@@ -13516,3 +13516,40 @@ html {
   cursor: progress;
   background: color-mix(in oklch, var(--ink-3) 14%, var(--bg-2));
 }
+
+/* Kobo setup: the steps behind a quiet disclosure under the warning. */
+.kobo-setup {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+.kobo-setup-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: fit-content;
+  list-style: none;
+  border-radius: 4px;
+  color: var(--ink-0);
+  font-weight: 500;
+  cursor: pointer;
+}
+.kobo-setup-summary::-webkit-details-marker { display: none; }
+.kobo-setup-summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--ink-2);
+  border-bottom: 1.5px solid var(--ink-2);
+  transform: rotate(-45deg);
+  transition: transform .15s;
+}
+.kobo-setup[open] > .kobo-setup-summary::before { transform: rotate(45deg); }
+.kobo-setup-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.kobo-setup .kobo-setup-steps { margin-top: 0.75rem; }
+.kobo-setup .kobo-shelf-rule { margin: 0.75rem 0 0; }
+@media (prefers-reduced-motion: reduce) {
+  .kobo-setup-summary::before { transition: none; }
+}

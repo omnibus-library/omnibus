@@ -28,6 +28,26 @@ const displayNameInput = (page: Page) => page.getByTestId("display-name-input");
 const profileStatus = (page: Page) => page.getByTestId("profile-status");
 const saveDisplayName = (page: Page) => page.getByTestId("display-name-save");
 
+/** Answer the Kobo device list read with `devices`. */
+async function stubKoboDevices(
+  page: Page,
+  devices: { id: number; name: string }[],
+): Promise<void> {
+  await page.route(
+    (url) => url.pathname === "/api/rpc/kobo/devices",
+    (route) =>
+      route.fulfill({
+        status: 200,
+        json: devices.map((d) => ({
+          ...d,
+          token: `tok-${d.id}`,
+          created_at: 0,
+          last_seen_at: 0,
+        })),
+      }),
+  );
+}
+
 /** Answer the Kindle delivery read with `body`. */
 async function stubKindleDelivery(
   page: Page,
@@ -112,6 +132,8 @@ test("renders the devices section layout", async ({ page }) => {
   await expect(page.getByTestId("kindle-email-connected")).toBeAttached();
   await expect(page.getByTestId("kindle-delivery")).toBeVisible();
   await expect(page.getByTestId("kobo-devices-card")).toBeVisible();
+  await expect(page.getByTestId("kobo-data-loss-warning")).toBeVisible();
+  await expect(page.getByText("How to connect a Kobo")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Choose shelves to sync" }),
   ).toHaveAttribute("href", "/shelves");
@@ -196,6 +218,11 @@ test("adds a Kobo device with an absolute endpoint URL, then removes it", async 
     await expect(page.getByTestId("kobo-endpoint-url").last()).toHaveValue(
       /^https?:\/\/[^/]+\/kobo\/[^/]+$/,
     );
+    // The new device joins the list below the form it was added from.
+    const row = page.getByTestId("kobo-device-row").filter({ hasText: name });
+    const rowTop = (await row.boundingBox())?.y ?? 0;
+    const addTop = (await page.getByTestId("kobo-device-add").boundingBox())?.y;
+    expect(rowTop).toBeGreaterThan(addTop ?? Number.POSITIVE_INFINITY);
   } finally {
     // Remove asks first, naming the device it would stop syncing.
     await page.getByRole("button", { name: `Remove ${name}` }).click();
@@ -214,6 +241,33 @@ test("adds a Kobo device with an absolute endpoint URL, then removes it", async 
     );
     await expect(page.getByTestId("kobo-remove-dialog")).toHaveCount(0);
   }
+});
+
+// The device list is per-user state on the shared admin, so both disclosure
+// states are stubbed: whether it opens on its own depends on the list.
+test("open the kobo setup steps from their disclosure", async ({ page }) => {
+  await stubKoboDevices(page, [{ id: 1, name: "Kobo Clara" }]);
+  await gotoReady(page, DEVICES);
+  await expect(page.getByTestId("kobo-device-row")).toHaveCount(1);
+
+  // A reader who already has a Kobo starts with the steps folded away.
+  const steps = page.getByTestId("kobo-setup-steps");
+  await expect(steps).toBeHidden();
+  await page.getByText("How to connect a Kobo").click();
+  await expect(steps).toBeVisible();
+  await expect(
+    steps.getByRole("link", { name: "omnibus-library/kobo-backup" }),
+  ).toHaveAttribute("href", "https://github.com/omnibus-library/kobo-backup");
+});
+
+test("show the kobo setup steps to a reader with no kobo yet", async ({
+  page,
+}) => {
+  await stubKoboDevices(page, []);
+  await gotoReady(page, DEVICES);
+
+  await expect(page.getByTestId("kobo-devices-empty")).toBeVisible();
+  await expect(page.getByTestId("kobo-setup-steps")).toBeVisible();
 });
 
 test("the legacy /account route redirects into Settings", async ({ page }) => {

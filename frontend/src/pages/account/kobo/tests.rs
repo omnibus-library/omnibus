@@ -190,6 +190,95 @@ mod render_tests {
         assert!(html.contains("Choose shelves to sync"), "{html}");
     }
 
+    /// Read top to bottom: what this is, the hazard, how to connect, the form,
+    /// then the devices — so a device added appears below the form, not above.
+    #[test]
+    fn kobo_card_orders_the_warning_setup_and_form_above_the_device_list() {
+        let html = render_in_vdom(card);
+        let at = |needle: &str| {
+            html.find(needle)
+                .unwrap_or_else(|| panic!("missing {needle}: {html}"))
+        };
+        let intro = at("Sync your shelves to a Kobo");
+        let warning = at("data-testid=\"kobo-data-loss-warning\"");
+        let setup = at("data-testid=\"kobo-setup\"");
+        let form = at("id=\"kobo-add-form\"");
+        let list = at("data-testid=\"kobo-devices-loading\"");
+        assert!(
+            intro < warning && warning < setup && setup < form && form < list,
+            "{html}"
+        );
+    }
+
+    /// The steps sit behind a disclosure that is closed until the device list
+    /// answers, so SSR and the first paint agree on it.
+    #[test]
+    fn kobo_card_keeps_the_setup_steps_in_a_closed_disclosure_before_the_list_answers() {
+        let html = render_in_vdom(card);
+        let start = html.find("<details").expect("a disclosure");
+        let end = html.find("</details>").expect("the disclosure closes");
+        let disclosure = &html[start..end];
+        assert!(disclosure.contains("data-testid=\"kobo-setup\""), "{html}");
+        assert!(
+            !disclosure.starts_with("<details open") && !disclosure.contains("open=true"),
+            "{html}"
+        );
+        assert!(disclosure.contains("<summary"), "{html}");
+        assert!(disclosure.contains("How to connect a Kobo"), "{html}");
+        assert!(
+            disclosure.contains("data-testid=\"kobo-setup-steps\""),
+            "{html}"
+        );
+        assert!(
+            disclosure.contains("data-testid=\"kobo-shelf-rule\""),
+            "{html}"
+        );
+    }
+
+    #[derive(Clone, Debug, PartialEq, Routable)]
+    enum OpenSetupRoute {
+        #[route("/")]
+        OpenSetupHost {},
+    }
+
+    #[component]
+    fn OpenSetupHost() -> Element {
+        render_kobo_setup(true)
+    }
+
+    #[test]
+    fn render_kobo_setup_opens_when_asked() {
+        let html = render_in_vdom(|| rsx! { Router::<OpenSetupRoute> {} });
+        assert!(html.contains("open=true"), "{html}");
+    }
+
+    /// kobo-backup both backs the device up and, through its TUI, sets the
+    /// sync URL — so the warning and the steps both point at it.
+    #[test]
+    fn kobo_card_points_to_kobo_backup_from_the_warning_and_the_steps() {
+        let html = render_in_vdom(card);
+        let link = r#"href="https://github.com/omnibus-library/kobo-backup""#;
+        let warning_end = html.find("data-testid=\"kobo-setup\"").expect("setup");
+        assert!(html[..warning_end].contains(link), "warning: {html}");
+        assert!(html[warning_end..].contains(link), "steps: {html}");
+        assert!(html.contains("TUI"), "{html}");
+    }
+
+    #[test]
+    fn kobo_card_makes_add_device_the_primary_action_in_the_form_footer() {
+        let html = render_in_vdom(card);
+        let footer = html
+            .find("class=\"settings-actions\"")
+            .expect("a footer row");
+        let add = html.find("data-testid=\"kobo-device-add\"").expect("add");
+        assert!(footer < add, "{html}");
+        assert!(html[footer..add].contains("btn primary"), "{html}");
+        assert!(
+            html[footer..add].contains("data-testid=\"kobo-devices-status\""),
+            "{html}"
+        );
+    }
+
     #[test]
     fn kobo_card_names_its_add_action() {
         let html = render_in_vdom(card);

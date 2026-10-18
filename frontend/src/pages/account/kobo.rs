@@ -1,15 +1,17 @@
 //! Kobo wireless-sync device card (Settings › Devices).
 //!
-//! Lists the caller's registered Kobos with their re-displayable `api_endpoint`
-//! URL and a copy button, per-device Regenerate/Remove — each confirmed, since
-//! either breaks the device's sync until it is re-set over USB — and an add
-//! form. The list starts unanswered so SSR and the first WASM paint agree.
+//! Reads top to bottom: the first-sync warning, the setup steps (a disclosure,
+//! open by default only for a reader with no Kobo yet), the add form, then the
+//! registered Kobos with their re-displayable `api_endpoint` URL and copy
+//! button, per-device Regenerate/Remove — each confirmed, since either breaks
+//! the device's sync until it is re-set over USB. The list and the
+//! disclosure's default start unanswered so SSR and the first WASM paint agree.
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::KoboDeviceView;
 
-use super::{confirm_dialog, live_status, Confirm};
+use super::{action_status, confirm_dialog, Confirm};
 use crate::components::clipboard::CopyButton;
 use crate::components::loading::RowSkeletons;
 use crate::components::BusyLabel;
@@ -53,38 +55,49 @@ fn endpoint_url(server_url: &str, token: &str) -> String {
     format!("{}/kobo/{token}", server_url.trim_end_matches('/'))
 }
 
-/// The "how to connect" procedure, plus the standing shelf rule beneath it.
-/// The rule is deliberately **not** a numbered item: a reader working the
-/// list has nothing to do at that number.
-fn render_kobo_setup_steps() -> Element {
+/// The backup tool whose TUI also sets a Kobo's sync URL.
+const KOBO_BACKUP_URL: &str = "https://github.com/omnibus-library/kobo-backup";
+
+/// The "how to connect" procedure behind a disclosure, plus the standing shelf
+/// rule beneath it. The rule is deliberately **not** a numbered item: a reader
+/// working the list has nothing to do at that number.
+fn render_kobo_setup(open: bool) -> Element {
     rsx! {
-        ol { class: "subtitle kobo-setup-steps", "data-testid": "kobo-setup-steps",
-            li {
-                "Give your Kobo a name and click "
-                b { "Add device" }
+        details { class: "kobo-setup", "data-testid": "kobo-setup", open,
+            summary { class: "kobo-setup-summary", "How to connect a Kobo" }
+            ol { class: "subtitle kobo-setup-steps", "data-testid": "kobo-setup-steps",
+                li {
+                    "Give your Kobo a name and click "
+                    b { "Add device" }
+                    " below."
+                }
+                li {
+                    "Copy the whole "
+                    b { "Wireless sync endpoint" }
+                    " URL shown for it. It must be reachable from the Kobo\u{2019}s own Wi-Fi."
+                }
+                li { "Connect the Kobo over USB and tap Connect on the device." }
+                li {
+                    "Edit "
+                    code { translate: "no", ".kobo/Kobo/Kobo eReader.conf" }
+                    " and set "
+                    code { translate: "no", "api_endpoint=" }
+                    " under "
+                    code { translate: "no", "[OneStoreServices]" }
+                    " to the URL you copied \u{2014} or let the "
+                    a { href: KOBO_BACKUP_URL, target: "_blank", rel: "noopener noreferrer",
+                        "omnibus-library/kobo-backup"
+                    }
+                    " TUI set it for you."
+                }
+                li { "Eject safely. Your next sync on the device talks to Omnibus." }
             }
-            li {
-                "Copy the whole "
-                b { "Wireless sync endpoint" }
-                " URL shown for it below. It must be reachable from the Kobo\u{2019}s own Wi-Fi."
+            p { class: "subtitle kobo-shelf-rule", "data-testid": "kobo-shelf-rule",
+                "Only shelves marked "
+                b { "Sync to Kobo" }
+                " are synced — set that on a shelf before the first sync. "
+                Link { to: Route::Shelves {}, "data-testid": "kobo-shelves-link", "Choose shelves to sync" }
             }
-            li { "Connect the Kobo over USB and tap Connect on the device." }
-            li {
-                "Edit "
-                code { translate: "no", ".kobo/Kobo/Kobo eReader.conf" }
-                " and set "
-                code { translate: "no", "api_endpoint=" }
-                " under "
-                code { translate: "no", "[OneStoreServices]" }
-                " to the URL you copied."
-            }
-            li { "Eject safely. Your next sync on the device talks to Omnibus." }
-        }
-        p { class: "subtitle kobo-shelf-rule", "data-testid": "kobo-shelf-rule",
-            "Only shelves marked "
-            b { "Sync to Kobo" }
-            " are synced — set that on a shelf before the first sync. "
-            Link { to: Route::Shelves {}, "data-testid": "kobo-shelves-link", "Choose shelves to sync" }
         }
     }
 }
@@ -104,12 +117,10 @@ fn render_kobo_warning() -> Element {
             }
             ul { class: "kobo-warning-tools",
                 li {
-                    a {
-                        href: "https://github.com/omnibus-library/kobo-backup#kobo-backup",
-                        target: "_blank",
-                        rel: "noopener noreferrer",
+                    a { href: KOBO_BACKUP_URL, target: "_blank", rel: "noopener noreferrer",
                         "omnibus-library/kobo-backup"
                     }
+                    " \u{2014} its TUI also sets your Kobo\u{2019}s sync URL for you"
                 }
                 li {
                     a {
@@ -162,10 +173,11 @@ fn render_kobo_device_list(
     }
 }
 
-/// The "Add a Kobo" name form.
+/// The "Add a Kobo" name form, with the card's status beside its action.
 fn render_kobo_add_form(
     name_input: Signal<String>,
     in_flight: bool,
+    status: Element,
     on_add: impl FnMut(Event<FormData>) + 'static,
 ) -> Element {
     rsx! {
@@ -188,9 +200,10 @@ fn render_kobo_add_form(
                 }
             }
             div { class: "settings-actions",
+                {status}
                 button {
                     r#type: "submit",
-                    class: "btn",
+                    class: "btn primary",
                     disabled: in_flight,
                     "aria-busy": "{in_flight}",
                     "data-testid": "kobo-device-add",
@@ -201,8 +214,8 @@ fn render_kobo_add_form(
     }
 }
 
-/// Card body: device list + add form. Every mutation re-fetches the list so the
-/// rendered state always matches the server.
+/// Card body: warning, setup steps, add form, then the device list. Every
+/// mutation folds the server's answer into the list.
 #[component]
 pub fn KoboDevicesCard() -> Element {
     let server_url = use_server_url();
@@ -217,13 +230,19 @@ pub fn KoboDevicesCard() -> Element {
     let mut msg_is_error = use_signal(|| false);
     let mut in_flight = use_signal(|| false);
     let mut pending = use_signal(|| None::<PendingKobo>);
+    // Decided once, when the list first answers: adding the first Kobo must
+    // not fold the steps away while the reader is still following them.
+    let mut setup_open = use_signal(|| false);
 
     let load_url = server_url.clone();
     use_effect(move || {
         let url = load_url.clone();
         spawn(async move {
             match data::list_kobo_devices(&url).await {
-                Ok(list) => devices.set(Some(list)),
+                Ok(list) => {
+                    setup_open.set(list.is_empty());
+                    devices.set(Some(list));
+                }
                 Err(e) => {
                     msg.set(Some(format!("Couldn\u{2019}t load your Kobos: {e}")));
                     msg_is_error.set(true);
@@ -331,12 +350,19 @@ pub fn KoboDevicesCard() -> Element {
     rsx! {
         section { class: "card", "data-testid": "kobo-devices-card",
             h3 { "Kobo wireless sync" }
-            {render_kobo_setup_steps()}
+            p { class: "subtitle", "Sync your shelves to a Kobo over Wi-Fi." }
             // Unconditional: the hazard applies the moment a URL is copied.
             {render_kobo_warning()}
+            {render_kobo_setup(setup_open())}
+            {render_kobo_add_form(
+                name_input,
+                in_flight(),
+                action_status("kobo-devices-status", msg().as_deref(), msg_is_error()),
+                on_add,
+            )}
             match device_list.as_deref() {
                 Some(list) => render_kobo_device_list(list, &endpoint_origin(), in_flight(), on_ask_regenerate, on_ask_remove),
-                // The status line below carries the failure.
+                // The form's status line carries the failure.
                 None if msg_is_error() => rsx! {},
                 None => rsx! {
                     div { role: "status", "aria-live": "polite", "data-testid": "kobo-devices-loading",
@@ -345,9 +371,6 @@ pub fn KoboDevicesCard() -> Element {
                     }
                 },
             }
-            {render_kobo_add_form(name_input, in_flight(), on_add)}
-
-            {live_status("kobo-devices-status", msg().as_deref(), msg_is_error())}
         }
         if let Some(ask) = pending() {
             {kobo_confirm(ask, in_flight(), pending, on_regenerate, on_remove)}
