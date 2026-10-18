@@ -41,6 +41,18 @@ fn ReaderHost() -> Element {
 }
 
 #[derive(Clone, Debug, PartialEq, Routable)]
+enum BareReaderRoute {
+    #[route("/")]
+    BareReaderHost {},
+}
+
+#[component]
+fn BareReaderHost() -> Element {
+    provide_current_user(Some(Some(test_user(false, true))));
+    rsx! { AdminPage { section: None } }
+}
+
+#[derive(Clone, Debug, PartialEq, Routable)]
 enum UnresolvedRoute {
     #[route("/")]
     UnresolvedHost {},
@@ -127,4 +139,14 @@ fn admin_page_sets_the_way_back_to_settings_apart() {
         .expect("a divided group");
     assert!(divided < html.find("admin-nav-settings").unwrap(), "{html}");
     assert!(html.find("admin-nav-logs").unwrap() < divided, "{html}");
+}
+
+#[test]
+fn admin_page_shows_a_reader_the_refusal_rather_than_the_section_list_on_narrow_screens() {
+    let html = render_in_vdom(|| rsx! { Router::<BareReaderRoute> {} });
+    assert!(html.contains("admin-forbidden"), "{html}");
+    assert!(
+        html.contains(r#"class="settings-layout has-section""#),
+        "{html}"
+    );
 }

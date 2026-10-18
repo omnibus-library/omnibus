@@ -105,3 +105,14 @@ fn settings_page_sets_the_administration_link_apart() {
         .expect("a divided group");
     assert!(divided < html.find("settings-nav-admin").unwrap(), "{html}");
 }
+
+#[test]
+fn settings_page_back_link_returns_to_the_section_list_without_a_dangling_query() {
+    let html = render_in_vdom(|| rsx! { Router::<DevicesRoute> {} });
+    let back = html
+        .find(r#"data-testid="settings-back""#)
+        .expect("back link");
+    let start = html[..back].rfind('<').expect("tag start");
+    let tag = &html[start..back + html[back..].find('>').expect("tag end")];
+    assert!(tag.contains(r#"href="/settings""#), "{tag}");
+}

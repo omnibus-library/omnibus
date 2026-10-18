@@ -35,7 +35,8 @@ mod page {
                 testid: "admin-layout",
                 nav_label: "Administration sections",
                 back_to: Route::Admin { section: None },
-                has_section: section.is_some(),
+                // A refusal is the page itself, never the section list.
+                has_section: section.is_some() || access() == Access::Denied,
                 nav: rsx! { AdminNav { active } },
                 match access() {
                     Access::Allowed => rsx! {

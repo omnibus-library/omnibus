@@ -47,10 +47,7 @@ pub(crate) fn SettingsShell(
                 {nav}
             }
             div { class: "settings-content",
-                Link { to: back_to, class: "settings-back", "data-testid": "settings-back",
-                    span { "aria-hidden": "true", "‹ " }
-                    "{title}"
-                }
+                BackLink { to: back_to, title }
                 {children}
             }
         }
@@ -76,13 +73,9 @@ pub(crate) fn NavGroup(
 }
 
 /// One sidebar link, marked `aria-current="page"` when it is the open section.
-/// While a form holds edits the click asks first instead of navigating.
 #[component]
 pub(crate) fn NavItem(to: Route, label: &'static str, testid: String, active: bool) -> Element {
-    let unsaved = try_use_context::<UnsavedChanges>();
-    let pending = try_use_context::<PendingLeave>();
-    let dirty = unsaved.is_some_and(|changes| changes.is_dirty());
-    let target = to.clone();
+    let (dirty, ask) = leave_guard(to.clone(), active);
     rsx! {
         Link {
             to: crate::routes::link_target(to),
@@ -90,14 +83,41 @@ pub(crate) fn NavItem(to: Route, label: &'static str, testid: String, active: bo
             "data-testid": testid,
             "aria-current": if active { "page" } else { "false" },
             onclick_only: dirty,
-            onclick: move |_| {
-                if let Some(PendingLeave(mut pending)) = pending.filter(|_| dirty) {
-                    pending.set(Some(target.clone()));
-                }
-            },
+            onclick: ask,
             "{label}"
         }
     }
+}
+
+/// "‹ {title}", the narrow screen's way from a section back to the list.
+#[component]
+fn BackLink(to: Route, title: &'static str) -> Element {
+    let (dirty, ask) = leave_guard(to.clone(), false);
+    rsx! {
+        Link {
+            to: crate::routes::link_target(to),
+            class: "settings-back",
+            "data-testid": "settings-back",
+            onclick_only: dirty,
+            onclick: ask,
+            span { "aria-hidden": "true", "‹ " }
+            "{title}"
+        }
+    }
+}
+
+/// Whether a link to `to` must ask before leaving (a form holds edits and the
+/// link isn't to the section already open), and the click that asks.
+fn leave_guard(to: Route, here: bool) -> (bool, impl FnMut(MouseEvent) + 'static) {
+    let unsaved = try_use_context::<UnsavedChanges>();
+    let pending = try_use_context::<PendingLeave>();
+    let dirty = !here && unsaved.is_some_and(|changes| changes.is_dirty());
+    let ask = move |_| {
+        if let Some(PendingLeave(mut pending)) = pending.filter(|_| dirty) {
+            pending.set(Some(to.clone()));
+        }
+    };
+    (dirty, ask)
 }
 
 /// "Discard unsaved changes?" for a held-back section switch.
