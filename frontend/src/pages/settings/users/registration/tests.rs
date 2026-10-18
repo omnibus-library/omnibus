@@ -51,6 +51,18 @@ fn registration_toggle_renders_unresolved_and_disabled_before_load() {
     assert!(html.contains("ld-sheen"), "{html}");
 }
 
+#[cfg(feature = "server")]
+#[test]
+fn registration_toggle_renders_as_a_labelled_switch_row() {
+    let html = crate::test_support::render_in_vdom(RegistrationToggle);
+    assert!(html.contains(r#"role="switch""#), "{html}");
+    assert!(
+        html.contains(r#"<label class="setting-row-label" for="registration-toggle">Allow new users to register</label>"#),
+        "{html}"
+    );
+    assert!(html.contains("settings-switch"), "{html}");
+}
+
 // `registration_toggle_handler` runs inside a `VirtualDom::new(...)
 // .rebuild_in_place()` so `Signal::new` has a runtime — the pattern in
 // `frontend/src/pages/settings/library/tests.rs`. The futures it spawns are

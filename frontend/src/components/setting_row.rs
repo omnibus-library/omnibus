@@ -6,20 +6,26 @@ use dioxus::prelude::*;
 
 /// A labelled row around `children` (the control). The label targets
 /// `control_id`, and the description carries `id="{control_id}-desc"` for the
-/// control to name in its `aria-describedby`.
+/// control to name in its `aria-describedby`. `pending` draws the description
+/// as a value still loading.
 #[component]
 pub fn SettingRow(
     label: String,
     description: String,
     control_id: String,
     #[props(default)] testid: Option<String>,
+    #[props(default)] pending: bool,
     children: Element,
 ) -> Element {
     rsx! {
         div { class: "setting-row", "data-testid": testid,
             div { class: "setting-row-text",
                 label { class: "setting-row-label", r#for: "{control_id}", "{label}" }
-                p { class: "setting-row-desc", id: "{control_id}-desc", "{description}" }
+                p {
+                    class: if pending { "setting-row-desc ld-sheen" } else { "setting-row-desc" },
+                    id: "{control_id}-desc",
+                    "{description}"
+                }
             }
             div { class: "setting-row-control", {children} }
         }
