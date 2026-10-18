@@ -39,6 +39,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"], optio
 tracing-appender = { version = "0.2", optional = true }
 time = { version = "0.3", features = ["formatting", "parsing"], optional = true }
 futures-util = { version = "0.3", optional = true }
+# Signs the per-image download links (`backend::ebooks::images`); pairs with
+# `sha2`, and already in the tree via `digest`, so no new crate builds.
+hmac = { version = "0.12", optional = true }
+# URL-safe, unpadded encoding of the image-link signature; the OPDS Basic-auth
+# tests also use it to encode their credentials.
+base64 = { version = "0.22", optional = true }
 # Fixed-digest derivation for the Kobo auth envelope. Deliberately not
 # `DefaultHasher`, whose output is not stable across toolchain versions —
 # a rotation there would drift the values a device caches across a deploy
@@ -103,9 +109,6 @@ epub = "2"
 # tests see what a reader would see, not just the response the server sends.
 # Default features off keeps the terminal UI (ratatui) out of server test builds.
 omnibus-mock-kobo = { path = "../mock-kobo", default-features = false }
-# Encode `Authorization: Basic` credentials in the OPDS Basic-auth tests.
-# Same version as `db`'s dependency, so cargo unifies on one build.
-base64 = "0.22"
 
 [features]
 default = ["server"]
@@ -130,6 +133,8 @@ server = [
     "dep:futures-util",
     "dep:urlencoding",
     "dep:sha2",
+    "dep:hmac",
+    "dep:base64",
     "dep:anyhow",
     "dep:tempfile",
     "dep:omnibus-db",

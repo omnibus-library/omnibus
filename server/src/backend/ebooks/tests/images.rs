@@ -5,12 +5,13 @@
 //! 404 and no-EPUB 422.
 
 use axum::{body::to_bytes, http::StatusCode};
-use omnibus_shared::{BookImage, BookImageList, BookImageReference};
+use omnibus_shared::{BookImage, BookImageLink, BookImageList, BookImageReference};
 use tower::ServiceExt;
 
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::*;
 
+use super::super::images::sign_image_link;
 use super::super::*;
 use super::seed_cbz_on_disk;
 
@@ -412,6 +413,234 @@ async fn api_get_ebook_image_file_returns_200_with_query_token() {
         .expect("request should succeed");
 
     assert_eq!(res.status(), StatusCode::OK);
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+fn now() -> i64 {
+    time::OffsetDateTime::now_utc().unix_timestamp()
+}
+
+/// Mint a link for `href` as `token`'s user through the real endpoint.
+async fn mint(app: &axum::Router, token: &str, uuid: &str, href: &str) -> BookImageLink {
+    let res = app
+        .clone()
+        .oneshot(get_with_bearer(
+            &format!(
+                "/api/ebooks/{uuid}/images/link?href={}",
+                urlencoding::encode(href)
+            ),
+            token,
+        ))
+        .await
+        .expect("request should succeed");
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_link_returns_a_signed_path_expiring_after_the_ttl() {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+    let app = crate::backend::rest_router(AppState::new(pool));
+
+    let before = now();
+    let res = app
+        .clone()
+        .oneshot(get_with_bearer(
+            &format!("/api/ebooks/{uuid}/images/link?href=OEBPS%2Fimages%2Fmap.png"),
+            &token,
+        ))
+        .await
+        .expect("request should succeed");
+    let after = now();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(header(&res, axum::http::header::CACHE_CONTROL), "no-store");
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let link: BookImageLink = serde_json::from_slice(&bytes).unwrap();
+    assert!(
+        (before + 15 * 60..=after + 15 * 60).contains(&link.expires_at),
+        "expires_at {} is not 15 minutes out",
+        link.expires_at
+    );
+    let expected_prefix = format!(
+        "/api/ebooks/{uuid}/images/file?href=OEBPS%2Fimages%2Fmap.png&expires={}&sig=",
+        link.expires_at
+    );
+    assert!(
+        link.path.starts_with(&expected_prefix),
+        "unexpected path {}",
+        link.path
+    );
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_link_returns_403_without_download_permission() {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    revoke_can_download(&pool, user.id).await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/ebooks/{uuid}/images/link?href=map.png"),
+            &token,
+        ))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_link_returns_404_for_an_unknown_uuid() {
+    let (app, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let res = app
+        .oneshot(get_with_bearer(
+            "/api/ebooks/00000000-0000-0000-0000-00000000dead/images/link?href=map.png",
+            &token,
+        ))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_link_returns_401_when_anonymous() {
+    let (app, _, _) = fixture().await;
+    let res = app
+        .oneshot(get_anon("/api/ebooks/some-uuid/images/link?href=map.png"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_serves_the_original_through_a_signed_link_without_a_session() {
+    let (_, _, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+    let (epub, map, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let link = mint(&app, &token, &uuid, "map.png").await;
+
+    let res = app
+        .oneshot(get_anon(&link.path))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::OK);
+    assert!(
+        header(&res, axum::http::header::CONTENT_DISPOSITION).starts_with("attachment"),
+        "a signed fetch is still a download"
+    );
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(&bytes[..], &map[..]);
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_returns_401_for_an_expired_signed_link() {
+    let (_, _, pool) = fixture().await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+    let key = db::auth::load_or_create_session_key(&pool).await.unwrap();
+    let expires = now() - 1;
+    let sig = sign_image_link(&key, &uuid, "map.png", expires).unwrap();
+    let app = crate::backend::rest_router(AppState::new(pool));
+
+    let res = app
+        .oneshot(get_anon(&format!(
+            "/api/ebooks/{uuid}/images/file?href=map.png&expires={expires}&sig={sig}"
+        )))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_returns_401_for_a_signed_link_used_on_another_href() {
+    let (_, _, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let link = mint(&app, &token, &uuid, "map.png").await;
+
+    let res = app
+        .oneshot(get_anon(
+            &link.path.replace("href=map.png", "href=plate.png"),
+        ))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_returns_401_for_a_signed_link_without_a_usable_expiry() {
+    let (_, _, pool) = fixture().await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+    let app = crate::backend::rest_router(AppState::new(pool));
+
+    for expiry in ["", "&expires=soon"] {
+        let res = app
+            .clone()
+            .oneshot(get_anon(&format!(
+                "/api/ebooks/{uuid}/images/file?href=map.png{expiry}&sig=abc"
+            )))
+            .await
+            .expect("request should succeed");
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "{expiry:?}");
+    }
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_never_falls_back_to_a_session_when_the_signature_is_bad() {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let expires = now() + 60;
+
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/ebooks/{uuid}/images/file?href=map.png&expires={expires}&sig=AAAA"),
+            &token,
+        ))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 
     std::fs::remove_dir_all(&tmp).ok();
 }

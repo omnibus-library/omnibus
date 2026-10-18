@@ -41,3 +41,13 @@ pub struct BookImageList {
     pub book_uuid: String,
     pub images: Vec<BookImage>,
 }
+
+/// `GET /api/ebooks/{uuid}/images/link` response: a server-relative path that
+/// fetches one image's original bytes without a session until `expires_at`
+/// (unix seconds). The link opens that one image and nothing else.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct BookImageLink {
+    pub path: String,
+    pub expires_at: i64,
+}

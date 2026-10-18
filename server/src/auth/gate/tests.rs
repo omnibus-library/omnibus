@@ -414,6 +414,53 @@ async fn ebook_image_file_get_with_query_token_passes() {
 }
 
 #[tokio::test]
+async fn ebook_image_file_get_with_a_sig_param_passes_without_a_session() {
+    // A signed image link authenticates itself in the handler, so the gate
+    // must not demand a session of a request that carries a signature.
+    let (app, _pool) = app().await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/ebooks/some-uuid/images/file?href=map.png&expires=1&sig=abc")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn ebook_image_file_get_without_sig_or_session_is_401() {
+    let (app, _pool) = app().await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/ebooks/some-uuid/images/file?href=map.png")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn sig_param_on_another_media_path_does_not_pass_without_a_session() {
+    let (app, _pool) = app().await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/ebooks/some-uuid/file?sig=abc")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn ebook_page_get_with_query_token_passes() {
     // The comic pager loads CBZ pages via `<img src>`, which from the mobile
     // WebView can only carry the session as `?token=` — same as covers/thumbs.

@@ -50,6 +50,21 @@ fn is_media_read_path(path: &str) -> bool {
         || (path.starts_with("/api/users/") && path.ends_with("/avatar"))
 }
 
+/// A signed image link (`?sig=` on the image fetch) authenticates itself in the
+/// handler, so the gate must not demand a session of it — the same exemption shape
+/// as the Kobo routes. The handler stays authoritative: it rejects a missing or bad
+/// signature itself.
+fn is_signed_image_fetch(req: &Request) -> bool {
+    let path = req.uri().path();
+    req.method() == Method::GET
+        && path.starts_with("/api/ebooks/")
+        && path.ends_with("/images/file")
+        && req
+            .uri()
+            .query()
+            .is_some_and(|q| q.split('&').any(|pair| pair.starts_with("sig=")))
+}
+
 /// Reject `/api/*` requests without a live session with `401 Unauthorized`, after exempting `/api/auth/*` and `/api/_health`.
 /// `/api/auth/*` handles its own authentication; `/api/_health` is the unauthenticated
 /// liveness probe used by `scripts/dev-server-up.sh`. This only gates the boundary:
@@ -66,6 +81,7 @@ pub async fn require_auth(State(state): State<AppState>, req: Request, next: Nex
         // themselves via the x-kobo-deviceid header (KoboHardwareUser).
         || path.starts_with("/api/v3/content/")
         || path == "/api/UserStorage/Metadata"
+        || is_signed_image_fetch(&req)
     {
         return next.run(req).await;
     }
