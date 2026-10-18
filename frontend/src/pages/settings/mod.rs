@@ -88,7 +88,8 @@ pub fn SettingsPage(section: Option<String>) -> Element {
             title: "Settings",
             testid: "settings-layout",
             nav_label: "Settings sections",
-            back_to: crate::Route::Settings { section: None },
+            back_to: Some(crate::Route::Settings { section: None }),
+            back_keeps: active == SettingsSection::parse(None),
             has_section: section.is_some(),
             nav: rsx! { PersonalNav { active, is_admin } },
             shell::SectionHeader { title: active.label() }

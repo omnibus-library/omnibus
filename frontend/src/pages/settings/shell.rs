@@ -17,13 +17,15 @@ use crate::Route;
 struct PendingLeave(Signal<Option<Route>>);
 
 /// Sidebar plus content. `back_to` is the section-less route a narrow
-/// screen's "‹ {title}" link returns to.
+/// screen's "‹ {title}" link returns to (none on a refusal); `back_keeps`
+/// says that route renders the open section, so following it drops no edits.
 #[component]
 pub(crate) fn SettingsShell(
     title: &'static str,
     testid: &'static str,
     nav_label: &'static str,
-    back_to: Route,
+    back_to: Option<Route>,
+    back_keeps: bool,
     has_section: bool,
     nav: Element,
     children: Element,
@@ -47,7 +49,9 @@ pub(crate) fn SettingsShell(
                 {nav}
             }
             div { class: "settings-content",
-                BackLink { to: back_to, title }
+                if let Some(to) = back_to {
+                    BackLink { to, title, here: back_keeps }
+                }
                 {children}
             }
         }
@@ -91,8 +95,8 @@ pub(crate) fn NavItem(to: Route, label: &'static str, testid: String, active: bo
 
 /// "‹ {title}", the narrow screen's way from a section back to the list.
 #[component]
-fn BackLink(to: Route, title: &'static str) -> Element {
-    let (dirty, ask) = leave_guard(to.clone(), false);
+fn BackLink(to: Route, title: &'static str, here: bool) -> Element {
+    let (dirty, ask) = leave_guard(to.clone(), here);
     rsx! {
         Link {
             to: crate::routes::link_target(to),

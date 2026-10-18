@@ -153,3 +153,9 @@ fn admin_page_shows_a_reader_the_refusal_rather_than_the_section_list_on_narrow_
         "{html}"
     );
 }
+
+#[test]
+fn admin_page_offers_a_refused_reader_no_way_back_into_administration() {
+    let html = render_in_vdom(|| rsx! { Router::<BareReaderRoute> {} });
+    assert!(!html.contains("settings-back"), "{html}");
+}
