@@ -330,9 +330,12 @@ test.describe("listen page", () => {
         await expect(listenPage.speedButton).toHaveText("1.00×");
       });
 
-      const at1x = await listenPage.scrubStamps();
-      expect(at1x.total).toBeGreaterThan(0);
-      expect(at1x.remaining).toBeGreaterThan(0);
+      const at1x = await test.step("read the time stamps at 1×", async () => {
+        const stamps = await listenPage.scrubStamps();
+        expect(stamps.total).toBeGreaterThan(0);
+        expect(stamps.remaining).toBeGreaterThan(0);
+        return stamps;
+      });
 
       await test.step("choose 2×", async () => {
         await listenPage.openSpeedPanel();

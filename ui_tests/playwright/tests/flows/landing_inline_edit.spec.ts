@@ -24,6 +24,10 @@ test.describe("inline edit", () => {
       await libraryPage.table.switchTo();
     });
 
+    await test.step("check the shared nav shows", async () => {
+      await libraryPage.topNav.assertDisplayed();
+    });
+
     // The class is added only for admins, so it is the signal editing is on.
     await test.step("check the title cell is editable", async () => {
       const titleCell = libraryPage.table.cell(TARGET.slug, "title");

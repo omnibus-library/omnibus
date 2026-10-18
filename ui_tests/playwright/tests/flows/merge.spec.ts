@@ -79,10 +79,7 @@ test.describe("book merge", () => {
     });
 
     await test.step("pick the audiobook to merge in", async () => {
-      await mergeDialog.open();
-      await mergeDialog.search(SOURCE.title);
-      await mergeDialog.assertCandidatesListed();
-      await mergeDialog.pickFirstCandidate();
+      await mergeDialog.chooseSource(SOURCE.title);
       await expect(mergeDialog.confirmButton).toBeVisible();
     });
 
@@ -159,10 +156,7 @@ test.describe("book merge", () => {
       // The toast is client state, so a merge made through the api has none.
       const mergeLogId = await test.step("merge the audiobook in", async () => {
         await bookDetailPage.goto(uuid);
-        await mergeDialog.open();
-        await mergeDialog.search(SOURCE.title);
-        await mergeDialog.assertCandidatesListed();
-        await mergeDialog.pickFirstCandidate();
+        await mergeDialog.chooseSource(SOURCE.title);
         const { response } = await expectMutation(merge.books(), () =>
           mergeDialog.confirm(),
         );

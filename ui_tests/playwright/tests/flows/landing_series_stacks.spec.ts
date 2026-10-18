@@ -18,8 +18,6 @@ const CODE_QUARTET_STACK = "Code Quartet, 4 books";
 // Stack series is per-account, so every test but the admin check runs as the
 // worker's reader (see 04a), and the fixture puts its choice back after each.
 test.describe("series stacks", () => {
-  test.describe.configure({ mode: "serial" });
-
   test.beforeAll("seed the library", async ({ request }) => {
     await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
@@ -182,13 +180,6 @@ test.describe("series stacks", () => {
   }) => {
     const asc = `stack-${await fetchBookUuidByTitle(request, "Beta in the Series")}`;
     const desc = `stack-${await fetchBookUuidByTitle(request, "Pioneers Vol 5: Signal")}`;
-    // The folded stack's lead moves with the sort, and is null while it is dealt out.
-    const flipSortTo = async (leadKey: string) => {
-      await readerLibraryPage.toggleSortDirection();
-      await expect
-        .poll(() => readerLibraryPage.stackLeadKey(PIONEERS_STACK))
-        .toBe(leadKey);
-    };
     await presetStackSeries(true, "reader");
 
     await test.step("open the library with the stack dealt out", async () => {
@@ -201,9 +192,14 @@ test.describe("series stacks", () => {
       await expect(readerLibraryPage.seriesCap.root).toBeVisible();
     });
 
+    // The folded stack's lead moves with the sort, and is null while it is dealt out.
     await test.step("flip the sort there and back", async () => {
-      await flipSortTo(desc);
-      await flipSortTo(asc);
+      for (const leadKey of [desc, asc]) {
+        await readerLibraryPage.toggleSortDirection();
+        await expect
+          .poll(() => readerLibraryPage.stackLeadKey(PIONEERS_STACK))
+          .toBe(leadKey);
+      }
       await expect(readerLibraryPage.seriesCap.root).toHaveCount(0);
       await expect(readerLibraryPage.sortDirectionButton).toBeFocused();
     });
@@ -214,8 +210,12 @@ test.describe("series stacks", () => {
       await expect(readerLibraryPage.seriesCap.foldButton).toBeFocused();
       await readerLibraryPage.seriesCap.foldWithEscape();
       await expect(readerLibraryPage.seriesStack(PIONEERS_STACK)).toBeFocused();
-      await flipSortTo(desc);
-      await flipSortTo(asc);
+      for (const leadKey of [desc, asc]) {
+        await readerLibraryPage.toggleSortDirection();
+        await expect
+          .poll(() => readerLibraryPage.stackLeadKey(PIONEERS_STACK))
+          .toBe(leadKey);
+      }
       await expect(readerLibraryPage.sortDirectionButton).toBeFocused();
     });
   });
@@ -265,12 +265,11 @@ test.describe("series stacks", () => {
     });
   });
 
-  test("save the switch per user and keep it across a reload", async ({
+  test("keep the switch across a reload", async ({
     readerLibraryPage,
-    libraryPage,
     readerExpectMutation,
   }) => {
-    await test.step("turn the switch on as the reader", async () => {
+    await test.step("turn the switch on", async () => {
       await readerLibraryPage.goto();
       await readerExpectMutation(account.stackSeries(true), () =>
         readerLibraryPage.toggleStackSeries(),
@@ -281,15 +280,24 @@ test.describe("series stacks", () => {
       await readerLibraryPage.reload();
     });
 
-    await test.step("check the reader's switch is still on", async () => {
+    await test.step("check the switch is still on", async () => {
       await expect(readerLibraryPage.stackToggle).toHaveAttribute(
         "aria-pressed",
         "true",
       );
       await expect(readerLibraryPage.seriesStack(PIONEERS_STACK)).toBeVisible();
     });
+  });
 
-    // The suite's admin never stacked, so its wall still tiles every volume.
+  // The suite's admin never stacked, so its wall still tiles every volume.
+  test("save the switch per user", async ({
+    libraryPage,
+    presetStackSeries,
+  }) => {
+    await test.step("turn the switch on as the reader", async () => {
+      await presetStackSeries(true, "reader");
+    });
+
     await test.step("check the admin's wall is unchanged", async () => {
       await libraryPage.goto();
       await expect(libraryPage.volumeTile("beta")).toBeVisible();
@@ -297,7 +305,7 @@ test.describe("series stacks", () => {
     });
   });
 
-  test("put the switch back and say so when a save fails", async ({
+  test("put the switch back when a save fails", async ({
     readerLibraryPage,
     presetStackSeries,
     readerExpectMutation,

@@ -187,7 +187,7 @@ test.describe("library filters", () => {
     });
   });
 
-  test("add a format clause and narrow the list and count", async ({
+  test("narrow the list with a format clause", async ({
     libraryPage,
     expectMutation,
   }) => {
@@ -284,50 +284,55 @@ test.describe("library filters", () => {
     });
   });
 
-  test("explain an empty result and clear from it", async ({
-    libraryPage,
-    expectMutation,
-  }) => {
-    const { filterBar } = libraryPage;
-    const hidden = slugsWhere((b) => authoredBy(b, "Alfred Aho"));
+  test.describe("an empty result", () => {
+    test.beforeEach(
+      "filter to Aho, then to PDFs",
+      async ({ libraryPage, expectMutation }) => {
+        const { filterBar } = libraryPage;
+        await libraryPage.goto();
+        await expectMutation(ebooks.page(), () =>
+          filterBar.addClause(clauses.includeAho),
+        );
+        await expectMutation(ebooks.page(), () =>
+          filterBar.addClause(clauses.includePdf),
+        );
+      },
+    );
 
-    await test.step("open the library", async () => {
-      await libraryPage.goto();
+    test("explain an empty result", async ({ libraryPage }) => {
+      await test.step("check the empty result is explained", async () => {
+        await libraryPage.assertShowsBooks(
+          slugsWhere((b) => authoredBy(b, "Alfred Aho") && hasFormat(b, "pdf")),
+        );
+        await expect(libraryPage.noMatchesMessage).toBeVisible();
+        await expect(libraryPage.emptyMessage).toHaveCount(0);
+      });
     });
 
-    await test.step("filter to Aho", async () => {
-      await expectMutation(ebooks.page(), () =>
-        filterBar.addClause(clauses.includeAho),
-      );
-    });
+    test("bring the list back without a false empty when the filters are cleared", async ({
+      libraryPage,
+      expectMutation,
+    }) => {
+      const { filterBar } = libraryPage;
+      const hidden = slugsWhere((b) => authoredBy(b, "Alfred Aho"));
 
-    await test.step("filter to PDFs, which rules every book out", async () => {
-      await expectMutation(ebooks.page(), () =>
-        filterBar.addClause(clauses.includePdf),
-      );
-    });
+      await test.step("watch for a false empty", async () => {
+        await libraryPage.recordEmptyLibraryInsertions();
+      });
 
-    await test.step("check the empty result is explained", async () => {
-      await libraryPage.assertShowsBooks(
-        slugsWhere((b) => authoredBy(b, "Alfred Aho") && hasFormat(b, "pdf")),
-      );
-      await expect(libraryPage.noMatchesMessage).toBeVisible();
-      await expect(libraryPage.emptyMessage).toHaveCount(0);
-      await libraryPage.recordEmptyLibraryInsertions();
-    });
+      const { request } = await test.step("clear the filters", () =>
+        expectMutation(ebooks.page(), () => libraryPage.clearFilters()));
 
-    const { request } = await test.step("clear the filters", () =>
-      expectMutation(ebooks.page(), () => libraryPage.clearFilters()));
-
-    await test.step("check the list is back without a false empty", async () => {
-      expect(request.postDataJSON().filters).toEqual({ clauses: [] });
-      await expect(filterBar.chips).toHaveCount(0);
-      await libraryPage.assertShowsBooksIncluding(hidden);
-      await expect
-        .poll(() => libraryPage.shownCount())
-        .toBeGreaterThanOrEqual(hidden.length);
-      await expect(libraryPage.noMatchesMessage).toHaveCount(0);
-      expect(await libraryPage.emptyLibraryInsertions()).toBe(0);
+      await test.step("check the list is back without a false empty", async () => {
+        expect(request.postDataJSON().filters).toEqual({ clauses: [] });
+        await expect(filterBar.chips).toHaveCount(0);
+        await libraryPage.assertShowsBooksIncluding(hidden);
+        await expect
+          .poll(() => libraryPage.shownCount())
+          .toBeGreaterThanOrEqual(hidden.length);
+        await expect(libraryPage.noMatchesMessage).toHaveCount(0);
+        expect(await libraryPage.emptyLibraryInsertions()).toBe(0);
+      });
     });
   });
 
@@ -452,8 +457,6 @@ test.describe("library filters", () => {
   });
 
   test.describe("on a shelf", () => {
-    test.describe.configure({ mode: "serial" });
-
     test("narrow a selected shelf on the landing page", async ({
       readerLibraryPage,
       readerExpectMutation,
@@ -560,51 +563,51 @@ test.describe("library filters", () => {
       });
     });
 
-    test("explain a filter that rules out every book on a shelf and clear from it", async ({
-      readerLibraryPage,
-      readerShelfPage,
-      readerExpectMutation,
-      filterShelf,
-    }) => {
-      const { filterBar } = readerShelfPage;
+    test.describe("a filter that rules out every member", () => {
+      test.beforeEach(
+        "filter the shelf to Lam, then to PDFs",
+        async ({
+          readerLibraryPage,
+          readerShelfPage,
+          readerExpectMutation,
+          filterShelf,
+        }) => {
+          await readerLibraryPage.goto();
+          await readerExpectMutation(ebooks.page(), () =>
+            readerLibraryPage.filterBar.addClause(clauses.includeLam),
+          );
+          await readerShelfPage.goto(filterShelf.id);
+          await readerExpectMutation(shelves.page(), () =>
+            readerShelfPage.filterBar.addClause(clauses.includePdf),
+          );
+        },
+      );
 
-      await test.step("filter All Books to Lam", async () => {
-        await readerLibraryPage.goto();
-        await readerExpectMutation(ebooks.page(), () =>
-          readerLibraryPage.filterBar.addClause(clauses.includeLam),
-        );
-      });
-
-      await test.step("open the shelf", async () => {
-        await readerShelfPage.goto(filterShelf.id);
-        await readerShelfPage.assertShowsMembers(
-          titlesOf(["compiler-compendium-2"]),
-        );
-      });
-
-      await test.step("filter it to PDFs, which rules every member out", async () => {
-        await readerExpectMutation(shelves.page(), () =>
-          filterBar.addClause(clauses.includePdf),
-        );
-      });
-
-      await test.step("check the empty shelf is explained", async () => {
-        await expect(readerShelfPage.filteredEmptyMessage).toContainText(
-          "No books on this shelf match these filters.",
-        );
-        await expect(readerShelfPage.emptyMessage).toHaveCount(0);
-        await expect(readerShelfPage.count).toHaveText("0");
+      test("explain the empty shelf", async ({ readerShelfPage }) => {
+        await test.step("check the empty shelf is explained", async () => {
+          await expect(readerShelfPage.filteredEmptyMessage).toContainText(
+            "No books on this shelf match these filters.",
+          );
+          await expect(readerShelfPage.emptyMessage).toHaveCount(0);
+          await expect(readerShelfPage.count).toHaveText("0");
+        });
       });
 
       // The full member list is already loaded, so clearing asks the server nothing.
-      await test.step("clear the filters", async () => {
-        await readerShelfPage.clearFilters();
-      });
+      test("bring every member back when the filters are cleared", async ({
+        readerShelfPage,
+      }) => {
+        await test.step("clear the filters", async () => {
+          await readerShelfPage.clearFilters();
+        });
 
-      await test.step("check every member is back", async () => {
-        await expect(filterBar.chips).toHaveCount(0);
-        await expect(readerShelfPage.filteredEmptyMessage).toHaveCount(0);
-        await readerShelfPage.assertShowsMembers(titlesOf(FILTER_SHELF_SLUGS));
+        await test.step("check every member is back", async () => {
+          await expect(readerShelfPage.filterBar.chips).toHaveCount(0);
+          await expect(readerShelfPage.filteredEmptyMessage).toHaveCount(0);
+          await readerShelfPage.assertShowsMembers(
+            titlesOf(FILTER_SHELF_SLUGS),
+          );
+        });
       });
     });
 
@@ -834,46 +837,49 @@ test.describe("library filters", () => {
       });
     });
 
-    test("keep the narrowed count when the shelf's full list fails and retry it on Clear all", async ({
-      readerLibraryPage,
-      readerExpectMutation,
-      filterShelf,
-    }) => {
-      const { filterBar } = readerLibraryPage;
-
-      await test.step("filter All Books to Lam", async () => {
-        await readerLibraryPage.goto();
-        await readerExpectMutation(ebooks.page(), () =>
-          filterBar.addClause(clauses.includeLam),
-        );
-      });
-
-      await test.step("select the shelf while its full list fails", async () => {
-        await readerLibraryPage.forceServerErrorWhere(
-          shelves.page(),
-          unfilteredShelfRead,
-        );
-        await readerLibraryPage.selectShelf(filterShelf);
-      });
+    test.describe("a shelf whose full list fails", () => {
+      test.beforeEach(
+        "filter to Lam, then select the shelf",
+        async ({ readerLibraryPage, readerExpectMutation, filterShelf }) => {
+          await readerLibraryPage.goto();
+          await readerExpectMutation(ebooks.page(), () =>
+            readerLibraryPage.filterBar.addClause(clauses.includeLam),
+          );
+          await readerLibraryPage.forceServerErrorWhere(
+            shelves.page(),
+            unfilteredShelfRead,
+          );
+          await readerLibraryPage.selectShelf(filterShelf);
+        },
+      );
 
       // The rows on screen answer the filter; only Add books needs the full list.
-      await test.step("check the narrowed rows stand and Add books is inert", async () => {
-        await readerLibraryPage.assertShowsBooks(["compiler-compendium-2"]);
-        await expect(readerLibraryPage.pageError).toHaveCount(0);
-        await expect(readerLibraryPage.shelfAddBooksButton).toHaveAttribute(
-          "aria-disabled",
-          "true",
-        );
+      test("keep the narrowed rows", async ({ readerLibraryPage }) => {
+        await test.step("check the narrowed rows stand and Add books is inert", async () => {
+          await readerLibraryPage.assertShowsBooks(["compiler-compendium-2"]);
+          await expect(readerLibraryPage.pageError).toHaveCount(0);
+          await expect(readerLibraryPage.shelfAddBooksButton).toHaveAttribute(
+            "aria-disabled",
+            "true",
+          );
+        });
       });
 
-      await test.step("clear all once the full list can load", async () => {
-        await readerLibraryPage.stopForcingServerError(shelves.page());
-        await readerExpectMutation(shelves.page(), () => filterBar.clearAll());
-      });
+      test("retry the full list on Clear all", async ({
+        readerLibraryPage,
+        readerExpectMutation,
+      }) => {
+        await test.step("clear all once the full list can load", async () => {
+          await readerLibraryPage.stopForcingServerError(shelves.page());
+          await readerExpectMutation(shelves.page(), () =>
+            readerLibraryPage.filterBar.clearAll(),
+          );
+        });
 
-      await test.step("check the shelf's members are back", async () => {
-        await readerLibraryPage.assertShowsBooks(FILTER_SHELF_SLUGS);
-        await expect(readerLibraryPage.pageError).toHaveCount(0);
+        await test.step("check the shelf's members are back", async () => {
+          await readerLibraryPage.assertShowsBooks(FILTER_SHELF_SLUGS);
+          await expect(readerLibraryPage.pageError).toHaveCount(0);
+        });
       });
     });
 

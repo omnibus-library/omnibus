@@ -26,6 +26,10 @@ test.describe("bulk edit", () => {
       await table.switchTo();
     });
 
+    await test.step("check the shared nav shows", async () => {
+      await libraryPage.topNav.assertDisplayed();
+    });
+
     await test.step("check the checkboxes show and no bar yet", async () => {
       await expect(table.selectAllBox).toBeVisible();
       await expect(table.selectBox(PRIMARY.slug)).toBeVisible();

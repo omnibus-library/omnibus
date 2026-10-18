@@ -118,15 +118,19 @@ test.describe("library page", () => {
       }) => {
         const book = FIXTURE_BOOKS[0]!;
 
-        const listed = await ebooksRequests.getEbooks();
-        await expect(listed).toBeOK();
-        const { books }: { books: AddedBook[] } = await listed.json();
-        const added = books.find((b) => b.title === book.title);
-        expect(
-          added?.added_at,
-          `${book.title} carries an added_at`,
-        ).toBeTruthy();
-        const addedMs = Date.parse(added!.added_at!);
+        const added =
+          await test.step("look up when the book was added", async () => {
+            const listed = await ebooksRequests.getEbooks();
+            await expect(listed).toBeOK();
+            const { books }: { books: AddedBook[] } = await listed.json();
+            const found = books.find((b) => b.title === book.title);
+            expect(
+              found?.added_at,
+              `${book.title} carries an added_at`,
+            ).toBeTruthy();
+            return found!;
+          });
+        const addedMs = Date.parse(added.added_at!);
 
         // Only a zone whose day differs from UTC's for this instant proves anything.
         test.skip(
@@ -144,7 +148,7 @@ test.describe("library page", () => {
         });
 
         await test.step("check the detail page", async () => {
-          await bookDetailPage.goto(added!.unique_identifier!);
+          await bookDetailPage.goto(added.unique_identifier!);
           await expect(bookDetailPage.metaValue("Added")).toHaveText(expected);
         });
       });
@@ -170,9 +174,7 @@ test.describe("library page", () => {
 
   // The view lives in localStorage, which each test's fresh context starts
   // without, so no cleanup is needed.
-  test("toggle to table view and keep it across a reload", async ({
-    libraryPage,
-  }) => {
+  test("keep the table view across a reload", async ({ libraryPage }) => {
     const table = libraryPage.table;
 
     await test.step("open the library as a grid", async () => {

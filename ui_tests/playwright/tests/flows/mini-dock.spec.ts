@@ -60,6 +60,10 @@ test.describe("mini-dock", () => {
       await listenPage.openThenBrowseAway(uuid);
     });
 
+    await test.step("check the shared nav shows", async () => {
+      await libraryPage.topNav.assertDisplayed();
+    });
+
     // One content-sized flex row spanning the full viewport width.
     await test.step("check the dock is a single full-width row", async () => {
       await expect(miniDock.root).toBeVisible();
@@ -369,11 +373,7 @@ test.describe("mini-dock", () => {
     });
   });
 
-  test("dismiss the dock to stop playback", async ({
-    listenPage,
-    libraryPage,
-    request,
-  }) => {
+  test("dismiss the dock", async ({ listenPage, libraryPage, request }) => {
     const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
     const { miniDock } = libraryPage;
 

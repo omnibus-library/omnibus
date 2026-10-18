@@ -156,7 +156,6 @@ test.describe("book detail page", () => {
 
     test("flip the switch in settings to change the next detail page", async ({
       bookDetailPage,
-      libraryPage,
       settingsPage,
       request,
       setScrollStops,
@@ -181,7 +180,7 @@ test.describe("book detail page", () => {
       });
 
       await test.step("open the book again", async () => {
-        await libraryPage.topNav.openLibrary();
+        await settingsPage.topNav.openLibrary();
         await bookDetailPage.goto(uuid);
       });
 
@@ -487,7 +486,7 @@ test.describe("book detail page", () => {
     });
   });
 
-  test("open a book from the landing table and return to the library", async ({
+  test("keep the table view after opening a book from it", async ({
     libraryPage,
     bookDetailPage,
   }) => {
@@ -507,7 +506,7 @@ test.describe("book detail page", () => {
     });
 
     await test.step("check the library comes back as a table", async () => {
-      await libraryPage.topNav.openLibrary();
+      await bookDetailPage.topNav.openLibrary();
       await libraryPage.assertDisplayed();
       await expect(libraryPage.table.root).toBeVisible();
     });
@@ -588,7 +587,7 @@ test.describe("book detail page", () => {
     });
 
     await test.step("return to the library", async () => {
-      await libraryPage.topNav.openLibrary();
+      await bookDetailPage.topNav.openLibrary();
       await libraryPage.assertDisplayed();
       await expect(libraryPage.grid).toBeVisible();
     });

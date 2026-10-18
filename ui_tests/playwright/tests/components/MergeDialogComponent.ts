@@ -45,6 +45,14 @@ export class MergeDialogComponent extends BaseComponent {
     await this.firstCandidate.click();
   }
 
+  /** Opens the dialog, searches `title` and picks the first candidate once it lists. */
+  async chooseSource(title: string): Promise<void> {
+    await this.open();
+    await this.search(title);
+    await this.firstCandidate.waitFor();
+    await this.pickFirstCandidate();
+  }
+
   async cancel(): Promise<void> {
     await this.cancelButton.click();
   }
@@ -65,8 +73,7 @@ export class MergeDialogComponent extends BaseComponent {
   async assertCandidatesListed(): Promise<void> {
     // The list fills after the debounced search RPC returns.
     await expect(this.firstCandidate).toBeVisible();
-    // The heading says what the search matched on: any one of the three
-    // fields, not all of them (#2525).
+    // The heading names whichever of the three fields matched, not all of them.
     await expect(this.resultsHeading).toBeVisible();
   }
 }

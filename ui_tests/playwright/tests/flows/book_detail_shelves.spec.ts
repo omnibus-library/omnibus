@@ -151,12 +151,12 @@ test.describe("book detail shelves", () => {
     });
   });
 
-  test("show a smart shelf holding the book as a tile and list it as automatic", async ({
+  test("show a smart shelf holding the book as a tile", async ({
     request,
     bookDetailPage,
     ownShelf,
   }) => {
-    const { shelfPicker, stops } = bookDetailPage;
+    const { stops } = bookDetailPage;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
     // Henri Poincare wrote no other fixture, so the rule matches this book only.
     const shelf =
@@ -166,19 +166,37 @@ test.describe("book detail shelves", () => {
           match_mode: "any",
           rules: [{ field: "author", op: "is", value: TARGET.authors[0]! }],
         }));
-    const onPage = bookDetailPage.shelfTile(shelf.id);
 
     await test.step("open the book", async () => {
       await bookDetailPage.goto(uuid);
     });
 
     await test.step("check the shelf shows as a smart tile", async () => {
-      await expect(onPage).toContainText(shelf.name);
+      await expect(bookDetailPage.shelfTile(shelf.id)).toContainText(
+        shelf.name,
+      );
       await expect(bookDetailPage.shelfTileKind(shelf.id)).toHaveText("Smart");
       await expect(stops.moreStop).not.toContainText(NO_SHELF_TEXT);
     });
+  });
+
+  test("list a smart shelf as automatic in the picker", async ({
+    request,
+    bookDetailPage,
+    ownShelf,
+  }) => {
+    const { shelfPicker } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const shelf =
+      await test.step("make a smart shelf matching the author", () =>
+        ownShelf("E2E Rule Shelf", {
+          kind: "smart",
+          match_mode: "any",
+          rules: [{ field: "author", op: "is", value: TARGET.authors[0]! }],
+        }));
 
     await test.step("open the picker", async () => {
+      await bookDetailPage.goto(uuid);
       await bookDetailPage.openShelfPicker();
     });
 

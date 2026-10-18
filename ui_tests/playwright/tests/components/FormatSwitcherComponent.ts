@@ -79,12 +79,15 @@ export class FormatSwitcherComponent extends BaseComponent {
     await this.stubKindleDelivery({ status: "failed", message });
   }
 
-  private async stubKindleDelivery(status: unknown): Promise<void> {
+  private async stubKindleDelivery(body: {
+    status: string;
+    message?: string;
+  }): Promise<void> {
     await this.page.route(kindleUrls.send, (route) =>
       route.fulfill({ json: 1 }),
     );
     await this.page.route(kindleUrls.sendStatus, (route) =>
-      route.fulfill({ json: status }),
+      route.fulfill({ json: body }),
     );
   }
 }

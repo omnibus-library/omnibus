@@ -12,7 +12,7 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 const NOT_SHARING = "This reader isn't sharing their stats";
 
 test.describe("household stats", () => {
-  // The target's sharing is one reader's state, so the tests stay on one worker.
+  // Only this file uses the second reader, so its tests share one worker's account.
   test.describe.configure({ mode: "serial" });
 
   test.beforeAll("seed the library", async ({ request }) => {

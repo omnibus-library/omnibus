@@ -247,7 +247,7 @@ test.describe("cleanup review", () => {
 
     await test.step("open the author review with one card", async () => {
       await cleanupReviewPage.stubQueue([AUTHOR_MERGE_CARD]);
-      await adminPage.forceServerError(decide);
+      await cleanupReviewPage.forceServerError(decide);
       await adminPage.goto("cleanup");
       await expectMutation(cleanup.queue("author"), () =>
         adminPage.cleanup.openReview("author"),

@@ -91,7 +91,7 @@ test.describe("suggestions strip", () => {
     });
   });
 
-  test("render cached suggestions and expand the stack with show more", async ({
+  test("render cached suggestions", async ({
     bookDetailPage,
     request,
     expectMutation,
@@ -107,9 +107,7 @@ test.describe("suggestions strip", () => {
       );
     });
 
-    // The collapsed stack caps at five of the seven.
     await test.step("check the first card names its book", async () => {
-      await expect(strip.cards).toHaveCount(5);
       await expect(strip.firstCard).toContainText(items[0]!.title);
       await expect(strip.firstCard).toContainText(items[0]!.author);
       await expect(strip.firstCard).toContainText("on 1 list");
@@ -128,9 +126,31 @@ test.describe("suggestions strip", () => {
         "noopener noreferrer",
       );
     });
+  });
+
+  test("expand the stack with show more", async ({
+    bookDetailPage,
+    request,
+    expectMutation,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const strip = bookDetailPage.suggestions;
+    const items = Array.from({ length: 7 }, (_, i) => mockSuggestion(i));
+
+    await test.step("open the book with seven suggestions cached", async () => {
+      await strip.stubReady(items);
+      await expectMutation(suggestions.fetch(), () =>
+        bookDetailPage.goto(uuid),
+      );
+    });
+
+    // The collapsed stack caps at five of the seven.
+    await test.step("check the stack shows five", async () => {
+      await expect(strip.cards).toHaveCount(5);
+      await expect(strip.showMoreButton).toHaveText("Show 2 more");
+    });
 
     await test.step("show the rest", async () => {
-      await expect(strip.showMoreButton).toHaveText("Show 2 more");
       await strip.showMore();
     });
 

@@ -899,7 +899,7 @@ test.describe("book journal", () => {
       });
     });
 
-    test("autosave a draft while typing and discard it on cancel", async ({
+    test("discard an autosaved draft on cancel", async ({
       request,
       bookDetailPage,
       createdJournalIds,
