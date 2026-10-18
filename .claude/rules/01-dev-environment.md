@@ -27,7 +27,7 @@ nix develop .#audit  --command cargo deny check advisories sources bans
 nix develop .#mobile                  # interactive shell with the Android NDK + targets
 ```
 
-`.envrc` resolves `use flake` to `default`, so the editor stays on the slim shell at all times. `just serve` works from default because zellij + process-compose live there; each multiplexer pane internally wraps its command in the right `.#shell` (server → `.#web`, android → `.#mobile`, playwright → `.#e2e`), so only the panes you actually start realize their extras — except the native `ios` pane, which runs `just ios-sim` on system xcodebuild + simctl and needs no nix shell at all. `just dev-up` and `just dev-bounce` self-wrap in `.#web`, so they work straight from default too.
+`.envrc` resolves `use flake` to `default`, so the editor stays on the slim shell at all times. `just serve` works from default because zellij + process-compose live there; each multiplexer pane internally wraps its command in the right `.#shell` (server and react → `.#web`, android → `.#mobile`, playwright → `.#e2e`), so only the panes you actually start realize their extras — except the native `ios` pane, which runs `just ios-sim` on system xcodebuild + simctl and needs no nix shell at all. `just dev-up` and `just dev-bounce` self-wrap in `.#web`, so they work straight from default too.
 
 ## Cached dev-env for hot recipes
 
@@ -81,7 +81,7 @@ Both launchers then walk `$PORT..$PORT+9` before binding, and identity-check `/a
 - `just dev-up` → [`scripts/dev-server-up.sh`](../../scripts/dev-server-up.sh) — daemonized; **reuses** this worktree's server if one is already healthy.
 - `just serve` / `just serve-pc` → [`scripts/dev-serve-fg.sh`](../../scripts/dev-serve-fg.sh) — foreground, so the pane owns the process; walks *past* its own running server rather than reusing (a pane is being asked to run one).
 
-Both publish the chosen port to `.claude/runtime/{port,env.sh}`. A hash collision between two worktrees is therefore not a failure — the second walks to a free port inside the shared window. Shared helpers live in [`scripts/lib/dev-port.sh`](../../scripts/lib/dev-port.sh); a second copy of the walk would let the two front doors hand one port to two worktrees.
+Both publish the chosen port to `.claude/runtime/{port,env.sh}`. The serve panes also reserve the next free port above it for the React client (`scripts/react-dev-fg.sh`, the `react` pane and `just react`), allowlist that origin in `OMNIBUS_PUBLIC_ORIGIN` (dx's proxy rewrites `Host`, so `origin_check` can't match it otherwise), and publish it to `.claude/runtime/react-port`. A hash collision between two worktrees is therefore not a failure — the second walks to a free port inside the shared window. Shared helpers live in [`scripts/lib/dev-port.sh`](../../scripts/lib/dev-port.sh); a second copy of the walk would let the two front doors hand one port to two worktrees.
 
 Override `PORT` before `nix develop` to pick a different window base. Playwright targets `$PLAYWRIGHT_BASE_URL` (written by both launchers); it falls back to `http://127.0.0.1:3000` when unset — so `source .claude/runtime/env.sh` rather than assuming 3000.
 
@@ -150,6 +150,8 @@ Export-with-overrides EPUB cache (read by `db::epub_rewrite`, for the "Send to K
 - `OMNIBUS_EXPORT_EPUB_CAP_BYTES` — eviction cap in bytes (default 5 GiB), same shape as `OMNIBUS_THUMBS_CAP_BYTES`/`OMNIBUS_HLS_CAP_BYTES` but FIFO by last-rewrite mtime rather than LRU (no cache-hit touch, since this cache is only written on an explicit export/download, not every page view).
 
 - `OMNIBUS_VERSION` — the running release tag (e.g. `v0.8.9`), read once at boot and returned as the `version` field on `GET /api/_health`; the mobile "You" screen fetches it there to show the server's release alongside the app's own compile-time build version (F-1055, `server::backend::app_version`). Also read at **compile time** via `option_env!` by `omnibus_frontend::version::app_version` so the web user-menu version line and a mobile build's own "App version" line report the real tag instead of the crate's pinned `0.1.0`. Baked into the Docker image build-arg (`Dockerfile`, `.github/workflows/docker.yml`) and into the TestFlight build env (`.github/workflows/testflight.yml`, mirroring its already-resolved `MARKETING_VERSION`). Leave unset for local dev — the server reports `"dev"` and the frontend falls back to `CARGO_PKG_VERSION`.
+
+- `OMNIBUS_REACT_DIR` — opt-in: a `vite build --base=/react/` output (`frontend-js/dist`, built by `pnpm --dir frontend-js run build`). When it holds an `index.html`, the server also serves the React client at `/react/` (`backend::react_ui`), beside the Dioxus UI on the same origin; a client route gets the app shell and a missing asset a 404. Unset (the default) mounts nothing; a directory without `index.html` logs one WARN at boot. Read once at boot.
 
 If `ANDROID_HOME` / `ANDROID_NDK_HOME` come back empty inside `nix develop .#mobile`, set them manually:
 

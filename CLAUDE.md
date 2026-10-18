@@ -74,11 +74,12 @@ Operator-specific conventions (ticket prefixes, branch naming) live in personal 
 ## Quick commands
 
 ```bash
-# Multiplexed dev stack (server + native ios + android + playwright panes)
+# Multiplexed dev stack (server + react + native ios + android + playwright panes)
 # The server pane port-walks this worktree's window, so two worktrees can
 # run the stack at once without colliding.
 just serve                                                  # Zellij
 just serve-pc                                               # process-compose
+just react                                                  # React client (frontend-js/) dev server, proxying to this worktree's server
 
 # Idempotent dev-server bring-up — port-walks from $PORT (this worktree's
 # window base: 3000 for the main checkout, hash-derived in 3010..3900

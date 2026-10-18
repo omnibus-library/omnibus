@@ -1,0 +1,90 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  height: 36px;
+  border-radius: 10px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 500;
+  font-size: 13px;
+  background: var(--bg-2);
+  color: var(--ink-0);
+  border: 1px solid var(--line-2);
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.12s,
+    color 0.15s;
+}
+@media (hover: hover) {
+  .btn:hover {
+    background: var(--bg-3);
+    border-color: var(--line);
+  }
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+  font-weight: 600;
+}
+@media (hover: hover) {
+  .btn.primary:hover {
+    background: color-mix(in oklch, var(--accent) 88%, white);
+  }
+}
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-1);
+}
+@media (hover: hover) {
+  .btn.ghost:hover {
+    color: var(--ink-0);
+    background: var(--bg-1);
+  }
+}
+.btn.sm {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+.btn.lg {
+  height: 44px;
+  padding: 0 20px;
+  font-size: 14px;
+  border-radius: 12px;
+}
+.btn.bad {
+  color: var(--bad);
+  border-color: color-mix(in oklch, var(--bad) 45%, transparent);
+}
+.btn.bad:hover {
+  background: color-mix(in oklch, var(--bad) 12%, transparent);
+}
+@media (hover: none) {
+  .btn:active:not(:disabled) {
+    background: var(--bg-3);
+    border-color: var(--line);
+  }
+  .btn.primary:active:not(:disabled) {
+    background: color-mix(in oklch, var(--accent) 88%, white);
+  }
+  .btn.ghost:active:not(:disabled) {
+    color: var(--ink-0);
+    background: var(--bg-1);
+  }
+}
+.btn.primary .ld-ring {
+  --accent: var(--accent-ink);
+  background: color-mix(in oklch, var(--accent-ink) 22%, transparent);
+}
+.btn[aria-busy="true"] {
+  cursor: progress;
+}

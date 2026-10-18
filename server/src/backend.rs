@@ -48,6 +48,7 @@ mod process_meta;
 mod profile;
 mod progress;
 mod ratings;
+mod react_ui;
 mod read_status;
 mod routes;
 mod scan;
@@ -69,6 +70,7 @@ use process_meta::read_app_version;
 pub use process_meta::{
     app_version, build_id, init_app_version, init_build_id, init_repo_root, repo_root,
 };
+pub use react_ui::{react_dir, react_ui_router, REACT_DIR_ENV};
 
 /// Per-IP rate-limit budget for `/api/search/*` and the `/api/rpc/search-*` server
 /// functions, separate from the auth limiter. Each request runs four FTS5 queries plus
