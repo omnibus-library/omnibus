@@ -95,6 +95,15 @@ test.describe("book detail chip editors", () => {
       await expect(tagChips.list).toContainText("Alpine Computing");
       await expect(tagChips.list).toContainText("+ tags");
     });
+
+    // The override is server state, so a fresh load proves the save stuck.
+    await test.step("reopen the book", async () => {
+      await bookDetailPage.goto(uuid);
+    });
+
+    await test.step("check the tag persisted", async () => {
+      await expect(tagChips.list).toContainText("Alpine Computing");
+    });
   });
 
   test("show a saved tag on the book", async ({
