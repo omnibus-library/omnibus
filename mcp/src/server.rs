@@ -95,8 +95,10 @@ impl ServerHandler for OmnibusMcp {
                  search_book_content full-text-searches the library's book text — \
                  distinct from search_books, which matches metadata only — citing each \
                  hit back to a book and chapter. list_book_images lists an EPUB's images — \
-                 maps, plates, illustrations — with the spine documents that show each. \
-                 The physical-collection tools resolve \
+                 maps, plates, illustrations — with the spine documents that show each, and \
+                 read_book_image returns one image's media type and size plus a download \
+                 URL for its original that expires after 15 minutes: hand it to the user \
+                 to save the file. The physical-collection tools resolve \
                  ISBNs and title searches against the library and the external \
                  metadata providers (always relay which provider answered), check in \
                  physical copies, and manage the wishlist and copy notes; \

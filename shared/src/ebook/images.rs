@@ -51,3 +51,19 @@ pub struct BookImageLink {
     pub path: String,
     pub expires_at: i64,
 }
+
+/// What `read_book_image` answers: the image's facts plus a `download_url` that
+/// fetches the original bytes without a session until `expires_at`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct BookImageRead {
+    pub book_uuid: String,
+    pub href: String,
+    pub media_type: String,
+    pub byte_size: i64,
+    /// Absolute URL on the instance's public origin.
+    pub download_url: String,
+    /// Unix seconds the URL stops working.
+    pub expires_at: i64,
+    pub expires_at_iso: String,
+}

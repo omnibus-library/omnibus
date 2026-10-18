@@ -7,8 +7,8 @@ use axum::{Json as AxumJson, Router};
 use rmcp::handler::server::wrapper::Parameters;
 
 use omnibus_shared::{
-    BookImage, BookImageList, BookImageReference, ChapterListEntry, ChapterListResponse,
-    ChapterTextResponse, ContentSearchHit, ContentSearchResults,
+    BookImage, BookImageLink, BookImageList, BookImageReference, ChapterListEntry,
+    ChapterListResponse, ChapterTextResponse, ContentSearchHit, ContentSearchResults,
 };
 
 use super::*;
@@ -21,6 +21,7 @@ const EXPECTED_TOOLS: &[&str] = &[
     "read_chapter_text",
     "search_book_content",
     "list_book_images",
+    "read_book_image",
 ];
 
 async fn login() -> AxumJson<serde_json::Value> {
@@ -143,6 +144,36 @@ async fn images(Path(uuid): Path<String>) -> Result<AxumJson<BookImageList>, Sta
     }
 }
 
+/// `GET …/images/file`: four PNG-typed bytes for `uuid-frank`'s map, with the
+/// statuses the server answers for each way the read can fail.
+async fn image_file(
+    Path(uuid): Path<String>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    match (uuid.as_str(), q.get("href").map(String::as_str)) {
+        ("uuid-frank", Some("OEBPS/images/map.png")) => (
+            [(axum::http::header::CONTENT_TYPE, "image/png")],
+            vec![1u8, 2, 3, 4],
+        )
+            .into_response(),
+        ("uuid-frank", _) => StatusCode::BAD_REQUEST.into_response(),
+        ("uuid-comic", _) => StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+        ("uuid-nodl", _) => StatusCode::FORBIDDEN.into_response(),
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// `GET …/images/link`: a fixed signed path, as the server would mint it.
+async fn image_link(Path(uuid): Path<String>) -> AxumJson<BookImageLink> {
+    AxumJson(BookImageLink {
+        path: format!(
+            "/api/ebooks/{uuid}/images/file?href=OEBPS%2Fimages%2Fmap.png&expires=1893456000&sig=abc"
+        ),
+        expires_at: 1_893_456_000,
+    })
+}
+
 /// Boot a stub instance serving the content read routes.
 async fn stub_service() -> OmnibusMcp {
     let app = Router::new()
@@ -153,6 +184,8 @@ async fn stub_service() -> OmnibusMcp {
             get(chapter_text),
         )
         .route("/api/ebooks/{uuid}/images", get(images))
+        .route("/api/ebooks/{uuid}/images/file", get(image_file))
+        .route("/api/ebooks/{uuid}/images/link", get(image_link))
         .route("/api/search/content", get(content_search));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -494,4 +527,127 @@ async fn list_book_images_reports_a_book_without_an_epub() {
         err.message
     );
     assert!(err.message.contains("CBZ"), "names what is not covered");
+}
+
+#[tokio::test]
+async fn read_book_image_returns_a_signed_download_url_on_the_public_url() {
+    let service = stub_service().await;
+    let public = service.client.public_url().to_string();
+
+    let read = service
+        .read_book_image(Parameters(ReadBookImageParams {
+            book_uuid: "uuid-frank".into(),
+            href: "OEBPS/images/map.png".into(),
+        }))
+        .await
+        .unwrap()
+        .0;
+
+    assert_eq!(read.book_uuid, "uuid-frank");
+    assert_eq!(read.href, "OEBPS/images/map.png");
+    assert_eq!(read.media_type, "image/png");
+    assert_eq!(read.byte_size, 4);
+    assert_eq!(read.expires_at, 1_893_456_000);
+    assert_eq!(read.expires_at_iso, "2030-01-01T00:00:00Z");
+    assert!(
+        read.download_url.starts_with(&public),
+        "{}",
+        read.download_url
+    );
+    let url = reqwest::Url::parse(&read.download_url).unwrap();
+    assert_eq!(url.path(), "/api/ebooks/uuid-frank/images/file");
+    let pairs: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+    assert_eq!(pairs["href"], "OEBPS/images/map.png");
+    assert_eq!(pairs["expires"], "1893456000");
+    assert_eq!(pairs["sig"], "abc");
+}
+
+#[tokio::test]
+async fn read_book_image_reports_an_href_that_is_not_a_manifest_image() {
+    let service = stub_service().await;
+    let err = expect_err(
+        service
+            .read_book_image(Parameters(ReadBookImageParams {
+                book_uuid: "uuid-frank".into(),
+                href: "c1.xhtml".into(),
+            }))
+            .await,
+    );
+    assert!(
+        err.message
+            .contains("not an image in this book's EPUB manifest"),
+        "got: {}",
+        err.message
+    );
+}
+
+#[tokio::test]
+async fn read_book_image_reports_not_found_for_an_unknown_uuid() {
+    let service = stub_service().await;
+    let err = expect_err(
+        service
+            .read_book_image(Parameters(ReadBookImageParams {
+                book_uuid: "uuid-missing".into(),
+                href: "OEBPS/images/map.png".into(),
+            }))
+            .await,
+    );
+    assert_eq!(err.message, "book uuid-missing not found");
+}
+
+#[tokio::test]
+async fn read_book_image_reports_a_book_without_an_epub() {
+    let service = stub_service().await;
+    let err = expect_err(
+        service
+            .read_book_image(Parameters(ReadBookImageParams {
+                book_uuid: "uuid-comic".into(),
+                href: "OEBPS/images/map.png".into(),
+            }))
+            .await,
+    );
+    assert!(
+        err.message.contains("has no EPUB file"),
+        "got: {}",
+        err.message
+    );
+}
+
+#[tokio::test]
+async fn read_book_image_reports_a_download_permission_denial() {
+    let service = stub_service().await;
+    let err = expect_err(
+        service
+            .read_book_image(Parameters(ReadBookImageParams {
+                book_uuid: "uuid-nodl".into(),
+                href: "OEBPS/images/map.png".into(),
+            }))
+            .await,
+    );
+    assert!(
+        err.message.contains("not permitted to download"),
+        "got: {}",
+        err.message
+    );
+}
+
+#[tokio::test]
+async fn read_book_image_rejects_an_empty_href_locally() {
+    // Port 1 is closed: a request would fail as a transport error, not as invalid params.
+    let client = OmnibusClient::new(Config {
+        base_url: "http://127.0.0.1:1".into(),
+        username: "reader".into(),
+        password: "correct horse battery".into(),
+    })
+    .unwrap();
+    let service = OmnibusMcp::new(Arc::new(client));
+    let err = expect_err(
+        service
+            .read_book_image(Parameters(ReadBookImageParams {
+                book_uuid: "uuid-frank".into(),
+                href: "  ".into(),
+            }))
+            .await,
+    );
+    assert!(err.message.contains("href"), "got: {}", err.message);
 }

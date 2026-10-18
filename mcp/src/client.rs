@@ -171,6 +171,9 @@ struct Credentials {
 pub struct OmnibusClient {
     http: reqwest::Client,
     base_url: String,
+    // The origin a human can open, which for a link handed back to one is not
+    // always the origin this client reaches the instance on.
+    public_url: String,
     credentials: Option<Credentials>,
     token: RwLock<Option<String>>,
     // Serializes logins so N racing tool calls produce one session, not N.
@@ -184,6 +187,7 @@ impl OmnibusClient {
         let http = reqwest::Client::builder().user_agent(USER_AGENT).build()?;
         Ok(Self {
             http,
+            public_url: config.base_url.clone(),
             base_url: config.base_url,
             credentials: Some(Credentials {
                 username: config.username,
@@ -203,11 +207,17 @@ impl OmnibusClient {
         let http = reqwest::Client::builder().user_agent(USER_AGENT).build()?;
         Ok(Self {
             http,
+            public_url: base_url.clone(),
             base_url,
             credentials: None,
             token: RwLock::new(Some(token)),
             login_lock: Mutex::new(()),
         })
+    }
+
+    /// The origin to put in a link a human will open.
+    pub fn public_url(&self) -> &str {
+        &self.public_url
     }
 
     /// The one allowlisted write: `POST /api/auth/login` for a bearer
@@ -339,6 +349,30 @@ impl OmnibusClient {
         query: &[(&str, String)],
     ) -> Result<T, ClientError> {
         Ok(self.get_json_with_meta(path, query).await?.0)
+    }
+
+    /// `GET path` as raw bytes plus the response's `Content-Type`
+    /// (`application/octet-stream` when it has none), for a body that is not JSON.
+    pub async fn get_bytes(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+    ) -> Result<(String, Vec<u8>), ClientError> {
+        let resp = self.get_with_relogin(path, query).await?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(ClientError::Status {
+                path: path.to_string(),
+                status: status.as_u16(),
+            });
+        }
+        let content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("application/octet-stream")
+            .to_string();
+        Ok((content_type, resp.bytes().await?.to_vec()))
     }
 
     /// `GET path`, mapping a 404 to `Ok(None)` — for the by-id endpoints

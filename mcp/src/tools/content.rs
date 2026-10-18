@@ -9,7 +9,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use omnibus_shared::{
-    BookImageList, ChapterListResponse, ChapterTextResponse, ContentSearchResults, SpoilerFilter,
+    BookImageLink, BookImageList, BookImageRead, ChapterListResponse, ChapterTextResponse,
+    ContentSearchResults, SpoilerFilter,
 };
 
 use crate::client::ClientError;
@@ -61,6 +62,15 @@ fn non_negative(value: i64, what: &str) -> Result<i64, ErrorData> {
         ));
     }
     Ok(value)
+}
+
+/// Parameters for the image read.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReadBookImageParams {
+    /// The book's uuid.
+    pub book_uuid: String,
+    /// The image's href from list_book_images.
+    pub href: String,
 }
 
 /// Map an image endpoint's status to the message that tells the model what to
@@ -208,6 +218,44 @@ impl OmnibusMcp {
             .await
             .map_err(|e| image_error(e, uuid))?;
         Ok(Json(list))
+    }
+
+    #[tool(
+        description = "Get one image from a book's EPUB, by the href from list_book_images. Returns the original's media_type and byte_size plus a download_url: a link on the instance's public address that fetches the full-resolution original with no further authentication and stops working at expires_at (15 minutes). Hand the URL to the user to save the file; it is the original, not a preview. The link opens that one image only. Errors if the uuid is unknown, the book has no EPUB file, href is not an image in that EPUB's manifest, or the account is not permitted to download files."
+    )]
+    pub async fn read_book_image(
+        &self,
+        Parameters(p): Parameters<ReadBookImageParams>,
+    ) -> Result<Json<BookImageRead>, ErrorData> {
+        let uuid = crate::tools::path_segment(&p.book_uuid, "book_uuid")?;
+        if p.href.trim().is_empty() {
+            return Err(ErrorData::invalid_params(
+                "href must be an image href from list_book_images",
+                None,
+            ));
+        }
+        let query = [("href", p.href.clone())];
+        // Fetching the original proves the href is a manifest image and gives its
+        // true size and type before a link is minted for it.
+        let (media_type, bytes) = self
+            .client
+            .get_bytes(&format!("/api/ebooks/{uuid}/images/file"), &query)
+            .await
+            .map_err(|e| image_error(e, uuid))?;
+        let link: BookImageLink = self
+            .client
+            .get_json(&format!("/api/ebooks/{uuid}/images/link"), &query)
+            .await
+            .map_err(|e| image_error(e, uuid))?;
+        Ok(Json(BookImageRead {
+            book_uuid: p.book_uuid.clone(),
+            href: p.href,
+            media_type,
+            byte_size: bytes.len() as i64,
+            download_url: format!("{}{}", self.client.public_url(), link.path),
+            expires_at: link.expires_at,
+            expires_at_iso: omnibus_shared::to_iso8601(link.expires_at),
+        }))
     }
 }
 
