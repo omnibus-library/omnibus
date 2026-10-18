@@ -9,12 +9,12 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{CleanupCounts, CleanupKind};
 
-use crate::components::{Loading, LoadingKind};
+use crate::components::{BusyLabel, Loading, LoadingKind};
 use crate::data::{self, server_error_message};
 use crate::{use_server_url, Route};
 
-/// The "Library cleanup" section of `/settings`: one row per cleanup kind with
-/// its pending count and a Review link, plus "Run detection now".
+/// The Cleanup section of `/admin`: one row per cleanup kind with its pending
+/// count and a Review link, plus "Run detection now".
 #[component]
 pub fn CleanupSection() -> Element {
     let is_admin = crate::use_is_admin();
@@ -23,32 +23,38 @@ pub fn CleanupSection() -> Element {
     let counts = use_signal(|| None::<Vec<(CleanupKind, CleanupCounts)>>);
     let error = use_signal(|| false);
     let status = use_signal(|| None::<String>);
+    let status_is_error = use_signal(|| false);
     let in_flight = use_signal(|| false);
     // Bumped after a detection pass is queued so the counts effect re-runs.
     let generation = use_signal(|| 0u32);
 
     spawn_counts_fetch(is_admin, server_url.clone(), counts, error, generation);
-    let on_detect = detect_handler(server_url, status, in_flight, generation);
+    let on_detect = detect_handler(server_url, status, status_is_error, in_flight, generation);
+    let busy = in_flight();
 
     rsx! {
         section { class: "card", "data-testid": "cleanup-card",
-            h2 { "Library cleanup" }
+            h3 { "Suggested fixes" }
             p { class: "subtitle",
                 "Near-duplicate authors, series, and tags, plus book titles carrying filename cruft."
             }
             if is_admin() {
-                CleanupCountsList { counts, error }
+                CleanupCountsList { counts, error, generation }
                 div { class: "cleanup-actions",
                     button {
                         class: "btn",
                         "data-testid": "cleanup-detect",
-                        disabled: in_flight(),
+                        disabled: busy,
+                        "aria-busy": if busy { "true" } else { "false" },
                         onclick: move |_| on_detect(()),
-                        "Run detection now"
+                        BusyLabel { busy, label: "Run detection now", busy_label: "Starting\u{2026}" }
                     }
                 }
                 if let Some(message) = status() {
-                    p { class: "settings-status", role: "status", "data-testid": "cleanup-detect-status",
+                    p {
+                        class: if status_is_error() { "settings-status error" } else { "settings-status" },
+                        role: "status",
+                        "data-testid": "cleanup-detect-status",
                         "{message}"
                     }
                 }
@@ -95,13 +101,15 @@ fn spawn_counts_fetch(
 fn detect_handler(
     server_url: String,
     status: Signal<Option<String>>,
+    status_is_error: Signal<bool>,
     in_flight: Signal<bool>,
     generation: Signal<u32>,
 ) -> impl Fn(()) {
     move |()| {
         // `Signal` is `Copy`; re-binding here keeps the closure `Fn` (a
         // click handler is called by shared reference) while still writing.
-        let (mut status, mut in_flight, mut generation) = (status, in_flight, generation);
+        let (mut status, mut status_is_error, mut in_flight, mut generation) =
+            (status, status_is_error, in_flight, generation);
         if in_flight() {
             return;
         }
@@ -114,9 +122,16 @@ fn detect_handler(
                     status.set(Some(
                         "Detection started. Counts update as it finishes.".to_string(),
                     ));
+                    status_is_error.set(false);
                     generation.set(generation() + 1);
                 }
-                Err(e) => status.set(Some(server_error_message(&e))),
+                Err(e) => {
+                    status.set(Some(format!(
+                        "Couldn\u{2019}t start detection: {}",
+                        server_error_message(&e)
+                    )));
+                    status_is_error.set(true);
+                }
             }
             in_flight.set(false);
         });
@@ -128,11 +143,21 @@ fn detect_handler(
 fn CleanupCountsList(
     counts: Signal<Option<Vec<(CleanupKind, CleanupCounts)>>>,
     error: Signal<bool>,
+    mut generation: Signal<u32>,
 ) -> Element {
     if error() {
         return rsx! {
-            p { class: "settings-status error", role: "status", "data-testid": "cleanup-counts-error",
-                "Failed to load cleanup counts."
+            div { class: "settings-actions",
+                p { class: "settings-status error", role: "status", "data-testid": "cleanup-counts-error",
+                    "Couldn\u{2019}t load the cleanup counts."
+                }
+                button {
+                    r#type: "button",
+                    class: "btn ghost",
+                    "data-testid": "cleanup-counts-retry",
+                    onclick: move |_| generation += 1,
+                    "Try again"
+                }
             }
         };
     }
@@ -142,7 +167,7 @@ fn CleanupCountsList(
                 kind: LoadingKind::Section,
                 class: "start",
                 testid: "cleanup-counts-loading",
-                label: "Counting what needs tidying",
+                label: "Counting what needs tidying\u{2026}",
             }
         };
     };
@@ -170,6 +195,7 @@ fn CleanupKindRow(kind: CleanupKind, count: CleanupCounts) -> Element {
                 to: Route::CleanupReview { kind: kind.as_str().to_string() },
                 class: "btn",
                 "data-testid": "cleanup-review-{kind.as_str()}",
+                "aria-label": "Review {kind_label(kind).to_lowercase()}",
                 "Review"
             }
         }
@@ -229,6 +255,33 @@ mod tests {
         assert!(html.contains("/admin/cleanup/tag"));
     }
 
+    #[test]
+    fn cleanup_kind_row_names_its_kind_in_the_review_link() {
+        let html = render_in_vdom(|| rsx! { Router::<RowRoute> {} });
+        assert!(html.contains(r#"aria-label="Review tags""#), "{html}");
+    }
+
+    #[derive(Clone, Debug, PartialEq, Routable)]
+    enum FailedRoute {
+        #[route("/")]
+        FailedHost {},
+    }
+
+    #[component]
+    fn FailedHost() -> Element {
+        let counts = use_signal(|| None);
+        let error = use_signal(|| true);
+        let generation = use_signal(|| 0u32);
+        rsx! { CleanupCountsList { counts, error, generation } }
+    }
+
+    #[test]
+    fn cleanup_counts_list_offers_a_retry_after_a_failed_load() {
+        let html = render_in_vdom(|| rsx! { Router::<FailedRoute> {} });
+        assert!(html.contains("cleanup-counts-error"), "{html}");
+        assert!(html.contains("cleanup-counts-retry"), "{html}");
+    }
+
     #[derive(Clone, Debug, PartialEq, Routable)]
     enum LoadingRoute {
         #[route("/")]
@@ -239,7 +292,8 @@ mod tests {
     fn LoadingHost() -> Element {
         let counts = use_signal(|| None);
         let error = use_signal(|| false);
-        rsx! { CleanupCountsList { counts, error } }
+        let generation = use_signal(|| 0u32);
+        rsx! { CleanupCountsList { counts, error, generation } }
     }
 
     #[test]

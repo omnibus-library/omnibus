@@ -1,6 +1,6 @@
 // Worker status indicator (issue #69). The indicator polls
 // `/api/rpc/worker_status` at 1 Hz and renders one row per active or
-// recently-finished background task above the Save button in the Library Location settings section.
+// recently-finished background task on the Maintenance tab of Administration › Health & activity.
 //
 // We intercept the polling endpoint instead of seeding a real library so
 // the spec doesn't depend on scan duration (which varies wildly with
@@ -70,7 +70,7 @@ test("worker-status indicator stays hidden when the worker is idle", async ({
   page,
 }) => {
   await mockWorkerStatus(page, { active: [], recent_complete: [] });
-  await gotoReady(page, "/settings?section=library");
+  await gotoReady(page, "/admin?section=health&tab=maintenance");
   // The indicator renders nothing — no element with the testid is in the DOM.
   await expect(indicator(page)).toHaveCount(0);
 });
@@ -89,7 +89,7 @@ test("worker-status indicator surfaces an active scan", async ({ page }) => {
     ],
     recent_complete: [],
   });
-  await gotoReady(page, "/settings?section=library");
+  await gotoReady(page, "/admin?section=health&tab=maintenance");
 
   await expect(indicator(page)).toBeVisible();
   await expect(indicator(page)).toContainText("Scanning library");
@@ -110,7 +110,7 @@ test("worker-status indicator shows processed/total when total is known", async 
     ],
     recent_complete: [],
   });
-  await gotoReady(page, "/settings?section=library");
+  await gotoReady(page, "/admin?section=health&tab=maintenance");
 
   await expect(indicator(page)).toContainText("Scanning library");
   await expect(indicator(page)).toContainText("(3 / 10)");
@@ -143,7 +143,7 @@ test("worker-status indicator renders the verbose activity panel for a scan", as
     ],
     recent_complete: [],
   });
-  await gotoReady(page, "/settings?section=library");
+  await gotoReady(page, "/admin?section=health&tab=maintenance");
 
   await expect(indicator(page)).toContainText("Scanning library");
   await expect(page.getByTestId("worker-status-phase")).toHaveText(
@@ -182,7 +182,7 @@ test("worker-status done row summarizes the scan's tallies", async ({
       },
     ],
   });
-  await gotoReady(page, "/settings?section=library");
+  await gotoReady(page, "/admin?section=health&tab=maintenance");
 
   await expect(indicator(page)).toContainText("Library scan");
   await expect(page.getByTestId("worker-status-summary")).toHaveText(
@@ -205,7 +205,7 @@ test("worker-status indicator transitions from active to done and lets the user 
     ],
     recent_complete: [],
   });
-  await gotoReady(page, "/settings?section=library");
+  await gotoReady(page, "/admin?section=health&tab=maintenance");
   await expect(indicator(page)).toContainText("Scanning library");
 
   // Flip the canned response to a terminal Done. Within ~1 polling
@@ -247,7 +247,7 @@ test("worker-status indicator surfaces a failed scan with the error message", as
       },
     ],
   });
-  await gotoReady(page, "/settings?section=library");
+  await gotoReady(page, "/admin?section=health&tab=maintenance");
 
   const failed = page.getByRole("alert");
   await expect(failed).toBeVisible();

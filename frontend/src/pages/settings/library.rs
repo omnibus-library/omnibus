@@ -8,45 +8,107 @@ use omnibus_shared::{LibraryContents, LibrarySection, Settings, SCAN_INTERVAL_MI
 
 #[cfg(not(feature = "mobile"))]
 use crate::components::worker_status::WorkerStatusIndicator;
+use crate::components::BusyLabel;
+use crate::data::server_error_message;
 use crate::{data, use_server_url};
+
+/// Where the saved settings stand. Save writes every field, so it waits for
+/// them: blank fields saved over a failed read would clear both library paths.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Load {
+    Pending,
+    Ready,
+    Failed,
+}
+
+/// Why a Save must not go out.
+#[derive(Debug, PartialEq)]
+enum SaveRefusal {
+    NotLoaded,
+    BadInterval,
+}
+
+const NOT_LOADED_MESSAGE: &str =
+    "The saved settings haven\u{2019}t loaded, so saving now would clear them.";
+const INTERVAL_MESSAGE: &str = "Enter a whole number of hours, or leave it blank.";
+
+/// The settings a Save would write, or why it must not go out. Paths are
+/// trimmed and a blank field is `None`; the interval's `>= 1` floor is still
+/// `Settings::validate()`'s call server-side.
+fn settings_payload(
+    load: Load,
+    ebook: &str,
+    audiobook: &str,
+    interval: &str,
+) -> Result<Settings, SaveRefusal> {
+    if load != Load::Ready {
+        return Err(SaveRefusal::NotLoaded);
+    }
+    let interval = interval.trim();
+    let scan_interval_hours = if interval.is_empty() {
+        None
+    } else {
+        Some(
+            interval
+                .parse::<u32>()
+                .map_err(|_| SaveRefusal::BadInterval)?,
+        )
+    };
+    let blank_to_none = |v: &str| Some(v.trim().to_string()).filter(|v| !v.is_empty());
+    Ok(Settings {
+        ebook_library_path: blank_to_none(ebook),
+        audiobook_library_path: blank_to_none(audiobook),
+        scan_interval_hours,
+    })
+}
+
+/// The Sources form's signals, threaded together through its load and save.
+#[derive(Clone, Copy, PartialEq)]
+struct SourcesForm {
+    ebook_path: Signal<String>,
+    audiobook_path: Signal<String>,
+    scan_interval_hours: Signal<String>,
+    interval_error: Signal<Option<String>>,
+    load: Signal<Load>,
+    /// Bumped by "Try again" to re-run the settings read.
+    reload: Signal<u32>,
+    saving: Signal<bool>,
+    status: Signal<Option<String>>,
+    status_is_error: Signal<bool>,
+    /// Bumped after a successful save to re-trigger the library-refresh effect.
+    library_refresh: Signal<u32>,
+}
 
 /// Library-paths form + live recursive file-count summaries, wrapped in a card.
 #[component]
 pub fn LibraryLocationSection() -> Element {
     let server_url = use_server_url();
-
-    let ebook_path = use_signal(String::new);
-    let audiobook_path = use_signal(String::new);
-    let scan_interval_hours = use_signal(String::new);
-    let status = use_signal(|| None::<String>);
-    let status_is_error = use_signal(|| false);
+    let form = SourcesForm {
+        ebook_path: use_signal(String::new),
+        audiobook_path: use_signal(String::new),
+        scan_interval_hours: use_signal(String::new),
+        interval_error: use_signal(|| None),
+        load: use_signal(|| Load::Pending),
+        reload: use_signal(|| 0u32),
+        saving: use_signal(|| false),
+        status: use_signal(|| None),
+        status_is_error: use_signal(|| false),
+        library_refresh: use_signal(|| 0u32),
+    };
     let library = use_signal(LibraryContents::default);
-    // Bumped after a successful save to re-trigger the library-refresh effect.
-    let library_refresh = use_signal(|| 0u32);
 
-    spawn_initial_settings_load(
-        server_url.clone(),
-        ebook_path,
-        audiobook_path,
-        scan_interval_hours,
-        status,
-        status_is_error,
-    );
-    spawn_library_refresh(server_url.clone(), library, library_refresh);
+    spawn_initial_settings_load(server_url.clone(), form);
+    spawn_library_refresh(server_url.clone(), library, form.library_refresh);
+    let on_submit = save_settings_handler(server_url, form);
 
-    let on_submit = save_settings_handler(
-        server_url,
-        ebook_path,
-        audiobook_path,
-        scan_interval_hours,
-        status,
-        status_is_error,
-        library_refresh,
-    );
+    let load = (form.load)();
+    let saving = (form.saving)();
+    let mut reload = form.reload;
+    let status = (form.status)();
 
     rsx! {
         section { class: "card", "data-testid": "library-location-card",
-            h2 { "Library Location" }
+            h3 { "Library folders" }
             p { class: "subtitle", "Where your books live on disk, and how often Omnibus rescans them." }
 
             form {
@@ -54,14 +116,30 @@ pub fn LibraryLocationSection() -> Element {
                 class: "settings-form",
                 onsubmit: on_submit,
                 LibraryPathFields {
-                    ebook_path,
-                    audiobook_path,
+                    ebook_path: form.ebook_path,
+                    audiobook_path: form.audiobook_path,
                     library,
                 }
-                ScanIntervalField { scan_interval_hours }
+                ScanIntervalField { scan_interval_hours: form.scan_interval_hours, error: form.interval_error }
 
                 div { class: "settings-actions",
-                    button { r#type: "submit", class: "btn", "Save" }
+                    button {
+                        r#type: "submit",
+                        class: "btn",
+                        "data-testid": "library-save",
+                        disabled: load != Load::Ready || saving,
+                        "aria-busy": if saving { "true" } else { "false" },
+                        BusyLabel { busy: saving, label: "Save library settings", busy_label: "Saving\u{2026}" }
+                    }
+                    if load == Load::Failed {
+                        button {
+                            r#type: "button",
+                            class: "btn ghost",
+                            "data-testid": "library-retry",
+                            onclick: move |_| reload += 1,
+                            "Try again"
+                        }
+                    }
                 }
             }
 
@@ -69,8 +147,8 @@ pub fn LibraryLocationSection() -> Element {
                 id: "settings-status",
                 "data-testid": "settings-status",
                 role: "status",
-                class: if status_is_error() { "settings-status error" } else { "settings-status success" },
-                if let Some(msg) = status() { "{msg}" }
+                class: if (form.status_is_error)() { "settings-status error" } else { "settings-status success" },
+                if let Some(msg) = status { "{msg}" }
             }
         }
     }
@@ -96,9 +174,9 @@ pub(crate) fn MaintenancePanel() -> Element {
     rsx! {
         section { class: "card", "data-testid": "maintenance-card",
             h3 { "Maintenance" }
-            p { class: "subtitle", "One-off jobs that run on the server's background worker." }
+            p { class: "subtitle", "One-off jobs that run on the server\u{2019}s background worker." }
             {worker_status_slot()}
-            div { class: "settings-actions", MaintenanceActions { io } }
+            MaintenanceActions { io }
             p {
                 "data-testid": "maintenance-status",
                 role: "status",
@@ -121,16 +199,25 @@ fn worker_status_slot() -> Element {
     }
 }
 
-/// Hydrates the saved [`Settings`] into the path inputs on mount.
-fn spawn_initial_settings_load(
-    url: String,
-    mut ebook_path: Signal<String>,
-    mut audiobook_path: Signal<String>,
-    mut scan_interval_hours: Signal<String>,
-    mut status: Signal<Option<String>>,
-    mut status_is_error: Signal<bool>,
-) {
+/// Hydrates the saved [`Settings`] into the path inputs on mount, and again
+/// whenever "Try again" bumps `reload`.
+fn spawn_initial_settings_load(url: String, form: SourcesForm) {
+    let SourcesForm {
+        mut ebook_path,
+        mut audiobook_path,
+        mut scan_interval_hours,
+        mut load,
+        reload,
+        mut status,
+        mut status_is_error,
+        ..
+    } = form;
     use_effect(move || {
+        let _ = reload();
+        if *load.peek() != Load::Pending {
+            load.set(Load::Pending);
+            status.set(None);
+        }
         let url = url.clone();
         spawn(async move {
             match data::get_settings(&url).await {
@@ -143,10 +230,15 @@ fn spawn_initial_settings_load(
                             .map(|h| h.to_string())
                             .unwrap_or_default(),
                     );
+                    load.set(Load::Ready);
                 }
                 Err(e) => {
-                    status.set(Some(e.to_string()));
+                    status.set(Some(format!(
+                        "Couldn\u{2019}t load the saved settings: {}",
+                        server_error_message(&e)
+                    )));
                     status_is_error.set(true);
+                    load.set(Load::Failed);
                 }
             }
         });
@@ -170,57 +262,60 @@ fn spawn_library_refresh(
     });
 }
 
-/// Returns the `<form onsubmit>` handler that POSTs the path + interval inputs.
-fn save_settings_handler(
-    url: String,
-    ebook_path: Signal<String>,
-    audiobook_path: Signal<String>,
-    scan_interval_hours: Signal<String>,
-    mut status: Signal<Option<String>>,
-    mut status_is_error: Signal<bool>,
-    mut library_refresh: Signal<u32>,
-) -> impl FnMut(FormEvent) {
+/// Returns the `<form onsubmit>` handler that POSTs the path + interval inputs,
+/// refusing (with the reason where the reader will look) a Save
+/// [`settings_payload`] rules out.
+fn save_settings_handler(url: String, form: SourcesForm) -> impl FnMut(FormEvent) {
+    let SourcesForm {
+        mut interval_error,
+        mut saving,
+        mut status,
+        mut status_is_error,
+        mut library_refresh,
+        ..
+    } = form;
     move |evt: FormEvent| {
         evt.prevent_default();
-        let url = url.clone();
-        let ebook = ebook_path().trim().to_string();
-        let audiobook = audiobook_path().trim().to_string();
-        let interval_input = scan_interval_hours().trim().to_string();
-        // Parsed client-side so a non-numeric entry gets an immediate,
-        // specific message instead of a generic save failure; an in-range
-        // numeric value still round-trips through `Settings::validate()`
-        // server-side (e.g. the `>= 1` floor).
-        let interval = if interval_input.is_empty() {
-            None
-        } else {
-            match interval_input.parse::<u32>() {
-                Ok(n) => Some(n),
-                Err(_) => {
-                    status.set(Some(
-                        "Automatic rescan interval must be a whole number of hours.".to_string(),
-                    ));
-                    status_is_error.set(true);
-                    return;
-                }
+        if saving() {
+            return;
+        }
+        interval_error.set(None);
+        let payload = match settings_payload(
+            (form.load)(),
+            &(form.ebook_path)(),
+            &(form.audiobook_path)(),
+            &(form.scan_interval_hours)(),
+        ) {
+            Ok(payload) => payload,
+            Err(SaveRefusal::NotLoaded) => {
+                status.set(Some(NOT_LOADED_MESSAGE.to_string()));
+                status_is_error.set(true);
+                return;
+            }
+            Err(SaveRefusal::BadInterval) => {
+                interval_error.set(Some(INTERVAL_MESSAGE.to_string()));
+                return;
             }
         };
+        status.set(None);
+        saving.set(true);
+        let url = url.clone();
         spawn(async move {
-            let payload = Settings {
-                ebook_library_path: (!ebook.is_empty()).then_some(ebook),
-                audiobook_library_path: (!audiobook.is_empty()).then_some(audiobook),
-                scan_interval_hours: interval,
-            };
             match data::save_settings(&url, payload).await {
                 Ok(_) => {
-                    status.set(Some("Settings saved.".to_string()));
+                    status.set(Some("Library settings saved.".to_string()));
                     status_is_error.set(false);
                     library_refresh.set(library_refresh() + 1);
                 }
-                Err(_) => {
-                    status.set(Some("Failed to save settings.".to_string()));
+                Err(e) => {
+                    status.set(Some(format!(
+                        "Couldn\u{2019}t save the library settings: {}",
+                        server_error_message(&e)
+                    )));
                     status_is_error.set(true);
                 }
             }
+            saving.set(false);
         });
     }
 }
@@ -234,13 +329,17 @@ fn LibraryPathFields(
 ) -> Element {
     rsx! {
         div { class: "settings-field",
-            label { r#for: "ebook-library-path", "Ebook Library Path" }
+            label { r#for: "ebook-library-path", "Ebook library path" }
             input {
                 r#type: "text",
                 id: "ebook-library-path",
                 name: "ebook_library_path",
+                autocomplete: "off",
+                autocapitalize: "none",
+                spellcheck: "false",
+                translate: "no",
                 value: "{ebook_path}",
-                placeholder: "/path/to/ebooks",
+                placeholder: "/path/to/ebooks\u{2026}",
                 oninput: move |evt| ebook_path.set(evt.value()),
             }
             LibrarySummary {
@@ -249,13 +348,17 @@ fn LibraryPathFields(
             }
         }
         div { class: "settings-field",
-            label { r#for: "audiobook-library-path", "Audiobook Library Path" }
+            label { r#for: "audiobook-library-path", "Audiobook library path" }
             input {
                 r#type: "text",
                 id: "audiobook-library-path",
                 name: "audiobook_library_path",
+                autocomplete: "off",
+                autocapitalize: "none",
+                spellcheck: "false",
+                translate: "no",
                 value: "{audiobook_path}",
-                placeholder: "/path/to/audiobooks",
+                placeholder: "/path/to/audiobooks\u{2026}",
                 oninput: move |evt| audiobook_path.set(evt.value()),
             }
             LibrarySummary {
@@ -268,22 +371,33 @@ fn LibraryPathFields(
 
 /// Optional periodic-rescan interval, in hours. Blank disables it — the
 /// server-side `Settings::validate()` rejects 0 or any other value below
-/// [`omnibus_shared::SCAN_INTERVAL_MIN_HOURS`]; a non-numeric entry is
-/// caught client-side by [`save_settings_handler`] before the request fires.
+/// [`omnibus_shared::SCAN_INTERVAL_MIN_HOURS`]; a non-numeric entry is caught
+/// by [`settings_payload`] and reported here, at the field.
 #[component]
-fn ScanIntervalField(mut scan_interval_hours: Signal<String>) -> Element {
+fn ScanIntervalField(
+    mut scan_interval_hours: Signal<String>,
+    error: Signal<Option<String>>,
+) -> Element {
+    let message = error();
+    let invalid = if message.is_some() { "true" } else { "false" };
     rsx! {
         div { class: "settings-field",
-            label { r#for: "scan-interval-hours", "Automatic Rescan Interval (hours)" }
+            label { r#for: "scan-interval-hours", "Automatic rescan interval (hours)" }
             input {
                 r#type: "number",
                 min: "{SCAN_INTERVAL_MIN_HOURS}",
+                inputmode: "numeric",
                 id: "scan-interval-hours",
                 name: "scan_interval_hours",
                 "data-testid": "scan-interval-hours",
+                "aria-describedby": "scan-interval-hint",
+                "aria-invalid": invalid,
                 value: "{scan_interval_hours}",
-                placeholder: "Leave blank to disable",
                 oninput: move |evt| scan_interval_hours.set(evt.value()),
+            }
+            p { class: "settings-hint", id: "scan-interval-hint", "Leave blank to rescan only when you ask." }
+            if let Some(m) = message {
+                p { class: "settings-status error", role: "alert", "data-testid": "scan-interval-error", "{m}" }
             }
         }
     }
@@ -417,8 +531,8 @@ struct MaintenanceIo {
     library_refresh: Signal<u32>,
 }
 
-/// Ghost buttons for one-off maintenance jobs (library rescan, author photo
-/// refetch, chapter backfill).
+/// The one-off maintenance jobs (library rescan, author photo refetch, chapter
+/// backfill, EPUB override bake), each with a line saying what it does.
 #[component]
 fn MaintenanceActions(io: MaintenanceIo) -> Element {
     let MaintenanceIo {
@@ -454,43 +568,72 @@ fn MaintenanceActions(io: MaintenanceIo) -> Element {
         rewrite_all_epubs_handler(server_url, status, status_is_error, rewrite_in_flight);
 
     rsx! {
-        button {
-            r#type: "button",
-            class: "btn ghost",
-            disabled: scan_in_flight(),
-            "data-testid": "scan-library",
-            onclick: on_scan,
-            "Scan Library"
+        ul { class: "maint-list",
+            MaintenanceCommand {
+                testid: "scan-library",
+                label: "Scan library",
+                description: "Look through both library folders now for new, changed and removed books, instead of waiting for the next automatic rescan.",
+                busy: scan_in_flight(),
+                on_run: on_scan,
+            }
+            MaintenanceCommand {
+                testid: "refetch-author-photos",
+                label: "Refetch author pictures",
+                description: "Look up every author\u{2019}s photo on Open Library again. Pictures set by hand are kept.",
+                busy: refetch_in_flight(),
+                on_run: on_refetch,
+            }
+            MaintenanceCommand {
+                testid: "backfill-chapters",
+                label: "Extract audiobook chapters",
+                description: "Read chapter markers from audiobooks added before chapters were recorded.",
+                busy: backfill_in_flight(),
+                on_run: on_backfill,
+            }
+            MaintenanceCommand {
+                testid: "rewrite-all-epubs",
+                label: "Bake overrides into EPUBs",
+                description: "Rebuild the downloadable copy of every edited EPUB so downloads and Kobo sync carry your metadata and covers.",
+                busy: rewrite_in_flight(),
+                on_run: on_rewrite,
+            }
         }
-        button {
-            r#type: "button",
-            class: "btn ghost",
-            disabled: refetch_in_flight(),
-            "data-testid": "refetch-author-photos",
-            onclick: on_refetch,
-            "Refetch Author Pictures"
-        }
-        button {
-            r#type: "button",
-            class: "btn ghost",
-            disabled: backfill_in_flight(),
-            "data-testid": "backfill-chapters",
-            onclick: on_backfill,
-            "Extract Audiobook Chapters"
-        }
-        button {
-            r#type: "button",
-            class: "btn ghost",
-            disabled: rewrite_in_flight(),
-            "data-testid": "rewrite-all-epubs",
-            onclick: on_rewrite,
-            "Bake Overrides Into EPUBs"
+    }
+}
+
+/// One maintenance command: what it does, and the button that queues it.
+#[component]
+fn MaintenanceCommand(
+    testid: &'static str,
+    label: &'static str,
+    description: &'static str,
+    busy: bool,
+    on_run: EventHandler<MouseEvent>,
+) -> Element {
+    rsx! {
+        li { class: "maint-row",
+            p { class: "maint-desc", id: "{testid}-desc", "{description}" }
+            button {
+                r#type: "button",
+                class: "btn ghost",
+                disabled: busy,
+                "aria-busy": if busy { "true" } else { "false" },
+                "aria-describedby": "{testid}-desc",
+                "data-testid": "{testid}",
+                onclick: move |evt| on_run.call(evt),
+                BusyLabel { busy, label, busy_label: "Queuing\u{2026}" }
+            }
         }
     }
 }
 
 fn library_summary_line(section: &LibrarySection) -> String {
-    let mut line = format!("{} file(s) found.", section.total_files);
+    let noun = if section.total_files == 1 {
+        "file"
+    } else {
+        "files"
+    };
+    let mut line = format!("{} {noun} found.", section.total_files);
     for (ext, count) in &section.counts_by_ext {
         line.push_str(&format!(" {count} .{ext} found."));
     }
@@ -515,7 +658,7 @@ fn LibrarySummary(testid: String, section: LibrarySection) -> Element {
                 id: "{testid}",
                 "data-testid": "{testid}",
                 class: "library-summary error",
-                "⚠ {err}"
+                "Couldn\u{2019}t read this folder: {err}"
             }
         };
     }

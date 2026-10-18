@@ -1,5 +1,5 @@
-//! Admin-only log viewer — the Logs section of `/settings`, which `/logs`
-//! redirects to. A paginated, newest-first view over the on-disk JSON logs with
+//! Admin-only log viewer — the Logs tab of Administration › Health &
+//! activity, which `/logs` redirects to. A paginated, newest-first view over the on-disk JSON logs with
 //! level/module/time-range filters. Web/SSR-only. The real authorization
 //! boundary is the `AdminUser` extractor on `rpc_get_logs`; the in-page
 //! `use_admin_access` gate just keeps the chrome off a non-admin screen.
@@ -12,7 +12,7 @@ use crate::components::loading::RowSkeletons;
 use crate::components::{BusyLabel, Loading, LoadingKind};
 use crate::{data, use_server_url, Access};
 
-/// The `/logs` admin log viewer page.
+/// The admin log viewer.
 #[component]
 pub fn LogsPage() -> Element {
     let access = crate::use_admin_access();
@@ -46,19 +46,15 @@ pub fn LogsPage() -> Element {
     rsx! {
         div { class: "logs-page", "data-testid": "logs-page",
             section { class: "card",
-                div { class: "logs-head",
-                    div {
-                        h2 { "Server logs" }
-                        p { class: "subtitle", "Browse the on-disk structured logs." }
-                    }
-                }
+                h3 { "Server logs" }
+                p { class: "subtitle", "Browse the on-disk structured logs, newest first." }
                 match access() {
                     Access::Allowed => rsx! {
                         LogFilterBar { filters, on_apply: EventHandler::new(on_apply) }
                         LogResults { applied, result, error, loading }
                     },
                     Access::Unknown => rsx! {
-                        Loading { kind: LoadingKind::Section, class: "start", label: "Checking your access" }
+                        Loading { kind: LoadingKind::Section, class: "start", label: "Checking your access\u{2026}" }
                     },
                     Access::Denied => rsx! {
                         p { class: "settings-status error", "data-testid": "logs-forbidden",
@@ -210,7 +206,7 @@ fn LogFilterBar(filters: LogFilters, on_apply: EventHandler<MouseEvent>) -> Elem
                     autocapitalize: "none",
                     autocorrect: "off",
                     spellcheck: "false",
-                    placeholder: "e.g. omnibus::backend",
+                    placeholder: "e.g. omnibus::backend\u{2026}",
                     value: "{module}",
                     oninput: move |e| module.set(e.value()),
                 }
@@ -251,15 +247,25 @@ fn LogFilterBar(filters: LogFilters, on_apply: EventHandler<MouseEvent>) -> Elem
 /// The result region: status line, table, and pagination controls.
 #[component]
 fn LogResults(
-    applied: Signal<LogQuery>,
+    mut applied: Signal<LogQuery>,
     result: Signal<Option<LogPage>>,
     error: Signal<bool>,
     loading: Signal<bool>,
 ) -> Element {
     if error() {
         return rsx! {
-            p { class: "settings-status error", role: "status", "data-testid": "logs-error",
-                "Failed to load logs."
+            div { class: "settings-actions",
+                p { class: "settings-status error", role: "status", "data-testid": "logs-error",
+                    "Couldn\u{2019}t load the logs."
+                }
+                button {
+                    r#type: "button",
+                    class: "btn ghost",
+                    "data-testid": "logs-retry",
+                    // Re-setting the same query re-runs the fetch effect.
+                    onclick: move |_| applied.set(applied()),
+                    "Try again"
+                }
             }
         };
     }
@@ -355,7 +361,7 @@ fn LogPagination(applied: Signal<LogQuery>, has_more: bool, loading: bool) -> El
                 disabled: page == 0 || loading,
                 "aria-busy": if newer_busy { "true" } else { "false" },
                 onclick: move |_| go(false),
-                BusyLabel { busy: newer_busy, label: "\u{2190} Newer", busy_label: "Loading\u{2026}" }
+                BusyLabel { busy: newer_busy, label: "Newer", busy_label: "Loading\u{2026}" }
             }
             span { class: "logs-page-indicator mono", "data-testid": "logs-page-indicator",
                 "Page {page + 1}"
@@ -367,8 +373,11 @@ fn LogPagination(applied: Signal<LogQuery>, has_more: bool, loading: bool) -> El
                 disabled: !has_more || loading,
                 "aria-busy": if older_busy { "true" } else { "false" },
                 onclick: move |_| go(true),
-                BusyLabel { busy: older_busy, label: "Older \u{2192}", busy_label: "Loading\u{2026}" }
+                BusyLabel { busy: older_busy, label: "Older", busy_label: "Loading\u{2026}" }
             }
         }
     }
 }
+
+#[cfg(all(test, feature = "server"))]
+mod tests;

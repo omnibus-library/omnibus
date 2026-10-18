@@ -4,12 +4,12 @@ import { expectMutation } from "../utils/api";
 import { TEST_USERNAME } from "../utils/auth";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
-// Admin user management (#1326). The seeded session is an admin, so it sees the
-// Users section. The create/delete round-trip uses a username no other spec or
+// Admin user management — Administration › People. The seeded session is an
+// admin, so it sees the section. The create/delete round-trip uses a username no other spec or
 // fixture touches and removes it at the end, so the shared server is left as it
 // was found. The last-admin / non-admin guards are covered by the server
 // integration tests (they'd mutate or depend on the shared admin here).
-const USERS = "/settings?section=users";
+const USERS = "/admin?section=people";
 // Per-run unique suffix so a run that dies before its cleanup delete doesn't
 // 409 the next run's create against the shared dev server.
 const TEMP_USER = `e2e_usermgmt_${Date.now()}`;
@@ -23,7 +23,7 @@ test("renders the users section layout", async ({ page }) => {
   await gotoReady(page, USERS);
 
   await expect(
-    page.getByRole("heading", { level: 2, name: "Users" }),
+    page.getByRole("heading", { level: 3, name: "Accounts" }),
   ).toBeVisible();
   await expect(page.getByTestId("users-table")).toBeVisible();
   await expect(page.getByTestId("users-new")).toBeVisible();
@@ -50,6 +50,23 @@ test("administrator permission implies and locks the others", async ({
   await expect(edit).toBeChecked();
   await expect(upload).toBeDisabled();
   await expect(edit).toBeDisabled();
+});
+
+test("keeps typed details when the new user backdrop is clicked", async ({
+  page,
+}) => {
+  await gotoReady(page, USERS);
+  await page.getByTestId("users-new").click();
+  const modal = page.getByTestId("users-new-modal");
+  await page.getByTestId("new-user-username").fill("half-typed");
+
+  // A corner of the backdrop, outside the dialog card.
+  await modal.click({ position: { x: 5, y: 5 } });
+
+  await expect(modal).toBeVisible();
+  await expect(page.getByTestId("new-user-username")).toHaveValue(
+    "half-typed",
+  );
 });
 
 test("creates a user then deletes it", async ({ page }) => {
@@ -85,7 +102,9 @@ test("creates a user then deletes it", async ({ page }) => {
   await expect(tempRow(page).getByText("Upload")).toBeVisible();
 
   // ── Delete (cleanup) ────────────────────────────────────
-  await tempRow(page).getByRole("button", { name: "Delete" }).click();
+  await tempRow(page)
+    .getByRole("button", { name: `Delete ${TEMP_USER}` })
+    .click();
   await expect(page.getByTestId("users-delete-modal")).toBeVisible();
 
   await expectMutation(
@@ -118,7 +137,7 @@ test("a backdrop click during an in-flight delete does not dismiss the modal or 
   const row = table(page).locator("tr", { hasText: tempName });
   await expect(row).toBeVisible();
 
-  await row.getByRole("button", { name: "Delete" }).click();
+  await row.getByRole("button", { name: `Delete ${tempName}` }).click();
   const modal = page.getByTestId("users-delete-modal");
   await expect(modal).toBeVisible();
 

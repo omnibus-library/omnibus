@@ -3,12 +3,15 @@ import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
-// The admin log viewer — now the Logs section of Settings (#1324); the legacy
-// `/logs` route redirects here. The layout test runs against the real on-disk
+// The admin log viewer — the Logs tab of Administration › Health & activity;
+// the legacy `/logs` route redirects here. The layout test runs against the real on-disk
 // logs the server is already writing (proving AC1 end-to-end); the filter /
 // error / pagination tests mock `/api/rpc/logs` after the initial load so the
 // rows under assertion are deterministic.
-const LOGS = "/settings?section=logs";
+const LOGS = "/admin?section=health&tab=logs";
+const LOGS_URL = /\/admin\?section=health&tab=logs$/;
+const logsHeading = (page: Page) =>
+  page.getByRole("heading", { level: 3, name: "Server logs" });
 
 const levelFilter = (page: Page) => page.getByLabel("Level");
 const moduleFilter = (page: Page) => page.getByLabel("Module");
@@ -64,10 +67,12 @@ test("renders the log viewer layout from the on-disk logs", async ({
     async () => gotoReady(page, LOGS),
   );
 
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Server logs" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("settings-nav-logs")).toHaveAttribute(
+  await expect(logsHeading(page)).toBeVisible();
+  await expect(page.getByTestId("admin-nav-health")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(page.getByTestId("health-tab-logs")).toHaveAttribute(
     "aria-current",
     "page",
   );
@@ -234,31 +239,28 @@ test("shows an error status when the log read fails", async ({ page }) => {
 
   await expect(page.getByTestId("logs-error")).toBeVisible();
   await expect(page.getByTestId("logs-error")).toContainText(
-    "Failed to load logs",
+    "Couldn’t load the logs",
   );
+  await expect(page.getByTestId("logs-retry")).toBeVisible();
 });
 
-test("reaches the log viewer from the sidebar Logs item (AC3)", async ({
+test("reaches the log viewer from the Health & activity Logs tab", async ({
   page,
 }) => {
-  await gotoReady(page, "/settings");
+  await gotoReady(page, "/admin?section=health");
 
-  await page.getByTestId("settings-nav-logs").click();
+  await page.getByTestId("health-tab-logs").click();
 
-  await expect(page).toHaveURL(/\/settings\?section=logs$/);
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Server logs" }),
-  ).toBeVisible();
+  await expect(page).toHaveURL(LOGS_URL);
+  await expect(logsHeading(page)).toBeVisible();
   await expect(page.getByTestId("logs-page")).toBeVisible();
 });
 
-test("the legacy /logs route redirects into the Logs section", async ({
+test("the legacy /logs route redirects into the Logs tab", async ({
   page,
 }) => {
   await gotoReady(page, "/logs");
 
-  await expect(page).toHaveURL(/\/settings\?section=logs$/);
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Server logs" }),
-  ).toBeVisible();
+  await expect(page).toHaveURL(LOGS_URL);
+  await expect(logsHeading(page)).toBeVisible();
 });

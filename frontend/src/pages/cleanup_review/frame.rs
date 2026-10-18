@@ -28,7 +28,7 @@ pub fn CleanupCrumb(kind: Option<CleanupKind>) -> Element {
                 class: "bd-crumb-home",
                 "Administration"
             }
-            span { class: "bd-crumb-sep", "\u{203a}" }
+            span { class: "bd-crumb-sep", "aria-hidden": "true", "\u{203a}" }
             Link {
                 to: crate::routes::link_target(Route::Admin {
                     section: Some("cleanup".to_string()),
@@ -37,8 +37,8 @@ pub fn CleanupCrumb(kind: Option<CleanupKind>) -> Element {
                 class: "bd-crumb-step",
                 "Cleanup"
             }
-            span { class: "bd-crumb-sep", "\u{203a}" }
-            span { class: "bd-crumb-curr", "{kind_title(kind)}" }
+            span { class: "bd-crumb-sep", "aria-hidden": "true", "\u{203a}" }
+            span { class: "bd-crumb-curr", "aria-current": "page", "{kind_title(kind)}" }
         }
     }
 }
@@ -92,6 +92,7 @@ pub fn CleanupKindLine(
                     key: "{kind.as_str()}",
                     to: Route::CleanupReview { kind: kind.as_str().to_string() },
                     class: if Some(kind) == current { "crx-kindchip on" } else { "crx-kindchip" },
+                    "aria-current": if Some(kind) == current { "page" } else { "false" },
                     "data-testid": "cleanup-kindchip-{kind.as_str()}",
                     "{kind_label(kind)}"
                     if let Some(pending) = pending_for(&loaded, kind) {

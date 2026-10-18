@@ -118,7 +118,7 @@ pub(super) fn RegistrationToggle() -> Element {
         section { class: "card", "data-testid": "registration-card",
             div { class: "users-head",
                 div {
-                    h2 { "Self-registration" }
+                    h3 { "Self-registration" }
                     p { class: "subtitle",
                         span { class: if pending { "ld-sheen" } else { "registration-status" }, "{status}" }
                     }

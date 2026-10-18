@@ -7,8 +7,14 @@
 use dioxus::prelude::*;
 use omnibus_shared::{SmtpConfigStatus, SmtpConfigUpdate, SmtpSecurity};
 
+use super::secret_key_field::ClearCredentialModal;
 use crate::components::credential_card::{credential_status_line, credential_status_message};
+use crate::components::BusyLabel;
+use crate::data::server_error_message;
 use crate::{data, use_server_url};
+
+const SMTP_NOT_LOADED: &str =
+    "The current SMTP settings haven\u{2019}t loaded, so saving now would overwrite them.";
 
 /// Admin field to configure the server-wide SMTP relay used by
 /// Send-to-Kindle. Loads the masked status on mount; the password is never read
@@ -27,6 +33,7 @@ pub fn SmtpConfigField() -> Element {
     let io = SmtpIo {
         status: use_signal(|| None),
         status_failed: use_signal(|| false),
+        reload: use_signal(|| 0u32),
         msg: use_signal(|| None),
         msg_is_error: use_signal(|| false),
         in_flight: use_signal(|| false),
@@ -34,8 +41,9 @@ pub fn SmtpConfigField() -> Element {
 
     spawn_smtp_config_load(server_url.clone(), fields, io);
 
+    let mut confirm_clear = use_signal(|| false);
     let on_save = make_smtp_save(server_url.clone(), fields, io);
-    let on_clear = make_smtp_clear(server_url.clone(), fields, io);
+    let mut on_clear = make_smtp_clear(server_url.clone(), fields, io, confirm_clear);
     let on_test = make_smtp_test(server_url, io);
 
     let st = (io.status)();
@@ -43,23 +51,36 @@ pub fn SmtpConfigField() -> Element {
 
     rsx! {
         section { class: "card", "data-testid": "smtp-card",
-            h2 { "Email delivery (SMTP)" }
-            p { class: "subtitle", "Configure the relay used by Send-to-Kindle." }
-            SmtpConnectionFields { fields, configured }
-            SmtpTestActions {
-                configured,
-                in_flight: io.in_flight,
-                status: st,
-                message: SmtpStatusMessage {
-                    msg: io.msg,
-                    msg_is_error: io.msg_is_error,
-                    status_failed: io.status_failed,
-                },
-                actions: SmtpActionHandlers {
-                    on_save: EventHandler::new(on_save),
-                    on_test: EventHandler::new(on_test),
-                    on_clear: EventHandler::new(on_clear),
-                },
+            h3 { "Email delivery (SMTP)" }
+            p { class: "subtitle", "The mail relay Send-to-Kindle sends books through." }
+            form { class: "settings-form", onsubmit: on_save,
+                SmtpConnectionFields { fields, configured }
+                SmtpTestActions {
+                    configured,
+                    in_flight: io.in_flight,
+                    status: st,
+                    message: SmtpStatusMessage {
+                        msg: io.msg,
+                        msg_is_error: io.msg_is_error,
+                        status_failed: io.status_failed,
+                        reload: io.reload,
+                    },
+                    actions: SmtpActionHandlers {
+                        on_test: EventHandler::new(on_test),
+                        on_clear: EventHandler::new(move |_| confirm_clear.set(true)),
+                    },
+                }
+            }
+            if confirm_clear() {
+                ClearCredentialModal {
+                    testid: "smtp-clear",
+                    title: "Clear the SMTP settings?",
+                    body: "This removes the relay host, sign-in and stored password. Send-to-Kindle stops working until the relay is set up again.",
+                    confirm_label: "Clear SMTP settings",
+                    busy: (io.in_flight)(),
+                    on_confirm: move |()| on_clear(()),
+                    on_cancel: move |()| confirm_clear.set(false),
+                }
             }
         }
     }
@@ -82,6 +103,8 @@ struct SmtpIo {
     status: Signal<Option<SmtpConfigStatus>>,
     /// Set when the config read failed, so the line stops saying "Checking".
     status_failed: Signal<bool>,
+    /// Bumped by "Try again" to re-run the config read.
+    reload: Signal<u32>,
     msg: Signal<Option<String>>,
     msg_is_error: Signal<bool>,
     in_flight: Signal<bool>,
@@ -92,6 +115,7 @@ fn spawn_smtp_config_load(server_url: String, fields: SmtpFields, io: SmtpIo) {
     let SmtpIo {
         mut status,
         mut status_failed,
+        reload,
         mut msg,
         mut msg_is_error,
         ..
@@ -102,6 +126,11 @@ fn spawn_smtp_config_load(server_url: String, fields: SmtpFields, io: SmtpIo) {
     let mut from_email = fields.from_email;
     let mut security = fields.security;
     use_effect(move || {
+        let _ = reload();
+        if *status_failed.peek() {
+            status_failed.set(false);
+            msg.set(None);
+        }
         let url = server_url.clone();
         spawn(async move {
             let s = match data::get_smtp_config(&url).await {
@@ -110,7 +139,8 @@ fn spawn_smtp_config_load(server_url: String, fields: SmtpFields, io: SmtpIo) {
                 Err(e) => {
                     status_failed.set(true);
                     msg.set(Some(format!(
-                        "Couldn\u{2019}t read the current settings: {e}"
+                        "Couldn\u{2019}t read the current settings: {}",
+                        server_error_message(&e)
                     )));
                     msg_is_error.set(true);
                     return;
@@ -134,8 +164,9 @@ fn spawn_smtp_config_load(server_url: String, fields: SmtpFields, io: SmtpIo) {
     });
 }
 
-/// Build the Save handler: validate the port, then POST the config update.
-fn make_smtp_save(server_url: String, fields: SmtpFields, io: SmtpIo) -> impl FnMut(MouseEvent) {
+/// Build the Save handler: refuse until the current config has loaded (the
+/// seeded blanks would overwrite it), validate the port, then POST the update.
+fn make_smtp_save(server_url: String, fields: SmtpFields, io: SmtpIo) -> impl FnMut(FormEvent) {
     let host = fields.host;
     let port = fields.port;
     let username = fields.username;
@@ -146,7 +177,16 @@ fn make_smtp_save(server_url: String, fields: SmtpFields, io: SmtpIo) -> impl Fn
     let mut msg = io.msg;
     let mut msg_is_error = io.msg_is_error;
     let mut in_flight = io.in_flight;
-    move |_| {
+    move |evt: FormEvent| {
+        evt.prevent_default();
+        if in_flight() {
+            return;
+        }
+        if status().is_none() {
+            msg.set(Some(SMTP_NOT_LOADED.to_string()));
+            msg_is_error.set(true);
+            return;
+        }
         let host_val = host().trim().to_string();
         // `parse::<u16>()` accepts 0, but 0 is not a usable port — reject it
         // so the UI matches the "1 and 65535" message (and the DB validator).
@@ -181,8 +221,11 @@ fn make_smtp_save(server_url: String, fields: SmtpFields, io: SmtpIo) -> impl Fn
                     msg.set(Some("SMTP settings saved.".to_string()));
                     msg_is_error.set(false);
                 }
-                Err(_) => {
-                    msg.set(Some("Failed to save SMTP settings.".to_string()));
+                Err(e) => {
+                    msg.set(Some(format!(
+                        "Couldn\u{2019}t save the SMTP settings: {}",
+                        server_error_message(&e)
+                    )));
                     msg_is_error.set(true);
                 }
             }
@@ -191,8 +234,14 @@ fn make_smtp_save(server_url: String, fields: SmtpFields, io: SmtpIo) -> impl Fn
     }
 }
 
-/// Build the Clear handler: wipe the stored config and reset the fields.
-fn make_smtp_clear(server_url: String, fields: SmtpFields, io: SmtpIo) -> impl FnMut(MouseEvent) {
+/// Build the confirmed Clear handler: wipe the stored config, reset the fields,
+/// and close the confirm dialog either way.
+fn make_smtp_clear(
+    server_url: String,
+    fields: SmtpFields,
+    io: SmtpIo,
+    mut confirm_clear: Signal<bool>,
+) -> impl FnMut(()) {
     let mut host = fields.host;
     let mut port = fields.port;
     let mut username = fields.username;
@@ -203,7 +252,10 @@ fn make_smtp_clear(server_url: String, fields: SmtpFields, io: SmtpIo) -> impl F
     let mut msg = io.msg;
     let mut msg_is_error = io.msg_is_error;
     let mut in_flight = io.in_flight;
-    move |_| {
+    move |()| {
+        if in_flight() {
+            return;
+        }
         let url = server_url.clone();
         in_flight.set(true);
         spawn(async move {
@@ -219,12 +271,16 @@ fn make_smtp_clear(server_url: String, fields: SmtpFields, io: SmtpIo) -> impl F
                     msg.set(Some("SMTP settings cleared.".to_string()));
                     msg_is_error.set(false);
                 }
-                Err(_) => {
-                    msg.set(Some("Failed to clear SMTP settings.".to_string()));
+                Err(e) => {
+                    msg.set(Some(format!(
+                        "Couldn\u{2019}t clear the SMTP settings: {}",
+                        server_error_message(&e)
+                    )));
                     msg_is_error.set(true);
                 }
             }
             in_flight.set(false);
+            confirm_clear.set(false);
         });
     }
 }
@@ -267,13 +323,16 @@ fn SmtpConnectionFields(fields: SmtpFields, configured: bool) -> Element {
     let mut security = fields.security;
     rsx! {
         div { class: "settings-field",
-            label { r#for: "smtp-host", "SMTP Host" }
+            label { r#for: "smtp-host", "SMTP host" }
             input {
                 r#type: "text",
                 id: "smtp-host",
                 name: "smtp_host",
                 autocomplete: "off",
-                placeholder: "smtp.example.com",
+                autocapitalize: "none",
+                spellcheck: "false",
+                translate: "no",
+                placeholder: "smtp.example.com\u{2026}",
                 value: "{host}",
                 oninput: move |e| host.set(e.value()),
             }
@@ -284,6 +343,9 @@ fn SmtpConnectionFields(fields: SmtpFields, configured: bool) -> Element {
                 r#type: "number",
                 id: "smtp-port",
                 name: "smtp_port",
+                inputmode: "numeric",
+                min: "1",
+                max: "65535",
                 value: "{port}",
                 oninput: move |e| port.set(e.value()),
             }
@@ -307,6 +369,8 @@ fn SmtpConnectionFields(fields: SmtpFields, configured: bool) -> Element {
                 id: "smtp-username",
                 name: "smtp_username",
                 autocomplete: "off",
+                autocapitalize: "none",
+                spellcheck: "false",
                 value: "{username}",
                 oninput: move |e| username.set(e.value()),
             }
@@ -327,13 +391,14 @@ fn SmtpConnectionFields(fields: SmtpFields, configured: bool) -> Element {
             }
         }
         div { class: "settings-field",
-            label { r#for: "smtp-from", "From Email" }
+            label { r#for: "smtp-from", "From address" }
             input {
                 r#type: "email",
                 id: "smtp-from",
                 name: "smtp_from_email",
                 autocomplete: "off",
-                placeholder: "library@example.com",
+                spellcheck: "false",
+                placeholder: "library@example.com\u{2026}",
                 value: "{from_email}",
                 oninput: move |e| from_email.set(e.value()),
             }
@@ -348,19 +413,20 @@ struct SmtpStatusMessage {
     msg: Signal<Option<String>>,
     msg_is_error: Signal<bool>,
     status_failed: Signal<bool>,
+    reload: Signal<u32>,
 }
 
-/// Save / send-test / clear handlers. Grouped so [`SmtpTestActions`] stays
-/// under the prop cap.
+/// Send-test / clear handlers (Save is the form's submit). Grouped so
+/// [`SmtpTestActions`] stays under the prop cap.
 #[derive(Copy, Clone, PartialEq)]
 struct SmtpActionHandlers {
-    on_save: EventHandler<MouseEvent>,
     on_test: EventHandler<MouseEvent>,
     on_clear: EventHandler<MouseEvent>,
 }
 
 /// Save / send-test / clear buttons, the configured-state line, and the
-/// save/test status message.
+/// save/test status message. Save waits for the current config to load, and a
+/// failed read offers Try again.
 #[component]
 fn SmtpTestActions(
     configured: bool,
@@ -373,12 +439,11 @@ fn SmtpTestActions(
         msg,
         msg_is_error,
         status_failed,
+        mut reload,
     } = message;
-    let SmtpActionHandlers {
-        on_save,
-        on_test,
-        on_clear,
-    } = actions;
+    let SmtpActionHandlers { on_test, on_clear } = actions;
+    let loaded = status.is_some();
+    let busy = in_flight();
     let detail = status
         .as_ref()
         .map(|s| format!("Configured \u{00b7} {}", s.source))
@@ -386,29 +451,38 @@ fn SmtpTestActions(
     rsx! {
         div { class: "settings-actions",
             button {
-                r#type: "button",
+                r#type: "submit",
                 class: "btn",
-                disabled: in_flight(),
+                disabled: busy || !loaded,
+                "aria-busy": if busy { "true" } else { "false" },
                 "data-testid": "smtp-save",
-                onclick: move |e| on_save.call(e),
-                "Save"
+                BusyLabel { busy, label: "Save SMTP settings", busy_label: "Saving\u{2026}" }
+            }
+            if status_failed() {
+                button {
+                    r#type: "button",
+                    class: "btn ghost",
+                    "data-testid": "smtp-retry",
+                    onclick: move |_| reload += 1,
+                    "Try again"
+                }
             }
             if configured {
                 button {
                     r#type: "button",
                     class: "btn ghost",
-                    disabled: in_flight(),
+                    disabled: busy,
                     "data-testid": "smtp-test",
                     onclick: move |e| on_test.call(e),
-                    "Send Test"
+                    "Send test email"
                 }
                 button {
                     r#type: "button",
                     class: "btn ghost",
-                    disabled: in_flight(),
+                    disabled: busy,
                     "data-testid": "smtp-clear",
                     onclick: move |e| on_clear.call(e),
-                    "Clear"
+                    "Clear\u{2026}"
                 }
             }
         }
@@ -416,3 +490,6 @@ fn SmtpTestActions(
         {credential_status_message("smtp-config-status", msg().as_deref(), msg_is_error())}
     }
 }
+
+#[cfg(test)]
+mod tests;
