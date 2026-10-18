@@ -52,6 +52,7 @@ import { LoginPage } from "../pages/LoginPage";
 import { PdfReaderPage } from "../pages/PdfReaderPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { ShelfPage } from "../pages/ShelfPage";
+import { ShelvesIndexPage } from "../pages/ShelvesIndexPage";
 import {
   type ExpectMutationOptions,
   expectMutation as expectMutationOn,
@@ -169,6 +170,8 @@ type PageFixtures = {
   // #endregion batch-F
 
   // #region batch-G: shelves
+  shelvesIndexPage: ShelvesIndexPage;
+  seedResumePoint: (bookUuid: string) => Promise<void>;
   // #endregion batch-G
 
   // #region batch-H: filters and book-detail shelves
@@ -662,6 +665,15 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // #endregion batch-F
 
   // #region batch-G: shelves
+  shelvesIndexPage: async ({ page }, use) => {
+    await use(new ShelvesIndexPage(page));
+  },
+  seedResumePoint: async ({ progressRequests }, use) => {
+    await use(async (bookUuid) => {
+      const saved = await progressRequests.postResumePoint(bookUuid);
+      await expect(saved, `seed progress for ${bookUuid}`).toBeOK();
+    });
+  },
   // #endregion batch-G
 
   // #region batch-H: filters and book-detail shelves

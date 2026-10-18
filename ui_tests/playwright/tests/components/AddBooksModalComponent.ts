@@ -23,6 +23,16 @@ export class AddBooksModalComponent extends BaseComponent {
     return this.root.getByTestId(`picker-tile-${bookUuid}`);
   }
 
+  /** The dialog's heading, which names the shelf being added to. */
+  heading(shelfName: string): Locator {
+    return this.root.getByRole("heading", { level: 2, name: shelfName });
+  }
+
+  /** A card's rendered width; a button shrink-wraps, so a hit can be a sliver. */
+  async tileWidth(bookUuid: string): Promise<number> {
+    return (await this.tile(bookUuid).boundingBox())?.width ?? 0;
+  }
+
   async search(query: string): Promise<void> {
     await this.searchField.fill(query);
   }
@@ -31,7 +41,16 @@ export class AddBooksModalComponent extends BaseComponent {
     await this.tile(bookUuid).click();
   }
 
+  /** Presses a card that is disabled, to show it is inert and not just styled. */
+  async pickAnyway(bookUuid: string): Promise<void> {
+    await this.tile(bookUuid).click({ force: true });
+  }
+
   async submit(): Promise<void> {
     await this.submitButton.click();
+  }
+
+  async close(): Promise<void> {
+    await this.closeButton.click();
   }
 }

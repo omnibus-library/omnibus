@@ -1,545 +1,517 @@
-import type { APIRequestContext, Page } from "@playwright/test";
+import { shelves } from "../contracts/shelves";
+import { buildShelf, buildShelfUpdate, smartShelfBy } from "../data/shelves";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
-import {
-  bookTile,
-  createShelf,
-  createShelfAs,
-  openShelfFromIndex,
-} from "../utils/shelves";
-import { createReader } from "../utils/users";
 
-// The web shelf page, reached the way a reader reaches it: from its card on
-// the `/shelves` index. Every membership write here lands on a shelf this file
-// made; the fixture books those shelves hold (Alpha, Beta in the Series) are
-// only ever read.
-//
-// The suite's admin may change every shelf except a Wishlist, so the locked
-// states come from the two things it can't change: its own Wishlist, and —
-// through a second, non-admin reader on a cookie-less context — a shelf that
-// reader doesn't own.
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
-
-const READER_PASSWORD = "shelf-reader-pw-0001";
-
-const editButton = (page: Page) => page.getByTestId("shelf-edit");
-const addButton = (page: Page) => page.getByTestId("shelf-add-books");
-const moreButton = (page: Page) => page.getByTestId("shelf-actions");
-const lockNote = (page: Page) => page.getByTestId("shelf-lock-reason");
-const grid = (page: Page) => page.getByTestId("shelf-grid");
-const title = (page: Page, name: string) =>
-  page.getByRole("heading", { level: 1, name });
-
-/** Sign `username` in through the login form on a cookie-less page. */
-async function logIn(page: Page, username: string): Promise<void> {
-  await gotoReady(page, "/login");
-  await page.getByLabel("Username").fill(username);
-  await page.getByLabel("Password").fill(READER_PASSWORD);
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/auth/login", expectedStatus: 200 },
-    async () => page.getByRole("button", { name: "Log in" }).click(),
-  );
-  await expect(page).toHaveURL(/\/$/);
-}
-
-/** The admin's own Wishlist — the one shelf it can see but never change. */
-async function ownWishlistId(request: APIRequestContext): Promise<number> {
-  const me = (await (await request.get("/api/auth/me")).json()) as {
-    id: number;
-  };
-  const shelves = (await (await request.get("/api/shelves")).json()) as {
-    id: number;
-    kind: string;
-    owner_user_id: number;
-  }[];
-  const wishlist = shelves.find(
-    (s) => s.kind === "wishlist" && s.owner_user_id === me.id,
-  );
-  expect(wishlist, "the suite's admin has a Wishlist").toBeTruthy();
-  return wishlist!.id;
-}
-
-test("renders the shelf page layout", async ({ page, request }) => {
-  const alpha = await fetchBookUuidByTitle(request, "Alpha");
-  const name = `E2E Detail Layout ${Date.now()}`;
-  const id = await createShelf(request, {
-    kind: "manual",
-    name,
-    book_uuids: [alpha],
+// Writes land on shelves this file made; the fixture books they hold are only read.
+test.describe("shelf page", () => {
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
 
-  await openShelfFromIndex(page, id);
+  test("show the shelf layout", async ({ shelfPage, ownShelf, request }) => {
+    const alpha = await fetchBookUuidByTitle(request, "Alpha");
+    const shelf = await ownShelf("E2E Detail Layout", { book_uuids: [alpha] });
 
-  await expectNavVisible(page);
-  await expect(title(page, name)).toBeVisible();
-  await expect(page.getByTestId("shelf-kicker")).toContainText(
-    "Hand-picked shelf",
-  );
-  await expect(page.getByTestId("shelf-owner")).toContainText("Your shelf");
-  await expect(addButton(page)).toBeEnabled();
-  await expect(editButton(page)).toBeEnabled();
-  await expect(moreButton(page)).toBeEnabled();
-  await expect(lockNote(page)).toHaveCount(0);
-  await expect(grid(page)).toContainText("Alpha");
-  await expect(page.getByTestId("shelf-back")).toHaveAttribute(
-    "href",
-    "/shelves",
-  );
-});
+    await test.step("open the shelf from the index", async () => {
+      await shelfPage.goto(shelf.id);
+    });
 
-test("opens a book from the shelf", async ({ page, request }) => {
-  const alpha = await fetchBookUuidByTitle(request, "Alpha");
-  const id = await createShelf(request, {
-    kind: "manual",
-    name: `E2E Detail Book ${Date.now()}`,
-    book_uuids: [alpha],
+    await test.step("check the shelf and its controls", async () => {
+      await shelfPage.assertDisplayed();
+      await shelfPage.topNav.assertDisplayed();
+      await expect(shelfPage.heading(shelf.name)).toBeVisible();
+      await expect(shelfPage.kickerText).toContainText("Hand-picked shelf");
+      await expect(shelfPage.ownerBadge).toContainText("Your shelf");
+      await expect(shelfPage.addBooksButton).toBeEnabled();
+      await expect(shelfPage.editButton).toBeEnabled();
+      await expect(shelfPage.moreButton).toBeEnabled();
+      await expect(shelfPage.lockNote).toHaveCount(0);
+      await expect(shelfPage.bookGrid).toContainText("Alpha");
+      await expect(shelfPage.backLink).toHaveAttribute("href", "/shelves");
+    });
   });
 
-  await openShelfFromIndex(page, id);
-  await bookTile(page, "Alpha").click();
+  test("open a book from the shelf", async ({
+    shelfPage,
+    bookDetailPage,
+    ownShelf,
+    request,
+  }) => {
+    const alpha = await fetchBookUuidByTitle(request, "Alpha");
+    const shelf = await ownShelf("E2E Detail Book", { book_uuids: [alpha] });
 
-  await expect(page).toHaveURL(new RegExp(`/books/${alpha}$`));
-});
+    await test.step("open the shelf from the index", async () => {
+      await shelfPage.goto(shelf.id);
+    });
 
-test("adds a book to a hand-picked shelf", async ({ page, request }) => {
-  const alpha = await fetchBookUuidByTitle(request, "Alpha");
-  const shelfName = `E2E Detail Add ${Date.now()}`;
-  const id = await createShelf(request, { kind: "manual", name: shelfName });
+    await test.step("open the book", async () => {
+      await shelfPage.openBook("Alpha");
+    });
 
-  await openShelfFromIndex(page, id);
-  await expect(page.getByTestId("shelf-empty")).toContainText(
-    "No books on this shelf yet.",
-  );
-
-  await addButton(page).click();
-  const modal = page.getByTestId("add-books-modal");
-  // The dialog names the shelf it is adding to, and can't add nothing.
-  await expect(
-    modal.getByRole("heading", { level: 2, name: shelfName }),
-  ).toBeVisible();
-  await expect(modal.getByTestId("add-books-submit")).toBeDisabled();
-
-  await modal.getByTestId("add-books-search").fill("Alpha");
-  const tile = modal.getByTestId(`picker-tile-${alpha}`);
-  // A card, not a bare cover: it names the book, so a coverless library is
-  // still pickable. The tile is a <button>, which shrink-wraps instead of
-  // stretching to its grid track — so it can take a click and still render as
-  // nothing. Assert a real box, not just a hit.
-  await expect(tile).toContainText("Alpha");
-  expect((await tile.boundingBox())?.width ?? 0).toBeGreaterThan(40);
-  await tile.click();
-  // The card reads as picked, and the submit button — the one place the count
-  // is reported — says what it will do.
-  await expect(tile).toHaveAttribute("aria-pressed", "true");
-  await expect(modal.getByTestId("add-books-submit")).toHaveText("Add 1 book");
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/shelves/add-books",
-      expectedBody: { id, book_uuids: [alpha] },
-      expectedStatus: 200,
-    },
-    async () => modal.getByTestId("add-books-submit").click(),
-  );
-
-  await expect(modal).toHaveCount(0);
-  await expect(grid(page)).toContainText("Alpha");
-});
-
-test("keeps the picker open and says so when adding fails", async ({
-  page,
-  request,
-}) => {
-  const alpha = await fetchBookUuidByTitle(request, "Alpha");
-  const id = await createShelf(request, {
-    kind: "manual",
-    name: `E2E Detail Add Fail ${Date.now()}`,
+    await test.step("check the book page shows", async () => {
+      await bookDetailPage.assertDisplayedFor(alpha);
+    });
   });
 
-  await openShelfFromIndex(page, id);
-  await page.route("**/api/rpc/shelves/add-books", (route) =>
-    route.fulfill({ status: 500, body: "boom" }),
-  );
-  await addButton(page).click();
-  const modal = page.getByTestId("add-books-modal");
-  await modal.getByTestId("add-books-search").fill("Alpha");
-  await modal.getByTestId(`picker-tile-${alpha}`).click();
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/shelves/add-books", expectedStatus: 500 },
-    async () => modal.getByTestId("add-books-submit").click(),
-  );
+  test.describe("membership", () => {
+    test("add a book to a hand-picked shelf", async ({
+      shelfPage,
+      ownShelf,
+      expectMutation,
+      request,
+    }) => {
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const shelf = await ownShelf("E2E Detail Add");
+      const picker = shelfPage.addBooksModal;
 
-  await expect(modal.getByTestId("add-books-error")).toBeVisible();
-  await expect(modal).toBeVisible();
-});
+      await test.step("open the empty shelf", async () => {
+        await shelfPage.goto(shelf.id);
+        await expect(shelfPage.emptyMessage).toContainText(
+          "No books on this shelf yet.",
+        );
+      });
 
-test("marks a book already on the shelf instead of offering it again", async ({
-  page,
-  request,
-}) => {
-  const alpha = await fetchBookUuidByTitle(request, "Alpha");
-  const id = await createShelf(request, {
-    kind: "manual",
-    name: `E2E Detail Member ${Date.now()}`,
-    book_uuids: [alpha],
+      await test.step("open the picker", async () => {
+        await shelfPage.openAddBooks();
+        await expect(picker.heading(shelf.name)).toBeVisible();
+        await expect(picker.submitButton).toBeDisabled();
+      });
+
+      await test.step("pick a book", async () => {
+        await picker.search("Alpha");
+        await expect(picker.tile(alpha)).toContainText("Alpha");
+        // A <button> shrink-wraps, so a tile can take a click and render as nothing.
+        await expect.poll(() => picker.tileWidth(alpha)).toBeGreaterThan(40);
+        await picker.pick(alpha);
+        await expect(picker.tile(alpha)).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await expect(picker.submitButton).toHaveText("Add 1 book");
+      });
+
+      await test.step("add it", async () => {
+        await expectMutation(shelves.addBooks(shelf.id, [alpha]), () =>
+          picker.submit(),
+        );
+      });
+
+      await test.step("check the shelf lists it", async () => {
+        await expect(picker.root).toHaveCount(0);
+        await expect(shelfPage.bookGrid).toContainText("Alpha");
+      });
+    });
+
+    test("keep the picker open and say so when adding fails", async ({
+      shelfPage,
+      ownShelf,
+      expectMutation,
+      request,
+    }) => {
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const shelf = await ownShelf("E2E Detail Add Fail");
+      const picker = shelfPage.addBooksModal;
+
+      await test.step("pick a book in the picker", async () => {
+        await shelfPage.goto(shelf.id);
+        await shelfPage.forceServerError(shelves.addBooks());
+        await shelfPage.openAddBooks();
+        await picker.search("Alpha");
+        await picker.pick(alpha);
+      });
+
+      await test.step("add it", async () => {
+        await expectMutation(failing(shelves.addBooks()), () =>
+          picker.submit(),
+        );
+      });
+
+      await test.step("check the picker says it failed", async () => {
+        await expect(picker.errorMessage).toBeVisible();
+        await expect(picker.root).toBeVisible();
+      });
+    });
+
+    test("mark a book already on the shelf instead of offering it again", async ({
+      shelfPage,
+      ownShelf,
+      request,
+    }) => {
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const shelf = await ownShelf("E2E Detail Member", {
+        book_uuids: [alpha],
+      });
+      const picker = shelfPage.addBooksModal;
+
+      await test.step("search the picker for the member", async () => {
+        await shelfPage.goto(shelf.id);
+        await shelfPage.openAddBooks();
+        await picker.search("Alpha");
+      });
+
+      await test.step("check the member is marked and disabled", async () => {
+        await expect(picker.tile(alpha)).toContainText("On this shelf");
+        await expect(picker.tile(alpha)).toBeDisabled();
+      });
+
+      // Inert, not merely styled: a member can't be picked into a second copy.
+      await test.step("press the member anyway", async () => {
+        await picker.pickAnyway(alpha);
+        await expect(picker.submitButton).toHaveText("Add books");
+        await expect(picker.submitButton).toBeDisabled();
+      });
+    });
+
+    test("keep Add books unavailable until the member list has loaded", async ({
+      shelfPage,
+      ownShelf,
+      request,
+    }) => {
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const shelf = await ownShelf("E2E Detail Members Unknown", {
+        book_uuids: [alpha],
+      });
+
+      // A failed fetch clears the page's books, so an ungated picker would offer members.
+      await test.step("fail the member fetch and open the shelf", async () => {
+        await shelfPage.forceServerError(shelves.page());
+        await shelfPage.goto(shelf.id);
+      });
+
+      await test.step("check Add books is inert", async () => {
+        await expect(shelfPage.addBooksButton).toBeDisabled();
+        await shelfPage.openAddBooksAnyway();
+        await expect(shelfPage.addBooksModal.root).toHaveCount(0);
+      });
+    });
+
+    test("take a book off a hand-picked shelf", async ({
+      shelfPage,
+      ownShelf,
+      expectMutation,
+      request,
+    }) => {
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const shelf = await ownShelf("E2E Detail Remove", {
+        book_uuids: [alpha],
+      });
+
+      await test.step("open the shelf", async () => {
+        await shelfPage.goto(shelf.id);
+        await expect(shelfPage.bookGrid).toContainText("Alpha");
+      });
+
+      await test.step("take the book off", async () => {
+        await expectMutation(shelves.removeBook(shelf.id, alpha), () =>
+          shelfPage.removeBook("Alpha"),
+        );
+      });
+
+      await test.step("check the shelf is empty", async () => {
+        await expect(shelfPage.emptyMessage).toBeVisible();
+      });
+    });
+
+    test("keep the book and say so when taking it off fails", async ({
+      shelfPage,
+      ownShelf,
+      expectMutation,
+      request,
+    }) => {
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const shelf = await ownShelf("E2E Detail Remove Fail", {
+        book_uuids: [alpha],
+      });
+
+      await test.step("open the shelf", async () => {
+        await shelfPage.goto(shelf.id);
+        await shelfPage.forceServerError(shelves.removeBook());
+      });
+
+      await test.step("take the book off", async () => {
+        await expectMutation(failing(shelves.removeBook()), () =>
+          shelfPage.removeBook("Alpha"),
+        );
+      });
+
+      await test.step("check the shelf says it failed", async () => {
+        await expect(shelfPage.removeError).toContainText(
+          "Couldn’t remove “Alpha”",
+        );
+        await expect(shelfPage.bookGrid).toContainText("Alpha");
+      });
+    });
   });
 
-  await openShelfFromIndex(page, id);
-  await addButton(page).click();
-  const modal = page.getByTestId("add-books-modal");
-  await modal.getByTestId("add-books-search").fill("Alpha");
-  const tile = modal.getByTestId(`picker-tile-${alpha}`);
+  test.describe("editing", () => {
+    test("rename a shelf from Edit shelf", async ({
+      shelfPage,
+      ownShelf,
+      expectMutation,
+    }) => {
+      const shelf = await ownShelf("E2E Detail Rename");
+      const renamed = `${shelf.name} (renamed)`;
+      const editor = shelfPage.editShelfModal;
 
-  await expect(tile).toContainText("On this shelf");
-  await expect(tile).toBeDisabled();
-  // Inert, not merely styled: a member can't be picked into a second copy.
-  await tile.click({ force: true });
-  await expect(modal.getByTestId("add-books-submit")).toHaveText("Add books");
-  await expect(modal.getByTestId("add-books-submit")).toBeDisabled();
-});
+      await test.step("rename it in the editor", async () => {
+        await shelfPage.goto(shelf.id);
+        await shelfPage.openEditShelf();
+        await editor.rename(renamed);
+      });
 
-test("keeps Add books unavailable until the member list has loaded", async ({
-  page,
-  request,
-}) => {
-  const alpha = await fetchBookUuidByTitle(request, "Alpha");
-  const id = await createShelf(request, {
-    kind: "manual",
-    name: `E2E Detail Members Unknown ${Date.now()}`,
-    book_uuids: [alpha],
+      await test.step("save it", async () => {
+        await expectMutation(shelves.update(), () => editor.save());
+      });
+
+      await test.step("check the title changed", async () => {
+        await expect(editor.root).toHaveCount(0);
+        await expect(shelfPage.heading(renamed)).toBeVisible();
+      });
+    });
+
+    test("keep the name and say so when a rename fails", async ({
+      shelfPage,
+      ownShelf,
+      expectMutation,
+    }) => {
+      const shelf = await ownShelf("E2E Detail Rename Fail");
+      const editor = shelfPage.editShelfModal;
+
+      await test.step("rename it in the editor", async () => {
+        await shelfPage.goto(shelf.id);
+        await shelfPage.forceServerError(shelves.update());
+        await shelfPage.openEditShelf();
+        await editor.rename(`${shelf.name} v2`);
+      });
+
+      await test.step("save it", async () => {
+        await expectMutation(failing(shelves.update()), () => editor.save());
+      });
+
+      await test.step("check the editor says it failed", async () => {
+        await expect(editor.errorMessage).toBeVisible();
+        await expect(shelfPage.heading(shelf.name)).toBeVisible();
+      });
+    });
+
+    test("turn on Kobo sync from the More menu", async ({
+      shelfPage,
+      ownShelf,
+      expectMutation,
+    }) => {
+      const shelf = await ownShelf("E2E Detail Kobo");
+
+      await test.step("open the More menu", async () => {
+        await shelfPage.goto(shelf.id);
+        await shelfPage.openMenu();
+        await expect(shelfPage.koboSyncToggle).toHaveAttribute(
+          "aria-checked",
+          "false",
+        );
+      });
+
+      await test.step("turn Sync to Kobo on", async () => {
+        await expectMutation(
+          shelves.update(shelf.id, buildShelfUpdate({ sync_to_kobo: true })),
+          () => shelfPage.toggleKoboSync(),
+        );
+      });
+
+      await test.step("check the shelf wears the Kobo badge", async () => {
+        await expect(shelfPage.koboBadge).toBeVisible();
+      });
+    });
+
+    test("delete a shelf and return to the index", async ({
+      shelfPage,
+      shelvesIndexPage,
+      shelvesRequests,
+      createdShelfIds,
+      expectMutation,
+    }) => {
+      const id = await test.step("create a shelf through the api", async () => {
+        const created = await shelvesRequests.postShelf(
+          buildShelf("E2E Detail Delete"),
+        );
+        await expect(created).toBeOK();
+        const { id }: { id: number } = await created.json();
+        createdShelfIds.add(id);
+        return id;
+      });
+
+      await test.step("ask to delete it", async () => {
+        await shelfPage.goto(id);
+        await shelfPage.openDeleteDialog();
+        await expect(shelfPage.deleteDialog).toBeVisible();
+      });
+
+      await test.step("confirm", async () => {
+        await expectMutation(shelves.delete(id), () =>
+          shelfPage.confirmDelete(),
+        );
+        createdShelfIds.delete(id);
+      });
+
+      await test.step("check the index no longer lists it", async () => {
+        await shelvesIndexPage.assertDisplayed();
+        await expect(shelvesIndexPage.shelfCard(id)).toHaveCount(0);
+      });
+    });
+
+    test("keep the shelf and say so when deleting fails", async ({
+      shelfPage,
+      ownShelf,
+      expectMutation,
+    }) => {
+      const shelf = await ownShelf("E2E Detail Delete Fail");
+
+      await test.step("ask to delete it", async () => {
+        await shelfPage.goto(shelf.id);
+        await shelfPage.forceServerError(shelves.delete());
+        await shelfPage.openDeleteDialog();
+      });
+
+      await test.step("confirm", async () => {
+        await expectMutation(failing(shelves.delete()), () =>
+          shelfPage.confirmDelete(),
+        );
+      });
+
+      await test.step("check the dialog says it failed", async () => {
+        await expect(shelfPage.deleteError).toBeVisible();
+        await expect(shelfPage.deleteConfirmButton).toBeEnabled();
+        await shelfPage.assertDisplayedFor(shelf.id);
+      });
+    });
   });
 
-  // Fail the member fetch. The page clears `books` on that path, so an
-  // ungated picker would mark nothing as "On this shelf" and offer a book the
-  // shelf already holds as though it were addable.
-  await page.route("**/api/rpc/shelves/page", (route) =>
-    route.fulfill({ status: 500, body: "boom" }),
-  );
-  await openShelfFromIndex(page, id);
+  test.describe("smart shelves", () => {
+    // "Ada Lovelace" matches the Alpha fixtures, which are read and never written.
+    const ada = smartShelfBy("Ada Lovelace");
 
-  await expect(addButton(page)).toBeDisabled();
-  // Inert, not merely styled — membership is unknown, so there is nothing
-  // honest for the picker to show.
-  await addButton(page).click({ force: true });
-  await expect(page.getByTestId("add-books-modal")).toHaveCount(0);
-});
+    test("show a smart shelf's rules", async ({ shelfPage, ownShelf }) => {
+      const shelf = await ownShelf("E2E Detail Smart", ada);
 
-test("takes a book off a hand-picked shelf", async ({ page, request }) => {
-  const alpha = await fetchBookUuidByTitle(request, "Alpha");
-  const id = await createShelf(request, {
-    kind: "manual",
-    name: `E2E Detail Remove ${Date.now()}`,
-    book_uuids: [alpha],
+      await test.step("open the shelf", async () => {
+        await shelfPage.goto(shelf.id);
+      });
+
+      await test.step("check its rules and members", async () => {
+        await expect(shelfPage.rulesSummary).toContainText(
+          "Author is Ada Lovelace",
+        );
+        // Rules fill a smart shelf, so there is nothing to add by hand.
+        await expect(shelfPage.addBooksButton).toHaveCount(0);
+        await expect(shelfPage.bookGrid).toContainText("Alpha");
+      });
+    });
+
+    test("re-sort a smart shelf's books", async ({
+      shelfPage,
+      ownShelf,
+      expectMutation,
+    }) => {
+      const shelf = await ownShelf("E2E Detail Sort", ada);
+
+      await test.step("open the shelf", async () => {
+        await shelfPage.goto(shelf.id);
+      });
+
+      await test.step("sort by title", async () => {
+        await expectMutation(shelves.page(), () => shelfPage.sortBy("title"));
+      });
+
+      await test.step("check the members still list", async () => {
+        await expect(shelfPage.bookGrid).toContainText("Alpha");
+      });
+    });
   });
 
-  await openShelfFromIndex(page, id);
-  await expect(grid(page)).toContainText("Alpha");
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/shelves/remove-book",
-      expectedBody: { id, book_uuid: alpha },
-      expectedStatus: 200,
-    },
-    async () =>
-      page
-        .getByRole("button", { name: "Remove Alpha from this shelf" })
-        .click(),
-  );
+  // The admin may change every shelf but a Wishlist; the other locks are a reader's view.
+  test.describe("access", () => {
+    test("grey out every change on a Wishlist and say why", async ({
+      shelfPage,
+      adminWishlist,
+    }) => {
+      await test.step("open the admin's own Wishlist", async () => {
+        await shelfPage.goto(adminWishlist.id);
+      });
 
-  await expect(page.getByTestId("shelf-empty")).toBeVisible();
-});
+      await test.step("check every change is greyed with a reason", async () => {
+        await expect(shelfPage.editButton).toBeDisabled();
+        await expect(shelfPage.moreButton).toBeDisabled();
+        await expect(shelfPage.addBooksButton).toHaveCount(0);
+        await expect(shelfPage.lockNote).toContainText(
+          "Your wishlist can’t be edited here.",
+        );
+        await expect(shelfPage.editButton).toHaveAttribute(
+          "aria-describedby",
+          "shd-lock-reason",
+        );
+      });
 
-test("keeps the book and says so when taking it off fails", async ({
-  page,
-  request,
-}) => {
-  const alpha = await fetchBookUuidByTitle(request, "Alpha");
-  const id = await createShelf(request, {
-    kind: "manual",
-    name: `E2E Detail Remove Fail ${Date.now()}`,
-    book_uuids: [alpha],
+      // A greyed control is inert, not merely styled.
+      await test.step("press Edit shelf anyway", async () => {
+        await shelfPage.openEditShelfAnyway();
+        await expect(shelfPage.editShelfModal.root).toHaveCount(0);
+      });
+    });
+
+    test("grey out another reader's shelf and name its owner", async ({
+      readerShelfPage,
+      ownShelf,
+    }) => {
+      const shelf = await ownShelf("E2E Detail Locked", {
+        visibility: "public",
+      });
+
+      await test.step("open the admin's public shelf as a reader", async () => {
+        await readerShelfPage.goto(shelf.id);
+      });
+
+      await test.step("check every change is greyed", async () => {
+        await expect(readerShelfPage.heading(shelf.name)).toBeVisible();
+        await expect(readerShelfPage.addBooksButton).toBeDisabled();
+        await expect(readerShelfPage.editButton).toBeDisabled();
+        await expect(readerShelfPage.moreButton).toBeDisabled();
+      });
+
+      await test.step("check the note names the owner", async () => {
+        const owner = await readerShelfPage.ownerLabel();
+        expect(owner, "the shelf names its owner").toBeTruthy();
+        await expect(readerShelfPage.lockNote).toContainText(
+          `You can’t edit this shelf — it belongs to ${owner}.`,
+        );
+      });
+
+      await test.step("press Add books anyway", async () => {
+        await readerShelfPage.openAddBooksAnyway();
+        await expect(readerShelfPage.addBooksModal.root).toHaveCount(0);
+      });
+    });
+
+    test("let an admin change another reader's shelf without explaining why", async ({
+      shelfPage,
+      ownShelf,
+      readerAccount,
+    }) => {
+      const shelf = await ownShelf("E2E Reader Shelf", {}, "reader");
+
+      await test.step("open the reader's shelf as the admin", async () => {
+        await shelfPage.goto(shelf.id);
+      });
+
+      // The hero still names the owner; only a refusal earns a note.
+      await test.step("check the admin may edit with no note", async () => {
+        await expect(shelfPage.ownerName).toHaveText(readerAccount.username);
+        await expect(shelfPage.adminNote).toHaveCount(0);
+        await expect(shelfPage.editButton).toBeEnabled();
+        await expect(shelfPage.lockNote).toHaveCount(0);
+      });
+    });
   });
-
-  await openShelfFromIndex(page, id);
-  await page.route("**/api/rpc/shelves/remove-book", (route) =>
-    route.fulfill({ status: 500, body: "boom" }),
-  );
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/shelves/remove-book",
-      expectedStatus: 500,
-    },
-    async () =>
-      page
-        .getByRole("button", { name: "Remove Alpha from this shelf" })
-        .click(),
-  );
-
-  await expect(page.getByTestId("shelf-remove-error")).toContainText(
-    "Couldn’t remove “Alpha”",
-  );
-  await expect(grid(page)).toContainText("Alpha");
-});
-
-test("renames a shelf from Edit shelf", async ({ page, request }) => {
-  const name = `E2E Detail Rename ${Date.now()}`;
-  const id = await createShelf(request, { kind: "manual", name });
-
-  await openShelfFromIndex(page, id);
-  await editButton(page).click();
-  const modal = page.getByTestId("edit-shelf-modal");
-  const renamed = `${name} (renamed)`;
-  await modal.getByTestId("edit-shelf-name").fill(renamed);
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/shelves/update", expectedStatus: 200 },
-    async () => modal.getByTestId("edit-shelf-save").click(),
-  );
-
-  await expect(modal).toHaveCount(0);
-  await expect(title(page, renamed)).toBeVisible();
-});
-
-test("keeps the name and says so when a rename fails", async ({
-  page,
-  request,
-}) => {
-  const name = `E2E Detail Rename Fail ${Date.now()}`;
-  const id = await createShelf(request, { kind: "manual", name });
-
-  await openShelfFromIndex(page, id);
-  await page.route("**/api/rpc/shelves/update", (route) =>
-    route.fulfill({ status: 500, body: "boom" }),
-  );
-  await editButton(page).click();
-  const modal = page.getByTestId("edit-shelf-modal");
-  await modal.getByTestId("edit-shelf-name").fill(`${name} v2`);
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/shelves/update", expectedStatus: 500 },
-    async () => modal.getByTestId("edit-shelf-save").click(),
-  );
-
-  await expect(modal.getByTestId("edit-shelf-error")).toBeVisible();
-  await expect(title(page, name)).toBeVisible();
-});
-
-test("turns on Kobo sync from the More menu", async ({ page, request }) => {
-  const id = await createShelf(request, {
-    kind: "manual",
-    name: `E2E Detail Kobo ${Date.now()}`,
-  });
-
-  await openShelfFromIndex(page, id);
-  await moreButton(page).click();
-  const toggle = page.getByRole("menuitemcheckbox", { name: "Sync to Kobo" });
-  await expect(toggle).toHaveAttribute("aria-checked", "false");
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/shelves/update",
-      expectedBody: {
-        id,
-        req: {
-          name: null,
-          description: null,
-          visibility: null,
-          match_mode: null,
-          rules: null,
-          sync_to_kobo: true,
-        },
-      },
-      expectedStatus: 200,
-    },
-    async () => toggle.click(),
-  );
-
-  await expect(page.getByTestId("shelf-kobo-badge")).toBeVisible();
-});
-
-test("deletes a shelf and returns to the index", async ({ page, request }) => {
-  const id = await createShelf(request, {
-    kind: "manual",
-    name: `E2E Detail Delete ${Date.now()}`,
-  });
-
-  await openShelfFromIndex(page, id);
-  await moreButton(page).click();
-  await page.getByTestId("shelf-delete").click();
-  await expect(page.getByTestId("shelf-delete-modal")).toBeVisible();
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/shelves/delete",
-      expectedBody: { id },
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("shelf-delete-confirm").click(),
-  );
-
-  await expect(page).toHaveURL(/\/shelves$/);
-  await expect(page.getByTestId(`shelf-card-${id}`)).toHaveCount(0);
-});
-
-test("keeps the shelf and says so when deleting fails", async ({
-  page,
-  request,
-}) => {
-  const name = `E2E Detail Delete Fail ${Date.now()}`;
-  const id = await createShelf(request, { kind: "manual", name });
-
-  await openShelfFromIndex(page, id);
-  await page.route("**/api/rpc/shelves/delete", (route) =>
-    route.fulfill({ status: 500, body: "boom" }),
-  );
-  await moreButton(page).click();
-  await page.getByTestId("shelf-delete").click();
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/shelves/delete", expectedStatus: 500 },
-    async () => page.getByTestId("shelf-delete-confirm").click(),
-  );
-
-  await expect(page.getByTestId("shelf-delete-error")).toBeVisible();
-  await expect(page.getByTestId("shelf-delete-confirm")).toBeEnabled();
-  await expect(page).toHaveURL(new RegExp(`/shelves/${id}$`));
-});
-
-test("shows a smart shelf's rules and re-sorts its books", async ({
-  page,
-  request,
-}) => {
-  // "Ada Lovelace" matches the Alpha fixtures — read, never written.
-  const id = await createShelf(request, {
-    kind: "smart",
-    name: `E2E Detail Smart ${Date.now()}`,
-    match_mode: "any",
-    rules: [{ field: "author", op: "is", value: "Ada Lovelace" }],
-  });
-
-  await openShelfFromIndex(page, id);
-  await expect(page.getByTestId("shelf-rules")).toContainText(
-    "Author is Ada Lovelace",
-  );
-  // Rules fill a smart shelf, so there is nothing to add by hand.
-  await expect(addButton(page)).toHaveCount(0);
-  await expect(grid(page)).toContainText("Alpha");
-
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/shelves/page", expectedStatus: 200 },
-    async () => page.getByTestId("shelf-sort").selectOption("title"),
-  );
-  await expect(grid(page)).toContainText("Alpha");
-});
-
-test("greys out every change on a Wishlist and says why", async ({
-  page,
-  request,
-}) => {
-  const id = await ownWishlistId(request);
-
-  await openShelfFromIndex(page, id);
-
-  await expect(editButton(page)).toBeDisabled();
-  await expect(moreButton(page)).toBeDisabled();
-  await expect(addButton(page)).toHaveCount(0);
-  await expect(lockNote(page)).toContainText(
-    "Your wishlist can’t be edited here.",
-  );
-  await expect(editButton(page)).toHaveAttribute(
-    "aria-describedby",
-    "shd-lock-reason",
-  );
-  // A greyed control is inert, not merely styled.
-  await editButton(page).click({ force: true });
-  await expect(page.getByTestId("edit-shelf-modal")).toHaveCount(0);
-});
-
-test("greys out another reader's shelf and names its owner", async ({
-  browser,
-  request,
-}) => {
-  const name = `E2E Detail Locked ${Date.now()}`;
-  const id = await createShelf(request, {
-    kind: "manual",
-    name,
-    visibility: "public",
-  });
-  const username = `e2e_shelf_viewer_${Date.now()}`;
-  const readerId = await createReader(request, username, READER_PASSWORD);
-  const context = await browser.newContext({
-    storageState: { cookies: [], origins: [] },
-  });
-  const page = await context.newPage();
-  try {
-    await logIn(page, username);
-    await openShelfFromIndex(page, id);
-
-    await expect(title(page, name)).toBeVisible();
-    await expect(addButton(page)).toBeDisabled();
-    await expect(editButton(page)).toBeDisabled();
-    await expect(moreButton(page)).toBeDisabled();
-    const owner = (
-      await page.getByTestId("shelf-owner-name").textContent()
-    )?.trim();
-    expect(owner, "the shelf names its owner").toBeTruthy();
-    await expect(lockNote(page)).toContainText(
-      `You can’t edit this shelf — it belongs to ${owner}.`,
-    );
-
-    await addButton(page).click({ force: true });
-    await expect(page.getByTestId("add-books-modal")).toHaveCount(0);
-  } finally {
-    await context.close();
-    await request.delete(`/api/admin/users/${readerId}`);
-  }
-});
-
-test("lets an admin change another reader's shelf without explaining why", async ({
-  page,
-  request,
-  playwright,
-  baseURL,
-}) => {
-  const username = `e2e_shelf_owner_${Date.now()}`;
-  const readerId = await createReader(request, username, READER_PASSWORD);
-  try {
-    const id = await createShelfAs(
-      playwright.request,
-      baseURL ?? "",
-      username,
-      READER_PASSWORD,
-      {
-        kind: "manual",
-        name: `E2E Reader Shelf ${Date.now()}`,
-      },
-    );
-
-    await openShelfFromIndex(page, id);
-
-    // The hero still names the owner; nothing explains why an admin *may*
-    // edit, because only a refusal earns a note.
-    await expect(page.getByTestId("shelf-owner-name")).toHaveText(username);
-    await expect(page.getByTestId("shelf-admin-note")).toHaveCount(0);
-    await expect(editButton(page)).toBeEnabled();
-    await expect(lockNote(page)).toHaveCount(0);
-  } finally {
-    await request.delete(`/api/admin/users/${readerId}`);
-  }
 });

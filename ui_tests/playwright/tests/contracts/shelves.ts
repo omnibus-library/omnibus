@@ -1,7 +1,8 @@
 import type { ExpectMutationOptions } from "../utils/api";
 
-/** The shelf endpoints the library and shelf pages post to. */
+/** The shelf endpoints the library and shelf pages call. */
 export const shelvesUrls = {
+  list: /\/api\/rpc\/shelves(?:\?|$)/,
   create: /\/api\/rpc\/shelves\/create(?:\?|$)/,
   update: /\/api\/rpc\/shelves\/update(?:\?|$)/,
   delete: /\/api\/rpc\/shelves\/delete(?:\?|$)/,
