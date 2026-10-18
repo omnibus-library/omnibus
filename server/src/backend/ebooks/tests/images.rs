@@ -15,6 +15,7 @@ use crate::request_log::tests::Sink;
 
 use super::super::images::sign_image_link;
 use super::super::*;
+use super::conditional::get_with_headers;
 use super::seed_cbz_on_disk;
 
 /// An EPUB whose first chapter shows `map.png` and whose second shows nothing,
@@ -273,6 +274,60 @@ async fn api_get_ebook_image_file_answers_if_none_match_with_304_and_same_header
         header(&second, axum::http::header::CACHE_CONTROL),
         "private, no-cache"
     );
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_answers_if_none_match_star_with_304_for_an_existing_image() {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let res = app
+        .oneshot(get_with_bearer_and_if_none_match(
+            &format!("/api/ebooks/{uuid}/images/file?href=map.png"),
+            &token,
+            "*",
+        ))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::NOT_MODIFIED);
+    assert_eq!(
+        header(&res, axum::http::header::VARY),
+        "Cookie, Authorization"
+    );
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_returns_412_for_a_stale_if_match() {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let res = app
+        .oneshot(get_with_headers(
+            &format!("/api/ebooks/{uuid}/images/file?href=map.png"),
+            &token,
+            &[(axum::http::header::IF_MATCH, "\"stale\"")],
+        ))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::PRECONDITION_FAILED);
+    assert!(to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap()
+        .is_empty());
 
     std::fs::remove_dir_all(&tmp).ok();
 }

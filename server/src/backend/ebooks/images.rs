@@ -234,10 +234,9 @@ async fn reject_bad_link(state: &AppState, uuid: &str, q: &SignedImageQuery) -> 
     (!verify_image_link(&key, uuid, &q.href, expires, sig)).then(rejected)
 }
 
-/// 404 unknown uuid, 422 no EPUB, 400 `href` not a manifest image. One open
-/// handle gives both the validator and the bytes (rule 09a); a matching
-/// `If-None-Match` answers 304 before the EPUB is parsed, since it proves this
-/// exact (file, href) was served before.
+/// 404 unknown uuid, 422 no EPUB, 400 `href` not a manifest image, then every
+/// precondition settled by [`conditional::evaluate`]. One open handle gives both
+/// the validator and the bytes (rule 09a).
 async fn serve_image(state: &AppState, uuid: &str, href: &str, headers: &HeaderMap) -> Response {
     let path = match epub_path(state, uuid).await {
         Ok(path) => path,
@@ -252,16 +251,7 @@ async fn serve_image(state: &AppState, uuid: &str, href: &str, headers: &HeaderM
         open.validator.etag.trim_matches('"'),
         conditional::content_etag(href.as_bytes()).trim_matches('"')
     );
-    if headers
-        .get(header::IF_NONE_MATCH)
-        .and_then(|v| v.to_str().ok())
-        // `*` matches any representation, so it proves nothing about this href.
-        .filter(|v| v.trim() != "*")
-        .is_some_and(|v| conditional::if_none_match_hits(v, &etag))
-    {
-        return conditional::not_modified(&etag, MEDIA_CACHE_CONTROL, MEDIA_VARY);
-    }
-
+    let last_modified = open.validator.last_modified;
     let file = open.into_std().await;
     let wanted = href.to_string();
     let read = tokio::task::spawn_blocking(move || read_image(file, &wanted)).await;
@@ -272,6 +262,20 @@ async fn serve_image(state: &AppState, uuid: &str, href: &str, headers: &HeaderM
         Ok(Err(e)) => return internal("read_image", format!("{:?}", e.to_string())),
         Err(e) => return internal("read_image", e),
     };
+    let validator = conditional::Validator {
+        etag,
+        last_modified,
+    };
+    match conditional::evaluate(headers, &validator, bytes.len() as u64) {
+        conditional::Precondition::NotModified(etag) => {
+            return conditional::not_modified(&etag, MEDIA_CACHE_CONTROL, MEDIA_VARY)
+        }
+        conditional::Precondition::Failed => {
+            return StatusCode::PRECONDITION_FAILED.into_response()
+        }
+        // The route sends no `Accept-Ranges`, so serving the full body for a `Range` is allowed.
+        conditional::Precondition::Proceed { .. } => {}
+    }
     // The manifest's media type is untrusted text; one that is not a legal header
     // value must not reach the response.
     let content_type = if HeaderValue::from_str(&media_type).is_ok() {
@@ -285,7 +289,7 @@ async fn serve_image(state: &AppState, uuid: &str, href: &str, headers: &HeaderM
             (header::CONTENT_TYPE, content_type),
             (header::CONTENT_DISPOSITION, disposition.as_str()),
             (header::CACHE_CONTROL, MEDIA_CACHE_CONTROL),
-            (header::ETAG, etag.as_str()),
+            (header::ETAG, validator.etag.as_str()),
             (header::VARY, MEDIA_VARY),
             (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
         ],
