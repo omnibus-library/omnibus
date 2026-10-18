@@ -129,6 +129,9 @@ pub fn AuthorsBrowser(routed: Option<i64>) -> Element {
     let rows_pending =
         loading() || (sort() == AuthorSort::Recent && *reading.read() == ReadingState::Pending);
     use_reveal_current_row(shown.is_some() && have_rows && !rows_pending);
+    // The layout outlives its routes, so Back to the list (or on to another
+    // author) must restore the window itself.
+    crate::scroll_restore::use_scroll_restore_on_change(routed);
 
     rsx! {
         div {

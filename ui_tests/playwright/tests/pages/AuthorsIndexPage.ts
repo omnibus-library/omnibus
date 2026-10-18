@@ -18,6 +18,8 @@ export class AuthorsIndexPage extends BasePage {
   readonly sortByCountButton: Locator;
   readonly sortByRecentButton: Locator;
   readonly readingFilterButton: Locator;
+  /** The list's own scroller, which beside an author scrolls apart from the window. */
+  readonly list: Locator;
   readonly cards: Locator;
   readonly firstCard: Locator;
   readonly firstRowBar: Locator;
@@ -34,6 +36,7 @@ export class AuthorsIndexPage extends BasePage {
     this.sortByCountButton = page.getByTestId("authors-sort-count");
     this.sortByRecentButton = page.getByTestId("authors-sort-recent");
     this.readingFilterButton = page.getByTestId("authors-reading-filter");
+    this.list = page.getByTestId("authors-list");
     this.cards = page.getByTestId("author-card");
     this.firstCard = this.cards.first();
     this.firstRowBar = page.getByTestId("author-row-bar").first();
@@ -92,6 +95,21 @@ export class AuthorsIndexPage extends BasePage {
 
   async jumpToLetter(letter: string): Promise<void> {
     await this.letterLink(letter).click();
+  }
+
+  /** How far the list's own scroller is scrolled. */
+  listScrollTop(): Promise<number> {
+    return this.list.evaluate((el) => el.scrollTop);
+  }
+
+  async scrollListToBottom(): Promise<void> {
+    await this.list.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+  }
+
+  async openCard(name: string): Promise<void> {
+    await this.card(name).click();
   }
 
   async openFirstCard(): Promise<void> {

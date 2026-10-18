@@ -47,13 +47,13 @@ test.describe("authors index", () => {
     await test.step("filter to one author and open them", async () => {
       await authorsIndexPage.goto();
       await authorsIndexPage.filterBy("Lovelace");
-      await authorsIndexPage.openFirstCard();
+      await authorsIndexPage.openCard("Ada Lovelace");
     });
 
     await test.step("check the pane changed and the list stayed", async () => {
       await expect(authorPage.heading).toHaveText("Ada Lovelace");
       await expect(authorsIndexPage.filterField).toHaveValue("Lovelace");
-      await expect(authorsIndexPage.firstCard).toHaveAttribute(
+      await expect(authorsIndexPage.card("Ada Lovelace")).toHaveAttribute(
         "aria-current",
         "page",
       );
