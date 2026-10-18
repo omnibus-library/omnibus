@@ -1,0 +1,25 @@
+.app-shell {
+  width: 100%;
+}
+.app-shell > main {
+  padding: 0 clamp(1.25rem, 4vw, 3.5rem);
+}
+@media (max-width: 720px) {
+  .app-shell > main {
+    padding-bottom: calc(62px + env(safe-area-inset-bottom) + 12px);
+  }
+}
+.app-shell:has(> main > .ld-page) {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.app-shell:has(> main > .ld-page) > main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.app-shell > main > .ld-page {
+  flex: 1;
+  min-height: 0;
+}

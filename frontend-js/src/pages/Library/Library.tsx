@@ -1,10 +1,13 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
-import { type Book, fetchBookPage, thumbSrcSet, thumbUrl } from "../api";
-import { BusyLabel, Cover } from "../atrium";
+import { type Book, fetchBookPage, thumbSrcSet, thumbUrl } from "../../api";
+import { Button } from "../../components/Button/Button";
+import { Cover } from "../../components/Cover/Cover";
+import { BusyLabel, CoverSkeletons } from "../../components/Loading/Loading";
+import { PageError } from "../../components/PageState/PageState";
+import "./Library.css";
 
 const TILE_SIZES = "(max-width: 640px) 160px, (max-width: 1280px) 200px, 240px";
-const SKELETON_CELLS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
 // The entrance cascade: 40ms steps, wrapping every eight tiles.
 const staggerMs = (index: number) => (index % 8) * 40;
@@ -32,23 +35,6 @@ function Tile({ book, index }: { book: Book; index: number }) {
         )}
       </span>
     </Link>
-  );
-}
-
-function Skeletons() {
-  return (
-    <div className="lib-loading" role="status" aria-live="polite">
-      <span className="ld-sr">Taking the books off the shelf</span>
-      <div className="ld-covers" aria-hidden="true">
-        {SKELETON_CELLS.map((i) => (
-          <div key={i} className="ld-covers-cell">
-            <span className="ld-skel cover" style={{ "--i": i }} />
-            <span className="ld-skel line" style={{ "--i": i }} />
-            <span className="ld-skel line" style={{ "--i": i }} />
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -95,11 +81,16 @@ export function Library() {
       </header>
       <div className="lib-layout lib-layout--collapsed">
         <div className="lib-main lib-books">
-          {pages.status === "pending" && <Skeletons />}
+          {pages.status === "pending" && (
+            <div className="lib-loading" role="status" aria-live="polite">
+              <span className="ld-sr">Taking the books off the shelf</span>
+              <CoverSkeletons />
+            </div>
+          )}
           {pages.status === "error" && (
-            <p className="library-empty" role="alert">
-              Couldn't load the library: {pages.error.message}
-            </p>
+            <PageError
+              message={`Couldn't load the library: ${pages.error.message}`}
+            />
           )}
           {pages.status === "success" && books.length === 0 && (
             <p className="library-empty">
@@ -115,9 +106,8 @@ export function Library() {
           )}
           {pages.hasNextPage && (
             <div className="lib-load-more-row">
-              <button
-                type="button"
-                className="btn lib-load-more"
+              <Button
+                className="lib-load-more"
                 onClick={() => pages.fetchNextPage()}
                 disabled={pages.isFetchingNextPage}
                 aria-busy={pages.isFetchingNextPage}
@@ -127,7 +117,7 @@ export function Library() {
                   label="Load more"
                   busyLabel="Loading more…"
                 />
-              </button>
+              </Button>
             </div>
           )}
         </div>

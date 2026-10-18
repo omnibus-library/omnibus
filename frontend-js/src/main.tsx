@@ -1,16 +1,13 @@
-import "../../frontend/assets/atrium.css";
-import "../../frontend/assets/loading.css";
+import "./styles/theme.css";
+import "./styles/base.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { createBrowserRouter, RouterProvider } from "react-router";
-import { AtriumRoot } from "./atrium";
-import { BookDetail } from "./pages/BookDetail";
-import { Library } from "./pages/Library";
-import { Login } from "./pages/Login";
-import { RequireAuth } from "./session";
+import { RouterProvider } from "react-router";
+import { AtriumRoot } from "./components/Theme/AtriumRoot";
+import { router } from "./router";
 
-// loading.css stops a cover's glint on img[data-loaded]; the Dioxus BootScript
+// Loading.css stops a cover's glint on img[data-loaded]; the Dioxus BootScript
 // stamps it the same way, from a capture-phase listener.
 document.addEventListener(
   "load",
@@ -21,17 +18,6 @@ document.addEventListener(
   },
   true,
 );
-
-const router = createBrowserRouter([
-  { path: "/login", element: <Login /> },
-  {
-    element: <RequireAuth />,
-    children: [
-      { path: "/", element: <Library /> },
-      { path: "/books/:uuid", element: <BookDetail /> },
-    ],
-  },
-]);
 
 const root = document.getElementById("root");
 if (!root) throw new Error("index.html has no #root element");

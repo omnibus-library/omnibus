@@ -7,14 +7,32 @@ one iOS and MCP already use — and changes nothing in Rust.
 Covers three screens: sign-in (cookie session), the library grid (keyset pages
 from `GET /api/ebooks`, thumbnails from `/api/thumbs`), and book detail.
 
-## Styling is the Dioxus app's own
+## Layout
 
-`src/main.tsx` imports `frontend/assets/atrium.css` and `loading.css` in place,
-not copies, so both clients draw from one stylesheet. The components render the
-Dioxus markup and class names (`auth-shell-*`, `atrium-topbar`, `lib-grid` /
-`lib-tile`, `cover tpl-plate`, `bdmq-*`) and wear the `.atrium[data-theme]`
-wrapper the theme tokens resolve against. Porting a screen means matching its
-markup, not restyling it.
+| Path | Holds |
+|---|---|
+| `src/styles/` | `theme.css` (tokens, the four themes, the `.atrium` root) and `base.css` |
+| `src/components/<Name>/` | shared building blocks, each `<Name>.tsx` beside its `<Name>.css` |
+| `src/layouts/` | `RequireAuth` (the session gate) and `AppShell` (top bar + page) |
+| `src/pages/<Name>/` | one folder per route, its CSS beside it |
+| `src/api.ts` | every REST call, parsed at the boundary with zod |
+| `tools/extract-atrium.cjs` | copies Atrium rules into component CSS when a screen is ported |
+
+A component imports its own CSS last, after its dependencies, so shared rules
+load before the screens that override them.
+
+## Styling, copied out of Atrium
+
+Each CSS file holds only the `atrium.css` and `loading.css` rules its markup can
+match, copied by `tools/extract-atrium.cjs` — 1,282 of Atrium's 13,178 lines.
+The components keep the Dioxus class names, which is what lets the copy apply
+unchanged: computed styles and screenshots of all three screens match the
+`atrium.css` build exactly.
+
+To port a screen: write its markup with the Dioxus class names, map its class
+prefix to its CSS file in the script's `OWNERS`, then run
+`node tools/extract-atrium.cjs --write` (it only creates missing files) and
+`pnpm exec biome check --write .`.
 
 ## Run it
 
@@ -43,8 +61,8 @@ and `pnpm exec vite build` are the gates.
 | Cold build | 80s server + 50s wasm client | 3s install + 1s `vite build` |
 | After a UI file edit | 16s server + 8s wasm, before wasm-bindgen and bundling | Vite hot reload (not timed; dev server ready in 168ms) |
 | After a `db/` edit | 17s | unchanged: still a Rust rebuild |
-| Shipped JS | wasm bundle (not measured) | 448 KB, 137 KB gzipped |
-| Shipped CSS | the same `atrium.css` + `loading.css` | 351 KB, 63 KB gzipped |
+| Shipped JS | wasm bundle (not measured) | 452 KB, 139 KB gzipped |
+| Shipped CSS | all of `atrium.css` + `loading.css` | 36 KB, 9 KB gzipped |
 
 Measured on one 16-core Linux box, dev profile, no sccache.
 

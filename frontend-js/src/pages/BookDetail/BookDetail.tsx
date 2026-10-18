@@ -7,31 +7,32 @@ import {
   type BookDetail as Detail,
   fetchBook,
   parseBookUuid,
-} from "../api";
-import { Cover, PageLoader } from "../atrium";
-import { descriptionOverflows, homeKicker } from "../format";
-
-function NotFound() {
-  return <p className="library-empty">No book has that id.</p>;
-}
+} from "../../api";
+import { Button } from "../../components/Button/Button";
+import { Chip } from "../../components/Chip/Chip";
+import { Cover } from "../../components/Cover/Cover";
+import { Loading } from "../../components/Loading/Loading";
+import { PageError, PageNotFound } from "../../components/PageState/PageState";
+import { descriptionOverflows, homeKicker } from "../../format";
+import "./BookDetail.css";
 
 type ChipRowProps = {
   label: string;
   listClass: string;
-  chipClass: string;
+  tone: "plain" | "genre";
   values: string[];
 };
 
-function ChipRow({ label, listClass, chipClass, values }: ChipRowProps) {
+function ChipRow({ label, listClass, tone, values }: ChipRowProps) {
   if (values.length === 0) return null;
   return (
     <div className="bd-chip-row">
       <span className="label bd-chip-row-label">{label}</span>
       <ul className={listClass}>
         {values.map((value) => (
-          <li key={value} className={chipClass}>
+          <Chip key={value} tone={tone}>
             {value}
-          </li>
+          </Chip>
         ))}
       </ul>
     </div>
@@ -51,15 +52,16 @@ function Description({ book }: { book: Detail }) {
         dangerouslySetInnerHTML={{ __html: book.description }}
       />
       {descriptionOverflows(book.description) && (
-        <button
-          type="button"
-          className="btn ghost sm bdmq-desc-toggle"
+        <Button
+          variant="ghost"
+          size="sm"
+          className="bdmq-desc-toggle"
           aria-expanded={open}
           aria-controls={id}
           onClick={() => setOpen(!open)}
         >
           {open ? "Show less" : "Show more"}
-        </button>
+        </Button>
       )}
     </>
   );
@@ -97,13 +99,13 @@ function Marquee({ book }: { book: Detail }) {
                 <ChipRow
                   label="Genres"
                   listClass="bd-tag-list bd-genre-list"
-                  chipClass="chip chip-genre"
+                  tone="genre"
                   values={book.genres}
                 />
                 <ChipRow
                   label="Tags"
                   listClass="bd-tag-list"
-                  chipClass="chip"
+                  tone="plain"
                   values={book.subjects}
                 />
               </div>
@@ -123,15 +125,17 @@ function BookDetailFor({ uuid }: { uuid: BookUuid }) {
   });
   switch (book.status) {
     case "pending":
-      return <PageLoader label="Taking it off the shelf" />;
+      return <Loading kind="page" label="Taking it off the shelf" />;
     case "error":
       return (
-        <p className="library-empty" role="alert">
-          Couldn't load the book: {book.error.message}
-        </p>
+        <PageError message={`Couldn't load the book: ${book.error.message}`} />
       );
     case "success":
-      return book.data ? <Marquee book={book.data} /> : <NotFound />;
+      return book.data ? (
+        <Marquee book={book.data} />
+      ) : (
+        <PageNotFound subject="Book" />
+      );
     default: {
       const _exhaustive: never = book;
       return _exhaustive;
@@ -141,5 +145,5 @@ function BookDetailFor({ uuid }: { uuid: BookUuid }) {
 
 export function BookDetail() {
   const uuid = parseBookUuid(useParams().uuid);
-  return uuid ? <BookDetailFor uuid={uuid} /> : <NotFound />;
+  return uuid ? <BookDetailFor uuid={uuid} /> : <PageNotFound subject="Book" />;
 }
