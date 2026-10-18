@@ -57,11 +57,16 @@ pub(crate) fn SettingsShell(
     }
 }
 
-/// A labelled run of sidebar links; `label` is omitted for an ungrouped list.
+/// A labelled run of sidebar links; `label` is omitted for an ungrouped list,
+/// and `divided` rules it off from the groups above.
 #[component]
-pub(crate) fn NavGroup(label: Option<&'static str>, children: Element) -> Element {
+pub(crate) fn NavGroup(
+    label: Option<&'static str>,
+    #[props(default)] divided: bool,
+    children: Element,
+) -> Element {
     rsx! {
-        div { class: "settings-nav-group",
+        div { class: if divided { "settings-nav-group divided" } else { "settings-nav-group" },
             if let Some(label) = label {
                 div { class: "settings-nav-group-label", "{label}" }
             }

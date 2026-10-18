@@ -138,7 +138,7 @@ fn PersonalNav(active: SettingsSection, is_admin: bool) -> Element {
             }
         }
         if is_admin {
-            NavGroup {
+            NavGroup { divided: true,
                 NavItem {
                     to: Route::Admin { section: None },
                     label: "Administration",

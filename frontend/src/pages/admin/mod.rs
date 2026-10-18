@@ -84,7 +84,7 @@ mod page {
             NavGroup { label: "Server",
                 for section in server.iter().copied() { {item(section)} }
             }
-            NavGroup {
+            NavGroup { divided: true,
                 NavItem {
                     to: Route::Settings { section: None },
                     label: "Your settings",

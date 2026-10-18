@@ -118,3 +118,13 @@ fn admin_page_waits_while_the_reader_is_unresolved() {
     assert!(!html.contains("admin-forbidden"), "{html}");
     assert!(!html.contains("users-card"), "{html}");
 }
+
+#[test]
+fn admin_page_sets_the_way_back_to_settings_apart() {
+    let html = render_in_vdom(|| rsx! { Router::<PeopleRoute> {} });
+    let divided = html
+        .find(r#"class="settings-nav-group divided""#)
+        .expect("a divided group");
+    assert!(divided < html.find("admin-nav-settings").unwrap(), "{html}");
+    assert!(html.find("admin-nav-logs").unwrap() < divided, "{html}");
+}

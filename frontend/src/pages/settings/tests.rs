@@ -96,3 +96,12 @@ fn settings_page_waits_on_a_legacy_slug_instead_of_rendering_a_section() {
     assert!(html.contains("settings-redirecting"), "{html}");
     assert!(!html.contains("settings-layout"), "{html}");
 }
+
+#[test]
+fn settings_page_sets_the_administration_link_apart() {
+    let html = render_in_vdom(|| rsx! { Router::<AdminReaderRoute> {} });
+    let divided = html
+        .find(r#"class="settings-nav-group divided""#)
+        .expect("a divided group");
+    assert!(divided < html.find("settings-nav-admin").unwrap(), "{html}");
+}
