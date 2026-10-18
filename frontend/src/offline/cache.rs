@@ -94,6 +94,10 @@ pub mod keys {
     pub fn authors() -> String {
         "authors".into()
     }
+    /// `GET /api/authors/reading`.
+    pub fn author_reading() -> String {
+        "author_reading".into()
+    }
     /// `GET /api/authors/{id}`.
     pub fn author(id: i64) -> String {
         format!("author:{id}")

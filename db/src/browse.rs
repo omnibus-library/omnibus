@@ -228,5 +228,9 @@ fn map_series_row(r: &sqlx::sqlite::SqliteRow) -> SeriesSummary {
     }
 }
 
+mod reading;
+
+pub use reading::{author_reading, book_reading, book_uuids};
+
 #[cfg(test)]
 mod tests;

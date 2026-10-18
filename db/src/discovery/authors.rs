@@ -71,6 +71,7 @@ async fn load_author(
         book_count: usize::try_from(book_count).unwrap_or(0),
         books,
         has_photo,
+        reading: Vec::new(),
     }))
 }
 
