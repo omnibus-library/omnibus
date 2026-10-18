@@ -119,7 +119,7 @@ test.describe("add-books sheet (phone viewport)", () => {
     });
 
     await test.step("check the desktop nav leaves out add books", async () => {
-      await tabBar.widenToDesktop();
+      await readerLibraryPage.resizeViewport({ width: 1280, height: 800 });
       await expect(topNav.checkInButton).toBeVisible();
       await expect(topNav.addBooksButton).toHaveCount(0);
     });

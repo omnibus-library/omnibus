@@ -1,4 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
+import { setRange } from "../utils/dom";
 import { BaseComponent } from "./BaseComponent";
 
 /** The audio player docked along the bottom of the page while a book plays. */
@@ -115,16 +116,7 @@ export class MiniDockComponent extends BaseComponent {
   }
 
   async setVolume(volume: number): Promise<void> {
-    await this.volumeSlider.evaluate((el, value) => {
-      const input = el as HTMLInputElement;
-      input.value = String(value);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    }, volume);
-  }
-
-  /** Narrows the window below the breakpoint where the dock sheds its secondary controls. */
-  async narrowViewport(): Promise<void> {
-    await this.page.setViewportSize({ width: 700, height: 800 });
+    await setRange(this.volumeSlider, volume);
   }
 
   /** The speed the chip shows. */

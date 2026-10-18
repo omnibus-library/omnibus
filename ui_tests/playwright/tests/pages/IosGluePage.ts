@@ -10,6 +10,7 @@ import type {
   SelectionPayload,
   Settled,
 } from "../data/iosGlue";
+import { nextFrame } from "../utils/dom";
 import { BasePage } from "./BasePage";
 
 const GLUE_ORIGIN = "http://ios-glue.test";
@@ -124,11 +125,6 @@ export class IosGluePage extends BasePage {
     );
   }
 
-  /** Resizes the host window; the stage is that less 10px a side. */
-  async resizeWindow(size: { width: number; height: number }): Promise<void> {
-    await this.page.setViewportSize(size);
-  }
-
   /** The host's page-turn entry point. */
   async next(): Promise<void> {
     await this.page.evaluate(() =>
@@ -215,7 +211,7 @@ export class IosGluePage extends BasePage {
         touchPoints: at(dx),
       });
       // A drag offset lands in a rAF callback, so a frame must run per move.
-      await this.nextFrame();
+      await nextFrame(this.page);
     }
     const midSwipe = (await this.sectionPosition()).offset;
     await cdp.send("Input.dispatchTouchEvent", {
@@ -375,12 +371,5 @@ export class IosGluePage extends BasePage {
     const match = /translate3d\((-?[\d.]+)px/.exec(offset);
     if (!match?.[1]) throw new Error(`no offset in "${offset}"`);
     return -Number(match[1]);
-  }
-
-  private async nextFrame(): Promise<void> {
-    await this.page.evaluate(
-      () =>
-        new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
-    );
   }
 }

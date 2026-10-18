@@ -65,7 +65,7 @@ test.describe("user menu", () => {
     });
 
     await test.step("click outside the menu", async () => {
-      await topNav.closeUserMenuByClickingOutside();
+      await topNav.clickOutside();
       await expect(topNav.signOutButton).toHaveCount(0);
       await expect(topNav.userMenuButton).toHaveAttribute(
         "aria-expanded",

@@ -16,8 +16,4 @@ export class TabBarComponent extends BaseComponent {
   async openAddBooksSheet(): Promise<void> {
     await this.centerActionButton.click();
   }
-
-  async widenToDesktop(): Promise<void> {
-    await this.page.setViewportSize({ width: 1280, height: 800 });
-  }
 }

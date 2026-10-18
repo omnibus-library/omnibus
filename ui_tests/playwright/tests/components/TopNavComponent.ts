@@ -33,7 +33,6 @@ export class TopNavComponent extends BaseComponent {
   readonly progressErrorMessage: Locator;
   readonly notificationsText: Locator;
   readonly serverHealthText: Locator;
-  readonly themeRoot: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -63,7 +62,6 @@ export class TopNavComponent extends BaseComponent {
     this.progressErrorMessage = page.getByRole("alert");
     this.notificationsText = this.userMenuPanel.getByText("Notifications");
     this.serverHealthText = this.userMenuPanel.getByText("Server health");
-    this.themeRoot = page.locator("div.atrium").first();
   }
 
   async openLibrary(): Promise<void> {
@@ -122,16 +120,6 @@ export class TopNavComponent extends BaseComponent {
   async closeUserMenuWithEscape(): Promise<void> {
     // Pressed on the panel itself so it cannot race the focus the menu takes on mount.
     await this.userMenuPanel.press("Escape");
-  }
-
-  async closeUserMenuByClickingOutside(): Promise<void> {
-    // A viewport point, not the scrim's box: the topbar's backdrop-filter shrinks a fixed scrim to the header strip.
-    await this.page.mouse.click(40, 500);
-  }
-
-  /** The theme the browser persisted, which the next load applies. */
-  storedTheme(): Promise<string | null> {
-    return this.page.evaluate(() => window.localStorage.getItem("omn.theme"));
   }
 
   /** Answers the menu's resume feed with `points` instead of the reader's own. */

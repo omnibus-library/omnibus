@@ -12,7 +12,11 @@ export abstract class BasePage {
   /** Bounds `open`'s wait for `readyLocator`, in ms; unset keeps the default. */
   protected readonly readyTimeout?: number;
 
-  constructor(readonly page: Page) {}
+  readonly themeRoot: Locator;
+
+  constructor(readonly page: Page) {
+    this.themeRoot = page.locator("div.atrium").first();
+  }
 
   protected abstract get readyLocator(): Locator;
 
@@ -62,6 +66,16 @@ export abstract class BasePage {
   /** Stores the theme before every load of this page, as if chosen earlier. */
   async presetTheme(theme: Theme | "sepia"): Promise<void> {
     await this.presetLocalStorage("omn.theme", theme);
+  }
+
+  /** The theme the browser persisted, which the next load applies. */
+  storedTheme(): Promise<string | null> {
+    return this.page.evaluate(() => window.localStorage.getItem("omn.theme"));
+  }
+
+  /** Resizes the window, which the page's breakpoints react to. */
+  async resizeViewport(size: { width: number; height: number }): Promise<void> {
+    await this.page.setViewportSize(size);
   }
 
   protected async presetLocalStorage(

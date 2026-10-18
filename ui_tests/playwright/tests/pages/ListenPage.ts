@@ -6,6 +6,7 @@ import { crossFormatUrls } from "../contracts/crossFormat";
 import { playbackUrls } from "../contracts/playback";
 import { expect } from "../fixtures/test";
 import { holdRequests } from "../utils/api";
+import { nextFrame, setRange } from "../utils/dom";
 import { BasePage } from "./BasePage";
 
 /** What the shared `<audio>` element reports, with `position` in book time across parts. */
@@ -160,7 +161,7 @@ export class ListenPage extends BasePage {
    * the dock survive it where a `goto` would remount the app and drop them.
    */
   async browseToLibrary(): Promise<void> {
-    await this.topNav.libraryLink.click();
+    await this.topNav.openLibrary();
     await this.page.waitForURL(/\/$/);
   }
 
@@ -216,37 +217,19 @@ export class ListenPage extends BasePage {
   }
 
   async setVolume(volume: number): Promise<void> {
-    await this.volumeSlider.evaluate((el, value) => {
-      const input = el as HTMLInputElement;
-      input.value = String(value);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    }, volume);
+    await setRange(this.volumeSlider, volume);
   }
 
   /** Drags the scrubber, which previews the position without seeking, and lets two frames pass. */
   async previewSeek(seconds: number): Promise<void> {
-    await this.seekSlider.evaluate((el, value) => {
-      const input = el as HTMLInputElement;
-      input.value = String(value);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    }, seconds);
+    await setRange(this.seekSlider, seconds);
     // Without the frames, a (wrong) async seek could land after the caller's read.
-    await this.page.evaluate(
-      () =>
-        new Promise<void>((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-        ),
-    );
+    await nextFrame(this.page, 2);
   }
 
   /** Releases the scrubber at `seconds`, which is what seeks and saves the position. */
   async releaseSeek(seconds: number): Promise<void> {
-    await this.seekSlider.evaluate((el, value) => {
-      const input = el as HTMLInputElement;
-      input.value = String(value);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-    }, seconds);
+    await setRange(this.seekSlider, seconds, { commit: true });
   }
 
   /** Seeks through the shim call a user's seek takes. */
@@ -384,12 +367,9 @@ export class ListenPage extends BasePage {
     bookUuid: string,
     rate: number,
   ): Promise<void> {
-    await this.page.addInitScript(
-      ({ key, value }) => localStorage.setItem(key, value),
-      {
-        key: `omn.listening.rate::${userId}::${bookUuid}`,
-        value: String(rate),
-      },
+    await this.presetLocalStorage(
+      `omn.listening.rate::${userId}::${bookUuid}`,
+      String(rate),
     );
   }
 

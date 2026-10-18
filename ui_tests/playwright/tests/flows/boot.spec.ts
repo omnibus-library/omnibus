@@ -73,7 +73,7 @@ test.describe("pre-hydration page", () => {
     // normally applies the saved theme is still held.
     await test.step("check the page wears the theme", async () => {
       await expect(preHydration.hydratedMarker).toHaveCount(0);
-      await expect(libraryPage.topNav.themeRoot).toHaveAttribute(
+      await expect(libraryPage.themeRoot).toHaveAttribute(
         "data-theme",
         "sepia",
       );
@@ -81,7 +81,7 @@ test.describe("pre-hydration page", () => {
 
     await test.step("release the download", async () => {
       await release();
-      await expect(libraryPage.topNav.themeRoot).toHaveAttribute(
+      await expect(libraryPage.themeRoot).toHaveAttribute(
         "data-theme",
         "sepia",
       );

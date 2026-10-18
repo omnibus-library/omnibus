@@ -1,4 +1,5 @@
 import type { CDPSession, Locator, Page } from "@playwright/test";
+import { nextFrame } from "../utils/dom";
 import { BaseComponent } from "./BaseComponent";
 
 type TouchPoint = { x: number; y: number; id: number };
@@ -67,7 +68,7 @@ export class ReaderGesturesComponent extends BaseComponent {
     await touch(cdp, "touchStart", [finger(0)]);
     for (const dx of [-20, -45, -70]) {
       await touch(cdp, "touchMove", [finger(dx)]);
-      await this.nextFrame();
+      await nextFrame(this.page);
     }
   }
 
@@ -135,14 +136,6 @@ export class ReaderGesturesComponent extends BaseComponent {
     const box = await this.topBar.boundingBox();
     if (!box) throw new Error("reader-top has no bounding box");
     return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-  }
-
-  /** Lets one animation frame run. Not a sleep: it resolves on the frame. */
-  private async nextFrame(): Promise<void> {
-    await this.page.evaluate(
-      () =>
-        new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
-    );
   }
 }
 

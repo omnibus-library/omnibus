@@ -129,10 +129,6 @@ export class EpubReaderPage extends BasePage {
     await this.displayPanelButton.click();
   }
 
-  async resizeViewport(size: { width: number; height: number }): Promise<void> {
-    await this.page.setViewportSize(size);
-  }
-
   async turnPage(): Promise<void> {
     await this.nextPageButton.click();
   }

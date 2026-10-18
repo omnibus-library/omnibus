@@ -70,7 +70,7 @@ test.describe("ios reader glue: the two-page threshold", () => {
       });
 
       await test.step("widen the window to the threshold", async () => {
-        await iosGluePage.resizeWindow({ width: 920, height: 700 });
+        await iosGluePage.resizeViewport({ width: 920, height: 700 });
       });
 
       await test.step("check the columns pair", async () => {

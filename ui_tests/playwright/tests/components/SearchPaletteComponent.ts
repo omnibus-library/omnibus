@@ -99,9 +99,4 @@ export class SearchPaletteComponent extends BaseComponent {
   async closeWithEscape(): Promise<void> {
     await this.page.keyboard.press("Escape");
   }
-
-  async closeByClickingOutside(): Promise<void> {
-    // A viewport point, not the scrim's box: the topbar's backdrop-filter shrinks a fixed scrim to the header strip.
-    await this.page.mouse.click(40, 500);
-  }
 }

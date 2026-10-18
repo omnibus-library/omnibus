@@ -338,7 +338,7 @@ test.describe("mini-dock", () => {
     });
 
     await test.step("narrow the window", async () => {
-      await miniDock.narrowViewport();
+      await listenPage.resizeViewport({ width: 700, height: 800 });
     });
 
     // Chapter jumps, ±30 seeks, volume, speed and sleep disappear below the
