@@ -7,9 +7,11 @@
 use axum::{body::to_bytes, http::StatusCode};
 use omnibus_shared::{BookImage, BookImageLink, BookImageList, BookImageReference};
 use tower::ServiceExt;
+use tracing_subscriber::layer::SubscriberExt;
 
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::*;
+use crate::request_log::tests::Sink;
 
 use super::super::images::sign_image_link;
 use super::super::*;
@@ -330,6 +332,41 @@ async fn api_get_ebook_image_file_falls_back_to_octet_stream_when_the_media_type
         "application/octet-stream"
     );
     assert!(res.headers().get("x-injected").is_none());
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_logs_a_read_failure_as_one_quoted_string() {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, b"not an epub").await;
+    let sink = Sink::default();
+    let subscriber = tracing_subscriber::registry().with(
+        tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_writer(sink.clone()),
+    );
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/ebooks/{uuid}/images/file?href=map.png"),
+            &token,
+        ))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let text = sink.text();
+    let line = text
+        .lines()
+        .find(|l| l.contains("internal server error"))
+        .unwrap_or_else(|| panic!("no internal error logged in {text}"));
+    // Debug-quoted, so a newline in the error is escaped rather than starting a new log line.
+    assert!(line.contains("error=\""), "{line}");
 
     std::fs::remove_dir_all(&tmp).ok();
 }

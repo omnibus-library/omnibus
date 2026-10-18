@@ -266,7 +266,8 @@ async fn serve_image(state: &AppState, uuid: &str, href: &str, headers: &HeaderM
     let (media_type, bytes) = match read {
         Ok(Ok(Some(image))) => image,
         Ok(Ok(None)) => return (StatusCode::BAD_REQUEST, NOT_AN_IMAGE).into_response(),
-        Ok(Err(e)) => return internal("read_image", e),
+        // Debug-quoted so a newline in a manifest href cannot forge a log line.
+        Ok(Err(e)) => return internal("read_image", format!("{:?}", e.to_string())),
         Err(e) => return internal("read_image", e),
     };
     // The manifest's media type is untrusted text; one that is not a legal header
