@@ -357,6 +357,7 @@ test.describe("shelves on the library page", () => {
       await test.step("check the editor says it failed", async () => {
         await expect(editor.errorMessage).toBeVisible();
         await expect(libraryPage.sectionTitle).toContainText(shelf.name);
+        await expect(libraryPage.sectionTitle).not.toContainText("v2");
       });
     });
   });

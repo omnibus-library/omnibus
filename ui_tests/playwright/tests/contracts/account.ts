@@ -50,7 +50,8 @@ export const account = {
       status,
     ),
 
-  profile: (displayName?: string): ExpectMutationOptions =>
+  /** A null name is the clear. */
+  profile: (displayName?: string | null): ExpectMutationOptions =>
     post(
       accountUrls.profile,
       displayName === undefined ? undefined : { display_name: displayName },

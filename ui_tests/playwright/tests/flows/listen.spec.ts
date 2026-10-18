@@ -274,7 +274,8 @@ test.describe("listen page", () => {
         await expect(listenPage.speedButton).toHaveText("1.80×");
       });
 
-      await test.step("reload", async () => {
+      await test.step("reload with the server's own saved speed", async () => {
+        await listenPage.restoreSavedSpeedReads();
         await listenPage.reload();
         await listenPage.waitUntilPlayerReady();
         await expect(listenPage.speedButton).toHaveText("1.80×");

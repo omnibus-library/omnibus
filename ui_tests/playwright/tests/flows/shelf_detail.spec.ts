@@ -295,6 +295,7 @@ test.describe("shelf page", () => {
       await test.step("check the editor says it failed", async () => {
         await expect(editor.errorMessage).toBeVisible();
         await expect(shelfPage.heading(shelf.name)).toBeVisible();
+        await expect(shelfPage.heading(`${shelf.name} v2`)).toHaveCount(0);
       });
     });
 

@@ -395,6 +395,11 @@ export class ListenPage extends BasePage {
     );
   }
 
+  /** Lets the saved-speed read reach the server again after `stubNoSavedSpeed`. */
+  async restoreSavedSpeedReads(): Promise<void> {
+    await this.page.unroute(playbackUrls.savedRate);
+  }
+
   /** Answers the speed write with success without storing it, for tests that only read the display. */
   async stubPlaybackRateSaved(): Promise<void> {
     await this.page.route(playbackUrls.rate, (route) =>

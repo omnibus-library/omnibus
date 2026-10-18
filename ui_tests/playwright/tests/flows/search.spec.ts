@@ -82,7 +82,7 @@ test.describe("search from the palette", () => {
 
     await test.step("search for part of an author's name", async () => {
       await libraryPage.goto();
-      await palette.search("shakespeare");
+      await palette.search("shakesp");
     });
 
     await test.step("check an author matches", async () => {

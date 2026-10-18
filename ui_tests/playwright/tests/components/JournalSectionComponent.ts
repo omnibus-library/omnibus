@@ -25,6 +25,7 @@ export class JournalSectionComponent extends BaseComponent {
   readonly insertHighlightButton: Locator;
   readonly highlightsPopover: Locator;
   private readonly previewToggle: Locator;
+  private readonly writeTab: Locator;
   readonly previewBold: Locator;
   readonly autosavedNote: Locator;
   private readonly imageInput: Locator;
@@ -54,6 +55,7 @@ export class JournalSectionComponent extends BaseComponent {
     this.insertHighlightButton = page.getByTestId("journal-insert-highlight");
     this.highlightsPopover = page.getByTestId("journal-highlights-pop");
     this.previewToggle = page.getByTestId("journal-preview-toggle");
+    this.writeTab = page.getByText("Write", { exact: true });
     this.previewBold = page.getByTestId("journal-preview").locator("strong");
     this.autosavedNote = page.getByTestId("journal-autosaved");
     this.imageInput = page.getByTestId("journal-image-input").first();
@@ -174,6 +176,11 @@ export class JournalSectionComponent extends BaseComponent {
 
   async togglePreview(): Promise<void> {
     await this.clickAndAwait(this.previewToggle, journalsUrls.preview);
+  }
+
+  /** Leaves the preview for the editor, which the preview hides. */
+  async showEditor(): Promise<void> {
+    await this.writeTab.click();
   }
 
   /** Picks `png` in the toolbar's file input, which uploads it. */

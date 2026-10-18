@@ -101,7 +101,8 @@ export class StatsPage extends BasePage {
     this.inProgress = page.getByTestId("stats-in-progress");
     this.emptyState = page.getByTestId("stats-empty");
     this.noActivityMessage = page.getByText("No reading activity yet");
-    this.failureMessage = page.getByRole("alert");
+    // The page body only: the nav's menus raise alerts of their own.
+    this.failureMessage = page.getByRole("main").getByRole("alert");
     this.backToYourStatsLink = page.getByRole("link", {
       name: "Back to your stats",
     });

@@ -237,6 +237,14 @@ test.describe("ios reader page curl", () => {
     }) => {
       const before = await iosGluePage.sectionPosition();
 
+      await test.step("tell the glue the host curls the next page", async () => {
+        await iosGluePage.setCurlReady({ on: true, next: true, prev: false });
+      });
+
+      await test.step("swipe left and leave it to the host", async () => {
+        expect(await iosGluePage.swipeLeft(), "the glue drew no drag").toBe("");
+      });
+
       await test.step("tell the glue the host curls no page", async () => {
         await iosGluePage.setCurlReady({ on: true, next: false, prev: false });
       });
@@ -339,6 +347,19 @@ test.describe("ios reader page curl", () => {
       }) => {
         const before = await iosGluePage.sectionPosition();
 
+        await test.step("tell the glue the host is curling", async () => {
+          await iosGluePage.setCurlReady({
+            on: true,
+            next: false,
+            prev: false,
+          });
+        });
+
+        await test.step("tap the forward gutter and leave it to the host", async () => {
+          await iosGluePage.tapNextGutter();
+          await expect.poll(() => iosGluePage.turnRequests()).toEqual(["1"]);
+        });
+
         await test.step("tell the glue the host is not curling", async () => {
           await iosGluePage.setCurlReady({
             on: false,
@@ -351,11 +372,11 @@ test.describe("ios reader page curl", () => {
           await iosGluePage.tapNextGutter();
         });
 
-        await test.step("check the glue slid to the next page and asked the host for nothing", async () => {
+        await test.step("check the glue slid to the next page and asked the host for nothing more", async () => {
           await expect
             .poll(async () => (await iosGluePage.sectionPosition()).scroll)
             .toBeGreaterThan(before.scroll);
-          expect(await iosGluePage.turnRequests()).toEqual([]);
+          expect(await iosGluePage.turnRequests()).toEqual(["1"]);
         });
       });
     });

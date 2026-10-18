@@ -157,6 +157,11 @@ test.describe("book journal", () => {
         await expect(journal.previewBold).toHaveText("bold preview");
       });
 
+      await test.step("switch back to the editor", async () => {
+        await journal.showEditor();
+        await expect(journal.editor).toBeVisible();
+      });
+
       await test.step("discard the draft", async () => {
         await journal.assertAutosaved();
         await expectMutation(journals.delete(), () => journal.discardDraft());

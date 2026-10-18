@@ -102,7 +102,7 @@ export class BookDetailPage extends BasePage {
     this.syncLink = new SyncLinkComponent(page);
     this.alignmentModal = new AlignmentModalComponent(page);
     this.titleHeading = page.getByRole("heading", { level: 1 });
-    this.readButton = page.getByTestId("action-read");
+    this.readButton = this.formats.epubRow.getByTestId("action-read");
     // The labels change with reading progress, so the row is found by test id.
     this.startReadingButton = page.getByTestId("start-reading");
     this.startReadingComicButton = page.getByTestId("start-reading-comic");

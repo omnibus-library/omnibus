@@ -3,9 +3,9 @@ import { BaseComponent } from "./BaseComponent";
 
 /**
  * The metadata edit form with its cover controls and save bar, shared by the
- * edit page and the add-books review. Its fields are found by id because the
- * edition picker's own Title field and its "Copy X from Y" buttons answer to
- * the same labels while it is open.
+ * edit page and the add-books review. Its fields are found by label within
+ * their own wrappers, since the edition picker mounts inside the form with a
+ * Title field and "Copy X from Y" buttons that answer to the same labels.
  */
 export class MetadataFormComponent extends BaseComponent {
   readonly titleField: Locator;
@@ -40,15 +40,17 @@ export class MetadataFormComponent extends BaseComponent {
 
   constructor(page: Page) {
     super(page);
-    this.titleField = page.locator("#me-title");
-    this.publisherField = page.locator("#me-publisher");
-    this.publishedField = page.locator("#me-published");
-    this.seriesField = page.locator("#me-series");
-    this.bookNumberField = page.locator("#me-book--");
-    this.isbn13Field = page.locator("#me-isbn-13");
-    this.isbn10Field = page.locator("#me-isbn-10");
-    this.printPagesField = page.locator("#me-print-pages");
-    this.descriptionField = page.locator("#me-description");
+    const fields = page.locator(".me-form .me-field");
+    this.titleField = fields.getByLabel("Title");
+    this.publisherField = fields.getByLabel("Publisher");
+    this.publishedField = fields.getByLabel("Published");
+    // Not exact: an edited field's label gains an "EDITED" badge.
+    this.seriesField = fields.getByLabel("Series");
+    this.bookNumberField = fields.getByLabel("Book #");
+    this.isbn13Field = fields.getByLabel("ISBN-13");
+    this.isbn10Field = fields.getByLabel("ISBN-10");
+    this.printPagesField = fields.getByLabel("Print Pages");
+    this.descriptionField = fields.getByLabel("Description");
 
     this.authorChips = page.locator(".me-chip-item");
     this.authorsInput = page.getByTestId("me-authors-input");

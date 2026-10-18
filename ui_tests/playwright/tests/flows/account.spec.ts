@@ -583,6 +583,13 @@ test.describe("profile", () => {
       await settingsPage.topNav.openUserMenu();
       await expect(settingsPage.topNav.userMenuPanel).toContainText("Seamus");
     });
+
+    await test.step("clear the name", async () => {
+      await settingsPage.topNav.closeUserMenuWithEscape();
+      await expectMutation(account.profile(null), () =>
+        section.saveDisplayName(""),
+      );
+    });
   });
 
   test("show an error status when saving the display name fails", async ({
@@ -1008,6 +1015,7 @@ test.describe("share stats", () => {
 
     await test.step("check it survives a reload", async () => {
       await settingsPage.reload();
+      await expect(section.shareStatsSwitch).toBeEnabled();
       await expect(section.shareStatsSwitch).not.toBeChecked();
     });
   });

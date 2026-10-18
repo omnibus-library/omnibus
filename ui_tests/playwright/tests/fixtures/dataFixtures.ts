@@ -363,6 +363,8 @@ export const test = base.extend<DataFixtures>({
             async () => (await mergeRequests.postUndo(mergeLogId)).status(),
             {
               message: `undo merge ${mergeLogId}`,
+              timeout: 30_000,
+              intervals: [200, 500, 1_000],
             },
           )
           .toBe(200);

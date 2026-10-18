@@ -183,8 +183,22 @@ test.describe("worker status indicator", () => {
   test("dismiss a finished scan", async ({ adminPage }) => {
     const { workerStatus } = adminPage;
 
-    await test.step("open the maintenance section after a scan", async () => {
+    await test.step("open the maintenance section during a scan", async () => {
       await workerStatus.stubStatus({
+        active: [
+          buildScanTask({
+            task_id: 3,
+            state: { state: "running", processed: 0, total: null },
+          }),
+        ],
+        recent_complete: [],
+      });
+      await adminPage.goto("maintenance");
+      await expect(workerStatus.indicator).toContainText("Scanning library");
+    });
+
+    await test.step("let the scan finish", async () => {
+      workerStatus.changeStatus({
         active: [],
         recent_complete: [
           buildScanTask({
@@ -194,8 +208,9 @@ test.describe("worker status indicator", () => {
           }),
         ],
       });
-      await adminPage.goto("maintenance");
-      await expect(workerStatus.indicator).toContainText("Library scan");
+      await expect(workerStatus.indicator).toContainText("Library scan", {
+        timeout: 3_500,
+      });
     });
 
     await test.step("dismiss the finished row", async () => {

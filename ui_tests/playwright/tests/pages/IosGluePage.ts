@@ -105,6 +105,8 @@ export class IosGluePage extends BasePage {
     }, options);
     await this.page.waitForFunction(
       () => (window as unknown as GlueWindow).glueStatus === "ready",
+      undefined,
+      { timeout: 15_000 },
     );
   }
 

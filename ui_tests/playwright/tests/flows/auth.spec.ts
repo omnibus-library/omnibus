@@ -84,7 +84,7 @@ test.describe("login page", () => {
         /username or password/i,
       );
       await expect(loginPage.errorBanner).not.toContainText("401");
-      await loginPage.assertDisplayed();
+      await loginPage.assertRedirectedHere();
     });
   });
 

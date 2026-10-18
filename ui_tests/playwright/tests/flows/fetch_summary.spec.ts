@@ -16,19 +16,9 @@ const SUMMARY =
   "A sufficiently long mocked summary with more than ten words to enrich the book.";
 
 test.describe("fetch summary", () => {
-  // The target starts sparse with an empty editor field, whatever a prior run
-  // or manual test left behind.
-  test.beforeAll(
-    "seed the library with the target sparse",
-    async ({ request, overridesRequests }) => {
-      await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-      await expect(
-        await overridesRequests.deleteOverrides(uuid),
-        "clear the overrides",
-      ).toBeOK();
-    },
-  );
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+  });
 
   test("fetch a summary from the detail page and hide the button", async ({
     bookDetailPage,

@@ -926,6 +926,14 @@ test.describe("book detail page", () => {
           "Couldn't save — try again",
         );
       });
+
+      await test.step("mark it unread once saves work again", async () => {
+        await bookDetailPage.stopForcingServerError(readStatus.set());
+        await expectMutation(readStatus.set(), () =>
+          readStatusControl.markUnread(),
+        );
+        await expect(readStatusControl.meta).toHaveText("Not started");
+      });
     });
   });
 
@@ -1016,6 +1024,7 @@ test.describe("book detail page", () => {
       request,
       expectMutation,
       highlightOn,
+      seededHighlightIds,
     }) => {
       const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
 
@@ -1039,6 +1048,13 @@ test.describe("book detail page", () => {
       // The row is only dropped once the server confirms.
       await test.step("check the card is still listed", async () => {
         await expect(card.root).toHaveCount(1);
+      });
+
+      await test.step("delete it once deletes work again", async () => {
+        await bookDetailPage.stopForcingServerError(highlights.delete());
+        await expectMutation(highlights.delete(), () => card.delete());
+        seededHighlightIds.delete(passage.id);
+        await expect(card.root).toHaveCount(0);
       });
     });
 
