@@ -40,15 +40,42 @@ impl SyncDelta {
 }
 
 /// Compute what `device_id` still needs, given `user_id`'s opted-in books.
-/// **Read-only**: [`record_synced`] advances the snapshot once the entitlements
-/// are written to the response, so a device that drops the connection mid-body
-/// sees the same delta again rather than silently losing books.
+/// This plain delta is read-only. [`record_synced`] advances the snapshot once the entitlements
+/// are written to the response, so a device that drops the connection mid-body sees the same
+/// delta again. [`fresh_sync_delta`] writes only a resend mark, so its dropped body replays too.
 pub async fn sync_delta(
     pool: &SqlitePool,
     user_id: i64,
     device_id: i64,
 ) -> Result<SyncDelta, KoboError> {
+    delta(pool, user_id, device_id, false).await
+}
+
+/// [`sync_delta`] for a device that may hold any library, so every still-synced book comes back
+/// as new. It marks those books to resend until [`record_synced`] lands them, so a dropped body
+/// or a later page still sends them, and a removal the device is owed still goes out.
+pub async fn fresh_sync_delta(
+    pool: &SqlitePool,
+    user_id: i64,
+    device_id: i64,
+) -> Result<SyncDelta, KoboError> {
+    delta(pool, user_id, device_id, true).await
+}
+
+async fn delta(
+    pool: &SqlitePool,
+    user_id: i64,
+    device_id: i64,
+    fresh: bool,
+) -> Result<SyncDelta, KoboError> {
     let wanted = sync_books(pool, user_id).await?;
+    if fresh {
+        // Committed, so page 2 of a continue loop (the plain path) still finds them marked.
+        let uuids: Vec<&str> = wanted.iter().map(|b| b.uuid.as_str()).collect();
+        let mut tx = pool.begin().await?;
+        mark_resend(&mut tx, device_id, &uuids).await?;
+        tx.commit().await?;
+    }
     let held = held_snapshot(pool, device_id).await?;
     let wanted_uuid_list: Vec<String> = wanted.iter().map(|b| b.uuid.clone()).collect();
     let states = super::reading_state_for(pool, user_id, &wanted_uuid_list).await?;
@@ -56,7 +83,7 @@ pub async fn sync_delta(
     let mut changes = Vec::new();
     for book in &wanted {
         match held.get(&book.uuid) {
-            None => changes.push(SyncChange::New(book.clone())),
+            None | Some(Held { resend: true, .. }) => changes.push(SyncChange::New(book.clone())),
             Some(h) if book.last_modified_epoch > h.last_modified_seen => {
                 changes.push(SyncChange::Changed(book.clone()));
             }
@@ -99,8 +126,8 @@ const UPSERT_CHUNK_SIZE: usize = 300;
 const UUID_CHUNK_SIZE: usize = 900;
 
 /// Advance the device's snapshot to match `changes`: upsert the adds and
-/// changes at the `last_modified` they were sent at, drop the removals. Call
-/// only after the response body is committed to; see [`sync_delta`].
+/// changes at the `last_modified` they were sent at, clearing any resend mark, and drop the
+/// removals. Call only after the response body is committed to; see [`sync_delta`].
 pub async fn record_synced(
     pool: &SqlitePool,
     device_id: i64,
@@ -149,7 +176,8 @@ async fn upsert_synced(
              VALUES {rows}
              ON CONFLICT(device_id, book_uuid) DO UPDATE SET
                 last_modified_seen = excluded.last_modified_seen,
-                synced_at          = excluded.synced_at"
+                synced_at          = excluded.synced_at,
+                resend             = 0"
         );
         let mut q = sqlx::query(&sql);
         for book in chunk {
@@ -187,8 +215,32 @@ async fn touch_state_changed(
     Ok(())
 }
 
-/// Drop every `kobo_books_sync` row for a book no longer opted in, chunked to
-/// stay under SQLite's bound-parameter limit.
+/// Mark the device's rows for `uuids` to resend as new, chunked to stay under SQLite's
+/// bound-parameter limit. [`upsert_synced`] clears the mark.
+async fn mark_resend(
+    tx: &mut Transaction<'_, Sqlite>,
+    device_id: i64,
+    uuids: &[&str],
+) -> Result<(), KoboError> {
+    for chunk in uuids.chunks(UUID_CHUNK_SIZE) {
+        let placeholders = std::iter::repeat_n("?", chunk.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "UPDATE kobo_books_sync SET resend = 1
+              WHERE device_id = ? AND book_uuid IN ({placeholders})"
+        );
+        let mut q = sqlx::query(&sql).bind(device_id);
+        for uuid in chunk {
+            q = q.bind(*uuid);
+        }
+        q.execute(&mut **tx).await?;
+    }
+    Ok(())
+}
+
+/// Drop the device's `kobo_books_sync` rows for `uuids`, chunked to stay under
+/// SQLite's bound-parameter limit.
 async fn delete_removed(
     tx: &mut Transaction<'_, Sqlite>,
     device_id: i64,
@@ -210,22 +262,14 @@ async fn delete_removed(
     Ok(())
 }
 
-/// Forget everything a device is holding, so its next sync re-sends the whole
-/// opted-in set. Used when a device is re-registered or its token rotated.
-pub async fn clear_snapshot(pool: &SqlitePool, device_id: i64) -> Result<(), KoboError> {
-    sqlx::query("DELETE FROM kobo_books_sync WHERE device_id = ?")
-        .bind(device_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 /// What a device already holds for one book.
 struct Held {
     last_modified_seen: i64,
     /// When this row was last sent — the watermark a state change is newer
     /// than, since reading state carries no `last_modified` of its own.
     synced_at: i64,
+    /// Set by a fresh sync until `record_synced` lands the book again.
+    resend: bool,
 }
 
 /// `book_uuid -> Held` for everything the device holds.
@@ -234,7 +278,7 @@ async fn held_snapshot(
     device_id: i64,
 ) -> Result<std::collections::BTreeMap<String, Held>, KoboError> {
     let rows = sqlx::query(
-        "SELECT book_uuid, last_modified_seen, synced_at
+        "SELECT book_uuid, last_modified_seen, synced_at, resend
            FROM kobo_books_sync WHERE device_id = ?",
     )
     .bind(device_id)
@@ -247,6 +291,7 @@ async fn held_snapshot(
             Held {
                 last_modified_seen: row.try_get("last_modified_seen")?,
                 synced_at: row.try_get("synced_at")?,
+                resend: row.try_get("resend")?,
             },
         );
     }

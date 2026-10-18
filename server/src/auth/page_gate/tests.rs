@@ -96,6 +96,15 @@ async fn require_page_session_percent_encodes_the_query_into_next() {
 }
 
 #[tokio::test]
+async fn require_page_session_redirects_a_signed_out_admin_visit_to_login() {
+    let (app, _pool) = app().await;
+    assert_redirects_to(
+        &get(&app, "/admin?section=people").await,
+        "/login?next=%2Fadmin%3Fsection%3Dpeople",
+    );
+}
+
+#[tokio::test]
 async fn require_page_session_marks_the_redirect_uncacheable() {
     let (app, _pool) = app().await;
     let res = get(&app, "/stats").await;

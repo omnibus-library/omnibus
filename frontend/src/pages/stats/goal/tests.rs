@@ -147,18 +147,6 @@ mod render_tests {
         HalfDailyHost {},
     }
 
-    #[derive(Clone, Debug, PartialEq, Routable)]
-    enum ReadOnlyUnsetRingRoute {
-        #[route("/")]
-        ReadOnlyUnsetRingHost {},
-    }
-
-    #[derive(Clone, Debug, PartialEq, Routable)]
-    enum ReadOnlyNoDailyRoute {
-        #[route("/")]
-        ReadOnlyNoDailyHost {},
-    }
-
     #[component]
     fn SetRingHost() -> Element {
         rsx! {
@@ -202,35 +190,6 @@ mod render_tests {
     }
 
     #[component]
-    fn ReadOnlyUnsetRingHost() -> Element {
-        rsx! {
-            AnnualGoalRing {
-                goal: None,
-                finished: Some(22),
-                year: "2026".to_string(),
-                as_of_day: "2026-07-02".to_string(),
-                editable: false,
-            }
-        }
-    }
-
-    #[component]
-    fn ReadOnlyNoDailyHost() -> Element {
-        rsx! {
-            DailyGoalsCard {
-                daily: DailyGoals {
-                    pages: None,
-                    minutes: None,
-                    unzoned_seconds: 0,
-                    pages_today: Some(47),
-                    minutes_today: Some(0),
-                },
-                editable: false,
-            }
-        }
-    }
-
-    #[component]
     fn HalfDailyHost() -> Element {
         rsx! {
             DailyGoalsCard {
@@ -245,10 +204,10 @@ mod render_tests {
         }
     }
 
-    /// The stats page reports goals and never edits them: all three are set
-    /// together in Settings → Account, so no editor may reappear here.
+    /// The cluster only reports. The hero's one goals link is the way to
+    /// change them, so neither card carries a control of its own.
     #[test]
-    fn the_goal_cluster_offers_no_editor_only_a_link_to_the_one_that_exists() {
+    fn the_goal_cluster_reports_goals_with_no_control_of_its_own() {
         let set = render_in_vdom(|| rsx! { Router::<SetRingRoute> {} });
         assert!(set.contains("stats-goal-progress"), "{set}");
         assert!(set.contains("19 of 30 books"), "{set}");
@@ -256,7 +215,12 @@ mod render_tests {
         // only has to say which span it describes.
         assert!(set.contains("This year"), "{set}");
         assert!(!set.contains("so far"), "{set}");
-        for gone in ["stats-goal-edit", "stats-goal-input", "stats-goal-save"] {
+        for gone in [
+            "stats-goal-edit",
+            "stats-goal-input",
+            "stats-goal-save",
+            "stats-goal-set-link",
+        ] {
             assert!(!set.contains(gone), "editor leaked back in ({gone}): {set}");
         }
 
@@ -269,13 +233,8 @@ mod render_tests {
         assert!(unset.contains("22"), "{unset}");
         assert!(unset.contains("2026 so far"), "{unset}");
         assert!(!unset.contains("This year"), "{unset}");
-        assert!(unset.contains("stats-goal-set-link"), "{unset}");
         assert!(!unset.contains("stats-goal-progress"), "{unset}");
-        // Goals live in the Account section, so the link has to open it.
-        assert!(
-            unset.contains(r#"href="/settings?section=account""#),
-            "{unset}"
-        );
+        assert!(!unset.contains("stats-goal-set-link"), "{unset}");
     }
 
     /// With no target the row still shows today's figure — the number a
@@ -303,12 +262,7 @@ mod render_tests {
         assert!(html.contains(">Minutes<"), "{html}");
         assert!(!html.contains("Pages a day"), "{html}");
         assert!(!html.contains("Pages today"), "{html}");
-        // One short call to action for the card, not one per row.
-        assert_eq!(html.matches("stats-daily-set-link").count(), 1, "{html}");
-        assert!(
-            html.contains(r#"href="/settings?section=account""#),
-            "{html}"
-        );
+        assert!(!html.contains("stats-daily-set-link"), "{html}");
         // Every session is placeable on the reader's own day now, so there is
         // no disclosure left to draw — not even for the non-zero figure an
         // older server would still send.
@@ -329,26 +283,5 @@ mod render_tests {
         // untargeted row carries its own timeframe — and only it does.
         assert!(html.contains(">Minutes today<"), "{html}");
         assert!(html.contains(">Pages a day<"), "{html}");
-        // And the card still offers the one place to finish setting up.
-        assert!(html.contains("stats-daily-set-link"), "{html}");
-    }
-
-    /// Viewing another reader's page: the figure still shows (their goals
-    /// follow the selection), but the Settings link goes — there's nowhere on
-    /// this page to change someone else's targets.
-    #[test]
-    fn a_read_only_annual_ring_reports_the_year_to_date_figure_with_no_link() {
-        let html = render_in_vdom(|| rsx! { Router::<ReadOnlyUnsetRingRoute> {} });
-        assert!(html.contains("stats-goal-year-to-date"), "{html}");
-        assert!(html.contains("22"), "{html}");
-        assert!(!html.contains("stats-goal-set-link"), "{html}");
-    }
-
-    #[test]
-    fn a_read_only_daily_card_reports_todays_figures_with_no_link() {
-        let html = render_in_vdom(|| rsx! { Router::<ReadOnlyNoDailyRoute> {} });
-        assert!(html.contains("stats-daily-pages-today"), "{html}");
-        assert!(html.contains("47"), "{html}");
-        assert!(!html.contains("stats-daily-set-link"), "{html}");
     }
 }

@@ -1,7 +1,8 @@
 //! Grouped results list rendered inside the palette panel — books,
-//! authors, series, tags, and genres. Each row component owns its click
-//! handler that closes the palette and routes into the matching detail
-//! page (or `/search` for tag and genre facets).
+//! authors, series, tags, genres, and settings. Each row component owns its
+//! click handler that closes the palette and routes into the matching detail
+//! page (or `/search` for tag and genre facets, a settings section for a
+//! setting).
 
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
@@ -12,6 +13,9 @@ use omnibus_shared::{
 
 use super::model::{facet_query, is_selected, plural, FlatItem};
 use super::PaletteOpen;
+use crate::components::glyphs::{server_glyph, sliders_glyph};
+use crate::pages::{SettingsEntry, SettingsTarget};
+use crate::routes::link_target;
 use crate::{use_server_url, Route};
 
 /// Build a row click handler that navigates to `route` and closes the palette.
@@ -33,6 +37,7 @@ fn navigate_and_close(
 #[component]
 pub(super) fn SpResultsList(
     results: Signal<Option<PaletteResults>>,
+    settings: Memo<Vec<&'static SettingsEntry>>,
     flat_items: Memo<Vec<FlatItem>>,
     selected: Signal<usize>,
     has_navigated: Signal<bool>,
@@ -109,6 +114,23 @@ pub(super) fn SpResultsList(
                             selected: has_nav && is_selected(&items, sel, &FlatItem::Genre { name: genre.name.clone() }),
                             on_click: navigate_and_close(nav, open, Route::Search { query: facet_query("genre", &genre.name) }),
                         }
+                    }
+                }
+            }
+
+            // Matched on the client, so outside the server-results guard.
+            if !settings.read().is_empty() {
+                SpGroupHead { label: "Settings", count: settings.read().len() }
+                for entry in settings.read().iter().copied() {
+                    SpSettingRow {
+                        key: "{entry.label}",
+                        entry,
+                        selected: has_nav && is_selected(&items, sel, &FlatItem::Setting(entry)),
+                        on_click: move |_| {
+                            nav.push(link_target(entry.target.route()));
+                            let mut open = open;
+                            open.0.set(false);
+                        },
                     }
                 }
             }
@@ -320,6 +342,37 @@ fn SpGenreRow(
     }
 }
 
+/// A setting row, its name over where it lives ("Settings › Preferences").
+#[component]
+fn SpSettingRow(
+    entry: &'static SettingsEntry,
+    selected: bool,
+    on_click: EventHandler<MouseEvent>,
+) -> Element {
+    let sel_class = if selected {
+        "sp-row selected"
+    } else {
+        "sp-row"
+    };
+    let glyph = match entry.target {
+        SettingsTarget::Personal(_) => sliders_glyph(16),
+        SettingsTarget::Admin(..) => server_glyph(16),
+    };
+
+    rsx! {
+        div {
+            class: "{sel_class}",
+            "data-testid": "sp-setting-row",
+            onclick: move |evt| on_click.call(evt),
+            div { class: "sp-avatar", {glyph} }
+            div { class: "sp-row-body",
+                div { class: "sp-row-title", "{entry.label}" }
+                div { class: "sp-row-sub", {entry.target.place()} }
+            }
+        }
+    }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────
 
 /// The year shown in a palette book row, gated through the shared sentinel
@@ -340,46 +393,4 @@ fn book_thumb_url(server_url: &str, book: &PaletteBookHit) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::super::model::build_flat_items;
-    use super::*;
-
-    #[test]
-    fn book_thumb_url_uses_uuid_not_id() {
-        let book = PaletteBookHit {
-            id: 99,
-            uuid: "abc-def-uuid".to_string(),
-            title: "Test Book".to_string(),
-            ..PaletteBookHit::default()
-        };
-        // On the (non-mobile) test build the URL is relative — same-origin,
-        // cookie-authed. Mobile prefixes the server base + `?token=`.
-        let url = book_thumb_url("http://localhost:3000", &book);
-        assert_eq!(url, "/api/thumbs/abc-def-uuid/sm");
-        // Guard: the integer id must never appear in the thumb URL.
-        assert!(
-            !url.contains("99"),
-            "thumb URL must not contain the numeric id"
-        );
-    }
-
-    #[test]
-    fn build_flat_items_is_empty_when_results_are_none() {
-        let items = build_flat_items(&None);
-        assert!(items.is_empty());
-    }
-
-    #[test]
-    fn palette_row_year_suppresses_the_calibre_sentinel() {
-        // `year` arrives pre-extracted as the four-digit string, so the
-        // sentinel reaches the palette as "0101" rather than a full date.
-        assert_eq!(palette_row_year(Some("0101")), "");
-        assert_eq!(palette_row_year(Some("0101-01-01T00:00:00+00:00")), "");
-        assert_eq!(palette_row_year(None), "");
-    }
-
-    #[test]
-    fn palette_row_year_keeps_a_real_year() {
-        assert_eq!(palette_row_year(Some("2016")), "2016");
-    }
-}
+mod tests;

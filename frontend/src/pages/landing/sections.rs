@@ -17,6 +17,7 @@ use crate::components::loading::{CoverSkeletons, RowSkeletons};
 use crate::components::shelf_facets::pencil_glyph;
 use crate::components::shelf_glyphs::plus_icon;
 use crate::components::{BusyLabel, ShelfFacets, ShelfList};
+use crate::pages::admin::sections::AdminSection;
 use crate::shelf_selection::ShelfSelection;
 
 /// Header banner fields sourced from the page's derived view state.
@@ -47,6 +48,8 @@ pub(super) struct LandingHeaderView {
     pub stack: StackToggleView,
     /// The viewer's shelves — the filter bar names its shelf chips from them.
     pub shelves: ShelfList,
+    /// The pick is All Books, the one view hidden formats narrow.
+    pub hidden_formats_apply: bool,
 }
 
 /// The shelf lens's Add books control: absent unless the pick is a
@@ -108,6 +111,7 @@ pub(super) fn LandingHeader(
         sort_lock,
         stack,
         shelves,
+        hidden_formats_apply,
     } = view;
     rsx! {
         header { class: "lib-header", "data-testid": "lib-header",
@@ -131,6 +135,7 @@ pub(super) fn LandingHeader(
                     shelves,
                     sort_lock,
                     stack,
+                    hidden_formats_apply,
                     on_change: move |next: ViewPrefs| on_prefs_change.call(next),
                     on_stack_toggle,
                 }
@@ -231,7 +236,7 @@ fn LandingHeaderMessages(
     rsx! {
         if path_missing {
             p { class: "lib-header-hint",
-                "Configure your ebook library path in Settings."
+                "Configure your ebook library path in {AdminSection::Sources.place()}."
             }
         }
         if let Some(msg) = page_error.as_ref() {

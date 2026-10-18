@@ -1,0 +1,6 @@
+# Refuse versions published in the last 14 days (minutes).
+minimumReleaseAge: 20160
+allowBuilds:
+  esbuild: true
+  # Only copies the worker script; `msw init .storybook/public` does that here.
+  msw: false

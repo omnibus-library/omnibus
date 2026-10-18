@@ -1,3 +1,6 @@
+---
+paths: "ui_tests/**"
+---
 # 04a — Playwright per-surface selectors
 
 Companion to [04-playwright.md](04-playwright.md), which owns the toolchain
@@ -62,8 +65,10 @@ pill, and no `.bdmq-next` cue — and the snapped marquee, `#bdmq-snap` with
 `.bdmq-sec` screens. Only one exists in the DOM at a time, so a spec asserting
 either must set the preference first with the `setScrollStops(enabled, owner?)`
 fixture, which turns it back off afterwards (`"reader"` for the worker reader
-whose Settings switch a test then flips); the dot rail (`bdmq-dots`, six rows)
-is the one control common to both.
+whose Settings switch a test then flips). Two controls are common to both: the
+dot rail (`bdmq-dots`, six rows, nothing else in its box) and the
+`bdmq-mode-toggle` switch in the stage's top-right corner, which flips the
+preference in place and has no `aria-pressed` until the viewer resolves.
 
 **"From the same hand" has three states, not two.** The author block fetches
 after the page renders, so `from-same-hand-loading` (a quiet note, no count)
@@ -143,36 +148,8 @@ record that no `/api/ebooks/*/cover` request fires. `me-discard` is a button
 ("Start over") here rather than the edit page's link. No spec commits a real
 upload: the library is shared and a filed book is visible to every other spec.
 
-**The stats period pills are not a menu, and half the page is not behind
-them.** `/stats` splits on the windowed / standing boundary: the Week / Month /
-Year / Lifetime pills (`stats-range-week` … `stats-range-all_time`) live in the
-"In this window" band's own sticky header and govern that band alone. There is
-no `role="dialog"` period menu and no `stats-range-trigger` — a spec that opens
-one is asserting a control that no longer exists. Consequences:
-
-- **The hero and the standing band must not move on a switch.** The streak,
-  both goals, the heatmap, the open-books list and the trailing-12 chart are
-  standing figures; `stats.spec.ts` pins that with a before/after `textContent`
-  comparison, the redesign's load-bearing assertion.
-- **The library figures are behind a scope tab**, not below the fold —
-  `stats-scope-tab-library` has to be clicked before `stats-library-size` or
-  `stats-library-composition` exist in the DOM at all.
-- **Lifetime drops every tile comparison.** `PeriodComparison` is `Default` for
-  `AllTime`, so a delta drawn against it would report a reader's whole history
-  as new; `stats-tile-*-delta` is absent there by design, not missing.
-- **The page reports goals but never edits them.** All three are set together
-  in Settings → Account (`account.spec.ts`, serial: one set of goal rows);
-  `stats.spec.ts` asserts only that the editors stay gone and the read-only
-  states render.
-- **An unset goal is not an empty state.** With no target the surface drops the
-  ring and the bar but still reports the real figure (`stats-goal-today`,
-  `stats-daily-{kind}-today`), so a spec asserting "no goal" must look for
-  those, not an invite; `*-invite` renders only when the server sent no figure.
-- **The household reader picker's options are in the DOM even while the menu
-  is closed** — only `hidden` keeps them offscreen — so a spec asserting one
-  is gone (sharing turned off) needs `toHaveCount(0)`, not a visibility check.
-  Options are `stats-reader-option-you` / `stats-reader-option-<id>`, and
-  `/api/rpc/stats` bodies carry `user_id` (`null` on the caller's own page).
+**The stats page** (period pills, the standing band, goals and household
+sharing) is covered in [04e-playwright-stats.md](04e-playwright-stats.md).
 
 **The PDF reader has no ready testid; the text layer is not an element you
 click.** `/pdf/:uuid` renders its chrome on SSR (`pdf-back`, `pdf-fit-*`,
@@ -194,6 +171,21 @@ the reader root closes them. Every turn POSTs `/api/rpc/progress` with
 ready report is treated as already saved) but does write read status `reading`
 on an unread book — pre-set `flatland` to `reading` in `beforeAll` (the comic
 spec's pattern) or assert that write.
+
+**Settings and Administration are one shell, two routes.** `/settings?section=`
+holds the five personal sections (`settings-nav-<slug>`), `/admin?section=`
+the eight server ones (`admin-nav-<slug>`); pre-split slugs redirect, so a spec
+opens the new URL directly. Three things trip specs:
+
+- **Under 720px the list and the section never share the screen.** With no
+  `?section=` only the sidebar renders; with one, only the section and its
+  `settings-back` link. A narrow spec names the section in the URL.
+- **A sidebar click over unsaved edits doesn't navigate.** It opens
+  `unsaved-confirm` (`unsaved-keep` / `unsaved-discard`).
+- **Preferences has no Save button.** Each switch saves on change and reports
+  in `{slug}-status`; hidden formats is a `fieldset` (`getByRole("group")`) of
+  `hidden-format-toggle-<fmt>` that POSTs on every change, and All Books shows
+  `lib-hidden-formats` only while the viewer hides one.
 
 **The filter bar and what reads its saved filter** (chips, the Add filter
 dialog, the shelf lens and `/shelves/:id` states) have their own file:

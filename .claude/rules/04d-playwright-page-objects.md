@@ -1,3 +1,6 @@
+---
+paths: "ui_tests/**"
+---
 # 04d — Playwright page objects
 
 Companion to [04-playwright.md](04-playwright.md), which owns the toolchain

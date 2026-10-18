@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use dioxus::prelude::*;
 use omnibus_shared::StatsSummary;
 
-use super::goal::{AnnualGoalRing, DailyGoalsCard};
+use super::goal::{AnnualGoalRing, DailyGoalsCard, GoalsLink};
 use super::heatmap::{day_number, streak_span};
 use crate::format::plural_noun;
 
@@ -92,16 +92,16 @@ fn streak_line(current: i64, longest: i64, yours: bool) -> Option<String> {
 /// switch never re-runs), `None` only while in flight. `who` is
 /// [`super::picker::Viewing::heading`]: `None` on the caller's own page,
 /// `Some("{name}'s stats")` on another reader's. `children` is the reader
-/// picker, rendered as the hero's first row. Goals are read straight off `summary`.
+/// picker, rendered as the hero's first row. Goals are read straight off
+/// `summary`.
 #[component]
 pub(super) fn StatsHero(
     summary: Option<StatsSummary>,
     #[props(default)] who: Option<String>,
     children: Element,
 ) -> Element {
-    // Goals are read-only on another reader's page — all three are set
-    // together in Settings → Account, which is reachable only from the
-    // caller's own.
+    // Goals are read-only on another reader's page, since nobody edits
+    // someone else's targets.
     let editable = who.is_none();
     let as_of_day = summary
         .as_ref()
@@ -119,6 +119,7 @@ pub(super) fn StatsHero(
         .as_ref()
         .map(|s| s.daily_goals.clone())
         .unwrap_or_default();
+    let any_goal_set = goal.is_some() || daily.pages.is_some() || daily.minutes.is_some();
     let anchor = summary.as_ref().and_then(|s| day_number(&s.as_of_day));
     let spark = match (summary.as_ref(), anchor) {
         (Some(s), Some(n)) => build_spark(s, n),
@@ -177,8 +178,11 @@ pub(super) fn StatsHero(
                     }
                 }
                 div { class: "st-hero-goals",
-                    AnnualGoalRing { goal, finished, year, as_of_day, editable }
-                    DailyGoalsCard { daily, editable }
+                    AnnualGoalRing { goal, finished, year, as_of_day }
+                    DailyGoalsCard { daily }
+                    if editable {
+                        GoalsLink { any_set: any_goal_set }
+                    }
                 }
             }
         }

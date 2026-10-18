@@ -1,3 +1,6 @@
+---
+paths: "ui_tests/playwright/tests/ios_glue/**, ui_tests/playwright/tests/utils/ios_glue.ts, omnibus-ios/omnibus/Reader/Web/**"
+---
 # 04b — The iOS reader glue harness
 
 Companion to [04-playwright.md](04-playwright.md). `omnibus-ios/omnibus/Reader/Web/`

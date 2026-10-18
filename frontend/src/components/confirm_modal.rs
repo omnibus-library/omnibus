@@ -40,11 +40,11 @@ fn dismiss_unless_busy(busy: bool, on_dismiss: EventHandler<()>) {
     }
 }
 
-/// Modal backdrop + panel shell shared by every dialog: a backdrop click
-/// dismisses (unless `busy`), a click inside the panel does not bubble to it.
-/// `children` is the body, `head` an optional title/close slot, `backdrop_class`
-/// overrides the default chrome. Escape dismisses on the same gate; `focus_on_open`
-/// focuses the panel for it, so leave it off when the body autofocuses a field.
+/// Modal backdrop and panel shell shared by every dialog. A backdrop click or
+/// Escape dismisses (unless `busy`), Tab stays inside, and a click inside the
+/// panel does not bubble. `children` is the body, `head` an optional title slot,
+/// `backdrop_class` overrides the chrome; `focus_on_open` focuses the panel for
+/// the keys, so leave it off when the body autofocuses a field.
 #[component]
 pub fn ConfirmModal(
     testid: String,
@@ -75,6 +75,7 @@ pub fn ConfirmModal(
                     evt.prevent_default();
                     dismiss_unless_busy(busy, on_dismiss);
                 }
+                crate::focus_trap::trap_tab(&evt);
             },
             // Focusable so the keydown above receives Escape at all: without
             // a tabindex the wrapper is not a key-event target, and focus
@@ -122,6 +123,57 @@ pub fn confirm_modal_body(
                     }
                 }
             }
+        }
+    }
+}
+
+/// What a destructive action's confirm dialog says. The dialog is `testid`,
+/// its buttons `{testid}-cancel` and `{testid}-confirm`.
+pub struct Confirm<'a> {
+    pub testid: &'a str,
+    pub title: &'a str,
+    pub body: &'a str,
+    pub action: &'a str,
+    pub busy_label: &'a str,
+}
+
+/// A confirm dialog for one destructive action, focused when it opens so
+/// Escape and Tab work inside it.
+pub fn confirm_dialog(
+    confirm: Confirm<'_>,
+    busy: bool,
+    on_cancel: EventHandler<()>,
+    on_confirm: EventHandler<()>,
+) -> Element {
+    let actions = vec![
+        ConfirmModalAction {
+            testid: format!("{}-cancel", confirm.testid),
+            label: "Cancel".to_string(),
+            busy_label: None,
+            busy: false,
+            tone: ConfirmModalTone::Ghost,
+            disabled: busy,
+            on_click: on_cancel,
+        },
+        ConfirmModalAction {
+            testid: format!("{}-confirm", confirm.testid),
+            label: confirm.action.to_string(),
+            busy_label: Some(confirm.busy_label.to_string()),
+            busy,
+            tone: ConfirmModalTone::Danger,
+            disabled: busy,
+            on_click: on_confirm,
+        },
+    ];
+    rsx! {
+        ConfirmModal {
+            testid: confirm.testid.to_string(),
+            aria_label: confirm.title.to_string(),
+            dialog_class: "mg-modal confirm-modal".to_string(),
+            busy,
+            on_dismiss: on_cancel,
+            focus_on_open: true,
+            {confirm_modal_body(confirm.title, confirm.body, None, actions)}
         }
     }
 }

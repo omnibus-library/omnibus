@@ -192,6 +192,14 @@ pub struct SmtpConfigStatus {
     pub source: String,
 }
 
+/// Whether Send-to-Kindle can deliver, for any signed-in reader. Carries the
+/// sender address a reader must approve at Amazon, or `None` when no relay is
+/// set up, and never the relay's host or credentials.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KindleDelivery {
+    pub sender_address: Option<String>,
+}
+
 /// Default `ebook-convert` command used when neither the settings override nor
 /// `OMNIBUS_EBOOK_CONVERT_PATH` is set — resolved on `$PATH` at spawn time.
 pub const DEFAULT_EBOOK_CONVERT_BIN: &str = "ebook-convert";

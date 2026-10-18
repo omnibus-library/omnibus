@@ -21,12 +21,13 @@ use super::snapshot::{DeleteAuthorSnapshot, MergeSnapshot, RenameSnapshot, Split
 use super::MergeEntity;
 
 /// Reverse a previously-applied cleanup log entry, restoring the pre-mutation
-/// state its snapshot recorded. Errs [`CleanupApplyError::AlreadyUndone`] if
+/// state its snapshot recorded and reopening the suggestion it came from, so
+/// the review queue can offer it again. Errs [`CleanupApplyError::AlreadyUndone`] if
 /// `log_id` was already undone, and [`CleanupApplyError::LogNotFound`] for an
 /// unknown id or a `(kind, action)` combination no primitive ever produces.
 pub async fn undo(pool: &SqlitePool, log_id: i64) -> Result<(), CleanupApplyError> {
     let row: Option<CleanupLogRow> = sqlx::query_as(
-        "SELECT kind, action, snapshot_json, applied_by, undone_at
+        "SELECT kind, action, snapshot_json, applied_by, undone_at, suggestion_id
            FROM cleanup_log WHERE id = ?",
     )
     .bind(log_id)
@@ -62,6 +63,7 @@ pub async fn undo(pool: &SqlitePool, log_id: i64) -> Result<(), CleanupApplyErro
     // `delete_one_in_tx`).
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     mark_undone_tx(&mut tx, log_id).await?;
+    reopen_suggestion_tx(&mut tx, row.suggestion_id).await?;
     let mut fts_rebuild_uuid: Option<String> = None;
     match (kind, action) {
         (CleanupKind::Author, CleanupAction::Merge) => {
@@ -103,6 +105,25 @@ struct CleanupLogRow {
     snapshot_json: String,
     applied_by: Option<i64>,
     undone_at: Option<i64>,
+    suggestion_id: Option<i64>,
+}
+
+/// Put the suggestion an undone change was accepted from back to pending. Left
+/// accepted, its row would block detection from ever re-suggesting the same
+/// payload. The next prune retires a merge whose sources came back under new
+/// ids instead.
+async fn reopen_suggestion_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    suggestion_id: Option<i64>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE dedup_suggestions SET decision = 'pending', decided_at = NULL, decided_by = NULL
+          WHERE id = ? AND decision = 'accepted'",
+    )
+    .bind(suggestion_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 /// Claim the log row by stamping `undone_at`, guarded on `undone_at IS

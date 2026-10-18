@@ -4,6 +4,9 @@
 //! inside a rebuilt `VirtualDom` so `Signal::new` has a runtime without a
 //! browser.
 
+#[cfg(feature = "server")]
+use crate::test_support::blank_form_event;
+
 use super::*;
 
 #[test]
@@ -51,26 +54,23 @@ fn registration_toggle_renders_unresolved_and_disabled_before_load() {
     assert!(html.contains("ld-sheen"), "{html}");
 }
 
+#[cfg(feature = "server")]
+#[test]
+fn registration_toggle_renders_as_a_labelled_switch_row() {
+    let html = crate::test_support::render_in_vdom(RegistrationToggle);
+    assert!(html.contains(r#"role="switch""#), "{html}");
+    assert!(
+        html.contains(r#"<label class="setting-row-label" for="registration-toggle">Allow new users to register</label>"#),
+        "{html}"
+    );
+    assert!(html.contains("settings-switch"), "{html}");
+}
+
 // `registration_toggle_handler` runs inside a `VirtualDom::new(...)
 // .rebuild_in_place()` so `Signal::new` has a runtime — the pattern in
 // `frontend/src/pages/settings/library/tests.rs`. The futures it spawns are
 // never polled, so no request actually fires; these assert the synchronous
 // guards and the pre-spawn state the handler commits to.
-
-#[cfg(feature = "server")]
-fn blank_form_event() -> Event<FormData> {
-    use std::rc::Rc;
-
-    use dioxus::prelude::SerializedFormData;
-
-    Event::new(
-        Rc::new(FormData::new(SerializedFormData::new(
-            String::new(),
-            vec![],
-        ))),
-        false,
-    )
-}
 
 #[cfg(feature = "server")]
 #[test]

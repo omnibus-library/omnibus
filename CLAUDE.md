@@ -16,6 +16,7 @@ Numbered rules in [.claude/rules/](.claude/rules/), applied in order. Follow the
 - [04b-playwright-ios-glue.md](.claude/rules/04b-playwright-ios-glue.md) — the iOS reader glue's test lane: serving `omnibus-ios/omnibus/Reader/Web/` on a routed origin, driving the host's entry points, and what Chromium can't prove.
 - [04c-playwright-filters.md](.claude/rules/04c-playwright-filters.md) — the library filter's test lane: the bar's popover, the landing lens and shelf page states, and the held-request technique.
 - [04d-playwright-page-objects.md](.claude/rules/04d-playwright-page-objects.md) — page, component and request objects injected by fixtures: the layout, the rules, and one sign-in per worker.
+- [04e-playwright-stats.md](.claude/rules/04e-playwright-stats.md) — the stats page's test lane: windowed vs standing figures, the goals link into Settings, household sharing and the reader picker.
 - [05-rust-style.md](.claude/rules/05-rust-style.md) — Rust style guide: comments, function/file shape, errors, tests, mechanics. Long-form rationale in [docs/style-guide.md](docs/style-guide.md).
 - [06-migrations.md](.claude/rules/06-migrations.md) — authoring SQL migrations: `NNNN_` naming, never-edit-applied, the `_norm` backfill pattern, testing against `sqlite::memory:`, and the dev-bounce step.
 - [07-hydration.md](.claude/rules/07-hydration.md) — SSR/WASM hydration parity: never feature-gate a component body on `web`; how to confirm and fix a hydration mismatch; why keyed siblings must each be unique.
@@ -29,6 +30,8 @@ Numbered rules in [.claude/rules/](.claude/rules/), applied in order. Follow the
 - [99-end-of-session.md](.claude/rules/99-end-of-session.md) — end-of-session checklist (docs sync, fmt/clippy, coverage, line-count cap).
 
 **Line-count cap:** every file in `CLAUDE.md`, `AGENTS.md`, and `.claude/` stays under ~200 lines. Split by topic when it grows past that — enforced by rule 99.
+
+**Path-scoped rules:** a topic rule opens with `paths:` frontmatter, so Claude Code loads it only once a matching file is touched; only 01, 02, 03, 05, 98 and 99 load every session. Give a new topic rule the same — Claude Code warns once the always-loaded instruction files pass 120k chars in total.
 
 ## Skills
 
@@ -72,11 +75,12 @@ Operator-specific conventions (ticket prefixes, branch naming) live in personal 
 ## Quick commands
 
 ```bash
-# Multiplexed dev stack (server + native ios + android + playwright panes)
+# Multiplexed dev stack (server + react + native ios + android + playwright panes)
 # The server pane port-walks this worktree's window, so two worktrees can
 # run the stack at once without colliding.
 just serve                                                  # Zellij
 just serve-pc                                               # process-compose
+just react                                                  # React client (frontend-js/) dev server, proxying to this worktree's server
 
 # Idempotent dev-server bring-up — port-walks from $PORT (this worktree's
 # window base: 3000 for the main checkout, hash-derived in 3010..3900

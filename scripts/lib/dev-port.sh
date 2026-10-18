@@ -97,6 +97,20 @@ choose_port() {
     return 1
 }
 
+# The port the React client's dev server (the `react` pane) takes: the first
+# free one above the server's, still inside this worktree's window. Returns 1
+# when there is none.
+choose_react_port() {
+    local port
+    for ((port = $1 + 1; port <= END_PORT; port++)); do
+        if is_port_free "$port"; then
+            echo "$port"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Publish the chosen port so Playwright, the ui-validate skill, and humans
 # can pick it up with `source .claude/runtime/env.sh` instead of assuming
 # 3000.

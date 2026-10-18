@@ -393,3 +393,10 @@ fn instant_secs_resolves_a_timestamp_and_declines_a_bare_date() {
     // No time of day: there is no instant here to resolve.
     assert_eq!(instant_secs("2023-11-14"), None);
 }
+
+#[test]
+fn capitalize_upper_cases_only_the_first_letter() {
+    assert_eq!(capitalize("library scan"), "Library scan");
+    assert_eq!(capitalize("EPUB bake"), "EPUB bake");
+    assert_eq!(capitalize(""), "");
+}

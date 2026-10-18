@@ -19,7 +19,7 @@
 #
 # `act` prints the device's control-API reply as received and exits 0 for a 2xx
 # reply, 1 for any other status or no reply. The device keeps its library across
-# runs; PUT /reset is withheld because Omnibus would still count what it sent (#2743).
+# runs; PUT /reset is not an agent action.
 #
 # OMNIBUS_EXPLORE_MOCK_KOBO names a built mock-kobo and skips the cargo build.
 # The device token reaches mock-kobo through its environment only: never argv,

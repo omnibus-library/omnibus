@@ -282,6 +282,8 @@ fn render_header_and_content(
                     (sigs.shelves_answered)(),
                     (sigs.shelves)(),
                 ),
+                hidden_formats_apply: super::view::visible_source((sigs.selection)())
+                    == super::view::VisibleSource::Browse,
             },
             prefs: prefs.clone(),
             on_prefs_change: on_prefs_change_header,

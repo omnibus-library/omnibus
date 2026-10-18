@@ -59,6 +59,13 @@ rewrite_origin_port() {
 # could then POST into this server. Rewriting each inherited entry onto our
 # port keeps an operator's LAN host from .env while dropping its stale port.
 origins="http://localhost:$port,http://127.0.0.1:$port"
+# Reserve the React client's port (the `react` pane's Vite server) and
+# allowlist its origin: dx's proxy rewrites Host, so origin_check can't match
+# a proxied request's Origin against it and needs the allowlist instead.
+react_port="$(choose_react_port "$port" || true)"
+if [ -n "$react_port" ]; then
+    origins="$origins,http://localhost:$react_port,http://127.0.0.1:$react_port"
+fi
 if [ -n "${OMNIBUS_PUBLIC_ORIGIN:-}" ]; then
     IFS=',' read -ra inherited <<<"$OMNIBUS_PUBLIC_ORIGIN"
     for entry in "${inherited[@]}"; do
@@ -76,6 +83,11 @@ export PORT="$port"
 export OMNIBUS_PUBLIC_ORIGIN="$origins"
 
 write_runtime_files "$port"
+if [ -n "$react_port" ]; then
+    echo "$react_port" >"$RUNTIME_DIR/react-port"
+else
+    rm -f "$RUNTIME_DIR/react-port"
+fi
 
 echo "serve: starting dx serve on port $port (http://localhost:$port)" >&2
 exec dx serve --platform web --fullstack \

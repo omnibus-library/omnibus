@@ -1,0 +1,64 @@
+.auth-banner {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--auth-line-2);
+  border-radius: 10px;
+  background: var(--auth-bg-1);
+}
+.auth-banner-err {
+  border-left: 3px solid var(--auth-bad);
+}
+.auth-banner-warn {
+  border-left: 3px solid var(--auth-warn);
+}
+.auth-banner-info {
+  border-left: 3px solid var(--auth-info);
+}
+.auth-banner-ok {
+  border-left: 3px solid var(--auth-ok);
+}
+.auth-banner-icon {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.75rem;
+  flex: 0 0 20px;
+  background: var(--auth-bg-2);
+}
+.auth-banner-err .auth-banner-icon {
+  color: var(--auth-bad);
+}
+.auth-banner-warn .auth-banner-icon {
+  color: var(--auth-warn);
+}
+.auth-banner-info .auth-banner-icon {
+  color: var(--auth-info);
+}
+.auth-banner-ok .auth-banner-icon {
+  color: var(--auth-ok);
+}
+.auth-banner-body {
+  flex: 1;
+}
+.auth-banner-title {
+  font-weight: 500;
+  font-size: 0.85rem;
+  color: var(--auth-ink-0);
+}
+.auth-banner-message {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--auth-ink-1);
+  line-height: 1.5;
+}
+.auth-banner-action {
+  margin-top: 0.6rem;
+  display: flex;
+  gap: 0.5rem;
+}

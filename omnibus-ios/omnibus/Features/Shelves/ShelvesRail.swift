@@ -47,12 +47,12 @@ struct ShelvesRail: View {
 
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 14) {
-                    ForEach(Array(previews.enumerated()), id: \.element.id) { index, preview in
+                    ForEach(previews) { preview in
                         NavigationLink(value: Destination.shelf(id: preview.shelf.id)) {
                             ShelfCard(preview: preview, viewerId: viewerId, width: 108)
                         }
                         .buttonStyle(BookPressStyle())
-                        .cascadeIn(index: index)
+                        .cascadeIn()
                         .shelfContextMenu(preview.shelf, onChanged: onChanged)
                         // Cards ease off as they leave, so the rail reads as a
                         // shelf continuing past the edge rather than a list
@@ -68,6 +68,7 @@ struct ShelvesRail: View {
                 }
                 .screenPadding()
                 .scrollTargetLayout()
+                .cascadeFill()
             }
             .scrollIndicators(.hidden)
             .scrollTargetBehavior(.viewAligned)

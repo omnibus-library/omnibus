@@ -158,7 +158,7 @@ impl IntoResponse for UploadError {
             }
             UploadError::NotConfigured => (
                 StatusCode::BAD_REQUEST,
-                "Configure an ebook library path in Settings first",
+                "Configure an ebook library path first",
             )
                 .into_response(),
             UploadError::LibraryNotWritable => (
@@ -183,7 +183,7 @@ impl IntoResponse for UploadError {
             UploadError::BadEbook(msg) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, msg).into_response(),
             UploadError::AudiobookNotConfigured => (
                 StatusCode::BAD_REQUEST,
-                "Configure an audiobook library path in Settings first",
+                "Configure an audiobook library path first",
             )
                 .into_response(),
             UploadError::AudiobookLibraryNotWritable => (
