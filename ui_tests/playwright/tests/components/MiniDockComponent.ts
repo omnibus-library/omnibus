@@ -90,15 +90,15 @@ export class MiniDockComponent extends BaseComponent {
     await this.previousChapterButton.click();
   }
 
-  async openVolumePopover(): Promise<void> {
+  async toggleVolumePopover(): Promise<void> {
     await this.volumeButton.click();
   }
 
-  async openSpeedPopover(): Promise<void> {
+  async toggleSpeedPopover(): Promise<void> {
     await this.speedChip.click();
   }
 
-  async openSleepPopover(): Promise<void> {
+  async toggleSleepPopover(): Promise<void> {
     await this.sleepChip.click();
   }
 

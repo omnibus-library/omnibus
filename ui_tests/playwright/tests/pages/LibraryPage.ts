@@ -9,6 +9,7 @@ import { CreateShelfModalComponent } from "../components/CreateShelfModalCompone
 import { EditShelfModalComponent } from "../components/EditShelfModalComponent";
 import { FilterBarComponent } from "../components/FilterBarComponent";
 import { LibraryTableComponent } from "../components/LibraryTableComponent";
+import { MiniDockComponent } from "../components/MiniDockComponent";
 import { PageScrollComponent } from "../components/PageScrollComponent";
 import { SeriesCapComponent } from "../components/SeriesCapComponent";
 import { ShelfGalleryComponent } from "../components/ShelfGalleryComponent";
@@ -25,6 +26,7 @@ export class LibraryPage extends BasePage {
   protected readonly urlPattern = /\/$/;
 
   readonly topNav: TopNavComponent;
+  readonly miniDock: MiniDockComponent;
   readonly checkInOverlay: CheckInOverlayComponent;
   readonly table: LibraryTableComponent;
   readonly continueStack: ContinueStackComponent;
@@ -75,6 +77,7 @@ export class LibraryPage extends BasePage {
   constructor(page: Page) {
     super(page);
     this.topNav = new TopNavComponent(page);
+    this.miniDock = new MiniDockComponent(page);
     this.checkInOverlay = new CheckInOverlayComponent(page);
     this.table = new LibraryTableComponent(page);
     this.continueStack = new ContinueStackComponent(page);

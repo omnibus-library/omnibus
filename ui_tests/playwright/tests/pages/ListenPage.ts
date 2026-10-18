@@ -1,6 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
 import { ListenDrawersComponent } from "../components/ListenDrawersComponent";
-import { MiniDockComponent } from "../components/MiniDockComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { crossFormatUrls } from "../contracts/crossFormat";
 import { playbackUrls } from "../contracts/playback";
@@ -31,7 +30,6 @@ export class ListenPage extends BasePage {
 
   readonly topNav: TopNavComponent;
   readonly drawers: ListenDrawersComponent;
-  readonly miniDock: MiniDockComponent;
 
   readonly audioElement: Locator;
   readonly preparingOverlay: Locator;
@@ -68,7 +66,6 @@ export class ListenPage extends BasePage {
     super(page);
     this.topNav = new TopNavComponent(page);
     this.drawers = new ListenDrawersComponent(page);
-    this.miniDock = new MiniDockComponent(page);
     this.audioElement = page.getByTestId("listen-audio");
     this.preparingOverlay = page.getByTestId("listen-preparing");
     this.failedOverlay = page.getByTestId("listen-failed");

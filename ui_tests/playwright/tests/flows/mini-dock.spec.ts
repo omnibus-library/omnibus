@@ -48,9 +48,13 @@ test.describe("mini-dock", () => {
     );
   });
 
-  test("show the mini-dock layout", async ({ listenPage, request }) => {
+  test("show the mini-dock layout", async ({
+    listenPage,
+    libraryPage,
+    request,
+  }) => {
     const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-    const { miniDock } = listenPage;
+    const { miniDock } = libraryPage;
 
     await test.step("open the audiobook, then browse to the library", async () => {
       await listenPage.openThenBrowseAway(uuid);
@@ -71,10 +75,11 @@ test.describe("mini-dock", () => {
 
   test("keep the mini-dock on other pages while an audiobook is loaded", async ({
     listenPage,
+    libraryPage,
     request,
   }) => {
     const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-    const { miniDock } = listenPage;
+    const { miniDock } = libraryPage;
 
     await test.step("open the audiobook", async () => {
       await listenPage.goto(uuid);
@@ -98,10 +103,11 @@ test.describe("mini-dock", () => {
 
   test("reflect playback state on the dock's play button", async ({
     listenPage,
+    libraryPage,
     request,
   }) => {
     const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-    const { miniDock } = listenPage;
+    const { miniDock } = libraryPage;
 
     await test.step("open the audiobook, then browse to the library", async () => {
       await listenPage.openThenBrowseAway(uuid);
@@ -132,10 +138,11 @@ test.describe("mini-dock", () => {
 
   test("expand the dock back to the full player", async ({
     listenPage,
+    libraryPage,
     request,
   }) => {
     const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-    const { miniDock } = listenPage;
+    const { miniDock } = libraryPage;
 
     await test.step("open the audiobook, then browse to the library", async () => {
       await listenPage.openThenBrowseAway(uuid);
@@ -155,10 +162,11 @@ test.describe("mini-dock", () => {
 
   test("adjust the volume from the dock popover", async ({
     listenPage,
+    libraryPage,
     request,
   }) => {
     const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-    const { miniDock } = listenPage;
+    const { miniDock } = libraryPage;
 
     await test.step("open the audiobook, then browse to the library", async () => {
       await listenPage.openThenBrowseAway(uuid);
@@ -167,7 +175,7 @@ test.describe("mini-dock", () => {
     // The bar row has no inline slider: volume lives behind an icon.
     await test.step("open the volume popover", async () => {
       await expect(miniDock.volumePopover).not.toHaveClass(/open/);
-      await miniDock.openVolumePopover();
+      await miniDock.toggleVolumePopover();
       await expect(miniDock.volumePopover).toHaveClass(/open/);
     });
 
@@ -188,11 +196,12 @@ test.describe("mini-dock", () => {
 
   test("set the playback speed from the dock popover", async ({
     listenPage,
+    libraryPage,
     request,
     expectMutation,
   }) => {
     const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-    const { miniDock } = listenPage;
+    const { miniDock } = libraryPage;
 
     await test.step("open the audiobook, then browse to the library", async () => {
       await listenPage.openThenBrowseAway(uuid);
@@ -202,7 +211,7 @@ test.describe("mini-dock", () => {
     // preset different from the persisted rate.
     await test.step("open the speed popover", async () => {
       await expect(miniDock.speedPopover).not.toHaveClass(/open/);
-      await miniDock.openSpeedPopover();
+      await miniDock.toggleSpeedPopover();
       await expect(miniDock.speedPopover).toHaveClass(/open/);
     });
 
@@ -236,10 +245,11 @@ test.describe("mini-dock", () => {
 
   test("arm a sleep countdown from the dock popover", async ({
     listenPage,
+    libraryPage,
     request,
   }) => {
     const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-    const { miniDock } = listenPage;
+    const { miniDock } = libraryPage;
 
     await test.step("open the audiobook, then browse to the library", async () => {
       await listenPage.openThenBrowseAway(uuid);
@@ -248,7 +258,7 @@ test.describe("mini-dock", () => {
     await test.step("open the sleep popover", async () => {
       await expect(miniDock.sleepChip).toHaveText("Sleep");
       await expect(miniDock.sleepPopover).not.toHaveClass(/open/);
-      await miniDock.openSleepPopover();
+      await miniDock.toggleSleepPopover();
       await expect(miniDock.sleepPopover).toHaveClass(/open/);
     });
 
@@ -271,10 +281,11 @@ test.describe("mini-dock", () => {
 
   test("jump across chapter boundaries from the dock", async ({
     listenPage,
+    libraryPage,
     request,
   }) => {
     const uuid = await fetchBookUuidByTitle(request, MULTIPART_MP3_BOOK.title);
-    const { miniDock } = listenPage;
+    const { miniDock } = libraryPage;
 
     await test.step("open the audiobook, then browse to the library", async () => {
       await listenPage.openThenBrowseAway(uuid);
@@ -300,45 +311,47 @@ test.describe("mini-dock", () => {
 
   test("close one dock popover when another opens", async ({
     listenPage,
+    libraryPage,
     request,
   }) => {
     const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-    const { miniDock } = listenPage;
+    const { miniDock } = libraryPage;
 
     await test.step("open the audiobook, then browse to the library", async () => {
       await listenPage.openThenBrowseAway(uuid);
     });
 
     await test.step("open the speed popover", async () => {
-      await miniDock.openSpeedPopover();
+      await miniDock.toggleSpeedPopover();
       await expect(miniDock.speedPopover).toHaveClass(/open/);
     });
 
     await test.step("open the sleep popover", async () => {
-      await miniDock.openSleepPopover();
+      await miniDock.toggleSleepPopover();
       await expect(miniDock.sleepPopover).toHaveClass(/open/);
       await expect(miniDock.speedPopover).not.toHaveClass(/open/);
     });
 
     await test.step("press the sleep chip again", async () => {
-      await miniDock.openSleepPopover();
+      await miniDock.toggleSleepPopover();
       await expect(miniDock.sleepPopover).not.toHaveClass(/open/);
     });
   });
 
   test("shed the secondary controls on narrow viewports", async ({
     listenPage,
+    libraryPage,
     request,
   }) => {
     const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-    const { miniDock } = listenPage;
+    const { miniDock } = libraryPage;
 
     await test.step("open the audiobook, then browse to the library", async () => {
       await listenPage.openThenBrowseAway(uuid);
     });
 
     await test.step("narrow the window", async () => {
-      await listenPage.resizeViewport({ width: 700, height: 800 });
+      await libraryPage.resizeViewport({ width: 700, height: 800 });
     });
 
     // Chapter jumps, ±30 seeks, volume, speed and sleep disappear below the
@@ -356,9 +369,13 @@ test.describe("mini-dock", () => {
     });
   });
 
-  test("dismiss the dock to stop playback", async ({ listenPage, request }) => {
+  test("dismiss the dock to stop playback", async ({
+    listenPage,
+    libraryPage,
+    request,
+  }) => {
     const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-    const { miniDock } = listenPage;
+    const { miniDock } = libraryPage;
 
     await test.step("open the audiobook, then browse to the library", async () => {
       await listenPage.openThenBrowseAway(uuid);

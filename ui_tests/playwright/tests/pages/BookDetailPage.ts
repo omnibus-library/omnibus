@@ -12,6 +12,7 @@ import { JournalEntryOverlayComponent } from "../components/JournalEntryOverlayC
 import { JournalSectionComponent } from "../components/JournalSectionComponent";
 import { ListenFilePickerComponent } from "../components/ListenFilePickerComponent";
 import { MergeDialogComponent } from "../components/MergeDialogComponent";
+import { MiniDockComponent } from "../components/MiniDockComponent";
 import { PhysicalCopyCardComponent } from "../components/PhysicalCopyCardComponent";
 import { QuoteCardModalComponent } from "../components/QuoteCardModalComponent";
 import { RatingComponent } from "../components/RatingComponent";
@@ -33,6 +34,7 @@ export class BookDetailPage extends BasePage {
   protected readonly urlPattern = /\/books\/[^/?#]+$/;
 
   readonly topNav: TopNavComponent;
+  readonly miniDock: MiniDockComponent;
   readonly checkInOverlay: CheckInOverlayComponent;
   readonly stops: BookDetailStopsComponent;
   readonly formats: FormatSwitcherComponent;
@@ -82,6 +84,7 @@ export class BookDetailPage extends BasePage {
   constructor(page: Page) {
     super(page);
     this.topNav = new TopNavComponent(page);
+    this.miniDock = new MiniDockComponent(page);
     this.checkInOverlay = new CheckInOverlayComponent(page);
     this.stops = new BookDetailStopsComponent(page);
     this.formats = new FormatSwitcherComponent(page);
