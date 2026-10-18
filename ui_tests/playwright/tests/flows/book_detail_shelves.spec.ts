@@ -7,7 +7,7 @@ import type {
 
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expectMutation, postFromPage } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
@@ -68,13 +68,12 @@ function withSmartShelf(
  * body below opens its book with a full load, so it reads the new value.
  */
 async function setScrollStops(page: Page, on: boolean) {
-  const resp = await page.request.post(
+  const status = await postFromPage(
+    page,
     "/api/account/book-detail-scroll-stops",
-    {
-      data: { enabled: on },
-    },
+    { enabled: on },
   );
-  expect(resp.status(), `setting scroll stops to ${on} failed`).toBe(200);
+  expect(status, `setting scroll stops to ${on} failed`).toBe(200);
 }
 
 /**

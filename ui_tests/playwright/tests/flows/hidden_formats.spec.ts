@@ -1,7 +1,7 @@
 import type { APIRequestContext, Page } from "@playwright/test";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expectMutation, postFromPage } from "../utils/api";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
@@ -67,11 +67,11 @@ async function logInAsHiddenUser(page: Page): Promise<void> {
  * what the library does with the preference.
  */
 async function saveHiddenFormats(
-  request: APIRequestContext,
+  page: Page,
   formats: string[],
 ): Promise<void> {
-  const resp = await request.post(HIDDEN_FORMATS_RPC, { data: { formats } });
-  expect(resp.status(), `saving hidden formats ${formats} failed`).toBe(200);
+  const status = await postFromPage(page, HIDDEN_FORMATS_RPC, { formats });
+  expect(status, `saving hidden formats ${formats} failed`).toBe(200);
 }
 
 test("renders the hidden-formats card in the preferences section", async ({
@@ -96,7 +96,7 @@ test("hiding cbz removes comics from the landing for that user only", async ({
   const page = await context.newPage();
   try {
     await logInAsHiddenUser(page);
-    await saveHiddenFormats(context.request, ["cbz"]);
+    await saveHiddenFormats(page, ["cbz"]);
 
     // Landing: both CBZ-only fixtures gone, receipt visible, and the note
     // naming what is hidden. No exact count — other specs may be reshaping
@@ -129,7 +129,7 @@ test("hiding cbz removes comics from the landing for that user only", async ({
     await expect(hiddenNote(adminPage)).toHaveCount(0);
 
     // Un-hide: tiles return, receipt and note gone.
-    await saveHiddenFormats(context.request, []);
+    await saveHiddenFormats(page, []);
     await gotoReady(page, "/");
     await expect(auroraTiles(page).first()).toBeVisible();
     await expect(receipt(page)).toHaveCount(0);
