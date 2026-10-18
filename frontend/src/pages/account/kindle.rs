@@ -154,13 +154,15 @@ fn kindle_email_form(
                 }
             }
             div { class: "settings-actions",
-                button {
-                    r#type: "button",
-                    class: "btn ghost danger settings-action-start",
-                    disabled: in_flight() || !connected,
-                    "data-testid": "kindle-email-clear",
-                    onclick: on_clear,
-                    "Clear"
+                if connected {
+                    button {
+                        r#type: "button",
+                        class: "btn ghost danger settings-action-start",
+                        disabled: in_flight(),
+                        "data-testid": "kindle-email-clear",
+                        onclick: on_clear,
+                        "Clear"
+                    }
                 }
                 button {
                     r#type: "submit",

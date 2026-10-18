@@ -112,27 +112,24 @@ fn kindle_card_names_its_save_action() {
     assert!(html.contains("kindle-delivery-loading"), "{html}");
 }
 
-/// Clear is destructive, so it sits apart at the far left; Save is the
-/// primary action, rightmost.
+/// Nothing is saved before the address loads, so there is nothing to clear;
+/// Save is the footer's primary action.
 #[test]
-fn kindle_card_puts_clear_first_and_save_last_in_its_footer() {
+fn kindle_card_offers_no_clear_until_an_address_is_saved() {
     let html = render_in_vdom(|| rsx! { Router::<CardRoute> {} });
+    assert!(
+        !html.contains(r#"data-testid="kindle-email-clear""#),
+        "{html}"
+    );
     let footer = html
         .find(r#"class="settings-actions""#)
         .expect("a footer row");
-    let clear = html
-        .find(r#"data-testid="kindle-email-clear""#)
-        .expect("clear");
     let save = html
         .find(r#"data-testid="kindle-email-save""#)
         .expect("save");
-    assert!(footer < clear && clear < save, "{html}");
+    assert!(footer < save, "{html}");
     assert!(
-        html[footer..clear].contains(r#"class="btn ghost danger settings-action-start""#),
-        "{html}"
-    );
-    assert!(
-        html[clear..save].contains(r#"class="btn primary""#),
+        html[footer..save].contains(r#"class="btn primary""#),
         "{html}"
     );
 }
