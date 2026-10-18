@@ -1,3 +1,6 @@
+//! Tests for the Administration page: its sidebar groups, and the loading and
+//! refusal states a non-admin meets.
+
 use dioxus::prelude::*;
 use dioxus_router::{Routable, Router};
 

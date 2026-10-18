@@ -1,3 +1,5 @@
+//! Tests for the account page helpers and the change-password card.
+
 use super::*;
 
 #[test]

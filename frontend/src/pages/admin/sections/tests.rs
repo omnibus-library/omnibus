@@ -1,3 +1,6 @@
+//! Tests for the Administration sections: slugs, order, titles and where copy
+//! sends an admin.
+
 use super::*;
 
 #[test]

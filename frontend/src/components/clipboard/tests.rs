@@ -1,3 +1,5 @@
+//! Tests for the copy button: its label, and what it says once copied.
+
 use super::*;
 use crate::test_support::render_in_vdom;
 

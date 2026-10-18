@@ -1,3 +1,6 @@
+//! Tests for the hidden-formats group: the set a change saves, and the
+//! checkboxes drawn for it.
+
 use super::*;
 
 #[test]

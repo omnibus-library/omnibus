@@ -1,3 +1,5 @@
+//! Tests for the settings row: its label, description and control wiring.
+
 use super::*;
 use crate::test_support::render;
 

@@ -11,9 +11,10 @@ use std::collections::BTreeSet;
 use dioxus::prelude::*;
 use omnibus_shared::{UserSummary, KNOWN_LIBRARY_FORMATS};
 
-use super::user_settings::{save_status, SaveState};
 use crate::components::{Loading, LoadingKind};
 use crate::data;
+
+use super::user_settings::{save_status, SaveState};
 
 /// `hidden` with `fmt` hidden (`on`) or shown, sorted and without repeats.
 fn with_format(hidden: Vec<String>, fmt: &str, on: bool) -> Vec<String> {

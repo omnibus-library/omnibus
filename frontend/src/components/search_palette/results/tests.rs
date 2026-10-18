@@ -1,3 +1,5 @@
+//! Tests for the palette results list's Settings group.
+
 use super::super::model::build_flat_items;
 use super::*;
 

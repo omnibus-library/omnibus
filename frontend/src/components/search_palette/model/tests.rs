@@ -1,3 +1,6 @@
+//! Tests for the palette's flat item list: its order, and where the highlight
+//! goes when results land.
+
 use omnibus_shared::{PaletteBookHit, PaletteGenreHit, PaletteResults};
 
 use super::*;

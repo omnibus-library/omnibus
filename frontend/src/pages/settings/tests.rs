@@ -1,3 +1,6 @@
+//! Tests for the personal Settings page: its sidebar, the narrow-screen page
+//! state, the back link and old-slug redirects.
+
 use dioxus_router::{Routable, Router};
 
 use super::*;

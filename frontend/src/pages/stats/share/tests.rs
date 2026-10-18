@@ -1,3 +1,5 @@
+//! Tests for the Stats page's household-sharing switch.
+
 use super::*;
 use crate::test_support::{provide_current_user, render_in_vdom, test_user};
 

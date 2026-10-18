@@ -1,3 +1,6 @@
+//! Tests for the Preferences section: its groups, and every control waiting on
+//! the viewer before it claims a value.
+
 use super::*;
 use crate::components::atrium::init_theme;
 use crate::test_support::{provide_current_user, render_in_vdom, test_user};

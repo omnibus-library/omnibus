@@ -1,3 +1,6 @@
+//! Tests for the API tokens section: its date and status helpers, the create
+//! form and a token row.
+
 use super::*;
 
 #[test]

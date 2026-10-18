@@ -1,3 +1,5 @@
+//! Tests for the Kobo devices card: setup steps, confirms and the device list.
+
 use super::*;
 
 #[test]

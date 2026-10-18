@@ -1,3 +1,6 @@
+//! Tests for the personal settings sections: slugs, old-slug redirects and
+//! the palette's settings matches.
+
 use super::*;
 
 #[test]

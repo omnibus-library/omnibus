@@ -562,12 +562,7 @@ fn MaintenanceActions(io: MaintenanceIo) -> Element {
         rewrite_in_flight,
     } = io;
     let server_url = use_server_url();
-    let on_scan = scan_library_handler(
-        server_url.clone(),
-        status,
-        status_is_error,
-        scan_in_flight,
-    );
+    let on_scan = scan_library_handler(server_url.clone(), status, status_is_error, scan_in_flight);
     let on_refetch = refetch_author_photos_handler(
         server_url.clone(),
         status,

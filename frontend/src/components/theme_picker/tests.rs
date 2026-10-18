@@ -1,3 +1,5 @@
+//! Tests for the theme picker's options and the one marked current.
+
 use super::*;
 use crate::components::atrium::init_theme;
 use crate::test_support::render_in_vdom;
