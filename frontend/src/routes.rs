@@ -128,8 +128,8 @@ pub fn Settings(section: Option<String>) -> Element {
     }
 }
 
-/// Route target for `/admin` — server administration, wrapped in the platform
-/// screen layout. `section` picks the sidebar section.
+/// Route target for `/admin`, the server administration page wrapped in the
+/// platform screen layout. `section` picks the sidebar section.
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn Admin(section: Option<String>) -> Element {
@@ -142,7 +142,7 @@ pub fn Admin(section: Option<String>) -> Element {
     }
 }
 
-/// Mobile stub for `/admin`: the native shell's flat settings page carries the
+/// Mobile stub for `/admin`. The native shell's flat settings page carries the
 /// admin cards it supports, so open that.
 #[cfg(feature = "mobile")]
 #[component]
@@ -158,7 +158,7 @@ pub fn LegacyCleanupReview(kind: String) -> Element {
     rsx! { Redirect { to: Route::CleanupReview { kind }, label: "Opening library cleanup" } }
 }
 
-/// Route target for `/admin/cleanup/:kind` — the one-card-at-a-time
+/// Route target for `/admin/cleanup/:kind`, the one-card-at-a-time
 /// library-cleanup review queue, wrapped in the platform screen layout.
 /// Web/server only; the in-page `use_is_admin` gate (backed by the
 /// `AdminUser`-gated `cleanup/*` server functions) keeps the chrome off a
@@ -172,7 +172,7 @@ pub fn CleanupReview(kind: String) -> Element {
     }
 }
 
-/// Mobile stub for `/admin/cleanup/:kind`: redirect to the landing page —
+/// Mobile stub for `/admin/cleanup/:kind`. It redirects to the landing page, as
 /// there is no cleanup review surface on mobile.
 #[cfg(feature = "mobile")]
 #[component]
@@ -181,7 +181,7 @@ pub fn CleanupReview(kind: String) -> Element {
     rsx! { Redirect { to: Route::Landing {}, label: TO_LIBRARY } }
 }
 
-/// Route target for `/logs` — the server log viewer is Administration › Logs,
+/// Route target for `/logs`. The server log viewer is Administration › Logs,
 /// so the standalone route is a redirect that keeps old bookmarks working.
 /// Mobile has no log viewer, so it redirects to the landing page instead.
 #[cfg(not(feature = "mobile"))]
@@ -198,7 +198,7 @@ pub fn Logs() -> Element {
     rsx! { Redirect { to: Route::Landing {}, label: TO_LIBRARY } }
 }
 
-/// Route target for `/admin/health` — server health is Administration ›
+/// Route target for `/admin/health`. Server health is Administration ›
 /// Health now, so this redirects there.
 #[cfg(not(feature = "mobile"))]
 #[component]
@@ -214,7 +214,7 @@ pub fn AdminHealth() -> Element {
     rsx! { Redirect { to: Route::Landing {}, label: TO_LIBRARY } }
 }
 
-/// Route target for `/account` on web/server — the account controls live in
+/// Route target for `/account` on web/server. The account controls live in
 /// Settings now, so this redirect keeps old bookmarks and the bottom nav's
 /// "You" tab working.
 #[cfg(not(feature = "mobile"))]

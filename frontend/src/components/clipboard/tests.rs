@@ -17,7 +17,7 @@ fn copy_feedback_confirms_a_copy_that_landed() {
 fn copy_feedback_asks_for_a_manual_copy_when_the_clipboard_refuses() {
     assert_eq!(
         copy_feedback(Some(CopyOutcome::Failed)),
-        "Couldn\u{2019}t copy \u{2014} select and copy it"
+        "Couldn\u{2019}t copy. Select and copy it."
     );
 }
 

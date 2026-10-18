@@ -1,6 +1,6 @@
-//! The "Visible to your household" switch on the caller's own stats page: the
+//! The "Visible to your household" switch on the caller's own stats page, the
 //! same `share_stats` preference Settings → Preferences holds, offered where
-//! its effect is felt. Account configuration (rule 08), so a flip saves
+//! its effect is felt. It is account configuration (rule 08), so a flip saves
 //! straight to the server and a refusal puts the switch back with an inline
 //! alert; nothing is queued.
 

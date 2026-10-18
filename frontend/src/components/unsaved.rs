@@ -68,7 +68,7 @@ pub fn use_unsaved_guard(id: &'static str, dirty: Memo<bool>) {
     });
 }
 
-/// Guard form `id` against leaving with edits: it is dirty while `current()`
+/// Guard form `id` against leaving with edits. It is dirty while `current()`
 /// differs from the returned snapshot, which the form sets to what it loaded
 /// and then to each value it saves. `None` (not loaded yet) is never dirty.
 pub fn use_saved_snapshot<T: Clone + PartialEq + 'static>(

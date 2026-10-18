@@ -5,13 +5,13 @@ import { expectMutation, postFromPage } from "../utils/api";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Per-user hidden-formats preference: Settings → Preferences holds it, the
+// The per-user hidden-formats preference lives in Settings → Preferences. The
 // landing All Books view excludes those formats, shows an "N hidden" receipt,
 // and names the hidden formats in a note that links back to the preference.
 // The suite runs fullyParallel against one shared server and every other spec
-// shares the seeded admin's storageState — a real save on that admin would
+// shares the seeded admin's storageState, and a real save on that admin would
 // hide the two CBZ fixtures out from under `landing.spec.ts` in a parallel
-// worker. So this spec provisions its OWN user (per-user pref = per-user
+// worker. So this spec provisions its OWN user (a per-user pref has a per-user
 // blast radius) and drives a fresh, cookie-less context through the login UI.
 // The CBZ fixtures (`aurora-station-01/-02`) are reserved for
 // comic_reader.spec.ts's progress writes; the assertions here are read-only,
@@ -38,7 +38,7 @@ test.beforeAll(async ({ request }) => {
   await ensureUser(request, SAVE_USER);
 });
 
-/** Provision a dedicated user via the admin API; 409 = already there. */
+/** Provision a dedicated user via the admin API (a 409 means it exists). */
 async function ensureUser(
   request: APIRequestContext,
   username: string,
@@ -104,8 +104,8 @@ test("hiding cbz removes comics from the landing for that user only", async ({
     await logInAs(page, HIDDEN_USER);
     await saveHiddenFormats(page, ["cbz"]);
 
-    // Landing: both CBZ-only fixtures gone, receipt visible, and the note
-    // naming what is hidden. No exact count — other specs may be reshaping
+    // On the landing both CBZ-only fixtures are gone, the receipt shows, and the
+    // note names what is hidden. No exact count, since other specs may be reshaping
     // the shared library in parallel.
     await gotoReady(page, "/");
     await expect(auroraTiles(page)).toHaveCount(0);
@@ -134,7 +134,7 @@ test("hiding cbz removes comics from the landing for that user only", async ({
     await expect(receipt(adminPage)).toHaveCount(0);
     await expect(hiddenNote(adminPage)).toHaveCount(0);
 
-    // Un-hide: tiles return, receipt and note gone.
+    // Un-hiding brings the tiles back and removes the receipt and note.
     await saveHiddenFormats(page, []);
     await gotoReady(page, "/");
     await expect(auroraTiles(page).first()).toBeVisible();
@@ -150,7 +150,7 @@ test("hiding cbz removes comics from the landing for that user only", async ({
       });
       if (status !== 200) {
         console.warn(
-          `hidden_formats cleanup POST failed (${status}) — later runs may start with cbz hidden`,
+          `hidden_formats cleanup POST failed (${status}). Later runs may start with cbz hidden`,
         );
       }
     } catch (e) {
@@ -228,8 +228,8 @@ test.describe("the preference saves as it changes", () => {
         expectedBody: { formats: [] },
         expectedStatus: 200,
       },
-      // A plain click: the box leaves the list once unhidden, so uncheck()
-      // would wait on a state it can no longer read.
+      // A plain click, because the box leaves the list once unhidden and
+      // uncheck() would wait on a state it can no longer read.
       async () => formatToggle(page, "djvu").click(),
     );
 

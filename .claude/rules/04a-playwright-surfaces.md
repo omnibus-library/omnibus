@@ -149,7 +149,7 @@ record that no `/api/ebooks/*/cover` request fires. `me-discard` is a button
 upload: the library is shared and a filed book is visible to every other spec.
 
 **The stats page** (period pills, the standing band, goals and household
-sharing) has its own file: [04e-playwright-stats.md](04e-playwright-stats.md).
+sharing) is covered in [04e-playwright-stats.md](04e-playwright-stats.md).
 
 **The PDF reader has no ready testid; the text layer is not an element you
 click.** `/pdf/:uuid` renders its chrome on SSR (`pdf-back`, `pdf-fit-*`,
@@ -180,7 +180,7 @@ opens the new URL directly. Three things trip specs:
 - **Under 720px the list and the section never share the screen.** With no
   `?section=` only the sidebar renders; with one, only the section and its
   `settings-back` link. A narrow spec names the section in the URL.
-- **A sidebar click over unsaved edits doesn't navigate** — it opens
+- **A sidebar click over unsaved edits doesn't navigate.** It opens
   `unsaved-confirm` (`unsaved-keep` / `unsaved-discard`).
 - **Preferences has no Save button.** Each switch saves on change and reports
   in `{slug}-status`; hidden formats is a `fieldset` (`getByRole("group")`) of

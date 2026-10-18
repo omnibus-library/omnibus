@@ -1,4 +1,4 @@
-//! Profile card (Settings › Profile): display name + avatar. Both writes are
+//! Profile card (Settings › Profile): display name and avatar. Both writes are
 //! account configuration, so they go straight to the server and surface
 //! failures inline (rule 08). Signals start empty so SSR and the first WASM
 //! paint agree (rule 07); the name's Save waits for the seeded value and

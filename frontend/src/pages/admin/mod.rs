@@ -1,4 +1,4 @@
-//! Server administration (`/admin`) — the settings shell over the sections an
+//! Server administration (`/admin`), the settings shell over the sections an
 //! administrator owns: Library (Sources, Maintenance, Metadata, Cleanup) and
 //! Server (People, Integrations, Health, Logs), each its own page. Gated on
 //! `use_admin_access`, so an unresolved reader sees loading and a non-admin a
@@ -24,7 +24,7 @@ mod page {
     };
     use crate::{Access, Route};
 
-    /// The `/admin` page: `section` picks the sidebar section.
+    /// The `/admin` page, where `section` picks the sidebar section.
     #[component]
     pub fn AdminPage(section: Option<String>) -> Element {
         let access = crate::use_admin_access();

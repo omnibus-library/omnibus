@@ -1,7 +1,7 @@
 # 04e — Playwright: the stats page
 
-Companion to [04a-playwright-surfaces.md](04a-playwright-surfaces.md): the
-`/stats` selectors that look right and match nothing, and the states a spec
+Companion to [04a-playwright-surfaces.md](04a-playwright-surfaces.md), for the
+`/stats` selectors that look right and match nothing and the states a spec
 must tell apart. `ui_tests/playwright/tests/flows/stats.spec.ts` and
 `stats_household.spec.ts` are the worked specs.
 

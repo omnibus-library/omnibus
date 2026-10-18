@@ -67,8 +67,8 @@ mod render {
         SettingsOnlyHost {},
     }
 
-    /// The list as the palette draws it before the server has answered: no
-    /// results yet, one matching setting.
+    /// The list as the palette draws it before the server has answered, with
+    /// no results yet and one matching setting.
     #[component]
     fn SettingsOnlyHost() -> Element {
         let results = use_signal(|| None::<PaletteResults>);

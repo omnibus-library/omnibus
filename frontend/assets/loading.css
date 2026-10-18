@@ -343,7 +343,7 @@ input[type="checkbox"].ld-unknown:not(.settings-switch *)::after {
   margin-top: -1px; border-radius: 1px; background: var(--ink-2);
   animation: ld-breathe 1.2s ease-in-out infinite;
 }
-/* A text or number field not read yet: disabled and tinted, never shown
+/* A text or number field not read yet is disabled and tinted, never shown
    empty as though nothing were set. */
 .settings-field input.ld-unknown:not([type="checkbox"]) {
   cursor: progress;

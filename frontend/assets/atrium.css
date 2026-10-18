@@ -128,7 +128,7 @@
      unreadable. Sepia can afford white ink because it drops the accent to
      0.58 L; light has to take the dark ink instead. */
   --accent-ink: oklch(0.16 0.02 65);
-  /* Light never set this, so it kept the dark theme's 0.30 L brown: an
+  /* Light never set this, so it kept the dark theme's 0.30 L brown, and an
      accent-soft fill under dark ink was unreadable. */
   --accent-soft: oklch(0.91 0.05 70);
   --cover-fallback-bg:  oklch(0.86 0.004 70);
@@ -5250,10 +5250,10 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   gap: 1.5rem;
 }
 
-/* Settings and Administration share one shell: a text-only section list
+/* Settings and Administration share one shell. A text-only section list sits
    beside the open section, whose cards read as hairline-separated groups
-   rather than filled boxes. Under 720px it becomes a list, then a page —
-   `has-section` is set when a `?section=` is in the URL. */
+   rather than filled boxes. Under 720px it becomes a list, then a page; the
+   shell sets `has-section` when the URL carries a `?section=`. */
 .settings-layout {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
@@ -5416,14 +5416,14 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   .settings-nav-item { transition: none; }
 }
 
-/* Small print in settings stays legible: the muted ink and an 11px floor. */
+/* Small print in settings keeps the muted ink and an 11px floor to stay legible. */
 .settings-nav-group-label,
 .settings-content .settings-hint { color: var(--ink-2); }
 .settings-content .users-table .mono { font-size: 11px; }
 
 .users-created { white-space: nowrap; }
-/* On a phone the accounts table reads as a list: one block per person, the
-   columns run inline and the actions get their own line. */
+/* On a phone the accounts table reads as a list, one block per person, with
+   the columns inline and the actions on a line of their own. */
 @media (max-width: 720px) {
   [data-testid="users-table"] thead { display: none; }
   [data-testid="users-table"],
@@ -5644,7 +5644,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .tkx-scope-chips { display: flex; gap: 5px; flex-wrap: wrap; margin-left: auto; }
 .tkx-scope-chip { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
 
-/* create form: the field, its hint, then the footer's Create token */
+/* The create form holds the field, its hint, then the footer's Create token. */
 .tkx-create.settings-form { margin-top: 0; }
 .tkx-create-hint { margin: 0; font-size: 11.5px; color: var(--ink-2); }
 
@@ -5802,7 +5802,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .logs-level-warn { background: color-mix(in oklch, var(--warn) 16%, transparent); color: var(--warn); }
 .logs-level-info { background: var(--accent-soft); color: var(--accent); }
 .logs-level-debug, .logs-level-trace { color: var(--ink-2); }
-/* Last-errors rows (Administration › Health): the book/file identifier a
+/* Last-errors rows (Administration › Health) link the book/file identifier a
    captured error carries, when present. */
 .logs-ref-link {
   color: var(--accent);
@@ -5817,10 +5817,10 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   margin-top: 1rem;
 }
 
-/* Administration › Health: five read-only groups — index status, worker
-   queue, FTS health, storage, last errors. Reuses `.card`, `.settings-status`,
+/* Administration › Health has five read-only groups: index status, worker
+   queue, FTS health, storage, last errors. It reuses `.card`, `.settings-status`,
    `.users-table`, and `.logs-stream`/`.logs-*` where a section maps onto an
-   existing shape; this covers the grid and the label/value rows. */
+   existing shape; this block styles the grid and the label/value rows. */
 .ah-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -10956,7 +10956,7 @@ html {
 }
 .profile-avatar-buttons { display: flex; align-items: center; gap: 8px; }
 .profile-avatar-actions .subtitle { margin: 0; }
-/* Visually hidden but focusable, inside its label: the label shows the focus. */
+/* Visually hidden but focusable inside its label, which shows the focus instead. */
 .profile-avatar-pick { position: relative; }
 .profile-avatar-input {
   position: absolute;
@@ -11701,8 +11701,8 @@ html {
 }
 
 /* ── Dot rail TOC ── */
-/* Positioned on its own: a box shared with anything wider would hang over the
-   panel and take the clicks meant for it. */
+/* Positioned on its own, since a box shared with anything wider would hang over
+   the panel and take the clicks meant for it. */
 .bdmq-dots {
   position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
   z-index: 6;
@@ -13288,12 +13288,11 @@ html {
   .check-in-overlay-scrim, .check-in-overlay-panel { animation: none; }
 }
 
-/* ── Settings findability (#2763) ───────────────────────────────────
-   Preferences offered where they take effect: the stats hero's sharing
-   switch and goals link, the library's hidden-formats note, and the book
-   page's scroll-stops toggle. */
+/* ── Preferences where they take effect ──────────────────────────────
+   The stats hero's sharing switch and goals link, the library's
+   hidden-formats note, and the book page's scroll-stops toggle. */
 
-/* The hero's top row: who the page shows, and whether others may see it. */
+/* The hero's top row names whose stats the page shows and whether others may see them. */
 .st-hero-bar {
   max-width: var(--st-max);
   margin: 0 auto;
@@ -13309,7 +13308,7 @@ html {
 .st-share-switch { color: var(--ink-1); }
 .st-share-error { font-size: 0.8rem; color: var(--bad); }
 
-/* Set / Edit goals: a quiet link under the goal cards, into Settings › Goals. */
+/* Set / Edit goals is a quiet link under the goal cards into Settings › Goals. */
 .st-goals-edit {
   align-self: flex-end;
   display: inline-flex; align-items: center;
@@ -13328,7 +13327,7 @@ html {
   .st-goals-edit { transition: none; }
 }
 
-/* The library's hidden-formats note: dashed and quieter than a filter chip,
+/* The library's hidden-formats note is dashed and quieter than a filter chip,
    since it is a standing preference rather than a filter on this view. */
 .lib-hidden-formats {
   display: inline-flex; align-items: center;
@@ -13352,7 +13351,7 @@ html {
 /* The book page's two readings swap inside one box that draws nothing, so
    the stage lays out its children exactly as before. */
 .bdmq-mode { display: contents; }
-/* Scroll stops: a glass pill, placed by `.bdmq-modebar` (#2763 block below). */
+/* The Scroll stops switch is a glass pill, placed by `.bdmq-modebar` below. */
 .bdmq-mode-toggle {
   display: inline-flex; align-items: center; gap: 9px;
   height: 30px; padding: 0 6px 0 12px;
@@ -13381,16 +13380,16 @@ html {
   .bdmq-mode-toggle { transition: none; }
 }
 
-/* ── Settings · personal sections (#2763) ── */
+/* ── Settings · personal sections ── */
 
-/* An autosaving control: its inline status, then the control. The status
-   span stays mounted (a live region) and only takes room once it speaks. */
+/* An autosaving control draws its inline status, then the control. The status
+   span stays mounted as a live region and takes room only once it speaks. */
 .pref-control { display: flex; align-items: center; }
 .pref-status { font-size: 0.8rem; color: var(--ink-2); }
 .pref-status:not(:empty) { margin-right: 0.75rem; }
 .pref-status.error { color: var(--bad); }
 
-/* Hidden formats: a fieldset drawn as one more settings row. The floated
+/* Hidden formats is a fieldset drawn as one more settings row. The floated
    legend lays out as ordinary content instead of sitting on the border. */
 .pref-fieldset {
   min-width: 0;
@@ -13410,13 +13409,13 @@ html {
 .copy-feedback:not(:empty) { margin-left: 0.5rem; }
 .copy-feedback.error { color: var(--bad); }
 
-/* Kindle: the sender address to approve, with its copy button. */
+/* The Kindle sender address to approve, with its copy button. */
 .kindle-delivery { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.25rem 0.75rem; }
 .kindle-delivery .subtitle { margin-bottom: 0; }
 .kindle-delivery code { font-family: var(--mono, ui-monospace, monospace); font-size: 0.85rem; overflow-wrap: anywhere; }
 
-/* ── Administration sections (#2763) ── */
-/* A card's actions are its last row: the primary action rightmost, a
+/* ── Administration sections ── */
+/* A card's actions are its last row, with the primary action rightmost and a
    destructive one (`settings-action-start`) and the form's status at the
    far left. */
 .settings-layout .settings-actions {
@@ -13432,7 +13431,7 @@ html {
 .settings-layout .settings-actions .settings-action-status { margin-right: auto; }
 .settings-layout .settings-actions .api-key-status { margin: 0 auto 0 0; }
 
-/* Maintenance: each command says what it does beside the button that runs it. */
+/* In Maintenance each command says what it does beside the button that runs it. */
 .maint-list { list-style: none; margin: 1rem 0 0; padding: 0; }
 .maint-row {
   display: flex;
@@ -13446,7 +13445,7 @@ html {
 .maint-desc { margin: 0; max-width: 56ch; color: var(--ink-1); font-size: 0.875rem; }
 .maint-row .btn { flex: none; }
 
-/* Cleanup review: the last applied change and its Undo. */
+/* The cleanup review's last applied change and its Undo. */
 .crx-undo {
   display: flex;
   align-items: center;
@@ -13465,7 +13464,7 @@ html {
   .maint-row { flex-direction: column; align-items: flex-start; gap: 0.6rem; }
 }
 
-/* ── Book page scroll-stops control (#2763) ── */
+/* ── Book page scroll-stops control ── */
 /* The switch sits in the stage's top-right corner, on the dot rail's edge
    line, a failed save's alert beside it. The bar is wider than the switch,
    so it lets clicks through wherever it draws nothing. */
@@ -13504,13 +13503,13 @@ html {
   .bdmq-mode-toggle[aria-pressed] .bdmq-mode-sw::after { transition: none; }
 }
 
-/* ── Settings · personal round two (#2763) ── */
+/* ── Settings · field errors and Kobo setup ── */
 
-/* A field a save refused: the reason under it, the input outlined. */
+/* A field a save refused shows the reason under it and an outlined input. */
 .settings-field-error { margin: 0; font-size: 0.8rem; color: var(--bad); }
 .settings-field input[aria-invalid="true"] { border-color: var(--bad); }
 
-/* Kobo setup: the steps behind a quiet disclosure under the warning. */
+/* Kobo setup keeps its steps behind a quiet disclosure under the warning. */
 .kobo-setup {
   margin-top: 0.75rem;
   padding: 0.75rem 1rem;

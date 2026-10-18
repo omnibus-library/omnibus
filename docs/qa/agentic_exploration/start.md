@@ -100,7 +100,7 @@ everything about a book — reader, player, metadata editor, journal, saved
 passages, delete — opens from that book's own page.
 
 **Your account page is Settings** on the web (user menu → Edit), and the
-**You** tab on iOS. Of it, your display name and picture (Profile), reading
+**You** tab on iOS. Within it, your display name and picture (Profile), reading
 goals (Goals) and the detail-page scroll-stop toggle (Preferences) are yours
 to change; the rest of Settings, and all of Administration, is on the rails
 below.
@@ -254,8 +254,8 @@ Never, whatever a flow seems to invite:
 - **Put a file into the library directory by any means other than uploading it
   through the app.** See above — this is the one that looks helpful and is not.
 - Destroy anything you do not own.
-- Touch **Administration** — library paths, API keys, SMTP, users, and the
-  like are instance-wide configuration and one edit breaks the run for
+- Touch **Administration**. Library paths, API keys, SMTP, users and the
+  like are instance-wide configuration, and one edit breaks the run for
   everyone. Your personal **Settings** are the one exception, and only for
   what *Your identity* above lists.
 - Trigger a reindex, a library scan, or an FTS rebuild.

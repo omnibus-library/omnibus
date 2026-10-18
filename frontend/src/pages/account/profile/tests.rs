@@ -64,7 +64,7 @@ fn profile_card_renders_the_unresolved_steady_state_before_current_user_resolves
     assert!(html.contains("data-testid=\"display-name-input\""));
     assert!(html.contains("value=\"\""));
     // Nothing to remove and nothing to report until a resolved user says
-    // otherwise — the status regions are mounted, but empty.
+    // otherwise, so the status regions are mounted but empty.
     assert!(!html.contains("data-testid=\"avatar-remove\""));
     assert!(html.contains(r#"class="settings-status" data-testid="avatar-status"></p>"#));
     assert!(html.contains(r#"class="settings-status" data-testid="profile-status"></p>"#));

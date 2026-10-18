@@ -258,7 +258,7 @@ fn FtsHealthCard(fts: FtsHealth) -> Element {
                 }
             } else {
                 p { class: "settings-status error", "data-testid": "admin-health-fts-out-of-sync",
-                    "Out of sync \u{2014} search can miss or misreport books until the index is rebuilt with "
+                    "Out of sync. Search can miss or misreport books until the index is rebuilt with "
                     code { translate: "no", "POST /api/fts/rebuild" }
                     "."
                 }

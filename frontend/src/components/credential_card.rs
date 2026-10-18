@@ -1,4 +1,4 @@
-//! Shared settings-card status primitives: the connected/configured dot line
+//! Shared settings-card status helpers: the connected/configured dot line
 //! of the credential cards (Hardcover, Google Books, SMTP, Calibre), and the
 //! save/clear/test result line every settings card reports through. Plain functions rather
 //! than `#[component]`s, so callers can invoke them mid-render without
@@ -42,7 +42,7 @@ pub fn credential_status_line(
     }
 }
 
-/// The save/clear/test result line: a `role="status"` `<p>` in the DOM before
+/// The save/clear/test result line, a `role="status"` `<p>` in the DOM before
 /// its first message, so that message is announced too (a live region mounted
 /// with its text often isn't).
 pub fn live_status(testid: &str, msg: Option<&str>, is_error: bool) -> Element {

@@ -1,7 +1,7 @@
 //! The two-pane frame `/settings` and `/admin` share: a sidebar of text-only
 //! section links beside the open section. Under 720px it reads as a list, then
-//! a page — CSS keys that on `has-section` (a `?section=` is present), so SSR
-//! and the first client paint emit the same markup whatever the viewport.
+//! a page. CSS keys that on `has-section` (set when a `?section=` is present),
+//! so SSR and the first client paint emit the same markup whatever the viewport.
 
 use dioxus::prelude::*;
 use dioxus_router::Link;

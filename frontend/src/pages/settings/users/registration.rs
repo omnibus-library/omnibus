@@ -130,7 +130,7 @@ pub(super) fn RegistrationToggle() -> Element {
                         role: "switch",
                         id: "registration-toggle",
                         "aria-describedby": "registration-toggle-desc",
-                        // Unknown: the knob waits at centre rather than claim either policy.
+                        // While unknown, the knob waits at centre rather than claim either policy.
                         class: if pending { "ld-unknown" } else { "registration-check" },
                         "data-testid": "registration-toggle",
                         checked: is_on,

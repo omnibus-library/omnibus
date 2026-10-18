@@ -263,7 +263,7 @@ test.describe("scroll stops preference", () => {
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await expect(page.locator("#bdmq-flow")).toBeAttached();
 
-    // Read down to the journal first: a flip keeps the reader where they are.
+    // Read down to the journal first, since a flip keeps the reader in place.
     await page.locator("#bdmq-flow").evaluate((el) => {
       const journal = el.querySelector<HTMLElement>(
         '[data-testid="bdmq-sec-3"]',
@@ -283,8 +283,8 @@ test.describe("scroll stops preference", () => {
       async () => toggle.click(),
     );
 
-    // No reload: the stage re-renders in the other reading on the same stop,
-    // the toggle keeps focus, and the marquee's glue follows the swap — the
+    // No reload. The stage re-renders in the other reading on the same stop,
+    // the toggle keeps focus, and the marquee's glue follows the swap, so the
     // rail tracks the snapped stops.
     await expect(page.locator("#bdmq-snap")).toBeAttached();
     await expect(page.locator("#bdmq-flow")).toHaveCount(0);
@@ -431,8 +431,8 @@ test("the dot rail leaves the journal's New entry beside it clickable", async ({
       middle(document.querySelector('[data-testid="bdmq-dots"]'));
   });
 
-  // A real pointer at the button's rail-side end: `click()` would scroll and
-  // retry until it found a spot the rail doesn't cover.
+  // A real pointer at the button's rail-side end, because `click()` would
+  // scroll and retry until it found a spot the rail doesn't cover.
   const box = (await newEntry.boundingBox())!;
   await page.mouse.click(box.x + box.width - 4, box.y + box.height / 2);
   await expect(page.getByTestId("journal-composer")).toBeVisible();

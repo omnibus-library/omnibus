@@ -1,10 +1,10 @@
-//! Hidden formats (Settings › Preferences): which formats the reader's landing
-//! All Books view excludes, as one group of checkboxes over the shared
-//! known-format vocabulary (plus any saved token the list doesn't know, so it
-//! can always be un-hidden). A change saves at once: the cached viewer takes
-//! it optimistically — so the landing's fetch key moves without a reload —
-//! and saves run one at a time, each carrying the whole set, so a quick run of
-//! clicks can't land out of order.
+//! The hidden-formats setting (Settings › Preferences) picks which formats the
+//! reader's landing All Books view excludes, as one group of checkboxes over
+//! the shared known-format vocabulary (plus any saved token the list doesn't
+//! know, so it can always be un-hidden). A change saves at once. The cached
+//! viewer takes it optimistically, which moves the landing's fetch key without
+//! a reload, and saves run one at a time, each carrying the whole set, so a
+//! quick run of clicks can't land out of order.
 
 use std::collections::BTreeSet;
 
@@ -113,8 +113,9 @@ fn FormatToggle(
     }
 }
 
-/// Whether a save loop is out, app-wide: the field may have remounted since it
-/// started, and a second loop would take the unconfirmed set as its baseline.
+/// Whether a save loop is out, app-wide, because the field may have remounted
+/// since it started and a second loop would take the unconfirmed set as its
+/// baseline.
 static LOOP_OUT: GlobalSignal<bool> = Signal::global(|| false);
 
 /// Apply one checkbox change to the cached viewer and make sure a save is
@@ -138,8 +139,8 @@ fn change_format(
 }
 
 /// Save the viewer's set until the server holds it, putting back `confirmed`
-/// (what it last accepted) if a save fails. Runs at the root: unchecking a
-/// format the list doesn't know unmounts its checkbox, and leaving the page
+/// (what it last accepted) if a save fails. Runs at the root because unchecking
+/// a format the list doesn't know unmounts its checkbox and leaving the page
 /// unmounts the field, but the save still has to settle the viewer.
 fn spawn_save_loop(
     mut viewer: Signal<Option<Option<UserSummary>>>,

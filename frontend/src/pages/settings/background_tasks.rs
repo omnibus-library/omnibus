@@ -1,4 +1,4 @@
-//! Recent tasks, under Administration › Maintenance — the admin view
+//! Recent tasks under Administration › Maintenance, the admin view
 //! over the durable `background_tasks` history table. Web/SSR-only, with the
 //! real authorization boundary being the
 //! `AdminUser` extractor on `rpc_get_background_tasks`; the in-page
@@ -41,7 +41,7 @@ fn task_kind_label(kind: &str) -> String {
     known.to_string()
 }
 
-/// Recent tasks: worker task runs with their status and timing.
+/// Recent tasks, the worker task runs with their status and timing.
 #[component]
 pub fn BackgroundTasksSection() -> Element {
     let is_admin = crate::use_is_admin();

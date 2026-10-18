@@ -420,8 +420,8 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
     }
 }
 
-/// What clearing `kind` stops, and why it can't simply be undone: a cleared
-/// secret can't be read back to restore it.
+/// What clearing `kind` stops, and why it can't simply be undone, since a
+/// cleared secret can't be read back to restore it.
 fn clear_warning(kind: SecretKeyKind) -> String {
     format!(
         "{} The key can\u{2019}t be shown again, so you\u{2019}ll need the original to put it back.",

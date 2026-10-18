@@ -1,5 +1,5 @@
-//! Settings › Preferences: how Omnibus looks and behaves for one reader, in
-//! four groups — Appearance (this device's theme), Library, Book page and
+//! Settings › Preferences, how Omnibus looks and behaves for one reader, in
+//! four groups: Appearance (this device's theme), Library, Book page and
 //! Privacy. Every control saves the moment it changes, so there is no Save
 //! button here and nothing for the unsaved-changes guard to track.
 

@@ -2,9 +2,9 @@
 //!
 //! Reads top to bottom: the first-sync warning, the setup steps (a disclosure,
 //! open by default only for a reader with no Kobo yet), the add form, then the
-//! registered Kobos with their re-displayable `api_endpoint` URL and copy
-//! button, per-device Regenerate/Remove — each confirmed, since either breaks
-//! the device's sync until it is re-set over USB. The list and the
+//! registered Kobos with their re-displayable `api_endpoint` URL, copy button
+//! and per-device Regenerate/Remove. Both ask first, since either breaks the
+//! device's sync until it is re-set over USB. The list and the
 //! disclosure's default start unanswered so SSR and the first WASM paint agree.
 
 use dioxus::prelude::*;
@@ -60,8 +60,8 @@ fn endpoint_url(server_url: &str, token: &str) -> String {
 const KOBO_BACKUP_URL: &str = "https://github.com/omnibus-library/kobo-backup";
 
 /// The "how to connect" procedure behind a disclosure, plus the standing shelf
-/// rule beneath it. The rule is deliberately **not** a numbered item: a reader
-/// working the list has nothing to do at that number.
+/// rule beneath it. The rule is deliberately **not** a numbered item, because a
+/// reader working the list has nothing to do at that number.
 fn render_kobo_setup(open: bool) -> Element {
     rsx! {
         details { class: "kobo-setup", "data-testid": "kobo-setup", open,
@@ -85,7 +85,7 @@ fn render_kobo_setup(open: bool) -> Element {
                     code { translate: "no", "api_endpoint=" }
                     " under "
                     code { translate: "no", "[OneStoreServices]" }
-                    " to the URL you copied \u{2014} or let the "
+                    " to the URL you copied, or let the "
                     a { href: KOBO_BACKUP_URL, target: "_blank", rel: "noopener noreferrer",
                         "omnibus-library/kobo-backup"
                     }
@@ -96,7 +96,7 @@ fn render_kobo_setup(open: bool) -> Element {
             p { class: "subtitle kobo-shelf-rule", "data-testid": "kobo-shelf-rule",
                 "Only shelves marked "
                 b { "Sync to Kobo" }
-                " are synced — set that on a shelf before the first sync. "
+                " are synced, so set that on a shelf before the first sync. "
                 Link { to: Route::Shelves {}, "data-testid": "kobo-shelves-link", "Choose shelves to sync" }
             }
         }
@@ -121,7 +121,7 @@ fn render_kobo_warning() -> Element {
                     a { href: KOBO_BACKUP_URL, target: "_blank", rel: "noopener noreferrer",
                         "omnibus-library/kobo-backup"
                     }
-                    " \u{2014} its TUI also sets your Kobo\u{2019}s sync URL for you"
+                    ", whose TUI also sets your Kobo\u{2019}s sync URL for you"
                 }
                 li {
                     a {
@@ -231,8 +231,8 @@ pub fn KoboDevicesCard() -> Element {
     let mut msg_is_error = use_signal(|| false);
     let mut in_flight = use_signal(|| false);
     let mut pending = use_signal(|| None::<PendingKobo>);
-    // Decided once, when the list first answers: adding the first Kobo must
-    // not fold the steps away while the reader is still following them.
+    // Decided once, when the list first answers, because adding the first Kobo
+    // must not fold the steps away while the reader is still following them.
     let mut setup_open = use_signal(|| false);
 
     let load_url = server_url.clone();

@@ -2,8 +2,8 @@
 //! audiobook) reordered with up/down buttons. One Save writes each list that
 //! changed to its scan root's `metadata_precedence` column, so a library with
 //! no path (which the server refuses) is only sent when its list was edited.
-//! The lists wait for the saved order: showing the defaults first would
-//! present an order nobody saved as the current one.
+//! The lists wait for the saved order, because showing the defaults first
+//! would present an order nobody saved as the current one.
 
 use dioxus::prelude::*;
 use omnibus_shared::MetadataSource;
@@ -183,7 +183,7 @@ fn use_order_load(url: String, card: OrderCard) {
     });
 }
 
-/// Save: write each list that changed, then report each library's outcome.
+/// Save each list that changed, then report each library's outcome.
 fn order_save_handler(url: String, card: OrderCard) -> impl FnMut(MouseEvent) {
     let OrderCard {
         libraries,
@@ -227,7 +227,7 @@ fn order_save_handler(url: String, card: OrderCard) -> impl FnMut(MouseEvent) {
 }
 
 /// Card holding both libraries' precedence lists and their one Save, which
-/// writes only the lists that changed. Admin-only — gated by the caller.
+/// writes only the lists that changed. Admin-only, gated by the caller.
 #[component]
 pub fn MetadataPrecedenceField() -> Element {
     let server_url = use_server_url();
@@ -271,7 +271,7 @@ pub fn MetadataPrecedenceField() -> Element {
         section { class: "card", "data-testid": "metadata-precedence-card",
             h3 { "Source order" }
             p { class: "subtitle",
-                "Order the sources Omnibus resolves each field from. Lower items win \u{2014} the last "
+                "Order the sources Omnibus resolves each field from. Lower items win. The last "
                 "source in the list that has a value for a field is used."
             }
             if loaded {

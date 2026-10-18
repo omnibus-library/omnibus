@@ -1,8 +1,8 @@
-//! The per-user preference switches in Settings › Preferences — Stack series,
-//! the book page's scroll stops, sharing stats with the household — plus the
-//! inline autosave status every Preferences control shares, and the one save
-//! the same switches on Stats and the book page also use. Each is account
-//! configuration (rule 08): a change saves straight to the server, patching
+//! The per-user preference switches in Settings › Preferences: Stack series,
+//! the book page's scroll stops and sharing stats with the household. It also
+//! holds the inline autosave status every Preferences control shares, and the
+//! one save the same switches on Stats and the book page use. Each is account
+//! configuration (rule 08), so a change saves straight to the server, patching
 //! the cached viewer optimistically and putting it back if the server refuses.
 
 use dioxus::prelude::*;
@@ -79,8 +79,9 @@ impl UserSetting {
     }
 }
 
-/// The preferences with a save out, app-wide rather than per switch: a switch
-/// remounted mid-save would otherwise send a second save that can land first.
+/// The preferences with a save out, app-wide rather than per switch, because a
+/// switch remounted mid-save would otherwise send a second save that can land
+/// first.
 static SAVES_OUT: GlobalSignal<Vec<UserSetting>> = Signal::global(Vec::new);
 
 /// Whether `setting` has a save out, from this switch or one since unmounted.

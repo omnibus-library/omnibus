@@ -5,11 +5,11 @@ import { expectNavVisible, gotoReady } from "../utils/nav";
 
 // Settings › Sign-in & security → API tokens (#2313, redesigned in #2330):
 // per-user long-lived `omni_…` bearers with a create-once secret hand-off
-// (copy buttons that report whether the copy landed + explicit dismiss), a
+// (copy buttons that report whether the copy landed, an explicit dismiss), a
 // token table with status pills and `omni_…xxxx` identifiers, in-row rename,
 // and in-row revoke confirmation. Tokens are per-user state on the shared
 // seeded admin, so every test names its tokens uniquely and revokes what it
-// created — counts are never asserted, only presence/absence of this test's
+// created. Counts are never asserted, only presence/absence of this test's
 // own rows.
 const SETTINGS_API_TOKENS = "/settings?section=security";
 
@@ -272,7 +272,7 @@ test("shows an error and keeps the row when revoke fails", async ({ page }) => {
 });
 
 // ── Copying the secret ──────────────────────────────────────────────
-// The copy must say whether it landed: on a plain-http LAN install there is
+// The copy must say whether it landed. On a plain-http LAN install there is
 // no `navigator.clipboard`, and a silent failure there loses the secret.
 
 test.describe("copying the secret", () => {
@@ -312,7 +312,7 @@ test("says so when the secret can't be copied", async ({ page }) => {
 
   const feedback = page.getByTestId("api-token-secret-copy-feedback");
   await expect(feedback).toHaveText(
-    "Couldn\u2019t copy \u2014 select and copy it",
+    "Couldn\u2019t copy. Select and copy it.",
   );
   await expect(feedback).toHaveClass(/error/);
   await expect(secretPanel(page)).toBeVisible();
@@ -323,9 +323,9 @@ test("says so when the secret can't be copied", async ({ page }) => {
 
 // ── Hosted MCP endpoint toggle (#2314) ──────────────────────────────
 // Lives under Administration › Integrations, admin-only (the seeded user is
-// an admin). The toggle is instance-wide state: the action test flips it on
-// and restores it off (the shipped default) before finishing, and nothing
-// else in the suite reads it — no other spec touches /mcp.
+// an admin). The toggle is instance-wide state. The action test flips it on
+// and restores it off (the shipped default) before finishing, and no other
+// spec touches /mcp, so nothing else in the suite reads it.
 
 const ADMIN_INTEGRATIONS = "/admin?section=integrations";
 

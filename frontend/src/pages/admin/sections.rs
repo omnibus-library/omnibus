@@ -20,7 +20,7 @@ pub(crate) enum AdminSection {
 }
 
 impl AdminSection {
-    /// Sidebar order: the first four are Library, the last four Server.
+    /// Sidebar order, with Library's four first and Server's four after.
     pub(crate) const ALL: [AdminSection; 8] = [
         AdminSection::Sources,
         AdminSection::Maintenance,

@@ -1,6 +1,6 @@
 //! Self-service "Sessions" card (Settings › Sign-in & security). Tabulates the
 //! caller's own live sessions — which client holds each one, when it was
-//! signed in, when it was last used — with a per-row Revoke that asks first,
+//! signed in, when it was last used. Each row has a Revoke that asks first,
 //! naming the client; the session authenticating this page has no Revoke
 //! button, because the server refuses that revoke anyway. The list starts
 //! unanswered so SSR and the first WASM paint agree on the loading rows.
@@ -151,7 +151,7 @@ fn render_session_list(
 }
 
 /// One session row: which client holds it, when it was created, when it was
-/// last used, and a Revoke button — hidden on the current session.
+/// last used, and a Revoke button, hidden on the current session.
 #[component]
 fn SessionRow(session: SessionView, disabled: bool, on_revoke: Callback<i64>) -> Element {
     let id = session.id;

@@ -45,7 +45,7 @@ pub(super) fn NewUserModal(on_close: EventHandler<()>, on_created: EventHandler<
     let saving = use_signal(|| false);
     let submit =
         build_new_user_submit_handler(username, password, perms, error, saving, on_created);
-    // Typed credentials hold the scrim: only Cancel or the close button discards them.
+    // Typed credentials hold the scrim, so only Cancel or the close button discards them.
     let holds = saving() || !username().is_empty() || !password().is_empty();
 
     rsx! {
@@ -332,7 +332,7 @@ pub(super) fn DeleteUserModal(
 #[component]
 pub(super) fn SessionsModal(user: AdminUserRow, on_close: EventHandler<()>) -> Element {
     let uid = user.id;
-    // `None` until each list answers: an empty list would claim there are none.
+    // `None` until each list answers, since an empty list would claim there are none.
     let mut sessions = use_signal(|| None::<Vec<SessionView>>);
     let mut devices = use_signal(|| None::<Vec<DeviceView>>);
     let mut error = use_signal(|| None::<String>);

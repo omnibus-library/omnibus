@@ -193,7 +193,7 @@ mod render_tests {
     }
 
     /// Read top to bottom: what this is, the hazard, how to connect, the form,
-    /// then the devices — so a device added appears below the form, not above.
+    /// then the devices, so a device added appears below the form, not above.
     #[test]
     fn kobo_card_orders_the_warning_setup_and_form_above_the_device_list() {
         let html = render_in_vdom(card);
@@ -255,7 +255,7 @@ mod render_tests {
     }
 
     /// kobo-backup both backs the device up and, through its TUI, sets the
-    /// sync URL — so the warning and the steps both point at it.
+    /// sync URL, so the warning and the steps both point at it.
     #[test]
     fn kobo_card_points_to_kobo_backup_from_the_warning_and_the_steps() {
         let html = render_in_vdom(card);

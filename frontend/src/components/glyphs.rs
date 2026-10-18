@@ -80,7 +80,7 @@ pub fn sparkle_glyph(size: u32) -> Element {
     }
 }
 
-/// Three sliders — the user menu's way into personal settings.
+/// Three sliders, the user menu's way into personal settings.
 pub fn sliders_glyph(size: u32) -> Element {
     rsx! {
         svg {
@@ -95,7 +95,7 @@ pub fn sliders_glyph(size: u32) -> Element {
     }
 }
 
-/// Two stacked server units — the user menu's way into Administration.
+/// Two stacked server units, the user menu's way into Administration.
 pub fn server_glyph(size: u32) -> Element {
     rsx! {
         svg {

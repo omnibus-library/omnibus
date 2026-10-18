@@ -1,5 +1,5 @@
-//! One settings row: the setting's name and what it does on the left, its
-//! control on the right. Shared by Preferences and the in-context toggles
+//! One settings row, with the setting's name and what it does on the left and
+//! its control on the right. Shared by Preferences and the in-context toggles
 //! elsewhere, so a switch reads the same wherever a reader meets it.
 
 use dioxus::prelude::*;

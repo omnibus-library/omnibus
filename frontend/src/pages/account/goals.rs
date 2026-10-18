@@ -1,11 +1,11 @@
 //! Reading-goals card in Settings → Goals: the annual books target and the
 //! two standing daily targets, always editable, saved together by one Save all.
 //!
-//! One form rather than three, even though the write path is per-kind: a
-//! reader setting up their year thinks about all three at once.
-//! [`changed_updates`] is what keeps the per-kind contract intact — only the
-//! kinds whose value actually moved are written, so a save never restates a
-//! target the reader didn't touch.
+//! One form rather than three, even though the write path is per-kind, because
+//! a reader setting up their year thinks about all three at once.
+//! [`changed_updates`] keeps the per-kind contract intact. It writes only the
+//! kinds whose value actually moved, so a save never restates a target the
+//! reader didn't touch.
 //!
 //! Goals are account configuration, so every write goes straight to the server
 //! and surfaces its failure inline (rule 08 test 1). The inputs start disabled
@@ -78,7 +78,7 @@ struct GoalSignals {
     msg_is_error: Signal<bool>,
     /// The server's current targets, in [`FIELDS`] order.
     targets: Signal<[Option<i64>; 3]>,
-    /// `None` until the read returns, then whether it succeeded — "no target"
+    /// `None` until the read returns, then whether it succeeded, since "no target"
     /// is only a fact once the server has said so.
     loaded: Signal<Option<bool>>,
 }
@@ -94,7 +94,7 @@ fn plural(unit: &str, n: i64) -> String {
 }
 
 /// Parse and bound one draft. An empty draft is a deliberate clear, not an
-/// error — it is how the form expresses "no target" without a Clear button
+/// error. It is how the form expresses "no target" without a Clear button
 /// per row.
 ///
 /// Mirrors the write path's own bounds so a typo never costs a round trip.
@@ -182,7 +182,7 @@ fn use_goal_hydration(server_url: String, mut signals: GoalSignals) {
         spawn(async move {
             let Ok(summary) = data::fetch_stats(&url, StatsRange::AllTime, None).await else {
                 signals.msg.set(Some(
-                    "Couldn\u{2019}t load your goals \u{2014} reload to try again.".to_string(),
+                    "Couldn\u{2019}t load your goals. Reload to try again.".to_string(),
                 ));
                 signals.msg_is_error.set(true);
                 signals.loaded.set(Some(false));
@@ -218,7 +218,7 @@ fn save_handler(
             Err(errors) => {
                 signals.errors.set(errors);
                 signals.msg.set(Some(
-                    "Nothing saved yet \u{2014} check the targets marked above.".to_string(),
+                    "Nothing saved yet. Check the targets marked above.".to_string(),
                 ));
                 signals.msg_is_error.set(true);
                 return;
@@ -244,12 +244,12 @@ fn save_handler(
                     landed[i] = value;
                 } else {
                     failed.push(FIELDS[i].label);
-                    errors[i] = Some("This one didn\u{2019}t save \u{2014} try again.".to_string());
+                    errors[i] = Some("This one didn\u{2019}t save. Try again.".to_string());
                 }
             }
             let (msg, is_error) = save_summary(&failed);
             signals.targets.set(landed);
-            // Reset only the drafts that landed: a failed kind keeps what the
+            // Reset only the drafts that landed. A failed kind keeps what the
             // reader typed, so it still differs from its target and the retry
             // the status line asks for has something to write.
             let mut drafts_after = (signals.drafts)();
@@ -289,7 +289,7 @@ async fn write_daily(server_url: &str, kind: &str, target: Option<i64>) -> bool 
         .is_ok()
 }
 
-/// One goal's label, input, hint and — once a save refuses it — its error.
+/// One goal's label, input and hint, plus its error once a save refuses it.
 /// Until the goals are read the input is disabled and claims no value.
 fn goal_field(i: usize, signals: GoalSignals, known: bool, saving: bool) -> Element {
     let GoalSignals {
@@ -341,7 +341,7 @@ fn goal_field(i: usize, signals: GoalSignals, known: bool, saving: bool) -> Elem
     }
 }
 
-/// The footer's status: a sheen while the goals are read, then the last
+/// The footer's status shows a sheen while the goals load, then the last
 /// save's outcome. Always mounted, so its first message is announced.
 fn goals_status(loaded: Option<bool>, msg: Option<String>, is_error: bool) -> Element {
     let class = status_class(ACTION_STATUS, msg.is_some(), is_error);
@@ -390,8 +390,8 @@ pub(crate) fn ReadingGoalsCard() -> Element {
                  already made toward it."
             }
             // `novalidate`: the browser's own constraint check would silently
-            // refuse the submit on an over-`max` value, so the field's error —
-            // which names its bound — would never show.
+            // refuse the submit on an over-`max` value, so the field's error,
+            // which names its bound, would never show.
             form {
                 id: "goals-form",
                 class: "settings-form",

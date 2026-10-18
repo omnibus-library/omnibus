@@ -110,8 +110,8 @@ struct CleanupLogRow {
 
 /// Put the suggestion an undone change was accepted from back to pending. Left
 /// accepted, its row would block detection from ever re-suggesting the same
-/// payload. A merge whose sources came back under new ids is retired by the
-/// next prune instead.
+/// payload. The next prune retires a merge whose sources came back under new
+/// ids instead.
 async fn reopen_suggestion_tx(
     tx: &mut Transaction<'_, Sqlite>,
     suggestion_id: Option<i64>,

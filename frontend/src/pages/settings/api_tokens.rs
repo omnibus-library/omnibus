@@ -52,8 +52,8 @@ fn mcp_command(origin: &str, bearer: &str) -> String {
     )
 }
 
-/// Whether the numbered-steps empty state replaces the plain create card: only
-/// once the list has answered with nothing, never while it is still loading.
+/// Whether the numbered-steps empty state replaces the plain create card, which
+/// it does only once the list has answered with nothing, never while loading.
 fn empty_state_shown(loaded: bool, count: usize) -> bool {
     loaded && count == 0
 }
@@ -100,11 +100,11 @@ fn create_form(
     }
 }
 
-/// Section body: head + scope strip, the create form (or the numbered-steps
+/// Section body: head and scope strip, the create form (or the numbered-steps
 /// empty state), the one-time secret under it, then the token table. The
 /// freshly-minted secret renders in a hand-off panel that survives until
-/// dismissed, the page unmounts, or another token is created — it can never be
-/// fetched again.
+/// dismissed, the page unmounts, or another token is created, since it can
+/// never be fetched again.
 #[component]
 pub fn ApiTokensSection() -> Element {
     let mut tokens = use_signal(Vec::<ApiTokenView>::new);
@@ -157,7 +157,7 @@ pub fn ApiTokensSection() -> Element {
                     tokens.write().insert(0, created.token);
                     // Announces the secret panel through the live status line.
                     msg.set(Some(
-                        "Token created. Copy its secret now \u{2014} it isn\u{2019}t shown again."
+                        "Token created. Copy its secret now, since it isn\u{2019}t shown again."
                             .to_string(),
                     ));
                     msg_is_error.set(false);

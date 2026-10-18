@@ -342,7 +342,7 @@ fn SpGenreRow(
     }
 }
 
-/// A setting: its name over where it lives ("Settings › Preferences").
+/// A setting row, its name over where it lives ("Settings › Preferences").
 #[component]
 fn SpSettingRow(
     entry: &'static SettingsEntry,

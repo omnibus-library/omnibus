@@ -88,8 +88,8 @@ fn pace_note(goal: &ReadingGoal, as_of_day: &str) -> Option<String> {
     })
 }
 
-/// The hero's one goals control: Settings → Goals, worded by whether any goal
-/// is set yet.
+/// The hero's one goals control, a link to Settings → Goals worded by whether
+/// any goal is set yet.
 #[component]
 pub(super) fn GoalsLink(any_set: bool) -> Element {
     rsx! {

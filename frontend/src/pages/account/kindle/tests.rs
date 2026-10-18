@@ -87,9 +87,7 @@ fn kindle_delivery_line_names_the_sender_to_approve_when_delivery_is_ready() {
 fn kindle_delivery_line_sends_a_reader_to_their_administrator_when_not_set_up() {
     let html = render_in_vdom(|| kindle_delivery_line(not_set_up(), Access::Denied));
     assert!(
-        html.contains(
-            "Email delivery isn\u{2019}t set up on this server \u{2014} ask your administrator."
-        ),
+        html.contains("Email delivery isn\u{2019}t set up on this server. Ask your administrator."),
         "{html}"
     );
 }
@@ -101,7 +99,7 @@ fn kindle_delivery_line_links_an_admin_to_integrations_when_not_set_up() {
         html.contains(r#"href="/admin?section=integrations""#),
         "{html}"
     );
-    assert!(!html.contains("ask your administrator"), "{html}");
+    assert!(!html.contains("Ask your administrator"), "{html}");
 }
 
 #[test]

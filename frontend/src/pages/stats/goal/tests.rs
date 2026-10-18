@@ -204,7 +204,7 @@ mod render_tests {
         }
     }
 
-    /// The cluster only reports: the hero's one goals link is the way to
+    /// The cluster only reports. The hero's one goals link is the way to
     /// change them, so neither card carries a control of its own.
     #[test]
     fn the_goal_cluster_reports_goals_with_no_control_of_its_own() {

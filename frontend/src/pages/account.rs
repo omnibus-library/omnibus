@@ -119,8 +119,8 @@ impl ThemeKind {
 
 // ── Page ───────────────────────────────────────────────────────────
 
-/// The native "You" tab. Web never routes here — `/account` redirects into
-/// Settings — so off mobile it renders nothing.
+/// The native "You" tab. Web never routes here because `/account` redirects
+/// into Settings, so off mobile it renders nothing.
 #[component]
 pub fn AccountPage() -> Element {
     #[cfg(feature = "mobile")]

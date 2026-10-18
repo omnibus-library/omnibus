@@ -4,7 +4,7 @@ import { expectMutation } from "../utils/api";
 import { TEST_USERNAME } from "../utils/auth";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
-// Admin user management — Administration › People. The seeded session is an
+// Admin user management at Administration › People. The seeded session is an
 // admin, so it sees the section. The create/delete round-trip uses a username no other spec or
 // fixture touches and removes it at the end, so the shared server is left as it
 // was found. The last-admin / non-admin guards are covered by the server

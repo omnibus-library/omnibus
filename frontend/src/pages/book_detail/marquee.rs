@@ -4,7 +4,7 @@
 //! (the default) is one continuous flow, on is the snapped marquee, same
 //! content either way. A switch in the stage's top-right corner flips it in
 //! place.
-//! Mechanics: `flow.js` / `marquee.js`, post-mount.
+//! `flow.js` and `marquee.js` run both readings after mount.
 
 use dioxus::prelude::*;
 use omnibus_shared::progress::ProgressFormat;
@@ -170,8 +170,8 @@ pub(super) fn MarqueeStage(
     let (mode_view, on_mode_toggle) = use_scroll_stops_toggle();
 
     // Install the scroll glue after mount and re-run it when the book or mode
-    // changes, replacing the other mode's listeners: a new book opens at the
-    // top, a flip keeps the reader's section. The eval is a no-op on SSR.
+    // changes, replacing the other mode's listeners. A new book opens at the
+    // top; a flip keeps the reader's section. The eval is a no-op on SSR.
     {
         let uuid = uuid.clone();
         let mut glued_book = use_signal(String::new);
@@ -373,7 +373,7 @@ struct ScrollStopsView {
     failed: bool,
 }
 
-/// The stage's Scroll stops switch, pinned to its top-right corner: pressed
+/// The stage's Scroll stops switch, pinned to its top-right corner and pressed
 /// while the panel snaps section by section. Until the viewer resolves it is
 /// inert and claims neither reading (rule 12).
 #[component]
@@ -404,9 +404,9 @@ fn ScrollStopsToggle(view: ScrollStopsView, on_toggle: EventHandler<()>) -> Elem
     }
 }
 
-/// The toggle's state and press handler: flip the cached viewer (the stage
-/// re-renders in the other mode at once), save, and flip back if refused —
-/// the save Preferences' switch makes.
+/// The toggle's state and press handler. It flips the cached viewer (the stage
+/// re-renders in the other mode at once), saves, and flips back if refused,
+/// through the same save the Preferences switch makes.
 fn use_scroll_stops_toggle() -> (ScrollStopsView, EventHandler<()>) {
     use crate::pages::account::user_settings::{toggle, SaveState, UserSetting};
 

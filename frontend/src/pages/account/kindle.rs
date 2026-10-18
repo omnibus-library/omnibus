@@ -1,7 +1,7 @@
 //! Send-to-Kindle destination card (Settings › Devices): the saved address,
 //! hydrated from `/api/auth/me` after mount, with save/clear round-tripping
 //! through `data::set_kindle_email`, and whether this server can deliver at
-//! all — with the sender address the reader must approve at Amazon. Until
+//! all, with the sender address the reader must approve at Amazon. Until
 //! each read answers, its line checks rather than guessing.
 
 use dioxus::prelude::*;
@@ -99,12 +99,12 @@ fn kindle_save_handler(
     }
 }
 
-/// What Clear's confirm says: the address it removes, and what stops.
+/// What Clear's confirm says, naming the address it removes and what stops.
 fn kindle_clear_warning(address: &str) -> String {
     format!("Send to Kindle stops delivering to {address} until you save an address again.")
 }
 
-/// The confirmed clear: remove the saved address, then close the confirm.
+/// Clear the saved address once confirmed, then close the confirm.
 fn kindle_clear_handler(
     server_url: String,
     mut signals: KindleEmailSignals,
@@ -336,7 +336,7 @@ fn kindle_delivery_line(delivery: Option<Option<KindleDelivery>>, access: Access
         },
         Access::Denied => rsx! {
             p { class: "subtitle", "data-testid": "kindle-delivery",
-                "Email delivery isn\u{2019}t set up on this server \u{2014} ask your administrator."
+                "Email delivery isn\u{2019}t set up on this server. Ask your administrator."
             }
         },
     }

@@ -1,4 +1,4 @@
-//! Library sources — the library-path form plus live file summaries, and the
+//! Library sources: the library-path form plus live file summaries, and the
 //! separate maintenance panel. The form points Omnibus at ebook and audiobook
 //! directories and sets the automatic-rescan interval; recursive per-extension
 //! counts from the scanner let path changes be eyeballed before saving.
@@ -15,7 +15,7 @@ use crate::data::server_error_message;
 use crate::{data, use_server_url};
 
 /// Where the saved settings stand. Save writes every field, so it waits for
-/// them: blank fields saved over a failed read would clear both library paths.
+/// them. Blank fields saved over a failed read would clear both library paths.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Load {
     Pending,
@@ -264,7 +264,7 @@ fn spawn_library_refresh(
     });
 }
 
-/// Returns the `<form onsubmit>` handler that POSTs the path + interval inputs,
+/// Returns the `<form onsubmit>` handler that POSTs the path and interval inputs,
 /// refusing (with the reason where the reader will look) a Save
 /// [`settings_payload`] rules out.
 fn save_settings_handler(

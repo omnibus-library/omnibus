@@ -1,7 +1,7 @@
 //! Wire types for the in-memory "last errors" ring buffer. Populated by the
 //! tracing `Layer` in `server::logging::init_tracing` from ERROR-level events
 //! and read by the admin health report (Administration › Health). A fast,
-//! bounded companion to the durable JSON log sink ([`crate::logs`]) — not a
+//! bounded companion to the durable JSON log sink ([`crate::logs`]), not a
 //! replacement.
 
 use serde::{Deserialize, Serialize};

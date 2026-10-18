@@ -100,8 +100,8 @@ pub(super) fn StatsHero(
     #[props(default)] who: Option<String>,
     children: Element,
 ) -> Element {
-    // Goals are read-only on another reader's page: nobody edits someone
-    // else's targets.
+    // Goals are read-only on another reader's page, since nobody edits
+    // someone else's targets.
     let editable = who.is_none();
     let as_of_day = summary
         .as_ref()

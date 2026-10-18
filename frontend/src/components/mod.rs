@@ -71,7 +71,7 @@ pub use page_state::{PageError, PageNotFound};
 pub mod cover_tile;
 pub use cover_tile::{CoverTile, CoverTileKind};
 
-// Shared settings-card status primitives: the credential cards' configured dot
+// Shared settings-card status helpers: the credential cards' configured dot
 // line and every settings card's save/clear/test result line.
 pub mod credential_card;
 

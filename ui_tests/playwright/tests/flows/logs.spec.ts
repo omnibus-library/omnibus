@@ -3,7 +3,7 @@ import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
-// The admin log viewer — Administration › Logs;
+// The admin log viewer at Administration › Logs;
 // the legacy `/logs` route redirects here. The layout test runs against the real on-disk
 // logs the server is already writing (proving AC1 end-to-end); the filter /
 // error / pagination tests mock `/api/rpc/logs` after the initial load so the

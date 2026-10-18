@@ -1,4 +1,4 @@
-//! People section — the admin accounts table plus the New / Edit /
+//! The People section: the admin accounts table plus the New / Edit /
 //! Delete modals and inline Unlock. Admin-only; rendered as the `people`
 //! section of `/admin`. SSR and the first WASM paint both start from an
 //! unanswered list shown as skeleton rows (rule 07); the post-mount effect

@@ -1,4 +1,4 @@
-//! Toolbar (Stack series + view mode + sort key + sort direction + the
+//! Toolbar (Stack series, view mode, sort key, sort direction and the
 //! hidden-formats note) and the filter chip bar beneath it, for the landing
 //! page.
 //!
@@ -77,8 +77,8 @@ pub(super) fn Toolbar(
     }
 }
 
-/// "Hidden: M4B, MP3" — the formats the reader's preference keeps off All
-/// Books, or `None` when it hides nothing.
+/// The formats the reader's preference keeps off All Books, worded as
+/// "Hidden: M4B, MP3", or `None` when it hides nothing.
 fn hidden_formats_label(formats: &[String]) -> Option<String> {
     if formats.is_empty() {
         return None;
@@ -98,7 +98,7 @@ fn HiddenFormatsLink(label: String) -> Element {
             "data-testid": "lib-hidden-formats",
             to: link_target(SettingsTarget::Personal(SettingsSection::Preferences).route()),
             "{label}"
-            span { class: "sr-only", " \u{2014} change in Settings" }
+            span { class: "sr-only", ". Change in Settings" }
         }
     }
 }

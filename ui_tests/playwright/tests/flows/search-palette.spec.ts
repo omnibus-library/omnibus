@@ -128,7 +128,7 @@ test.describe("settings results", () => {
     page,
   }) => {
     await gotoReady(page, "/");
-    // Hold the library search open: settings match in the browser, so they
+    // Hold the library search open. Settings match in the browser, so they
     // must not wait on it.
     let release: () => void = () => {};
     const held = new Promise<void>((resolve) => {

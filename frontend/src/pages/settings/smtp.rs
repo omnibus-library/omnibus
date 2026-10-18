@@ -55,8 +55,8 @@ pub fn SmtpConfigField() -> Element {
         section { class: "card", "data-testid": "smtp-card",
             h3 { "Email delivery (SMTP)" }
             p { class: "subtitle", "The mail relay Send-to-Kindle sends books through." }
-            // `novalidate`: the browser's own range check would refuse the
-            // submit before the port's message below could say why.
+            // `novalidate`, because the browser's own range check would refuse
+            // the submit before the port's message below could say why.
             form { class: "settings-form", novalidate: true, onsubmit: on_save,
                 SmtpConnectionFields { fields, configured }
                 SmtpTestActions {
@@ -249,8 +249,8 @@ fn make_smtp_save(server_url: String, fields: SmtpFields, io: SmtpIo) -> impl Fn
         };
         let url = server_url.clone();
         in_flight.set(true);
-        // What was sent, not what the fields hold when the answer lands: an
-        // edit typed meanwhile must still read as unsaved.
+        // What was sent, not what the fields hold when the answer lands, since
+        // an edit typed meanwhile must still read as unsaved.
         let mut submitted = fields.values();
         let sent_password = std::mem::take(&mut submitted.password);
         spawn(async move {

@@ -192,9 +192,9 @@ pub struct SmtpConfigStatus {
     pub source: String,
 }
 
-/// Whether Send-to-Kindle can deliver, for any signed-in reader: the sender
-/// address a reader must approve at Amazon, `None` when no relay is set up.
-/// Never the relay's host or credentials.
+/// Whether Send-to-Kindle can deliver, for any signed-in reader. Carries the
+/// sender address a reader must approve at Amazon, or `None` when no relay is
+/// set up, and never the relay's host or credentials.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct KindleDelivery {
     pub sender_address: Option<String>,

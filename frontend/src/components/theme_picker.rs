@@ -1,4 +1,4 @@
-//! The theme control — Dark / Black / Light / Sepia as one segmented group,
+//! The theme control, Dark / Black / Light / Sepia as one segmented group,
 //! shared by the user menu and Settings › Preferences. It reads the app-wide
 //! theme signal, which starts at Dark on every target and takes the persisted
 //! choice after mount, so SSR and the first paint agree (rule 07).

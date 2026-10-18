@@ -1,5 +1,5 @@
-//! Tests for the settings-card status primitives: the credential dot line's
-//! states, and the result line mounted before its first message.
+//! Tests for the settings-card status helpers: the credential dot line's
+//! states and the result line mounted before its first message.
 
 use crate::test_support::render;
 

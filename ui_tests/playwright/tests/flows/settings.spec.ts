@@ -4,7 +4,7 @@ import { expect, test } from "../fixtures/test";
 import { expectMutation, recordRequests } from "../utils/api";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
-// Settings splits in two shells: `/settings` holds each reader's own sections
+// Settings splits in two shells. `/settings` holds each reader's own sections
 // and `/admin` the server's, each section behind a `?section=` slug, so tests
 // navigate straight to the section whose controls they exercise. The seeded
 // dev user is an admin, so every admin section is present.
@@ -641,7 +641,7 @@ test("saves a Hardcover key, shows a connected status, then clears it", async ({
       expectedStatus: 200,
     },
     async () => {
-      // Clearing asks first: the key can't be read back to restore it.
+      // Clearing asks first, since the key can't be read back to restore it.
       await hardcoverClearButton(page).click();
       await hardcoverClearConfirm(page).click();
     },

@@ -1,9 +1,9 @@
-//! Personal settings (`/settings`) — a sidebar of the five sections every
+//! Personal settings (`/settings`), a sidebar of the five sections every
 //! reader owns (Profile, Preferences, Goals, Devices, Sign-in & security),
 //! picked by `?section=`. Server configuration lives under `/admin`
 //! ([`crate::pages::admin`]), which reuses this module's shell and the admin
 //! cards declared here. An older `?section=` slug redirects to its new home.
-//! The mobile shell has no sidebar — it renders its library/admin cards flat.
+//! The mobile shell has no sidebar and renders its library/admin cards flat.
 
 // Web/server only: the API-token management card calls the web-only
 // `data::*_api_token` wrappers (no mobile surface).
@@ -99,8 +99,8 @@ pub fn SettingsPage(section: Option<String>) -> Element {
 }
 
 /// Mobile settings: the library form plus the admin maintenance, key and SMTP
-/// cards, flat (no sidebar, no metadata-precedence or logs surfaces — those
-/// stay web-only).
+/// cards, laid out flat. There is no sidebar, and the metadata-precedence card
+/// and the log viewer stay web-only.
 #[cfg(feature = "mobile")]
 #[component]
 pub fn SettingsPage(section: Option<String>) -> Element {

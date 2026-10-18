@@ -396,7 +396,7 @@ fn UmSessionRows(on_signout: EventHandler<()>) -> Element {
     }
 }
 
-/// The theme section: the shared segmented control under its label.
+/// The theme section, the shared segmented control under its label.
 #[cfg(any(feature = "web", feature = "server"))]
 #[component]
 fn UmThemeSeg() -> Element {

@@ -5,12 +5,12 @@ import { TEST_PASSWORD } from "../utils/auth";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
 // Personal settings (#2763) are five sections: Profile (display name and
-// picture), Preferences (theme, Stack series, hidden formats, scroll stops,
-// share stats — every control saves as it changes), Goals, Devices (Kindle
+// picture), Preferences (theme, Stack series, hidden formats, scroll stops
+// and share stats, each saving as it changes), Goals, Devices (Kindle
 // delivery and Kobo wireless sync) and Sign-in & security (password,
 // sessions, API tokens). The legacy standalone `/account` page redirects
 // into Settings. The seeded session (global setup) is an authed admin, which
-// is a superset of the plain-user surface these sections need. The admin's
+// is a superset of the plain-user access these sections need. The admin's
 // Stack series, hidden formats and scroll stops are read by other specs, so
 // this file only asserts those controls render; it never flips them.
 const PROFILE = "/settings?section=profile";
@@ -257,7 +257,7 @@ test("adds a Kobo device with an absolute endpoint URL, then removes it", async 
 });
 
 // The device list is per-user state on the shared admin, so both disclosure
-// states are stubbed: whether it opens on its own depends on the list.
+// states are stubbed, since whether it opens on its own depends on the list.
 test("open the kobo setup steps from their disclosure", async ({ page }) => {
   await stubKoboDevices(page, [{ id: 1, name: "Kobo Clara" }]);
   await gotoReady(page, DEVICES);
@@ -807,8 +807,8 @@ test.describe
       await goalInput(page, "minutes").fill("45");
       await expect(saveAll(page)).toBeEnabled();
 
-      // One Save all, three per-kind writes: the annual route and the daily
-      // route can't be batched, so the card fans out and reports what landed.
+      // One Save all makes three per-kind writes. The annual and daily routes
+      // can't be batched, so the card fans out and reports what landed.
       await expectMutation(
         page,
         {
@@ -847,7 +847,7 @@ test.describe
       await gotoReady(page, GOALS);
       await expect(goalInput(page, "pages")).toHaveValue("30");
 
-      // Blanking is how the form drops a goal — there is no Clear per row.
+      // Blanking is how the form drops a goal. There is no Clear per row.
       await goalInput(page, "pages").fill("");
 
       await expectMutation(
@@ -896,7 +896,7 @@ test.describe
       await expect(page.getByTestId("goals-status")).toContainText(
         "Nothing saved",
       );
-      // Nothing was written — the form keeps the value it rejected.
+      // Nothing was written, and the form keeps the value it rejected.
       await expect(goalInput(page, "pages")).toHaveValue("1500");
     });
 

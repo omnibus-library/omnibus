@@ -86,7 +86,7 @@ pub async fn get_cleanup_queue(
 
 /// Web/SSR: record an Accept / Reject on one suggestion. Accepting also runs
 /// the apply primitive server-side, so this returns only once the library has
-/// actually changed — with the `cleanup_log` id [`undo_cleanup`] takes.
+/// actually changed, returning the `cleanup_log` id [`undo_cleanup`] takes.
 #[cfg(not(feature = "mobile"))]
 pub async fn decide_cleanup_suggestion(
     _server_url: &str,

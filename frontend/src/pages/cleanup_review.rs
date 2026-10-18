@@ -1,4 +1,4 @@
-//! Library-cleanup review page (`/admin/cleanup/:kind`) — one suggestion card
+//! Library-cleanup review page (`/admin/cleanup/:kind`), one suggestion card
 //! at a time, decided with Accept / Reject / Skip, with an Undo for the last
 //! change this sitting applied. Web/SSR only: the real
 //! authorization boundary is the `AdminUser` extractor on the `cleanup/*`
@@ -72,7 +72,7 @@ struct QueueState {
     generation: Signal<u32>,
 }
 
-/// The `/admin/cleanup/:kind` review surface. An unrecognized `kind` slug
+/// The `/admin/cleanup/:kind` review page. An unrecognized `kind` slug
 /// renders the not-found notice rather than silently reviewing another kind.
 #[component]
 pub fn CleanupReviewPage(kind: String) -> Element {
@@ -277,8 +277,8 @@ fn review_key_action(key: &Key) -> Option<ReviewKey> {
 /// so it comes back on the next pass.
 ///
 /// A no-op once the queue is worked through, like Accept and Reject, so Space
-/// on the end-of-pass screen doesn't keep counting skips into the tally — and
-/// while a decision is in flight, whose own success is what advances.
+/// on the end-of-pass screen doesn't keep counting skips into the tally. It is
+/// also a no-op while a decision is in flight, whose own success advances.
 fn skip(state: QueueState) {
     if (state.in_flight)() || current_card(&state.cards.read(), (state.cursor)()).is_none() {
         return;
@@ -362,7 +362,7 @@ fn decide(server_url: String, state: QueueState, decision: Decision) {
     });
 }
 
-/// Reverse the change the undo bar offers, then refetch the queue: undo
+/// Reverse the change the undo bar offers, then refetch the queue. Undo
 /// reopens its suggestion, so the card comes back if it still applies.
 fn undo_last(server_url: String, state: QueueState) {
     let QueueState {

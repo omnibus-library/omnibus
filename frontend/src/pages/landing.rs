@@ -99,7 +99,7 @@ pub fn LandingPage() -> Element {
 }
 
 /// Short, human-friendly tail of an absolute library path. We show only the
-/// last segment to keep the header line tidy — full path lives in Administration › Sources.
+/// last segment to keep the header line tidy. The full path lives in Administration › Sources.
 fn short_path(path: &str) -> String {
     path.rsplit('/')
         .find(|s| !s.is_empty())

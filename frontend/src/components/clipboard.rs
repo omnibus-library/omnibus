@@ -1,8 +1,9 @@
-//! Copy-to-clipboard for values a reader carries elsewhere — a Kobo endpoint
-//! URL, a one-time token secret. [`copy_text`] reports whether the copy landed,
-//! falling back to a hidden textarea and `execCommand("copy")` where
-//! `navigator.clipboard` is missing (a plain-http LAN install is not a secure
-//! context), and [`CopyButton`] says so on screen — a copy never fails silently.
+//! Copy-to-clipboard for values a reader carries elsewhere, such as a Kobo
+//! endpoint URL or a one-time token secret. [`copy_text`] reports whether the
+//! copy landed, falling back to a hidden textarea and `execCommand("copy")`
+//! where `navigator.clipboard` is missing (a plain-http LAN install is not a
+//! secure context), and [`CopyButton`] says so on screen, so a copy never fails
+//! silently.
 
 use dioxus::prelude::*;
 
@@ -56,12 +57,12 @@ pub async fn copy_text(text: &str) -> bool {
     false
 }
 
-/// The feedback line beside a copy button: empty until a copy is tried.
+/// The feedback line beside a copy button, empty until a copy is tried.
 pub fn copy_feedback(outcome: Option<CopyOutcome>) -> &'static str {
     match outcome {
         None => "",
         Some(CopyOutcome::Copied) => "Copied",
-        Some(CopyOutcome::Failed) => "Couldn\u{2019}t copy \u{2014} select and copy it",
+        Some(CopyOutcome::Failed) => "Couldn\u{2019}t copy. Select and copy it.",
     }
 }
 
