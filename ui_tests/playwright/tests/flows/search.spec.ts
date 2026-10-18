@@ -54,15 +54,26 @@ test.describe("search from the palette", () => {
     });
   });
 
-  test("leave the search trigger off the settings page", async ({
+  // Settings are findable from the palette, so the trigger stays put on the
+  // pages that hold them.
+  test("show the search trigger on settings and administration", async ({
     settingsPage,
+    adminPage,
   }) => {
     await test.step("open settings", async () => {
       await settingsPage.goto();
     });
 
-    await test.step("check the nav has no search trigger", async () => {
-      await expect(settingsPage.topNav.searchButton).toHaveCount(0);
+    await test.step("check the nav has the search trigger", async () => {
+      await expect(settingsPage.topNav.searchButton).toBeVisible();
+    });
+
+    await test.step("open administration", async () => {
+      await adminPage.goto();
+    });
+
+    await test.step("check the nav has the search trigger", async () => {
+      await expect(adminPage.topNav.searchButton).toBeVisible();
     });
   });
 

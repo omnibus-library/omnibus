@@ -24,6 +24,7 @@ export class TopNavComponent extends BaseComponent {
   readonly shelvesLink: Locator;
   readonly signOutButton: Locator;
   readonly settingsLink: Locator;
+  readonly adminLink: Locator;
   readonly editLink: Locator;
   readonly versionText: Locator;
   readonly nowReadingLink: Locator;
@@ -31,6 +32,7 @@ export class TopNavComponent extends BaseComponent {
   readonly piranesiText: Locator;
   readonly progressErrorMessage: Locator;
   readonly notificationsText: Locator;
+  readonly serverHealthText: Locator;
   readonly themeRoot: Locator;
 
   constructor(page: Page) {
@@ -52,6 +54,7 @@ export class TopNavComponent extends BaseComponent {
     this.shelvesLink = this.root.getByRole("link", { name: "Shelves" });
     this.signOutButton = page.getByTestId("logout-button");
     this.settingsLink = page.getByRole("link", { name: "Settings" });
+    this.adminLink = page.getByTestId("user-menu-admin");
     this.editLink = page.getByRole("link", { name: "Edit" });
     this.versionText = page.getByTestId("user-menu-version");
     this.nowReadingLink = page.getByTestId("user-menu-now-reading-action");
@@ -59,6 +62,7 @@ export class TopNavComponent extends BaseComponent {
     this.piranesiText = page.getByText("Piranesi");
     this.progressErrorMessage = page.getByRole("alert");
     this.notificationsText = this.userMenuPanel.getByText("Notifications");
+    this.serverHealthText = this.userMenuPanel.getByText("Server health");
     this.themeRoot = page.locator("div.atrium").first();
   }
 
@@ -97,6 +101,10 @@ export class TopNavComponent extends BaseComponent {
 
   async openSettings(): Promise<void> {
     await this.settingsLink.click();
+  }
+
+  async openAdministration(): Promise<void> {
+    await this.adminLink.click();
   }
 
   async editProfile(): Promise<void> {

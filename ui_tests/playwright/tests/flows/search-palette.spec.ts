@@ -139,6 +139,76 @@ test.describe("search palette", () => {
     });
   });
 
+  // Settings match in the browser, so no library is needed.
+  test.describe("settings results", () => {
+    test("show a matching setting before the library answers and open its section", async ({
+      libraryPage,
+      settingsPage,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
+
+      await test.step("search for a setting while the library search is held", async () => {
+        await libraryPage.goto();
+        await palette.holdLibrarySearch();
+        await palette.search("kobo");
+      });
+
+      await test.step("check the setting shows without the result count", async () => {
+        await expect(palette.row("setting")).toHaveCount(1);
+        await expect(palette.row("setting")).toContainText("Kobo devices");
+        await expect(palette.row("setting")).toContainText(
+          "Settings \u203A Devices",
+        );
+        await expect(palette.resultCountText).toHaveCount(0);
+      });
+
+      await test.step("open the setting", async () => {
+        await palette.chooseTopResult("setting");
+        await settingsPage.assertDisplayedFor("devices");
+        await expect(palette.panel).toHaveCount(0);
+      });
+
+      await test.step("release the library search", async () => {
+        await palette.releaseLibrarySearch();
+      });
+    });
+
+    test("reach a server setting with the arrow keys and open it with Enter", async ({
+      libraryPage,
+      adminPage,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
+
+      await test.step("search for a setting only a setting answers", async () => {
+        await libraryPage.goto();
+        await palette.search("smtp");
+      });
+
+      // The count includes the setting, so waiting on it also lets the library's
+      // answer land before the arrow press, which would otherwise reset it.
+      await test.step("check the setting is counted and named", async () => {
+        await expect(palette.resultCountText).toContainText(/^1 result /);
+        await expect(palette.row("setting")).toContainText(
+          "Email delivery (SMTP)",
+        );
+        await expect(palette.row("setting")).toContainText(
+          "Administration \u203A Integrations",
+        );
+      });
+
+      // Settings list last, so the first Up lands on one.
+      await test.step("select it with the arrow key", async () => {
+        await palette.selectPreviousResult();
+        await expect(palette.row("setting")).toHaveClass(/selected/);
+      });
+
+      await test.step("open it with Enter", async () => {
+        await palette.submit();
+        await adminPage.assertDisplayedFor("integrations");
+      });
+    });
+  });
+
   test.describe("with the seeded library", () => {
     test.beforeAll("seed the library", async ({ request }) => {
       await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);

@@ -4,8 +4,8 @@ import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Account, "Admin · server health" and Notifications were folded into the
-// Settings sidebar (#1324), so the menu no longer lists them.
+// Account and Notifications were folded into Settings (#1324), and server
+// health into Administration (#2763), so the menu no longer lists them.
 
 test.describe("user menu", () => {
   test.beforeAll("seed the library", async ({ request }) => {
@@ -107,6 +107,28 @@ test.describe("user menu", () => {
 
     await test.step("check the default section opens", async () => {
       await settingsPage.assertDisplayedFor();
+      await expect(settingsPage.account.profileCard).toBeVisible();
+    });
+  });
+
+  test("open administration from the user menu", async ({
+    libraryPage,
+    adminPage,
+  }) => {
+    const { topNav } = libraryPage;
+
+    await test.step("open the menu", async () => {
+      await libraryPage.goto();
+      await topNav.openUserMenu();
+      await expect(topNav.adminLink).toHaveText("Administration");
+    });
+
+    await test.step("click the Administration row", async () => {
+      await topNav.openAdministration();
+    });
+
+    await test.step("check administration opens", async () => {
+      await adminPage.assertDisplayedFor();
     });
   });
 
@@ -122,6 +144,7 @@ test.describe("user menu", () => {
     await test.step("check Account, server health and Notifications are gone", async () => {
       await expect(topNav.userMenuLink("Account")).toHaveCount(0);
       await expect(topNav.userMenuLink("Admin · server health")).toHaveCount(0);
+      await expect(topNav.serverHealthText).toHaveCount(0);
       await expect(topNav.notificationsText).toHaveCount(0);
     });
   });
@@ -240,7 +263,7 @@ test.describe("user menu", () => {
     });
   });
 
-  test("open the account section from the Edit link", async ({
+  test("open the profile section from the Edit link", async ({
     libraryPage,
     settingsPage,
   }) => {
@@ -252,8 +275,8 @@ test.describe("user menu", () => {
       await topNav.editProfile();
     });
 
-    await test.step("check Settings opens on the Account section", async () => {
-      await settingsPage.assertDisplayedFor("account");
+    await test.step("check Settings opens on the Profile section", async () => {
+      await settingsPage.assertDisplayedFor("profile");
       await expect(settingsPage.account.profileCard).toBeVisible();
     });
   });

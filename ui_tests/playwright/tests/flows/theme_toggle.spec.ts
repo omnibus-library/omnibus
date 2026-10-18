@@ -1,8 +1,10 @@
 import { expect, test } from "../fixtures/pageFixtures";
 
-// The web build keeps the choice under `omn.theme` in localStorage and applies
-// it in a post-hydration effect, so SSR markup stays deterministic. Each test
-// starts with empty localStorage and asserts `data-theme`, which is the contract.
+// One segmented control lives in the user menu and again in Settings ›
+// Preferences, where it applies to this device alone. The web build keeps the
+// choice under `omn.theme` in localStorage and applies it in a post-hydration
+// effect, so SSR markup stays deterministic. Each test starts with empty
+// localStorage and asserts `data-theme`, which is the contract.
 
 test.describe("theme toggle", () => {
   test("show the dark theme on first paint", async ({ libraryPage }) => {
@@ -17,10 +19,16 @@ test.describe("theme toggle", () => {
       await expect(topNav.themeRoot).toHaveAttribute("data-theme", "dark");
     });
 
-    await test.step("check the menu offers the themes", async () => {
+    await test.step("check the menu marks the dark theme", async () => {
       await topNav.openUserMenu();
-      await expect(topNav.themeButton("dark")).toBeVisible();
-      await expect(topNav.themeButton("light")).toBeVisible();
+      await expect(topNav.themeButton("dark")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await expect(topNav.themeButton("light")).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
     });
   });
 
@@ -82,6 +90,30 @@ test.describe("theme toggle", () => {
       await topNav.selectTheme("dark");
       await expect(topNav.themeRoot).toHaveAttribute("data-theme", "dark");
       expect(await topNav.storedTheme()).toBe("dark");
+    });
+  });
+
+  test("switch the theme from preferences and persist it", async ({
+    settingsPage,
+  }) => {
+    const { topNav, account } = settingsPage;
+
+    await test.step("open the preferences section", async () => {
+      await settingsPage.goto("preferences");
+      await expect(topNav.themeRoot).toHaveAttribute("data-theme", "dark");
+    });
+
+    await test.step("choose the sepia theme", async () => {
+      await account.selectTheme("sepia");
+    });
+
+    await test.step("check the theme applies, is marked and is stored", async () => {
+      await expect(topNav.themeRoot).toHaveAttribute("data-theme", "sepia");
+      await expect(account.themeButton("sepia")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(await topNav.storedTheme()).toBe("sepia");
     });
   });
 });
