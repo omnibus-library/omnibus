@@ -16,6 +16,7 @@ Numbered rules in [.claude/rules/](.claude/rules/), applied in order. Follow the
 - [04b-playwright-ios-glue.md](.claude/rules/04b-playwright-ios-glue.md) — the iOS reader glue's test lane: serving `omnibus-ios/omnibus/Reader/Web/` on a routed origin, driving the host's entry points, and what Chromium can't prove.
 - [04c-playwright-filters.md](.claude/rules/04c-playwright-filters.md) — the library filter's test lane: the bar's popover, the landing lens and shelf page states, and the held-request technique.
 - [04d-playwright-page-objects.md](.claude/rules/04d-playwright-page-objects.md) — page, component and request objects injected by fixtures: the layout, the rules, and one sign-in per worker.
+- [04e-playwright-stats.md](.claude/rules/04e-playwright-stats.md) — the stats page's test lane: windowed vs standing figures, goals edited in place, household sharing and the reader picker.
 - [05-rust-style.md](.claude/rules/05-rust-style.md) — Rust style guide: comments, function/file shape, errors, tests, mechanics. Long-form rationale in [docs/style-guide.md](docs/style-guide.md).
 - [06-migrations.md](.claude/rules/06-migrations.md) — authoring SQL migrations: `NNNN_` naming, never-edit-applied, the `_norm` backfill pattern, testing against `sqlite::memory:`, and the dev-bounce step.
 - [07-hydration.md](.claude/rules/07-hydration.md) — SSR/WASM hydration parity: never feature-gate a component body on `web`; how to confirm and fix a hydration mismatch; why keyed siblings must each be unique.

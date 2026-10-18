@@ -62,7 +62,8 @@ pill, and no `.bdmq-next` cue — and the snapped marquee, `#bdmq-snap` with
 `.bdmq-sec` screens. Only one exists in the DOM at a time, so a spec asserting
 either must set the preference first
 (`POST /api/account/book-detail-scroll-stops`) and put it back afterwards; the
-dot rail (`bdmq-dots`, six rows) is the one control common to both.
+dot rail (`bdmq-dots`, six rows) and the `bdmq-mode-toggle` under it (in
+`.bdmq-rail`, flips the preference in place) are the controls common to both.
 
 **"From the same hand" has three states, not two.** The author block fetches
 after the page renders, so `from-same-hand-loading` (a quiet note, no count)
@@ -145,37 +146,8 @@ record that no `/api/ebooks/*/cover` request fires. `me-discard` is a button
 ("Start over") here rather than the edit page's link. No spec commits a real
 upload: the library is shared and a filed book is visible to every other spec.
 
-**The stats period pills are not a menu, and half the page is not behind
-them.** `/stats` splits on the windowed / standing boundary: the Week / Month /
-Year / Lifetime pills (`stats-range-week` … `stats-range-all_time`) live in the
-"In this window" band's own sticky header and govern that band alone. There is
-no `role="dialog"` period menu and no `stats-range-trigger` — a spec that opens
-one is asserting a control that no longer exists. Three consequences:
-
-- **The hero and the standing band must not move on a switch.** The streak,
-  both goals, the heatmap, the open-books list and the trailing-12 chart are
-  standing figures; `stats.spec.ts` pins that with a before/after `textContent`
-  comparison, and that test is the redesign's load-bearing assertion.
-- **The library figures are behind a scope tab**, not below the fold —
-  `stats-scope-tab-library` has to be clicked before `stats-library-size` or
-  `stats-library-composition` exist in the DOM at all.
-- **Lifetime drops every tile comparison.** `PeriodComparison` is `Default` for
-  `AllTime`, so a delta drawn against it would report a reader's whole history
-  as new; `stats-tile-*-delta` is absent there by design, not missing.
-- **The page reports goals but never edits them.** All three are set together
-  in Settings → Account, so the goal-editing specs live in `account.spec.ts`
-  (serial — they reset the same three per-user rows). `stats.spec.ts` asserts
-  only that the editors stay gone and that the read-only states render.
-- **An unset goal is not an empty state.** With no target the surface drops the
-  ring and the bar but still reports the real figure — `stats-goal-today`,
-  `stats-daily-{kind}-today` — so a spec asserting "no goal" must look for
-  those, not for an invite. `*-invite` now renders only when the server sent no
-  figure at all.
-- **The household reader picker's options are in the DOM even while the menu
-  is closed** — only `hidden` keeps them offscreen — so a spec asserting one
-  is gone (sharing turned off) needs `toHaveCount(0)`, not a visibility check.
-  Options are `stats-reader-option-you` / `stats-reader-option-<id>`, and
-  `/api/rpc/stats` bodies carry `user_id` (`null` on the caller's own page).
+**The stats page** (period pills, the standing band, goals and household
+sharing) has its own file: [04e-playwright-stats.md](04e-playwright-stats.md).
 
 **The PDF reader has no ready testid; the text layer is not an element you
 click.** `/pdf/:uuid` renders its chrome on SSR (`pdf-back`, `pdf-fit-*`,

@@ -40,7 +40,7 @@ Never use XPath. If you want XPath, the SSR markup probably needs a role, label,
 
 Per-surface gotchas — which selector each screen actually answers to, and
 the ones that look right and match nothing — live in
-[04a-playwright-surfaces.md](04a-playwright-surfaces.md) (the filter's: [04c](04c-playwright-filters.md)).
+[04a-playwright-surfaces.md](04a-playwright-surfaces.md) (the filter's: [04c](04c-playwright-filters.md); the stats page's: [04e](04e-playwright-stats.md)).
 Read it before writing a selector against the landing grid/table, the continue
 fan, the book detail panel, or the stats page.
 
