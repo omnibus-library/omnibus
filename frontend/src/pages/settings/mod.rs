@@ -171,5 +171,5 @@ fn section_content(section: SettingsSection) -> Element {
     }
 }
 
-#[cfg(all(test, not(feature = "mobile")))]
+#[cfg(all(test, feature = "server", not(feature = "mobile")))]
 mod tests;

@@ -121,5 +121,5 @@ mod page {
     }
 }
 
-#[cfg(all(test, not(feature = "mobile")))]
+#[cfg(all(test, feature = "server", not(feature = "mobile")))]
 mod tests;
