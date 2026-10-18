@@ -117,41 +117,34 @@ fn save_settings_handler_starts_a_save_once_the_settings_have_loaded() {
 }
 
 #[test]
-fn scan_library_handler_flips_in_flight_immediately_on_click() {
-    in_root_scope(|| {
-        let status = Signal::new(None::<String>);
-        let status_is_error = Signal::new(false);
-        let scan_in_flight = Signal::new(false);
+fn run_job_handler_marks_its_job_running_on_click() {
+    for job in MaintenanceJob::ALL {
+        in_root_scope(|| {
+            let io = MaintenanceIo {
+                status: Signal::new(None),
+                status_is_error: Signal::new(false),
+                running: Signal::new(Vec::new()),
+            };
 
-        let mut handler = scan_library_handler(
-            "http://127.0.0.1:0".to_string(),
-            status,
-            status_is_error,
-            scan_in_flight,
-        );
-        handler(blank_mouse_event());
+            let mut handler = run_job_handler("http://127.0.0.1:0".to_string(), job, io);
+            handler(blank_mouse_event());
 
-        assert!(scan_in_flight());
-    });
+            assert_eq!((io.running)(), vec![job]);
+        });
+    }
 }
 
 #[test]
-fn rewrite_all_epubs_handler_flips_in_flight_immediately_on_click() {
-    in_root_scope(|| {
-        let status = Signal::new(None::<String>);
-        let status_is_error = Signal::new(false);
-        let rewrite_in_flight = Signal::new(false);
-
-        let mut handler = rewrite_all_epubs_handler(
-            "http://127.0.0.1:0".to_string(),
-            status,
-            status_is_error,
-            rewrite_in_flight,
-        );
-        handler(blank_mouse_event());
-
-        assert!(rewrite_in_flight());
-    });
+fn maintenance_job_testids_keep_their_e2e_names() {
+    assert_eq!(
+        MaintenanceJob::ALL.map(MaintenanceJob::testid),
+        [
+            "scan-library",
+            "refetch-author-photos",
+            "backfill-chapters",
+            "rewrite-all-epubs"
+        ]
+    );
 }
 
 #[cfg(feature = "server")]

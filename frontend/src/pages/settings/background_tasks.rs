@@ -36,14 +36,7 @@ fn task_kind_label(kind: &str) -> String {
         "send_to_kindle" => "Send to Kindle",
         "rewrite_all_epubs" => "EPUB override bake",
         "detect_cleanup" => "Cleanup detection",
-        _ => {
-            let spaced = kind.replace('_', " ");
-            let mut chars = spaced.chars();
-            return chars
-                .next()
-                .map(|first| first.to_uppercase().chain(chars).collect())
-                .unwrap_or_default();
-        }
+        _ => return crate::format::capitalize(&kind.replace('_', " ")),
     };
     known.to_string()
 }

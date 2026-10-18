@@ -161,10 +161,7 @@ pub(crate) fn MaintenancePanel() -> Element {
     let io = MaintenanceIo {
         status,
         status_is_error,
-        refetch_in_flight: use_signal(|| false),
-        backfill_in_flight: use_signal(|| false),
-        scan_in_flight: use_signal(|| false),
-        rewrite_in_flight: use_signal(|| false),
+        running: use_signal(Vec::new),
     };
 
     rsx! {
@@ -414,189 +411,119 @@ fn ScanIntervalField(
     }
 }
 
-/// Returns the "Scan Library" button's `onclick` handler: flips
-/// `scan_in_flight` immediately (so the button disables before the request
-/// even lands), then reports the queued scan — or its failure — once the
-/// request resolves.
-fn scan_library_handler(
-    url: String,
-    mut status: Signal<Option<String>>,
-    mut status_is_error: Signal<bool>,
-    mut scan_in_flight: Signal<bool>,
-) -> impl FnMut(MouseEvent) {
+/// One job the maintenance panel queues on the server's background worker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MaintenanceJob {
+    Scan,
+    RefetchPhotos,
+    Chapters,
+    BakeEpubs,
+}
+
+impl MaintenanceJob {
+    const ALL: [MaintenanceJob; 4] = [
+        MaintenanceJob::Scan,
+        MaintenanceJob::RefetchPhotos,
+        MaintenanceJob::Chapters,
+        MaintenanceJob::BakeEpubs,
+    ];
+
+    fn testid(self) -> &'static str {
+        match self {
+            MaintenanceJob::Scan => "scan-library",
+            MaintenanceJob::RefetchPhotos => "refetch-author-photos",
+            MaintenanceJob::Chapters => "backfill-chapters",
+            MaintenanceJob::BakeEpubs => "rewrite-all-epubs",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            MaintenanceJob::Scan => "Scan library",
+            MaintenanceJob::RefetchPhotos => "Refetch author pictures",
+            MaintenanceJob::Chapters => "Extract audiobook chapters",
+            MaintenanceJob::BakeEpubs => "Bake overrides into EPUBs",
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            MaintenanceJob::Scan => "Look through both library folders now for new, changed and removed books, instead of waiting for the next automatic rescan.",
+            MaintenanceJob::RefetchPhotos => "Look up every author\u{2019}s photo on Open Library again. Pictures set by hand are kept.",
+            MaintenanceJob::Chapters => "Read chapter markers from audiobooks added before chapters were recorded.",
+            MaintenanceJob::BakeEpubs => "Rebuild the downloadable copy of every edited EPUB so downloads and Kobo sync carry your metadata and covers.",
+        }
+    }
+
+    /// The job's name in the status line.
+    fn noun(self) -> &'static str {
+        match self {
+            MaintenanceJob::Scan => "library scan",
+            MaintenanceJob::RefetchPhotos => "author photo refetch",
+            MaintenanceJob::Chapters => "chapter extraction",
+            MaintenanceJob::BakeEpubs => "EPUB override bake",
+        }
+    }
+
+    async fn queue(self, url: &str) -> Result<(), data::DataError> {
+        match self {
+            MaintenanceJob::Scan => data::scan_library(url).await,
+            MaintenanceJob::RefetchPhotos => data::refetch_author_photos(url).await,
+            MaintenanceJob::Chapters => data::backfill_chapters(url).await,
+            MaintenanceJob::BakeEpubs => data::rewrite_all_epubs(url).await,
+        }
+    }
+}
+
+/// A job button's `onclick`: disable it at once, then report whether queuing
+/// worked. Completion shows in the `WorkerStatusIndicator` above, not here.
+fn run_job_handler(url: String, job: MaintenanceJob, io: MaintenanceIo) -> impl FnMut(MouseEvent) {
+    let MaintenanceIo {
+        mut status,
+        mut status_is_error,
+        mut running,
+    } = io;
     move |_evt: MouseEvent| {
         let url = url.clone();
-        scan_in_flight.set(true);
+        running.write().push(job);
         spawn(async move {
-            match data::scan_library(&url).await {
-                Ok(()) => {
-                    status.set(Some("Library scan queued.".into()));
-                    status_is_error.set(false);
-                }
-                Err(e) => {
-                    status.set(Some(format!("Failed to start library scan: {e}")));
-                    status_is_error.set(true);
-                }
-            }
-            scan_in_flight.set(false);
+            let (line, failed) = match job.queue(&url).await {
+                Ok(()) => (
+                    format!("{} queued.", crate::format::capitalize(job.noun())),
+                    false,
+                ),
+                Err(e) => (format!("Failed to start {}: {e}", job.noun()), true),
+            };
+            status.set(Some(line));
+            status_is_error.set(failed);
+            running.write().retain(|out| *out != job);
         });
     }
 }
 
-/// Returns the "Refetch Author Pictures" button's `onclick` handler, mirroring
-/// [`scan_library_handler`]'s immediate-disable-then-report shape.
-fn refetch_author_photos_handler(
-    url: String,
-    mut status: Signal<Option<String>>,
-    mut status_is_error: Signal<bool>,
-    mut refetch_in_flight: Signal<bool>,
-) -> impl FnMut(MouseEvent) {
-    move |_evt: MouseEvent| {
-        let url = url.clone();
-        refetch_in_flight.set(true);
-        spawn(async move {
-            match data::refetch_author_photos(&url).await {
-                Ok(()) => {
-                    status.set(Some("Author photo refetch queued.".into()));
-                    status_is_error.set(false);
-                }
-                Err(e) => {
-                    status.set(Some(format!("Failed to start photo refetch: {e}")));
-                    status_is_error.set(true);
-                }
-            }
-            refetch_in_flight.set(false);
-        });
-    }
-}
-
-/// Returns the "Extract Audiobook Chapters" button's `onclick` handler,
-/// mirroring [`scan_library_handler`]'s immediate-disable-then-report shape.
-fn backfill_chapters_handler(
-    url: String,
-    mut status: Signal<Option<String>>,
-    mut status_is_error: Signal<bool>,
-    mut backfill_in_flight: Signal<bool>,
-) -> impl FnMut(MouseEvent) {
-    move |_evt: MouseEvent| {
-        let url = url.clone();
-        backfill_in_flight.set(true);
-        spawn(async move {
-            match data::backfill_chapters(&url).await {
-                Ok(()) => {
-                    status.set(Some("Chapter extraction queued.".into()));
-                    status_is_error.set(false);
-                }
-                Err(e) => {
-                    status.set(Some(format!("Failed to start chapter extraction: {e}")));
-                    status_is_error.set(true);
-                }
-            }
-            backfill_in_flight.set(false);
-        });
-    }
-}
-
-/// Returns the "Bake Overrides Into EPUBs" button's `onclick` handler,
-/// mirroring [`refetch_author_photos_handler`]'s immediate-disable-then-report
-/// shape: the run is queued on the shared worker and this reports only whether
-/// *queuing* succeeded. Completion and any per-book failures surface via the
-/// `WorkerStatusIndicator`'s poll.
-fn rewrite_all_epubs_handler(
-    url: String,
-    mut status: Signal<Option<String>>,
-    mut status_is_error: Signal<bool>,
-    mut rewrite_in_flight: Signal<bool>,
-) -> impl FnMut(MouseEvent) {
-    move |_evt: MouseEvent| {
-        let url = url.clone();
-        rewrite_in_flight.set(true);
-        spawn(async move {
-            match data::rewrite_all_epubs(&url).await {
-                Ok(()) => {
-                    status.set(Some("EPUB override bake queued.".into()));
-                    status_is_error.set(false);
-                }
-                Err(e) => {
-                    status.set(Some(format!("Failed to start EPUB override bake: {e}")));
-                    status_is_error.set(true);
-                }
-            }
-            rewrite_in_flight.set(false);
-        });
-    }
-}
-
-/// Shared status line plus each maintenance job's own in-flight flag.
-/// Grouped so [`MaintenanceActions`] stays under the prop cap.
+/// The panel's shared status line and the jobs it has queuing right now.
 #[derive(Copy, Clone, PartialEq)]
 struct MaintenanceIo {
     status: Signal<Option<String>>,
     status_is_error: Signal<bool>,
-    refetch_in_flight: Signal<bool>,
-    backfill_in_flight: Signal<bool>,
-    scan_in_flight: Signal<bool>,
-    rewrite_in_flight: Signal<bool>,
+    running: Signal<Vec<MaintenanceJob>>,
 }
 
-/// The one-off maintenance jobs (library rescan, author photo refetch, chapter
-/// backfill, EPUB override bake), each with a line saying what it does.
+/// The one-off maintenance jobs, each with a line saying what it does.
 #[component]
 fn MaintenanceActions(io: MaintenanceIo) -> Element {
-    let MaintenanceIo {
-        status,
-        status_is_error,
-        refetch_in_flight,
-        backfill_in_flight,
-        scan_in_flight,
-        rewrite_in_flight,
-    } = io;
     let server_url = use_server_url();
-    let on_scan = scan_library_handler(server_url.clone(), status, status_is_error, scan_in_flight);
-    let on_refetch = refetch_author_photos_handler(
-        server_url.clone(),
-        status,
-        status_is_error,
-        refetch_in_flight,
-    );
-    let on_backfill = backfill_chapters_handler(
-        server_url.clone(),
-        status,
-        status_is_error,
-        backfill_in_flight,
-    );
-    let on_rewrite =
-        rewrite_all_epubs_handler(server_url, status, status_is_error, rewrite_in_flight);
-
     rsx! {
         ul { class: "maint-list",
-            MaintenanceCommand {
-                testid: "scan-library",
-                label: "Scan library",
-                description: "Look through both library folders now for new, changed and removed books, instead of waiting for the next automatic rescan.",
-                busy: scan_in_flight(),
-                on_run: on_scan,
-            }
-            MaintenanceCommand {
-                testid: "refetch-author-photos",
-                label: "Refetch author pictures",
-                description: "Look up every author\u{2019}s photo on Open Library again. Pictures set by hand are kept.",
-                busy: refetch_in_flight(),
-                on_run: on_refetch,
-            }
-            MaintenanceCommand {
-                testid: "backfill-chapters",
-                label: "Extract audiobook chapters",
-                description: "Read chapter markers from audiobooks added before chapters were recorded.",
-                busy: backfill_in_flight(),
-                on_run: on_backfill,
-            }
-            MaintenanceCommand {
-                testid: "rewrite-all-epubs",
-                label: "Bake overrides into EPUBs",
-                description: "Rebuild the downloadable copy of every edited EPUB so downloads and Kobo sync carry your metadata and covers.",
-                busy: rewrite_in_flight(),
-                on_run: on_rewrite,
+            for job in MaintenanceJob::ALL {
+                MaintenanceCommand {
+                    key: "{job.testid()}",
+                    testid: job.testid(),
+                    label: job.label(),
+                    description: job.description(),
+                    busy: (io.running)().contains(&job),
+                    on_run: run_job_handler(server_url.clone(), job, io),
+                }
             }
         }
     }
