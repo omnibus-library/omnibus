@@ -376,6 +376,26 @@ pub fn build_test_epub_with_ncx(spine: &[(&str, &str)], toc: &[(&str, &str)]) ->
     )
 }
 
+/// [`build_test_epub`] plus one manifest image per `(href, media_type, bytes)`,
+/// stored at `href` (OPF-root-relative, as written).
+pub fn build_test_epub_with_images(
+    spine: &[(&str, &str)],
+    images: &[(&str, &str, &[u8])],
+) -> Vec<u8> {
+    let manifest: String = images
+        .iter()
+        .enumerate()
+        .map(|(i, (href, media_type, _))| {
+            format!(r#"<item id="img{i}" href="{href}" media-type="{media_type}"/>"#)
+        })
+        .collect();
+    let entries: Vec<(&str, Vec<u8>)> = images
+        .iter()
+        .map(|(href, _, bytes)| (*href, bytes.to_vec()))
+        .collect();
+    assemble_test_epub(spine, &manifest, "", &entries)
+}
+
 fn assemble_test_epub(
     spine: &[(&str, &str)],
     extra_manifest: &str,

@@ -8,7 +8,7 @@ use std::io::{Read, Seek};
 use epub::doc::EpubDoc;
 use quick_xml::events::Event;
 
-use crate::ebook::images::{archive_path, attr, image_srcs, strip_fragment};
+use crate::ebook::images::{archive_path, attr, image_refs, strip_fragment};
 use crate::ebook::toc::join_href;
 
 /// Manifest ids that name the cover by convention rather than declaration.
@@ -99,7 +99,7 @@ fn guide_cover_href(opf: &[u8]) -> Option<String> {
 /// this can trust, so it yields nothing.
 fn page_image<R: Read + Seek>(doc: &mut EpubDoc<R>, page_path: &str) -> Option<(Vec<u8>, String)> {
     let page = doc.get_resource_by_path(page_path)?;
-    let mut srcs = image_srcs(&page);
+    let mut srcs: Vec<String> = image_refs(&page).into_iter().map(|r| r.src).collect();
     srcs.sort();
     srcs.dedup();
     let [src] = srcs.as_slice() else {
