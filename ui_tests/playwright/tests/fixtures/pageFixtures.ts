@@ -23,6 +23,7 @@ import { ProgressRequests } from "../apiRequests/ProgressRequests";
 import { ReadStatusRequests } from "../apiRequests/ReadStatusRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
+import { StatsRequests } from "../apiRequests/StatsRequests";
 import { UsersRequests } from "../apiRequests/UsersRequests";
 import type { SeededBookmark } from "../data/bookmarks";
 import type { LibraryBook } from "../data/ebooks";
@@ -40,9 +41,15 @@ import {
   type ShelfRef,
   wishlistOf,
 } from "../data/shelves";
+import {
+  buildSession,
+  TARGET_BOOK_CFI,
+  TARGET_BOOK_TITLE,
+} from "../data/stats";
 import { buildReader, type Credentials } from "../data/users";
 import { AuthorsIndexPage } from "../pages/AuthorsIndexPage";
 import { BookDetailPage } from "../pages/BookDetailPage";
+import { ChartBuilderPage } from "../pages/ChartBuilderPage";
 import { CheckInPage } from "../pages/CheckInPage";
 import { ComicReaderPage } from "../pages/ComicReaderPage";
 import { EpubReaderPage } from "../pages/EpubReaderPage";
@@ -52,10 +59,12 @@ import { LoginPage } from "../pages/LoginPage";
 import { PdfReaderPage } from "../pages/PdfReaderPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { ShelfPage } from "../pages/ShelfPage";
+import { StatsPage } from "../pages/StatsPage";
 import {
   type ExpectMutationOptions,
   expectMutation as expectMutationOn,
 } from "../utils/api";
+import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { withLock } from "../utils/lock";
 import { DUAL_FORMAT_BOOK } from "./dual_format";
 import {
@@ -181,6 +190,15 @@ type PageFixtures = {
   // #endregion batch-J
 
   // #region batch-K: stats
+  statsPage: StatsPage;
+  chartBuilderPage: ChartBuilderPage;
+  statsRequests: StatsRequests;
+  secondReaderExpectMutation: ExpectMutation;
+  goals: {
+    set(goals: { annual: number; dailyPages: number }): Promise<void>;
+    clear(): Promise<void>;
+  };
+  householdTarget: ReaderAccount;
   // #endregion batch-K
 
   // #region batch-L: iOS reader glue
@@ -674,6 +692,83 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // #endregion batch-J
 
   // #region batch-K: stats
+  statsPage: async ({ page }, use) => {
+    await use(new StatsPage(page));
+  },
+  chartBuilderPage: async ({ page }, use) => {
+    await use(new ChartBuilderPage(page));
+  },
+  statsRequests: async ({ request }, use) => {
+    await use(new StatsRequests(request));
+  },
+
+  // The household target's UI writes happen on its own page, not the test's.
+  secondReaderExpectMutation: async ({ secondReaderPage }, use) => {
+    await use((contract, action) =>
+      expectMutationOn(secondReaderPage, contract, action),
+    );
+  },
+
+  // Goals are account configuration the admin's other specs read, so every
+  // goal is cleared again after the test.
+  goals: async ({ goalsRequests }, use) => {
+    const clear = async () => {
+      for (const cleared of await goalsRequests.clearAll()) {
+        await expect(cleared, "clear a goal").toBeOK();
+      }
+    };
+    await use({
+      set: async ({ annual, dailyPages }) => {
+        const yearly = await goalsRequests.putAnnualGoal({ target: annual });
+        await expect(yearly, "set the annual goal").toBeOK();
+        const daily = await goalsRequests.putDailyGoals({
+          kind: "pages",
+          target: dailyPages,
+        });
+        await expect(daily, "set the daily pages goal").toBeOK();
+      },
+      clear,
+    });
+    await clear();
+  },
+
+  // Sharing is visible to every reader on the instance, so it goes back off
+  // after each test; the library must be seeded before this runs.
+  householdTarget: async (
+    { request, secondReaderAccount, secondReaderRequest },
+    use,
+  ) => {
+    const account = new AccountRequests(secondReaderRequest);
+    await expect(
+      await account.postShareStats(true),
+      "turn the target's sharing on",
+    ).toBeOK();
+
+    const bookUuid = await fetchBookUuidByTitle(request, TARGET_BOOK_TITLE);
+    const now = Math.floor(Date.now() / 1000);
+    const sitting = await new StatsRequests(secondReaderRequest).postSessions([
+      buildSession(bookUuid, {
+        startedAt: now - 60,
+        seconds: 60,
+        format: "epub",
+        utcOffsetMinutes: 0,
+      }),
+    ]);
+    await expect(sitting, "seed the target's reading session").toBeOK();
+    const { recorded } = await sitting.json();
+    expect(recorded, "the target's session was skipped").toBe(1);
+    const placed = await new ProgressRequests(
+      secondReaderRequest,
+    ).postEpubPosition(bookUuid, TARGET_BOOK_CFI);
+    await expect(placed, "seed the target's reading position").toBeOK();
+
+    await use(secondReaderAccount);
+
+    await expect(
+      await account.postShareStats(false),
+      "turn the target's sharing off",
+    ).toBeOK();
+  },
   // #endregion batch-K
 
   // #region batch-L: iOS reader glue

@@ -41,4 +41,9 @@ export class TopNavComponent extends BaseComponent {
     await expect(this.libraryLink).toBeVisible();
     await expect(this.userMenuButton).toBeVisible();
   }
+
+  // batch-K:
+  async openStats(): Promise<void> {
+    await this.root.getByRole("link", { name: "Stats" }).click();
+  }
 }
