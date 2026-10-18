@@ -218,9 +218,11 @@ async fn reject_bad_link(
     if expires < now_secs() {
         return Some(rejected());
     }
-    let key = match db::auth::load_or_create_session_key(&state.pool).await {
-        Ok(key) => key,
-        Err(e) => return Some(internal("load_or_create_session_key", e)),
+    // No key yet means no link was ever minted; reading must not create one for an anonymous caller.
+    let key = match db::auth::get_session_key(&state.pool).await {
+        Ok(Some(key)) => key,
+        Ok(None) => return Some(rejected()),
+        Err(e) => return Some(internal("get_session_key", e)),
     };
     (!verify_image_link(&key, uuid, &q.href, expires, sig)).then(rejected)
 }

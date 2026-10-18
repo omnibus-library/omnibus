@@ -623,6 +623,28 @@ async fn api_get_ebook_image_file_returns_401_for_a_signed_link_without_a_usable
 }
 
 #[tokio::test]
+async fn api_get_ebook_image_file_returns_401_for_a_signed_link_before_any_key_exists_and_creates_none(
+) {
+    let (_, _, pool) = fixture().await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+    let app = crate::backend::rest_router(AppState::new(pool.clone()));
+    let expires = now() + 60;
+
+    let res = app
+        .oneshot(get_anon(&format!(
+            "/api/ebooks/{uuid}/images/file?href=map.png&expires={expires}&sig=AAAA"
+        )))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(db::auth::get_session_key(&pool).await.unwrap(), None);
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
 async fn api_get_ebook_image_file_never_falls_back_to_a_session_when_the_signature_is_bad() {
     let (_, _, pool) = fixture().await;
     let user = auth_test_support::create_user(&pool, "alice").await;
