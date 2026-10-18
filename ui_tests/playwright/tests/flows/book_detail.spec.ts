@@ -1628,9 +1628,7 @@ test.describe("book detail page", () => {
       // waiter is armed.
       await test.step("play the first part", async () => {
         await picker.open();
-        const firstManifest = picker.waitForManifest();
-        await picker.pick(firstFile);
-        await firstManifest;
+        await Promise.all([picker.waitForManifest(), picker.pick(firstFile)]);
         await listenPage.assertDisplayedFor(uuid, firstFile);
       });
 
@@ -1655,7 +1653,7 @@ test.describe("book detail page", () => {
       await test.step("check the player reboots onto the second part", async () => {
         expect(
           new URL(secondManifest.url()).searchParams.get("file_id"),
-          "re-pick must reboot onto a different part",
+          "re-pick must reboot onto the second part",
         ).toBe(String(secondFile));
       });
 
