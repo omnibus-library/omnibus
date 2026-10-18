@@ -1,6 +1,6 @@
 //  FirstFillCascadeTests.swift
-//  The library grid's entrance timing: cells in the opening window ripple in
-//  the order they appear, and every cell after it arrives without a delay.
+//  The cover grids' entrance timing: cells in the opening window ripple in the
+//  order they appear, and every cell after it arrives without a delay.
 
 import Foundation
 import Testing

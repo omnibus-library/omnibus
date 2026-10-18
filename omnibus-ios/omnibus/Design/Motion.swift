@@ -30,30 +30,15 @@ enum Motion {
 
 // MARK: - Entrance cascade
 
-/// Fades and lifts a view into place, staggered against its neighbours.
+/// Fades and lifts a view into place, on the delay its fill hands out.
 ///
-/// The stagger is deliberately short and capped: the point is that the shelf
-/// *fills*, not that the user waits for it. By list index, the delay is taken
-/// modulo a small window so a cell scrolled to on page nine animates like one
-/// on page one instead of arriving half a second late.
+/// A cell outside any `cascadeFill()` rises without a delay: the stagger is the
+/// container's to decide, because only the container knows which cells arrived
+/// together.
 private struct CascadeIn: ViewModifier {
-    enum Order {
-        case listIndex(Int)
-        case firstFill(FirstFillCascade)
-    }
-
-    let order: Order
-
+    @Environment(\.cascadeFill) private var fill
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shown = false
-
-    /// Asked once, on appearance: a first-fill slot is spent by asking.
-    private func delay() -> Double {
-        switch order {
-        case .listIndex(let index): FirstFillCascade.stagger(slot: index % 8)
-        case .firstFill(let fill): fill.delay()
-        }
-    }
 
     func body(content: Content) -> some View {
         content
@@ -66,19 +51,21 @@ private struct CascadeIn: ViewModifier {
                     shown = true
                     return
                 }
-                withAnimation(Motion.settle.delay(delay())) { shown = true }
+                // Asked only here: a first-fill slot is spent by asking.
+                withAnimation(Motion.settle.delay(fill?.delay() ?? 0)) { shown = true }
             }
     }
 }
 
-/// Staggers one grid's opening fill and nothing after it.
+/// Staggers one container's opening fill and nothing after it.
 ///
-/// A delay keyed on list index orders nothing once a lazy grid builds its
-/// cells a row at a time: a row scrolled into view waits on whatever slots its
-/// indices land on, so a later row can beat an earlier one. Here the cells that
-/// appear in the opening window ripple in the order they appear — reading
-/// order, since the first layout builds them top to bottom — and every cell
-/// after it rises at once.
+/// The stagger is deliberately short and capped: the point is that the shelf
+/// *fills*, not that the user waits for it. It can't be keyed on list index — a
+/// lazy grid builds its cells a row at a time, so a row scrolled into view
+/// would wait on whatever slots its indices land on, and a later row could beat
+/// an earlier one. Instead the cells that appear in the opening window ripple
+/// in the order they appear — reading order, since the first layout builds them
+/// top to bottom — and every cell after it rises at once.
 @MainActor
 final class FirstFillCascade {
     /// Long enough to take in every cell of the first layout pass.
@@ -88,7 +75,7 @@ final class FirstFillCascade {
     private var slots = 0
 
     /// The capped delay for the `slot`th cell of a cascade.
-    nonisolated static func stagger(slot: Int) -> Double {
+    static func stagger(slot: Int) -> Double {
         min(Double(slot) * 0.04, 0.32)
     }
 
@@ -102,15 +89,38 @@ final class FirstFillCascade {
     }
 }
 
+/// Owns the `FirstFillCascade` for every `cascadeIn()` inside it.
+///
+/// Its lifetime is the fill: a container that is rebuilt — a fresh set of
+/// results, a grid back from an empty state — ripples again.
+private struct CascadeFill: ViewModifier {
+    @State private var cascade = FirstFillCascade()
+
+    func body(content: Content) -> some View {
+        content.environment(\.cascadeFill, cascade)
+    }
+}
+
+private struct CascadeFillKey: EnvironmentKey {
+    static let defaultValue: FirstFillCascade? = nil
+}
+
+extension EnvironmentValues {
+    fileprivate var cascadeFill: FirstFillCascade? {
+        get { self[CascadeFillKey.self] }
+        set { self[CascadeFillKey.self] = newValue }
+    }
+}
+
 extension View {
-    /// Staggered entrance for items in a grid or rail.
-    func cascadeIn(index: Int) -> some View {
-        modifier(CascadeIn(order: .listIndex(index)))
+    /// Entrance for a grid or rail cell, timed by the nearest `cascadeFill()`.
+    func cascadeIn() -> some View {
+        modifier(CascadeIn())
     }
 
-    /// Entrance for a lazy grid's cells: the first fill ripples, later cells rise together.
-    func cascadeIn(_ fill: FirstFillCascade) -> some View {
-        modifier(CascadeIn(order: .firstFill(fill)))
+    /// Times the `cascadeIn()` cells inside: the first fill ripples, later cells rise together.
+    func cascadeFill() -> some View {
+        modifier(CascadeFill())
     }
 }
 

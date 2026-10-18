@@ -281,14 +281,14 @@ struct MetadataFetchSheet: View {
                             "Try a shorter title, drop the author, or clear the ISBN — an ISBN only ever finds one printing."
                     )
                 } else {
-                    ForEach(Array(editions.enumerated()), id: \.element.id) { index, edition in
+                    ForEach(editions) { edition in
                         EditionCandidateCard(
                             edition: edition,
                             changes: MetadataFetchFlow.changeCount(edition: edition, draft: draft)
                         ) {
                             Task { await select(edition) }
                         }
-                        .cascadeIn(index: index)
+                        .cascadeIn()
                     }
                 }
 
@@ -297,6 +297,8 @@ struct MetadataFetchSheet: View {
                         .padding(.top, Spacing.md)
                 }
             }
+            // Each search lands on a fresh results screen, so each ripples.
+            .cascadeFill()
             .screenPadding()
             .padding(.top, Spacing.sm)
             .padding(.bottom, Spacing.lg)
