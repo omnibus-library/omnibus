@@ -171,8 +171,8 @@ struct Credentials {
 pub struct OmnibusClient {
     http: reqwest::Client,
     base_url: String,
-    // The origin a human can open, which for a link handed back to one is not
-    // always the origin this client reaches the instance on.
+    // The origin a person opens a returned link on. Hosted, it differs from the
+    // loopback `base_url` the calls go through.
     public_url: String,
     credentials: Option<Credentials>,
     token: RwLock<Option<String>>,

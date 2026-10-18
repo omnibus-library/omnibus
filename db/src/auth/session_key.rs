@@ -20,8 +20,9 @@ pub async fn load_or_create_session_key(pool: &SqlitePool) -> AuthResult<Vec<u8>
     insert_session_key_if_absent(pool, &key).await
 }
 
-/// Store `key` unless a row exists, and return the key actually stored — a
-/// concurrent first caller's, if it won — so every caller mints against one key.
+/// Store `key` unless a row already exists, then return the stored key. A
+/// concurrent first caller may have won the insert, and every caller must sign
+/// with one key.
 async fn insert_session_key_if_absent(pool: &SqlitePool, key: &[u8]) -> AuthResult<Vec<u8>> {
     sqlx::query("INSERT INTO secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO NOTHING")
         .bind(SESSION_KEY_NAME)

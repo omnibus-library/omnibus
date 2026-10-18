@@ -90,14 +90,17 @@ fn manifest_images(
             .then(|| read_budgeted(entry, DIMENSION_PREFIX_BYTES, budget).ok())
             .flatten()
             .and_then(|prefix| crate::metadata_lookup::cover::dimensions(&prefix));
-        images.insert(href.clone(), BookImage {
-            href,
-            media_type: item.mime.clone(),
-            byte_size,
-            width: dimensions.map(|(w, _)| i64::from(w)),
-            height: dimensions.map(|(_, h)| i64::from(h)),
-            references: Vec::new(),
-        });
+        images.insert(
+            href.clone(),
+            BookImage {
+                href,
+                media_type: item.mime.clone(),
+                byte_size,
+                width: dimensions.map(|(w, _)| i64::from(w)),
+                height: dimensions.map(|(_, h)| i64::from(h)),
+                references: Vec::new(),
+            },
+        );
     }
     images
 }
@@ -187,8 +190,9 @@ fn open(file: File) -> anyhow::Result<(Package, Archive)> {
     Ok((doc, zip::ZipArchive::new(file)?))
 }
 
-/// An entry by manifest href: the epub crate keeps hrefs percent-encoded while
-/// entry names are literal, so retry decoded as its own lookup does.
+/// Look up an entry by manifest href. The epub crate keeps hrefs percent-encoded
+/// while entry names are literal, so a miss retries the decoded name, as the
+/// crate's own lookup does.
 fn archive_entry<'a>(archive: &'a mut Archive, href: &str) -> ZipResult<ZipFile<'a, File>> {
     let index = archive
         .index_for_name(href)

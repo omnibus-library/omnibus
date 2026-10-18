@@ -189,10 +189,10 @@ server over one tool that breaks the rule. rmcp no longer enforces this, so
 person to open rather than the tool layer to call. It is a per-image HMAC-signed
 link: 15 minutes, minted by `GET /api/ebooks/{uuid}/images/link` for
 download-permitted users and verified by `GET /api/ebooks/{uuid}/images/signed`
-without a session, so a leaked URL opens that one image and nothing else. It is built on the caller's public
-origin — the configured base URL over stdio, the `/mcp` request's own origin when
-hosted (`AppState::request_origin`) — never the loopback the hosted tools call
-through.
+without a session, so a leaked URL opens that one image and nothing else. It is
+built on the caller's public origin, never the loopback the hosted tools call
+through: the configured base URL over stdio, or the `/mcp` request's own origin
+when hosted (`AppState::request_origin`).
 
 MCP sessions are separable everywhere: `User-Agent: omnibus-mcp/<ver>` on every
 request (logged by the server's request span), and login sends
