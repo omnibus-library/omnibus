@@ -1,12 +1,14 @@
 //! Per-library metadata-source precedence editor: two ordered lists (ebook /
 //! audiobook) reordered with up/down buttons. One Save writes each list that
 //! changed to its scan root's `metadata_precedence` column, so a library with
-//! no path (which the server refuses) is only sent when its list was edited. The lists wait for the saved order: showing the defaults
-//! first would present an order nobody saved as the current one.
+//! no path (which the server refuses) is only sent when its list was edited.
+//! The lists wait for the saved order: showing the defaults first would
+//! present an order nobody saved as the current one.
 
 use dioxus::prelude::*;
 use omnibus_shared::MetadataSource;
 
+use crate::components::credential_card::live_status;
 use crate::components::{BusyLabel, Loading, LoadingKind};
 use crate::data::server_error_message;
 use crate::{data, use_server_url};
@@ -130,43 +132,38 @@ fn save_summary(outcomes: &[(&'static str, Result<(), String>)]) -> (String, boo
     (line.join(" "), true)
 }
 
-/// Card holding both libraries' precedence lists and their one Save, which
-/// writes only the lists that changed. Admin-only — gated by the caller.
-#[component]
-pub fn MetadataPrecedenceField() -> Element {
-    let server_url = use_server_url();
-    let libraries = [
-        LibraryOrder {
-            library: "ebook",
-            draft: use_signal(|| None),
-            saved: use_signal(|| None),
-        },
-        LibraryOrder {
-            library: "audiobook",
-            draft: use_signal(|| None),
-            saved: use_signal(|| None),
-        },
-    ];
-    let mut failed = use_signal(|| false);
-    let mut reload = use_signal(|| 0u32);
-    let mut msg = use_signal(|| None::<String>);
-    let mut msg_is_error = use_signal(|| false);
-    let mut saving = use_signal(|| false);
-    let announcement = use_signal(String::new);
-    let dirty = use_memo(move || libraries.iter().any(|order| order.changed().is_some()));
-    crate::components::unsaved::use_unsaved_guard("metadata-order", dirty);
+/// The card's signals, threaded together through its load and save.
+#[derive(Clone, Copy, PartialEq)]
+struct OrderCard {
+    libraries: [LibraryOrder; 2],
+    failed: Signal<bool>,
+    /// Bumped by "Try again" to re-run the load.
+    reload: Signal<u32>,
+    msg: Signal<Option<String>>,
+    msg_is_error: Signal<bool>,
+    saving: Signal<bool>,
+}
 
-    let load_url = server_url.clone();
+/// Load both libraries' saved orders, again on each "Try again". An answer to
+/// an attempt a retry has superseded is dropped.
+fn use_order_load(url: String, card: OrderCard) {
+    let OrderCard {
+        libraries,
+        mut failed,
+        reload,
+        mut msg,
+        mut msg_is_error,
+        ..
+    } = card;
     use_effect(move || {
         let attempt = reload();
         failed.set(false);
         for mut order in libraries {
             order.draft.set(None);
             order.saved.set(None);
-            let url = load_url.clone();
+            let url = url.clone();
             spawn(async move {
                 let answer = data::get_metadata_precedence(&url, order.library).await;
-                // A retry supersedes whatever the attempt before it still had out.
                 if *reload.peek() != attempt {
                     return;
                 }
@@ -184,8 +181,18 @@ pub fn MetadataPrecedenceField() -> Element {
             });
         }
     });
+}
 
-    let on_save = move |_| {
+/// Save: write each list that changed, then report each library's outcome.
+fn order_save_handler(url: String, card: OrderCard) -> impl FnMut(MouseEvent) {
+    let OrderCard {
+        libraries,
+        mut msg,
+        mut msg_is_error,
+        mut saving,
+        ..
+    } = card;
+    move |_| {
         if saving() {
             return;
         }
@@ -196,7 +203,7 @@ pub fn MetadataPrecedenceField() -> Element {
         if pending.is_empty() {
             return;
         }
-        let url = server_url.clone();
+        let url = url.clone();
         saving.set(true);
         spawn(async move {
             let mut outcomes = Vec::new();
@@ -216,7 +223,46 @@ pub fn MetadataPrecedenceField() -> Element {
             msg_is_error.set(is_error);
             saving.set(false);
         });
+    }
+}
+
+/// Card holding both libraries' precedence lists and their one Save, which
+/// writes only the lists that changed. Admin-only — gated by the caller.
+#[component]
+pub fn MetadataPrecedenceField() -> Element {
+    let server_url = use_server_url();
+    let card = OrderCard {
+        libraries: [
+            LibraryOrder {
+                library: "ebook",
+                draft: use_signal(|| None),
+                saved: use_signal(|| None),
+            },
+            LibraryOrder {
+                library: "audiobook",
+                draft: use_signal(|| None),
+                saved: use_signal(|| None),
+            },
+        ],
+        failed: use_signal(|| false),
+        reload: use_signal(|| 0u32),
+        msg: use_signal(|| None),
+        msg_is_error: use_signal(|| false),
+        saving: use_signal(|| false),
     };
+    let OrderCard {
+        libraries,
+        failed,
+        mut reload,
+        mut msg,
+        msg_is_error,
+        saving,
+    } = card;
+    let announcement = use_signal(String::new);
+    let dirty = use_memo(move || libraries.iter().any(|order| order.changed().is_some()));
+    crate::components::unsaved::use_unsaved_guard("metadata-order", dirty);
+    use_order_load(server_url.clone(), card);
+    let on_save = order_save_handler(server_url, card);
 
     let loaded = libraries.iter().all(|order| order.draft.read().is_some());
     let busy = saving();
@@ -263,12 +309,7 @@ pub fn MetadataPrecedenceField() -> Element {
                     BusyLabel { busy, label: "Save metadata order", busy_label: "Saving\u{2026}" }
                 }
             }
-            p {
-                role: "status",
-                "data-testid": "metadata-precedence-status",
-                class: if msg_is_error() { "settings-status error" } else { "settings-status success" },
-                if let Some(m) = msg() { "{m}" }
-            }
+            {live_status("metadata-precedence-status", msg().as_deref(), msg_is_error())}
         }
     }
 }

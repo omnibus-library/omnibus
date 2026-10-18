@@ -133,8 +133,7 @@ fn kindle_clear_handler(
     }
 }
 
-/// The Kindle email form: input and save/clear actions. Split out of `kindle_account_body` so the signal wiring above and
-/// this markup each stay readable on their own.
+/// The Kindle email form: the address input, Save, and Clear once one is saved.
 fn kindle_email_form(
     email_input: Signal<String>,
     in_flight: Signal<bool>,

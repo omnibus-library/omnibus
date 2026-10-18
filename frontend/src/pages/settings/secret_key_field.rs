@@ -353,54 +353,54 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
             h3 { "{kind.heading()}" }
             p { class: "subtitle", "{kind.subtitle()}" }
             form { class: "settings-form", onsubmit: on_save,
-            div { class: "settings-field",
-                label { r#for: kind.input_id(), "{kind.label()}" }
-                input {
-                    r#type: "password",
-                    id: kind.input_id(),
-                    name: kind.input_name(),
-                    // Server-wide secret: keep password managers / autofill /
-                    // spellcheck from storing or mangling it.
-                    autocomplete: "off",
-                    autocapitalize: "none",
-                    autocorrect: "off",
-                    spellcheck: "false",
-                    placeholder: "{placeholder}",
-                    value: "{key_input}",
-                    oninput: move |e| key_input.set(e.value()),
-                }
-            }
-            div { class: "settings-actions",
-                {credential_status_line(&format!("{testid}-status"), known, (sigs.status_failed)(), &detail, "Not connected")}
-                if configured {
-                    button {
-                        r#type: "button",
-                        class: "btn ghost danger",
-                        disabled: busy,
-                        "data-testid": "{testid}-clear",
-                        onclick: move |_| confirm_clear.set(true),
-                        "Clear\u{2026}"
+                div { class: "settings-field",
+                    label { r#for: kind.input_id(), "{kind.label()}" }
+                    input {
+                        r#type: "password",
+                        id: kind.input_id(),
+                        name: kind.input_name(),
+                        // Server-wide secret: keep password managers / autofill /
+                        // spellcheck from storing or mangling it.
+                        autocomplete: "off",
+                        autocapitalize: "none",
+                        autocorrect: "off",
+                        spellcheck: "false",
+                        placeholder: "{placeholder}",
+                        value: "{key_input}",
+                        oninput: move |e| key_input.set(e.value()),
                     }
                 }
-                if (sigs.status_failed)() {
+                div { class: "settings-actions",
+                    {credential_status_line(&format!("{testid}-status"), known, (sigs.status_failed)(), &detail, "Not connected")}
+                    if configured {
+                        button {
+                            r#type: "button",
+                            class: "btn ghost danger",
+                            disabled: busy,
+                            "data-testid": "{testid}-clear",
+                            onclick: move |_| confirm_clear.set(true),
+                            "Clear\u{2026}"
+                        }
+                    }
+                    if (sigs.status_failed)() {
+                        button {
+                            r#type: "button",
+                            class: "btn ghost",
+                            "data-testid": "{testid}-retry",
+                            onclick: move |_| reload += 1,
+                            "Try again"
+                        }
+                    }
                     button {
-                        r#type: "button",
-                        class: "btn ghost",
-                        "data-testid": "{testid}-retry",
-                        onclick: move |_| reload += 1,
-                        "Try again"
+                        r#type: "submit",
+                        class: "btn primary",
+                        disabled: busy || known.is_none(),
+                        "aria-busy": if busy { "true" } else { "false" },
+                        "data-testid": "{testid}-save",
+                        BusyLabel { busy, label: format!("Save {} key", kind.noun()), busy_label: "Saving\u{2026}" }
                     }
                 }
-                button {
-                    r#type: "submit",
-                    class: "btn primary",
-                    disabled: busy || known.is_none(),
-                    "aria-busy": if busy { "true" } else { "false" },
-                    "data-testid": "{testid}-save",
-                    BusyLabel { busy, label: format!("Save {} key", kind.noun()), busy_label: "Saving\u{2026}" }
-                }
-            }
-            {live_status(&format!("{testid}-key-status"), msg().as_deref(), msg_is_error())}
+                {live_status(&format!("{testid}-key-status"), msg().as_deref(), msg_is_error())}
             }
             if confirm_clear() {
                 {confirm_dialog(

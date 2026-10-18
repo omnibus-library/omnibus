@@ -105,18 +105,26 @@ struct SmtpFields {
 }
 
 /// Every editable SMTP field, as the unsaved-edits guard compares them.
-type SmtpValues = (String, String, String, String, String, SmtpSecurity);
+#[derive(Clone, PartialEq)]
+struct SmtpDraft {
+    host: String,
+    port: String,
+    username: String,
+    from_email: String,
+    password: String,
+    security: SmtpSecurity,
+}
 
 impl SmtpFields {
-    fn values(self) -> SmtpValues {
-        (
-            (self.host)(),
-            (self.port)(),
-            (self.username)(),
-            (self.from_email)(),
-            (self.password)(),
-            (self.security)(),
-        )
+    fn values(self) -> SmtpDraft {
+        SmtpDraft {
+            host: (self.host)(),
+            port: (self.port)(),
+            username: (self.username)(),
+            from_email: (self.from_email)(),
+            password: (self.password)(),
+            security: (self.security)(),
+        }
     }
 }
 
@@ -124,7 +132,7 @@ impl SmtpFields {
 #[derive(Copy, Clone, PartialEq)]
 struct SmtpIo {
     /// What the fields held when they were last loaded, saved or cleared.
-    saved: Signal<Option<SmtpValues>>,
+    saved: Signal<Option<SmtpDraft>>,
     status: Signal<Option<SmtpConfigStatus>>,
     /// Set when the config read failed, so the line stops saying "Checking".
     status_failed: Signal<bool>,
@@ -244,7 +252,7 @@ fn make_smtp_save(server_url: String, fields: SmtpFields, io: SmtpIo) -> impl Fn
         // What was sent, not what the fields hold when the answer lands: an
         // edit typed meanwhile must still read as unsaved.
         let mut submitted = fields.values();
-        let sent_password = std::mem::take(&mut submitted.4);
+        let sent_password = std::mem::take(&mut submitted.password);
         spawn(async move {
             match data::set_smtp_config(&url, update).await {
                 Ok(s) => {
