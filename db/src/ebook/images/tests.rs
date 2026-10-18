@@ -290,6 +290,26 @@ fn list_images_spends_the_byte_budget_on_spine_documents_that_exceed_the_cap() {
 }
 
 #[test]
+fn list_images_lists_images_past_the_byte_budget_without_pixel_dimensions() {
+    // 100 KiB each against the 256 KiB test budget: the third read spends it.
+    let mut plate = solid_color_png(1, 2, 3, 4, 3);
+    plate.resize(100 * 1024, 0);
+    let names: Vec<String> = (0..5).map(|i| format!("plate{i}.png")).collect();
+    let images: Vec<(&str, &str, &[u8])> = names
+        .iter()
+        .map(|n| (n.as_str(), "image/png", plate.as_slice()))
+        .collect();
+    let path = write_epub(&[("c1.xhtml", &page("<p>text</p>"))], &images);
+
+    let listed = list_images(&path).unwrap();
+
+    let sized: Vec<_> = listed.iter().map(|i| (i.width, i.height)).collect();
+    assert_eq!(listed.len(), 5);
+    assert_eq!(sized.iter().filter(|d| **d == (Some(4), Some(3))).count(), 3);
+    assert_eq!(sized.iter().filter(|d| **d == (None, None)).count(), 2);
+}
+
+#[test]
 fn list_images_lists_an_unreferenced_image_with_no_references() {
     let png = solid_color_png(1, 2, 3, 2, 2);
     let path = write_epub(

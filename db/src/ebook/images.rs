@@ -28,9 +28,10 @@ type Archive = zip::ZipArchive<File>;
 /// at the front, so a listing never decompresses a whole multi-megabyte plate.
 const DIMENSION_PREFIX_BYTES: u64 = 1024 * 1024;
 
-/// Decompressed spine bytes one listing may read, so a book of thousands of
-/// itemrefs cannot cost thousands of page-cap inflations per call.
-const SPINE_SCAN_BUDGET: u64 = 4 * MAX_PAGE_BYTES;
+/// Decompressed bytes one listing may read across image headers and spine
+/// documents, so a book of thousands of items cannot cost thousands of cap-sized
+/// inflations per call.
+const LISTING_BUDGET: u64 = 4 * MAX_PAGE_BYTES;
 
 /// One image reference in an XHTML page.
 pub struct ImageRef {
@@ -45,16 +46,32 @@ pub struct ImageRef {
 pub fn list_images(path: &Path) -> anyhow::Result<Vec<BookImage>> {
     let file = File::open(path).with_context(|| format!("open epub {}", path.display()))?;
     let (doc, mut archive) = open(file).with_context(|| format!("read epub {}", path.display()))?;
-    let mut images = manifest_images(&doc, &mut archive);
-    attach_references(&doc, &mut archive, &mut images);
+    let mut budget = LISTING_BUDGET;
+    let mut images = manifest_images(&doc, &mut archive, &mut budget);
+    attach_references(&doc, &mut archive, &mut images, &mut budget);
     // BTreeMap order is href order, and the sort is stable.
     let mut images: Vec<BookImage> = images.into_values().collect();
     images.sort_by_key(|i| i.references.first().map_or(i64::MAX, |r| r.spine_index));
     Ok(images)
 }
 
+/// Read up to `cap` bytes of `entry`, charging `budget` what was inflated: the
+/// bytes read, or all of `cap` when the read fails partway.
+fn read_budgeted(entry: impl Read, cap: u64, budget: &mut u64) -> anyhow::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    let read = entry.take(cap).read_to_end(&mut bytes);
+    *budget = budget.saturating_sub(read.as_ref().map_or(cap, |&n| n as u64));
+    read?;
+    Ok(bytes)
+}
+
 /// The manifest's `image/*` items present in the archive, keyed by archive path.
-fn manifest_images(doc: &Package, archive: &mut Archive) -> BTreeMap<String, BookImage> {
+/// Once `budget` is spent the rest list without pixel dimensions.
+fn manifest_images(
+    doc: &Package,
+    archive: &mut Archive,
+    budget: &mut u64,
+) -> BTreeMap<String, BookImage> {
     let mut images = BTreeMap::new();
     for item in doc
         .resources
@@ -62,17 +79,18 @@ fn manifest_images(doc: &Package, archive: &mut Archive) -> BTreeMap<String, Boo
         .filter(|i| i.mime.starts_with("image/"))
     {
         let href = archive_path(&item.path);
+        if images.contains_key(&href) {
+            continue;
+        }
         let Ok(entry) = archive_entry(archive, &href) else {
             continue;
         };
         let byte_size = i64::try_from(entry.size()).unwrap_or(i64::MAX);
-        let mut prefix = Vec::new();
-        let dimensions = entry
-            .take(DIMENSION_PREFIX_BYTES)
-            .read_to_end(&mut prefix)
-            .ok()
-            .and_then(|_| crate::metadata_lookup::cover::dimensions(&prefix));
-        images.entry(href.clone()).or_insert(BookImage {
+        let dimensions = (*budget > 0)
+            .then(|| read_budgeted(entry, DIMENSION_PREFIX_BYTES, budget).ok())
+            .flatten()
+            .and_then(|prefix| crate::metadata_lookup::cover::dimensions(&prefix));
+        images.insert(href.clone(), BookImage {
             href,
             media_type: item.mime.clone(),
             byte_size,
@@ -84,16 +102,17 @@ fn manifest_images(doc: &Package, archive: &mut Archive) -> BTreeMap<String, Boo
     images
 }
 
-/// Record, per spine document in spine order, each manifest image it shows.
+/// Record, per spine document in spine order, each manifest image it shows,
+/// until `budget` is spent.
 fn attach_references(
     doc: &Package,
     archive: &mut Archive,
     images: &mut BTreeMap<String, BookImage>,
+    budget: &mut u64,
 ) {
-    let mut budget = SPINE_SCAN_BUDGET;
     for (index, spine_item) in doc.spine.iter().enumerate() {
-        if budget == 0 {
-            tracing::warn!(spine_index = index, "book images: spine scan budget spent");
+        if *budget == 0 {
+            tracing::warn!(spine_index = index, "book images: byte budget spent");
             break;
         }
         let spine_index = index as i64;
@@ -103,12 +122,14 @@ fn attach_references(
         let page_path = archive_path(&resource.path);
         let page = match archive_entry(archive, &page_path)
             .map_err(anyhow::Error::from)
-            .and_then(|entry| {
-                let read = read_capped(entry, &page_path);
-                // An over-cap read inflated the whole cap before bailing.
-                let spent = read.as_ref().map_or(MAX_PAGE_BYTES, |p| p.len() as u64);
-                budget = budget.saturating_sub(spent);
-                read
+            .and_then(|entry| read_budgeted(entry, MAX_PAGE_BYTES + 1, budget))
+            .and_then(|page| {
+                // Reading one byte past the cap is how an oversized page shows itself.
+                anyhow::ensure!(
+                    page.len() as u64 <= MAX_PAGE_BYTES,
+                    "entry {page_path} exceeds {MAX_PAGE_BYTES} byte cap"
+                );
+                Ok(page)
             }) {
             Ok(page) => page,
             Err(e) => {
