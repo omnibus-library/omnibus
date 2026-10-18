@@ -360,6 +360,43 @@ impl Drop for DataDirGuard {
     }
 }
 
+/// Seed one EPUB book whose on-disk file holds `epub_bytes`. Returns
+/// `(uuid, book_id, book_file_id, tmp)`; caller removes `tmp`.
+pub(crate) async fn seed_epub_with_bytes(
+    pool: &sqlx::SqlitePool,
+    epub_bytes: &[u8],
+) -> (String, i64, i64, std::path::PathBuf) {
+    let tmp = db::test_support::make_test_dir("epub_routes");
+    std::fs::write(tmp.join("alpha.epub"), epub_bytes).unwrap();
+
+    let lib_id = sqlx::query("INSERT INTO scan_roots (path, display_name) VALUES (?, 'lib')")
+        .bind(tmp.to_str().unwrap())
+        .execute(pool)
+        .await
+        .unwrap()
+        .last_insert_rowid();
+    let uuid = "77777777-7777-7777-7777-777777777777".to_string();
+    let book_id =
+        sqlx::query("INSERT INTO books (uuid, library_id, path, title) VALUES (?, ?, ?, 'Alpha')")
+            .bind(&uuid)
+            .bind(lib_id)
+            .bind(tmp.to_str().unwrap())
+            .execute(pool)
+            .await
+            .unwrap()
+            .last_insert_rowid();
+    let file_id = sqlx::query(
+        "INSERT INTO book_files (book_id, format, filename, size_bytes) \
+         VALUES (?, 'EPUB', 'alpha', 0)",
+    )
+    .bind(book_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_rowid();
+    (uuid, book_id, file_id, tmp)
+}
+
 /// Flip `can_download` off for an already-created user. `auth::test_support`
 /// user factories always insert `can_download = 1`, so download-permission
 /// tests start from a real user and revoke the flag here rather than adding

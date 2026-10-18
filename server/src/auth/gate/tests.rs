@@ -23,6 +23,15 @@ async fn app() -> (Router, sqlx::SqlitePool) {
             get(|| async { "part ok" }),
         )
         .route("/api/ebooks/{uuid}/file", get(|| async { "file ok" }))
+        .route("/api/ebooks/{uuid}/images", get(|| async { "images ok" }))
+        .route(
+            "/api/ebooks/{uuid}/images/file",
+            get(|| async { "image ok" }),
+        )
+        .route(
+            "/api/ebooks/{uuid}/images/signed",
+            get(|| async { "signed image ok" }),
+        )
         .route(
             "/api/ebooks/{uuid}/pages/{page}",
             get(|| async { "page ok" }),
@@ -366,6 +375,87 @@ async fn ebook_file_get_without_auth_is_401() {
         .oneshot(
             Request::builder()
                 .uri("/api/ebooks/some-uuid/file")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn ebook_images_get_with_query_token_passes() {
+    let (app, pool) = app().await;
+    let token = seed_bearer_token(&pool).await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/ebooks/some-uuid/images?token={token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn ebook_image_file_get_with_query_token_passes() {
+    let (app, pool) = app().await;
+    let token = seed_bearer_token(&pool).await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/ebooks/some-uuid/images/file?href=map.png&token={token}"
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn ebook_signed_image_get_passes_without_a_session() {
+    // A signed image link authenticates itself in the handler by its signature.
+    let (app, _pool) = app().await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/ebooks/some-uuid/images/signed?href=map.png&expires=1&sig=abc")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn ebook_signed_image_head_passes_without_a_session() {
+    let (app, _pool) = app().await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("HEAD")
+                .uri("/api/ebooks/some-uuid/images/signed?href=map.png&expires=1&sig=abc")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn ebook_image_file_get_with_a_sig_param_but_no_session_is_401() {
+    let (app, _pool) = app().await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/ebooks/some-uuid/images/file?href=map.png&expires=1&sig=abc")
                 .body(Body::empty())
                 .unwrap(),
         )

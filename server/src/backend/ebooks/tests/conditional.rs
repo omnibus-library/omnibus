@@ -73,7 +73,7 @@ async fn validator_fixture(
 const EPUB_BYTES: &[u8] = b"PK\x03\x04 fake-epub-with-a-body-long-enough-to-slice";
 
 /// GET with a bearer token plus arbitrary extra headers.
-fn get_with_headers(
+pub(super) fn get_with_headers(
     uri: &str,
     token: &str,
     extra: &[(axum::http::HeaderName, &str)],

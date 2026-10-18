@@ -5,6 +5,7 @@
 //! callers keep `omnibus_shared::EbookMetadata`.
 
 mod chapters;
+mod images;
 mod metadata;
 mod overrides;
 mod validator;
@@ -15,6 +16,7 @@ mod tests;
 pub use chapters::{
     ChapterListEntry, ChapterListResponse, ChapterTextResponse, CHAPTER_TEXT_MAX_CHARS,
 };
+pub use images::{BookImage, BookImageLink, BookImageList, BookImageRead, BookImageReference};
 pub use metadata::{BookFileInfo, Contributor, EbookMetadata, Identifier};
 pub use overrides::{BulkMetadataEdit, BulkRewriteError, BulkRewriteSummary, MetadataOverrides};
 pub use validator::{

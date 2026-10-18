@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use axum::{
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Extension, Router,
 };
@@ -253,7 +253,8 @@ pub struct AppState {
     remote_image_config: Arc<db::author_photos::RemoteImageConfig>,
     /// Whether the per-IP limiters built from this state enforce their budgets.
     rate_limits: RateLimits,
-    /// Feeds the Kobo URL origin only. CSRF still reads `auth::csrf::allowed_origins()`.
+    /// Feeds `kobo::origin_for` (Kobo URLs) and [`AppState::request_origin`] (hosted-MCP
+    /// links). CSRF still reads `auth::csrf::allowed_origins()`.
     /// An `Arc` keeps the per-request clone cheap.
     public_origins: Arc<[String]>,
 }
@@ -301,6 +302,29 @@ impl AppState {
             public_origins: origins.into(),
             ..self
         }
+    }
+
+    /// The origin (`scheme://host`) a request reached the server on, for URLs a
+    /// client outside this process will open. With no host to read, the first
+    /// configured origin; `""` when none is configured either.
+    pub fn request_origin(&self, headers: &HeaderMap) -> String {
+        let configured = &self.public_origins;
+        let origin = kobo::origin_for(headers, configured);
+        if origin.is_empty() {
+            return configured.first().cloned().unwrap_or_default();
+        }
+        // A TLS proxy that sends no X-Forwarded-Proto leaves the scheme a guess, so a configured origin on the same host supplies it.
+        let authority = origin.split_once("://").map_or("", |(_, a)| a);
+        let same_host = |o: &&String| {
+            o.split_once("://")
+                .is_some_and(|(_, a)| a.eq_ignore_ascii_case(authority))
+        };
+        configured
+            .iter()
+            .find(|o| o.eq_ignore_ascii_case(&origin))
+            .or_else(|| configured.iter().find(same_host))
+            .cloned()
+            .unwrap_or(origin)
     }
 
     /// SQLite connection pool used by every handler.

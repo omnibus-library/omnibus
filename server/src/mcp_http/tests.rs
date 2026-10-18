@@ -12,7 +12,7 @@ use axum::{
 use omnibus_db as db;
 use tower::ServiceExt;
 
-use super::mcp_router;
+use super::{caller, mcp_router};
 use crate::auth::test_support::create_user;
 use crate::backend::AppState;
 
@@ -186,4 +186,16 @@ async fn mcp_serves_initialize_and_tools_list_with_an_api_token() {
         body.contains("list_books"),
         "tools/list should carry the shared tool layer: {body}"
     );
+}
+
+#[tokio::test]
+async fn caller_takes_the_public_url_from_the_mcp_requests_host() {
+    let pool = db::init_db("sqlite::memory:").await.unwrap();
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(header::HOST, "omnibus.example.com".parse().unwrap());
+
+    let caller = caller(&AppState::new(pool), &headers, "omni_token".into());
+
+    assert_eq!(caller.public_url, "http://omnibus.example.com");
+    assert_eq!(caller.token, "omni_token");
 }

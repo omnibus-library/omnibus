@@ -36,7 +36,7 @@ pub use session::{
     revoke_session_checked, revoke_session_for_user, validate_session, SessionAuthError,
     LIST_SESSIONS_LIMIT, MAX_USER_AGENT_CHARS,
 };
-pub use session_key::{get_session_key, load_or_create_session_key, put_session_key};
+pub use session_key::{get_session_key, load_or_create_session_key};
 pub use token::{
     generate_token, hash_token, is_session_cookie_name, parse_basic_credentials,
     parse_session_token, SESSION_COOKIE_NAME, SESSION_COOKIE_NAME_HOST_PREFIXED,

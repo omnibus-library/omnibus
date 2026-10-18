@@ -3,7 +3,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, StatusCode};
+use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 
@@ -119,12 +120,23 @@ async fn add_books_thing(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Bearer-checked binary route: PNG-typed bytes that are not valid UTF-8.
+async fn blob(
+    State(stub): State<Arc<Stub>>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, StatusCode> {
+    check_bearer(&stub, &headers)?;
+    Ok(([(header::CONTENT_TYPE, "image/png")], vec![0u8, 159, 255]))
+}
+
 /// Boot a stub instance and return `(client, stub)`.
 async fn stub_client() -> (OmnibusClient, Arc<Stub>) {
     let stub = Arc::new(Stub::default());
     let app = Router::new()
         .route("/api/auth/login", post(login))
         .route("/api/thing", get(protected))
+        .route("/api/blob", get(blob))
+        .route("/api/untyped", get(|| async { StatusCode::OK }))
         .route("/api/scan/resolve", post(write_thing))
         .route("/api/shelves/{id}/books", post(add_books_thing))
         .route(
@@ -318,6 +330,53 @@ async fn get_json_returns_http_when_the_instance_is_unreachable() {
 }
 
 #[tokio::test]
+async fn get_bytes_returns_the_content_type_and_body() {
+    let (client, _stub) = stub_client().await;
+
+    let (content_type, body) = client.get_bytes("/api/blob", &[]).await.unwrap();
+
+    assert_eq!(content_type, "image/png");
+    assert_eq!(body, vec![0u8, 159, 255]);
+}
+
+#[tokio::test]
+async fn get_bytes_defaults_the_content_type_when_the_answer_has_none() {
+    let (client, _stub) = stub_client().await;
+
+    let (content_type, body) = client.get_bytes("/api/untyped", &[]).await.unwrap();
+
+    assert_eq!(content_type, "application/octet-stream");
+    assert!(body.is_empty());
+}
+
+#[tokio::test]
+async fn get_bytes_returns_status_for_a_non_success_answer() {
+    let (client, _stub) = stub_client().await;
+
+    let err = client
+        .get_bytes("/api/missing-route", &[])
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(&err, ClientError::Status { path, status: 404 } if path == "/api/missing-route"),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn public_url_is_the_configured_base_url() {
+    let client = OmnibusClient::new(Config {
+        base_url: "https://omnibus.example.com".into(),
+        username: "reader".into(),
+        password: "correct horse battery".into(),
+    })
+    .unwrap();
+
+    assert_eq!(client.public_url(), "https://omnibus.example.com");
+}
+
+#[tokio::test]
 async fn get_json_opt_maps_404_to_none_and_success_to_some() {
     let (client, _stub) = stub_client().await;
     let missing: Option<Payload> = client
@@ -453,7 +512,12 @@ async fn stub_bearer_client(token: &str) -> (OmnibusClient, Arc<Stub>) {
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
-    let client = OmnibusClient::with_bearer(format!("http://{addr}"), token.to_string()).unwrap();
+    let client = OmnibusClient::with_bearer(
+        format!("http://{addr}"),
+        token.to_string(),
+        format!("http://{addr}"),
+    )
+    .unwrap();
     (client, stub)
 }
 
