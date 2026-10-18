@@ -173,8 +173,8 @@ pub(crate) fn MaintenancePanel() -> Element {
 
     rsx! {
         section { class: "card", "data-testid": "maintenance-card",
-            h3 { "Maintenance" }
-            p { class: "subtitle", "One-off jobs that run on the server\u{2019}s background worker." }
+            h3 { "Run a job" }
+            p { class: "subtitle", "Each job runs once on the server\u{2019}s background worker; progress shows here." }
             {worker_status_slot()}
             MaintenanceActions { io }
             p {

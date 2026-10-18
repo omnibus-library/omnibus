@@ -450,10 +450,11 @@ fn SmtpTestActions(
         .unwrap_or_default();
     rsx! {
         div { class: "settings-actions",
+            {credential_status_line("smtp-status", status.as_ref().map(|s| s.configured), status_failed(), &detail, "Not configured")}
             if configured {
                 button {
                     r#type: "button",
-                    class: "btn ghost danger settings-action-start",
+                    class: "btn ghost danger",
                     disabled: busy,
                     "data-testid": "smtp-clear",
                     onclick: move |e| on_clear.call(e),
@@ -488,7 +489,6 @@ fn SmtpTestActions(
                 BusyLabel { busy, label: "Save SMTP settings", busy_label: "Saving\u{2026}" }
             }
         }
-        {credential_status_line("smtp-status", status.as_ref().map(|s| s.configured), status_failed(), &detail, "Not configured")}
         {credential_status_message("smtp-config-status", msg().as_deref(), msg_is_error())}
     }
 }

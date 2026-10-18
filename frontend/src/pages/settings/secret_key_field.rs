@@ -369,10 +369,11 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
                 }
             }
             div { class: "settings-actions",
+                {credential_status_line(&format!("{testid}-status"), known, (sigs.status_failed)(), &detail, "Not connected")}
                 if configured {
                     button {
                         r#type: "button",
-                        class: "btn ghost danger settings-action-start",
+                        class: "btn ghost danger",
                         disabled: busy,
                         "data-testid": "{testid}-clear",
                         onclick: move |_| confirm_clear.set(true),
@@ -397,7 +398,6 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
                     BusyLabel { busy, label: format!("Save {} key", kind.noun()), busy_label: "Saving\u{2026}" }
                 }
             }
-            {credential_status_line(&format!("{testid}-status"), known, (sigs.status_failed)(), &detail, "Not connected")}
             {credential_status_message(&format!("{testid}-key-status"), msg().as_deref(), msg_is_error())}
             }
             if confirm_clear() {

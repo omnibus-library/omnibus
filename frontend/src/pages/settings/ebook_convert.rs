@@ -204,6 +204,7 @@ pub fn EbookConvertField() -> Element {
                 }
             }
             div { class: "settings-actions",
+                {credential_status_line("ebook-convert-status", available, (sigs.status_failed)(), &detail, "Not detected")}
                 if overridden {
                     button {
                         r#type: "button",
@@ -223,7 +224,6 @@ pub fn EbookConvertField() -> Element {
                     BusyLabel { busy, label: "Save ebook-convert path", busy_label: "Saving\u{2026}" }
                 }
             }
-            {credential_status_line("ebook-convert-status", available, (sigs.status_failed)(), &detail, "Not detected")}
             {credential_status_message("ebook-convert-save-status", msg().as_deref(), msg_is_error())}
             }
         }
