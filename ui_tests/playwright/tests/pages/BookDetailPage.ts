@@ -1,7 +1,18 @@
 import type { Locator, Page } from "@playwright/test";
 import { BookDetailStopsComponent } from "../components/BookDetailStopsComponent";
+import { BookExportComponent } from "../components/BookExportComponent";
+import { BookSummaryComponent } from "../components/BookSummaryComponent";
 import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
+import { FormatSwitcherComponent } from "../components/FormatSwitcherComponent";
+import { FromSameHandComponent } from "../components/FromSameHandComponent";
+import { HeroChipsComponent } from "../components/HeroChipsComponent";
+import { ListenFilePickerComponent } from "../components/ListenFilePickerComponent";
+import { QuoteCardModalComponent } from "../components/QuoteCardModalComponent";
+import { RatingComponent } from "../components/RatingComponent";
+import { ReadStatusControlComponent } from "../components/ReadStatusControlComponent";
 import { SavedPassageCardComponent } from "../components/SavedPassageCardComponent";
+import { SavedPassagesComponent } from "../components/SavedPassagesComponent";
+import { SuggestionsStripComponent } from "../components/SuggestionsStripComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { physicalUrls } from "../contracts/physical";
 import { expect } from "../fixtures/test";
@@ -126,6 +137,76 @@ export class BookDetailPage extends BasePage {
   }
 
   // #region batch-C: book detail
+  readonly formats = new FormatSwitcherComponent(this.page);
+  readonly exportMenu = new BookExportComponent(this.page);
+  readonly rating = new RatingComponent(this.page);
+  readonly readStatusControl = new ReadStatusControlComponent(this.page);
+  readonly savedPassages = new SavedPassagesComponent(this.page);
+  readonly quoteCard = new QuoteCardModalComponent(this.page);
+  readonly fromSameHand = new FromSameHandComponent(this.page);
+  readonly listenFilePicker = new ListenFilePickerComponent(this.page);
+  readonly heroChips = new HeroChipsComponent(this.page);
+  readonly summary = new BookSummaryComponent(this.page);
+  readonly suggestions = new SuggestionsStripComponent(this.page);
+
+  readonly authorsLine = this.page.getByTestId("book-authors");
+  // "From the same hand" adds a cover per tile, so the first is the hero's.
+  readonly heroCover = this.page.getByTestId("cover").first();
+  readonly startListeningButton = this.page.getByTestId("start-listening");
+
+  /** The authors line's link to `name`'s page. */
+  authorLink(name: string): Locator {
+    return this.authorsLine.getByRole("link", { name });
+  }
+
+  /** The first link named for the series, which the kicker leads the page with. */
+  seriesLink(name: RegExp): Locator {
+    return this.page.getByRole("link", { name }).first();
+  }
+
+  /** Opens the book and waits for its first fetches, as `goto` does not. */
+  async gotoSettled(bookUuid: string): Promise<void> {
+    await this.openAndSettle(`/books/${bookUuid}`);
+  }
+
+  async startReading(): Promise<void> {
+    await this.startReadingButton.click();
+  }
+
+  async startListening(): Promise<void> {
+    await this.startListeningButton.click();
+  }
+
+  async openAuthor(name: string): Promise<void> {
+    await this.authorLink(name).click();
+  }
+
+  async openSeries(name: RegExp): Promise<void> {
+    await this.seriesLink(name).click();
+  }
+
+  async goBack(): Promise<void> {
+    await this.page.goBack();
+  }
+
+  /** The path of the page's URL, for a spec to poll when a link leaves the book. */
+  async path(): Promise<string> {
+    return new URL(this.page.url()).pathname;
+  }
+
+  /** Marks `window`, which a full page load clears, so a hop's staying in-app can be told. */
+  async plantFullLoadSentinel(): Promise<void> {
+    await this.page.evaluate(() =>
+      Reflect.set(window, "__fullLoadSentinel", true),
+    );
+  }
+
+  /** Whether the mark from `plantFullLoadSentinel` is still there. */
+  async fullLoadSentinelSurvived(): Promise<boolean> {
+    return this.page.evaluate(
+      () => Reflect.get(window, "__fullLoadSentinel") === true,
+    );
+  }
   // #endregion batch-C
 
   // #region batch-D: book detail writes

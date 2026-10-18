@@ -18,4 +18,33 @@ export class SavedPassageCardComponent extends BaseComponent {
   async openInBook(): Promise<void> {
     await this.openLink.click();
   }
+
+  // batch-C:
+  get noteText(): Locator {
+    return this.root.getByTestId("highlight-note");
+  }
+
+  get deleteButton(): Locator {
+    return this.root.getByTestId("highlight-delete");
+  }
+
+  get quoteButton(): Locator {
+    return this.root.getByTestId("highlight-quote");
+  }
+
+  async delete(): Promise<void> {
+    await this.deleteButton.click();
+  }
+
+  async openQuoteCard(): Promise<void> {
+    await this.quoteButton.click();
+  }
+
+  /** The reader path and cfi the link points at, resolved against this page. */
+  async openTarget(): Promise<{ pathname: string; cfi: string | null }> {
+    const href = await this.openLink.getAttribute("href");
+    if (href === null) throw new Error("the open in book link has no href");
+    const target = new URL(href, this.page.url());
+    return { pathname: target.pathname, cfi: target.searchParams.get("cfi") };
+  }
 }

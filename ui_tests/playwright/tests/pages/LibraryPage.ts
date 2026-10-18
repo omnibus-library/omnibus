@@ -54,6 +54,23 @@ export class LibraryPage extends BasePage {
   }
 
   // #region batch-C: book detail
+  readonly libraryGrid = this.page.getByTestId("lib-grid");
+
+  /** The link on a table row's cover cell that opens the book. */
+  tableRowOpenLink(slug: string, title: string): Locator {
+    return this.table
+      .row(slug)
+      .getByRole("link", { name: `Open details for ${title}` });
+  }
+
+  async openFromTable(slug: string, title: string): Promise<void> {
+    await this.tableRowOpenLink(slug, title).click();
+  }
+
+  /** Follows the top nav's Library link, from whichever page the reader is on. */
+  async openFromNav(): Promise<void> {
+    await this.topNav.libraryLink.click();
+  }
   // #endregion batch-C
 
   // #region batch-E: metadata edit
