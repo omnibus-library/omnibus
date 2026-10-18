@@ -1,7 +1,9 @@
 import type { Locator, Page } from "@playwright/test";
+import { AlignmentModalComponent } from "../components/AlignmentModalComponent";
 import { BookDetailStopsComponent } from "../components/BookDetailStopsComponent";
 import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
 import { SavedPassageCardComponent } from "../components/SavedPassageCardComponent";
+import { SyncLinkComponent } from "../components/SyncLinkComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { physicalUrls } from "../contracts/physical";
 import { expect } from "../fixtures/test";
@@ -141,5 +143,18 @@ export class BookDetailPage extends BasePage {
   // #endregion batch-I
 
   // #region batch-J: audio and cross-format
+  readonly syncLink = new SyncLinkComponent(this.page);
+  readonly alignmentModal = new AlignmentModalComponent(this.page);
+  readonly listenActionButton = this.page.getByTestId("action-listen");
+
+  /** Opens the audiobook player through the Listen action. */
+  async listen(): Promise<void> {
+    await this.listenActionButton.click();
+  }
+
+  /** Opens the reader through the Start reading action. */
+  async startReading(): Promise<void> {
+    await this.startReadingButton.click();
+  }
   // #endregion batch-J
 }

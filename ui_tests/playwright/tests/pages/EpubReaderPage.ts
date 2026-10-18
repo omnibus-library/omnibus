@@ -354,4 +354,12 @@ export class EpubReaderPage extends BasePage {
     });
     return refusals;
   }
+
+  // batch-J: audio and cross-format
+  readonly progressRibbon = this.page.locator(".rd-ribbon");
+
+  /** The footer's bottom edge in viewport pixels. */
+  async footerBottom(): Promise<number> {
+    return this.footerBar.evaluate((el) => el.getBoundingClientRect().bottom);
+  }
 }

@@ -63,3 +63,35 @@ export function pdfPageAnchor(index: number): string {
 export function pagePercent(index: number, pages: number): number {
   return Math.round(((index + 1) * 100) / pages);
 }
+
+// batch-J: audio and cross-format
+/** Strictly increasing event clocks that stay at or behind wall time, which the server clamps later ones to. */
+export class EventClock {
+  private seconds = 0;
+
+  constructor() {
+    this.reanchor(60);
+  }
+
+  next(): number {
+    this.seconds += 1;
+    return this.seconds;
+  }
+
+  /** Restarts `behind` seconds under wall time. */
+  reanchor(behind = 3): void {
+    this.seconds = Math.floor(Date.now() / 1000) - behind;
+  }
+}
+
+/** The format and audio position a progress-save request carried. */
+export function savedAudioPosition(request: Request): {
+  format: string;
+  seconds: number;
+} {
+  const {
+    update,
+  }: { update: { format: string; audio_position_seconds: number } } =
+    request.postDataJSON();
+  return { format: update.format, seconds: update.audio_position_seconds };
+}
