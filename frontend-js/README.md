@@ -69,8 +69,8 @@ and `pnpm exec vite build` are the gates.
 | Cold build | 80s server + 50s wasm client | 3s install + 1s `vite build` |
 | After a UI file edit | 16s server + 8s wasm, before wasm-bindgen and bundling | Vite hot reload (not timed; dev server ready in 168ms) |
 | After a `db/` edit | 17s | unchanged: still a Rust rebuild |
-| Shipped JS | wasm bundle (not measured) | 452 KB, 139 KB gzipped |
-| Shipped CSS | all of `atrium.css` + `loading.css` | 36 KB, 9 KB gzipped |
+| Shipped JS | wasm bundle (not measured) | 460 KB, 140 KB gzipped |
+| Shipped CSS | all of `atrium.css` + `loading.css` | 37 KB, 9 KB gzipped |
 
 Measured on one 16-core Linux box, dev profile, no sccache.
 
