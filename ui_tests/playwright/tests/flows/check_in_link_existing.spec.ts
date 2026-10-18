@@ -1,5 +1,5 @@
-import { palette } from "../contracts/palette";
 import { scan } from "../contracts/scan";
+import { search } from "../contracts/search";
 import { buildExternalBook, notInLibrary } from "../data/scan";
 import { uniqueSuffix } from "../data/unique";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
@@ -78,7 +78,7 @@ test.describe("check-in link to an existing book", () => {
     await test.step("search the library for the book", async () => {
       await flow.openLinkPicker();
       await expect(flow.linkScreen).toBeVisible();
-      await expectMutation(palette.search(TARGET_QUERY), () =>
+      await expectMutation(search.palette(TARGET_QUERY), () =>
         flow.searchLibrary(TARGET_QUERY),
       );
       await expect(flow.linkResultsList).toContainText(TARGET.title);
@@ -109,7 +109,7 @@ test.describe("check-in link to an existing book", () => {
     await test.step("check the book's page shows the copy", async () => {
       await bookDetailPage.goto(uuid);
       await expect(bookDetailPage.physicalPill).toBeVisible();
-      await expect(bookDetailPage.physicalCopyCard(note)).toBeVisible();
+      await expect(bookDetailPage.physicalCopy.card(note)).toBeVisible();
     });
 
     // The ISBN now matches the book directly, without asking the providers.
@@ -145,7 +145,7 @@ test.describe("check-in link to an existing book", () => {
     await test.step("pick the library book", async () => {
       await flow.openLinkPicker();
       await expect(flow.linkScreen).toBeVisible();
-      await expectMutation(palette.search(TARGET_QUERY), () =>
+      await expectMutation(search.palette(TARGET_QUERY), () =>
         flow.searchLibrary(TARGET_QUERY),
       );
       await flow.pickLinkResult(TARGET.title);
@@ -182,7 +182,7 @@ test.describe("check-in link to an existing book", () => {
     await test.step("search the library for nothing", async () => {
       await flow.openLinkPicker();
       await expect(flow.linkScreen).toBeVisible();
-      await expectMutation(palette.search(query), () =>
+      await expectMutation(search.palette(query), () =>
         flow.searchLibrary(query),
       );
     });

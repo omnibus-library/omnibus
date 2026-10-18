@@ -11,7 +11,6 @@ export class SyncLinkComponent extends BaseComponent {
   // Named by its aria-label, which holds while the visible text flips.
   readonly followSwitch: Locator;
   readonly followError: Locator;
-  readonly progressRuler: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -26,7 +25,6 @@ export class SyncLinkComponent extends BaseComponent {
       name: "Follow the other format",
     });
     this.followError = page.getByTestId("sync-follow-error");
-    this.progressRuler = page.getByTestId("bdmq-ruler");
   }
 
   async openAlignment(): Promise<void> {

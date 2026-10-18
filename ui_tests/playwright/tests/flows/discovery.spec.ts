@@ -29,7 +29,7 @@ test.describe("author page", () => {
 
     await test.step("check the series and its first book", async () => {
       await expect(authorPage.heading).toContainText("Wirth");
-      await expect(authorPage.seriesHeading("Code Quartet")).toBeVisible();
+      await expect(authorPage.seriesLink("Code Quartet")).toBeVisible();
       await expect(authorPage.bookTitle("Quartet I: Lexer")).toBeVisible();
     });
   });

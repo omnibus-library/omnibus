@@ -151,7 +151,7 @@ test.describe("add books page", () => {
     });
 
     await test.step("take the staged cover back", async () => {
-      await addBooksPage.removeStagedCover();
+      await form.removeCoverOverride();
       await expect(form.coverHintText).toHaveText("extracted from file");
       await expect(form.removeCoverOverrideButton).toHaveCount(0);
     });
@@ -179,7 +179,7 @@ test.describe("add books page", () => {
     });
 
     await test.step("start over", async () => {
-      await addBooksPage.startOver();
+      await addBooksPage.form.discard();
     });
 
     await test.step("check the picker is back and nothing was sent", async () => {

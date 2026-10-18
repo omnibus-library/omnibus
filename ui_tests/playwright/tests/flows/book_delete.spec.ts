@@ -36,7 +36,7 @@ test.describe("delete book files", () => {
 
     await test.step("open the dialog", async () => {
       await dialog.open();
-      await expect(dialog.dialog).toBeVisible();
+      await expect(dialog.root).toBeVisible();
       await expect(dialog.selectAllBox).toBeVisible();
       // One checkbox row per file, and nothing is selected until the user picks.
       await expect(dialog.fileCheckboxes).toHaveCount(1);
@@ -45,7 +45,7 @@ test.describe("delete book files", () => {
 
     await test.step("cancel the dialog", async () => {
       await dialog.cancel();
-      await expect(dialog.dialog).not.toBeVisible();
+      await expect(dialog.root).not.toBeVisible();
     });
   });
 
@@ -171,8 +171,8 @@ test.describe("delete book files", () => {
 
     // No files, but the physical copy is a deletable item in its own section.
     await test.step("select the copy", async () => {
-      await expect(dialog.dialog).toContainText("PHYSICAL COPIES");
-      await expect(dialog.dialog).toContainText("no file on disk");
+      await expect(dialog.root).toContainText("PHYSICAL COPIES");
+      await expect(dialog.root).toContainText("no file on disk");
       await dialog.selectAll();
       await expect(dialog.continueButton).toHaveText(/Delete 1 item/);
       await dialog.continueToConfirm();

@@ -42,7 +42,6 @@ export class LibraryPage extends BasePage {
   readonly filterBar: FilterBarComponent;
   readonly scroll: PageScrollComponent;
 
-  readonly titleHeading: Locator;
   readonly sectionTitle: Locator;
   readonly libraryHeading: Locator;
   readonly grid: Locator;
@@ -92,7 +91,6 @@ export class LibraryPage extends BasePage {
     this.addBooksModal = new AddBooksModalComponent(page);
     this.filterBar = new FilterBarComponent(page);
     this.scroll = new PageScrollComponent(page);
-    this.titleHeading = page.getByRole("heading", { level: 1 });
     this.sectionTitle = page.getByTestId("lib-section-title");
     this.libraryHeading = page.getByRole("heading", {
       level: 1,
@@ -260,10 +258,6 @@ export class LibraryPage extends BasePage {
   /** Follows the hidden-formats note to the preference that hides them. */
   async openHiddenFormatsNote(): Promise<void> {
     await this.hiddenNote.click();
-  }
-
-  tableRowCount(): Promise<number> {
-    return this.table.rows.count();
   }
 
   async openAddBooks(): Promise<void> {

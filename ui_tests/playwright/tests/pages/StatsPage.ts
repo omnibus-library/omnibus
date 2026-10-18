@@ -2,6 +2,7 @@ import type { Locator, Page, Response } from "@playwright/test";
 import { StatsDrillSheetComponent } from "../components/StatsDrillSheetComponent";
 import { StatsReaderPickerComponent } from "../components/StatsReaderPickerComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
+import { progressUrls } from "../contracts/progress";
 import { statsUrls } from "../contracts/stats";
 import type { StatsRange, StatsTile } from "../data/stats";
 import { expect } from "../fixtures/test";
@@ -276,7 +277,7 @@ export class StatsPage extends BasePage {
   async holdOwnInProgress(): Promise<() => Promise<void>> {
     const release = await holdRequests(
       this.page,
-      statsUrls.recentProgress,
+      progressUrls.recent,
       (request) => {
         const { limit, user_id }: { limit: number; user_id: number | null } =
           request.postDataJSON();
@@ -286,7 +287,7 @@ export class StatsPage extends BasePage {
     return async () => {
       const landed = this.page.waitForResponse(
         (response) =>
-          isPostTo(statsUrls.recentProgress)(response) &&
+          isPostTo(progressUrls.recent)(response) &&
           response.request().postDataJSON().user_id === null,
       );
       release();

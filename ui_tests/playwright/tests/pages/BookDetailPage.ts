@@ -24,10 +24,8 @@ import { SuggestionsStripComponent } from "../components/SuggestionsStripCompone
 import { SyncLinkComponent } from "../components/SyncLinkComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { WishlistCardComponent } from "../components/WishlistCardComponent";
-import { physicalUrls } from "../contracts/physical";
 import type { CopyRow, WishlistRow } from "../data/physical";
 import { expect } from "../fixtures/test";
-import { isPostTo } from "../utils/api";
 import { BasePage } from "./BasePage";
 
 export class BookDetailPage extends BasePage {
@@ -68,16 +66,13 @@ export class BookDetailPage extends BasePage {
   readonly immersiveReadButton: Locator;
   readonly noFilesMessage: Locator;
   readonly checkInWhenAcquiredButton: Locator;
-  readonly physicalCopyCards: Locator;
   readonly physicalPill: Locator;
-  readonly removeCopyButton: Locator;
-  readonly lastCopyDialog: Locator;
-  readonly removeFromLibraryButton: Locator;
   readonly authorsLine: Locator;
   readonly heroCover: Locator;
   readonly startListeningButton: Locator;
   readonly editMetadataLink: Locator;
   readonly notFoundMessage: Locator;
+  readonly progressRuler: Locator;
   readonly addToShelfButton: Locator;
   readonly shelvesLoading: Locator;
 
@@ -120,19 +115,14 @@ export class BookDetailPage extends BasePage {
     this.checkInWhenAcquiredButton = page.getByRole("button", {
       name: "Check in when acquired",
     });
-    this.physicalCopyCards = page.getByTestId("physical-copy-card");
     this.physicalPill = page.getByTestId("physical-pill");
-    this.removeCopyButton = page.getByTestId("copy-delete");
-    this.lastCopyDialog = page.getByTestId("last-copy-modal");
-    this.removeFromLibraryButton = this.lastCopyDialog.getByRole("button", {
-      name: "Remove from library",
-    });
     this.authorsLine = page.getByTestId("book-authors");
     // "From the same hand" adds a cover per tile, so the first is the hero's.
     this.heroCover = page.getByTestId("cover").first();
     this.startListeningButton = page.getByTestId("start-listening");
     this.editMetadataLink = page.getByTestId("edit-metadata");
     this.notFoundMessage = page.getByText("Book not found.");
+    this.progressRuler = page.getByTestId("bdmq-ruler");
     this.addToShelfButton = page.getByTestId("bdmq-add-to-shelf");
     this.shelvesLoading = page.getByTestId("bdmq-shelves-loading");
   }
@@ -147,11 +137,6 @@ export class BookDetailPage extends BasePage {
       this.page,
       this.savedPassages.cards.filter({ hasText: quote }),
     );
-  }
-
-  /** The copy card a test filed, picked out by its unique note. */
-  physicalCopyCard(note: string): Locator {
-    return this.physicalCopyCards.filter({ hasText: note });
   }
 
   /** The authors line's link to `name`'s page. */
@@ -217,20 +202,6 @@ export class BookDetailPage extends BasePage {
 
   async checkInWhenAcquired(): Promise<void> {
     await this.checkInWhenAcquiredButton.click();
-  }
-
-  /** Opens the remove dialog, with extra choices for a book's last copy. */
-  async openRemoveCopyDialog(): Promise<void> {
-    await this.removeCopyButton.click();
-  }
-
-  /** Deletes the last copy and its book, then waits for the book delete. */
-  async removeFromLibrary(): Promise<void> {
-    const removed = this.page.waitForResponse(
-      isPostTo(physicalUrls.deleteBook),
-    );
-    await this.removeFromLibraryButton.click();
-    await removed;
   }
 
   /** Opens the reader through the Start reading action. */

@@ -8,9 +8,11 @@ export const searchUrls = {
 
 /** The searches the palette and the results page run. */
 export const search = {
-  palette: (): ExpectMutationOptions => ({
+  /** The library search; a query also pins the body, none leaves it unchecked. */
+  palette: (query?: string): ExpectMutationOptions => ({
     method: "POST",
     url: searchUrls.palette,
+    expectedBody: query === undefined ? undefined : { q: query },
     expectedStatus: 200,
   }),
 

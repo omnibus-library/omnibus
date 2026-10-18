@@ -53,7 +53,6 @@ async function bothFormatsUuid(
   timeout: number,
 ): Promise<string> {
   const isEbook = (f: string) => /^(epub|pdf)$/i.test(f);
-  const isAudio = (f: string) => /^(mp3|m4b)$/i.test(f);
   const ebooks = new EbooksRequests(request);
 
   let match: LibraryBook | undefined;
@@ -65,7 +64,7 @@ async function bothFormatsUuid(
         const { books }: { books: LibraryBook[] } = await listed.json();
         match = books.find((b) => b.title === book.title);
         if (match === undefined) return false;
-        return match.formats.some(isEbook) && match.formats.some(isAudio);
+        return match.formats.some(isEbook) && match.formats.some(isAudioFormat);
       },
       {
         message: `book ${JSON.stringify(book.title)} never surfaced with both an ebook and an audio format`,
@@ -627,9 +626,7 @@ export const test = base.extend<DataFixtures>({
       await expect(detail, `read ${bookUuid}`).toBeOK();
       const { book_files }: { book_files: { id: number; format: string }[] } =
         await detail.json();
-      const audio = book_files.find((file) =>
-        /^(mp3|m4b|m4a)$/i.test(file.format),
-      );
+      const audio = book_files.find((file) => isAudioFormat(file.format));
       if (!audio) throw new Error(`book ${bookUuid} has no audio file`);
       return audio.id;
     });

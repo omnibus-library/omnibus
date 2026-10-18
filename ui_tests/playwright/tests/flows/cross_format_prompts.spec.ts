@@ -153,7 +153,7 @@ test.describe("cross-format resume prompts", () => {
     // One position ruler for the book plus the linked readout naming the
     // audio-timeline hand-off.
     await test.step("check the ruler and the linked readout show", async () => {
-      await expect(bookDetailPage.syncLink.progressRuler).toBeVisible();
+      await expect(bookDetailPage.progressRuler).toBeVisible();
       await expect(bookDetailPage.syncLink.manageButton).toBeVisible();
       await expect(bookDetailPage.syncLink.linkedSummary).toBeVisible();
     });

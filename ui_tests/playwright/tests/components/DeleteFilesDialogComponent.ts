@@ -6,7 +6,7 @@ import { BaseComponent } from "./BaseComponent";
 /** An admin's "Delete files…" dialog on a book page: pick, confirm, delete. */
 export class DeleteFilesDialogComponent extends BaseComponent {
   readonly openButton: Locator;
-  readonly dialog: Locator;
+  readonly root: Locator;
   readonly fileCheckboxes: Locator;
   readonly selectAllBox: Locator;
   readonly continueButton: Locator;
@@ -19,8 +19,8 @@ export class DeleteFilesDialogComponent extends BaseComponent {
   constructor(page: Page) {
     super(page);
     this.openButton = page.getByTestId("delete-files");
-    this.dialog = page.getByTestId("delete-book-dialog");
-    this.fileCheckboxes = this.dialog.getByRole("checkbox");
+    this.root = page.getByTestId("delete-book-dialog");
+    this.fileCheckboxes = this.root.getByRole("checkbox");
     this.selectAllBox = page.getByTestId("delete-select-all");
     this.continueButton = page.getByTestId("delete-continue");
     this.confirmCopy = page.getByTestId("delete-confirm-copy");

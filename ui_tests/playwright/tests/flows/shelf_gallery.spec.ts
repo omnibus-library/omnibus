@@ -120,7 +120,7 @@ test.describe("shelf gallery", () => {
         );
         await expect(libraryPage.sectionTitle).toContainText("All Books");
         await expect
-          .poll(() => libraryPage.tableRowCount())
+          .poll(() => libraryPage.table.rows.count())
           .toBeGreaterThanOrEqual(FIXTURE_BOOKS.length);
       });
     });

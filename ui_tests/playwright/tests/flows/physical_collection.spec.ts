@@ -154,6 +154,7 @@ test.describe("physical collection", () => {
       request,
       bookDetailPage,
     }) => {
+      const { physicalCopy } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("open a book with one copy", async () => {
@@ -169,13 +170,11 @@ test.describe("physical collection", () => {
           "aria-label",
           "In your physical collection",
         );
-        await expect(bookDetailPage.physicalCopyCards).toBeVisible();
-        await expect(bookDetailPage.physicalCopyCards).toContainText(
+        await expect(physicalCopy.cards).toBeVisible();
+        await expect(physicalCopy.cards).toContainText(
           "Trade paperback, MIT Press",
         );
-        await expect(bookDetailPage.physicalCopyCards).toContainText(
-          "9780262033848",
-        );
+        await expect(physicalCopy.cards).toContainText("9780262033848");
       });
     });
 
@@ -205,7 +204,7 @@ test.describe("physical collection", () => {
       });
 
       await test.step("check the card shows the note", async () => {
-        await expect(bookDetailPage.physicalCopyCards).toContainText(note);
+        await expect(physicalCopy.cards).toContainText(note);
       });
     });
 
@@ -225,7 +224,7 @@ test.describe("physical collection", () => {
       // A file-backed book, so this is the plain confirm, not the last-copy
       // remove-or-wishlist prompt.
       await test.step("ask to delete the copy", async () => {
-        await bookDetailPage.openRemoveCopyDialog();
+        await physicalCopy.openDeleteDialog();
         await expect(physicalCopy.deleteDialog).toBeVisible();
       });
 
@@ -237,7 +236,7 @@ test.describe("physical collection", () => {
       });
 
       await test.step("check the copy is gone", async () => {
-        await expect(bookDetailPage.physicalCopyCards).toBeHidden();
+        await expect(physicalCopy.cards).toBeHidden();
       });
     });
 
@@ -259,14 +258,12 @@ test.describe("physical collection", () => {
       });
 
       await test.step("check the copy names its filer and offers no controls", async () => {
-        await expect(readerBookDetailPage.physicalCopyCards).toContainText(
-          "by Ada",
-        );
-        await expect(readerBookDetailPage.physicalCopyCards).toContainText(
+        await expect(physicalCopy.cards).toContainText("by Ada");
+        await expect(physicalCopy.cards).toContainText(
           "Trade paperback, MIT Press",
         );
         await expect(physicalCopy.editNoteButton).toHaveCount(0);
-        await expect(readerBookDetailPage.removeCopyButton).toHaveCount(0);
+        await expect(physicalCopy.deleteButton).toHaveCount(0);
       });
     });
   });

@@ -13,7 +13,7 @@ export class MetadataCompareComponent extends BaseComponent {
   readonly fields: Locator;
   readonly takeAllButton: Locator;
   private readonly toggleUnchangedButton: Locator;
-  readonly backButton: Locator;
+  private readonly backButton: Locator;
   private readonly doneButton: Locator;
   readonly coverRow: Locator;
   readonly coverSourceImage: Locator;

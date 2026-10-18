@@ -56,15 +56,6 @@ export class AddBooksPage extends BasePage {
     });
   }
 
-  async removeStagedCover(): Promise<void> {
-    await this.form.removeCoverOverrideButton.click();
-  }
-
-  /** Drops the review form and returns to the picker. */
-  async startOver(): Promise<void> {
-    await this.form.discardButton.click();
-  }
-
   /** Listens for requests that would create something: a commit or a cover. */
   recordCommitRequests(): string[] {
     const urls: string[] = [];

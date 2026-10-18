@@ -7,7 +7,6 @@ export const statsUrls = {
   librarySize: /\/api\/rpc\/library-size(?:\?|$)/,
   libraryComposition: /\/api\/rpc\/library-composition(?:\?|$)/,
   householdReaders: /\/api\/rpc\/household-readers(?:\?|$)/,
-  recentProgress: /\/api\/rpc\/progress\/recent(?:\?|$)/,
 };
 
 function read(url: RegExp, expectedBody?: unknown): ExpectMutationOptions {
