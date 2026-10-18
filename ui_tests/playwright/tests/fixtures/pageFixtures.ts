@@ -91,6 +91,7 @@ import { CleanupReviewPage } from "../pages/CleanupReviewPage";
 import { ComicReaderPage } from "../pages/ComicReaderPage";
 import { EpubReaderPage } from "../pages/EpubReaderPage";
 import { GenreSearchPage } from "../pages/GenreSearchPage";
+import { IosGluePage } from "../pages/IosGluePage";
 import { LibraryPage } from "../pages/LibraryPage";
 import { ListenPage } from "../pages/ListenPage";
 import { LoginPage } from "../pages/LoginPage";
@@ -330,6 +331,7 @@ type PageFixtures = {
   // #endregion batch-K
 
   // #region batch-L: iOS reader glue
+  iosGluePage: IosGluePage;
   // #endregion batch-L
 };
 
@@ -1574,6 +1576,9 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // #endregion batch-K
 
   // #region batch-L: iOS reader glue
+  iosGluePage: async ({ page }, use) => {
+    await use(new IosGluePage(page));
+  },
   // #endregion batch-L
 });
 

@@ -1,18 +1,5 @@
-import type { Page } from "@playwright/test";
-
-import { expect, test } from "../fixtures/test";
-import {
-  buildChapterEpub,
-  type GlueWindow,
-  openGlue,
-  relocates,
-  type Settled,
-} from "../utils/ios_glue";
-
-// The glue's half of the iOS page curl: `peek` puts a neighbouring page in
-// front for the host to snapshot without moving the reader, `turnInstant`
-// lands a turn the host has already drawn, `whenSettled` says where a spread's
-// spine is, and a swipe or gutter tap the host can curl is left to it.
+import { buildChapterEpub } from "../data/iosGlue";
+import { expect, test } from "../fixtures/pageFixtures";
 
 const PROSE = Array.from(
   { length: 30 },
@@ -20,279 +7,357 @@ const PROSE = Array.from(
     `<p>Paragraph ${i + 1}. The tide came in the way bad news does, quietly, and nobody on the quay said a word about it until the lamps were lit.</p>`,
 ).join("\n");
 const SHORT = "<p>The lamps along the quay were lit.</p>";
-const MIDDLE = { x: 201, y: 437 };
 
-/** Where the section is scrolled, and the offset drawn over it. */
-function position(page: Page): Promise<{ scroll: number; offset: string }> {
-  return page.evaluate(() => {
-    const container = document.querySelector<HTMLElement>(
-      "#stage .epub-container",
-    );
-    if (!container) throw new Error("no epub container");
-    const view = container.firstElementChild as HTMLElement | null;
-    return {
-      scroll: container.scrollLeft,
-      offset: view?.style.transform ?? "",
-    };
-  });
-}
+// The glue's half of the iOS page curl: it shows a neighbouring page for the
+// host to snapshot, lands a turn the host drew, and leaves the host any swipe
+// or gutter tap it can curl.
+test.describe("ios reader page curl", () => {
+  test.describe("peeking and landing", () => {
+    test.use({ viewport: { width: 402, height: 874 } });
 
-/** The horizontal shift a `translate3d(...)` offset draws. */
-function shiftOf(offset: string): number {
-  const match = /translate3d\((-?[\d.]+)px/.exec(offset);
-  if (!match?.[1]) throw new Error(`no offset in "${offset}"`);
-  return Number(match[1]);
-}
+    test.describe("inside a section", () => {
+      test.beforeEach("open a long chapter", async ({ iosGluePage }) => {
+        await iosGluePage.openBook(await buildChapterEpub(PROSE));
+      });
 
-function peek(page: Page, dir: number): Promise<boolean> {
-  return page.evaluate(
-    (d) => (window as unknown as GlueWindow).OmnibusReader.peek(d),
-    dir,
-  );
-}
+      test("show the next page on a peek without moving the reader", async ({
+        iosGluePage,
+      }) => {
+        const before = await iosGluePage.sectionPosition();
 
-function turnInstant(page: Page, dir: number): Promise<boolean> {
-  return page.evaluate(
-    (d) => (window as unknown as GlueWindow).OmnibusReader.turnInstant(d),
-    dir,
-  );
-}
+        await test.step("peek at the next page", async () => {
+          expect(await iosGluePage.peek(1)).toBe(true);
+        });
 
-function neighbourKind(page: Page, dir: number): Promise<string> {
-  return page.evaluate(
-    (d) => (window as unknown as GlueWindow).OmnibusReader.neighbourKind(d),
-    dir,
-  );
-}
+        await test.step("check the page shifts and the reader stays put", async () => {
+          const peeked = await iosGluePage.sectionPosition();
+          expect(peeked.scroll, "a peek leaves epub.js where it was").toBe(
+            before.scroll,
+          );
+          expect(await iosGluePage.peekDistance()).toBeGreaterThan(0);
+        });
 
-function whenSettled(page: Page): Promise<Settled> {
-  return page.evaluate(() =>
-    (window as unknown as GlueWindow).OmnibusReader.whenSettled(),
-  );
-}
+        await test.step("put the page back", async () => {
+          expect(await iosGluePage.unpeek()).toBe(true);
+        });
 
-function setCurlReady(
-  page: Page,
-  ready: { on: boolean; next: boolean; prev: boolean },
-): Promise<void> {
-  return page.evaluate(
-    (r) =>
-      (window as unknown as GlueWindow).OmnibusReader.setCurlReady(
-        r.on,
-        r.next,
-        r.prev,
-      ),
-    ready,
-  );
-}
+        await test.step("check no offset is left drawn", async () => {
+          expect((await iosGluePage.sectionPosition()).offset).toBe("");
+        });
+      });
 
-function turnRequests(page: Page): Promise<string[]> {
-  return page.evaluate(
-    () => (window as unknown as GlueWindow).glueTurnRequests,
-  );
-}
+      test("land a turn on the page the peek showed", async ({
+        iosGluePage,
+      }) => {
+        const before = await iosGluePage.sectionPosition();
+        const cfiBefore = (await iosGluePage.relocates()).at(-1)?.cfi;
 
-async function nextFrame(page: Page): Promise<void> {
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
-  );
-}
+        const shift =
+          await test.step("peek at the next page, then put it back", async () => {
+            expect(await iosGluePage.peek(1)).toBe(true);
+            const distance = await iosGluePage.peekDistance();
+            expect(await iosGluePage.unpeek()).toBe(true);
+            return distance;
+          });
 
-/**
- * A one-finger swipe leftward from the middle of the page. Returns the offset
- * drawn mid-swipe, with a frame let run after each move so a drag the glue
- * took would have painted one.
- */
-async function swipeLeft(page: Page): Promise<string> {
-  const cdp = await page.context().newCDPSession(page);
-  const at = (dx: number) => [{ x: MIDDLE.x + dx, y: MIDDLE.y, id: 1 }];
-  await cdp.send("Input.dispatchTouchEvent", {
-    type: "touchStart",
-    touchPoints: at(0),
-  });
-  for (const dx of [-30, -90, -160]) {
-    await cdp.send("Input.dispatchTouchEvent", {
-      type: "touchMove",
-      touchPoints: at(dx),
+        await test.step("land the turn", async () => {
+          expect(await iosGluePage.turnInstant(1)).toBe(true);
+        });
+
+        await test.step("check the turn landed on the page the peek showed", async () => {
+          const landed = await iosGluePage.sectionPosition();
+          expect(
+            landed.scroll,
+            "the turn lands on the page the peek showed",
+          ).toBe(before.scroll + shift);
+          expect(landed.offset).toBe("");
+          const last = (await iosGluePage.relocates()).at(-1);
+          expect(last?.cfi).not.toBe(cfiBefore);
+          expect(last?.echo, "a landed turn is movement").toBe(false);
+        });
+      });
+
+      test("settle a capture only once a slide has finished drawing", async ({
+        iosGluePage,
+      }) => {
+        const before = await iosGluePage.sectionPosition();
+
+        await test.step("turn with a slide", async () => {
+          await iosGluePage.turnSlide(1);
+        });
+
+        await test.step("check the capture waits out the slide", async () => {
+          expect((await iosGluePage.whenSettled()).columns).toBe(1);
+          const settled = await iosGluePage.sectionPosition();
+          expect(settled.offset, "no slide is still drawing").toBe("");
+          expect(settled.scroll).toBeGreaterThan(before.scroll);
+        });
+      });
+
+      test("offer nothing to peek at or turn to before the first page", async ({
+        iosGluePage,
+      }) => {
+        const before = await iosGluePage.sectionPosition();
+
+        await test.step("ask for the page before the first", async () => {
+          expect(await iosGluePage.neighbourKind(-1)).toBe("none");
+          expect(await iosGluePage.peek(-1)).toBe(false);
+          expect(await iosGluePage.turnInstant(-1)).toBe(false);
+        });
+
+        await test.step("check the reader has not moved", async () => {
+          expect(await iosGluePage.sectionPosition()).toEqual(before);
+        });
+      });
     });
-    await nextFrame(page);
-  }
-  const midSwipe = (await position(page)).offset;
-  await cdp.send("Input.dispatchTouchEvent", {
-    type: "touchEnd",
-    touchPoints: [],
-  });
-  await cdp.detach();
-  return midSwipe;
-}
 
-test.describe("iOS reader page curl: peeking and landing", () => {
-  test.use({ viewport: { width: 402, height: 874 } });
+    test.describe("at a chapter's end", () => {
+      test.beforeEach(
+        "open a short chapter followed by a long one",
+        async ({ iosGluePage }) => {
+          const epub = await buildChapterEpub(SHORT, {
+            chapters: [PROSE],
+            toc: [
+              ["One", "chapter.xhtml"],
+              ["Two", "chapter2.xhtml"],
+            ],
+          });
+          await iosGluePage.openBook(epub);
+        },
+      );
 
-  test("a peek shows the next page without moving the reader, and the turn lands on that page", async ({
-    page,
-  }) => {
-    await openGlue(page, await buildChapterEpub(PROSE));
-    const before = await position(page);
-    const cfiBefore = (await relocates(page)).at(-1)?.cfi;
+      test("report the next page as across a section", async ({
+        iosGluePage,
+      }) => {
+        await test.step("check what the host decides by", async () => {
+          expect(
+            await iosGluePage.whenSettled(),
+            "what the host decides by",
+          ).toEqual({
+            columns: 1,
+            // The stage is inset 10px a side, so its middle is the window's.
+            spine: 201,
+            next: "section",
+            prev: "none",
+          });
+        });
 
-    expect(await peek(page, 1)).toBe(true);
-    const peeked = await position(page);
-    expect(peeked.scroll, "a peek leaves epub.js where it was").toBe(
-      before.scroll,
-    );
-    const shift = -shiftOf(peeked.offset);
-    expect(shift).toBeGreaterThan(0);
+        await test.step("check the next page is a section with nothing to peek at", async () => {
+          expect(await iosGluePage.neighbourKind(1)).toBe("section");
+          expect(
+            await iosGluePage.peek(1),
+            "an unlaid chapter has no pixels",
+          ).toBe(false);
+        });
+      });
 
-    expect(await peek(page, 0)).toBe(true);
-    expect((await position(page)).offset).toBe("");
+      test("cross into the next section on a turn", async ({ iosGluePage }) => {
+        await test.step("land a turn forward", async () => {
+          expect(await iosGluePage.turnInstant(1)).toBe(true);
+        });
 
-    expect(await turnInstant(page, 1)).toBe(true);
-    const landed = await position(page);
-    expect(landed.scroll, "the turn lands on the page the peek showed").toBe(
-      before.scroll + shift,
-    );
-    expect(landed.offset).toBe("");
-    const last = (await relocates(page)).at(-1);
-    expect(last?.cfi).not.toBe(cfiBefore);
-    expect(last?.echo, "a landed turn is movement").toBe(false);
-  });
-
-  test("a capture waits out a slide still drawing, so it never snapshots a page mid-turn", async ({
-    page,
-  }) => {
-    await openGlue(page, await buildChapterEpub(PROSE));
-    const before = await position(page);
-
-    await page.evaluate(() =>
-      (window as unknown as GlueWindow).OmnibusReader.turnSlide(1),
-    );
-    expect((await whenSettled(page)).columns).toBe(1);
-
-    const settled = await position(page);
-    expect(settled.offset, "no slide is still drawing").toBe("");
-    expect(settled.scroll).toBeGreaterThan(before.scroll);
-  });
-
-  test("before the book's first page there is nothing to peek at or turn to", async ({
-    page,
-  }) => {
-    await openGlue(page, await buildChapterEpub(PROSE));
-    const before = await position(page);
-
-    expect(await neighbourKind(page, -1)).toBe("none");
-    expect(await peek(page, -1)).toBe(false);
-    expect(await turnInstant(page, -1)).toBe(false);
-    expect(await position(page)).toEqual(before);
-  });
-
-  test("at a chapter's end the next page is across a section, and the turn crosses into it", async ({
-    page,
-  }) => {
-    const epub = await buildChapterEpub(SHORT, {
-      chapters: [PROSE],
-      toc: [
-        ["One", "chapter.xhtml"],
-        ["Two", "chapter2.xhtml"],
-      ],
+        await test.step("check the reader is in the next chapter", async () => {
+          await expect
+            .poll(
+              async () => (await iosGluePage.relocates()).at(-1)?.chapterTitle,
+            )
+            .toBe("Two");
+          expect(await iosGluePage.neighbourKind(-1)).toBe("section");
+        });
+      });
     });
-    await openGlue(page, epub);
-
-    expect(await whenSettled(page), "what the host decides by").toEqual({
-      columns: 1,
-      // The stage is inset 10px a side, so its middle is the window's.
-      spine: 201,
-      next: "section",
-      prev: "none",
-    });
-    expect(await neighbourKind(page, 1)).toBe("section");
-    expect(await peek(page, 1), "an unlaid chapter has no pixels").toBe(false);
-
-    expect(await turnInstant(page, 1)).toBe(true);
-    await expect
-      .poll(async () => (await relocates(page)).at(-1)?.chapterTitle)
-      .toBe("Two");
-    expect(await neighbourKind(page, -1)).toBe("section");
-  });
-});
-
-test.describe("iOS reader page curl: a two-page spread", () => {
-  test.use({ viewport: { width: 1000, height: 700 } });
-
-  test("a spread's spine is where its columns meet, and a peek shows the whole next spread", async ({
-    page,
-  }) => {
-    await openGlue(page, await buildChapterEpub(PROSE), { spread: "auto" });
-
-    const settled = await whenSettled(page);
-    expect(settled.columns).toBe(2);
-    expect(settled.spine, "the middle of a stage inset 10px a side").toBe(500);
-
-    expect(await peek(page, 1)).toBe(true);
-    expect(
-      -shiftOf((await position(page)).offset),
-      "both columns move, so the snapshot is the next spread",
-    ).toBe(980);
-  });
-});
-
-test.describe("iOS reader page curl: who turns the page", () => {
-  test.use({ viewport: { width: 402, height: 874 }, hasTouch: true });
-
-  test.beforeEach(async ({ page }) => {
-    await openGlue(page, await buildChapterEpub(PROSE));
   });
 
-  test("a swipe toward a page the host can curl is left to it, and one it can't is still the slide", async ({
-    page,
-  }) => {
-    const before = await position(page);
+  test.describe("a two-page spread", () => {
+    test.use({ viewport: { width: 1000, height: 700 } });
 
-    await setCurlReady(page, { on: true, next: true, prev: false });
-    expect(await swipeLeft(page), "the glue drew no drag").toBe("");
-    expect((await position(page)).scroll).toBe(before.scroll);
-
-    await setCurlReady(page, { on: true, next: false, prev: false });
-    expect(await swipeLeft(page), "the glue drew the drag").not.toBe("");
-    await expect
-      .poll(async () => (await position(page)).scroll)
-      .toBeGreaterThan(before.scroll);
-  });
-
-  test("a touch during a peek can't drag the shifted page, but a tap still reaches the host", async ({
-    page,
-  }) => {
-    // Swipes are the glue's here, so only the peek can be what holds one off.
-    await setCurlReady(page, { on: true, next: false, prev: false });
-    expect(await peek(page, 1)).toBe(true);
-    const peeked = await position(page);
-
-    expect(await swipeLeft(page), "the peek's shift stands").toBe(
-      peeked.offset,
+    test.beforeEach(
+      "open a long chapter as a spread",
+      async ({ iosGluePage }) => {
+        await iosGluePage.openBook(await buildChapterEpub(PROSE), {
+          spread: "auto",
+        });
+      },
     );
-    expect(await position(page)).toEqual(peeked);
 
-    await page.touchscreen.tap(380, MIDDLE.y);
-    await expect.poll(() => turnRequests(page)).toEqual(["1"]);
+    test("put the spine where the columns meet", async ({ iosGluePage }) => {
+      await test.step("check the columns and the spine", async () => {
+        const settled = await iosGluePage.whenSettled();
+        expect(settled.columns).toBe(2);
+        expect(settled.spine, "the middle of a stage inset 10px a side").toBe(
+          500,
+        );
+      });
+    });
+
+    test("show the whole next spread on a peek", async ({ iosGluePage }) => {
+      await test.step("peek at the next spread", async () => {
+        expect(await iosGluePage.peek(1)).toBe(true);
+      });
+
+      await test.step("check both columns move", async () => {
+        expect(
+          await iosGluePage.peekDistance(),
+          "both columns move, so the snapshot is the next spread",
+        ).toBe(980);
+      });
+    });
   });
 
-  test("a gutter tap is the host's to draw while it curls, and the glue's slide otherwise", async ({
-    page,
-  }) => {
-    const before = await position(page);
+  test.describe("who turns the page", () => {
+    test.use({ viewport: { width: 402, height: 874 }, hasTouch: true });
 
-    await setCurlReady(page, { on: true, next: false, prev: false });
-    await page.touchscreen.tap(380, MIDDLE.y);
-    await page.touchscreen.tap(20, MIDDLE.y);
-    await expect.poll(() => turnRequests(page)).toEqual(["1", "-1"]);
-    expect((await position(page)).scroll).toBe(before.scroll);
+    test.beforeEach("open a long chapter", async ({ iosGluePage }) => {
+      await iosGluePage.openBook(await buildChapterEpub(PROSE));
+    });
 
-    await setCurlReady(page, { on: false, next: false, prev: false });
-    await page.touchscreen.tap(380, MIDDLE.y);
-    await expect
-      .poll(async () => (await position(page)).scroll)
-      .toBeGreaterThan(before.scroll);
-    expect(await turnRequests(page)).toEqual(["1", "-1"]);
+    test("leave a swipe toward a page the host can curl to the host", async ({
+      iosGluePage,
+    }) => {
+      const before = await iosGluePage.sectionPosition();
+
+      await test.step("tell the glue the host curls the next page", async () => {
+        await iosGluePage.setCurlReady({ on: true, next: true, prev: false });
+      });
+
+      const drawn = await test.step("swipe left", async () => {
+        return iosGluePage.swipeLeft();
+      });
+
+      await test.step("check the glue drew no drag and left the page", async () => {
+        expect(drawn, "the glue drew no drag").toBe("");
+        expect((await iosGluePage.sectionPosition()).scroll).toBe(
+          before.scroll,
+        );
+      });
+    });
+
+    test("slide on a swipe toward a page the host can't curl", async ({
+      iosGluePage,
+    }) => {
+      const before = await iosGluePage.sectionPosition();
+
+      await test.step("tell the glue the host curls no page", async () => {
+        await iosGluePage.setCurlReady({ on: true, next: false, prev: false });
+      });
+
+      const drawn = await test.step("swipe left", async () => {
+        return iosGluePage.swipeLeft();
+      });
+
+      await test.step("check the glue drew the drag and slid to the next page", async () => {
+        expect(drawn, "the glue drew the drag").not.toBe("");
+        await expect
+          .poll(async () => (await iosGluePage.sectionPosition()).scroll)
+          .toBeGreaterThan(before.scroll);
+      });
+    });
+
+    test.describe("during a peek", () => {
+      test("hold off a swipe that would drag the shifted page", async ({
+        iosGluePage,
+      }) => {
+        // Swipes are the glue's here, so only the peek can be what holds one off.
+        await test.step("tell the glue the host curls no page", async () => {
+          await iosGluePage.setCurlReady({
+            on: true,
+            next: false,
+            prev: false,
+          });
+        });
+
+        await test.step("peek at the next page", async () => {
+          expect(await iosGluePage.peek(1)).toBe(true);
+        });
+
+        const peeked = await iosGluePage.sectionPosition();
+
+        const drawn = await test.step("swipe left", async () => {
+          return iosGluePage.swipeLeft();
+        });
+
+        await test.step("check the peek's shift stands", async () => {
+          expect(drawn, "the peek's shift stands").toBe(peeked.offset);
+          expect(await iosGluePage.sectionPosition()).toEqual(peeked);
+        });
+      });
+
+      test("pass a tap on the gutter to the host", async ({ iosGluePage }) => {
+        await test.step("tell the glue the host curls no page", async () => {
+          await iosGluePage.setCurlReady({
+            on: true,
+            next: false,
+            prev: false,
+          });
+        });
+
+        await test.step("peek at the next page", async () => {
+          expect(await iosGluePage.peek(1)).toBe(true);
+        });
+
+        await test.step("tap the forward gutter", async () => {
+          await iosGluePage.tapNextGutter();
+        });
+
+        await test.step("check the host is asked to turn forward", async () => {
+          await expect.poll(() => iosGluePage.turnRequests()).toEqual(["1"]);
+        });
+      });
+    });
+
+    test.describe("gutter taps", () => {
+      test("leave both gutter taps to the host while it curls", async ({
+        iosGluePage,
+      }) => {
+        const before = await iosGluePage.sectionPosition();
+
+        await test.step("tell the glue the host is curling", async () => {
+          await iosGluePage.setCurlReady({
+            on: true,
+            next: false,
+            prev: false,
+          });
+        });
+
+        await test.step("tap each gutter", async () => {
+          await iosGluePage.tapNextGutter();
+          await iosGluePage.tapPreviousGutter();
+        });
+
+        await test.step("check the host is asked for both turns and the page stays put", async () => {
+          await expect
+            .poll(() => iosGluePage.turnRequests())
+            .toEqual(["1", "-1"]);
+          expect((await iosGluePage.sectionPosition()).scroll).toBe(
+            before.scroll,
+          );
+        });
+      });
+
+      test("slide on a gutter tap while the host is not curling", async ({
+        iosGluePage,
+      }) => {
+        const before = await iosGluePage.sectionPosition();
+
+        await test.step("tell the glue the host is not curling", async () => {
+          await iosGluePage.setCurlReady({
+            on: false,
+            next: false,
+            prev: false,
+          });
+        });
+
+        await test.step("tap the forward gutter", async () => {
+          await iosGluePage.tapNextGutter();
+        });
+
+        await test.step("check the glue slid to the next page and asked the host for nothing", async () => {
+          await expect
+            .poll(async () => (await iosGluePage.sectionPosition()).scroll)
+            .toBeGreaterThan(before.scroll);
+          expect(await iosGluePage.turnRequests()).toEqual([]);
+        });
+      });
+    });
   });
 });
