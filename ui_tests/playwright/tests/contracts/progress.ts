@@ -4,6 +4,8 @@ import type { ExpectMutationOptions } from "../utils/api";
 export const progressUrls = {
   save: /\/api\/rpc\/progress(?:\?|$)/,
   get: /\/api\/rpc\/progress\/get(?:\?|$)/,
+  // batch-I:
+  recent: /\/api\/rpc\/progress\/recent(?:\?|$)/,
 };
 
 /** The writes the reader makes to the reader's saved position. */
@@ -36,5 +38,13 @@ export const progress = {
   saveAfterJump: (): ExpectMutationOptions => ({
     ...progress.save(),
     timeout: 20_000,
+  }),
+
+  // batch-I:
+  /** The read the user menu makes for its resume rows, a POST that changes nothing. */
+  recent: (): ExpectMutationOptions => ({
+    method: "POST",
+    url: progressUrls.recent,
+    expectedStatus: 200,
   }),
 };

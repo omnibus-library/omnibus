@@ -55,4 +55,17 @@ export abstract class BasePage {
     await waitForHydration(this.page);
     await this.readyLocator.waitFor({ timeout: this.readyTimeout });
   }
+
+  // batch-I:
+  /** Reloads, then waits for the page's first fetches to settle. */
+  async reloadAndSettle(): Promise<void> {
+    await this.reload();
+    await this.page.waitForLoadState("networkidle");
+  }
+
+  /** Steps back in history and waits until the page is ready again. */
+  async goBack(): Promise<void> {
+    await this.page.goBack();
+    await this.waitUntilReady();
+  }
 }

@@ -9,6 +9,7 @@ import { CreateShelfModalComponent } from "../components/CreateShelfModalCompone
 import { EditShelfModalComponent } from "../components/EditShelfModalComponent";
 import { FilterBarComponent } from "../components/FilterBarComponent";
 import { LibraryTableComponent } from "../components/LibraryTableComponent";
+import { PageScrollComponent } from "../components/PageScrollComponent";
 import { SeriesCapComponent } from "../components/SeriesCapComponent";
 import { ShelfGalleryComponent } from "../components/ShelfGalleryComponent";
 import { TabBarComponent } from "../components/TabBarComponent";
@@ -430,6 +431,28 @@ export class LibraryPage extends BasePage {
   // #endregion batch-H
 
   // #region batch-I: search, nav and discovery
+  readonly scroll = new PageScrollComponent(this.page);
+
+  /** The titles on the grid tiles, in the order they are painted. */
+  tileTitles(): Promise<string[]> {
+    return this.page.locator(".lib-tile-title").allTextContents();
+  }
+
+  /** Opens the last tile, which a short viewport leaves at the bottom of the screen. */
+  async openLastBook(): Promise<void> {
+    await this.bookTiles.last().click();
+  }
+
+  /** Records the body of every page fetch the library makes, in order. */
+  recordPageFetches(): string[] {
+    const bodies: string[] = [];
+    this.page.on("request", (request) => {
+      if (request.method() === "POST" && ebooksUrls.page.test(request.url())) {
+        bodies.push(request.postData() ?? "");
+      }
+    });
+    return bodies;
+  }
   // #endregion batch-I
 
   // #region batch-J: audio and cross-format

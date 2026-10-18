@@ -286,6 +286,15 @@ export class BookDetailPage extends BasePage {
   // #endregion batch-H
 
   // #region batch-I: search, nav and discovery
+  async openSeriesPage(): Promise<void> {
+    await this.stops.seriesPageLink.click();
+  }
+
+  /** Checks the page is a book's uuid route, whichever book, and not a numeric id. */
+  async assertDisplayedByUuid(): Promise<void> {
+    await expect(this.page).toHaveURL(/\/books\/[0-9a-fA-F-]{36}$/);
+    await expect(this.titleHeading).toBeVisible();
+  }
   // #endregion batch-I
 
   // #region batch-J: audio and cross-format

@@ -13,6 +13,7 @@ import type {
 } from "@playwright/test";
 import { STORAGE_STATE_PATH } from "../../globalSetup";
 import { AccountRequests } from "../apiRequests/AccountRequests";
+import { AuthorsRequests } from "../apiRequests/AuthorsRequests";
 import { AuthRequests } from "../apiRequests/AuthRequests";
 import { BookmarksRequests } from "../apiRequests/BookmarksRequests";
 import { BookRatingRequests } from "../apiRequests/BookRatingRequests";
@@ -40,6 +41,7 @@ import type {
   CreatedKoboDevice,
   SignedInSession,
 } from "../data/account";
+import type { IndexedBook } from "../data/authors";
 import { type BookRecord, isAudioFormat } from "../data/bookDetail";
 import type { SeededBookmark } from "../data/bookmarks";
 import type { LibraryBook, UploadedEbook } from "../data/ebooks";
@@ -58,6 +60,7 @@ import type { MetadataProvider } from "../data/metadataKeys";
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
 import type { BookProgress, ProgressRecord } from "../data/progress";
 import type { ReadStatus, ReadStatusRecord } from "../data/readStatus";
+import { buildRecentPoint, type RecentBook } from "../data/recentProgress";
 import {
   buildShelf,
   type NewShelf,
@@ -67,6 +70,7 @@ import {
 import { buildReader, type Credentials, type SeededUser } from "../data/users";
 import { AddBooksPage } from "../pages/AddBooksPage";
 import { AdminHealthPage } from "../pages/AdminHealthPage";
+import { AuthorPage } from "../pages/AuthorPage";
 import { AuthorsIndexPage } from "../pages/AuthorsIndexPage";
 import { BookDetailPage } from "../pages/BookDetailPage";
 import { CheckInPage } from "../pages/CheckInPage";
@@ -81,6 +85,9 @@ import { MetadataEditPage } from "../pages/MetadataEditPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { PdfReaderPage } from "../pages/PdfReaderPage";
 import { RegisterPage } from "../pages/RegisterPage";
+import { SearchResultsPage } from "../pages/SearchResultsPage";
+import { SeriesIndexPage } from "../pages/SeriesIndexPage";
+import { SeriesPage } from "../pages/SeriesPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { ShelfPage } from "../pages/ShelfPage";
 import { ShelvesIndexPage } from "../pages/ShelvesIndexPage";
@@ -93,6 +100,7 @@ import { withLock } from "../utils/lock";
 import { fixturesDir } from "../utils/seed";
 import { MERGE_PRIMARY, MERGE_SECONDARY } from "./audiobooks";
 import { DUAL_FORMAT_BOOK } from "./dual_format";
+import { FIXTURE_BOOKS } from "./epubs";
 import {
   test as base,
   expect,
@@ -267,6 +275,21 @@ type PageFixtures = {
   // #endregion batch-H
 
   // #region batch-I: search, nav and discovery
+  searchResultsPage: SearchResultsPage;
+  authorPage: AuthorPage;
+  seriesPage: SeriesPage;
+  seriesIndexPage: SeriesIndexPage;
+  authorsRequests: AuthorsRequests;
+  indexedBooks: () => Promise<IndexedBook[]>;
+  authorId: (name: string) => Promise<number>;
+  seriesId: (name: string) => Promise<number>;
+  linkedAuthorNames: () => Promise<string[]>;
+  deletedAuthors: Set<string>;
+  uploadAuthorPhoto: (authorId: number) => Promise<void>;
+  recentBook: (
+    format: "epub" | "audio",
+    bookFileId?: number,
+  ) => Promise<RecentBook>;
   // #endregion batch-I
 
   // #region batch-J: audio and cross-format
@@ -1215,6 +1238,134 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // #endregion batch-H
 
   // #region batch-I: search, nav and discovery
+  searchResultsPage: async ({ page }, use) => {
+    await use(new SearchResultsPage(page));
+  },
+  authorPage: async ({ page }, use) => {
+    await use(new AuthorPage(page));
+  },
+  seriesPage: async ({ page }, use) => {
+    await use(new SeriesPage(page));
+  },
+  seriesIndexPage: async ({ page }, use) => {
+    await use(new SeriesIndexPage(page));
+  },
+  authorsRequests: async ({ request }, use) => {
+    await use(new AuthorsRequests(request));
+  },
+
+  indexedBooks: async ({ request }, use) => {
+    const ebooks = new EbooksRequests(request);
+    await use(async () => {
+      const listed = await ebooks.getEbooks();
+      expect(listed.status(), "GET /api/rpc/ebooks").toBe(200);
+      const { books }: { books: IndexedBook[] } = await listed.json();
+      return books;
+    });
+  },
+
+  authorId: async ({ indexedBooks }, use) => {
+    await use(async (name) => {
+      for (const book of await indexedBooks()) {
+        const match = book.creators.find((creator) => creator.name === name);
+        if (match?.id) return match.id;
+      }
+      throw new Error(`no indexed author named ${JSON.stringify(name)}`);
+    });
+  },
+
+  seriesId: async ({ indexedBooks }, use) => {
+    await use(async (name) => {
+      const books = await indexedBooks();
+      const match = books.find(
+        (book) => book.series === name && book.series_id != null,
+      );
+      if (!match?.series_id) {
+        throw new Error(`no indexed series named ${JSON.stringify(name)}`);
+      }
+      return match.series_id;
+    });
+  },
+
+  linkedAuthorNames: async ({ indexedBooks }, use) => {
+    await use(async () =>
+      (await indexedBooks()).flatMap((book) =>
+        book.creators.map((creator) => creator.name),
+      ),
+    );
+  },
+
+  // A delete blocklists the name for good and the indexer will not re-read an
+  // unchanged EPUB, so an override on each book is what puts the author back.
+  deletedAuthors: async (
+    { request, overridesRequests, linkedAuthorNames },
+    use,
+  ) => {
+    const names = new Set<string>();
+    await use(names);
+    for (const name of names) {
+      const affected = FIXTURE_BOOKS.filter((book) =>
+        book.authors.includes(name),
+      );
+      expect(
+        affected.length,
+        `no fixture book lists ${JSON.stringify(name)}`,
+      ).toBeGreaterThan(0);
+      for (const book of affected) {
+        const uuid = await fetchBookUuidByTitle(request, book.title);
+        const restored = await overridesRequests.postOverrides(uuid, {
+          creators: book.authors.map((author) => ({
+            name: author,
+            role: null,
+            file_as: null,
+          })),
+        });
+        await expect(restored, `restore the authors of ${book.title}`).toBeOK();
+      }
+      await expect
+        .poll(async () => (await linkedAuthorNames()).includes(name), {
+          message: `author ${JSON.stringify(name)} should be restored via override`,
+          timeout: 10_000,
+          intervals: [100, 200, 500, 1_000],
+        })
+        .toBe(true);
+    }
+  },
+
+  uploadAuthorPhoto: async ({ authorsRequests }, use) => {
+    const uploaded: number[] = [];
+    await use(async (authorId) => {
+      const put = await authorsRequests.putPhoto(authorId);
+      expect(put.status(), `upload a photo for author ${authorId}`).toBe(204);
+      uploaded.push(authorId);
+    });
+    for (const authorId of uploaded) {
+      const deleted = await authorsRequests.deletePhoto(authorId);
+      await expect(deleted, `delete the photo of author ${authorId}`).toBeOK();
+    }
+  },
+
+  recentBook: async ({ request }, use) => {
+    const ebooks = new EbooksRequests(request);
+    await use(async (format, bookFileId) => {
+      const target = FIXTURE_BOOKS[1]!;
+      const uuid = await fetchBookUuidByTitle(request, target.title);
+      const listed = await ebooks.getEbooks();
+      expect(listed.status(), "GET /api/rpc/ebooks").toBe(200);
+      const { books }: { books: Record<string, unknown>[] } =
+        await listed.json();
+      const book = books.find(
+        (candidate) => candidate.unique_identifier === uuid,
+      );
+      if (!book) {
+        throw new Error(
+          `book ${JSON.stringify(target.title)} disappeared after lookup`,
+        );
+      }
+      const point = buildRecentPoint(uuid, book, format, bookFileId ?? null);
+      return { uuid, title: target.title, point };
+    });
+  },
   // #endregion batch-I
 
   // #region batch-J: audio and cross-format
