@@ -3,7 +3,7 @@
 //! archive path. The reference walk is shared with cover resolution
 //! (`cover::embedded`); the listing and fetch back the REST and MCP image tools.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
@@ -114,6 +114,11 @@ fn attach_references(
     images: &mut BTreeMap<String, BookImage>,
     budget: &mut u64,
 ) {
+    // Keyed decoded, so a src and a manifest href that encode one path differently still meet.
+    let by_decoded: HashMap<String, String> = images
+        .keys()
+        .map(|href| (percent_decoded(href), href.clone()))
+        .collect();
     for (index, spine_item) in doc.spine.iter().enumerate() {
         if *budget == 0 {
             tracing::warn!(spine_index = index, "book images: byte budget spent");
@@ -144,8 +149,11 @@ fn attach_references(
         };
         let dir = page_path.rsplit_once('/').map_or("", |(dir, _)| dir);
         for found in image_refs(&page) {
-            // shortcut: hrefs compare as written (no percent-decoding), upgrade if a real book's src and manifest encode differently
-            let Some(image) = images.get_mut(&join_href(dir, strip_fragment(&found.src))) else {
+            let resolved = percent_decoded(&join_href(dir, strip_fragment(&found.src)));
+            let Some(image) = by_decoded
+                .get(&resolved)
+                .and_then(|href| images.get_mut(href))
+            else {
                 continue;
             };
             if image
@@ -241,6 +249,11 @@ pub fn image_refs(xhtml: &[u8]) -> Vec<ImageRef> {
 /// resolved — the crate joins hrefs onto the OPF directory verbatim.
 pub fn archive_path(path: &std::path::Path) -> String {
     join_href("", &path.to_string_lossy().replace('\\', "/"))
+}
+
+/// `href` percent-decoded, or as written when it does not decode to UTF-8.
+fn percent_decoded(href: &str) -> String {
+    urlencoding::decode(href).map_or_else(|_| href.to_string(), |d| d.into_owned())
 }
 
 /// `href` without its `#fragment`.

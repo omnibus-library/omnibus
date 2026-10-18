@@ -108,6 +108,44 @@ fn list_images_reads_an_image_and_spine_document_whose_manifest_hrefs_are_percen
 }
 
 #[test]
+fn list_images_matches_a_reference_whose_src_percent_encodes_a_literal_manifest_href() {
+    let png = solid_color_png(1, 2, 3, 2, 2);
+    let path = write_epub(
+        &[(
+            "Text/c1.xhtml",
+            &page(r#"<img src="../Images/%6dap.png" alt="Map"/>"#),
+        )],
+        &[("Images/map.png", "image/png", &png)],
+    );
+
+    let images = list_images(&path).unwrap();
+
+    assert_eq!(
+        image(&images, "Images/map.png").references,
+        vec![reference(0, Some("Map"))]
+    );
+}
+
+#[test]
+fn list_images_matches_a_literal_src_against_a_percent_encoded_manifest_href() {
+    let png = solid_color_png(1, 2, 3, 2, 2);
+    let path = write_epub(
+        &[(
+            "Text/c1.xhtml",
+            &page(r#"<img src="../Images/my map.png" alt="Map"/>"#),
+        )],
+        &[("Images/my%20map.png", "image/png", &png)],
+    );
+
+    let images = list_images(&path).unwrap();
+
+    assert_eq!(
+        image(&images, "Images/my%20map.png").references,
+        vec![reference(0, Some("Map"))]
+    );
+}
+
+#[test]
 fn list_images_keeps_the_first_alt_when_a_document_shows_an_image_twice() {
     let png = solid_color_png(1, 2, 3, 2, 2);
     let path = write_epub(
