@@ -1,5 +1,5 @@
 ---
-paths: "db/src/content_fts/**, db/src/progress.rs, db/src/progress/**, mcp/**, shared/src/content_search/**, server/src/backend/search.rs, server/src/backend/search/**"
+paths: "db/src/content_fts/**, db/src/progress.rs, db/src/progress/**, mcp/**, shared/src/content_search/**, server/src/backend/search.rs, server/src/backend/search/**, shared/src/content_search.rs, shared/src/ebook/chapters.rs, server/src/backend/ebooks/chapters.rs, server/src/backend/ebooks/tests/chapters.rs"
 ---
 # 11 — What a reader may be shown
 
