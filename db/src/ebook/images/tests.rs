@@ -280,7 +280,10 @@ fn list_images_lists_images_past_the_byte_budget_without_pixel_dimensions() {
 
     let sized: Vec<_> = listed.iter().map(|i| (i.width, i.height)).collect();
     assert_eq!(listed.len(), 5);
-    assert_eq!(sized.iter().filter(|d| **d == (Some(4), Some(3))).count(), 3);
+    assert_eq!(
+        sized.iter().filter(|d| **d == (Some(4), Some(3))).count(),
+        3
+    );
     assert_eq!(sized.iter().filter(|d| **d == (None, None)).count(), 2);
 }
 
