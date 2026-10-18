@@ -97,15 +97,30 @@ export class AuthorsIndexPage extends BasePage {
     await this.letterLink(letter).click();
   }
 
-  /** How far the list's own scroller is scrolled. */
-  listScrollTop(): Promise<number> {
-    return this.list.evaluate((el) => el.scrollTop);
+  /** The list's offset once it has held for a quarter second. */
+  settledListScrollTop(): Promise<number> {
+    return this.list.evaluate(
+      (el) =>
+        new Promise<number>((resolve, reject) => {
+          const deadline = Date.now() + 5_000;
+          let previous = Number.NaN;
+          const check = () => {
+            const top = el.scrollTop;
+            if (top === previous) return resolve(top);
+            if (Date.now() > deadline) {
+              return reject(new Error("the list's offset never settled"));
+            }
+            previous = top;
+            setTimeout(check, 250);
+          };
+          check();
+        }),
+    );
   }
 
-  async scrollListToBottom(): Promise<void> {
-    await this.list.evaluate((el) => {
-      el.scrollTop = el.scrollHeight;
-    });
+  /** Scrolls the list until `name`'s row sits at its foot. */
+  async scrollCardToListEnd(name: string): Promise<void> {
+    await this.card(name).evaluate((el) => el.scrollIntoView({ block: "end" }));
   }
 
   async openCard(name: string): Promise<void> {

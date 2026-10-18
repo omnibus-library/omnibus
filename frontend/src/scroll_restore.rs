@@ -24,6 +24,9 @@ const RESTORE_JS: &str = r#"
     // Path whose scroll offsets we trust. Null while a history navigation is
     // in flight; `restore` re-arms it once the incoming page has settled.
     let recordPath = location.pathname;
+    // Stops the restore still converging, so a newer one supersedes it rather
+    // than both scrolling the window at once.
+    let running = null;
     const record = () => {
       raf = 0;
       if (recordPath === null || location.pathname !== recordPath) return;
@@ -38,6 +41,7 @@ const RESTORE_JS: &str = r#"
       // `toTopIfNone`: a path never scrolled starts at the top, for a layout
       // whose window would otherwise keep the previous route's offset.
       restore(path, toTopIfNone) {
+        if (running) running();
         const key = path || location.pathname;
         const target = positions[key];
         const rearm = () => { recordPath = key; };
@@ -47,13 +51,16 @@ const RESTORE_JS: &str = r#"
           return;
         }
         let cancelled = false;
-        const cancel = () => { cancelled = true; teardown(); };
-        const teardown = () => {
+        const unlisten = () => {
           window.removeEventListener("wheel", cancel);
           window.removeEventListener("touchstart", cancel);
           window.removeEventListener("keydown", cancel);
-          rearm();
+          running = null;
         };
+        const teardown = () => { unlisten(); rearm(); };
+        const cancel = () => { cancelled = true; teardown(); };
+        // Superseded: stop without re-arming, as the newer restore owns recording.
+        running = () => { cancelled = true; unlisten(); };
         // A real scroll intent from the user wins over restoration.
         window.addEventListener("wheel", cancel, { passive: true });
         window.addEventListener("touchstart", cancel, { passive: true });

@@ -276,23 +276,26 @@ test.describe("authors list scroll beside an author", () => {
     authorsIndexPage,
     authorPage,
   }) => {
+    const name = "Ada Lovelace";
     let savedTop = 0;
 
-    await test.step("scroll the authors list to the bottom", async () => {
+    await test.step("scroll an author to the foot of the list", async () => {
       await authorsIndexPage.goto();
-      await expect(authorsIndexPage.firstCard).toBeVisible();
-      await authorsIndexPage.scrollListToBottom();
-      savedTop = await authorsIndexPage.listScrollTop();
+      // The preview has landed, so the load-time scroll to it is done.
+      await expect(authorsIndexPage.previewName).toBeVisible();
+      await authorsIndexPage.scrollCardToListEnd(name);
+      savedTop = await authorsIndexPage.settledListScrollTop();
       expect(savedTop).toBeGreaterThan(0);
     });
 
-    await test.step("open the last author", async () => {
-      await authorsIndexPage.openLastCard();
+    await test.step("open that author", async () => {
+      await authorsIndexPage.openCard(name);
       await authorPage.assertDisplayed();
     });
 
     await test.step("check the list kept its place", async () => {
-      expect(await authorsIndexPage.listScrollTop()).toBe(savedTop);
+      // A remounted list would centre the opened row, moving it off the foot.
+      expect(await authorsIndexPage.settledListScrollTop()).toBe(savedTop);
     });
   });
 });
