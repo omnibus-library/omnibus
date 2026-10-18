@@ -166,7 +166,7 @@ test.describe("check-in lookup", () => {
         "Without a Google Books API key",
       );
       await expect(flow.fallbackNoteMessage).toContainText(
-        "Set up your Google Books API key in Settings",
+        "Set up your Google Books API key in Administration › Integrations",
       );
     });
   });
