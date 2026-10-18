@@ -344,7 +344,7 @@ pub(crate) fn ChangePasswordCard() -> Element {
                 div { class: "settings-actions",
                     button {
                         r#type: "submit",
-                        class: "btn",
+                        class: "btn primary",
                         disabled: in_flight(),
                         "aria-busy": "{in_flight()}",
                         "data-testid": "change-password-submit",

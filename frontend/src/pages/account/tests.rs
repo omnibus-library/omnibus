@@ -39,3 +39,25 @@ mod live_status_line {
         assert!(html.contains("Nope."), "{html}");
     }
 }
+
+#[cfg(all(feature = "server", not(feature = "mobile")))]
+mod change_password_card {
+    use super::*;
+    use crate::test_support::render_in_vdom;
+
+    #[test]
+    fn change_password_card_makes_change_password_the_primary_footer_action() {
+        let html = render_in_vdom(|| rsx! { ChangePasswordCard {} });
+        let footer = html
+            .find(r#"class="settings-actions""#)
+            .expect("a footer row");
+        let submit = html
+            .find(r#"data-testid="change-password-submit""#)
+            .expect("submit");
+        assert!(footer < submit, "{html}");
+        assert!(
+            html[footer..submit].contains(r#"class="btn primary""#),
+            "{html}"
+        );
+    }
+}
