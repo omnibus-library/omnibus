@@ -17,9 +17,8 @@ never change anyone's permissions, and never delete a user.
 
 ## Steps
 
-1. Go to your account page — Settings → Account on the web (user menu →
-   Edit), inside the otherwise off-limits Settings screen; the You tab on
-   iOS.
+1. Go to your profile. On the web that is Settings → Profile (user menu → Edit),
+   the one corner of Settings this flow touches; on iOS it is the You tab.
 2. Change your display name to a **different plausible person's name** — not
    your actor id, not a counter, not a date. A stale copy elsewhere is just as
    obvious when the chrome still says `Mara Ellison` after you saved

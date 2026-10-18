@@ -1,40 +1,37 @@
-//! Account screen (`/account`). Web/SSR renders the self-service account cards
-//! (password today), with Kindle delivery and Kobo devices living in their own
-//! Settings sections. The native shell renders the mobile "You" tab: identity,
-//! now-reading, quick links, account rows, theme, and versions. Signals start
-//! empty so SSR and the first WASM paint agree; load effects fill them after.
+//! The account module. On the native shell `AccountPage` is the "You" tab:
+//! identity, now-reading, quick links, account rows, theme and versions. On
+//! web `/account` redirects into Settings, and this module instead holds the
+//! self-service cards Settings composes (profile, preference switches, Kindle,
+//! Kobo, password, sessions) plus the live status line and confirm dialog they
+//! share. Signals start empty so SSR and the first WASM paint agree; load
+//! effects fill them after.
 
 use dioxus::prelude::*;
 
 #[cfg(feature = "mobile")]
 mod downloads;
-// Web-only Kobo wireless-sync device card, rendered as its own Settings
-// section.
+// The one goals editor (annual + the two dailies), on Settings › Goals.
+#[cfg(not(feature = "mobile"))]
+pub(crate) mod goals;
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod hidden_formats;
-// The one place all three reading goals are set (annual + the two dailies).
-// The stats page renders them and never edits them.
-#[cfg(not(feature = "mobile"))]
-mod goals;
-// Send-to-Kindle address card, rendered as its own Settings section.
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod kindle;
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod kobo;
-// Display name + avatar, at the top of the Account section.
 #[cfg(not(feature = "mobile"))]
-mod profile;
-// The per-user feature switches table, above the goals it sits beside.
+pub(crate) mod profile;
+#[cfg(not(feature = "mobile"))]
+pub(crate) mod sessions;
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod user_settings;
-// Self-service "Your sessions" card (F5.4, #910).
-#[cfg(not(feature = "mobile"))]
-mod sessions;
 
 #[cfg(not(feature = "mobile"))]
 use crate::components::auth::{score_password, PasswordRequirements, StrengthMeter};
 #[cfg(not(feature = "mobile"))]
-use crate::components::credential_card::credential_status_message;
+use crate::components::credential_card::live_status;
+#[cfg(not(feature = "mobile"))]
+use crate::components::BusyLabel;
 #[cfg(not(feature = "mobile"))]
 use crate::{data, use_server_url};
 
@@ -122,8 +119,8 @@ impl ThemeKind {
 
 // ── Page ───────────────────────────────────────────────────────────
 
-/// The Account screen. Web/SSR renders the self-service account cards; the
-/// native shell renders the mobile "You" tab.
+/// The native "You" tab. Web never routes here because `/account` redirects
+/// into Settings, so off mobile it renders nothing.
 #[component]
 pub fn AccountPage() -> Element {
     #[cfg(feature = "mobile")]
@@ -132,21 +129,7 @@ pub fn AccountPage() -> Element {
     }
     #[cfg(not(feature = "mobile"))]
     {
-        account_web_body()
-    }
-}
-
-/// Web/SSR Account section body — the self-service cards that aren't tied to
-/// a delivery device. Kindle and Kobo have their own Settings sections.
-#[cfg(not(feature = "mobile"))]
-fn account_web_body() -> Element {
-    rsx! {
-        profile::ProfileCard {}
-        user_settings::UserSettingsCard {}
-        goals::ReadingGoalsCard {}
-        ChangePasswordCard {}
-        sessions::SessionsCard {}
-        hidden_formats::HiddenFormatsCard {}
+        rsx! {}
     }
 }
 
@@ -200,14 +183,14 @@ fn change_password_submit_handler(
     }
 }
 
-/// Self-service change-password card (web Account section). Requires the
+/// Self-service change-password card (Settings › Sign-in & security). Requires the
 /// current password to authorize, validates the new one against the same
 /// policy as registration (strength meter + requirements are advisory; the
 /// server is authoritative), and surfaces the server's inline error for a
 /// wrong current password or a policy rejection without clearing the form.
 #[cfg(not(feature = "mobile"))]
 #[component]
-fn ChangePasswordCard() -> Element {
+pub(crate) fn ChangePasswordCard() -> Element {
     let server_url = use_server_url();
     let signals = ChangePasswordSignals {
         current: use_signal(String::new),
@@ -229,7 +212,7 @@ fn ChangePasswordCard() -> Element {
 
     rsx! {
         section { class: "card", "data-testid": "account-password-card",
-            h2 { "Password" }
+            h3 { "Password" }
             p { class: "subtitle", "Change the password you use to sign in." }
 
             form {
@@ -277,15 +260,16 @@ fn ChangePasswordCard() -> Element {
                 div { class: "settings-actions",
                     button {
                         r#type: "submit",
-                        class: "btn",
+                        class: "btn primary",
                         disabled: in_flight(),
+                        "aria-busy": "{in_flight()}",
                         "data-testid": "change-password-submit",
-                        "Change password"
+                        BusyLabel { busy: in_flight(), label: "Change password", busy_label: "Changing\u{2026}" }
                     }
                 }
             }
 
-            {credential_status_message("change-password-status", msg().as_deref(), msg_is_error())}
+            {live_status("change-password-status", msg().as_deref(), msg_is_error())}
         }
     }
 }
@@ -605,24 +589,4 @@ fn VersionBlock(server_version: Option<String>, failed: bool) -> Element {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn role_label_maps_admin_to_owner() {
-        assert_eq!(role_label(true), "Owner");
-        assert_eq!(role_label(false), "Reader");
-    }
-
-    #[test]
-    fn identity_subline_joins_username_and_role() {
-        assert_eq!(identity_subline("elena", true), "elena \u{00b7} Owner");
-        assert_eq!(identity_subline("bob", false), "bob \u{00b7} Reader");
-    }
-
-    #[test]
-    fn theme_order_matches_css_attrs() {
-        let attrs: Vec<&str> = THEME_ORDER.iter().map(|(_, k)| k.as_attr()).collect();
-        assert_eq!(attrs, ["dark", "black", "light", "sepia"]);
-    }
-}
+mod tests;

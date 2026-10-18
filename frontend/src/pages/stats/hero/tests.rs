@@ -139,15 +139,14 @@ mod render_tests {
     }
 
     #[test]
-    fn stats_hero_reads_third_person_and_hides_the_goal_editors_for_another_reader() {
+    fn stats_hero_reads_third_person_and_offers_no_goals_link_for_another_reader() {
         let html = render_in_vdom(|| rsx! { Router::<AnotherReaderRoute> {} });
         assert!(html.contains("stats-hero-who"), "{html}");
         // SSR HTML-escapes the apostrophe.
         assert!(html.contains("alice&#39;s stats"), "{html}");
         assert!(html.contains("On a run"), "{html}");
         assert!(html.contains("The longest ever is 20 days."), "{html}");
-        assert!(!html.contains("stats-goal-set-link"), "{html}");
-        assert!(!html.contains("stats-daily-set-link"), "{html}");
+        assert!(!html.contains("stats-goals-link"), "{html}");
     }
 
     #[derive(Clone, Debug, PartialEq, Routable)]
@@ -163,13 +162,61 @@ mod render_tests {
         }
     }
 
+    #[derive(Clone, Debug, PartialEq, Routable)]
+    enum GoalSetRoute {
+        #[route("/")]
+        GoalSetHost {},
+    }
+
+    #[component]
+    fn GoalSetHost() -> Element {
+        let mut summary = summary_with_streak(5, 20);
+        summary.daily_goals.minutes = Some(omnibus_shared::DailyGoal {
+            kind: omnibus_shared::GOAL_KIND_MINUTES.to_string(),
+            target: 30,
+            current: 10,
+            day: "2026-07-02".to_string(),
+        });
+        rsx! { StatsHero { summary: Some(summary) } }
+    }
+
     #[test]
-    fn stats_hero_stays_first_person_and_keeps_the_goal_editors_on_the_callers_own_page() {
+    fn stats_hero_stays_first_person_on_the_callers_own_page() {
         let html = render_in_vdom(|| rsx! { Router::<OwnPageRoute> {} });
         assert!(!html.contains("stats-hero-who"), "{html}");
         assert!(html.contains("You are on a run"), "{html}");
         assert!(html.contains("Your longest ever is 20 days."), "{html}");
-        assert!(html.contains("stats-goal-set-link"), "{html}");
-        assert!(html.contains("stats-daily-set-link"), "{html}");
+    }
+
+    /// One control for every goal, and it goes to where goals are edited.
+    #[test]
+    fn stats_hero_links_to_the_goals_section_to_set_goals_when_none_is_set() {
+        let html = render_in_vdom(|| rsx! { Router::<OwnPageRoute> {} });
+        assert_eq!(
+            html.matches("data-testid=\"stats-goals-link\"").count(),
+            1,
+            "{html}"
+        );
+        assert!(html.contains(r#"href="/settings?section=goals""#), "{html}");
+        assert!(html.contains(">Set goals<"), "{html}");
+        for gone in [
+            "stats-goal-set-link",
+            "stats-daily-set-link",
+            "stats-goals-edit",
+        ] {
+            assert!(!html.contains(gone), "{gone} is back: {html}");
+        }
+    }
+
+    #[test]
+    fn stats_hero_links_to_the_goals_section_to_edit_goals_once_any_is_set() {
+        let html = render_in_vdom(|| rsx! { Router::<GoalSetRoute> {} });
+        assert_eq!(
+            html.matches("data-testid=\"stats-goals-link\"").count(),
+            1,
+            "{html}"
+        );
+        assert!(html.contains(">Edit goals<"), "{html}");
+        assert!(!html.contains(">Set goals<"), "{html}");
     }
 }

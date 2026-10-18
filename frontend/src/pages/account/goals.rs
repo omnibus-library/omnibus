@@ -1,16 +1,16 @@
-//! Reading-goals card in Settings → Account: the annual books target and the
-//! two standing daily targets, edited together behind one control.
+//! Reading-goals card in Settings → Goals: the annual books target and the
+//! two standing daily targets, always editable, saved together by one Save all.
 //!
-//! One editor rather than three, even though the write path is per-kind: a
-//! reader setting up their year thinks about all three at once, and three
-//! separate Edit buttons scattered across a stats page made a single decision
-//! feel like three chores. [`changed_updates`] is what keeps the per-kind
-//! contract intact — only the kinds whose value actually moved are written, so
-//! a save never restates a target the reader didn't touch.
+//! One form rather than three, even though the write path is per-kind, because
+//! a reader setting up their year thinks about all three at once.
+//! [`changed_updates`] keeps the per-kind contract intact. It writes only the
+//! kinds whose value actually moved, so a save never restates a target the
+//! reader didn't touch.
 //!
 //! Goals are account configuration, so every write goes straight to the server
-//! and surfaces its failure inline (rule 08 test 1). The targets start
-//! unread so SSR and the first WASM paint agree on the loading rows (rule 07).
+//! and surfaces its failure inline (rule 08 test 1). The inputs start disabled
+//! and unread so SSR and the first WASM paint agree (rule 07) and no zero or
+//! "no target" is claimed before the saved values arrive (rule 12).
 
 use dioxus::prelude::*;
 use omnibus_shared::{
@@ -18,7 +18,9 @@ use omnibus_shared::{
     GOAL_KIND_PAGES, MAX_DAILY_MINUTES, MAX_DAILY_PAGES, MAX_GOAL_TARGET,
 };
 
-use crate::components::credential_card::credential_status_message;
+use crate::components::credential_card::{status_class, ACTION_STATUS};
+use crate::components::unsaved::use_unsaved_guard;
+use crate::components::BusyLabel;
 use crate::{data, use_server_url};
 
 /// One editable goal: which kind it is, what it's called, and what bounds it.
@@ -62,20 +64,21 @@ const FIELDS: [GoalField; 3] = [
 ];
 
 /// Signals backing the card — grouped so the seeding effect and the save
-/// handler don't each take six signal params. Mirrors `ProfileSignals` in
+/// handler don't each take seven signal params. Mirrors `ProfileSignals` in
 /// `profile.rs`.
 #[derive(Clone, Copy)]
 struct GoalSignals {
     /// One draft per [`FIELDS`] entry, in the same order. Empty means "no
     /// target", which is how a goal is cleared.
     drafts: Signal<[String; 3]>,
-    editing: Signal<bool>,
+    /// Why each field's last save was refused, in [`FIELDS`] order.
+    errors: Signal<[Option<String>; 3]>,
     saving: Signal<bool>,
     msg: Signal<Option<String>>,
     msg_is_error: Signal<bool>,
     /// The server's current targets, in [`FIELDS`] order.
     targets: Signal<[Option<i64>; 3]>,
-    /// `None` until the read returns, then whether it succeeded — "Not set"
+    /// `None` until the read returns, then whether it succeeded, since "no target"
     /// is only a fact once the server has said so.
     loaded: Signal<Option<bool>>,
 }
@@ -91,8 +94,8 @@ fn plural(unit: &str, n: i64) -> String {
 }
 
 /// Parse and bound one draft. An empty draft is a deliberate clear, not an
-/// error — it is how the single form expresses "no target" without needing a
-/// Clear button per row.
+/// error. It is how the form expresses "no target" without a Clear button
+/// per row.
 ///
 /// Mirrors the write path's own bounds so a typo never costs a round trip.
 fn parse_draft(draft: &str, unit: &str, max: i64) -> Result<Option<i64>, String> {
@@ -109,12 +112,24 @@ fn parse_draft(draft: &str, unit: &str, max: i64) -> Result<Option<i64>, String>
     Ok(Some(target))
 }
 
-/// Read-mode value for one goal: the target with its unit, or that none is set.
-fn target_summary(target: Option<i64>, unit: &str) -> String {
-    match target {
-        Some(n) => format!("{n} {}", plural(unit, n)),
-        None => "Not set".to_string(),
+/// Every draft as a target, or why each refused field was refused.
+fn validate_drafts(drafts: &[String; 3]) -> Result<[Option<i64>; 3], [Option<String>; 3]> {
+    let results: [Result<Option<i64>, String>; 3] =
+        std::array::from_fn(|i| parse_draft(&drafts[i], FIELDS[i].unit, FIELDS[i].max));
+    if results.iter().all(Result::is_ok) {
+        Ok(results.map(Result::unwrap_or_default))
+    } else {
+        Err(results.map(Result::err))
     }
+}
+
+/// Whether Save all has anything to do: a draft that moves its target, or one
+/// that can't be read and so needs saying why.
+fn goals_differ_from_saved(drafts: &[String; 3], targets: &[Option<i64>; 3]) -> bool {
+    FIELDS
+        .iter()
+        .enumerate()
+        .any(|(i, field)| parse_draft(&drafts[i], field.unit, field.max) != Ok(targets[i]))
 }
 
 /// The drafts a save should actually write: index and new value for every
@@ -166,11 +181,8 @@ fn use_goal_hydration(server_url: String, mut signals: GoalSignals) {
         let url = server_url.clone();
         spawn(async move {
             let Ok(summary) = data::fetch_stats(&url, StatsRange::AllTime, None).await else {
-                // Say so rather than rendering "Not set" for goals that may
-                // well exist — an empty card is indistinguishable from a
-                // reader who has set nothing.
                 signals.msg.set(Some(
-                    "Couldn't load your goals \u{2014} reload to try again.".to_string(),
+                    "Couldn\u{2019}t load your goals. Reload to try again.".to_string(),
                 ));
                 signals.msg_is_error.set(true);
                 signals.loaded.set(Some(false));
@@ -201,28 +213,27 @@ fn save_handler(
 ) -> impl FnMut(Event<FormData>) + 'static {
     move |evt: Event<FormData>| {
         evt.prevent_default();
-        let drafts = (signals.drafts)();
-        let mut parsed = [None; 3];
-        for (i, field) in FIELDS.iter().enumerate() {
-            match parse_draft(&drafts[i], field.unit, field.max) {
-                Ok(value) => parsed[i] = value,
-                Err(msg) => {
-                    signals.msg.set(Some(format!("{}: {msg}", field.label)));
-                    signals.msg_is_error.set(true);
-                    return;
-                }
+        let parsed = match validate_drafts(&(signals.drafts)()) {
+            Ok(parsed) => parsed,
+            Err(errors) => {
+                signals.errors.set(errors);
+                signals.msg.set(Some(
+                    "Nothing saved yet. Check the targets marked above.".to_string(),
+                ));
+                signals.msg_is_error.set(true);
+                return;
             }
-        }
+        };
         let pending = changed_updates(&parsed, &(signals.targets)());
         if pending.is_empty() {
-            signals.editing.set(false);
-            signals.msg.set(None);
             return;
         }
         let url = server_url.clone();
         signals.saving.set(true);
+        signals.msg.set(None);
         spawn(async move {
             let mut landed = (signals.targets)();
+            let mut errors: [Option<String>; 3] = Default::default();
             let mut failed: Vec<&'static str> = Vec::new();
             for (i, value) in pending {
                 let ok = match FIELDS[i].kind {
@@ -233,25 +244,24 @@ fn save_handler(
                     landed[i] = value;
                 } else {
                     failed.push(FIELDS[i].label);
+                    errors[i] = Some("This one didn\u{2019}t save. Try again.".to_string());
                 }
             }
             let (msg, is_error) = save_summary(&failed);
             signals.targets.set(landed);
-            // Reset only the drafts that landed. Resetting all of them would
-            // overwrite what the reader typed into a kind whose write failed
-            // with the value it had before — and since the next Save diffs
-            // drafts against targets, the retry the status line asks for would
-            // then find no change and close the editor having written nothing.
+            // Reset only the drafts that landed. A failed kind keeps what the
+            // reader typed, so it still differs from its target and the retry
+            // the status line asks for has something to write.
             let mut drafts_after = (signals.drafts)();
-            for (i, field) in FIELDS.iter().enumerate() {
-                if !failed.contains(&field.label) {
+            for (i, error) in errors.iter().enumerate() {
+                if error.is_none() {
                     drafts_after[i] = landed[i].map(|n| n.to_string()).unwrap_or_default();
                 }
             }
             signals.drafts.set(drafts_after);
+            signals.errors.set(errors);
             signals.msg.set(Some(msg));
             signals.msg_is_error.set(is_error);
-            signals.editing.set(!failed.is_empty());
             signals.saving.set(false);
         });
     }
@@ -279,129 +289,81 @@ async fn write_daily(server_url: &str, kind: &str, target: Option<i64>) -> bool 
         .is_ok()
 }
 
-/// The three targets as a read-only list, over the one control that opens them
-/// all for editing.
-/// One goal's read-mode value: its summary once read, a sheen while the read
-/// is out, and a plain "Unknown" if it failed — never a guessed "Not set".
-fn goal_value(target: Option<i64>, unit: &str, loaded: Option<bool>) -> Element {
-    match loaded {
-        Some(true) => rsx! { {target_summary(target, unit)} },
-        Some(false) => rsx! { "Unknown" },
-        None => rsx! { span { class: "ld-sheen", "Checking" } },
-    }
-}
-
-fn goals_readout(
-    targets: [Option<i64>; 3],
-    loaded: Option<bool>,
-    on_edit: impl FnMut(Event<MouseData>) + 'static,
-) -> Element {
+/// One goal's label, input and hint, plus its error once a save refuses it.
+/// Until the goals are read the input is disabled and claims no value.
+fn goal_field(i: usize, signals: GoalSignals, known: bool, saving: bool) -> Element {
+    let GoalSignals {
+        mut drafts,
+        mut errors,
+        mut msg,
+        ..
+    } = signals;
+    let field = &FIELDS[i];
+    let error = errors.read()[i].clone();
+    let invalid = error.is_some();
+    let described_by = if invalid {
+        format!("{0}-hint {0}-error", field.testid)
+    } else {
+        format!("{}-hint", field.testid)
+    };
     rsx! {
-        dl { class: "goal-readout",
-            for (i, field) in FIELDS.iter().enumerate() {
-                div { key: "{field.testid}", class: "goal-readout-row",
-                    dt { class: "goal-readout-label", {field.label} }
-                    dd {
-                        class: if targets[i].is_some() { "goal-readout-value" } else { "goal-readout-value unset" },
-                        "data-testid": "{field.testid}-value",
-                        {goal_value(targets[i], field.unit, loaded)}
-                    }
-                }
+        div { class: "settings-field",
+            label { r#for: "{field.testid}", {field.label} }
+            input {
+                r#type: "number",
+                id: "{field.testid}",
+                class: if !known { "ld-unknown" },
+                "data-testid": "{field.testid}-input",
+                min: "1",
+                max: "{field.max}",
+                inputmode: "numeric",
+                placeholder: if known { "No target" },
+                value: "{drafts.read()[i]}",
+                disabled: !known || saving,
+                "aria-invalid": invalid,
+                "aria-describedby": "{described_by}",
+                oninput: move |e| {
+                    drafts.write()[i] = e.value();
+                    errors.write()[i] = None;
+                    msg.set(None);
+                },
             }
-        }
-        div { class: "settings-actions",
-            button {
-                r#type: "button",
-                class: "btn",
-                "data-testid": "goals-edit",
-                // Editing unread targets would write over values never seen.
-                disabled: loaded != Some(true),
-                onclick: on_edit,
-                "Edit goals"
+            p { class: "settings-hint", id: "{field.testid}-hint", {field.hint} }
+            if let Some(error) = error {
+                p {
+                    class: "settings-field-error",
+                    id: "{field.testid}-error",
+                    "data-testid": "{field.testid}-error",
+                    "{error}"
+                }
             }
         }
     }
 }
 
-/// The three fields as one form. A blank field clears that goal, which is why
-/// there is no Clear button per row.
-fn goals_form(
-    mut drafts: Signal<[String; 3]>,
-    mut msg: Signal<Option<String>>,
-    saving: bool,
-    on_save: impl FnMut(Event<FormData>) + 'static,
-    on_cancel: impl FnMut(Event<MouseData>) + 'static,
-) -> Element {
-    let current = drafts();
+/// The footer's status shows a sheen while the goals load, then the last
+/// save's outcome. Always mounted, so its first message is announced.
+fn goals_status(loaded: Option<bool>, msg: Option<String>, is_error: bool) -> Element {
+    let class = status_class(ACTION_STATUS, msg.is_some(), is_error);
     rsx! {
-        // `novalidate`: the browser's own constraint check would silently
-        // refuse the submit on an over-`max` value, so the card's error — which
-        // names the field and its bound — would never run. `min`/`max` stay for
-        // the spinner and the mobile keypad.
-        form {
-            id: "goals-form",
-            class: "settings-form",
-            novalidate: true,
-            onsubmit: on_save,
-            for (i, field) in FIELDS.iter().enumerate() {
-                div { key: "{field.testid}", class: "settings-field",
-                    label { r#for: "{field.testid}", {field.label} }
-                    input {
-                        r#type: "number",
-                        id: "{field.testid}",
-                        "data-testid": "{field.testid}-input",
-                        min: "1",
-                        max: "{field.max}",
-                        inputmode: "numeric",
-                        placeholder: "No target",
-                        value: "{current[i]}",
-                        disabled: saving,
-                        oninput: move |e| {
-                            let mut next = drafts();
-                            next[i] = e.value();
-                            drafts.set(next);
-                            msg.set(None);
-                        },
-                    }
-                    p { class: "subtitle", {field.hint} }
-                }
-            }
-            p { class: "subtitle",
-                "Leave a field empty to drop that goal. Clearing a target keeps the progress \
-                 you have already made toward it."
-            }
-            div { class: "settings-actions",
-                button {
-                    r#type: "submit",
-                    class: "btn",
-                    disabled: saving,
-                    "data-testid": "goals-save",
-                    "Save"
-                }
-                button {
-                    r#type: "button",
-                    class: "btn ghost",
-                    disabled: saving,
-                    "data-testid": "goals-cancel",
-                    onclick: on_cancel,
-                    "Cancel"
-                }
+        p { role: "status", class, "data-testid": "goals-status",
+            if loaded.is_none() {
+                span { class: "ld-sheen", "Reading your goals" }
+            } else {
+                {msg.unwrap_or_default()}
             }
         }
     }
 }
 
-/// Reading goals for the signed-in user — the one place all three are set.
-///
-/// The stats page renders them but never edits them: a goal is account
-/// configuration, and scattering its editors across the surface that *reports*
-/// it is what made a single decision feel like three.
+/// Reading goals for the signed-in user: three always-editable targets and one
+/// Save all, which wakes once a value differs from what is saved.
 #[component]
 pub(crate) fn ReadingGoalsCard() -> Element {
     let server_url = use_server_url();
-    let mut signals = GoalSignals {
+    let signals = GoalSignals {
         drafts: use_signal(|| [const { String::new() }; 3]),
-        editing: use_signal(|| false),
+        errors: use_signal(Default::default),
         saving: use_signal(|| false),
         msg: use_signal(|| None::<String>),
         msg_is_error: use_signal(|| false),
@@ -409,38 +371,47 @@ pub(crate) fn ReadingGoalsCard() -> Element {
         loaded: use_signal(|| None::<bool>),
     };
     use_goal_hydration(server_url.clone(), signals);
+    let dirty = use_memo(move || {
+        (signals.loaded)() == Some(true)
+            && goals_differ_from_saved(&(signals.drafts)(), &(signals.targets)())
+    });
+    use_unsaved_guard("goals", dirty);
 
     let on_save = save_handler(server_url, signals);
-    let on_edit = move |_| {
-        signals.msg.set(None);
-        signals.editing.set(true);
-    };
-    let on_cancel = move |_| {
-        // Drop the drafts back to what the server last confirmed, so a
-        // cancelled edit can't leave a half-typed target on screen.
-        signals
-            .drafts
-            .set((signals.targets)().map(|t| t.map(|n| n.to_string()).unwrap_or_default()));
-        signals.msg.set(None);
-        signals.editing.set(false);
-    };
+    let loaded = (signals.loaded)();
+    let known = loaded == Some(true);
+    let saving = (signals.saving)();
 
     rsx! {
         section { class: "card", "data-testid": "account-goals-card",
-            h2 { "Reading goals" }
+            h3 { "Reading goals" }
             p { class: "subtitle",
-                "One target for the year and two for the day. They show on your Stats page."
+                "Leave a field empty for no goal. Clearing one keeps the progress you have \
+                 already made toward it."
             }
-            if (signals.editing)() {
-                {goals_form(signals.drafts, signals.msg, (signals.saving)(), on_save, on_cancel)}
-            } else {
-                {goals_readout((signals.targets)(), (signals.loaded)(), on_edit)}
+            // `novalidate`: the browser's own constraint check would silently
+            // refuse the submit on an over-`max` value, so the field's error,
+            // which names its bound, would never show.
+            form {
+                id: "goals-form",
+                class: "settings-form",
+                novalidate: true,
+                onsubmit: on_save,
+                {goal_field(0, signals, known, saving)}
+                {goal_field(1, signals, known, saving)}
+                {goal_field(2, signals, known, saving)}
+                div { class: "settings-actions",
+                    {goals_status(loaded, (signals.msg)(), (signals.msg_is_error)())}
+                    button {
+                        r#type: "submit",
+                        class: "btn primary",
+                        disabled: saving || !dirty(),
+                        "aria-busy": "{saving}",
+                        "data-testid": "goals-save",
+                        BusyLabel { busy: saving, label: "Save all", busy_label: "Saving\u{2026}" }
+                    }
+                }
             }
-            {credential_status_message(
-                "goals-status",
-                (signals.msg)().as_deref(),
-                (signals.msg_is_error)(),
-            )}
         }
     }
 }

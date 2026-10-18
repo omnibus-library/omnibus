@@ -9,6 +9,7 @@ use omnibus_shared::ExternalBookMeta;
 
 use super::search::TitleSearch;
 use super::{clean_isbn, isbn_rejection, FlowState};
+use crate::pages::admin::sections::AdminSection;
 use crate::{data, use_server_url};
 
 /// ISBN entry and title search together, with the camera as a secondary
@@ -102,7 +103,7 @@ pub(super) fn ProviderNote() -> Element {
     rsx! {
         if key_configured() == Some(false) {
             p { class: "check-in-provider-note", "data-testid": "check-in-google-books-note",
-                "Without a Google Books API key, this search will use Open Library, which may not have the latest books or all ISBNs. Set up your Google Books API key in Settings."
+                "Without a Google Books API key, this search will use Open Library, which may not have the latest books or all ISBNs. Set up your Google Books API key in {AdminSection::Integrations.place()}."
             }
         }
     }

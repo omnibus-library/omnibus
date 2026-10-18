@@ -1,14 +1,15 @@
-//! Library-cleanup review page (`/settings/cleanup/:kind`) — one suggestion
-//! card at a time, decided with Accept / Reject / Skip. Web/SSR only: the real
+//! Library-cleanup review page (`/admin/cleanup/:kind`), one suggestion card
+//! at a time, decided with Accept / Reject / Skip, with an Undo for the last
+//! change this sitting applied. Web/SSR only: the real
 //! authorization boundary is the `AdminUser` extractor on the `cleanup/*`
 //! server functions; the in-page `use_admin_access` gate keeps the chrome off a
 //! non-admin screen.
 #![cfg(not(feature = "mobile"))]
 
 use dioxus::prelude::*;
-use omnibus_shared::{CleanupCounts, CleanupKind, Decision, SuggestionCard};
+use omnibus_shared::{CleanupAction, CleanupCounts, CleanupKind, Decision, SuggestionCard};
 
-use crate::components::{Loading, LoadingKind};
+use crate::components::{BusyLabel, Loading, LoadingKind};
 use crate::data::{self, CLEANUP_QUEUE_PAGE};
 use crate::focus_after_paint::focus_after_paint;
 use crate::{use_admin_access, use_server_url, Access};
@@ -29,6 +30,23 @@ struct Tally {
     accepted_edited: i64,
     rejected: i64,
     skipped: i64,
+    undone: i64,
+}
+
+/// The change the reviewer applied last, which this page can still undo.
+#[derive(Clone, PartialEq)]
+struct Applied {
+    log_id: i64,
+    summary: String,
+}
+
+/// What the undo bar offers: nothing yet, the last applied change, or word
+/// that it was undone.
+#[derive(Clone, PartialEq)]
+enum UndoState {
+    None,
+    Offer(Applied),
+    Undone,
 }
 
 /// Signals the queue reducer owns, threaded together so the handlers below
@@ -49,9 +67,12 @@ struct QueueState {
     /// single-letter hotkeys.
     typing: Signal<bool>,
     tally: Signal<Tally>,
+    undo: Signal<UndoState>,
+    /// Bumped after an undo so the queue refetches and a reopened card returns.
+    generation: Signal<u32>,
 }
 
-/// The `/settings/cleanup/:kind` review surface. An unrecognized `kind` slug
+/// The `/admin/cleanup/:kind` review page. An unrecognized `kind` slug
 /// renders the not-found notice rather than silently reviewing another kind.
 #[component]
 pub fn CleanupReviewPage(kind: String) -> Element {
@@ -66,11 +87,13 @@ pub fn CleanupReviewPage(kind: String) -> Element {
         draft: use_signal(String::new),
         typing: use_signal(|| false),
         tally: use_signal(Tally::default),
+        undo: use_signal(|| UndoState::None),
+        generation: use_signal(|| 0u32),
     };
     let counts = use_signal(|| None::<Vec<(CleanupKind, CleanupCounts)>>);
 
     spawn_queue_fetch(access, server_url.clone(), parsed, state);
-    spawn_counts_fetch(access, server_url.clone(), counts);
+    spawn_counts_fetch(access, server_url.clone(), counts, state.generation);
     sync_draft_to_card(state);
 
     rsx! {
@@ -105,7 +128,7 @@ pub fn CleanupReviewPage(kind: String) -> Element {
                             Loading {
                                 kind: LoadingKind::Section,
                                 testid: "cleanup-review-access-loading",
-                                label: "Checking your access",
+                                label: "Checking your access\u{2026}",
                             }
                         },
                         Access::Denied => rsx! {
@@ -139,7 +162,9 @@ fn spawn_queue_fetch(
     let mut cards = state.cards;
     let mut cursor = state.cursor;
     let mut error = state.error;
+    let generation = state.generation;
     use_effect(move || {
+        let _ = generation();
         // Read inside the effect so it re-subscribes and re-runs when
         // `CurrentUser` resolves. It is `Unknown` on the first paint — firing
         // then is a guaranteed 401/403 against the admin-gated route, and the
@@ -149,6 +174,8 @@ fn spawn_queue_fetch(
         }
         let server_url = server_url.clone();
         error.set(None);
+        // Back to loading, so a refetch after an undo never shows the list it replaces.
+        cards.set(None);
         cursor.set(0);
         spawn(async move {
             let Some(kind) = kind else {
@@ -173,8 +200,10 @@ fn spawn_counts_fetch(
     access: ReadSignal<Access>,
     server_url: String,
     mut counts: Signal<Option<Vec<(CleanupKind, CleanupCounts)>>>,
+    generation: Signal<u32>,
 ) {
     use_effect(move || {
+        let _ = generation();
         if access() != Access::Allowed {
             return;
         }
@@ -248,9 +277,10 @@ fn review_key_action(key: &Key) -> Option<ReviewKey> {
 /// so it comes back on the next pass.
 ///
 /// A no-op once the queue is worked through, like Accept and Reject, so Space
-/// on the end-of-pass screen doesn't keep counting skips into the tally.
+/// on the end-of-pass screen doesn't keep counting skips into the tally. It is
+/// also a no-op while a decision is in flight, whose own success advances.
 fn skip(state: QueueState) {
-    if current_card(&state.cards.read(), (state.cursor)()).is_none() {
+    if (state.in_flight)() || current_card(&state.cards.read(), (state.cursor)()).is_none() {
         return;
     }
     let mut tally = state.tally;
@@ -274,8 +304,19 @@ fn edited_value(card: &SuggestionCard, draft: &str) -> Option<String> {
     Some(draft.to_string())
 }
 
+/// What an applied card changed, for the undo bar.
+fn applied_summary(card: &SuggestionCard, value: &str) -> String {
+    match card.action {
+        CleanupAction::Merge => format!("Merged into \u{201c}{value}\u{201d}."),
+        CleanupAction::Rename => format!("Renamed to \u{201c}{value}\u{201d}."),
+        CleanupAction::Split => format!("Split \u{201c}{}\u{201d}.", card.primary_name),
+        CleanupAction::Delete => format!("Deleted \u{201c}{}\u{201d}.", card.primary_name),
+    }
+}
+
 /// Send one Accept / Reject through `cleanup/decide`, then advance. Guarded on
-/// `in_flight` so a held hotkey can't double-decide the same card.
+/// `in_flight` so a held hotkey can't double-decide the same card. An applied
+/// accept becomes the change the undo bar offers.
 fn decide(server_url: String, state: QueueState, decision: Decision) {
     let QueueState {
         cards,
@@ -284,6 +325,7 @@ fn decide(server_url: String, state: QueueState, decision: Decision) {
         mut in_flight,
         draft,
         mut tally,
+        mut undo,
         ..
     } = state;
     if in_flight() {
@@ -293,13 +335,17 @@ fn decide(server_url: String, state: QueueState, decision: Decision) {
         return;
     };
     let id = card.id;
+    let summary = applied_summary(&card, &draft());
     let value = edited_value(&card, &draft());
     let was_edited = value.is_some();
     in_flight.set(true);
     error.set(None);
     spawn(async move {
         match data::decide_cleanup_suggestion(&server_url, id, decision, value).await {
-            Ok(()) => {
+            Ok(log_id) => {
+                if let Some(log_id) = log_id {
+                    undo.set(UndoState::Offer(Applied { log_id, summary }));
+                }
                 {
                     let mut t = tally.write();
                     match (decision, was_edited) {
@@ -309,6 +355,38 @@ fn decide(server_url: String, state: QueueState, decision: Decision) {
                     }
                 }
                 advance(state);
+            }
+            Err(e) => error.set(Some(crate::data::server_error_message(&e))),
+        }
+        in_flight.set(false);
+    });
+}
+
+/// Reverse the change the undo bar offers, then refetch the queue. Undo
+/// reopens its suggestion, so the card comes back if it still applies.
+fn undo_last(server_url: String, state: QueueState) {
+    let QueueState {
+        mut error,
+        mut in_flight,
+        mut tally,
+        mut undo,
+        mut generation,
+        ..
+    } = state;
+    let UndoState::Offer(applied) = undo() else {
+        return;
+    };
+    if in_flight() {
+        return;
+    }
+    in_flight.set(true);
+    error.set(None);
+    spawn(async move {
+        match data::undo_cleanup(&server_url, applied.log_id).await {
+            Ok(()) => {
+                undo.set(UndoState::Undone);
+                tally.write().undone += 1;
+                generation.set(generation() + 1);
             }
             Err(e) => error.set(Some(crate::data::server_error_message(&e))),
         }
@@ -329,6 +407,14 @@ fn CleanupReviewBody(kind: Option<CleanupKind>, state: QueueState) -> Element {
     let cards = (state.cards)();
     let card = current_card(&cards, (state.cursor)());
     rsx! {
+        UndoBar {
+            state: (state.undo)(),
+            busy: (state.in_flight)(),
+            on_undo: {
+                let server_url = server_url.clone();
+                move |()| undo_last(server_url.clone(), state)
+            },
+        }
         if kind.is_none() {
             p { class: "settings-status error", role: "status", "data-testid": "cleanup-review-unknown-kind",
                 "Unknown cleanup kind."
@@ -343,7 +429,7 @@ fn CleanupReviewBody(kind: Option<CleanupKind>, state: QueueState) -> Element {
             Loading {
                 kind: LoadingKind::Section,
                 testid: "cleanup-review-loading",
-                label: "Gathering the suggestions",
+                label: "Gathering the suggestions\u{2026}",
             }
         } else if let Some(card) = card {
             SuggestionCardView {
@@ -375,6 +461,33 @@ fn CleanupReviewBody(kind: Option<CleanupKind>, state: QueueState) -> Element {
     }
 }
 
+/// The last applied change and its Undo, or word that it was undone.
+#[component]
+fn UndoBar(state: UndoState, busy: bool, on_undo: EventHandler<()>) -> Element {
+    match state {
+        UndoState::None => rsx! {},
+        UndoState::Offer(applied) => rsx! {
+            div { class: "crx-undo", "data-testid": "cleanup-undo-bar",
+                p { role: "status", "{applied.summary}" }
+                button {
+                    r#type: "button",
+                    class: "btn ghost sm",
+                    "data-testid": "cleanup-undo",
+                    disabled: busy,
+                    "aria-busy": if busy { "true" } else { "false" },
+                    onclick: move |_| on_undo.call(()),
+                    BusyLabel { busy, label: "Undo", busy_label: "Undoing\u{2026}" }
+                }
+            }
+        },
+        UndoState::Undone => rsx! {
+            div { class: "crx-undo", "data-testid": "cleanup-undone",
+                p { role: "status", "Change undone. The library is back as it was." }
+            }
+        },
+    }
+}
+
 /// End of the pass: what this sitting actually did, and the way back.
 #[component]
 fn PassDone(tally: Tally) -> Element {
@@ -383,6 +496,7 @@ fn PassDone(tally: Tally) -> Element {
         (tally.accepted_edited, "accepted with your wording"),
         (tally.rejected, "rejected"),
         (tally.skipped, "skipped \u{2014} comes back next pass"),
+        (tally.undone, "undone"),
     ];
     rsx! {
         section { class: "card crx-card crx-card-done", "data-testid": "cleanup-card-done",
@@ -402,7 +516,7 @@ fn PassDone(tally: Tally) -> Element {
                     }
                 }
             }
-            p { class: "mes-foot", "Every applied change is reversible from Settings \u{2192} Logs." }
+            p { class: "mes-foot", "The most recent change you applied can be undone from this page." }
         }
     }
 }

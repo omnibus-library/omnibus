@@ -12,7 +12,7 @@ use crate::resolve_canonical_book_uuid;
 pub mod annotations;
 pub mod delta;
 
-pub use delta::{clear_snapshot, record_synced, sync_delta, SyncChange, SyncDelta};
+pub use delta::{fresh_sync_delta, record_synced, sync_delta, SyncChange, SyncDelta};
 
 /// SELECT list shared by [`sync_books`] and [`book_for_sync`]. `b` is the
 /// `books` alias; `authors_json` carries every author in `position` order and

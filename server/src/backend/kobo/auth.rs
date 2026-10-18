@@ -4,12 +4,13 @@
 //! envelope rather than performing any further verification.
 
 use axum::{
+    extract::State,
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
 
-use super::{dto, extractor::KoboAuthUser, origin_from_headers, store_resources};
+use super::{dto, extractor::KoboAuthUser, origin_from_headers, store_resources, AppState};
 
 /// Required on the `v1/initialization` response — base64 `{}`. Without it the
 /// device treats the payload as malformed and never adopts the resources map.
@@ -20,8 +21,12 @@ const KOBO_API_TOKEN: &str = "e30=";
 /// entries repointed here, so store browse and search keep working against Kobo
 /// directly and this server never proxies that traffic. `reading_services_host`
 /// points the annotation channel at [`super::reading_services::reading_services_router`].
-pub async fn initialization(auth: KoboAuthUser, headers: HeaderMap) -> Response {
-    let base = origin_from_headers(&headers);
+pub async fn initialization(
+    auth: KoboAuthUser,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
+    let base = origin_from_headers(&state, &headers);
     let resources = store_resources::resources_for(&base, &auth.token);
     (
         StatusCode::OK,

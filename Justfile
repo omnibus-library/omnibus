@@ -13,6 +13,12 @@ serve:
 serve-pc:
     process-compose up
 
+# The React client's dev server (frontend-js/) on its own port, proxying /api
+# to this worktree's server — run it beside `just serve`, whose `react` pane
+# runs the same script.
+react:
+    nix develop .#web --command scripts/react-dev-fg.sh
+
 # Idempotent dev-server ensure-running. Probes /api/_health for THIS
 # workspace's server (identity-checked via repo_root); reuses if healthy,
 # starts a fresh daemonized `dx serve` if missing. Port-walks $PORT..$PORT+9

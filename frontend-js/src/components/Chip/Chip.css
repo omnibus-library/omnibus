@@ -1,0 +1,38 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--bg-2);
+  color: var(--ink-1);
+  border: 1px solid var(--line-2);
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .chip:hover {
+    color: var(--ink-0);
+    border-color: var(--accent);
+  }
+}
+.chip.on {
+  color: var(--ink-0);
+  border-color: var(--accent);
+}
+.chip-genre {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-2));
+}
+@media (hover: none) {
+  .chip:active {
+    color: var(--ink-0);
+    border-color: var(--accent);
+  }
+  .chip {
+    touch-action: manipulation;
+  }
+}

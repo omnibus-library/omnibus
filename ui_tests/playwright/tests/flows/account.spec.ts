@@ -1,19 +1,23 @@
 import type { APIRequestContext, Page } from "@playwright/test";
 import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expectMutation, postFromPage, recordRequests } from "../utils/api";
 import { TEST_PASSWORD } from "../utils/auth";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
-// The unified Settings sidebar (#1324, #1345) splits the per-user surfaces
-// into their own sections: Account holds the password card, Kindle the
-// Send-to-Kindle destination address (F4.3), Kobo the wireless-sync devices
-// (#927/#1439). The legacy standalone `/account` page redirects into Account
-// (mirroring `/logs`) so there is one consistently-chromed entry point.
-// The seeded session (global setup) is an authed admin, which is a superset
-// of the plain-user surface these sections need.
-const ACCOUNT = "/settings?section=account";
-const KINDLE = "/settings?section=kindle";
-const KOBO = "/settings?section=kobo";
+// Personal settings (#2763) are five sections: Profile (display name and
+// picture), Preferences (theme, Stack series, hidden formats, scroll stops
+// and share stats, each saving as it changes), Goals, Devices (Kindle
+// delivery and Kobo wireless sync) and Sign-in & security (password,
+// sessions, API tokens). The legacy standalone `/account` page redirects
+// into Settings. The seeded session (global setup) is an authed admin, which
+// is a superset of the plain-user access these sections need. The admin's
+// Stack series, hidden formats and scroll stops are read by other specs, so
+// this file only asserts those controls render; it never flips them.
+const PROFILE = "/settings?section=profile";
+const PREFERENCES = "/settings?section=preferences";
+const GOALS = "/settings?section=goals";
+const DEVICES = "/settings?section=devices";
+const SECURITY = "/settings?section=security";
 
 const emailInput = (page: Page) => page.getByTestId("kindle-email-input");
 const currentPassword = (page: Page) =>
@@ -22,87 +26,174 @@ const newPassword = (page: Page) => page.getByTestId("new-password-input");
 const changeStatus = (page: Page) => page.getByTestId("change-password-status");
 const displayNameInput = (page: Page) => page.getByTestId("display-name-input");
 const profileStatus = (page: Page) => page.getByTestId("profile-status");
+const saveDisplayName = (page: Page) => page.getByTestId("display-name-save");
 
-test("renders the account section layout", async ({ page }) => {
-  await gotoReady(page, ACCOUNT);
+/** Answer the Kobo device list read with `devices`. */
+async function stubKoboDevices(
+  page: Page,
+  devices: { id: number; name: string }[],
+): Promise<void> {
+  await page.route(
+    (url) => url.pathname === "/api/rpc/kobo/devices",
+    (route) =>
+      route.fulfill({
+        status: 200,
+        json: devices.map((d) => ({
+          ...d,
+          token: `tok-${d.id}`,
+          created_at: 0,
+          last_seen_at: 0,
+        })),
+      }),
+  );
+}
 
-  await expect(page.getByTestId("settings-nav-account")).toHaveAttribute(
+/** Answer the Kindle delivery read with `body`. */
+async function stubKindleDelivery(
+  page: Page,
+  body: { sender_address: string | null },
+): Promise<void> {
+  await page.route(
+    (url) => url.pathname === "/api/rpc/kindle/delivery",
+    (route) => route.fulfill({ status: 200, json: body }),
+  );
+}
+
+test("renders the profile section layout", async ({ page }) => {
+  await gotoReady(page, PROFILE);
+
+  await expect(page.getByTestId("settings-nav-profile")).toHaveAttribute(
     "aria-current",
     "page",
   );
-  // Profile card sits at the top of the section.
   await expect(page.getByTestId("account-profile-card")).toBeVisible();
-  await expect(displayNameInput(page)).toBeVisible();
-  await expect(page.getByTestId("display-name-save")).toBeVisible();
   await expect(
-    page.getByRole("heading", { level: 2, name: "Password" }),
+    page.getByRole("heading", { level: 3, name: "Profile" }),
+  ).toBeVisible();
+  await expect(displayNameInput(page)).toBeVisible();
+  // Nothing to save until the name changes.
+  await expect(saveDisplayName(page)).toBeDisabled();
+  // The picker's file input is visually hidden but still in the tab order.
+  await page.getByTestId("avatar-file-input").focus();
+  await expect(page.getByTestId("avatar-file-input")).toBeFocused();
+  // Password lives under Sign-in & security now.
+  await expect(page.getByTestId("account-password-card")).toHaveCount(0);
+
+  await expectNavVisible(page);
+});
+
+test("renders the preferences section layout", async ({ page }) => {
+  await gotoReady(page, PREFERENCES);
+
+  await expect(page.getByTestId("settings-nav-preferences")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  for (const group of ["Appearance", "Library", "Book page", "Privacy"]) {
+    await expect(
+      page.getByRole("heading", { level: 3, name: group }),
+    ).toBeVisible();
+  }
+  await expect(page.getByText("Applies to this device.")).toBeVisible();
+  await expect(page.getByTestId("theme-dark")).toBeVisible();
+  for (const name of [
+    "Stack series",
+    "Scroll stops",
+    "Share stats with household",
+  ]) {
+    await expect(page.getByRole("switch", { name })).toBeEnabled();
+  }
+  // Hidden formats is one labelled group of checkboxes that saves on change
+  // (its behaviour is covered by hidden_formats.spec.ts).
+  await expect(
+    page.getByRole("group", { name: "Hidden formats" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("hidden-format-toggle-epub")).toBeVisible();
+  await expect(page.getByTestId("hidden-formats-save")).toHaveCount(0);
+
+  await expectNavVisible(page);
+});
+
+test("renders the devices section layout", async ({ page }) => {
+  await gotoReady(page, DEVICES);
+
+  await expect(page.getByTestId("settings-nav-devices")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(
+    page.getByRole("heading", { level: 3, name: "Kindle" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("account-kindle-card")).toBeVisible();
+  await expect(emailInput(page)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save Kindle email" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("kindle-email-connected")).toBeAttached();
+  await expect(page.getByTestId("kindle-delivery")).toBeVisible();
+  await expect(page.getByTestId("kobo-devices-card")).toBeVisible();
+  await expect(page.getByTestId("kobo-data-loss-warning")).toBeVisible();
+  await expect(page.getByText("How to connect a Kobo")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Choose shelves to sync" }),
+  ).toHaveAttribute("href", "/shelves");
+
+  await expectNavVisible(page);
+});
+
+test("renders the sign-in and security section layout", async ({ page }) => {
+  await gotoReady(page, SECURITY);
+
+  await expect(page.getByTestId("settings-nav-security")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(
+    page.getByRole("heading", { level: 3, name: "Password" }),
   ).toBeVisible();
   await expect(page.getByTestId("account-password-card")).toBeVisible();
   await expect(currentPassword(page)).toBeVisible();
   await expect(newPassword(page)).toBeVisible();
   await expect(page.getByTestId("change-password-submit")).toBeVisible();
-  // The per-user feature switches sit above the goals as a table — one row
-  // per setting, so a new one is a row rather than another card.
-  await expect(page.getByTestId("account-user-settings-card")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Omnibus User Settings" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("user-settings-table")).toBeVisible();
-  await expect(page.getByTestId("user-setting-scroll-stops")).toBeVisible();
-  const scrollStops = page.getByRole("switch", {
-    name: "Use book details scroll stops",
+  await expect(page.getByTestId("account-sessions-card")).toBeVisible();
+  await expect(page.getByTestId("api-tokens-card")).toBeVisible();
+
+  await expectNavVisible(page);
+});
+
+// Delivery readiness is instance configuration (an SMTP relay), so the two
+// states are stubbed rather than set up on the shared server.
+test("names the sender to approve when Kindle delivery is ready", async ({
+  page,
+}) => {
+  await stubKindleDelivery(page, {
+    sender_address: "library@example.com",
   });
-  await expect(scrollStops).toBeEnabled();
-  await expect(page.getByTestId("scroll-stops-soon")).toHaveCount(0);
-  // Share stats with household (its state is covered by the serial block below).
-  await expect(page.getByTestId("user-setting-share-stats")).toBeVisible();
-  await expect(
-    page.getByRole("switch", { name: "Share stats with household" }),
-  ).toBeEnabled();
-  // Hidden-formats card (its behavior is covered by hidden_formats.spec.ts).
-  await expect(page.getByTestId("account-hidden-formats-card")).toBeVisible();
+  await gotoReady(page, DEVICES);
 
-  // Kindle and Kobo have their own sections now — not this one.
-  await expect(page.getByTestId("account-kindle-card")).toHaveCount(0);
-  await expect(page.getByTestId("kobo-devices-card")).toHaveCount(0);
-
-  await expectNavVisible(page);
+  await expect(page.getByTestId("kindle-delivery")).toContainText(
+    "Approve library@example.com",
+  );
+  await expect(page.getByTestId("kindle-sender-copy")).toBeVisible();
 });
 
-test("renders the Kindle section layout", async ({ page }) => {
-  await gotoReady(page, KINDLE);
+test("links an admin to integrations when Kindle delivery isn't set up", async ({
+  page,
+}) => {
+  await stubKindleDelivery(page, {
+    sender_address: null,
+  });
+  await gotoReady(page, DEVICES);
 
-  await expect(page.getByTestId("settings-nav-kindle")).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
   await expect(
-    page.getByRole("heading", { level: 2, name: "Kindle" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("account-kindle-card")).toBeVisible();
-  await expect(emailInput(page)).toBeVisible();
-  await expect(page.getByTestId("kindle-email-save")).toBeVisible();
-  await expect(page.getByTestId("kindle-email-connected")).toBeAttached();
-
-  await expectNavVisible(page);
-});
-
-test("renders the Kobo section layout", async ({ page }) => {
-  await gotoReady(page, KOBO);
-
-  await expect(page.getByTestId("settings-nav-kobo")).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  await expect(page.getByTestId("kobo-devices-card")).toBeVisible();
-
-  await expectNavVisible(page);
+    page.getByRole("link", { name: "Set up email delivery" }),
+  ).toHaveAttribute("href", "/admin?section=integrations");
 });
 
 test("adds a Kobo device with an absolute endpoint URL, then removes it", async ({
   page,
 }) => {
-  await gotoReady(page, KOBO);
+  await gotoReady(page, DEVICES);
 
   const name = `E2E Kobo ${Date.now()}`;
   await page.getByTestId("kobo-device-name-input").fill(name);
@@ -125,7 +216,32 @@ test("adds a Kobo device with an absolute endpoint URL, then removes it", async 
     await expect(page.getByTestId("kobo-endpoint-url").last()).toHaveValue(
       /^https?:\/\/[^/]+\/kobo\/[^/]+$/,
     );
+    // The new device joins the list below the form it was added from.
+    const row = page.getByTestId("kobo-device-row").filter({ hasText: name });
+    const rowTop = (await row.boundingBox())?.y ?? 0;
+    const addTop = (await page.getByTestId("kobo-device-add").boundingBox())?.y;
+    expect(rowTop).toBeGreaterThan(addTop ?? Number.POSITIVE_INFINITY);
+
+    // Regenerate asks first as well, and backing out sends nothing.
+    const regenerates = recordRequests(
+      page,
+      "/api/rpc/kobo/devices/regenerate",
+    );
+    await page
+      .getByRole("button", { name: `Regenerate token for ${name}` })
+      .click();
+    await expect(
+      page.getByRole("dialog", { name: `Regenerate the token for ${name}?` }),
+    ).toBeVisible();
+    await page.getByTestId("kobo-regenerate-dialog-cancel").click();
+    await expect(page.getByTestId("kobo-regenerate-dialog")).toHaveCount(0);
+    expect(regenerates).toEqual([]);
   } finally {
+    // Remove asks first, naming the device it would stop syncing.
+    await page.getByRole("button", { name: `Remove ${name}` }).click();
+    await expect(
+      page.getByRole("dialog", { name: `Remove ${name}?` }),
+    ).toBeVisible();
     await expectMutation(
       page,
       {
@@ -134,22 +250,48 @@ test("adds a Kobo device with an absolute endpoint URL, then removes it", async 
         expectedBody: { id: created.id },
         expectedStatus: 200,
       },
-      async () => page.getByTestId("kobo-device-remove").last().click(),
+      async () => page.getByTestId("kobo-remove-dialog-confirm").click(),
     );
+    await expect(page.getByTestId("kobo-remove-dialog")).toHaveCount(0);
   }
 });
 
-test("the legacy /account route redirects into the Account section", async ({
+// The device list is per-user state on the shared admin, so both disclosure
+// states are stubbed, since whether it opens on its own depends on the list.
+test("open the kobo setup steps from their disclosure", async ({ page }) => {
+  await stubKoboDevices(page, [{ id: 1, name: "Kobo Clara" }]);
+  await gotoReady(page, DEVICES);
+  await expect(page.getByTestId("kobo-device-row")).toHaveCount(1);
+
+  // A reader who already has a Kobo starts with the steps folded away.
+  const steps = page.getByTestId("kobo-setup-steps");
+  await expect(steps).toBeHidden();
+  await page.getByText("How to connect a Kobo").click();
+  await expect(steps).toBeVisible();
+  await expect(
+    steps.getByRole("link", { name: "omnibus-library/kobo-backup" }),
+  ).toHaveAttribute("href", "https://github.com/omnibus-library/kobo-backup");
+});
+
+test("show the kobo setup steps to a reader with no kobo yet", async ({
   page,
 }) => {
+  await stubKoboDevices(page, []);
+  await gotoReady(page, DEVICES);
+
+  await expect(page.getByTestId("kobo-devices-empty")).toBeVisible();
+  await expect(page.getByTestId("kobo-setup-steps")).toBeVisible();
+});
+
+test("the legacy /account route redirects into Settings", async ({ page }) => {
   await gotoReady(page, "/account");
 
   await expect(page).toHaveURL(/\/settings\??$/);
-  await expect(page.getByTestId("account-password-card")).toBeVisible();
+  await expect(page.getByTestId("account-profile-card")).toBeVisible();
 });
 
 test("saves the Kindle email and shows a success status", async ({ page }) => {
-  await gotoReady(page, KINDLE);
+  await gotoReady(page, DEVICES);
 
   const address = "reader@kindle.com";
   await emailInput(page).fill(address);
@@ -171,10 +313,87 @@ test("saves the Kindle email and shows a success status", async ({ page }) => {
   await expect(page.getByTestId("kindle-email-status")).toHaveClass(/success/);
 });
 
+test("clears the Kindle email only once the named address is confirmed", async ({
+  page,
+}) => {
+  await gotoReady(page, DEVICES);
+  const address = "reader@kindle.com";
+  expect(
+    await postFromPage(page, "/api/rpc/account/kindle-email", {
+      email: address,
+    }),
+  ).toBe(200);
+  await gotoReady(page, DEVICES);
+  const writes = recordRequests(page, "/api/rpc/account/kindle-email");
+
+  await page.getByTestId("kindle-email-clear").click();
+  await expect(page.getByTestId("kindle-email-clear-dialog")).toContainText(
+    address,
+  );
+  await page.getByTestId("kindle-email-clear-dialog-cancel").click();
+
+  await expect(page.getByTestId("kindle-email-clear-dialog")).toHaveCount(0);
+  expect(writes).toEqual([]);
+
+  await page.getByTestId("kindle-email-clear").click();
+  await expectMutation(
+    page,
+    {
+      method: "POST",
+      url: "/api/rpc/account/kindle-email",
+      expectedBody: { email: null },
+      expectedStatus: 200,
+    },
+    async () => page.getByTestId("kindle-email-clear-dialog-confirm").click(),
+  );
+  await expect(page.getByTestId("kindle-email-clear-dialog")).toHaveCount(0);
+  await expect(page.getByTestId("kindle-email-status")).toHaveText(
+    "Kindle email cleared.",
+  );
+});
+
+test("asks before revoking another session", async ({ page }) => {
+  // The admin's sessions are shared by every spec, so the list is stubbed.
+  const session = { kind: "cookie", created_at: 1, last_used_at: 1 };
+  await page.route("**/api/auth/sessions", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({
+          json: [
+            {
+              ...session,
+              id: 1,
+              client: "Firefox on Linux",
+              expires_at: 4e9,
+              is_current: true,
+            },
+            {
+              ...session,
+              id: 2,
+              client: "Kobo Libra",
+              expires_at: 4e9,
+              is_current: false,
+            },
+          ],
+        })
+      : route.continue(),
+  );
+  await gotoReady(page, SECURITY);
+  const revokes = recordRequests(page, "/api/auth/sessions/2");
+
+  await page
+    .getByRole("button", { name: "Revoke the session on Kobo Libra" })
+    .click();
+  await expect(page.getByTestId("session-revoke-dialog")).toBeVisible();
+  await page.getByTestId("session-revoke-dialog-cancel").click();
+
+  await expect(page.getByTestId("session-revoke-dialog")).toHaveCount(0);
+  expect(revokes).toEqual([]);
+});
+
 test("shows an error status when saving the Kindle email fails", async ({
   page,
 }) => {
-  await gotoReady(page, KINDLE);
+  await gotoReady(page, DEVICES);
 
   await emailInput(page).fill("reader@kindle.com");
 
@@ -212,7 +431,7 @@ test("shows an error status when saving the Kindle email fails", async ({
 test("changes the password and clears the form on success", async ({
   page,
 }) => {
-  await gotoReady(page, ACCOUNT);
+  await gotoReady(page, SECURITY);
 
   await page.route("**/api/rpc/account/change-password", (route) => {
     if (route.request().method() === "POST") {
@@ -251,7 +470,7 @@ test("changes the password and clears the form on success", async ({
 test("rejects a wrong current password and leaves the form untouched", async ({
   page,
 }) => {
-  await gotoReady(page, ACCOUNT);
+  await gotoReady(page, SECURITY);
 
   await currentPassword(page).fill("definitely-not-the-password");
   await newPassword(page).fill("Brand-New-Valid-9x");
@@ -281,7 +500,7 @@ test("rejects a wrong current password and leaves the form untouched", async ({
 });
 
 test("rejects an invalid new password", async ({ page }) => {
-  await gotoReady(page, ACCOUNT);
+  await gotoReady(page, SECURITY);
 
   // Correct current password authorizes; the too-short new password fails
   // policy on the server before any write happens.
@@ -308,7 +527,7 @@ test("rejects an invalid new password", async ({ page }) => {
 // `finally`, and the failure test mocks the response rather than writing.
 
 test("saves the display name and shows a success status", async ({ page }) => {
-  await gotoReady(page, ACCOUNT);
+  await gotoReady(page, PROFILE);
 
   try {
     await displayNameInput(page).fill("Seamus");
@@ -321,7 +540,7 @@ test("saves the display name and shows a success status", async ({ page }) => {
         expectedBody: { display_name: "Seamus" },
         expectedStatus: 200,
       },
-      async () => page.getByTestId("display-name-save").click(),
+      async () => saveDisplayName(page).click(),
     );
 
     await expect(profileStatus(page)).toHaveText("Profile saved.");
@@ -342,7 +561,7 @@ test("saves the display name and shows a success status", async ({ page }) => {
         expectedBody: { display_name: null },
         expectedStatus: 200,
       },
-      async () => page.getByTestId("display-name-save").click(),
+      async () => saveDisplayName(page).click(),
     );
   }
 });
@@ -350,7 +569,7 @@ test("saves the display name and shows a success status", async ({ page }) => {
 test("shows an error status when saving the display name fails", async ({
   page,
 }) => {
-  await gotoReady(page, ACCOUNT);
+  await gotoReady(page, PROFILE);
 
   await displayNameInput(page).fill("Seamus");
 
@@ -372,16 +591,82 @@ test("shows an error status when saving the display name fails", async ({
       url: "/api/rpc/account/profile",
       expectedStatus: 500,
     },
-    async () => page.getByTestId("display-name-save").click(),
+    async () => saveDisplayName(page).click(),
   );
 
   await expect(profileStatus(page)).toHaveClass(/error/);
 });
 
+test("offers Save display name only once the name changes", async ({
+  page,
+}) => {
+  await gotoReady(page, PROFILE);
+  const original = await displayNameInput(page).inputValue();
+
+  await expect(saveDisplayName(page)).toBeDisabled();
+  await displayNameInput(page).fill(`${original} draft`);
+  await expect(saveDisplayName(page)).toBeEnabled();
+  await displayNameInput(page).fill(original);
+  await expect(saveDisplayName(page)).toBeDisabled();
+});
+
+test("asks before leaving an unsaved display name", async ({ page }) => {
+  await gotoReady(page, PROFILE);
+  await displayNameInput(page).fill("Unsaved name");
+
+  await page.getByTestId("settings-nav-preferences").click();
+  await expect(page.getByTestId("unsaved-confirm")).toBeVisible();
+  await page.getByTestId("unsaved-keep").click();
+  await expect(page).toHaveURL(/section=profile$/);
+  await expect(displayNameInput(page)).toHaveValue("Unsaved name");
+
+  await page.getByTestId("settings-nav-preferences").click();
+  await page.getByTestId("unsaved-discard").click();
+  await expect(page).toHaveURL(/section=preferences$/);
+});
+
+test("stay on the open section when its own link is clicked over edits", async ({
+  page,
+}) => {
+  await gotoReady(page, PROFILE);
+  await displayNameInput(page).fill("Unsaved name");
+
+  await page.getByTestId("settings-nav-profile").click();
+
+  await expect(page.getByTestId("unsaved-confirm")).toHaveCount(0);
+  await expect(displayNameInput(page)).toHaveValue("Unsaved name");
+});
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("ask before the back link drops unsaved goals", async ({ page }) => {
+    await gotoReady(page, GOALS);
+    await page.getByTestId("goal-pages-input").fill("42");
+
+    await page.getByTestId("settings-back").click();
+    await expect(page.getByTestId("unsaved-confirm")).toBeVisible();
+    await page.getByTestId("unsaved-keep").click();
+
+    await expect(page).toHaveURL(/section=goals$/);
+    await expect(page.getByTestId("goal-pages-input")).toHaveValue("42");
+  });
+
+  test("go back from the default section without asking", async ({ page }) => {
+    await gotoReady(page, PROFILE);
+    await displayNameInput(page).fill("Unsaved name");
+
+    await page.getByTestId("settings-back").click();
+
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page.getByTestId("unsaved-confirm")).toHaveCount(0);
+  });
+});
+
 test("confirms a replaced avatar and clears it when the next upload starts", async ({
   page,
 }) => {
-  await gotoReady(page, ACCOUNT);
+  await gotoReady(page, PROFILE);
 
   // Stubbed: the admin's real avatar would show in every other spec's menu.
   let answer = 204;
@@ -417,11 +702,11 @@ test("confirms a replaced avatar and clears it when the next upload starts", asy
     pick,
   );
   await expect(page.getByTestId("avatar-status")).toHaveClass(/error/);
-  await expect(profileStatus(page)).toHaveCount(0);
+  await expect(profileStatus(page)).toBeEmpty();
 });
 
 test("shows an error when the avatar upload fails", async ({ page }) => {
-  await gotoReady(page, ACCOUNT);
+  await gotoReady(page, PROFILE);
 
   await page.route("**/api/account/avatar", (route) => {
     if (route.request().method() === "POST") {
@@ -496,33 +781,33 @@ test.describe
       }
     }
 
-    test("the goals card sets all three targets behind one control", async ({
-      page,
-      request,
-    }) => {
+    const goalInput = (page: Page, kind: string) =>
+      page.getByTestId(`goal-${kind}-input`);
+    const saveAll = (page: Page) => page.getByTestId("goals-save");
+
+    test("edit goals inline and save all", async ({ page, request }) => {
       await clearAllGoals(request);
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, GOALS);
 
       const card = page.getByTestId("account-goals-card");
-      await expect(card).toBeVisible();
       await expect(
-        page.getByRole("heading", { level: 2, name: "Reading goals" }),
+        card.getByRole("heading", { level: 3, name: "Reading goals" }),
       ).toBeVisible();
-
-      // Read mode: every kind states its target or that it has none, and there is
-      // exactly one control — the point of consolidating them here.
-      for (const testid of ["goal-books", "goal-pages", "goal-minutes"]) {
-        await expect(page.getByTestId(`${testid}-value`)).toHaveText("Not set");
+      // Always a form: three fields and one Save all, which waits for a change.
+      for (const kind of ["books", "pages", "minutes"]) {
+        await expect(goalInput(page, kind)).toBeEnabled();
+        await expect(goalInput(page, kind)).toHaveValue("");
       }
       await expect(card.getByRole("button")).toHaveCount(1);
-      await expect(page.getByTestId("goals-edit")).toBeVisible();
+      await expect(saveAll(page)).toHaveText("Save all");
+      await expect(saveAll(page)).toBeDisabled();
 
-      await page.getByTestId("goals-edit").click();
-      await page.getByTestId("goal-books-input").fill("24");
-      await page.getByTestId("goal-pages-input").fill("30");
-      await page.getByTestId("goal-minutes-input").fill("45");
+      await goalInput(page, "books").fill("24");
+      await goalInput(page, "pages").fill("30");
+      await goalInput(page, "minutes").fill("45");
+      await expect(saveAll(page)).toBeEnabled();
 
-      // One Save, three per-kind writes: the annual route and the daily route
+      // One Save all makes three per-kind writes. The annual and daily routes
       // can't be batched, so the card fans out and reports what landed.
       await expectMutation(
         page,
@@ -535,24 +820,18 @@ test.describe
           expectedBody: { update: { target: 24 }, utc_offset_minutes: 0 },
           expectedStatus: 200,
         },
-        async () => page.getByTestId("goals-save").click(),
+        async () => saveAll(page).click(),
       );
 
       await expect(page.getByTestId("goals-status")).toHaveText("Goals saved.");
-      await expect(page.getByTestId("goal-books-value")).toHaveText("24 books");
-      await expect(page.getByTestId("goal-pages-value")).toHaveText("30 pages");
-      await expect(page.getByTestId("goal-minutes-value")).toHaveText(
-        "45 minutes",
-      );
+      await expect(saveAll(page)).toBeDisabled();
 
       // They survive a reload — the card reads all three back off the server,
       // which is what tells an optimistic render apart from a real write.
-      await gotoReady(page, ACCOUNT);
-      await expect(page.getByTestId("goal-books-value")).toHaveText("24 books");
-      await expect(page.getByTestId("goal-pages-value")).toHaveText("30 pages");
-      await expect(page.getByTestId("goal-minutes-value")).toHaveText(
-        "45 minutes",
-      );
+      await gotoReady(page, GOALS);
+      await expect(goalInput(page, "books")).toHaveValue("24");
+      await expect(goalInput(page, "pages")).toHaveValue("30");
+      await expect(goalInput(page, "minutes")).toHaveValue("45");
     });
 
     test("an emptied field clears that goal and leaves the others alone", async ({
@@ -565,11 +844,11 @@ test.describe
         kind: "pages",
         target: 30,
       });
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, GOALS);
+      await expect(goalInput(page, "pages")).toHaveValue("30");
 
-      await page.getByTestId("goals-edit").click();
-      // Blanking is how a single form drops a goal — there is no Clear per row.
-      await page.getByTestId("goal-pages-input").fill("");
+      // Blanking is how the form drops a goal. There is no Clear per row.
+      await goalInput(page, "pages").fill("");
 
       await expectMutation(
         page,
@@ -582,13 +861,15 @@ test.describe
           expectedBody: { update: { kind: "pages" }, utc_offset_minutes: 0 },
           expectedStatus: 200,
         },
-        async () => page.getByTestId("goals-save").click(),
+        async () => saveAll(page).click(),
       );
+      await expect(page.getByTestId("goals-status")).toHaveText("Goals saved.");
 
-      await expect(page.getByTestId("goal-pages-value")).toHaveText("Not set");
       // The untouched annual target is not restated — only changed kinds are
       // written, so another device's value can't be clobbered by a no-op save.
-      await expect(page.getByTestId("goal-books-value")).toHaveText("24 books");
+      await gotoReady(page, GOALS);
+      await expect(goalInput(page, "books")).toHaveValue("24");
+      await expect(goalInput(page, "pages")).toHaveValue("");
     });
 
     test("an out-of-range target is refused before it costs a round trip", async ({
@@ -596,20 +877,27 @@ test.describe
       request,
     }) => {
       await clearAllGoals(request);
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, GOALS);
 
-      await page.getByTestId("goals-edit").click();
       // 1,500 is a legal day of pages and an impossible day of minutes, so the
       // same number has to be accepted by one field and refused by the other.
-      await page.getByTestId("goal-pages-input").fill("1500");
-      await page.getByTestId("goal-minutes-input").fill("1500");
-      await page.getByTestId("goals-save").click();
+      await goalInput(page, "pages").fill("1500");
+      await goalInput(page, "minutes").fill("1500");
+      await saveAll(page).click();
 
-      const status = page.getByTestId("goals-status");
-      await expect(status).toContainText("Minutes a day");
-      await expect(status).toContainText("1440");
-      // Nothing was written — the form stays open on the value it rejected.
-      await expect(page.getByTestId("goal-pages-input")).toHaveValue("1500");
+      await expect(page.getByTestId("goal-minutes-error")).toContainText(
+        "1440",
+      );
+      await expect(goalInput(page, "minutes")).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      );
+      await expect(page.getByTestId("goal-pages-error")).toHaveCount(0);
+      await expect(page.getByTestId("goals-status")).toContainText(
+        "Nothing saved",
+      );
+      // Nothing was written, and the form keeps the value it rejected.
+      await expect(goalInput(page, "pages")).toHaveValue("1500");
     });
 
     test("a failed save names the kind that didn't land", async ({
@@ -621,36 +909,40 @@ test.describe
         route.fulfill({ status: 500, contentType: "text/plain", body: "boom" }),
       );
 
-      await gotoReady(page, ACCOUNT);
-      await page.getByTestId("goals-edit").click();
-      await page.getByTestId("goal-books-input").fill("24");
-      await page.getByTestId("goal-pages-input").fill("30");
-      await page.getByTestId("goals-save").click();
+      await gotoReady(page, GOALS);
+      await goalInput(page, "books").fill("24");
+      await goalInput(page, "pages").fill("30");
+      await saveAll(page).click();
 
       // Three goals are three writes: the reader has to know which one to retry
       // rather than being told "something went wrong".
       const status = page.getByTestId("goals-status");
       await expect(status).toContainText("Pages a day");
       await expect(status).toHaveClass(/error/);
-      // The annual write did land, and the form stays open on the failure.
-      await expect(page.getByTestId("goal-books-input")).toHaveValue("24");
+      await expect(page.getByTestId("goal-pages-error")).toBeVisible();
+      // The annual write did land; the failed kind keeps its draft to retry.
+      await expect(goalInput(page, "books")).toHaveValue("24");
+      await expect(goalInput(page, "pages")).toHaveValue("30");
+      await expect(saveAll(page)).toBeEnabled();
     });
 
-    test("cancel drops the drafts back to what the server confirmed", async ({
-      page,
-      request,
-    }) => {
+    test("asks before leaving unsaved goals", async ({ page, request }) => {
       await clearAllGoals(request);
       await seedGoal(request, "/api/stats/goal", { target: 24 });
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, GOALS);
+      await expect(goalInput(page, "books")).toHaveValue("24");
 
-      await page.getByTestId("goals-edit").click();
-      await page.getByTestId("goal-books-input").fill("99");
-      await page.getByTestId("goals-cancel").click();
+      await goalInput(page, "books").fill("99");
+      await page.getByTestId("settings-nav-profile").click();
+      await expect(page.getByTestId("unsaved-confirm")).toBeVisible();
+      await page.getByTestId("unsaved-keep").click();
+      await expect(goalInput(page, "books")).toHaveValue("99");
 
-      await expect(page.getByTestId("goal-books-value")).toHaveText("24 books");
-      await page.getByTestId("goals-edit").click();
-      await expect(page.getByTestId("goal-books-input")).toHaveValue("24");
+      // Typing the saved value back leaves nothing to lose.
+      await goalInput(page, "books").fill("24");
+      await expect(saveAll(page)).toBeDisabled();
+      await page.getByTestId("settings-nav-profile").click();
+      await expect(page).toHaveURL(/section=profile$/);
     });
   });
 
@@ -682,15 +974,17 @@ test.describe
 
     const shareStatsSwitch = (page: Page) =>
       page.getByRole("switch", { name: "Share stats with household" });
+    const shareStatsStatus = (page: Page) =>
+      page.getByTestId("share-stats-status");
 
     test("turning share stats off saves and survives a reload", async ({
       page,
     }) => {
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, PREFERENCES);
 
       await expect(shareStatsSwitch(page)).toBeChecked();
       await expect(page.getByTestId("user-setting-share-stats")).toContainText(
-        "Other readers on this server can see your stats page.",
+        "On by default.",
       );
 
       await expectMutation(
@@ -705,18 +999,16 @@ test.describe
       );
 
       await expect(shareStatsSwitch(page)).not.toBeChecked();
+      await expect(shareStatsStatus(page)).toHaveText("Saved");
 
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, PREFERENCES);
       await expect(shareStatsSwitch(page)).not.toBeChecked();
-      await expect(page.getByTestId("user-setting-share-stats")).toContainText(
-        "Only you can see your stats page.",
-      );
     });
 
     test("a failed share-stats save puts the switch back and shows the error", async ({
       page,
     }) => {
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, PREFERENCES);
       await expect(shareStatsSwitch(page)).toBeChecked();
 
       await page.route("**/api/rpc/account/share-stats", (route) => {
@@ -742,6 +1034,9 @@ test.describe
       );
 
       await expect(shareStatsSwitch(page)).toBeChecked();
-      await expect(page.getByTestId("share-stats-error")).toBeVisible();
+      await expect(shareStatsStatus(page)).toHaveText(
+        "Couldn’t save. Try again.",
+      );
+      await expect(shareStatsStatus(page)).toHaveClass(/error/);
     });
   });

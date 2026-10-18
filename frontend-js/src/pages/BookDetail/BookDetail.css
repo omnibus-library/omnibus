@@ -1,0 +1,247 @@
+.bd-author-link {
+  color: var(--ink-0);
+  border-bottom: 1px solid var(--line-2);
+  position: relative;
+  transition: border-color 0.15s;
+}
+@media (hover: hover) {
+  .bd-author-link:hover {
+    border-bottom-color: var(--accent);
+  }
+}
+
+.bd-desc {
+  margin-top: 22px;
+  font-size: 16px;
+  color: var(--ink-1);
+  line-height: 1.6;
+  max-width: 640px;
+}
+.bd-desc p + p {
+  margin-top: 12px;
+}
+.bd-desc ul {
+  margin: 12px 0 12px 18px;
+}
+.bd-desc em {
+  font-style: italic;
+  color: var(--ink-0);
+}
+.bd-desc strong {
+  color: var(--ink-0);
+}
+
+.bd-tag-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  list-style: none;
+  padding: 0;
+  margin: 22px 0 0;
+}
+
+@media (pointer: coarse) {
+  .bd-desc,
+  .bd-desc * {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .bd-desc img {
+    -webkit-touch-callout: default;
+    -webkit-user-drag: auto;
+  }
+}
+.bdmq-stage {
+  position: fixed;
+  top: var(--bdmq-top, 61px);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  /* No z-index: the stage must stay below the topbar's stacking context so
+     its dropdowns (user menu z 61, search palette) paint over the panel.
+     Overlays hosted inside the stage are instead kept out of the topbar's
+     strip geometrically — the journal overlay insets by --bdmq-top, and the
+     in-stage ConfirmModal backdrops get the same top padding below. */
+  background:
+    radial-gradient(
+      70% 90% at 78% 15%,
+      color-mix(in oklch, var(--accent) 14%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      60% 80% at 12% 85%,
+      color-mix(in oklch, var(--accent) 10%, transparent),
+      transparent 55%
+    ),
+    var(--bg-0);
+}
+.bdmq-coverwrap {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 0;
+  /* Breathing room the cover is sized against, so its left edge and drop
+     shadow never sit flush against the viewport. */
+  --bdmq-cover-gutter: clamp(18px, 2.6vw, 52px);
+}
+.bdmq-coverwrap .cover-wrap {
+  filter: drop-shadow(0 40px 60px oklch(0 0 0 / 0.6))
+    drop-shadow(0 4px 0 oklch(0 0 0 / 0.3));
+}
+.bdmq-coverpx {
+  aspect-ratio: 2 / 3;
+  flex: 0 0 auto;
+  will-change: transform;
+  /* The design sizes the cover off the stage height (125%, 2:3) so it bleeds
+     past the stage under the parallax, and the width follows from that height
+     -- so on a tall or narrow window it runs wider than the 50% cover
+     column. Capping that with `max-width` alone squashed the box off 2:3 (an
+     explicit height outranks the ratio), so `object-fit: cover` then ate the
+     artwork's left edge flush against the viewport. Size off whichever
+     constraint binds instead: the ratio always holds, and the book's left edge
+     always clears the gutter. `100vh - --bdmq-top` is the stage's own height
+     (it is fixed to `top: var(--bdmq-top); bottom: 0`), and 1.25 * 2/3 = 5/6. */
+  width: min(
+    calc((100vh - var(--bdmq-top, 61px)) * 5 / 6),
+    calc(100% - var(--bdmq-cover-gutter) * 2)
+  );
+  height: auto;
+}
+.bdmq-coverpx .cover-wrap {
+  width: 100%;
+  height: 100%;
+}
+.bdmq-flowscroll {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 57%;
+  overflow-y: auto;
+  /* The flow is the page's own scroller, so a bounce at either end must not
+     hand the gesture to the document behind the fixed stage. */
+  overscroll-behavior: contain;
+  z-index: 1;
+  /* The scrim — background, blur and seam — lives on `.bdmq-flowscrim`
+     below, and must not come back here. See there for why. */
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--accent) 60%, var(--bg-3))
+    transparent;
+}
+.bdmq-flowscrim {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 57%;
+  background: color-mix(in oklch, var(--bg-0) 70%, transparent);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+  z-index: 0;
+}
+.bdmq-flowscrim {
+  border-left: 1px solid var(--line-2);
+}
+.bdmq-flowscroll::-webkit-scrollbar {
+  width: 6px;
+}
+.bdmq-flowscroll::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--accent) 60%, var(--bg-3));
+  border-radius: 99px;
+}
+.bdmq-flowscroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.bdmq-flow {
+  padding: 44px 74px 90px 60px;
+  display: flex;
+  flex-direction: column;
+}
+.bdmq-flowsec {
+  scroll-margin-top: 44px;
+}
+.bdmq-flowsec + .bdmq-flowsec {
+  margin-top: 64px;
+  padding-top: 56px;
+  border-top: 1px solid var(--line-2);
+}
+.bdmq-k {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 18px;
+}
+.bdmq-titlerow {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.atrium .bdmq-by {
+  margin-top: 12px;
+  font-size: 16px;
+  color: var(--ink-1);
+}
+.bdmq-by .bd-author-link:hover {
+  color: var(--accent);
+}
+.bdmq-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+.bd-chip-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.bd-chip-row-label {
+  flex: 0 0 auto;
+  min-width: 52px;
+  color: var(--ink-3);
+}
+.bd-chip-row .bd-tag-list {
+  margin-top: 0;
+}
+.bdmq-desc {
+  margin-top: 18px;
+  font-size: 15px;
+  color: var(--ink-1);
+  line-height: 1.6;
+  max-width: 560px;
+}
+.bdmq-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.bdmq-desc.is-open {
+  display: block;
+  -webkit-line-clamp: none;
+  overflow: visible;
+}
+.bdmq-desc-toggle {
+  margin-top: 8px;
+}
+@media (max-width: 940px) {
+  .bdmq-coverwrap {
+    width: 100%;
+    opacity: 0.22;
+  }
+  .bdmq-coverpx {
+    width: auto;
+    height: 125%;
+    max-width: 100%;
+  }
+}

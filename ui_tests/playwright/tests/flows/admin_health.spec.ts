@@ -1,5 +1,5 @@
-// The admin server-health page (#952) and its live-update poll loop (#955).
-// `AdminHealthPage` fires a POST /api/rpc/admin-health on mount and again
+// Administration › Health and its live-update poll loop.
+// `HealthOverview` fires a POST /api/rpc/admin-health on mount and again
 // every POLL_INTERVAL_MS (5s, `frontend/src/pages/admin_health.rs`) from a
 // post-mount `use_future`, with no other UI trigger on the page (unlike the
 // worker-status indicator, there's no button here).
@@ -21,7 +21,7 @@ import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
-const ADMIN_HEALTH = "/admin/health";
+const ADMIN_HEALTH = "/admin?section=health";
 const ADMIN_HEALTH_RPC = "**/api/rpc/admin-health";
 
 interface AdminHealthReport {
@@ -54,6 +54,7 @@ interface AdminHealthReport {
     target: string;
     message: string;
     book_uuid?: string | null;
+    file?: string | null;
   }>;
 }
 
@@ -131,13 +132,17 @@ test("renders the admin health layout", async ({ page }) => {
   );
 
   await expect(
-    page.getByRole("heading", { level: 1, name: "Server health" }),
+    page.getByRole("heading", { level: 2, name: "Health" }),
   ).toBeVisible();
+  await expect(page.getByTestId("admin-nav-health")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
   await expect(page.getByTestId("admin-health-grid")).toBeVisible();
 
   const indexCard = page.getByTestId("admin-health-index-card");
   await expect(
-    indexCard.getByRole("heading", { name: "Index status" }),
+    indexCard.getByRole("heading", { level: 3, name: "Index status" }),
   ).toBeVisible();
   await expect(indexCard).toContainText("Books indexed");
   await expect(indexCard).toContainText("Authors indexed");
@@ -145,7 +150,7 @@ test("renders the admin health layout", async ({ page }) => {
 
   const workerCard = page.getByTestId("admin-health-worker-card");
   await expect(
-    workerCard.getByRole("heading", { name: "Worker queue" }),
+    workerCard.getByRole("heading", { level: 3, name: "Worker queue" }),
   ).toBeVisible();
   // Shared dev server — a parallel spec's scan may or may not be running,
   // so assert the section rendered one of its two valid states rather than
@@ -158,21 +163,21 @@ test("renders the admin health layout", async ({ page }) => {
 
   const ftsCard = page.getByTestId("admin-health-fts-card");
   await expect(
-    ftsCard.getByRole("heading", { name: "Search index (FTS)" }),
+    ftsCard.getByRole("heading", { level: 3, name: "Search index (FTS)" }),
   ).toBeVisible();
   await expect(ftsCard).toContainText("Books rows");
   await expect(ftsCard).toContainText("FTS rows");
 
   const storageCard = page.getByTestId("admin-health-storage-card");
   await expect(
-    storageCard.getByRole("heading", { name: "Storage" }),
+    storageCard.getByRole("heading", { level: 3, name: "Storage" }),
   ).toBeVisible();
   await expect(storageCard).toContainText("Library content");
   await expect(storageCard).toContainText("Thumbnail cache");
 
   const errorsCard = page.getByTestId("admin-health-errors-card");
   await expect(
-    errorsCard.getByRole("heading", { name: "Last errors" }),
+    errorsCard.getByRole("heading", { level: 3, name: "Last errors" }),
   ).toBeVisible();
   await expect(
     page
@@ -228,12 +233,61 @@ test("live-updates index stats and the worker queue after a poll tick, without n
   await expect(kvValue(indexCard, "Books indexed")).toHaveText("47");
   const ghostedWarning = page.getByTestId("admin-health-ghosted-warning");
   await expect(ghostedWarning).toBeVisible();
-  await expect(ghostedWarning).toContainText("3 book(s) have no file on disk");
+  await expect(ghostedWarning).toContainText("3 books have no file on disk");
 
   const workerRow = page.getByTestId("admin-health-worker-row");
   await expect(workerRow).toBeVisible();
   await expect(workerRow).toContainText("Scanning library");
 
   // No navigation happened — the update landed on the same page.
-  await expect(page).toHaveURL(new RegExp(`${ADMIN_HEALTH}$`));
+  await expect(page).toHaveURL(/\/admin\?section=health$/);
+});
+
+test("links a captured error to its book and names its file", async ({
+  page,
+}) => {
+  await mockAdminHealth(page, {
+    index: {
+      ebook_library_path: "/data/ebooks",
+      audiobook_library_path: null,
+      book_count: 1,
+      author_count: 1,
+      series_count: 0,
+      ghosted_book_count: 0,
+    },
+    worker_queue: [],
+    fts: { books_rows: 1, fts_rows: 1, in_sync: true },
+    storage: BASE_STORAGE,
+    last_errors: [
+      {
+        timestamp: 1_700_000_000,
+        target: "omnibus::scanner",
+        message: "unreadable epub",
+        book_uuid: "00000000-0000-4000-8000-000000000001",
+        file: "/data/ebooks/broken.epub",
+      },
+    ],
+  });
+
+  const firstPoll = waitForAdminHealthPoll(page);
+  await gotoReady(page, ADMIN_HEALTH);
+  await firstPoll;
+
+  const row = page.getByTestId("admin-health-errors-row");
+  await expect(row.getByRole("link", { name: "Open book" })).toHaveAttribute(
+    "href",
+    "/books/00000000-0000-4000-8000-000000000001",
+  );
+  await expect(row.getByTestId("admin-health-errors-file")).toHaveText(
+    "/data/ebooks/broken.epub",
+  );
+});
+
+test("the legacy /admin/health route redirects into Administration › Health", async ({
+  page,
+}) => {
+  await gotoReady(page, "/admin/health");
+
+  await expect(page).toHaveURL(/\/admin\?section=health$/);
+  await expect(page.getByTestId("admin-health-page")).toBeVisible();
 });

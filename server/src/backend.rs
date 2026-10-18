@@ -48,6 +48,7 @@ mod process_meta;
 mod profile;
 mod progress;
 mod ratings;
+mod react_ui;
 mod read_status;
 mod routes;
 mod scan;
@@ -69,6 +70,7 @@ use process_meta::read_app_version;
 pub use process_meta::{
     app_version, build_id, init_app_version, init_build_id, init_repo_root, repo_root,
 };
+pub use react_ui::{react_dir, react_ui_router, REACT_DIR_ENV};
 
 /// Per-IP rate-limit budget for `/api/search/*` and the `/api/rpc/search-*` server
 /// functions, separate from the auth limiter. Each request runs four FTS5 queries plus
@@ -251,6 +253,9 @@ pub struct AppState {
     remote_image_config: Arc<db::author_photos::RemoteImageConfig>,
     /// Whether the per-IP limiters built from this state enforce their budgets.
     rate_limits: RateLimits,
+    /// Feeds the Kobo URL origin only. CSRF still reads `auth::csrf::allowed_origins()`.
+    /// An `Arc` keeps the per-request clone cheap.
+    public_origins: Arc<[String]>,
 }
 
 impl AppState {
@@ -262,6 +267,7 @@ impl AppState {
             worker,
             remote_image_config: Arc::new(db::author_photos::RemoteImageConfig::default()),
             rate_limits: RateLimits::default(),
+            public_origins: Arc::default(),
         }
     }
 
@@ -286,6 +292,14 @@ impl AppState {
         Self {
             remote_image_config: Arc::new(cfg),
             ..Self::new(pool)
+        }
+    }
+
+    /// Replace the public origins; `new` defaults to none.
+    pub fn with_public_origins(self, origins: &[String]) -> Self {
+        Self {
+            public_origins: origins.into(),
+            ..self
         }
     }
 

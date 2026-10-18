@@ -1,0 +1,16 @@
+.disc-page {
+  padding-bottom: 60px;
+}
+.disc-hero-title {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: clamp(50px, 6vw, 90px);
+  --lh: 0.92;
+  line-height: var(--lh);
+  letter-spacing: -0.005em;
+  margin: 8px 0 0;
+  color: var(--ink-0);
+}
+.disc-body {
+  padding: 32px 0 0;
+}

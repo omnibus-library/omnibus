@@ -1,0 +1,45 @@
+.unported {
+  display: grid;
+  gap: 14px;
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 12vh var(--pad);
+}
+
+.unported-title {
+  font-family: var(--serif);
+  font-size: 48px;
+  font-weight: 500;
+  line-height: 1.05;
+  color: var(--ink-0);
+}
+
+.unported-params {
+  display: grid;
+  gap: 6px;
+}
+
+.unported-params div {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+}
+
+.unported-params dd {
+  font-family: var(--mono);
+  color: var(--ink-1);
+}
+
+.unported-source {
+  color: var(--ink-2);
+}
+
+.unported-source code {
+  font-family: var(--mono);
+  color: var(--ink-1);
+}
+
+.unported-actions {
+  display: flex;
+  gap: 10px;
+}

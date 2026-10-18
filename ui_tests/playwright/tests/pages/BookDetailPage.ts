@@ -9,6 +9,7 @@ import { RatingComponent } from "../components/RatingComponent";
 import { ReadStatusControlComponent } from "../components/ReadStatusControlComponent";
 import { SavedPassageCardComponent } from "../components/SavedPassageCardComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
+import { accountUrls } from "../contracts/account";
 import { kindleUrls } from "../contracts/kindle";
 import { physicalUrls } from "../contracts/physical";
 import type { KindleSendStatus } from "../data/kindle";
@@ -49,6 +50,9 @@ export class BookDetailPage extends BasePage {
   readonly heroCover: Locator;
   readonly sectionsNav: Locator;
   readonly sectionDots: Locator;
+  readonly scrollStopsToggleButton: Locator;
+  readonly railScrollStopsToggleButton: Locator;
+  readonly scrollStopsErrorMessage: Locator;
   readonly flowScroller: Locator;
   readonly snapScroller: Locator;
   readonly flowSections: Locator;
@@ -65,6 +69,9 @@ export class BookDetailPage extends BasePage {
   readonly savedPassageCards: Locator;
   readonly savedPassagesEmptyMessage: Locator;
   readonly showMorePassagesButton: Locator;
+  readonly newJournalEntryButton: Locator;
+  readonly journalComposer: Locator;
+  readonly cancelJournalEntryButton: Locator;
   readonly moreStop: Locator;
   readonly fromSameHandHeading: Locator;
   readonly fromSameHandRow: Locator;
@@ -110,6 +117,12 @@ export class BookDetailPage extends BasePage {
     this.heroCover = this.heroCoverFrame.getByTestId("cover");
     this.sectionsNav = page.getByRole("navigation", { name: "Page sections" });
     this.sectionDots = this.sectionsNav.getByRole("button");
+    // A test asserts the toggle absent from the rail, so it keeps its test id.
+    this.scrollStopsToggleButton = page.getByTestId("bdmq-mode-toggle");
+    this.railScrollStopsToggleButton =
+      this.sectionsNav.getByTestId("bdmq-mode-toggle");
+    // Other alerts share the page, so the toggle's is found by test id.
+    this.scrollStopsErrorMessage = page.getByTestId("bdmq-mode-error");
     // The scrollers and their sections carry no role, and the `bdmq-sec-{i}`
     // ids render in both modes, so the modes are told apart by class.
     this.flowScroller = page.locator("#bdmq-flow");
@@ -132,6 +145,14 @@ export class BookDetailPage extends BasePage {
     this.savedPassageCards = page.getByTestId("highlight-card");
     this.savedPassagesEmptyMessage = page.getByTestId("highlights-empty");
     this.showMorePassagesButton = page.getByTestId("highlights-show-more");
+    this.newJournalEntryButton = page.getByRole("button", {
+      name: "New entry",
+    });
+    this.journalComposer = page.getByTestId("journal-composer");
+    this.cancelJournalEntryButton = this.journalComposer.getByRole("button", {
+      name: "Cancel",
+      exact: true,
+    });
     this.moreStop = page.getByTestId("bdmq-more");
     this.fromSameHandHeading = page.getByRole("heading", {
       name: "From the same hand",
@@ -211,6 +232,13 @@ export class BookDetailPage extends BasePage {
     return this.sectionsNav.getByRole("button", {
       name: new RegExp(`${section}$`, "i"),
     });
+  }
+
+  /** The panel holding `section`, in whichever reading the page is in. */
+  sectionPanel(section: MarqueeSection): Locator {
+    return this.page.getByTestId(
+      `bdmq-sec-${MARQUEE_SECTIONS.indexOf(section)}`,
+    );
   }
 
   /** The copy card a test filed, picked out by its unique note. */
@@ -324,11 +352,57 @@ export class BookDetailPage extends BasePage {
     }, top);
   }
 
+  /** Scrolls the continuous flow until `section` starts at its top. */
+  async scrollFlowToSection(section: MarqueeSection): Promise<void> {
+    const top = await this.sectionPanel(section).evaluate(
+      (el: HTMLElement) => el.offsetTop,
+    );
+    await this.scrollFlowTo(top);
+  }
+
   /** Scrolls the snap marquee to the screen holding `section`. */
   async scrollMarqueeToStop(section: MarqueeSection): Promise<void> {
     await this.snapScroller.evaluate((el, index) => {
       el.scrollTop = index * el.clientHeight;
     }, MARQUEE_SECTIONS.indexOf(section));
+  }
+
+  /** Flips the stage's scroll stops toggle and waits for the save. */
+  async toggleScrollStops(): Promise<void> {
+    const saved = this.page.waitForResponse(isPostTo(accountUrls.scrollStops));
+    await this.scrollStopsToggleButton.click();
+    await saved;
+  }
+
+  /** Scrolls the flow until the new journal entry sits level with the rail. */
+  async alignNewJournalEntryWithRail(): Promise<void> {
+    const [entry, rail] = await Promise.all([
+      this.newJournalEntryButton.boundingBox(),
+      this.sectionsNav.boundingBox(),
+    ]);
+    if (!entry || !rail) {
+      throw new Error("the new journal entry and the dot rail must both show");
+    }
+    const offset = entry.y + entry.height / 2 - (rail.y + rail.height / 2);
+    await this.flowScroller.evaluate((el, by) => {
+      el.scrollTop += by;
+    }, offset);
+  }
+
+  /**
+   * Clicks the new journal entry 4px from its rail-side end with a real
+   * pointer, since `click()` would retry around anything covering the spot.
+   */
+  async openJournalComposerBesideRail(): Promise<void> {
+    const box = await this.newJournalEntryButton.boundingBox();
+    if (!box) {
+      throw new Error("the new journal entry must show");
+    }
+    await this.page.mouse.click(box.x + box.width - 4, box.y + box.height / 2);
+  }
+
+  async cancelJournalEntry(): Promise<void> {
+    await this.cancelJournalEntryButton.click();
   }
 
   async backToBook(): Promise<void> {
@@ -380,6 +454,23 @@ export class BookDetailPage extends BasePage {
   /** The cover's inline transform, which the scroll glue rewrites as it runs. */
   async coverTransform(): Promise<string> {
     return this.heroCoverFrame.evaluate((el) => el.style.transform);
+  }
+
+  /** The scroll stops toggle's bottom edge and the dot rail's top edge, in px. */
+  async toggleAndRailEdges(): Promise<{
+    toggleBottom: number;
+    railTop: number;
+  }> {
+    const [toggle, rail] = await Promise.all([
+      this.scrollStopsToggleButton.boundingBox(),
+      this.sectionsNav.boundingBox(),
+    ]);
+    if (!toggle || !rail) {
+      throw new Error(
+        "the scroll stops toggle and the dot rail must both show",
+      );
+    }
+    return { toggleBottom: toggle.y + toggle.height, railTop: rail.y };
   }
 
   /** Checks the page is showing the book `bookUuid`, not just any book. */

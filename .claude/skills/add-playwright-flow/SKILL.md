@@ -27,40 +27,40 @@ import { expect, test } from "../fixtures/pageFixtures";
 
 ## 2. Add the page objects the flow needs
 
-Extend an existing page or component before adding one. `/settings` is the
-one `SettingsPage`, so a flow on its library paths form adds members to that
-class and reaches the form with `goto("library")`:
+Extend an existing page or component before adding one. A new page extends
+`BasePage`, and its fixture goes in `fixtures/pageFixtures.ts`:
 
 ```ts
-export class SettingsPage extends BasePage {
-  // …the members it already has
+export class LibrarySourcesPage extends BasePage {
+  protected readonly urlPattern = /\/admin\?section=sources$/;
 
-  readonly saveLibraryButton: Locator;
-  readonly libraryStatus: Locator;
+  readonly topNav: TopNavComponent;
+
+  readonly saveButton: Locator;
+  readonly statusMessage: Locator;
 
   constructor(page: Page) {
-    // …
-    // Scoped, because the page has other Save buttons.
-    this.saveLibraryButton = page
-      .locator("#settings-form")
-      .getByRole("button", { name: "Save" });
-    this.libraryStatus = page.getByTestId("settings-status");
+    super(page);
+    this.topNav = new TopNavComponent(page);
+    this.saveButton = page.getByRole("button", { name: "Save library settings" });
+    this.statusMessage = page.getByRole("status");
   }
 
-  async goto(section: "account" | "library"): Promise<void> {
-    await this.openAndSettle(`/settings?section=${section}`);
+  protected get readyLocator(): Locator {
+    return this.saveButton;
   }
 
-  async saveLibrary(): Promise<void> {
+  async goto(): Promise<void> {
+    await this.open("/admin?section=sources");
+  }
+
+  async save(): Promise<void> {
     const saved = this.page.waitForResponse(isPostTo(/\/api\/rpc\/settings$/));
-    await this.saveLibraryButton.click();
+    await this.saveButton.click();
     await saved;
   }
 }
 ```
-
-A page with no object yet extends `BasePage`, and its fixture goes in
-`fixtures/pageFixtures.ts`.
 
 ## 3. Write the layout test
 
@@ -68,15 +68,15 @@ One per spec, first in the file, with no user actions: open the page, then
 check its URL, the shared nav and the page's key elements.
 
 ```ts
-test("show the library settings layout", async ({ settingsPage }) => {
-  await test.step("open the library section", async () => {
-    await settingsPage.goto("library");
+test("show the library sources layout", async ({ librarySourcesPage }) => {
+  await test.step("open the library sources", async () => {
+    await librarySourcesPage.goto();
   });
 
   await test.step("check the page and its nav", async () => {
-    await settingsPage.assertDisplayed();
-    await settingsPage.topNav.assertDisplayed();
-    await expect(settingsPage.saveLibraryButton).toBeVisible();
+    await librarySourcesPage.assertDisplayed();
+    await librarySourcesPage.topNav.assertDisplayed();
+    await expect(librarySourcesPage.saveButton).toBeVisible();
   });
 });
 ```
@@ -87,17 +87,15 @@ Happy path and error path each get their own test, and each phase is a
 `test.step`:
 
 ```ts
-test.describe("library settings", () => {
-  test("save the library paths", async ({ settingsPage, expectMutation }) => {
-    await test.step("open the library section", async () => {
-      await settingsPage.goto("library");
+test.describe("library sources", () => {
+  test("save the library paths", async ({ librarySourcesPage, expectMutation }) => {
+    await test.step("open the library sources", async () => {
+      await librarySourcesPage.goto();
     });
 
     await test.step("save the form", async () => {
-      await expectMutation(settings.save(paths), () =>
-        settingsPage.saveLibrary(),
-      );
-      await expect(settingsPage.libraryStatus).toHaveText("Settings saved.");
+      await expectMutation(settings.save(paths), () => librarySourcesPage.save());
+      await expect(librarySourcesPage.statusMessage).toHaveText("Library settings saved.");
     });
   });
 });

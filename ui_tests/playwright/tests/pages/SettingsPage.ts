@@ -17,7 +17,8 @@ export class SettingsPage extends BasePage {
     this.topNav = new TopNavComponent(page);
     this.titleHeading = page.getByRole("heading", { level: 1 });
     this.scrollStopsSwitch = page.getByRole("switch", {
-      name: "Use book details scroll stops",
+      name: "Scroll stops",
+      exact: true,
     });
   }
 
@@ -25,7 +26,7 @@ export class SettingsPage extends BasePage {
     return this.titleHeading;
   }
 
-  async goto(section: "account"): Promise<void> {
+  async goto(section: "preferences"): Promise<void> {
     await this.openAndSettle(`/settings?section=${section}`);
   }
 

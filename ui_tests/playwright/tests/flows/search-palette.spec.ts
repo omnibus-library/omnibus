@@ -121,6 +121,66 @@ test("input is focused after Cmd+K so typing works immediately", async ({
   await expect(page.getByTestId("sp-input")).toHaveValue("hello");
 });
 
+// ── Settings (matched in the browser, no library needed) ──────────────
+
+test.describe("settings results", () => {
+  test("a matching setting shows before the library answers and opens its section", async ({
+    page,
+  }) => {
+    await gotoReady(page, "/");
+    // Hold the library search open. Settings match in the browser, so they
+    // must not wait on it.
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/rpc/search-palette", async (route) => {
+      await held;
+      await route.continue();
+    });
+
+    await page.getByTestId("search-trigger").click();
+    await page.getByTestId("sp-input").fill("kobo");
+
+    const row = page.getByTestId("sp-setting-row");
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText("Kobo devices");
+    await expect(row).toContainText("Settings \u203A Devices");
+    await expect(page.getByTestId("sp-result-count")).toHaveCount(0);
+
+    await row.click();
+    await expect(page).toHaveURL(/\/settings\?section=devices$/);
+    await expect(page.getByTestId("sp-panel")).toHaveCount(0);
+
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  });
+
+  test("arrow keys reach a server setting and Enter opens it", async ({
+    page,
+  }) => {
+    await gotoReady(page, "/");
+    await page.getByTestId("search-trigger").click();
+    await page.getByTestId("sp-input").fill("smtp");
+
+    // The count includes the setting, so a query only a setting answers
+    // never reads as "0 results". Waiting on it also lets the library's
+    // answer land before the arrow press, which would otherwise reset it.
+    await expect(page.getByTestId("sp-result-count")).toContainText(
+      /^1 result /,
+    );
+    const row = page.getByTestId("sp-setting-row");
+    await expect(row).toContainText("Email delivery (SMTP)");
+    await expect(row).toContainText("Administration \u203A Integrations");
+
+    // Settings list last, so the first Up lands on one.
+    await page.keyboard.press("ArrowUp");
+    await expect(row).toHaveClass(/selected/);
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/admin\?section=integrations$/);
+  });
+});
+
 // ── Seeded-data tests (books, authors, series, tags) ──────────────────
 
 test.describe("with seeded library", () => {

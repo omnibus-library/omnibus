@@ -1,5 +1,5 @@
-// Library cleanup (#966): the Settings "Library cleanup" section and the
-// `/settings/cleanup/:kind` review page.
+// Library cleanup: Administration › Cleanup and the `/admin/cleanup/:kind`
+// review page.
 //
 // The layout test drives the real endpoints — the seeded admin session already
 // has access — and arrives at the review page the way a user does, through the
@@ -14,12 +14,13 @@
 
 import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expectMutation, recordRequests } from "../utils/api";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
-const SETTINGS_CLEANUP = "/settings?section=cleanup";
+const ADMIN_CLEANUP = "/admin?section=cleanup";
 const QUEUE_RPC = "**/api/rpc/cleanup/queue";
 const DECIDE_RPC = "**/api/rpc/cleanup/decide";
+const UNDO_RPC = "**/api/rpc/cleanup/undo";
 
 interface SuggestionCard {
   id: number;
@@ -74,9 +75,9 @@ async function mockQueue(page: Page, cards: SuggestionCard[]): Promise<void> {
   });
 }
 
-/** Open one kind's review queue through the Settings section's Review link. */
+/** Open one kind's review queue through the Cleanup section's Review link. */
 async function openReview(page: Page, kind: string): Promise<void> {
-  await gotoReady(page, SETTINGS_CLEANUP);
+  await gotoReady(page, ADMIN_CLEANUP);
   await expectMutation(
     page,
     {
@@ -90,9 +91,9 @@ async function openReview(page: Page, kind: string): Promise<void> {
   await expect(page.getByTestId("cleanup-review")).toBeVisible();
 }
 
-/** Open the author review queue through the Settings section's Review link. */
+/** Open the author review queue through the Cleanup section's Review link. */
 async function openAuthorReview(page: Page): Promise<void> {
-  await gotoReady(page, SETTINGS_CLEANUP);
+  await gotoReady(page, ADMIN_CLEANUP);
   await expectMutation(
     page,
     {
@@ -112,12 +113,12 @@ test("renders the library cleanup section and the review layout", async ({
   await expectMutation(
     page,
     { method: "POST", url: "/api/rpc/cleanup/counts", expectedStatus: 200 },
-    async () => gotoReady(page, SETTINGS_CLEANUP),
+    async () => gotoReady(page, ADMIN_CLEANUP),
   );
 
   const card = page.getByTestId("cleanup-card");
   await expect(
-    card.getByRole("heading", { name: "Library cleanup" }),
+    card.getByRole("heading", { level: 3, name: "Suggested fixes" }),
   ).toBeVisible();
   await expect(page.getByTestId("cleanup-kinds")).toBeVisible();
   for (const kind of ["author", "series", "tag", "book_title"]) {
@@ -146,7 +147,7 @@ test("renders the library cleanup section and the review layout", async ({
   await expect(
     page.getByRole("heading", { level: 1, name: "Review authors" }),
   ).toBeVisible();
-  // The redesigned frame: breadcrumb back to Settings, the kind chips, and
+  // The redesigned frame: breadcrumb back to Administration, the kind chips, and
   // the decide bar's hotkey legend.
   await expect(page.getByTestId("cleanup-kindline")).toBeVisible();
   for (const kind of ["author", "series", "tag", "book_title"]) {
@@ -161,8 +162,8 @@ test("renders the library cleanup section and the review layout", async ({
   ).toBeVisible();
 });
 
-test("queues a detection pass from the settings section", async ({ page }) => {
-  await gotoReady(page, SETTINGS_CLEANUP);
+test("queues a detection pass from the cleanup section", async ({ page }) => {
+  await gotoReady(page, ADMIN_CLEANUP);
 
   await expectMutation(
     page,
@@ -252,6 +253,58 @@ test("renders one card at a time and accepts it with the Y hotkey", async ({
 
   // The queue held one card, so the accepted card is the last one.
   await expect(page.getByTestId("cleanup-review-empty")).toBeVisible();
+});
+
+test("undoes the last accepted change and brings its card back", async ({
+  page,
+}) => {
+  await mockQueue(page, [AUTHOR_MERGE_CARD]);
+  // The canned card names no real row, so both writes are fulfilled here; the
+  // decide answers with the `cleanup_log` id the undo then names.
+  await page.route(DECIDE_RPC, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: "91",
+    });
+  });
+  await page.route(UNDO_RPC, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: "null",
+    });
+  });
+  await openAuthorReview(page);
+
+  await expectMutation(
+    page,
+    { method: "POST", url: "/api/rpc/cleanup/decide", expectedStatus: 200 },
+    async () => page.getByRole("button", { name: "Accept (Y)" }).click(),
+  );
+  await expect(page.getByTestId("cleanup-undo-bar")).toContainText(
+    "Merged into “Mary Shelley”.",
+  );
+
+  const recounts = recordRequests(page, "/api/rpc/cleanup/counts");
+  await expectMutation(
+    page,
+    {
+      method: "POST",
+      url: "/api/rpc/cleanup/undo",
+      expectedBody: { log_id: 91 },
+      expectedStatus: 200,
+    },
+    async () => page.getByTestId("cleanup-undo").click(),
+  );
+
+  await expect(page.getByTestId("cleanup-undone")).toBeVisible();
+  // The reopened suggestion counts again, so the chips are re-read.
+  await expect.poll(() => recounts.length).toBeGreaterThan(0);
+  // Undo reopens the suggestion, so the refetched queue offers it again.
+  await expect(page.getByTestId("cleanup-card-proposed")).toHaveText(
+    "Mary Shelley",
+  );
 });
 
 test("rejects a card with the Reject button", async ({ page }) => {

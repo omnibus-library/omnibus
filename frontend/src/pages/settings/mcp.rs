@@ -8,7 +8,8 @@ use dioxus::prelude::*;
 
 use crate::data;
 
-use super::api_tokens::{copy_to_clipboard, use_instance_origin};
+use super::api_tokens::use_instance_origin;
+use crate::components::clipboard::CopyButton;
 
 /// Card body: current state loaded on mount (admins only), one
 /// enable/disable switch, and the copyable endpoint URL.
@@ -83,7 +84,6 @@ pub fn McpToggleCard() -> Element {
         Some(false) => "/mcp answers 404 until this is on. Instance-wide, and off by default.",
     };
     let endpoint = format!("{}/mcp", origin());
-    let copy_endpoint = endpoint.clone();
     // Unknown is its own look — the knob waits at centre — never "off".
     let (track_class, state_class) = match enabled() {
         None => ("tkx-track ld-toggle-unknown", "tkx-switch-state ld-sheen"),
@@ -120,13 +120,12 @@ pub fn McpToggleCard() -> Element {
             }
             p { class: "tkx-mcp-note", "{note}" }
             div { class: "tkx-copyrow",
-                div { class: "tkx-copyfield", "data-testid": "mcp-endpoint-url", "{endpoint}" }
-                button {
-                    r#type: "button",
+                div { class: "tkx-copyfield", "data-testid": "mcp-endpoint-url", translate: "no", "{endpoint}" }
+                CopyButton {
+                    text: endpoint.clone(),
+                    label: "Copy URL",
+                    testid: "mcp-endpoint-copy",
                     class: "btn ghost",
-                    "data-testid": "mcp-endpoint-copy",
-                    onclick: move |_| copy_to_clipboard(&copy_endpoint),
-                    "Copy URL"
                 }
             }
             if let Some(m) = msg() {

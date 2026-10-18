@@ -56,15 +56,21 @@
     if (top) top.classList.toggle('on', scroller.scrollTop > 400);
   }
 
-  function goTo(i) {
+  // Section 0 is the book itself and carries no label, so it scrolls to a
+  // true zero rather than to its own offset minus the label's gap.
+  function sectionTop(i) {
     var el = secs[i];
-    if (!el) return;
-    // Section 0 is the book itself and carries no label, so it scrolls to a
-    // true zero rather than to its own offset minus the label's gap.
-    scroller.scrollTo({
-      top: i === 0 ? 0 : Math.max(0, el.offsetTop - 30),
-      behavior: reduced ? 'auto' : 'smooth',
-    });
+    return i === 0 || !el ? 0 : Math.max(0, el.offsetTop - 30);
+  }
+
+  function goTo(i) {
+    scroller.scrollTo({ top: sectionTop(i), behavior: reduced ? 'auto' : 'smooth' });
+  }
+
+  // The section the rail still marks from the reading this one replaced.
+  function marked() {
+    for (var i = 0; i < dots.length; i++) if (dots[i].classList.contains('on')) return i;
+    return 0;
   }
 
   function onResize() {
@@ -97,8 +103,10 @@
   };
 
   measureTopbar();
-  // A fresh book always opens at the top — without this, navigating from one
-  // book's journal section to another book keeps the old scroll offset.
-  scroller.scrollTo({ top: 0, behavior: 'auto' });
+  // A fresh book opens at the top, not the last book's offset; a flip from the
+  // snapped reading (the stage sets the flag) keeps the reader's section.
+  var keep = window.__omnibusMarqueeKeep ? marked() : 0;
+  window.__omnibusMarqueeKeep = false;
+  scroller.scrollTo({ top: sectionTop(keep), behavior: 'auto' });
   paint();
 })();

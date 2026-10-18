@@ -1,3 +1,6 @@
+---
+paths: "ui_tests/**, test_data/**, db/tests/fixture_epubs.rs, .github/workflows/e2e.yml, omnibus-ios/omnibusUITests/**, scripts/explore/driver/package.json, flake.nix"
+---
 # 04 — Playwright E2E conventions
 
 These rules exist so every flow is tested the same way. Don't diverge without updating this file first.
@@ -40,7 +43,7 @@ Never use XPath. If you want XPath, the SSR markup probably needs a role, label,
 
 Per-surface gotchas — which selector each screen actually answers to, and
 the ones that look right and match nothing — live in
-[04a-playwright-surfaces.md](04a-playwright-surfaces.md) (the filter's: [04c](04c-playwright-filters.md)).
+[04a-playwright-surfaces.md](04a-playwright-surfaces.md) (the filter's: [04c](04c-playwright-filters.md); the stats page's: [04e](04e-playwright-stats.md)).
 Read it before writing a selector against the landing grid/table, the continue
 fan, the book detail panel, or the stats page.
 
@@ -136,16 +139,16 @@ Intercept the mutating route and `route.fulfill({ status: 500, ... })` before tr
 
 ```ts
 test("saves library paths and shows a success status", async ({ page }) => {
-  await page.goto("/settings");
-  await page.getByLabel("Ebook Library Path").fill(path);
+  await page.goto("/admin?section=sources");
+  await page.getByLabel("Ebook library path").fill(path);
 
   await expectMutation(
     page,
-    { method: "POST", url: "/api/settings", expectedBody: { ... }, expectedStatus: 200 },
-    async () => page.getByRole("button", { name: "Save" }).click(),
+    { method: "POST", url: "/api/rpc/settings", expectedBody: { ... }, expectedStatus: 200 },
+    async () => page.getByRole("button", { name: "Save library settings" }).click(),
   );
 
-  await expect(page.getByRole("status")).toHaveText("Settings saved.");
+  await expect(page.getByTestId("settings-status")).toHaveText("Library settings saved.");
 });
 ```
 

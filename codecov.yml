@@ -16,7 +16,8 @@ coverage:
         informational: true
 
 # `unit` carries the Rust suite's upload; `ios` carries the omnibus-ios
-# unit suite (ios-tests.yml). Leaves room for an `e2e` flag later without
+# unit suite (ios-tests.yml); `frontend-js` carries the React client's unit
+# and story tests (frontend-js.yml). Leaves room for an `e2e` flag later without
 # reshaping the project number.
 #
 # Both set `carryforward` because both producing jobs are path-gated: rust.yml
@@ -41,6 +42,10 @@ flags:
     carryforward: true
     paths:
       - omnibus-ios/
+  frontend-js:
+    carryforward: true
+    paths:
+      - frontend-js/
 
 # PR comment: show the overall + per-flag diff, and don't nag when there's
 # nothing to say.

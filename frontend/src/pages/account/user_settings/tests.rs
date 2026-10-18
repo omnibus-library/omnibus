@@ -1,55 +1,151 @@
-//! Tests for each `UserSetting`'s status line, plus the settings card's SSR
-//! render while the viewer is still unresolved.
+//! Tests for the preference switches: what each one writes back onto the
+//! cached viewer, the inline autosave status, and a refused save's revert.
+
+use std::cell::Cell;
+
+use crate::test_support::{provide_current_user, settle, test_user};
 
 use super::*;
 
+type ViewerSlot = Signal<Option<Option<UserSummary>>>;
+
+thread_local! {
+    static HOST: Cell<Option<(ViewerSlot, Signal<bool>)>> = const { Cell::new(None) };
+    static SECOND_SAVE_SENT: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Flips Share stats once on mount, through a save the server refuses.
+#[component]
+fn RefusedFlip() -> Element {
+    let viewer = crate::use_current_user().0;
+    let state = use_signal(|| SaveState::Idle);
+    use_hook(move || {
+        flip_and_save(UserSetting::ShareStats, viewer, state, |_| async {
+            Err(data::DataError::Http {
+                status: 500,
+                body: String::new(),
+            })
+        })
+    });
+    rsx! {}
+}
+
+/// Flips Share stats once on mount, through a save that never answers.
+#[component]
+fn PendingFlip() -> Element {
+    let viewer = crate::use_current_user().0;
+    let state = use_signal(|| SaveState::Idle);
+    use_hook(move || {
+        flip_and_save(UserSetting::ShareStats, viewer, state, |_| {
+            std::future::pending::<Result<(), data::DataError>>()
+        })
+    });
+    rsx! {}
+}
+
+/// Flips Share stats again on mount, noting whether its save went out.
+#[component]
+fn SecondFlip() -> Element {
+    let viewer = crate::use_current_user().0;
+    let state = use_signal(|| SaveState::Idle);
+    use_hook(move || {
+        flip_and_save(UserSetting::ShareStats, viewer, state, |_| {
+            SECOND_SAVE_SENT.with(|sent| sent.set(true));
+            async { Ok(()) }
+        })
+    });
+    rsx! {}
+}
+
+/// Shows [`PendingFlip`], then [`SecondFlip`] in its place once the test says.
+#[component]
+fn RemountHost() -> Element {
+    provide_current_user(Some(Some(test_user(false, false))));
+    let viewer = crate::use_current_user().0;
+    let first = use_signal(|| true);
+    HOST.with(|host| host.set(Some((viewer, first))));
+    rsx! {
+        if first() {
+            PendingFlip {}
+        } else {
+            SecondFlip {}
+        }
+    }
+}
+
+/// Holds the viewer and shows [`RefusedFlip`] until the test hides it.
+#[component]
+fn SwitchHost() -> Element {
+    provide_current_user(Some(Some(test_user(false, false))));
+    let viewer = crate::use_current_user().0;
+    let shown = use_signal(|| true);
+    HOST.with(|host| host.set(Some((viewer, shown))));
+    rsx! {
+        if shown() {
+            RefusedFlip {}
+        }
+    }
+}
+
 #[test]
-fn user_setting_status_line_describes_scroll_stops() {
+fn user_setting_write_is_read_back_for_every_setting() {
+    for setting in [
+        UserSetting::StackSeries,
+        UserSetting::ScrollStops,
+        UserSetting::ShareStats,
+    ] {
+        let mut reader = test_user(false, false);
+        setting.write(&mut reader, true);
+        assert!(setting.read(&reader), "{setting:?}");
+        setting.write(&mut reader, false);
+        assert!(!setting.read(&reader), "{setting:?}");
+    }
+}
+
+#[test]
+fn save_state_text_says_nothing_until_a_save_starts() {
+    assert_eq!(save_state_text(SaveState::Idle), "");
+}
+
+#[test]
+fn save_state_text_confirms_a_save_that_landed() {
+    assert_eq!(save_state_text(SaveState::Saved), "Saved");
+}
+
+#[test]
+fn save_state_text_names_the_recovery_when_a_save_fails() {
     assert_eq!(
-        UserSetting::ScrollStops.status_line(None),
-        "Checking\u{2026}"
-    );
-    assert_eq!(
-        UserSetting::ScrollStops.status_line(Some(true)),
-        "Book details snap through one panel at a time."
-    );
-    assert_eq!(
-        UserSetting::ScrollStops.status_line(Some(false)),
-        "Book details scroll continuously, top to bottom."
+        save_state_text(SaveState::Failed),
+        "Couldn\u{2019}t save. Try again."
     );
 }
 
 #[test]
-fn user_setting_status_line_describes_share_stats() {
-    assert_eq!(
-        UserSetting::ShareStats.status_line(None),
-        "Checking\u{2026}"
-    );
-    assert_eq!(
-        UserSetting::ShareStats.status_line(Some(true)),
-        "Other readers on this server can see your stats page."
-    );
-    assert_eq!(
-        UserSetting::ShareStats.status_line(Some(false)),
-        "Only you can see your stats page."
-    );
+fn flip_and_save_puts_the_viewer_back_when_the_switch_unmounts_before_a_refusal() {
+    let mut dom = VirtualDom::new(SwitchHost);
+    dom.rebuild_in_place();
+    let (viewer, mut shown) = HOST.with(Cell::get).expect("host mounted");
+    let share_stats = |dom: &VirtualDom| {
+        dom.in_runtime(|| viewer.peek().clone().flatten().map(|user| user.share_stats))
+    };
+    assert_eq!(share_stats(&dom), Some(false), "the flip is optimistic");
+
+    dom.in_runtime(|| shown.set(false));
+    settle(&mut dom);
+
+    assert_eq!(share_stats(&dom), Some(true));
 }
 
-// `test_support`'s SSR renderer only exists on the `server` feature.
-#[cfg(feature = "server")]
-fn unresolved() -> Element {
-    crate::test_support::provide_current_user(None);
-    rsx! { UserSettingsCard {} }
-}
-
-#[cfg(feature = "server")]
 #[test]
-fn user_settings_card_renders_every_switch_unknown_until_the_viewer_resolves() {
-    let html = crate::test_support::render_in_vdom(unresolved);
-    assert!(html.contains("scroll-stops-toggle"), "{html}");
-    assert!(html.contains("share-stats-toggle"), "{html}");
-    assert_eq!(html.matches("disabled").count(), 2, "{html}");
-    assert_eq!(html.matches("ld-unknown").count(), 2, "{html}");
-    assert!(html.contains("Checking\u{2026}"), "{html}");
-    assert!(html.contains("ld-sheen"), "{html}");
+fn flip_and_save_waits_while_an_earlier_mount_still_has_its_save_out() {
+    let mut dom = VirtualDom::new(RemountHost);
+    dom.rebuild_in_place();
+    let (viewer, mut first) = HOST.with(Cell::get).expect("host mounted");
+
+    dom.in_runtime(|| first.set(false));
+    settle(&mut dom);
+
+    assert!(!SECOND_SAVE_SENT.with(Cell::get));
+    let shared = dom.in_runtime(|| viewer.peek().clone().flatten().map(|user| user.share_stats));
+    assert_eq!(shared, Some(false), "only the first flip landed");
 }

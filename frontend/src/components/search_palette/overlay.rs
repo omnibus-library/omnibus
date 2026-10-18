@@ -12,12 +12,13 @@ use dioxus_router::use_navigator;
 use omnibus_shared::PaletteResults;
 
 use super::keyboard::{make_keydown_handler, KeyboardContext};
-use super::model::{build_flat_items, plural, FlatItem};
+use super::model::{build_flat_items, keep_selection, plural, FlatItem};
 use super::results::SpResultsList;
 use super::PaletteOpen;
 use crate::components::glyphs::search_glyph;
 use crate::components::{Loading, LoadingKind, MarkSize, Ring};
 use crate::focus_after_paint::focus_after_paint;
+use crate::pages::{matching_settings, SettingsEntry};
 use crate::platform_sleep::async_sleep_ms;
 use crate::{data, use_server_url};
 
@@ -28,6 +29,7 @@ use crate::{data, use_server_url};
 /// server.
 fn build_search_dispatcher(
     server_url: String,
+    settings: Memo<Vec<&'static SettingsEntry>>,
     mut results: Signal<Option<PaletteResults>>,
     mut selected: Signal<usize>,
     mut loading: Signal<bool>,
@@ -52,7 +54,11 @@ fn build_search_dispatcher(
             errored.set(false);
             match data::search_palette(&url, &trimmed).await {
                 Ok(r) => {
-                    selected.set(0);
+                    let settings = settings.peek().clone();
+                    let before = build_flat_items(&results.peek(), &settings);
+                    let after = build_flat_items(&Some(r.clone()), &settings);
+                    let kept = keep_selection(&before, *selected.peek(), &after);
+                    selected.set(kept);
                     results.set(Some(r));
                 }
                 Err(_) => {
@@ -69,12 +75,14 @@ fn build_search_dispatcher(
 }
 
 /// `(total, duration_ms, has_results)` for the meta line, or `(0, 0, false)`
-/// before the first response lands.
-fn sp_result_summary(res: &Option<PaletteResults>) -> (usize, u64, bool) {
+/// before the first response lands. `settings` matches count toward the
+/// total, so a query only a setting answers never reads as "0 results".
+fn sp_result_summary(res: &Option<PaletteResults>, settings: usize) -> (usize, u64, bool) {
     let total = res
         .as_ref()
         .map(omnibus_shared::PaletteResults::total_count)
-        .unwrap_or(0);
+        .unwrap_or(0)
+        + settings;
     let duration = res.as_ref().map(|r| r.duration_ms).unwrap_or(0);
     (total, duration, res.is_some())
 }
@@ -103,6 +111,8 @@ fn sp_meta_and_error(has_results: bool, total: usize, duration: u64, is_errored:
 #[derive(Clone, Copy)]
 struct SpOverlayState {
     query: Signal<String>,
+    // Matched on the client from the live query, so they need no debounce.
+    settings: Memo<Vec<&'static SettingsEntry>>,
     results: Signal<Option<PaletteResults>>,
     selected: Signal<usize>,
     loading: Signal<bool>,
@@ -119,8 +129,11 @@ struct SpOverlayState {
 }
 
 fn use_sp_overlay_state() -> SpOverlayState {
+    let query = use_signal(String::new);
+    let is_admin = crate::use_is_admin();
     SpOverlayState {
-        query: use_signal(String::new),
+        query,
+        settings: use_memo(move || matching_settings(&query.read(), is_admin())),
         results: use_signal(|| Option::<PaletteResults>::None),
         selected: use_signal(|| 0_usize),
         loading: use_signal(|| false),
@@ -148,6 +161,7 @@ fn build_overlay_wiring(
 ) {
     let SpOverlayState {
         query,
+        settings,
         results,
         selected,
         loading,
@@ -157,7 +171,7 @@ fn build_overlay_wiring(
     } = state;
     let mut open_mut = open;
     let nav = use_navigator();
-    let flat_items = use_memo(move || build_flat_items(&results.read()));
+    let flat_items = use_memo(move || build_flat_items(&results.read(), &settings.read()));
 
     let close = move || {
         open_mut.0.set(false);
@@ -172,6 +186,7 @@ fn build_overlay_wiring(
     });
     let spawn_search = build_search_dispatcher(
         server_url,
+        state.settings,
         results,
         selected,
         loading,
@@ -189,6 +204,7 @@ pub(super) fn SpOverlay(open: PaletteOpen) -> Element {
     let state = use_sp_overlay_state();
     let SpOverlayState {
         mut query,
+        settings,
         results,
         mut selected,
         loading,
@@ -202,7 +218,7 @@ pub(super) fn SpOverlay(open: PaletteOpen) -> Element {
     let res = results.read();
     let is_loading = loading();
     let is_errored = errored();
-    let (total, duration, has_results) = sp_result_summary(&res);
+    let (total, duration, has_results) = sp_result_summary(&res, settings.read().len());
 
     rsx! {
         div {
@@ -247,6 +263,7 @@ pub(super) fn SpOverlay(open: PaletteOpen) -> Element {
                 // fresh query (it resets to 0 after each response).
                 SpResultsList {
                     results,
+                    settings,
                     flat_items,
                     selected,
                     has_navigated,
@@ -282,7 +299,7 @@ fn SpInputRow(query: Signal<String>, is_loading: bool, on_input: EventHandler<St
                 class: "sp-input",
                 "data-testid": "sp-input",
                 r#type: "text",
-                placeholder: "Search books, authors, series, tags…",
+                placeholder: "Search books, authors, series, tags, settings…",
                 autofocus: true,
                 // `autofocus` only fires on initial page load.
                 // `onmounted` programmatically focuses the input
@@ -450,7 +467,19 @@ fn SpFooter() -> Element {
 
 #[cfg(test)]
 mod tests {
-    use super::classify_prefocus_key;
+    use omnibus_shared::PaletteResults;
+
+    use super::{classify_prefocus_key, sp_result_summary};
+
+    #[test]
+    fn sp_result_summary_counts_matching_settings_toward_the_total() {
+        let none_from_the_server = Some(PaletteResults {
+            duration_ms: 12,
+            ..PaletteResults::default()
+        });
+
+        assert_eq!(sp_result_summary(&none_from_the_server, 2), (2, 12, true));
+    }
 
     #[test]
     fn classify_prefocus_key_appends_a_bare_printable_character() {
