@@ -1,7 +1,7 @@
 //! Integration tests for the top-level `/api/*` router (health, body limits, rate limiting).
 use axum::{
     body::{to_bytes, Body},
-    http::{header::AUTHORIZATION, Request, StatusCode},
+    http::{header::AUTHORIZATION, HeaderMap, HeaderValue, Request, StatusCode},
 };
 use tower::ServiceExt;
 
@@ -355,4 +355,18 @@ async fn api_book_upload_endpoints_never_return_429_when_rate_limits_are_disable
             i + 1
         );
     }
+}
+
+#[tokio::test]
+async fn request_origin_prefers_a_configured_origin_on_the_same_host() {
+    let (_app, state, _pool) = fixture().await;
+    let state = state.with_public_origins(&["https://omnibus.example.com".to_string()]);
+    // A TLS-terminating proxy that sends no X-Forwarded-Proto: the header scheme would be http.
+    let mut headers = HeaderMap::new();
+    headers.insert("host", HeaderValue::from_static("omnibus.example.com"));
+
+    assert_eq!(
+        state.request_origin(&headers),
+        "https://omnibus.example.com"
+    );
 }

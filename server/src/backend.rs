@@ -305,7 +305,18 @@ impl AppState {
     /// The origin (`scheme://host`) a request reached the server on, for URLs a
     /// client outside this process will open; `""` when no host is resolvable.
     pub fn request_origin(&self, headers: &HeaderMap) -> String {
-        kobo::origin_for(headers, &self.public_origins)
+        let origin = kobo::origin_for(headers, &self.public_origins);
+        // Behind a TLS proxy that sends no X-Forwarded-Proto the header scheme is a guess; a configured origin on the same host knows it.
+        let authority = origin.split_once("://").map_or("", |(_, a)| a);
+        let listed = |o: &&String| {
+            o.split_once("://")
+                .is_some_and(|(_, a)| a.eq_ignore_ascii_case(authority))
+        };
+        self.public_origins
+            .iter()
+            .find(listed)
+            .cloned()
+            .unwrap_or(origin)
     }
 
     /// SQLite connection pool used by every handler.
