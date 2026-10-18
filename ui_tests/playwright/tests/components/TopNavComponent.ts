@@ -1,7 +1,13 @@
 import type { Locator, Page } from "@playwright/test";
+import { authUrls } from "../contracts/auth";
+import { progressUrls } from "../contracts/progress";
+import type { RecentPoint } from "../data/recentProgress";
 import { expect } from "../fixtures/test";
 import { BaseComponent } from "./BaseComponent";
 import { SearchPaletteComponent } from "./SearchPaletteComponent";
+
+/** A theme the user menu's segmented control offers. */
+export type Theme = "dark" | "black" | "light";
 
 /** The primary navigation bar along the top of every web page. */
 export class TopNavComponent extends BaseComponent {
@@ -12,6 +18,19 @@ export class TopNavComponent extends BaseComponent {
   readonly userMenuPanel: Locator;
   readonly searchButton: Locator;
   readonly searchPalette: SearchPaletteComponent;
+  readonly breadcrumbNav: Locator;
+
+  readonly signOutButton: Locator;
+  readonly settingsLink: Locator;
+  readonly editLink: Locator;
+  readonly versionText: Locator;
+  readonly nowReadingLink: Locator;
+  readonly emptyProgressMessage: Locator;
+  readonly piranesiText: Locator;
+  readonly progressErrorMessage: Locator;
+  readonly notificationsText: Locator;
+  readonly accountProfileCard: Locator;
+  readonly themeRoot: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -25,6 +44,20 @@ export class TopNavComponent extends BaseComponent {
     this.userMenuPanel = page.getByTestId("user-menu-panel");
     this.searchButton = page.getByTestId("search-trigger");
     this.searchPalette = new SearchPaletteComponent(page, this.searchButton);
+    // The trail the bar replaced: top-level pages draw none.
+    this.breadcrumbNav = page.locator("nav.breadcrumb");
+
+    this.signOutButton = page.getByTestId("logout-button");
+    this.settingsLink = page.getByRole("link", { name: "Settings" });
+    this.editLink = page.getByRole("link", { name: "Edit" });
+    this.versionText = page.getByTestId("user-menu-version");
+    this.nowReadingLink = page.getByTestId("user-menu-now-reading-action");
+    this.emptyProgressMessage = page.getByText("Nothing in progress");
+    this.piranesiText = page.getByText("Piranesi");
+    this.progressErrorMessage = page.getByRole("alert");
+    this.notificationsText = this.userMenuPanel.getByText("Notifications");
+    this.accountProfileCard = page.getByTestId("account-profile-card");
+    this.themeRoot = page.locator("div.atrium").first();
   }
 
   async openCheckIn(): Promise<void> {
@@ -35,10 +68,87 @@ export class TopNavComponent extends BaseComponent {
     await this.userMenuButton.click();
   }
 
+  /** A link in the bar, by its label. */
+  navLink(name: "Authors" | "Series"): Locator {
+    return this.root.getByRole("link", { name });
+  }
+
+  /** A link inside the open user menu. */
+  userMenuLink(name: string): Locator {
+    return this.userMenuPanel.getByRole("link", { name });
+  }
+
+  /** A theme button in the open user menu. */
+  themeButton(theme: Theme): Locator {
+    return this.page.getByTestId(`theme-${theme}`);
+  }
+
+  /** Follows a nav link, an in-app transition rather than a reload. */
+  async open(name: "Authors" | "Series"): Promise<void> {
+    await this.navLink(name).click();
+    await this.page.waitForURL(new RegExp(`/${name.toLowerCase()}$`));
+  }
+
+  async openSettings(): Promise<void> {
+    await this.settingsLink.click();
+  }
+
+  async editProfile(): Promise<void> {
+    await this.editLink.click();
+  }
+
+  async signOut(): Promise<void> {
+    await this.signOutButton.click();
+  }
+
+  async selectTheme(theme: Theme): Promise<void> {
+    await this.themeButton(theme).click();
+  }
+
+  async closeUserMenuWithEscape(): Promise<void> {
+    // Pressed on the panel itself so it cannot race the focus the menu takes on mount.
+    await this.userMenuPanel.press("Escape");
+  }
+
+  async closeUserMenuByClickingOutside(): Promise<void> {
+    // A viewport point, not the scrim's box: the topbar's backdrop-filter shrinks a fixed scrim to the header strip.
+    await this.page.mouse.click(40, 500);
+  }
+
+  /** The theme the browser persisted, which the next load applies. */
+  storedTheme(): Promise<string | null> {
+    return this.page.evaluate(() => window.localStorage.getItem("omn.theme"));
+  }
+
+  /** Answers the menu's resume feed with `points` instead of the reader's own. */
+  async stubRecentProgress(points: RecentPoint[]): Promise<void> {
+    await this.page.route(progressUrls.recent, (route) =>
+      route.fulfill({ status: 200, json: points }),
+    );
+  }
+
+  /** Answers sign-out without ending the session, which every parallel test shares. */
+  async stubSignOut(): Promise<void> {
+    await this.page.route(authUrls.logout, (route) =>
+      route.fulfill({ status: 200, contentType: "text/plain", body: "" }),
+    );
+  }
+
   /** The nav check every layout test makes: the bar and its fixed entries. */
   async assertDisplayed(): Promise<void> {
     await expect(this.root).toBeVisible();
     await expect(this.libraryLink).toBeVisible();
     await expect(this.userMenuButton).toBeVisible();
+  }
+
+  /** Checks the Settings link opened the default section, with no bare `?` on the URL. */
+  async assertSettingsOpened(): Promise<void> {
+    await expect(this.page).toHaveURL(/\/settings$/);
+  }
+
+  /** Checks Edit opened Settings on the Account section, where the profile card is. */
+  async assertAccountSettingsOpened(): Promise<void> {
+    await expect(this.page).toHaveURL(/\/settings\?section=account$/);
+    await expect(this.accountProfileCard).toBeVisible();
   }
 }

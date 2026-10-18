@@ -2,7 +2,9 @@ import type { Locator, Page } from "@playwright/test";
 import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
 import { ContinueStackComponent } from "../components/ContinueStackComponent";
 import { LibraryTableComponent } from "../components/LibraryTableComponent";
+import { PageScrollComponent } from "../components/PageScrollComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
+import { ebooksUrls } from "../contracts/ebooks";
 import type { ShelfRef } from "../data/shelves";
 import { BasePage } from "./BasePage";
 
@@ -69,6 +71,35 @@ export class LibraryPage extends BasePage {
   // #endregion batch-H
 
   // #region batch-I: search, nav and discovery
+  readonly scroll = new PageScrollComponent(this.page);
+  readonly sortSelect = this.page.getByTestId("lib-sort-select");
+  readonly bookTiles = this.page.getByTestId(/^ebook-tile-/);
+  readonly firstBookTile = this.bookTiles.first();
+
+  /** The titles on the grid tiles, in the order they are painted. */
+  tileTitles(): Promise<string[]> {
+    return this.page.locator(".lib-tile-title").allTextContents();
+  }
+
+  async sortBy(option: string): Promise<void> {
+    await this.sortSelect.selectOption(option);
+  }
+
+  /** Opens the last tile, which a short viewport leaves at the bottom of the screen. */
+  async openLastBook(): Promise<void> {
+    await this.bookTiles.last().click();
+  }
+
+  /** Records the body of every page fetch the library makes, in order. */
+  recordPageFetches(): string[] {
+    const bodies: string[] = [];
+    this.page.on("request", (request) => {
+      if (request.method() === "POST" && ebooksUrls.page.test(request.url())) {
+        bodies.push(request.postData() ?? "");
+      }
+    });
+    return bodies;
+  }
   // #endregion batch-I
 
   // #region batch-J: audio and cross-format
