@@ -83,8 +83,9 @@ export class UsersSectionComponent extends BaseComponent {
     await this.registrationSwitch.check();
   }
 
+  // `uncheck()` re-reads the state after its click, racing the forced 500's revert.
   async blockRegistration(): Promise<void> {
-    await this.registrationSwitch.uncheck();
+    await this.registrationSwitch.click();
   }
 
   /** Holds each delete for `ms`, so the dialog is still busy mid-request. */

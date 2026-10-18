@@ -80,7 +80,9 @@ export class StatsDrillSheetComponent extends BaseComponent {
     await this.root.click({ position: { x: 4, y: 4 } });
   }
 
+  /** Presses Escape once the sheet holds focus, which is what routes the key to it. */
   async closeWithEscape(): Promise<void> {
+    await this.root.and(this.page.locator(":focus")).waitFor();
     await this.page.keyboard.press("Escape");
   }
 }
