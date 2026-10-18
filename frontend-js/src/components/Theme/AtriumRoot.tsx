@@ -1,9 +1,10 @@
 import { type ReactNode, useState } from "react";
 
-const THEMES = ["dark", "black", "light", "sepia"] as const;
-type Theme = (typeof THEMES)[number];
+export const THEMES = ["dark", "black", "light", "sepia"] as const;
+export type Theme = (typeof THEMES)[number];
 
-function isTheme(value: unknown): value is Theme {
+/** Whether a stored or chosen value names one of the four Atrium themes. */
+export function isTheme(value: unknown): value is Theme {
   return THEMES.some((theme) => theme === value);
 }
 

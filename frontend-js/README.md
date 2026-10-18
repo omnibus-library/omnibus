@@ -12,12 +12,12 @@ from `GET /api/ebooks`, thumbnails from `/api/thumbs`), and book detail.
 | Path | Holds |
 |---|---|
 | `src/styles/` | `theme.css` (tokens, the four themes, the `.atrium` root) and `base.css` |
-| `src/components/<Name>/` | shared building blocks: `<Name>.tsx` beside its `.css`, `.stories.tsx` and `.test.tsx` |
+| `src/components/<Name>/` | shared building blocks: `<Name>.tsx` beside its `.css` and `.stories.tsx` |
 | `src/layouts/` | `RequireAuth` (the session gate) and `AppShell` (top bar + page) |
 | `src/pages/<Name>/` | one folder per route, its CSS beside it |
 | `src/api.ts` | every REST call, parsed at the boundary with zod |
 | `src/testing/` | `AppHarness` (a signed-in session and a router), sample books, the Vitest setup |
-| `.ladle/` | the story server's config and the provider every story renders inside |
+| `.storybook/` | Storybook's config, and the preview every story renders inside |
 | `tools/extract-atrium.cjs` | copies Atrium rules into component CSS when a screen is ported |
 
 A component imports its own CSS last, after its dependencies, so shared rules
@@ -62,23 +62,30 @@ OMNIBUS_PORT=3460 pnpm exec vite --port 3461
 ```
 
 `pnpm exec biome check .`, `pnpm exec tsc --noEmit`, `pnpm exec vitest run`,
-`pnpm exec ladle build` and `pnpm exec vite build` are the gates; the
-`Frontend JS` workflow runs all five when `frontend-js/` changes.
+`pnpm exec storybook build` and `pnpm exec vite build` are the gates; the
+`Frontend JS` workflow runs all of them when `frontend-js/` changes. The story
+tests need Chromium: the `.#e2e` shell provides it.
 
 ## Stories and tests
 
-- **Stories:** `pnpm exec ladle serve` opens every shared component's
-  `*.stories.tsx`, in the app's own styles and theme, at
-  `http://localhost:61000`. A story renders inside `AppHarness`, so components
-  that need a session or a router work as they do in the app.
-- **Component tests** sit beside each component and use Testing Library in
-  jsdom. They assert what a reader sees and can do: roles, labels, text.
-- **Pages** are tested through the real route table in `src/router.test.tsx`:
-  every page that renders without the API, the layout split, the guest
-  redirect and `/logs`. The library, book detail and the sign-in submit call
-  the API, so they need a local server behind them first.
-- **Every story is also rendered** by `src/stories.test.tsx`, so a story that
-  stops rendering fails the suite.
+- **Storybook:** `pnpm run storybook` opens every shared component's
+  `*.stories.tsx` at `http://localhost:6006`, in the app's own styles. The
+  toolbar switches between Atrium's four themes. Each story renders inside
+  `AppHarness`; a story sets `parameters.user` or `parameters.path` to change
+  who is signed in or where the router is.
+- **Component tests are the stories' `play` functions.** Each one drives the
+  rendered story (types, clicks) and asserts what a reader sees: roles, labels,
+  text. **Run tests** in Storybook's sidebar runs them all and marks each story,
+  and a story's Interactions panel replays its steps.
+- **Every story is a test,** `play` or not: the `storybook` Vitest project
+  renders each one in Chromium, so a story that stops rendering fails. The
+  a11y addon checks each story too; it reports without failing, because
+  Atrium's muted inks fail colour contrast in six stories (as in the Dioxus app).
+- **Unit tests** (`pnpm run test:unit`, jsdom) cover the API parsers,
+  formatting, `safeNext`, the theme root, and the real route table in
+  `src/router.test.tsx`: every page that renders without the API, the layout
+  split, the guest redirect and `/logs`. The library, book detail and the
+  sign-in submit call the API, so they need a local fake server first.
 
 ## What it showed
 

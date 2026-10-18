@@ -16,17 +16,11 @@
     "types": [
       "vite/client",
       "node"
-    ],
-    "paths": {
-      "@ladle/react": [
-        "./types/ladle-react.d.ts"
-      ]
-    }
+    ]
   },
   "include": [
     "src",
-    ".ladle",
-    "types",
+    ".storybook",
     "vite.config.ts"
   ]
 }

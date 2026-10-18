@@ -1,61 +1,108 @@
-import type { Story, StoryDefault } from "@ladle/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { type ComponentProps, useState } from "react";
+import { expect, fn } from "storybook/test";
 import { Field } from "./Field";
 
-export default { title: "Components / Field" } satisfies StoryDefault;
-
-type Look = Omit<ComponentProps<typeof Field>, "value" | "onChange">;
-
-function Live({ initial = "", ...look }: Look & { initial?: string }) {
-  const [value, setValue] = useState(initial);
+// Holds the value the way a form would, and still reports each change.
+function LiveField(props: ComponentProps<typeof Field>) {
+  const [value, setValue] = useState(props.value);
   return (
-    <div style={{ maxWidth: 360 }}>
-      <Field {...look} value={value} onChange={setValue} />
-    </div>
+    <Field
+      {...props}
+      value={value}
+      onChange={(next) => {
+        setValue(next);
+        props.onChange(next);
+      }}
+    />
   );
 }
 
-export const Neutral: Story = () => (
-  <Live id="story-username" label="Username" autoComplete="username" />
-);
+const meta = {
+  title: "Components/Field",
+  component: Field,
+  render: (args) => <LiveField {...args} />,
+  args: {
+    id: "story-username",
+    label: "Username",
+    autoComplete: "username",
+    value: "",
+    onChange: fn(),
+  },
+  decorators: [
+    (Story) => (
+      <div style={{ maxWidth: 360 }}>
+        <Story />
+      </div>
+    ),
+  ],
+} satisfies Meta<typeof Field>;
 
-export const Valid: Story = () => (
-  <Live
-    id="story-email"
-    label="Email"
-    type="email"
-    autoComplete="email"
-    initial="ada@example.com"
-    valid
-  />
-);
+export default meta;
+type Story = StoryObj<typeof meta>;
 
-export const Invalid: Story = () => (
-  <Live
-    id="story-password"
-    label="Password"
-    type="password"
-    autoComplete="new-password"
-    initial="short"
-    error="Use at least 10 characters."
-  />
-);
+export const Neutral: Story = {
+  play: async ({ canvas, userEvent, args }) => {
+    const input = canvas.getByLabelText("Username");
 
-export const WithHint: Story = () => (
-  <Live
-    id="story-kindle"
-    label="Kindle email"
-    autoComplete="email"
-    hint="Ends in @kindle.com"
-  />
-);
+    await userEvent.type(input, "ada");
 
-export const WithAction: Story = () => (
-  <Live
-    id="story-login-password"
-    label="Password"
-    type="password"
-    autoComplete="current-password"
-    action={<a href="#forgot">Forgot?</a>}
-  />
-);
+    await expect(input).toHaveValue("ada");
+    await expect(args.onChange).toHaveBeenLastCalledWith("ada");
+  },
+};
+
+export const Valid: Story = {
+  args: {
+    label: "Email",
+    type: "email",
+    value: "ada@example.com",
+    valid: true,
+  },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByText("✓")).toBeInTheDocument();
+  },
+};
+
+export const Invalid: Story = {
+  args: {
+    label: "Password",
+    type: "password",
+    value: "short",
+    error: "Use at least 10 characters.",
+  },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByRole("alert")).toHaveTextContent(
+      "Use at least 10 characters.",
+    );
+    await expect(canvas.getByLabelText("Password")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+  },
+};
+
+export const WithHint: Story = {
+  args: { label: "Kindle email", hint: "Ends in @kindle.com" },
+};
+
+export const ErrorHidesHint: Story = {
+  args: {
+    label: "Kindle email",
+    hint: "Ends in @kindle.com",
+    error: "Not an email address.",
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.queryByText("Ends in @kindle.com"),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const WithAction: Story = {
+  args: {
+    label: "Password",
+    type: "password",
+    action: <a href="#forgot">Forgot?</a>,
+  },
+};
