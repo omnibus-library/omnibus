@@ -1,7 +1,7 @@
 import type { Page, Request, Response } from "@playwright/test";
 import { PreHydrationComponent } from "../components/PreHydrationComponent";
 import { AddBooksPage } from "../pages/AddBooksPage";
-import { AdminHealthPage } from "../pages/AdminHealthPage";
+import { AdminPage } from "../pages/AdminPage";
 import { AuthorPage } from "../pages/AuthorPage";
 import { AuthorsIndexPage } from "../pages/AuthorsIndexPage";
 import { BookDetailPage } from "../pages/BookDetailPage";
@@ -60,12 +60,13 @@ type PageFixtures = {
   readerSeriesPage: SeriesPage;
   secondReaderSettingsPage: SettingsPage;
   settingsPage: SettingsPage;
+  adminPage: AdminPage;
+  readerAdminPage: AdminPage;
   loginPage: LoginPage;
   authorsIndexPage: AuthorsIndexPage;
   listenPage: ListenPage;
   registerPage: RegisterPage;
   cleanupReviewPage: CleanupReviewPage;
-  adminHealthPage: AdminHealthPage;
   metadataEditPage: MetadataEditPage;
   addBooksPage: AddBooksPage;
   notFoundPage: NotFoundPage;
@@ -76,6 +77,7 @@ type PageFixtures = {
   seriesPage: SeriesPage;
   seriesIndexPage: SeriesIndexPage;
   statsPage: StatsPage;
+  secondReaderStatsPage: StatsPage;
   chartBuilderPage: ChartBuilderPage;
   iosGluePage: IosGluePage;
 };
@@ -155,6 +157,14 @@ export const test = base.extend<PageFixtures>({
     await use(new SettingsPage(page));
   },
 
+  adminPage: async ({ page }, use) => {
+    await use(new AdminPage(page));
+  },
+
+  readerAdminPage: async ({ readerPage }, use) => {
+    await use(new AdminPage(readerPage));
+  },
+
   loginPage: async ({ page }, use) => {
     await use(new LoginPage(page));
   },
@@ -173,10 +183,6 @@ export const test = base.extend<PageFixtures>({
 
   cleanupReviewPage: async ({ page }, use) => {
     await use(new CleanupReviewPage(page));
-  },
-
-  adminHealthPage: async ({ page }, use) => {
-    await use(new AdminHealthPage(page));
   },
 
   metadataEditPage: async ({ page }, use) => {
@@ -217,6 +223,10 @@ export const test = base.extend<PageFixtures>({
 
   statsPage: async ({ page }, use) => {
     await use(new StatsPage(page));
+  },
+
+  secondReaderStatsPage: async ({ secondReaderPage }, use) => {
+    await use(new StatsPage(secondReaderPage));
   },
 
   chartBuilderPage: async ({ page }, use) => {

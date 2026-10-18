@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { BaseComponent } from "./BaseComponent";
 
-/** Settings → API Tokens: the token list, plus the hosted MCP endpoint card. */
+/** Settings › Sign-in & security → API tokens: the list, and the one-time secret hand-off. */
 export class ApiTokensSectionComponent extends BaseComponent {
   readonly card: Locator;
   readonly heading: Locator;
@@ -14,6 +14,7 @@ export class ApiTokensSectionComponent extends BaseComponent {
   readonly secretPanel: Locator;
   readonly secretField: Locator;
   readonly secretCopyButton: Locator;
+  readonly secretCopyFeedback: Locator;
   readonly secretDismissButton: Locator;
   readonly mcpCommand: Locator;
   readonly mcpCommandCopyButton: Locator;
@@ -24,17 +25,10 @@ export class ApiTokensSectionComponent extends BaseComponent {
   readonly renameSaveButton: Locator;
   readonly renameCancelButton: Locator;
 
-  readonly mcpCard: Locator;
-  readonly mcpHeading: Locator;
-  readonly mcpSwitch: Locator;
-  readonly mcpState: Locator;
-  readonly mcpStatus: Locator;
-  readonly mcpEndpointField: Locator;
-
   constructor(page: Page) {
     super(page);
     this.card = page.getByTestId("api-tokens-card");
-    this.heading = page.getByRole("heading", { name: "API Tokens" });
+    this.heading = page.getByRole("heading", { level: 3, name: "API tokens" });
     this.liveCount = page.getByTestId("api-tokens-count");
     this.scope = page.getByTestId("api-tokens-scope");
     this.nameField = page.getByTestId("api-token-name-input");
@@ -44,6 +38,9 @@ export class ApiTokensSectionComponent extends BaseComponent {
     this.secretPanel = page.getByTestId("api-token-secret-field");
     this.secretField = page.getByTestId("api-token-secret");
     this.secretCopyButton = page.getByTestId("api-token-secret-copy");
+    this.secretCopyFeedback = page.getByTestId(
+      "api-token-secret-copy-feedback",
+    );
     this.secretDismissButton = page.getByTestId("api-token-secret-dismiss");
     this.mcpCommand = page.getByTestId("api-token-mcp-command");
     this.mcpCommandCopyButton = page.getByTestId("api-token-mcp-command-copy");
@@ -53,15 +50,6 @@ export class ApiTokensSectionComponent extends BaseComponent {
     this.renameField = page.getByTestId("api-token-rename-input");
     this.renameSaveButton = page.getByTestId("api-token-rename-save");
     this.renameCancelButton = page.getByTestId("api-token-rename-cancel");
-
-    this.mcpCard = page.getByTestId("mcp-toggle-card");
-    this.mcpHeading = page.getByRole("heading", {
-      name: "Hosted MCP endpoint",
-    });
-    this.mcpSwitch = page.getByTestId("mcp-toggle");
-    this.mcpState = page.getByTestId("mcp-toggle-state");
-    this.mcpStatus = page.getByTestId("mcp-toggle-status");
-    this.mcpEndpointField = page.getByTestId("mcp-endpoint-url");
   }
 
   row(name: string): Locator {
@@ -98,7 +86,9 @@ export class ApiTokensSectionComponent extends BaseComponent {
 
   /** Revoking is two steps: the row's button swaps in a confirmation. */
   async startRevoke(name: string): Promise<void> {
-    await this.row(name).getByRole("button", { name: "Revoke" }).click();
+    await this.row(name)
+      .getByRole("button", { name: `Revoke ${name}`, exact: true })
+      .click();
   }
 
   async confirmRevoke(): Promise<void> {
@@ -112,7 +102,9 @@ export class ApiTokensSectionComponent extends BaseComponent {
   }
 
   async startRename(name: string): Promise<void> {
-    await this.row(name).getByRole("button", { name: "Rename" }).click();
+    await this.row(name)
+      .getByRole("button", { name: `Rename ${name}`, exact: true })
+      .click();
   }
 
   async saveRename(newName: string): Promise<void> {
@@ -124,7 +116,27 @@ export class ApiTokensSectionComponent extends BaseComponent {
     await this.renameCancelButton.click();
   }
 
-  async toggleMcp(): Promise<void> {
-    await this.mcpSwitch.click();
+  async copySecret(): Promise<void> {
+    await this.secretCopyButton.click();
+  }
+
+  /** Lets the page read and write the clipboard, as a reader's browser does after a prompt. */
+  async allowClipboard(): Promise<void> {
+    await this.page
+      .context()
+      .grantPermissions(["clipboard-read", "clipboard-write"]);
+  }
+
+  /** What the clipboard holds now. */
+  async clipboardText(): Promise<string> {
+    return this.page.evaluate(() => navigator.clipboard.readText());
+  }
+
+  /** Removes the clipboard API and refuses the fallback copy, as on a plain-http install. */
+  async stubClipboardUnavailable(): Promise<void> {
+    await this.page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", { value: undefined });
+      document.execCommand = () => false;
+    });
   }
 }

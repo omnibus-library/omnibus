@@ -3,7 +3,7 @@ import { workerStatusUrls } from "../contracts/workerStatus";
 import type { WorkerStatus } from "../data/workerStatus";
 import { BaseComponent } from "./BaseComponent";
 
-/** The background-task indicator above the Library section's Save button. */
+/** The background-task indicator in Administration › Maintenance. */
 export class WorkerStatusComponent extends BaseComponent {
   readonly indicator: Locator;
   readonly phase: Locator;

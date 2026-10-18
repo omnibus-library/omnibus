@@ -16,6 +16,7 @@ import { TabBarComponent } from "../components/TabBarComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { ebooksUrls } from "../contracts/ebooks";
 import { shelvesUrls } from "../contracts/shelves";
+import { thumbsUrls } from "../contracts/thumbs";
 import type { ShelfRef } from "../data/shelves";
 import { expect } from "../fixtures/test";
 import { BasePage } from "./BasePage";
@@ -62,6 +63,11 @@ export class LibraryPage extends BasePage {
     await this.openAndSettle("/");
   }
 
+  /** Opens the landing page without waiting for its fetches, which a hold keeps from settling. */
+  async gotoUnsettled(): Promise<void> {
+    await this.open("/");
+  }
+
   /** Filters the book list to `shelf` in place; the page does not navigate. */
   async selectShelf(shelf: ShelfRef): Promise<void> {
     await this.galleryShelfTile(shelf.id).click();
@@ -83,6 +89,9 @@ export class LibraryPage extends BasePage {
   readonly gridViewButton = this.page.getByTestId("view-toggle-grid");
   readonly bookTiles = this.page.getByTestId(/^ebook-tile-/);
   readonly firstBookTile = this.bookTiles.first();
+  readonly firstCover = this.grid
+    .getByRole("img", { name: /^Cover of / })
+    .first();
   readonly firstBookTileCaption = this.firstBookTile.locator(".lib-tile-cap");
   readonly loadMoreButton = this.page.getByTestId("lib-load-more");
   readonly sortSelect = this.page.getByTestId("lib-sort-select");
@@ -204,7 +213,16 @@ export class LibraryPage extends BasePage {
   /** The landing's "· N hidden" receipt, shown when the reader hides a format. */
   readonly hiddenReceipt = this.page.getByTestId("lib-hidden-count");
 
+  /** The note naming the hidden formats, which links to the preference that hides them. */
+  readonly hiddenNote = this.page.getByTestId("lib-hidden-formats");
+
   private releaseHeldShelfReads: (() => void) | undefined;
+  private releaseHeldThumbnails: (() => void) | undefined;
+
+  /** Follows the hidden-formats note to the preference that hides them. */
+  async openHiddenFormatsNote(): Promise<void> {
+    await this.hiddenNote.click();
+  }
 
   tableRowCount(): Promise<number> {
     return this.table.rows.count();
@@ -220,6 +238,22 @@ export class LibraryPage extends BasePage {
 
   async openEditShelf(): Promise<void> {
     await this.shelfEditButton.click();
+  }
+
+  /** Parks every thumbnail until `releaseThumbnails`, so a cover can be seen mid-load. */
+  async holdThumbnails(): Promise<void> {
+    const held = new Promise<void>((resolve) => {
+      this.releaseHeldThumbnails = resolve;
+    });
+    await this.page.route(thumbsUrls.any, async (route) => {
+      await held;
+      await route.continue();
+    });
+  }
+
+  async releaseThumbnails(): Promise<void> {
+    this.releaseHeldThumbnails?.();
+    await this.page.unrouteAll({ behavior: "wait" });
   }
 
   /** Parks every shelf member read until `releaseShelfReads`. */

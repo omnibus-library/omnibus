@@ -37,13 +37,13 @@ test.describe("suggestions strip", () => {
       await expect(strip.notConfiguredText).toBeVisible();
     });
 
-    // The seeded user is an admin, so the card deep-links to the Metadata
-    // Lookup settings where the key lives (#1324).
+    // The seeded user is an admin, so the card deep-links to Administration ›
+    // Integrations, where the key lives.
     await test.step("check the prompt links to the key's settings", async () => {
       await expect(strip.connectLink).toBeVisible();
       await expect(strip.connectLink).toHaveAttribute(
         "href",
-        "/settings?section=metadata",
+        "/admin?section=integrations",
       );
     });
   });

@@ -1,7 +1,9 @@
 import type { ExpectMutationOptions } from "../utils/api";
 
-/** The Kobo device endpoints Settings → Kobo posts to. */
+/** The Kobo device endpoints Settings › Devices reads and posts to. */
 export const koboUrls = {
+  list: /\/api\/rpc\/kobo\/devices(?:\?|$)/,
+  regenerate: /\/api\/rpc\/kobo\/devices\/regenerate(?:\?|$)/,
   create: /\/api\/rpc\/kobo\/devices\/create(?:\?|$)/,
   revoke: /\/api\/rpc\/kobo\/devices\/revoke(?:\?|$)/,
 };

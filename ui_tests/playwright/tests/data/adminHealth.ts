@@ -29,6 +29,7 @@ export type AdminHealthReport = {
     target: string;
     message: string;
     book_uuid?: string | null;
+    file?: string | null;
   }[];
 };
 

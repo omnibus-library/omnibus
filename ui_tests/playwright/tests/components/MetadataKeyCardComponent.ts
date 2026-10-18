@@ -2,12 +2,13 @@ import type { Locator, Page } from "@playwright/test";
 import type { MetadataProvider } from "../data/metadataKeys";
 import { BaseComponent } from "./BaseComponent";
 
-/** One provider's API key card in Settings → Metadata Lookup. */
+/** One provider's API key card in Administration › Integrations. */
 export class MetadataKeyCardComponent extends BaseComponent {
   readonly root: Locator;
   readonly keyField: Locator;
   readonly saveButton: Locator;
   readonly clearButton: Locator;
+  readonly confirmClearButton: Locator;
   readonly connectionStatus: Locator;
   readonly message: Locator;
 
@@ -18,6 +19,9 @@ export class MetadataKeyCardComponent extends BaseComponent {
     this.keyField = page.getByLabel(keyLabel);
     this.saveButton = page.getByTestId(`${provider}-save`);
     this.clearButton = page.getByTestId(`${provider}-clear`);
+    this.confirmClearButton = page.getByTestId(
+      `${provider}-clear-dialog-confirm`,
+    );
     this.connectionStatus = page.getByTestId(`${provider}-status`);
     this.message = page.getByTestId(`${provider}-key-status`);
   }
@@ -30,7 +34,9 @@ export class MetadataKeyCardComponent extends BaseComponent {
     await this.saveButton.click();
   }
 
+  /** Clears the key, answering the confirmation that asks first. */
   async clear(): Promise<void> {
     await this.clearButton.click();
+    await this.confirmClearButton.click();
   }
 }

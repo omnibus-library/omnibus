@@ -4,35 +4,35 @@ import type { LibrarySettings } from "../data/settings";
 import { expect } from "../fixtures/test";
 import { BaseComponent } from "./BaseComponent";
 
-/** Settings → Library Location: scan paths, rescan interval and bulk jobs. */
+/** Administration › Sources: the scan paths and the rescan interval. */
 export class LibrarySectionComponent extends BaseComponent {
   readonly ebookPathField: Locator;
   readonly audiobookPathField: Locator;
   readonly scanIntervalField: Locator;
   readonly saveButton: Locator;
-  readonly scanButton: Locator;
-  readonly bakeEpubOverridesButton: Locator;
+  readonly retryButton: Locator;
   readonly status: Locator;
   readonly ebookSummary: Locator;
   readonly audiobookSummary: Locator;
 
   constructor(page: Page) {
     super(page);
-    this.ebookPathField = page.getByLabel("Ebook Library Path");
-    this.audiobookPathField = page.getByLabel("Audiobook Library Path");
+    this.ebookPathField = page.getByLabel("Ebook library path");
+    this.audiobookPathField = page.getByLabel("Audiobook library path");
     this.scanIntervalField = page.getByLabel(
-      "Automatic Rescan Interval (hours)",
+      "Automatic rescan interval (hours)",
     );
-    // The metadata cards have Save buttons of their own, so scope to this form.
-    this.saveButton = page
-      .locator("#settings-form")
-      .getByRole("button", { name: "Save" });
-    this.scanButton = page.getByTestId("scan-library");
-    this.bakeEpubOverridesButton = page.getByTestId("rewrite-all-epubs");
-    // The worker indicator is a role=status too, so find the form's by testid.
+    this.saveButton = page.getByRole("button", {
+      name: "Save library settings",
+    });
+    this.retryButton = page.getByTestId("library-retry");
     this.status = page.getByTestId("settings-status");
     this.ebookSummary = page.getByTestId("ebook-library-summary");
     this.audiobookSummary = page.getByTestId("audiobook-library-summary");
+  }
+
+  async fillEbookPath(path: string): Promise<void> {
+    await this.ebookPathField.fill(path);
   }
 
   /** Fills every field; no interval clears it, so a saved one can't leak in. */
@@ -48,14 +48,6 @@ export class LibrarySectionComponent extends BaseComponent {
     await this.saveButton.click();
   }
 
-  async startScan(): Promise<void> {
-    await this.scanButton.click();
-  }
-
-  async bakeEpubOverrides(): Promise<void> {
-    await this.bakeEpubOverridesButton.click();
-  }
-
   /** Answers a save with the server-side floor on the rescan interval. */
   async stubIntervalRejected(): Promise<void> {
     await this.page.route(settingsUrls.save, (route) =>
@@ -69,14 +61,14 @@ export class LibrarySectionComponent extends BaseComponent {
     );
   }
 
-  /** Answers the bulk EPUB bake as queued, so no book file is rewritten. */
-  async stubBakeQueued(): Promise<void> {
-    await this.page.route(settingsUrls.rewriteAllEpubs, (route) =>
-      route.request().method() === "POST"
+  /** Fails the read of the saved settings, which the form fills itself from. */
+  async stubSettingsUnreadable(): Promise<void> {
+    await this.page.route(settingsUrls.save, (route) =>
+      route.request().method() === "GET"
         ? route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: "null",
+            status: 500,
+            contentType: "text/plain",
+            body: "forced failure",
           })
         : route.continue(),
     );
@@ -84,13 +76,15 @@ export class LibrarySectionComponent extends BaseComponent {
 
   /** Checks the form reports its save as done. */
   async assertSaved(): Promise<void> {
-    await expect(this.status).toHaveText("Settings saved.");
+    await expect(this.status).toHaveText("Library settings saved.");
     await expect(this.status).toHaveClass(/success/);
   }
 
   /** Checks the form reports its save as failed. */
   async assertSaveFailed(): Promise<void> {
-    await expect(this.status).toHaveText("Failed to save settings.");
+    await expect(this.status).toContainText(
+      "Couldn’t save the library settings",
+    );
     await expect(this.status).toHaveClass(/error/);
   }
 }

@@ -2,10 +2,13 @@ import type { MetadataProvider } from "../data/metadataKeys";
 import type { LibrarySettings } from "../data/settings";
 import type { ExpectMutationOptions } from "../utils/api";
 
-/** The settings endpoints the Library, Metadata and Email sections post to. */
+/** The endpoints the Administration sections post to. */
 export const settingsUrls = {
   save: /\/api\/rpc\/settings(?:\?|$)/,
   smtp: /\/api\/rpc\/smtp(?:\?|$)/,
+  smtpClear: /\/api\/rpc\/smtp\/clear(?:\?|$)/,
+  metadataPrecedence: /\/api\/rpc\/metadata-precedence\/set(?:\?|$)/,
+  mcp: /\/api\/settings\/mcp(?:\?|$)/,
   scanLibrary: /\/api\/rpc\/scan-library(?:\?|$)/,
   rewriteAllEpubs: /\/api\/rpc\/admin\/rewrite-all-epubs(?:\?|$)/,
   metadataKey: {
@@ -14,7 +17,7 @@ export const settingsUrls = {
   } satisfies Record<MetadataProvider, RegExp>,
 };
 
-/** The writes an admin makes from the settings sections. */
+/** The writes an admin makes from the Administration sections. */
 export const settings = {
   saveLibrary: (
     library: LibrarySettings,
@@ -42,6 +45,19 @@ export const settings = {
     method: "POST",
     url: settingsUrls.rewriteAllEpubs,
     expectedStatus: 200,
+  }),
+
+  saveMetadataPrecedence: (): ExpectMutationOptions => ({
+    method: "POST",
+    url: settingsUrls.metadataPrecedence,
+    expectedStatus: 200,
+  }),
+
+  setMcp: (enabled: boolean): ExpectMutationOptions => ({
+    method: "POST",
+    url: settingsUrls.mcp,
+    expectedBody: { enabled },
+    expectedStatus: 204,
   }),
 
   /** Saves `key`, or clears the provider's key when it is null. */

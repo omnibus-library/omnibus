@@ -1,14 +1,16 @@
 import type { Locator, Page } from "@playwright/test";
 import { cleanupUrls } from "../contracts/cleanup";
 import type { CleanupKind, SuggestionCard } from "../data/cleanup";
+import { recordRequests } from "../utils/api";
 import { BasePage } from "./BasePage";
 
 /**
  * The one-card-at-a-time review of a kind's suggestions. Its only way in is a
- * Review link in Settings → Library cleanup, so it has no `goto`.
+ * Review link in Administration › Cleanup, so its only entry of its own is
+ * an old address that redirects here.
  */
 export class CleanupReviewPage extends BasePage {
-  protected readonly urlPattern = /\/settings\/cleanup\/[a-z_]+$/;
+  protected readonly urlPattern = /\/admin\/cleanup\/[a-z_]+$/;
 
   readonly review: Locator;
   readonly kindline: Locator;
@@ -28,6 +30,9 @@ export class CleanupReviewPage extends BasePage {
   readonly acceptEditedButton: Locator;
   readonly rejectButton: Locator;
   readonly skipButton: Locator;
+  readonly undoBar: Locator;
+  readonly undoButton: Locator;
+  readonly undoneMessage: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -51,10 +56,18 @@ export class CleanupReviewPage extends BasePage {
     });
     this.rejectButton = page.getByRole("button", { name: "Reject (N)" });
     this.skipButton = page.getByRole("button", { name: "Skip (Space)" });
+    this.undoBar = page.getByTestId("cleanup-undo-bar");
+    this.undoButton = page.getByTestId("cleanup-undo");
+    this.undoneMessage = page.getByTestId("cleanup-undone");
   }
 
   protected get readyLocator(): Locator {
     return this.review;
+  }
+
+  /** Opens an address that predates Administration, which redirects here. */
+  async gotoLegacy(path: string): Promise<void> {
+    await this.openAndSettle(path);
   }
 
   /** The page's title, such as "Review authors". */
@@ -81,6 +94,10 @@ export class CleanupReviewPage extends BasePage {
 
   async skip(): Promise<void> {
     await this.skipButton.click();
+  }
+
+  async undo(): Promise<void> {
+    await this.undoButton.click();
   }
 
   async acceptWithHotkey(): Promise<void> {
@@ -117,14 +134,33 @@ export class CleanupReviewPage extends BasePage {
     );
   }
 
-  /** Accepts any decision without writing it, since a canned card has no row. */
-  async stubDecisionsRecorded(): Promise<void> {
+  /**
+   * Accepts any decision without writing it, since a canned card has no row.
+   * `logId` is the `cleanup_log` row an undo would then name.
+   */
+  async stubDecisionsRecorded(logId: number | null = null): Promise<void> {
     await this.page.route(cleanupUrls.decide, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: String(logId),
+      }),
+    );
+  }
+
+  /** Accepts an undo without writing it, for the same canned card. */
+  async stubUndoRecorded(): Promise<void> {
+    await this.page.route(cleanupUrls.undo, (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
         body: "null",
       }),
     );
+  }
+
+  /** The methods of every re-read of the kind counts from now on. */
+  recordCountReads(): string[] {
+    return recordRequests(this.page, cleanupUrls.counts);
   }
 }

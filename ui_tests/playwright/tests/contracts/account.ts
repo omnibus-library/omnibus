@@ -1,15 +1,18 @@
 import type { ExpectMutationOptions } from "../utils/api";
 
-/** The account endpoints Settings → Account and Kindle post to. */
+/** The account endpoints the personal Settings sections post to. */
 export const accountUrls = {
   scrollStops: /\/api\/rpc\/account\/book-detail-scroll-stops(?:\?|$)/,
   shareStats: /\/api\/rpc\/account\/share-stats(?:\?|$)/,
   stackSeries: /\/api\/rpc\/account\/stack-series(?:\?|$)/,
   kindleEmail: /\/api\/rpc\/account\/kindle-email(?:\?|$)/,
+  kindleDelivery: /\/api\/rpc\/kindle\/delivery(?:\?|$)/,
   changePassword: /\/api\/rpc\/account\/change-password(?:\?|$)/,
   profile: /\/api\/rpc\/account\/profile(?:\?|$)/,
   avatar: /\/api\/account\/avatar(?:\?|$)/,
   hiddenFormats: /\/api\/rpc\/account\/hidden-formats(?:\?|$)/,
+  sessions: /\/api\/auth\/sessions(?:\?|$)/,
+  sessionRevoke: /\/api\/auth\/sessions\/\d+(?:\?|$)/,
   annualGoal: /\/api\/rpc\/stats-goal(?:\?|$)/,
   dailyGoal: /\/api\/rpc\/stats-goal-daily(?:\?|$)/,
 };
@@ -40,7 +43,8 @@ export const account = {
   stackSeries: (enabled?: boolean): ExpectMutationOptions =>
     switchWrite(accountUrls.stackSeries, enabled),
 
-  kindleEmail: (email?: string): ExpectMutationOptions =>
+  /** A null address is the clear. */
+  kindleEmail: (email?: string | null): ExpectMutationOptions =>
     write(accountUrls.kindleEmail, email === undefined ? undefined : { email }),
 
   changePassword: (
@@ -63,7 +67,11 @@ export const account = {
   avatar: (status = 204): ExpectMutationOptions =>
     write(accountUrls.avatar, undefined, status),
 
-  hiddenFormats: (): ExpectMutationOptions => write(accountUrls.hiddenFormats),
+  hiddenFormats: (formats?: string[]): ExpectMutationOptions =>
+    write(
+      accountUrls.hiddenFormats,
+      formats === undefined ? undefined : { formats },
+    ),
 
   annualGoal: (target: number): ExpectMutationOptions =>
     write(accountUrls.annualGoal, { update: { target }, ...UTC }),

@@ -7,14 +7,12 @@ import { expect, test } from "../fixtures/pageFixtures";
 const idle: WorkerStatus = { active: [], recent_complete: [] };
 
 test.describe("worker status indicator", () => {
-  test("hide the indicator when the worker is idle", async ({
-    settingsPage,
-  }) => {
-    const { workerStatus } = settingsPage;
+  test("hide the indicator when the worker is idle", async ({ adminPage }) => {
+    const { workerStatus } = adminPage;
 
-    await test.step("open the library section while the worker is idle", async () => {
+    await test.step("open the maintenance section while the worker is idle", async () => {
       await workerStatus.stubStatus(idle);
-      await settingsPage.goto("library");
+      await adminPage.goto("maintenance");
     });
 
     await test.step("check no indicator renders", async () => {
@@ -22,10 +20,10 @@ test.describe("worker status indicator", () => {
     });
   });
 
-  test("show an active scan", async ({ settingsPage }) => {
-    const { workerStatus } = settingsPage;
+  test("show an active scan", async ({ adminPage }) => {
+    const { workerStatus } = adminPage;
 
-    await test.step("open the library section during a scan", async () => {
+    await test.step("open the maintenance section during a scan", async () => {
       await workerStatus.stubStatus({
         active: [
           buildScanTask({
@@ -36,7 +34,7 @@ test.describe("worker status indicator", () => {
         ],
         recent_complete: [],
       });
-      await settingsPage.goto("library");
+      await adminPage.goto("maintenance");
     });
 
     await test.step("check the indicator names the scan", async () => {
@@ -46,11 +44,11 @@ test.describe("worker status indicator", () => {
   });
 
   test("show processed and total when the total is known", async ({
-    settingsPage,
+    adminPage,
   }) => {
-    const { workerStatus } = settingsPage;
+    const { workerStatus } = adminPage;
 
-    await test.step("open the library section during a scan with a known total", async () => {
+    await test.step("open the maintenance section during a scan with a known total", async () => {
       await workerStatus.stubStatus({
         active: [
           buildScanTask({
@@ -60,7 +58,7 @@ test.describe("worker status indicator", () => {
         ],
         recent_complete: [],
       });
-      await settingsPage.goto("library");
+      await adminPage.goto("maintenance");
     });
 
     await test.step("check the indicator shows the progress", async () => {
@@ -69,10 +67,10 @@ test.describe("worker status indicator", () => {
     });
   });
 
-  test("show the activity panel for a scan", async ({ settingsPage }) => {
-    const { workerStatus } = settingsPage;
+  test("show the activity panel for a scan", async ({ adminPage }) => {
+    const { workerStatus } = adminPage;
 
-    await test.step("open the library section during a verbose scan", async () => {
+    await test.step("open the maintenance section during a verbose scan", async () => {
       await workerStatus.stubStatus({
         active: [
           buildScanTask({
@@ -94,7 +92,7 @@ test.describe("worker status indicator", () => {
         ],
         recent_complete: [],
       });
-      await settingsPage.goto("library");
+      await adminPage.goto("maintenance");
     });
 
     await test.step("check the panel shows the phase, item and tallies", async () => {
@@ -109,10 +107,10 @@ test.describe("worker status indicator", () => {
     });
   });
 
-  test("summarize a finished scan's tallies", async ({ settingsPage }) => {
-    const { workerStatus } = settingsPage;
+  test("summarize a finished scan's tallies", async ({ adminPage }) => {
+    const { workerStatus } = adminPage;
 
-    await test.step("open the library section after a scan", async () => {
+    await test.step("open the maintenance section after a scan", async () => {
       await workerStatus.stubStatus({
         active: [],
         recent_complete: [
@@ -133,7 +131,7 @@ test.describe("worker status indicator", () => {
           }),
         ],
       });
-      await settingsPage.goto("library");
+      await adminPage.goto("maintenance");
     });
 
     await test.step("check the row summarizes the tallies", async () => {
@@ -143,11 +141,11 @@ test.describe("worker status indicator", () => {
   });
 
   test("show a finished scan once the active one completes", async ({
-    settingsPage,
+    adminPage,
   }) => {
-    const { workerStatus } = settingsPage;
+    const { workerStatus } = adminPage;
 
-    await test.step("open the library section during a scan", async () => {
+    await test.step("open the maintenance section during a scan", async () => {
       await workerStatus.stubStatus({
         active: [
           buildScanTask({
@@ -157,7 +155,7 @@ test.describe("worker status indicator", () => {
         ],
         recent_complete: [],
       });
-      await settingsPage.goto("library");
+      await adminPage.goto("maintenance");
       await expect(workerStatus.indicator).toContainText("Scanning library");
     });
 
@@ -182,10 +180,10 @@ test.describe("worker status indicator", () => {
     });
   });
 
-  test("dismiss a finished scan", async ({ settingsPage }) => {
-    const { workerStatus } = settingsPage;
+  test("dismiss a finished scan", async ({ adminPage }) => {
+    const { workerStatus } = adminPage;
 
-    await test.step("open the library section after a scan", async () => {
+    await test.step("open the maintenance section after a scan", async () => {
       await workerStatus.stubStatus({
         active: [],
         recent_complete: [
@@ -196,7 +194,7 @@ test.describe("worker status indicator", () => {
           }),
         ],
       });
-      await settingsPage.goto("library");
+      await adminPage.goto("maintenance");
       await expect(workerStatus.indicator).toContainText("Library scan");
     });
 
@@ -210,12 +208,10 @@ test.describe("worker status indicator", () => {
     });
   });
 
-  test("show a failed scan with its error message", async ({
-    settingsPage,
-  }) => {
-    const { workerStatus } = settingsPage;
+  test("show a failed scan with its error message", async ({ adminPage }) => {
+    const { workerStatus } = adminPage;
 
-    await test.step("open the library section after a failed scan", async () => {
+    await test.step("open the maintenance section after a failed scan", async () => {
       await workerStatus.stubStatus({
         active: [],
         recent_complete: [
@@ -226,7 +222,7 @@ test.describe("worker status indicator", () => {
           }),
         ],
       });
-      await settingsPage.goto("library");
+      await adminPage.goto("maintenance");
     });
 
     await test.step("check the alert gives the reason", async () => {

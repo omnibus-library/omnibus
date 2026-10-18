@@ -10,18 +10,16 @@ import { failing } from "../utils/api";
 // The decide tests stub the queue: the real one is server state a parallel
 // reindex can refill, and accepting a real suggestion would merge live rows.
 
-test.describe("library cleanup section", () => {
-  test("show the library cleanup layout", async ({
-    settingsPage,
+test.describe("cleanup section", () => {
+  test("show the cleanup section layout", async ({
+    adminPage,
     cleanupReviewPage,
     expectMutation,
   }) => {
-    const { cleanup: section } = settingsPage;
+    const { cleanup: section } = adminPage;
 
-    await test.step("open the library cleanup section", async () => {
-      await expectMutation(cleanup.counts(), () =>
-        settingsPage.goto("cleanup"),
-      );
+    await test.step("open the cleanup section", async () => {
+      await expectMutation(cleanup.counts(), () => adminPage.goto("cleanup"));
     });
 
     await test.step("check each kind lists its pending count", async () => {
@@ -32,7 +30,7 @@ test.describe("library cleanup section", () => {
         await expect(section.pendingCount(kind)).toContainText("pending");
       }
       await expect(section.detectButton).toBeVisible();
-      await settingsPage.topNav.assertDisplayed();
+      await adminPage.topNav.assertDisplayed();
     });
 
     await test.step("follow the author review link", async () => {
@@ -55,11 +53,11 @@ test.describe("library cleanup section", () => {
     });
   });
 
-  test("queue a detection pass", async ({ settingsPage, expectMutation }) => {
-    const { cleanup: section } = settingsPage;
+  test("queue a detection pass", async ({ adminPage, expectMutation }) => {
+    const { cleanup: section } = adminPage;
 
-    await test.step("open the library cleanup section", async () => {
-      await settingsPage.goto("cleanup");
+    await test.step("open the cleanup section", async () => {
+      await adminPage.goto("cleanup");
     });
 
     await test.step("run detection", async () => {
@@ -74,15 +72,15 @@ test.describe("library cleanup section", () => {
 
 test.describe("cleanup review", () => {
   test("show the empty state when no suggestions are pending", async ({
-    settingsPage,
+    adminPage,
     cleanupReviewPage,
     expectMutation,
   }) => {
     await test.step("open the author review with an empty queue", async () => {
       await cleanupReviewPage.stubQueue([]);
-      await settingsPage.goto("cleanup");
+      await adminPage.goto("cleanup");
       await expectMutation(cleanup.queue("author"), () =>
-        settingsPage.cleanup.openReview("author"),
+        adminPage.cleanup.openReview("author"),
       );
       await cleanupReviewPage.assertDisplayed();
     });
@@ -95,16 +93,55 @@ test.describe("cleanup review", () => {
     });
   });
 
+  test("undo the last accepted change and bring its card back", async ({
+    adminPage,
+    cleanupReviewPage,
+    expectMutation,
+  }) => {
+    // The canned card names no real row, so both writes are stubbed; the
+    // decide answers with the `cleanup_log` id the undo then names.
+    await test.step("open the author review with one card", async () => {
+      await cleanupReviewPage.stubQueue([AUTHOR_MERGE_CARD]);
+      await cleanupReviewPage.stubDecisionsRecorded(91);
+      await cleanupReviewPage.stubUndoRecorded();
+      await adminPage.goto("cleanup");
+      await expectMutation(cleanup.queue("author"), () =>
+        adminPage.cleanup.openReview("author"),
+      );
+      await cleanupReviewPage.assertDisplayed();
+    });
+
+    await test.step("accept the card", async () => {
+      await expectMutation(cleanup.decide(), () => cleanupReviewPage.accept());
+      await expect(cleanupReviewPage.undoBar).toContainText(
+        "Merged into “Mary Shelley”.",
+      );
+    });
+
+    const countReads = cleanupReviewPage.recordCountReads();
+
+    await test.step("undo the change", async () => {
+      await expectMutation(cleanup.undo(91), () => cleanupReviewPage.undo());
+    });
+
+    await test.step("check the suggestion is offered again", async () => {
+      await expect(cleanupReviewPage.undoneMessage).toBeVisible();
+      // The reopened suggestion counts again, so the chips are re-read.
+      await expect.poll(() => countReads.length).toBeGreaterThan(0);
+      await expect(cleanupReviewPage.cardProposed).toHaveText("Mary Shelley");
+    });
+  });
+
   test("accept a card with the Y hotkey", async ({
-    settingsPage,
+    adminPage,
     cleanupReviewPage,
     expectMutation,
   }) => {
     await test.step("open the author review with one card", async () => {
       await cleanupReviewPage.stubQueue([AUTHOR_MERGE_CARD]);
-      await settingsPage.goto("cleanup");
+      await adminPage.goto("cleanup");
       await expectMutation(cleanup.queue("author"), () =>
-        settingsPage.cleanup.openReview("author"),
+        adminPage.cleanup.openReview("author"),
       );
       await cleanupReviewPage.assertDisplayed();
     });
@@ -143,16 +180,16 @@ test.describe("cleanup review", () => {
   });
 
   test("reject a card with the reject button", async ({
-    settingsPage,
+    adminPage,
     cleanupReviewPage,
     expectMutation,
   }) => {
     await test.step("open the author review with one card", async () => {
       await cleanupReviewPage.stubQueue([AUTHOR_MERGE_CARD]);
       await cleanupReviewPage.stubDecisionsRecorded();
-      await settingsPage.goto("cleanup");
+      await adminPage.goto("cleanup");
       await expectMutation(cleanup.queue("author"), () =>
-        settingsPage.cleanup.openReview("author"),
+        adminPage.cleanup.openReview("author"),
       );
       await cleanupReviewPage.assertDisplayed();
     });
@@ -169,7 +206,7 @@ test.describe("cleanup review", () => {
   });
 
   test("skip a card without deciding it", async ({
-    settingsPage,
+    adminPage,
     cleanupReviewPage,
     expectMutation,
   }) => {
@@ -183,9 +220,9 @@ test.describe("cleanup review", () => {
 
     await test.step("open the author review with two cards", async () => {
       await cleanupReviewPage.stubQueue([AUTHOR_MERGE_CARD, second]);
-      await settingsPage.goto("cleanup");
+      await adminPage.goto("cleanup");
       await expectMutation(cleanup.queue("author"), () =>
-        settingsPage.cleanup.openReview("author"),
+        adminPage.cleanup.openReview("author"),
       );
       await cleanupReviewPage.assertDisplayed();
       await expect(cleanupReviewPage.cardProposed).toHaveText("Mary Shelley");
@@ -202,7 +239,7 @@ test.describe("cleanup review", () => {
   });
 
   test("keep the card when the decide request fails", async ({
-    settingsPage,
+    adminPage,
     cleanupReviewPage,
     expectMutation,
   }) => {
@@ -210,10 +247,10 @@ test.describe("cleanup review", () => {
 
     await test.step("open the author review with one card", async () => {
       await cleanupReviewPage.stubQueue([AUTHOR_MERGE_CARD]);
-      await settingsPage.forceServerError(decide);
-      await settingsPage.goto("cleanup");
+      await adminPage.forceServerError(decide);
+      await adminPage.goto("cleanup");
       await expectMutation(cleanup.queue("author"), () =>
-        settingsPage.cleanup.openReview("author"),
+        adminPage.cleanup.openReview("author"),
       );
       await cleanupReviewPage.assertDisplayed();
     });
@@ -230,7 +267,7 @@ test.describe("cleanup review", () => {
   });
 
   test("accept a book title with the reviewer's own wording", async ({
-    settingsPage,
+    adminPage,
     cleanupReviewPage,
     expectMutation,
   }) => {
@@ -242,9 +279,9 @@ test.describe("cleanup review", () => {
     await test.step("open the book title review with one card", async () => {
       await cleanupReviewPage.stubQueue([TITLE_RENAME_CARD]);
       await cleanupReviewPage.stubDecisionsRecorded();
-      await settingsPage.goto("cleanup");
+      await adminPage.goto("cleanup");
       await expectMutation(cleanup.queue("book_title"), () =>
-        settingsPage.cleanup.openReview("book_title"),
+        adminPage.cleanup.openReview("book_title"),
       );
       await cleanupReviewPage.assertDisplayed();
       await expect(cleanupReviewPage.proposalField).toHaveValue("Frankenstein");
@@ -278,15 +315,15 @@ test.describe("cleanup review", () => {
   // A title with a y, an n or a space must land in the field and not decide
   // the card out from under the reviewer.
   test("ignore the hotkeys while the proposal field has focus", async ({
-    settingsPage,
+    adminPage,
     cleanupReviewPage,
     expectMutation,
   }) => {
     await test.step("open the book title review with one card", async () => {
       await cleanupReviewPage.stubQueue([TITLE_RENAME_CARD]);
-      await settingsPage.goto("cleanup");
+      await adminPage.goto("cleanup");
       await expectMutation(cleanup.queue("book_title"), () =>
-        settingsPage.cleanup.openReview("book_title"),
+        adminPage.cleanup.openReview("book_title"),
       );
       await cleanupReviewPage.assertDisplayed();
     });
@@ -306,15 +343,15 @@ test.describe("cleanup review", () => {
   // Space on the end-of-pass screen used to keep incrementing the very tally
   // that screen reports.
   test("stop counting skips once the pass is worked through", async ({
-    settingsPage,
+    adminPage,
     cleanupReviewPage,
     expectMutation,
   }) => {
     await test.step("open the book title review with one card", async () => {
       await cleanupReviewPage.stubQueue([TITLE_RENAME_CARD]);
-      await settingsPage.goto("cleanup");
+      await adminPage.goto("cleanup");
       await expectMutation(cleanup.queue("book_title"), () =>
-        settingsPage.cleanup.openReview("book_title"),
+        adminPage.cleanup.openReview("book_title"),
       );
       await cleanupReviewPage.assertDisplayed();
     });

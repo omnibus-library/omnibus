@@ -3,11 +3,13 @@ import { usersUrls } from "../contracts/users";
 import type { Credentials, NewUser } from "../data/users";
 import { BaseComponent } from "./BaseComponent";
 
-/** Settings → Users: the account table, its new-user form and the sign-up switch. */
+/** Administration › People: the account table, its new-user form and the sign-up switch. */
 export class UsersSectionComponent extends BaseComponent {
+  readonly card: Locator;
   readonly heading: Locator;
   readonly table: Locator;
   readonly newUserButton: Locator;
+  readonly newUserDialog: Locator;
   readonly usernameField: Locator;
   readonly passwordField: Locator;
   readonly submitButton: Locator;
@@ -20,9 +22,11 @@ export class UsersSectionComponent extends BaseComponent {
 
   constructor(page: Page) {
     super(page);
-    this.heading = page.getByRole("heading", { level: 2, name: "Users" });
+    this.card = page.getByTestId("users-card");
+    this.heading = page.getByRole("heading", { level: 3, name: "Accounts" });
     this.table = page.getByTestId("users-table");
     this.newUserButton = page.getByTestId("users-new");
+    this.newUserDialog = page.getByTestId("users-new-modal");
     this.usernameField = page.getByTestId("new-user-username");
     this.passwordField = page.getByTestId("new-user-password");
     this.submitButton = page.getByTestId("new-user-submit");
@@ -53,9 +57,29 @@ export class UsersSectionComponent extends BaseComponent {
     await this.newUserButton.click();
   }
 
+  async fillUsername(username: string): Promise<void> {
+    await this.usernameField.fill(username);
+  }
+
   async fillCredentials({ username, password }: Credentials): Promise<void> {
     await this.usernameField.fill(username);
     await this.passwordField.fill(password);
+  }
+
+  /** Clicks the scrim, well away from the centred new-user dialog. */
+  async clickNewUserBackdrop(): Promise<void> {
+    await this.newUserDialog.click({ position: { x: 5, y: 5 } });
+  }
+
+  async pressTab({ backwards = false } = {}): Promise<void> {
+    await this.page.keyboard.press(backwards ? "Shift+Tab" : "Tab");
+  }
+
+  /** Whether keyboard focus is somewhere inside the new-user dialog. */
+  hasFocusInNewUserDialog(): Promise<boolean> {
+    return this.newUserDialog.evaluate((dialog) =>
+      dialog.contains(document.activeElement),
+    );
   }
 
   async checkPermission(name: keyof NewUser["permissions"]): Promise<void> {
@@ -67,7 +91,9 @@ export class UsersSectionComponent extends BaseComponent {
   }
 
   async openDeleteDialog(username: string): Promise<void> {
-    await this.row(username).getByRole("button", { name: "Delete" }).click();
+    await this.row(username)
+      .getByRole("button", { name: `Delete ${username}` })
+      .click();
   }
 
   async confirmDelete(): Promise<void> {

@@ -1,6 +1,7 @@
 import { account } from "../contracts/account";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
 // A real save on the shared admin would hide the CBZ fixtures out from under
@@ -19,18 +20,16 @@ test.describe("hidden formats", () => {
   test("show the hidden formats layout", async ({ settingsPage }) => {
     const section = settingsPage.account;
 
-    await test.step("open the account section", async () => {
-      await settingsPage.goto("account");
+    await test.step("open the preferences section", async () => {
+      await settingsPage.goto("preferences");
     });
 
     await test.step("check the card and its nav", async () => {
       await settingsPage.assertDisplayed();
       await settingsPage.topNav.assertDisplayed();
       await expect(section.hiddenFormatsCard).toBeVisible();
-      await expect(section.hiddenFormatsHeading).toBeVisible();
       await expect(section.hiddenFormatToggle("cbz")).toBeVisible();
       await expect(section.hiddenFormatToggle("epub")).toBeVisible();
-      await expect(section.saveHiddenFormatsButton).toBeVisible();
     });
   });
 
@@ -39,32 +38,18 @@ test.describe("hidden formats", () => {
     readerLibraryPage,
     libraryPage,
     presetReaderHiddenFormats,
-    readerExpectMutation,
   }) => {
-    const section = readerSettingsPage.account;
-
-    await test.step("start with nothing hidden", async () => {
-      await presetReaderHiddenFormats([]);
-    });
-
-    await test.step("hide cbz in the account section", async () => {
-      await readerSettingsPage.goto("account");
-      await expect(section.hiddenFormatsCard).toBeVisible();
-      await section.setFormatHidden("cbz", true);
-      await readerExpectMutation(account.hiddenFormats(), () =>
-        section.saveHiddenFormats(),
-      );
-      await expect(section.hiddenFormatsStatus).toHaveText(
-        "Hidden formats saved.",
-      );
+    await test.step("hide cbz for the reader", async () => {
+      await presetReaderHiddenFormats(["cbz"]);
     });
 
     // The receipt lands with the list, so waiting on it keeps "no tiles" from
     // passing early. No exact count: other specs reshape the shared library.
-    await test.step("check the comics leave the library", async () => {
+    await test.step("check the comics leave the library and the note names them", async () => {
       await readerLibraryPage.goto();
       await expect(readerLibraryPage.hiddenReceipt).toBeVisible();
       await expect(readerLibraryPage.hiddenReceipt).toHaveText(/· \d+ hidden/);
+      await expect(readerLibraryPage.hiddenNote).toContainText("Hidden: CBZ");
       for (const comic of COMICS) {
         await expect(readerLibraryPage.bookTile(comic.title)).toHaveCount(0);
       }
@@ -77,6 +62,13 @@ test.describe("hidden formats", () => {
       await expect
         .poll(async () => palette.row("book").count())
         .toBeGreaterThan(0);
+      await palette.closeWithEscape();
+    });
+
+    await test.step("check the note leads to the preference", async () => {
+      await readerLibraryPage.openHiddenFormatsNote();
+      await readerSettingsPage.assertDisplayedFor("preferences");
+      await expect(readerSettingsPage.account.hiddenFormatsCard).toBeVisible();
     });
 
     await test.step("check the admin still sees them", async () => {
@@ -85,6 +77,30 @@ test.describe("hidden formats", () => {
         await expect(libraryPage.bookTile(comic.title)).toBeVisible();
       }
       await expect(libraryPage.hiddenReceipt).toHaveCount(0);
+      await expect(libraryPage.hiddenNote).toHaveCount(0);
+    });
+  });
+
+  test("hide a format by ticking it", async ({
+    readerSettingsPage,
+    presetReaderHiddenFormats,
+    readerExpectMutation,
+  }) => {
+    const section = readerSettingsPage.account;
+
+    await test.step("start with nothing hidden", async () => {
+      await presetReaderHiddenFormats([]);
+      await readerSettingsPage.goto("preferences");
+    });
+
+    await test.step("tick cbz", async () => {
+      await readerExpectMutation(account.hiddenFormats(["cbz"]), () =>
+        section.setFormatHidden("cbz", true),
+      );
+    });
+
+    await test.step("check the preference reports it saved", async () => {
+      await expect(section.hiddenFormatsStatus).toHaveText("Saved");
     });
   });
 
@@ -100,16 +116,12 @@ test.describe("hidden formats", () => {
       await presetReaderHiddenFormats(["cbz"]);
     });
 
-    await test.step("show cbz in the account section", async () => {
-      await readerSettingsPage.goto("account");
-      await expect(section.hiddenFormatsCard).toBeVisible();
-      await section.setFormatHidden("cbz", false);
-      await readerExpectMutation(account.hiddenFormats(), () =>
-        section.saveHiddenFormats(),
+    await test.step("untick cbz in the preferences section", async () => {
+      await readerSettingsPage.goto("preferences");
+      await readerExpectMutation(account.hiddenFormats([]), () =>
+        section.setFormatHidden("cbz", false),
       );
-      await expect(section.hiddenFormatsStatus).toHaveText(
-        "Hidden formats saved.",
-      );
+      await expect(section.hiddenFormatsStatus).toHaveText("Saved");
     });
 
     await test.step("check the comics return to the library", async () => {
@@ -118,6 +130,60 @@ test.describe("hidden formats", () => {
         await expect(readerLibraryPage.bookTile(comic.title)).toBeVisible();
       }
       await expect(readerLibraryPage.hiddenReceipt).toHaveCount(0);
+      await expect(readerLibraryPage.hiddenNote).toHaveCount(0);
+    });
+  });
+
+  test("show a saved format the library doesn't list", async ({
+    readerSettingsPage,
+    presetReaderHiddenFormats,
+    readerExpectMutation,
+  }) => {
+    const section = readerSettingsPage.account;
+
+    await test.step("start with a format hidden that no book has", async () => {
+      await presetReaderHiddenFormats(["djvu"]);
+      await readerSettingsPage.goto("preferences");
+      await expect(section.hiddenFormatToggle("djvu")).toBeChecked();
+    });
+
+    // A plain click, because the box leaves the list once unhidden and
+    // uncheck() would wait on a state it can no longer read.
+    await test.step("untick it", async () => {
+      await readerExpectMutation(account.hiddenFormats([]), () =>
+        section.toggleHiddenFormat("djvu"),
+      );
+    });
+
+    await test.step("check it saved and left the list", async () => {
+      await expect(section.hiddenFormatsStatus).toHaveText("Saved");
+      await expect(section.hiddenFormatToggle("djvu")).toHaveCount(0);
+    });
+  });
+
+  test("put a format back when the server refuses the save", async ({
+    readerSettingsPage,
+    presetReaderHiddenFormats,
+    readerExpectMutation,
+  }) => {
+    const section = readerSettingsPage.account;
+    const save = account.hiddenFormats();
+
+    await test.step("start with nothing hidden and the save refused", async () => {
+      await presetReaderHiddenFormats([]);
+      await readerSettingsPage.goto("preferences");
+      await readerSettingsPage.forceServerError(save);
+    });
+
+    await test.step("tick cbz", async () => {
+      await readerExpectMutation(failing(save), () =>
+        section.toggleHiddenFormat("cbz"),
+      );
+    });
+
+    await test.step("check the tick is put back with an error", async () => {
+      await expect(section.hiddenFormatsStatus).toHaveText(/Couldn.t save/);
+      await expect(section.hiddenFormatToggle("cbz")).not.toBeChecked();
     });
   });
 });

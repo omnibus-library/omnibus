@@ -3,7 +3,7 @@ import { logsUrls } from "../contracts/logs";
 import type { LogPage } from "../data/logs";
 import { BaseComponent } from "./BaseComponent";
 
-/** Settings → Logs: the admin viewer over the server's on-disk JSON logs. */
+/** Administration › Logs: the admin viewer over the server's on-disk JSON logs. */
 export class LogsSectionComponent extends BaseComponent {
   readonly root: Locator;
   readonly heading: Locator;
@@ -19,11 +19,12 @@ export class LogsSectionComponent extends BaseComponent {
   readonly olderButton: Locator;
   readonly newerButton: Locator;
   readonly error: Locator;
+  readonly retryButton: Locator;
 
   constructor(page: Page) {
     super(page);
     this.root = page.getByTestId("logs-page");
-    this.heading = page.getByRole("heading", { level: 2, name: "Server logs" });
+    this.heading = page.getByRole("heading", { level: 3, name: "Server logs" });
     this.levelFilter = page.getByLabel("Level");
     this.moduleFilter = page.getByLabel("Module");
     this.fromField = page.getByLabel("From");
@@ -36,6 +37,7 @@ export class LogsSectionComponent extends BaseComponent {
     this.olderButton = page.getByTestId("logs-next");
     this.newerButton = page.getByTestId("logs-prev");
     this.error = page.getByTestId("logs-error");
+    this.retryButton = page.getByTestId("logs-retry");
   }
 
   /** The level text a listed record shows. */

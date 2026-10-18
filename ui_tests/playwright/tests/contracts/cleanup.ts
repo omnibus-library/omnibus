@@ -11,6 +11,7 @@ export const cleanupUrls = {
   detect: /\/api\/rpc\/cleanup\/detect(?:\?|$)/,
   queue: /\/api\/rpc\/cleanup\/queue(?:\?|$)/,
   decide: /\/api\/rpc\/cleanup\/decide(?:\?|$)/,
+  undo: /\/api\/rpc\/cleanup\/undo(?:\?|$)/,
 };
 
 /** The reads and writes of reviewing a library's cleanup suggestions. */
@@ -36,15 +37,27 @@ export const cleanup = {
     expectedStatus: 200,
   }),
 
-  /** `value` is the reviewer's own wording, or null to accept the proposal. */
+  /**
+   * `value` is the reviewer's own wording, or null to accept the proposal.
+   * With no card, any decision matches.
+   */
   decide: (
-    card: Pick<SuggestionCard, "id">,
-    decision: CleanupDecision,
+    card?: Pick<SuggestionCard, "id">,
+    decision?: CleanupDecision,
     value: string | null = null,
   ): ExpectMutationOptions => ({
     method: "POST",
     url: cleanupUrls.decide,
-    expectedBody: { id: card.id, decision, value },
+    expectedBody:
+      card && decision ? { id: card.id, decision, value } : undefined,
+    expectedStatus: 200,
+  }),
+
+  /** `logId` names the `cleanup_log` row of the decision being taken back. */
+  undo: (logId: number): ExpectMutationOptions => ({
+    method: "POST",
+    url: cleanupUrls.undo,
+    expectedBody: { log_id: logId },
     expectedStatus: 200,
   }),
 };

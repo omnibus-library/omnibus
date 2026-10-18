@@ -7,12 +7,12 @@ import { TEST_USERNAME } from "../utils/auth";
 // The last-admin and non-admin guards live in the server's integration tests,
 // since here they would mutate the suite's admin.
 
-test.describe("users section", () => {
-  test("show the users section layout", async ({ settingsPage }) => {
-    const { users: section } = settingsPage;
+test.describe("people section", () => {
+  test("show the people section layout", async ({ adminPage }) => {
+    const { users: section } = adminPage;
 
-    await test.step("open the users section", async () => {
-      await settingsPage.goto("users");
+    await test.step("open the people section", async () => {
+      await adminPage.goto("people");
     });
 
     await test.step("check the table and its new-user button show", async () => {
@@ -21,17 +21,17 @@ test.describe("users section", () => {
       await expect(section.newUserButton).toBeVisible();
       // The suite's admin is always present.
       await expect(section.row(TEST_USERNAME)).toBeVisible();
-      await settingsPage.topNav.assertDisplayed();
+      await adminPage.topNav.assertDisplayed();
     });
   });
 
   test("lock the other permissions when administrator is checked", async ({
-    settingsPage,
+    adminPage,
   }) => {
-    const { users: section } = settingsPage;
+    const { users: section } = adminPage;
 
     await test.step("open the new-user form", async () => {
-      await settingsPage.goto("users");
+      await adminPage.goto("people");
       await section.openNewUserForm();
       await expect(section.permission("can_upload")).not.toBeChecked();
     });
@@ -48,16 +48,62 @@ test.describe("users section", () => {
     });
   });
 
+  test("keep the typed details when the new user backdrop is clicked", async ({
+    adminPage,
+  }) => {
+    const { users: section } = adminPage;
+
+    await test.step("start a new user", async () => {
+      await adminPage.goto("people");
+      await section.openNewUserForm();
+      await section.fillUsername("half-typed");
+    });
+
+    await test.step("click the backdrop", async () => {
+      await section.clickNewUserBackdrop();
+    });
+
+    await test.step("check the dialog and the details stay", async () => {
+      await expect(section.newUserDialog).toBeVisible();
+      await expect(section.usernameField).toHaveValue("half-typed");
+    });
+  });
+
+  test("keep keyboard focus inside the new user dialog", async ({
+    adminPage,
+  }) => {
+    const { users: section } = adminPage;
+
+    await test.step("open the new-user form", async () => {
+      await adminPage.goto("people");
+      await section.openNewUserForm();
+      await expect(section.newUserDialog).toBeFocused();
+    });
+
+    // More presses than the dialog has controls, so Tab must wrap at least once.
+    await test.step("tab past every control", async () => {
+      for (let press = 0; press < 12; press++) {
+        await section.pressTab();
+        expect(await section.hasFocusInNewUserDialog()).toBe(true);
+      }
+    });
+
+    await test.step("tab backwards", async () => {
+      await section.pressTab({ backwards: true });
+      expect(await section.hasFocusInNewUserDialog()).toBe(true);
+    });
+  });
+
   test("create a user", async ({
-    settingsPage,
+    adminPage,
     createdUserIds,
     expectMutation,
   }) => {
-    const { users: section } = settingsPage;
+    const { users: section } = adminPage;
     const user = buildUploader();
 
     await test.step("open the new-user form", async () => {
-      await settingsPage.goto("users");
+      await adminPage.goto("people");
       await section.openNewUserForm();
     });
 
@@ -83,16 +129,16 @@ test.describe("users section", () => {
   });
 
   test("delete a user", async ({
-    settingsPage,
+    adminPage,
     seedUser,
     createdUserIds,
     expectMutation,
   }) => {
-    const { users: section } = settingsPage;
+    const { users: section } = adminPage;
     const user = await seedUser();
 
     await test.step("ask to delete the user", async () => {
-      await settingsPage.goto("users");
+      await adminPage.goto("people");
       await section.openDeleteDialog(user.username);
       await expect(section.deleteDialog).toBeVisible();
     });
@@ -110,16 +156,16 @@ test.describe("users section", () => {
   // The dialog's backdrop had no busy gate, so a stray click mid-delete closed
   // it before the admin saw the outcome (#1484).
   test("ignore a backdrop click while a delete is in flight", async ({
-    settingsPage,
+    adminPage,
     seedUser,
     createdUserIds,
     expectMutation,
   }) => {
-    const { users: section } = settingsPage;
+    const { users: section } = adminPage;
     const user = await seedUser();
 
     await test.step("ask to delete the user", async () => {
-      await settingsPage.goto("users");
+      await adminPage.goto("people");
       await expect(section.row(user.username)).toBeVisible();
       await section.openDeleteDialog(user.username);
       await expect(section.deleteDialog).toBeVisible();
@@ -141,14 +187,11 @@ test.describe("users section", () => {
     });
   });
 
-  test("reject a duplicate username", async ({
-    settingsPage,
-    expectMutation,
-  }) => {
-    const { users: section } = settingsPage;
+  test("reject a duplicate username", async ({ adminPage, expectMutation }) => {
+    const { users: section } = adminPage;
 
     await test.step("open the new-user form", async () => {
-      await settingsPage.goto("users");
+      await adminPage.goto("people");
       await section.openNewUserForm();
     });
 
@@ -174,14 +217,12 @@ test.describe("users section", () => {
 // `registration_enabled` is one row auth.spec's pages read, and readers take no
 // lock, so these stub its read and write; the server tests cover persistence.
 test.describe("self-registration", () => {
-  test("show the current self-registration setting", async ({
-    settingsPage,
-  }) => {
-    const { users: section } = settingsPage;
+  test("show the current self-registration setting", async ({ adminPage }) => {
+    const { users: section } = adminPage;
 
-    await test.step("open the users section with sign-up closed", async () => {
-      await settingsPage.stubRegistrationOpen(false);
-      await settingsPage.goto("users");
+    await test.step("open the people section with sign-up closed", async () => {
+      await adminPage.stubRegistrationOpen(false);
+      await adminPage.goto("people");
     });
 
     await test.step("check the switch is off and enabled", async () => {
@@ -193,16 +234,13 @@ test.describe("self-registration", () => {
     });
   });
 
-  test("turn self-registration on", async ({
-    settingsPage,
-    expectMutation,
-  }) => {
-    const { users: section } = settingsPage;
+  test("turn self-registration on", async ({ adminPage, expectMutation }) => {
+    const { users: section } = adminPage;
 
-    await test.step("open the users section with sign-up closed", async () => {
-      await settingsPage.stubRegistrationOpen(false);
+    await test.step("open the people section with sign-up closed", async () => {
+      await adminPage.stubRegistrationOpen(false);
       await section.stubRegistrationSaved();
-      await settingsPage.goto("users");
+      await adminPage.goto("people");
       await expect(section.registrationSwitch).not.toBeChecked();
     });
 
@@ -222,16 +260,16 @@ test.describe("self-registration", () => {
   });
 
   test("show an error and keep the switch when saving fails", async ({
-    settingsPage,
+    adminPage,
     expectMutation,
   }) => {
-    const { users: section } = settingsPage;
+    const { users: section } = adminPage;
     const turnOff = users.setRegistration(false);
 
-    await test.step("open the users section with sign-up open", async () => {
-      await settingsPage.stubRegistrationOpen(true);
-      await settingsPage.forceServerError(turnOff);
-      await settingsPage.goto("users");
+    await test.step("open the people section with sign-up open", async () => {
+      await adminPage.stubRegistrationOpen(true);
+      await adminPage.forceServerError(turnOff);
+      await adminPage.goto("people");
       await expect(section.registrationSwitch).toBeChecked();
     });
 

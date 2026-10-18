@@ -3,6 +3,9 @@ import type { BrowserContext } from "@playwright/test";
 /** The part of `POST /api/rpc/kobo/devices/create`'s answer a test keeps. */
 export type CreatedKoboDevice = { id: number };
 
+/** What a stubbed device list needs of each Kobo device. */
+export type KoboDeviceListing = { id: number; name: string };
+
 /** The part of `POST /api/rpc/api-tokens/create`'s answer a test keeps. */
 export type CreatedApiToken = { token: { id: number } };
 

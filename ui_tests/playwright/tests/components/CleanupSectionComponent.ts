@@ -2,7 +2,7 @@ import type { Locator, Page } from "@playwright/test";
 import type { CleanupKind } from "../data/cleanup";
 import { BaseComponent } from "./BaseComponent";
 
-/** Settings → Library cleanup: pending suggestions by kind, and detection. */
+/** Administration › Cleanup: pending suggestions by kind, and detection. */
 export class CleanupSectionComponent extends BaseComponent {
   readonly card: Locator;
   readonly heading: Locator;
@@ -13,7 +13,10 @@ export class CleanupSectionComponent extends BaseComponent {
   constructor(page: Page) {
     super(page);
     this.card = page.getByTestId("cleanup-card");
-    this.heading = this.card.getByRole("heading", { name: "Library cleanup" });
+    this.heading = this.card.getByRole("heading", {
+      level: 3,
+      name: "Suggested fixes",
+    });
     this.kinds = page.getByTestId("cleanup-kinds");
     this.detectButton = page.getByRole("button", { name: "Run detection now" });
     this.detectStatus = page.getByTestId("cleanup-detect-status");
