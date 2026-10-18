@@ -1,5 +1,5 @@
 ---
-paths: "frontend/src/offline/**, frontend/src/data.rs, frontend/src/data/**, omnibus-ios/omnibus/Offline/**, omnibus-ios/omnibus/Services/**, omnibus-ios/omnibusTests/OfflineSyncTests.swift"
+paths: "frontend/src/offline/**, frontend/src/data.rs, frontend/src/data/**, omnibus-ios/omnibus/Offline/**, omnibus-ios/omnibus/Services/**, omnibus-ios/omnibusTests/OfflineSyncTests.swift, frontend/src/offline.rs"
 ---
 # 08 — What may be queued offline
 
