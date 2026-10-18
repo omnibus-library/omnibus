@@ -404,10 +404,11 @@ impl OmnibusClient {
         Ok(req.send().await?)
     }
 
-    /// `method path`, re-logging-in transparently on a 401 (same contract as
-    /// [`Self::get_with_relogin`]). Panics when the request is not covered by
-    /// [`WRITE_ALLOWLIST`] — that is a bug in this crate, and failing loudly
-    /// beats letting an unvetted write reach the instance.
+    /// `method path`, re-logging-in transparently on a 401, as
+    /// [`Self::get_with_relogin`] does; other statuses are returned to the caller.
+    /// Panics when the request is not covered by [`WRITE_ALLOWLIST`]: that is a
+    /// bug in this crate, and failing loudly beats letting an unvetted write
+    /// reach the instance.
     async fn write_with_relogin<B: Serialize + ?Sized>(
         &self,
         method: Method,

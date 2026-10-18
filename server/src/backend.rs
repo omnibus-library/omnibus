@@ -251,8 +251,8 @@ pub struct AppState {
     remote_image_config: Arc<db::author_photos::RemoteImageConfig>,
     /// Whether the per-IP limiters built from this state enforce their budgets.
     rate_limits: RateLimits,
-    /// Feeds [`AppState::request_origin`], the origin Kobo download URLs and hosted-MCP
-    /// image links are built on. CSRF still reads `auth::csrf::allowed_origins()`.
+    /// Feeds `kobo::origin_for` (Kobo URLs) and [`AppState::request_origin`] (hosted-MCP
+    /// links). CSRF still reads `auth::csrf::allowed_origins()`.
     /// An `Arc` keeps the per-request clone cheap.
     public_origins: Arc<[String]>,
 }

@@ -7,10 +7,9 @@ use super::{AuthError, AuthResult};
 const SESSION_KEY_NAME: &str = "session_signing_key";
 const SESSION_KEY_LEN: usize = 64; // 512 bits — tower-sessions key size
 
-/// Returns the session signing key. Creates and persists a fresh random
-/// key on first call if none exists. Operators who want to manage it
-/// externally can pre-seed this row (or set `OMNIBUS_SESSION_KEY` — server
-/// layer reads the env var and calls `put_session_key` at boot).
+/// Returns the session signing key, creating and persisting a fresh random one
+/// on first call. It signs image download links, so rotating it kills every
+/// outstanding link.
 pub async fn load_or_create_session_key(pool: &SqlitePool) -> AuthResult<Vec<u8>> {
     if let Some(bytes) = get_session_key(pool).await? {
         return Ok(bytes);
@@ -45,19 +44,6 @@ pub async fn get_session_key(pool: &SqlitePool) -> AuthResult<Option<Vec<u8>>> {
     Ok(v)
 }
 
-/// Store or replace the session signing key in the database.
-pub async fn put_session_key(pool: &SqlitePool, key: &[u8]) -> AuthResult<()> {
-    sqlx::query(
-        "INSERT INTO secrets (name, value) VALUES (?, ?)
-         ON CONFLICT(name) DO UPDATE SET value = excluded.value",
-    )
-    .bind(SESSION_KEY_NAME)
-    .bind(key)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -76,7 +62,7 @@ mod tests {
     async fn load_or_create_session_key_never_replaces_a_key_another_caller_stored() {
         let p = pool().await;
         let stored = vec![7u8; SESSION_KEY_LEN];
-        put_session_key(&p, &stored).await.unwrap();
+        insert_session_key_if_absent(&p, &stored).await.unwrap();
 
         // The state a concurrent first caller leaves behind between our read and our write.
         let returned = insert_session_key_if_absent(&p, &[9u8; SESSION_KEY_LEN])
