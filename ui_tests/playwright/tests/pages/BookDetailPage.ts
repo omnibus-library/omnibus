@@ -194,10 +194,6 @@ export class BookDetailPage extends BasePage {
     await this.seriesLink(name).click();
   }
 
-  async goBack(): Promise<void> {
-    await this.page.goBack();
-  }
-
   /** The path of the page's URL, for a spec to poll when a link leaves the book. */
   async path(): Promise<string> {
     return new URL(this.page.url()).pathname;

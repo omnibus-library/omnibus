@@ -131,7 +131,7 @@ test.describe("epub reader", () => {
 
     // Back always lands on the book's page, whichever entry opened the reader.
     await test.step("go back", async () => {
-      await epubReaderPage.goBack();
+      await epubReaderPage.leave();
     });
 
     await test.step("check the book detail page shows", async () => {

@@ -113,7 +113,8 @@ export class EpubReaderPage extends BasePage {
     );
   }
 
-  async goBack(): Promise<void> {
+  /** Leaves through the reader's Back button, which lands on the book's page. */
+  async leave(): Promise<void> {
     await this.backButton.click();
   }
 
@@ -124,10 +125,6 @@ export class EpubReaderPage extends BasePage {
   /** The same button opens and closes the panel. */
   async closeDisplayPanel(): Promise<void> {
     await this.displayPanelButton.click();
-  }
-
-  async reload(): Promise<void> {
-    await this.page.reload();
   }
 
   async resizeViewport(size: { width: number; height: number }): Promise<void> {
