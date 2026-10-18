@@ -109,6 +109,9 @@ Approval** and never bumps them. Bump each by hand, all parts in one PR:
   the `version` and the four `hash`es of `wasm-bindgen-cli` in `flake.nix`
   (`nix store prefetch-file <release tarball url>` prints each one).
 
+A major Swift package update waits there too: raise its requirement in Xcode's
+package settings along with the pin in `Package.resolved`.
+
 ## Branches, commits, and pull requests
 
 - **Branch names** follow `OMNI-<issue>/<short-slug>`, for example

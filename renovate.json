@@ -10,7 +10,7 @@
   "semanticCommitType": "chore",
   "semanticCommitScope": null,
   "labels": ["no release"],
-  "dependencyDashboardHeader": "This issue lists Renovate updates and detected dependencies. Everything under **Pending Approval** is a manual pin that moves with a Nix input: bump it by hand as [CONTRIBUTING.md](https://github.com/omnibus-library/omnibus/blob/main/CONTRIBUTING.md#dependency-updates) describes rather than ticking it here.",
+  "dependencyDashboardHeader": "This issue lists Renovate updates and detected dependencies. Everything under **Pending Approval** is a manual bump: do it by hand as [CONTRIBUTING.md](https://github.com/omnibus-library/omnibus/blob/main/CONTRIBUTING.md#dependency-updates) describes rather than ticking it here.",
   "nix": {
     "enabled": true,
     "lockFileMaintenance": {
@@ -82,6 +82,12 @@
     {
       "description": "pnpm comes from nixpkgs-unstable; packageManager only records its version.",
       "matchDepTypes": ["packageManager"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "A major Swift update must also move its requirement in project.pbxproj.",
+      "matchManagers": ["custom.regex"],
+      "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true
     }
   ]
