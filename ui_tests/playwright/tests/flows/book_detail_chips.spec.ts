@@ -2,188 +2,188 @@
 // that swap the hero's chip lists for the shared ChipEditor and save a
 // genres/subjects override on every add.
 //
-// Both editors write `metadata_overrides` on the target — globally visible
-// server state that flips `has_override` — which is why this file owns
-// `standalone-glacier` outright (see the fixture comment in
-// `tests/fixtures/epubs.ts`).
+// Both editors write `metadata_overrides` on the target, which is globally
+// visible and flips `has_override`, so this file owns `standalone-glacier`
+// outright (see the fixture comment in `tests/fixtures/epubs.ts`).
 
-import type { APIRequestContext } from "@playwright/test";
+import { overrides } from "../contracts/overrides";
+import type { BookRecord } from "../data/bookDetail";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-glacier")!;
 
-// Every test writes/clears overrides on the SAME reserved book, so the
-// suite-wide `fullyParallel` would let one test's `clearOverrides` wipe
-// another's just-saved chip mid-assertion. Run this file sequentially in
-// one worker instead.
-test.describe.configure({ mode: "default" });
+test.describe("book detail chip editors", () => {
+  // Every test writes and clears overrides on the same reserved book, so under
+  // `fullyParallel` one test's clear would wipe another's just-saved chip.
+  test.describe.configure({ mode: "default" });
 
-/** The save endpoint every chip write goes through. */
-const OVERRIDES_RPC = /\/api\/rpc\/ebook\/overrides$/;
-
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
-
-/** Drop every override on the target so each test starts chip-free. */
-async function clearOverrides(request: APIRequestContext) {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  const resp = await request.post("/api/rpc/ebook/overrides/delete", {
-    data: { uuid },
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
-  expect(resp.status(), "cleanup revert must succeed").toBe(200);
-}
 
-test.beforeEach(async ({ request }) => {
-  await clearOverrides(request);
-});
-
-test.afterAll(async ({ request }) => {
-  await clearOverrides(request);
-});
-
-test("renders the book detail chip-editor layout", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-  await expectNavVisible(page);
-
-  // Both pills render even though the book carries no genres or tags —
-  // they are the entry point, not a decoration on existing chips.
-  await expect(page.getByTestId("bd-add-genres")).toHaveText("+ genres");
-  await expect(page.getByTestId("bd-add-tags")).toHaveText("+ tags");
-
-  // #2257: genres and tags are separate labelled rows, and each add pill
-  // sits inside the row it adds to — not trailing the other set's chips.
-  const genreRow = page.getByTestId("bd-genre-row");
-  const tagRow = page.getByTestId("bd-tag-row");
-  await expect(genreRow).toContainText("Genres");
-  await expect(tagRow).toContainText("Tags");
-  await expect(genreRow.getByTestId("bd-add-genres")).toBeVisible();
-  await expect(tagRow.getByTestId("bd-add-tags")).toBeVisible();
-  await expect(genreRow.getByTestId("bd-add-tags")).toHaveCount(0);
-  await expect(tagRow.getByTestId("bd-add-genres")).toHaveCount(0);
-});
-
-test("adds a tag from the hero pill, persists it, and suggests it on reopen", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  await page.getByTestId("bd-add-tags").click();
-  const input = page.getByTestId("bd-tags-input");
-  await expect(input).toBeVisible();
-  await expect(input).toHaveAttribute("placeholder", "+ add tag…");
-
-  await input.fill("Alpine Computing");
-  await expectMutation(
-    page,
-    { method: "POST", url: OVERRIDES_RPC, expectedStatus: 200 },
-    async () => input.press("Enter"),
-  );
-  await expect(page.getByTestId("bd-tags-editor")).toContainText(
-    "Alpine Computing",
+  // The teardown clears them again, so the book also ends the run chip-free.
+  test.beforeEach(
+    "start the reserved book chip-free",
+    async ({ request, overridesRequests, revertedOverrides }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      revertedOverrides.add(uuid);
+      await expect(
+        await overridesRequests.deleteOverrides(uuid),
+        "clear the overrides",
+      ).toBeOK();
+    },
   );
 
-  // Escape exits edit mode; the static list shows the saved tag + pill.
-  await input.press("Escape");
-  await expect(input).toHaveCount(0);
-  const tagList = page.getByTestId("bd-tag-list");
-  await expect(tagList).toContainText("Alpine Computing");
-  await expect(tagList).toContainText("+ tags");
+  test("show the chip editor layout", async ({ bookDetailPage, request }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const { heroChips } = bookDetailPage;
 
-  // Survives a full reload (the override is server state, not UI state).
-  await gotoReady(page, `/books/${uuid}`);
-  await expect(page.getByTestId("bd-tag-list")).toContainText(
-    "Alpine Computing",
-  );
+    await test.step("open the book", async () => {
+      await bookDetailPage.gotoSettled(uuid);
+    });
 
-  // Reopening surfaces the dropdown on focus (already-assigned values are
-  // excluded from the pool, so assert the header — it proves the editor
-  // reopened with its dropdown wired up).
-  await page.getByTestId("bd-add-tags").click();
-  await expect(page.getByTestId("bd-tags-suggestions")).toContainText(
-    "ADD TAG",
-  );
-});
+    await test.step("check the nav shows", async () => {
+      await bookDetailPage.topNav.assertDisplayed();
+    });
 
-test("adds a genre from the hero pill and shows it as an accented chip", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
+    // The pills are the entry point, not a decoration on existing chips, so
+    // both render although the book carries no genres or tags.
+    await test.step("check both pills show", async () => {
+      await expect(heroChips.addGenresPill).toHaveText("+ genres");
+      await expect(heroChips.addTagsPill).toHaveText("+ tags");
+    });
 
-  await page.getByTestId("bd-add-genres").click();
-  const input = page.getByTestId("bd-genres-input");
-  await expect(input).toHaveAttribute("placeholder", "+ add genre…");
+    // #2257: each pill sits inside the row it adds to, not trailing the other
+    // set's chips.
+    await test.step("check each row holds its own pill", async () => {
+      await expect(heroChips.genreRow).toContainText("Genres");
+      await expect(heroChips.tagRow).toContainText("Tags");
+      await expect(heroChips.genreRowGenresPill).toBeVisible();
+      await expect(heroChips.tagRowTagsPill).toBeVisible();
+      await expect(heroChips.genreRowTagsPill).toHaveCount(0);
+      await expect(heroChips.tagRowGenresPill).toHaveCount(0);
+    });
+  });
 
-  await input.fill("Field Notes");
-  await expectMutation(
-    page,
-    { method: "POST", url: OVERRIDES_RPC, expectedStatus: 200 },
-    async () => input.press("Enter"),
-  );
+  test("add a tag from the hero pill", async ({
+    bookDetailPage,
+    request,
+    expectMutation,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const { heroChips } = bookDetailPage;
 
-  await input.press("Escape");
-  const genreList = page.getByTestId("bd-genre-list");
-  await expect(genreList).toContainText("Field Notes");
-  await expect(genreList).toContainText("+ genres");
+    await test.step("open the tag editor", async () => {
+      await bookDetailPage.gotoSettled(uuid);
+      await heroChips.openTagEditor();
+      await expect(heroChips.tagsInput).toBeVisible();
+      await expect(heroChips.tagsInput).toHaveAttribute(
+        "placeholder",
+        "+ add tag…",
+      );
+    });
 
-  // A genres override must not write a `subjects` one alongside it.
-  const resp = await request.get(`/api/ebooks/${uuid}`);
-  expect(resp.status()).toBe(200);
-  const book = (await resp.json()) as {
-    genres?: string[];
-    subjects: string[];
-  };
-  expect(book.genres).toEqual(["Field Notes"]);
-  expect(book.subjects).toEqual([]);
-});
+    await test.step("save a tag", async () => {
+      await expectMutation(overrides.save(), () =>
+        heroChips.addTag("Alpine Computing"),
+      );
+      await expect(heroChips.tagsEditor).toContainText("Alpine Computing");
+    });
 
-test("surfaces a failed tag save by not persisting the chip", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
+    await test.step("leave the editor", async () => {
+      await heroChips.closeTagEditor();
+      await expect(heroChips.tagsInput).toHaveCount(0);
+      await expect(heroChips.tagList).toContainText("Alpine Computing");
+      await expect(heroChips.tagList).toContainText("+ tags");
+    });
 
-  await page.route(OVERRIDES_RPC, (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "application/json",
-      body: JSON.stringify({ error: "boom" }),
-    }),
-  );
+    // The override is server state, not UI state.
+    await test.step("check the tag survives a reload", async () => {
+      await bookDetailPage.gotoSettled(uuid);
+      await expect(heroChips.tagList).toContainText("Alpine Computing");
+    });
 
-  await page.getByTestId("bd-add-tags").click();
-  const input = page.getByTestId("bd-tags-input");
-  await input.fill("Never Saved");
-  await expectMutation(
-    page,
-    { method: "POST", url: OVERRIDES_RPC, expectedStatus: 500 },
-    async () => input.press("Enter"),
-  );
+    // Assigned values leave the pool, so the dropdown's header is what proves
+    // the editor reopened with it wired up.
+    await test.step("reopen the editor and check it suggests", async () => {
+      await heroChips.openTagEditor();
+      await expect(heroChips.tagSuggestions).toContainText("ADD TAG");
+    });
+  });
 
-  // A rejected save resyncs the editor from the canonical book, so the
-  // optimistic chip clears in place — no reload required.
-  await expect(page.getByTestId("bd-tags-editor")).not.toContainText(
-    "Never Saved",
-  );
+  test("add a genre from the hero pill", async ({
+    bookDetailPage,
+    ebooksRequests,
+    request,
+    expectMutation,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const { heroChips } = bookDetailPage;
 
-  // And nothing was persisted server-side.
-  await page.unroute(OVERRIDES_RPC);
-  await gotoReady(page, `/books/${uuid}`);
-  await expect(page.getByTestId("bd-tag-list")).not.toContainText(
-    "Never Saved",
-  );
+    await test.step("open the genre editor", async () => {
+      await bookDetailPage.gotoSettled(uuid);
+      await heroChips.openGenreEditor();
+      await expect(heroChips.genresInput).toHaveAttribute(
+        "placeholder",
+        "+ add genre…",
+      );
+    });
+
+    await test.step("save a genre", async () => {
+      await expectMutation(overrides.save(), () =>
+        heroChips.addGenre("Field Notes"),
+      );
+    });
+
+    await test.step("leave the editor", async () => {
+      await heroChips.closeGenreEditor();
+      await expect(heroChips.genreList).toContainText("Field Notes");
+      await expect(heroChips.genreList).toContainText("+ genres");
+    });
+
+    // A genres override must not write a `subjects` one alongside it.
+    await test.step("check only the genres override was saved", async () => {
+      const response = await ebooksRequests.getEbook(uuid);
+      await expect(response).toBeOK();
+      const book: BookRecord = await response.json();
+      expect(book.genres).toEqual(["Field Notes"]);
+      expect(book.subjects).toEqual([]);
+    });
+  });
+
+  test("keep a tag out when its save fails", async ({
+    bookDetailPage,
+    request,
+    expectMutation,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const { heroChips } = bookDetailPage;
+
+    await test.step("open the tag editor with saves failing", async () => {
+      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.forceServerError(overrides.save());
+      await heroChips.openTagEditor();
+    });
+
+    await test.step("save a tag", async () => {
+      await expectMutation(failing(overrides.save()), () =>
+        heroChips.addTag("Never Saved"),
+      );
+    });
+
+    // A rejected save resyncs the editor from the canonical book, so the
+    // optimistic chip clears in place.
+    await test.step("check the chip clears without a reload", async () => {
+      await expect(heroChips.tagsEditor).not.toContainText("Never Saved");
+    });
+
+    await test.step("check nothing was saved", async () => {
+      await bookDetailPage.gotoSettled(uuid);
+      await expect(heroChips.tagList).not.toContainText("Never Saved");
+    });
+  });
 });

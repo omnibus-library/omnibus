@@ -1,188 +1,143 @@
-import type { Page } from "@playwright/test";
+import { suggestions } from "../contracts/suggestions";
+import { mockSuggestion } from "../data/bookDetail";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
+import { expect, test } from "../fixtures/pageFixtures";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// F3.3 "Readers also enjoyed" strip on the book-detail page. The strip's
-// state depends on whether a Hardcover key is configured server-wide and on
-// the outcome of a real Hardcover API call — neither of which this suite can
-// control deterministically (no `HARDCOVER_API_KEY` in CI, and the key is
-// shared global state other specs, e.g. `settings.spec.ts`, also mutate). So
-// every test here mocks `POST /api/rpc/ebook-suggestions` via `page.route`
-// rather than seeding real `book_suggestions` rows — the frontend calls a
-// plain interceptable server function (see `rpc_get_suggestions` in
-// `frontend/src/rpc/books.rs`), so this reproduces every UI state exactly
-// without a new DB seeding seam or any cross-spec state race.
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
+// F3.3 "Readers also enjoyed" strip. Its state depends on a server-wide Hardcover
+// key and a live API call, neither of which CI controls, so each test answers
+// `POST /api/rpc/ebook-suggestions` itself rather than seeding cache rows.
 
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
 
-interface MockSuggestion {
-  hardcover_id: number;
-  hardcover_url: string;
-  title: string;
-  author: string;
-  list_count: number;
-  cover_url: string | null;
-}
+test.describe("suggestions strip", () => {
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+  });
 
-function mockSuggestion(rank: number): MockSuggestion {
-  return {
-    hardcover_id: 1000 + rank,
-    hardcover_url: `https://hardcover.app/books/mock-${rank}`,
-    title: `Suggested Book ${rank}`,
-    author: `Suggested Author ${rank}`,
-    list_count: rank + 1,
-    cover_url: null,
-  };
-}
+  test("show a connect prompt when no hardcover key is configured", async ({
+    bookDetailPage,
+    request,
+    expectMutation,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const strip = bookDetailPage.suggestions;
 
-/** Intercept the suggestions fetch and reply with a fixed `SuggestionsResponse`. */
-async function mockSuggestionsResponse(
-  page: Page,
-  body: unknown,
-): Promise<void> {
-  await page.route("**/api/rpc/ebook-suggestions", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(body),
-    }),
-  );
-}
+    await test.step("open the book with no key configured", async () => {
+      await strip.stubNotConfigured();
+      await expectMutation(suggestions.fetch(), () =>
+        bookDetailPage.gotoSettled(uuid),
+      );
+    });
 
-/**
- * Navigate to a book's detail page and wait for the suggestions strip's
- * POST /api/rpc/ebook-suggestions to resolve (it's a POST per Dioxus server
- * function convention, and the handler enqueues a cascade resolution as a
- * side effect — not a side-effect-free read), so the page has settled into
- * whichever mocked state before assertions run.
- *
- * This deliberately doesn't reuse `expectMutation`: that helper's request
- * wait is tuned for a click-triggered mutation on an already-hydrated page,
- * but this request fires from the page's own mount effect right after WASM
- * hydration — which, on a fresh navigation, can take meaningfully longer
- * than a warm in-page action.
- */
-async function gotoBookAwaitingSuggestions(
-  page: Page,
-  uuid: string,
-): Promise<void> {
-  const requestPromise = page.waitForRequest(
-    (r) =>
-      r.method() === "POST" && r.url().includes("/api/rpc/ebook-suggestions"),
-    { timeout: 30_000 },
-  );
-  await gotoReady(page, `/books/${uuid}`);
-  const request = await requestPromise;
-  const response = await request.response();
-  expect(response?.status()).toBe(200);
-}
+    await test.step("check the prompt shows", async () => {
+      await expect(strip.root).toBeVisible();
+      await expect(strip.notConfigured).toBeVisible();
+      await expect(strip.notConfiguredText).toBeVisible();
+    });
 
-// ---------------------------------------------------------------------------
-// State — not configured (no Hardcover key)
-// ---------------------------------------------------------------------------
+    // The seeded user is an admin, so the card deep-links to the Metadata
+    // Lookup settings where the key lives (#1324).
+    await test.step("check the prompt links to the key's settings", async () => {
+      await expect(strip.connectLink).toBeVisible();
+      await expect(strip.connectLink).toHaveAttribute(
+        "href",
+        "/settings?section=metadata",
+      );
+    });
+  });
 
-test("shows a connect prompt when no Hardcover key is configured", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await mockSuggestionsResponse(page, { status: "not_configured" });
-  await gotoBookAwaitingSuggestions(page, uuid);
+  test("show a pending placeholder while a resolution is enqueued", async ({
+    bookDetailPage,
+    request,
+    expectMutation,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const strip = bookDetailPage.suggestions;
 
-  const strip = page.getByTestId("suggestions-strip");
-  await expect(strip).toBeVisible();
-  await expect(page.getByTestId("suggestions-not-configured")).toBeVisible();
-  await expect(
-    page.getByText(
-      "Add a Hardcover API key to pull read-alikes for this book.",
-    ),
-  ).toBeVisible();
-  // The seeded dev user is an admin, so the connect card deep-links to the
-  // Metadata Lookup settings section where the Hardcover key lives (#1324).
-  const connectLink = page.getByTestId("suggestions-connect-link");
-  await expect(connectLink).toBeVisible();
-  await expect(connectLink).toHaveAttribute(
-    "href",
-    "/settings?section=metadata",
-  );
-});
+    await test.step("open the book with nothing cached yet", async () => {
+      await strip.stubPending();
+      await expectMutation(suggestions.fetch(), () =>
+        bookDetailPage.gotoSettled(uuid),
+      );
+    });
 
-// ---------------------------------------------------------------------------
-// State — pending (resolution enqueued, nothing cached yet)
-// ---------------------------------------------------------------------------
+    await test.step("check the placeholder shows", async () => {
+      await expect(strip.pending).toBeVisible();
+      await expect(strip.pendingText).toBeVisible();
+      await expect(strip.spinner).toBeVisible();
+    });
+  });
 
-test("shows a pending placeholder while a resolution is enqueued", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await mockSuggestionsResponse(page, { status: "pending" });
-  await gotoBookAwaitingSuggestions(page, uuid);
+  test("show an empty note when the cache resolved with no matches", async ({
+    bookDetailPage,
+    request,
+    expectMutation,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const strip = bookDetailPage.suggestions;
 
-  await expect(page.getByTestId("suggestions-pending")).toBeVisible();
-  await expect(
-    page.getByText("Looking for read-alikes via Hardcover…"),
-  ).toBeVisible();
-  await expect(page.getByTestId("suggestions-spinner")).toBeVisible();
-});
+    await test.step("open the book with a sticky negative cached", async () => {
+      await strip.stubReady([]);
+      await expectMutation(suggestions.fetch(), () =>
+        bookDetailPage.gotoSettled(uuid),
+      );
+    });
 
-// ---------------------------------------------------------------------------
-// State — ready, no matches (sticky negative)
-// ---------------------------------------------------------------------------
+    await test.step("check the empty note shows", async () => {
+      await expect(strip.empty).toBeVisible();
+      await expect(strip.emptyText).toBeVisible();
+    });
+  });
 
-test("shows an empty note when the cache resolved with no matches", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await mockSuggestionsResponse(page, { status: "ready", items: [] });
-  await gotoBookAwaitingSuggestions(page, uuid);
+  test("render cached suggestions and expand the stack with show more", async ({
+    bookDetailPage,
+    request,
+    expectMutation,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const strip = bookDetailPage.suggestions;
+    const items = Array.from({ length: 7 }, (_, i) => mockSuggestion(i));
 
-  await expect(page.getByTestId("suggestions-empty")).toBeVisible();
-  await expect(
-    page.getByText("No read-alikes found for this book yet."),
-  ).toBeVisible();
-});
+    await test.step("open the book with seven suggestions cached", async () => {
+      await strip.stubReady(items);
+      await expectMutation(suggestions.fetch(), () =>
+        bookDetailPage.gotoSettled(uuid),
+      );
+    });
 
-// ---------------------------------------------------------------------------
-// State — ready, with results (collapsed stack + "show more" + outbound link)
-// ---------------------------------------------------------------------------
+    // The collapsed stack caps at five of the seven.
+    await test.step("check the first card names its book", async () => {
+      await expect(strip.cards).toHaveCount(5);
+      await expect(strip.firstCard).toContainText(items[0]!.title);
+      await expect(strip.firstCard).toContainText(items[0]!.author);
+      await expect(strip.firstCard).toContainText("on 1 list");
+    });
 
-test("renders cached suggestions and expands the collapsed stack via show more", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  const items = Array.from({ length: 7 }, (_, i) => mockSuggestion(i));
-  await mockSuggestionsResponse(page, { status: "ready", items });
-  await gotoBookAwaitingSuggestions(page, uuid);
+    // Each card is an outbound link, opened in a new tab without leaking a
+    // `window.opener`.
+    await test.step("check the card links to Hardcover", async () => {
+      await expect(strip.firstCard).toHaveAttribute(
+        "href",
+        items[0]!.hardcover_url,
+      );
+      await expect(strip.firstCard).toHaveAttribute("target", "_blank");
+      await expect(strip.firstCard).toHaveAttribute(
+        "rel",
+        "noopener noreferrer",
+      );
+    });
 
-  const strip = page.getByTestId("suggestions-strip");
-  const cards = strip.getByTestId("suggestion-card");
+    await test.step("show the rest", async () => {
+      await expect(strip.showMoreButton).toHaveText("Show 2 more");
+      await strip.showMore();
+    });
 
-  // Collapsed stack caps at 5 even though 7 items are cached.
-  await expect(cards).toHaveCount(5);
-  await expect(cards.first()).toContainText(items[0]!.title);
-  await expect(cards.first()).toContainText(items[0]!.author);
-  await expect(cards.first()).toContainText("on 1 list");
-
-  // Each card is an outbound link to the Hardcover book page, opened in a
-  // new tab without leaking a `window.opener` reference.
-  await expect(cards.first()).toHaveAttribute("href", items[0]!.hardcover_url);
-  await expect(cards.first()).toHaveAttribute("target", "_blank");
-  await expect(cards.first()).toHaveAttribute("rel", "noopener noreferrer");
-
-  const showMore = page.getByTestId("suggestions-show-more");
-  await expect(showMore).toHaveText("Show 2 more");
-  await showMore.click();
-
-  await expect(cards).toHaveCount(7);
-  await expect(cards.last()).toContainText(items[6]!.title);
-  await expect(showMore).toHaveCount(0);
+    await test.step("check all seven cards show", async () => {
+      await expect(strip.cards).toHaveCount(7);
+      await expect(strip.lastCard).toContainText(items[6]!.title);
+      await expect(strip.showMoreButton).toHaveCount(0);
+    });
+  });
 });

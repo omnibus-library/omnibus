@@ -15,6 +15,7 @@ import { STORAGE_STATE_PATH } from "../../globalSetup";
 import { AccountRequests } from "../apiRequests/AccountRequests";
 import { AuthRequests } from "../apiRequests/AuthRequests";
 import { BookmarksRequests } from "../apiRequests/BookmarksRequests";
+import { BookRatingRequests } from "../apiRequests/BookRatingRequests";
 import { EbooksRequests } from "../apiRequests/EbooksRequests";
 import { GoalsRequests } from "../apiRequests/GoalsRequests";
 import { HighlightsRequests } from "../apiRequests/HighlightsRequests";
@@ -34,6 +35,7 @@ import type {
   CreatedKoboDevice,
   SignedInSession,
 } from "../data/account";
+import { type BookRecord, isAudioFormat } from "../data/bookDetail";
 import type { SeededBookmark } from "../data/bookmarks";
 import type { LibraryBook } from "../data/ebooks";
 import {
@@ -70,7 +72,9 @@ import {
   type ExpectMutationOptions,
   expectMutation as expectMutationOn,
 } from "../utils/api";
+import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { withLock } from "../utils/lock";
+import { MERGE_PRIMARY, MERGE_SECONDARY } from "./audiobooks";
 import { DUAL_FORMAT_BOOK } from "./dual_format";
 import {
   test as base,
@@ -194,6 +198,14 @@ type PageFixtures = {
   // #endregion batch-B
 
   // #region batch-C: book detail
+  bookRatingRequests: BookRatingRequests;
+  ebooksRequests: EbooksRequests;
+  ratedBookUuids: Set<string>;
+  revertedOverrides: Set<string>;
+  setScrollStops: (enabled: boolean) => Promise<void>;
+  startReadStatusAt: (bookUuid: string, status: ReadStatus) => Promise<void>;
+  clearHighlights: (bookUuid: string) => Promise<void>;
+  mergedMp3Book: string;
   // #endregion batch-C
 
   // #region batch-D: book detail writes
@@ -879,6 +891,95 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // #endregion batch-B
 
   // #region batch-C: book detail
+  bookRatingRequests: async ({ request }, use) => {
+    await use(new BookRatingRequests(request));
+  },
+  ebooksRequests: async ({ request }, use) => {
+    await use(new EbooksRequests(request));
+  },
+
+  ratedBookUuids: async ({ bookRatingRequests }, use) => {
+    const uuids = new Set<string>();
+    await use(uuids);
+    for (const uuid of uuids) {
+      const cleared = await bookRatingRequests.deleteRating(uuid);
+      await expect(cleared, `clear the rating on ${uuid}`).toBeOK();
+    }
+  },
+
+  revertedOverrides: async ({ overridesRequests }, use) => {
+    const uuids = new Set<string>();
+    await use(uuids);
+    for (const uuid of uuids) {
+      const reverted = await overridesRequests.deleteOverrides(uuid);
+      await expect(reverted, `revert the overrides on ${uuid}`).toBeOK();
+    }
+  },
+
+  // Turns the switch back off, because every other detail test reads the flow.
+  setScrollStops: async ({ accountRequests }, use) => {
+    let changed = false;
+    await use(async (enabled) => {
+      changed = true;
+      const saved = await accountRequests.postScrollStops(enabled);
+      await expect(saved, `set scroll stops to ${enabled}`).toBeOK();
+    });
+    if (changed) {
+      const saved = await accountRequests.postScrollStops(false);
+      await expect(saved, "turn scroll stops off").toBeOK();
+    }
+  },
+
+  // Sets the status now and puts the book back to unread after the test.
+  startReadStatusAt: async ({ presetReadStatus }, use) => {
+    const started = new Set<string>();
+    await use(async (bookUuid, status) => {
+      started.add(bookUuid);
+      await presetReadStatus(bookUuid, status);
+    });
+    for (const uuid of started) await presetReadStatus(uuid, "unread");
+  },
+
+  clearHighlights: async ({ highlightsRequests }, use) => {
+    await use(async (bookUuid) => {
+      const listed = await highlightsRequests.getHighlights(bookUuid);
+      await expect(listed, "list highlights").toBeOK();
+      const stray: SeededHighlight[] = await listed.json();
+      for (const { id } of stray) {
+        const deleted = await highlightsRequests.deleteHighlight(id);
+        await expect(deleted, `delete highlight ${id}`).toBeOK();
+      }
+    });
+  },
+
+  // Merging the reserved MP3 pair gives its primary two audio files, the
+  // scenario the Listen file picker is for; the lock fixture undoes the merge.
+  mergedMp3Book: async (
+    { request, mergeRequests, mergeLock, ebooksRequests },
+    use,
+  ) => {
+    const primaryUuid = await fetchBookUuidByTitle(
+      request,
+      MERGE_PRIMARY.title,
+    );
+    const secondaryUuid = await fetchBookUuidByTitle(
+      request,
+      MERGE_SECONDARY.title,
+    );
+    const merged = await mergeRequests.postMerge(secondaryUuid, primaryUuid);
+    await expect(merged, "merge the reserved mp3 pair").toBeOK();
+    const { merge_log_id: mergeLogId } = await merged.json();
+    mergeLock.undoAfter(mergeLogId);
+
+    const detail = await ebooksRequests.getEbook(primaryUuid);
+    await expect(detail, "read the merged book").toBeOK();
+    const { book_files: files }: BookRecord = await detail.json();
+    expect(
+      files.filter((file) => isAudioFormat(file.format)),
+      "two audio files after the merge",
+    ).toHaveLength(2);
+    await use(primaryUuid);
+  },
   // #endregion batch-C
 
   // #region batch-D: book detail writes

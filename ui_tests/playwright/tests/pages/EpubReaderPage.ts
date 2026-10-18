@@ -354,4 +354,15 @@ export class EpubReaderPage extends BasePage {
     });
     return refusals;
   }
+
+  // batch-C:
+  /** Checks the reader opened `bookUuid` at the passage `cfi`, not where it left off. */
+  async assertPassageOpened(bookUuid: string, cfi: string): Promise<void> {
+    await expect(this.page).toHaveURL(
+      (url) =>
+        url.pathname === `/read/${bookUuid}` &&
+        url.searchParams.get("cfi") === cfi,
+    );
+    await expect(this.viewerPanel).toBeVisible();
+  }
 }
