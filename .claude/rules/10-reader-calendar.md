@@ -1,5 +1,5 @@
 ---
-paths: "db/src/stats/**, db/src/user_offset.rs, db/src/user_offset/**, db/src/progress/ledger/**, db/migrations/**, server/src/backend/stats.rs, server/src/backend/stats/**, frontend/src/pages/stats/**, frontend/src/pages/chart_builder/**"
+paths: "db/src/stats/**, db/src/user_offset.rs, db/src/user_offset/**, db/src/progress/ledger/**, db/migrations/**, server/src/backend/stats.rs, server/src/backend/stats/**, frontend/src/pages/stats/**, frontend/src/pages/chart_builder/**, db/src/progress/ledger.rs"
 ---
 # 10 — Which calendar a figure is cut on
 
