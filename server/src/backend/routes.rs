@@ -492,6 +492,7 @@ fn kindle_routes() -> Router<AppState> {
     Router::new()
         .route("/api/kindle/send", post(kindle::post_send))
         .route("/api/kindle/send/status", get(kindle::get_send_status))
+        .route("/api/kindle/delivery", get(kindle::get_delivery))
         .route("/api/account/kindle-email", post(kindle::post_kindle_email))
         .route(
             "/api/account/hidden-formats",

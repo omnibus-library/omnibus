@@ -3317,19 +3317,21 @@ a.idx-letter-on:focus-visible {
 
 /* Theme segmented control */
 .um-theme { display: flex; flex-direction: column; gap: 8px; }
-.um-theme-seg {
-  display: inline-flex; align-self: flex-end;
+.theme-seg {
+  display: inline-flex;
   background: var(--bg-2); border: 1px solid var(--line-2);
   border-radius: 8px; padding: 2px;
 }
-.um-theme-btn {
+.um-theme .theme-seg { align-self: flex-end; }
+.theme-seg-btn {
   background: transparent; border: none; color: var(--ink-2);
   padding: 4px 12px; border-radius: 6px; cursor: pointer;
   font: inherit; font-size: 12px;
 }
-@media (hover: hover) { .um-theme-btn:hover:not([disabled]) { color: var(--ink-0); } }
-.um-theme-btn.on { background: var(--bg-0); color: var(--ink-0); }
-.um-theme-btn[disabled] { opacity: .45; cursor: not-allowed; }
+@media (hover: hover) { .theme-seg-btn:hover:not([disabled]) { color: var(--ink-0); } }
+.theme-seg-btn.on { background: var(--bg-0); color: var(--ink-0); }
+.theme-seg-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.theme-seg-btn[disabled] { opacity: .45; cursor: not-allowed; }
 
 /* Version line — web app == server, so a single build version (#1055) */
 .um-version {
@@ -5618,6 +5620,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .kobo-device-head { display: flex; justify-content: space-between; align-items: baseline; }
 .kobo-device-name { font-weight: 600; color: var(--ink-0); }
 .kobo-endpoint-url { font-family: var(--mono, ui-monospace, monospace); font-size: 0.85rem; }
+.kobo-endpoint-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.kobo-endpoint-row .kobo-endpoint-url { flex: 1 1 16rem; min-width: 0; }
 .btn.ghost.danger { color: var(--bad); }
 @media (hover: hover) {
   .btn.ghost.danger:hover { background: color-mix(in oklch, var(--bad) 12%, transparent); }
@@ -5680,7 +5684,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 /* the one-time secret */
 .tkx-secret { border: 1px solid color-mix(in oklch, var(--accent) 55%, transparent); background: color-mix(in oklch, var(--accent) 8%, var(--bg-1)); border-radius: var(--r-lg); padding: 20px 22px; }
 .tkx-secret-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
-.tkx-secret-head h3 { margin: 0; font-size: 16px; font-weight: 600; color: var(--ink-0); }
+.tkx-secret-head h4 { margin: 0; font-size: 16px; font-weight: 600; color: var(--ink-0); }
 .tkx-secret-once { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
 .tkx-secret-sub { margin: 0 0 14px; font-size: 12.5px; color: var(--ink-2); }
 .tkx-copyrow { display: flex; gap: 8px; align-items: stretch; }
@@ -10974,7 +10978,19 @@ html {
 }
 .profile-avatar-buttons { display: flex; align-items: center; gap: 8px; }
 .profile-avatar-actions .subtitle { margin: 0; }
-.profile-avatar-input { display: none; }
+/* Visually hidden but focusable, inside its label: the label shows the focus. */
+.profile-avatar-pick { position: relative; }
+.profile-avatar-input {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  opacity: 0;
+}
+.profile-avatar-pick:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.profile-avatar-pick:has(input:disabled) { opacity: .5; cursor: default; }
 
 /* ── Cross-format alignment (modal + book-detail entry row) ─────────── */
 .al-modal {
@@ -13398,3 +13414,37 @@ html {
 @media (prefers-reduced-motion: reduce) {
   .bdmq-mode-toggle, .bdmq-mode-toggle i { transition: none; }
 }
+
+/* ── Settings · personal sections (#2763) ── */
+
+/* An autosaving control: its inline status, then the control. The status
+   span stays mounted (a live region) and only takes room once it speaks. */
+.pref-control { display: flex; align-items: center; }
+.pref-status { font-size: 0.8rem; color: var(--ink-2); }
+.pref-status:not(:empty) { margin-right: 0.75rem; }
+.pref-status.error { color: var(--bad); }
+
+/* Hidden formats: a fieldset drawn as one more settings row. The floated
+   legend lays out as ordinary content instead of sitting on the border. */
+.pref-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0.9rem 0;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.pref-fieldset:last-child { border-bottom: 0; }
+.pref-fieldset > legend { float: left; width: 100%; padding: 0; cursor: default; }
+.pref-fieldset > legend + * { clear: both; }
+.pref-fieldset .hidden-formats-list { margin-top: 0.75rem; }
+.pref-fieldset .pref-status { display: block; margin: 0.5rem 0 0; }
+
+/* A copy button's outcome, beside it. */
+.copy-feedback { font-size: 0.8rem; color: var(--ink-2); }
+.copy-feedback:not(:empty) { margin-left: 0.5rem; }
+.copy-feedback.error { color: var(--bad); }
+
+/* Kindle: the sender address to approve, with its copy button. */
+.kindle-delivery { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.25rem 0.75rem; }
+.kindle-delivery .subtitle { margin-bottom: 0; }
+.kindle-delivery code { font-family: var(--mono, ui-monospace, monospace); font-size: 0.85rem; overflow-wrap: anywhere; }

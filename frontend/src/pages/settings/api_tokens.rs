@@ -1,15 +1,19 @@
-//! Per-user API-token management (web Settings → API Tokens), in the `.tkx-*`
-//! redesign idiom: permission chips state the blast radius up front, creation
-//! sits on top, the one-time secret is a real hand-off (copy + a pre-filled
-//! `claude mcp add` command), and the token table carries status pills plus
-//! in-row rename and revoke confirmation. Signals start empty (rule 07).
+//! Per-user API tokens (Settings › Sign-in & security), in the `.tkx-*` idiom:
+//! permission chips state the blast radius up front, creation sits on top, the
+//! one-time secret is a real hand-off (copy buttons that say whether the copy
+//! landed, plus a pre-filled `claude mcp add` command), and the token table
+//! carries status pills plus in-row rename and revoke confirmation. Signals
+//! start empty (rule 07).
 
 use dioxus::prelude::*;
 use omnibus_shared::ApiTokenView;
 
+use crate::components::clipboard::{copy_text, CopyButton};
 use crate::components::user_avatar::initials_for;
+use crate::components::BusyLabel;
 use crate::contexts::use_current_user_summary;
 use crate::data;
+use crate::pages::account::live_status;
 use crate::time::now_unix;
 
 /// Idle threshold: a token unused for longer than this shows the amber
@@ -39,17 +43,12 @@ pub(crate) fn use_instance_origin() -> Signal<String> {
     origin
 }
 
-/// Copy `text` to the clipboard. Post-mount web interop only — an SSR no-op,
-/// so the markup that triggers it stays identical across targets (rule 07).
-#[cfg_attr(not(feature = "web"), allow(unused_variables))]
+/// Copy `text` without on-screen feedback, for the hosted-MCP card.
 pub(super) fn copy_to_clipboard(text: &str) {
-    #[cfg(feature = "web")]
-    {
-        let literal = serde_json::to_string(text).unwrap_or_else(|_| String::from("\"\""));
-        let _ = dioxus::document::eval(&format!(
-            "try {{ navigator.clipboard.writeText({literal}); }} catch (_e) {{}}"
-        ));
-    }
+    let text = text.to_string();
+    spawn(async move {
+        copy_text(&text).await;
+    });
 }
 
 /// The `claude mcp add` one-liner, pre-filled with the instance origin and
@@ -115,7 +114,11 @@ pub fn ApiTokensSection() -> Element {
                     name_input.set(String::new());
                     new_secret.set(Some((created.token.name.clone(), created.secret)));
                     tokens.write().insert(0, created.token);
-                    msg.set(None);
+                    // Announces the secret panel through the live status line.
+                    msg.set(Some(
+                        "Token created. Copy its secret now \u{2014} it isn\u{2019}t shown again."
+                            .to_string(),
+                    ));
                     msg_is_error.set(false);
                 }
                 Err(e) => {
@@ -214,7 +217,7 @@ pub fn ApiTokensSection() -> Element {
         div { class: "tkx-tokens", "data-testid": "api-tokens-card",
             div { class: "tkx-head",
                 div {
-                    h2 { class: "tkx-title", "API Tokens" }
+                    h3 { class: "tkx-title", "API tokens" }
                     p { class: "tkx-lede",
                         "Long-lived tokens let an API client — an MCP server, a script, a "
                         "shortcut — act as you. They never expire on their own; revoking one "
@@ -235,7 +238,7 @@ pub fn ApiTokensSection() -> Element {
 
             div { class: "tkx-scope", "data-testid": "api-tokens-scope",
                 span { class: "tkx-scope-who",
-                    span { class: "tkx-scope-avatar", title: "{display_name}", "{avatar_initials}" }
+                    span { class: "tkx-scope-avatar", title: "{display_name}", "aria-hidden": "true", "{avatar_initials}" }
                     "Every token carries your account’s permissions, in full:"
                 }
                 span { class: "tkx-scope-chips",
@@ -265,7 +268,7 @@ pub fn ApiTokensSection() -> Element {
                                 name: "api_token_name",
                                 "data-testid": "api-token-name-input",
                                 autocomplete: "off",
-                                placeholder: "MCP on my laptop",
+                                placeholder: "e.g. MCP on my laptop\u{2026}",
                                 maxlength: "100",
                                 value: "{name_input}",
                                 oninput: move |e| name_input.set(e.value()),
@@ -275,8 +278,9 @@ pub fn ApiTokensSection() -> Element {
                             r#type: "submit",
                             class: "btn primary",
                             disabled: in_flight(),
+                            "aria-busy": "{in_flight()}",
                             "data-testid": "api-token-create",
-                            "Create token"
+                            BusyLabel { busy: in_flight(), label: "Create token", busy_label: "Creating\u{2026}" }
                         }
                     }
                     p { class: "tkx-create-hint", "{CREATE_HINT}" }
@@ -286,7 +290,7 @@ pub fn ApiTokensSection() -> Element {
             if show_empty {
                 section { class: "card tkx-empty", "data-testid": "api-tokens-empty",
                     div {
-                        h3 { class: "tkx-empty-title", "No tokens yet" }
+                        h4 { class: "tkx-empty-title", "No tokens yet" }
                         p { class: "tkx-lede", "You only need one if something outside this \
                                                 browser has to reach your library." }
                     }
@@ -296,7 +300,7 @@ pub fn ApiTokensSection() -> Element {
                         li {
                             span {
                                 "Paste it into the client, e.g. "
-                                code { {mcp_command(&origin(), "<token>")} }
+                                code { translate: "no", {mcp_command(&origin(), "<token>")} }
                             }
                         }
                     }
@@ -309,7 +313,7 @@ pub fn ApiTokensSection() -> Element {
                                 name: "api_token_name",
                                 "data-testid": "api-token-name-input",
                                 autocomplete: "off",
-                                placeholder: "MCP on my laptop",
+                                placeholder: "e.g. MCP on my laptop\u{2026}",
                                 maxlength: "100",
                                 value: "{name_input}",
                                 oninput: move |e| name_input.set(e.value()),
@@ -319,8 +323,9 @@ pub fn ApiTokensSection() -> Element {
                             r#type: "submit",
                             class: "btn primary",
                             disabled: in_flight(),
+                            "aria-busy": "{in_flight()}",
                             "data-testid": "api-token-create",
-                            "Create first token"
+                            BusyLabel { busy: in_flight(), label: "Create first token", busy_label: "Creating\u{2026}" }
                         }
                     }
                 }
@@ -377,14 +382,7 @@ pub fn ApiTokensSection() -> Element {
                 }
             }
 
-            if let Some(m) = msg() {
-                p {
-                    role: "status",
-                    "data-testid": "api-tokens-status",
-                    class: if msg_is_error() { "settings-status error" } else { "settings-status success" },
-                    "{m}"
-                }
-            }
+            {live_status("api-tokens-status", msg().as_deref(), msg_is_error())}
         }
     }
 }
@@ -399,12 +397,10 @@ fn SecretHandOff(
     on_dismiss: EventHandler<()>,
 ) -> Element {
     let command = mcp_command(&origin, &secret);
-    let copy_secret = secret.clone();
-    let copy_command = command.clone();
     rsx! {
         div { class: "tkx-secret", "data-testid": "api-token-secret-field",
             div { class: "tkx-secret-head",
-                h3 { "{name}" }
+                h4 { "{name}" }
                 span { class: "tkx-secret-once", "shown once" }
             }
             p { class: "tkx-secret-sub",
@@ -412,25 +408,23 @@ fn SecretHandOff(
                 "now — if you lose it, revoke the token and make another."
             }
             div { class: "tkx-copyrow",
-                div { class: "tkx-copyfield", "data-testid": "api-token-secret", "{secret}" }
-                button {
-                    r#type: "button",
+                div { class: "tkx-copyfield", "data-testid": "api-token-secret", translate: "no", "{secret}" }
+                CopyButton {
+                    text: secret.clone(),
+                    label: "Copy secret",
+                    testid: "api-token-secret-copy",
                     class: "btn primary",
-                    "data-testid": "api-token-secret-copy",
-                    onclick: move |_| copy_to_clipboard(&copy_secret),
-                    "Copy secret"
                 }
             }
             div { class: "tkx-secret-next",
                 span { class: "label", "Connect an MCP client" }
                 div { class: "tkx-cmd",
-                    code { "data-testid": "api-token-mcp-command", "{command}" }
-                    button {
-                        r#type: "button",
-                        class: "btn ghost sm",
-                        "data-testid": "api-token-mcp-command-copy",
-                        onclick: move |_| copy_to_clipboard(&copy_command),
-                        "Copy"
+                    code { "data-testid": "api-token-mcp-command", translate: "no", "{command}" }
+                    CopyButton {
+                        text: command.clone(),
+                        label: "Copy",
+                        testid: "api-token-mcp-command-copy",
+                        aria_label: "Copy the MCP command",
                     }
                 }
             }
@@ -440,7 +434,7 @@ fn SecretHandOff(
                     class: "btn",
                     "data-testid": "api-token-secret-dismiss",
                     onclick: move |_| on_dismiss.call(()),
-                    "I’ve stored it"
+                    "Hide secret"
                 }
                 span { class: "mono", "dismissing hides the secret for good" }
             }
@@ -473,7 +467,7 @@ fn ApiTokenRow(
                 // Legacy rows (pre-suffix) render no identifier — omitted,
                 // never faked (AC4).
                 if let Some(suffix) = token.suffix.as_ref() {
-                    span { class: "tkx-row-id", "omni_…{suffix}" }
+                    span { class: "tkx-row-id", translate: "no", "omni_…{suffix}" }
                 }
             }
             span { class: "tkx-pill {pill_class}", "data-testid": "api-token-pill", "{pill_label}" }
@@ -490,6 +484,7 @@ fn ApiTokenRow(
                     r#type: "button",
                     class: "btn ghost sm",
                     disabled,
+                    "aria-label": "Rename {token.name}",
                     "data-testid": "api-token-rename-{id}",
                     onclick: move |_| on_ask_rename.call(id),
                     "Rename"
@@ -498,6 +493,7 @@ fn ApiTokenRow(
                     r#type: "button",
                     class: "btn ghost sm bad",
                     disabled,
+                    "aria-label": "Revoke {token.name}",
                     "data-testid": "api-token-revoke-{id}",
                     onclick: move |_| on_ask_revoke.call(id),
                     "Revoke"
@@ -801,5 +797,76 @@ mod render_tests {
         assert!(html.contains("omni_test_secret"));
         assert!(html.contains("https://example.test/mcp"));
         assert!(html.contains("data-testid=\"api-token-secret-dismiss\""));
+    }
+
+    fn named_row() -> Element {
+        rsx! {
+            ApiTokenRow {
+                token: ApiTokenView {
+                    id: 7,
+                    name: "MCP on my laptop".to_string(),
+                    created_at: 1_705_276_800,
+                    last_used_at: None,
+                    suffix: Some("4e39".to_string()),
+                },
+                disabled: false,
+                on_ask_rename: |_| {},
+                on_ask_revoke: |_| {},
+            }
+        }
+    }
+
+    fn hand_off() -> Element {
+        rsx! {
+            SecretHandOff {
+                name: "laptop".to_string(),
+                secret: "omni_test_secret".to_string(),
+                origin: "https://example.test".to_string(),
+                on_dismiss: |_| {},
+            }
+        }
+    }
+
+    #[test]
+    fn api_token_row_names_the_token_on_its_actions() {
+        let html = render_in_vdom(named_row);
+        assert!(
+            html.contains(r#"aria-label="Rename MCP on my laptop""#),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"aria-label="Revoke MCP on my laptop""#),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn secret_hand_off_reports_whether_each_copy_landed() {
+        let html = render_in_vdom(hand_off);
+        assert!(html.contains("api-token-secret-copy-feedback"), "{html}");
+        assert!(
+            html.contains("api-token-mcp-command-copy-feedback"),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn secret_hand_off_offers_to_hide_the_secret() {
+        let html = render_in_vdom(hand_off);
+        assert!(html.contains("Hide secret"), "{html}");
+        assert!(!html.contains("I\u{2019}ve stored it"), "{html}");
+    }
+
+    #[test]
+    fn api_tokens_section_mounts_its_status_line_before_any_message() {
+        let html = render_in_vdom(section);
+        assert!(
+            html.contains("<h3 class=\"tkx-title\">API tokens</h3>"),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"class="settings-status" data-testid="api-tokens-status"></p>"#),
+            "{html}"
+        );
     }
 }

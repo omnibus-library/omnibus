@@ -1,12 +1,17 @@
-//! Send-to-Kindle destination card (web Settings → Kindle): the saved address,
+//! Send-to-Kindle destination card (Settings › Devices): the saved address,
 //! hydrated from `/api/auth/me` after mount, with save/clear round-tripping
-//! through `data::set_kindle_email`. Until the read answers, the status line
-//! checks rather than claiming no address is configured.
+//! through `data::set_kindle_email`, and whether this server can deliver at
+//! all — with the sender address the reader must approve at Amazon. Until
+//! each read answers, its line checks rather than guessing.
 
 use dioxus::prelude::*;
+use dioxus_router::Link;
+use omnibus_shared::KindleDelivery;
 
-use crate::components::credential_card::credential_status_message;
-use crate::{data, use_server_url};
+use super::live_status;
+use crate::components::clipboard::CopyButton;
+use crate::components::{BusyLabel, Loading, LoadingKind};
+use crate::{data, use_server_url, Access, Route};
 
 /// Signals backing the Kindle email form — grouped so the hydration effect
 /// and the save/clear handler builders don't each take five signal params.
@@ -20,6 +25,19 @@ struct KindleEmailSignals {
     msg: Signal<Option<String>>,
     msg_is_error: Signal<bool>,
     in_flight: Signal<bool>,
+}
+
+/// Reads whether the server can deliver after mount: `None` while asking,
+/// `Some(None)` once the read has failed.
+fn use_kindle_delivery(server_url: String) -> Signal<Option<Option<KindleDelivery>>> {
+    let mut delivery = use_signal(|| None);
+    use_effect(move || {
+        let url = server_url.clone();
+        spawn(async move {
+            delivery.set(Some(data::kindle_delivery(&url).await.ok()));
+        });
+    });
+    delivery
 }
 
 /// Hydrates the saved Kindle email after mount. `current_user` is a no-op on
@@ -104,8 +122,7 @@ fn kindle_clear_handler(
     }
 }
 
-/// The Kindle email form: input, save/clear actions, and the approved-sender
-/// hint. Split out of `kindle_account_body` so the signal wiring above and
+/// The Kindle email form: input and save/clear actions. Split out of `kindle_account_body` so the signal wiring above and
 /// this markup each stay readable on their own.
 fn kindle_email_form(
     email_input: Signal<String>,
@@ -121,7 +138,7 @@ fn kindle_email_form(
             class: "settings-form",
             onsubmit: on_save,
             div { class: "settings-field",
-                label { r#for: "kindle-email", "Kindle Email" }
+                label { r#for: "kindle-email", "Kindle email" }
                 input {
                     r#type: "email",
                     id: "kindle-email",
@@ -136,25 +153,14 @@ fn kindle_email_form(
                     oninput: move |e| email_input.set(e.value()),
                 }
             }
-            p { class: "subtitle",
-                "Add "
-                b { "your library's sender address" }
-                " to your Amazon "
-                a {
-                    href: "https://www.amazon.com/sendtokindle/email",
-                    target: "_blank",
-                    rel: "noopener",
-                    "approved sender list"
-                }
-                " or Amazon will silently drop the delivery."
-            }
             div { class: "settings-actions",
                 button {
                     r#type: "submit",
                     class: "btn",
                     disabled: in_flight(),
+                    "aria-busy": "{in_flight()}",
                     "data-testid": "kindle-email-save",
-                    "Save"
+                    BusyLabel { busy: in_flight(), label: "Save Kindle email", busy_label: "Saving\u{2026}" }
                 }
                 button {
                     r#type: "button",
@@ -169,12 +175,14 @@ fn kindle_email_form(
     }
 }
 
-/// The Send-to-Kindle destination card (Settings → Kindle). Hydrates the
+/// The Send-to-Kindle destination card (Settings › Devices). Hydrates the
 /// saved address from `/api/auth/me`; saving/clearing round-trips through
 /// `data::set_kindle_email`.
 #[component]
 pub(crate) fn KindleEmailCard() -> Element {
     let server_url = use_server_url();
+    let delivery = use_kindle_delivery(server_url.clone());
+    let access = crate::use_admin_access();
     let signals = KindleEmailSignals {
         email_input: use_signal(String::new),
         saved_email: use_signal(|| None::<String>),
@@ -191,14 +199,16 @@ pub(crate) fn KindleEmailCard() -> Element {
 
     rsx! {
         section { class: "card", "data-testid": "account-kindle-card",
-            h2 { "Kindle" }
-            p { class: "subtitle", "Configure your Send-to-Kindle delivery address." }
+            h3 { "Kindle" }
+            p { class: "subtitle", "The address Send to Kindle delivers your books to." }
 
             {kindle_email_form(signals.email_input, signals.in_flight, connected, on_save, on_clear)}
 
             {kindle_connected_line(connected, (signals.hydrated)())}
 
-            {credential_status_message("kindle-email-status", (signals.msg)().as_deref(), (signals.msg_is_error)())}
+            {kindle_delivery_line(delivery(), access())}
+
+            {live_status("kindle-email-status", (signals.msg)().as_deref(), (signals.msg_is_error)())}
         }
     }
 }
@@ -226,28 +236,72 @@ fn kindle_connected_line(connected: bool, hydrated: Option<bool>) -> Element {
     }
 }
 
-#[cfg(all(test, feature = "server"))]
-mod tests {
-    use super::*;
-    use crate::test_support::render;
-
-    #[test]
-    fn kindle_line_checks_before_claiming_no_address_is_configured() {
-        let pending = render(kindle_connected_line(false, None));
-        assert!(pending.contains("ld-sheen"), "{pending}");
-        assert!(
-            !pending.contains("No Kindle email configured yet."),
-            "{pending}"
-        );
-        let answered = render(kindle_connected_line(false, Some(true)));
-        assert!(
-            answered.contains("No Kindle email configured yet."),
-            "{answered}"
-        );
-        let failed = render(kindle_connected_line(false, Some(false)));
-        assert!(
-            !failed.contains("No Kindle email configured yet."),
-            "{failed}"
-        );
+/// Whether this server can deliver at all. Ready names the sender to approve
+/// at Amazon; not set up says who can fix it, which waits on the reader's role.
+fn kindle_delivery_line(delivery: Option<Option<KindleDelivery>>, access: Access) -> Element {
+    let checking = rsx! {
+        Loading {
+            kind: LoadingKind::Section,
+            class: "start",
+            testid: "kindle-delivery-loading",
+            label: "Checking email delivery\u{2026}",
+        }
+    };
+    let Some(answer) = delivery else {
+        return checking;
+    };
+    let Some(delivery) = answer else {
+        return rsx! {
+            p { class: "subtitle", "data-testid": "kindle-delivery",
+                "Couldn\u{2019}t check whether email delivery is set up on this server."
+            }
+        };
+    };
+    if let Some(sender) = delivery.sender_address {
+        return rsx! {
+            div { class: "kindle-delivery", "data-testid": "kindle-delivery",
+                p { class: "subtitle",
+                    "Approve "
+                    code { translate: "no", "{sender}" }
+                    " in your Amazon account\u{2019}s "
+                    a {
+                        href: "https://www.amazon.com/sendtokindle/email",
+                        target: "_blank",
+                        rel: "noopener",
+                        "approved senders"
+                    }
+                    ", or Amazon drops the delivery."
+                }
+                CopyButton {
+                    text: sender.clone(),
+                    label: "Copy address",
+                    testid: "kindle-sender-copy",
+                    aria_label: "Copy sender address",
+                }
+            }
+        };
+    }
+    match access {
+        Access::Unknown => checking,
+        Access::Allowed => rsx! {
+            p { class: "subtitle", "data-testid": "kindle-delivery",
+                "Email delivery isn\u{2019}t set up on this server yet. "
+                Link {
+                    to: crate::routes::link_target(Route::Admin {
+                        section: Some("integrations".to_string()),
+                        tab: None,
+                    }),
+                    "Set up email delivery"
+                }
+            }
+        },
+        Access::Denied => rsx! {
+            p { class: "subtitle", "data-testid": "kindle-delivery",
+                "Email delivery isn\u{2019}t set up on this server \u{2014} ask your administrator."
+            }
+        },
     }
 }
+
+#[cfg(all(test, feature = "server"))]
+mod tests;

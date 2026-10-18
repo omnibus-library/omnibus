@@ -1,7 +1,7 @@
 //! Send-to-Kindle REST handlers (mobile-facing). Mirrors the web server
 //! functions in `frontend/src/rpc/{kindle,account}.rs` and the SMTP admin RPCs
-//! in `frontend/src/rpc/settings.rs`: per-user send + Kindle-email, and the
-//! admin-only SMTP config (get / set / clear / test).
+//! in `frontend/src/rpc/settings.rs`: per-user send + Kindle-email, delivery
+//! readiness, and the admin-only SMTP config (get / set / clear / test).
 
 use axum::{
     extract::{Query, State},
@@ -10,7 +10,7 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, worker::Task};
-use omnibus_shared::{KindleSendStatus, ProgressState, SmtpConfigUpdate};
+use omnibus_shared::{KindleDelivery, KindleSendStatus, ProgressState, SmtpConfigUpdate};
 use serde::Deserialize;
 
 use super::{internal, AppState};
@@ -55,7 +55,7 @@ pub(super) async fn post_send(
         Ok(None) => {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
-                "add your Kindle email on your account page before sending",
+                "add your Kindle email in Settings › Devices before sending",
             )
                 .into_response();
         }
@@ -139,6 +139,18 @@ pub(super) async fn post_kindle_email(
     }
 }
 
+/// Whether Send-to-Kindle can deliver, and the sender address to approve at
+/// Amazon. Any signed-in reader may ask; the relay's host and credentials
+/// never leave the server.
+pub(super) async fn get_delivery(_user: AuthUser, State(state): State<AppState>) -> Response {
+    match db::effective_smtp_config(&state.pool).await {
+        Ok(config) => {
+            Json(KindleDelivery::for_sender(config.map(|c| c.from_email))).into_response()
+        }
+        Err(e) => internal("read smtp config", e),
+    }
+}
+
 /// Admin-only: masked SMTP config status.
 pub(super) async fn get_smtp(_admin: AdminUser, State(state): State<AppState>) -> Response {
     match db::smtp_status(&state.pool).await {
@@ -185,7 +197,7 @@ pub(super) async fn post_smtp_test(admin: AdminUser, State(state): State<AppStat
         Ok(None) => {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
-                "set your Kindle email on your account page first, then send a test",
+                "set your Kindle email in Settings › Devices first, then send a test",
             )
                 .into_response();
         }

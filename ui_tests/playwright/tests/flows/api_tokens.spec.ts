@@ -3,14 +3,15 @@ import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
-// Settings → API Tokens (#2313, redesigned in #2330): per-user long-lived
-// `omni_…` bearers with a create-once secret hand-off (copy affordances +
-// explicit dismiss), a token table with status pills and `omni_…xxxx`
-// identifiers, in-row rename, and in-row revoke confirmation. Tokens are
-// per-user state on the shared seeded admin, so every test names its tokens
-// uniquely and revokes what it created — counts are never asserted, only
-// presence/absence of this test's own rows.
-const SETTINGS_API_TOKENS = "/settings?section=api-tokens";
+// Settings › Sign-in & security → API tokens (#2313, redesigned in #2330):
+// per-user long-lived `omni_…` bearers with a create-once secret hand-off
+// (copy buttons that report whether the copy landed + explicit dismiss), a
+// token table with status pills and `omni_…xxxx` identifiers, in-row rename,
+// and in-row revoke confirmation. Tokens are per-user state on the shared
+// seeded admin, so every test names its tokens uniquely and revokes what it
+// created — counts are never asserted, only presence/absence of this test's
+// own rows.
+const SETTINGS_API_TOKENS = "/settings?section=security";
 
 const nameInput = (page: Page) => page.getByTestId("api-token-name-input");
 const createButton = (page: Page) => page.getByTestId("api-token-create");
@@ -53,12 +54,14 @@ async function revokeToken(page: Page, name: string): Promise<void> {
   await expect(rowFor(page, name)).toHaveCount(0);
 }
 
-test("renders the API Tokens section layout", async ({ page }) => {
+test("renders the API tokens section layout", async ({ page }) => {
   await gotoReady(page, SETTINGS_API_TOKENS);
 
   await expectNavVisible(page);
   await expect(page.getByTestId("api-tokens-card")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "API Tokens" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 3, name: "API tokens" }),
+  ).toBeVisible();
   // The head states the live-token count and the account's blast radius —
   // the seeded admin always carries the Admin chip.
   await expect(page.getByTestId("api-tokens-count")).toContainText("live");
@@ -97,8 +100,11 @@ test("creates a token, hands off the secret exactly once, and revokes it", async
   await expect(row.getByText(`omni_…${secret.slice(-4)}`)).toBeVisible();
   await expect(row.getByTestId("api-token-pill")).toHaveText("Never used");
 
+  // The live status line announces the hand-off.
+  await expect(status(page)).toContainText("Token created.");
+
   // Dismissing hides the secret for good.
-  await page.getByTestId("api-token-secret-dismiss").click();
+  await page.getByRole("button", { name: "Hide secret" }).click();
   await expect(secretPanel(page)).toHaveCount(0);
 
   // After a reload the secret is unrecoverable: the row persists, the
@@ -246,17 +252,69 @@ test("shows an error and keeps the row when revoke fails", async ({ page }) => {
   await revokeToken(page, name);
 });
 
+// ── Copying the secret ──────────────────────────────────────────────
+// The copy must say whether it landed: on a plain-http LAN install there is
+// no `navigator.clipboard`, and a silent failure there loses the secret.
+
+test.describe("copying the secret", () => {
+  test.use({ permissions: ["clipboard-read", "clipboard-write"] });
+
+  test("copies the secret and says so", async ({ page }) => {
+    const name = `e2e copy ${Date.now()}`;
+    await gotoReady(page, SETTINGS_API_TOKENS);
+    await createToken(page, name);
+    const secret = (await secretField(page).textContent()) ?? "";
+
+    await page.getByTestId("api-token-secret-copy").click();
+
+    await expect(page.getByTestId("api-token-secret-copy-feedback")).toHaveText(
+      "Copied",
+    );
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      secret,
+    );
+
+    await page.getByTestId("api-token-secret-dismiss").click();
+    await revokeToken(page, name);
+  });
+});
+
+test("says so when the secret can't be copied", async ({ page }) => {
+  // No clipboard API (as on plain http) and a refused fallback copy.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", { value: undefined });
+    document.execCommand = () => false;
+  });
+  const name = `e2e copy-fail ${Date.now()}`;
+  await gotoReady(page, SETTINGS_API_TOKENS);
+  await createToken(page, name);
+
+  await page.getByTestId("api-token-secret-copy").click();
+
+  const feedback = page.getByTestId("api-token-secret-copy-feedback");
+  await expect(feedback).toHaveText(
+    "Couldn\u2019t copy \u2014 select and copy it",
+  );
+  await expect(feedback).toHaveClass(/error/);
+  await expect(secretPanel(page)).toBeVisible();
+
+  await page.getByTestId("api-token-secret-dismiss").click();
+  await revokeToken(page, name);
+});
+
 // ── Hosted MCP endpoint toggle (#2314) ──────────────────────────────
-// Renders in the same section, admin-only (the seeded user is an admin).
-// The toggle is instance-wide state: the action test flips it on and
-// restores it off (the shipped default) before finishing, and nothing else
-// in the suite reads it — no other spec touches /mcp.
+// Lives under Administration › Integrations, admin-only (the seeded user is
+// an admin). The toggle is instance-wide state: the action test flips it on
+// and restores it off (the shipped default) before finishing, and nothing
+// else in the suite reads it — no other spec touches /mcp.
+
+const ADMIN_INTEGRATIONS = "/admin?section=integrations";
 
 const mcpToggle = (page: Page) => page.getByTestId("mcp-toggle");
 const mcpState = (page: Page) => page.getByTestId("mcp-toggle-state");
 
 test("renders the MCP endpoint toggle card for an admin", async ({ page }) => {
-  await gotoReady(page, SETTINGS_API_TOKENS);
+  await gotoReady(page, ADMIN_INTEGRATIONS);
 
   await expect(page.getByTestId("mcp-toggle-card")).toBeVisible();
   await expect(
@@ -272,7 +330,7 @@ test("renders the MCP endpoint toggle card for an admin", async ({ page }) => {
 });
 
 test("enables and disables the MCP endpoint", async ({ page }) => {
-  await gotoReady(page, SETTINGS_API_TOKENS);
+  await gotoReady(page, ADMIN_INTEGRATIONS);
   await expect(mcpToggle(page)).toBeEnabled();
 
   try {
@@ -316,7 +374,7 @@ test("enables and disables the MCP endpoint", async ({ page }) => {
 test("shows an error and keeps the switch state when the toggle fails", async ({
   page,
 }) => {
-  await gotoReady(page, SETTINGS_API_TOKENS);
+  await gotoReady(page, ADMIN_INTEGRATIONS);
   await expect(mcpToggle(page)).toBeEnabled();
 
   // Fail only the POST — the card's status GET on mount shares the URL.

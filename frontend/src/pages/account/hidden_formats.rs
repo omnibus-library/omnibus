@@ -1,160 +1,167 @@
-//! "Hidden formats" account card: which formats the caller's landing All
-//! Books view excludes. Checkbox list over the shared known-format vocabulary
-//! (plus any saved token the list doesn't know, so it can always be
-//! un-hidden); saving refreshes the app-wide `CurrentUser` context so the
-//! landing page refetches with the new exclusion without a reload.
+//! Hidden formats (Settings › Preferences): which formats the reader's landing
+//! All Books view excludes, as one group of checkboxes over the shared
+//! known-format vocabulary (plus any saved token the list doesn't know, so it
+//! can always be un-hidden). A change saves at once: the cached viewer takes
+//! it optimistically — so the landing's fetch key moves without a reload —
+//! and saves run one at a time, each carrying the whole set, so a quick run of
+//! clicks can't land out of order.
 
 use std::collections::BTreeSet;
 
 use dioxus::prelude::*;
-use omnibus_shared::KNOWN_LIBRARY_FORMATS;
+use omnibus_shared::{UserSummary, KNOWN_LIBRARY_FORMATS};
 
-use crate::components::credential_card::credential_status_message;
+use super::user_settings::{save_status, SaveState};
 use crate::components::{Loading, LoadingKind};
 use crate::data;
 
-/// The hidden-formats preference card (Settings → Account).
-#[cfg(not(feature = "mobile"))]
-#[component]
-pub(crate) fn HiddenFormatsCard() -> Element {
-    let mut selected = use_signal(BTreeSet::<String>::new);
-    let mut seeded = use_signal(|| false);
-    let mut msg = use_signal(|| None::<String>);
-    let mut msg_is_error = use_signal(|| false);
-    let mut in_flight = use_signal(|| false);
+/// `hidden` with `fmt` hidden (`on`) or shown, sorted and without repeats.
+fn with_format(hidden: Vec<String>, fmt: &str, on: bool) -> Vec<String> {
+    let mut set: BTreeSet<String> = hidden.into_iter().collect();
+    if on {
+        set.insert(fmt.to_string());
+    } else {
+        set.remove(fmt);
+    }
+    set.into_iter().collect()
+}
 
-    // Seed the selection once from the resolved viewer. Unseeded on SSR and
-    // the first WASM paint (rule 07), where the list shows loading rather
-    // than unchecked boxes; the `seeded` guard keeps a later context refresh
-    // (our own save) from clobbering in-progress edits.
-    let viewer = crate::use_current_user_summary();
-    use_effect(move || {
-        if *seeded.peek() {
-            return;
-        }
-        if let Some(user) = viewer() {
-            selected.set(user.hidden_formats.into_iter().collect());
-            seeded.set(true);
-        }
-    });
-
-    // Captured before the async save: `use_current_user` is a hook and can
-    // only run during render.
-    let mut viewer_slot = crate::use_current_user().0;
-    let on_save = move |_| {
-        let formats: Vec<String> = selected.peek().iter().cloned().collect();
-        in_flight.set(true);
-        msg.set(None);
-        spawn(async move {
-            match data::set_hidden_formats("", formats).await {
-                Ok(()) => {
-                    // Refresh the app-wide viewer so the landing `fetch_key`
-                    // (which folds in `hidden_formats`) refetches at once.
-                    if let Ok(resolved) = data::current_user().await {
-                        viewer_slot.set(Some(resolved));
-                    }
-                    msg_is_error.set(false);
-                    msg.set(Some("Hidden formats saved.".to_string()));
-                }
-                Err(e) => {
-                    msg_is_error.set(true);
-                    msg.set(Some(e.to_string()));
-                }
-            }
-            in_flight.set(false);
-        });
-    };
-
-    // Known formats first, then any saved token outside the list.
-    let unknown_saved: Vec<String> = selected
-        .read()
+/// The checkboxes to draw: every known format, then any saved one the list
+/// doesn't know.
+fn format_options(hidden: &[String]) -> Vec<String> {
+    let known = KNOWN_LIBRARY_FORMATS.iter().map(|f| f.to_string());
+    let unknown = hidden
         .iter()
         .filter(|f| !KNOWN_LIBRARY_FORMATS.contains(&f.as_str()))
-        .cloned()
-        .collect();
-    let current = selected.read().clone();
+        .cloned();
+    known.chain(unknown).collect()
+}
+
+/// The cached viewer's hidden formats, once `/me` has resolved.
+fn hidden_of(viewer: &Option<Option<UserSummary>>) -> Option<Vec<String>> {
+    viewer.as_ref()?.as_ref().map(|u| u.hidden_formats.clone())
+}
+
+/// The hidden-formats group. Waits on the viewer rather than draw every box
+/// unchecked, which would claim nothing is hidden.
+#[component]
+pub(crate) fn HiddenFormatsField() -> Element {
+    let viewer = crate::use_current_user().0;
+    let state = use_signal(|| SaveState::Idle);
+    // What the server last accepted; taken from the viewer at the first change.
+    let confirmed = use_signal(|| None::<Vec<String>>);
+    let hidden = hidden_of(&viewer.read());
 
     rsx! {
-        section { class: "card", "data-testid": "account-hidden-formats-card",
-            h2 { "Hidden formats" }
-            p { class: "subtitle",
-                "Hide formats from your All Books view. A book stays visible while "
-                "it has any format you haven't hidden; other readers are unaffected."
+        fieldset {
+            class: "pref-fieldset",
+            "data-testid": "account-hidden-formats-card",
+            "aria-describedby": "hidden-formats-desc",
+            legend { class: "setting-row-label", "Hidden formats" }
+            p { class: "setting-row-desc", id: "hidden-formats-desc",
+                "Hide these from your All Books view. A book stays visible while it has a "
+                "format you haven\u{2019}t hidden; other readers are unaffected."
             }
-            if seeded() {
-                div { class: "settings-field hidden-formats-list",
-                    for fmt in KNOWN_LIBRARY_FORMATS.iter().map(|f| f.to_string()) {
-                        {format_toggle(&fmt, current.contains(&fmt), selected)}
+            match hidden {
+                Some(hidden) => rsx! {
+                    div { class: "hidden-formats-list",
+                        for fmt in format_options(&hidden) {
+                            FormatToggle {
+                                key: "{fmt}",
+                                checked: hidden.contains(&fmt),
+                                fmt,
+                                viewer,
+                                confirmed,
+                                state,
+                            }
+                        }
                     }
-                    for fmt in unknown_saved {
-                        {format_toggle(&fmt, true, selected)}
+                    {save_status("hidden-formats-status", state())}
+                },
+                None => rsx! {
+                    Loading {
+                        kind: LoadingKind::Section,
+                        class: "start",
+                        testid: "hidden-formats-loading",
+                        label: "Reading your preference\u{2026}",
                     }
-                }
-            } else {
-                // Unchecked boxes before the preference is read would claim
-                // nothing is hidden.
-                Loading {
-                    kind: LoadingKind::Section,
-                    class: "start",
-                    testid: "hidden-formats-loading",
-                    label: "Reading your preference",
-                }
+                },
             }
-            div { class: "settings-actions",
-                button {
-                    r#type: "button",
-                    class: "btn",
-                    disabled: in_flight() || !seeded(),
-                    "data-testid": "hidden-formats-save",
-                    onclick: on_save,
-                    "Save"
-                }
-            }
-            {credential_status_message("hidden-formats-status", msg().as_deref(), msg_is_error())}
         }
     }
 }
 
-/// One labelled checkbox row; toggling edits the shared selection set.
-#[cfg(not(feature = "mobile"))]
-fn format_toggle(fmt: &str, checked: bool, mut selected: Signal<BTreeSet<String>>) -> Element {
-    let fmt = fmt.to_string();
+/// One format's checkbox, labelled in capitals.
+#[component]
+fn FormatToggle(
+    fmt: String,
+    checked: bool,
+    viewer: Signal<Option<Option<UserSummary>>>,
+    confirmed: Signal<Option<Vec<String>>>,
+    state: Signal<SaveState>,
+) -> Element {
+    let label = fmt.to_uppercase();
     let toggle_fmt = fmt.clone();
     rsx! {
-        label { key: "{fmt}", class: "hidden-format-row", r#for: "hidden-format-{fmt}",
+        label { class: "hidden-format-row", r#for: "hidden-format-{fmt}",
             input {
                 r#type: "checkbox",
                 id: "hidden-format-{fmt}",
                 "data-testid": "hidden-format-toggle-{fmt}",
                 checked,
-                onchange: move |e| {
-                    let mut set = selected.write();
-                    if e.checked() {
-                        set.insert(toggle_fmt.clone());
-                    } else {
-                        set.remove(&toggle_fmt);
-                    }
-                },
+                onchange: move |e| change_format(&toggle_fmt, e.checked(), viewer, confirmed, state),
             }
-            span { class: "mono", "{fmt}" }
+            span { class: "mono", "{label}" }
         }
     }
 }
 
-#[cfg(all(test, feature = "server"))]
-mod tests {
-    use super::*;
-    use crate::test_support::{provide_current_user, render_in_vdom};
-
-    fn unresolved() -> Element {
-        provide_current_user(None);
-        rsx! { HiddenFormatsCard {} }
+/// Apply one checkbox change to the cached viewer and make sure a save is
+/// running; the running save picks up every change made before it finishes.
+fn change_format(
+    fmt: &str,
+    on: bool,
+    mut viewer: Signal<Option<Option<UserSummary>>>,
+    mut confirmed: Signal<Option<Vec<String>>>,
+    mut state: Signal<SaveState>,
+) {
+    let Some(current) = hidden_of(&viewer.peek()) else {
+        return;
+    };
+    if confirmed.peek().is_none() {
+        confirmed.set(Some(current.clone()));
     }
-
-    #[test]
-    fn hidden_formats_card_waits_rather_than_showing_every_box_unchecked() {
-        let html = render_in_vdom(unresolved);
-        assert!(html.contains("hidden-formats-loading"), "{html}");
-        assert!(!html.contains("hidden-format-toggle-"), "{html}");
+    write_hidden(&mut viewer, with_format(current, fmt, on));
+    if *state.peek() == SaveState::Saving {
+        return;
     }
+    state.set(SaveState::Saving);
+    spawn(async move {
+        loop {
+            let want = hidden_of(&viewer.peek()).unwrap_or_default();
+            if confirmed.peek().as_ref() == Some(&want) {
+                state.set(SaveState::Saved);
+                return;
+            }
+            if data::set_hidden_formats("", want.clone()).await.is_err() {
+                let back = confirmed.peek().clone().unwrap_or_default();
+                write_hidden(&mut viewer, back);
+                state.set(SaveState::Failed);
+                return;
+            }
+            confirmed.set(Some(want));
+        }
+    });
 }
+
+/// Write `hidden` into the cached viewer, if one is cached.
+fn write_hidden(viewer: &mut Signal<Option<Option<UserSummary>>>, hidden: Vec<String>) {
+    viewer.with_mut(|slot| {
+        if let Some(Some(user)) = slot.as_mut() {
+            user.hidden_formats = hidden;
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests;

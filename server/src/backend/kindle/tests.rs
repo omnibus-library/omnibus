@@ -122,6 +122,7 @@ async fn smtp_test_returns_422_when_admin_has_no_kindle_email() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(body_text(response).await.contains("Settings › Devices"));
 }
 
 // ── Per-user Kindle email ────────────────────────────────────────
@@ -180,6 +181,58 @@ async fn kindle_email_post_returns_401_when_anonymous() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+// ── Delivery readiness ───────────────────────────────────────────
+
+#[tokio::test]
+async fn kindle_delivery_get_returns_401_when_anonymous() {
+    let (app, _, _) = fixture().await;
+    let res = app.oneshot(get_anon("/api/kindle/delivery")).await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn kindle_delivery_get_names_only_the_sender_when_smtp_is_configured() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "reader").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    configure_smtp(&pool).await;
+
+    let res = app
+        .oneshot(get_with_bearer("/api/kindle/delivery", &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!({ "sender_address": "library@example.com", "delivery_ready": true })
+    );
+}
+
+#[tokio::test]
+async fn kindle_delivery_get_reports_not_ready_when_smtp_is_unset() {
+    let _env =
+        db::test_support::EnvVarGuard::set("SMTP_HOST", None).also_set("SMTP_FROM_EMAIL", None);
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "reader").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let res = app
+        .oneshot(get_with_bearer("/api/kindle/delivery", &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!({ "sender_address": null, "delivery_ready": false })
+    );
+}
+
 // ── Send gates ───────────────────────────────────────────────────
 
 #[tokio::test]
@@ -197,6 +250,7 @@ async fn send_returns_422_when_user_has_no_kindle_email() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(body_text(response).await.contains("Settings › Devices"));
 }
 
 #[tokio::test]

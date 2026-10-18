@@ -26,6 +26,9 @@ pub(crate) mod cleanup;
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod ebook_convert;
 pub(crate) mod library;
+// Web/server only: Preferences composes the web-only account cards.
+#[cfg(not(feature = "mobile"))]
+mod preferences;
 // Only compiled on web/server: its body calls the web-only
 // `data::get_metadata_precedence`/`save_metadata_precedence` (no mobile RPC
 // route yet).
@@ -170,10 +173,7 @@ fn section_content(section: SettingsSection) -> Element {
 
     match section {
         SettingsSection::Profile => rsx! { account::profile::ProfileCard {} },
-        SettingsSection::Preferences => rsx! {
-            account::user_settings::UserSettingsCard {}
-            account::hidden_formats::HiddenFormatsCard {}
-        },
+        SettingsSection::Preferences => rsx! { preferences::PreferencesSection {} },
         SettingsSection::Goals => rsx! { account::goals::ReadingGoalsCard {} },
         SettingsSection::Devices => rsx! {
             account::kindle::KindleEmailCard {}
