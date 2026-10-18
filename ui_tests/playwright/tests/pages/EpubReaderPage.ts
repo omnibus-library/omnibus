@@ -21,7 +21,6 @@ import { BasePage } from "./BasePage";
 export const PAGE_LABEL = /p\.\u00a0\d+ of \d+/;
 
 export type ContentsEntry = { label: string; href: string; level: number };
-export type Theme = "dark" | "black" | "light" | "sepia";
 
 /**
  * The EPUB reader at `/read/:uuid`: its chrome, drawers and page turns. The
@@ -245,11 +244,6 @@ export class EpubReaderPage extends BasePage {
     return urls;
   }
 
-  /** Stores the theme before every load of this page, as if chosen earlier. */
-  async presetTheme(theme: Theme): Promise<void> {
-    await this.presetLocalStorage("omn.theme", theme);
-  }
-
   /** Stores the typeface before every load of this page, as presetTheme does. */
   async presetTypeface(face: Typeface): Promise<void> {
     await this.presetLocalStorage("omn.typeface", face);
@@ -334,13 +328,6 @@ export class EpubReaderPage extends BasePage {
   async assertDisplayedFor(bookUuid: string): Promise<void> {
     await expect(this.page).toHaveURL(new RegExp(`/read/${bookUuid}$`));
     await expect(this.viewerPanel).toBeVisible();
-  }
-
-  private async presetLocalStorage(key: string, value: string): Promise<void> {
-    await this.page.addInitScript(
-      (entry) => window.localStorage.setItem(entry.key, entry.value),
-      { key, value },
-    );
   }
 
   /** CSP violations reach the console as error entries, iframe ones included. */

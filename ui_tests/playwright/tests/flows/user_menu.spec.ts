@@ -93,7 +93,10 @@ test.describe("user menu", () => {
     });
   });
 
-  test("open settings from the user menu", async ({ libraryPage }) => {
+  test("open settings from the user menu", async ({
+    libraryPage,
+    settingsPage,
+  }) => {
     const { topNav } = libraryPage;
 
     await test.step("click the Settings link", async () => {
@@ -103,7 +106,7 @@ test.describe("user menu", () => {
     });
 
     await test.step("check the default section opens", async () => {
-      await topNav.assertSettingsOpened();
+      await settingsPage.assertDisplayedFor();
     });
   });
 
@@ -239,6 +242,7 @@ test.describe("user menu", () => {
 
   test("open the account section from the Edit link", async ({
     libraryPage,
+    settingsPage,
   }) => {
     const { topNav } = libraryPage;
 
@@ -249,7 +253,8 @@ test.describe("user menu", () => {
     });
 
     await test.step("check Settings opens on the Account section", async () => {
-      await topNav.assertAccountSettingsOpened();
+      await settingsPage.assertDisplayedFor("account");
+      await expect(settingsPage.account.profileCard).toBeVisible();
     });
   });
 });

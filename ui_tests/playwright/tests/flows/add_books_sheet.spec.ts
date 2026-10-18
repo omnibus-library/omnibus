@@ -7,7 +7,7 @@ test.describe("add-books sheet (phone viewport)", () => {
   test.use({ viewport: { width: 375, height: 812 } });
 
   test("show the center action in the tab bar", async ({ libraryPage }) => {
-    const { tabBar } = libraryPage;
+    const { tabBar, topNav } = libraryPage;
 
     await test.step("open the library", async () => {
       await libraryPage.gotoSettled();
@@ -15,7 +15,7 @@ test.describe("add-books sheet (phone viewport)", () => {
 
     // Series left the bar for the centre action, so four tabs split around it.
     await test.step("check the tab bar and its center action show", async () => {
-      await expect(tabBar.libraryLink).toBeVisible();
+      await expect(topNav.libraryLink).toBeVisible();
       await expect(tabBar.centerActionButton).toBeVisible();
       await expect(tabBar.centerActionButton).toHaveAttribute(
         "aria-expanded",
@@ -101,7 +101,7 @@ test.describe("add-books sheet (phone viewport)", () => {
   test("hide upload from a reader who may not upload at either width", async ({
     readerLibraryPage,
   }) => {
-    const { tabBar, addBooksSheet } = readerLibraryPage;
+    const { tabBar, topNav, addBooksSheet } = readerLibraryPage;
 
     await test.step("open the library as the reader", async () => {
       await readerLibraryPage.gotoSettled();
@@ -120,8 +120,8 @@ test.describe("add-books sheet (phone viewport)", () => {
 
     await test.step("check the desktop nav leaves out add books", async () => {
       await tabBar.widenToDesktop();
-      await expect(tabBar.checkInButton).toBeVisible();
-      await expect(tabBar.addBooksButton).toHaveCount(0);
+      await expect(topNav.checkInButton).toBeVisible();
+      await expect(topNav.addBooksButton).toHaveCount(0);
     });
   });
 

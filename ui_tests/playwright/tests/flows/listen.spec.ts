@@ -138,7 +138,7 @@ test.describe("listen page", () => {
     // `routes::link_target` trims the bare trailing `?` dioxus-router writes
     // for an unset `?file_id` (#2256), so the URL is exactly `/listen/:uuid`.
     await test.step("press listen", async () => {
-      await bookDetailPage.listen();
+      await bookDetailPage.formats.listen();
       await listenPage.assertDisplayedFor(uuid);
       await expect(listenPage.playButton).toBeVisible();
     });
@@ -256,14 +256,14 @@ test.describe("listen page", () => {
     test("seed an empty server preference from the account-scoped local speed", async ({
       listenPage,
       request,
-      signedInUserId,
+      adminSession,
       expectMutation,
     }) => {
       const uuid = await fetchBookUuidByTitle(request, LOCAL_SEED_BOOK.title);
 
       await test.step("remember 1.8× in this browser with no speed saved", async () => {
         await listenPage.stubNoSavedSpeed();
-        await listenPage.presetLocalSpeed(signedInUserId, uuid, 1.8);
+        await listenPage.presetLocalSpeed(adminSession.user.id, uuid, 1.8);
       });
 
       await test.step("open the player", async () => {
@@ -847,9 +847,8 @@ test.describe("listen page", () => {
       });
 
       await test.step("add a bookmark at the playhead", async () => {
-        const { response } = await expectMutation(
-          bookmarks.createAtPlayhead(),
-          () => listenPage.drawers.addBookmark(),
+        const { response } = await expectMutation(bookmarks.create(), () =>
+          listenPage.drawers.addBookmark(),
         );
         const { id }: SeededBookmark = await response.json();
         seededBookmarkIds.add(id);

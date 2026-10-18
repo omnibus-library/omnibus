@@ -6,6 +6,7 @@ import { BaseComponent } from "./BaseComponent";
 export class FormatSwitcherComponent extends BaseComponent {
   readonly root: Locator;
   readonly epubRow: Locator;
+  readonly badges: Locator;
   readonly epubBadge: Locator;
   readonly kindleButton: Locator;
   readonly koboButton: Locator;
@@ -17,12 +18,23 @@ export class FormatSwitcherComponent extends BaseComponent {
     super(page);
     this.root = page.getByTestId("format-switcher");
     this.epubRow = this.root.getByTestId("format-row-epub");
+    this.badges = page.getByTestId("format-badge");
     this.epubBadge = this.epubRow.getByTestId("format-badge");
     this.kindleButton = this.epubRow.getByTestId("action-kindle");
     this.koboButton = this.epubRow.getByTestId("action-kobo");
     this.listenAction = this.root.getByTestId("action-listen");
     this.kindleStatus = page.getByTestId("kindle-send-status");
     this.dismissKindleStatusButton = page.getByTestId("kindle-toast-dismiss");
+  }
+
+  /** The copies-list row for a format, such as `MP3`. */
+  row(format: string): Locator {
+    return this.page.locator(`[data-format="${format}"]`).first();
+  }
+
+  /** Opens the audiobook player through the Listen action. */
+  async listen(): Promise<void> {
+    await this.listenAction.click();
   }
 
   async sendToKindle(): Promise<void> {

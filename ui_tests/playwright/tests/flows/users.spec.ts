@@ -180,7 +180,7 @@ test.describe("self-registration", () => {
     const { users: section } = settingsPage;
 
     await test.step("open the users section with sign-up closed", async () => {
-      await section.stubRegistrationOpen(false);
+      await settingsPage.stubRegistrationOpen(false);
       await settingsPage.goto("users");
     });
 
@@ -200,7 +200,7 @@ test.describe("self-registration", () => {
     const { users: section } = settingsPage;
 
     await test.step("open the users section with sign-up closed", async () => {
-      await section.stubRegistrationOpen(false);
+      await settingsPage.stubRegistrationOpen(false);
       await section.stubRegistrationSaved();
       await settingsPage.goto("users");
       await expect(section.registrationSwitch).not.toBeChecked();
@@ -229,7 +229,7 @@ test.describe("self-registration", () => {
     const turnOff = users.setRegistration(false);
 
     await test.step("open the users section with sign-up open", async () => {
-      await section.stubRegistrationOpen(true);
+      await settingsPage.stubRegistrationOpen(true);
       await settingsPage.forceServerError(turnOff);
       await settingsPage.goto("users");
       await expect(section.registrationSwitch).toBeChecked();

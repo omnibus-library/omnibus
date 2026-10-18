@@ -8,18 +8,13 @@ export const bookmarksUrls = {
 
 /** The writes the bookmarks drawer makes. */
 export const bookmarks = {
-  /** The save "+ Bookmark" makes. */
-  create: (bookmark: NewBookmark): ExpectMutationOptions => ({
+  /** The save "+ Bookmark" makes; at the playhead, whose position the body leaves unpinned, pass none. */
+  create: (bookmark?: NewBookmark): ExpectMutationOptions => ({
     method: "POST",
     url: bookmarksUrls.create,
-    expectedBody: { input: { client_id: null, ...bookmark } },
-    expectedStatus: 200,
-  }),
-
-  /** The save "+ Bookmark" makes at the playhead, whose position the body leaves unpinned. */
-  createAtPlayhead: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: bookmarksUrls.create,
+    ...(bookmark
+      ? { expectedBody: { input: { client_id: null, ...bookmark } } }
+      : {}),
     expectedStatus: 200,
   }),
 };

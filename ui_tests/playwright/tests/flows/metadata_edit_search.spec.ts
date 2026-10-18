@@ -904,7 +904,7 @@ test.describe("metadata edit edition picker", () => {
     test("apply the source's cover at once", async ({
       metadataEditPage,
       bookDetailPage,
-      overridesRequests,
+      ebooksRequests,
       expectMutation,
       request,
     }) => {
@@ -913,7 +913,7 @@ test.describe("metadata edit edition picker", () => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("stub the write with the book as the server returns it", async () => {
-        const book = await overridesRequests.getEbook(uuid);
+        const book = await ebooksRequests.getEbook(uuid);
         await expect(book).toBeOK();
         await metadataEditPage.stubCoverFromUrl(await book.json());
       });

@@ -1,9 +1,6 @@
 import { journals } from "../contracts/journals";
-import {
-  type JournalEntryRef,
-  journalMarker,
-  TINY_PNG,
-} from "../data/journals";
+import { TINY_PNG } from "../data/covers";
+import { type JournalEntryRef, journalMarker } from "../data/journals";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
@@ -610,7 +607,7 @@ test.describe("book journal", () => {
       await test.step("scroll the entry's row into view", async () => {
         await journal.scrollRowIntoView(marker);
         expect(
-          await journal.flowScrollTop(),
+          await bookDetailPage.stops.flowScrollTop(),
           "the flow scroller must have scrolled for this to bite",
         ).toBeGreaterThan(0);
       });

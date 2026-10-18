@@ -222,6 +222,7 @@ test.describe("series stacks", () => {
 
   test("link the head card to the series page", async ({
     readerLibraryPage,
+    readerSeriesPage,
     presetStackSeries,
   }) => {
     await presetStackSeries(true);
@@ -236,7 +237,7 @@ test.describe("series stacks", () => {
     });
 
     await test.step("check the series page opens", async () => {
-      await readerLibraryPage.seriesCap.assertSeriesPageOpened("Pioneers");
+      await readerSeriesPage.assertShowsSeries("Pioneers");
     });
   });
 

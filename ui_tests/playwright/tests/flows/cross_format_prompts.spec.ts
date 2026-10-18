@@ -112,7 +112,7 @@ test.describe("cross-format resume prompts", () => {
             );
             await expect(epub, "epub progress write").toBeOK();
             await libraryPage.goto();
-            return libraryPage.showsResumeCard(uuid);
+            return continueStack.showsCard(uuid);
           },
           { timeout: 45_000, intervals: [1_000] },
         )
@@ -137,7 +137,7 @@ test.describe("cross-format resume prompts", () => {
 
     // Same handler as the book-detail CTA; immersive.spec covers the dock.
     await test.step("open the reader with the audiobook docked", async () => {
-      await libraryPage.openImmersiveFromContinueStack(uuid);
+      await continueStack.openImmersive(uuid);
       await epubReaderPage.assertDisplayedFor(uuid);
     });
   });

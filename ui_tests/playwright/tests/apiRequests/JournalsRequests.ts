@@ -4,16 +4,17 @@ import { BaseRequests } from "./BaseRequests";
 
 /** Journal entries on a book, as whoever owns the context. */
 export class JournalsRequests extends BaseRequests {
-  /** Writes an entry; the body is the stored entry, with its `id`. */
+  /** Writes an entry (a `progress` of 100 finishes the book); answers it with its `id`. */
   postJournal(
     bookUuid: string,
     bodyMd: string,
     status: JournalStatus,
+    progress: number | null = null,
   ): Promise<APIResponse> {
     return this.post("/api/journals", {
       book_uuid: bookUuid,
       body_md: bodyMd,
-      progress: null,
+      progress,
       status,
     });
   }

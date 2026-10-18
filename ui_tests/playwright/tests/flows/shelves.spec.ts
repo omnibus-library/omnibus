@@ -149,21 +149,19 @@ test.describe("shelves on the library page", () => {
       await test.step("select the first shelf", async () => {
         await libraryPage.gotoSettled();
         await libraryPage.selectShelf(shelfA);
-        await expect(libraryPage.bookGrid).toContainText("Alpha");
+        await expect(libraryPage.grid).toContainText("Alpha");
       });
 
       await test.step("select the second shelf", async () => {
         await libraryPage.selectShelf(shelfB);
-        await expect(libraryPage.bookGrid).toContainText("Beta in the Series");
-        await expect(libraryPage.bookGrid).not.toContainText("Alpha");
+        await expect(libraryPage.grid).toContainText("Beta in the Series");
+        await expect(libraryPage.grid).not.toContainText("Alpha");
       });
 
       await test.step("select the first shelf again", async () => {
         await libraryPage.selectShelf(shelfA);
-        await expect(libraryPage.bookGrid).toContainText("Alpha");
-        await expect(libraryPage.bookGrid).not.toContainText(
-          "Beta in the Series",
-        );
+        await expect(libraryPage.grid).toContainText("Alpha");
+        await expect(libraryPage.grid).not.toContainText("Beta in the Series");
       });
 
       await test.step("check the library never navigated", async () => {
@@ -197,8 +195,8 @@ test.describe("shelves on the library page", () => {
 
       await test.step("check the table's column headers respect the lock", async () => {
         await libraryPage.table.switchTo();
-        await expect(libraryPage.titleSortButton).toBeDisabled();
-        await expect(libraryPage.titleColumnHeader).toHaveAttribute(
+        await expect(libraryPage.table.titleSortButton).toBeDisabled();
+        await expect(libraryPage.table.titleColumnHeader).toHaveAttribute(
           "aria-sort",
           "none",
         );
@@ -233,10 +231,8 @@ test.describe("shelves on the library page", () => {
       await test.step("select the shelf", async () => {
         await libraryPage.gotoSettled();
         await libraryPage.selectShelf(shelf);
-        await expect(libraryPage.bookGrid).toContainText("Alpha");
-        await expect(libraryPage.bookGrid).not.toContainText(
-          "Beta in the Series",
-        );
+        await expect(libraryPage.grid).toContainText("Alpha");
+        await expect(libraryPage.grid).not.toContainText("Beta in the Series");
         await expect(libraryPage.shelfFacets).toContainText("Smart shelf");
         await expect(libraryPage.shelfFacets).toContainText(
           "Author is Ada Lovelace",
@@ -276,8 +272,8 @@ test.describe("shelves on the library page", () => {
         await expect(libraryPage.shelfFacets).toContainText(
           "Author is Grace Hopper",
         );
-        await expect(libraryPage.bookGrid).toContainText("Beta in the Series");
-        await expect(libraryPage.bookGrid).not.toContainText("Alpha");
+        await expect(libraryPage.grid).toContainText("Beta in the Series");
+        await expect(libraryPage.grid).not.toContainText("Alpha");
       });
     });
 

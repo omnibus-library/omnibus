@@ -48,8 +48,12 @@ export class AddBooksPage extends BasePage {
   }
 
   /** Stages a cover for the book, to be saved with it. */
-  async stageCover(cover: PickedFiles): Promise<void> {
-    await this.form.coverUploadInput.setInputFiles(cover);
+  async stageCover(png: Buffer): Promise<void> {
+    await this.form.coverUploadInput.setInputFiles({
+      name: "cover.png",
+      mimeType: "image/png",
+      buffer: png,
+    });
   }
 
   async removeStagedCover(): Promise<void> {

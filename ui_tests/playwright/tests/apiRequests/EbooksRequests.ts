@@ -7,7 +7,7 @@ export class EbooksRequests extends BaseRequests {
     return this.get("/api/rpc/ebooks");
   }
 
-  /** One book as the detail page reads it, with its overrides and files. */
+  /** One book as the detail page reads it, with its override flags, genres and files. */
   getEbook(bookUuid: string): Promise<APIResponse> {
     return this.get(`/api/ebooks/${bookUuid}`);
   }

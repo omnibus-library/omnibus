@@ -20,7 +20,7 @@ test.describe("pre-hydration page", () => {
     await test.step("check the nav and skeletons show", async () => {
       await expect(preHydration.hydratedMarker).toHaveCount(0);
       await libraryPage.topNav.assertDisplayed();
-      await expect(preHydration.libraryLoading).toBeVisible();
+      await expect(libraryPage.loading).toBeVisible();
       await expect(preHydration.libraryCountPending).toBeVisible();
       await expect(preHydration.pageLoaderMark).toHaveCount(0);
       await expect(preHydration.zeroBooksText).toHaveCount(0);
@@ -28,7 +28,7 @@ test.describe("pre-hydration page", () => {
 
     await test.step("release the download", async () => {
       await preHydration.release();
-      await expect(preHydration.libraryLoading).toHaveCount(0);
+      await expect(libraryPage.loading).toHaveCount(0);
     });
   });
 
@@ -62,7 +62,7 @@ test.describe("pre-hydration page", () => {
     preHydration,
   }) => {
     await test.step("save a theme and hold the client download", async () => {
-      await preHydration.presetSavedTheme("sepia");
+      await libraryPage.presetTheme("sepia");
       await preHydration.hold();
     });
 
@@ -74,12 +74,18 @@ test.describe("pre-hydration page", () => {
     // normally applies the saved theme is still held.
     await test.step("check the page wears the theme", async () => {
       await expect(preHydration.hydratedMarker).toHaveCount(0);
-      await expect(preHydration.appRoot).toHaveAttribute("data-theme", "sepia");
+      await expect(libraryPage.topNav.themeRoot).toHaveAttribute(
+        "data-theme",
+        "sepia",
+      );
     });
 
     await test.step("release the download", async () => {
       await preHydration.release();
-      await expect(preHydration.appRoot).toHaveAttribute("data-theme", "sepia");
+      await expect(libraryPage.topNav.themeRoot).toHaveAttribute(
+        "data-theme",
+        "sepia",
+      );
     });
   });
 });

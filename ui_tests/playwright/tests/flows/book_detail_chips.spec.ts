@@ -28,9 +28,9 @@ test.describe("book detail chip editors", () => {
   // The teardown clears them again, so the book also ends the run chip-free.
   test.beforeEach(
     "start the reserved book chip-free",
-    async ({ request, overridesRequests, revertedOverrides }) => {
+    async ({ request, overridesRequests, overriddenBookUuids }) => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-      revertedOverrides.add(uuid);
+      overriddenBookUuids.add(uuid);
       await expect(
         await overridesRequests.deleteOverrides(uuid),
         "clear the overrides",

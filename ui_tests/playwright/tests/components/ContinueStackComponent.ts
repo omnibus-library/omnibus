@@ -50,6 +50,21 @@ export class ContinueStackComponent extends BaseComponent {
     return this.page.getByTestId(`resume-edge-go-${bookUuid}`);
   }
 
+  /** Whether the fan shows a card for `bookUuid` within 3 s, rather than failing the wait. */
+  async showsCard(bookUuid: string): Promise<boolean> {
+    return this.card(bookUuid)
+      .waitFor({ state: "visible", timeout: 3_000 })
+      .then(
+        () => true,
+        () => false,
+      );
+  }
+
+  /** Opens the book's reader with its audiobook docked, from the pill on the front card. */
+  async openImmersive(bookUuid: string): Promise<void> {
+    await this.immersiveChip(bookUuid).click();
+  }
+
   cardCount(): Promise<number> {
     return this.cards.count();
   }

@@ -23,9 +23,4 @@ export class OverridesRequests extends BaseRequests {
       },
     });
   }
-
-  /** The book with its override flags and genres. */
-  getEbook(uuid: string): Promise<APIResponse> {
-    return this.get(`/api/ebooks/${uuid}`);
-  }
 }

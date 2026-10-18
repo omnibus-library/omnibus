@@ -8,21 +8,4 @@ export class StatsRequests extends BaseRequests {
   postSessions(sessions: SessionSeed[]): Promise<APIResponse> {
     return this.post("/api/progress/sessions", sessions);
   }
-
-  postRating(bookUuid: string, stars: number): Promise<APIResponse> {
-    return this.post("/api/ratings", { book_uuid: bookUuid, stars });
-  }
-
-  /** A journal entry at `progress` percent; 100 counts the book as finished. */
-  postJournal(
-    bookUuid: string,
-    bodyMd: string,
-    progress: number,
-  ): Promise<APIResponse> {
-    return this.post("/api/journals", {
-      book_uuid: bookUuid,
-      body_md: bodyMd,
-      progress,
-    });
-  }
 }

@@ -207,7 +207,7 @@ test.describe("shelf page", () => {
 
       await test.step("take the book off", async () => {
         await expectMutation(shelves.removeBook(shelf.id, alpha), () =>
-          shelfPage.removeBook("Alpha"),
+          shelfPage.removeBook(alpha),
         );
       });
 
@@ -234,7 +234,7 @@ test.describe("shelf page", () => {
 
       await test.step("take the book off", async () => {
         await expectMutation(failing(shelves.removeBook()), () =>
-          shelfPage.removeBook("Alpha"),
+          shelfPage.removeBook(alpha),
         );
       });
 

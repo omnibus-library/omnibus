@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import { uploads } from "../contracts/uploads";
+import { TINY_PNG } from "../data/covers";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
 import { audiobookFixturesDir, fixturesDir } from "../utils/seed";
@@ -21,17 +22,6 @@ const AUDIOBOOK_PARTS = ["chapter01.mp3", "chapter02.mp3"].map((chapter) =>
     chapter,
   ),
 );
-
-// A 1×1 PNG: enough for the browser to type it `image/png` and the form to
-// stage it, since nothing here ever sends it.
-const TINY_PNG = {
-  name: "cover.png",
-  mimeType: "image/png",
-  buffer: Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
-    "base64",
-  ),
-};
 
 test.describe("add books page", () => {
   test("show the add-books layout", async ({ addBooksPage }) => {

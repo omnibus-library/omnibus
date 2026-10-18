@@ -284,7 +284,7 @@ test.describe("shelf gallery", () => {
       await test.step("check Add books waits for the refetch", async () => {
         await expect(picker.root).toHaveCount(0);
         await expect(libraryPage.bookTile("Beta in the Series")).toBeVisible();
-        await expect(libraryPage.loadingIndicator).toHaveCount(0);
+        await expect(libraryPage.loading).toHaveCount(0);
         await expect(libraryPage.shelfAddBooksButton).toHaveAttribute(
           "aria-disabled",
           "true",

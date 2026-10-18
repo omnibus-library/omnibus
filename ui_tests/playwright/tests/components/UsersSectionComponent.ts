@@ -97,17 +97,6 @@ export class UsersSectionComponent extends BaseComponent {
     });
   }
 
-  /** Answers the sign-up status read, which is one row the whole server shares. */
-  async stubRegistrationOpen(open: boolean): Promise<void> {
-    await this.page.route(usersUrls.registrationStatus, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ enabled: open }),
-      }),
-    );
-  }
-
   /** Accepts the sign-up switch's write without storing it. */
   async stubRegistrationSaved(): Promise<void> {
     await this.page.route(usersUrls.registration, (route) =>

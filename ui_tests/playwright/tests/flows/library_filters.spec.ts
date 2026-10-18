@@ -308,7 +308,7 @@ test.describe("library filters", () => {
         slugsWhere((b) => authoredBy(b, "Alfred Aho") && hasFormat(b, "pdf")),
       );
       await expect(libraryPage.noMatchesMessage).toBeVisible();
-      await expect(libraryPage.emptyLibraryMessage).toHaveCount(0);
+      await expect(libraryPage.emptyMessage).toHaveCount(0);
       await libraryPage.recordEmptyLibraryInsertions();
     });
 
@@ -898,7 +898,7 @@ test.describe("library filters", () => {
 
       await test.step("release the read and check the book left", async () => {
         await readerShelfPage.releaseShelfReads();
-        await expect(readerShelfPage.removeButtonByUuid(target)).toHaveCount(0);
+        await expect(readerShelfPage.removeButton(target)).toHaveCount(0);
       });
 
       await test.step("check its button was never enabled again", async () => {

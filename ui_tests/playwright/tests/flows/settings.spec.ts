@@ -56,7 +56,7 @@ test.describe("settings page", () => {
 
     await test.step("open metadata lookup", async () => {
       await settingsPage.openSection("metadata");
-      await settingsPage.assertSectionOpen("metadata");
+      await settingsPage.assertDisplayedFor("metadata");
       await expect(
         settingsPage.metadata.keyCard("hardcover").root,
       ).toBeVisible();
@@ -67,20 +67,20 @@ test.describe("settings page", () => {
 
     await test.step("open email delivery", async () => {
       await settingsPage.openSection("email");
-      await settingsPage.assertSectionOpen("email");
+      await settingsPage.assertDisplayedFor("email");
       await expect(settingsPage.email.card).toBeVisible();
     });
 
     await test.step("open kindle", async () => {
       await settingsPage.openSection("kindle");
-      await settingsPage.assertSectionOpen("kindle");
-      await expect(settingsPage.kindleCard).toBeVisible();
+      await settingsPage.assertDisplayedFor("kindle");
+      await expect(settingsPage.kindle.card).toBeVisible();
     });
 
     await test.step("open kobo", async () => {
       await settingsPage.openSection("kobo");
-      await settingsPage.assertSectionOpen("kobo");
-      await expect(settingsPage.koboDevicesCard).toBeVisible();
+      await settingsPage.assertDisplayedFor("kobo");
+      await expect(settingsPage.kobo.devicesCard).toBeVisible();
     });
   });
 });

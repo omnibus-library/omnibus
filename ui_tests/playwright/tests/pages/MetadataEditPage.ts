@@ -5,7 +5,6 @@ import { TopNavComponent } from "../components/TopNavComponent";
 import { coversUrls } from "../contracts/covers";
 import type { EditionAnswers } from "../data/editions";
 import { expect } from "../fixtures/test";
-import type { ExpectMutationOptions } from "../utils/api";
 import { BasePage } from "./BasePage";
 
 /** A book's metadata edit page at `/books/:uuid/edit`. */
@@ -102,10 +101,5 @@ export class MetadataEditPage extends BasePage {
           })
         : route.continue(),
     );
-  }
-
-  /** Lets writes through again after `forceServerError(contract)` failed them. */
-  async stopForcingServerError(contract: ExpectMutationOptions): Promise<void> {
-    await this.page.unroute(contract.url);
   }
 }

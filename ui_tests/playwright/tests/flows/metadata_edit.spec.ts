@@ -546,7 +546,7 @@ test.describe("metadata edit page", () => {
 
     test("apply a pasted cover URL", async ({
       metadataEditPage,
-      overridesRequests,
+      ebooksRequests,
       expectMutation,
       request,
     }) => {
@@ -554,7 +554,7 @@ test.describe("metadata edit page", () => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("stub the write with the book as the server returns it", async () => {
-        const book = await overridesRequests.getEbook(uuid);
+        const book = await ebooksRequests.getEbook(uuid);
         await expect(book).toBeOK();
         await metadataEditPage.stubCoverFromUrl(await book.json());
       });

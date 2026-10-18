@@ -67,66 +67,6 @@ export class LibraryPage extends BasePage {
     await this.sectionTitle.filter({ hasText: shelf.name }).waitFor();
   }
 
-  readonly libraryGrid = this.page.getByTestId("lib-grid");
-
-  /** The link on a table row's cover cell that opens the book. */
-  tableRowOpenLink(slug: string, title: string): Locator {
-    return this.table
-      .row(slug)
-      .getByRole("link", { name: `Open details for ${title}` });
-  }
-
-  async openFromTable(slug: string, title: string): Promise<void> {
-    await this.tableRowOpenLink(slug, title).click();
-  }
-
-  /** Follows the top nav's Library link, from whichever page the reader is on. */
-  async openFromNav(): Promise<void> {
-    await this.topNav.libraryLink.click();
-  }
-
-  /** The Genres cell of a book's table row, a chip editor once clicked. */
-  genresCell(slug: string): Locator {
-    return this.table.cell(slug, "genres");
-  }
-
-  /** The chip editor an open Genres cell shows. */
-  genresCellInput(slug: string): Locator {
-    return this.table.cellInput(slug, "genres");
-  }
-
-  async openGenresCell(slug: string): Promise<void> {
-    await this.genresCell(slug).click();
-  }
-
-  async typeGenreInCell(slug: string, genre: string): Promise<void> {
-    await this.genresCellInput(slug).fill(genre);
-  }
-
-  /** Commits the typed genre with Enter; a test that asserts the write wraps it. */
-  async commitGenreInCell(slug: string): Promise<void> {
-    await this.genresCellInput(slug).press("Enter");
-  }
-
-  /** Leaves the cell's editor with Escape, saving nothing. */
-  async closeGenresCell(slug: string): Promise<void> {
-    await this.genresCellInput(slug).press("Escape");
-  }
-
-  /** The palette's rows for genres, whose click refines the search to one. */
-  get paletteGenreRows(): Locator {
-    return this.topNav.searchPalette.row("genre");
-  }
-
-  async refineToPaletteGenre(): Promise<void> {
-    await this.paletteGenreRows.click();
-  }
-
-  /** The text of every book row the palette lists. */
-  async paletteBookRowTexts(): Promise<string[]> {
-    return this.topNav.searchPalette.row("book").allInnerTexts();
-  }
-
   readonly bulkEditBar = new BulkEditBarComponent(this.page);
   readonly bulkEditModal = new BulkEditModalComponent(this.page);
   readonly seriesCap = new SeriesCapComponent(this.page);
@@ -139,11 +79,6 @@ export class LibraryPage extends BasePage {
   });
   readonly grid = this.page.getByTestId("lib-grid");
   readonly toolbar = this.page.getByTestId("lib-toolbar");
-  readonly shelfRow = this.page.getByTestId("shelf-gallery");
-  readonly allBooksShelfTile = this.page.getByTestId("gallery-all-books");
-  readonly newShelfButton = this.page.getByTestId("new-shelf");
-  readonly shelfRowPrevButton = this.page.getByTestId("shelf-row-prev");
-  readonly shelfRowNextButton = this.page.getByTestId("shelf-row-next");
   readonly gridViewButton = this.page.getByTestId("view-toggle-grid");
   readonly bookTiles = this.page.getByTestId(/^ebook-tile-/);
   readonly firstBookTile = this.bookTiles.first();
@@ -266,19 +201,12 @@ export class LibraryPage extends BasePage {
   readonly shelfAddBooksButton = this.page.getByTestId("shelf-add-books");
   readonly shelfAddBooksTile = this.page.getByTestId("shelf-add-tile");
   readonly shelfFacets = this.page.getByTestId("shelf-facets");
-  readonly bookGrid = this.page.getByTestId("lib-grid");
-  readonly lastBookGridItem = this.bookGrid.locator(":scope > *").last();
+  readonly lastBookGridItem = this.grid.locator(":scope > *").last();
   readonly emptyMessage = this.page.getByTestId("lib-empty");
   readonly pageError = this.page.getByTestId("lib-page-error");
-  readonly loadingIndicator = this.page.getByTestId("lib-loading");
   readonly sortLockedNote = this.page.getByTestId("lib-sort-locked");
-  readonly titleColumnHeader = this.page.getByRole("columnheader", {
-    name: /Title/,
-  });
-  readonly titleSortButton = this.titleColumnHeader.getByRole("button");
-  readonly navShelvesLink = this.page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Shelves" });
+  /** The landing's "· N hidden" receipt, shown when the reader hides a format. */
+  readonly hiddenReceipt = this.page.getByTestId("lib-hidden-count");
 
   private releaseHeldShelfReads: (() => void) | undefined;
 
@@ -341,7 +269,6 @@ export class LibraryPage extends BasePage {
   readonly filterBar = new FilterBarComponent(this.page);
 
   readonly loading = this.page.getByTestId("lib-loading");
-  readonly emptyLibraryMessage = this.page.getByTestId("lib-empty");
   readonly noMatchesMessage = this.page.getByText(
     "No books match these filters.",
   );
@@ -360,7 +287,7 @@ export class LibraryPage extends BasePage {
 
   /** The slugs of the book tiles on the grid, sorted. */
   async tileSlugs(): Promise<string[]> {
-    return this.page.getByTestId(/^ebook-tile-/).evaluateAll((tiles) =>
+    return this.bookTiles.evaluateAll((tiles) =>
       tiles
         .map((t) => t.getAttribute("data-testid")?.slice("ebook-tile-".length))
         .filter((slug): slug is string => slug !== undefined)
@@ -441,22 +368,6 @@ export class LibraryPage extends BasePage {
       }
     });
     return bodies;
-  }
-
-  /** Whether the continue fan shows a card for `bookUuid` within 3 s, rather than failing the wait. */
-  async showsResumeCard(bookUuid: string): Promise<boolean> {
-    return this.continueStack
-      .card(bookUuid)
-      .waitFor({ state: "visible", timeout: 3_000 })
-      .then(
-        () => true,
-        () => false,
-      );
-  }
-
-  /** Opens the book's reader with its audiobook docked, from the pill on the front card. */
-  async openImmersiveFromContinueStack(bookUuid: string): Promise<void> {
-    await this.continueStack.immersiveChip(bookUuid).click();
   }
 
   /** Opens a book's detail from its grid tile, a client-side hop. */

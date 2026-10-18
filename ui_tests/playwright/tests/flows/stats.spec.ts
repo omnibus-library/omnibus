@@ -27,7 +27,13 @@ test.describe("stats page", () => {
   // captures an empty summary; sessions need an indexed book, so library first.
   test.beforeAll(
     "seed the library and its reading history",
-    async ({ request, overridesRequests, statsRequests }) => {
+    async ({
+      request,
+      overridesRequests,
+      statsRequests,
+      bookRatingRequests,
+      journalsRequests,
+    }) => {
       await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
       const uuid = await fetchBookUuidByTitle(request, FIXTURE_BOOKS[0]!.title);
 
@@ -64,11 +70,12 @@ test.describe("stats page", () => {
       expect(recorded, "the session seeds were skipped").toBe(4);
 
       // Feeds the headline tiles: a star rating and a finished (100%) journal.
-      const rating = await statsRequests.postRating(uuid, 4.5);
+      const rating = await bookRatingRequests.postRating(uuid, 4.5);
       await expect(rating, "seed a rating").toBeOK();
-      const journal = await statsRequests.postJournal(
+      const journal = await journalsRequests.postJournal(
         uuid,
         "Finished it — stats spec seed.",
+        "published",
         100,
       );
       await expect(journal, "seed a finished journal").toBeOK();
@@ -968,9 +975,12 @@ test.describe("stats page", () => {
     // Goals are account configuration, and all three are set together in
     // Settings → Account. This page reports them but must not grow an editor
     // back: that split is the whole reason there is one Edit button.
-    test("report the goals without an editor", async ({ statsPage, goals }) => {
+    test("report the goals without an editor", async ({
+      statsPage,
+      presetGoals,
+    }) => {
       await test.step("set an annual and a daily pages goal", async () => {
-        await goals.set({ annual: 24, dailyPages: 30 });
+        await presetGoals({ books: 24, pages: 30 });
       });
 
       await test.step("open the stats page", async () => {
@@ -998,10 +1008,10 @@ test.describe("stats page", () => {
 
     test("report the real figures when no goals are set", async ({
       statsPage,
-      goals,
+      presetGoals,
     }) => {
       await test.step("clear every goal", async () => {
-        await goals.clear();
+        await presetGoals();
       });
 
       await test.step("open the stats page", async () => {
@@ -1027,16 +1037,21 @@ test.describe("stats page", () => {
       });
     });
 
-    test("open the goal editor from the hero", async ({ statsPage, goals }) => {
+    test("open the goal editor from the hero", async ({
+      statsPage,
+      settingsPage,
+      presetGoals,
+    }) => {
       await test.step("clear every goal and open the stats page", async () => {
-        await goals.clear();
+        await presetGoals();
         await statsPage.goto();
       });
 
       await test.step("follow the link to the one place goals are set", async () => {
         await expect(statsPage.dailySetLink).toBeVisible();
         await statsPage.openGoalEditor();
-        await statsPage.assertGoalEditorOpened();
+        await settingsPage.assertDisplayedFor("account");
+        await expect(settingsPage.account.goalsCard).toBeVisible();
       });
     });
   });

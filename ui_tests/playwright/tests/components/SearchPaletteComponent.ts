@@ -26,6 +26,11 @@ export class SearchPaletteComponent extends BaseComponent {
     return this.page.getByTestId(`sp-${kind}-row`);
   }
 
+  /** The text of every result row of one `kind`. */
+  rowTexts(kind: string): Promise<string[]> {
+    return this.row(kind).allInnerTexts();
+  }
+
   /** The row of one `kind` that the arrow keys and Enter act on first. */
   topResult(kind: string): Locator {
     return this.row(kind).first();

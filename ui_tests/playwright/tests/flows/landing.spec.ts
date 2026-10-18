@@ -29,11 +29,11 @@ test.describe("library page", () => {
 
     // `marquee.js` arms the paging buttons only at an end with more to show.
     await test.step("check the shelves row shows", async () => {
-      await expect(libraryPage.shelfRow).toBeVisible();
-      await expect(libraryPage.allBooksShelfTile).toBeVisible();
-      await expect(libraryPage.newShelfButton).toBeVisible();
-      await expect(libraryPage.shelfRowPrevButton).toBeAttached();
-      await expect(libraryPage.shelfRowNextButton).toBeAttached();
+      await expect(libraryPage.shelfGallery.root).toBeVisible();
+      await expect(libraryPage.shelfGallery.allBooksTile).toBeVisible();
+      await expect(libraryPage.shelfGallery.newShelfButton).toBeVisible();
+      await expect(libraryPage.shelfGallery.previousArrow).toBeAttached();
+      await expect(libraryPage.shelfGallery.nextArrow).toBeAttached();
     });
   });
 
@@ -86,7 +86,6 @@ test.describe("library page", () => {
       test("show the added date on the reader's day, as the detail page does", async ({
         libraryPage,
         bookDetailPage,
-        bookMetaRows,
         ebooksRequests,
       }) => {
         const book = FIXTURE_BOOKS[0]!;
@@ -118,7 +117,7 @@ test.describe("library page", () => {
 
         await test.step("check the detail page", async () => {
           await bookDetailPage.goto(added!.unique_identifier!);
-          await expect(bookMetaRows.value("Added")).toHaveText(expected);
+          await expect(bookDetailPage.metaValue("Added")).toHaveText(expected);
         });
       });
     });

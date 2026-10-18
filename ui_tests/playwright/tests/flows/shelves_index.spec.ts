@@ -37,7 +37,7 @@ test.describe("shelves index", () => {
   }) => {
     await test.step("open the library", async () => {
       await libraryPage.gotoSettled();
-      await expect(libraryPage.navShelvesLink).toHaveCount(0);
+      await expect(libraryPage.topNav.shelvesLink).toHaveCount(0);
     });
 
     await test.step("follow All shelves", async () => {

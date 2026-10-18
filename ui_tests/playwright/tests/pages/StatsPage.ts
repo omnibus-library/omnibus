@@ -39,7 +39,6 @@ export class StatsPage extends BasePage {
   readonly dailyMinutesToday: Locator;
   readonly dailySetLink: Locator;
   readonly goalEditors: Locator;
-  readonly accountGoalsCard: Locator;
 
   readonly scopeSwitch: Locator;
   readonly userScope: Locator;
@@ -122,7 +121,6 @@ export class StatsPage extends BasePage {
       .or(page.getByTestId("stats-goal-save"))
       .or(page.getByTestId("stats-daily-pages-edit"))
       .or(page.getByTestId("stats-daily-minutes-edit"));
-    this.accountGoalsCard = page.getByTestId("account-goals-card");
 
     this.scopeSwitch = page.getByTestId("stats-scope-switch");
     this.userScope = page.getByTestId("stats-scope-user");
@@ -301,12 +299,6 @@ export class StatsPage extends BasePage {
       "aria-pressed",
       "true",
     );
-  }
-
-  /** Checks the hero's link landed on Settings → Account, where the goals card is. */
-  async assertGoalEditorOpened(): Promise<void> {
-    await expect(this.page).toHaveURL(/\/settings\?section=account$/);
-    await expect(this.accountGoalsCard).toBeVisible();
   }
 
   private async fulfilWith(

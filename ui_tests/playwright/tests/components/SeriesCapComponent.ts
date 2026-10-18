@@ -1,5 +1,4 @@
 import type { Locator, Page } from "@playwright/test";
-import { expect } from "../fixtures/test";
 import { BaseComponent } from "./BaseComponent";
 
 /** The head card over a series stack once it is opened and its volumes dealt out. */
@@ -21,13 +20,5 @@ export class SeriesCapComponent extends BaseComponent {
 
   async foldWithEscape(): Promise<void> {
     await this.page.keyboard.press("Escape");
-  }
-
-  /** Checks the link landed on a series page headed by `seriesName`. */
-  async assertSeriesPageOpened(seriesName: string): Promise<void> {
-    await expect(this.page).toHaveURL(/\/series\/\d+$/);
-    await expect(this.page.getByRole("heading", { level: 1 })).toContainText(
-      seriesName,
-    );
   }
 }

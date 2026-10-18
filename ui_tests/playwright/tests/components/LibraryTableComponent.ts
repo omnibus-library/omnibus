@@ -20,6 +20,7 @@ export class LibraryTableComponent extends BaseComponent {
   readonly selectAllBox: Locator;
   readonly selectBoxes: Locator;
   readonly titleSortButton: Locator;
+  readonly titleColumnHeader: Locator;
   readonly descendingHeader: Locator;
   readonly firstRowTitleCell: Locator;
   readonly firstCoverImage: Locator;
@@ -34,6 +35,7 @@ export class LibraryTableComponent extends BaseComponent {
     this.titleSortButton = page.getByRole("button", {
       name: /^Title( ↑| ↓)?$/,
     });
+    this.titleColumnHeader = page.getByRole("columnheader", { name: /Title/ });
     this.descendingHeader = page.locator(".sort-th[aria-sort='descending']");
     this.firstRowTitleCell = this.rows.first().getByTestId("ebook-cell-title");
     this.firstCoverImage = this.rows
@@ -79,6 +81,13 @@ export class LibraryTableComponent extends BaseComponent {
     return this.cell(slug, "cover").getByRole("img");
   }
 
+  /** The link on a row's cover cell that opens the book. */
+  openLink(slug: string, title: string): Locator {
+    return this.row(slug).getByRole("link", {
+      name: `Open details for ${title}`,
+    });
+  }
+
   /** The dash a book without a cover shows in its place. */
   coverFallback(slug: string): Locator {
     return this.cell(slug, "cover").getByText("—");
@@ -116,6 +125,10 @@ export class LibraryTableComponent extends BaseComponent {
   async switchTo(): Promise<void> {
     await this.viewToggleButton.click();
     await this.root.waitFor();
+  }
+
+  async openBook(slug: string, title: string): Promise<void> {
+    await this.openLink(slug, title).click();
   }
 
   async sortByTitle(): Promise<void> {

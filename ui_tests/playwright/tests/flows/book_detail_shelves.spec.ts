@@ -200,8 +200,7 @@ test.describe("book detail shelves", () => {
     request,
     bookDetailPage,
     ownShelf,
-    presetReadStatus,
-    changedReadStatusUuids,
+    startReadStatusAt,
     expectMutation,
   }) => {
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
@@ -215,8 +214,7 @@ test.describe("book detail shelves", () => {
 
     // Read status is per-user and global, and this spec owns the book's.
     await test.step("start the book unread", async () => {
-      changedReadStatusUuids.add(uuid);
-      await presetReadStatus(uuid, "unread");
+      await startReadStatusAt(uuid, "unread");
     });
 
     await test.step("open the book and check the shelf is not listed", async () => {
@@ -226,8 +224,8 @@ test.describe("book detail shelves", () => {
     });
 
     await test.step("mark the book finished", async () => {
-      await expectMutation(readStatus.change(), () =>
-        bookDetailPage.markFinished(),
+      await expectMutation(readStatus.set(), () =>
+        bookDetailPage.readStatusControl.markFinished(),
       );
     });
 
@@ -407,14 +405,14 @@ test.describe("book detail shelves", () => {
     readerSettingsPage,
     readerBookDetailPage,
     readerExpectMutation,
-    scheduleScrollStopsReset,
+    setScrollStops,
   }) => {
     const { stops, shelfPicker } = readerBookDetailPage;
     const { scrollStopsSwitch } = readerSettingsPage.account;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
     await test.step("turn scroll stops on", async () => {
-      scheduleScrollStopsReset();
+      await setScrollStops(false, "reader");
       await readerSettingsPage.goto("account");
       await expect(scrollStopsSwitch).toBeEnabled();
       await readerExpectMutation(account.scrollStops(true), () =>

@@ -8,11 +8,13 @@ export const readStatusUrls = {
 
 /** The read-status writes a reader makes by itself. */
 export const readStatus = {
-  /** The write a reader makes on reaching the end of an unfinished book. */
-  set: (bookUuid: string, status: ReadStatus): ExpectMutationOptions => ({
+  /** The write a reader or the book page's control makes; no arguments pins no body. */
+  set: (bookUuid?: string, status?: ReadStatus): ExpectMutationOptions => ({
     method: "POST",
     url: readStatusUrls.set,
-    expectedBody: { update: { book_uuid: bookUuid, status } },
+    ...(bookUuid && status
+      ? { expectedBody: { update: { book_uuid: bookUuid, status } } }
+      : {}),
     expectedStatus: 200,
   }),
 
@@ -20,12 +22,5 @@ export const readStatus = {
   setOnOpen: (bookUuid: string, status: ReadStatus): ExpectMutationOptions => ({
     ...readStatus.set(bookUuid, status),
     timeout: 20_000,
-  }),
-
-  /** The write the book page's control makes; no body is pinned. */
-  change: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: readStatusUrls.set,
-    expectedStatus: 200,
   }),
 };

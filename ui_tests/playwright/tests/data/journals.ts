@@ -10,10 +10,3 @@ export type JournalEntryRef = { id: number };
 export function journalMarker(label: string): string {
   return `e2e-${label}-${uniqueSuffix()}`;
 }
-
-/** A valid 1x1 transparent PNG; the upload endpoint sniffs magic bytes. */
-export const TINY_PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQAB" +
-    "pfZFQAAAAABJRU5ErkJggg==",
-  "base64",
-);

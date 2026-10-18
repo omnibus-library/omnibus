@@ -85,13 +85,6 @@ export class ShelfPage extends BasePage {
     });
   }
 
-  /** The button that takes a book off a hand-picked shelf. */
-  removeButton(bookTitle: string): Locator {
-    return this.page.getByRole("button", {
-      name: `Remove ${bookTitle} from this shelf`,
-    });
-  }
-
   /** Opens the shelf from the `/shelves` index, as a reader does. */
   async goto(shelfId: number): Promise<void> {
     const index = new ShelvesIndexPage(this.page);
@@ -127,8 +120,8 @@ export class ShelfPage extends BasePage {
     await this.editButton.click({ force: true });
   }
 
-  async removeBook(bookTitle: string): Promise<void> {
-    await this.removeButton(bookTitle).click();
+  async removeBook(bookUuid: string): Promise<void> {
+    await this.removeButton(bookUuid).click();
   }
 
   async openMenu(): Promise<void> {
@@ -174,8 +167,8 @@ export class ShelfPage extends BasePage {
   private heldReads = 0;
   private releaseHeldReads = () => {};
 
-  /** The button on a member's tile that takes it off the shelf, by uuid. */
-  removeButtonByUuid(bookUuid: string): Locator {
+  /** The button on a member's tile that takes it off a hand-picked shelf. */
+  removeButton(bookUuid: string): Locator {
     return this.page.getByTestId(`shelf-remove-${bookUuid}`);
   }
 
@@ -191,7 +184,7 @@ export class ShelfPage extends BasePage {
         isShelfRead(response) &&
         response.request().postDataJSON().filters.clauses.length === 0,
     );
-    await this.removeButtonByUuid(bookUuid).click();
+    await this.removeButton(bookUuid).click();
     await reread;
   }
 

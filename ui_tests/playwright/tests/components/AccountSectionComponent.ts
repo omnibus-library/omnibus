@@ -1,14 +1,10 @@
 import type { Locator, Page } from "@playwright/test";
 import { accountUrls } from "../contracts/account";
+import { TINY_PNG } from "../data/covers";
 import { BaseComponent } from "./BaseComponent";
 
 /** A reading goal's kind, as the goals card names its fields. */
 export type GoalKind = "books" | "pages" | "minutes";
-
-const PIXEL_PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-  "base64",
-);
 
 /** Settings → Account: profile, password, feature switches, goals and hidden formats. */
 export class AccountSectionComponent extends BaseComponent {
@@ -48,8 +44,6 @@ export class AccountSectionComponent extends BaseComponent {
   readonly hiddenFormatsHeading: Locator;
   readonly saveHiddenFormatsButton: Locator;
   readonly hiddenFormatsStatus: Locator;
-  /** The landing's "· N hidden" receipt, which renders on `/`, not here. */
-  readonly landingHiddenReceipt: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -105,7 +99,6 @@ export class AccountSectionComponent extends BaseComponent {
     });
     this.saveHiddenFormatsButton = page.getByTestId("hidden-formats-save");
     this.hiddenFormatsStatus = page.getByTestId("hidden-formats-status");
-    this.landingHiddenReceipt = page.getByTestId("lib-hidden-count");
   }
 
   /** The current value of one goal, which reads "Not set" until it has a target. */
@@ -138,7 +131,7 @@ export class AccountSectionComponent extends BaseComponent {
     await this.avatarFileInput.setInputFiles({
       name: "avatar.png",
       mimeType: "image/png",
-      buffer: PIXEL_PNG,
+      buffer: TINY_PNG,
     });
   }
 

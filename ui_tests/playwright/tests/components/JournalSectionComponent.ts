@@ -186,13 +186,6 @@ export class JournalSectionComponent extends BaseComponent {
     await this.ladderRow(marker).scrollIntoViewIfNeeded();
   }
 
-  /** How far the book page's flow scroller has scrolled; 0 without one. */
-  flowScrollTop(): Promise<number> {
-    return this.page.evaluate(
-      () => document.querySelector("#bdmq-flow")?.scrollTop ?? 0,
-    );
-  }
-
   /** The text of the selection the page holds, which is empty when collapsed. */
   selectedText(): Promise<string | undefined> {
     return this.page.evaluate(() => window.getSelection()?.toString());

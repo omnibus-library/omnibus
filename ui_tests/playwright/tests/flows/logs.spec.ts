@@ -192,7 +192,7 @@ test.describe("logs section", () => {
     });
 
     await test.step("check the viewer shows", async () => {
-      await settingsPage.assertSectionOpen("logs");
+      await settingsPage.assertDisplayedFor("logs");
       await expect(section.heading).toBeVisible();
       await expect(section.root).toBeVisible();
     });
@@ -208,7 +208,7 @@ test.describe("logs section", () => {
     });
 
     await test.step("check the logs section shows", async () => {
-      await settingsPage.assertSectionOpen("logs");
+      await settingsPage.assertDisplayedFor("logs");
       await expect(section.heading).toBeVisible();
     });
   });

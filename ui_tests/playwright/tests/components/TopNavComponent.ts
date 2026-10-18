@@ -14,12 +14,14 @@ export class TopNavComponent extends BaseComponent {
   readonly root: Locator;
   readonly libraryLink: Locator;
   readonly checkInButton: Locator;
+  readonly addBooksButton: Locator;
   readonly userMenuButton: Locator;
   readonly userMenuPanel: Locator;
   readonly searchButton: Locator;
   readonly searchPalette: SearchPaletteComponent;
   readonly breadcrumbNav: Locator;
 
+  readonly shelvesLink: Locator;
   readonly signOutButton: Locator;
   readonly settingsLink: Locator;
   readonly editLink: Locator;
@@ -29,7 +31,6 @@ export class TopNavComponent extends BaseComponent {
   readonly piranesiText: Locator;
   readonly progressErrorMessage: Locator;
   readonly notificationsText: Locator;
-  readonly accountProfileCard: Locator;
   readonly themeRoot: Locator;
 
   constructor(page: Page) {
@@ -40,6 +41,7 @@ export class TopNavComponent extends BaseComponent {
       name: "Check in",
       exact: true,
     });
+    this.addBooksButton = page.getByTestId("add-books-button");
     this.userMenuButton = this.root.getByTestId("user-menu-trigger");
     this.userMenuPanel = page.getByTestId("user-menu-panel");
     this.searchButton = page.getByTestId("search-trigger");
@@ -47,6 +49,7 @@ export class TopNavComponent extends BaseComponent {
     // The trail the bar replaced: top-level pages draw none.
     this.breadcrumbNav = page.locator("nav.breadcrumb");
 
+    this.shelvesLink = this.root.getByRole("link", { name: "Shelves" });
     this.signOutButton = page.getByTestId("logout-button");
     this.settingsLink = page.getByRole("link", { name: "Settings" });
     this.editLink = page.getByRole("link", { name: "Edit" });
@@ -56,8 +59,11 @@ export class TopNavComponent extends BaseComponent {
     this.piranesiText = page.getByText("Piranesi");
     this.progressErrorMessage = page.getByRole("alert");
     this.notificationsText = this.userMenuPanel.getByText("Notifications");
-    this.accountProfileCard = page.getByTestId("account-profile-card");
     this.themeRoot = page.locator("div.atrium").first();
+  }
+
+  async openLibrary(): Promise<void> {
+    await this.libraryLink.click();
   }
 
   async openCheckIn(): Promise<void> {
@@ -139,17 +145,6 @@ export class TopNavComponent extends BaseComponent {
     await expect(this.root).toBeVisible();
     await expect(this.libraryLink).toBeVisible();
     await expect(this.userMenuButton).toBeVisible();
-  }
-
-  /** Checks the Settings link opened the default section, with no bare `?` on the URL. */
-  async assertSettingsOpened(): Promise<void> {
-    await expect(this.page).toHaveURL(/\/settings$/);
-  }
-
-  /** Checks Edit opened Settings on the Account section, where the profile card is. */
-  async assertAccountSettingsOpened(): Promise<void> {
-    await expect(this.page).toHaveURL(/\/settings\?section=account$/);
-    await expect(this.accountProfileCard).toBeVisible();
   }
 
   async openStats(): Promise<void> {

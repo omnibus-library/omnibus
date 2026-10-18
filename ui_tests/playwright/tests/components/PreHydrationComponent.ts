@@ -9,8 +9,6 @@ const CLIENT_WASM = /\/omnibus_bg[^/]*\.wasm(\?|$)/;
 /** What a page shows while the client's wasm download is held back. */
 export class PreHydrationComponent extends BaseComponent {
   readonly hydratedMarker: Locator;
-  readonly appRoot: Locator;
-  readonly libraryLoading: Locator;
   readonly libraryCountPending: Locator;
   readonly pageLoaderMark: Locator;
   readonly zeroBooksText: Locator;
@@ -21,8 +19,6 @@ export class PreHydrationComponent extends BaseComponent {
   constructor(page: Page) {
     super(page);
     this.hydratedMarker = page.locator("html[data-hydrated]");
-    this.appRoot = page.locator("div.atrium").first();
-    this.libraryLoading = page.getByTestId("lib-loading");
     this.libraryCountPending = page.getByTestId("lib-count-pending");
     this.pageLoaderMark = page.locator(".ld-riffle");
     this.zeroBooksText = page.getByText(/\b0 books\b/);
@@ -46,13 +42,5 @@ export class PreHydrationComponent extends BaseComponent {
   async release(): Promise<void> {
     this.releaseDownload();
     await waitForHydration(this.page);
-  }
-
-  /** Stores the theme before every load, as if the reader had chosen it. */
-  async presetSavedTheme(theme: string): Promise<void> {
-    await this.page.addInitScript(
-      (saved) => localStorage.setItem("omn.theme", saved),
-      theme,
-    );
   }
 }

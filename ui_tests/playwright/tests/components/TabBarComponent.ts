@@ -6,19 +6,11 @@ import { BaseComponent } from "./BaseComponent";
  * the nav shows the Check in and Add books buttons in its place.
  */
 export class TabBarComponent extends BaseComponent {
-  readonly libraryLink: Locator;
   readonly centerActionButton: Locator;
-  readonly checkInButton: Locator;
-  readonly addBooksButton: Locator;
 
   constructor(page: Page) {
     super(page);
-    this.libraryLink = page
-      .getByRole("navigation", { name: "Primary" })
-      .getByRole("link", { name: "Library" });
     this.centerActionButton = page.getByTestId("tabbar-scan");
-    this.checkInButton = page.getByTestId("check-in-button");
-    this.addBooksButton = page.getByTestId("add-books-button");
   }
 
   async openAddBooksSheet(): Promise<void> {

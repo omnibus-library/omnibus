@@ -69,11 +69,14 @@ export class SettingsPage extends BasePage {
     await this.sectionLink(section).click();
   }
 
-  /** Checks the address names `section`. */
-  async assertSectionOpen(section: SettingsSection): Promise<void> {
+  /** Checks the address names `section`, or the default one with no bare `?`. */
+  async assertDisplayedFor(section?: SettingsSection): Promise<void> {
     await expect(this.page).toHaveURL(
-      new RegExp(`/settings\\?section=${section}$`),
+      section === undefined
+        ? /\/settings$/
+        : new RegExp(`/settings\\?section=${section}$`),
     );
+    await expect(this.layout).toBeVisible();
   }
 
   readonly kindle = new KindleSectionComponent(this.page);
@@ -92,7 +95,4 @@ export class SettingsPage extends BasePage {
   readonly users = new UsersSectionComponent(this.page);
   readonly logs = new LogsSectionComponent(this.page);
   readonly cleanup = new CleanupSectionComponent(this.page);
-  // The sidebar tour needs only these two cards of the Kindle and Kobo sections.
-  readonly kindleCard = this.page.getByTestId("account-kindle-card");
-  readonly koboDevicesCard = this.page.getByTestId("kobo-devices-card");
 }

@@ -89,17 +89,19 @@ test.describe("genres", () => {
       // Genres render as their own chip list above the tags.
       await test.step("check the book page lists them", async () => {
         await bookDetailPage.assertDisplayedFor(uuid);
-        await expect(bookDetailPage.genreList).toBeVisible();
-        await expect(bookDetailPage.genreList).toContainText(
+        await expect(bookDetailPage.heroChips.genreList).toBeVisible();
+        await expect(bookDetailPage.heroChips.genreList).toContainText(
           "Hard Science Fiction",
         );
-        await expect(bookDetailPage.genreList).toContainText("Adventure");
+        await expect(bookDetailPage.heroChips.genreList).toContainText(
+          "Adventure",
+        );
       });
     });
 
     test("keep the scanned tags when editing genres", async ({
       metadataEditPage,
-      overridesRequests,
+      ebooksRequests,
       expectMutation,
       request,
     }) => {
@@ -118,7 +120,7 @@ test.describe("genres", () => {
 
       // A genres override must not write a subjects one: that would pin the scanned tags against a later rescan.
       await test.step("read the book back", async () => {
-        const read = await overridesRequests.getEbook(uuid);
+        const read = await ebooksRequests.getEbook(uuid);
         await expect(read).toBeOK();
         const book: OverriddenBook = await read.json();
         expect(book.genres).toEqual(["Noir"]);
@@ -131,13 +133,14 @@ test.describe("genres", () => {
     test("open the genres cell as an inline chip editor", async ({
       libraryPage,
     }) => {
-      const cell = libraryPage.genresCell(TARGET.slug);
-      const input = libraryPage.genresCellInput(TARGET.slug);
+      const { table } = libraryPage;
+      const cell = table.cell(TARGET.slug, "genres");
+      const input = table.cellInput(TARGET.slug, "genres");
 
       await test.step("open the table and click the cell", async () => {
         await libraryPage.goto();
-        await libraryPage.table.switchTo();
-        await libraryPage.openGenresCell(TARGET.slug);
+        await table.switchTo();
+        await table.openCell(TARGET.slug, "genres");
       });
 
       await test.step("check the chip editor shows", async () => {
@@ -147,7 +150,7 @@ test.describe("genres", () => {
       });
 
       await test.step("leave with Escape", async () => {
-        await libraryPage.closeGenresCell(TARGET.slug);
+        await table.cancelCell(TARGET.slug, "genres");
         await expect(input).toHaveCount(0);
         await expect(cell).not.toHaveClass(/ebook-cell-editing/);
       });
@@ -157,25 +160,26 @@ test.describe("genres", () => {
       libraryPage,
       expectMutation,
     }) => {
-      const cell = libraryPage.genresCell(TARGET.slug);
+      const { table } = libraryPage;
+      const cell = table.cell(TARGET.slug, "genres");
 
       await test.step("open the table and click the cell", async () => {
         await libraryPage.goto();
-        await libraryPage.table.switchTo();
-        await libraryPage.openGenresCell(TARGET.slug);
+        await table.switchTo();
+        await table.openCell(TARGET.slug, "genres");
       });
 
       await test.step("add a genre", async () => {
-        await libraryPage.typeGenreInCell(TARGET.slug, "Techno-Thriller");
+        await table.fillCell(TARGET.slug, "genres", "Techno-Thriller");
         await expectMutation(overrides.save(), () =>
-          libraryPage.commitGenreInCell(TARGET.slug),
+          table.commitCell(TARGET.slug, "genres"),
         );
       });
 
       await test.step("check the cell shows the server-merged value", async () => {
         await libraryPage.assertDisplayed();
         await expect(cell).toContainText("Techno-Thriller");
-        await libraryPage.closeGenresCell(TARGET.slug);
+        await table.cancelCell(TARGET.slug, "genres");
         await expect(cell).toContainText("Techno-Thriller");
       });
     });
@@ -184,25 +188,27 @@ test.describe("genres", () => {
       libraryPage,
       expectMutation,
     }) => {
+      const { table } = libraryPage;
+
       await test.step("open the table and click the cell", async () => {
         await libraryPage.goto();
-        await libraryPage.table.switchTo();
-        await libraryPage.openGenresCell(TARGET.slug);
+        await table.switchTo();
+        await table.openCell(TARGET.slug, "genres");
       });
 
       await test.step("add a genre while the server fails the write", async () => {
         await libraryPage.forceServerError(overrides.save());
-        await libraryPage.typeGenreInCell(TARGET.slug, "Never Saved");
+        await table.fillCell(TARGET.slug, "genres", "Never Saved");
         await expectMutation(failing(overrides.save()), () =>
-          libraryPage.commitGenreInCell(TARGET.slug),
+          table.commitCell(TARGET.slug, "genres"),
         );
       });
 
       // The optimistic state is replaced only by a successful answer, so a rejected save leaves no genre in the cell.
       await test.step("reload and check the cell never took it", async () => {
         await libraryPage.goto();
-        await libraryPage.table.switchTo();
-        await expect(libraryPage.genresCell(TARGET.slug)).not.toContainText(
+        await table.switchTo();
+        await expect(table.cell(TARGET.slug, "genres")).not.toContainText(
           "Never Saved",
         );
       });
@@ -230,15 +236,15 @@ test.describe("genres", () => {
       });
 
       await test.step("check one genre row names it and counts its books", async () => {
-        await expect(libraryPage.paletteGenreRows).toHaveCount(1);
-        await expect(libraryPage.paletteGenreRows).toContainText(GENRE);
-        await expect(libraryPage.paletteGenreRows).toContainText("1 book");
+        await expect(palette.row("genre")).toHaveCount(1);
+        await expect(palette.row("genre")).toContainText(GENRE);
+        await expect(palette.row("genre")).toContainText("1 book");
       });
     });
 
     test("refine the search to a genre from the palette", async ({
       libraryPage,
-      genreSearchPage,
+      searchResultsPage,
       assignGenres,
       request,
     }) => {
@@ -249,17 +255,17 @@ test.describe("genres", () => {
         await assignGenres(uuid, [GENRE]);
         await libraryPage.goto();
         await palette.search(GENRE);
-        await expect(libraryPage.paletteGenreRows).toHaveCount(1);
+        await expect(palette.row("genre")).toHaveCount(1);
       });
 
       await test.step("pick the genre row", async () => {
-        await libraryPage.refineToPaletteGenre();
+        await palette.chooseTopResult("genre");
       });
 
       // The book itself is the hit on the full-page results.
       await test.step("check the results are scoped to the genre", async () => {
-        await genreSearchPage.assertDisplayedFor(GENRE);
-        await expect(genreSearchPage.bookRows).toContainText(TARGET.title);
+        await searchResultsPage.assertDisplayedFor(`genre:${GENRE}`);
+        await expect(searchResultsPage.bookRows).toContainText(TARGET.title);
       });
     });
 
@@ -276,13 +282,13 @@ test.describe("genres", () => {
         await assignGenres(uuid, [GENRE]);
         await libraryPage.goto();
         await palette.search(GENRE);
-        await expect(libraryPage.paletteGenreRows).toHaveCount(1);
+        await expect(palette.row("genre")).toHaveCount(1);
       });
 
       await test.step("check the book is not listed as a book hit", async () => {
         await expect
           .poll(async () => {
-            const texts = await libraryPage.paletteBookRowTexts();
+            const texts = await palette.rowTexts("book");
             return texts.filter((t) => t.includes(TARGET.title)).length;
           })
           .toBe(0);
@@ -301,7 +307,7 @@ test.describe("genres", () => {
         await assignGenres(uuid, [GENRE]);
         await libraryPage.goto();
         await palette.search(GENRE);
-        await expect(libraryPage.paletteGenreRows).toHaveCount(1);
+        await expect(palette.row("genre")).toHaveCount(1);
       });
 
       // An empty list is the clear-all override, and the index has to follow it.
@@ -312,7 +318,7 @@ test.describe("genres", () => {
       });
 
       await test.step("check the palette no longer groups the genre", async () => {
-        await expect(libraryPage.paletteGenreRows).toHaveCount(0);
+        await expect(palette.row("genre")).toHaveCount(0);
       });
     });
   });

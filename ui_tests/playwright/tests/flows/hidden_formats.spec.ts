@@ -37,7 +37,6 @@ test.describe("hidden formats", () => {
   test("hide cbz from one reader's library only", async ({
     readerSettingsPage,
     readerLibraryPage,
-    settingsPage,
     libraryPage,
     presetReaderHiddenFormats,
     readerExpectMutation,
@@ -64,8 +63,8 @@ test.describe("hidden formats", () => {
     // passing early. No exact count: other specs reshape the shared library.
     await test.step("check the comics leave the library", async () => {
       await readerLibraryPage.goto();
-      await expect(section.landingHiddenReceipt).toBeVisible();
-      await expect(section.landingHiddenReceipt).toHaveText(/· \d+ hidden/);
+      await expect(readerLibraryPage.hiddenReceipt).toBeVisible();
+      await expect(readerLibraryPage.hiddenReceipt).toHaveText(/· \d+ hidden/);
       for (const comic of COMICS) {
         await expect(readerLibraryPage.bookTile(comic.title)).toHaveCount(0);
       }
@@ -85,7 +84,7 @@ test.describe("hidden formats", () => {
       for (const comic of COMICS) {
         await expect(libraryPage.bookTile(comic.title)).toBeVisible();
       }
-      await expect(settingsPage.account.landingHiddenReceipt).toHaveCount(0);
+      await expect(libraryPage.hiddenReceipt).toHaveCount(0);
     });
   });
 
@@ -118,7 +117,7 @@ test.describe("hidden formats", () => {
       for (const comic of COMICS) {
         await expect(readerLibraryPage.bookTile(comic.title)).toBeVisible();
       }
-      await expect(section.landingHiddenReceipt).toHaveCount(0);
+      await expect(readerLibraryPage.hiddenReceipt).toHaveCount(0);
     });
   });
 });

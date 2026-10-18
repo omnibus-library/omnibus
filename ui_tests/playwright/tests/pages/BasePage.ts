@@ -1,4 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
+import type { Theme } from "../components/TopNavComponent";
+import { authUrls } from "../contracts/auth";
 import { expect } from "../fixtures/test";
 import type { ExpectMutationOptions } from "../utils/api";
 import { waitForHydration } from "../utils/nav";
@@ -30,6 +32,37 @@ export abstract class BasePage {
             body: "forced failure",
           })
         : route.continue(),
+    );
+  }
+
+  /** Lets requests `contract` describes through again after a forced error. */
+  async stopForcingServerError(contract: ExpectMutationOptions): Promise<void> {
+    await this.page.unroute(contract.url);
+  }
+
+  /** Pins whether signup is open, which differs between a fresh CI database and a dev one. */
+  async stubRegistrationOpen(open: boolean): Promise<void> {
+    await this.page.route(authUrls.registration, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ enabled: open }),
+      }),
+    );
+  }
+
+  /** Stores the theme before every load of this page, as if chosen earlier. */
+  async presetTheme(theme: Theme | "sepia"): Promise<void> {
+    await this.presetLocalStorage("omn.theme", theme);
+  }
+
+  protected async presetLocalStorage(
+    key: string,
+    value: string,
+  ): Promise<void> {
+    await this.page.addInitScript(
+      (entry) => window.localStorage.setItem(entry.key, entry.value),
+      { key, value },
     );
   }
 

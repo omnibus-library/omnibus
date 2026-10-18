@@ -9,4 +9,7 @@ export type CreatedApiToken = { token: { id: number } };
 type SessionCookie = Parameters<BrowserContext["addCookies"]>[0][number];
 
 /** A signed-in user and the cookies of their session. */
-export type SignedInSession = { user: unknown; cookies: SessionCookie[] };
+export type SignedInSession = {
+  user: { id: number };
+  cookies: SessionCookie[];
+};

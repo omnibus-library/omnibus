@@ -26,7 +26,7 @@ import { WishlistCardComponent } from "../components/WishlistCardComponent";
 import { physicalUrls } from "../contracts/physical";
 import type { CopyRow, WishlistRow } from "../data/physical";
 import { expect } from "../fixtures/test";
-import { type ExpectMutationOptions, isPostTo } from "../utils/api";
+import { isPostTo } from "../utils/api";
 import { BasePage } from "./BasePage";
 
 export class BookDetailPage extends BasePage {
@@ -37,7 +37,6 @@ export class BookDetailPage extends BasePage {
   readonly stops: BookDetailStopsComponent;
 
   readonly titleHeading: Locator;
-  readonly fromSameHandEmptyMessage: Locator;
   readonly readButton: Locator;
   readonly startReadingButton: Locator;
   readonly startReadingComicButton: Locator;
@@ -59,7 +58,6 @@ export class BookDetailPage extends BasePage {
     this.checkInOverlay = new CheckInOverlayComponent(page);
     this.stops = new BookDetailStopsComponent(page);
     this.titleHeading = page.getByRole("heading", { level: 1 });
-    this.fromSameHandEmptyMessage = page.getByTestId("from-same-hand-empty");
     this.readButton = page.getByTestId("action-read");
     // The labels change with reading progress, so the row is found by test id.
     this.startReadingButton = page.getByTestId("start-reading");
@@ -94,7 +92,7 @@ export class BookDetailPage extends BasePage {
   savedPassageCard(quote: string): SavedPassageCardComponent {
     return new SavedPassageCardComponent(
       this.page,
-      this.page.getByTestId("highlight-card").filter({ hasText: quote }),
+      this.savedPassages.cards.filter({ hasText: quote }),
     );
   }
 
@@ -226,13 +224,7 @@ export class BookDetailPage extends BasePage {
   readonly physicalCopy = new PhysicalCopyCardComponent(this.page);
 
   readonly editMetadataLink = this.page.getByTestId("edit-metadata");
-  readonly formatBadges = this.page.getByTestId("format-badge");
   readonly notFoundMessage = this.page.getByText("Book not found.");
-
-  /** The copies-list row for a format, such as `MP3`. */
-  formatRow(format: string): Locator {
-    return this.page.locator(`[data-format="${format}"]`).first();
-  }
 
   /** Answers the panel's two on-mount reads, so a stub fixes what it settles on. */
   async stubPhysicalLoad(
@@ -243,13 +235,6 @@ export class BookDetailPage extends BasePage {
     await this.wishlist.stubLoad(wishlist);
   }
 
-  /** Lets requests `contract` describes through again after a forced error. */
-  async stopForcingServerError(contract: ExpectMutationOptions): Promise<void> {
-    await this.page.unroute(contract.url);
-  }
-
-  readonly genreList = this.page.getByTestId("bd-genre-list");
-
   async openEditMetadata(): Promise<void> {
     await this.editMetadataLink.click();
   }
@@ -258,7 +243,6 @@ export class BookDetailPage extends BasePage {
 
   readonly addToShelfButton = this.page.getByTestId("bdmq-add-to-shelf");
   readonly shelvesLoading = this.page.getByTestId("bdmq-shelves-loading");
-  readonly markFinishedButton = this.page.getByTestId("read-status-finished");
 
   /** The More stop's tile for a shelf that holds the book. */
   shelfTile(shelfId: number): Locator {
@@ -276,10 +260,6 @@ export class BookDetailPage extends BasePage {
     await this.shelfPicker.root.waitFor();
   }
 
-  async markFinished(): Promise<void> {
-    await this.markFinishedButton.click();
-  }
-
   async openSeriesPage(): Promise<void> {
     await this.stops.seriesPageLink.click();
   }
@@ -292,10 +272,15 @@ export class BookDetailPage extends BasePage {
 
   readonly syncLink = new SyncLinkComponent(this.page);
   readonly alignmentModal = new AlignmentModalComponent(this.page);
-  readonly listenActionButton = this.page.getByTestId("action-listen");
 
-  /** Opens the audiobook player through the Listen action. */
-  async listen(): Promise<void> {
-    await this.listenActionButton.click();
+  /** The book's details table: label and value rows such as `Added`. */
+  metaValue(label: string): Locator {
+    const labelCell = this.page.locator(".bd-meta-k", {
+      hasText: new RegExp(`^${label}$`),
+    });
+    return this.page
+      .locator("tr.bd-meta-row")
+      .filter({ has: labelCell })
+      .locator(".bd-meta-v");
   }
 }

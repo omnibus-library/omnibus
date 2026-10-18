@@ -13,7 +13,6 @@ import type {
 } from "@playwright/test";
 import { STORAGE_STATE_PATH } from "../../globalSetup";
 import { AccountRequests } from "../apiRequests/AccountRequests";
-import { AudiobooksRequests } from "../apiRequests/AudiobooksRequests";
 import { AuthorsRequests } from "../apiRequests/AuthorsRequests";
 import { AuthRequests } from "../apiRequests/AuthRequests";
 import { BookmarksRequests } from "../apiRequests/BookmarksRequests";
@@ -38,7 +37,6 @@ import { StatsRequests } from "../apiRequests/StatsRequests";
 import { ThumbsRequests } from "../apiRequests/ThumbsRequests";
 import { UploadsRequests } from "../apiRequests/UploadsRequests";
 import { UsersRequests } from "../apiRequests/UsersRequests";
-import { BookMetaRowsComponent } from "../components/BookMetaRowsComponent";
 import { PreHydrationComponent } from "../components/PreHydrationComponent";
 import type {
   CreatedApiToken,
@@ -92,7 +90,6 @@ import { CheckInPage } from "../pages/CheckInPage";
 import { CleanupReviewPage } from "../pages/CleanupReviewPage";
 import { ComicReaderPage } from "../pages/ComicReaderPage";
 import { EpubReaderPage } from "../pages/EpubReaderPage";
-import { GenreSearchPage } from "../pages/GenreSearchPage";
 import { IosGluePage } from "../pages/IosGluePage";
 import { LibraryPage } from "../pages/LibraryPage";
 import { ListenPage } from "../pages/ListenPage";
@@ -130,6 +127,11 @@ export type ExpectMutation = <T>(
   contract: ExpectMutationOptions,
   action: () => Promise<T>,
 ) => Promise<{ result: T; request: Request; response: Response }>;
+
+const mutationsOn =
+  (page: Page): ExpectMutation =>
+  (contract, action) =>
+    expectMutationOn(page, contract, action);
 
 /** A plain reader this worker signs up once, for every test that needs one. */
 export type ReaderAccount = Credentials & {
@@ -190,6 +192,7 @@ type PageFixtures = {
   readerBookDetailPage: BookDetailPage;
   readerSettingsPage: SettingsPage;
   readerShelfPage: ShelfPage;
+  readerSeriesPage: SeriesPage;
   secondReaderPage: Page;
   secondReaderRequest: APIRequestContext;
   secondReaderSettingsPage: SettingsPage;
@@ -240,8 +243,10 @@ type PageFixtures = {
   bookRatingRequests: BookRatingRequests;
   ebooksRequests: EbooksRequests;
   ratedBookUuids: Set<string>;
-  revertedOverrides: Set<string>;
-  setScrollStops: (enabled: boolean) => Promise<void>;
+  setScrollStops: (
+    enabled: boolean,
+    owner?: "admin" | "reader",
+  ) => Promise<void>;
   startReadStatusAt: (bookUuid: string, status: ReadStatus) => Promise<void>;
   clearHighlights: (bookUuid: string) => Promise<void>;
   mergedMp3Book: string;
@@ -258,14 +263,12 @@ type PageFixtures = {
   bookExists: (bookUuid: string) => Promise<boolean>;
 
   metadataEditPage: MetadataEditPage;
-  genreSearchPage: GenreSearchPage;
   overriddenBookUuids: Set<string>;
   assignGenres: (bookUuid: string, genres: string[]) => Promise<void>;
 
   addBooksPage: AddBooksPage;
   notFoundPage: NotFoundPage;
   preHydration: PreHydrationComponent;
-  bookMetaRows: BookMetaRowsComponent;
   thumbsRequests: ThumbsRequests;
   revertOverridesOf: (...titles: string[]) => Promise<void>;
   presetStackSeries: (enabled: boolean) => Promise<void>;
@@ -274,8 +277,6 @@ type PageFixtures = {
   seedResumePoint: (bookUuid: string) => Promise<void>;
 
   filterShelf: FilterShelf;
-  changedReadStatusUuids: Set<string>;
-  scheduleScrollStopsReset: () => void;
 
   searchResultsPage: SearchResultsPage;
   authorPage: AuthorPage;
@@ -293,9 +294,7 @@ type PageFixtures = {
     bookFileId?: number,
   ) => Promise<RecentBook>;
 
-  audiobooksRequests: AudiobooksRequests;
   crossFormatRequests: CrossFormatRequests;
-  signedInUserId: number;
   audioFileId: (bookUuid: string) => Promise<number>;
   resumePromptUuid: string;
   linkedBookUuids: Set<string>;
@@ -306,10 +305,6 @@ type PageFixtures = {
   chartBuilderPage: ChartBuilderPage;
   statsRequests: StatsRequests;
   secondReaderExpectMutation: ExpectMutation;
-  goals: {
-    set(goals: { annual: number; dailyPages: number }): Promise<void>;
-    clear(): Promise<void>;
-  };
   householdTarget: ReaderAccount;
 
   iosGluePage: IosGluePage;
@@ -334,6 +329,41 @@ async function signInPastLimit(
     )
     .not.toBe(429);
   return response;
+}
+
+/** The uuid of `book` once it lists both an ebook and an audio format. */
+async function bothFormatsUuid(
+  request: APIRequestContext,
+  book: { title: string },
+  timeout: number,
+): Promise<string> {
+  const isEbook = (f: string) => /^(epub|pdf)$/i.test(f);
+  const isAudio = (f: string) => /^(mp3|m4b)$/i.test(f);
+  const ebooks = new EbooksRequests(request);
+
+  let match: LibraryBook | undefined;
+  await expect
+    .poll(
+      async () => {
+        const listed = await ebooks.getEbooks();
+        if (listed.status() !== 200) return false;
+        const { books }: { books: LibraryBook[] } = await listed.json();
+        match = books.find((b) => b.title === book.title);
+        if (match === undefined) return false;
+        return match.formats.some(isEbook) && match.formats.some(isAudio);
+      },
+      {
+        message: `book ${JSON.stringify(book.title)} never surfaced with both an ebook and an audio format`,
+        timeout,
+        intervals: [100, 200, 500, 1_000, 2_000],
+      },
+    )
+    .toBe(true);
+
+  if (!match?.unique_identifier) {
+    throw new Error(`book ${JSON.stringify(book.title)} is missing its uuid`);
+  }
+  return match.unique_identifier;
 }
 
 /** Signs up a reader and signs it in for a cookie and a bearer; deletes it after `use`. */
@@ -407,7 +437,14 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   ],
 
   expectMutation: async ({ page }, use) => {
-    await use((contract, action) => expectMutationOn(page, contract, action));
+    await use(mutationsOn(page));
+  },
+  // A reader's UI writes happen on its own page, not the test's.
+  readerExpectMutation: async ({ readerPage }, use) => {
+    await use(mutationsOn(readerPage));
+  },
+  secondReaderExpectMutation: async ({ secondReaderPage }, use) => {
+    await use(mutationsOn(secondReaderPage));
   },
   libraryPage: async ({ page }, use) => {
     await use(new LibraryPage(page));
@@ -551,22 +588,11 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // Parks the read status, the page and no highlights or bookmarks, so a
   // leftover from an earlier run cannot change what a test sees or writes.
   parkBook: async (
-    {
-      presetReadStatus,
-      progressRequests,
-      highlightsRequests,
-      bookmarksRequests,
-    },
+    { presetReadStatus, progressRequests, clearHighlights, bookmarksRequests },
     use,
   ) => {
     await use(async (bookUuid, anchor, status) => {
-      const listedHighlights = await highlightsRequests.getHighlights(bookUuid);
-      await expect(listedHighlights, "list highlights").toBeOK();
-      const strayHighlights: SeededHighlight[] = await listedHighlights.json();
-      for (const { id } of strayHighlights) {
-        const deleted = await highlightsRequests.deleteHighlight(id);
-        await expect(deleted, `delete highlight ${id}`).toBeOK();
-      }
+      await clearHighlights(bookUuid);
 
       const listedBookmarks = await bookmarksRequests.getBookmarks(bookUuid);
       await expect(listedBookmarks, "list bookmarks").toBeOK();
@@ -593,47 +619,16 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     });
   },
 
-  adminWishlist: async ({ request }, use) => {
-    const me = await new AuthRequests(request).getMe();
-    await expect(me).toBeOK();
-    const { id } = await me.json();
-    const listed = await new ShelvesRequests(request).getShelves();
+  adminWishlist: async ({ adminSession, shelvesRequests }, use) => {
+    const listed = await shelvesRequests.getShelves();
     await expect(listed).toBeOK();
-    await use(wishlistOf(await listed.json(), id));
+    await use(wishlistOf(await listed.json(), adminSession.user.id));
   },
 
   // A combined book count can land before the second scan attaches the other
   // format, so poll until the book lists both an ebook and an audio format.
   dualFormatUuid: async ({ request }, use) => {
-    const isEbook = (f: string) => /^(epub|pdf)$/i.test(f);
-    const isAudio = (f: string) => /^(mp3|m4b)$/i.test(f);
-    const ebooks = new EbooksRequests(request);
-
-    let match: LibraryBook | undefined;
-    await expect
-      .poll(
-        async () => {
-          const listed = await ebooks.getEbooks();
-          if (listed.status() !== 200) return false;
-          const { books }: { books: LibraryBook[] } = await listed.json();
-          match = books.find((b) => b.title === DUAL_FORMAT_BOOK.title);
-          if (match === undefined) return false;
-          return match.formats.some(isEbook) && match.formats.some(isAudio);
-        },
-        {
-          message: `book ${JSON.stringify(DUAL_FORMAT_BOOK.title)} never surfaced with both an ebook and an audio format`,
-          timeout: 20_000,
-          intervals: [100, 200, 500, 1_000, 2_000],
-        },
-      )
-      .toBe(true);
-
-    if (!match?.unique_identifier) {
-      throw new Error(
-        `dual-format book ${JSON.stringify(DUAL_FORMAT_BOOK.title)} is missing its uuid`,
-      );
-    }
-    await use(match.unique_identifier);
+    await use(await bothFormatsUuid(request, DUAL_FORMAT_BOOK, 20_000));
   },
 
   readerPage: async ({ browser, readerAccount, viewport }, use) => {
@@ -672,6 +667,9 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   },
   readerShelfPage: async ({ readerPage }, use) => {
     await use(new ShelfPage(readerPage));
+  },
+  readerSeriesPage: async ({ readerPage }, use) => {
+    await use(new SeriesPage(readerPage));
   },
 
   secondReaderPage: async ({ browser, secondReaderAccount, viewport }, use) => {
@@ -804,13 +802,6 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   },
   mcpRequests: async ({ request }, use) => {
     await use(new McpRequests(request));
-  },
-
-  // The reader's page is not `page`, so its mutations need their own waiter.
-  readerExpectMutation: async ({ readerPage }, use) => {
-    await use((contract, action) =>
-      expectMutationOn(readerPage, contract, action),
-    );
   },
 
   adminSession: async ({ request }, use) => {
@@ -1009,25 +1000,19 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     }
   },
 
-  revertedOverrides: async ({ overridesRequests }, use) => {
-    const uuids = new Set<string>();
-    await use(uuids);
-    for (const uuid of uuids) {
-      const reverted = await overridesRequests.deleteOverrides(uuid);
-      await expect(reverted, `revert the overrides on ${uuid}`).toBeOK();
-    }
-  },
-
-  // Turns the switch back off, because every other detail test reads the flow.
-  setScrollStops: async ({ accountRequests }, use) => {
-    let changed = false;
-    await use(async (enabled) => {
-      changed = true;
-      const saved = await accountRequests.postScrollStops(enabled);
+  // Turns the switch back off for whoever it touched, because every other
+  // detail test reads the flow.
+  setScrollStops: async ({ accountRequests, readerAccountRequests }, use) => {
+    const touched = new Set<AccountRequests>();
+    await use(async (enabled, owner = "admin") => {
+      const requests =
+        owner === "admin" ? accountRequests : readerAccountRequests;
+      touched.add(requests);
+      const saved = await requests.postScrollStops(enabled);
       await expect(saved, `set scroll stops to ${enabled}`).toBeOK();
     });
-    if (changed) {
-      const saved = await accountRequests.postScrollStops(false);
+    for (const requests of touched) {
+      const saved = await requests.postScrollStops(false);
       await expect(saved, "turn scroll stops off").toBeOK();
     }
   },
@@ -1129,10 +1114,9 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     rmSync(folder, { recursive: true, force: true });
   },
 
-  bookExists: async ({ request }, use) => {
-    const ebooks = new EbooksRequests(request);
+  bookExists: async ({ ebooksRequests }, use) => {
     await use(async (bookUuid) => {
-      const detail = await ebooks.postEbookDetail(bookUuid);
+      const detail = await ebooksRequests.postEbookDetail(bookUuid);
       if (detail.status() !== 200) return false;
       return (await detail.json()) !== null;
     });
@@ -1140,9 +1124,6 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
 
   metadataEditPage: async ({ page }, use) => {
     await use(new MetadataEditPage(page));
-  },
-  genreSearchPage: async ({ page }, use) => {
-    await use(new GenreSearchPage(page));
   },
 
   // Drops what a test left on the books it registers, covers included, so the
@@ -1175,25 +1156,17 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   preHydration: async ({ page }, use) => {
     await use(new PreHydrationComponent(page));
   },
-  bookMetaRows: async ({ page }, use) => {
-    await use(new BookMetaRowsComponent(page));
-  },
   thumbsRequests: async ({ request }, use) => {
     await use(new ThumbsRequests(request));
   },
 
   // Registered before the edit, so the revert runs even when the edit fails.
-  revertOverridesOf: async ({ request, overridesRequests }, use) => {
-    const uuids = new Set<string>();
+  revertOverridesOf: async ({ request, overriddenBookUuids }, use) => {
     await use(async (...titles) => {
       for (const title of titles) {
-        uuids.add(await fetchBookUuidByTitle(request, title));
+        overriddenBookUuids.add(await fetchBookUuidByTitle(request, title));
       }
     });
-    for (const uuid of uuids) {
-      const reverted = await overridesRequests.deleteOverrides(uuid);
-      await expect(reverted, `revert overrides on ${uuid}`).toBeOK();
-    }
   },
 
   // The reader's preference outlives the test, so it goes back to off after.
@@ -1241,27 +1214,6 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     });
   },
 
-  changedReadStatusUuids: async ({ readStatusRequests }, use) => {
-    const uuids = new Set<string>();
-    await use(uuids);
-    for (const uuid of uuids) {
-      const reset = await readStatusRequests.putReadStatus(uuid, "unread");
-      await expect(reset, `reset read status of ${uuid}`).toBeOK();
-    }
-  },
-
-  // The reader starts every test with scroll stops off, so a test that turns
-  // them on schedules this to put them back.
-  scheduleScrollStopsReset: async ({ readerAccountRequests }, use) => {
-    let scheduled = false;
-    await use(() => {
-      scheduled = true;
-    });
-    if (!scheduled) return;
-    const off = await readerAccountRequests.postScrollStops(false);
-    await expect(off, "turn the reader's scroll stops off").toBeOK();
-  },
-
   searchResultsPage: async ({ page }, use) => {
     await use(new SearchResultsPage(page));
   },
@@ -1278,10 +1230,9 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     await use(new AuthorsRequests(request));
   },
 
-  indexedBooks: async ({ request }, use) => {
-    const ebooks = new EbooksRequests(request);
+  indexedBooks: async ({ ebooksRequests }, use) => {
     await use(async () => {
-      const listed = await ebooks.getEbooks();
+      const listed = await ebooksRequests.getEbooks();
       expect(listed.status(), "GET /api/rpc/ebooks").toBe(200);
       const { books }: { books: IndexedBook[] } = await listed.json();
       return books;
@@ -1369,12 +1320,11 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     }
   },
 
-  recentBook: async ({ request }, use) => {
-    const ebooks = new EbooksRequests(request);
+  recentBook: async ({ request, ebooksRequests }, use) => {
     await use(async (format, bookFileId) => {
       const target = FIXTURE_BOOKS[1]!;
       const uuid = await fetchBookUuidByTitle(request, target.title);
-      const listed = await ebooks.getEbooks();
+      const listed = await ebooksRequests.getEbooks();
       expect(listed.status(), "GET /api/rpc/ebooks").toBe(200);
       const { books }: { books: Record<string, unknown>[] } =
         await listed.json();
@@ -1391,24 +1341,14 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     });
   },
 
-  audiobooksRequests: async ({ request }, use) => {
-    await use(new AudiobooksRequests(request));
-  },
   crossFormatRequests: async ({ request }, use) => {
     await use(new CrossFormatRequests(request));
   },
 
-  signedInUserId: async ({ request }, use) => {
-    const me = await new AuthRequests(request).getMe();
-    await expect(me).toBeOK();
-    const { id } = await me.json();
-    await use(id);
-  },
-
   // Every audio progress save names the file the player loaded (#1888).
-  audioFileId: async ({ audiobooksRequests }, use) => {
+  audioFileId: async ({ ebooksRequests }, use) => {
     await use(async (bookUuid) => {
-      const detail = await audiobooksRequests.getBookDetail(bookUuid);
+      const detail = await ebooksRequests.getEbook(bookUuid);
       await expect(detail, `read ${bookUuid}`).toBeOK();
       const { book_files }: { book_files: { id: number; format: string }[] } =
         await detail.json();
@@ -1423,35 +1363,7 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // The reserved pair's two scans can land apart, so poll until it lists both
   // an ebook and an audio format.
   resumePromptUuid: async ({ request }, use) => {
-    const isEbook = (f: string) => /^(epub|pdf)$/i.test(f);
-    const isAudio = (f: string) => /^(mp3|m4b)$/i.test(f);
-    const ebooks = new EbooksRequests(request);
-
-    let match: LibraryBook | undefined;
-    await expect
-      .poll(
-        async () => {
-          const listed = await ebooks.getEbooks();
-          if (listed.status() !== 200) return false;
-          const { books }: { books: LibraryBook[] } = await listed.json();
-          match = books.find((b) => b.title === RESUME_PROMPT_BOOK.title);
-          if (match === undefined) return false;
-          return match.formats.some(isEbook) && match.formats.some(isAudio);
-        },
-        {
-          message: `book ${JSON.stringify(RESUME_PROMPT_BOOK.title)} never surfaced with both an ebook and an audio format`,
-          timeout: 45_000,
-          intervals: [100, 200, 500, 1_000, 2_000],
-        },
-      )
-      .toBe(true);
-
-    if (!match?.unique_identifier) {
-      throw new Error(
-        `resume-prompt book ${JSON.stringify(RESUME_PROMPT_BOOK.title)} is missing its uuid`,
-      );
-    }
-    await use(match.unique_identifier);
+    await use(await bothFormatsUuid(request, RESUME_PROMPT_BOOK, 45_000));
   },
 
   linkedBookUuids: async ({ crossFormatRequests }, use) => {
@@ -1491,36 +1403,6 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   },
   statsRequests: async ({ request }, use) => {
     await use(new StatsRequests(request));
-  },
-
-  // The household target's UI writes happen on its own page, not the test's.
-  secondReaderExpectMutation: async ({ secondReaderPage }, use) => {
-    await use((contract, action) =>
-      expectMutationOn(secondReaderPage, contract, action),
-    );
-  },
-
-  // Goals are account configuration the admin's other specs read, so every
-  // goal is cleared again after the test.
-  goals: async ({ goalsRequests }, use) => {
-    const clear = async () => {
-      for (const cleared of await goalsRequests.clearAll()) {
-        await expect(cleared, "clear a goal").toBeOK();
-      }
-    };
-    await use({
-      set: async ({ annual, dailyPages }) => {
-        const yearly = await goalsRequests.putAnnualGoal({ target: annual });
-        await expect(yearly, "set the annual goal").toBeOK();
-        const daily = await goalsRequests.putDailyGoals({
-          kind: "pages",
-          target: dailyPages,
-        });
-        await expect(daily, "set the daily pages goal").toBeOK();
-      },
-      clear,
-    });
-    await clear();
   },
 
   // Sharing is visible to every reader on the instance, so it goes back off

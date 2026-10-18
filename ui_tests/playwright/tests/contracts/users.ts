@@ -6,7 +6,6 @@ export const usersUrls = {
   create: /\/api\/admin\/users(?:\?|$)/,
   byId: /\/api\/admin\/users\/\d+(?:\?|$)/,
   registration: /\/api\/settings\/registration(?:\?|$)/,
-  registrationStatus: /\/api\/auth\/registration(?:\?|$)/,
 };
 
 /** The writes an admin makes from the Users section. */

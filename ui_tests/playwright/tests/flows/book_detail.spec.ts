@@ -173,7 +173,7 @@ test.describe("book detail page", () => {
       });
 
       await test.step("open the book again", async () => {
-        await libraryPage.openFromNav();
+        await libraryPage.topNav.openLibrary();
         await bookDetailPage.gotoSettled(uuid);
       });
 
@@ -298,9 +298,7 @@ test.describe("book detail page", () => {
 
       await test.step("open a sibling's page", async () => {
         await fromSameHand.openFirstTile();
-        await expect
-          .poll(() => bookDetailPage.path())
-          .toMatch(/^\/books\/[0-9a-fA-F-]{36}$/);
+        await bookDetailPage.assertDisplayedByUuid();
         await expect
           .poll(() => bookDetailPage.path())
           .not.toBe(`/books/${uuid}`);
@@ -372,17 +370,14 @@ test.describe("book detail page", () => {
     // interactive controls, so the cover cell's link is the way in.
     await test.step("open the book from its row", async () => {
       await expect(
-        libraryPage.tableRowOpenLink(TARGET.slug, TARGET.title),
+        libraryPage.table.openLink(TARGET.slug, TARGET.title),
       ).toBeVisible();
-      await libraryPage.openFromTable(TARGET.slug, TARGET.title);
-      await expect
-        .poll(() => bookDetailPage.path())
-        .toMatch(/^\/books\/[0-9a-fA-F-]{36}$/);
-      await expect(bookDetailPage.titleHeading).toBeVisible();
+      await libraryPage.table.openBook(TARGET.slug, TARGET.title);
+      await bookDetailPage.assertDisplayedByUuid();
     });
 
     await test.step("check the library comes back as a table", async () => {
-      await libraryPage.openFromNav();
+      await libraryPage.topNav.openLibrary();
       await libraryPage.assertDisplayed();
       await expect(libraryPage.table.root).toBeVisible();
     });
@@ -463,9 +458,9 @@ test.describe("book detail page", () => {
     });
 
     await test.step("return to the library", async () => {
-      await libraryPage.openFromNav();
+      await libraryPage.topNav.openLibrary();
       await libraryPage.assertDisplayed();
-      await expect(libraryPage.libraryGrid).toBeVisible();
+      await expect(libraryPage.grid).toBeVisible();
     });
   });
 
@@ -728,7 +723,7 @@ test.describe("book detail page", () => {
       });
 
       await test.step("mark it finished", async () => {
-        await expectMutation(readStatus.change(), () =>
+        await expectMutation(readStatus.set(), () =>
           readStatusControl.markFinished(),
         );
         await expect(readStatusControl.finishedSegment).toHaveClass(/active/);
@@ -757,7 +752,7 @@ test.describe("book detail page", () => {
       });
 
       await test.step("mark it unread", async () => {
-        await expectMutation(readStatus.change(), () =>
+        await expectMutation(readStatus.set(), () =>
           readStatusControl.markUnread(),
         );
         await expect(readStatusControl.meta).toHaveText("Not started");
@@ -779,15 +774,15 @@ test.describe("book detail page", () => {
       });
 
       await test.step("mark it reading", async () => {
-        await expectMutation(readStatus.change(), () =>
+        await expectMutation(readStatus.set(), () =>
           readStatusControl.markReading(),
         );
         await expect(readStatusControl.readingSegment).toHaveClass(/active/);
       });
 
       await test.step("mark it finished with saves failing", async () => {
-        await bookDetailPage.forceServerError(readStatus.change());
-        await expectMutation(failing(readStatus.change()), () =>
+        await bookDetailPage.forceServerError(readStatus.set());
+        await expectMutation(failing(readStatus.set()), () =>
           readStatusControl.markFinished(),
         );
       });
@@ -1035,6 +1030,7 @@ test.describe("book detail page", () => {
   test.describe("links from the hero", () => {
     test("open the author page from the authors line", async ({
       bookDetailPage,
+      authorPage,
       request,
     }) => {
       // The "by …" line renders the lone author as a link to /authors/:id.
@@ -1048,9 +1044,7 @@ test.describe("book detail page", () => {
 
       await test.step("follow the author link", async () => {
         await bookDetailPage.openAuthor(author);
-        await expect
-          .poll(() => bookDetailPage.path())
-          .toMatch(/^\/authors\/\d+$/);
+        await authorPage.assertDisplayed();
       });
     });
 
@@ -1058,6 +1052,7 @@ test.describe("book detail page", () => {
     // series name as a link to /series/:id.
     test("open the series page from the series kicker", async ({
       bookDetailPage,
+      seriesPage,
       request,
     }) => {
       const beta = FIXTURE_BOOKS.find((b) => b.slug === "beta")!;
@@ -1070,9 +1065,7 @@ test.describe("book detail page", () => {
 
       await test.step("follow the series link", async () => {
         await bookDetailPage.openSeries(/Pioneers/);
-        await expect
-          .poll(() => bookDetailPage.path())
-          .toMatch(/^\/series\/\d+$/);
+        await seriesPage.assertDisplayed();
       });
     });
   });
