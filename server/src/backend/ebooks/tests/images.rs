@@ -304,6 +304,33 @@ async fn api_get_ebook_image_file_returns_400_for_an_href_that_is_not_a_manifest
 }
 
 #[tokio::test]
+async fn api_get_ebook_image_file_returns_400_for_a_manifest_image_missing_from_the_archive() {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let epub = db::test_support::assemble_test_epub(
+        &[("c1.xhtml", "<html><body><p>Text.</p></body></html>")],
+        r#"<item id="ghost" href="ghost.png" media-type="image/png"/>"#,
+        "",
+        &[],
+    );
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/ebooks/{uuid}/images/file?href=ghost.png"),
+            &token,
+        ))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
 async fn api_get_ebook_image_file_falls_back_to_octet_stream_when_the_media_type_is_not_header_safe(
 ) {
     let (_, _, pool) = fixture().await;

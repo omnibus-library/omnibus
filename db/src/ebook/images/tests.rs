@@ -7,7 +7,8 @@ use std::path::PathBuf;
 use omnibus_shared::{BookImage, BookImageReference};
 
 use crate::test_support::{
-    build_stored_zip, build_test_epub_with_images, make_test_dir, solid_color_png,
+    assemble_test_epub, build_stored_zip, build_test_epub_with_images, make_test_dir,
+    solid_color_png,
 };
 
 use super::*;
@@ -391,6 +392,22 @@ fn read_image_returns_none_for_an_href_that_is_not_a_manifest_image() {
         let read = read_image(File::open(&path).unwrap(), href).unwrap();
         assert_eq!(read, None, "{href} must not be served");
     }
+}
+
+#[test]
+fn read_image_returns_none_for_a_manifest_image_missing_from_the_archive() {
+    let epub = assemble_test_epub(
+        &[("c1.xhtml", &page("<p>text</p>"))],
+        r#"<item id="ghost" href="ghost.png" media-type="image/png"/>"#,
+        "",
+        &[],
+    );
+    let path = make_test_dir("book_images_ghost").join("book.epub");
+    std::fs::write(&path, epub).unwrap();
+
+    let read = read_image(File::open(&path).unwrap(), "ghost.png").unwrap();
+
+    assert_eq!(read, None);
 }
 
 #[test]

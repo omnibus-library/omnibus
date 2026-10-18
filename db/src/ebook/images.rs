@@ -160,9 +160,9 @@ fn attach_references(
 }
 
 /// The original bytes of the `image/*` manifest item at archive path `href`,
-/// with its manifest media type. `Ok(None)` when `href` names no such item:
-/// it is only ever compared to manifest paths, never joined to one, so it
-/// cannot reach another entry or a file outside the archive.
+/// with its manifest media type. `Ok(None)` when `href` names no such item or
+/// the archive lacks its entry: it is only ever compared to manifest paths,
+/// never joined to one, so it cannot reach another entry or a file outside it.
 pub fn read_image(file: File, href: &str) -> anyhow::Result<Option<(String, Vec<u8>)>> {
     let (doc, mut archive) = open(file)?;
     let Some(item) = doc
@@ -172,7 +172,11 @@ pub fn read_image(file: File, href: &str) -> anyhow::Result<Option<(String, Vec<
     else {
         return Ok(None);
     };
-    let bytes = read_capped(archive_entry(&mut archive, href)?, href)?;
+    let entry = match archive_entry(&mut archive, href) {
+        Err(ZipError::FileNotFound) => return Ok(None),
+        entry => entry?,
+    };
+    let bytes = read_capped(entry, href)?;
     Ok(Some((item.mime.clone(), bytes)))
 }
 

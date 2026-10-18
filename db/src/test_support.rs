@@ -396,7 +396,10 @@ pub fn build_test_epub_with_images(
     assemble_test_epub(spine, &manifest, "", &entries)
 }
 
-fn assemble_test_epub(
+/// The builder behind the others: [`build_test_epub`] plus raw `extra_manifest`
+/// items, `spine_attrs` on `<spine>`, and `extra_entries` written to the archive,
+/// so a manifest item can name an entry the archive lacks.
+pub fn assemble_test_epub(
     spine: &[(&str, &str)],
     extra_manifest: &str,
     spine_attrs: &str,
