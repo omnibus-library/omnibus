@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
   APIRequest,
@@ -10,12 +11,14 @@ import type {
   ViewportSize,
   WorkerInfo,
 } from "@playwright/test";
+import { STORAGE_STATE_PATH } from "../../globalSetup";
 import { AccountRequests } from "../apiRequests/AccountRequests";
 import { AuthRequests } from "../apiRequests/AuthRequests";
 import { BookmarksRequests } from "../apiRequests/BookmarksRequests";
 import { EbooksRequests } from "../apiRequests/EbooksRequests";
 import { GoalsRequests } from "../apiRequests/GoalsRequests";
 import { HighlightsRequests } from "../apiRequests/HighlightsRequests";
+import { McpRequests } from "../apiRequests/McpRequests";
 import { MergeRequests } from "../apiRequests/MergeRequests";
 import { OverridesRequests } from "../apiRequests/OverridesRequests";
 import { PhysicalRequests } from "../apiRequests/PhysicalRequests";
@@ -24,6 +27,11 @@ import { ReadStatusRequests } from "../apiRequests/ReadStatusRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
 import { UsersRequests } from "../apiRequests/UsersRequests";
+import type {
+  CreatedApiToken,
+  CreatedKoboDevice,
+  SignedInSession,
+} from "../data/account";
 import type { SeededBookmark } from "../data/bookmarks";
 import type { LibraryBook } from "../data/ebooks";
 import {
@@ -50,6 +58,7 @@ import { LibraryPage } from "../pages/LibraryPage";
 import { ListenPage } from "../pages/ListenPage";
 import { LoginPage } from "../pages/LoginPage";
 import { PdfReaderPage } from "../pages/PdfReaderPage";
+import { RegisterPage } from "../pages/RegisterPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { ShelfPage } from "../pages/ShelfPage";
 import {
@@ -151,6 +160,20 @@ type PageFixtures = {
   mergeLock: MergeLock;
 
   // #region batch-A: auth and account settings
+  registerPage: RegisterPage;
+  mcpRequests: McpRequests;
+  readerExpectMutation: ExpectMutation;
+  adminSession: SignedInSession;
+  presetGoals: (goals?: { books?: number; pages?: number }) => Promise<void>;
+  presetShareStats: (enabled: boolean) => Promise<void>;
+  presetDisplayName: (displayName: string | null) => Promise<void>;
+  presetKindleEmail: (email: string | null) => Promise<void>;
+  presetMcpEndpoint: (enabled: boolean) => Promise<void>;
+  presetReaderHiddenFormats: (formats: string[]) => Promise<void>;
+  createdKoboDeviceIds: Set<number>;
+  ownKoboDevice: (name: string) => Promise<number>;
+  createdApiTokenIds: Set<number>;
+  ownApiToken: (name: string) => Promise<number>;
   // #endregion batch-A
 
   // #region batch-B: admin settings
@@ -644,6 +667,141 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   },
 
   // #region batch-A: auth and account settings
+  registerPage: async ({ page }, use) => {
+    await use(new RegisterPage(page));
+  },
+  mcpRequests: async ({ request }, use) => {
+    await use(new McpRequests(request));
+  },
+
+  // The reader's page is not `page`, so its mutations need their own waiter.
+  readerExpectMutation: async ({ readerPage }, use) => {
+    await use((contract, action) =>
+      expectMutationOn(readerPage, contract, action),
+    );
+  },
+
+  adminSession: async ({ request }, use) => {
+    const me = await new AuthRequests(request).getMe();
+    await expect(me).toBeOK();
+    const stored: { cookies: SignedInSession["cookies"] } = JSON.parse(
+      readFileSync(STORAGE_STATE_PATH, "utf8"),
+    );
+    await use({ user: await me.json(), cookies: stored.cookies });
+  },
+
+  // The goal fixtures start from no goals and end there, because a stats spec
+  // writes the same three rows on this admin.
+  presetGoals: async ({ goalsRequests }, use) => {
+    const clear = async () => {
+      for (const cleared of await goalsRequests.clearAll()) {
+        await expect(cleared, "clear the reading goals").toBeOK();
+      }
+    };
+    await use(async ({ books, pages } = {}) => {
+      await clear();
+      if (books !== undefined) {
+        const set = await goalsRequests.putAnnualGoal({ target: books });
+        await expect(set, `set the annual goal to ${books}`).toBeOK();
+      }
+      if (pages !== undefined) {
+        const set = await goalsRequests.putDailyGoals({
+          kind: "pages",
+          target: pages,
+        });
+        await expect(set, `set the daily pages goal to ${pages}`).toBeOK();
+      }
+    });
+    await clear();
+  },
+
+  // Sharing is on for every other spec, so that is where a test leaves it.
+  presetShareStats: async ({ accountRequests }, use) => {
+    const set = async (enabled: boolean) => {
+      const saved = await accountRequests.postShareStats(enabled);
+      await expect(saved, `set share stats to ${enabled}`).toBeOK();
+    };
+    await use(set);
+    await set(true);
+  },
+
+  presetDisplayName: async ({ accountRequests }, use) => {
+    const set = async (displayName: string | null) => {
+      const saved = await accountRequests.postProfile(displayName);
+      await expect(saved, `set the display name to ${displayName}`).toBeOK();
+    };
+    await use(set);
+    await set(null);
+  },
+
+  presetKindleEmail: async ({ accountRequests }, use) => {
+    const set = async (email: string | null) => {
+      const saved = await accountRequests.postKindleEmail(email);
+      await expect(saved, `set the Kindle email to ${email}`).toBeOK();
+    };
+    await use(set);
+    await set(null);
+  },
+
+  // The switch is instance-wide and a reader takes no lock, so the lock keeps
+  // two writers from flipping it under each other.
+  presetMcpEndpoint: async ({ mcpRequests }, use) => {
+    const set = async (enabled: boolean) => {
+      const saved = await mcpRequests.postMcp(enabled);
+      await expect(saved, `set the MCP endpoint to ${enabled}`).toBeOK();
+    };
+    await withLock("mcp-endpoint", async () => {
+      await use(set);
+      await set(false);
+    });
+  },
+
+  presetReaderHiddenFormats: async ({ readerAccountRequests }, use) => {
+    const set = async (formats: string[]) => {
+      const saved = await readerAccountRequests.postHiddenFormats(formats);
+      await expect(saved, `hide formats [${formats}]`).toBeOK();
+    };
+    await use(set);
+    await set([]);
+  },
+
+  createdKoboDeviceIds: async ({ accountRequests }, use) => {
+    const ids = new Set<number>();
+    await use(ids);
+    for (const id of ids) {
+      const revoked = await accountRequests.postKoboDeviceRevoke(id);
+      await expect(revoked, `revoke Kobo device ${id}`).toBeOK();
+    }
+  },
+
+  ownKoboDevice: async ({ accountRequests, createdKoboDeviceIds }, use) => {
+    await use(async (name) => {
+      const created = await accountRequests.postKoboDevice(name);
+      await expect(created, `add Kobo device ${name}`).toBeOK();
+      const { id }: CreatedKoboDevice = await created.json();
+      createdKoboDeviceIds.add(id);
+      return id;
+    });
+  },
+
+  createdApiTokenIds: async ({ accountRequests }, use) => {
+    const ids = new Set<number>();
+    await use(ids);
+    for (const id of ids) {
+      const revoked = await accountRequests.postApiTokenRevoke(id);
+      await expect(revoked, `revoke API token ${id}`).toBeOK();
+    }
+  },
+
+  ownApiToken: async ({ accountRequests, createdApiTokenIds }, use) => {
+    await use(async (name) => {
+      const created = await accountRequests.postApiToken(name);
+      await expect(created, `create API token ${name}`).toBeOK();
+      const { token }: CreatedApiToken = await created.json();
+      createdApiTokenIds.add(token.id);
+      return token.id;
+    });
+  },
   // #endregion batch-A
 
   // #region batch-B: admin settings
