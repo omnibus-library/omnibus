@@ -19,7 +19,7 @@ test.describe("authors index", () => {
     await test.step("check the hero and the nav", async () => {
       await authorsIndexPage.assertDisplayed();
       await topNav.assertDisplayed();
-      await expect(authorsIndexPage.heading).toContainText("author");
+      await expect(authorsIndexPage.heading).toContainText("Authors");
       // A top-level route: the nav is the only wayfinding it needs.
       await expect(topNav.breadcrumbNav).toHaveCount(0);
       await expect(topNav.navLink("Authors")).toBeVisible();
@@ -29,8 +29,56 @@ test.describe("authors index", () => {
       await expect(authorsIndexPage.filterField).toBeVisible();
       await expect(authorsIndexPage.sortByNameButton).toBeVisible();
       await expect(authorsIndexPage.sortByCountButton).toBeVisible();
+      await expect(authorsIndexPage.sortByRecentButton).toBeVisible();
+      await expect(authorsIndexPage.readingFilterButton).toBeEnabled();
       await expect(authorsIndexPage.firstCard).toBeVisible();
       expect(await authorsIndexPage.cards.count()).toBeGreaterThan(0);
+    });
+
+    await test.step("check an author previews beside the list", async () => {
+      await expect(authorsIndexPage.previewName).toBeVisible();
+    });
+  });
+
+  test("open an author beside the list", async ({
+    authorsIndexPage,
+    authorPage,
+  }) => {
+    await test.step("filter to one author and open them", async () => {
+      await authorsIndexPage.goto();
+      await authorsIndexPage.filterBy("Lovelace");
+      await authorsIndexPage.openCard("Ada Lovelace");
+    });
+
+    await test.step("check the pane changed and the list stayed", async () => {
+      await expect(authorPage.heading).toHaveText("Ada Lovelace");
+      await expect(authorsIndexPage.filterField).toHaveValue("Lovelace");
+      await expect(authorsIndexPage.card("Ada Lovelace")).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+    });
+  });
+
+  test("leave progress unknown when it fails to load", async ({
+    authorsIndexPage,
+  }) => {
+    await test.step("open the index with progress failing", async () => {
+      await authorsIndexPage.failReadingProgress();
+      await authorsIndexPage.goto();
+      await expect(authorsIndexPage.firstCard).toBeVisible();
+    });
+
+    await test.step("check nothing claims the reader read nothing", async () => {
+      await expect(authorsIndexPage.readingFilterButton).toBeDisabled();
+      await expect(authorsIndexPage.firstRowBar).toHaveAttribute(
+        "data-state",
+        "unknown",
+      );
+    });
+
+    await test.step("check an author still previews", async () => {
+      await expect(authorsIndexPage.previewName).toBeVisible();
     });
   });
 

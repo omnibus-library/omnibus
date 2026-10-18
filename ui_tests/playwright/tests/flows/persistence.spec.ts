@@ -154,41 +154,6 @@ test.describe("sort persistence", () => {
 test.describe("scroll restoration", () => {
   test.use({ viewport: { width: 1000, height: 320 } });
 
-  test("restore the authors index scroll position after visiting an author", async ({
-    authorsIndexPage,
-    authorPage,
-  }) => {
-    let savedY = 0;
-
-    await test.step("scroll the authors index to the bottom", async () => {
-      await authorsIndexPage.goto();
-      await expect(authorsIndexPage.firstCard).toBeVisible();
-      await authorsIndexPage.scroll.toBottom();
-      // The clamped offset the manager records for this path.
-      savedY = await authorsIndexPage.scroll.y();
-      expect(savedY).toBeGreaterThan(0);
-    });
-
-    await test.step("open the last author and go back", async () => {
-      // The last card is visible at the bottom, so clicking it does not scroll
-      // the window and overwrite the saved offset.
-      await authorsIndexPage.openLastCard();
-      await authorPage.assertDisplayed();
-      await authorsIndexPage.goBack();
-      await expect(authorsIndexPage.firstCard).toBeVisible();
-    });
-
-    await test.step("check the scroll position is restored", async () => {
-      // The restore converges after the list re-fetches and paints.
-      await expect
-        .poll(() => authorsIndexPage.scroll.y(), {
-          message: "the authors index scroll was not restored",
-          timeout: 5000,
-        })
-        .toBeGreaterThan(savedY * 0.6);
-    });
-  });
-
   test("restore the library scroll position after opening a book", async ({
     libraryPage,
     bookDetailPage,
@@ -256,6 +221,81 @@ test.describe("scroll restoration", () => {
         })
         .toBeGreaterThan(movedY * 0.6);
       expect(await libraryPage.scroll.settledY()).toBeLessThan(movedY * 1.4);
+    });
+  });
+});
+
+// Below `--au-split` the authors list and an author take the screen in turn,
+// and the window scrolls; the layout stays mounted across both routes, so the
+// restore must run on the route change rather than on a remount.
+test.describe("authors scroll restoration, one pane at a time", () => {
+  test.use({ viewport: { width: 800, height: 320 } });
+
+  test("restore the authors index scroll position after visiting an author", async ({
+    authorsIndexPage,
+    authorPage,
+  }) => {
+    let savedY = 0;
+
+    await test.step("scroll the authors index to the bottom", async () => {
+      await authorsIndexPage.goto();
+      await expect(authorsIndexPage.firstCard).toBeVisible();
+      await authorsIndexPage.scroll.toBottom();
+      // The clamped offset the manager records for this path.
+      savedY = await authorsIndexPage.scroll.y();
+      expect(savedY).toBeGreaterThan(0);
+    });
+
+    await test.step("open the last author and go back", async () => {
+      // The last card is visible at the bottom, so clicking it does not scroll
+      // the window and overwrite the saved offset.
+      await authorsIndexPage.openLastCard();
+      await authorPage.assertDisplayed();
+      await authorsIndexPage.goBack();
+      await expect(authorsIndexPage.firstCard).toBeVisible();
+    });
+
+    await test.step("check the scroll position is restored", async () => {
+      // The restore converges after the list re-fetches and paints.
+      await expect
+        .poll(() => authorsIndexPage.scroll.y(), {
+          message: "the authors index scroll was not restored",
+          timeout: 5000,
+        })
+        .toBeGreaterThan(savedY * 0.6);
+    });
+  });
+});
+
+// Two panes: the list scrolls in its own scroller, which opening an author
+// must leave where it was.
+test.describe("authors list scroll beside an author", () => {
+  test.use({ viewport: { width: 1000, height: 640 } });
+
+  test("keep the authors list's place while opening an author", async ({
+    authorsIndexPage,
+    authorPage,
+  }) => {
+    const name = "Ada Lovelace";
+    let savedTop = 0;
+
+    await test.step("scroll an author to the foot of the list", async () => {
+      await authorsIndexPage.goto();
+      // The preview has landed, so the load-time scroll to it is done.
+      await expect(authorsIndexPage.previewName).toBeVisible();
+      await authorsIndexPage.scrollCardToListEnd(name);
+      savedTop = await authorsIndexPage.settledListScrollTop();
+      expect(savedTop).toBeGreaterThan(0);
+    });
+
+    await test.step("open that author", async () => {
+      await authorsIndexPage.openCard(name);
+      await authorPage.assertDisplayed();
+    });
+
+    await test.step("check the list kept its place", async () => {
+      // A remounted list would centre the opened row, moving it off the foot.
+      expect(await authorsIndexPage.settledListScrollTop()).toBe(savedTop);
     });
   });
 });

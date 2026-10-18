@@ -2,16 +2,20 @@ import type { Locator, Page } from "@playwright/test";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { BasePage } from "./BasePage";
 
-/** One author at `/authors/:id`: their books, series and photo. */
+/** One author at `/authors/:id`: their pane beside the authors list. */
 export class AuthorPage extends BasePage {
   protected readonly urlPattern = /\/authors\/\d+$/;
 
   readonly topNav: TopNavComponent;
 
+  /** The author's name: an h2, since the list beside it owns the page's h1. */
   readonly heading: Locator;
-  readonly libraryCountLabel: Locator;
+  readonly meta: Locator;
+  readonly readingStrip: Locator;
+  readonly showInLibraryButton: Locator;
   readonly letterAvatar: Locator;
   readonly photoAvatar: Locator;
+  readonly moreButton: Locator;
   readonly deleteButton: Locator;
   readonly deleteDialog: Locator;
   readonly deleteCancelButton: Locator;
@@ -21,10 +25,13 @@ export class AuthorPage extends BasePage {
   constructor(page: Page) {
     super(page);
     this.topNav = new TopNavComponent(page);
-    this.heading = page.getByRole("heading", { level: 1 });
-    this.libraryCountLabel = page.getByText("In your library");
+    this.heading = page.getByTestId("author-name");
+    this.meta = page.getByTestId("author-meta");
+    this.readingStrip = page.getByTestId("author-reading");
+    this.showInLibraryButton = page.getByTestId("author-show-in-library");
     this.letterAvatar = page.locator("div.disc-avatar");
     this.photoAvatar = page.locator("img.disc-avatar--photo");
+    this.moreButton = page.getByTestId("author-more");
     this.deleteButton = page.getByTestId("author-delete-btn");
     this.deleteDialog = page.getByTestId("author-delete-modal");
     this.deleteCancelButton = page.getByTestId("author-delete-cancel");
@@ -36,9 +43,9 @@ export class AuthorPage extends BasePage {
     return this.heading;
   }
 
-  /** A series section's heading link to that series' page. */
+  /** A series shelf's "Series page" link. */
   seriesLink(name: string): Locator {
-    return this.page.getByRole("link", { name });
+    return this.page.getByRole("link", { name: `${name} series page` });
   }
 
   bookTitle(title: string): Locator {
@@ -53,8 +60,25 @@ export class AuthorPage extends BasePage {
     await this.seriesLink(name).click();
   }
 
+  /** Opens the ⋯ menu, an admin's only. */
+  async openMoreMenu(): Promise<void> {
+    await this.moreButton.click();
+  }
+
   async openDeleteDialog(): Promise<void> {
+    await this.openMoreMenu();
     await this.deleteButton.click();
+  }
+
+  /** Opens the library on `name`'s books, once its first page answers for them. */
+  async showInLibrary(name: string): Promise<void> {
+    const answered = this.page.waitForResponse(
+      (res) =>
+        res.url().includes("/api/rpc/ebooks/page") &&
+        (res.request().postData() ?? "").includes(name),
+    );
+    await this.showInLibraryButton.click();
+    await answered;
   }
 
   async cancelDelete(): Promise<void> {

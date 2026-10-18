@@ -24,7 +24,8 @@ test.describe("delete an author", () => {
       await authorPage.goto(await authorId("Hedy Lamarr"));
     });
 
-    await test.step("check the delete button shows", async () => {
+    await test.step("check the ⋯ menu offers Delete", async () => {
+      await authorPage.openMoreMenu();
       await expect(authorPage.deleteButton).toBeVisible();
     });
   });
@@ -79,6 +80,8 @@ test.describe("delete an author", () => {
 
     await test.step("check the authors index opens", async () => {
       await authorsIndexPage.assertDisplayed();
+      // The list stays mounted across the redirect, so it drops the row itself.
+      await expect(authorsIndexPage.card(name)).toHaveCount(0);
     });
 
     await test.step("check the library no longer links the author", async () => {

@@ -280,3 +280,24 @@ fn resume_route_sends_an_epub_position_to_the_reader() {
         }
     );
 }
+
+#[test]
+fn reader_route_opens_an_unread_audio_only_book_in_the_player() {
+    assert_eq!(
+        reader_route("book-a".into(), None, None, &["m4b".into()]),
+        Route::BookListen {
+            uuid: "book-a".into(),
+            file_id: None
+        }
+    );
+}
+
+#[test]
+fn reader_route_opens_an_unread_dual_format_book_in_the_reader() {
+    assert_eq!(
+        reader_route("book-a".into(), None, None, &["m4b".into(), "epub".into()]),
+        Route::BookRead {
+            uuid: "book-a".into()
+        }
+    );
+}

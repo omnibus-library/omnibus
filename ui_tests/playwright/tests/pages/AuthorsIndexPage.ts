@@ -4,7 +4,7 @@ import { TopNavComponent } from "../components/TopNavComponent";
 import { expect } from "../fixtures/test";
 import { BasePage } from "./BasePage";
 
-/** The authors index at `/authors`. */
+/** The authors list at `/authors`, previewing an author in the pane beside it. */
 export class AuthorsIndexPage extends BasePage {
   // The trailing slash is optional: a delete redirects here and either form is accepted.
   protected readonly urlPattern = /\/authors\/?$/;
@@ -16,8 +16,15 @@ export class AuthorsIndexPage extends BasePage {
   readonly heading: Locator;
   readonly sortByNameButton: Locator;
   readonly sortByCountButton: Locator;
+  readonly sortByRecentButton: Locator;
+  readonly readingFilterButton: Locator;
+  /** The list's own scroller, which beside an author scrolls apart from the window. */
+  readonly list: Locator;
   readonly cards: Locator;
   readonly firstCard: Locator;
+  readonly firstRowBar: Locator;
+  /** The previewed author's name in the pane. */
+  readonly previewName: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -27,12 +34,22 @@ export class AuthorsIndexPage extends BasePage {
     this.heading = page.getByRole("heading", { level: 1 });
     this.sortByNameButton = page.getByTestId("authors-sort-name");
     this.sortByCountButton = page.getByTestId("authors-sort-count");
+    this.sortByRecentButton = page.getByTestId("authors-sort-recent");
+    this.readingFilterButton = page.getByTestId("authors-reading-filter");
+    this.list = page.getByTestId("authors-list");
     this.cards = page.getByTestId("author-card");
     this.firstCard = this.cards.first();
+    this.firstRowBar = page.getByTestId("author-row-bar").first();
+    this.previewName = page.getByTestId("author-name");
   }
 
   protected get readyLocator(): Locator {
     return this.filterField;
+  }
+
+  /** `name`'s row, by the label that leads with the author's name. */
+  card(name: string): Locator {
+    return this.page.getByRole("link", { name: new RegExp(`^${name},`) });
   }
 
   /** The strip's link for authors whose surname starts with `letter`. */
@@ -61,6 +78,13 @@ export class AuthorsIndexPage extends BasePage {
     await this.page.goto("/authors", { waitUntil: "domcontentloaded" });
   }
 
+  /** Fails the reader's progress request, which no server state can force. */
+  async failReadingProgress(): Promise<void> {
+    await this.page.route("**/api/rpc/authors/reading", (route) =>
+      route.fulfill({ status: 500, contentType: "text/plain", body: "boom" }),
+    );
+  }
+
   async filterBy(text: string): Promise<void> {
     await this.filterField.fill(text);
   }
@@ -71,6 +95,36 @@ export class AuthorsIndexPage extends BasePage {
 
   async jumpToLetter(letter: string): Promise<void> {
     await this.letterLink(letter).click();
+  }
+
+  /** The list's offset once it has held for a quarter second. */
+  settledListScrollTop(): Promise<number> {
+    return this.list.evaluate(
+      (el) =>
+        new Promise<number>((resolve, reject) => {
+          const deadline = Date.now() + 5_000;
+          let previous = Number.NaN;
+          const check = () => {
+            const top = el.scrollTop;
+            if (top === previous) return resolve(top);
+            if (Date.now() > deadline) {
+              return reject(new Error("the list's offset never settled"));
+            }
+            previous = top;
+            setTimeout(check, 250);
+          };
+          check();
+        }),
+    );
+  }
+
+  /** Scrolls the list until `name`'s row sits at its foot. */
+  async scrollCardToListEnd(name: string): Promise<void> {
+    await this.card(name).evaluate((el) => el.scrollIntoView({ block: "end" }));
+  }
+
+  async openCard(name: string): Promise<void> {
+    await this.card(name).click();
   }
 
   async openFirstCard(): Promise<void> {

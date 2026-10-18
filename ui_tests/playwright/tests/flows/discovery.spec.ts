@@ -13,12 +13,64 @@ test.describe("author page", () => {
       await authorPage.goto(await authorId("Ada Lovelace"));
     });
 
-    await test.step("check the name and the library count", async () => {
+    await test.step("check the name, counts and progress", async () => {
       await authorPage.assertDisplayed();
       await authorPage.topNav.assertDisplayed();
       await expect(authorPage.heading).toContainText("Ada");
       await expect(authorPage.heading).toContainText("Lovelace");
-      await expect(authorPage.libraryCountLabel).toBeVisible();
+      await expect(authorPage.meta).toContainText("book");
+      await expect(authorPage.readingStrip).toBeVisible();
+      await expect(authorPage.showInLibraryButton).toBeVisible();
+    });
+  });
+
+  test("show the author's books in the library", async ({
+    authorPage,
+    libraryPage,
+    authorId,
+  }) => {
+    const name = "Niklaus Wirth";
+
+    await test.step("show the author in the library", async () => {
+      // A fresh context has saved no library prefs: the filter is handed over.
+      await authorPage.goto(await authorId(name));
+      await authorPage.showInLibrary(name);
+    });
+
+    await test.step("check the library is narrowed to them", async () => {
+      await libraryPage.assertDisplayed();
+      await expect(libraryPage.filterBar.chip(0)).toContainText(name);
+    });
+
+    await test.step("check the filter outlives a reload", async () => {
+      await libraryPage.goto();
+      await expect(libraryPage.filterBar.chip(0)).toContainText(name);
+    });
+  });
+
+  test("leave a selected shelf to show the author's books", async ({
+    authorPage,
+    libraryPage,
+    authorId,
+    ownShelf,
+  }) => {
+    const name = "Niklaus Wirth";
+    const shelf = await ownShelf("Show in library");
+
+    await test.step("pick an empty shelf on the library", async () => {
+      // The landing restores its last shelf pick, which would hide the books.
+      await libraryPage.goto();
+      await libraryPage.selectShelf(shelf);
+    });
+
+    await test.step("show the author in the library", async () => {
+      await authorPage.goto(await authorId(name));
+      await authorPage.showInLibrary(name);
+    });
+
+    await test.step("check it lists All Books, narrowed", async () => {
+      await expect(libraryPage.sectionTitle).toContainText("All Books");
+      await expect(libraryPage.filterBar.chip(0)).toContainText(name);
     });
   });
 
@@ -40,8 +92,8 @@ test.describe("author page", () => {
     authorId,
   }) => {
     await test.step("open an author whose books share one series", async () => {
-      // Wirth's four books all belong to Code Quartet, so its heading is the
-      // only link of that name on the page.
+      // Wirth's four books all belong to Code Quartet, one shelf with one
+      // "Series page" link.
       await authorPage.goto(await authorId("Niklaus Wirth"));
       await expect(authorPage.seriesLink("Code Quartet")).toBeVisible();
     });

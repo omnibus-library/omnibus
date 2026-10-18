@@ -1,247 +1,127 @@
-//! Tests for the authors-index sort/grouping helpers: `sort_key` prefers
-//! the explicit sort field, `first_letter` groups by that same key, and
-//! names sort in the library's dictionary order.
+//! Render tests for the authors list's three-valued states: a row's bar while
+//! progress is pending, once it lands, and when it never will; the Reading
+//! chip before its count is known; and `/authors`' preview pane branches.
+
+use std::collections::HashMap;
+
+use omnibus_shared::AuthorReading;
 
 use super::*;
+use crate::test_support::{render, render_in_vdom};
 
-fn author(name: &str, sort: Option<&str>) -> AuthorSummary {
-    AuthorSummary {
-        id: 0,
-        name: name.into(),
-        sort: sort.map(Into::into),
-        book_count: 0,
-        accent: None,
-        has_photo: false,
+fn progress(finished: usize, reading: usize) -> AuthorReading {
+    AuthorReading {
+        author_id: 1,
+        finished,
+        reading,
+        last_read_at: None,
     }
 }
 
 #[test]
-fn sort_key_uses_comma_form_sort_verbatim() {
-    let a = author("Louisa May Alcott", Some("Alcott, Louisa May"));
-    assert_eq!(sort_key(&a), "Alcott, Louisa May");
-    assert_eq!(first_letter(&a), 'A');
+fn row_bar_draws_a_skeleton_until_progress_lands() {
+    let html = render(row_bar(4, None, &ReadingState::Pending));
+    assert!(html.contains(r#"data-state="pending""#), "{html}");
+    assert!(html.contains("ld-skel"), "{html}");
 }
 
 #[test]
-fn sort_key_ignores_commaless_sort_and_falls_back_to_name() {
-    // Regression: a comma-less `sort` value (some real-world dumps
-    // stuff a pseudonym or bare surname here, e.g. "Underwood" for
-    // an author whose display name is "Erin A. Craig") used to win,
-    // grouping Erin under U. Now we treat it as garbage and derive
-    // the surname from the display name instead.
-    let a = author("Erin A. Craig", Some("Underwood"));
-    assert_eq!(sort_key(&a), "Craig, Erin A.");
-    assert_eq!(first_letter(&a), 'C');
+fn row_bar_fills_finished_then_reading_by_share_of_books() {
+    let html = render(row_bar(
+        4,
+        Some(&progress(1, 2)),
+        &ReadingState::Ready(HashMap::new()),
+    ));
+    assert!(html.contains(r#"data-state="ready""#), "{html}");
+    assert!(html.contains("width: 25%"), "finished share: {html}");
+    assert!(html.contains("width: 50%"), "reading share: {html}");
 }
 
 #[test]
-fn sort_key_falls_back_to_name_when_sort_missing() {
-    let a = author("Ada Lovelace", None);
-    assert_eq!(sort_key(&a), "Lovelace, Ada");
-    assert_eq!(first_letter(&a), 'L');
+fn row_bar_marks_progress_unknown_rather_than_empty_when_it_fails() {
+    let html = render(row_bar(4, None, &ReadingState::Failed));
+    assert!(html.contains(r#"data-state="unknown""#), "{html}");
+    assert!(html.contains("is-unknown"), "{html}");
+}
+
+#[allow(non_snake_case)]
+fn HeadWithoutProgress() -> Element {
+    rsx! {
+        AuthorsListHead {
+            total: Some(3),
+            filter: String::new(),
+            sort: AuthorSort::Name,
+            reading_count: None,
+            only_reading: false,
+            on_filter: move |_| {},
+            on_sort: move |_| {},
+            on_only_reading: move |_| {},
+        }
+    }
+}
+
+#[allow(non_snake_case)]
+fn HeadWithProgress() -> Element {
+    rsx! {
+        AuthorsListHead {
+            total: Some(3),
+            filter: String::new(),
+            sort: AuthorSort::Name,
+            reading_count: Some(2),
+            only_reading: false,
+            on_filter: move |_| {},
+            on_sort: move |_| {},
+            on_only_reading: move |_| {},
+        }
+    }
 }
 
 #[test]
-fn sort_key_treats_lastname_first_display_name_verbatim() {
-    // Some Calibre dumps store the display name itself as
-    // "Surname, Given". Keep it as-is — `rsplitn(2, ' ')` would
-    // otherwise treat "Olivia" as the surname.
-    let a = author("Atwater, Olivia", None);
-    assert_eq!(sort_key(&a), "Atwater, Olivia");
-    assert_eq!(first_letter(&a), 'A');
+fn reading_chip_is_inert_and_uncounted_until_progress_lands() {
+    let html = render_in_vdom(HeadWithoutProgress);
+    assert!(html.contains("disabled"), "{html}");
+    assert!(html.contains("ld-sheen"), "{html}");
+    assert!(!html.contains(r#"<span class="au-chip-count">0"#), "{html}");
 }
 
 #[test]
-fn sort_key_handles_mononym() {
-    let a = author("Plato", None);
-    assert_eq!(sort_key(&a), "Plato");
-    assert_eq!(first_letter(&a), 'P');
-}
-
-#[test]
-fn sort_key_handles_empty_sort_string() {
-    // Explicit empty string in `sort` should be ignored the same
-    // way as `None`.
-    let a = author("Ada Lovelace", Some(""));
-    assert_eq!(sort_key(&a), "Lovelace, Ada");
-    assert_eq!(first_letter(&a), 'L');
-}
-
-#[test]
-fn first_letter_buckets_non_alpha_under_hash() {
-    // Digits, punctuation, and non-Latin scripts collapse into the
-    // single '#' section after Z. The test names use mononyms so
-    // `sort_key` doesn't pull a Latin surname out of a multi-word
-    // string (e.g. "1984 Editorial" would derive "Editorial, 1984"
-    // and land under E — which is correct, but not what this test
-    // is checking).
-    //
-    // We also avoid Latin diacritics here because their byte form
-    // depends on source-file Unicode normalization — `chars().next()`
-    // on NFD-encoded "Émile" returns plain `E`, which would land
-    // under E. Either bucket is defensible; what matters is that
-    // unambiguously-non-Latin starts land under '#'.
-    assert_eq!(first_letter(&author("1984", None)), '#');
-    assert_eq!(first_letter(&author("[Anonymous]", None)), '#');
-    assert_eq!(first_letter(&author("\u{4E2D}\u{6587}", None)), '#');
-}
-
-#[test]
-fn is_non_alpha_key_classifies_keys() {
-    assert!(!is_non_alpha_key("Alcott, Louisa May"));
-    assert!(!is_non_alpha_key("zZz"));
-    assert!(is_non_alpha_key("1984"));
-    assert!(is_non_alpha_key("[Anonymous]"));
-    assert!(is_non_alpha_key("\u{4E2D}\u{6587}"));
-    assert!(is_non_alpha_key(""));
-}
-
-#[test]
-fn filter_authors_returns_all_when_query_is_empty() {
-    let all = [
-        author("Ada Lovelace", None),
-        author("Louisa May Alcott", None),
-    ];
-    let out = filter_authors(&all, "");
-    assert_eq!(out.len(), 2);
-}
-
-#[test]
-fn filter_authors_matches_lowercase_query_against_mixed_case_name() {
-    // `filter_authors` folds each author's name before comparing, but
-    // takes `query` as-is — callers (e.g. `AuthorsIndexPage`) are
-    // responsible for folding the query first.
-    let all = [
-        author("Ada Lovelace", None),
-        author("Louisa May Alcott", None),
-    ];
-    let out = filter_authors(&all, "lovelace");
-    assert_eq!(out.len(), 1);
-    assert_eq!(out[0].name, "Ada Lovelace");
-}
-
-#[test]
-fn filter_authors_matches_a_query_typed_without_the_names_diacritics() {
-    let all = [
-        author("Benito Pérez Galdós", None),
-        author("Ada Lovelace", None),
-    ];
-    assert_eq!(filter_authors(&all, "perez galdos").len(), 1);
-}
-
-#[test]
-fn compute_author_groups_keeps_an_accented_name_in_its_existing_letter_bucket() {
-    let all = [
-        author("Benito Pérez Galdós", None),
-        author("Ada Lovelace", None),
-    ];
-    let groups = compute_author_groups(&all, "", IndexSort::Name);
-
-    let letters: Vec<(char, Vec<&str>)> = groups
-        .letters
-        .iter()
-        .map(|(letter, authors)| {
-            (
-                *letter,
-                authors.iter().map(|author| author.name.as_str()).collect(),
-            )
-        })
-        .collect();
-    assert_eq!(
-        letters,
-        vec![
-            ('G', vec!["Benito Pérez Galdós"]),
-            ('L', vec!["Ada Lovelace"]),
-        ]
+fn reading_chip_shows_its_count_once_progress_lands() {
+    let html = render_in_vdom(HeadWithProgress);
+    assert!(
+        html.contains(r#"<span class="au-chip-count">2</span>"#),
+        "{html}"
     );
+    assert!(!html.contains("ld-sheen"), "{html}");
+}
+
+/// Renders `/authors`' pane under a layout context previewing `preview`.
+fn pane(preview: Preview) -> Element {
+    let preview = use_memo(move || preview);
+    let authors = use_signal(Vec::new);
+    let reading = use_signal(|| ReadingState::Pending);
+    use_context_provider(|| AuthorsListContext {
+        preview,
+        authors,
+        reading,
+    });
+    rsx! { AuthorsIndexPage {} }
 }
 
 #[test]
-fn sort_authors_by_name_orders_alpha_before_non_alpha_bucket() {
-    let all = [author("1984", None), author("Ada Lovelace", None)];
-    let mut filtered: Vec<&AuthorSummary> = all.iter().collect();
-    sort_authors(&mut filtered, IndexSort::Name);
-    assert_eq!(filtered[0].name, "Ada Lovelace");
-    assert_eq!(filtered[1].name, "1984");
-}
-
-/// A given-name-form `sort` keys from the display name, as the library does.
-#[test]
-fn sort_authors_by_name_orders_accented_surnames_in_dictionary_order() {
-    let all = [
-        author("Sarah Polk", Some("Polk, Sarah")),
-        author("Benito Pérez Galdós", Some("Pérez Galdós, Benito")),
-        author("Anne Perry", None),
-        author("Bret Pettichord", Some("Bret Pettichord")),
-        author("Ana Pérez", Some("Pérez, Ana")),
-        author("Ana Perez", Some("Perez, Ana")),
-    ];
-    let mut filtered: Vec<&AuthorSummary> = all.iter().collect();
-    sort_authors(&mut filtered, IndexSort::Name);
-    let names: Vec<&str> = filtered.iter().map(|a| a.name.as_str()).collect();
-    assert_eq!(
-        names,
-        [
-            "Ana Perez",
-            "Ana Pérez",
-            "Benito Pérez Galdós",
-            "Anne Perry",
-            "Bret Pettichord",
-            "Sarah Polk",
-        ]
-    );
-    assert!(filtered.iter().all(|a| first_letter(a) == 'P'));
+fn preview_pane_says_the_list_failed_rather_than_that_the_library_is_empty() {
+    let html = render_in_vdom(|| pane(Preview::Unavailable));
+    assert!(html.contains("load authors"), "{html}");
+    assert!(!html.contains("library is empty"), "{html}");
 }
 
 #[test]
-fn first_letter_files_an_accented_initial_under_its_letter() {
-    let a = author("Paul Éluard", None);
-    assert_eq!(sort_key(&a), "Éluard, Paul");
-    assert_eq!(first_letter(&a), 'E');
-    assert!(!is_non_alpha_key(&sort_key(&a)));
+fn preview_pane_says_the_library_is_empty_only_when_it_is() {
+    let html = render_in_vdom(|| pane(Preview::Empty));
+    assert!(html.contains("library is empty"), "{html}");
 }
 
 #[test]
-fn sort_authors_by_book_count_orders_descending_then_name() {
-    let mut low = author("Alpha", None);
-    low.book_count = 3;
-    let mut high = author("Bravo", None);
-    high.book_count = 7;
-    let all = [low, high];
-    let mut filtered: Vec<&AuthorSummary> = all.iter().collect();
-    sort_authors(&mut filtered, IndexSort::BookCount);
-    assert_eq!(filtered[0].name, "Bravo");
-    assert_eq!(filtered[1].name, "Alpha");
-}
-
-#[test]
-fn group_by_letter_buckets_by_first_letter_when_shown() {
-    // `group_by_letter` only merges *consecutive* same-letter entries — it
-    // relies on the caller (the `use_memo` pipeline in `AuthorsIndexPage`)
-    // to have already run `sort_authors` first. Both surnames here
-    // ("Lovelace", "Lowe") start with 'L' and are given already in sorted
-    // order, matching that contract.
-    let all = [author("Ada Lovelace", None), author("Bob Lowe", None)];
-    let groups = group_by_letter(&all, true);
-    assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].0, 'L');
-    assert_eq!(groups[0].1.len(), 2);
-}
-
-#[test]
-fn group_by_letter_returns_empty_when_show_letters_is_false() {
-    let all = [author("Ada Lovelace", None)];
-    let groups = group_by_letter(&all, false);
-    assert!(groups.is_empty());
-}
-
-#[test]
-fn index_subtitle_labels_the_second_figure_as_credits_not_books() {
-    // #2292: the figure is Σ per-author book counts (author–book credits),
-    // which a multi-creator book inflates past the distinct-title total, so
-    // the header must not call it "books".
-    let sub = index_subtitle(23, 27);
-    assert!(sub.contains("23 authors"), "{sub}");
-    assert!(sub.contains("27 author credits"), "{sub}");
-    assert!(!sub.contains("books"), "must not claim a book count: {sub}");
+fn preview_pane_loads_while_the_preview_is_pending() {
+    let html = render_in_vdom(|| pane(Preview::Pending));
+    assert!(html.contains("Gathering every author"), "{html}");
 }

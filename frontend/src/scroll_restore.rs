@@ -1,14 +1,15 @@
 //! Session-scoped scroll-position restoration across route navigations.
 //! `dioxus_router` remounts a page fresh on back-nav, dropping its scroll
 //! offset; a `window`-level JS singleton (installed via `document::eval`)
-//! records `scrollY` per path and restores it once content has painted.
+//! records `scrollY` per path and restores it once content has painted. A
+//! layout that outlives its routes re-runs it on each route change instead.
 //! In-memory only; scrolling is on the document/window (web + mobile WebView).
 
 use dioxus::prelude::*;
 
-/// Ensure the `window.__omnibusScroll` manager is installed, then restore the
-/// saved offset for the current path. Idempotent: the installer guards on the
-/// singleton, so repeated calls only re-trigger a restore. Restore retries
+/// Ensure the `window.__omnibusScroll` manager is installed; `run_restore`
+/// appends the call that restores the current path. Idempotent: the installer
+/// guards on the singleton, so repeated calls only re-trigger a restore. Restore retries
 /// across animation frames until the target is reached, the user scrolls, the
 /// document stops growing, or a time budget elapses.
 #[cfg(any(feature = "web", feature = "mobile"))]
@@ -23,6 +24,9 @@ const RESTORE_JS: &str = r#"
     // Path whose scroll offsets we trust. Null while a history navigation is
     // in flight; `restore` re-arms it once the incoming page has settled.
     let recordPath = location.pathname;
+    // Stops the restore still converging, so a newer one supersedes it rather
+    // than both scrolling the window at once.
+    let running = null;
     const record = () => {
       raf = 0;
       if (recordPath === null || location.pathname !== recordPath) return;
@@ -34,19 +38,29 @@ const RESTORE_JS: &str = r#"
     window.addEventListener("popstate", () => { recordPath = null; });
     window.__omnibusScroll = {
       positions,
-      restore(path) {
+      // `toTopIfNone`: a path never scrolled starts at the top, for a layout
+      // whose window would otherwise keep the previous route's offset.
+      restore(path, toTopIfNone) {
+        if (running) running();
         const key = path || location.pathname;
         const target = positions[key];
         const rearm = () => { recordPath = key; };
-        if (target == null || target <= 0) { rearm(); return; }
+        if (target == null || target <= 0) {
+          if (toTopIfNone) window.scrollTo(0, 0);
+          rearm();
+          return;
+        }
         let cancelled = false;
-        const cancel = () => { cancelled = true; teardown(); };
-        const teardown = () => {
+        const unlisten = () => {
           window.removeEventListener("wheel", cancel);
           window.removeEventListener("touchstart", cancel);
           window.removeEventListener("keydown", cancel);
-          rearm();
+          running = null;
         };
+        const teardown = () => { unlisten(); rearm(); };
+        const cancel = () => { cancelled = true; teardown(); };
+        // Superseded: stop without re-arming, as the newer restore owns recording.
+        running = () => { cancelled = true; unlisten(); };
         // A real scroll intent from the user wins over restoration.
         window.addEventListener("wheel", cancel, { passive: true });
         window.addEventListener("touchstart", cancel, { passive: true });
@@ -70,7 +84,6 @@ const RESTORE_JS: &str = r#"
       },
     };
   }
-  window.__omnibusScroll.restore(location.pathname);
 })();
 "#;
 
@@ -85,16 +98,33 @@ pub fn use_scroll_restore(ready: Memo<bool>) {
             return;
         }
         done.set(true);
-        run_restore();
+        run_restore(false);
     });
 }
 
+/// For a layout that stays mounted while the route changes underneath it (the
+/// authors list beside an author), where the remount [`use_scroll_restore`]
+/// waits for never comes: on each change of `key` after the first, restores
+/// the incoming path's saved offset, or starts it at the top if it has none.
+pub fn use_scroll_restore_on_change<K: PartialEq + Clone + 'static>(key: K) {
+    let mut last = use_signal(|| key.clone());
+    use_effect(use_reactive!(|key| {
+        if *last.peek() == key {
+            return;
+        }
+        last.set(key);
+        run_restore(true);
+    }));
+}
+
 #[cfg(any(feature = "web", feature = "mobile"))]
-fn run_restore() {
-    let _ = dioxus::document::eval(RESTORE_JS);
+fn run_restore(to_top_if_none: bool) {
+    let _ = dioxus::document::eval(&format!(
+        "{RESTORE_JS}\nwindow.__omnibusScroll.restore(location.pathname, {to_top_if_none});"
+    ));
 }
 
 // SSR / server-only build: effects don't run during SSR and there's no DOM to
 // drive, so this is inert. Kept so the hook compiles on every target.
 #[cfg(not(any(feature = "web", feature = "mobile")))]
-fn run_restore() {}
+fn run_restore(_to_top_if_none: bool) {}

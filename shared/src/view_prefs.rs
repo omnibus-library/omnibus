@@ -105,7 +105,7 @@ pub struct ViewPrefs {
     pub filters_open: bool,
 }
 
-/// Sort axis for the Authors / Series / Shelves index pages (name A–Z or most books first).
+/// Sort axis for the Series and Shelves index pages (name A–Z or most books first).
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum IndexSort {
@@ -114,11 +114,23 @@ pub enum IndexSort {
     BookCount,
 }
 
+/// Sort axis for the Authors index: [`IndexSort`]'s two plus the authors the
+/// reader read most recently. Its tokens match `IndexSort`'s, so a choice
+/// stored before `Recent` existed still parses.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthorSort {
+    #[default]
+    Name,
+    BookCount,
+    Recent,
+}
+
 /// Persisted, library-wide sort choices for the index pages (Authors, Series, Shelves).
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DiscoveryPrefs {
     #[serde(default)]
-    pub authors_sort: IndexSort,
+    pub authors_sort: AuthorSort,
     #[serde(default)]
     pub series_sort: IndexSort,
     #[serde(default)]
