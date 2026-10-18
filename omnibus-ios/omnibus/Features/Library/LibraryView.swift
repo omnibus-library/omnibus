@@ -334,6 +334,8 @@ struct LibraryView: View {
     @Environment(\.palette) private var palette
     @Environment(AppState.self) private var app
     @State private var model = LibraryModel()
+    /// Only the grid's first fill cascades; a row scrolled in arrives whole.
+    @State private var gridCascade = FirstFillCascade()
     @Namespace private var bookZoom
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var presentation = Presentation.shared
@@ -514,9 +516,9 @@ struct LibraryView: View {
 
     private var grid: some View {
         LazyVGrid(columns: columns, spacing: 26) {
-            ForEach(Array(model.gridItems.enumerated()), id: \.element.id) { index, item in
+            ForEach(model.gridItems, id: \.id) { item in
                 gridCell(item)
-                    .cascadeIn(index: index)
+                    .cascadeIn(gridCascade)
                     .task { await model.loadMoreIfNeeded(currentItem: item.anchor) }
             }
         }
