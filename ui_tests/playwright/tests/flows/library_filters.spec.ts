@@ -328,7 +328,7 @@ test.describe("library filters", () => {
         await expect(filterBar.chips).toHaveCount(0);
         await libraryPage.assertShowsBooksIncluding(hidden);
         await expect
-          .poll(() => libraryPage.shownCount())
+          .poll(() => libraryPage.shelfGallery.allBooksTotal())
           .toBeGreaterThanOrEqual(hidden.length);
         await expect(libraryPage.noMatchesMessage).toHaveCount(0);
         expect(await libraryPage.emptyLibraryInsertions()).toBe(0);
@@ -467,7 +467,9 @@ test.describe("library filters", () => {
       await test.step("open the library and select the shelf", async () => {
         await readerLibraryPage.goto();
         await readerLibraryPage.selectShelf(filterShelf);
-        await readerLibraryPage.assertShowsBooks(FILTER_SHELF_SLUGS);
+        await readerLibraryPage.assertShowsBooks(FILTER_SHELF_SLUGS, {
+          filtered: false,
+        });
       });
 
       const { request } = await test.step("filter it to Monica Lam", () =>
@@ -647,7 +649,9 @@ test.describe("library filters", () => {
       await test.step("check the shelf's members are back", async () => {
         await expect(readerLibraryPage.pageError).toHaveCount(0);
         await expect(filterBar.chips).toHaveCount(0);
-        await readerLibraryPage.assertShowsBooks(FILTER_SHELF_SLUGS);
+        await readerLibraryPage.assertShowsBooks(FILTER_SHELF_SLUGS, {
+          filtered: false,
+        });
       });
     });
 
@@ -826,9 +830,7 @@ test.describe("library filters", () => {
       await test.step("check the old empty answer is gone", async () => {
         await expect(readerLibraryPage.clearFiltersButton).toHaveCount(0);
         await expect(readerLibraryPage.loading).toBeVisible();
-        await expect(readerLibraryPage.sectionTitle).not.toContainText(
-          "0 books",
-        );
+        await expect(readerLibraryPage.filteredCount).toHaveCount(0);
       });
 
       await test.step("release the read and check the new answer", async () => {
@@ -893,7 +895,9 @@ test.describe("library filters", () => {
         });
 
         await test.step("check the shelf's members are back", async () => {
-          await readerLibraryPage.assertShowsBooks(FILTER_SHELF_SLUGS);
+          await readerLibraryPage.assertShowsBooks(FILTER_SHELF_SLUGS, {
+            filtered: false,
+          });
           await expect(readerLibraryPage.pageError).toHaveCount(0);
         });
       });

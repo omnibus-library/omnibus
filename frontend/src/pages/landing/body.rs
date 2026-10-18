@@ -180,10 +180,6 @@ pub(super) fn web_landing_body(
             {render_edit_shelf_overlay(edit_shelf, selected_shelf, shelves_tick)}
             if show_stack {
                 EdgeResume { entries, lead }
-                div { class: "lmq-scrollhint", aria_hidden: true,
-                    "scroll \u{2014} the books take over"
-                    span { class: "arr", "\u{2193}" }
-                }
             }
         }
     }
@@ -264,14 +260,12 @@ fn render_header_and_content(
     rsx! {
         LandingHeader {
             view: LandingHeaderView {
-                path_subtitle: view.path_subtitle,
                 book_count: view.book_count,
                 count_pending: view.count_pending,
                 hidden_count: view.hidden_count,
                 path_missing: view.path_missing,
                 page_error: view.page_error.clone(),
                 lib_err: view.lib_err.clone(),
-                section_title: view.section_title,
                 selected_shelf,
                 can_edit,
                 add_books,
@@ -337,7 +331,6 @@ fn render_gallery(
         ShelfGallery {
             shelves: (sigs.shelves)(),
             loaded: (sigs.shelves_answered)(),
-            filtered: !sigs.prefs.read().filters.is_empty(),
             selection: (sigs.selection)(),
             all_count: (sigs.total)(),
             all_cover_uuids,
@@ -493,8 +486,8 @@ fn render_edit_shelf_overlay(
                     on_close: move |_| edit_shelf.set(false),
                     on_saved: move |_| {
                         edit_shelf.set(false);
-                        // Refetches the gallery list, the section title,
-                        // and (via `selected_key`) the full shelf.
+                        // Refetches the gallery list (so the tab shows the
+                        // edit) and, via `selected_key`, the full shelf.
                         shelves_tick.with_mut(|n| *n += 1);
                     },
                 }

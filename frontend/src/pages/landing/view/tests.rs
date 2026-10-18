@@ -31,17 +31,6 @@ fn visible_source_ranks_a_shelf_pick_over_browse() {
 }
 
 #[test]
-fn section_title_names_the_pick_and_falls_back_while_the_list_loads() {
-    let shelves = vec![shelf(7, "Lunch Break Picks", 3)];
-    assert_eq!(section_title(ShelfSelection::All, &shelves), "All Books");
-    assert_eq!(
-        section_title(ShelfSelection::Shelf(7), &shelves),
-        "Lunch Break Picks"
-    );
-    assert_eq!(section_title(ShelfSelection::Shelf(7), &[]), "Shelf");
-}
-
-#[test]
 fn shelf_book_count_prefers_the_loaded_member_list_over_the_gallery_summary() {
     // The summary's aggregate is stale after a membership change; the member
     // list is the one that refetched, so the header must follow it.

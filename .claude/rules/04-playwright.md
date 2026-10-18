@@ -68,7 +68,8 @@ control that no longer exists.
   `ShelfPage.goto(id)`, never a bare `page.goto` to an id.
 - Selecting a shelf *card* in that same section **does not navigate**: it
   filters the book list in place. Open one with `LibraryPage.selectShelf()` and
-  assert against the landing surface — `lib-section-title` for the name,
+  assert against the landing surface — the pressed tab
+  (`ShelfGalleryComponent.selectedTab`) for the name and count,
   `shelf-facets` for kind/visibility/rules, `shelf-edit` for the pencil,
   `lib-grid` for members, `lib-page-error` for a failed member fetch, and on
   a hand-picked shelf `shelf-add-books` / the grid's closing `shelf-add-tile`.

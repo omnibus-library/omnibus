@@ -1,10 +1,10 @@
 //! The shelves row below the stack, drawn text first: names as type on a
 //! hairline rule with up to three member covers peeking in above the name on
 //! hover, which costs ~110px instead of the 170px the cover-mosaic tiles took.
-//! Selecting filters the landing book list in place; only the slab's "All
-//! shelves" link leaves, for the full `/shelves` index — which is now the only
-//! way there, since the top nav carries no Shelves link. Horizontal paging
-//! (the `‹`/`›` arrows) is driven by `marquee.js`.
+//! Selecting filters the landing book list in place; only the heading's "All
+//! shelves" link leaves, for the full `/shelves` index, which is now the only
+//! way there since the top nav carries no Shelves link. Horizontal paging (the
+//! caret buttons at the row's ends) is driven by `marquee.js`.
 //!
 //! The row carries a subset of what the index lists: [`rail_shelves`] applies
 //! the same inclusion rule as the iOS landing rail, so another reader's
@@ -15,8 +15,9 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{ShelfKind, ShelfSummary, Visibility};
 
+use crate::components::glyphs::{caret_left_glyph, caret_right_glyph, chevron_right_glyph};
 use crate::components::loading::Skeleton;
-use crate::components::shelf_glyphs::{cog_icon, heart_icon};
+use crate::components::shelf_glyphs::{cog_icon, heart_icon, plus_icon};
 use crate::components::CreateShelfModal;
 use crate::shelf_access::shows_owner_attribution;
 use crate::shelf_selection::ShelfSelection;
@@ -46,9 +47,9 @@ pub(super) fn rail_shelves(all: &[ShelfSummary], viewer_id: Option<i64>) -> Vec<
         .collect()
 }
 
-/// Caption meta line: `"N books"`, plus `Public` when the shelf is shared,
-/// plus `by <owner>` when the viewer doesn't own it. Kind is carried by the
-/// badge glyph beside it rather than a second word.
+/// Spoken meta: `"N books"`, plus `Public` when the shelf is shared, plus
+/// `by <owner>` when the viewer doesn't own it. The tab shows only
+/// [`shelf_tab_meta`]; this keeps the rest within reach of a screen reader.
 pub(super) fn shelf_meta_line(count: i64, visibility: Visibility, owner: Option<&str>) -> String {
     let mut line = if count == 1 {
         "1 book".to_string()
@@ -58,12 +59,22 @@ pub(super) fn shelf_meta_line(count: i64, visibility: Visibility, owner: Option<
     if visibility == Visibility::Public {
         line.push_str(" \u{00b7} Public");
     }
-    // Admins see every shelf, so without this an owner's private shelf is
-    // indistinguishable from the viewer's own (#2248).
     if let Some(owner) = owner {
         line.push_str(&format!(" \u{00b7} by {owner}"));
     }
     line
+}
+
+/// What follows a shelf's name in its tab: the book count, plus the owner
+/// when the viewer doesn't own it. The spoken label carries the rest (unit,
+/// kind, visibility), so the tab stays one line.
+pub(super) fn shelf_tab_meta(count: i64, owner: Option<&str>) -> String {
+    match owner {
+        // Admins see every shelf, so without this an owner's private shelf is
+        // indistinguishable from the viewer's own (#2248).
+        Some(owner) => format!("{count} \u{00b7} {owner}"),
+        None => count.to_string(),
+    }
 }
 
 /// Spoken label for a shelf entry. The kind badge is a decorative glyph, so
@@ -91,16 +102,6 @@ pub(super) fn attributed_owner(shelf: &ShelfSummary, viewer_id: Option<i64>) -> 
         .then_some(shelf.owner_username.as_str())
 }
 
-/// The slab line above the row, which doubles as the receipt for what the
-/// current pick and the active filters are doing to the list below.
-pub(super) fn slab_line(shelf_picked: bool, filters_active: bool) -> &'static str {
-    if shelf_picked || filters_active {
-        "Shelves \u{2014} filtering the list below"
-    } else {
-        "Shelves \u{2014} showing everything"
-    }
-}
-
 /// Per-render snapshot of the row's data + selection state: the shelf list,
 /// which one is picked, the "All Books" entry's count/covers, the server URL
 /// for thumbnails, and the select/create callbacks.
@@ -109,8 +110,6 @@ pub(super) struct ShelfGalleryProps {
     pub shelves: Vec<ShelfSummary>,
     /// False until the shelves fetch has answered; placeholders hold the row.
     pub loaded: bool,
-    /// Filter clauses are narrowing the list below, whichever tile is picked.
-    pub filtered: bool,
     pub selection: ShelfSelection,
     pub all_count: Option<i64>,
     pub all_cover_uuids: Vec<String>,
@@ -126,7 +125,6 @@ pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
     let ShelfGalleryProps {
         shelves,
         loaded,
-        filtered,
         selection,
         all_count,
         all_cover_uuids,
@@ -151,23 +149,24 @@ pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
         section {
             class: "lmq-shelves",
             "data-testid": "shelf-gallery",
-            aria_label: "Shelves",
-            div { class: "lmq-slab",
-                span { class: "k", "{slab_line(!all_active, filtered)}" }
-                div { class: "lmq-slab-acts",
-                    button {
-                        r#type: "button",
-                        class: "lmq-slink",
-                        "data-testid": "new-shelf",
-                        onclick: move |_| show_create.set(true),
-                        "\u{FF0B} New shelf"
-                    }
-                    Link {
-                        to: Route::Shelves {},
-                        class: "lmq-slink",
-                        "data-testid": "gallery-all-shelves",
-                        "All shelves \u{2192}"
-                    }
+            "aria-labelledby": "lmq-shelves-title",
+            h2 { class: "lmq-shelves-title", id: "lmq-shelves-title", "Shelves" }
+            // The section's own actions, on the heading's line and before the tabs in tab order.
+            div { class: "lmq-slab-acts",
+                button {
+                    r#type: "button",
+                    class: "lmq-slink",
+                    "data-testid": "new-shelf",
+                    onclick: move |_| show_create.set(true),
+                    {plus_icon()}
+                    "New shelf"
+                }
+                Link {
+                    to: Route::Shelves {},
+                    class: "lmq-slink",
+                    "data-testid": "gallery-all-shelves",
+                    "All shelves"
+                    {chevron_right_glyph(12)}
                 }
             }
             div { class: "lmq-shwrap",
@@ -181,7 +180,7 @@ pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
                     "data-testid": "shelf-row-prev",
                     aria_label: "Earlier shelves",
                     tabindex: "-1",
-                    "\u{2039}"
+                    {caret_left_glyph(16)}
                 }
                 button {
                     r#type: "button",
@@ -189,7 +188,7 @@ pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
                     "data-testid": "shelf-row-next",
                     aria_label: "More shelves",
                     tabindex: "-1",
-                    "\u{203A}"
+                    {caret_right_glyph(16)}
                 }
                 div { class: "lmq-shtx", id: "lmq-shelf-row",
                     button {
@@ -201,7 +200,9 @@ pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
                         onclick: move |_| on_select.call(ShelfSelection::All),
                         {peek(&all_cover_uuids, &server_url, None)}
                         span { class: "lmq-shent-name", "All Books" }
-                        span { class: "lmq-shent-meta", "{all_meta}" }
+                        if let Some(n) = all_count {
+                            span { class: "lmq-shent-meta", "data-testid": "gallery-all-books-count", "{n}" }
+                        }
                     }
                     for s in shelves.iter() {
                         ShelfRowEntry {
@@ -221,7 +222,6 @@ pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
                                 "data-testid": "shelf-gallery-pending",
                                 "aria-hidden": "true",
                                 Skeleton { index: i, style: "--w:{118 - i * 18}px;height:20px" }
-                                Skeleton { index: i, style: "--w:64px;height:.6em;margin-top:9px" }
                             }
                         }
                     }
@@ -252,7 +252,7 @@ fn ShelfRowEntry(
 ) -> Element {
     let id = shelf.id;
     let owner = attributed_owner(&shelf, viewer_id);
-    let meta = shelf_meta_line(shelf.book_count, shelf.visibility, owner);
+    let meta = shelf_tab_meta(shelf.book_count, owner);
     let label = shelf_aria_label(
         &shelf.name,
         shelf.book_count,

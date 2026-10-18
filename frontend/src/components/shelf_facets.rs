@@ -1,7 +1,7 @@
 //! Facet row for a shelf: kind ("Smart shelf" / "Hand-picked shelf" /
 //! "Wishlist"), visibility, and — for smart shelves — one chip per rule
 //! ("Author is Brandon Sanderson"). Mounted under the landing header's
-//! section title; the shelf page's kicker speaks the same labels. Extra
+//! filter row; the shelf page's kicker speaks the same labels. Extra
 //! badges pass through as children so they share the row.
 
 use dioxus::prelude::*;
