@@ -65,7 +65,8 @@ private struct CascadeIn: ViewModifier {
 /// would wait on whatever slots its indices land on, and a later row could beat
 /// an earlier one. Instead the cells that appear in the opening window ripple
 /// in the order they appear — reading order, since the first layout builds them
-/// top to bottom — and every cell after it rises at once.
+/// top to bottom — and every cell after it rises at once, though never before
+/// the fill's own last cell has started.
 @MainActor
 final class FirstFillCascade {
     /// Long enough to take in every cell of the first layout pass.
@@ -73,19 +74,30 @@ final class FirstFillCascade {
 
     private var openedAt: ContinuousClock.Instant?
     private var slots = 0
+    private var lastStart: ContinuousClock.Instant?
 
-    /// The capped delay for the `slot`th cell of a cascade.
+    /// The delay for the `slot`th cell of a fill: 40ms apart at first, closing
+    /// on 0.32s without reaching it. A linear step clamped at the cap started
+    /// every cell past the eighth together, so a wide grid's fill ended in a
+    /// block; this one decelerates into its tail and keeps every cell in order.
     static func stagger(slot: Int) -> Double {
-        min(Double(slot) * 0.04, 0.32)
+        0.32 * (1 - pow(0.875, Double(slot)))
     }
 
     /// The entrance delay for a cell appearing at `now`.
     func delay(at now: ContinuousClock.Instant = .now) -> Double {
         let opened = openedAt ?? now
         openedAt = opened
-        guard now - opened < Self.window else { return 0 }
-        defer { slots += 1 }
-        return Self.stagger(slot: slots)
+        guard now - opened < Self.window else {
+            // A row scrolled in while the fill is still rippling would
+            // otherwise land ahead of the rows above it.
+            return max(0, ((lastStart ?? now) - now) / .seconds(1))
+        }
+        let delay = Self.stagger(slot: slots)
+        slots += 1
+        let start = now + .seconds(delay)
+        lastStart = max(lastStart ?? start, start)
+        return delay
     }
 }
 
