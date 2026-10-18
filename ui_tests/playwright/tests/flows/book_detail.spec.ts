@@ -8,6 +8,7 @@ import {
   AUDIOBOOK_BOOK_COUNT,
   AUDIOBOOK_BOOKS,
   MERGE_ONLY_TITLES,
+  MERGE_SECONDARY,
 } from "../fixtures/audiobooks";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
@@ -42,9 +43,6 @@ const READ_STATUS_BOOK = FIXTURE_BOOKS.find(
 const PASSAGES_BOOK = FIXTURE_BOOKS.find(
   (b) => b.slug === "standalone-garden",
 )!;
-
-const fileIdOf = (manifestUrl: string) =>
-  new URL(manifestUrl).searchParams.get("file_id");
 
 test.describe("book detail page", () => {
   // The audiobook re-seed below re-points the shared library, so under
@@ -609,6 +607,8 @@ test.describe("book detail page", () => {
         await bookDetailPage.goto(uuid);
       });
 
+      const downloads = formats.recordDownloads();
+
       await test.step("check the kobo action is offered", async () => {
         await expect(formats.koboButton).toBeVisible();
         await expect(formats.koboButton).toBeEnabled();
@@ -617,10 +617,10 @@ test.describe("book detail page", () => {
       // The stem is the canonical uuid, which F4.4's USB import relies on; the
       // extension is `.kepub.epub` when kepubify converts and `.epub` otherwise.
       await test.step("send to the kobo", async () => {
-        const download = await formats.downloadForKobo();
-        expect(download.suggestedFilename()).toMatch(
-          new RegExp(`^${uuid}\\.(kepub\\.)?epub$`),
-        );
+        await formats.downloadForKobo();
+        await expect
+          .poll(() => downloads[0], { timeout: 30_000 })
+          .toMatch(new RegExp(`^${uuid}\\.(kepub\\.)?epub$`));
       });
     });
 
@@ -1299,20 +1299,23 @@ test.describe("book detail page", () => {
         listenPage,
         mergedMp3Book: uuid,
       }) => {
+        const { listenFilePicker } = bookDetailPage;
+
         await test.step("open the merged book", async () => {
           await bookDetailPage.goto(uuid);
         });
 
+        const manifests = listenFilePicker.recordManifestRequests(uuid);
+
         // The second, non-default file's id travels with the route and the
         // manifest fetch alike.
         await test.step("pick the second file", async () => {
-          const manifestUrl = await bookDetailPage.listenFilePicker.choosePart(
-            uuid,
-            1,
-          );
-          expect(manifestUrl).toMatch(
-            new RegExp(`/api/audiobooks/${uuid}/manifest\\?file_id=\\d+$`),
-          );
+          await listenFilePicker.choosePart(MERGE_SECONDARY.title);
+          await expect
+            .poll(() => manifests[0])
+            .toMatch(
+              new RegExp(`/api/audiobooks/${uuid}/manifest\\?file_id=\\d+$`),
+            );
           await listenPage.assertDisplayedFor(uuid, "any");
         });
       });
@@ -1332,11 +1335,14 @@ test.describe("book detail page", () => {
           await bookDetailPage.plantFullLoadSentinel();
         });
 
+        const manifests = listenFilePicker.recordManifestRequests(uuid);
+
         // The book becomes the active playback book with its uuid set.
         const first = await test.step("pick the first part", async () => {
-          const manifestUrl = await listenFilePicker.choosePart(uuid, 0);
+          await listenFilePicker.choosePart("Part 1");
           await listenPage.assertDisplayedFor(uuid, "any");
-          return manifestUrl;
+          await expect.poll(() => manifests.length).toBeGreaterThan(0);
+          return manifests[0];
         });
 
         await test.step("go back to the book", async () => {
@@ -1345,11 +1351,12 @@ test.describe("book detail page", () => {
         });
 
         await test.step("re-pick the second part", async () => {
-          const second = await listenFilePicker.choosePart(uuid, 1);
-          expect(
-            fileIdOf(second),
-            "re-pick must reboot onto a different part",
-          ).not.toBe(fileIdOf(first));
+          await listenFilePicker.choosePart(MERGE_SECONDARY.title);
+          await expect
+            .poll(() => manifests.at(-1), {
+              message: "re-pick must reboot onto a different part",
+            })
+            .not.toBe(first);
         });
 
         await test.step("check the session never fully reloaded", async () => {

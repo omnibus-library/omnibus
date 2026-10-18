@@ -22,14 +22,22 @@ export class ListenFilePickerComponent extends BaseComponent {
     await this.trigger.click();
   }
 
-  /** Opens the menu, picks the file at `index`, and returns the manifest URL it fetches. */
-  async choosePart(bookUuid: string, index: number): Promise<string> {
+  /** Opens the menu and picks the file whose row reads `label`. */
+  async choosePart(label: string): Promise<void> {
     await this.open();
-    await this.panel.waitFor();
-    const manifest = this.page.waitForRequest((request) =>
-      request.url().includes(`/api/audiobooks/${bookUuid}/manifest?file_id=`),
-    );
-    await this.fileLinks.nth(index).click();
-    return (await manifest).url();
+    await this.fileLinks.filter({ hasText: label }).click();
+  }
+
+  /** Records the manifest URL of every part the player fetches from now on. */
+  recordManifestRequests(bookUuid: string): string[] {
+    const urls: string[] = [];
+    this.page.on("request", (request) => {
+      if (
+        request.url().includes(`/api/audiobooks/${bookUuid}/manifest?file_id=`)
+      ) {
+        urls.push(request.url());
+      }
+    });
+    return urls;
   }
 }

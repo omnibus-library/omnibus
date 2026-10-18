@@ -1,4 +1,4 @@
-import type { Download, Locator, Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { kindleUrls } from "../contracts/kindle";
 import { BaseComponent } from "./BaseComponent";
 
@@ -45,11 +45,18 @@ export class FormatSwitcherComponent extends BaseComponent {
     await this.dismissKindleStatusButton.click();
   }
 
-  /** Clicks Send to Kobo and returns the file the browser downloads. */
-  async downloadForKobo(): Promise<Download> {
-    const download = this.page.waitForEvent("download");
+  /** Clicks Send to Kobo, which the browser answers with a download. */
+  async downloadForKobo(): Promise<void> {
     await this.koboButton.click();
-    return download;
+  }
+
+  /** Records the file name of every download the page starts from now on. */
+  recordDownloads(): string[] {
+    const names: string[] = [];
+    this.page.on("download", (download) =>
+      names.push(download.suggestedFilename()),
+    );
+    return names;
   }
 
   /** Hides the directory picker so Send to Kobo downloads; call before opening the book. */
