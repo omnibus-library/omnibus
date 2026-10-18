@@ -5,15 +5,15 @@ import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
-
-// Tags get a fixture of their own: the suite is fullyParallel even within a
-// file, and the authors tests' cleanup deletes all of TARGET's overrides,
-// which would wipe an in-flight tags override. No other spec reads this book.
-const TAGS_TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-ocean")!;
+// Reserved: every test here writes overrides and then drops them all, so they
+// run one at a time and no other spec may read this book (alpha is
+// metadata_edit's).
+const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-ocean")!;
 const NEW_TAG = "Speculative Fiction";
 
 test.describe("inline edit", () => {
+  test.describe.configure({ mode: "default" });
+
   test.beforeAll("seed the library", async ({ request }) => {
     await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
@@ -48,7 +48,7 @@ test.describe("inline edit", () => {
     });
 
     await test.step("save a new title", async () => {
-      await table.fillCell(TARGET.slug, "title", "Alpha Inline Edited");
+      await table.fillCell(TARGET.slug, "title", "Inline Edited");
       await expectMutation(overrides.save(), () =>
         table.commitCell(TARGET.slug, "title"),
       );
@@ -59,7 +59,7 @@ test.describe("inline edit", () => {
     await test.step("check the row shows the new title", async () => {
       await libraryPage.assertDisplayed();
       await expect(table.cell(TARGET.slug, "title")).toContainText(
-        "Alpha Inline Edited",
+        "Inline Edited",
       );
     });
   });
@@ -182,7 +182,7 @@ test.describe("inline edit", () => {
       await expect(table.cellInput(TARGET.slug, "author")).toBeVisible();
     });
 
-    // The chips sit before the input, so Shift+Tab lands on a chip's Remove
+    // The chips sit before the input, so Shift+Tab lands on the last chip's Remove
     // button, and the blur must not close an editor focus is still inside.
     await test.step("tab back from the input", async () => {
       await table.tabBackFromCell(TARGET.slug, "author");
@@ -190,7 +190,7 @@ test.describe("inline edit", () => {
 
     await test.step("check the remove button has focus and the editor stays open", async () => {
       await expect(
-        table.removeAuthorButton(TARGET.slug, TARGET.authors[0]!),
+        table.removeAuthorButton(TARGET.slug, TARGET.authors.at(-1)!),
       ).toBeFocused();
       await expect(table.cellInput(TARGET.slug, "author")).toBeVisible();
       await expect(table.cell(TARGET.slug, "author")).toHaveClass(
@@ -244,33 +244,31 @@ test.describe("inline edit", () => {
   });
 
   test.describe("tags cell", () => {
-    test.describe.configure({ mode: "default" });
-
     test("open the tags chip editor inline", async ({ libraryPage }) => {
       const table = libraryPage.table;
 
       await test.step("open the tags editor", async () => {
         await libraryPage.gotoSettled();
         await table.switchTo();
-        await table.openCell(TAGS_TARGET.slug, "tags");
+        await table.openCell(TARGET.slug, "tags");
       });
 
       // The editor renders inside the cell, as the authors one does.
       await test.step("check the editor shows", async () => {
-        await expect(table.cellInput(TAGS_TARGET.slug, "tags")).toBeVisible();
-        await expect(table.cellInput(TAGS_TARGET.slug, "tags")).toHaveAttribute(
+        await expect(table.cellInput(TARGET.slug, "tags")).toBeVisible();
+        await expect(table.cellInput(TARGET.slug, "tags")).toHaveAttribute(
           "placeholder",
           "+ add tag…",
         );
-        await expect(table.cell(TAGS_TARGET.slug, "tags")).toHaveClass(
+        await expect(table.cell(TARGET.slug, "tags")).toHaveClass(
           /ebook-cell-editing/,
         );
       });
 
       await test.step("close it with escape", async () => {
-        await table.cancelCell(TAGS_TARGET.slug, "tags");
-        await expect(table.cellInput(TAGS_TARGET.slug, "tags")).toHaveCount(0);
-        await expect(table.cell(TAGS_TARGET.slug, "tags")).not.toHaveClass(
+        await table.cancelCell(TARGET.slug, "tags");
+        await expect(table.cellInput(TARGET.slug, "tags")).toHaveCount(0);
+        await expect(table.cell(TARGET.slug, "tags")).not.toHaveClass(
           /ebook-cell-editing/,
         );
       });
@@ -282,25 +280,23 @@ test.describe("inline edit", () => {
       revertOverridesOf,
     }) => {
       const table = libraryPage.table;
-      await revertOverridesOf(TAGS_TARGET.title);
+      await revertOverridesOf(TARGET.title);
 
       await test.step("open the tags editor", async () => {
         await libraryPage.gotoSettled();
         await table.switchTo();
-        await table.openCell(TAGS_TARGET.slug, "tags");
-        await expect(table.cellInput(TAGS_TARGET.slug, "tags")).toBeVisible();
+        await table.openCell(TARGET.slug, "tags");
+        await expect(table.cellInput(TARGET.slug, "tags")).toBeVisible();
       });
 
       // Nothing in the pool matches, so Enter commits the typed text as a new
       // tag and posts the full `subjects` override.
       await test.step("type a new tag and save it", async () => {
-        await table.fillCell(TAGS_TARGET.slug, "tags", NEW_TAG);
+        await table.fillCell(TARGET.slug, "tags", NEW_TAG);
         await expectMutation(overrides.save(), () =>
-          table.commitCell(TAGS_TARGET.slug, "tags"),
+          table.commitCell(TARGET.slug, "tags"),
         );
-        await expect(
-          table.chip(TAGS_TARGET.slug, "tags", NEW_TAG),
-        ).toBeVisible();
+        await expect(table.chip(TARGET.slug, "tags", NEW_TAG)).toBeVisible();
       });
     });
 
@@ -314,10 +310,10 @@ test.describe("inline edit", () => {
       request,
     }) => {
       const table = libraryPage.table;
-      await revertOverridesOf(TAGS_TARGET.title);
+      await revertOverridesOf(TARGET.title);
 
       await test.step("give the book the tag through the api", async () => {
-        const uuid = await fetchBookUuidByTitle(request, TAGS_TARGET.title);
+        const uuid = await fetchBookUuidByTitle(request, TARGET.title);
         const saved = await overridesRequests.postOverrides(uuid, {
           subjects: [NEW_TAG],
         });
@@ -327,41 +323,33 @@ test.describe("inline edit", () => {
       await test.step("open the tags editor", async () => {
         await libraryPage.gotoSettled();
         await table.switchTo();
-        await table.openCell(TAGS_TARGET.slug, "tags");
-        await expect(table.cellInput(TAGS_TARGET.slug, "tags")).toBeVisible();
+        await table.openCell(TARGET.slug, "tags");
+        await expect(table.cellInput(TARGET.slug, "tags")).toBeVisible();
       });
 
       // The dropdown leaves out tags already on the book, so the chip goes first.
       await test.step("remove the tag from the book", async () => {
         await expectMutation(overrides.save(), () =>
-          table.removeTag(TAGS_TARGET.slug, NEW_TAG),
+          table.removeTag(TARGET.slug, NEW_TAG),
         );
       });
 
       await test.step("type a prefix of the tag", async () => {
-        await table.fillCell(TAGS_TARGET.slug, "tags", "Specul");
+        await table.fillCell(TARGET.slug, "tags", "Specul");
+        await expect(table.cellSuggestions(TARGET.slug, "tags")).toBeVisible();
         await expect(
-          table.cellSuggestions(TAGS_TARGET.slug, "tags"),
+          table.suggestionHeading(TARGET.slug, "tags", "ADD TAG"),
         ).toBeVisible();
         await expect(
-          table.suggestionHeading(TAGS_TARGET.slug, "tags", "ADD TAG"),
-        ).toBeVisible();
-        await expect(
-          table.suggestion(TAGS_TARGET.slug, "tags", /Speculative Fiction/),
+          table.suggestion(TARGET.slug, "tags", /Speculative Fiction/),
         ).toBeVisible();
       });
 
       await test.step("pick the suggestion", async () => {
         await expectMutation(overrides.save(), () =>
-          table.chooseSuggestion(
-            TAGS_TARGET.slug,
-            "tags",
-            /Speculative Fiction/,
-          ),
+          table.chooseSuggestion(TARGET.slug, "tags", /Speculative Fiction/),
         );
-        await expect(
-          table.chip(TAGS_TARGET.slug, "tags", NEW_TAG),
-        ).toBeVisible();
+        await expect(table.chip(TARGET.slug, "tags", NEW_TAG)).toBeVisible();
       });
     });
   });

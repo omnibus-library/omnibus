@@ -369,8 +369,8 @@ export const FIXTURE_BOOKS: readonly ExpectedBook[] = [
     hasCover: true,
   },
   {
-    // Reserved for landing_inline_edit.spec.ts's Tags-cell tests: they hold
-    // a `subjects` override on this book mid-test, so `tags` stays
+    // Reserved for landing_inline_edit.spec.ts: its tests hold title, author
+    // and `subjects` overrides on this book mid-test, so `tags` stays
     // undefined (unasserted) and no other spec may touch its overrides.
     slug: "standalone-ocean",
     filename: "standalone-ocean.epub",
