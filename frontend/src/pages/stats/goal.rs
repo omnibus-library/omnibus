@@ -4,16 +4,13 @@
 //! switcher does.
 //!
 //! The cluster itself only reports. Goals are account configuration, set
-//! together in one editor (`pages::account::goals`) that lives in Settings →
-//! Goals and opens inline from the hero's Edit goals control.
+//! together in Settings → Goals, which the hero's one [`GoalsLink`] opens.
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{DailyGoal, DailyGoals, ReadingGoal};
 
 use super::heatmap::{civil_from_days, day_number, days_from_civil};
-#[cfg(not(feature = "mobile"))]
-use crate::focus_after_paint::focus_after_paint;
 use crate::pages::settings::sections::{SettingsSection, SettingsTarget};
 use crate::routes::link_target;
 
@@ -91,82 +88,30 @@ fn pace_note(goal: &ReadingGoal, as_of_day: &str) -> Option<String> {
     })
 }
 
-/// The link every "no goal set" state offers: the Goals section of Settings.
+/// The hero's one goals control: Settings → Goals, worded by whether any goal
+/// is set yet.
 #[component]
-fn SetGoalsLink(label: &'static str, testid: &'static str) -> Element {
+pub(super) fn GoalsLink(any_set: bool) -> Element {
     rsx! {
         Link {
-            class: "st-goal-link",
-            "data-testid": testid,
+            class: "st-goals-edit",
+            "data-testid": "stats-goals-link",
             to: link_target(SettingsTarget::Personal(SettingsSection::Goals).route()),
-            {label}
+            if any_set { "Edit goals" } else { "Set goals" }
         }
     }
-}
-
-/// The hero's Edit goals control, and once pressed the goals editor in its
-/// place — the same one Settings → Goals hosts. `on_saved` fires once a change
-/// lands, so the hero can refetch the figures it draws.
-#[cfg(not(feature = "mobile"))]
-#[component]
-pub(super) fn GoalsEditor(on_saved: Option<EventHandler<()>>) -> Element {
-    let mut open = use_signal(|| false);
-    // Set when the editor closes, so focus lands back on the control that
-    // opened it instead of falling to the page.
-    let mut refocus = use_signal(|| false);
-    rsx! {
-        // One stable element around the swap, so siblings keep their
-        // handlers (rule 07).
-        div { class: "st-goals-edit-slot",
-            if open() {
-                div { class: "st-goals-editor", "data-testid": "stats-goals-editor",
-                    crate::pages::account::goals::ReadingGoalsCard {
-                        on_saved,
-                        on_close: move |_| {
-                            open.set(false);
-                            refocus.set(true);
-                        },
-                    }
-                }
-            } else {
-                button {
-                    r#type: "button",
-                    class: "st-goals-edit",
-                    "data-testid": "stats-goals-edit",
-                    onmounted: move |evt| {
-                        if refocus() {
-                            refocus.set(false);
-                            focus_after_paint(&evt);
-                        }
-                    },
-                    onclick: move |_| open.set(true),
-                    "Edit goals"
-                }
-            }
-        }
-    }
-}
-
-/// The native shell has no goals editor; its goals are set from Settings.
-#[cfg(feature = "mobile")]
-#[component]
-pub(super) fn GoalsEditor(on_saved: Option<EventHandler<()>>) -> Element {
-    let _ = on_saved;
-    rsx! {}
 }
 
 /// The annual books goal: a conic ring carrying the ratio, with the figure and
 /// pace beside it. With no target it drops the ring and reports `finished` (the
 /// year's real count) under a "so far" qualifier, like the daily rows; a ring is
 /// a claim only a target can support. `year` and `as_of_day` are the server's.
-/// `editable` gates the "Set a goal" link: `false` on another reader's page.
 #[component]
 pub(super) fn AnnualGoalRing(
     goal: Option<ReadingGoal>,
     finished: Option<i64>,
     year: String,
     as_of_day: String,
-    #[props(default = true)] editable: bool,
 ) -> Element {
     // The kicker carries the timeframe rather than repeating it under the
     // figure: "This year" over "22 books" over "2026 so far" said the same
@@ -222,15 +167,9 @@ pub(super) fn AnnualGoalRing(
                             span { class: "st-year-bare-unit", {plural("book", n)} }
                         }
                     }
-                    if editable {
-                        SetGoalsLink { label: "Set a goal", testid: "stats-goal-set-link" }
-                    }
                 } else {
                     p { class: "st-year-invite", "data-testid": "stats-goal-invite",
                         "No target for the year yet."
-                    }
-                    if editable {
-                        SetGoalsLink { label: "Set a goal", testid: "stats-goal-set-link" }
                     }
                 }
             }
@@ -238,15 +177,11 @@ pub(super) fn AnnualGoalRing(
     }
 }
 
-/// The standing daily goals card: the pages and minutes rows, and the one link
-/// to where they are set. `editable` gates the "Set goals" link, same as
-/// [`AnnualGoalRing`]'s. `DailyGoals::unzoned_seconds` is always zero (rule 10),
-/// so there is no unplaceable-sessions disclosure.
+/// The standing daily goals card: the pages and minutes rows.
+/// `DailyGoals::unzoned_seconds` is always zero (rule 10), so there is no
+/// unplaceable-sessions disclosure.
 #[component]
-pub(super) fn DailyGoalsCard(
-    daily: DailyGoals,
-    #[props(default = true)] editable: bool,
-) -> Element {
+pub(super) fn DailyGoalsCard(daily: DailyGoals) -> Element {
     // "Every day" promises a recurrence, which is only true once something
     // recurs; with no target at all the rows are just what happened today.
     let neither = daily.pages.is_none() && daily.minutes.is_none();
@@ -275,12 +210,6 @@ pub(super) fn DailyGoalsCard(
                 goal: daily.minutes.clone(),
                 today: daily.minutes_today,
                 alone: neither,
-            }
-            // One short call to action while either kind is still unset, at the
-            // card's foot rather than in each row: there is one place to set
-            // them, so there is one thing to click.
-            if editable && (daily.pages.is_none() || daily.minutes.is_none()) {
-                SetGoalsLink { label: "Set goals", testid: "stats-daily-set-link" }
             }
         }
     }

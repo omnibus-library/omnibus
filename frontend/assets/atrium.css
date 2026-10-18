@@ -5587,41 +5587,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   appearance: none;
 }
 
-/* ── Reading goals card (Settings → Account) ───────────────────────────
-   The three targets in read mode. One row per goal, the figure in the display
-   serif so the card reads as a summary rather than as a disabled form — the
-   form itself is behind the single Edit control. */
-.goal-readout {
-  margin: 1.25rem 0 0;
-  display: flex;
-  flex-direction: column;
-}
-.goal-readout-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.7rem 0;
-  border-bottom: 1px solid var(--line-2);
-}
-.goal-readout-row:last-child { border-bottom: 0; }
-.goal-readout-label { font-size: 0.875rem; color: var(--ink-1); }
-.goal-readout-value {
-  margin: 0;
-  font-family: var(--serif);
-  font-size: 1.4rem;
-  line-height: 1;
-  color: var(--ink-0);
-}
-/* An absent target is not a figure, so it doesn't get the figure's treatment —
-   "Not set" in the UI face reads as a state, where 22px serif reads as a value. */
-.goal-readout-value.unset {
-  font-family: var(--sans);
-  font-size: 0.875rem;
-  color: var(--ink-3);
-}
-.goal-readout + .settings-actions { margin-top: 1.25rem; }
-
 .settings-status { font-size: 0.875rem; margin-top: 0.5rem; min-height: 1.2em; }
 .settings-status.success, .success-msg { color: var(--ok); }
 .settings-status.error, .error { color: var(--bad); font-size: 0.85rem; }
@@ -13353,8 +13318,8 @@ html {
 
 /* ── Settings findability (#2763) ───────────────────────────────────
    Preferences offered where they take effect: the stats hero's sharing
-   switch and inline goals editor, the library's hidden-formats note, and the
-   book page's scroll-stops toggle. */
+   switch and goals link, the library's hidden-formats note, and the book
+   page's scroll-stops toggle. */
 
 /* The hero's top row: who the page shows, and whether others may see it. */
 .st-hero-bar {
@@ -13372,15 +13337,14 @@ html {
 .st-share-switch { color: var(--ink-1); }
 .st-share-error { font-size: 0.8rem; color: var(--bad); }
 
-/* Edit goals: a quiet control under the goal cards, swapped in place for the
-   editor it opens. */
-.st-goals-edit-slot { display: flex; flex-direction: column; }
+/* Set / Edit goals: a quiet link under the goal cards, into Settings › Goals. */
 .st-goals-edit {
   align-self: flex-end;
+  display: inline-flex; align-items: center;
   padding: 6px 14px;
   border: 1px solid var(--line-2); border-radius: 999px;
-  background: transparent; color: var(--ink-1);
-  font: inherit; font-size: 0.8rem; cursor: pointer;
+  color: var(--ink-1);
+  font-size: 0.8rem; text-decoration: none;
   transition: color .15s, border-color .15s;
 }
 .st-goals-edit:hover {
@@ -13388,13 +13352,6 @@ html {
   border-color: color-mix(in oklch, var(--accent) 45%, var(--line-2));
 }
 .st-goals-edit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.st-goals-editor {
-  background: var(--bg-1);
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-lg);
-  padding: 4px 18px 16px;
-}
-.st-goals-editor .settings-form { margin-top: 0.75rem; gap: 1rem; }
 @media (prefers-reduced-motion: reduce) {
   .st-goals-edit { transition: none; }
 }
@@ -13546,4 +13503,16 @@ html {
 
 @media (max-width: 720px) {
   .maint-row { flex-direction: column; align-items: flex-start; gap: 0.6rem; }
+}
+
+/* ── Settings · personal round two (#2763) ── */
+
+/* A field a save refused: the reason under it, the input outlined. */
+.settings-field-error { margin: 0; font-size: 0.8rem; color: var(--bad); }
+.settings-field input[aria-invalid="true"] { border-color: var(--bad); }
+
+/* A value not read yet: disabled and tinted, never an empty "no target". */
+.settings-field input.ld-unknown {
+  cursor: progress;
+  background: color-mix(in oklch, var(--ink-3) 14%, var(--bg-2));
 }

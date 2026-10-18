@@ -37,15 +37,6 @@ fn parse_draft_names_the_unit_it_is_asking_for() {
 }
 
 #[test]
-fn target_summary_states_the_unit_or_that_none_is_set() {
-    assert_eq!(target_summary(Some(30), "book"), "30 books");
-    assert_eq!(target_summary(Some(1), "book"), "1 book");
-    assert_eq!(target_summary(Some(45), "minute"), "45 minutes");
-    // Never "0" — an unset goal is an absence, not a target of nothing.
-    assert_eq!(target_summary(None, "page"), "Not set");
-}
-
-#[test]
 fn changed_updates_writes_only_the_kinds_that_actually_moved() {
     // The single Save must not restate a target the reader didn't touch:
     // another device may have changed it since this page loaded.
@@ -114,59 +105,118 @@ fn a_failed_kinds_draft_still_differs_from_its_target_so_a_retry_writes() {
     );
 }
 
-#[cfg(feature = "server")]
 #[test]
-fn goals_card_opens_in_read_mode_behind_a_single_edit_control() {
-    let html = crate::test_support::render(rsx! { ReadingGoalsCard {} });
-
-    assert!(html.contains("account-goals-card"), "{html}");
-    // One control, not one per goal — the whole point of the move.
-    assert_eq!(html.matches("goals-edit").count(), 1, "{html}");
-    for testid in ["goal-books-value", "goal-pages-value", "goal-minutes-value"] {
-        assert!(html.contains(testid), "missing {testid}: {html}");
-    }
-    // The form is behind the control, not beside it.
-    assert!(!html.contains("goals-save"), "{html}");
+fn goals_differ_from_saved_is_false_when_every_draft_matches_its_target() {
+    let drafts = ["24".to_string(), " 30 ".to_string(), String::new()];
+    assert!(!goals_differ_from_saved(
+        &drafts,
+        &[Some(24), Some(30), None]
+    ));
 }
 
-#[cfg(feature = "server")]
 #[test]
-fn goals_card_checks_rather_than_claims_not_set_before_the_goals_are_read() {
-    let html = crate::test_support::render(rsx! { ReadingGoalsCard {} });
-    assert!(html.contains("ld-sheen"), "{html}");
-    assert!(!html.contains("Not set"), "{html}");
+fn goals_differ_from_saved_is_true_when_a_draft_changes_a_target() {
+    let drafts = ["25".to_string(), "30".to_string(), String::new()];
+    assert!(goals_differ_from_saved(
+        &drafts,
+        &[Some(24), Some(30), None]
+    ));
 }
 
-#[cfg(feature = "server")]
 #[test]
-fn goal_value_states_not_set_only_once_the_read_has_answered() {
-    let read = crate::test_support::render(goal_value(None, "book", Some(true)));
-    assert!(read.contains("Not set"), "{read}");
-    let failed = crate::test_support::render(goal_value(None, "book", Some(false)));
-    assert!(
-        failed.contains("Unknown") && !failed.contains("Not set"),
-        "{failed}"
+fn goals_differ_from_saved_is_true_when_a_draft_clears_a_target() {
+    let drafts = ["24".to_string(), String::new(), String::new()];
+    assert!(goals_differ_from_saved(
+        &drafts,
+        &[Some(24), Some(30), None]
+    ));
+}
+
+/// An unreadable draft enables Save all, so pressing it shows why it can't be
+/// saved instead of the button silently refusing.
+#[test]
+fn goals_differ_from_saved_is_true_when_a_draft_cannot_be_read() {
+    let drafts = ["24".to_string(), "lots".to_string(), String::new()];
+    assert!(goals_differ_from_saved(
+        &drafts,
+        &[Some(24), Some(30), None]
+    ));
+}
+
+#[test]
+fn validate_drafts_returns_every_target_when_all_drafts_parse() {
+    let drafts = ["24".to_string(), String::new(), "45".to_string()];
+    assert_eq!(validate_drafts(&drafts), Ok([Some(24), None, Some(45)]));
+}
+
+#[test]
+fn validate_drafts_names_each_refused_field() {
+    let drafts = ["0".to_string(), "30".to_string(), "1500".to_string()];
+    let errors = validate_drafts(&drafts).unwrap_err();
+    assert_eq!(
+        errors[0].as_deref(),
+        Some("Pick a target between 1 and 10000.")
+    );
+    assert_eq!(errors[1], None);
+    assert_eq!(
+        errors[2].as_deref(),
+        Some("Pick a target between 1 and 1440.")
     );
 }
 
 #[cfg(feature = "server")]
-#[component]
-fn InlineGoalsHost() -> Element {
-    rsx! { ReadingGoalsCard { on_close: move |_| {} } }
-}
+mod render_tests {
+    use super::*;
+    use crate::test_support::render;
 
-/// Opened from another page's own control, the card drops its heading and
-/// its Edit button — the host's control already said what this is — and
-/// waits for the goals before offering the form, so nothing can be typed
-/// over targets it hasn't read.
-#[cfg(feature = "server")]
-#[test]
-fn goals_card_hosted_inline_drops_its_heading_and_waits_for_the_goals() {
-    let html = crate::test_support::render_in_vdom(InlineGoalsHost);
+    #[test]
+    fn goals_card_renders_three_inputs_and_one_save_all_control() {
+        let html = render(rsx! { ReadingGoalsCard {} });
 
-    assert!(html.contains("account-goals-card"), "{html}");
-    assert!(!html.contains("Reading goals"), "{html}");
-    assert!(!html.contains("goals-edit"), "{html}");
-    assert!(!html.contains("goals-save"), "{html}");
-    assert!(html.contains("goals-loading"), "{html}");
+        assert!(html.contains("<h3>Reading goals</h3>"), "{html}");
+        for testid in ["goal-books-input", "goal-pages-input", "goal-minutes-input"] {
+            assert!(html.contains(testid), "missing {testid}: {html}");
+        }
+        assert_eq!(
+            html.matches("data-testid=\"goals-save\"").count(),
+            1,
+            "{html}"
+        );
+        assert!(html.contains("Save all"), "{html}");
+        for gone in ["goals-edit", "goals-cancel", "goal-books-value"] {
+            assert!(!html.contains(gone), "{gone} is back: {html}");
+        }
+    }
+
+    #[test]
+    fn goals_card_holds_inputs_disabled_and_unknown_until_the_goals_load() {
+        let html = render(rsx! { ReadingGoalsCard {} });
+
+        assert_eq!(html.matches("ld-unknown").count(), 3, "{html}");
+        assert_eq!(
+            html.matches("disabled").count(),
+            4,
+            "three inputs and Save all: {html}"
+        );
+        // Neither a zero nor "no target" before the saved values have arrived.
+        assert!(!html.contains("value=\"0\""), "{html}");
+        assert!(!html.contains("No target"), "{html}");
+        assert!(html.contains("ld-sheen"), "{html}");
+    }
+
+    #[test]
+    fn goals_card_puts_save_all_and_its_status_in_the_card_footer() {
+        let html = render(rsx! { ReadingGoalsCard {} });
+        let footer = html
+            .find("class=\"settings-actions\"")
+            .expect("the card has a footer row");
+        let status = html.find("data-testid=\"goals-status\"").expect("status");
+        let save = html.find("data-testid=\"goals-save\"").expect("save");
+        assert!(footer < status && status < save, "{html}");
+        assert!(
+            html.contains("settings-status settings-action-status"),
+            "{html}"
+        );
+        assert!(html.contains("class=\"btn primary\""), "{html}");
+    }
 }
