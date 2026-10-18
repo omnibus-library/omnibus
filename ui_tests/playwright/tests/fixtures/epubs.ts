@@ -35,6 +35,8 @@ export interface ExpectedBook {
    * fixtures pin `[]`.
    */
   tags?: string[];
+  /** True iff a spec edits the title and authors, so row checks skip them and the cover label. */
+  titleAndAuthorsEdited?: boolean;
   /**
    * Raw stored `dc:date` value (e.g. `"1843-10-01"`). The published cell
    * renders a formatted human date derived from this, not the raw string —
@@ -370,12 +372,13 @@ export const FIXTURE_BOOKS: readonly ExpectedBook[] = [
   },
   {
     // Reserved for landing_inline_edit.spec.ts: its tests hold title, author
-    // and `subjects` overrides on this book mid-test, so `tags` stays
-    // undefined (unasserted) and no other spec may touch its overrides.
+    // and `subjects` overrides on this book mid-test, so `tags` is unasserted,
+    // the title and authors are flagged edited, and no other spec may touch it.
     slug: "standalone-ocean",
     filename: "standalone-ocean.epub",
     title: "Ocean of Bytes",
     authors: ["Donald Knuth", "Leslie Lamport"],
+    titleAndAuthorsEdited: true,
     publisher: "MIT Press Mirror",
     published: "1989-06-21",
     language: "en",

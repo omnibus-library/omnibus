@@ -205,16 +205,19 @@ export class LibraryTableComponent extends BaseComponent {
       this.row(book.slug),
       `row for slug "${book.slug}" should be visible`,
     ).toBeVisible();
-    await expect(this.cell(book.slug, "title")).toHaveText(book.title);
-    await expect(this.cell(book.slug, "author")).toHaveText(
-      book.authors.join(", "),
-    );
+    // landing_inline_edit.spec.ts edits standalone-ocean's title and authors
+    // (and tags) in parallel with this check, so those cells are not pinned.
+    if (!book.titleAndAuthorsEdited) {
+      await expect(this.cell(book.slug, "title")).toHaveText(book.title);
+      await expect(this.cell(book.slug, "author")).toHaveText(
+        book.authors.join(", "),
+      );
+    }
     await expect(this.cell(book.slug, "series")).toHaveText(
       expectedSeriesText(book),
     );
-    // Public-domain books carry long subject lists, and standalone-ocean's
-    // title, authors and tags are edited by a spec, so their fixtures leave
-    // tags unpinned.
+    // Public-domain books carry long subject lists, so their fixtures leave
+    // tags unpinned, as does the book above.
     if (book.tags) {
       await expect(this.cell(book.slug, "tags")).toHaveText(
         book.tags.join(", "),
@@ -227,7 +230,9 @@ export class LibraryTableComponent extends BaseComponent {
     if (book.hasCover) {
       await expect(
         this.cell(book.slug, "cover").getByRole("img", {
-          name: `Cover of ${book.title}`,
+          name: book.titleAndAuthorsEdited
+            ? /^Cover of /
+            : `Cover of ${book.title}`,
         }),
       ).toBeVisible();
     } else {
