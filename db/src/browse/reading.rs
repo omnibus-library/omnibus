@@ -6,10 +6,11 @@
 //! A book's status is the stored one; with none stored, a saved position
 //! counts as reading, the rule the Continue rail already applies.
 
-use omnibus_shared::{AuthorReading, BookReading, EbookMetadata, ReadStatus};
+use omnibus_shared::{AuthorReading, BookReading, EbookMetadata, ProgressFormat, ReadStatus};
 use sqlx::{Row, SqlitePool};
 
 use crate::metadata_overrides::sql::{effective_authors_sql, overrides_win_sql};
+use crate::progress::{resolve_listening, ProgressError};
 
 use super::{placeholders, visible, BrowseError};
 
@@ -20,6 +21,7 @@ const LATEST_POSITION_CTE: &str = "pos AS (
            rp.progress_percent AS percent,
            rp.format,
            rp.book_file_id,
+           rp.audio_position_seconds,
            MAX(COALESCE(rp.client_updated_at, rp.updated_at)) AS at
       FROM reading_progress rp
      WHERE rp.user_id = ?1
@@ -78,9 +80,9 @@ fn author_reading_sql(n: usize) -> String {
         state AS (
             SELECT b.id AS book_id,
                    COALESCE(rs.status, 'reading') AS status,
-                   MAX(COALESCE(pos.at, 0),
-                       CASE WHEN rs.status IN ('reading', 'finished')
-                            THEN rs.updated_at ELSE 0 END) AS at
+                   COALESCE(pos.at,
+                            CASE WHEN rs.status IN ('reading', 'finished')
+                                 THEN rs.updated_at END) AS at
               FROM books b
               LEFT JOIN book_read_status rs
                      ON rs.user_id = ?1 AND rs.book_uuid = b.uuid
@@ -90,7 +92,7 @@ fn author_reading_sql(n: usize) -> String {
         SELECT e.author_id,
                SUM(s.status = 'finished') AS finished,
                SUM(s.status = 'reading') AS reading,
-               MAX(CASE WHEN s.status != 'unread' THEN NULLIF(s.at, 0) END) AS last_read_at
+               MAX(CASE WHEN s.status != 'unread' THEN s.at END) AS last_read_at
           FROM effective e
           JOIN state s ON s.book_id = e.book_id
          GROUP BY e.author_id
@@ -113,7 +115,8 @@ pub async fn book_reading(
     let sql = format!(
         "WITH {LATEST_POSITION_CTE}
          SELECT w.value AS book_uuid, rs.status, rs.updated_at AS status_at,
-                pos.percent, pos.format, pos.book_file_id, pos.at AS pos_at
+                pos.percent, pos.format, pos.book_file_id, pos.audio_position_seconds,
+                pos.at AS pos_at
            FROM json_each(?2) w
            LEFT JOIN book_read_status rs
                   ON rs.user_id = ?1 AND rs.book_uuid = w.value
@@ -125,7 +128,41 @@ pub async fn book_reading(
         .bind(wanted)
         .fetch_all(pool)
         .await?;
-    Ok(rows.iter().map(map_book_reading).collect())
+    let mut out = Vec::with_capacity(rows.len());
+    for row in &rows {
+        let mut reading = map_book_reading(row);
+        if reading.format == Some(ProgressFormat::Audio) {
+            resolve_audio(pool, &mut reading, row.get("audio_position_seconds")).await?;
+        }
+        out.push(reading);
+    }
+    Ok(out)
+}
+
+/// An audio position stores no percent, and its file id can name a file the
+/// reindex has since replaced, so both come from [`resolve_listening`] — the
+/// Continue rail's resolution — rather than the row.
+async fn resolve_audio(
+    pool: &SqlitePool,
+    reading: &mut BookReading,
+    position_seconds: Option<f64>,
+) -> Result<(), BrowseError> {
+    let point = match resolve_listening(
+        pool,
+        &reading.book_uuid,
+        reading.book_file_id,
+        position_seconds,
+    )
+    .await
+    {
+        Ok(point) => point,
+        Err(ProgressError::Sqlx(e)) => return Err(BrowseError::Db(e)),
+        // Only an upsert raises this; a read of a vanished book has nothing to resume.
+        Err(ProgressError::BookNotFound) => None,
+    };
+    reading.book_file_id = point.map(|p| p.book_file_id);
+    reading.percent = point.and_then(|p| p.percent);
+    Ok(())
 }
 
 /// The uuids [`book_reading`] takes, from a list of books.
@@ -141,10 +178,14 @@ fn map_book_reading(r: &sqlx::sqlite::SqliteRow) -> BookReading {
     let status = r
         .get::<Option<String>, _>("status")
         .map_or(ReadStatus::Reading, |s| ReadStatus::from_db(&s));
-    let status_at = (status != ReadStatus::Unread)
-        .then(|| r.get::<Option<i64>, _>("status_at"))
-        .flatten();
+    // The position's client time, as the Continue rail orders by: a status
+    // stamps server receipt, so a replayed offline write would read as today.
+    // A book marked unread hasn't been read lately, whatever it kept.
     let pos_at: Option<i64> = r.get("pos_at");
+    let status_at: Option<i64> = r.get("status_at");
+    let last_read_at = (status != ReadStatus::Unread)
+        .then(|| pos_at.or(status_at))
+        .flatten();
     BookReading {
         book_uuid: r.get("book_uuid"),
         status,
@@ -153,7 +194,7 @@ fn map_book_reading(r: &sqlx::sqlite::SqliteRow) -> BookReading {
             .get::<Option<String>, _>("format")
             .map(|f| crate::progress::parse_format(&f)),
         book_file_id: r.get("book_file_id"),
-        last_read_at: pos_at.max(status_at),
+        last_read_at,
     }
 }
 

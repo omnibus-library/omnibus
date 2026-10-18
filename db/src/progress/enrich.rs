@@ -82,6 +82,47 @@ pub(super) async fn enrich_record(
     Ok(audio)
 }
 
+/// Where a stored listening position resumes, resolved as [`enrich_record`]
+/// resolves it for the Continue rail: the file it names if the book still has
+/// it, else the book's first audio file, with the whole-book percent there.
+/// `None` once the book has no audio file left.
+pub async fn resolve_listening(
+    pool: &SqlitePool,
+    book_uuid: &str,
+    book_file_id: Option<i64>,
+    position_seconds: Option<f64>,
+) -> Result<Option<ListeningPoint>, ProgressError> {
+    let record = ProgressRecord {
+        book_uuid: book_uuid.to_string(),
+        format: ProgressFormat::Audio,
+        epub_cfi: None,
+        audio_position_seconds: position_seconds,
+        progress_percent: None,
+        kobo_location: None,
+        book_file_id,
+        updated_at: 0,
+        client_updated_at: 0,
+        total_duration_seconds: None,
+        resolved: None,
+        derived_epub_cfi: None,
+    };
+    let Some(totals) = audio_totals(pool, book_uuid, &record).await? else {
+        return Ok(None);
+    };
+    Ok(Some(ListeningPoint {
+        book_file_id: totals.book_file_id,
+        percent: audio_percent(&record, totals.total_duration_seconds),
+    }))
+}
+
+/// A listening position resolved by [`resolve_listening`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListeningPoint {
+    pub book_file_id: i64,
+    /// Floored whole-book percent; `None` when the parts measured no duration.
+    pub percent: Option<i64>,
+}
+
 /// Fill [`ProgressRecord::derived_epub_cfi`] for an epub row that stores a
 /// percent but no CFI, so a reader opens it where it is instead of the cover.
 /// Placed by the cross-format spine-stats mapping, which floors, so the landing

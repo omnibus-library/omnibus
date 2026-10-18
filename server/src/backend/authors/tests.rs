@@ -291,3 +291,44 @@ async fn api_get_authors_index_returns_401_when_anonymous() {
     let res = app.oneshot(get_anon("/api/authors")).await.unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn api_get_author_returns_500_when_reading_state_cannot_be_read() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let author_id = seed_finished_austen(&pool, user.id).await;
+    sqlx::query("DROP TABLE book_read_status")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/authors/{author_id}"),
+            &token,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn api_get_author_reading_returns_500_when_reading_state_cannot_be_read() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    seed_finished_austen(&pool, user.id).await;
+    sqlx::query("DROP TABLE book_read_status")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let res = app
+        .oneshot(get_with_bearer("/api/authors/reading", &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
