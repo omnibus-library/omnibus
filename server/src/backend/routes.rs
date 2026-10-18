@@ -98,6 +98,10 @@ pub(super) fn content_routes() -> Router<AppState> {
             "/api/ebooks/{uuid}/images/file",
             get(ebooks::images::get_ebook_image_file),
         )
+        .route(
+            "/api/ebooks/{uuid}/images/signed",
+            get(ebooks::images::get_ebook_signed_image),
+        )
         .route("/api/ebooks/{uuid}/file", get(ebooks::get_ebook_file))
         .route(
             "/api/ebooks/{uuid}/pages/{page}",

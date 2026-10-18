@@ -1,8 +1,8 @@
-//! `GET /api/ebooks/{uuid}/images` and `.../images/file`: the EPUB image
-//! listing and the original-bytes fetch: auth gating, query-token auth, spine
-//! references, the attachment-and-validator headers, the 400 for an href that
-//! is no manifest image, the download-permission 403, and the unknown-uuid
-//! 404 and no-EPUB 422.
+//! `GET /api/ebooks/{uuid}/images`, `.../images/file`, `.../images/link` and
+//! `.../images/signed`: the EPUB image listing, the original-bytes fetch and the
+//! signed link to it: auth gating, query-token auth, spine references, the
+//! attachment-and-validator headers, the 400 for an href that is no manifest
+//! image, the download-permission 403, and the unknown-uuid 404 and no-EPUB 422.
 
 use axum::{body::to_bytes, http::StatusCode};
 use omnibus_shared::{BookImage, BookImageLink, BookImageList, BookImageReference};
@@ -469,7 +469,7 @@ async fn api_get_ebook_image_link_returns_a_signed_path_expiring_after_the_ttl()
         link.expires_at
     );
     let expected_prefix = format!(
-        "/api/ebooks/{uuid}/images/file?href=OEBPS%2Fimages%2Fmap.png&expires={}&sig=",
+        "/api/ebooks/{uuid}/images/signed?href=OEBPS%2Fimages%2Fmap.png&expires={}&sig=",
         link.expires_at
     );
     assert!(
@@ -532,7 +532,7 @@ async fn api_get_ebook_image_link_returns_401_when_anonymous() {
 }
 
 #[tokio::test]
-async fn api_get_ebook_image_file_serves_the_original_through_a_signed_link_without_a_session() {
+async fn api_get_ebook_signed_image_serves_the_original_without_a_session() {
     let (_, _, pool) = fixture().await;
     let admin = auth_test_support::create_admin(&pool, "admin").await;
     let token = auth_test_support::bearer_token(&pool, admin.id).await;
@@ -558,7 +558,7 @@ async fn api_get_ebook_image_file_serves_the_original_through_a_signed_link_with
 }
 
 #[tokio::test]
-async fn api_get_ebook_image_file_returns_401_for_an_expired_signed_link() {
+async fn api_get_ebook_signed_image_returns_401_for_an_expired_link() {
     let (_, _, pool) = fixture().await;
     let (epub, _, _) = epub_with_two_images();
     let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
@@ -569,7 +569,7 @@ async fn api_get_ebook_image_file_returns_401_for_an_expired_signed_link() {
 
     let res = app
         .oneshot(get_anon(&format!(
-            "/api/ebooks/{uuid}/images/file?href=map.png&expires={expires}&sig={sig}"
+            "/api/ebooks/{uuid}/images/signed?href=map.png&expires={expires}&sig={sig}"
         )))
         .await
         .expect("request should succeed");
@@ -580,7 +580,7 @@ async fn api_get_ebook_image_file_returns_401_for_an_expired_signed_link() {
 }
 
 #[tokio::test]
-async fn api_get_ebook_image_file_returns_401_for_a_signed_link_used_on_another_href() {
+async fn api_get_ebook_signed_image_returns_401_for_a_link_used_on_another_href() {
     let (_, _, pool) = fixture().await;
     let admin = auth_test_support::create_admin(&pool, "admin").await;
     let token = auth_test_support::bearer_token(&pool, admin.id).await;
@@ -602,7 +602,7 @@ async fn api_get_ebook_image_file_returns_401_for_a_signed_link_used_on_another_
 }
 
 #[tokio::test]
-async fn api_get_ebook_image_file_returns_401_for_a_signed_link_without_a_usable_expiry() {
+async fn api_get_ebook_signed_image_returns_401_for_a_link_without_a_usable_expiry() {
     let (_, _, pool) = fixture().await;
     let (epub, _, _) = epub_with_two_images();
     let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
@@ -610,7 +610,7 @@ async fn api_get_ebook_image_file_returns_401_for_a_signed_link_without_a_usable
     // Signed over the value a missing or garbled expiry could default to, so only the guard rejects it.
     let sig = sign_image_link(&key, &uuid, "map.png", i64::MAX).unwrap();
     let app = crate::backend::rest_router(AppState::new(pool));
-    let file = format!("/api/ebooks/{uuid}/images/file?href=map.png");
+    let file = format!("/api/ebooks/{uuid}/images/signed?href=map.png");
 
     let control = app
         .clone()
@@ -631,8 +631,7 @@ async fn api_get_ebook_image_file_returns_401_for_a_signed_link_without_a_usable
 }
 
 #[tokio::test]
-async fn api_get_ebook_image_file_returns_401_for_a_signed_link_before_any_key_exists_and_creates_none(
-) {
+async fn api_get_ebook_signed_image_returns_401_before_any_key_exists_and_creates_none() {
     let (_, _, pool) = fixture().await;
     let (epub, _, _) = epub_with_two_images();
     let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
@@ -641,7 +640,7 @@ async fn api_get_ebook_image_file_returns_401_for_a_signed_link_before_any_key_e
 
     let res = app
         .oneshot(get_anon(&format!(
-            "/api/ebooks/{uuid}/images/file?href=map.png&expires={expires}&sig=AAAA"
+            "/api/ebooks/{uuid}/images/signed?href=map.png&expires={expires}&sig=AAAA"
         )))
         .await
         .expect("request should succeed");
@@ -653,19 +652,39 @@ async fn api_get_ebook_image_file_returns_401_for_a_signed_link_before_any_key_e
 }
 
 #[tokio::test]
-async fn api_get_ebook_image_file_never_falls_back_to_a_session_when_the_signature_is_bad() {
+async fn api_get_ebook_signed_image_returns_401_without_a_signature() {
     let (_, _, pool) = fixture().await;
-    let user = auth_test_support::create_user(&pool, "alice").await;
-    let token = auth_test_support::bearer_token(&pool, user.id).await;
     let (epub, _, _) = epub_with_two_images();
     let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+    db::auth::load_or_create_session_key(&pool).await.unwrap();
     let app = crate::backend::rest_router(AppState::new(pool));
     let expires = now() + 60;
 
     let res = app
-        .oneshot(get_with_bearer(
-            &format!("/api/ebooks/{uuid}/images/file?href=map.png&expires={expires}&sig=AAAA"),
-            &token,
+        .oneshot(get_anon(&format!(
+            "/api/ebooks/{uuid}/images/signed?href=map.png&expires={expires}"
+        )))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_returns_401_for_a_valid_signature_without_a_session() {
+    let (_, _, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let link = mint(&app, &token, &uuid, "map.png").await;
+
+    let res = app
+        .oneshot(get_anon(
+            &link.path.replace("/images/signed", "/images/file"),
         ))
         .await
         .expect("request should succeed");

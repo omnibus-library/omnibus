@@ -1,8 +1,9 @@
 //! `/api/ebooks/{uuid}/images*` handlers: the listing of an EPUB's images, one
 //! image's original bytes, and the signed link that fetches those bytes without
-//! a session. The listing and the fetch's session mode are [`MediaAuthUser`]-gated
-//! (`?token=` for clients that cannot set headers); a book without an EPUB answers
-//! 422, distinct from the 404 for an unknown uuid.
+//! a session. The listing and `/images/file` are [`MediaAuthUser`]-gated (`?token=`
+//! for clients that cannot set headers); `/images/signed` takes no session and is
+//! authenticated by its signature alone. A book without an EPUB answers 422,
+//! distinct from the 404 for an unknown uuid.
 //!
 //! A link is an HMAC over (uuid, href, expiry) under the server's secret: it opens
 //! that one image until it expires and nothing else, so a leaked URL is not a session.
@@ -87,7 +88,7 @@ pub(crate) fn verify_image_link(
     image_link_mac(key, uuid, href, expires).is_ok_and(|mac| mac.verify_slice(&tag).is_ok())
 }
 
-/// Query param of the link mint: the image's archive path.
+/// Query param of the link mint and the session fetch: the image's archive path.
 #[derive(Deserialize)]
 pub(crate) struct ImageHrefQuery {
     href: String,
@@ -120,7 +121,7 @@ pub(crate) async fn get_ebook_image_link(
         Err(e) => return internal("sign_image_link", e),
     };
     let path = format!(
-        "/api/ebooks/{uuid}/images/file?href={}&expires={expires_at}&sig={sig}",
+        "/api/ebooks/{uuid}/images/signed?href={}&expires={expires_at}&sig={sig}",
         urlencoding::encode(&q.href)
     );
     (
@@ -171,55 +172,53 @@ async fn epub_path(state: &AppState, uuid: &str) -> Result<PathBuf, Response> {
     }
 }
 
-/// Query params for `GET /api/ebooks/{uuid}/images/file`. `expires` and `sig` are
-/// the signed-link mode, kept as text so a malformed value is a 401, not a 400.
+/// One image's original bytes, by the archive path `list_book_images` reports.
+/// Every 200 is an `attachment`, because an `image/svg+xml` body opened
+/// top-level would run inline script under the app's CSP.
+pub(crate) async fn get_ebook_image_file(
+    user: MediaAuthUser,
+    State(state): State<AppState>,
+    Path(uuid): Path<String>,
+    Query(q): Query<ImageHrefQuery>,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(denied) = deny_without_download(&user.0) {
+        return denied;
+    }
+    serve_image(&state, &uuid, &q.href, &headers).await
+}
+
+/// Query params for `GET /api/ebooks/{uuid}/images/signed`. `expires` and `sig`
+/// are kept as text so a malformed or missing value is a 401, not a 400.
 #[derive(Deserialize)]
-pub(crate) struct ImageFileQuery {
+pub(crate) struct SignedImageQuery {
     href: String,
     expires: Option<String>,
     sig: Option<String>,
 }
 
-/// One image's original bytes, by the archive path `list_book_images` reports.
-/// Download-shaped: every 200 is an `attachment`, because an `image/svg+xml` body
-/// opened top-level would run inline script under the app's CSP. Carrying `sig`
-/// authenticates the request by that signature alone, never by a session.
-pub(crate) async fn get_ebook_image_file(
-    user: Result<MediaAuthUser, Response>,
+/// [`get_ebook_image_file`] through a link [`get_ebook_image_link`] minted,
+/// authenticated by its signature alone, never by a session. The download
+/// permission was enforced when the link was minted.
+pub(crate) async fn get_ebook_signed_image(
     State(state): State<AppState>,
     Path(uuid): Path<String>,
-    Query(q): Query<ImageFileQuery>,
+    Query(q): Query<SignedImageQuery>,
     headers: HeaderMap,
 ) -> Response {
-    match q.sig.as_deref() {
-        // The download permission was enforced when the link was minted.
-        Some(sig) => {
-            if let Some(rejected) = reject_bad_link(&state, &uuid, &q, sig).await {
-                return rejected;
-            }
-        }
-        None => {
-            let user = match user {
-                Ok(user) => user,
-                Err(rejection) => return rejection,
-            };
-            if let Some(denied) = deny_without_download(&user.0) {
-                return denied;
-            }
-        }
+    if let Some(rejected) = reject_bad_link(&state, &uuid, &q).await {
+        return rejected;
     }
     serve_image(&state, &uuid, &q.href, &headers).await
 }
 
-/// `Some(401)` unless `sig` is a live signature over this (uuid, href); `Some(500)`
-/// when the key cannot be read.
-async fn reject_bad_link(
-    state: &AppState,
-    uuid: &str,
-    q: &ImageFileQuery,
-    sig: &str,
-) -> Option<Response> {
+/// `Some(401)` unless `q` carries a live signature over this (uuid, href);
+/// `Some(500)` when the key cannot be read.
+async fn reject_bad_link(state: &AppState, uuid: &str, q: &SignedImageQuery) -> Option<Response> {
     let rejected = || (StatusCode::UNAUTHORIZED, "invalid or expired link").into_response();
+    let Some(sig) = q.sig.as_deref() else {
+        return Some(rejected());
+    };
     let Some(expires) = q.expires.as_deref().and_then(|e| e.parse::<i64>().ok()) else {
         return Some(rejected());
     };

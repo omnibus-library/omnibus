@@ -215,7 +215,7 @@ async fn image_link(
         .append_pair("sig", "abc");
     AxumJson(BookImageLink {
         path: format!(
-            "/api/ebooks/{uuid}/images/file?{}",
+            "/api/ebooks/{uuid}/images/signed?{}",
             query.query().unwrap_or_default()
         ),
         expires_at: 1_893_456_000,
@@ -669,7 +669,7 @@ async fn read_book_image_builds_the_download_url_on_the_public_url_not_the_base_
 
     assert_eq!(
         read.download_url,
-        "https://omnibus.example.com/api/ebooks/uuid-frank/images/file\
+        "https://omnibus.example.com/api/ebooks/uuid-frank/images/signed\
          ?href=OEBPS%2Fimages%2Fmap.png&expires=1893456000&sig=abc"
     );
 }

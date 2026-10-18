@@ -103,7 +103,7 @@ too:
 - `/opds/*` — a session, else HTTP Basic.
 - `/metrics` — `OMNIBUS_METRICS_TOKEN`; the route does not exist until it is set.
 - `/mcp` — a bearer token, gated per request on the admin `mcp_enabled` setting.
-- `/api/ebooks/{uuid}/images/file?sig=…` — exempted from the gate and authenticated
+- `/api/ebooks/{uuid}/images/signed` — exempted from the gate and authenticated
   by a per-image HMAC link (`backend::ebooks::images`).
 
 ## Database
@@ -188,8 +188,8 @@ server over one tool that breaks the rule. rmcp no longer enforces this, so
 `read_book_image` returns a download URL for an EPUB image's original, for a
 person to open rather than the tool layer to call. It is a per-image HMAC-signed
 link: 15 minutes, minted by `GET /api/ebooks/{uuid}/images/link` for
-download-permitted users and verified by the fetch without a session, so a leaked
-URL opens that one image and nothing else. It is built on the caller's public
+download-permitted users and verified by `GET /api/ebooks/{uuid}/images/signed`
+without a session, so a leaked URL opens that one image and nothing else. It is built on the caller's public
 origin — the configured base URL over stdio, the `/mcp` request's own origin when
 hosted (`AppState::request_origin`) — never the loopback the hosted tools call
 through.
