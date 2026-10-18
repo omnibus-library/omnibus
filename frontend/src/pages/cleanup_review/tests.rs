@@ -10,7 +10,7 @@ use super::{
     applied_summary, edited_value, review_key_action, skip, Applied, PassDone, QueueState,
     ReviewKey, Tally, UndoBar, UndoState,
 };
-use crate::test_support::{provide_current_user, render, render_in_vdom, test_user};
+use crate::test_support::{in_root_scope, provide_current_user, render, render_in_vdom, test_user};
 
 fn card(kind: CleanupKind, action: CleanupAction) -> SuggestionCard {
     SuggestionCard {
@@ -298,14 +298,6 @@ fn queue_with_one_card(in_flight: bool) -> QueueState {
         undo: Signal::new(UndoState::None),
         generation: Signal::new(0),
     }
-}
-
-/// Run `f` inside a live root scope, so it can create signals. Unlike a
-/// component body, a panic here fails the test instead of being caught.
-fn in_root_scope(f: impl FnOnce()) {
-    let mut dom = VirtualDom::new(|| rsx! {});
-    dom.rebuild_in_place();
-    dom.in_scope(ScopeId::ROOT, f);
 }
 
 #[test]

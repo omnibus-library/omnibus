@@ -6,6 +6,7 @@
 use omnibus_shared::worker::TaskKind;
 
 use super::*;
+use crate::test_support::in_root_scope;
 
 // ---------- poll gating ----------
 
@@ -23,14 +24,6 @@ fn should_poll_fetches_only_for_an_admin_viewer() {
 }
 
 // ---------- live-poll merge logic ----------
-
-/// Run `f` inside a live root scope, so it can create signals. Unlike a
-/// component body, a panic here fails the test instead of being caught.
-fn in_root_scope(f: impl FnOnce()) {
-    let mut dom = VirtualDom::new(|| rsx! {});
-    dom.rebuild_in_place();
-    dom.in_scope(ScopeId::ROOT, f);
-}
 
 fn sample_report(book_count: i64) -> AdminHealthReport {
     AdminHealthReport {

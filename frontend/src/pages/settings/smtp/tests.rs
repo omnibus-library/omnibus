@@ -1,27 +1,8 @@
 //! Tests for the SMTP card: the Save guard that keeps a failed read from
 //! overwriting the relay, and the card's first paint.
 
-use std::rc::Rc;
-
 use super::*;
-
-/// Run `f` inside a live root scope, so it can create signals. Unlike a
-/// component body, a panic here fails the test instead of being caught.
-fn in_root_scope(f: impl FnOnce()) {
-    let mut dom = VirtualDom::new(|| rsx! {});
-    dom.rebuild_in_place();
-    dom.in_scope(ScopeId::ROOT, f);
-}
-
-fn blank_form_event() -> FormEvent {
-    Event::new(
-        Rc::new(FormData::new(SerializedFormData::new(
-            String::new(),
-            vec![],
-        ))),
-        false,
-    )
-}
+use crate::test_support::{blank_form_event, in_root_scope};
 
 /// The card's signals as a failed read leaves them: seeded defaults, no status.
 fn unloaded_card() -> (SmtpFields, SmtpIo) {

@@ -1,16 +1,7 @@
 //! Render tests for the server-wide key cards and their clear confirm.
 
 use super::*;
-use crate::test_support::render_in_vdom;
-
-/// The opening tag of the element carrying `testid`.
-fn tag_with_testid<'a>(html: &'a str, testid: &str) -> &'a str {
-    let at = html
-        .find(&format!(r#"data-testid="{testid}""#))
-        .unwrap_or_else(|| panic!("{testid} missing: {html}"));
-    let start = html[..at].rfind('<').unwrap();
-    &html[start..=at + html[at..].find('>').unwrap()]
-}
+use crate::test_support::{render_in_vdom, tag_with_testid};
 
 #[test]
 fn secret_key_field_holds_save_until_the_status_loads() {

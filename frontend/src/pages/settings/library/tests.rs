@@ -3,9 +3,10 @@
 //! live root scope so they can touch signals; the futures they spawn are never
 //! polled, so no network call fires.
 
-use std::rc::Rc;
-
 use super::*;
+#[cfg(feature = "server")]
+use crate::test_support::tag_with_testid;
+use crate::test_support::{blank_form_event, blank_mouse_event, in_root_scope};
 
 fn section(total: usize, counts: &[(&str, usize)]) -> LibrarySection {
     LibrarySection {
@@ -14,33 +15,6 @@ fn section(total: usize, counts: &[(&str, usize)]) -> LibrarySection {
         counts_by_ext: counts.iter().map(|(e, c)| (e.to_string(), *c)).collect(),
         error: None,
     }
-}
-
-/// Run `f` inside a live root scope, so it can create signals. Unlike a
-/// component body, a panic here fails the test instead of being caught.
-fn in_root_scope(f: impl FnOnce()) {
-    let mut dom = VirtualDom::new(|| rsx! {});
-    dom.rebuild_in_place();
-    dom.in_scope(ScopeId::ROOT, f);
-}
-
-/// A no-op `FormEvent` — the Save handler reads its signals, not the form.
-fn blank_form_event() -> FormEvent {
-    Event::new(
-        Rc::new(FormData::new(SerializedFormData::new(
-            String::new(),
-            vec![],
-        ))),
-        false,
-    )
-}
-
-/// A no-op `MouseEvent` — the maintenance handlers ignore their argument.
-fn blank_mouse_event() -> MouseEvent {
-    Event::new(
-        Rc::new(MouseData::new(SerializedMouseData::default())),
-        false,
-    )
 }
 
 /// The Sources form's signals, holding `load` and the given saved paths.
@@ -177,17 +151,6 @@ fn rewrite_all_epubs_handler_flips_in_flight_immediately_on_click() {
 
         assert!(rewrite_in_flight());
     });
-}
-
-/// The opening tag of the element carrying `testid`.
-#[cfg(feature = "server")]
-fn tag_with_testid<'a>(html: &'a str, testid: &str) -> &'a str {
-    let at = html
-        .find(&format!(r#"data-testid="{testid}""#))
-        .unwrap_or_else(|| panic!("{testid} missing: {html}"));
-    let start = html[..at].rfind('<').unwrap();
-    let end = at + html[at..].find('>').unwrap();
-    &html[start..=end]
 }
 
 #[cfg(feature = "server")]

@@ -5,6 +5,8 @@
 //! browser.
 
 use super::*;
+#[cfg(feature = "server")]
+use crate::test_support::blank_form_event;
 
 #[test]
 fn registration_status_line_describes_who_can_create_an_account() {
@@ -68,21 +70,6 @@ fn registration_toggle_renders_as_a_labelled_switch_row() {
 // `frontend/src/pages/settings/library/tests.rs`. The futures it spawns are
 // never polled, so no request actually fires; these assert the synchronous
 // guards and the pre-spawn state the handler commits to.
-
-#[cfg(feature = "server")]
-fn blank_form_event() -> Event<FormData> {
-    use std::rc::Rc;
-
-    use dioxus::prelude::SerializedFormData;
-
-    Event::new(
-        Rc::new(FormData::new(SerializedFormData::new(
-            String::new(),
-            vec![],
-        ))),
-        false,
-    )
-}
 
 #[cfg(feature = "server")]
 #[test]
