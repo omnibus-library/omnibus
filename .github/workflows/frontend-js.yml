@@ -1,8 +1,8 @@
 name: Frontend JS
 
-# Lint, typecheck, unit-test and build the React client (frontend-js/). Mirrors
-# ts-lint.yml: path gating lives in the `changes` job rather than a
-# workflow-level `paths:` filter, so the gate job always reports a status.
+# Lint, typecheck, test and build the React client (frontend-js/) and its Ladle
+# stories. Mirrors ts-lint.yml: path gating lives in the `changes` job rather
+# than a workflow-level `paths:` filter, so the gate job always reports a status.
 
 on:
   pull_request:
@@ -39,7 +39,7 @@ jobs:
               - "flake.lock"
 
   frontend-js:
-    name: biome + tsc + vitest + build
+    name: biome + tsc + vitest + stories + build
     needs: changes
     if: ${{ needs.changes.outputs.js == 'true' || github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
@@ -75,17 +75,37 @@ jobs:
           restore-keys: |
             frontend-js-node-modules-${{ runner.os }}-
 
-      - name: biome check, tsc, vitest, vite build
-        run: |
-          nix develop .#web --command bash -c '
-            set -euo pipefail
-            cd frontend-js
-            pnpm install --frozen-lockfile
-            pnpm exec biome check .
-            pnpm exec tsc --noEmit
-            pnpm exec vitest run
-            pnpm exec vite build
-          '
+      - name: Install dependencies
+        run: nix develop .#web --command pnpm --dir frontend-js install --frozen-lockfile
+
+      - name: Biome
+        run: nix develop .#web --command pnpm --dir frontend-js exec biome check .
+
+      - name: Typecheck
+        run: nix develop .#web --command pnpm --dir frontend-js exec tsc --noEmit
+
+      # Unit tests, the shared components' tests, every page that renders
+      # without the API, and a smoke render of every story.
+      - name: Unit and component tests
+        run: >-
+          nix develop .#web --command pnpm --dir frontend-js exec vitest run
+          --reporter=default --reporter=junit --outputFile.junit=results.xml
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() && hashFiles('frontend-js/results.xml') != '' }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: frontend-js/results.xml
+          report_type: test_results
+          flags: frontend-js
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Build the stories
+        run: nix develop .#web --command pnpm --dir frontend-js exec ladle build
+
+      - name: Build the app
+        run: nix develop .#web --command pnpm --dir frontend-js exec vite build
 
   # Green when `frontend-js` passed or was skipped, red when it failed. Require
   # only this job in branch protection, never `frontend-js` itself.
