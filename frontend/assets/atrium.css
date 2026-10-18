@@ -5269,8 +5269,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   max-width: 760px;
 }
 .settings-content > * { min-width: 0; }
-/* The health dashboard and the log viewer are grids and tables, not forms. */
-.settings-content:has(.ah-page, .logs-page) { max-width: 1120px; }
+/* Health & activity and the accounts table are dashboards and tables, not forms. */
+.settings-content:has(.settings-tabs, [data-testid="users-table"]) { max-width: 1120px; }
 .settings-sidebar {
   display: flex;
   flex-direction: column;
@@ -5430,6 +5430,22 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   .settings-nav-item, .settings-tab { transition: none; }
+}
+
+.users-created { white-space: nowrap; }
+/* On a phone the accounts table reads as a list: one block per person, the
+   columns run inline and the actions get their own line. */
+@media (max-width: 720px) {
+  [data-testid="users-table"] thead { display: none; }
+  [data-testid="users-table"],
+  [data-testid="users-table"] tbody,
+  [data-testid="users-table"] tr,
+  [data-testid="users-table"] td { display: block; }
+  [data-testid="users-table"] tr { padding: 0.75rem 0; border-bottom: 1px solid var(--line-2); }
+  [data-testid="users-table"] tbody tr:last-child { border-bottom: 0; }
+  [data-testid="users-table"] td { padding: 0.15rem 0; border: 0; }
+  [data-testid="users-table"] td.users-col-actions { padding-top: 0.5rem; text-align: left; }
+  [data-testid="users-table"] .users-col-actions .btn { margin: 0 0.35rem 0.35rem 0; }
 }
 
 /* ── Admin Users section (F5.4) ─────────────────────────────────── */

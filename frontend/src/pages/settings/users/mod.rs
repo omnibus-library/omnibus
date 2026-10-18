@@ -275,7 +275,7 @@ fn UserRow(user: AdminUserRow, is_self: bool, on_action: EventHandler<UserRowAct
             }
             td { {permission_chips(&user)} }
             td { class: "users-kindle", "{kindle}" }
-            td { "{fmt_date(user.created_at)}" }
+            td { class: "users-created", "{fmt_date(user.created_at)}" }
             td {
                 if user.locked {
                     span { class: "users-badge users-badge-locked", "Locked" }
