@@ -254,8 +254,8 @@ VERBS: dict[tuple[str, str], tuple[str, str | None, str | None]] = {
     ("checkin", "lookup"): (OBSERVATION, None, None),
     ("checkin", "search"): (OBSERVATION, None, None),
     # The Kobo lane's device actions (kobo_lane.md). A sync is the one write:
-    # it fixes what the device library should hold. `kobo.reset` is withheld
-    # from agents, so it stays unlisted and reads as a visible gap.
+    # it fixes what the device library should hold. Agents never get `kobo.reset`,
+    # so it stays unlisted and reads as a visible gap.
     ("kobo", "sync"): (WRITE, "kobo_library", None),
     ("kobo", "show"): (OBSERVATION, None, None),
     ("kobo", "requests"): (OBSERVATION, None, None),

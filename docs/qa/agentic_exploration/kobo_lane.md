@@ -41,7 +41,7 @@ The actions today:
 | `show` | Reads the device | `details.library` (every book, keyed by uuid) and `details.last_sync` |
 
 Reading position, highlights and downloads arrive as new rows in this table
-with #2725, #2726 and #2738. **A reset is deliberately not there.**
+with #2725, #2726 and #2738. **A reset is not an agent action yet.**
 
 ## Reading a reply
 

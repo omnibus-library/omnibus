@@ -61,7 +61,7 @@ pub fn resolve_target(
 /// A running device, and what the user should be told about how it was set up.
 pub struct Started {
     pub control: Control,
-    /// Set when a new local device (no state file) was wired to an existing server device.
+    /// Set when auto-wire gives a new local device (no state file) an existing server device.
     pub notice: Option<String>,
 }
 

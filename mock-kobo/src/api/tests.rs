@@ -441,7 +441,7 @@ fn empty_device_view() -> DeviceView {
 }
 
 #[test]
-fn reset_reply_is_reset_and_promises_a_full_resend() {
+fn reset_reply_promises_a_full_resend() {
     let reply = reset_reply(Ok(empty_device_view()));
 
     let body = wire(&reply);
