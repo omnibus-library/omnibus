@@ -1,5 +1,5 @@
 import { shelves } from "../contracts/shelves";
-import { buildShelf, buildShelfUpdate, smartShelfBy } from "../data/shelves";
+import { buildShelfUpdate, smartShelfBy } from "../data/shelves";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
@@ -329,19 +329,11 @@ test.describe("shelf page", () => {
     test("delete a shelf and return to the index", async ({
       shelfPage,
       shelvesIndexPage,
-      shelvesRequests,
+      ownShelf,
       createdShelfIds,
       expectMutation,
     }) => {
-      const id = await test.step("create a shelf through the api", async () => {
-        const created = await shelvesRequests.postShelf(
-          buildShelf("E2E Detail Delete"),
-        );
-        await expect(created).toBeOK();
-        const { id }: { id: number } = await created.json();
-        createdShelfIds.add(id);
-        return id;
-      });
+      const { id } = await ownShelf("E2E Detail Delete");
 
       await test.step("ask to delete it", async () => {
         await shelfPage.goto(id);

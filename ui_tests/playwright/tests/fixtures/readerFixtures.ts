@@ -1,10 +1,8 @@
-import { ScanRequests } from "../apiRequests/ScanRequests";
 import type { ExternalBookMeta, Wish } from "../data/scan";
 import { wishlistOf } from "../data/shelves";
 import { test as base, expect } from "./pageFixtures";
 
 type ReaderFixtures = {
-  readerScanRequests: ScanRequests;
   wishFor: (book: ExternalBookMeta) => Promise<Wish>;
 };
 
@@ -12,10 +10,6 @@ type ReaderFixtures = {
 export const test = base.extend<ReaderFixtures>({
   storageState: async ({ readerAccount }, use) => {
     await use(readerAccount.storageStatePath);
-  },
-
-  readerScanRequests: async ({ readerRequest }, use) => {
-    await use(new ScanRequests(readerRequest));
   },
 
   wishFor: async (

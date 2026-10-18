@@ -199,7 +199,7 @@ test.describe("book detail shelves", () => {
     request,
     bookDetailPage,
     ownShelf,
-    startReadStatusAt,
+    presetReadStatus,
     expectMutation,
   }) => {
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
@@ -213,7 +213,7 @@ test.describe("book detail shelves", () => {
 
     // Read status is per-user and global, and this spec owns the book's.
     await test.step("start the book unread", async () => {
-      await startReadStatusAt(uuid, "unread");
+      await presetReadStatus(uuid, "unread");
     });
 
     await test.step("open the book and check the shelf is not listed", async () => {

@@ -844,13 +844,13 @@ test.describe("book detail page", () => {
       bookDetailPage,
       request,
       expectMutation,
-      startReadStatusAt,
+      presetReadStatus,
     }) => {
       const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
       const { readStatusControl } = bookDetailPage;
 
       await test.step("open the unread book", async () => {
-        await startReadStatusAt(uuid, "unread");
+        await presetReadStatus(uuid, "unread");
         await bookDetailPage.goto(uuid);
       });
 
@@ -873,13 +873,13 @@ test.describe("book detail page", () => {
       bookDetailPage,
       request,
       expectMutation,
-      startReadStatusAt,
+      presetReadStatus,
     }) => {
       const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
       const { readStatusControl } = bookDetailPage;
 
       await test.step("open the finished book", async () => {
-        await startReadStatusAt(uuid, "finished");
+        await presetReadStatus(uuid, "finished");
         await bookDetailPage.goto(uuid);
       });
 
@@ -895,13 +895,13 @@ test.describe("book detail page", () => {
       bookDetailPage,
       request,
       expectMutation,
-      startReadStatusAt,
+      presetReadStatus,
     }) => {
       const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
       const { readStatusControl } = bookDetailPage;
 
       await test.step("open the unread book", async () => {
-        await startReadStatusAt(uuid, "unread");
+        await presetReadStatus(uuid, "unread");
         await bookDetailPage.goto(uuid);
       });
 

@@ -37,10 +37,10 @@ test.describe("hidden formats", () => {
     readerSettingsPage,
     readerLibraryPage,
     libraryPage,
-    presetReaderHiddenFormats,
+    presetHiddenFormats,
   }) => {
     await test.step("hide cbz for the reader", async () => {
-      await presetReaderHiddenFormats(["cbz"]);
+      await presetHiddenFormats(["cbz"], "reader");
     });
 
     // The receipt lands with the list, so waiting on it keeps "no tiles" from
@@ -83,13 +83,13 @@ test.describe("hidden formats", () => {
 
   test("hide a format by ticking it", async ({
     readerSettingsPage,
-    presetReaderHiddenFormats,
+    presetHiddenFormats,
     readerExpectMutation,
   }) => {
     const section = readerSettingsPage.account;
 
     await test.step("start with nothing hidden", async () => {
-      await presetReaderHiddenFormats([]);
+      await presetHiddenFormats([], "reader");
       await readerSettingsPage.goto("preferences");
     });
 
@@ -107,13 +107,13 @@ test.describe("hidden formats", () => {
   test("show cbz again", async ({
     readerSettingsPage,
     readerLibraryPage,
-    presetReaderHiddenFormats,
+    presetHiddenFormats,
     readerExpectMutation,
   }) => {
     const section = readerSettingsPage.account;
 
     await test.step("start with cbz hidden", async () => {
-      await presetReaderHiddenFormats(["cbz"]);
+      await presetHiddenFormats(["cbz"], "reader");
     });
 
     await test.step("untick cbz in the preferences section", async () => {
@@ -136,13 +136,13 @@ test.describe("hidden formats", () => {
 
   test("show a saved format the library doesn't list", async ({
     readerSettingsPage,
-    presetReaderHiddenFormats,
+    presetHiddenFormats,
     readerExpectMutation,
   }) => {
     const section = readerSettingsPage.account;
 
     await test.step("start with a format hidden that no book has", async () => {
-      await presetReaderHiddenFormats(["djvu"]);
+      await presetHiddenFormats(["djvu"], "reader");
       await readerSettingsPage.goto("preferences");
       await expect(section.hiddenFormatToggle("djvu")).toBeChecked();
     });
@@ -163,14 +163,14 @@ test.describe("hidden formats", () => {
 
   test("put a format back when the server refuses the save", async ({
     readerSettingsPage,
-    presetReaderHiddenFormats,
+    presetHiddenFormats,
     readerExpectMutation,
   }) => {
     const section = readerSettingsPage.account;
     const save = account.hiddenFormats();
 
     await test.step("start with nothing hidden and the save refused", async () => {
-      await presetReaderHiddenFormats([]);
+      await presetHiddenFormats([], "reader");
       await readerSettingsPage.goto("preferences");
       await readerSettingsPage.forceServerError(save);
     });

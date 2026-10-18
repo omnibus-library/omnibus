@@ -2,7 +2,6 @@ import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { APIRequestContext } from "@playwright/test";
 import { EbooksRequests } from "../apiRequests/EbooksRequests";
-import type { ShelvesRequests } from "../apiRequests/ShelvesRequests";
 import type { IndexedBook } from "../data/authors";
 import { type BookRecord, isAudioFormat } from "../data/bookDetail";
 import type { SeededBookmark } from "../data/bookmarks";
@@ -18,6 +17,7 @@ import {
   FILTER_SHELF_SLUGS,
   type FilterShelf,
 } from "../data/libraryFilters";
+import type { MetadataProvider } from "../data/metadataKeys";
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
 import {
   type BookProgress,
@@ -26,6 +26,7 @@ import {
 } from "../data/progress";
 import type { ReadStatus, ReadStatusRecord } from "../data/readStatus";
 import { buildRecentPoint, type RecentBook } from "../data/recentProgress";
+import type { LibrarySettings, ServerLibrary } from "../data/settings";
 import {
   buildShelf,
   type NewShelf,
@@ -39,6 +40,7 @@ import { test as base, expect } from "./accountFixtures";
 import { MERGE_PRIMARY, MERGE_SECONDARY } from "./audiobooks";
 import { DUAL_FORMAT_BOOK, RESUME_PROMPT_BOOK } from "./dual_format";
 import { FIXTURE_BOOKS } from "./epubs";
+import { cleanupSet, type Owner } from "./lifecycle";
 
 /** Registers merges so each is undone, newest first, before the lock frees. */
 export type MergeLock = {
@@ -80,7 +82,17 @@ async function bothFormatsUuid(
   return match.unique_identifier;
 }
 
+/** Every book the library lists, with the author and series ids the indexer gave it. */
+async function indexedBooks(ebooks: EbooksRequests): Promise<IndexedBook[]> {
+  const listed = await ebooks.getEbooks();
+  await expect(listed, "GET /api/rpc/ebooks").toBeOK();
+  const { books }: { books: IndexedBook[] } = await listed.json();
+  return books;
+}
+
 type DataFixtures = {
+  scratchLibrary: LibrarySettings;
+  savedMetadataKeys: Set<MetadataProvider>;
   createdBookUuids: Set<string>;
   filedCopies: FiledCopy[];
   seededHighlightIds: Set<number>;
@@ -91,7 +103,7 @@ type DataFixtures = {
   ) => Promise<SeededHighlight>;
   storedPosition: (bookUuid: string) => Promise<ProgressRecord | null>;
   storedReadStatus: (bookUuid: string) => Promise<ReadStatus | null>;
-  presetReadStatus: (bookUuid: string, status: ReadStatus) => Promise<void>;
+  setReadStatus: (bookUuid: string, status: ReadStatus) => Promise<void>;
   parkBook: (
     bookUuid: string,
     anchor: string,
@@ -103,11 +115,11 @@ type DataFixtures = {
   ownShelf: (
     label: string,
     shelf?: Partial<NewShelf>,
-    owner?: "admin" | "reader",
+    owner?: Owner,
   ) => Promise<ShelfRef>;
   mergeLock: MergeLock;
   ratedBookUuids: Set<string>;
-  startReadStatusAt: (bookUuid: string, status: ReadStatus) => Promise<void>;
+  presetReadStatus: (bookUuid: string, status: ReadStatus) => Promise<void>;
   clearHighlights: (bookUuid: string) => Promise<void>;
   mergedMp3Book: string;
   createdJournalIds: Set<number>;
@@ -123,7 +135,6 @@ type DataFixtures = {
   revertOverridesOf: (...titles: string[]) => Promise<void>;
   seedResumePoint: (bookUuid: string) => Promise<void>;
   filterShelf: FilterShelf;
-  indexedBooks: () => Promise<IndexedBook[]>;
   authorId: (name: string) => Promise<number>;
   seriesId: (name: string) => Promise<number>;
   linkedAuthorNames: () => Promise<string[]>;
@@ -145,14 +156,37 @@ type DataFixtures = {
  * deletes or restores them after `use`.
  */
 export const test = base.extend<DataFixtures>({
-  createdBookUuids: async ({ physicalRequests }, use) => {
-    const uuids = new Set<string>();
-    await use(uuids);
-    for (const uuid of uuids) {
-      const deleted = await physicalRequests.deleteBook(uuid);
-      await expect(deleted, `delete ${uuid}`).toBeOK();
-    }
+  // Library paths are server-wide, so saving a test's own repoints every reader
+  // of the shared library until they are put back. The lock keeps two saving
+  // tests from taking each other's scratch paths for the original.
+  scratchLibrary: async ({ settingsRequests }, use) => {
+    await withLock("library-settings", async () => {
+      const before = await settingsRequests.getSettings();
+      await expect(before, "read the library settings").toBeOK();
+      const original: ServerLibrary = await before.json();
+      await use({
+        ebook_library_path: "/tmp/omnibus-test-ebooks",
+        audiobook_library_path: "/tmp/omnibus-test-audiobooks",
+      });
+      const restored = await settingsRequests.postSettings(original);
+      await expect(restored, "restore the library settings").toBeOK();
+    });
   },
+
+  savedMetadataKeys: async ({ metadataKeysRequests }, use) =>
+    cleanupSet(
+      use,
+      (provider: MetadataProvider) =>
+        metadataKeysRequests.postKey(provider, null),
+      (provider) => `clear ${provider} key`,
+    ),
+
+  createdBookUuids: async ({ physicalRequests }, use) =>
+    cleanupSet(
+      use,
+      (uuid: string) => physicalRequests.deleteBook(uuid),
+      (uuid) => `delete ${uuid}`,
+    ),
 
   filedCopies: async ({ physicalRequests }, use) => {
     const filed: FiledCopy[] = [];
@@ -168,29 +202,25 @@ export const test = base.extend<DataFixtures>({
     }
   },
 
-  seededHighlightIds: async ({ highlightsRequests }, use) => {
-    const ids = new Set<number>();
-    await use(ids);
-    for (const id of ids) {
-      const deleted = await highlightsRequests.deleteHighlight(id);
-      await expect(deleted, `delete highlight ${id}`).toBeOK();
-    }
-  },
+  seededHighlightIds: async ({ highlightsRequests }, use) =>
+    cleanupSet(
+      use,
+      (id: number) => highlightsRequests.deleteHighlight(id),
+      (id) => `delete highlight ${id}`,
+    ),
 
-  seededBookmarkIds: async ({ bookmarksRequests }, use) => {
-    const ids = new Set<number>();
-    await use(ids);
-    for (const id of ids) {
-      const deleted = await bookmarksRequests.deleteBookmark(id);
-      await expect(deleted, `delete bookmark ${id}`).toBeOK();
-    }
-  },
+  seededBookmarkIds: async ({ bookmarksRequests }, use) =>
+    cleanupSet(
+      use,
+      (id: number) => bookmarksRequests.deleteBookmark(id),
+      (id) => `delete bookmark ${id}`,
+    ),
 
   highlightOn: async ({ highlightsRequests, seededHighlightIds }, use) => {
     await use(async (bookUuid, overrides) => {
       const highlight = buildHighlight(bookUuid, overrides);
       const created = await highlightsRequests.postHighlight(highlight);
-      expect(created.status(), "seed highlight").toBe(200);
+      await expect(created, "seed highlight").toBeOK();
       const { id } = await created.json();
       seededHighlightIds.add(id);
       return { ...highlight, id };
@@ -219,7 +249,7 @@ export const test = base.extend<DataFixtures>({
 
   // Converges by read-then-write, because concurrent writes can hit SQLite's
   // busy timeout while a seed reindex is still writing.
-  presetReadStatus: async ({ readStatusRequests, storedReadStatus }, use) => {
+  setReadStatus: async ({ readStatusRequests, storedReadStatus }, use) => {
     await use(async (bookUuid, status) => {
       await expect
         .poll(
@@ -241,7 +271,7 @@ export const test = base.extend<DataFixtures>({
   // Parks the read status, the page and no highlights or bookmarks, so a
   // leftover from an earlier run cannot change what a test sees or writes.
   parkBook: async (
-    { presetReadStatus, progressRequests, clearHighlights, bookmarksRequests },
+    { setReadStatus, progressRequests, clearHighlights, bookmarksRequests },
     use,
   ) => {
     await use(async (bookUuid, anchor, status) => {
@@ -255,7 +285,7 @@ export const test = base.extend<DataFixtures>({
         await expect(deleted, `delete bookmark ${id}`).toBeOK();
       }
 
-      await presetReadStatus(bookUuid, status);
+      await setReadStatus(bookUuid, status);
       await expect
         .poll(
           async () =>
@@ -284,32 +314,33 @@ export const test = base.extend<DataFixtures>({
     await use(await bothFormatsUuid(request, DUAL_FORMAT_BOOK, 20_000));
   },
 
-  createdShelfIds: async ({ shelvesRequests }, use) => {
-    const ids = new Set<number>();
-    await use(ids);
-    for (const id of ids) {
-      const deleted = await shelvesRequests.deleteShelf(id);
-      await expect(deleted, `delete shelf ${id}`).toBeOK();
-    }
-  },
+  createdShelfIds: async ({ shelvesRequests }, use) =>
+    cleanupSet(
+      use,
+      (id: number) => shelvesRequests.deleteShelf(id),
+      (id) => `delete shelf ${id}`,
+    ),
 
-  ownShelf: async ({ shelvesRequests, readerShelvesRequests }, use) => {
-    const made: { id: number; requests: ShelvesRequests }[] = [];
-    await use(async (label, shelf, owner = "admin") => {
-      const requests =
-        owner === "admin" ? shelvesRequests : readerShelvesRequests;
-      const req = buildShelf(label, shelf);
-      const created = await requests.postShelf(req);
-      await expect(created, `create shelf ${req.name}`).toBeOK();
-      const { id } = await created.json();
-      made.push({ id, requests });
-      return { id, name: req.name };
-    });
-    for (const { id, requests } of made) {
-      const deleted = await requests.deleteShelf(id);
-      await expect(deleted, `delete shelf ${id}`).toBeOK();
-    }
-  },
+  // The admin's shelves join `createdShelfIds`; the reader's are deleted here.
+  ownShelf: async (
+    { shelvesRequests, readerShelvesRequests, createdShelfIds },
+    use,
+  ) =>
+    cleanupSet(
+      (readerShelfIds) =>
+        use(async (label, shelf, owner = "admin") => {
+          const requests =
+            owner === "admin" ? shelvesRequests : readerShelvesRequests;
+          const req = buildShelf(label, shelf);
+          const created = await requests.postShelf(req);
+          await expect(created, `create shelf ${req.name}`).toBeOK();
+          const { id } = await created.json();
+          (owner === "admin" ? createdShelfIds : readerShelfIds).add(id);
+          return { id, name: req.name };
+        }),
+      (id: number) => readerShelvesRequests.deleteShelf(id),
+      (id) => `delete shelf ${id}`,
+    ),
 
   // Holds the lock from setup to teardown, because a reader takes none and
   // the merged fixture must be restored before the next writer starts.
@@ -339,23 +370,21 @@ export const test = base.extend<DataFixtures>({
     });
   },
 
-  ratedBookUuids: async ({ bookRatingRequests }, use) => {
-    const uuids = new Set<string>();
-    await use(uuids);
-    for (const uuid of uuids) {
-      const cleared = await bookRatingRequests.deleteRating(uuid);
-      await expect(cleared, `clear the rating on ${uuid}`).toBeOK();
-    }
-  },
+  ratedBookUuids: async ({ bookRatingRequests }, use) =>
+    cleanupSet(
+      use,
+      (uuid: string) => bookRatingRequests.deleteRating(uuid),
+      (uuid) => `clear the rating on ${uuid}`,
+    ),
 
   // Sets the status now and puts the book back to unread after the test.
-  startReadStatusAt: async ({ presetReadStatus }, use) => {
+  presetReadStatus: async ({ setReadStatus }, use) => {
     const started = new Set<string>();
     await use(async (bookUuid, status) => {
       started.add(bookUuid);
-      await presetReadStatus(bookUuid, status);
+      await setReadStatus(bookUuid, status);
     });
-    for (const uuid of started) await presetReadStatus(uuid, "unread");
+    for (const uuid of started) await setReadStatus(uuid, "unread");
   },
 
   clearHighlights: async ({ highlightsRequests }, use) => {
@@ -399,14 +428,12 @@ export const test = base.extend<DataFixtures>({
     await use(primaryUuid);
   },
 
-  createdJournalIds: async ({ journalsRequests }, use) => {
-    const ids = new Set<number>();
-    await use(ids);
-    for (const id of ids) {
-      const deleted = await journalsRequests.deleteJournal(id);
-      await expect(deleted, `delete journal entry ${id}`).toBeOK();
-    }
-  },
+  createdJournalIds: async ({ journalsRequests }, use) =>
+    cleanupSet(
+      use,
+      (id: number) => journalsRequests.deleteJournal(id),
+      (id) => `delete journal entry ${id}`,
+    ),
 
   journalEntryOn: async ({ journalsRequests, createdJournalIds }, use) => {
     await use(async (bookUuid, body, status = "published") => {
@@ -432,7 +459,7 @@ export const test = base.extend<DataFixtures>({
       title: "Deletable Test Volume",
       author: "Delete Spec",
     });
-    expect(uploaded.status(), "upload the deletable ebook").toBe(201);
+    await expect(uploaded, "upload the deletable ebook").toBeOK();
     const { uuid }: { uuid: string } = await uploaded.json();
     await use({ uuid, folder });
     rmSync(folder, { recursive: true, force: true });
@@ -448,14 +475,12 @@ export const test = base.extend<DataFixtures>({
 
   // Drops what a test left on the books it registers, covers included, so the
   // next test starts from the scanned values.
-  overriddenBookUuids: async ({ overridesRequests }, use) => {
-    const uuids = new Set<string>();
-    await use(uuids);
-    for (const uuid of uuids) {
-      const reverted = await overridesRequests.deleteOverrides(uuid);
-      await expect(reverted, `revert overrides on ${uuid}`).toBeOK();
-    }
-  },
+  overriddenBookUuids: async ({ overridesRequests }, use) =>
+    cleanupSet(
+      use,
+      (uuid: string) => overridesRequests.deleteOverrides(uuid),
+      (uuid) => `revert overrides on ${uuid}`,
+    ),
 
   assignGenres: async ({ overridesRequests, overriddenBookUuids }, use) => {
     await use(async (bookUuid, genres) => {
@@ -508,18 +533,9 @@ export const test = base.extend<DataFixtures>({
     });
   },
 
-  indexedBooks: async ({ ebooksRequests }, use) => {
-    await use(async () => {
-      const listed = await ebooksRequests.getEbooks();
-      expect(listed.status(), "GET /api/rpc/ebooks").toBe(200);
-      const { books }: { books: IndexedBook[] } = await listed.json();
-      return books;
-    });
-  },
-
-  authorId: async ({ indexedBooks }, use) => {
+  authorId: async ({ ebooksRequests }, use) => {
     await use(async (name) => {
-      for (const book of await indexedBooks()) {
+      for (const book of await indexedBooks(ebooksRequests)) {
         const match = book.creators.find((creator) => creator.name === name);
         if (match?.id) return match.id;
       }
@@ -527,9 +543,9 @@ export const test = base.extend<DataFixtures>({
     });
   },
 
-  seriesId: async ({ indexedBooks }, use) => {
+  seriesId: async ({ ebooksRequests }, use) => {
     await use(async (name) => {
-      const books = await indexedBooks();
+      const books = await indexedBooks(ebooksRequests);
       const match = books.find(
         (book) => book.series === name && book.series_id != null,
       );
@@ -540,9 +556,9 @@ export const test = base.extend<DataFixtures>({
     });
   },
 
-  linkedAuthorNames: async ({ indexedBooks }, use) => {
+  linkedAuthorNames: async ({ ebooksRequests }, use) => {
     await use(async () =>
-      (await indexedBooks()).flatMap((book) =>
+      (await indexedBooks(ebooksRequests)).flatMap((book) =>
         book.creators.map((creator) => creator.name),
       ),
     );
@@ -603,7 +619,7 @@ export const test = base.extend<DataFixtures>({
       const target = FIXTURE_BOOKS[1]!;
       const uuid = await fetchBookUuidByTitle(request, target.title);
       const listed = await ebooksRequests.getEbooks();
-      expect(listed.status(), "GET /api/rpc/ebooks").toBe(200);
+      await expect(listed, "GET /api/rpc/ebooks").toBeOK();
       const { books }: { books: Record<string, unknown>[] } =
         await listed.json();
       const book = books.find(
@@ -638,14 +654,12 @@ export const test = base.extend<DataFixtures>({
     await use(await bothFormatsUuid(request, RESUME_PROMPT_BOOK, 45_000));
   },
 
-  linkedBookUuids: async ({ crossFormatRequests }, use) => {
-    const uuids = new Set<string>();
-    await use(uuids);
-    for (const uuid of uuids) {
-      const unlinked = await crossFormatRequests.postUnlink(uuid);
-      await expect(unlinked, `unlink ${uuid}`).toBeOK();
-    }
-  },
+  linkedBookUuids: async ({ crossFormatRequests }, use) =>
+    cleanupSet(
+      use,
+      (uuid: string) => crossFormatRequests.postUnlink(uuid),
+      (uuid) => `unlink ${uuid}`,
+    ),
 
   // biome-ignore lint/correctness/noEmptyPattern: Playwright reads a fixture's dependencies from this pattern.
   eventClock: async ({}, use) => {

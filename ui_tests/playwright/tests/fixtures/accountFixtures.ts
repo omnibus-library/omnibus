@@ -14,6 +14,7 @@ import { AccountRequests } from "../apiRequests/AccountRequests";
 import { AuthRequests } from "../apiRequests/AuthRequests";
 import { LogViewerRequests } from "../apiRequests/LogViewerRequests";
 import { ProgressRequests } from "../apiRequests/ProgressRequests";
+import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
 import { StatsRequests } from "../apiRequests/StatsRequests";
 import { UsersRequests } from "../apiRequests/UsersRequests";
@@ -22,8 +23,6 @@ import type {
   CreatedKoboDevice,
   SignedInSession,
 } from "../data/account";
-import type { MetadataProvider } from "../data/metadataKeys";
-import type { LibrarySettings, ServerLibrary } from "../data/settings";
 import {
   buildSession,
   TARGET_BOOK_CFI,
@@ -32,6 +31,7 @@ import {
 import { buildReader, type Credentials, type SeededUser } from "../data/users";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { withLock } from "../utils/lock";
+import { cleanupSet, type Owner, presetting } from "./lifecycle";
 import { test as base, expect } from "./requestFixtures";
 import { loadAdminBearerToken, newBearerContext } from "./test";
 
@@ -124,16 +124,19 @@ type AccountFixtures = {
   readerRequest: APIRequestContext;
   readerShelvesRequests: ShelvesRequests;
   readerAccountRequests: AccountRequests;
+  readerScanRequests: ScanRequests;
   secondReaderPage: Page;
   secondReaderRequest: APIRequestContext;
-  scratchLibrary: LibrarySettings;
+  secondReaderAccountRequests: AccountRequests;
+  secondReaderStatsRequests: StatsRequests;
+  secondReaderProgressRequests: ProgressRequests;
   adminSession: SignedInSession;
   presetGoals: (goals?: { books?: number; pages?: number }) => Promise<void>;
   presetShareStats: (enabled: boolean) => Promise<void>;
   presetDisplayName: (displayName: string | null) => Promise<void>;
   presetKindleEmail: (email: string | null) => Promise<void>;
   presetMcpEndpoint: (enabled: boolean) => Promise<void>;
-  presetReaderHiddenFormats: (formats: string[]) => Promise<void>;
+  presetHiddenFormats: (formats: string[], owner?: Owner) => Promise<void>;
   createdKoboDeviceIds: Set<number>;
   ownKoboDevice: (name: string) => Promise<number>;
   createdApiTokenIds: Set<number>;
@@ -142,12 +145,8 @@ type AccountFixtures = {
   seedUser: () => Promise<SeededUser>;
   anonymousRequest: APIRequestContext;
   anonymousLogViewerRequests: LogViewerRequests;
-  savedMetadataKeys: Set<MetadataProvider>;
-  setScrollStops: (
-    enabled: boolean,
-    owner?: "admin" | "reader",
-  ) => Promise<void>;
-  presetStackSeries: (enabled: boolean) => Promise<void>;
+  setScrollStops: (enabled: boolean, owner?: Owner) => Promise<void>;
+  presetStackSeries: (enabled: boolean, owner?: Owner) => Promise<void>;
   householdTarget: ReaderAccount;
 };
 
@@ -196,6 +195,10 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
     await use(new AccountRequests(readerRequest));
   },
 
+  readerScanRequests: async ({ readerRequest }, use) => {
+    await use(new ScanRequests(readerRequest));
+  },
+
   secondReaderPage: async ({ browser, secondReaderAccount, viewport }, use) => {
     await usePageAs(browser, secondReaderAccount, viewport, use);
   },
@@ -213,21 +216,16 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
     await context.dispose();
   },
 
-  // Library paths are server-wide, so saving a test's own repoints every reader
-  // of the shared library until they are put back. The lock keeps two saving
-  // tests from taking each other's scratch paths for the original.
-  scratchLibrary: async ({ settingsRequests }, use) => {
-    await withLock("library-settings", async () => {
-      const before = await settingsRequests.getSettings();
-      await expect(before, "read the library settings").toBeOK();
-      const original: ServerLibrary = await before.json();
-      await use({
-        ebook_library_path: "/tmp/omnibus-test-ebooks",
-        audiobook_library_path: "/tmp/omnibus-test-audiobooks",
-      });
-      const restored = await settingsRequests.postSettings(original);
-      await expect(restored, "restore the library settings").toBeOK();
-    });
+  secondReaderAccountRequests: async ({ secondReaderRequest }, use) => {
+    await use(new AccountRequests(secondReaderRequest));
+  },
+
+  secondReaderStatsRequests: async ({ secondReaderRequest }, use) => {
+    await use(new StatsRequests(secondReaderRequest));
+  },
+
+  secondReaderProgressRequests: async ({ secondReaderRequest }, use) => {
+    await use(new ProgressRequests(secondReaderRequest));
   },
 
   adminSession: async ({ request }, use) => {
@@ -265,63 +263,63 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
   },
 
   // Sharing is on for every other spec, so that is where a test leaves it.
-  presetShareStats: async ({ accountRequests }, use) => {
-    const set = async (enabled: boolean) => {
-      const saved = await accountRequests.postShareStats(enabled);
-      await expect(saved, `set share stats to ${enabled}`).toBeOK();
-    };
-    await use(set);
-    await set(true);
-  },
+  presetShareStats: async ({ accountRequests }, use) =>
+    presetting(
+      use,
+      (enabled) => accountRequests.postShareStats(enabled),
+      true,
+      (enabled) => `set share stats to ${enabled}`,
+    ),
 
-  presetDisplayName: async ({ accountRequests }, use) => {
-    const set = async (displayName: string | null) => {
-      const saved = await accountRequests.postProfile(displayName);
-      await expect(saved, `set the display name to ${displayName}`).toBeOK();
-    };
-    await use(set);
-    await set(null);
-  },
+  presetDisplayName: async ({ accountRequests }, use) =>
+    presetting(
+      use,
+      (displayName: string | null) => accountRequests.postProfile(displayName),
+      null,
+      (displayName) => `set the display name to ${displayName}`,
+    ),
 
-  presetKindleEmail: async ({ accountRequests }, use) => {
-    const set = async (email: string | null) => {
-      const saved = await accountRequests.postKindleEmail(email);
-      await expect(saved, `set the Kindle email to ${email}`).toBeOK();
-    };
-    await use(set);
-    await set(null);
-  },
+  presetKindleEmail: async ({ accountRequests }, use) =>
+    presetting(
+      use,
+      (email: string | null) => accountRequests.postKindleEmail(email),
+      null,
+      (email) => `set the Kindle email to ${email}`,
+    ),
 
   // The switch is instance-wide and a reader takes no lock, so the lock keeps
   // two writers from flipping it under each other.
-  presetMcpEndpoint: async ({ mcpRequests }, use) => {
-    const set = async (enabled: boolean) => {
-      const saved = await mcpRequests.postMcp(enabled);
-      await expect(saved, `set the MCP endpoint to ${enabled}`).toBeOK();
-    };
-    await withLock("mcp-endpoint", async () => {
-      await use(set);
-      await set(false);
-    });
-  },
+  presetMcpEndpoint: async ({ mcpRequests }, use) =>
+    withLock("mcp-endpoint", () =>
+      presetting(
+        use,
+        (enabled) => mcpRequests.postMcp(enabled),
+        false,
+        (enabled) => `set the MCP endpoint to ${enabled}`,
+      ),
+    ),
 
-  presetReaderHiddenFormats: async ({ readerAccountRequests }, use) => {
-    const set = async (formats: string[]) => {
-      const saved = await readerAccountRequests.postHiddenFormats(formats);
-      await expect(saved, `hide formats [${formats}]`).toBeOK();
-    };
-    await use(set);
-    await set([]);
-  },
+  presetHiddenFormats: async (
+    { accountRequests, readerAccountRequests },
+    use,
+  ) =>
+    presetting(
+      use,
+      (formats: string[], owner) =>
+        (owner === "admin"
+          ? accountRequests
+          : readerAccountRequests
+        ).postHiddenFormats(formats),
+      [],
+      (formats) => `hide formats [${formats}]`,
+    ),
 
-  createdKoboDeviceIds: async ({ accountRequests }, use) => {
-    const ids = new Set<number>();
-    await use(ids);
-    for (const id of ids) {
-      const revoked = await accountRequests.postKoboDeviceRevoke(id);
-      await expect(revoked, `revoke Kobo device ${id}`).toBeOK();
-    }
-  },
+  createdKoboDeviceIds: async ({ accountRequests }, use) =>
+    cleanupSet(
+      use,
+      (id: number) => accountRequests.postKoboDeviceRevoke(id),
+      (id) => `revoke Kobo device ${id}`,
+    ),
 
   ownKoboDevice: async ({ accountRequests, createdKoboDeviceIds }, use) => {
     await use(async (name) => {
@@ -333,14 +331,12 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
     });
   },
 
-  createdApiTokenIds: async ({ accountRequests }, use) => {
-    const ids = new Set<number>();
-    await use(ids);
-    for (const id of ids) {
-      const revoked = await accountRequests.postApiTokenRevoke(id);
-      await expect(revoked, `revoke API token ${id}`).toBeOK();
-    }
-  },
+  createdApiTokenIds: async ({ accountRequests }, use) =>
+    cleanupSet(
+      use,
+      (id: number) => accountRequests.postApiTokenRevoke(id),
+      (id) => `revoke API token ${id}`,
+    ),
 
   ownApiToken: async ({ accountRequests, createdApiTokenIds }, use) => {
     await use(async (name) => {
@@ -352,14 +348,12 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
     });
   },
 
-  createdUserIds: async ({ usersRequests }, use) => {
-    const ids = new Set<number>();
-    await use(ids);
-    for (const id of ids) {
-      const deleted = await usersRequests.deleteUser(id);
-      await expect(deleted, `delete user ${id}`).toBeOK();
-    }
-  },
+  createdUserIds: async ({ usersRequests }, use) =>
+    cleanupSet(
+      use,
+      (id: number) => usersRequests.deleteUser(id),
+      (id) => `delete user ${id}`,
+    ),
 
   seedUser: async ({ usersRequests, createdUserIds }, use) => {
     await use(async () => {
@@ -386,57 +380,48 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
     await use(new LogViewerRequests(anonymousRequest));
   },
 
-  savedMetadataKeys: async ({ metadataKeysRequests }, use) => {
-    const providers = new Set<MetadataProvider>();
-    await use(providers);
-    for (const provider of providers) {
-      const cleared = await metadataKeysRequests.postKey(provider, null);
-      await expect(cleared, `clear ${provider} key`).toBeOK();
-    }
-  },
-
   // Turns the switch back off for whoever it touched, because every other
   // detail test reads the flow.
-  setScrollStops: async ({ accountRequests, readerAccountRequests }, use) => {
-    const touched = new Set<AccountRequests>();
-    await use(async (enabled, owner = "admin") => {
-      const requests =
-        owner === "admin" ? accountRequests : readerAccountRequests;
-      touched.add(requests);
-      const saved = await requests.postScrollStops(enabled);
-      await expect(saved, `set scroll stops to ${enabled}`).toBeOK();
-    });
-    for (const requests of touched) {
-      const saved = await requests.postScrollStops(false);
-      await expect(saved, "turn scroll stops off").toBeOK();
-    }
-  },
+  setScrollStops: async ({ accountRequests, readerAccountRequests }, use) =>
+    presetting(
+      use,
+      (enabled: boolean, owner) =>
+        (owner === "admin"
+          ? accountRequests
+          : readerAccountRequests
+        ).postScrollStops(enabled),
+      false,
+      (enabled) => `set scroll stops to ${enabled}`,
+    ),
 
-  // The reader's preference outlives the test, so it goes back to off after.
-  presetStackSeries: async ({ readerAccountRequests }, use) => {
-    const save = async (enabled: boolean) => {
-      const saved = await readerAccountRequests.postStackSeries(enabled);
-      await expect(saved, `save stack series ${enabled}`).toBeOK();
-    };
-    await use(save);
-    await save(false);
-  },
+  // The preference outlives the test, so it goes back to off after.
+  presetStackSeries: async ({ accountRequests, readerAccountRequests }, use) =>
+    presetting(
+      use,
+      (enabled: boolean, owner) =>
+        (owner === "admin"
+          ? accountRequests
+          : readerAccountRequests
+        ).postStackSeries(enabled),
+      false,
+      (enabled) => `save stack series ${enabled}`,
+    ),
 
   // Sharing is visible to every reader on the instance, so it goes back off
   // after each test; the library must be seeded before this runs.
   householdTarget: async (
-    { request, secondReaderAccount, secondReaderRequest },
+    {
+      request,
+      secondReaderAccount,
+      secondReaderAccountRequests,
+      secondReaderStatsRequests,
+      secondReaderProgressRequests,
+    },
     use,
   ) => {
-    const account = new AccountRequests(secondReaderRequest);
-    await expect(
-      await account.postShareStats(true),
-      "turn the target's sharing on",
-    ).toBeOK();
-
     const bookUuid = await fetchBookUuidByTitle(request, TARGET_BOOK_TITLE);
     const now = Math.floor(Date.now() / 1000);
-    const sitting = await new StatsRequests(secondReaderRequest).postSessions([
+    const sitting = await secondReaderStatsRequests.postSessions([
       buildSession(bookUuid, {
         startedAt: now - 60,
         seconds: 60,
@@ -447,15 +432,22 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
     await expect(sitting, "seed the target's reading session").toBeOK();
     const { recorded } = await sitting.json();
     expect(recorded, "the target's session was skipped").toBe(1);
-    const placed = await new ProgressRequests(
-      secondReaderRequest,
-    ).postEpubPosition(bookUuid, TARGET_BOOK_CFI);
+    const placed = await secondReaderProgressRequests.postEpubPosition(
+      bookUuid,
+      TARGET_BOOK_CFI,
+    );
     await expect(placed, "seed the target's reading position").toBeOK();
+
+    // Last, so no reader sees the target shared before its records exist.
+    await expect(
+      await secondReaderAccountRequests.postShareStats(true),
+      "turn the target's sharing on",
+    ).toBeOK();
 
     await use(secondReaderAccount);
 
     await expect(
-      await account.postShareStats(false),
+      await secondReaderAccountRequests.postShareStats(false),
       "turn the target's sharing off",
     ).toBeOK();
   },

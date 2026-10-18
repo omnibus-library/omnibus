@@ -34,9 +34,9 @@ test.describe("pdf reader", () => {
   // leave unasserted.
   test.beforeAll(
     "mark the pristine pdf reading",
-    async ({ request, presetReadStatus }) => {
+    async ({ request, setReadStatus }) => {
       const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
-      await presetReadStatus(uuid, "reading");
+      await setReadStatus(uuid, "reading");
     },
   );
 

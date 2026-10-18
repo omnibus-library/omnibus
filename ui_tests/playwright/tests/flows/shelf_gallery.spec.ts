@@ -441,7 +441,7 @@ test.describe("shelf gallery", () => {
     // `standalone-desert` is reserved: finishing a book is global state.
     test("drop a book from the continue-reading stack once it is finished", async ({
       libraryPage,
-      presetReadStatus,
+      setReadStatus,
       readStatusRequests,
       seedResumePoint,
       request,
@@ -451,7 +451,7 @@ test.describe("shelf gallery", () => {
 
       // Reset first: this test ends finished, and that outlives the run.
       await test.step("put a reading book on the stack", async () => {
-        await presetReadStatus(uuid, "reading");
+        await setReadStatus(uuid, "reading");
         await libraryPage.assertResumeCardOnStack(uuid, seedResumePoint);
         await expect(stack.card(uuid)).toBeVisible();
       });

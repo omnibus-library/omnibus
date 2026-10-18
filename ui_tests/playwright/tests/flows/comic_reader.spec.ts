@@ -24,9 +24,9 @@ test.describe("comic pager", () => {
   // leave unasserted.
   test.beforeAll(
     "mark the pristine comic reading",
-    async ({ request, presetReadStatus }) => {
+    async ({ request, setReadStatus }) => {
       const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
-      await presetReadStatus(uuid, "reading");
+      await setReadStatus(uuid, "reading");
     },
   );
 

@@ -27,7 +27,7 @@ test.describe("series stacks", () => {
   test.beforeEach(
     "start with stack series off",
     async ({ presetStackSeries }) => {
-      await presetStackSeries(false);
+      await presetStackSeries(false, "reader");
     },
   );
 
@@ -91,7 +91,7 @@ test.describe("series stacks", () => {
     presetStackSeries,
   }) => {
     const cap = readerLibraryPage.seriesCap;
-    await presetStackSeries(true);
+    await presetStackSeries(true, "reader");
 
     await test.step("open the library", async () => {
       await readerLibraryPage.goto();
@@ -117,7 +117,7 @@ test.describe("series stacks", () => {
     presetStackSeries,
   }) => {
     const cap = readerLibraryPage.seriesCap;
-    await presetStackSeries(true);
+    await presetStackSeries(true, "reader");
 
     await test.step("open the Pioneers stack", async () => {
       await readerLibraryPage.goto();
@@ -151,7 +151,7 @@ test.describe("series stacks", () => {
     readerLibraryPage,
     presetStackSeries,
   }) => {
-    await presetStackSeries(true);
+    await presetStackSeries(true, "reader");
 
     await test.step("open the library and mark its cells", async () => {
       await readerLibraryPage.goto();
@@ -189,7 +189,7 @@ test.describe("series stacks", () => {
         .poll(() => readerLibraryPage.stackLeadKey(PIONEERS_STACK))
         .toBe(leadKey);
     };
-    await presetStackSeries(true);
+    await presetStackSeries(true, "reader");
 
     await test.step("open the library with the stack dealt out", async () => {
       await readerLibraryPage.goto();
@@ -225,7 +225,7 @@ test.describe("series stacks", () => {
     readerSeriesPage,
     presetStackSeries,
   }) => {
-    await presetStackSeries(true);
+    await presetStackSeries(true, "reader");
 
     await test.step("open the Pioneers stack", async () => {
       await readerLibraryPage.goto();
@@ -245,7 +245,7 @@ test.describe("series stacks", () => {
     readerLibraryPage,
     presetStackSeries,
   }) => {
-    await presetStackSeries(true);
+    await presetStackSeries(true, "reader");
 
     await test.step("switch to the table", async () => {
       await readerLibraryPage.goto();
@@ -302,7 +302,7 @@ test.describe("series stacks", () => {
     presetStackSeries,
     readerExpectMutation,
   }) => {
-    await presetStackSeries(true);
+    await presetStackSeries(true, "reader");
 
     await test.step("open the library with the switch on", async () => {
       await readerLibraryPage.goto();
