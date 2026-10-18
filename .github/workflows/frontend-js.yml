@@ -1,7 +1,7 @@
 name: Frontend JS
 
-# Lint, typecheck, test and build the React client (frontend-js/) and its Ladle
-# stories. Mirrors ts-lint.yml: path gating lives in the `changes` job rather
+# Lint, typecheck, test and build the React client (frontend-js/) and its
+# Storybook. Mirrors ts-lint.yml: path gating lives in the `changes` job rather
 # than a workflow-level `paths:` filter, so the gate job always reports a status.
 
 on:
@@ -39,10 +39,12 @@ jobs:
               - "flake.lock"
 
   frontend-js:
-    name: biome + tsc + vitest + stories + build
+    name: biome + tsc + tests + storybook + build
     needs: changes
     if: ${{ needs.changes.outputs.js == 'true' || github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
+    env:
+      STORYBOOK_DISABLE_TELEMETRY: "1"
     permissions:
       contents: read
       # See rust.yml: id-token for the Nix installer's FlakeHub OIDC auth,
@@ -56,6 +58,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@v22
 
       # Its own prefix so this and the other workflows don't evict each other.
+      # The `.#e2e` shell carries the Chromium bundle the story tests run in.
       - name: Cache Nix store
         uses: nix-community/cache-nix-action@v7
         with:
@@ -65,7 +68,7 @@ jobs:
           purge-prefixes: nix-fejs-${{ runner.os }}-
           purge-last-accessed: 604800
           purge-primary-key: never
-          gc-max-store-size-linux: 2G
+          gc-max-store-size-linux: 5G
 
       - name: Cache node_modules
         uses: actions/cache@v4
@@ -76,36 +79,44 @@ jobs:
             frontend-js-node-modules-${{ runner.os }}-
 
       - name: Install dependencies
-        run: nix develop .#web --command pnpm --dir frontend-js install --frozen-lockfile
+        run: nix develop .#e2e --command pnpm --dir frontend-js install --frozen-lockfile
 
       - name: Biome
-        run: nix develop .#web --command pnpm --dir frontend-js exec biome check .
+        run: nix develop .#e2e --command pnpm --dir frontend-js exec biome check .
 
       - name: Typecheck
-        run: nix develop .#web --command pnpm --dir frontend-js exec tsc --noEmit
+        run: nix develop .#e2e --command pnpm --dir frontend-js exec tsc --noEmit
 
-      # Unit tests, the shared components' tests, every page that renders
-      # without the API, and a smoke render of every story.
-      - name: Unit and component tests
+      # API parsers, formatting, the theme root and every route that renders
+      # without the API, in jsdom.
+      - name: Unit tests
         run: >-
-          nix develop .#web --command pnpm --dir frontend-js exec vitest run
-          --reporter=default --reporter=junit --outputFile.junit=results.xml
+          nix develop .#e2e --command pnpm --dir frontend-js exec vitest run
+          --project unit --reporter=default --reporter=junit
+          --outputFile.junit=results-unit.xml
+
+      # Every story renders in Chromium; a story's `play` is its test.
+      - name: Story tests
+        run: >-
+          nix develop .#e2e --command pnpm --dir frontend-js exec vitest run
+          --project storybook --reporter=default --reporter=junit
+          --outputFile.junit=results-stories.xml
 
       - name: Upload test results to Codecov
-        if: ${{ !cancelled() && hashFiles('frontend-js/results.xml') != '' }}
+        if: ${{ !cancelled() && hashFiles('frontend-js/results-*.xml') != '' }}
         uses: codecov/codecov-action@v5
         with:
-          files: frontend-js/results.xml
+          files: frontend-js/results-unit.xml,frontend-js/results-stories.xml
           report_type: test_results
           flags: frontend-js
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
-      - name: Build the stories
-        run: nix develop .#web --command pnpm --dir frontend-js exec ladle build
+      - name: Build Storybook
+        run: nix develop .#e2e --command pnpm --dir frontend-js exec storybook build --quiet
 
       - name: Build the app
-        run: nix develop .#web --command pnpm --dir frontend-js exec vite build
+        run: nix develop .#e2e --command pnpm --dir frontend-js exec vite build
 
   # Green when `frontend-js` passed or was skipped, red when it failed. Require
   # only this job in branch protection, never `frontend-js` itself.
