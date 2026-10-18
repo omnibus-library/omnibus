@@ -1,4 +1,4 @@
-//! The Overview tab of Administration › Health & activity. Five read-only
+//! Administration › Health. Five read-only
 //! groups over one [`AdminHealthReport`], polled every
 //! [`POLL_INTERVAL_MS`] from a post-mount `use_future` loop (never the
 //! render body, for hydration parity). Web/SSR-only; the real
@@ -25,7 +25,7 @@ use crate::{Access, Route};
 /// small and this page has one viewer at a time.
 const POLL_INTERVAL_MS: u32 = 5_000;
 
-/// The Overview tab of Administration › Health & activity.
+/// Administration › Health.
 #[component]
 pub fn HealthOverview() -> Element {
     let access = crate::use_admin_access();

@@ -72,7 +72,7 @@ struct QueueState {
     generation: Signal<u32>,
 }
 
-/// The `/settings/cleanup/:kind` review surface. An unrecognized `kind` slug
+/// The `/admin/cleanup/:kind` review surface. An unrecognized `kind` slug
 /// renders the not-found notice rather than silently reviewing another kind.
 #[component]
 pub fn CleanupReviewPage(kind: String) -> Element {

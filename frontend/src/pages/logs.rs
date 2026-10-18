@@ -1,5 +1,5 @@
-//! Admin-only log viewer — the Logs tab of Administration › Health &
-//! activity, which `/logs` redirects to. A paginated, newest-first view over the on-disk JSON logs with
+//! Admin-only log viewer — Administration › Logs, which `/logs` redirects
+//! to. A paginated, newest-first view over the on-disk JSON logs with
 //! level/module/time-range filters. Web/SSR-only. The real authorization
 //! boundary is the `AdminUser` extractor on `rpc_get_logs`; the in-page
 //! `use_admin_access` gate just keeps the chrome off a non-admin screen.

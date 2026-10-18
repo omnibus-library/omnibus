@@ -136,16 +136,16 @@ Intercept the mutating route and `route.fulfill({ status: 500, ... })` before tr
 
 ```ts
 test("saves library paths and shows a success status", async ({ page }) => {
-  await page.goto("/settings");
-  await page.getByLabel("Ebook Library Path").fill(path);
+  await page.goto("/admin?section=sources");
+  await page.getByLabel("Ebook library path").fill(path);
 
   await expectMutation(
     page,
-    { method: "POST", url: "/api/settings", expectedBody: { ... }, expectedStatus: 200 },
-    async () => page.getByRole("button", { name: "Save" }).click(),
+    { method: "POST", url: "/api/rpc/settings", expectedBody: { ... }, expectedStatus: 200 },
+    async () => page.getByRole("button", { name: "Save library settings" }).click(),
   );
 
-  await expect(page.getByRole("status")).toHaveText("Settings saved.");
+  await expect(page.getByTestId("settings-status")).toHaveText("Library settings saved.");
 });
 ```
 

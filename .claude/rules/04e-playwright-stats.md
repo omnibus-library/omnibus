@@ -22,10 +22,11 @@ one is asserting a control that no longer exists. Three consequences:
 - **Lifetime drops every tile comparison.** `PeriodComparison` is `Default` for
   `AllTime`, so a delta drawn against it would report a reader's whole history
   as new; `stats-tile-*-delta` is absent there by design, not missing.
-- **Goals edit in place, through the Settings editor.** `stats-goals-edit`
-  swaps in `stats-goals-editor` — the same `ReadingGoalsCard` as
-  `/settings?section=goals` — and a save refetches the all-time figures. The
-  specs that reset the three per-user goal rows are serial for that reason.
+- **The page reports goals but never edits them.** Its one goals control,
+  `stats-goals-link`, opens `/settings?section=goals`, reading "Set goals" or
+  "Edit goals" by whether any is set; `stats-goals-edit` and
+  `stats-goals-editor` no longer exist. The specs that set the three per-user
+  goal rows live in `account.spec.ts`, serial because they share them.
 - **An unset goal is not an empty state.** With no target the surface drops the
   ring and the bar but still reports the real figure — `stats-goal-today`,
   `stats-daily-{kind}-today` — so a spec asserting "no goal" must look for

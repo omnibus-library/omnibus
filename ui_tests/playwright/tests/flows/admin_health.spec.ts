@@ -283,7 +283,7 @@ test("links a captured error to its book and names its file", async ({
   );
 });
 
-test("the legacy /admin/health route redirects into the Overview tab", async ({
+test("the legacy /admin/health route redirects into Administration › Health", async ({
   page,
 }) => {
   await gotoReady(page, "/admin/health");

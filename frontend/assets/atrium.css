@@ -5751,7 +5751,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 }
 .metadata-precedence-item span { flex: 1; font-size: 0.9rem; }
 .metadata-precedence-item button { padding: 0.2rem 0.55rem; }
-/* Admin log viewer (Health & activity › Logs). */
+/* Admin log viewer (Administration › Logs). */
 .logs-filters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -5802,7 +5802,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .logs-level-warn { background: color-mix(in oklch, var(--warn) 16%, transparent); color: var(--warn); }
 .logs-level-info { background: var(--accent-soft); color: var(--accent); }
 .logs-level-debug, .logs-level-trace { color: var(--ink-2); }
-/* Server Health "last errors" panel (#954): the book/file identifier a
+/* Last-errors rows (Administration › Health): the book/file identifier a
    captured error carries, when present. */
 .logs-ref-link {
   color: var(--accent);
@@ -5817,7 +5817,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   margin-top: 1rem;
 }
 
-/* Health & activity › Overview: five read-only groups — index status, worker
+/* Administration › Health: five read-only groups — index status, worker
    queue, FTS health, storage, last errors. Reuses `.card`, `.settings-status`,
    `.users-table`, and `.logs-stream`/`.logs-*` where a section maps onto an
    existing shape; this covers the grid and the label/value rows. */

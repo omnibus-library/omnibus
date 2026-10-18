@@ -1,4 +1,4 @@
-//! Tests for the Activity tab: the task-name and duration formatters, and the
+//! Tests for Recent tasks: the task-name and duration formatters, and the
 //! failed-load state.
 
 use super::*;
