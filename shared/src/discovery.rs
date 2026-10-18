@@ -7,6 +7,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ebook::EbookMetadata;
+use crate::progress::ProgressFormat;
+use crate::read_status::ReadStatus;
 use crate::series_stacks::SeriesStack;
 
 /// Response payload for `GET /api/ebooks` and `rpc_get_ebooks`.
@@ -92,6 +94,47 @@ pub struct AuthorDetail {
     /// when set. `'letter'` negative-cache rows do not set this flag.
     #[serde(default)]
     pub has_photo: bool,
+    /// The caller's state on each of `books` they have opened or marked;
+    /// a book absent here is unread with no position.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reading: Vec<BookReading>,
+}
+
+/// One reader's state on one book: its status, how far in, and when.
+/// `status` is the stored one; a book with a position but no stored status
+/// reads as `Reading`, as it does on the Continue rail.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct BookReading {
+    pub book_uuid: String,
+    pub status: ReadStatus,
+    /// Whole-book percent of the latest position, floored; `None` without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub percent: Option<i64>,
+    /// The latest position's format and audio file, so a Resume opens the
+    /// reader or player (and file) it was left in. `None` without a position.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<ProgressFormat>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub book_file_id: Option<i64>,
+    /// Unix seconds of the latest position, or of the status if it is newer
+    /// and not `Unread`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_read_at: Option<i64>,
+}
+
+/// One reader's progress through one author's books, for the `/authors`
+/// list. Per-reader, so it rides its own request beside [`AuthorSummary`],
+/// which every reader shares. An author the reader never opened is absent.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct AuthorReading {
+    pub author_id: i64,
+    pub finished: usize,
+    pub reading: usize,
+    /// The newest [`BookReading::last_read_at`] across the author's books.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_read_at: Option<i64>,
 }
 
 /// Result of an admin-triggered "Scan for picture" run. The endpoint

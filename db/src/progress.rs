@@ -70,7 +70,8 @@ fn format_str(f: ProgressFormat) -> &'static str {
     }
 }
 
-fn parse_format(raw: &str) -> ProgressFormat {
+/// A stored `reading_progress.format` token as a [`ProgressFormat`].
+pub fn parse_format(raw: &str) -> ProgressFormat {
     // The CHECK constraint on `reading_progress.format` rules out anything
     // other than these two values, so an unknown string here would be a
     // schema-level invariant breach. Default to Epub rather than panic.

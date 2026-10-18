@@ -421,6 +421,7 @@ fn discovery_routes() -> Router<AppState> {
         .route("/api/covers/{uuid}", get(covers::get_cover))
         .route("/api/thumbs/{uuid}/{size}", get(covers::get_thumb))
         .route("/api/authors", get(authors::get_authors))
+        .route("/api/authors/reading", get(authors::get_author_reading))
         .route(
             "/api/authors/refetch-photos",
             post(author_photos::post_refetch_author_photos),
