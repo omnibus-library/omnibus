@@ -5137,6 +5137,7 @@ dependencies = [
  "anyhow",
  "axum",
  "base64 0.22.1",
+ "image",
  "omnibus-shared",
  "reqwest 0.13.4",
  "rmcp",

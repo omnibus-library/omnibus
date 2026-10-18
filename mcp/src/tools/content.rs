@@ -3,7 +3,9 @@
 //! indexed chapter text, and list an EPUB's images. Pure reads over existing
 //! `GET` endpoints — nothing here touches the [`crate::client::WRITE_ALLOWLIST`].
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use rmcp::handler::server::wrapper::Parameters;
+use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::{tool, tool_router, ErrorData, Json};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -71,6 +73,55 @@ pub struct ReadBookImageParams {
     pub book_uuid: String,
     /// The image's href from list_book_images.
     pub href: String,
+}
+
+/// Longest edge of the viewable copy `read_book_image` attaches; a larger image
+/// is shrunk to fit, a smaller one is never enlarged.
+const PREVIEW_MAX_EDGE: u32 = 1568;
+
+/// Decode ceilings, as in `omnibus_db::thumbs::encode_cover_preview`: a header
+/// claiming a billion pixels is refused before anything is allocated for it.
+const DECODE_MAX_EDGE: u32 = 8192;
+const DECODE_MAX_ALLOC: u64 = 256 * 1024 * 1024;
+
+/// JPEG quality of an opaque preview.
+const PREVIEW_JPEG_QUALITY: u8 = 85;
+
+/// A downscaled, viewable copy of `bytes` as `(bytes, media type)`: PNG when the
+/// image has alpha, else JPEG. `None` unless the bytes themselves sniff as a raster
+/// (never the manifest's claim) and decode within the limits, so an SVG or a
+/// crafted header gets the URL only. CPU-bound: call inside `spawn_blocking`.
+fn preview(bytes: &[u8]) -> Option<(Vec<u8>, &'static str)> {
+    omnibus_shared::detect_image_format(bytes)?;
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(DECODE_MAX_EDGE);
+    limits.max_image_height = Some(DECODE_MAX_EDGE);
+    limits.max_alloc = Some(DECODE_MAX_ALLOC);
+    reader.limits(limits);
+    let decoded = reader.decode().ok()?;
+    let fitted = if decoded.width().max(decoded.height()) > PREVIEW_MAX_EDGE {
+        decoded.resize(
+            PREVIEW_MAX_EDGE,
+            PREVIEW_MAX_EDGE,
+            image::imageops::FilterType::Triangle,
+        )
+    } else {
+        decoded
+    };
+    let mut out = Vec::new();
+    if fitted.color().has_alpha() {
+        fitted
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+            .ok()?;
+        return Some((out, "image/png"));
+    }
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, PREVIEW_JPEG_QUALITY)
+        .encode_image(&fitted.to_rgb8())
+        .ok()?;
+    Some((out, "image/jpeg"))
 }
 
 /// Map an image endpoint's status to the message that tells the model what to
@@ -221,12 +272,13 @@ impl OmnibusMcp {
     }
 
     #[tool(
-        description = "Get one image from a book's EPUB, by the href from list_book_images. Returns the original's media_type and byte_size plus a download_url: a link on the instance's public address that fetches the full-resolution original with no further authentication and stops working at expires_at (15 minutes). Hand the URL to the user to save the file; it is the original, not a preview. The link opens that one image only. Errors if the uuid is unknown, the book has no EPUB file, href is not an image in that EPUB's manifest, or the account is not permitted to download files."
+        output_schema = rmcp::handler::server::tool::schema_for_output::<BookImageRead>(),
+        description = "Get one image from a book's EPUB, by the href from list_book_images. Returns the original's media_type and byte_size plus a download_url: a link on the instance's public address that fetches the full-resolution original with no further authentication and stops working at expires_at (15 minutes). Hand the URL to the user to save the file; it is the original, not a preview. The link opens that one image only. A raster image (JPEG, PNG, GIF, WebP) also comes back as an image block — a downscaled viewable copy, at most 1568 px on a side — so you can look at it; an SVG, or an image that will not decode, comes as the URL only. Errors if the uuid is unknown, the book has no EPUB file, href is not an image in that EPUB's manifest, or the account is not permitted to download files."
     )]
     pub async fn read_book_image(
         &self,
         Parameters(p): Parameters<ReadBookImageParams>,
-    ) -> Result<Json<BookImageRead>, ErrorData> {
+    ) -> Result<CallToolResult, ErrorData> {
         let uuid = crate::tools::path_segment(&p.book_uuid, "book_uuid")?;
         if p.href.trim().is_empty() {
             return Err(ErrorData::invalid_params(
@@ -247,7 +299,7 @@ impl OmnibusMcp {
             .get_json(&format!("/api/ebooks/{uuid}/images/link"), &query)
             .await
             .map_err(|e| image_error(e, uuid))?;
-        Ok(Json(BookImageRead {
+        let read = BookImageRead {
             book_uuid: p.book_uuid.clone(),
             href: p.href,
             media_type,
@@ -255,7 +307,21 @@ impl OmnibusMcp {
             download_url: format!("{}{}", self.client.public_url(), link.path),
             expires_at: link.expires_at,
             expires_at_iso: omnibus_shared::to_iso8601(link.expires_at),
-        }))
+        };
+        let json = serde_json::to_value(&read)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let mut result = CallToolResult::structured(json);
+        // A failed or panicked decode costs the preview, not the download URL.
+        let shown = tokio::task::spawn_blocking(move || preview(&bytes))
+            .await
+            .ok()
+            .flatten();
+        if let Some((data, mime)) = shown {
+            result
+                .content
+                .push(ContentBlock::image(STANDARD.encode(data), mime));
+        }
+        Ok(result)
     }
 }
 

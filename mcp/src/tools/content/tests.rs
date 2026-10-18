@@ -5,6 +5,7 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json as AxumJson, Router};
 use rmcp::handler::server::wrapper::Parameters;
+use rmcp::model::{CallToolResult, ContentBlock};
 
 use omnibus_shared::{
     BookImage, BookImageLink, BookImageList, BookImageReference, ChapterListEntry,
@@ -23,6 +24,58 @@ const EXPECTED_TOOLS: &[&str] = &[
     "list_book_images",
     "read_book_image",
 ];
+
+const SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>"#;
+
+fn encode_png(image: image::DynamicImage) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    image
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+    bytes
+}
+
+fn opaque_png(width: u32, height: u32) -> Vec<u8> {
+    let pixels = image::RgbImage::from_pixel(width, height, image::Rgb([200, 30, 30]));
+    encode_png(image::DynamicImage::ImageRgb8(pixels))
+}
+
+fn transparent_png(width: u32, height: u32) -> Vec<u8> {
+    let pixels = image::RgbaImage::from_pixel(width, height, image::Rgba([10, 20, 30, 0]));
+    encode_png(image::DynamicImage::ImageRgba8(pixels))
+}
+
+/// IEEE CRC-32, so a patched PNG header still passes the decoder's checksum
+/// and reaches its dimension limits.
+fn crc32(bytes: &[u8]) -> u32 {
+    let mut crc = 0xFFFF_FFFFu32;
+    for &b in bytes {
+        crc ^= u32::from(b);
+        for _ in 0..8 {
+            crc = (crc >> 1) ^ (0xEDB8_8320 & (crc & 1).wrapping_neg());
+        }
+    }
+    !crc
+}
+
+/// A PNG whose header declares `width`×`height` over 8×8 of real pixel data.
+fn png_claiming(width: u32, height: u32) -> Vec<u8> {
+    let mut png = opaque_png(8, 8);
+    let ihdr = png.windows(4).position(|w| w == b"IHDR").unwrap();
+    png[ihdr + 4..ihdr + 8].copy_from_slice(&width.to_be_bytes());
+    png[ihdr + 8..ihdr + 12].copy_from_slice(&height.to_be_bytes());
+    let crc = crc32(&png[ihdr..ihdr + 17]);
+    png[ihdr + 17..ihdr + 21].copy_from_slice(&crc.to_be_bytes());
+    png
+}
+
+/// The `BookImageRead` a `read_book_image` call carried as structured content.
+fn read_of(result: CallToolResult) -> omnibus_shared::BookImageRead {
+    result.into_typed().unwrap()
+}
 
 async fn login() -> AxumJson<serde_json::Value> {
     AxumJson(serde_json::json!({
@@ -155,6 +208,16 @@ async fn image_file(
         ("uuid-frank", Some("OEBPS/images/map.png")) => (
             [(axum::http::header::CONTENT_TYPE, "image/png")],
             vec![1u8, 2, 3, 4],
+        )
+            .into_response(),
+        ("uuid-frank", Some("OEBPS/images/plate.png")) => (
+            [(axum::http::header::CONTENT_TYPE, "image/png")],
+            opaque_png(8, 6),
+        )
+            .into_response(),
+        ("uuid-frank", Some("OEBPS/images/logo.svg")) => (
+            [(axum::http::header::CONTENT_TYPE, "image/svg+xml")],
+            SVG.to_vec(),
         )
             .into_response(),
         ("uuid-frank", _) => StatusCode::BAD_REQUEST.into_response(),
@@ -545,8 +608,8 @@ async fn read_book_image_returns_a_signed_download_url_on_the_public_url() {
             href: "OEBPS/images/map.png".into(),
         }))
         .await
-        .unwrap()
-        .0;
+        .unwrap();
+    let read = read_of(read);
 
     assert_eq!(read.book_uuid, "uuid-frank");
     assert_eq!(read.href, "OEBPS/images/map.png");
@@ -675,12 +738,116 @@ async fn read_book_image_builds_the_download_url_on_the_public_url_not_the_base_
             href: "OEBPS/images/map.png".into(),
         }))
         .await
-        .unwrap()
-        .0;
+        .unwrap();
+    let read = read_of(read);
 
     assert_eq!(
         read.download_url,
         "https://omnibus.example.com/api/ebooks/uuid-frank/images/file\
          ?href=OEBPS%2Fimages%2Fmap.png&expires=1893456000&sig=abc"
     );
+}
+
+#[test]
+fn preview_returns_none_for_svg_bytes() {
+    assert!(preview(SVG).is_none());
+}
+
+#[test]
+fn preview_shrinks_an_image_whose_edge_exceeds_the_cap() {
+    let (bytes, media_type) = preview(&opaque_png(3136, 1000)).unwrap();
+
+    assert_eq!(media_type, "image/jpeg");
+    let decoded = image::load_from_memory(&bytes).unwrap();
+    assert_eq!((decoded.width(), decoded.height()), (1568, 500));
+}
+
+#[test]
+fn preview_leaves_an_image_exactly_at_the_cap_unscaled() {
+    let (bytes, _) = preview(&opaque_png(1568, 4)).unwrap();
+
+    let decoded = image::load_from_memory(&bytes).unwrap();
+    assert_eq!((decoded.width(), decoded.height()), (1568, 4));
+}
+
+#[test]
+fn preview_keeps_a_small_image_at_its_own_size() {
+    let (bytes, media_type) = preview(&opaque_png(64, 48)).unwrap();
+
+    assert_eq!(media_type, "image/jpeg");
+    let decoded = image::load_from_memory(&bytes).unwrap();
+    assert_eq!((decoded.width(), decoded.height()), (64, 48));
+}
+
+#[test]
+fn preview_encodes_png_when_the_image_has_alpha() {
+    let (bytes, media_type) = preview(&transparent_png(32, 32)).unwrap();
+
+    assert_eq!(media_type, "image/png");
+    assert!(image::load_from_memory(&bytes).unwrap().color().has_alpha());
+}
+
+#[test]
+fn preview_returns_none_for_bytes_that_sniff_as_a_png_but_do_not_decode() {
+    let mut not_a_png = vec![0x89, 0x50, 0x4E, 0x47];
+    not_a_png.extend_from_slice(b"garbage after the signature");
+
+    assert!(preview(&not_a_png).is_none());
+}
+
+#[test]
+fn preview_returns_none_for_a_header_claiming_enormous_dimensions() {
+    assert!(preview(&png_claiming(100_000, 100_000)).is_none());
+}
+
+#[tokio::test]
+async fn read_book_image_attaches_an_image_block_for_a_raster() {
+    let service = stub_service().await;
+
+    let result = service
+        .read_book_image(Parameters(ReadBookImageParams {
+            book_uuid: "uuid-frank".into(),
+            href: "OEBPS/images/plate.png".into(),
+        }))
+        .await
+        .unwrap();
+
+    let block = result
+        .content
+        .iter()
+        .find_map(|c| match c {
+            ContentBlock::Image(image) => Some(image),
+            _ => None,
+        })
+        .expect("a raster comes with an image block");
+    assert_eq!(block.mime_type, "image/jpeg");
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&block.data)
+        .unwrap();
+    let decoded = image::load_from_memory(&bytes).unwrap();
+    assert_eq!((decoded.width(), decoded.height()), (8, 6));
+    let read = read_of(result);
+    assert_eq!(read.byte_size, opaque_png(8, 6).len() as i64);
+}
+
+#[tokio::test]
+async fn read_book_image_attaches_no_image_block_for_an_svg() {
+    let service = stub_service().await;
+
+    let result = service
+        .read_book_image(Parameters(ReadBookImageParams {
+            book_uuid: "uuid-frank".into(),
+            href: "OEBPS/images/logo.svg".into(),
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        result
+            .content
+            .iter()
+            .all(|c| !matches!(c, ContentBlock::Image(_))),
+        "an SVG comes as the URL only"
+    );
+    assert_eq!(read_of(result).media_type, "image/svg+xml");
 }
