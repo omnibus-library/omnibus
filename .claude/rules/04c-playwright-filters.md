@@ -1,5 +1,5 @@
 ---
-paths: "ui_tests/**, frontend/src/components/filter_bar/**"
+paths: "ui_tests/**, frontend/src/components/filter_bar/**, frontend/src/components/filter_bar.rs"
 ---
 # 04c — Playwright: the library filter
 
