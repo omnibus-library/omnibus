@@ -74,12 +74,12 @@ pub async fn page_count_for_book(pool: &sqlx::SqlitePool, book_id: i64) -> Optio
 /// 64 MiB covers any real scanned page. Same shape as
 /// `epub_rewrite::archive::MAX_ENTRY_BYTES`.
 #[cfg(not(test))]
-const MAX_PAGE_BYTES: u64 = 64 * 1024 * 1024;
+pub const MAX_PAGE_BYTES: u64 = 64 * 1024 * 1024;
 /// Test builds use a much smaller cap so the zip-bomb regression test isn't
 /// compressing 64 MiB on every run — the bounded-read behavior under test
 /// doesn't depend on the cap's exact value.
 #[cfg(test)]
-const MAX_PAGE_BYTES: u64 = 64 * 1024;
+pub const MAX_PAGE_BYTES: u64 = 64 * 1024;
 
 /// Read page `index` (0-based, in [`list_pages`] order) out of the archive:
 /// its mime type and decompressed bytes, capped at [`MAX_PAGE_BYTES`].

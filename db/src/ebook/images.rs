@@ -15,7 +15,7 @@ use quick_xml::events::Event;
 use zip::read::ZipFile;
 use zip::result::{ZipError, ZipResult};
 
-use crate::comic::read_capped;
+use crate::comic::{read_capped, MAX_PAGE_BYTES};
 use crate::ebook::toc::join_href;
 
 #[cfg(test)]
@@ -27,6 +27,10 @@ type Archive = zip::ZipArchive<File>;
 /// How much of an image's start is read to learn its pixel size. Headers sit
 /// at the front, so a listing never decompresses a whole multi-megabyte plate.
 const DIMENSION_PREFIX_BYTES: u64 = 1024 * 1024;
+
+/// Decompressed spine bytes one listing may read, so a book of thousands of
+/// itemrefs cannot cost thousands of page-cap inflations per call.
+const SPINE_SCAN_BUDGET: u64 = 4 * MAX_PAGE_BYTES;
 
 /// One image reference in an XHTML page.
 pub struct ImageRef {
@@ -86,7 +90,12 @@ fn attach_references(
     archive: &mut Archive,
     images: &mut BTreeMap<String, BookImage>,
 ) {
+    let mut budget = SPINE_SCAN_BUDGET;
     for (index, spine_item) in doc.spine.iter().enumerate() {
+        if budget == 0 {
+            tracing::warn!(spine_index = index, "book images: spine scan budget spent");
+            break;
+        }
         let spine_index = index as i64;
         let Some(resource) = doc.resources.get(&spine_item.idref) else {
             continue;
@@ -94,8 +103,13 @@ fn attach_references(
         let page_path = archive_path(&resource.path);
         let page = match archive_entry(archive, &page_path)
             .map_err(anyhow::Error::from)
-            .and_then(|entry| read_capped(entry, &page_path))
-        {
+            .and_then(|entry| {
+                let read = read_capped(entry, &page_path);
+                // An over-cap read inflated the whole cap before bailing.
+                let spent = read.as_ref().map_or(MAX_PAGE_BYTES, |p| p.len() as u64);
+                budget = budget.saturating_sub(spent);
+                read
+            }) {
             Ok(page) => page,
             Err(e) => {
                 // Debug-quoted (the error text embeds the path too) so a newline in a manifest path cannot forge a log line.

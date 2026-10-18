@@ -223,6 +223,54 @@ fn list_images_skips_a_spine_document_that_exceeds_the_byte_cap() {
 }
 
 #[test]
+fn list_images_stops_reading_spine_documents_once_the_byte_budget_is_spent() {
+    let png = solid_color_png(1, 2, 3, 2, 2);
+    // Each page is just under the per-page cap, so a handful spend the budget.
+    let body = page(&format!(
+        r#"<img src="a.png"/><p>{}</p>"#,
+        "x".repeat(60 * 1024)
+    ));
+    let names: Vec<String> = (0..8).map(|i| format!("c{i}.xhtml")).collect();
+    let spine: Vec<(&str, &str)> = names.iter().map(|n| (n.as_str(), body.as_str())).collect();
+    let path = write_epub(&spine, &[("a.png", "image/png", &png)]);
+
+    let images = list_images(&path).unwrap();
+
+    let seen: Vec<i64> = image(&images, "a.png")
+        .references
+        .iter()
+        .map(|r| r.spine_index)
+        .collect();
+    assert!(seen.contains(&0), "{seen:?}");
+    assert!(
+        !seen.contains(&7),
+        "page past the budget was read: {seen:?}"
+    );
+}
+
+#[test]
+fn list_images_spends_the_byte_budget_on_spine_documents_that_exceed_the_cap() {
+    let png = solid_color_png(1, 2, 3, 2, 2);
+    let oversized = page(&format!(
+        r#"<img src="a.png"/><p>{}</p>"#,
+        "x".repeat(70 * 1024)
+    ));
+    let fine = page(r#"<img src="a.png"/>"#);
+    let names: Vec<String> = (0..6).map(|i| format!("c{i}.xhtml")).collect();
+    let bodies = [&oversized, &oversized, &oversized, &oversized, &fine, &fine];
+    let spine: Vec<(&str, &str)> = names
+        .iter()
+        .zip(bodies)
+        .map(|(n, body)| (n.as_str(), body.as_str()))
+        .collect();
+    let path = write_epub(&spine, &[("a.png", "image/png", &png)]);
+
+    let images = list_images(&path).unwrap();
+
+    assert_eq!(image(&images, "a.png").references, vec![]);
+}
+
+#[test]
 fn list_images_lists_an_unreferenced_image_with_no_references() {
     let png = solid_color_png(1, 2, 3, 2, 2);
     let path = write_epub(
