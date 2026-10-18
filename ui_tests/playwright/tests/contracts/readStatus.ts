@@ -1,5 +1,5 @@
 import type { ReadStatus } from "../data/readStatus";
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The read-status endpoint the readers post to. */
 export const readStatusUrls = {
@@ -8,13 +8,14 @@ export const readStatusUrls = {
 
 /** The read-status writes a reader makes by itself. */
 export const readStatus = {
-  /** The write a reader makes on reaching the end of an unfinished book. */
-  set: (bookUuid: string, status: ReadStatus): ExpectMutationOptions => ({
-    method: "POST",
-    url: readStatusUrls.set,
-    expectedBody: { update: { book_uuid: bookUuid, status } },
-    expectedStatus: 200,
-  }),
+  /** The write a reader or the book page's control makes; no arguments pins no body. */
+  set: (bookUuid?: string, status?: ReadStatus): ExpectMutationOptions =>
+    post(
+      readStatusUrls.set,
+      bookUuid && status
+        ? { update: { book_uuid: bookUuid, status } }
+        : undefined,
+    ),
 
   /** The write an open makes, once the page load and its fetches settle. */
   setOnOpen: (bookUuid: string, status: ReadStatus): ExpectMutationOptions => ({

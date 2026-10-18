@@ -1,782 +1,680 @@
-import type { Page } from "@playwright/test";
-import { test as readerTest } from "../fixtures/readerFixtures";
-import { expect, test } from "../fixtures/test";
-import { expectMutation, recordRequests } from "../utils/api";
-import { expectNavVisible, gotoReady } from "../utils/nav";
+import { settings } from "../contracts/settings";
+import { buildMetadataKey } from "../data/metadataKeys";
+import type { LibrarySettings, SmtpSettings } from "../data/settings";
+import { expect, test } from "../fixtures/pageFixtures";
+import type { AdminSection } from "../pages/AdminPage";
+import type { SettingsSection } from "../pages/SettingsPage";
+import { failing } from "../utils/api";
 
-// Settings splits in two shells. `/settings` holds each reader's own sections
-// and `/admin` the server's, each section behind a `?section=` slug, so tests
-// navigate straight to the section whose controls they exercise. The seeded
-// dev user is an admin, so every admin section is present.
-const ADMIN_SOURCES = "/admin?section=sources";
-const ADMIN_INTEGRATIONS = "/admin?section=integrations";
-const ADMIN_MAINTENANCE = "/admin?section=maintenance";
+// Settings holds each reader's own sections and Administration the server's;
+// the suite's admin sees both.
+const PERSONAL_SECTIONS: SettingsSection[] = [
+  "profile",
+  "preferences",
+  "goals",
+  "devices",
+  "security",
+];
 
-const ebookInput = (page: Page) => page.getByLabel("Ebook library path");
-const audiobookInput = (page: Page) =>
-  page.getByLabel("Audiobook library path");
-const scanIntervalInput = (page: Page) =>
-  page.getByLabel("Automatic rescan interval (hours)");
-const saveButton = (page: Page) =>
-  page.getByRole("button", { name: "Save library settings" });
-const settingsStatus = (page: Page) => page.getByTestId("settings-status");
-// The maintenance commands report on their own line, apart from the form's.
-const maintenanceStatus = (page: Page) =>
-  page.getByTestId("maintenance-status");
-// The key cards share Integrations with SMTP, so their controls are
-// testid-scoped rather than named "Save"/"Clear…".
-const hardcoverKeyInput = (page: Page) => page.getByLabel("Hardcover API key");
-const hardcoverSaveButton = (page: Page) => page.getByTestId("hardcover-save");
-const hardcoverClearButton = (page: Page) =>
-  page.getByTestId("hardcover-clear");
-const hardcoverClearConfirm = (page: Page) =>
-  page.getByTestId("hardcover-clear-dialog-confirm");
-const hardcoverStatus = (page: Page) => page.getByTestId("hardcover-status");
-const hardcoverMessage = (page: Page) =>
-  page.getByTestId("hardcover-key-status");
-const googleBooksKeyInput = (page: Page) =>
-  page.getByLabel("Google Books API key");
-const googleBooksSaveButton = (page: Page) =>
-  page.getByTestId("google-books-save");
-const googleBooksClearButton = (page: Page) =>
-  page.getByTestId("google-books-clear");
-const googleBooksClearConfirm = (page: Page) =>
-  page.getByTestId("google-books-clear-dialog-confirm");
-const googleBooksStatus = (page: Page) =>
-  page.getByTestId("google-books-status");
-const googleBooksMessage = (page: Page) =>
-  page.getByTestId("google-books-key-status");
+const ADMIN_SECTIONS: AdminSection[] = [
+  "sources",
+  "maintenance",
+  "metadata",
+  "cleanup",
+  "people",
+  "integrations",
+  "health",
+  "logs",
+];
 
-test("renders the settings sidebar with the personal sections", async ({
-  page,
-}) => {
-  await gotoReady(page, "/settings");
+const placeholderLibrary: LibrarySettings = {
+  ebook_library_path: "/tmp/whatever",
+  audiobook_library_path: "/tmp/whatever-audio",
+};
 
-  await expect(page.getByTestId("settings-layout")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Settings" }),
-  ).toBeVisible();
-  for (const slug of [
-    "profile",
-    "preferences",
-    "goals",
-    "devices",
-    "security",
-  ]) {
-    await expect(page.getByTestId(`settings-nav-${slug}`)).toBeVisible();
-  }
-  // An admin also gets the way into Administration.
-  await expect(page.getByTestId("settings-nav-admin")).toBeVisible();
-  await expectNavVisible(page);
+const smtp: SmtpSettings = {
+  host: "smtp.example.com",
+  fromEmail: "library@example.com",
+  password: "s3cret-pass",
+};
+
+const KEY_PROVIDERS = [
+  { provider: "hardcover", name: "Hardcover" },
+  { provider: "google-books", name: "Google Books" },
+] as const;
+
+test.describe("settings page", () => {
+  test("show the settings layout", async ({ settingsPage }) => {
+    await test.step("open settings", async () => {
+      await settingsPage.goto();
+    });
+
+    await test.step("check the sidebar lists the personal sections", async () => {
+      await settingsPage.assertDisplayed();
+      await expect(settingsPage.heading).toBeVisible();
+      for (const section of PERSONAL_SECTIONS) {
+        await expect(settingsPage.sectionLink(section)).toBeVisible();
+      }
+      // An admin also gets the way into Administration.
+      await expect(settingsPage.adminLink).toBeVisible();
+      await settingsPage.topNav.assertDisplayed();
+    });
+  });
 });
 
-test("renders the administration sidebar with every admin section", async ({
-  page,
-}) => {
-  await gotoReady(page, "/admin");
+test.describe("administration page", () => {
+  test("show the administration layout", async ({ adminPage }) => {
+    await test.step("open administration", async () => {
+      await adminPage.goto();
+    });
 
-  await expect(page.getByTestId("admin-layout")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Administration" }),
-  ).toBeVisible();
-  for (const slug of [
-    "sources",
-    "maintenance",
-    "metadata",
-    "cleanup",
-    "people",
-    "integrations",
-    "health",
-    "logs",
-  ]) {
-    await expect(page.getByTestId(`admin-nav-${slug}`)).toBeVisible();
-  }
-  await expect(page.getByTestId("admin-nav-sources")).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  await expect(page.getByTestId("admin-nav-settings")).toBeVisible();
-  await expectNavVisible(page);
-});
-
-readerTest(
-  "refuses administration to a reader who is not an admin",
-  async ({ page }) => {
-    await gotoReady(page, "/admin?section=people");
-
-    await expect(page.getByTestId("admin-forbidden")).toBeVisible();
-    await expect(page.getByTestId("users-card")).toHaveCount(0);
-  },
-);
-
-test("renders the Sources section controls", async ({ page }) => {
-  await gotoReady(page, ADMIN_SOURCES);
-
-  await expect(page.getByTestId("admin-nav-sources")).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  await expect(ebookInput(page)).toBeVisible();
-  await expect(audiobookInput(page)).toBeVisible();
-  await expect(scanIntervalInput(page)).toBeVisible();
-  await expect(saveButton(page)).toBeEnabled();
-  // The maintenance commands are their own section, not part of this form.
-  await expect(page.getByTestId("scan-library")).toHaveCount(0);
-  await expect(settingsStatus(page)).toBeAttached();
-  await expect(page.getByTestId("ebook-library-summary")).toBeAttached();
-  await expect(page.getByTestId("audiobook-library-summary")).toBeAttached();
-});
-
-test("holds the library save after the saved settings fail to load", async ({
-  page,
-}) => {
-  await page.route("**/api/rpc/settings", (route) => {
-    if (route.request().method() === "GET") {
-      return route.fulfill({
-        status: 500,
-        contentType: "text/plain",
-        body: "forced failure",
-      });
-    }
-    return route.continue();
+    await test.step("check the sidebar lists every admin section", async () => {
+      await adminPage.assertDisplayed();
+      await expect(adminPage.heading).toBeVisible();
+      for (const section of ADMIN_SECTIONS) {
+        await expect(adminPage.sectionLink(section)).toBeVisible();
+      }
+      await expect(adminPage.sectionLink("sources")).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      await expect(adminPage.settingsLink).toBeVisible();
+      await adminPage.topNav.assertDisplayed();
+    });
   });
 
-  await gotoReady(page, ADMIN_SOURCES);
+  test("refuse administration to a reader who is not an admin", async ({
+    readerAdminPage,
+  }) => {
+    await test.step("open the people section as the reader", async () => {
+      await readerAdminPage.goto("people");
+    });
 
-  // Blank fields saved over a failed read would clear both library paths.
-  await expect(saveButton(page)).toBeDisabled();
-  await expect(page.getByTestId("library-retry")).toBeVisible();
-  await expect(settingsStatus(page)).toHaveClass(/error/);
-});
-
-test("navigates between admin sections from the sidebar and updates the URL", async ({
-  page,
-}) => {
-  await gotoReady(page, "/admin");
-
-  await page.getByTestId("admin-nav-integrations").click();
-  await expect(page).toHaveURL(/\/admin\?section=integrations$/);
-  await expect(page.getByTestId("smtp-card")).toBeVisible();
-  await expect(page.getByTestId("hardcover-key-card")).toBeVisible();
-  await expect(page.getByTestId("google-books-key-card")).toBeVisible();
-
-  await page.getByTestId("admin-nav-people").click();
-  await expect(page).toHaveURL(/\/admin\?section=people$/);
-  await expect(page.getByTestId("users-card")).toBeVisible();
-
-  await page.getByTestId("admin-nav-health").click();
-  await expect(page).toHaveURL(/\/admin\?section=health$/);
-  await expect(page.getByTestId("admin-health-page")).toBeVisible();
-
-  await page.getByTestId("admin-nav-maintenance").click();
-  await expect(page).toHaveURL(/\/admin\?section=maintenance$/);
-  await expect(page.getByTestId("maintenance-card")).toBeVisible();
-  await expect(page.getByTestId("background-tasks-card")).toBeVisible();
-
-  await page.getByTestId("admin-nav-logs").click();
-  await expect(page).toHaveURL(/\/admin\?section=logs$/);
-  await expect(page.getByTestId("logs-page")).toBeVisible();
-});
-
-test("saves the SMTP config and shows a configured status", async ({
-  page,
-}) => {
-  await gotoReady(page, ADMIN_INTEGRATIONS);
-
-  await page.getByLabel("SMTP host").fill("smtp.example.com");
-  await page.getByLabel("From address").fill("library@example.com");
-  await page.getByLabel("Password").fill("s3cret-pass");
-
-  // Mock the save so the test never depends on a real SMTP relay and never
-  // mutates shared server state; the UI renders from the returned masked
-  // status. The raw password must never come back — only `password_masked`.
-  await page.route("**/api/rpc/smtp", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          configured: true,
-          host: "smtp.example.com",
-          port: 587,
-          username: null,
-          from_email: "library@example.com",
-          security: "starttls",
-          password_masked: "s3…ss",
-          source: "settings",
-        }),
-      });
-    }
-    return route.continue();
+    await test.step("check the refusal shows and the section does not", async () => {
+      await expect(readerAdminPage.forbiddenNotice).toBeVisible();
+      await expect(readerAdminPage.users.card).toHaveCount(0);
+    });
   });
 
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/smtp", expectedStatus: 200 },
-    async () => page.getByTestId("smtp-save").click(),
-  );
+  test("open each section from the sidebar", async ({ adminPage }) => {
+    await test.step("open administration", async () => {
+      await adminPage.goto();
+    });
 
-  await expect(page.getByTestId("smtp-config-status")).toHaveText(
-    "SMTP settings saved.",
-  );
-  await expect(page.getByTestId("smtp-status")).toContainText("Configured");
-});
+    await test.step("open integrations", async () => {
+      await adminPage.openSection("integrations");
+      await adminPage.assertDisplayedFor("integrations");
+      const { integrations } = adminPage;
+      await expect(integrations.smtp.card).toBeVisible();
+      await expect(integrations.keyCard("hardcover").root).toBeVisible();
+      await expect(integrations.keyCard("google-books").root).toBeVisible();
+    });
 
-test("asks before clearing the SMTP settings", async ({ page }) => {
-  // Configured is instance state, so the read is stubbed rather than set.
-  await page.route("**/api/rpc/smtp", (route) =>
-    route.request().method() === "GET"
-      ? route.fulfill({
-          json: {
-            configured: true,
-            host: "smtp.example.com",
-            port: 587,
-            username: null,
-            from_email: "library@example.com",
-            security: "starttls",
-            password_masked: "s3…ss",
-            source: "settings",
-          },
-        })
-      : route.continue(),
-  );
-  await gotoReady(page, ADMIN_INTEGRATIONS);
-  const clears = recordRequests(page, "/api/rpc/smtp/clear");
+    await test.step("open people", async () => {
+      await adminPage.openSection("people");
+      await adminPage.assertDisplayedFor("people");
+      await expect(adminPage.users.card).toBeVisible();
+    });
 
-  await page.getByTestId("smtp-clear").click();
-  await expect(page.getByTestId("smtp-clear-dialog")).toBeVisible();
-  await page.getByTestId("smtp-clear-dialog-cancel").click();
+    await test.step("open health", async () => {
+      await adminPage.openSection("health");
+      await adminPage.assertDisplayedFor("health");
+      await expect(adminPage.health.root).toBeVisible();
+    });
 
-  await expect(page.getByTestId("smtp-clear-dialog")).toHaveCount(0);
-  expect(clears).toEqual([]);
-});
+    await test.step("open maintenance", async () => {
+      await adminPage.openSection("maintenance");
+      await adminPage.assertDisplayedFor("maintenance");
+      await expect(adminPage.maintenance.card).toBeVisible();
+      await expect(adminPage.maintenance.backgroundTasksCard).toBeVisible();
+    });
 
-test("asks before leaving unsaved library paths", async ({ page }) => {
-  await gotoReady(page, ADMIN_SOURCES);
-  await expect(saveButton(page)).toBeEnabled();
-  await ebookInput(page).fill("/srv/unsaved-path");
+    await test.step("open logs", async () => {
+      await adminPage.openSection("logs");
+      await adminPage.assertDisplayedFor("logs");
+      await expect(adminPage.logs.root).toBeVisible();
+    });
+  });
 
-  await page.getByTestId("admin-nav-people").click();
-  await expect(page.getByTestId("unsaved-confirm")).toBeVisible();
-  await page.getByTestId("unsaved-keep").click();
+  test("follow an old settings link to its new home", async ({ adminPage }) => {
+    await test.step("open the old users address", async () => {
+      await adminPage.gotoLegacy("/settings?section=users");
+    });
 
-  await expect(page).toHaveURL(/section=sources$/);
-  await expect(ebookInput(page)).toHaveValue("/srv/unsaved-path");
-});
+    await test.step("check administration shows the people section", async () => {
+      await adminPage.assertDisplayedFor("people");
+    });
+  });
 
-test("asks before leaving a typed but unsaved key", async ({ page }) => {
-  await gotoReady(page, ADMIN_INTEGRATIONS);
-  await hardcoverKeyInput(page).fill("hc_unsaved");
+  test("follow an old cleanup review link to its new home", async ({
+    cleanupReviewPage,
+  }) => {
+    await test.step("open the old author review address", async () => {
+      await cleanupReviewPage.gotoLegacy("/settings/cleanup/authors");
+    });
 
-  await page.getByTestId("admin-nav-people").click();
-  await expect(page.getByTestId("unsaved-confirm")).toBeVisible();
-  await page.getByTestId("unsaved-discard").click();
-
-  await expect(page).toHaveURL(/section=people$/);
-});
-
-test("saves only the metadata order that changed", async ({ page }) => {
-  // The order is instance configuration other specs index under, so the
-  // write is answered here with the order it was sent.
-  await page.route("**/api/rpc/metadata-precedence/set", (route) =>
-    route.fulfill({ json: route.request().postDataJSON().precedence }),
-  );
-  await gotoReady(page, "/admin?section=metadata");
-  const save = page.getByTestId("metadata-precedence-save");
-  await expect(
-    page.getByTestId("ebook-metadata-precedence-item-0"),
-  ).toBeVisible();
-  await expect(save).toBeDisabled();
-  const writes = recordRequests(page, "/api/rpc/metadata-precedence/set");
-
-  await page.getByTestId("ebook-metadata-precedence-down-0").click();
-  await expect(save).toBeEnabled();
-  const { request } = await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/metadata-precedence/set",
-      expectedStatus: 200,
-    },
-    async () => save.click(),
-  );
-
-  expect(request.postDataJSON().library).toBe("ebook");
-  await expect(page.getByTestId("metadata-precedence-status")).toHaveText(
-    "Metadata order saved.",
-  );
-  await expect(save).toBeDisabled();
-  expect(writes).toHaveLength(1);
-});
-
-test("follows an old settings link to its new home", async ({ page }) => {
-  await gotoReady(page, "/settings?section=users");
-  await expect(page).toHaveURL(/\/admin\?section=people$/);
-
-  await gotoReady(page, "/settings/cleanup/authors");
-  await expect(page).toHaveURL(/\/admin\/cleanup\/authors$/);
+    await test.step("check the review shows under administration", async () => {
+      await cleanupReviewPage.assertDisplayedFor("authors");
+    });
+  });
 });
 
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  /** Whether the page scrolls sideways. */
-  const scrollsSideways = (page: Page) =>
-    page.evaluate(
-      () => document.documentElement.scrollWidth > window.innerWidth,
-    );
+  test("pick a settings section from the list", async ({ settingsPage }) => {
+    await test.step("open settings", async () => {
+      await settingsPage.goto();
+    });
 
-  test("pick a settings section from the list, then go back", async ({
-    page,
+    await test.step("check only the list shows", async () => {
+      await expect(settingsPage.sectionLink("devices")).toBeVisible();
+      await expect(settingsPage.backLink).toBeHidden();
+      expect(await settingsPage.scrollsSideways()).toBe(false);
+    });
+
+    await test.step("pick the devices section", async () => {
+      await settingsPage.openSection("devices");
+    });
+
+    await test.step("check only the section shows", async () => {
+      await settingsPage.assertDisplayedFor("devices");
+      await expect(settingsPage.kindle.card).toBeVisible();
+      await expect(settingsPage.sectionLink("devices")).toBeHidden();
+      expect(await settingsPage.scrollsSideways()).toBe(false);
+    });
+  });
+
+  test("go back from a settings section to the list", async ({
+    settingsPage,
   }) => {
-    await gotoReady(page, "/settings");
-    await expect(page.getByTestId("settings-nav-devices")).toBeVisible();
-    await expect(page.getByTestId("settings-back")).toBeHidden();
-    expect(await scrollsSideways(page)).toBe(false);
+    await test.step("open the devices section", async () => {
+      await settingsPage.goto("devices");
+    });
 
-    await page.getByTestId("settings-nav-devices").click();
-    await expect(page).toHaveURL(/\/settings\?section=devices$/);
-    await expect(page.getByTestId("account-kindle-card")).toBeVisible();
-    await expect(page.getByTestId("settings-nav-devices")).toBeHidden();
-    expect(await scrollsSideways(page)).toBe(false);
+    await test.step("follow the back link", async () => {
+      await settingsPage.openSectionList();
+    });
 
-    await page.getByTestId("settings-back").click();
-    await expect(page).toHaveURL(/\/settings$/);
-    await expect(page.getByTestId("settings-nav-devices")).toBeVisible();
+    await test.step("check the list shows again", async () => {
+      await settingsPage.assertDisplayedFor();
+      await expect(settingsPage.sectionLink("devices")).toBeVisible();
+    });
   });
 
-  test("pick an administration section from the list", async ({ page }) => {
-    await gotoReady(page, "/admin");
-    await page.getByTestId("admin-nav-people").click();
+  test("pick an administration section from the list", async ({
+    adminPage,
+  }) => {
+    await test.step("open administration", async () => {
+      await adminPage.goto();
+    });
 
-    await expect(page).toHaveURL(/\/admin\?section=people$/);
-    await expect(page.getByTestId("users-table")).toBeVisible();
-    expect(await scrollsSideways(page)).toBe(false);
+    await test.step("pick the people section", async () => {
+      await adminPage.openSection("people");
+    });
+
+    await test.step("check the section shows without a sideways scroll", async () => {
+      await adminPage.assertDisplayedFor("people");
+      await expect(adminPage.users.table).toBeVisible();
+      expect(await adminPage.scrollsSideways()).toBe(false);
+    });
   });
 });
 
-test("saves library paths and shows a success status", async ({ page }) => {
-  await gotoReady(page, ADMIN_SOURCES);
+test.describe("sources section", () => {
+  test("show the sources section layout", async ({ adminPage }) => {
+    const { library, maintenance } = adminPage;
 
-  const ebookPath = "/tmp/omnibus-test-ebooks";
-  const audiobookPath = "/tmp/omnibus-test-audiobooks";
+    await test.step("open the sources section", async () => {
+      await adminPage.goto("sources");
+    });
 
-  await ebookInput(page).fill(ebookPath);
-  await audiobookInput(page).fill(audiobookPath);
+    await test.step("check the form shows without the maintenance jobs", async () => {
+      await expect(adminPage.sectionLink("sources")).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      await expect(library.ebookPathField).toBeVisible();
+      await expect(library.audiobookPathField).toBeVisible();
+      await expect(library.scanIntervalField).toBeVisible();
+      await expect(library.saveButton).toBeEnabled();
+      await expect(maintenance.scanButton).toHaveCount(0);
+      await expect(library.status).toBeAttached();
+      await expect(library.ebookSummary).toBeAttached();
+      await expect(library.audiobookSummary).toBeAttached();
+    });
+  });
 
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/settings",
-      expectedBody: {
-        settings: {
-          ebook_library_path: ebookPath,
-          audiobook_library_path: audiobookPath,
-        },
-      },
-      expectedStatus: 200,
-    },
-    async () => saveButton(page).click(),
-  );
+  // Blank fields saved over a failed read would clear both library paths.
+  test("hold the library save when the saved settings fail to load", async ({
+    adminPage,
+  }) => {
+    const { library } = adminPage;
 
-  await expect(settingsStatus(page)).toHaveText("Library settings saved.");
-  await expect(settingsStatus(page)).toHaveClass(/success/);
+    await test.step("open the sources section with the read failing", async () => {
+      await adminPage.forceServerError(settings.load());
+      await adminPage.goto("sources");
+    });
+
+    await test.step("check the save is held and a retry offered", async () => {
+      await expect(library.saveButton).toBeDisabled();
+      await expect(library.retryButton).toBeVisible();
+      await expect(library.status).toHaveClass(/error/);
+    });
+  });
+
+  test("save the library paths", async ({
+    adminPage,
+    expectMutation,
+    scratchLibrary,
+  }) => {
+    const { library } = adminPage;
+
+    await test.step("open the sources section", async () => {
+      await adminPage.goto("sources");
+    });
+
+    await test.step("fill in the library paths", async () => {
+      await library.fillForm(scratchLibrary);
+    });
+
+    await test.step("save the settings", async () => {
+      await expectMutation(settings.saveLibrary(scratchLibrary), () =>
+        library.save(),
+      );
+    });
+
+    await test.step("check the form reports the save", async () => {
+      await library.assertSaved();
+    });
+  });
+
+  test("save an automatic rescan interval with the library paths", async ({
+    adminPage,
+    expectMutation,
+    scratchLibrary,
+  }) => {
+    const { library } = adminPage;
+    const withInterval = { ...scratchLibrary, scan_interval_hours: 24 };
+
+    await test.step("open the sources section", async () => {
+      await adminPage.goto("sources");
+    });
+
+    await test.step("fill in the paths and the interval", async () => {
+      await library.fillForm(withInterval);
+    });
+
+    await test.step("save the settings", async () => {
+      await expectMutation(settings.saveLibrary(withInterval), () =>
+        library.save(),
+      );
+    });
+
+    await test.step("check the form reports the save", async () => {
+      await library.assertSaved();
+    });
+  });
+
+  test("show an error when the server rejects an invalid rescan interval", async ({
+    adminPage,
+    expectMutation,
+  }) => {
+    const { library } = adminPage;
+    const tooShort = { ...placeholderLibrary, scan_interval_hours: 1 };
+
+    await test.step("open the sources section", async () => {
+      await adminPage.goto("sources");
+    });
+
+    // Rejected server-side, so the form's own min check can't stop the request.
+    await test.step("fill in an interval the server rejects", async () => {
+      await library.stubIntervalRejected();
+      await library.fillForm(tooShort);
+    });
+
+    await test.step("save the settings", async () => {
+      await expectMutation(settings.saveLibrary(tooShort, 422), () =>
+        library.save(),
+      );
+    });
+
+    await test.step("check the form reports the failure", async () => {
+      await library.assertSaveFailed();
+    });
+  });
+
+  test("show an error when saving the library settings fails", async ({
+    adminPage,
+    expectMutation,
+  }) => {
+    const { library } = adminPage;
+    const save = settings.saveLibrary(placeholderLibrary);
+
+    await test.step("open the sources section", async () => {
+      await adminPage.goto("sources");
+    });
+
+    await test.step("fill in the paths and fail the save", async () => {
+      await library.fillForm(placeholderLibrary);
+      await adminPage.forceServerError(save);
+    });
+
+    await test.step("save the settings", async () => {
+      await expectMutation(failing(save), () => library.save());
+    });
+
+    await test.step("check the form reports the failure", async () => {
+      await library.assertSaveFailed();
+    });
+  });
+
+  test("ask before leaving unsaved library paths", async ({ adminPage }) => {
+    const { library } = adminPage;
+
+    await test.step("edit the ebook path", async () => {
+      await adminPage.goto("sources");
+      await expect(library.saveButton).toBeEnabled();
+      await library.fillEbookPath("/srv/unsaved-path");
+    });
+
+    await test.step("try to leave and keep editing", async () => {
+      await adminPage.openSection("people");
+      await expect(adminPage.unsavedPrompt).toBeVisible();
+      await adminPage.keepEditing();
+    });
+
+    await test.step("check the section and the edit stay", async () => {
+      await adminPage.assertDisplayedFor("sources");
+      await expect(library.ebookPathField).toHaveValue("/srv/unsaved-path");
+    });
+  });
 });
 
-test("saves an automatic rescan interval alongside the library paths", async ({
-  page,
-}) => {
-  await gotoReady(page, ADMIN_SOURCES);
+test.describe("maintenance section", () => {
+  test("show an error when a library scan fails", async ({
+    adminPage,
+    expectMutation,
+  }) => {
+    const { maintenance } = adminPage;
+    const scan = settings.scanLibrary();
 
-  const ebookPath = "/tmp/omnibus-test-ebooks";
-  const audiobookPath = "/tmp/omnibus-test-audiobooks";
+    await test.step("open the maintenance section", async () => {
+      await adminPage.goto("maintenance");
+      await adminPage.forceServerError(scan);
+    });
 
-  await ebookInput(page).fill(ebookPath);
-  await audiobookInput(page).fill(audiobookPath);
-  await scanIntervalInput(page).fill("24");
+    await test.step("start a scan", async () => {
+      await expectMutation(failing(scan), () => maintenance.startScan());
+    });
 
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/settings",
-      expectedBody: {
-        settings: {
-          ebook_library_path: ebookPath,
-          audiobook_library_path: audiobookPath,
-          scan_interval_hours: 24,
-        },
-      },
-      expectedStatus: 200,
-    },
-    async () => saveButton(page).click(),
-  );
+    await test.step("check the section reports the failure", async () => {
+      await expect(maintenance.status).toContainText(
+        "Failed to start library scan",
+      );
+      await expect(maintenance.status).toHaveClass(/error/);
+    });
+  });
 
-  await expect(settingsStatus(page)).toHaveText("Library settings saved.");
-  await expect(settingsStatus(page)).toHaveClass(/success/);
+  test("bake overrides into every epub", async ({
+    adminPage,
+    expectMutation,
+  }) => {
+    const { maintenance } = adminPage;
+
+    await test.step("open the maintenance section", async () => {
+      await adminPage.goto("maintenance");
+      await maintenance.stubBakeQueued();
+    });
+
+    await test.step("bake the overrides", async () => {
+      await expectMutation(settings.rewriteAllEpubs(), () =>
+        maintenance.bakeEpubOverrides(),
+      );
+    });
+
+    await test.step("check the section reports the bake as queued", async () => {
+      await expect(maintenance.status).toHaveText("EPUB override bake queued.");
+      await expect(maintenance.status).not.toHaveClass(/error/);
+    });
+  });
+
+  test("show an error when the epub bake fails to queue", async ({
+    adminPage,
+    expectMutation,
+  }) => {
+    const { maintenance } = adminPage;
+    const bake = settings.rewriteAllEpubs();
+
+    await test.step("open the maintenance section", async () => {
+      await adminPage.goto("maintenance");
+      await adminPage.forceServerError(bake);
+    });
+
+    await test.step("bake the overrides", async () => {
+      await expectMutation(failing(bake), () =>
+        maintenance.bakeEpubOverrides(),
+      );
+    });
+
+    await test.step("check the section reports the failure", async () => {
+      await expect(maintenance.status).toContainText(
+        "Failed to start EPUB override bake",
+      );
+      await expect(maintenance.status).toHaveClass(/error/);
+    });
+  });
 });
 
-test("shows an error status when the server rejects an invalid rescan interval", async ({
-  page,
-}) => {
-  await gotoReady(page, ADMIN_SOURCES);
+test.describe("metadata section", () => {
+  // The order is instance configuration other specs index under, so the write
+  // is answered with the order it was sent.
+  test("save only the metadata order that changed", async ({
+    adminPage,
+    expectMutation,
+  }) => {
+    const { metadata } = adminPage;
 
-  // Fill every field explicitly (rather than relying on whatever an
-  // earlier test left saved) so the expected request body below is
-  // deterministic regardless of test order.
-  await ebookInput(page).fill("/tmp/whatever");
-  await audiobookInput(page).fill("/tmp/whatever-audio");
-  await scanIntervalInput(page).fill("1");
+    await test.step("open the metadata section", async () => {
+      await metadata.stubSaved();
+      await adminPage.goto("metadata");
+      await expect(metadata.item("ebook", 0)).toBeVisible();
+      await expect(metadata.saveButton).toBeDisabled();
+    });
 
-  // Force the validation failure server-side (e.g. a stale client vs. a
-  // future, stricter floor) rather than relying on the browser's own
-  // `min` enforcement, so this exercises the same error-status rendering
-  // path as any other 4xx/5xx save failure.
-  await page.route("**/api/rpc/settings", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 422,
-        contentType: "text/plain",
-        body: "scan_interval_hours must be at least 1 (omit to disable)",
+    const saves = metadata.recordSaves();
+
+    await test.step("move a provider down", async () => {
+      await metadata.moveDown("ebook", 0);
+      await expect(metadata.saveButton).toBeEnabled();
+    });
+
+    await test.step("save the order", async () => {
+      const { request } = await expectMutation(
+        settings.saveMetadataPrecedence(),
+        () => metadata.save(),
+      );
+      expect(request.postDataJSON().library).toBe("ebook");
+    });
+
+    await test.step("check the order reads as saved once", async () => {
+      await expect(metadata.status).toHaveText("Metadata order saved.");
+      await expect(metadata.saveButton).toBeDisabled();
+      expect(saves).toHaveLength(1);
+    });
+  });
+});
+
+test.describe("integrations section", () => {
+  test("save the smtp config", async ({ adminPage, expectMutation }) => {
+    const { smtp: card } = adminPage.integrations;
+
+    await test.step("open the integrations section", async () => {
+      await adminPage.goto("integrations");
+    });
+
+    // Stubbed, so no real relay is needed and the shared config stays as found.
+    await test.step("fill in the relay", async () => {
+      await card.stubSaved();
+      await card.fillForm(smtp);
+    });
+
+    await test.step("save the config", async () => {
+      await expectMutation(settings.saveSmtp(), () => card.save());
+    });
+
+    await test.step("check the card shows it configured", async () => {
+      await expect(card.saveStatus).toHaveText("SMTP settings saved.");
+      await expect(card.configuredStatus).toContainText("Configured");
+    });
+  });
+
+  test("ask before clearing the smtp settings", async ({ adminPage }) => {
+    const { smtp: card } = adminPage.integrations;
+
+    await test.step("open the integrations section with a relay configured", async () => {
+      await card.stubConfigured();
+      await adminPage.goto("integrations");
+    });
+
+    const clears = card.recordClears();
+
+    await test.step("ask to clear it and back out", async () => {
+      await card.startClear();
+      await expect(card.clearDialog).toBeVisible();
+      await card.cancelClear();
+    });
+
+    await test.step("check the dialog closed and nothing was sent", async () => {
+      await expect(card.clearDialog).toHaveCount(0);
+      expect(clears).toEqual([]);
+    });
+  });
+
+  test("ask before leaving a typed but unsaved key", async ({ adminPage }) => {
+    const card = adminPage.integrations.keyCard("hardcover");
+
+    await test.step("type a key without saving it", async () => {
+      await adminPage.goto("integrations");
+      await card.fillKey("hc_unsaved");
+    });
+
+    await test.step("try to leave and discard the key", async () => {
+      await adminPage.openSection("people");
+      await expect(adminPage.unsavedPrompt).toBeVisible();
+      await adminPage.discardEdits();
+    });
+
+    await test.step("check the other section opened", async () => {
+      await adminPage.assertDisplayedFor("people");
+    });
+  });
+});
+
+for (const { provider, name } of KEY_PROVIDERS) {
+  const label = name.toLowerCase();
+
+  test.describe(`${label} key`, () => {
+    // Save and clear share one server-wide key, so they run in order.
+    test.describe.configure({ mode: "default" });
+
+    test(`save a ${label} key`, async ({
+      adminPage,
+      savedMetadataKeys,
+      expectMutation,
+    }) => {
+      const card = adminPage.integrations.keyCard(provider);
+      const key = buildMetadataKey(provider);
+
+      await test.step("open the integrations section", async () => {
+        await adminPage.goto("integrations");
       });
-    }
-    return route.continue();
-  });
 
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/settings",
-      expectedBody: {
-        settings: {
-          ebook_library_path: "/tmp/whatever",
-          audiobook_library_path: "/tmp/whatever-audio",
-          scan_interval_hours: 1,
-        },
-      },
-      expectedStatus: 422,
-    },
-    async () => saveButton(page).click(),
-  );
-
-  await expect(settingsStatus(page)).toContainText(
-    "Couldn’t save the library settings",
-  );
-  await expect(settingsStatus(page)).toHaveClass(/error/);
-});
-
-test("shows an error status when saving settings fails", async ({ page }) => {
-  await gotoReady(page, ADMIN_SOURCES);
-
-  await ebookInput(page).fill("/tmp/whatever");
-  await audiobookInput(page).fill("/tmp/whatever-audio");
-  // Cleared explicitly (rather than left at whatever an earlier test
-  // saved) so the expected request body below omits `scan_interval_hours`
-  // deterministically, regardless of test order.
-  await scanIntervalInput(page).fill("");
-
-  await page.route("**/api/rpc/settings", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 500,
-        contentType: "text/plain",
-        body: "forced failure",
+      await test.step("save a key", async () => {
+        await card.fillKey(key);
+        await expectMutation(settings.saveMetadataKey(provider, key), () =>
+          card.save(),
+        );
+        savedMetadataKeys.add(provider);
       });
-    }
-    return route.continue();
-  });
 
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/settings",
-      expectedBody: {
-        settings: {
-          ebook_library_path: "/tmp/whatever",
-          audiobook_library_path: "/tmp/whatever-audio",
-        },
-      },
-      expectedStatus: 500,
-    },
-    async () => saveButton(page).click(),
-  );
-
-  await expect(settingsStatus(page)).toContainText(
-    "Couldn’t save the library settings",
-  );
-  await expect(settingsStatus(page)).toHaveClass(/error/);
-});
-
-test("shows an error status when a manual library scan fails", async ({
-  page,
-}) => {
-  await gotoReady(page, ADMIN_MAINTENANCE);
-
-  await page.route("**/api/rpc/scan-library", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 500,
-        contentType: "text/plain",
-        body: "forced failure",
+      await test.step("check the card shows it connected", async () => {
+        await expect(card.message).toHaveText(`${name} key saved.`);
+        await expect(card.message).toHaveClass(/success/);
+        await expect(card.connectionStatus).toContainText("Connected");
+        // The raw key is never echoed back to the client.
+        await expect(card.keyField).toHaveValue("");
+        await expect(card.clearButton).toBeVisible();
       });
-    }
-    return route.continue();
-  });
+    });
 
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/scan-library", expectedStatus: 500 },
-    async () => page.getByTestId("scan-library").click(),
-  );
+    test(`clear a ${label} key`, async ({
+      adminPage,
+      metadataKeysRequests,
+      savedMetadataKeys,
+      expectMutation,
+    }) => {
+      const card = adminPage.integrations.keyCard(provider);
 
-  await expect(maintenanceStatus(page)).toContainText(
-    "Failed to start library scan",
-  );
-  await expect(maintenanceStatus(page)).toHaveClass(/error/);
-});
-
-test("bakes overrides into every EPUB and shows a queued status", async ({
-  page,
-}) => {
-  await gotoReady(page, ADMIN_MAINTENANCE);
-
-  await page.route("**/api/rpc/admin/rewrite-all-epubs", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: "null",
+      await test.step("save a key through the api", async () => {
+        const saved = await metadataKeysRequests.postKey(
+          provider,
+          buildMetadataKey(provider),
+        );
+        await expect(saved).toBeOK();
+        savedMetadataKeys.add(provider);
       });
-    }
-    return route.continue();
-  });
 
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/admin/rewrite-all-epubs",
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("rewrite-all-epubs").click(),
-  );
-
-  await expect(maintenanceStatus(page)).toHaveText(
-    "EPUB override bake queued.",
-  );
-  await expect(maintenanceStatus(page)).not.toHaveClass(/error/);
-});
-
-test("shows an error status when the bulk EPUB rewrite fails to queue", async ({
-  page,
-}) => {
-  await gotoReady(page, ADMIN_MAINTENANCE);
-
-  await page.route("**/api/rpc/admin/rewrite-all-epubs", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 500,
-        contentType: "text/plain",
-        body: "forced failure",
+      await test.step("open the integrations section", async () => {
+        await adminPage.goto("integrations");
+        await expect(card.clearButton).toBeVisible();
       });
-    }
-    return route.continue();
-  });
 
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/admin/rewrite-all-epubs",
-      expectedStatus: 500,
-    },
-    async () => page.getByTestId("rewrite-all-epubs").click(),
-  );
-
-  await expect(maintenanceStatus(page)).toContainText(
-    "Failed to start EPUB override bake",
-  );
-  await expect(maintenanceStatus(page)).toHaveClass(/error/);
-});
-
-// ---------------------------------------------------------------------------
-// Action — Hardcover and Google Books key save/clear
-// ---------------------------------------------------------------------------
-
-test("saves a Hardcover key, shows a connected status, then clears it", async ({
-  page,
-}) => {
-  await gotoReady(page, ADMIN_INTEGRATIONS);
-
-  const key = `hc_test_${Date.now()}`;
-
-  await hardcoverKeyInput(page).fill(key);
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/hardcover-key",
-      expectedBody: { key },
-      expectedStatus: 200,
-    },
-    async () => hardcoverSaveButton(page).click(),
-  );
-
-  await expect(hardcoverMessage(page)).toHaveText("Hardcover key saved.");
-  await expect(hardcoverMessage(page)).toHaveClass(/success/);
-  await expect(hardcoverStatus(page)).toContainText("Connected");
-  // The raw key is never echoed back to the client.
-  await expect(hardcoverKeyInput(page)).toHaveValue("");
-  await expect(hardcoverClearButton(page)).toBeVisible();
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/hardcover-key",
-      expectedBody: { key: null },
-      expectedStatus: 200,
-    },
-    async () => {
       // Clearing asks first, since the key can't be read back to restore it.
-      await hardcoverClearButton(page).click();
-      await hardcoverClearConfirm(page).click();
-    },
-  );
-
-  await expect(hardcoverMessage(page)).toHaveText("Hardcover key cleared.");
-  await expect(hardcoverMessage(page)).toHaveClass(/success/);
-  await expect(hardcoverStatus(page)).toContainText("Not connected");
-  await expect(hardcoverClearButton(page)).toHaveCount(0);
-});
-
-test("shows an error status when saving the Hardcover key fails", async ({
-  page,
-}) => {
-  await gotoReady(page, ADMIN_INTEGRATIONS);
-
-  // Only fail the write — the mount-time GET status fetch must still pass
-  // through, otherwise the card never renders the fields under test.
-  await page.route("**/api/rpc/hardcover-key", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 500,
-        contentType: "text/plain",
-        body: "forced failure",
+      await test.step("clear the key", async () => {
+        await expectMutation(settings.saveMetadataKey(provider, null), () =>
+          card.clear(),
+        );
+        savedMetadataKeys.delete(provider);
       });
-    }
-    return route.continue();
-  });
 
-  const key = `hc_test_error_${Date.now()}`;
-  await hardcoverKeyInput(page).fill(key);
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/hardcover-key",
-      expectedBody: { key },
-      expectedStatus: 500,
-    },
-    async () => hardcoverSaveButton(page).click(),
-  );
-
-  await expect(hardcoverMessage(page)).toContainText(
-    "Couldn’t save the Hardcover key",
-  );
-  await expect(hardcoverMessage(page)).toHaveClass(/error/);
-  // The failed save must not clear the admin's typed-in draft.
-  await expect(hardcoverKeyInput(page)).toHaveValue(key);
-});
-
-test("saves a Google Books key, shows a connected status, then clears it", async ({
-  page,
-}) => {
-  await gotoReady(page, ADMIN_INTEGRATIONS);
-
-  const key = `AIza_test_${Date.now()}`;
-
-  await googleBooksKeyInput(page).fill(key);
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/google-books-key",
-      expectedBody: { key },
-      expectedStatus: 200,
-    },
-    async () => googleBooksSaveButton(page).click(),
-  );
-
-  await expect(googleBooksMessage(page)).toHaveText("Google Books key saved.");
-  await expect(googleBooksMessage(page)).toHaveClass(/success/);
-  await expect(googleBooksStatus(page)).toContainText("Connected");
-  // The raw key is never echoed back to the client.
-  await expect(googleBooksKeyInput(page)).toHaveValue("");
-  await expect(googleBooksClearButton(page)).toBeVisible();
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/google-books-key",
-      expectedBody: { key: null },
-      expectedStatus: 200,
-    },
-    async () => {
-      await googleBooksClearButton(page).click();
-      await googleBooksClearConfirm(page).click();
-    },
-  );
-
-  await expect(googleBooksMessage(page)).toHaveText(
-    "Google Books key cleared.",
-  );
-  await expect(googleBooksMessage(page)).toHaveClass(/success/);
-  await expect(googleBooksStatus(page)).toContainText("Not connected");
-  await expect(googleBooksClearButton(page)).toHaveCount(0);
-});
-
-test("shows an error status when saving the Google Books key fails", async ({
-  page,
-}) => {
-  await gotoReady(page, ADMIN_INTEGRATIONS);
-
-  // Only fail the write — the mount-time GET status fetch must still pass
-  // through, otherwise the card never renders the fields under test.
-  await page.route("**/api/rpc/google-books-key", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 500,
-        contentType: "text/plain",
-        body: "forced failure",
+      await test.step("check the card shows it not connected", async () => {
+        await expect(card.message).toHaveText(`${name} key cleared.`);
+        await expect(card.message).toHaveClass(/success/);
+        await expect(card.connectionStatus).toContainText("Not connected");
+        await expect(card.clearButton).toHaveCount(0);
       });
-    }
-    return route.continue();
+    });
+
+    test(`show an error when saving the ${label} key fails`, async ({
+      adminPage,
+      expectMutation,
+    }) => {
+      const card = adminPage.integrations.keyCard(provider);
+      const key = buildMetadataKey(provider);
+      const save = settings.saveMetadataKey(provider, key);
+
+      await test.step("open the integrations section", async () => {
+        await adminPage.goto("integrations");
+      });
+
+      await test.step("fill in a key and fail the save", async () => {
+        await adminPage.forceServerError(save);
+        await card.fillKey(key);
+      });
+
+      await test.step("save the key", async () => {
+        await expectMutation(failing(save), () => card.save());
+      });
+
+      await test.step("check the card reports the failure", async () => {
+        await expect(card.message).toContainText(
+          `Couldn’t save the ${name} key`,
+        );
+        await expect(card.message).toHaveClass(/error/);
+        // The failed save must not clear the admin's typed-in draft.
+        await expect(card.keyField).toHaveValue(key);
+      });
+    });
   });
-
-  const key = `AIza_test_error_${Date.now()}`;
-  await googleBooksKeyInput(page).fill(key);
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/google-books-key",
-      expectedBody: { key },
-      expectedStatus: 500,
-    },
-    async () => googleBooksSaveButton(page).click(),
-  );
-
-  await expect(googleBooksMessage(page)).toContainText(
-    "Couldn’t save the Google Books key",
-  );
-  await expect(googleBooksMessage(page)).toHaveClass(/error/);
-  // The failed save must not clear the admin's typed-in draft.
-  await expect(googleBooksKeyInput(page)).toHaveValue(key);
-});
+}

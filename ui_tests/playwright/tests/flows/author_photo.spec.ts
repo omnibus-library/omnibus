@@ -1,141 +1,87 @@
-import type { APIRequestContext } from "@playwright/test";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Minimal valid 1x1 PNG. detect_image_format only inspects magic bytes,
-// so the body can be tiny — duplicates the constant from the Rust tests.
-const TINY_PNG = Buffer.from([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49,
-  0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06,
-  0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44,
-  0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0d,
-  0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42,
-  0x60, 0x82,
-]);
-
-// All tests in this file mutate the cached photo for the same author
-// ("Ada Lovelace") — run them serially so the afterEach DELETE on one test
-// doesn't race the assertions of another.
+// Every test writes the cached photo of the same author ("Ada Lovelace"), so
+// they run in turn. The discovery specs read that author, which is why only
+// the photo is touched and never the author row.
 test.describe.configure({ mode: "serial" });
 
-test.beforeAll(async ({ request }) => {
+test.beforeAll("seed the library", async ({ request }) => {
   await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
 });
 
-async function fetchAuthorIdByName(
-  request: APIRequestContext,
-  name: string,
-): Promise<number> {
-  const resp = await request.get("/api/rpc/ebooks");
-  expect(resp.status(), "GET /api/rpc/ebooks failed").toBe(200);
-  const body = (await resp.json()) as {
-    books: { creators: { name: string; id: number | null }[] }[];
-  };
-  for (const book of body.books) {
-    const match = book.creators.find((c) => c.name === name);
-    if (match?.id) return match.id;
-  }
-  throw new Error(`no indexed author named ${JSON.stringify(name)}`);
-}
+test.describe("author photo", () => {
+  test("show the letter avatar when no photo is uploaded", async ({
+    authorPage,
+    authorId,
+  }) => {
+    await test.step("open an author without a photo", async () => {
+      await authorPage.goto(await authorId("Ada Lovelace"));
+    });
 
-test.afterEach(async ({ request }) => {
-  // Clean up any uploaded photo so reruns start from a known-empty state.
-  // Discovery tests rely on the same authors being present, so we must not
-  // touch the author row itself — only the cached photo.
-  const ada = await fetchAuthorIdByName(request, "Ada Lovelace").catch(
-    () => null,
-  );
-  if (ada !== null) {
-    await request.delete(`/api/authors/${ada}/photo`);
-  }
-});
-
-test("author page shows letter avatar when no photo is uploaded", async ({
-  page,
-  request,
-}) => {
-  const id = await fetchAuthorIdByName(request, "Ada Lovelace");
-  await gotoReady(page, `/authors/${id}`);
-
-  // Avatar div with the initial visible; no <img.disc-avatar--photo>.
-  const letter = page.locator("div.disc-avatar");
-  await expect(letter).toBeVisible();
-  await expect(letter).toHaveText("A");
-  await expect(page.locator("img.disc-avatar--photo")).toHaveCount(0);
-});
-
-test("admin upload swaps the letter avatar for the photo", async ({
-  page,
-  request,
-}) => {
-  const id = await fetchAuthorIdByName(request, "Ada Lovelace");
-
-  // PUT the photo through the REST endpoint. The seeded test user is the
-  // first user registered, so it has is_admin = true.
-  const putResp = await request.put(`/api/authors/${id}/photo`, {
-    multipart: {
-      photo: {
-        name: "ada.png",
-        mimeType: "image/png",
-        buffer: TINY_PNG,
-      },
-    },
+    await test.step("check the initial shows and no photo does", async () => {
+      await expect(authorPage.letterAvatar).toBeVisible();
+      await expect(authorPage.letterAvatar).toHaveText("A");
+      await expect(authorPage.photoAvatar).toHaveCount(0);
+    });
   });
-  expect(putResp.status(), "PUT photo should succeed").toBe(204);
 
-  const img = page.locator("img.disc-avatar--photo");
-  // Re-navigate until the photo hero resolves. The author page fetches
-  // `get_author` client-side, and the `<img>` swaps back to the letter avatar
-  // on a single transient photo-GET error (`broken_photo_src` self-heal, only
-  // reset on a fresh mount) — under parallel load either can leave the letter
-  // showing on the first paint. A reload re-fetches and re-attempts cleanly;
-  // this still fails if the photo genuinely never renders.
-  await expect(async () => {
-    await gotoReady(page, `/authors/${id}`);
-    await expect(img).toBeVisible({ timeout: 3_000 });
-  }).toPass({ timeout: 20_000, intervals: [500, 1_000, 2_000] });
+  test("swap the letter avatar for an uploaded photo", async ({
+    authorPage,
+    authorId,
+    uploadAuthorPhoto,
+  }) => {
+    const id = await authorId("Ada Lovelace");
 
-  await expect(img).toHaveAttribute("src", `/api/authors/${id}/photo`);
-  // #1839 — `.disc-avatar` is the stable outer circle (rule 07: a
-  // `has_photo` flip must patch the child, not swap the element), so it
-  // stays present with the photo inside; only the letter fallback text
-  // should be gone.
-  await expect(page.locator("div.disc-avatar")).not.toContainText("A");
+    await test.step("upload a photo and reload until it shows", async () => {
+      // One transient photo error drops the image to the letter until a fresh mount,
+      // and a queued lookup can overwrite the upload, so retry both.
+      await expect(async () => {
+        await uploadAuthorPhoto(id);
+        await authorPage.goto(id);
+        await expect(authorPage.photoAvatar).toBeVisible({ timeout: 3_000 });
+      }).toPass({ timeout: 20_000, intervals: [500, 1_000, 2_000] });
+    });
 
-  // Sanity-check the image bytes load — fetch directly from the page
-  // context so cookies ride along. We can't rely on `waitForResponse` here
-  // because the <img> request may complete before we register the listener.
-  const status = await page.evaluate(
-    async (url: string) => (await fetch(url)).status,
-    `/api/authors/${id}/photo`,
-  );
-  expect(status).toBe(200);
-});
+    await test.step("check the photo is the author's", async () => {
+      await expect(authorPage.photoAvatar).toHaveAttribute(
+        "src",
+        `/api/authors/${id}/photo`,
+      );
+      // `.disc-avatar` stays as the outer circle when `has_photo` flips (#1839,
+      // rule 07), so only the letter inside it goes.
+      await expect(authorPage.letterAvatar).not.toContainText("A");
+    });
 
-test("admin DELETE clears the photo and the letter returns", async ({
-  page,
-  request,
-}) => {
-  const id = await fetchAuthorIdByName(request, "Ada Lovelace");
-
-  // Upload, confirm photo, then DELETE and confirm letter is back.
-  const putResp = await request.put(`/api/authors/${id}/photo`, {
-    multipart: {
-      photo: {
-        name: "ada.png",
-        mimeType: "image/png",
-        buffer: TINY_PNG,
-      },
-    },
+    await test.step("check the image bytes load", async () => {
+      // Fetched from the page so its cookies ride along; the <img> request can
+      // finish before a response listener is registered.
+      expect(await authorPage.photoStatus(id)).toBe(200);
+    });
   });
-  expect(putResp.status()).toBe(204);
 
-  const delResp = await request.delete(`/api/authors/${id}/photo`);
-  expect(delResp.status(), "DELETE photo should succeed").toBe(204);
+  test("bring the letter back when the photo is deleted", async ({
+    authorPage,
+    authorsRequests,
+    authorId,
+    uploadAuthorPhoto,
+  }) => {
+    const id = await authorId("Ada Lovelace");
 
-  await gotoReady(page, `/authors/${id}`);
-  await expect(page.locator("div.disc-avatar")).toBeVisible();
-  await expect(page.locator("img.disc-avatar--photo")).toHaveCount(0);
+    await test.step("upload the photo and delete it as the admin", async () => {
+      await uploadAuthorPhoto(id);
+      const deleted = await authorsRequests.deletePhoto(id);
+      expect(deleted.status(), "delete the photo").toBe(204);
+    });
+
+    await test.step("open the author", async () => {
+      await authorPage.goto(id);
+    });
+
+    await test.step("check the letter is back and the photo gone", async () => {
+      await expect(authorPage.letterAvatar).toBeVisible();
+      await expect(authorPage.photoAvatar).toHaveCount(0);
+    });
+  });
 });

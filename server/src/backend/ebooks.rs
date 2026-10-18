@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use super::conditional::{self, MEDIA_CACHE_CONTROL, MEDIA_VARY};
 
 pub(super) mod chapters;
+pub(super) mod images;
 mod query;
 use self::query::{decode_page_cursor, parse_formats, request_filters};
 use super::{internal, with_pagination_headers, AppState};

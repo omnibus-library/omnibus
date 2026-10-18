@@ -1,254 +1,195 @@
-// Admin "Delete files…" dialog on the book detail page.
-//
-// Serial mode, and every destructive test operates on a book this spec
-// created itself (an uploaded EPUB, or a fileless physical-only record).
-// Committed fixtures are only ever used for the read-only layout and the
-// intercepted-error paths — a spec that actually deleted one would remove the
-// file from `test_data/` and break every other flow on the shared server.
-import { existsSync, readFileSync, rmSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { books } from "../contracts/books";
+import { buildExternalBook } from "../data/scan";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
+// Every destructive test deletes a book it created itself; a committed fixture
+// is only used read-only, or with the delete intercepted, so no flow loses a file.
 test.describe.configure({ mode: "serial" });
 
-// An EPUB-only fixture used read-only, by the layout and error-path tests.
 const FIXTURE = FIXTURE_BOOKS.find((b) => b.slug === "beta")!;
 
-// The uploaded book's identity. Distinct from every committed fixture so it
-// can't auto-attach to one, and so its canonical folder is ours to remove.
-const UPLOAD_TITLE = "Deletable Test Volume";
-const UPLOAD_AUTHOR = "Delete Spec";
-// `library_layout` slugs `<author>/<title>/` under the library root.
-const UPLOAD_AUTHOR_DIR = resolve(fixturesDir(), "delete-spec");
-
-test.beforeAll(async ({ request }) => {
-  test.setTimeout(120_000);
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
-
-// Belt-and-braces: if a delete assertion failed mid-test, don't leave the
-// uploaded file inside the committed fixtures tree.
-test.afterAll(() => {
-  rmSync(UPLOAD_AUTHOR_DIR, { recursive: true, force: true });
-});
-
-/** Upload an EPUB into the library and return the new book's uuid. */
-async function uploadDeletableBook(
-  request: import("@playwright/test").APIRequestContext,
-): Promise<string> {
-  const source = resolve(fixturesDir(), "generated", "alpha.epub");
-  const resp = await request.post("/api/uploads/ebooks", {
-    multipart: {
-      file: {
-        name: "deletable.epub",
-        mimeType: "application/epub+zip",
-        buffer: readFileSync(source),
-      },
-      title: UPLOAD_TITLE,
-      author: UPLOAD_AUTHOR,
-    },
+test.describe("delete book files", () => {
+  test.beforeAll("seed the library", async ({ request }) => {
+    test.setTimeout(120_000);
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
-  // 201 Created — the commit handler files the upload and returns the new uuid.
-  expect(resp.status(), "POST /api/uploads/ebooks failed").toBe(201);
-  const { uuid } = (await resp.json()) as { uuid: string };
-  return uuid;
-}
 
-/** Create a fileless physical-only book and return its uuid. */
-async function createPhysicalOnlyBook(
-  request: import("@playwright/test").APIRequestContext,
-  title: string,
-): Promise<string> {
-  const resp = await request.post("/api/scan/physical-only", {
-    data: {
-      meta: {
-        isbn13: "9781234567897",
-        title,
-        authors: ["Delete Spec"],
-        year: null,
-        pages: null,
-        publisher: null,
-        description: null,
-        cover_url: null,
-        source: "open_library",
-      },
-      note: null,
-    },
+  test("show the delete files layout", async ({ request, bookDetailPage }) => {
+    const { deleteFilesDialog: dialog } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, FIXTURE.title);
+
+    await test.step("open the ebook", async () => {
+      await bookDetailPage.goto(uuid);
+    });
+
+    await test.step("check the rail offers an admin delete", async () => {
+      await bookDetailPage.assertDisplayed();
+      await bookDetailPage.topNav.assertDisplayed();
+      await expect(bookDetailPage.editMetadataLink).toBeVisible();
+      await expect(dialog.openButton).toBeVisible();
+    });
+
+    await test.step("open the dialog", async () => {
+      await dialog.open();
+      await expect(dialog.root).toBeVisible();
+      await expect(dialog.selectAllBox).toBeVisible();
+      // One checkbox row per file, and nothing is selected until the user picks.
+      await expect(dialog.fileCheckboxes).toHaveCount(1);
+      await expect(dialog.continueButton).toBeDisabled();
+    });
+
+    await test.step("cancel the dialog", async () => {
+      await dialog.cancel();
+      await expect(dialog.root).not.toBeVisible();
+    });
   });
-  expect(resp.status(), "POST /api/scan/physical-only failed").toBe(200);
-  const { book_uuid } = (await resp.json()) as { book_uuid: string };
-  return book_uuid;
-}
 
-/** Whether the book still resolves from the library RPC. */
-async function bookExists(
-  request: import("@playwright/test").APIRequestContext,
-  uuid: string,
-): Promise<boolean> {
-  const resp = await request.post("/api/rpc/ebook", { data: { uuid } });
-  if (resp.status() !== 200) return false;
-  const body = (await resp.json()) as unknown;
-  return body !== null;
-}
+  test("warn that deleting every file also removes the book", async ({
+    request,
+    bookDetailPage,
+    bookExists,
+  }) => {
+    const { deleteFilesDialog: dialog } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, FIXTURE.title);
 
-// ---------------------------------------------------------------------------
-// Layout
-// ---------------------------------------------------------------------------
+    await test.step("select every file and continue", async () => {
+      await bookDetailPage.goto(uuid);
+      await dialog.open();
+      await dialog.selectAll();
+      await dialog.continueToConfirm();
+    });
 
-test("renders the delete affordance on the book detail layout", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, FIXTURE.title);
-  await gotoReady(page, `/books/${uuid}`);
-  await expectNavVisible(page);
+    await test.step("check the confirm warns the book goes too", async () => {
+      await expect(dialog.confirmCopy).toContainText(
+        "removed from your library entirely",
+      );
+    });
 
-  // Admin storageState: the rail carries "Delete files…" alongside the
-  // existing edit/merge affordances.
-  await expect(page.getByTestId("edit-metadata")).toBeVisible();
-  const deleteFiles = page.getByTestId("delete-files");
-  await expect(deleteFiles).toBeVisible();
+    // Back returns to the checklist with the selection intact.
+    await test.step("go back, then cancel", async () => {
+      await dialog.back();
+      await expect(dialog.selectAllBox).toBeVisible();
+      await dialog.cancel();
+    });
 
-  await deleteFiles.click();
-  const dialog = page.getByTestId("delete-book-dialog");
-  await expect(dialog).toBeVisible();
-  await expect(page.getByTestId("delete-select-all")).toBeVisible();
-  // One checkbox row per file, and nothing is selected until the user picks.
-  await expect(dialog.getByRole("checkbox")).toHaveCount(1);
-  await expect(page.getByTestId("delete-continue")).toBeDisabled();
+    await test.step("check the book is untouched", async () => {
+      expect(await bookExists(uuid)).toBe(true);
+    });
+  });
 
-  await page.getByTestId("delete-cancel").click();
-  await expect(dialog).not.toBeVisible();
-});
+  test("keep the book when deleting its files fails", async ({
+    request,
+    bookDetailPage,
+    bookExists,
+    expectMutation,
+  }) => {
+    const { deleteFilesDialog: dialog } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, FIXTURE.title);
 
-// ---------------------------------------------------------------------------
-// Action — confirm copy (no mutation; the fixture book must survive)
-// ---------------------------------------------------------------------------
+    await test.step("select every file while deletes fail", async () => {
+      await bookDetailPage.goto(uuid);
+      await bookDetailPage.forceServerError(books.deleteFiles());
+      await dialog.open();
+      await dialog.selectAll();
+      await dialog.continueToConfirm();
+    });
 
-test("warns that deleting every file also removes the book", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, FIXTURE.title);
-  await gotoReady(page, `/books/${uuid}`);
+    await test.step("confirm the delete", async () => {
+      await expectMutation(failing(books.deleteFiles()), () =>
+        dialog.confirmDelete(),
+      );
+    });
 
-  await page.getByTestId("delete-files").click();
-  await page.getByTestId("delete-select-all").click();
-  await page.getByTestId("delete-continue").click();
+    await test.step("check the dialog shows the error and the book stays", async () => {
+      await expect(dialog.errorAlert).toBeVisible();
+      await dialog.cancel();
+      expect(await bookExists(uuid)).toBe(true);
+    });
+  });
 
-  await expect(page.getByTestId("delete-confirm-copy")).toContainText(
-    "removed from your library entirely",
-  );
-  // Back returns to the checklist with the selection intact, and Cancel
-  // leaves the book untouched.
-  await page.getByTestId("delete-back").click();
-  await expect(page.getByTestId("delete-select-all")).toBeVisible();
-  await page.getByTestId("delete-cancel").click();
-  expect(await bookExists(request, uuid)).toBe(true);
-});
+  test("delete an uploaded ebook with its record and file on disk", async ({
+    bookDetailPage,
+    libraryPage,
+    uploadedEbook,
+    bookExists,
+    expectMutation,
+  }) => {
+    test.slow();
+    const { deleteFilesDialog: dialog } = bookDetailPage;
 
-// ---------------------------------------------------------------------------
-// Action — error path (intercepted, so nothing is actually deleted)
-// ---------------------------------------------------------------------------
+    await test.step("select every file of the uploaded book", async () => {
+      await bookDetailPage.goto(uploadedEbook.uuid);
+      await dialog.open();
+      await dialog.selectAll();
+      await dialog.continueToConfirm();
+    });
 
-test("surfaces a server error and leaves the book in place", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, FIXTURE.title);
-  await gotoReady(page, `/books/${uuid}`);
+    await test.step("confirm the delete", async () => {
+      await expectMutation(books.deleteFiles(), () => dialog.confirmDelete());
+    });
 
-  await page.route("**/api/rpc/books/delete-files", (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "text/plain",
-      body: "delete exploded",
-    }),
-  );
+    // The last file gone takes the book with it, and the page back to the library.
+    await test.step("check the book and its file are gone", async () => {
+      await libraryPage.assertDisplayed();
+      expect(await bookExists(uploadedEbook.uuid)).toBe(false);
+      // The canonical `<author>/<title>/` folders are pruned with the file.
+      expect(existsSync(uploadedEbook.folder)).toBe(false);
+    });
+  });
 
-  await page.getByTestId("delete-files").click();
-  await page.getByTestId("delete-select-all").click();
-  await page.getByTestId("delete-continue").click();
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/books/delete-files", expectedStatus: 500 },
-    async () => page.getByTestId("delete-confirm").click(),
-  );
+  test("delete a physical-only book by removing its copy", async ({
+    bookDetailPage,
+    libraryPage,
+    scanRequests,
+    createdBookUuids,
+    bookExists,
+    expectMutation,
+  }) => {
+    const { deleteFilesDialog: dialog } = bookDetailPage;
 
-  // The dialog stays open with an alert; the book is still there.
-  await expect(page.getByRole("alert")).toBeVisible();
-  await page.getByTestId("delete-cancel").click();
-  expect(await bookExists(request, uuid)).toBe(true);
-});
+    const uuid =
+      await test.step("add a book with a copy and no files", async () => {
+        const added = await scanRequests.postPhysicalOnly(buildExternalBook());
+        await expect(added).toBeOK();
+        const { book_uuid }: { book_uuid: string } = await added.json();
+        createdBookUuids.add(book_uuid);
+        return book_uuid;
+      });
 
-// ---------------------------------------------------------------------------
-// Action — real deletes, on books this spec created
-// ---------------------------------------------------------------------------
+    // The control stays as this record's only removal, but no longer promises
+    // to delete files it hasn't got (#2471).
+    await test.step("open the delete dialog", async () => {
+      await bookDetailPage.goto(uuid);
+      await expect(dialog.openButton).toHaveText(/Delete record/);
+      await dialog.open();
+    });
 
-test("deletes an uploaded ebook, its record, and its file on disk", async ({
-  page,
-  request,
-}) => {
-  test.slow();
-  const uuid = await uploadDeletableBook(request);
-  await gotoReady(page, `/books/${uuid}`);
+    // No files, but the physical copy is a deletable item in its own section.
+    await test.step("select the copy", async () => {
+      await expect(dialog.root).toContainText("PHYSICAL COPIES");
+      await expect(dialog.root).toContainText("no file on disk");
+      await dialog.selectAll();
+      await expect(dialog.continueButton).toHaveText(/Delete 1 item/);
+      await dialog.continueToConfirm();
+    });
 
-  await page.getByTestId("delete-files").click();
-  await page.getByTestId("delete-select-all").click();
-  await page.getByTestId("delete-continue").click();
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/books/delete-files",
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("delete-confirm").click(),
-  );
+    // Every item selected means the record goes.
+    await test.step("confirm the delete", async () => {
+      await expect(dialog.confirmCopy).toContainText(
+        "removed from your library entirely",
+      );
+      await expectMutation(books.deleteFiles(), () => dialog.confirmDelete());
+      createdBookUuids.delete(uuid);
+    });
 
-  // Last file gone → the book goes too, and the page returns to the library.
-  await expect(page).toHaveURL(/\/$/);
-  expect(await bookExists(request, uuid)).toBe(false);
-  // The canonical `<author>/<title>/` folders are pruned along with the file.
-  expect(existsSync(UPLOAD_AUTHOR_DIR)).toBe(false);
-});
-
-test("deletes a physical-only book by un-recording its copy", async ({
-  page,
-  request,
-}) => {
-  const uuid = await createPhysicalOnlyBook(request, "Deletable Physical Copy");
-  await gotoReady(page, `/books/${uuid}`);
-
-  // The control stays — it is this record's only removal — but it stops
-  // promising to delete files it hasn't got (#2471).
-  const deleteControl = page.getByTestId("delete-files");
-  await expect(deleteControl).toHaveText(/Delete record/);
-
-  await deleteControl.click();
-  // No files, but the physical copy is a deletable item in its own section.
-  const dialog = page.getByTestId("delete-book-dialog");
-  await expect(dialog).toContainText("PHYSICAL COPIES");
-  await expect(dialog).toContainText("no file on disk");
-  await page.getByTestId("delete-select-all").click();
-  await expect(page.getByTestId("delete-continue")).toHaveText(/Delete 1 item/);
-  await page.getByTestId("delete-continue").click();
-
-  // Every item selected → the record goes.
-  await expect(page.getByTestId("delete-confirm-copy")).toContainText(
-    "removed from your library entirely",
-  );
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/books/delete-files", expectedStatus: 200 },
-    async () => page.getByTestId("delete-confirm").click(),
-  );
-
-  await expect(page).toHaveURL(/\/$/);
-  expect(await bookExists(request, uuid)).toBe(false);
+    await test.step("check the record is gone", async () => {
+      await libraryPage.assertDisplayed();
+      expect(await bookExists(uuid)).toBe(false);
+    });
+  });
 });

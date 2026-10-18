@@ -65,8 +65,9 @@ Beside the workspace:
 - **`omnibus-ios/`** — the native SwiftUI client, an Xcode project rather than a
   crate. See [ios.md](ios.md).
 - **`ui_tests/playwright/`** — the E2E suite: `tests/flows/` (one spec per user
-  flow), `tests/ios_glue/` (the iOS reader glue, driven in Chromium),
-  `tests/utils/`, `tests/fixtures/`. Conventions in
+  flow), `tests/ios_glue/` (the iOS reader glue, driven in Chromium), and the
+  page-object layers they use: `pages/`, `components/`, `apiRequests/`,
+  `contracts/`, `data/`, `fixtures/` (plus `utils/`). Conventions in
   [rule 04](../.claude/rules/04-playwright.md).
 - **`site/`** — the marketing site; see [below](#site).
 
@@ -103,6 +104,8 @@ too:
 - `/opds/*` — a session, else HTTP Basic.
 - `/metrics` — `OMNIBUS_METRICS_TOKEN`; the route does not exist until it is set.
 - `/mcp` — a bearer token, gated per request on the admin `mcp_enabled` setting.
+- `/api/ebooks/{uuid}/images/signed` — exempted from the gate and authenticated
+  by a per-image HMAC link (`backend::ebooks::images`).
 
 ## Database
 
@@ -182,6 +185,15 @@ value as a nullable field (`{ "progress": null }`). MCP requires an
 `outputSchema` root of `type: "object"`, and strict clients refuse the whole
 server over one tool that breaks the rule. rmcp no longer enforces this, so
 `every_tool_advertises_an_object_rooted_output_schema` does.
+
+`read_book_image` returns a download URL for an EPUB image's original, for a
+person to open rather than the tool layer to call. It is a per-image HMAC-signed
+link: 15 minutes, minted by `GET /api/ebooks/{uuid}/images/link` for
+download-permitted users and verified by `GET /api/ebooks/{uuid}/images/signed`
+without a session, so a leaked URL opens that one image and nothing else. It is
+built on the caller's public origin, never the loopback the hosted tools call
+through: the configured base URL over stdio, or the `/mcp` request's own origin
+when hosted (`AppState::request_origin`).
 
 MCP sessions are separable everywhere: `User-Agent: omnibus-mcp/<ver>` on every
 request (logged by the server's request span), and login sends

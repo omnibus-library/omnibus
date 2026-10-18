@@ -23,10 +23,11 @@ on `/shelves/:id`, which share the filter the landing saved (per browser
 context, in localStorage). The three states a filtered shelf can be in:
 
 - **Landing lens:** `lib-section-title` carries the narrowed count,
-  `lib-clear-filters-empty` is "nothing matches", `lib-page-error` a failed
-  narrowed fetch, and `lib-loading` the wait. A failed *full* list under a
-  filter is no page error: the rows answer the filter, and only `shelf-add-books`
-  goes inert (`aria-disabled`, titled for the failure).
+  `LibraryPage.noMatchesMessage` (with `clearFiltersButton`) is "nothing
+  matches", `lib-page-error` a failed narrowed fetch, and `lib-loading` the
+  wait. A failed *full* list under a filter is no page error: the rows answer
+  the filter, and only `shelf-add-books` goes inert (`aria-disabled`, titled for
+  the failure).
 - **`/shelves/:id`:** `shelf-count` is absent after a failed fetch (never `0`),
   `shelf-count-pending` while counting, `shelf-filtered-empty` with a `Clear
   filters` *button* (not a testid) when the filter rules every member out,
@@ -36,15 +37,18 @@ context, in localStorage). The three states a filtered shelf can be in:
   a spec sees that only by holding the request.
 
 **Spec technique.** The filter is context state but a shelf is server state, so
-the shelf cases run as a reader of their own on a cookie-less context with a
-hand-picked shelf only that reader owns.
+the shelf cases run as the worker reader (`readerLibraryPage`, `readerShelfPage`)
+with the hand-picked `filterShelf` only that reader owns.
 
-- Hold a read with a route handler that awaits a gate, then release it with
-  `page.unrouteAll({ behavior: "wait" })` — a plain `unroute` while a handler is
-  parked throws "Route is already handled".
+- A held read is `FilterBarComponent.holdShelfReads(clauses?)`, which parks the
+  shelf reads carrying that many clauses (all, when omitted) and returns the
+  release. The release drops the routes with `page.unrouteAll({ behavior: "wait"
+  })`: a plain `unroute` while a handler is parked throws "Route is already
+  handled".
 - A state that exists only between two events (a tile re-enabled before it
-  leaves) is recorded by a `MutationObserver` and asserted afterwards, never
-  polled for.
-- Specs that edit a shelf put it back in `finally` (the others count its members).
+  leaves) is recorded by a `record*` observer (`recordRemoveButtonStates`) and
+  asserted afterwards, never polled for.
+- The shelf a spec edits comes from `ownShelf`, whose `created*ShelfIds` set
+  deletes it after the test, so the specs that count members never see it.
 - The mobile sheet has no Playwright lane: it is mobile-only, so its logic is
   pure functions tested under `--features mobile`.

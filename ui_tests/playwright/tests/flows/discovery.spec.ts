@@ -1,263 +1,180 @@
-import type { APIRequestContext } from "@playwright/test";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { fetchBookIdByTitle } from "../utils/ebooks";
-import { gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
+import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
-import { selectShelfInGallery, withManualShelf } from "../utils/shelves";
 
-// Seed before all tests so the indexer has populated authors/series/tags.
-test.beforeAll(async ({ request }) => {
+test.beforeAll("seed the library", async ({ request }) => {
   await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
 });
 
-// ---------------------------------------------------------------------------
-// Helpers — resolve IDs via the RPC layer so tests don't hardcode DB ids.
-// ---------------------------------------------------------------------------
+test.describe("author page", () => {
+  test("show the author page layout", async ({ authorPage, authorId }) => {
+    await test.step("open an author", async () => {
+      await authorPage.goto(await authorId("Ada Lovelace"));
+    });
 
-async function fetchAuthorIdByName(
-  request: APIRequestContext,
-  name: string,
-): Promise<number> {
-  // GET /api/rpc/ebooks (same payload the landing page uses) and scan
-  // each book's creators for the named author.
-  const resp = await request.get("/api/rpc/ebooks");
-  expect(resp.status(), "GET /api/rpc/ebooks failed").toBe(200);
-  const body = (await resp.json()) as {
-    books: { creators: { name: string; id: number | null }[] }[];
-  };
-  for (const book of body.books) {
-    const match = book.creators.find((c) => c.name === name);
-    if (match?.id) return match.id;
-  }
-  throw new Error(`no indexed author named ${JSON.stringify(name)}`);
-}
+    await test.step("check the name, counts and progress", async () => {
+      await authorPage.assertDisplayed();
+      await authorPage.topNav.assertDisplayed();
+      await expect(authorPage.heading).toContainText("Ada");
+      await expect(authorPage.heading).toContainText("Lovelace");
+      await expect(authorPage.meta).toContainText("book");
+      await expect(authorPage.readingStrip).toBeVisible();
+      await expect(authorPage.showInLibraryButton).toBeVisible();
+    });
+  });
 
-async function fetchSeriesIdByName(
-  request: APIRequestContext,
-  name: string,
-): Promise<number> {
-  // `EbookMetadata` carries `series_id` directly, so we can resolve the
-  // series ID from any book in the series via the same `/api/rpc/ebooks`
-  // payload the landing page consumes.
-  const resp = await request.get("/api/rpc/ebooks");
-  expect(resp.status(), "GET /api/rpc/ebooks failed").toBe(200);
-  const body = (await resp.json()) as {
-    books: { series: string | null; series_id: number | null }[];
-  };
-  const match = body.books.find(
-    (b) => b.series === name && b.series_id != null,
-  );
-  if (!match?.series_id) {
-    throw new Error(`no indexed series named ${JSON.stringify(name)}`);
-  }
-  return match.series_id;
-}
+  test("show the author's books in the library", async ({
+    authorPage,
+    libraryPage,
+    authorId,
+  }) => {
+    const name = "Niklaus Wirth";
 
-// ---------------------------------------------------------------------------
-// Author page
-// ---------------------------------------------------------------------------
+    await test.step("show the author in the library", async () => {
+      // A fresh context has saved no library prefs: the filter is handed over.
+      await authorPage.goto(await authorId(name));
+      await authorPage.showInLibrary(name);
+    });
 
-test("renders the author page layout", async ({ page, request }) => {
-  const authorName = "Ada Lovelace";
-  const authorId = await fetchAuthorIdByName(request, authorName);
+    await test.step("check the library is narrowed to them", async () => {
+      await libraryPage.assertDisplayed();
+      await expect(libraryPage.filterBar.chip(0)).toContainText(name);
+    });
 
-  await gotoReady(page, `/authors/${authorId}`);
+    await test.step("check the filter outlives a reload", async () => {
+      await libraryPage.goto();
+      await expect(libraryPage.filterBar.chip(0)).toContainText(name);
+    });
+  });
 
-  // The pane sits beside the list, whose title is the page's h1.
-  await expect(page.getByRole("heading", { level: 1 })).toContainText(
-    "Authors",
-  );
-  await expect(page.getByTestId("author-name")).toHaveText(authorName);
+  test("leave a selected shelf to show the author's books", async ({
+    authorPage,
+    libraryPage,
+    authorId,
+    ownShelf,
+  }) => {
+    const name = "Niklaus Wirth";
+    const shelf = await ownShelf("Show in library");
 
-  // Book count, the reader's progress strip, and the library shortcut.
-  await expect(page.getByTestId("author-meta")).toContainText("book");
-  await expect(page.getByTestId("author-reading")).toBeVisible();
-  await expect(page.getByTestId("author-show-in-library")).toBeVisible();
-});
+    await test.step("pick an empty shelf on the library", async () => {
+      // The landing restores its last shelf pick, which would hide the books.
+      await libraryPage.goto();
+      await libraryPage.selectShelf(shelf);
+    });
 
-test("author page shows books by the author", async ({ page, request }) => {
-  // Niklaus Wirth has 4 books in the Code Quartet
-  const authorName = "Niklaus Wirth";
-  const authorId = await fetchAuthorIdByName(request, authorName);
+    await test.step("show the author in the library", async () => {
+      await authorPage.goto(await authorId(name));
+      await authorPage.showInLibrary(name);
+    });
 
-  await gotoReady(page, `/authors/${authorId}`);
+    await test.step("check it lists All Books, narrowed", async () => {
+      await expect(libraryPage.sectionTitle).toContainText("All Books");
+      await expect(libraryPage.filterBar.chip(0)).toContainText(name);
+    });
+  });
 
-  await expect(page.getByTestId("author-name")).toContainText("Wirth");
+  test("show the books by the author", async ({ authorPage, authorId }) => {
+    await test.step("open an author with a four-book series", async () => {
+      await authorPage.goto(await authorId("Niklaus Wirth"));
+    });
 
-  // Should show the series section for "Code Quartet"
-  await expect(page.getByText("Code Quartet")).toBeVisible();
+    await test.step("check the series and its first book", async () => {
+      await expect(authorPage.heading).toContainText("Wirth");
+      await expect(authorPage.seriesLink("Code Quartet")).toBeVisible();
+      await expect(authorPage.bookTitle("Quartet I: Lexer")).toBeVisible();
+    });
+  });
 
-  // At least the first book title should be visible
-  await expect(page.getByText("Quartet I: Lexer")).toBeVisible();
-});
+  test("link the series heading to the series page", async ({
+    authorPage,
+    seriesPage,
+    authorId,
+  }) => {
+    await test.step("open an author whose books share one series", async () => {
+      // Wirth's four books all belong to Code Quartet, one shelf with one
+      // "Series page" link.
+      await authorPage.goto(await authorId("Niklaus Wirth"));
+      await expect(authorPage.seriesLink("Code Quartet")).toBeVisible();
+    });
 
-test("author page shows the author's books in the library", async ({
-  page,
-  request,
-}) => {
-  // A fresh browser context has never saved library prefs, which is the case
-  // a saved filter alone can't reach: the filter must be handed over.
-  const authorId = await fetchAuthorIdByName(request, "Niklaus Wirth");
-  await gotoReady(page, `/authors/${authorId}`);
+    await test.step("click the series heading", async () => {
+      await authorPage.openSeries("Code Quartet");
+    });
 
-  // The library's first page asks for this author's books alone.
-  const filtered = page.waitForResponse(
-    (res) =>
-      res.url().includes("/api/rpc/ebooks/page") &&
-      (res.request().postData() ?? "").includes("Niklaus Wirth"),
-  );
-  await page.getByTestId("author-show-in-library").click();
-  await filtered;
-
-  await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByTestId("filter-chip-0")).toContainText(
-    "Niklaus Wirth",
-  );
-
-  // Saved once the library answered, so it outlives a reload.
-  await gotoReady(page, "/");
-  await expect(page.getByTestId("filter-chip-0")).toContainText(
-    "Niklaus Wirth",
-  );
-});
-
-test("author page leaves a selected shelf to show the author's books", async ({
-  page,
-  request,
-}) => {
-  // The landing restores its last shelf pick, which would otherwise narrow
-  // the author's books to that shelf's (here, none of them).
-  const authorId = await fetchAuthorIdByName(request, "Niklaus Wirth");
-  await withManualShelf(request, "Show in library", async (shelf) => {
-    await gotoReady(page, "/");
-    await selectShelfInGallery(page, shelf.id, shelf.name);
-
-    await gotoReady(page, `/authors/${authorId}`);
-    await page.getByTestId("author-show-in-library").click();
-
-    await expect(page.getByTestId("lib-section-title")).toContainText(
-      "All Books",
-    );
-    await expect(page.getByTestId("filter-chip-0")).toContainText(
-      "Niklaus Wirth",
-    );
+    await test.step("check the series page opens", async () => {
+      await seriesPage.assertShowsSeries("Code Quartet");
+    });
   });
 });
 
-test("author series section heading links to the series page", async ({
-  page,
-  request,
-}) => {
-  // Niklaus Wirth's four books all belong to "Code Quartet", so the author
-  // page renders a single series shelf whose "Series page" link opens
-  // /series/:id.
-  const authorId = await fetchAuthorIdByName(request, "Niklaus Wirth");
-  await gotoReady(page, `/authors/${authorId}`);
+test.describe("book detail", () => {
+  test("link the shelf stop to the series page", async ({
+    bookDetailPage,
+    seriesPage,
+    request,
+  }) => {
+    // "Beta in the Series" is Pioneers #1, so its Shelf stop draws the whole series
+    // with a "series page →" link; the Home kicker's link is in book_detail.spec.ts.
+    const beta = FIXTURE_BOOKS.find((book) => book.slug === "beta")!;
 
-  const seriesLink = page.getByRole("link", {
-    name: "Code Quartet series page",
+    await test.step("open the first book of a series", async () => {
+      await bookDetailPage.goto(
+        await fetchBookUuidByTitle(request, beta.title),
+      );
+      await expect(bookDetailPage.seriesShelf).toBeVisible();
+    });
+
+    await test.step("click the series page link", async () => {
+      await bookDetailPage.openSeriesPage();
+    });
+
+    await test.step("check the series page opens", async () => {
+      await seriesPage.assertShowsSeries("Pioneers");
+    });
   });
-  await expect(seriesLink).toBeVisible();
-  await seriesLink.click();
-
-  await expect(page).toHaveURL(/\/series\/\d+$/);
-  // Destination renders: series page H1 + book-count label.
-  await expect(page.getByRole("heading", { level: 1 })).toContainText(
-    "Code Quartet",
-  );
-  await expect(page.getByText(/in library/)).toBeVisible();
 });
 
-// ---------------------------------------------------------------------------
-// Book detail → series
-// ---------------------------------------------------------------------------
+test.describe("series page", () => {
+  test("show the series page layout", async ({ seriesPage, seriesId }) => {
+    await test.step("open a series", async () => {
+      await seriesPage.goto(await seriesId("Pioneers"));
+    });
 
-test("book detail shelf stop links to the series page", async ({
-  page,
-  request,
-}) => {
-  // `beta` ("Beta in the Series") is Pioneers #1, so the marquee Shelf stop
-  // renders the whole series as covers with a dedicated "series page →"
-  // link under the shelf (the Home kicker's series link is covered by
-  // book_detail.spec.ts — this test owns the shelf-stop affordance).
-  const beta = FIXTURE_BOOKS.find((b) => b.slug === "beta")!;
-  const id = await fetchBookIdByTitle(request, beta.title);
-  await gotoReady(page, `/books/${id}`);
-
-  await expect(page.getByTestId("bdmq-series-shelf")).toBeVisible();
-  const shelfLink = page.getByRole("link", { name: /series page/ });
-  await shelfLink.click();
-
-  await expect(page).toHaveURL(/\/series\/\d+$/);
-  await expect(page.getByRole("heading", { level: 1 })).toContainText(
-    "Pioneers",
-  );
-  await expect(page.getByText(/in library/)).toBeVisible();
-});
-
-// ---------------------------------------------------------------------------
-// Series page
-// ---------------------------------------------------------------------------
-
-test("renders the series page layout", async ({ page, request }) => {
-  const seriesName = "Pioneers";
-  const seriesId = await fetchSeriesIdByName(request, seriesName);
-
-  await gotoReady(page, `/series/${seriesId}`);
-
-  // H1 contains the series name
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-
-  // Book count label is visible
-  await expect(page.getByText(/in library/)).toBeVisible();
-});
-
-test("series page shows books in order", async ({ page, request }) => {
-  const seriesName = "Pioneers";
-  const seriesId = await fetchSeriesIdByName(request, seriesName);
-
-  await gotoReady(page, `/series/${seriesId}`);
-
-  // Should have multiple book cards — "Pioneers" has 5 books in fixtures
-  const cards = page.locator("article.series-card");
-  await expect(cards).toHaveCount(5);
-
-  // First book should show "Book #1"
-  await expect(cards.first().getByText("Book #1")).toBeVisible();
-});
-
-test("clicking a non-linked area of a series book card navigates to the book", async ({
-  page,
-  request,
-}) => {
-  const seriesName = "Pioneers";
-  const seriesId = await fetchSeriesIdByName(request, seriesName);
-
-  await gotoReady(page, `/series/${seriesId}`);
-
-  // "Book #1" is plain label text, not the cover or title link, and it's a
-  // sibling (not an ancestor/descendant) of the stretched-link overlay — so
-  // Playwright's actionability check correctly refuses a direct `.click()`
-  // on the label itself (a different element receives the pointer event).
-  // Click through the card, an ancestor of the overlay, at the label's
-  // position instead, so the browser's real hit-testing routes the click to
-  // the full-card overlay.
-  const firstCard = page.locator("article.series-card").first();
-  const label = firstCard.getByText("Book #1");
-  await expect(label).toBeVisible();
-
-  const cardBox = await firstCard.boundingBox();
-  const labelBox = await label.boundingBox();
-  if (!cardBox || !labelBox) {
-    throw new Error("expected the card and label to have a bounding box");
-  }
-  await firstCard.click({
-    position: {
-      x: labelBox.x + labelBox.width / 2 - cardBox.x,
-      y: labelBox.y + labelBox.height / 2 - cardBox.y,
-    },
+    await test.step("check the heading and the book count", async () => {
+      await seriesPage.assertDisplayed();
+      await seriesPage.topNav.assertDisplayed();
+      await expect(seriesPage.bookCountLabel).toBeVisible();
+    });
   });
 
-  await expect(page).toHaveURL(/\/books\/[^/]+$/);
+  test("list the books in order", async ({ seriesPage, seriesId }) => {
+    await test.step("open a five-book series", async () => {
+      await seriesPage.goto(await seriesId("Pioneers"));
+    });
+
+    await test.step("check the cards and the first number", async () => {
+      await expect(seriesPage.bookCards).toHaveCount(5);
+      await expect(seriesPage.firstCardNumberLabel).toBeVisible();
+    });
+  });
+
+  test("open the book when a non-linked area of its card is clicked", async ({
+    seriesPage,
+    bookDetailPage,
+    seriesId,
+  }) => {
+    await test.step("open a series", async () => {
+      await seriesPage.goto(await seriesId("Pioneers"));
+      await expect(seriesPage.firstCardNumberLabel).toBeVisible();
+    });
+
+    await test.step("click the first card on its number", async () => {
+      await seriesPage.openFirstBookFromItsNumber();
+    });
+
+    await test.step("check the book opens", async () => {
+      await bookDetailPage.assertDisplayed();
+    });
+  });
 });

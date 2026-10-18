@@ -131,7 +131,7 @@ test.describe("epub reader", () => {
 
     // Back always lands on the book's page, whichever entry opened the reader.
     await test.step("go back", async () => {
-      await epubReaderPage.goBack();
+      await epubReaderPage.leave();
     });
 
     await test.step("check the book detail page shows", async () => {
@@ -244,7 +244,7 @@ test.describe("epub reader", () => {
 
       // A client-side navigation with no mutation, so follow the route change.
       await test.step("open the reader with the read action", async () => {
-        await bookDetailPage.read();
+        await bookDetailPage.formatRow("EPUB").read();
       });
 
       await test.step("check the reader opens", async () => {

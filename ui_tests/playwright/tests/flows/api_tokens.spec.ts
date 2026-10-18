@@ -1,418 +1,455 @@
-import type { Locator, Page } from "@playwright/test";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
-import { expectNavVisible, gotoReady } from "../utils/nav";
+import { apiTokens } from "../contracts/apiTokens";
+import { settings } from "../contracts/settings";
+import type { CreatedApiToken } from "../data/account";
+import { uniqueSuffix } from "../data/unique";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
+import { topEdge } from "../utils/dom";
 
-// Settings › Sign-in & security → API tokens (#2313, redesigned in #2330):
-// per-user long-lived `omni_…` bearers with a create-once secret hand-off
-// (copy buttons that report whether the copy landed, an explicit dismiss), a
-// token table with status pills and `omni_…xxxx` identifiers, in-row rename,
-// and in-row revoke confirmation. Tokens are per-user state on the shared
-// seeded admin, so every test names its tokens uniquely and revokes what it
-// created. Counts are never asserted, only presence/absence of this test's
-// own rows.
-const SETTINGS_API_TOKENS = "/settings?section=security";
+// Tokens are per-user state on the shared admin, so every test names its own
+// uniquely and a fixture revokes what it made; counts are never asserted, only
+// the presence or absence of a test's own rows.
 
-const nameInput = (page: Page) => page.getByTestId("api-token-name-input");
-const createButton = (page: Page) => page.getByTestId("api-token-create");
-const secretPanel = (page: Page) => page.getByTestId("api-token-secret-field");
-const secretField = (page: Page) => page.getByTestId("api-token-secret");
-const status = (page: Page) => page.getByTestId("api-tokens-status");
+test.describe("api tokens section", () => {
+  test("show the api tokens layout", async ({ settingsPage }) => {
+    const tokens = settingsPage.apiTokens;
 
-const rowFor = (page: Page, name: string) =>
-  page.getByTestId("api-token-row").filter({ hasText: name });
-
-async function createToken(page: Page, name: string): Promise<void> {
-  await nameInput(page).fill(name);
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/api-tokens/create",
-      expectedBody: { name },
-      expectedStatus: 200,
-    },
-    async () => createButton(page).click(),
-  );
-}
-
-// Revoke is two-step: the row's Revoke swaps in a confirmation row, and only
-// its "Revoke token" fires the mutation.
-async function revokeToken(page: Page, name: string): Promise<void> {
-  await rowFor(page, name)
-    .getByRole("button", { name: `Revoke ${name}`, exact: true })
-    .click();
-  const confirm = page.getByTestId("api-token-revoke-confirm");
-  await expect(confirm).toBeVisible();
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/api-tokens/revoke",
-      expectedStatus: 200,
-    },
-    async () => confirm.getByRole("button", { name: "Revoke token" }).click(),
-  );
-  await expect(rowFor(page, name)).toHaveCount(0);
-}
-
-test("renders the API tokens section layout", async ({ page }) => {
-  await gotoReady(page, SETTINGS_API_TOKENS);
-
-  await expectNavVisible(page);
-  await expect(page.getByTestId("api-tokens-card")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { level: 3, name: "API tokens" }),
-  ).toBeVisible();
-  // The head states the live-token count and the account's blast radius —
-  // the seeded admin always carries the Admin chip.
-  await expect(page.getByTestId("api-tokens-count")).toContainText("live");
-  await expect(page.getByTestId("api-tokens-scope")).toContainText("Admin");
-  await expect(nameInput(page)).toBeVisible();
-  await expect(createButton(page)).toBeVisible();
-  // No secret surface exists before a create — the secret only ever renders
-  // once, immediately after minting.
-  await expect(secretPanel(page)).toHaveCount(0);
-});
-
-test("creates a token, hands off the secret exactly once, and revokes it", async ({
-  page,
-}) => {
-  const name = `e2e once ${Date.now()}`;
-  await gotoReady(page, SETTINGS_API_TOKENS);
-
-  await createToken(page, name);
-
-  // The hand-off panel is displayed now: the omni_-prefixed secret, its copy
-  // button, and the pre-filled `claude mcp add` command carrying the same
-  // secret and this instance's origin.
-  await expect(secretPanel(page)).toBeVisible();
-  const secret = (await secretField(page).textContent()) ?? "";
-  expect(secret).toMatch(/^omni_/);
-  await expect(page.getByTestId("api-token-secret-copy")).toBeVisible();
-  const command = page.getByTestId("api-token-mcp-command");
-  await expect(command).toContainText(secret);
-  await expect(command).toContainText(`${new URL(page.url()).origin}/mcp`);
-  await expect(page.getByTestId("api-token-mcp-command-copy")).toBeVisible();
-
-  // The form stays on top; the secret lands directly under it and the new
-  // row joins the list below, rather than appearing above where it was made.
-  const row = rowFor(page, name);
-  await expect(row).toBeVisible();
-  await expect(nameInput(page)).toBeVisible();
-  const top = async (l: Locator) => (await l.boundingBox())?.y ?? Number.NaN;
-  const formTop = await top(createButton(page));
-  const secretTop = await top(secretPanel(page));
-  expect(secretTop).toBeGreaterThan(formTop);
-  expect(await top(row)).toBeGreaterThan(secretTop);
-
-  // The row lists the token with its omni_…xxxx identifier and the
-  // never-used pill.
-  await expect(row.getByText(`omni_…${secret.slice(-4)}`)).toBeVisible();
-  await expect(row.getByTestId("api-token-pill")).toHaveText("Never used");
-
-  // The live status line announces the hand-off.
-  await expect(status(page)).toContainText("Token created.");
-
-  // Dismissing hides the secret for good.
-  await page.getByRole("button", { name: "Hide secret" }).click();
-  await expect(secretPanel(page)).toHaveCount(0);
-
-  // After a reload the secret is unrecoverable: the row persists, the
-  // secret surface does not.
-  await gotoReady(page, SETTINGS_API_TOKENS);
-  await expect(rowFor(page, name)).toBeVisible();
-  await expect(secretPanel(page)).toHaveCount(0);
-
-  await revokeToken(page, name);
-});
-
-test("cancels an in-row revoke confirmation without revoking", async ({
-  page,
-}) => {
-  const name = `e2e cancel ${Date.now()}`;
-  await gotoReady(page, SETTINGS_API_TOKENS);
-  await createToken(page, name);
-  await page.getByTestId("api-token-secret-dismiss").click();
-
-  await rowFor(page, name)
-    .getByRole("button", { name: `Revoke ${name}`, exact: true })
-    .click();
-  const confirm = page.getByTestId("api-token-revoke-confirm");
-  await expect(confirm).toBeVisible();
-  await confirm.getByRole("button", { name: "Cancel" }).click();
-  await expect(confirm).toHaveCount(0);
-  await expect(rowFor(page, name)).toBeVisible();
-
-  await revokeToken(page, name);
-});
-
-test("renames a token in place", async ({ page }) => {
-  const name = `e2e rename ${Date.now()}`;
-  const renamed = `${name} v2`;
-  await gotoReady(page, SETTINGS_API_TOKENS);
-  await createToken(page, name);
-  await page.getByTestId("api-token-secret-dismiss").click();
-
-  await rowFor(page, name)
-    .getByRole("button", { name: `Rename ${name}`, exact: true })
-    .click();
-  const input = page.getByTestId("api-token-rename-input");
-  await expect(input).toHaveValue(name);
-  await input.fill(renamed);
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/api-tokens/rename",
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("api-token-rename-save").click(),
-  );
-  await expect(rowFor(page, renamed)).toBeVisible();
-
-  // The rename survives a reload — it persisted, not just re-rendered.
-  await gotoReady(page, SETTINGS_API_TOKENS);
-  await expect(rowFor(page, renamed)).toBeVisible();
-
-  await revokeToken(page, renamed);
-});
-
-test("shows an error and keeps the list unchanged when creation fails", async ({
-  page,
-}) => {
-  const name = `e2e fail ${Date.now()}`;
-  await gotoReady(page, SETTINGS_API_TOKENS);
-
-  await page.route("**/api/rpc/api-tokens/create", (route) =>
-    route.fulfill({ status: 500, body: "internal server error" }),
-  );
-  await nameInput(page).fill(name);
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/api-tokens/create",
-      expectedBody: { name },
-      expectedStatus: 500,
-    },
-    async () => createButton(page).click(),
-  );
-
-  await expect(status(page)).toBeVisible();
-  await expect(status(page)).toHaveClass(/error/);
-  await expect(secretPanel(page)).toHaveCount(0);
-  await expect(rowFor(page, name)).toHaveCount(0);
-});
-
-test("shows an error and keeps the row when rename fails", async ({ page }) => {
-  const name = `e2e rename-fail ${Date.now()}`;
-  await gotoReady(page, SETTINGS_API_TOKENS);
-  await createToken(page, name);
-  await page.getByTestId("api-token-secret-dismiss").click();
-
-  await page.route("**/api/rpc/api-tokens/rename", (route) =>
-    route.fulfill({ status: 500, body: "internal server error" }),
-  );
-  await rowFor(page, name)
-    .getByRole("button", { name: `Rename ${name}`, exact: true })
-    .click();
-  await page.getByTestId("api-token-rename-input").fill(`${name} v2`);
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/api-tokens/rename",
-      expectedStatus: 500,
-    },
-    async () => page.getByTestId("api-token-rename-save").click(),
-  );
-
-  // The error surfaces, the edit row stays open, and cancelling reveals the
-  // row still under its original name.
-  await expect(status(page)).toHaveClass(/error/);
-  await page.getByTestId("api-token-rename-cancel").click();
-  await expect(rowFor(page, name)).toBeVisible();
-
-  await page.unroute("**/api/rpc/api-tokens/rename");
-  await revokeToken(page, name);
-});
-
-test("shows an error and keeps the row when revoke fails", async ({ page }) => {
-  const name = `e2e revoke-fail ${Date.now()}`;
-  await gotoReady(page, SETTINGS_API_TOKENS);
-  await createToken(page, name);
-  await page.getByTestId("api-token-secret-dismiss").click();
-
-  await page.route("**/api/rpc/api-tokens/revoke", (route) =>
-    route.fulfill({ status: 500, body: "internal server error" }),
-  );
-  await rowFor(page, name)
-    .getByRole("button", { name: `Revoke ${name}`, exact: true })
-    .click();
-  const confirm = page.getByTestId("api-token-revoke-confirm");
-  await expect(confirm).toBeVisible();
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/api-tokens/revoke",
-      expectedStatus: 500,
-    },
-    async () => confirm.getByRole("button", { name: "Revoke token" }).click(),
-  );
-
-  // The error surfaces and the token survives — cancel back to the row.
-  await expect(status(page)).toHaveClass(/error/);
-  await page.getByTestId("api-token-revoke-cancel").click();
-  await expect(rowFor(page, name)).toBeVisible();
-
-  await page.unroute("**/api/rpc/api-tokens/revoke");
-  await revokeToken(page, name);
-});
-
-// ── Copying the secret ──────────────────────────────────────────────
-// The copy must say whether it landed. On a plain-http LAN install there is
-// no `navigator.clipboard`, and a silent failure there loses the secret.
-
-test.describe("copying the secret", () => {
-  test.use({ permissions: ["clipboard-read", "clipboard-write"] });
-
-  test("copies the secret and says so", async ({ page }) => {
-    const name = `e2e copy ${Date.now()}`;
-    await gotoReady(page, SETTINGS_API_TOKENS);
-    await createToken(page, name);
-    const secret = (await secretField(page).textContent()) ?? "";
-
-    await page.getByTestId("api-token-secret-copy").click();
-
-    await expect(page.getByTestId("api-token-secret-copy-feedback")).toHaveText(
-      "Copied",
-    );
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-      secret,
-    );
-
-    await page.getByTestId("api-token-secret-dismiss").click();
-    await revokeToken(page, name);
-  });
-});
-
-test("says so when the secret can't be copied", async ({ page }) => {
-  // No clipboard API (as on plain http) and a refused fallback copy.
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, "clipboard", { value: undefined });
-    document.execCommand = () => false;
-  });
-  const name = `e2e copy-fail ${Date.now()}`;
-  await gotoReady(page, SETTINGS_API_TOKENS);
-  await createToken(page, name);
-
-  await page.getByTestId("api-token-secret-copy").click();
-
-  const feedback = page.getByTestId("api-token-secret-copy-feedback");
-  await expect(feedback).toHaveText("Couldn\u2019t copy. Select and copy it.");
-  await expect(feedback).toHaveClass(/error/);
-  await expect(secretPanel(page)).toBeVisible();
-
-  await page.getByTestId("api-token-secret-dismiss").click();
-  await revokeToken(page, name);
-});
-
-// ── Hosted MCP endpoint toggle (#2314) ──────────────────────────────
-// Lives under Administration › Integrations, admin-only (the seeded user is
-// an admin). The toggle is instance-wide state. The action test flips it on
-// and restores it off (the shipped default) before finishing, and no other
-// spec touches /mcp, so nothing else in the suite reads it.
-
-const ADMIN_INTEGRATIONS = "/admin?section=integrations";
-
-const mcpToggle = (page: Page) => page.getByTestId("mcp-toggle");
-const mcpState = (page: Page) => page.getByTestId("mcp-toggle-state");
-
-test("renders the MCP endpoint toggle card for an admin", async ({ page }) => {
-  await gotoReady(page, ADMIN_INTEGRATIONS);
-
-  await expect(page.getByTestId("mcp-toggle-card")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Hosted MCP endpoint" }),
-  ).toBeVisible();
-  await expect(mcpState(page)).toBeVisible();
-  // The copyable endpoint URL carries this instance's origin.
-  await expect(page.getByTestId("mcp-endpoint-url")).toHaveText(
-    `${new URL(page.url()).origin}/mcp`,
-  );
-  // The card waits for the status read before offering the switch.
-  await expect(mcpToggle(page)).toBeEnabled();
-});
-
-test("enables and disables the MCP endpoint", async ({ page }) => {
-  await gotoReady(page, ADMIN_INTEGRATIONS);
-  await expect(mcpToggle(page)).toBeEnabled();
-
-  try {
-    // The dev instance ships with the toggle off; flip on, then restore.
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: "/api/settings/mcp",
-        expectedBody: { enabled: true },
-        expectedStatus: 204,
-      },
-      async () => mcpToggle(page).click(),
-    );
-    await expect(page.getByTestId("mcp-toggle-status")).toHaveClass(/success/);
-    await expect(mcpState(page)).toHaveText("enabled");
-    await expect(mcpToggle(page)).toHaveAttribute("aria-checked", "true");
-
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: "/api/settings/mcp",
-        expectedBody: { enabled: false },
-        expectedStatus: 204,
-      },
-      async () => mcpToggle(page).click(),
-    );
-    await expect(mcpState(page)).toHaveText("disabled");
-    await expect(mcpToggle(page)).toHaveAttribute("aria-checked", "false");
-  } finally {
-    // Failure-safe restore of the instance-wide default: a mid-test failure
-    // must not leave /mcp enabled for the rest of the suite. Direct API
-    // write (idempotent) — the UI's state is unknowable after a failure.
-    await page.request.post("/api/settings/mcp", {
-      data: { enabled: false },
+    await test.step("open the security section", async () => {
+      await settingsPage.goto("security");
     });
-  }
+
+    await test.step("check the settings frame", async () => {
+      await settingsPage.assertDisplayedFor("security");
+      await settingsPage.topNav.assertDisplayed();
+    });
+
+    // The head states the live-token count and the account's blast radius.
+    await test.step("check the token card", async () => {
+      await expect(tokens.card).toBeVisible();
+      await expect(tokens.heading).toBeVisible();
+      await expect(tokens.liveCount).toContainText("live");
+      await expect(tokens.scope).toContainText("Admin");
+      await expect(tokens.nameField).toBeVisible();
+      await expect(tokens.createButton).toBeVisible();
+    });
+
+    // The secret only ever renders once, immediately after minting.
+    await test.step("check no secret is shown", async () => {
+      await expect(tokens.secretPanel).toHaveCount(0);
+    });
+  });
+
+  test("create a token and hand off its secret once", async ({
+    settingsPage,
+    createdApiTokenIds,
+    expectMutation,
+    baseURL,
+  }) => {
+    const tokens = settingsPage.apiTokens;
+    const name = `e2e once ${uniqueSuffix()}`;
+
+    await test.step("open the security section", async () => {
+      await settingsPage.goto("security");
+    });
+
+    await test.step("create a token", async () => {
+      const { response } = await expectMutation(apiTokens.create(name), () =>
+        tokens.createToken(name),
+      );
+      const created: CreatedApiToken = await response.json();
+      createdApiTokenIds.add(created.token.id);
+    });
+
+    // The panel holds the omni_ secret, its copy button and the `claude mcp add`
+    // command carrying the same secret and this instance's origin.
+    const secret =
+      await test.step("check the secret is handed off", async () => {
+        await expect(tokens.secretPanel).toBeVisible();
+        const shown = await tokens.readSecret();
+        expect(shown).toMatch(/^omni_/);
+        await expect(tokens.secretCopyButton).toBeVisible();
+        await expect(tokens.mcpCommand).toContainText(shown);
+        await expect(tokens.mcpCommand).toContainText(`${baseURL}/mcp`);
+        await expect(tokens.mcpCommandCopyButton).toBeVisible();
+        return shown;
+      });
+
+    // The form stays on top; the secret lands directly under it and the new
+    // row joins the list below, rather than appearing above where it was made.
+    await test.step("check the form, the secret and the row stack in order", async () => {
+      await expect(tokens.nameField).toBeVisible();
+      const formTop = await topEdge(tokens.createButton);
+      const secretTop = await topEdge(tokens.secretPanel);
+      expect(secretTop).toBeGreaterThan(formTop);
+      expect(await topEdge(tokens.row(name))).toBeGreaterThan(secretTop);
+    });
+
+    await test.step("check the new row", async () => {
+      await expect(tokens.row(name)).toBeVisible();
+      await expect(tokens.rowIdentifier(name, secret)).toBeVisible();
+      await expect(tokens.rowPill(name)).toHaveText("Never used");
+    });
+
+    await test.step("check the status line announces the hand-off", async () => {
+      await expect(tokens.statusMessage).toContainText("Token created.");
+    });
+
+    await test.step("dismiss the secret", async () => {
+      await tokens.dismissSecret();
+      await expect(tokens.secretPanel).toHaveCount(0);
+    });
+
+    // The row persists and the secret does not: it is unrecoverable.
+    await test.step("check the secret is gone after a reload", async () => {
+      await settingsPage.reload();
+      await expect(tokens.row(name)).toBeVisible();
+      await expect(tokens.secretPanel).toHaveCount(0);
+    });
+  });
+
+  test("revoke a token", async ({
+    settingsPage,
+    ownApiToken,
+    createdApiTokenIds,
+    expectMutation,
+  }) => {
+    const tokens = settingsPage.apiTokens;
+    const name = `e2e revoke ${uniqueSuffix()}`;
+
+    const id = await test.step("create a token through the api", () =>
+      ownApiToken(name));
+
+    await test.step("open the security section", async () => {
+      await settingsPage.goto("security");
+    });
+
+    await test.step("ask to revoke it", async () => {
+      await tokens.startRevoke(name);
+      await expect(tokens.revokeConfirmRow).toBeVisible();
+    });
+
+    await test.step("confirm the revoke", async () => {
+      await expectMutation(apiTokens.revoke(), () => tokens.confirmRevoke());
+      createdApiTokenIds.delete(id);
+      await expect(tokens.row(name)).toHaveCount(0);
+    });
+  });
+
+  test("cancel an in-row revoke confirmation", async ({
+    settingsPage,
+    ownApiToken,
+  }) => {
+    const tokens = settingsPage.apiTokens;
+    const name = `e2e cancel ${uniqueSuffix()}`;
+
+    await test.step("create a token through the api", async () => {
+      await ownApiToken(name);
+    });
+
+    await test.step("ask to revoke it", async () => {
+      await settingsPage.goto("security");
+      await tokens.startRevoke(name);
+      await expect(tokens.revokeConfirmRow).toBeVisible();
+    });
+
+    await test.step("cancel", async () => {
+      await tokens.cancelRevoke();
+    });
+
+    await test.step("check the token stays", async () => {
+      await expect(tokens.revokeConfirmRow).toHaveCount(0);
+      await expect(tokens.row(name)).toBeVisible();
+    });
+  });
+
+  test("rename a token in place", async ({
+    settingsPage,
+    ownApiToken,
+    expectMutation,
+  }) => {
+    const tokens = settingsPage.apiTokens;
+    const name = `e2e rename ${uniqueSuffix()}`;
+    const renamed = `${name} v2`;
+
+    await test.step("create a token through the api", async () => {
+      await ownApiToken(name);
+    });
+
+    await test.step("start renaming it", async () => {
+      await settingsPage.goto("security");
+      await tokens.startRename(name);
+      await expect(tokens.renameField).toHaveValue(name);
+    });
+
+    await test.step("save the new name", async () => {
+      await expectMutation(apiTokens.rename(), () =>
+        tokens.saveRename(renamed),
+      );
+      await expect(tokens.row(renamed)).toBeVisible();
+    });
+
+    // It persisted rather than only re-rendered.
+    await test.step("check the name survives a reload", async () => {
+      await settingsPage.reload();
+      await expect(tokens.row(renamed)).toBeVisible();
+    });
+  });
+
+  test("show an error and keep the list unchanged when creation fails", async ({
+    settingsPage,
+    expectMutation,
+  }) => {
+    const tokens = settingsPage.apiTokens;
+    const name = `e2e fail ${uniqueSuffix()}`;
+
+    await test.step("open the security section", async () => {
+      await settingsPage.goto("security");
+      await settingsPage.forceServerError(apiTokens.create(name));
+    });
+
+    await test.step("create a token", async () => {
+      await expectMutation(failing(apiTokens.create(name)), () =>
+        tokens.createToken(name),
+      );
+    });
+
+    await test.step("check the error shows and no token appears", async () => {
+      await expect(tokens.statusMessage).toBeVisible();
+      await expect(tokens.statusMessage).toHaveClass(/error/);
+      await expect(tokens.secretPanel).toHaveCount(0);
+      await expect(tokens.row(name)).toHaveCount(0);
+    });
+  });
+
+  test("show an error and keep the row when rename fails", async ({
+    settingsPage,
+    ownApiToken,
+    expectMutation,
+  }) => {
+    const tokens = settingsPage.apiTokens;
+    const name = `e2e rename-fail ${uniqueSuffix()}`;
+
+    await test.step("create a token through the api", async () => {
+      await ownApiToken(name);
+    });
+
+    await test.step("start renaming it", async () => {
+      await settingsPage.goto("security");
+      await settingsPage.forceServerError(apiTokens.rename());
+      await tokens.startRename(name);
+    });
+
+    await test.step("save a new name", async () => {
+      await expectMutation(failing(apiTokens.rename()), () =>
+        tokens.saveRename(`${name} v2`),
+      );
+    });
+
+    // Cancelling out of the edit row reveals the row under its original name.
+    await test.step("check the error shows and the name is unchanged", async () => {
+      await expect(tokens.statusMessage).toHaveClass(/error/);
+      await tokens.cancelRename();
+      await expect(tokens.row(name)).toBeVisible();
+    });
+  });
+
+  test("show an error and keep the row when revoke fails", async ({
+    settingsPage,
+    ownApiToken,
+    expectMutation,
+  }) => {
+    const tokens = settingsPage.apiTokens;
+    const name = `e2e revoke-fail ${uniqueSuffix()}`;
+
+    await test.step("create a token through the api", async () => {
+      await ownApiToken(name);
+    });
+
+    await test.step("ask to revoke it", async () => {
+      await settingsPage.goto("security");
+      await settingsPage.forceServerError(apiTokens.revoke());
+      await tokens.startRevoke(name);
+      await expect(tokens.revokeConfirmRow).toBeVisible();
+    });
+
+    await test.step("confirm the revoke", async () => {
+      await expectMutation(failing(apiTokens.revoke()), () =>
+        tokens.confirmRevoke(),
+      );
+    });
+
+    await test.step("check the error shows and the token survives", async () => {
+      await expect(tokens.statusMessage).toHaveClass(/error/);
+      await tokens.cancelRevoke();
+      await expect(tokens.row(name)).toBeVisible();
+    });
+  });
 });
 
-test("shows an error and keeps the switch state when the toggle fails", async ({
-  page,
-}) => {
-  await gotoReady(page, ADMIN_INTEGRATIONS);
-  await expect(mcpToggle(page)).toBeEnabled();
+// The copy must say whether it landed: on a plain-http LAN install there is no
+// `navigator.clipboard`, and a silent failure there loses the secret.
+test.describe("copying the secret", () => {
+  test("copy the secret and say so", async ({
+    settingsPage,
+    createdApiTokenIds,
+    expectMutation,
+  }) => {
+    const tokens = settingsPage.apiTokens;
+    const name = `e2e copy ${uniqueSuffix()}`;
 
-  // Fail only the POST — the card's status GET on mount shares the URL.
-  await page.route("**/api/settings/mcp", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({ status: 500, body: "internal server error" });
-    }
-    return route.continue();
+    await test.step("open the security section", async () => {
+      await tokens.allowClipboard();
+      await settingsPage.goto("security");
+    });
+
+    const secret = await test.step("create a token", async () => {
+      const { response } = await expectMutation(apiTokens.create(name), () =>
+        tokens.createToken(name),
+      );
+      const created: CreatedApiToken = await response.json();
+      createdApiTokenIds.add(created.token.id);
+      return tokens.readSecret();
+    });
+
+    await test.step("copy the secret", async () => {
+      await tokens.copySecret();
+    });
+
+    await test.step("check the copy is announced and landed", async () => {
+      await expect(tokens.secretCopyFeedback).toHaveText("Copied");
+      expect(await tokens.clipboardText()).toBe(secret);
+    });
   });
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/settings/mcp",
-      expectedBody: { enabled: true },
-      expectedStatus: 500,
-    },
-    async () => mcpToggle(page).click(),
-  );
 
-  await expect(page.getByTestId("mcp-toggle-status")).toHaveClass(/error/);
-  await expect(mcpState(page)).toHaveText("disabled");
-  await expect(mcpToggle(page)).toHaveAttribute("aria-checked", "false");
+  test("say so when the secret can't be copied", async ({
+    settingsPage,
+    createdApiTokenIds,
+    expectMutation,
+  }) => {
+    const tokens = settingsPage.apiTokens;
+    const name = `e2e copy-fail ${uniqueSuffix()}`;
+
+    // No clipboard API (as on plain http) and a refused fallback copy.
+    await test.step("open the security section without a clipboard", async () => {
+      await tokens.stubClipboardUnavailable();
+      await settingsPage.goto("security");
+    });
+
+    await test.step("create a token", async () => {
+      const { response } = await expectMutation(apiTokens.create(name), () =>
+        tokens.createToken(name),
+      );
+      const created: CreatedApiToken = await response.json();
+      createdApiTokenIds.add(created.token.id);
+    });
+
+    await test.step("copy the secret", async () => {
+      await tokens.copySecret();
+    });
+
+    await test.step("check the failure is announced and the secret stays", async () => {
+      await expect(tokens.secretCopyFeedback).toHaveText(
+        "Couldn\u2019t copy. Select and copy it.",
+      );
+      await expect(tokens.secretCopyFeedback).toHaveClass(/error/);
+      await expect(tokens.secretPanel).toBeVisible();
+    });
+  });
+});
+
+// The endpoint switch lives under Administration › Integrations and is
+// instance-wide: `presetMcpEndpoint` holds a lock for the tests that write it
+// and puts it back off, the shipped default.
+test.describe("hosted mcp endpoint", () => {
+  test("show the hosted mcp endpoint card", async ({ adminPage, baseURL }) => {
+    const { mcp } = adminPage.integrations;
+
+    await test.step("open the integrations section", async () => {
+      await adminPage.goto("integrations");
+    });
+
+    await test.step("check the card", async () => {
+      await expect(mcp.card).toBeVisible();
+      await expect(mcp.heading).toBeVisible();
+      await expect(mcp.state).toBeVisible();
+      await expect(mcp.endpointField).toHaveText(`${baseURL}/mcp`);
+    });
+
+    // The card waits for the status read before offering the switch.
+    await test.step("check the switch is offered", async () => {
+      await expect(mcp.toggle).toBeEnabled();
+    });
+  });
+
+  test("enable the mcp endpoint", async ({
+    adminPage,
+    presetMcpEndpoint,
+    expectMutation,
+  }) => {
+    const { mcp } = adminPage.integrations;
+
+    await test.step("start with the endpoint off", async () => {
+      await presetMcpEndpoint(false);
+      await adminPage.goto("integrations");
+      await expect(mcp.toggle).toBeEnabled();
+    });
+
+    await test.step("switch it on", async () => {
+      await expectMutation(settings.setMcp(true), () => mcp.flip());
+    });
+
+    await test.step("check it reads enabled", async () => {
+      await expect(mcp.status).toHaveClass(/success/);
+      await expect(mcp.state).toHaveText("enabled");
+      await expect(mcp.toggle).toHaveAttribute("aria-checked", "true");
+    });
+  });
+
+  test("disable the mcp endpoint", async ({
+    adminPage,
+    presetMcpEndpoint,
+    expectMutation,
+  }) => {
+    const { mcp } = adminPage.integrations;
+
+    await test.step("start with the endpoint on", async () => {
+      await presetMcpEndpoint(true);
+      await adminPage.goto("integrations");
+      await expect(mcp.toggle).toBeEnabled();
+    });
+
+    await test.step("switch it off", async () => {
+      await expectMutation(settings.setMcp(false), () => mcp.flip());
+    });
+
+    await test.step("check it reads disabled", async () => {
+      await expect(mcp.state).toHaveText("disabled");
+      await expect(mcp.toggle).toHaveAttribute("aria-checked", "false");
+    });
+  });
+
+  test("show an error and keep the switch state when the toggle fails", async ({
+    adminPage,
+    presetMcpEndpoint,
+    expectMutation,
+  }) => {
+    const { mcp } = adminPage.integrations;
+
+    await test.step("start with the endpoint off", async () => {
+      await presetMcpEndpoint(false);
+      await adminPage.goto("integrations");
+      await expect(mcp.toggle).toBeEnabled();
+      await adminPage.forceServerError(settings.setMcp(true));
+    });
+
+    await test.step("switch it on", async () => {
+      await expectMutation(failing(settings.setMcp(true)), () => mcp.flip());
+    });
+
+    await test.step("check the error shows and the switch stays off", async () => {
+      await expect(mcp.status).toHaveClass(/error/);
+      await expect(mcp.state).toHaveText("disabled");
+      await expect(mcp.toggle).toHaveAttribute("aria-checked", "false");
+    });
+  });
 });

@@ -1,196 +1,221 @@
+import { search } from "../contracts/search";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
-import { expectNavVisible, gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-test.beforeAll(async ({ request }) => {
+test.beforeAll("seed the library", async ({ request }) => {
   await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
 });
 
-// ── Helper: open the search palette and type a query ──────────────────
-// The old inline search input is replaced by the F1.5 palette. These
-// helpers open the palette and type into its input. The palette shows
-// grouped results (books, authors, series, tags) inline — no form
-// submission is needed.
+test.describe("search from the palette", () => {
+  test("show matching book results in the palette", async ({ libraryPage }) => {
+    const palette = libraryPage.topNav.searchPalette;
 
-async function openPaletteAndType(
-  page: import("@playwright/test").Page,
-  query: string,
-) {
-  await page.getByTestId("search-trigger").click();
-  const input = page.getByTestId("sp-input");
-  await expect(input).toBeVisible();
-  await input.fill(query);
-}
+    await test.step("search for a title", async () => {
+      await libraryPage.goto();
+      await palette.search("dracula");
+    });
 
-test("search input shows matching book results in palette", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
+    await test.step("check a book matches", async () => {
+      await expect(palette.row("book")).not.toHaveCount(0);
+    });
+  });
 
-  await openPaletteAndType(page, "dracula");
+  test("show author results when searching by author", async ({
+    libraryPage,
+  }) => {
+    const palette = libraryPage.topNav.searchPalette;
 
-  // Poll until the palette shows a book result matching "dracula".
-  await expect
-    .poll(async () => page.getByTestId("sp-book-row").count())
-    .toBeGreaterThanOrEqual(1);
-});
+    await test.step("search for an author", async () => {
+      await libraryPage.goto();
+      await palette.search("shakespeare");
+    });
 
-test("search by author shows author results", async ({ page }) => {
-  await gotoReady(page, "/");
-  await openPaletteAndType(page, "shakespeare");
+    await test.step("check an author matches", async () => {
+      await expect(palette.row("author")).not.toHaveCount(0);
+    });
+  });
 
-  // Poll until the palette shows author results.
-  await expect
-    .poll(async () => page.getByTestId("sp-author-row").count())
-    .toBeGreaterThanOrEqual(1);
-});
+  test("clear the results when the search is cleared", async ({
+    libraryPage,
+  }) => {
+    const palette = libraryPage.topNav.searchPalette;
 
-test("clearing the search clears results", async ({ page }) => {
-  await gotoReady(page, "/");
-  await openPaletteAndType(page, "dracula");
-  await expect
-    .poll(async () => page.getByTestId("sp-book-row").count())
-    .toBeGreaterThanOrEqual(1);
+    await test.step("search for a title", async () => {
+      await libraryPage.goto();
+      await palette.search("dracula");
+      await expect(palette.row("book")).not.toHaveCount(0);
+    });
 
-  // Clear the input.
-  const input = page.getByTestId("sp-input");
-  await input.fill("");
+    await test.step("clear the search", async () => {
+      await palette.clear();
+      await expect(palette.row("book")).toHaveCount(0);
+    });
+  });
 
-  // Results should disappear.
-  await expect
-    .poll(async () => page.getByTestId("sp-book-row").count())
-    .toBe(0);
-});
-
-test("settings and administration render the search trigger", async ({
-  page,
-}) => {
   // Settings are findable from the palette, so the trigger stays put on the
   // pages that hold them.
-  await gotoReady(page, "/settings");
-  await expect(page.getByTestId("search-trigger")).toBeVisible();
-  await gotoReady(page, "/admin");
-  await expect(page.getByTestId("search-trigger")).toBeVisible();
+  test("show the search trigger on settings and administration", async ({
+    settingsPage,
+    adminPage,
+  }) => {
+    await test.step("open settings", async () => {
+      await settingsPage.goto();
+    });
+
+    await test.step("check the nav has the search trigger", async () => {
+      await expect(settingsPage.topNav.searchButton).toBeVisible();
+    });
+
+    await test.step("open administration", async () => {
+      await adminPage.goto();
+    });
+
+    await test.step("check the nav has the search trigger", async () => {
+      await expect(adminPage.topNav.searchButton).toBeVisible();
+    });
+  });
+
+  test("show author results for part of a name", async ({ libraryPage }) => {
+    const palette = libraryPage.topNav.searchPalette;
+
+    await test.step("search for part of an author's name", async () => {
+      await libraryPage.goto();
+      await palette.search("shakesp");
+    });
+
+    await test.step("check an author matches", async () => {
+      await expect(palette.row("author")).not.toHaveCount(0);
+    });
+  });
+
+  test("show tag or book results for a tag", async ({ libraryPage }) => {
+    const palette = libraryPage.topNav.searchPalette;
+
+    await test.step("search for a tag", async () => {
+      await libraryPage.goto();
+      await palette.search("vampires");
+    });
+
+    await test.step("check a tag or a book matches", async () => {
+      // "Vampires" is a tag on Dracula, so it surfaces as a tag or as the book.
+      await expect
+        .poll(
+          async () =>
+            (await palette.row("tag").count()) +
+            (await palette.row("book").count()),
+          { message: "no tag or book result for the tag" },
+        )
+        .toBeGreaterThanOrEqual(1);
+    });
+  });
 });
 
-test("author substring shows author results", async ({ page }) => {
-  await gotoReady(page, "/");
-  await openPaletteAndType(page, "shakespeare");
+test.describe("search results page", () => {
+  test("show the search results layout", async ({ searchResultsPage }) => {
+    const { topNav } = searchResultsPage;
 
-  await expect
-    .poll(async () => page.getByTestId("sp-author-row").count())
-    .toBeGreaterThanOrEqual(1);
-});
+    await test.step("open the results for a query", async () => {
+      await searchResultsPage.goto("dracula");
+    });
 
-test("tag substring shows tag or book results", async ({ page }) => {
-  await gotoReady(page, "/");
-  await openPaletteAndType(page, "vampires");
+    await test.step("check the nav is the way back", async () => {
+      await searchResultsPage.assertDisplayed();
+      await topNav.assertDisplayed();
+      await expect(topNav.breadcrumbNav).toHaveCount(0);
+    });
 
-  // "Vampires" is a tag on Dracula — should appear in tag results or book results.
-  await expect
-    .poll(async () => {
-      const tags = await page.getByTestId("sp-tag-row").count();
-      const books = await page.getByTestId("sp-book-row").count();
-      return tags + books;
-    })
-    .toBeGreaterThanOrEqual(1);
-});
+    await test.step("check the heading and stat line", async () => {
+      await expect(searchResultsPage.heading).toContainText(/dracula/i);
+      await expect(searchResultsPage.resultCountText).toHaveCount(1);
+      await expect(searchResultsPage.resultCountText).toContainText(/fts5/);
+    });
 
-// ── /search/:query full-page route ────────────────────────────────────
+    await test.step("check the hits and the jump rail", async () => {
+      await expect(searchResultsPage.bookRows).not.toHaveCount(0);
+      await expect(searchResultsPage.highlightedTermText).toBeVisible();
+      await expect(searchResultsPage.jumpRailHeading).toBeVisible();
+    });
 
-test("renders the /search results page layout", async ({ page }) => {
-  await gotoReady(page, "/search/dracula");
+    await test.step("check the head has no controls that do nothing", async () => {
+      // Relevance, Table and Grid once swallowed clicks with no handler (#2453).
+      await expect(searchResultsPage.relevanceSortButton).toHaveCount(0);
+      await expect(searchResultsPage.tableViewButton).toHaveCount(0);
+      await expect(searchResultsPage.gridViewButton).toHaveCount(0);
+    });
+  });
 
-  // Shared nav is the way back to the library now that the page has no breadcrumb.
-  await expectNavVisible(page);
-  await expect(page.locator("nav.breadcrumb")).toHaveCount(0);
+  test("reach every hit of a section through Show all", async ({
+    searchResultsPage,
+    expectMutation,
+  }) => {
+    let total = 0;
 
-  // Heading echoes the query, and the summary stat line shows the engine +
-  // timing once the RPC settles.
-  await expect(page.getByRole("heading", { level: 1 })).toContainText(
-    /dracula/i,
-  );
-  await expect
-    .poll(async () => page.getByTestId("search-result-count").count())
-    .toBe(1);
-  await expect(page.getByTestId("search-result-count")).toContainText(/fts5/);
+    await test.step("open results that outrun the preview", async () => {
+      // "the" matches more fixture titles than the five a section previews.
+      await searchResultsPage.goto("the");
+      await expect(searchResultsPage.showAllBooksButton).toHaveText(
+        /^Show all \d+$/,
+      );
+      total = await searchResultsPage.showAllBooksCount();
+      expect(total, "the query must outrun the preview").toBeGreaterThan(5);
+      await expect(searchResultsPage.bookRows).toHaveCount(5);
+      await expect(searchResultsPage.showAllBooksButton).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+    });
 
-  // At least one book cover card for "dracula".
-  await expect
-    .poll(async () => page.getByTestId("search-book-row").count())
-    .toBeGreaterThanOrEqual(1);
+    await test.step("check the rail names the same count", async () => {
+      await expect(searchResultsPage.railBooksLink).toContainText(
+        String(total),
+      );
+    });
 
-  // The matched term is highlighted at least once on the page.
-  await expect(page.locator(".search-hit").first()).toBeVisible();
+    await test.step("expand the books section", async () => {
+      // A read, but a POST, so it is asserted like one.
+      await expectMutation(search.results({ q: "the", limit: total }), () =>
+        searchResultsPage.toggleShowAllBooks(),
+      );
+      await expect(searchResultsPage.bookRows).toHaveCount(total);
+      await expect(searchResultsPage.showAllBooksButton).toHaveText(
+        "Show fewer",
+      );
+      await expect(searchResultsPage.showAllBooksButton).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      );
+    });
 
-  // "On this page" jump rail is present.
-  await expect(page.getByText("On this page")).toBeVisible();
+    await test.step("collapse it without a second fetch", async () => {
+      await searchResultsPage.toggleShowAllBooks();
+      await expect(searchResultsPage.bookRows).toHaveCount(5);
+    });
+  });
 
-  // Regression for #2453: the head carried Relevance / Grid / Table buttons
-  // with no handlers — they swallowed the click and changed nothing.
-  await expect(page.getByRole("button", { name: "Relevance ↓" })).toHaveCount(
-    0,
-  );
-  await expect(page.getByRole("button", { name: "Table" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Grid" })).toHaveCount(0);
-});
+  test("leave the section collapsed and say so when Show all fails", async ({
+    searchResultsPage,
+    expectMutation,
+  }) => {
+    await test.step("open the results", async () => {
+      await searchResultsPage.goto("the");
+      await searchResultsPage.forceServerError(search.results());
+    });
 
-test("a section counting more hits than it previews reaches them all through Show all", async ({
-  page,
-}) => {
-  // "the" matches more fixture titles than the five a section previews.
-  await gotoReady(page, "/search/the");
+    await test.step("expand the books section", async () => {
+      await expectMutation(failing(search.results()), () =>
+        searchResultsPage.toggleShowAllBooks(),
+      );
+    });
 
-  const showAll = page.getByTestId("search-show-all-results-books");
-  await expect(showAll).toHaveText(/^Show all \d+$/);
-  const total = Number((await showAll.innerText()).replace(/\D/g, ""));
-  expect(total, "the query must outrun the preview").toBeGreaterThan(5);
-  await expect(page.getByTestId("search-book-row")).toHaveCount(5);
-  await expect(showAll).toHaveAttribute("aria-expanded", "false");
-
-  // The rail names the same count the section can now reach.
-  const railBooks = page
-    .getByRole("complementary")
-    .getByRole("link", { name: /^Books/ });
-  await expect(railBooks).toContainText(String(total));
-
-  // A read, but a POST — asserted like one.
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/search-results",
-      expectedBody: { q: "the", limit: total },
-      expectedStatus: 200,
-    },
-    async () => showAll.click(),
-  );
-  await expect(page.getByTestId("search-book-row")).toHaveCount(total);
-  await expect(showAll).toHaveText("Show fewer");
-  await expect(showAll).toHaveAttribute("aria-expanded", "true");
-
-  // Collapsing needs no second fetch.
-  await showAll.click();
-  await expect(page.getByTestId("search-book-row")).toHaveCount(5);
-});
-
-test("a failed Show all fetch says so and leaves the section collapsed", async ({
-  page,
-}) => {
-  await gotoReady(page, "/search/the");
-  await page.route("**/api/rpc/search-results", (route) =>
-    route.fulfill({ status: 500, body: "boom" }),
-  );
-
-  const showAll = page.getByTestId("search-show-all-results-books");
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/search-results", expectedStatus: 500 },
-    async () => showAll.click(),
-  );
-  await expect(page.getByTestId("search-section-error")).toBeVisible();
-  await expect(page.getByTestId("search-book-row")).toHaveCount(5);
-  await expect(showAll).toHaveAttribute("aria-expanded", "false");
+    await test.step("check the failure shows and the section stays collapsed", async () => {
+      await expect(searchResultsPage.sectionErrorMessage).toBeVisible();
+      await expect(searchResultsPage.bookRows).toHaveCount(5);
+      await expect(searchResultsPage.showAllBooksButton).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+    });
+  });
 });

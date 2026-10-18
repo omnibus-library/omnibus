@@ -1,20 +1,10 @@
-// F5.10 manual merge: admin "Merge with…" dialog on the book detail page.
-//
-// Serial mode: the happy-path test mutates shared server state (it merges
-// two seeded books) and relies on its own Undo step as cleanup — the
-// merged_uuids guard a merge leaves behind is keyed by path-stable uuids
-// that survive re-seeding, so a leaked merge would silently re-attach on a
-// later reindex and corrupt other specs' format counts. Never remove the
-// undo step without re-thinking that.
-
+import { type MergeResult, merge } from "../contracts/merge";
 import { AUDIOBOOK_BOOK_COUNT, MERGE_PRIMARY } from "../fixtures/audiobooks";
 import { AUTO_ATTACHED_PAIRS } from "../fixtures/dual_format";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { withLock } from "../utils/lock";
-import { expectNavVisible, gotoReady } from "../utils/nav";
 import {
   audiobookFixturesDir,
   fixturesDir,
@@ -22,162 +12,175 @@ import {
   seedLibrary,
 } from "../utils/seed";
 
+// A leaked merge would re-attach on a later reindex and corrupt other specs'
+// format counts, so `mergeLock` undoes every merge before the next writer.
 test.describe.configure({ mode: "serial" });
 
-// Both libraries seeded: the merge pairs an EPUB-only ebook with an
-// audiobook. Exactly one fixture pair ("Immersive Voyage") shares a
-// normalized (title, author) and auto-attaches into a single dual-format
-// book, so the combined total is the additive sum minus AUTO_ATTACHED_PAIRS.
-// The merge TARGET/SOURCE below are chosen to avoid that pair.
-test.beforeAll(async ({ request }) => {
-  // Two sequential seed polls (ebooks then audiobooks), up to 45s each, so
-  // this hook needs more than the 60s config default.
-  test.setTimeout(120_000);
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-  await seedAudiobookLibrary(
-    request,
-    audiobookFixturesDir(),
-    FIXTURE_BOOKS.length + AUDIOBOOK_BOOK_COUNT - AUTO_ATTACHED_PAIRS,
-  );
-});
-
-// TARGET: EPUB-only standalone ("Alpha", Ada Lovelace). SOURCE: the
-// merge-only MP3 audiobook — a book no other spec reads, so the merge below
-// can't change what a parallel spec is asserting against. Its title and
-// author are distinct from every EPUB fixture, so auto-attach stays out of
-// the way. See `fixtures/audiobooks.ts::MERGE_PRIMARY`.
+// The merge-only MP3 audiobook is read by no other spec, and its title and
+// author match no EPUB, so auto-attach stays out of the way.
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
 const SOURCE = MERGE_PRIMARY;
 
-// Open the dialog, search for SOURCE, and select it — shared by the happy
-// and error action tests.
-async function openDialogAndPickSource(page: import("@playwright/test").Page) {
-  await page.getByTestId("merge-with").click();
-  await page.getByTestId("merge-search").fill(SOURCE.title);
-  // The candidate list fills after the debounced search RPC returns —
-  // wait for it explicitly so the click can't race the render.
-  await expect(page.getByTestId("merge-candidate").first()).toBeVisible();
-  // The results heading says what the search matched on: any one of the
-  // three fields, not all of them (#2525).
-  await expect(
-    page.getByText("matching title, author or series"),
-  ).toBeVisible();
-  await page.getByTestId("merge-candidate").first().click();
-  await expect(page.getByTestId("merge-confirm")).toBeVisible();
-}
+test.describe("book merge", () => {
+  // One fixture pair ("Immersive Voyage") auto-attaches into a single
+  // dual-format book, so the combined total is the sum less that pair.
+  test.beforeAll("seed both libraries", async ({ request }) => {
+    // Two seed polls of up to 45s each outlast the default timeout.
+    test.setTimeout(120_000);
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+    await seedAudiobookLibrary(
+      request,
+      audiobookFixturesDir(),
+      FIXTURE_BOOKS.length + AUDIOBOOK_BOOK_COUNT - AUTO_ATTACHED_PAIRS,
+    );
+  });
 
-// ---------------------------------------------------------------------------
-// Layout
-// ---------------------------------------------------------------------------
-
-test("renders the merge affordance on the book detail layout", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-  await expectNavVisible(page);
-
-  // Admin storageState: the rail shows "Merge with…" next to the
-  // existing edit affordance. Clicking opens the dialog with its search
-  // input; Cancel closes it without any mutation.
-  await expect(page.getByTestId("edit-metadata")).toBeVisible();
-  const mergeWith = page.getByTestId("merge-with");
-  await expect(mergeWith).toBeVisible();
-  await mergeWith.click();
-  await expect(
-    page.getByRole("dialog", { name: "Merge with another book" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("merge-search")).toBeVisible();
-  await page.getByTestId("merge-cancel").click();
-  await expect(page.getByTestId("merge-search")).not.toBeVisible();
-});
-
-// ---------------------------------------------------------------------------
-// Action — error path first (state must be untouched for the happy path)
-// ---------------------------------------------------------------------------
-
-test("surfaces a server error in the dialog and leaves the book unchanged", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  await page.route("**/api/rpc/merge-books", (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "text/plain",
-      body: "merge exploded",
-    }),
-  );
-
-  await openDialogAndPickSource(page);
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/merge-books", expectedStatus: 500 },
-    async () => page.getByTestId("merge-confirm").click(),
-  );
-
-  // The dialog stays open with an alert; the book keeps its single format.
-  // The marquee files stop states a book's formats as the rows of its copies
-  // list — one row (and one badge tile) per format — so that is what a
-  // format count asserts against now.
-  await expect(page.getByRole("alert")).toBeVisible();
-  await page.getByTestId("merge-cancel").click();
-  await expect(page.getByTestId("format-badge")).toHaveCount(1);
-  await expect(page.getByTestId("format-badge")).toHaveAttribute(
-    "aria-label",
-    "EPUB",
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Action — merge then undo (undo doubles as cleanup; see header comment)
-// ---------------------------------------------------------------------------
-
-test("merges an audiobook into the ebook and undoes it from the toast", async ({
-  page,
-  request,
-}) => {
-  // Serialize against book_detail.spec's file-picker tests: all three mutate
-  // the merge-only audiobooks on the shared per-shard server, so parallel
-  // workers would corrupt each other's merge state. The lock spans merge→undo
-  // so the fixture is restored before release. See utils/lock.ts.
-  test.slow();
-  await withLock("audiobook-merge", async () => {
+  test("show the merge affordance layout", async ({
+    request,
+    bookDetailPage,
+  }) => {
+    const { mergeDialog } = bookDetailPage;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-    await gotoReady(page, `/books/${uuid}`);
 
-    await openDialogAndPickSource(page);
-    const { response } = await expectMutation(
-      page,
-      { method: "POST", url: "/api/rpc/merge-books", expectedStatus: 200 },
-      async () => page.getByTestId("merge-confirm").click(),
-    );
-    expect(response.status()).toBe(200);
+    await test.step("open the ebook", async () => {
+      await bookDetailPage.goto(uuid);
+    });
 
-    // Refetch lands: a copies row per format, both CTAs, and the undo toast.
-    await expect(page.getByTestId("format-badge")).toHaveCount(2);
-    await expect(
-      page.locator(`[data-format="${SOURCE.format}"]`).first(),
-    ).toBeVisible();
-    await expect(page.getByTestId("start-reading")).toBeVisible();
-    await expect(page.getByTestId("listen-secondary")).toBeVisible();
-    const toast = page.getByRole("status").filter({ hasText: "Books merged." });
-    await expect(toast).toBeVisible();
+    await test.step("check the rail offers an admin merge", async () => {
+      await bookDetailPage.assertDisplayed();
+      await bookDetailPage.topNav.assertDisplayed();
+      await expect(bookDetailPage.editMetadataLink).toBeVisible();
+      await expect(mergeDialog.openButton).toBeVisible();
+    });
 
-    // Undo from the toast restores the split (and cleans up shared state).
-    await expectMutation(
-      page,
-      { method: "POST", url: "/api/rpc/merge-books/undo", expectedStatus: 200 },
-      async () => page.getByTestId("merge-undo").click(),
-    );
-    await expect(page.getByTestId("format-badge")).toHaveCount(1);
-    await expect(page.getByTestId("format-badge")).toHaveAttribute(
-      "aria-label",
-      "EPUB",
-    );
-    await expect(page.getByTestId("listen-secondary")).not.toBeVisible();
+    await test.step("open the merge dialog", async () => {
+      await mergeDialog.open();
+      await expect(mergeDialog.dialog).toBeVisible();
+      await expect(mergeDialog.searchField).toBeVisible();
+    });
+
+    await test.step("cancel the dialog", async () => {
+      await mergeDialog.cancel();
+      await expect(mergeDialog.searchField).not.toBeVisible();
+    });
+  });
+
+  test("keep the book unchanged when the merge fails", async ({
+    request,
+    bookDetailPage,
+    expectMutation,
+  }) => {
+    const { mergeDialog } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+    await test.step("open the ebook while merges fail", async () => {
+      await bookDetailPage.goto(uuid);
+      await bookDetailPage.forceServerError(merge.books());
+    });
+
+    await test.step("pick the audiobook to merge in", async () => {
+      await mergeDialog.chooseSource(SOURCE.title);
+      await expect(mergeDialog.confirmButton).toBeVisible();
+    });
+
+    await test.step("confirm the merge", async () => {
+      await expectMutation(failing(merge.books()), () => mergeDialog.confirm());
+    });
+
+    // The marquee files stop lists a book's formats as one copies row, and
+    // one badge tile, per format.
+    await test.step("check the dialog shows the error and the book is unchanged", async () => {
+      await expect(mergeDialog.errorAlert).toBeVisible();
+      await mergeDialog.cancel();
+      await expect(bookDetailPage.formatBadges).toHaveCount(1);
+      await expect(bookDetailPage.formatBadges).toHaveAttribute(
+        "aria-label",
+        "EPUB",
+      );
+    });
+  });
+
+  test.describe("holding the audiobook lock", () => {
+    // The lock is taken before the test body runs, so it can wait out other
+    // specs' merges for longer than the default timeout.
+    test.slow();
+
+    test("merge an audiobook into an ebook", async ({
+      request,
+      bookDetailPage,
+      mergeLock,
+      expectMutation,
+    }) => {
+      const { mergeDialog } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the ebook", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("pick the audiobook to merge in", async () => {
+        await mergeDialog.open();
+        await mergeDialog.search(SOURCE.title);
+        await mergeDialog.assertCandidatesListed();
+        await mergeDialog.pickFirstCandidate();
+        await expect(mergeDialog.confirmButton).toBeVisible();
+      });
+
+      await test.step("confirm the merge", async () => {
+        const { response } = await expectMutation(merge.books(), () =>
+          mergeDialog.confirm(),
+        );
+        const { merge_log_id }: MergeResult = await response.json();
+        mergeLock.undoAfter(merge_log_id);
+      });
+
+      // The refetch lands with a copies row per format, both CTAs, and the toast.
+      await test.step("check the book gains the audio format", async () => {
+        await expect(bookDetailPage.formatBadges).toHaveCount(2);
+        await expect(
+          bookDetailPage.formatRow(SOURCE.format).root,
+        ).toBeVisible();
+        await expect(bookDetailPage.startReadingButton).toBeVisible();
+        await expect(bookDetailPage.listenButton).toBeVisible();
+        await expect(mergeDialog.mergedToast).toBeVisible();
+      });
+    });
+
+    test("undo a merge from its toast", async ({
+      request,
+      bookDetailPage,
+      mergeLock,
+      expectMutation,
+    }) => {
+      const { mergeDialog } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      // The toast is client state, so a merge made through the api has none.
+      const mergeLogId = await test.step("merge the audiobook in", async () => {
+        await bookDetailPage.goto(uuid);
+        await mergeDialog.chooseSource(SOURCE.title);
+        const { response } = await expectMutation(merge.books(), () =>
+          mergeDialog.confirm(),
+        );
+        const { merge_log_id }: MergeResult = await response.json();
+        mergeLock.undoAfter(merge_log_id);
+        await expect(mergeDialog.mergedToast).toBeVisible();
+        return merge_log_id;
+      });
+
+      await test.step("undo the merge from the toast", async () => {
+        await expectMutation(merge.undo(), () => mergeDialog.undo());
+        mergeLock.undone(mergeLogId);
+      });
+
+      await test.step("check the formats are split again", async () => {
+        await expect(bookDetailPage.formatBadges).toHaveCount(1);
+        await expect(bookDetailPage.formatBadges).toHaveAttribute(
+          "aria-label",
+          "EPUB",
+        );
+        await expect(bookDetailPage.listenButton).not.toBeVisible();
+      });
+    });
   });
 });

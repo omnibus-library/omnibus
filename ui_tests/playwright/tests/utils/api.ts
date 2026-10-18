@@ -3,6 +3,12 @@ import { expect } from "../fixtures/test";
 
 export type MutationMethod = "POST" | "PUT" | "PATCH" | "DELETE";
 
+/** A request a test can force to fail: any mutation, or a read. */
+export interface ForcedRequest {
+  method: "GET" | MutationMethod;
+  url: string | RegExp;
+}
+
 export interface ExpectMutationOptions {
   method: MutationMethod;
   url: string | RegExp;
@@ -69,6 +75,15 @@ export function isPostTo(url: RegExp): (response: Response) => boolean {
     response.request().method() === "POST" && url.test(response.url());
 }
 
+/** A POST to `url`; `expectedBody`, when given, is checked exactly. */
+export function post(
+  url: RegExp,
+  expectedBody?: unknown,
+  expectedStatus = 200,
+): ExpectMutationOptions {
+  return { method: "POST", url, expectedBody, expectedStatus };
+}
+
 /** Returns `contract` expecting the 500 a forced-failure stub answers with. */
 export function failing(
   contract: ExpectMutationOptions,
@@ -77,36 +92,33 @@ export function failing(
 }
 
 /**
- * POST `body` as JSON from inside `page`, which must be on the app origin, and
- * return the status. The browser attaches its own session cookie; Playwright's
- * request client drops the Secure cookie on plain-http `127.0.0.1`.
+ * Parks the requests to `url` that `parks` accepts until the returned release
+ * runs; requests that arrive after it pass straight through.
  */
-export async function postFromPage(
+export async function holdRequests(
   page: Page,
-  url: string,
-  body: unknown,
-): Promise<number> {
-  return page.evaluate(
-    async ([target, payload]) => {
-      const resp = await fetch(target, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      return resp.status;
-    },
-    [url, body] as const,
-  );
+  url: string | RegExp | ((url: URL) => boolean),
+  parks: (request: Request) => boolean = () => true,
+): Promise<() => void> {
+  let release = (): void => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(url, async (route) => {
+    if (parks(route.request())) await gate;
+    await route.continue();
+  });
+  return release;
 }
 
 /**
- * Methods of every request whose URL contains `path`, from now on, so a test
- * can show a cancelled confirm sent nothing.
+ * Methods of every request to `url` from now on, so a test can show a
+ * cancelled confirm sent nothing.
  */
-export function recordRequests(page: Page, path: string): string[] {
+export function recordRequests(page: Page, url: RegExp): string[] {
   const seen: string[] = [];
   page.on("request", (request) => {
-    if (request.url().includes(path)) seen.push(request.method());
+    if (url.test(request.url())) seen.push(request.method());
   });
   return seen;
 }

@@ -16,6 +16,10 @@ export abstract class BaseRequests {
     return this.request.put(url, { data });
   }
 
+  protected patch(url: string, data?: unknown): Promise<APIResponse> {
+    return this.request.patch(url, { data });
+  }
+
   protected delete(url: string): Promise<APIResponse> {
     return this.request.delete(url);
   }

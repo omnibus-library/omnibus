@@ -21,7 +21,6 @@ import { BasePage } from "./BasePage";
 export const PAGE_LABEL = /p\.\u00a0\d+ of \d+/;
 
 export type ContentsEntry = { label: string; href: string; level: number };
-export type Theme = "dark" | "black" | "light" | "sepia";
 
 /**
  * The EPUB reader at `/read/:uuid`: its chrome, drawers and page turns. The
@@ -61,6 +60,7 @@ export class EpubReaderPage extends BasePage {
   readonly annotationsSheet: Locator;
   readonly bookmarksFilterButton: Locator;
   readonly addAnnotationButton: Locator;
+  readonly progressRibbon: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -97,6 +97,7 @@ export class EpubReaderPage extends BasePage {
       "annotations-filter-bookmarks",
     );
     this.addAnnotationButton = page.getByTestId("reader-annotations-add");
+    this.progressRibbon = page.locator(".rd-ribbon");
   }
 
   protected get readyLocator(): Locator {
@@ -114,7 +115,8 @@ export class EpubReaderPage extends BasePage {
     );
   }
 
-  async goBack(): Promise<void> {
+  /** Leaves through the reader's Back button, which lands on the book's page. */
+  async leave(): Promise<void> {
     await this.backButton.click();
   }
 
@@ -125,14 +127,6 @@ export class EpubReaderPage extends BasePage {
   /** The same button opens and closes the panel. */
   async closeDisplayPanel(): Promise<void> {
     await this.displayPanelButton.click();
-  }
-
-  async reload(): Promise<void> {
-    await this.page.reload();
-  }
-
-  async resizeViewport(size: { width: number; height: number }): Promise<void> {
-    await this.page.setViewportSize(size);
   }
 
   async turnPage(): Promise<void> {
@@ -245,11 +239,6 @@ export class EpubReaderPage extends BasePage {
     return urls;
   }
 
-  /** Stores the theme before every load of this page, as if chosen earlier. */
-  async presetTheme(theme: Theme): Promise<void> {
-    await this.presetLocalStorage("omn.theme", theme);
-  }
-
   /** Stores the typeface before every load of this page, as presetTheme does. */
   async presetTypeface(face: Typeface): Promise<void> {
     await this.presetLocalStorage("omn.typeface", face);
@@ -330,17 +319,18 @@ export class EpubReaderPage extends BasePage {
     );
   }
 
-  /** Checks the page is reading the book `bookUuid`, not just any book. */
-  async assertDisplayedFor(bookUuid: string): Promise<void> {
-    await expect(this.page).toHaveURL(new RegExp(`/read/${bookUuid}$`));
-    await expect(this.viewerPanel).toBeVisible();
-  }
-
-  private async presetLocalStorage(key: string, value: string): Promise<void> {
-    await this.page.addInitScript(
-      (entry) => window.localStorage.setItem(entry.key, entry.value),
-      { key, value },
+  /** Checks the page is reading the book `bookUuid`, at the passage `cfi` when given. */
+  async assertDisplayedFor(bookUuid: string, cfi?: string): Promise<void> {
+    if (cfi === undefined) {
+      await this.assertDisplayedAt(new RegExp(`/read/${bookUuid}$`));
+      return;
+    }
+    await expect(this.page).toHaveURL(
+      (url) =>
+        url.pathname === `/read/${bookUuid}` &&
+        url.searchParams.get("cfi") === cfi,
     );
+    await expect(this.viewerPanel).toBeVisible();
   }
 
   /** CSP violations reach the console as error entries, iframe ones included. */
@@ -353,5 +343,10 @@ export class EpubReaderPage extends BasePage {
       }
     });
     return refusals;
+  }
+
+  /** The footer's bottom edge in viewport pixels. */
+  async footerBottom(): Promise<number> {
+    return this.footerBar.evaluate((el) => el.getBoundingClientRect().bottom);
   }
 }

@@ -14,11 +14,11 @@ One file per user flow: `ui_tests/playwright/tests/flows/<flow-name>.spec.ts`.
 `tests/ios_glue/` and its own recipe — see
 [04b-playwright-ios-glue.md](../../rules/04b-playwright-ios-glue.md).)
 
-New specs use page objects; see
+Specs use page objects; see
 [04d-playwright-page-objects.md](../../rules/04d-playwright-page-objects.md) for
 the layout and rules, and the `tests/flows/check_in_*.spec.ts` specs for worked
-examples. Import `test`
-and `expect` from a fixtures file, never from `@playwright/test`:
+examples. Import `test` and `expect` from a fixtures file, never from
+`@playwright/test`:
 
 ```ts
 import { scan } from "../contracts/scan";
@@ -27,39 +27,37 @@ import { expect, test } from "../fixtures/pageFixtures";
 
 ## 2. Add the page objects the flow needs
 
-Extend an existing page or component before adding one. A new page extends
-`BasePage`, and its fixture goes in `fixtures/pageFixtures.ts`:
+Extend an existing page or component before adding one. A section of a page is
+a component the page holds: `LibrarySectionComponent` is `adminPage.library`,
+built in `AdminPage`'s constructor. A new page extends `BasePage`, sets
+`urlPattern` and `readyLocator`, opens through `openAndSettle(path)` and gets a
+fixture in `fixtures/pageFixtures.ts`.
 
 ```ts
-export class LibrarySourcesPage extends BasePage {
-  protected readonly urlPattern = /\/admin\?section=sources$/;
-
-  readonly topNav: TopNavComponent;
-
+// components/LibrarySectionComponent.ts
+export class LibrarySectionComponent extends BaseComponent {
   readonly saveButton: Locator;
-  readonly statusMessage: Locator;
+  readonly status: Locator;
 
   constructor(page: Page) {
     super(page);
-    this.topNav = new TopNavComponent(page);
-    this.saveButton = page.getByRole("button", { name: "Save library settings" });
-    this.statusMessage = page.getByRole("status");
-  }
-
-  protected get readyLocator(): Locator {
-    return this.saveButton;
-  }
-
-  async goto(): Promise<void> {
-    await this.open("/admin?section=sources");
+    this.saveButton = page.getByRole("button", {
+      name: "Save library settings",
+    });
+    this.status = page.getByTestId("settings-status");
   }
 
   async save(): Promise<void> {
-    const saved = this.page.waitForResponse(isPostTo(/\/api\/rpc\/settings$/));
     await this.saveButton.click();
-    await saved;
+  }
+
+  async assertSaved(): Promise<void> {
+    await expect(this.status).toHaveText("Library settings saved.");
   }
 }
+
+// pages/AdminPage.ts, in the constructor
+this.library = new LibrarySectionComponent(page);
 ```
 
 ## 3. Write the layout test
@@ -68,15 +66,15 @@ One per spec, first in the file, with no user actions: open the page, then
 check its URL, the shared nav and the page's key elements.
 
 ```ts
-test("show the library sources layout", async ({ librarySourcesPage }) => {
+test("show the library sources layout", async ({ adminPage }) => {
   await test.step("open the library sources", async () => {
-    await librarySourcesPage.goto();
+    await adminPage.goto("sources");
   });
 
   await test.step("check the page and its nav", async () => {
-    await librarySourcesPage.assertDisplayed();
-    await librarySourcesPage.topNav.assertDisplayed();
-    await expect(librarySourcesPage.saveButton).toBeVisible();
+    await adminPage.assertDisplayedFor("sources");
+    await adminPage.topNav.assertDisplayed();
+    await expect(adminPage.library.saveButton).toBeVisible();
   });
 });
 ```
@@ -88,14 +86,21 @@ Happy path and error path each get their own test, and each phase is a
 
 ```ts
 test.describe("library sources", () => {
-  test("save the library paths", async ({ librarySourcesPage, expectMutation }) => {
+  test("save the library paths", async ({
+    adminPage,
+    expectMutation,
+    scratchLibrary,
+  }) => {
     await test.step("open the library sources", async () => {
-      await librarySourcesPage.goto();
+      await adminPage.goto("sources");
     });
 
     await test.step("save the form", async () => {
-      await expectMutation(settings.save(paths), () => librarySourcesPage.save());
-      await expect(librarySourcesPage.statusMessage).toHaveText("Library settings saved.");
+      await adminPage.library.fillForm(scratchLibrary);
+      await expectMutation(settings.saveLibrary(scratchLibrary), () =>
+        adminPage.library.save(),
+      );
+      await adminPage.library.assertSaved();
     });
   });
 });
@@ -126,17 +131,16 @@ await expect(flow.errorMessage).toBeVisible();
 ## 6. Where everything else goes
 
 A spec holds tests and nothing else — no helper functions. Biome enforces the
-locator half: see [04d](../../rules/04d-playwright-page-objects.md#lint). When
-migrating an existing spec, delete its `!` line from `biome.json`'s `overrides`.
+locator half: see [04d](../../rules/04d-playwright-page-objects.md#lint).
 
 | You need | Put it in |
 |---|---|
 | a locator or a UI action | the page or component object |
-| a read of rendered content (an iframe, geometry) or a `page.on` listener | a page or component query or `record*` method |
-| an API call to seed, clean up or read back | an `apiRequests/` class |
+| a read of rendered content (an iframe, geometry) or a `page.on` listener | a page or component query or `record*` method (a locator's edges: `topEdge`/`bottomEdge` in `utils/dom.ts`) |
+| an API call to seed, clean up or read back | an `apiRequests/` class, injected from `fixtures/requestFixtures.ts` |
 | a mutation's method, URL, body and status | a `contracts/` builder |
 | a payload type or a unique test value | `data/` |
-| data that must be deleted after the test | a fixture that cleans up after `use` |
+| data that must be deleted after the test | a `cleanupSet` fixture (`fixtures/lifecycle.ts`) in `dataFixtures.ts`, or `accountFixtures.ts` for account state |
 
 ## 7. Run
 

@@ -10,6 +10,7 @@ use omnibus_shared::EbookMetadata;
 
 pub(crate) mod accent;
 mod cover;
+pub mod images;
 mod parse;
 mod stat;
 mod strip;

@@ -1,16 +1,9 @@
-import type { Page } from "@playwright/test";
+import { account } from "../contracts/account";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
-import { fetchBookUuidByTitle, switchToTableView } from "../utils/ebooks";
-import { expectNavVisible, gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
+import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
-import { logInThroughUi, provisionUser } from "../utils/users";
-
-// Stack series is per-account, so this spec runs on its own user (see 04a).
-const STACK_USER = "stackseries";
-const STACK_PASSWORD = "stack-series-pw-00";
-const SAVE_URL = "/api/rpc/account/stack-series";
 
 const PIONEERS = ["beta", "gamma", "pioneers-3", "pioneers-4", "pioneers-5"];
 const CODE_QUARTET = [
@@ -19,253 +12,325 @@ const CODE_QUARTET = [
   "code-quartet-3",
   "code-quartet-4",
 ];
+const PIONEERS_STACK = "Pioneers, 5 books";
+const CODE_QUARTET_STACK = "Code Quartet, 4 books";
 
-const stackToggle = (page: Page) =>
-  page.getByRole("button", { name: "Stack series" });
-const stackTiles = (page: Page) => page.getByTestId(/^series-stack-/);
-const pioneersStack = (page: Page) =>
-  page.getByRole("button", { name: "Pioneers, 5 books" });
-const pioneersCell = (page: Page) =>
-  page
-    .getByTestId("lib-grid")
-    .getByRole("listitem")
-    .filter({ has: pioneersStack(page) });
-const volumeTile = (page: Page, slug: string) =>
-  page.getByTestId(`ebook-tile-${slug}`);
-
-// The tests walk one account's preference through its states in order.
-test.describe.configure({ mode: "serial" });
-
-let stacker: Page;
-
-test.beforeAll(async ({ browser, request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-  await provisionUser(request, STACK_USER, STACK_PASSWORD);
-
-  const context = await browser.newContext({
-    storageState: { cookies: [], origins: [] },
+// Stack series is per-account, so these tests run as the worker's reader (see
+// 04a), and the fixture turns it off after each.
+test.describe("series stacks", () => {
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
-  stacker = await context.newPage();
-  await logInThroughUi(stacker, STACK_USER, STACK_PASSWORD);
-  // A rerun after a failure may find the account still stacked.
-  await setStacking(stacker, false);
-});
 
-test.afterAll(async () => {
-  // Leave the account on the default however the tests ended.
-  await setStacking(stacker, false);
-  await stacker.context().close();
-});
-
-/** Save Stack series through the toolbar switch unless it already reads `on`. */
-async function setStacking(page: Page, on: boolean): Promise<void> {
-  await gotoReady(page, "/");
-  // Enabled only once `/me` resolves, so aria-pressed is the saved value.
-  await expect(stackToggle(page)).toBeEnabled();
-  if ((await stackToggle(page).getAttribute("aria-pressed")) === String(on)) {
-    return;
-  }
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: SAVE_URL,
-      expectedBody: { enabled: on },
-      expectedStatus: 200,
+  test.beforeEach(
+    "start with stack series off",
+    async ({ presetStackSeries }) => {
+      await presetStackSeries(false, "reader");
     },
-    async () => stackToggle(page).click(),
   );
-  await expect(stackToggle(page)).toHaveAttribute("aria-pressed", String(on));
-}
 
-test("renders the stack series switch off with every volume tiled", async () => {
-  await gotoReady(stacker, "/");
+  test("show the stack series layout", async ({ readerLibraryPage }) => {
+    await test.step("open the library", async () => {
+      await readerLibraryPage.goto();
+    });
 
-  await expect(stackToggle(stacker)).toBeEnabled();
-  await expect(stackToggle(stacker)).toHaveAttribute("aria-pressed", "false");
-  await expect(stackTiles(stacker)).toHaveCount(0);
-  for (const slug of PIONEERS) {
-    await expect(volumeTile(stacker, slug)).toBeVisible();
-  }
-  await expectNavVisible(stacker);
-});
-
-test("turning stack series on folds each series into one counted tile", async () => {
-  await setStacking(stacker, true);
-
-  await expect(pioneersStack(stacker)).toContainText("5 books");
-  // The list item is the grid cell itself, never a `display: contents` shell.
-  await expect(pioneersCell(stacker)).toHaveCSS("display", "block");
-  await expect(
-    stacker.getByRole("button", { name: "Code Quartet, 4 books" }),
-  ).toContainText("4 books");
-  for (const slug of [...PIONEERS, ...CODE_QUARTET]) {
-    await expect(volumeTile(stacker, slug)).toHaveCount(0);
-  }
-});
-
-test("opening a stack deals its volumes out behind a head card and escape folds it", async () => {
-  await gotoReady(stacker, "/");
-  await pioneersStack(stacker).click();
-
-  const cap = stacker.getByTestId("series-cap");
-  await expect(cap).toBeVisible();
-  await expect(cap).toContainText("Pioneers");
-  await expect(cap).toContainText("5 in your library");
-  for (const slug of PIONEERS) {
-    await expect(volumeTile(stacker, slug)).toBeVisible();
-  }
-  await expect(stacker.getByRole("button", { name: /Fold up/ })).toBeFocused();
-
-  await stacker.keyboard.press("Escape");
-
-  await expect(cap).toHaveCount(0);
-  await expect(pioneersStack(stacker)).toBeVisible();
-  await expect(pioneersStack(stacker)).toBeFocused();
-  for (const slug of PIONEERS) {
-    await expect(volumeTile(stacker, slug)).toHaveCount(0);
-  }
-  // The returning stack tile must not replay the wall's mount sweep on top
-  // of its own FLIP fade.
-  await expect
-    .poll(() =>
-      pioneersStack(stacker).evaluate(
-        (el) =>
-          el
-            .getAnimations()
-            .filter(
-              (a) =>
-                a instanceof CSSAnimation && a.animationName === "lib-sweep-in",
-            ).length,
-      ),
-    )
-    .toBe(0);
-});
-
-test("opening a stack moves the rest of the wall rather than rebuilding it", async () => {
-  await gotoReady(stacker, "/");
-  const grid = stacker.getByTestId("lib-grid");
-  // A cell the diff re-creates loses this mark; a moved one keeps it.
-  await grid.evaluate((g) => {
-    for (const cell of g.children) cell.setAttribute("data-e2e-kept", "");
+    await test.step("check the switch is off with every volume tiled", async () => {
+      await expect(readerLibraryPage.stackToggle).toBeEnabled();
+      await expect(readerLibraryPage.stackToggle).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      await expect(readerLibraryPage.stackTiles).toHaveCount(0);
+      for (const slug of PIONEERS) {
+        await expect(readerLibraryPage.volumeTile(slug)).toBeVisible();
+      }
+      await readerLibraryPage.topNav.assertDisplayed();
+    });
   });
 
-  await pioneersStack(stacker).click();
-  await expect(stacker.getByTestId("series-cap")).toBeVisible();
+  test("turn stack series on to fold each series into one counted tile", async ({
+    readerLibraryPage,
+    readerExpectMutation,
+  }) => {
+    await test.step("open the library", async () => {
+      await readerLibraryPage.goto();
+    });
 
-  const fresh = await grid.evaluate(
-    (g) => g.querySelectorAll(":scope > :not([data-e2e-kept])").length,
-  );
-  expect(fresh).toBe(1 + PIONEERS.length);
-  // The deal-out motion owns a volume's entrance, not the wall's sweep-in.
-  await expect(volumeTile(stacker, "beta")).toHaveCSS("animation-name", "none");
-});
+    await test.step("turn the switch on", async () => {
+      await readerExpectMutation(account.stackSeries(true), () =>
+        readerLibraryPage.toggleStackSeries(),
+      );
+      await expect(readerLibraryPage.stackToggle).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
 
-test("a sort change never reopens a run or moves focus", async ({
-  request,
-}) => {
-  const asc = `stack-${await fetchBookUuidByTitle(request, "Beta in the Series")}`;
-  const desc = `stack-${await fetchBookUuidByTitle(request, "Pioneers Vol 5: Signal")}`;
-  // The folded Pioneers stack's lead, which moves with the sort; null while dealt out.
-  const lead = () =>
-    stacker.evaluate(
-      () =>
-        document
-          .querySelector('[aria-label="Pioneers, 5 books"]')
-          ?.closest("[data-flip-key]")
-          ?.getAttribute("data-flip-key") ?? null,
-    );
-  const sortDir = stacker.getByTestId("lib-sort-dir");
-  const flipTo = async (key: string) => {
-    await sortDir.click();
-    await expect.poll(lead).toBe(key);
-  };
+    await test.step("check each series folds into one tile", async () => {
+      await expect(readerLibraryPage.seriesStack(PIONEERS_STACK)).toContainText(
+        "5 books",
+      );
+      // The list item is the grid cell itself, never a `display: contents` shell.
+      await expect(readerLibraryPage.stackCell(PIONEERS_STACK)).toHaveCSS(
+        "display",
+        "block",
+      );
+      await expect(
+        readerLibraryPage.seriesStack(CODE_QUARTET_STACK),
+      ).toContainText("4 books");
+      for (const slug of [...PIONEERS, ...CODE_QUARTET]) {
+        await expect(readerLibraryPage.volumeTile(slug)).toHaveCount(0);
+      }
+    });
+  });
 
-  await gotoReady(stacker, "/");
-  await expect(sortDir).toHaveText("↑");
-  await expect.poll(lead).toBe(asc);
-  await pioneersStack(stacker).click();
-  await expect(stacker.getByTestId("series-cap")).toBeVisible();
+  test("open a stack to deal its volumes out behind a head card", async ({
+    readerLibraryPage,
+    presetStackSeries,
+  }) => {
+    const cap = readerLibraryPage.seriesCap;
+    await presetStackSeries(true, "reader");
 
-  await flipTo(desc);
-  await flipTo(asc);
-  await expect(stacker.getByTestId("series-cap")).toHaveCount(0);
-  await expect(sortDir).toBeFocused();
+    await test.step("open the library", async () => {
+      await readerLibraryPage.goto();
+    });
 
-  // A fold's refocus is spent on the tile it returns to.
-  await pioneersStack(stacker).click();
-  await stacker.keyboard.press("Escape");
-  await expect(pioneersStack(stacker)).toBeFocused();
-  await flipTo(desc);
-  await flipTo(asc);
-  await expect(sortDir).toBeFocused();
-});
+    await test.step("open the Pioneers stack", async () => {
+      await readerLibraryPage.openSeriesStack(PIONEERS_STACK);
+    });
 
-test("the head card links to the series page", async () => {
-  await gotoReady(stacker, "/");
-  await pioneersStack(stacker).click();
+    await test.step("check the volumes are dealt out behind the head card", async () => {
+      await expect(cap.root).toBeVisible();
+      await expect(cap.root).toContainText("Pioneers");
+      await expect(cap.root).toContainText("5 in your library");
+      for (const slug of PIONEERS) {
+        await expect(readerLibraryPage.volumeTile(slug)).toBeVisible();
+      }
+      await expect(cap.foldButton).toBeFocused();
+    });
+  });
 
-  await stacker.getByRole("link", { name: "Series page →" }).click();
+  test("fold an open stack with escape", async ({
+    readerLibraryPage,
+    presetStackSeries,
+  }) => {
+    const cap = readerLibraryPage.seriesCap;
+    await presetStackSeries(true, "reader");
 
-  await expect(stacker).toHaveURL(/\/series\/\d+$/);
-  await expect(stacker.getByRole("heading", { level: 1 })).toContainText(
-    "Pioneers",
-  );
-});
+    await test.step("open the Pioneers stack", async () => {
+      await readerLibraryPage.goto();
+      await readerLibraryPage.openSeriesStack(PIONEERS_STACK);
+      await expect(cap.foldButton).toBeFocused();
+    });
 
-test("table view hides the switch and the grid brings it back on", async () => {
-  await gotoReady(stacker, "/");
-  await switchToTableView(stacker);
+    await test.step("press escape", async () => {
+      await cap.foldWithEscape();
+    });
 
-  await expect(stackToggle(stacker)).toHaveCount(0);
+    await test.step("check the stack folds and keeps focus", async () => {
+      await expect(cap.root).toHaveCount(0);
+      await expect(readerLibraryPage.seriesStack(PIONEERS_STACK)).toBeVisible();
+      await expect(readerLibraryPage.seriesStack(PIONEERS_STACK)).toBeFocused();
+      for (const slug of PIONEERS) {
+        await expect(readerLibraryPage.volumeTile(slug)).toHaveCount(0);
+      }
+    });
 
-  // Hidden, not off: the saved choice comes back with the grid.
-  await stacker.getByTestId("view-toggle-grid").click();
-  await expect(stackToggle(stacker)).toBeEnabled();
-  await expect(stackToggle(stacker)).toHaveAttribute("aria-pressed", "true");
-  await expect(pioneersStack(stacker)).toBeVisible();
-});
+    // The returning stack tile must not replay the wall's mount sweep on top
+    // of its own FLIP fade.
+    await test.step("check the wall's sweep does not replay", async () => {
+      await expect
+        .poll(() => readerLibraryPage.sweepAnimationCount(PIONEERS_STACK))
+        .toBe(0);
+    });
+  });
 
-test("the switch is saved per user and survives a reload", async ({
-  page: adminPage,
-}) => {
-  await stacker.reload();
-  await stacker.waitForLoadState("networkidle");
+  test("move the rest of the wall rather than rebuilding it when a stack opens", async ({
+    readerLibraryPage,
+    presetStackSeries,
+  }) => {
+    await presetStackSeries(true, "reader");
 
-  await expect(stackToggle(stacker)).toHaveAttribute("aria-pressed", "true");
-  await expect(pioneersStack(stacker)).toBeVisible();
+    await test.step("open the library and mark its cells", async () => {
+      await readerLibraryPage.goto();
+      await readerLibraryPage.markGridCells();
+    });
 
-  // The shared admin never stacked, so its wall still tiles every volume.
-  await gotoReady(adminPage, "/");
-  await expect(volumeTile(adminPage, "beta")).toBeVisible();
-  await expect(stackTiles(adminPage)).toHaveCount(0);
-});
+    await test.step("open the Pioneers stack", async () => {
+      await readerLibraryPage.openSeriesStack(PIONEERS_STACK);
+      await expect(readerLibraryPage.seriesCap.root).toBeVisible();
+    });
 
-test("a failed save puts the switch back and says so", async () => {
-  await setStacking(stacker, true);
-  await stacker.route(`**${SAVE_URL}`, (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "text/plain",
-      body: "forced failure",
-    }),
-  );
-  try {
-    await expectMutation(
-      stacker,
-      {
-        method: "POST",
-        url: SAVE_URL,
-        expectedBody: { enabled: false },
-        expectedStatus: 500,
-      },
-      async () => stackToggle(stacker).click(),
-    );
+    await test.step("check only the head card and its volumes are new", async () => {
+      expect(await readerLibraryPage.countUnmarkedGridCells()).toBe(
+        1 + PIONEERS.length,
+      );
+      // The deal-out motion owns a volume's entrance, not the wall's sweep-in.
+      await expect(readerLibraryPage.volumeTile("beta")).toHaveCSS(
+        "animation-name",
+        "none",
+      );
+    });
+  });
 
-    await expect(stackToggle(stacker)).toHaveAttribute("aria-pressed", "true");
-    await expect(stacker.getByTestId("lib-stack-error")).toBeVisible();
-    await expect(pioneersStack(stacker)).toBeVisible();
-  } finally {
-    await stacker.unroute(`**${SAVE_URL}`);
-  }
+  test("flip the sort without reopening a run or moving focus", async ({
+    readerLibraryPage,
+    presetStackSeries,
+    request,
+  }) => {
+    const asc = `stack-${await fetchBookUuidByTitle(request, "Beta in the Series")}`;
+    const desc = `stack-${await fetchBookUuidByTitle(request, "Pioneers Vol 5: Signal")}`;
+    await presetStackSeries(true, "reader");
+
+    await test.step("open the library with the stack dealt out", async () => {
+      await readerLibraryPage.goto();
+      await expect(readerLibraryPage.sortDirectionButton).toHaveText("↑");
+      await expect
+        .poll(() => readerLibraryPage.stackLeadKey(PIONEERS_STACK))
+        .toBe(asc);
+      await readerLibraryPage.openSeriesStack(PIONEERS_STACK);
+      await expect(readerLibraryPage.seriesCap.root).toBeVisible();
+    });
+
+    // The folded stack's lead moves with the sort, and is null while it is dealt out.
+    await test.step("flip the sort there and back", async () => {
+      for (const leadKey of [desc, asc]) {
+        await readerLibraryPage.toggleSortDirection();
+        await expect
+          .poll(() => readerLibraryPage.stackLeadKey(PIONEERS_STACK))
+          .toBe(leadKey);
+      }
+      await expect(readerLibraryPage.seriesCap.root).toHaveCount(0);
+      await expect(readerLibraryPage.sortDirectionButton).toBeFocused();
+    });
+
+    // A fold's refocus is spent on the tile it returns to.
+    await test.step("fold the stack and flip the sort again", async () => {
+      await readerLibraryPage.openSeriesStack(PIONEERS_STACK);
+      await expect(readerLibraryPage.seriesCap.foldButton).toBeFocused();
+      await readerLibraryPage.seriesCap.foldWithEscape();
+      await expect(readerLibraryPage.seriesStack(PIONEERS_STACK)).toBeFocused();
+      for (const leadKey of [desc, asc]) {
+        await readerLibraryPage.toggleSortDirection();
+        await expect
+          .poll(() => readerLibraryPage.stackLeadKey(PIONEERS_STACK))
+          .toBe(leadKey);
+      }
+      await expect(readerLibraryPage.sortDirectionButton).toBeFocused();
+    });
+  });
+
+  test("link the head card to the series page", async ({
+    readerLibraryPage,
+    readerSeriesPage,
+    presetStackSeries,
+  }) => {
+    await presetStackSeries(true, "reader");
+
+    await test.step("open the Pioneers stack", async () => {
+      await readerLibraryPage.goto();
+      await readerLibraryPage.openSeriesStack(PIONEERS_STACK);
+    });
+
+    await test.step("follow the head card's link", async () => {
+      await readerLibraryPage.seriesCap.openSeriesPage();
+    });
+
+    await test.step("check the series page opens", async () => {
+      await readerSeriesPage.assertShowsSeries("Pioneers");
+    });
+  });
+
+  test("keep the saved stack choice across table view", async ({
+    readerLibraryPage,
+    presetStackSeries,
+  }) => {
+    await presetStackSeries(true, "reader");
+
+    await test.step("switch to the table", async () => {
+      await readerLibraryPage.goto();
+      await readerLibraryPage.table.switchTo();
+      await expect(readerLibraryPage.stackToggle).toHaveCount(0);
+    });
+
+    // The switch is hidden, not off: the saved choice comes back with the grid.
+    await test.step("switch back to the grid", async () => {
+      await readerLibraryPage.switchToGrid();
+      await expect(readerLibraryPage.stackToggle).toBeEnabled();
+      await expect(readerLibraryPage.stackToggle).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await expect(readerLibraryPage.seriesStack(PIONEERS_STACK)).toBeVisible();
+    });
+  });
+
+  test("keep the switch across a reload", async ({
+    readerLibraryPage,
+    readerExpectMutation,
+  }) => {
+    await test.step("turn the switch on", async () => {
+      await readerLibraryPage.goto();
+      await readerExpectMutation(account.stackSeries(true), () =>
+        readerLibraryPage.toggleStackSeries(),
+      );
+    });
+
+    await test.step("reload the page", async () => {
+      await readerLibraryPage.reload();
+    });
+
+    await test.step("check the switch is still on", async () => {
+      await expect(readerLibraryPage.stackToggle).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await expect(readerLibraryPage.seriesStack(PIONEERS_STACK)).toBeVisible();
+    });
+  });
+
+  // The suite's admin never stacked, so its wall still tiles every volume.
+  test("save the switch per user", async ({
+    libraryPage,
+    presetStackSeries,
+  }) => {
+    await test.step("turn the switch on as the reader", async () => {
+      await presetStackSeries(true, "reader");
+    });
+
+    await test.step("check the admin's wall is unchanged", async () => {
+      await libraryPage.goto();
+      await expect(libraryPage.volumeTile("beta")).toBeVisible();
+      await expect(libraryPage.stackTiles).toHaveCount(0);
+    });
+  });
+
+  test("put the switch back when a save fails", async ({
+    readerLibraryPage,
+    presetStackSeries,
+    readerExpectMutation,
+  }) => {
+    await presetStackSeries(true, "reader");
+
+    await test.step("open the library with the switch on", async () => {
+      await readerLibraryPage.goto();
+      await expect(readerLibraryPage.stackToggle).toBeEnabled();
+    });
+
+    await test.step("turn the switch off while the server fails", async () => {
+      await readerLibraryPage.forceServerError(account.stackSeries());
+      await readerExpectMutation(failing(account.stackSeries(false)), () =>
+        readerLibraryPage.toggleStackSeries(),
+      );
+    });
+
+    await test.step("check the switch is back on with an error shown", async () => {
+      await expect(readerLibraryPage.stackToggle).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await expect(readerLibraryPage.stackError).toBeVisible();
+      await expect(readerLibraryPage.seriesStack(PIONEERS_STACK)).toBeVisible();
+    });
+  });
 });

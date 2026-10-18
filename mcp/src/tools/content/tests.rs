@@ -5,10 +5,11 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json as AxumJson, Router};
 use rmcp::handler::server::wrapper::Parameters;
+use rmcp::model::{CallToolResult, ContentBlock};
 
 use omnibus_shared::{
-    ChapterListEntry, ChapterListResponse, ChapterTextResponse, ContentSearchHit,
-    ContentSearchResults,
+    BookImage, BookImageLink, BookImageList, BookImageReference, ChapterListEntry,
+    ChapterListResponse, ChapterTextResponse, ContentSearchHit, ContentSearchResults,
 };
 
 use super::*;
@@ -16,7 +17,41 @@ use crate::client::OmnibusClient;
 use crate::config::Config;
 
 /// Every content tool this issue ships, by MCP tool name.
-const EXPECTED_TOOLS: &[&str] = &["list_chapters", "read_chapter_text", "search_book_content"];
+const EXPECTED_TOOLS: &[&str] = &[
+    "list_chapters",
+    "read_chapter_text",
+    "search_book_content",
+    "list_book_images",
+    "read_book_image",
+];
+
+const SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>"#;
+
+fn encode_png(image: image::DynamicImage) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    image
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+    bytes
+}
+
+fn opaque_png(width: u32, height: u32) -> Vec<u8> {
+    let pixels = image::RgbImage::from_pixel(width, height, image::Rgb([200, 30, 30]));
+    encode_png(image::DynamicImage::ImageRgb8(pixels))
+}
+
+fn transparent_png(width: u32, height: u32) -> Vec<u8> {
+    let pixels = image::RgbaImage::from_pixel(width, height, image::Rgba([10, 20, 30, 0]));
+    encode_png(image::DynamicImage::ImageRgba8(pixels))
+}
+
+/// The `BookImageRead` a `read_book_image` call carried as structured content.
+fn read_of(result: CallToolResult) -> omnibus_shared::BookImageRead {
+    result.into_typed().unwrap()
+}
 
 async fn login() -> AxumJson<serde_json::Value> {
     AxumJson(serde_json::json!({
@@ -117,8 +152,78 @@ async fn content_search(
     }
 }
 
-/// Boot a stub instance serving the content read routes.
-async fn stub_service() -> OmnibusMcp {
+async fn images(Path(uuid): Path<String>) -> Result<AxumJson<BookImageList>, StatusCode> {
+    match uuid.as_str() {
+        "uuid-frank" => Ok(AxumJson(BookImageList {
+            book_uuid: uuid,
+            images: vec![BookImage {
+                href: "OEBPS/images/map.png".into(),
+                media_type: "image/png".into(),
+                byte_size: 2048,
+                width: Some(640),
+                height: Some(480),
+                references: vec![BookImageReference {
+                    spine_index: 1,
+                    alt: Some("A map".into()),
+                }],
+            }],
+        })),
+        "uuid-comic" => Err(StatusCode::UNPROCESSABLE_ENTITY),
+        _ => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+/// `GET …/images/file`: four PNG-typed bytes for `uuid-frank`'s map, with the
+/// statuses the server answers for each way the read can fail.
+async fn image_file(
+    Path(uuid): Path<String>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    match (uuid.as_str(), q.get("href").map(String::as_str)) {
+        ("uuid-frank", Some("OEBPS/images/map.png")) => (
+            [(axum::http::header::CONTENT_TYPE, "image/png")],
+            vec![1u8, 2, 3, 4],
+        )
+            .into_response(),
+        ("uuid-frank", Some("OEBPS/images/plate.png")) => (
+            [(axum::http::header::CONTENT_TYPE, "image/png")],
+            opaque_png(8, 6),
+        )
+            .into_response(),
+        ("uuid-frank", Some("OEBPS/images/logo.svg")) => (
+            [(axum::http::header::CONTENT_TYPE, "image/svg+xml")],
+            SVG.to_vec(),
+        )
+            .into_response(),
+        ("uuid-frank", _) => StatusCode::BAD_REQUEST.into_response(),
+        ("uuid-nodl", _) => StatusCode::FORBIDDEN.into_response(),
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// `GET …/images/link`: a signed path over the `href` it was asked to mint for.
+async fn image_link(
+    Path(uuid): Path<String>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> AxumJson<BookImageLink> {
+    let mut query = reqwest::Url::parse("http://stub").unwrap();
+    query
+        .query_pairs_mut()
+        .append_pair("href", q.get("href").map_or("", String::as_str))
+        .append_pair("expires", "1893456000")
+        .append_pair("sig", "abc");
+    AxumJson(BookImageLink {
+        path: format!(
+            "/api/ebooks/{uuid}/images/signed?{}",
+            query.query().unwrap_or_default()
+        ),
+        expires_at: 1_893_456_000,
+    })
+}
+
+/// Boot a stub instance serving the content read routes; returns its origin.
+async fn spawn_stub() -> String {
     let app = Router::new()
         .route("/api/auth/login", post(login))
         .route("/api/ebooks/{uuid}/chapters", get(chapters))
@@ -126,14 +231,22 @@ async fn stub_service() -> OmnibusMcp {
             "/api/ebooks/{uuid}/chapters/{spine_index}/text",
             get(chapter_text),
         )
+        .route("/api/ebooks/{uuid}/images", get(images))
+        .route("/api/ebooks/{uuid}/images/file", get(image_file))
+        .route("/api/ebooks/{uuid}/images/link", get(image_link))
         .route("/api/search/content", get(content_search));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
+    format!("http://{addr}")
+}
+
+/// A service logged in to the stub instance.
+async fn stub_service() -> OmnibusMcp {
     let client = OmnibusClient::new(Config {
-        base_url: format!("http://{addr}"),
+        base_url: spawn_stub().await,
         username: "reader".into(),
         password: "correct horse battery".into(),
     })
@@ -414,4 +527,280 @@ async fn read_chapter_text_forwards_stop_at_progress_only_when_asked() {
         .expect("read should succeed");
     assert_eq!(text.0.offset, 10);
     assert!(!text.0.truncated_by_progress, "the stub reports no cut");
+}
+
+#[tokio::test]
+async fn list_book_images_returns_each_image_with_its_references() {
+    let service = stub_service().await;
+    let list = service
+        .list_book_images(Parameters(ListBookImagesParams {
+            book_uuid: "uuid-frank".into(),
+        }))
+        .await
+        .unwrap();
+    assert_eq!(list.0.book_uuid, "uuid-frank");
+    assert_eq!(list.0.images.len(), 1);
+    let image = &list.0.images[0];
+    assert_eq!(image.href, "OEBPS/images/map.png");
+    assert_eq!(image.media_type, "image/png");
+    assert_eq!(
+        (image.byte_size, image.width, image.height),
+        (2048, Some(640), Some(480))
+    );
+    assert_eq!(image.references[0].spine_index, 1);
+    assert_eq!(image.references[0].alt.as_deref(), Some("A map"));
+}
+
+#[tokio::test]
+async fn list_book_images_reports_not_found_for_an_unknown_uuid() {
+    let service = stub_service().await;
+    let err = expect_err(
+        service
+            .list_book_images(Parameters(ListBookImagesParams {
+                book_uuid: "uuid-missing".into(),
+            }))
+            .await,
+    );
+    assert_eq!(err.message, "book uuid-missing not found");
+}
+
+#[tokio::test]
+async fn list_book_images_reports_a_book_without_an_epub() {
+    let service = stub_service().await;
+    let err = expect_err(
+        service
+            .list_book_images(Parameters(ListBookImagesParams {
+                book_uuid: "uuid-comic".into(),
+            }))
+            .await,
+    );
+    assert!(
+        err.message.contains("has no EPUB file"),
+        "got: {}",
+        err.message
+    );
+    assert!(err.message.contains("CBZ"), "names what is not covered");
+}
+
+#[tokio::test]
+async fn read_book_image_returns_a_signed_download_url_on_the_public_url() {
+    let service = stub_service().await;
+    let public = service.client.public_url().to_string();
+
+    let read = service
+        .read_book_image(Parameters(ReadBookImageParams {
+            book_uuid: "uuid-frank".into(),
+            href: "OEBPS/images/map.png".into(),
+        }))
+        .await
+        .unwrap();
+    let read = read_of(read);
+
+    assert_eq!(read.book_uuid, "uuid-frank");
+    assert_eq!(read.href, "OEBPS/images/map.png");
+    assert_eq!(read.media_type, "image/png");
+    assert_eq!(read.byte_size, 4);
+    assert_eq!(read.expires_at, 1_893_456_000);
+    assert_eq!(read.expires_at_iso, "2030-01-01T00:00:00Z");
+    assert!(
+        read.download_url.starts_with(&public),
+        "{}",
+        read.download_url
+    );
+}
+
+#[tokio::test]
+async fn read_book_image_reports_an_href_that_is_not_a_manifest_image() {
+    let service = stub_service().await;
+    let err = expect_err(
+        service
+            .read_book_image(Parameters(ReadBookImageParams {
+                book_uuid: "uuid-frank".into(),
+                href: "c1.xhtml".into(),
+            }))
+            .await,
+    );
+    assert!(
+        err.message
+            .contains("not an image in this book's EPUB manifest"),
+        "got: {}",
+        err.message
+    );
+}
+
+#[tokio::test]
+async fn read_book_image_reports_a_download_permission_denial() {
+    let service = stub_service().await;
+    let err = expect_err(
+        service
+            .read_book_image(Parameters(ReadBookImageParams {
+                book_uuid: "uuid-nodl".into(),
+                href: "OEBPS/images/map.png".into(),
+            }))
+            .await,
+    );
+    assert!(
+        err.message.contains("not permitted to download"),
+        "got: {}",
+        err.message
+    );
+}
+
+#[tokio::test]
+async fn read_book_image_builds_the_download_url_on_the_public_url_not_the_base_url() {
+    // The hosted `/mcp` shape: calls go through a loopback base URL, but the link
+    // goes to a person, so it must carry the origin they reached the server on.
+    let client = OmnibusClient::with_bearer(
+        spawn_stub().await,
+        "caller-token".into(),
+        "https://omnibus.example.com".into(),
+    )
+    .unwrap();
+    let service = OmnibusMcp::new(Arc::new(client));
+
+    let read = service
+        .read_book_image(Parameters(ReadBookImageParams {
+            book_uuid: "uuid-frank".into(),
+            href: "OEBPS/images/map.png".into(),
+        }))
+        .await
+        .unwrap();
+    let read = read_of(read);
+
+    assert_eq!(
+        read.download_url,
+        "https://omnibus.example.com/api/ebooks/uuid-frank/images/signed\
+         ?href=OEBPS%2Fimages%2Fmap.png&expires=1893456000&sig=abc"
+    );
+}
+
+#[test]
+fn preview_returns_none_for_svg_bytes() {
+    assert!(preview(SVG).is_none());
+}
+
+#[test]
+fn preview_shrinks_an_image_whose_edge_exceeds_the_cap() {
+    let (bytes, media_type) = preview(&opaque_png(3136, 1000)).unwrap();
+
+    assert_eq!(media_type, "image/jpeg");
+    let decoded = image::load_from_memory(&bytes).unwrap();
+    assert_eq!((decoded.width(), decoded.height()), (1568, 500));
+}
+
+#[test]
+fn preview_leaves_an_image_exactly_at_the_cap_unscaled() {
+    let (bytes, _) = preview(&opaque_png(1568, 4)).unwrap();
+
+    let decoded = image::load_from_memory(&bytes).unwrap();
+    assert_eq!((decoded.width(), decoded.height()), (1568, 4));
+}
+
+#[test]
+fn preview_keeps_a_small_image_at_its_own_size() {
+    let (bytes, media_type) = preview(&opaque_png(64, 48)).unwrap();
+
+    assert_eq!(media_type, "image/jpeg");
+    let decoded = image::load_from_memory(&bytes).unwrap();
+    assert_eq!((decoded.width(), decoded.height()), (64, 48));
+}
+
+#[test]
+fn preview_encodes_png_when_the_image_has_alpha() {
+    let (bytes, media_type) = preview(&transparent_png(32, 32)).unwrap();
+
+    assert_eq!(media_type, "image/png");
+    assert!(image::load_from_memory(&bytes).unwrap().color().has_alpha());
+}
+
+#[test]
+fn preview_encodes_jpeg_for_an_rgba_image_with_no_transparent_pixel() {
+    let pixels = image::RgbaImage::from_pixel(32, 32, image::Rgba([10, 20, 30, 255]));
+    let (_, media_type) = preview(&encode_png(image::DynamicImage::ImageRgba8(pixels))).unwrap();
+
+    assert_eq!(media_type, "image/jpeg");
+}
+
+#[test]
+fn preview_encodes_png_when_one_pixel_is_transparent() {
+    let mut pixels = image::RgbaImage::from_pixel(32, 32, image::Rgba([10, 20, 30, 255]));
+    pixels.put_pixel(5, 7, image::Rgba([10, 20, 30, 0]));
+    let (_, media_type) = preview(&encode_png(image::DynamicImage::ImageRgba8(pixels))).unwrap();
+
+    assert_eq!(media_type, "image/png");
+}
+
+#[test]
+fn preview_returns_none_when_the_encoded_copy_exceeds_the_byte_cap() {
+    // Noise with alpha does not compress, so its PNG copy runs past 3.5 MB.
+    let mut seed = 0x2545_f491_u32;
+    let pixels = image::RgbaImage::from_fn(1200, 1200, |_, _| {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        image::Rgba(seed.to_le_bytes())
+    });
+
+    assert!(preview(&encode_png(image::DynamicImage::ImageRgba8(pixels))).is_none());
+}
+
+#[test]
+fn preview_returns_none_for_an_image_wider_than_the_decode_limit() {
+    assert!(preview(&opaque_png(DECODE_MAX_EDGE + 1, 1)).is_none());
+}
+
+#[tokio::test]
+async fn read_book_image_attaches_an_image_block_for_a_raster() {
+    let service = stub_service().await;
+
+    let result = service
+        .read_book_image(Parameters(ReadBookImageParams {
+            book_uuid: "uuid-frank".into(),
+            href: "OEBPS/images/plate.png".into(),
+        }))
+        .await
+        .unwrap();
+
+    let block = result
+        .content
+        .iter()
+        .find_map(|c| match c {
+            ContentBlock::Image(image) => Some(image),
+            _ => None,
+        })
+        .expect("a raster comes with an image block");
+    assert_eq!(block.mime_type, "image/jpeg");
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&block.data)
+        .unwrap();
+    let decoded = image::load_from_memory(&bytes).unwrap();
+    assert_eq!((decoded.width(), decoded.height()), (8, 6));
+    let read = read_of(result);
+    assert_eq!(read.byte_size, opaque_png(8, 6).len() as i64);
+    // The mint is asked for the href the caller named, not any other image's.
+    let url = reqwest::Url::parse(&read.download_url).unwrap();
+    let minted_for: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+    assert_eq!(minted_for["href"], "OEBPS/images/plate.png");
+}
+
+#[tokio::test]
+async fn read_book_image_attaches_no_image_block_for_an_svg() {
+    let service = stub_service().await;
+
+    let result = service
+        .read_book_image(Parameters(ReadBookImageParams {
+            book_uuid: "uuid-frank".into(),
+            href: "OEBPS/images/logo.svg".into(),
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        result
+            .content
+            .iter()
+            .all(|c| !matches!(c, ContentBlock::Image(_))),
+        "an SVG comes as the URL only"
+    );
+    assert_eq!(read_of(result).media_type, "image/svg+xml");
 }

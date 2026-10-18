@@ -1,313 +1,289 @@
-import type { Page } from "@playwright/test";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { users } from "../contracts/users";
+import { buildReader, buildUploader } from "../data/users";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 import { TEST_USERNAME } from "../utils/auth";
-import { expectNavVisible, gotoReady } from "../utils/nav";
 
-// Admin user management at Administration › People. The seeded session is an
-// admin, so it sees the section. The create/delete round-trip uses a username no other spec or
-// fixture touches and removes it at the end, so the shared server is left as it
-// was found. The last-admin / non-admin guards are covered by the server
-// integration tests (they'd mutate or depend on the shared admin here).
-const USERS = "/admin?section=people";
-// Per-run unique suffix so a run that dies before its cleanup delete doesn't
-// 409 the next run's create against the shared dev server.
-const TEMP_USER = `e2e_usermgmt_${Date.now()}`;
-const TEMP_PASSWORD = "Temp-E2E-Pass-9x";
+// The last-admin and non-admin guards live in the server's integration tests,
+// since here they would mutate the suite's admin.
 
-const table = (page: Page) => page.getByTestId("users-table");
-const tempRow = (page: Page) =>
-  table(page).locator("tr", { hasText: TEMP_USER });
+test.describe("people section", () => {
+  test("show the people section layout", async ({ adminPage }) => {
+    const { users: section } = adminPage;
 
-test("renders the users section layout", async ({ page }) => {
-  await gotoReady(page, USERS);
+    await test.step("open the people section", async () => {
+      await adminPage.goto("people");
+    });
 
-  await expect(
-    page.getByRole("heading", { level: 3, name: "Accounts" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("users-table")).toBeVisible();
-  await expect(page.getByTestId("users-new")).toBeVisible();
-  // The seeded admin is always present.
-  await expect(
-    table(page).locator("tr", { hasText: TEST_USERNAME }),
-  ).toBeVisible();
-  await expectNavVisible(page);
-});
-
-test("administrator permission implies and locks the others", async ({
-  page,
-}) => {
-  await gotoReady(page, USERS);
-  await page.getByTestId("users-new").click();
-
-  const upload = page.getByTestId("perm-can_upload");
-  const edit = page.getByTestId("perm-can_edit");
-  await expect(upload).not.toBeChecked();
-
-  await page.getByTestId("perm-is_admin").check();
-  // Administrator forces the rest on and disables them.
-  await expect(upload).toBeChecked();
-  await expect(edit).toBeChecked();
-  await expect(upload).toBeDisabled();
-  await expect(edit).toBeDisabled();
-});
-
-test("keeps typed details when the new user backdrop is clicked", async ({
-  page,
-}) => {
-  await gotoReady(page, USERS);
-  await page.getByTestId("users-new").click();
-  const modal = page.getByTestId("users-new-modal");
-  await page.getByTestId("new-user-username").fill("half-typed");
-
-  // A corner of the backdrop, outside the dialog card.
-  await modal.click({ position: { x: 5, y: 5 } });
-
-  await expect(modal).toBeVisible();
-  await expect(page.getByTestId("new-user-username")).toHaveValue("half-typed");
-});
-
-test("keeps keyboard focus inside the new user dialog", async ({ page }) => {
-  await gotoReady(page, USERS);
-  await page.getByTestId("users-new").click();
-  const modal = page.getByTestId("users-new-modal");
-  await expect(modal).toBeFocused();
-
-  const focusInModal = () =>
-    page.evaluate(
-      () =>
-        document
-          .querySelector('[data-testid="users-new-modal"]')
-          ?.contains(document.activeElement) ?? false,
-    );
-  // More presses than the dialog has controls, so Tab must wrap at least once.
-  for (let press = 0; press < 12; press++) {
-    await page.keyboard.press("Tab");
-    expect(await focusInModal()).toBe(true);
-  }
-  await page.keyboard.press("Shift+Tab");
-  expect(await focusInModal()).toBe(true);
-});
-
-test("creates a user then deletes it", async ({ page }) => {
-  await gotoReady(page, USERS);
-
-  // ── Create ──────────────────────────────────────────────
-  await page.getByTestId("users-new").click();
-  await page.getByTestId("new-user-username").fill(TEMP_USER);
-  await page.getByTestId("new-user-password").fill(TEMP_PASSWORD);
-  await page.getByTestId("perm-can_upload").check();
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/admin/users",
-      expectedBody: {
-        username: TEMP_USER,
-        password: TEMP_PASSWORD,
-        permissions: {
-          is_admin: false,
-          can_upload: true,
-          can_edit: false,
-          can_download: true,
-        },
-      },
-      expectedStatus: 201,
-    },
-    async () => page.getByTestId("new-user-submit").click(),
-  );
-
-  await expect(tempRow(page)).toBeVisible();
-  await expect(tempRow(page).getByText("Upload")).toBeVisible();
-
-  // ── Delete (cleanup) ────────────────────────────────────
-  await tempRow(page)
-    .getByRole("button", { name: `Delete ${TEMP_USER}` })
-    .click();
-  await expect(page.getByTestId("users-delete-modal")).toBeVisible();
-
-  await expectMutation(
-    page,
-    { method: "DELETE", url: "/api/admin/users/", expectedStatus: 204 },
-    async () => page.getByTestId("delete-user-confirm").click(),
-  );
-
-  await expect(tempRow(page)).toHaveCount(0);
-});
-
-test("a backdrop click during an in-flight delete does not dismiss the modal or lose the result", async ({
-  page,
-}) => {
-  // #1484 — DeleteUserModal used to sit on a hand-rolled `ModalShell` whose
-  // backdrop had no busy gate at all, so a stray click while the delete was
-  // in flight closed the modal before the admin saw the outcome. It now
-  // shares `ConfirmModal`, which refuses to dismiss while `busy`.
-  await gotoReady(page, USERS);
-
-  const tempName = `e2e_backdrop_${Date.now()}`;
-  await page.getByTestId("users-new").click();
-  await page.getByTestId("new-user-username").fill(tempName);
-  await page.getByTestId("new-user-password").fill(TEMP_PASSWORD);
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/admin/users", expectedStatus: 201 },
-    async () => page.getByTestId("new-user-submit").click(),
-  );
-  const row = table(page).locator("tr", { hasText: tempName });
-  await expect(row).toBeVisible();
-
-  await row.getByRole("button", { name: `Delete ${tempName}` }).click();
-  const modal = page.getByTestId("users-delete-modal");
-  await expect(modal).toBeVisible();
-
-  // Delay the DELETE response so the modal is provably still busy when the
-  // backdrop click lands mid-request.
-  await page.route("**/api/admin/users/*", async (route) => {
-    if (route.request().method() !== "DELETE") return route.continue();
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    return route.continue();
-  });
-
-  try {
-    await expectMutation(
-      page,
-      { method: "DELETE", url: "/api/admin/users/", expectedStatus: 204 },
-      async () => {
-        await page.getByTestId("delete-user-confirm").click();
-        // Click the backdrop well away from the centered panel while the
-        // delete is still in flight (the route above delays the response) —
-        // the modal must stay open and the request must still complete.
-        await modal.click({ position: { x: 5, y: 5 } });
-        await expect(modal).toBeVisible();
-      },
-    );
-  } finally {
-    await page.unroute("**/api/admin/users/*");
-  }
-
-  await expect(modal).toHaveCount(0);
-  await expect(row).toHaveCount(0);
-});
-
-test("surfaces a 409 when creating a duplicate username", async ({ page }) => {
-  await gotoReady(page, USERS);
-  await page.getByTestId("users-new").click();
-
-  // Collide with the seeded admin — the server rejects before any write.
-  await page.getByTestId("new-user-username").fill(TEST_USERNAME);
-  await page.getByTestId("new-user-password").fill(TEMP_PASSWORD);
-
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/admin/users", expectedStatus: 409 },
-    async () => page.getByTestId("new-user-submit").click(),
-  );
-
-  await expect(page.getByTestId("users-modal-error")).toContainText(
-    "username is already taken",
-  );
-});
-
-// ── Self-registration switch ──────────────────────────────────────────
-//
-// `registration_enabled` is a single global settings row that the whole
-// server reads, and `auth.spec.ts` asserts the register page and the login
-// page's Register link — both of which key off it. Flipping it for real would
-// be visible to those specs the instant it landed (the suite is
-// `fullyParallel` against one shared server), and a spec-local restore
-// wouldn't help: readers don't take the writers' lock. So these specs stub
-// both the read and the write, asserting the network contract and the UI's
-// reaction without ever touching shared state. The real persistence path is
-// covered by the server integration tests
-// (`api_post_registration_*` in `server/src/backend/settings/tests.rs`).
-
-/** Pin the registration-status read so the switch starts from a known value. */
-async function stubRegistrationStatus(page: Page, enabled: boolean) {
-  await page.route("**/api/auth/registration", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ enabled }),
+    await test.step("check the table and its new-user button show", async () => {
+      await expect(section.heading).toBeVisible();
+      await expect(section.table).toBeVisible();
+      await expect(section.newUserButton).toBeVisible();
+      // The suite's admin is always present.
+      await expect(section.row(TEST_USERNAME)).toBeVisible();
+      await adminPage.topNav.assertDisplayed();
     });
   });
-}
 
-test("reflects the current self-registration setting", async ({ page }) => {
-  await stubRegistrationStatus(page, false);
-  await gotoReady(page, USERS);
+  test("lock the other permissions when administrator is checked", async ({
+    adminPage,
+  }) => {
+    const { users: section } = adminPage;
 
-  const toggle = page.getByTestId("registration-toggle");
-  await expect(toggle).not.toBeChecked();
-  await expect(page.getByTestId("registration-card")).toContainText(
-    "Only an administrator can create accounts.",
-  );
-  await expect(toggle).toBeEnabled();
-});
+    await test.step("open the new-user form", async () => {
+      await adminPage.goto("people");
+      await section.openNewUserForm();
+      await expect(section.permission("can_upload")).not.toBeChecked();
+    });
 
-test("turning self-registration on posts the new value and updates the card", async ({
-  page,
-}) => {
-  await stubRegistrationStatus(page, false);
-  await page.route("**/api/settings/registration", async (route) => {
-    await route.fulfill({ status: 204, body: "" });
-  });
-  await gotoReady(page, USERS);
+    await test.step("make the user an administrator", async () => {
+      await section.checkPermission("is_admin");
+    });
 
-  const toggle = page.getByTestId("registration-toggle");
-  await expect(toggle).not.toBeChecked();
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/settings/registration",
-      expectedBody: { enabled: true },
-      expectedStatus: 204,
-    },
-    async () => toggle.check(),
-  );
-
-  await expect(toggle).toBeChecked();
-  await expect(page.getByTestId("registration-card")).toContainText(
-    "Anyone who can reach this server can create an account.",
-  );
-  await expect(page.getByTestId("registration-error")).toHaveCount(0);
-});
-
-test("a failed save surfaces the error and leaves the switch as it was", async ({
-  page,
-}) => {
-  await stubRegistrationStatus(page, true);
-  await page.route("**/api/settings/registration", async (route) => {
-    await route.fulfill({
-      status: 500,
-      contentType: "text/plain",
-      body: "set registration enabled failed",
+    await test.step("check the other permissions are on and locked", async () => {
+      await expect(section.permission("can_upload")).toBeChecked();
+      await expect(section.permission("can_edit")).toBeChecked();
+      await expect(section.permission("can_upload")).toBeDisabled();
+      await expect(section.permission("can_edit")).toBeDisabled();
     });
   });
-  await gotoReady(page, USERS);
 
-  const toggle = page.getByTestId("registration-toggle");
-  await expect(toggle).toBeChecked();
+  test("keep the typed details when the new user backdrop is clicked", async ({
+    adminPage,
+  }) => {
+    const { users: section } = adminPage;
 
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/settings/registration",
-      expectedBody: { enabled: false },
-      expectedStatus: 500,
-    },
-    async () => toggle.uncheck(),
-  );
+    await test.step("start a new user", async () => {
+      await adminPage.goto("people");
+      await section.openNewUserForm();
+      await section.fillUsername("half-typed");
+    });
 
-  await expect(page.getByTestId("registration-error")).toContainText(
-    "set registration enabled failed",
-  );
-  // The switch must not claim a state the server rejected.
-  await expect(toggle).toBeChecked();
-  await expect(page.getByTestId("registration-card")).toContainText(
-    "Anyone who can reach this server can create an account.",
-  );
+    await test.step("click the backdrop", async () => {
+      await section.clickNewUserBackdrop();
+    });
+
+    await test.step("check the dialog and the details stay", async () => {
+      await expect(section.newUserDialog).toBeVisible();
+      await expect(section.usernameField).toHaveValue("half-typed");
+    });
+  });
+
+  test("keep keyboard focus inside the new user dialog", async ({
+    adminPage,
+  }) => {
+    const { users: section } = adminPage;
+
+    await test.step("open the new-user form", async () => {
+      await adminPage.goto("people");
+      await section.openNewUserForm();
+      await expect(section.newUserDialog).toBeFocused();
+    });
+
+    // More presses than the dialog has controls, so Tab must wrap at least once.
+    await test.step("tab past every control", async () => {
+      for (let press = 0; press < 12; press++) {
+        await section.pressTab();
+        expect(await section.hasFocusInNewUserDialog()).toBe(true);
+      }
+    });
+
+    await test.step("tab backwards", async () => {
+      await section.pressTab({ backwards: true });
+      expect(await section.hasFocusInNewUserDialog()).toBe(true);
+    });
+  });
+
+  test("create a user", async ({
+    adminPage,
+    createdUserIds,
+    expectMutation,
+  }) => {
+    const { users: section } = adminPage;
+    const user = buildUploader();
+
+    await test.step("open the new-user form", async () => {
+      await adminPage.goto("people");
+      await section.openNewUserForm();
+    });
+
+    await test.step("fill in the user and let it upload", async () => {
+      await section.fillCredentials(user);
+      await section.checkPermission("can_upload");
+    });
+
+    await test.step("submit the form", async () => {
+      const { response } = await expectMutation(users.create(user), () =>
+        section.submitNewUser(),
+      );
+      const { id } = await response.json();
+      createdUserIds.add(id);
+    });
+
+    await test.step("check the table lists the user", async () => {
+      await expect(section.row(user.username)).toBeVisible();
+      await expect(
+        section.permissionChip(user.username, "Upload"),
+      ).toBeVisible();
+    });
+  });
+
+  test("delete a user", async ({
+    adminPage,
+    seedUser,
+    createdUserIds,
+    expectMutation,
+  }) => {
+    const { users: section } = adminPage;
+    const user = await seedUser();
+
+    await test.step("ask to delete the user", async () => {
+      await adminPage.goto("people");
+      await section.openDeleteDialog(user.username);
+      await expect(section.deleteDialog).toBeVisible();
+    });
+
+    await test.step("confirm the delete", async () => {
+      await expectMutation(users.delete(), () => section.confirmDelete());
+      createdUserIds.delete(user.id);
+    });
+
+    await test.step("check the table no longer lists the user", async () => {
+      await expect(section.row(user.username)).toHaveCount(0);
+    });
+  });
+
+  // The dialog's backdrop had no busy gate, so a stray click mid-delete closed
+  // it before the admin saw the outcome (#1484).
+  test("ignore a backdrop click while a delete is in flight", async ({
+    adminPage,
+    seedUser,
+    createdUserIds,
+    expectMutation,
+  }) => {
+    const { users: section } = adminPage;
+    const user = await seedUser();
+
+    await test.step("ask to delete the user", async () => {
+      await adminPage.goto("people");
+      await expect(section.row(user.username)).toBeVisible();
+      await section.openDeleteDialog(user.username);
+      await expect(section.deleteDialog).toBeVisible();
+    });
+
+    await test.step("click the backdrop while the delete is in flight", async () => {
+      await section.stubSlowDeletes(400);
+      await expectMutation(users.delete(), async () => {
+        await section.confirmDelete();
+        await section.clickDeleteBackdrop();
+        await expect(section.deleteDialog).toBeVisible();
+      });
+      createdUserIds.delete(user.id);
+    });
+
+    await test.step("check the dialog closed with the user gone", async () => {
+      await expect(section.deleteDialog).toHaveCount(0);
+      await expect(section.row(user.username)).toHaveCount(0);
+    });
+  });
+
+  test("reject a duplicate username", async ({ adminPage, expectMutation }) => {
+    const { users: section } = adminPage;
+
+    await test.step("open the new-user form", async () => {
+      await adminPage.goto("people");
+      await section.openNewUserForm();
+    });
+
+    // The server rejects the suite's admin's name before any write.
+    await test.step("submit the admin's username", async () => {
+      await section.fillCredentials({
+        ...buildReader(),
+        username: TEST_USERNAME,
+      });
+      await expectMutation(users.createConflict(), () =>
+        section.submitNewUser(),
+      );
+    });
+
+    await test.step("check the form reports the clash", async () => {
+      await expect(section.formError).toContainText(
+        "username is already taken",
+      );
+    });
+  });
+});
+
+// `registration_enabled` is one row auth.spec's pages read, and readers take no
+// lock, so these stub its read and write; the server tests cover persistence.
+test.describe("self-registration", () => {
+  test("show the current self-registration setting", async ({ adminPage }) => {
+    const { users: section } = adminPage;
+
+    await test.step("open the people section with sign-up closed", async () => {
+      await adminPage.stubRegistrationOpen(false);
+      await adminPage.goto("people");
+    });
+
+    await test.step("check the switch is off and enabled", async () => {
+      await expect(section.registrationSwitch).not.toBeChecked();
+      await expect(section.registrationCard).toContainText(
+        "Only an administrator can create accounts.",
+      );
+      await expect(section.registrationSwitch).toBeEnabled();
+    });
+  });
+
+  test("turn self-registration on", async ({ adminPage, expectMutation }) => {
+    const { users: section } = adminPage;
+
+    await test.step("open the people section with sign-up closed", async () => {
+      await adminPage.stubRegistrationOpen(false);
+      await section.stubRegistrationSaved();
+      await adminPage.goto("people");
+      await expect(section.registrationSwitch).not.toBeChecked();
+    });
+
+    await test.step("turn sign-up on", async () => {
+      await expectMutation(users.setRegistration(true), () =>
+        section.allowRegistration(),
+      );
+    });
+
+    await test.step("check the card says anyone can register", async () => {
+      await expect(section.registrationSwitch).toBeChecked();
+      await expect(section.registrationCard).toContainText(
+        "Anyone who can reach this server can create an account.",
+      );
+      await expect(section.registrationError).toHaveCount(0);
+    });
+  });
+
+  test("show an error and keep the switch when saving fails", async ({
+    adminPage,
+    expectMutation,
+  }) => {
+    const { users: section } = adminPage;
+    const turnOff = users.setRegistration(false);
+
+    await test.step("open the people section with sign-up open", async () => {
+      await adminPage.stubRegistrationOpen(true);
+      await adminPage.forceServerError(turnOff);
+      await adminPage.goto("people");
+      await expect(section.registrationSwitch).toBeChecked();
+    });
+
+    await test.step("turn sign-up off", async () => {
+      await expectMutation(failing(turnOff), () => section.blockRegistration());
+    });
+
+    await test.step("check the error shows and the switch stays on", async () => {
+      await expect(section.registrationError).toContainText("forced failure");
+      // The switch must not claim a state the server rejected.
+      await expect(section.registrationSwitch).toBeChecked();
+      await expect(section.registrationCard).toContainText(
+        "Anyone who can reach this server can create an account.",
+      );
+    });
+  });
 });
