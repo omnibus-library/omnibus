@@ -253,6 +253,11 @@ It follows this worktree's dev server, logs in as `OMNIBUS_DEV_SEED_USER`, and
 reuses or creates the Omnibus device named "Mock Kobo". The screen shows the
 device's hardware id, URL, library, last sync and the requests it made.
 
+The seeded admin starts with a **Kobo library** smart shelf that holds every
+EPUB, CBZ and PDF and has **Sync to Kobo** on, so the first sync downloads all
+of them. The server adds that shelf only when it creates the admin. If your dev
+database already had an admin, mark a shelf **Sync to Kobo** yourself.
+
 | Key | Does |
 |---|---|
 | <kbd>s</kbd> | Sync now |
