@@ -2,7 +2,10 @@
 //! opt-in scoping, the continue loop, format and size advertisement, and the
 //! reading state each entitlement carries.
 
-use axum::http::StatusCode;
+use axum::{
+    body::Body,
+    http::{HeaderValue, Request, StatusCode},
+};
 use omnibus_db::{self as db, test_support::seed_synced_ebook};
 use serde_json::Value;
 use tower::ServiceExt;
@@ -10,6 +13,14 @@ use tower::ServiceExt;
 use crate::auth::test_support as auth_test_support;
 
 use super::{body_json, fixture, get, opt_in, pin_state_clocks, seed_book_with_kepub_cache};
+
+/// A follow-up `library/sync` request: it echoes the token the server issued, as a device does.
+fn resync(token: &str) -> Request<Body> {
+    let mut req = get(format!("/kobo/{token}/v1/library/sync"));
+    req.headers_mut()
+        .insert("x-kobo-synctoken", HeaderValue::from_static("omnibus"));
+    req
+}
 
 #[tokio::test]
 async fn library_sync_rejects_an_invalid_token() {
@@ -42,11 +53,13 @@ async fn library_sync_delivers_every_book_across_the_continue_loop() {
     let mut total = 0;
     let mut pages = 0;
     loop {
-        let res = app
-            .clone()
-            .oneshot(get(format!("/kobo/{token}/v1/library/sync")))
-            .await
-            .unwrap();
+        // Only the first page is a fresh sync; the device echoes the token on the rest.
+        let request = if pages == 0 {
+            get(format!("/kobo/{token}/v1/library/sync"))
+        } else {
+            resync(&token)
+        };
+        let res = app.clone().oneshot(request).await.unwrap();
         assert_eq!(res.status(), StatusCode::OK);
         assert_eq!(res.headers().get("x-kobo-synctoken").unwrap(), "omnibus");
         let more = res.headers().get("x-kobo-sync").is_some();
@@ -270,11 +283,7 @@ async fn library_sync_reflects_an_opt_in_toggled_off() {
     .await
     .unwrap();
 
-    let second = app
-        .clone()
-        .oneshot(get(format!("/kobo/{token}/v1/library/sync")))
-        .await
-        .unwrap();
+    let second = app.clone().oneshot(resync(&token)).await.unwrap();
     let items = body_json(second).await;
     let arr = items.as_array().unwrap();
     assert_eq!(arr.len(), 1);
@@ -283,10 +292,7 @@ async fn library_sync_reflects_an_opt_in_toggled_off() {
     assert_eq!(removed["IsRemoved"], true);
 
     // And once the removal is delivered, the third sync is a true no-op.
-    let third = app
-        .oneshot(get(format!("/kobo/{token}/v1/library/sync")))
-        .await
-        .unwrap();
+    let third = app.oneshot(resync(&token)).await.unwrap();
     assert!(body_json(third).await.as_array().unwrap().is_empty());
 }
 
@@ -305,11 +311,58 @@ async fn library_sync_returns_an_empty_delta_once_the_device_is_current() {
         .unwrap();
     assert_eq!(body_json(first).await.as_array().unwrap().len(), 1);
 
+    let second = app.oneshot(resync(&token)).await.unwrap();
+    assert!(body_json(second).await.as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn library_sync_resends_every_book_when_the_request_carries_no_sync_token() {
+    // A factory-reset Kobo has lost our token but we still hold its old snapshot.
+    let (app, pool, token, uid) = fixture().await;
+    let uuid = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
+    opt_in(&pool, uid, std::slice::from_ref(&uuid)).await;
+    let first = app
+        .clone()
+        .oneshot(get(format!("/kobo/{token}/v1/library/sync")))
+        .await
+        .unwrap();
+    assert_eq!(body_json(first).await.as_array().unwrap().len(), 1);
+
     let second = app
         .oneshot(get(format!("/kobo/{token}/v1/library/sync")))
         .await
         .unwrap();
-    assert!(body_json(second).await.as_array().unwrap().is_empty());
+
+    let json = body_json(second).await;
+    let items = json.as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["NewEntitlement"]["BookEntitlement"]["Id"], uuid);
+}
+
+#[tokio::test]
+async fn library_sync_resends_every_book_when_the_sync_token_is_not_omnibus() {
+    // A Kobo that talked to the official store first arrives with the store's token.
+    let (app, pool, token, uid) = fixture().await;
+    let uuid = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
+    opt_in(&pool, uid, std::slice::from_ref(&uuid)).await;
+    let first = app
+        .clone()
+        .oneshot(get(format!("/kobo/{token}/v1/library/sync")))
+        .await
+        .unwrap();
+    assert_eq!(body_json(first).await.as_array().unwrap().len(), 1);
+    let mut store_token = get(format!("/kobo/{token}/v1/library/sync"));
+    store_token.headers_mut().insert(
+        "x-kobo-synctoken",
+        HeaderValue::from_static("eyJ0eXAi.eyJ2ZXIi"),
+    );
+
+    let second = app.oneshot(store_token).await.unwrap();
+
+    let json = body_json(second).await;
+    let items = json.as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["NewEntitlement"]["BookEntitlement"]["Id"], uuid);
 }
 
 #[tokio::test]
@@ -333,10 +386,7 @@ async fn library_sync_emits_the_change_pair_when_a_book_is_modified() {
         .await
         .unwrap();
 
-    let second = app
-        .oneshot(get(format!("/kobo/{token}/v1/library/sync")))
-        .await
-        .unwrap();
+    let second = app.oneshot(resync(&token)).await.unwrap();
     let items = body_json(second).await;
     let arr = items.as_array().unwrap();
     assert_eq!(arr.len(), 2);
@@ -467,10 +517,7 @@ async fn library_sync_derives_a_kobospan_from_a_web_written_cfi() {
     );
 
     // …so a second sync has nothing new to announce.
-    let res = app
-        .oneshot(get(format!("/kobo/{token}/v1/library/sync")))
-        .await
-        .unwrap();
+    let res = app.oneshot(resync(&token)).await.unwrap();
     let json = body_json(res).await;
     assert!(
         json.as_array().unwrap().is_empty(),
@@ -620,11 +667,7 @@ async fn library_sync_re_announces_a_status_change_to_a_device_that_holds_the_bo
     .await
     .unwrap();
 
-    let second = app
-        .clone()
-        .oneshot(get(format!("/kobo/{token}/v1/library/sync")))
-        .await
-        .unwrap();
+    let second = app.clone().oneshot(resync(&token)).await.unwrap();
     let json = body_json(second).await;
     let arr = json.as_array().unwrap();
     assert_eq!(arr.len(), 1, "a state change emits one bare item");
@@ -634,10 +677,7 @@ async fn library_sync_re_announces_a_status_change_to_a_device_that_holds_the_bo
     );
 
     // And once delivered, the device is current again.
-    let third = app
-        .oneshot(get(format!("/kobo/{token}/v1/library/sync")))
-        .await
-        .unwrap();
+    let third = app.oneshot(resync(&token)).await.unwrap();
     assert!(body_json(third).await.as_array().unwrap().is_empty());
 }
 

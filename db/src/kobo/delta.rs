@@ -211,7 +211,7 @@ async fn delete_removed(
 }
 
 /// Forget everything a device is holding, so its next sync re-sends the whole
-/// opted-in set. Used when a device is re-registered or its token rotated.
+/// opted-in set. `library/sync` calls it when a request doesn't echo Omnibus's sync token.
 pub async fn clear_snapshot(pool: &SqlitePool, device_id: i64) -> Result<(), KoboError> {
     sqlx::query("DELETE FROM kobo_books_sync WHERE device_id = ?")
         .bind(device_id)

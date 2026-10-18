@@ -27,16 +27,30 @@ const SYNC_PAGE_SIZE: usize = 100;
 /// monotonically, so the remainder heals across subsequent syncs.
 const SPAN_DERIVATIONS_PER_SYNC: usize = 8;
 
+/// The sync token header, which the device echoes back, and the token's one value.
+const SYNC_TOKEN_HEADER: &str = "x-kobo-synctoken";
+const SYNC_TOKEN: &str = "omnibus";
+
 /// `GET library/sync` — the per-device delta, streamed as a JSON array via
-/// [`Body::from_stream`] with no item cap. First sync emits `NewEntitlement`s for the
-/// opted-in set; later ones only changes and `ChangedEntitlement {IsRemoved:true}`. Paged
-/// at [`SYNC_PAGE_SIZE`] (`x-kobo-sync: continue`). The snapshot advances in the final
-/// poll, so a connection dropped mid-body replays the same delta rather than losing books.
+/// [`Body::from_stream`] with no item cap. A request without our sync token emits
+/// `NewEntitlement`s for the opted-in set; one that echoes it gets only changes and
+/// `ChangedEntitlement {IsRemoved:true}`. Paged at [`SYNC_PAGE_SIZE`] (`x-kobo-sync: continue`).
+/// The snapshot advances in the final poll, so a connection dropped mid-body replays the
+/// same delta rather than losing books.
 pub async fn library_sync(
     auth: KoboAuthUser,
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Response {
+    // A device with no token of ours holds no library (first sync, reset, re-sign-in, or a token from the Kobo store).
+    if headers
+        .get(SYNC_TOKEN_HEADER)
+        .is_none_or(|v| v != SYNC_TOKEN)
+    {
+        if let Err(e) = db::kobo::clear_snapshot(state.pool(), auth.device_id).await {
+            return internal("kobo clear_snapshot", e);
+        }
+    }
     let delta = match db::kobo::sync_delta(state.pool(), auth.user_id, auth.device_id).await {
         Ok(d) => d,
         Err(e) => return internal("kobo sync_delta", e),
@@ -126,11 +140,11 @@ fn build_sync_response(
         StatusCode::OK,
         [
             (header::CONTENT_TYPE, "application/json"),
-            // Opaque; the device echoes it back but the real cursor is the
-            // per-device snapshot (`kobo_books_sync`), never this value.
+            // The device echoes this on every later request, and a request without it is a
+            // fresh library (see `library_sync`). The delta cursor is still the snapshot.
             (
-                header::HeaderName::from_static("x-kobo-synctoken"),
-                "omnibus",
+                header::HeaderName::from_static(SYNC_TOKEN_HEADER),
+                SYNC_TOKEN,
             ),
         ],
         Body::from_stream(stream),
