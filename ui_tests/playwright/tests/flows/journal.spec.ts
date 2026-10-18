@@ -6,11 +6,7 @@ import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Journals are public + global per book: every test here lands on the same
-// `alpha` book and mutates the shared per-book feed, so run serially (mirrors
-// book_detail.spec.ts) — `playwright.config.ts` is otherwise `fullyParallel`,
-// which would interleave these and let one test's entries race another's
-// assertions. Each test still creates a uniquely-marked entry and deletes it.
+// Every test writes alpha's shared journal feed, so the file runs serially.
 test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async ({ request }) => {

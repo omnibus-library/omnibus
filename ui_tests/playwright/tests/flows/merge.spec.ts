@@ -140,7 +140,7 @@ test("merges an audiobook into the ebook and undoes it from the toast", async ({
   page,
   request,
 }) => {
-  // Serialize against book_detail.spec's file-picker tests: all three mutate
+  // Serialize against book_detail.spec's file-picker tests: they all mutate
   // the merge-only audiobooks on the shared per-shard server, so parallel
   // workers would corrupt each other's merge state. The lock spans merge→undo
   // so the fixture is restored before release. See utils/lock.ts.

@@ -12,6 +12,9 @@ export class LibraryPage extends BasePage {
 
   readonly titleHeading: Locator;
   readonly sectionTitle: Locator;
+  readonly tableViewButton: Locator;
+  readonly bookTable: Locator;
+  readonly bookGrid: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -19,6 +22,12 @@ export class LibraryPage extends BasePage {
     this.checkInOverlay = new CheckInOverlayComponent(page);
     this.titleHeading = page.getByRole("heading", { level: 1 });
     this.sectionTitle = page.getByTestId("lib-section-title");
+    this.tableViewButton = page.getByRole("button", {
+      name: "Table",
+      exact: true,
+    });
+    this.bookTable = page.getByTestId("ebook-table");
+    this.bookGrid = page.getByTestId("lib-grid");
   }
 
   protected get readyLocator(): Locator {
@@ -37,8 +46,31 @@ export class LibraryPage extends BasePage {
     });
   }
 
+  /** The details link in a book's table row; the row itself is no link. */
+  tableDetailsLink(title: string): Locator {
+    return this.bookTable.getByRole("link", {
+      name: `Open details for ${title}`,
+      exact: true,
+    });
+  }
+
   async goto(): Promise<void> {
     await this.open("/");
+  }
+
+  /** Shows the book list as a table; the grid is the default view. */
+  async switchToTableView(): Promise<void> {
+    await this.tableViewButton.click();
+  }
+
+  /** Opens the book's details from its grid tile, as a click does in the app. */
+  async openBookFromGrid(title: string): Promise<void> {
+    await this.bookTile(title).click();
+  }
+
+  /** Opens the book's details from the link in its table row. */
+  async openBookFromTable(title: string): Promise<void> {
+    await this.tableDetailsLink(title).click();
   }
 
   /** Filters the book list to `shelf` in place; the page does not navigate. */

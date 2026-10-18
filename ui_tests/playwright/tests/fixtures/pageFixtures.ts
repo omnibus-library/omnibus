@@ -1,38 +1,54 @@
 import { join } from "node:path";
 import type { Request, Response } from "@playwright/test";
+import { AccountRequests } from "../apiRequests/AccountRequests";
 import { AuthRequests } from "../apiRequests/AuthRequests";
 import { BookmarksRequests } from "../apiRequests/BookmarksRequests";
 import { EbooksRequests } from "../apiRequests/EbooksRequests";
 import { HighlightsRequests } from "../apiRequests/HighlightsRequests";
+import { MergeRequests } from "../apiRequests/MergeRequests";
 import { PhysicalRequests } from "../apiRequests/PhysicalRequests";
 import { ProgressRequests } from "../apiRequests/ProgressRequests";
+import { RatingsRequests } from "../apiRequests/RatingsRequests";
 import { ReadStatusRequests } from "../apiRequests/ReadStatusRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
 import { UsersRequests } from "../apiRequests/UsersRequests";
 import type { SeededBookmark } from "../data/bookmarks";
-import type { LibraryBook } from "../data/ebooks";
+import type { EbookDetail, LibraryBook } from "../data/ebooks";
 import {
   buildHighlight,
   type NewHighlight,
   type SeededHighlight,
 } from "../data/highlights";
+import {
+  isAudioPair,
+  type MergedAudiobook,
+  type MergeLog,
+} from "../data/merge";
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
 import type { BookProgress, ProgressRecord } from "../data/progress";
+import type { RatingRecord } from "../data/ratings";
 import type { ReadStatus, ReadStatusRecord } from "../data/readStatus";
 import { type ShelfRef, wishlistOf } from "../data/shelves";
 import { buildReader, type Credentials } from "../data/users";
+import { AuthorPage } from "../pages/AuthorPage";
 import { BookDetailPage } from "../pages/BookDetailPage";
 import { CheckInPage } from "../pages/CheckInPage";
 import { ComicReaderPage } from "../pages/ComicReaderPage";
 import { EpubReaderPage } from "../pages/EpubReaderPage";
 import { LibraryPage } from "../pages/LibraryPage";
+import { ListenPage } from "../pages/ListenPage";
 import { PdfReaderPage } from "../pages/PdfReaderPage";
+import { SeriesPage } from "../pages/SeriesPage";
+import { SettingsPage } from "../pages/SettingsPage";
 import { ShelfPage } from "../pages/ShelfPage";
 import {
   type ExpectMutationOptions,
   expectMutation as expectMutationOn,
 } from "../utils/api";
+import { fetchBookUuidByTitle } from "../utils/ebooks";
+import { withLock } from "../utils/lock";
+import { MERGE_PRIMARY, MERGE_SECONDARY } from "./audiobooks";
 import { DUAL_FORMAT_BOOK } from "./dual_format";
 import {
   test as base,
@@ -62,15 +78,23 @@ type PageFixtures = {
   expectMutation: ExpectMutation;
   libraryPage: LibraryPage;
   bookDetailPage: BookDetailPage;
+  authorPage: AuthorPage;
+  seriesPage: SeriesPage;
+  listenPage: ListenPage;
   checkInPage: CheckInPage;
   epubReaderPage: EpubReaderPage;
   comicReaderPage: ComicReaderPage;
   pdfReaderPage: PdfReaderPage;
   shelfPage: ShelfPage;
+  settingsPage: SettingsPage;
   scanRequests: ScanRequests;
+  accountRequests: AccountRequests;
+  ebooksRequests: EbooksRequests;
+  mergeRequests: MergeRequests;
   physicalRequests: PhysicalRequests;
   highlightsRequests: HighlightsRequests;
   progressRequests: ProgressRequests;
+  ratingsRequests: RatingsRequests;
   readStatusRequests: ReadStatusRequests;
   bookmarksRequests: BookmarksRequests;
   createdBookUuids: Set<string>;
@@ -83,7 +107,13 @@ type PageFixtures = {
   ) => Promise<SeededHighlight>;
   storedPosition: (bookUuid: string) => Promise<ProgressRecord | null>;
   storedReadStatus: (bookUuid: string) => Promise<ReadStatus | null>;
+  storedRating: (bookUuid: string) => Promise<number | null | undefined>;
   presetReadStatus: (bookUuid: string, status: ReadStatus) => Promise<void>;
+  presetRating: (bookUuid: string, stars: number | null) => Promise<void>;
+  sweepHighlights: (bookUuid: string) => Promise<void>;
+  audiobookMerge: { uuid: string };
+  mergedAudiobook: MergedAudiobook;
+  presetScrollStops: (enabled: boolean) => Promise<void>;
   parkBook: (
     bookUuid: string,
     anchor: string,
@@ -147,6 +177,15 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   bookDetailPage: async ({ page }, use) => {
     await use(new BookDetailPage(page));
   },
+  authorPage: async ({ page }, use) => {
+    await use(new AuthorPage(page));
+  },
+  seriesPage: async ({ page }, use) => {
+    await use(new SeriesPage(page));
+  },
+  listenPage: async ({ page }, use) => {
+    await use(new ListenPage(page));
+  },
   checkInPage: async ({ page }, use) => {
     await use(new CheckInPage(page));
   },
@@ -162,9 +201,24 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   shelfPage: async ({ page }, use) => {
     await use(new ShelfPage(page));
   },
+  settingsPage: async ({ page }, use) => {
+    await use(new SettingsPage(page));
+  },
 
   scanRequests: async ({ request }, use) => {
     await use(new ScanRequests(request));
+  },
+
+  accountRequests: async ({ request }, use) => {
+    await use(new AccountRequests(request));
+  },
+
+  ebooksRequests: async ({ request }, use) => {
+    await use(new EbooksRequests(request));
+  },
+
+  mergeRequests: async ({ request }, use) => {
+    await use(new MergeRequests(request));
   },
 
   physicalRequests: async ({ request }, use) => {
@@ -177,6 +231,10 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
 
   progressRequests: async ({ request }, use) => {
     await use(new ProgressRequests(request));
+  },
+
+  ratingsRequests: async ({ request }, use) => {
+    await use(new RatingsRequests(request));
   },
 
   readStatusRequests: async ({ request }, use) => {
@@ -259,6 +317,16 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     });
   },
 
+  // Undefined on a failed read, so only a real unrated 200 reads as null.
+  storedRating: async ({ ratingsRequests }, use) => {
+    await use(async (bookUuid) => {
+      const response = await ratingsRequests.getRating(bookUuid);
+      if (!response.ok()) return undefined;
+      const record: RatingRecord | null = await response.json();
+      return record?.stars ?? null;
+    });
+  },
+
   // Converges by read-then-write, because concurrent writes can hit SQLite's
   // busy timeout while a seed reindex is still writing.
   presetReadStatus: async ({ readStatusRequests, storedReadStatus }, use) => {
@@ -280,25 +348,110 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     });
   },
 
-  // Parks the read status, the page and no highlights or bookmarks, so a
-  // leftover from an earlier run cannot change what a test sees or writes.
-  parkBook: async (
-    {
-      presetReadStatus,
-      progressRequests,
-      highlightsRequests,
-      bookmarksRequests,
-    },
-    use,
-  ) => {
-    await use(async (bookUuid, anchor, status) => {
-      const listedHighlights = await highlightsRequests.getHighlights(bookUuid);
-      await expect(listedHighlights, "list highlights").toBeOK();
-      const strayHighlights: SeededHighlight[] = await listedHighlights.json();
-      for (const { id } of strayHighlights) {
+  // Leaves every book it rated unrated, as the tests that read ratings expect.
+  presetRating: async ({ ratingsRequests }, use) => {
+    const touched = new Set<string>();
+    await use(async (bookUuid, stars) => {
+      touched.add(bookUuid);
+      if (stars === null) {
+        const cleared = await ratingsRequests.deleteRating(bookUuid);
+        expect(cleared.status(), `clear the rating of ${bookUuid}`).toBe(204);
+        return;
+      }
+      const rated = await ratingsRequests.postRating({
+        book_uuid: bookUuid,
+        stars,
+      });
+      expect(rated.status(), `rate ${bookUuid} ${stars} stars`).toBe(200);
+    });
+    for (const bookUuid of touched) {
+      const deleted = await ratingsRequests.deleteRating(bookUuid);
+      await expect(deleted, `delete the rating of ${bookUuid}`).toBeOK();
+    }
+  },
+
+  // Merges the reserved audiobook pair for one test and undoes it after, so
+  // the pair is restored however the test ends. `merge.spec.ts` mutates the
+  // same pair, hence the lock, and the wait for it counts toward the timeout.
+  audiobookMerge: async ({ request, mergeRequests }, use, testInfo) => {
+    testInfo.slow();
+    await withLock("audiobook-merge", async () => {
+      const uuid = await fetchBookUuidByTitle(request, MERGE_PRIMARY.title);
+      const sourceUuid = await fetchBookUuidByTitle(
+        request,
+        MERGE_SECONDARY.title,
+      );
+      const merged = await mergeRequests.postMerge(sourceUuid, uuid);
+      expect(merged.status(), "POST /api/rpc/merge-books failed").toBe(200);
+      const { merge_log_id }: MergeLog = await merged.json();
+      expect(typeof merge_log_id, "merge_log_id must be a number").toBe(
+        "number",
+      );
+
+      await use({ uuid });
+
+      const undone = await mergeRequests.postMergeUndo(merge_log_id);
+      expect(undone.status(), "POST /api/rpc/merge-books/undo failed").toBe(
+        200,
+      );
+    });
+  },
+
+  // Reads the merged book in its own fixture, so a setup failure here still
+  // runs `audiobookMerge`'s undo.
+  mergedAudiobook: async ({ audiobookMerge, ebooksRequests }, use) => {
+    const { uuid } = audiobookMerge;
+    const detail = await ebooksRequests.getEbook(uuid);
+    await expect(detail, `read the merged book ${uuid}`).toBeOK();
+    const book: EbookDetail = await detail.json();
+    const audioFileIds = (book.book_files ?? [])
+      .filter((file) => /^(mp3|m4b|m4a)$/i.test(file.format))
+      .map((file) => file.id);
+    if (!isAudioPair(audioFileIds)) {
+      throw new Error(
+        `expected two audio files after merge, got ${audioFileIds.length}`,
+      );
+    }
+    await use({ uuid, audioFileIds });
+  },
+
+  // Every other test reads the default layout, so the preference goes back
+  // off however the test ends.
+  presetScrollStops: async ({ accountRequests }, use) => {
+    let preset = false;
+    await use(async (enabled) => {
+      preset = true;
+      const saved = await accountRequests.postScrollStops(enabled);
+      expect(saved.status(), `set scroll stops to ${enabled}`).toBe(200);
+    });
+    if (preset) {
+      const reset = await accountRequests.postScrollStops(false);
+      expect(reset.status(), "turn scroll stops back off").toBe(200);
+    }
+  },
+
+  // Deletes every highlight the admin has on the book, so a leftover from an
+  // earlier run cannot change what a test lists.
+  sweepHighlights: async ({ highlightsRequests }, use) => {
+    await use(async (bookUuid) => {
+      const listed = await highlightsRequests.getHighlights(bookUuid);
+      await expect(listed, "list highlights").toBeOK();
+      const strays: SeededHighlight[] = await listed.json();
+      for (const { id } of strays) {
         const deleted = await highlightsRequests.deleteHighlight(id);
         await expect(deleted, `delete highlight ${id}`).toBeOK();
       }
+    });
+  },
+
+  // Parks the read status, the page and no highlights or bookmarks, so a
+  // leftover from an earlier run cannot change what a test sees or writes.
+  parkBook: async (
+    { presetReadStatus, progressRequests, sweepHighlights, bookmarksRequests },
+    use,
+  ) => {
+    await use(async (bookUuid, anchor, status) => {
+      await sweepHighlights(bookUuid);
 
       const listedBookmarks = await bookmarksRequests.getBookmarks(bookUuid);
       await expect(listedBookmarks, "list bookmarks").toBeOK();
@@ -336,16 +489,15 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
 
   // A combined book count can land before the second scan attaches the other
   // format, so poll until the book lists both an ebook and an audio format.
-  dualFormatUuid: async ({ request }, use) => {
+  dualFormatUuid: async ({ ebooksRequests }, use) => {
     const isEbook = (f: string) => /^(epub|pdf)$/i.test(f);
     const isAudio = (f: string) => /^(mp3|m4b)$/i.test(f);
-    const ebooks = new EbooksRequests(request);
 
     let match: LibraryBook | undefined;
     await expect
       .poll(
         async () => {
-          const listed = await ebooks.getEbooks();
+          const listed = await ebooksRequests.getEbooks();
           if (listed.status() !== 200) return false;
           const { books }: { books: LibraryBook[] } = await listed.json();
           match = books.find((b) => b.title === DUAL_FORMAT_BOOK.title);

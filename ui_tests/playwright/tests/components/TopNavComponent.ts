@@ -24,6 +24,10 @@ export class TopNavComponent extends BaseComponent {
     await this.checkInButton.click();
   }
 
+  async openLibrary(): Promise<void> {
+    await this.libraryLink.click();
+  }
+
   /** The nav check every layout test makes: the bar and its fixed entries. */
   async assertDisplayed(): Promise<void> {
     await expect(this.root).toBeVisible();
