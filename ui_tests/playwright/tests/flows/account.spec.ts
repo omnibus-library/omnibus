@@ -1,6 +1,6 @@
 import type { APIRequestContext, Page } from "@playwright/test";
 import { expect, test } from "../fixtures/test";
-import { expectMutation, postFromPage } from "../utils/api";
+import { expectMutation, postFromPage, recordRequests } from "../utils/api";
 import { TEST_PASSWORD } from "../utils/auth";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
@@ -27,15 +27,6 @@ const changeStatus = (page: Page) => page.getByTestId("change-password-status");
 const displayNameInput = (page: Page) => page.getByTestId("display-name-input");
 const profileStatus = (page: Page) => page.getByTestId("profile-status");
 const saveDisplayName = (page: Page) => page.getByTestId("display-name-save");
-
-/** Methods of every request to `path` from now on: a cancelled confirm sends none. */
-function recordRequests(page: Page, path: string): string[] {
-  const seen: string[] = [];
-  page.on("request", (request) => {
-    if (request.url().includes(path)) seen.push(request.method());
-  });
-  return seen;
-}
 
 /** Answer the Kobo device list read with `devices`. */
 async function stubKoboDevices(
@@ -322,7 +313,7 @@ test("saves the Kindle email and shows a success status", async ({ page }) => {
   await expect(page.getByTestId("kindle-email-status")).toHaveClass(/success/);
 });
 
-test("asks before clearing the Kindle email, naming the address", async ({
+test("clears the Kindle email only once the named address is confirmed", async ({
   page,
 }) => {
   await gotoReady(page, DEVICES);
@@ -343,6 +334,22 @@ test("asks before clearing the Kindle email, naming the address", async ({
 
   await expect(page.getByTestId("kindle-email-clear-dialog")).toHaveCount(0);
   expect(writes).toEqual([]);
+
+  await page.getByTestId("kindle-email-clear").click();
+  await expectMutation(
+    page,
+    {
+      method: "POST",
+      url: "/api/rpc/account/kindle-email",
+      expectedBody: { email: null },
+      expectedStatus: 200,
+    },
+    async () => page.getByTestId("kindle-email-clear-dialog-confirm").click(),
+  );
+  await expect(page.getByTestId("kindle-email-clear-dialog")).toHaveCount(0);
+  await expect(page.getByTestId("kindle-email-status")).toHaveText(
+    "Kindle email cleared.",
+  );
 });
 
 test("asks before revoking another session", async ({ page }) => {
@@ -616,6 +623,44 @@ test("asks before leaving an unsaved display name", async ({ page }) => {
   await page.getByTestId("settings-nav-preferences").click();
   await page.getByTestId("unsaved-discard").click();
   await expect(page).toHaveURL(/section=preferences$/);
+});
+
+test("stay on the open section when its own link is clicked over edits", async ({
+  page,
+}) => {
+  await gotoReady(page, PROFILE);
+  await displayNameInput(page).fill("Unsaved name");
+
+  await page.getByTestId("settings-nav-profile").click();
+
+  await expect(page.getByTestId("unsaved-confirm")).toHaveCount(0);
+  await expect(displayNameInput(page)).toHaveValue("Unsaved name");
+});
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("ask before the back link drops unsaved goals", async ({ page }) => {
+    await gotoReady(page, GOALS);
+    await page.getByTestId("goal-pages-input").fill("42");
+
+    await page.getByTestId("settings-back").click();
+    await expect(page.getByTestId("unsaved-confirm")).toBeVisible();
+    await page.getByTestId("unsaved-keep").click();
+
+    await expect(page).toHaveURL(/section=goals$/);
+    await expect(page.getByTestId("goal-pages-input")).toHaveValue("42");
+  });
+
+  test("go back from the default section without asking", async ({ page }) => {
+    await gotoReady(page, PROFILE);
+    await displayNameInput(page).fill("Unsaved name");
+
+    await page.getByTestId("settings-back").click();
+
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page.getByTestId("unsaved-confirm")).toHaveCount(0);
+  });
 });
 
 test("confirms a replaced avatar and clears it when the next upload starts", async ({

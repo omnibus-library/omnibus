@@ -14,7 +14,7 @@
 
 import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expectMutation, recordRequests } from "../utils/api";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
 const ADMIN_CLEANUP = "/admin?section=cleanup";
@@ -286,6 +286,7 @@ test("undoes the last accepted change and brings its card back", async ({
     "Merged into “Mary Shelley”.",
   );
 
+  const recounts = recordRequests(page, "/api/rpc/cleanup/counts");
   await expectMutation(
     page,
     {
@@ -298,6 +299,8 @@ test("undoes the last accepted change and brings its card back", async ({
   );
 
   await expect(page.getByTestId("cleanup-undone")).toBeVisible();
+  // The reopened suggestion counts again, so the chips are re-read.
+  await expect.poll(() => recounts.length).toBeGreaterThan(0);
   // Undo reopens the suggestion, so the refetched queue offers it again.
   await expect(page.getByTestId("cleanup-card-proposed")).toHaveText(
     "Mary Shelley",

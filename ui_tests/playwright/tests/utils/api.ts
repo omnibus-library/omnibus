@@ -98,3 +98,15 @@ export async function postFromPage(
     [url, body] as const,
   );
 }
+
+/**
+ * Methods of every request whose URL contains `path`, from now on, so a test
+ * can show a cancelled confirm sent nothing.
+ */
+export function recordRequests(page: Page, path: string): string[] {
+  const seen: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes(path)) seen.push(request.method());
+  });
+  return seen;
+}

@@ -1,4 +1,4 @@
-import type { APIRequestContext, Browser, Page } from "@playwright/test";
+import type { APIRequestContext, BrowserContext, Page } from "@playwright/test";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
 import { expectMutation, postFromPage } from "../utils/api";
@@ -161,93 +161,88 @@ test("hiding cbz removes comics from the landing for that user only", async ({
 });
 
 test.describe("the preference saves as it changes", () => {
-  // Every test resets the same account's preference first.
+  // The tests share one signed-in page (sign-in is rate limited) and reset the
+  // same account's preference, so they run in order.
   test.describe.configure({ mode: "serial" });
+  let context: BrowserContext;
+  let page: Page;
 
-  /** A page signed in as the save user, starting with nothing hidden. */
-  async function preferencesAsSaveUser(
-    browser: Browser,
-    hidden: string[] = [],
-  ) {
-    const context = await browser.newContext({
+  test.beforeAll("sign in as the save user", async ({ browser }) => {
+    context = await browser.newContext({
       storageState: { cookies: [], origins: [] },
     });
-    const page = await context.newPage();
+    page = await context.newPage();
     await logInAs(page, SAVE_USER);
+  });
+
+  test.afterAll("clear the preference", async () => {
+    await postFromPage(page, HIDDEN_FORMATS_RPC, { formats: [] });
+    await context.close();
+  });
+
+  /** Open Preferences with `hidden` already saved. */
+  async function openPreferences(hidden: string[] = []): Promise<void> {
     expect(
       await postFromPage(page, HIDDEN_FORMATS_RPC, { formats: hidden }),
     ).toBe(200);
     await gotoReady(page, PREFERENCES);
-    return { context, page };
   }
 
-  test("hide and show a format by ticking it", async ({ browser }) => {
-    const { context, page } = await preferencesAsSaveUser(browser);
-    try {
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: HIDDEN_FORMATS_RPC,
-          expectedBody: { formats: ["cbz"] },
-          expectedStatus: 200,
-        },
-        async () => formatToggle(page, "cbz").check(),
-      );
-      await expect(saveStatus(page)).toHaveText("Saved");
+  test("hide and show a format by ticking it", async () => {
+    await openPreferences();
 
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: HIDDEN_FORMATS_RPC,
-          expectedBody: { formats: [] },
-          expectedStatus: 200,
-        },
-        async () => formatToggle(page, "cbz").uncheck(),
-      );
-      await expect(saveStatus(page)).toHaveText("Saved");
-    } finally {
-      await postFromPage(page, HIDDEN_FORMATS_RPC, { formats: [] });
-      await context.close();
-    }
+    await expectMutation(
+      page,
+      {
+        method: "POST",
+        url: HIDDEN_FORMATS_RPC,
+        expectedBody: { formats: ["cbz"] },
+        expectedStatus: 200,
+      },
+      async () => formatToggle(page, "cbz").check(),
+    );
+    await expect(saveStatus(page)).toHaveText("Saved");
+
+    await expectMutation(
+      page,
+      {
+        method: "POST",
+        url: HIDDEN_FORMATS_RPC,
+        expectedBody: { formats: [] },
+        expectedStatus: 200,
+      },
+      async () => formatToggle(page, "cbz").uncheck(),
+    );
+    await expect(saveStatus(page)).toHaveText("Saved");
   });
 
-  test("show a saved format the library doesn't list", async ({ browser }) => {
-    const { context, page } = await preferencesAsSaveUser(browser, ["djvu"]);
-    try {
-      await expect(formatToggle(page, "djvu")).toBeChecked();
+  test("show a saved format the library doesn't list", async () => {
+    await openPreferences(["djvu"]);
+    await expect(formatToggle(page, "djvu")).toBeChecked();
 
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: HIDDEN_FORMATS_RPC,
-          expectedBody: { formats: [] },
-          expectedStatus: 200,
-        },
-        // A plain click: the box leaves the list once unhidden, so uncheck()
-        // would wait on a state it can no longer read.
-        async () => formatToggle(page, "djvu").click(),
-      );
+    await expectMutation(
+      page,
+      {
+        method: "POST",
+        url: HIDDEN_FORMATS_RPC,
+        expectedBody: { formats: [] },
+        expectedStatus: 200,
+      },
+      // A plain click: the box leaves the list once unhidden, so uncheck()
+      // would wait on a state it can no longer read.
+      async () => formatToggle(page, "djvu").click(),
+    );
 
-      await expect(saveStatus(page)).toHaveText("Saved");
-      await expect(formatToggle(page, "djvu")).toHaveCount(0);
-    } finally {
-      await postFromPage(page, HIDDEN_FORMATS_RPC, { formats: [] });
-      await context.close();
-    }
+    await expect(saveStatus(page)).toHaveText("Saved");
+    await expect(formatToggle(page, "djvu")).toHaveCount(0);
   });
 
-  test("put a format back when the server refuses the save", async ({
-    browser,
-  }) => {
-    const { context, page } = await preferencesAsSaveUser(browser);
+  test("put a format back when the server refuses the save", async () => {
+    await openPreferences();
+    await page.route(`**${HIDDEN_FORMATS_RPC}`, (route) =>
+      route.fulfill({ status: 500, body: "{}" }),
+    );
     try {
-      await page.route(`**${HIDDEN_FORMATS_RPC}`, (route) =>
-        route.fulfill({ status: 500, body: "{}" }),
-      );
-
       await expectMutation(
         page,
         { method: "POST", url: HIDDEN_FORMATS_RPC, expectedStatus: 500 },
@@ -258,7 +253,6 @@ test.describe("the preference saves as it changes", () => {
       await expect(formatToggle(page, "cbz")).not.toBeChecked();
     } finally {
       await page.unrouteAll({ behavior: "wait" });
-      await context.close();
     }
   });
 });

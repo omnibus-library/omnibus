@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { test as readerTest } from "../fixtures/readerFixtures";
 import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expectMutation, recordRequests } from "../utils/api";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
 // Settings splits in two shells: `/settings` holds each reader's own sections
@@ -241,11 +241,7 @@ test("asks before clearing the SMTP settings", async ({ page }) => {
       : route.continue(),
   );
   await gotoReady(page, ADMIN_INTEGRATIONS);
-  const clears: string[] = [];
-  page.on("request", (request) => {
-    if (request.url().includes("/api/rpc/smtp/clear"))
-      clears.push(request.url());
-  });
+  const clears = recordRequests(page, "/api/rpc/smtp/clear");
 
   await page.getByTestId("smtp-clear").click();
   await expect(page.getByTestId("smtp-clear-dialog")).toBeVisible();
@@ -253,6 +249,64 @@ test("asks before clearing the SMTP settings", async ({ page }) => {
 
   await expect(page.getByTestId("smtp-clear-dialog")).toHaveCount(0);
   expect(clears).toEqual([]);
+});
+
+test("asks before leaving unsaved library paths", async ({ page }) => {
+  await gotoReady(page, ADMIN_SOURCES);
+  await expect(saveButton(page)).toBeEnabled();
+  await ebookInput(page).fill("/srv/unsaved-path");
+
+  await page.getByTestId("admin-nav-people").click();
+  await expect(page.getByTestId("unsaved-confirm")).toBeVisible();
+  await page.getByTestId("unsaved-keep").click();
+
+  await expect(page).toHaveURL(/section=sources$/);
+  await expect(ebookInput(page)).toHaveValue("/srv/unsaved-path");
+});
+
+test("asks before leaving a typed but unsaved key", async ({ page }) => {
+  await gotoReady(page, ADMIN_INTEGRATIONS);
+  await hardcoverKeyInput(page).fill("hc_unsaved");
+
+  await page.getByTestId("admin-nav-people").click();
+  await expect(page.getByTestId("unsaved-confirm")).toBeVisible();
+  await page.getByTestId("unsaved-discard").click();
+
+  await expect(page).toHaveURL(/section=people$/);
+});
+
+test("saves only the metadata order that changed", async ({ page }) => {
+  // The order is instance configuration other specs index under, so the
+  // write is answered here with the order it was sent.
+  await page.route("**/api/rpc/metadata-precedence/set", (route) =>
+    route.fulfill({ json: route.request().postDataJSON().precedence }),
+  );
+  await gotoReady(page, "/admin?section=metadata");
+  const save = page.getByTestId("metadata-precedence-save");
+  await expect(
+    page.getByTestId("ebook-metadata-precedence-item-0"),
+  ).toBeVisible();
+  await expect(save).toBeDisabled();
+  const writes = recordRequests(page, "/api/rpc/metadata-precedence/set");
+
+  await page.getByTestId("ebook-metadata-precedence-down-0").click();
+  await expect(save).toBeEnabled();
+  const { request } = await expectMutation(
+    page,
+    {
+      method: "POST",
+      url: "/api/rpc/metadata-precedence/set",
+      expectedStatus: 200,
+    },
+    async () => save.click(),
+  );
+
+  expect(request.postDataJSON().library).toBe("ebook");
+  await expect(page.getByTestId("metadata-precedence-status")).toHaveText(
+    "Metadata order saved.",
+  );
+  await expect(save).toBeDisabled();
+  expect(writes).toHaveLength(1);
 });
 
 test("follows an old settings link to its new home", async ({ page }) => {
