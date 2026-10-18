@@ -21,4 +21,12 @@ export const readStatus = {
     ...readStatus.set(bookUuid, status),
     timeout: 20_000,
   }),
+
+  // batch-H:
+  /** The write the book page's control makes; no body is pinned. */
+  change: (): ExpectMutationOptions => ({
+    method: "POST",
+    url: readStatusUrls.set,
+    expectedStatus: 200,
+  }),
 };
