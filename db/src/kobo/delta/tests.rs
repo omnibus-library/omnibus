@@ -275,7 +275,7 @@ async fn fresh_sync_delta_still_owes_the_removal_of_a_book_no_longer_synced() {
 }
 
 #[tokio::test]
-async fn fresh_sync_delta_leaves_the_snapshot_cleared_for_the_plain_sync_that_follows() {
+async fn fresh_sync_delta_leaves_its_books_pending_for_the_plain_sync_that_follows() {
     // Page 2 of a continue loop echoes the token and takes the plain path; it
     // must still find the page-1 books unrecorded, not the old snapshot.
     let pool = init_db("sqlite::memory:").await.unwrap();
@@ -291,6 +291,82 @@ async fn fresh_sync_delta_leaves_the_snapshot_cleared_for_the_plain_sync_that_fo
 
     assert_eq!(delta.len(), 1);
     assert!(matches!(&delta.changes[0], SyncChange::New(b) if b.uuid == uuid));
+}
+
+#[tokio::test]
+async fn record_synced_clears_the_pending_mark_a_fresh_sync_left() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    make_user(&pool, "filler").await; // so the user id differs from the device id
+    let user = make_user(&pool, "reader").await;
+    let device = make_device(&pool, user, "Clara").await;
+    let uuid = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
+    synced_shelf(&pool, user, "Kobo", std::slice::from_ref(&uuid)).await;
+    sync_once(&pool, user, device).await;
+    let fresh = fresh_sync_delta(&pool, user, device).await.unwrap();
+
+    record_synced(&pool, device, &fresh.changes).await.unwrap();
+
+    assert!(sync_delta(&pool, user, device).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn fresh_sync_delta_still_owes_a_removal_when_a_book_is_opted_out_after_an_aborted_resend() {
+    // The first fresh response never reached the device, so nothing was recorded.
+    // The retry carries no token either, and must still archive the book opted
+    // out in between.
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    make_user(&pool, "filler").await; // so the user id differs from the device id
+    let user = make_user(&pool, "reader").await;
+    let device = make_device(&pool, user, "Clara").await;
+    let kept = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
+    let gone = seed_synced_ebook(&pool, "emma.epub", "Emma", "Austen").await;
+    let shelf = synced_shelf(&pool, user, "Kobo", &[kept.clone(), gone.clone()]).await;
+    sync_once(&pool, user, device).await;
+    fresh_sync_delta(&pool, user, device).await.unwrap();
+    crate::shelves::remove_book(&pool, shelf, &gone)
+        .await
+        .unwrap();
+
+    let delta = fresh_sync_delta(&pool, user, device).await.unwrap();
+
+    assert_eq!(delta.len(), 2, "got {:?}", delta.changes);
+    assert!(matches!(&delta.changes[0], SyncChange::New(b) if b.uuid == kept));
+    assert!(matches!(
+        &delta.changes[1],
+        SyncChange::Removed { book_uuid } if *book_uuid == gone
+    ));
+}
+
+#[tokio::test]
+async fn sync_delta_still_owes_a_removal_when_a_book_is_opted_out_between_pages() {
+    // Page 1 of a continue loop landed for `kept` only; `gone` was opted out
+    // before page 2, which echoes the token and takes the plain path.
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    make_user(&pool, "filler").await; // so the user id differs from the device id
+    let user = make_user(&pool, "reader").await;
+    let device = make_device(&pool, user, "Clara").await;
+    let kept = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
+    let gone = seed_synced_ebook(&pool, "emma.epub", "Emma", "Austen").await;
+    let shelf = synced_shelf(&pool, user, "Kobo", &[kept.clone(), gone.clone()]).await;
+    sync_once(&pool, user, device).await;
+    let page_one = fresh_sync_delta(&pool, user, device).await.unwrap();
+    let kept_only: Vec<SyncChange> = page_one
+        .changes
+        .into_iter()
+        .filter(|change| matches!(change, SyncChange::New(b) if b.uuid == kept))
+        .collect();
+    record_synced(&pool, device, &kept_only).await.unwrap();
+    crate::shelves::remove_book(&pool, shelf, &gone)
+        .await
+        .unwrap();
+
+    let delta = sync_delta(&pool, user, device).await.unwrap();
+
+    assert_eq!(delta.len(), 1, "got {:?}", delta.changes);
+    assert!(matches!(
+        &delta.changes[0],
+        SyncChange::Removed { book_uuid } if *book_uuid == gone
+    ));
 }
 
 #[tokio::test]
