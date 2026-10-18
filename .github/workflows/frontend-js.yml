@@ -94,6 +94,7 @@ jobs:
           nix develop .#e2e --command pnpm --dir frontend-js exec vitest run
           --project unit --reporter=default --reporter=junit
           --outputFile.junit=results-unit.xml
+          --coverage --coverage.reportsDirectory=coverage/unit
 
       # Every story renders in Chromium; a story's `play` is its test.
       - name: Story tests
@@ -101,6 +102,7 @@ jobs:
           nix develop .#e2e --command pnpm --dir frontend-js exec vitest run
           --project storybook --reporter=default --reporter=junit
           --outputFile.junit=results-stories.xml
+          --coverage --coverage.reportsDirectory=coverage/stories
 
       - name: Upload test results to Codecov
         if: ${{ !cancelled() && hashFiles('frontend-js/results-*.xml') != '' }}
@@ -112,11 +114,21 @@ jobs:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
+      # Codecov merges the two uploads under one flag.
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() && hashFiles('frontend-js/coverage/*/lcov.info') != '' }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: frontend-js/coverage/unit/lcov.info,frontend-js/coverage/stories/lcov.info
+          flags: frontend-js
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
       - name: Build Storybook
         run: nix develop .#e2e --command pnpm --dir frontend-js exec storybook build --quiet
 
       - name: Build the app
-        run: nix develop .#e2e --command pnpm --dir frontend-js exec vite build
+        run: nix develop .#e2e --command pnpm --dir frontend-js exec vite build --base=/react/
 
   # Green when `frontend-js` passed or was skipped, red when it failed. Require
   # only this job in branch protection, never `frontend-js` itself.
