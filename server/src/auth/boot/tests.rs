@@ -261,7 +261,7 @@ async fn seed_gives_new_admin_a_kobo_shelf_holding_every_kobo_readable_book() {
     let pool = db::init_db("sqlite::memory:").await.unwrap();
     seed_dev_user(&pool).await.unwrap();
 
-    // Indexed after the seed, as on a fresh dev boot.
+    // A fresh dev boot seeds the admin before the library finishes indexing.
     let epub = db::test_support::seed_synced_ebook(&pool, "a.epub", "A", "Ann").await;
     let cbz = db::test_support::seed_synced_ebook(&pool, "b.cbz", "B", "Ben").await;
     let pdf = db::test_support::seed_synced_ebook(&pool, "c.pdf", "C", "Cy").await;

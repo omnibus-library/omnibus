@@ -34,10 +34,10 @@ pub async fn apply_initial_admin(pool: &SqlitePool) -> Result<(), omnibus_db::au
     Ok(())
 }
 
-/// Read `OMNIBUS_DEV_SEED_USER=<username>:<password>` and create the named user
-/// (promoted to admin, with a Kobo-synced shelf of every Kobo-readable book) if
-/// absent. No-op in release builds, when the variable is unset, malformed or has
-/// empty halves, or when the user already exists.
+/// Read `OMNIBUS_DEV_SEED_USER=<username>:<password>` and create that user as an
+/// admin with a Kobo-synced shelf of every Kobo-readable book. No-op in release
+/// builds, when the variable is unset, malformed or has empty halves, or when the
+/// user already exists.
 pub async fn seed_dev_user(pool: &SqlitePool) -> anyhow::Result<()> {
     // Release builds must not provision admin credentials from env, even
     // if OMNIBUS_DEV_SEED_USER is somehow set. We additionally warn so a
@@ -108,8 +108,8 @@ pub async fn seed_dev_user(pool: &SqlitePool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Give `owner_id` a smart shelf matching every format a Kobo can download,
-/// opted in to wireless sync, so a mock or real Kobo has the whole library.
+/// Give `owner_id` a smart shelf of every EPUB, CBZ and PDF with Kobo sync on.
+/// Those are the only formats a Kobo can download.
 async fn seed_kobo_shelf(pool: &SqlitePool, owner_id: i64) -> anyhow::Result<()> {
     let format = |value: &str| ShelfRule {
         field: RuleField::Format,
