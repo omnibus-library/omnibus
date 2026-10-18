@@ -1,27 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { parseBookDetail, parseBookPage } from "./api";
+import { aWireBook } from "./testing/wire";
 
-const auroraWire = {
-  id: 2,
-  filename: "aurora-station-01.cbz",
-  title: "Aurora Station, Vol. 1",
-  description: null,
-  publisher: null,
-  published: null,
-  language: null,
-  creators: [{ name: "Sora Inkwell", role: null, file_as: null, id: 2 }],
-  subjects: [],
-  identifiers: [],
-  series: "Aurora Station",
-  series_index: "1",
-  unique_identifier: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
-  cover_url: "/api/covers/ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
-  accent: "oklch(0.555 0.153 28.4)",
-  formats: ["CBZ"],
-  error: null,
-  has_override: false,
-  has_cover_override: false,
-};
+const auroraWire = aWireBook({ published: null });
 
 describe("parseBookPage", () => {
   it("maps wire rows to books and reads paging from the headers", () => {

@@ -1,7 +1,13 @@
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { Controller, useForm } from "react-hook-form";
 import { useNavigate, useSearchParams } from "react-router";
-import { ApiError, login } from "../../api";
+import {
+  ApiError,
+  type Credentials,
+  CredentialsSchema,
+  login,
+} from "../../api";
 import { AuthShell, Emphasis } from "../../components/AuthShell/AuthShell";
 import { Banner } from "../../components/Banner/Banner";
 import { Button } from "../../components/Button/Button";
@@ -27,8 +33,11 @@ export function Login() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [search] = useSearchParams();
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const form = useForm<Credentials>({
+    resolver: zodResolver(CredentialsSchema),
+    mode: "onChange",
+    defaultValues: { username: "", password: "" },
+  });
   const signIn = useMutation({
     mutationFn: login,
     onSuccess: (user) => {
@@ -36,11 +45,6 @@ export function Login() {
       navigate(safeNext(search.get("next")) ?? "/", { replace: true });
     },
   });
-
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    signIn.mutate({ username, password });
-  }
 
   return (
     <AuthShell
@@ -53,31 +57,48 @@ export function Login() {
       lede="Continue to your library."
     >
       <PageTitle page="Sign in" />
-      <form className="auth-form-inner" onSubmit={onSubmit}>
+      <form
+        className="auth-form-inner"
+        onSubmit={form.handleSubmit((credentials) =>
+          signIn.mutate(credentials),
+        )}
+      >
         {signIn.isError && (
           <Banner kind="err" title={loginErrorMessage(signIn.error)} />
         )}
-        <Field
-          id="login-username"
-          label="Username"
-          autoComplete="username"
-          value={username}
-          onChange={setUsername}
+        <Controller
+          name="username"
+          control={form.control}
+          render={({ field }) => (
+            <Field
+              id="login-username"
+              label="Username"
+              autoComplete="username"
+              value={field.value}
+              onChange={field.onChange}
+            />
+          )}
         />
-        <Field
-          id="login-password"
-          label="Password"
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={setPassword}
+        <Controller
+          name="password"
+          control={form.control}
+          render={({ field }) => (
+            <Field
+              id="login-password"
+              label="Password"
+              type="password"
+              autoComplete="current-password"
+              value={field.value}
+              onChange={field.onChange}
+            />
+          )}
         />
         <Button
           type="submit"
           variant="primary"
           size="lg"
           className="auth-submit"
-          disabled={!username || !password || signIn.isPending}
+          disabled={!form.formState.isValid || signIn.isPending}
           aria-busy={signIn.isPending}
         >
           <BusyLabel

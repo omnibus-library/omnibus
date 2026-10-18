@@ -1,8 +1,10 @@
 import type { Preview } from "@storybook/react-vite";
+import { mswLoader } from "msw-storybook-addon/csf3";
 import type { User } from "../src/api";
 import { isTheme, THEMES } from "../src/components/Theme/AtriumRoot";
 import { watchImageLoads } from "../src/imageWatch";
 import { ADA, AppHarness } from "../src/testing/AppHarness";
+import { coverHandlers, sessionHandler } from "../src/testing/handlers";
 import "../src/styles/theme.css";
 import "../src/styles/base.css";
 
@@ -19,7 +21,19 @@ function isUser(value: unknown): value is User {
   );
 }
 
+// `parameters.user: null` renders the story signed out.
+function storyUser(value: unknown): User | null {
+  if (value === null) return null;
+  return isUser(value) ? value : ADA;
+}
+
 const preview = {
+  tags: ["autodocs"],
+  loaders: [mswLoader()],
+  // Every story starts on the fake API; a story's own `beforeEach` overrides it.
+  beforeEach({ msw }) {
+    msw.use(sessionHandler(), ...coverHandlers);
+  },
   globalTypes: {
     theme: {
       description: "Atrium theme",
@@ -40,7 +54,7 @@ const preview = {
     (Story, { id, globals, parameters }) => (
       <AppHarness
         key={id}
-        user={isUser(parameters.user) ? parameters.user : ADA}
+        user={storyUser(parameters.user)}
         path={typeof parameters.path === "string" ? parameters.path : "/"}
       >
         <div

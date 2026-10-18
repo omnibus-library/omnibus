@@ -122,7 +122,13 @@ export async function fetchMe(): Promise<User | null> {
   return UserSchema.parse(await readJson(res));
 }
 
-export type Credentials = { username: string; password: string };
+/** What the sign-in form must hold before it may submit. */
+export const CredentialsSchema = z.object({
+  username: z.string().min(1, "Enter your username."),
+  password: z.string().min(1, "Enter your password."),
+});
+
+export type Credentials = z.infer<typeof CredentialsSchema>;
 
 /** Opens a cookie session; the server sets the cookie on the response. */
 export async function login(credentials: Credentials): Promise<User> {

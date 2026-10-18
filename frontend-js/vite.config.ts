@@ -14,6 +14,17 @@ export default defineConfig({
     proxy: { "/api": { target: `http://127.0.0.1:${apiPort}` } },
   },
   test: {
+    coverage: {
+      provider: "v8",
+      reporter: ["text-summary", "lcov"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/**/*.stories.tsx",
+        "src/**/*.test.{ts,tsx}",
+        "src/testing/**",
+        "src/**/*.d.ts",
+      ],
+    },
     projects: [
       {
         extends: true,

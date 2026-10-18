@@ -2,3 +2,5 @@
 minimumReleaseAge: 20160
 allowBuilds:
   esbuild: true
+  # Only copies the worker script; `msw init .storybook/public` does that here.
+  msw: false
