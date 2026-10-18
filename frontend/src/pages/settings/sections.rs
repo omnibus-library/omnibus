@@ -100,11 +100,6 @@ pub(crate) fn legacy_settings_target(slug: &str) -> Option<SettingsTarget> {
 }
 
 impl SettingsTarget {
-    /// Whether only an administrator can open this target.
-    pub(crate) fn requires_admin(self) -> bool {
-        matches!(self, SettingsTarget::Admin(..))
-    }
-
     /// The route that opens this target.
     pub(crate) fn route(self) -> Route {
         match self {
@@ -305,7 +300,7 @@ pub(crate) fn matching_settings(query: &str, is_admin: bool) -> Vec<&'static Set
     }
     SETTINGS_INDEX
         .iter()
-        .filter(|entry| is_admin || !entry.target.requires_admin())
+        .filter(|entry| is_admin || matches!(entry.target, SettingsTarget::Personal(_)))
         .filter(|entry| {
             entry.label.to_lowercase().contains(&query)
                 || entry
