@@ -79,6 +79,15 @@ impl UserSetting {
     }
 }
 
+/// The preferences with a save out, app-wide rather than per switch: a switch
+/// remounted mid-save would otherwise send a second save that can land first.
+static SAVES_OUT: GlobalSignal<Vec<UserSetting>> = Signal::global(Vec::new);
+
+/// Whether `setting` has a save out, from this switch or one since unmounted.
+pub(crate) fn saving(setting: UserSetting) -> bool {
+    SAVES_OUT.read().contains(&setting)
+}
+
 /// How an autosaving control's last save went.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SaveState {
@@ -142,7 +151,7 @@ pub(crate) fn UserSettingSwitch(setting: UserSetting) -> Element {
                         class: if value.is_none() { "ld-unknown" },
                         "data-testid": "{id}",
                         checked: value == Some(true),
-                        disabled: value.is_none() || state() == SaveState::Saving,
+                        disabled: value.is_none() || saving(setting),
                         onchange: move |_| toggle(setting, viewer, state),
                     }
                 }
@@ -179,20 +188,22 @@ fn flip_and_save<F>(
     else {
         return;
     };
-    if *state.peek() == SaveState::Saving {
+    if SAVES_OUT.peek().contains(&setting) {
         return;
     }
+    SAVES_OUT.write().push(setting);
     state.set(SaveState::Saving);
     write_viewer(viewer, setting, !was);
-    let saving = save(!was);
+    let request = save(!was);
     dioxus::core::spawn_forever(async move {
-        let settled = match saving.await {
+        let settled = match request.await {
             Ok(()) => SaveState::Saved,
             Err(_) => {
                 write_viewer(viewer, setting, was);
                 SaveState::Failed
             }
         };
+        SAVES_OUT.write().retain(|out| *out != setting);
         if let Ok(mut state) = state.try_write() {
             *state = settled;
         }

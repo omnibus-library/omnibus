@@ -3,7 +3,7 @@
 
 use std::cell::Cell;
 
-use dioxus::dioxus_core::NoOpMutations;
+use crate::test_support::settle;
 
 use super::*;
 
@@ -21,12 +21,6 @@ fn GuardedShell() -> Element {
     let saved = use_saved_snapshot("name", move || draft.read().clone());
     FORM.with(|form| form.set(Some((changes, draft, saved))));
     rsx! {}
-}
-
-fn settle(dom: &mut VirtualDom) {
-    dom.process_events();
-    dom.render_immediate(&mut NoOpMutations);
-    dom.process_events();
 }
 
 #[test]

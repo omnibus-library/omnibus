@@ -15,7 +15,7 @@ const SHARE_SAVE_ERROR: &str = "Couldn't change who can see your stats. Try agai
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub(super) fn ShareStatsToggle() -> Element {
-    use crate::pages::account::user_settings::{toggle, SaveState, UserSetting};
+    use crate::pages::account::user_settings::{saving, toggle, SaveState, UserSetting};
 
     let viewer = crate::use_current_user().0;
     let state = use_signal(|| SaveState::Idle);
@@ -34,7 +34,7 @@ pub(super) fn ShareStatsToggle() -> Element {
                     class: if pending { "ld-unknown" },
                     "data-testid": "stats-share-toggle",
                     checked: shared == Some(true),
-                    disabled: pending || state() == SaveState::Saving,
+                    disabled: pending || saving(UserSetting::ShareStats),
                     onchange: move |_| toggle(UserSetting::ShareStats, viewer, state),
                 }
                 span { "Visible to your household" }

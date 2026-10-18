@@ -115,3 +115,11 @@ pub fn tag_with_testid<'a>(html: &'a str, testid: &str) -> &'a str {
     let end = at + html[at..].find('>').expect("unterminated tag");
     &html[start..=end]
 }
+
+/// Let `dom` act on everything a test just did: queued events, the re-render
+/// they cause, then the tasks and effects that render woke.
+pub fn settle(dom: &mut VirtualDom) {
+    dom.process_events();
+    dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+    dom.process_events();
+}

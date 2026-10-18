@@ -113,6 +113,10 @@ fn FormatToggle(
     }
 }
 
+/// Whether a save loop is out, app-wide: the field may have remounted since it
+/// started, and a second loop would take the unconfirmed set as its baseline.
+static LOOP_OUT: GlobalSignal<bool> = Signal::global(|| false);
+
 /// Apply one checkbox change to the cached viewer and make sure a save is
 /// running; the running save picks up every change made before it finishes.
 fn change_format(
@@ -125,9 +129,10 @@ fn change_format(
         return;
     };
     write_hidden(&mut viewer, with_format(current.clone(), fmt, on));
-    if *state.peek() == SaveState::Saving {
+    if *LOOP_OUT.peek() {
         return;
     }
+    *LOOP_OUT.write() = true;
     state.set(SaveState::Saving);
     spawn_save_loop(viewer, current, state);
 }
@@ -153,6 +158,7 @@ fn spawn_save_loop(
             }
             confirmed = want;
         };
+        *LOOP_OUT.write() = false;
         if let Ok(mut state) = state.try_write() {
             *state = settled;
         }

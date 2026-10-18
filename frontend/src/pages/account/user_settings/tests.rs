@@ -3,15 +3,15 @@
 
 use std::cell::Cell;
 
-use dioxus::dioxus_core::NoOpMutations;
+use crate::test_support::{provide_current_user, settle, test_user};
 
 use super::*;
-use crate::test_support::{provide_current_user, test_user};
 
 type ViewerSlot = Signal<Option<Option<UserSummary>>>;
 
 thread_local! {
     static HOST: Cell<Option<(ViewerSlot, Signal<bool>)>> = const { Cell::new(None) };
+    static SECOND_SAVE_SENT: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Flips Share stats once on mount, through a save the server refuses.
@@ -28,6 +28,49 @@ fn RefusedFlip() -> Element {
         })
     });
     rsx! {}
+}
+
+/// Flips Share stats once on mount, through a save that never answers.
+#[component]
+fn PendingFlip() -> Element {
+    let viewer = crate::use_current_user().0;
+    let state = use_signal(|| SaveState::Idle);
+    use_hook(move || {
+        flip_and_save(UserSetting::ShareStats, viewer, state, |_| {
+            std::future::pending::<Result<(), data::DataError>>()
+        })
+    });
+    rsx! {}
+}
+
+/// Flips Share stats again on mount, noting whether its save went out.
+#[component]
+fn SecondFlip() -> Element {
+    let viewer = crate::use_current_user().0;
+    let state = use_signal(|| SaveState::Idle);
+    use_hook(move || {
+        flip_and_save(UserSetting::ShareStats, viewer, state, |_| {
+            SECOND_SAVE_SENT.with(|sent| sent.set(true));
+            async { Ok(()) }
+        })
+    });
+    rsx! {}
+}
+
+/// Shows [`PendingFlip`], then [`SecondFlip`] in its place once the test says.
+#[component]
+fn RemountHost() -> Element {
+    provide_current_user(Some(Some(test_user(false, false))));
+    let viewer = crate::use_current_user().0;
+    let first = use_signal(|| true);
+    HOST.with(|host| host.set(Some((viewer, first))));
+    rsx! {
+        if first() {
+            PendingFlip {}
+        } else {
+            SecondFlip {}
+        }
+    }
 }
 
 /// Holds the viewer and shows [`RefusedFlip`] until the test hides it.
@@ -88,9 +131,21 @@ fn flip_and_save_puts_the_viewer_back_when_the_switch_unmounts_before_a_refusal(
     assert_eq!(share_stats(&dom), Some(false), "the flip is optimistic");
 
     dom.in_runtime(|| shown.set(false));
-    dom.process_events();
-    dom.render_immediate(&mut NoOpMutations);
-    dom.process_events();
+    settle(&mut dom);
 
     assert_eq!(share_stats(&dom), Some(true));
+}
+
+#[test]
+fn flip_and_save_waits_while_an_earlier_mount_still_has_its_save_out() {
+    let mut dom = VirtualDom::new(RemountHost);
+    dom.rebuild_in_place();
+    let (viewer, mut first) = HOST.with(Cell::get).expect("host mounted");
+
+    dom.in_runtime(|| first.set(false));
+    settle(&mut dom);
+
+    assert!(!SECOND_SAVE_SENT.with(Cell::get));
+    let shared = dom.in_runtime(|| viewer.peek().clone().flatten().map(|user| user.share_stats));
+    assert_eq!(shared, Some(false), "only the first flip landed");
 }
