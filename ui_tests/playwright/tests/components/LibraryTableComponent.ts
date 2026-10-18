@@ -166,9 +166,12 @@ export class LibraryTableComponent extends BaseComponent {
     await this.cellInput(slug, column).press("Escape");
   }
 
-  /** Moves focus from the editor's input back to the chip before it. */
+  /** Moves focus from the editor's input back to the chip before it, once the input holds it. */
   async tabBackFromCell(slug: string, column: string): Promise<void> {
-    await this.cellInput(slug, column).press("Shift+Tab");
+    const input = this.cellInput(slug, column);
+    // The input takes focus a frame after it mounts and would pull it back from the chip.
+    await input.and(this.page.locator(":focus")).waitFor();
+    await input.press("Shift+Tab");
   }
 
   async removeTag(slug: string, tag: string): Promise<void> {

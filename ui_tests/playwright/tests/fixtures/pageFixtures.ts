@@ -761,8 +761,16 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
         },
       });
       for (const mergeLogId of [...merged].reverse()) {
-        const undone = await mergeRequests.postUndo(mergeLogId);
-        await expect(undone, `undo merge ${mergeLogId}`).toBeOK();
+        // A reindex beside the undo can leave the database locked for a moment,
+        // and a merge that outlives the test breaks every later reader of it.
+        await expect
+          .poll(
+            async () => (await mergeRequests.postUndo(mergeLogId)).status(),
+            {
+              message: `undo merge ${mergeLogId}`,
+            },
+          )
+          .toBe(200);
       }
     });
   },
