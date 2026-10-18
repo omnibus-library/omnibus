@@ -1,9 +1,11 @@
 //! Flat-list item model + small helpers shared between the overlay, the
 //! keyboard handler, and the results list. The overlay builds a flat
-//! `Vec<FlatItem>` from grouped `PaletteResults` so arrow-key navigation
-//! has a single index space across Book / Author / Series / Tag / Genre rows.
+//! `Vec<FlatItem>` from grouped `PaletteResults` plus the matching settings,
+//! so arrow-key navigation has a single index space across every row.
 
 use omnibus_shared::PaletteResults;
+
+use crate::pages::SettingsEntry;
 
 /// A single selectable item in the flat list used for arrow-key navigation.
 /// Books carry the stable `uuid` so the palette can build `/books/:uuid` URLs
@@ -17,14 +19,25 @@ pub(super) enum FlatItem {
     Series { id: i64, name: String },
     Tag { id: i64, name: String },
     Genre { name: String },
+    Setting(&'static SettingsEntry),
 }
 
-/// Build a flat ordered list of all selectable items from the results.
-pub(super) fn build_flat_items(results: &Option<PaletteResults>) -> Vec<FlatItem> {
-    let Some(r) = results else {
-        return Vec::new();
-    };
+/// Build a flat ordered list of all selectable items: the server's groups,
+/// then the settings, the order the list renders them in. Settings match on
+/// the client, so they're listed before the server has answered.
+pub(super) fn build_flat_items(
+    results: &Option<PaletteResults>,
+    settings: &[&'static SettingsEntry],
+) -> Vec<FlatItem> {
     let mut items = Vec::new();
+    if let Some(r) = results {
+        push_result_items(r, &mut items);
+    }
+    items.extend(settings.iter().map(|entry| FlatItem::Setting(entry)));
+    items
+}
+
+fn push_result_items(r: &PaletteResults, items: &mut Vec<FlatItem>) {
     for b in &r.books {
         items.push(FlatItem::Book {
             uuid: b.uuid.clone(),
@@ -54,7 +67,6 @@ pub(super) fn build_flat_items(results: &Option<PaletteResults>) -> Vec<FlatItem
             name: g.name.clone(),
         });
     }
-    items
 }
 
 /// Check if a given flat item matches the currently selected index.
@@ -75,3 +87,6 @@ pub(super) fn plural(n: usize) -> &'static str {
 // `/search` chips turned out to have their own — wrong — copy; re-exported so
 // the palette's call sites read unchanged.
 pub(super) use crate::format::facet_query;
+
+#[cfg(test)]
+mod tests;

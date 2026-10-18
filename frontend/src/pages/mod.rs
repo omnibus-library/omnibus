@@ -84,6 +84,9 @@ pub use series::SeriesPage;
 pub use series_index::SeriesIndexPage;
 pub use server_connect::ServerConnectPage;
 pub(crate) use settings::sections::settings_page_title;
+// The search palette finds settings by name.
+#[cfg(not(feature = "mobile"))]
+pub(crate) use settings::sections::{matching_settings, SettingsEntry, SettingsTarget};
 pub use settings::SettingsPage;
 pub use shelf_detail::ShelfDetailPage;
 pub use shelves_index::ShelvesIndexPage;

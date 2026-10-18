@@ -64,9 +64,15 @@ test("clearing the search clears results", async ({ page }) => {
     .toBe(0);
 });
 
-test("settings page does not render the search trigger", async ({ page }) => {
+test("settings and administration render the search trigger", async ({
+  page,
+}) => {
+  // Settings are findable from the palette, so the trigger stays put on the
+  // pages that hold them.
   await gotoReady(page, "/settings");
-  await expect(page.getByTestId("search-trigger")).toHaveCount(0);
+  await expect(page.getByTestId("search-trigger")).toBeVisible();
+  await gotoReady(page, "/admin");
+  await expect(page.getByTestId("search-trigger")).toBeVisible();
 });
 
 test("author substring shows author results", async ({ page }) => {

@@ -148,3 +148,25 @@ fn goal_value_states_not_set_only_once_the_read_has_answered() {
         "{failed}"
     );
 }
+
+#[cfg(feature = "server")]
+#[component]
+fn InlineGoalsHost() -> Element {
+    rsx! { ReadingGoalsCard { on_close: move |_| {} } }
+}
+
+/// Opened from another page's own control, the card drops its heading and
+/// its Edit button — the host's control already said what this is — and
+/// waits for the goals before offering the form, so nothing can be typed
+/// over targets it hasn't read.
+#[cfg(feature = "server")]
+#[test]
+fn goals_card_hosted_inline_drops_its_heading_and_waits_for_the_goals() {
+    let html = crate::test_support::render_in_vdom(InlineGoalsHost);
+
+    assert!(html.contains("account-goals-card"), "{html}");
+    assert!(!html.contains("Reading goals"), "{html}");
+    assert!(!html.contains("goals-edit"), "{html}");
+    assert!(!html.contains("goals-save"), "{html}");
+    assert!(html.contains("goals-loading"), "{html}");
+}

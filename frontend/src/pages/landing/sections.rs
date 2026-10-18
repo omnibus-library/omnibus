@@ -47,6 +47,8 @@ pub(super) struct LandingHeaderView {
     pub stack: StackToggleView,
     /// The viewer's shelves — the filter bar names its shelf chips from them.
     pub shelves: ShelfList,
+    /// The pick is All Books, the one view hidden formats narrow.
+    pub hidden_formats_apply: bool,
 }
 
 /// The shelf lens's Add books control: absent unless the pick is a
@@ -108,6 +110,7 @@ pub(super) fn LandingHeader(
         sort_lock,
         stack,
         shelves,
+        hidden_formats_apply,
     } = view;
     rsx! {
         header { class: "lib-header", "data-testid": "lib-header",
@@ -131,6 +134,7 @@ pub(super) fn LandingHeader(
                     shelves,
                     sort_lock,
                     stack,
+                    hidden_formats_apply,
                     on_change: move |next: ViewPrefs| on_prefs_change.call(next),
                     on_stack_toggle,
                 }

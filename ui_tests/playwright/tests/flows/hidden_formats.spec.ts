@@ -5,23 +5,24 @@ import { expectMutation } from "../utils/api";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Per-user hidden-formats preference: an Account card writes the pref, the
-// landing All Books view excludes those formats and shows an "N hidden"
-// receipt. The suite runs fullyParallel against one shared server and every
-// other spec shares the seeded admin's storageState — a real save on that
-// admin would hide the two CBZ fixtures out from under `landing.spec.ts` in
-// a parallel worker. So this spec provisions its OWN user (per-user pref =
-// per-user blast radius) and drives a fresh, cookie-less context through the
-// login UI. The CBZ fixtures (`aurora-station-01/-02`) are reserved for
+// Per-user hidden-formats preference: Settings → Preferences holds it, the
+// landing All Books view excludes those formats, shows an "N hidden" receipt,
+// and names the hidden formats in a note that links back to the preference.
+// The suite runs fullyParallel against one shared server and every other spec
+// shares the seeded admin's storageState — a real save on that admin would
+// hide the two CBZ fixtures out from under `landing.spec.ts` in a parallel
+// worker. So this spec provisions its OWN user (per-user pref = per-user
+// blast radius) and drives a fresh, cookie-less context through the login UI.
+// The CBZ fixtures (`aurora-station-01/-02`) are reserved for
 // comic_reader.spec.ts's progress writes; the assertions here are read-only,
 // which their reservation explicitly allows.
-const ACCOUNT = "/settings?section=account";
+const PREFERENCES = "/settings?section=preferences";
 const HIDDEN_USER = "hiddenformats";
 const HIDDEN_PASSWORD = "hidden-formats-pw-00";
+const HIDDEN_FORMATS_RPC = "/api/rpc/account/hidden-formats";
 
-const cbzToggle = (page: Page) => page.getByTestId("hidden-format-toggle-cbz");
-const saveButton = (page: Page) => page.getByTestId("hidden-formats-save");
 const receipt = (page: Page) => page.getByTestId("lib-hidden-count");
+const hiddenNote = (page: Page) => page.getByTestId("lib-hidden-formats");
 const auroraTiles = (page: Page) =>
   page.getByTestId(/^ebook-tile-aurora-station-/);
 
@@ -60,38 +61,27 @@ async function logInAsHiddenUser(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/$/);
 }
 
-/** Save the given hidden-formats state through the Account card. */
-async function saveCbzHidden(page: Page, hidden: boolean): Promise<void> {
-  await gotoReady(page, ACCOUNT);
-  await expect(page.getByTestId("account-hidden-formats-card")).toBeVisible();
-  await cbzToggle(page).setChecked(hidden);
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/account/hidden-formats",
-      expectedStatus: 200,
-    },
-    async () => saveButton(page).click(),
-  );
-  await expect(page.getByTestId("hidden-formats-status")).toHaveText(
-    "Hidden formats saved.",
-  );
+/**
+ * Save the user's hidden formats straight through the API. The Preferences
+ * card that writes them is account.spec.ts's to drive; this spec is about
+ * what the library does with the preference.
+ */
+async function saveHiddenFormats(
+  request: APIRequestContext,
+  formats: string[],
+): Promise<void> {
+  const resp = await request.post(HIDDEN_FORMATS_RPC, { data: { formats } });
+  expect(resp.status(), `saving hidden formats ${formats} failed`).toBe(200);
 }
 
-test("renders the hidden-formats card in the account section", async ({
+test("renders the hidden-formats card in the preferences section", async ({
   page,
 }) => {
-  await gotoReady(page, ACCOUNT);
+  await gotoReady(page, PREFERENCES);
 
-  const card = page.getByTestId("account-hidden-formats-card");
-  await expect(card).toBeVisible();
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Hidden formats" }),
-  ).toBeVisible();
-  await expect(cbzToggle(page)).toBeVisible();
+  await expect(page.getByTestId("account-hidden-formats-card")).toBeVisible();
+  await expect(page.getByTestId("hidden-format-toggle-cbz")).toBeVisible();
   await expect(page.getByTestId("hidden-format-toggle-epub")).toBeVisible();
-  await expect(saveButton(page)).toBeVisible();
   await expectNavVisible(page);
 });
 
@@ -106,14 +96,16 @@ test("hiding cbz removes comics from the landing for that user only", async ({
   const page = await context.newPage();
   try {
     await logInAsHiddenUser(page);
-    await saveCbzHidden(page, true);
+    await saveHiddenFormats(context.request, ["cbz"]);
 
-    // Landing: both CBZ-only fixtures gone, receipt visible. No exact count
-    // — other specs may be reshaping the shared library in parallel.
+    // Landing: both CBZ-only fixtures gone, receipt visible, and the note
+    // naming what is hidden. No exact count — other specs may be reshaping
+    // the shared library in parallel.
     await gotoReady(page, "/");
     await expect(auroraTiles(page)).toHaveCount(0);
     await expect(receipt(page)).toBeVisible();
     await expect(receipt(page)).toHaveText(/· \d+ hidden/);
+    await expect(hiddenNote(page)).toContainText("Hidden: CBZ");
 
     // Scope check: the exclusion is landing-only — search still finds the
     // hidden comic.
@@ -124,28 +116,32 @@ test("hiding cbz removes comics from the landing for that user only", async ({
       .toBeGreaterThan(0);
     await page.keyboard.press("Escape");
 
+    // The note leads to the preference that hides them.
+    await hiddenNote(page).click();
+    await expect(page).toHaveURL(/\/settings\?section=preferences$/);
+    await expect(page.getByTestId("account-hidden-formats-card")).toBeVisible();
+
     // Per-user isolation: the seeded admin (shared storageState) still sees
-    // the comics and no receipt.
+    // the comics, no receipt and no note.
     await gotoReady(adminPage, "/");
     await expect(auroraTiles(adminPage).first()).toBeVisible();
     await expect(receipt(adminPage)).toHaveCount(0);
+    await expect(hiddenNote(adminPage)).toHaveCount(0);
 
-    // Un-hide: tiles return, receipt gone.
-    await saveCbzHidden(page, false);
+    // Un-hide: tiles return, receipt and note gone.
+    await saveHiddenFormats(context.request, []);
     await gotoReady(page, "/");
     await expect(auroraTiles(page).first()).toBeVisible();
     await expect(receipt(page)).toHaveCount(0);
+    await expect(hiddenNote(page)).toHaveCount(0);
   } finally {
     // Always clear the pref — a retry or later run must start unhidden. Not
     // a hard assert (that would mask whichever failure got us here), but a
     // failed cleanup is loud so leaked state never reads as a mystery flake.
     try {
-      const resp = await context.request.post(
-        "/api/rpc/account/hidden-formats",
-        {
-          data: { formats: [] },
-        },
-      );
+      const resp = await context.request.post(HIDDEN_FORMATS_RPC, {
+        data: { formats: [] },
+      });
       if (!resp.ok()) {
         console.warn(
           `hidden_formats cleanup POST failed (${resp.status()}) — later runs may start with cbz hidden`,

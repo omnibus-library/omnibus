@@ -3,16 +3,19 @@
 //! so it sits outside the windowed band and never moves when the period
 //! switcher does.
 //!
-//! **Read-only.** Goals are account configuration, and all three are set
-//! together in Settings → Account (`pages::account::goals`). This surface
-//! reports them; it does not edit them.
+//! The cluster itself only reports. Goals are account configuration, set
+//! together in one editor (`pages::account::goals`) that lives in Settings →
+//! Goals and opens inline from the hero's Edit goals control.
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{DailyGoal, DailyGoals, ReadingGoal};
 
 use super::heatmap::{civil_from_days, day_number, days_from_civil};
-use crate::Route;
+#[cfg(not(feature = "mobile"))]
+use crate::focus_after_paint::focus_after_paint;
+use crate::pages::settings::sections::{SettingsSection, SettingsTarget};
+use crate::routes::link_target;
 
 /// Pluralize a unit noun. The captions read as sentences, so "1 book" has to
 /// win over a parenthesised "(s)".
@@ -88,18 +91,68 @@ fn pace_note(goal: &ReadingGoal, as_of_day: &str) -> Option<String> {
     })
 }
 
-/// The link every "no goal set" state offers — one destination, because there
-/// is one place goals are set.
+/// The link every "no goal set" state offers: the Goals section of Settings.
 #[component]
 fn SetGoalsLink(label: &'static str, testid: &'static str) -> Element {
     rsx! {
         Link {
             class: "st-goal-link",
             "data-testid": testid,
-            to: Route::Settings { section: Some("account".to_string()) },
+            to: link_target(SettingsTarget::Personal(SettingsSection::Goals).route()),
             {label}
         }
     }
+}
+
+/// The hero's Edit goals control, and once pressed the goals editor in its
+/// place — the same one Settings → Goals hosts. `on_saved` fires once a change
+/// lands, so the hero can refetch the figures it draws.
+#[cfg(not(feature = "mobile"))]
+#[component]
+pub(super) fn GoalsEditor(on_saved: Option<EventHandler<()>>) -> Element {
+    let mut open = use_signal(|| false);
+    // Set when the editor closes, so focus lands back on the control that
+    // opened it instead of falling to the page.
+    let mut refocus = use_signal(|| false);
+    rsx! {
+        // One stable element around the swap, so siblings keep their
+        // handlers (rule 07).
+        div { class: "st-goals-edit-slot",
+            if open() {
+                div { class: "st-goals-editor", "data-testid": "stats-goals-editor",
+                    crate::pages::account::goals::ReadingGoalsCard {
+                        on_saved,
+                        on_close: move |_| {
+                            open.set(false);
+                            refocus.set(true);
+                        },
+                    }
+                }
+            } else {
+                button {
+                    r#type: "button",
+                    class: "st-goals-edit",
+                    "data-testid": "stats-goals-edit",
+                    onmounted: move |evt| {
+                        if refocus() {
+                            refocus.set(false);
+                            focus_after_paint(&evt);
+                        }
+                    },
+                    onclick: move |_| open.set(true),
+                    "Edit goals"
+                }
+            }
+        }
+    }
+}
+
+/// The native shell has no goals editor; its goals are set from Settings.
+#[cfg(feature = "mobile")]
+#[component]
+pub(super) fn GoalsEditor(on_saved: Option<EventHandler<()>>) -> Element {
+    let _ = on_saved;
+    rsx! {}
 }
 
 /// The annual books goal: a conic ring carrying the ratio, with the figure and
