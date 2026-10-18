@@ -255,6 +255,8 @@ async fn serve_image(state: &AppState, uuid: &str, href: &str, headers: &HeaderM
     if headers
         .get(header::IF_NONE_MATCH)
         .and_then(|v| v.to_str().ok())
+        // `*` matches any representation, so it proves nothing about this href.
+        .filter(|v| v.trim() != "*")
         .is_some_and(|v| conditional::if_none_match_hits(v, &etag))
     {
         return conditional::not_modified(&etag, MEDIA_CACHE_CONTROL, MEDIA_VARY);

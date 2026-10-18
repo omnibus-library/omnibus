@@ -304,6 +304,29 @@ async fn api_get_ebook_image_file_returns_400_for_an_href_that_is_not_a_manifest
 }
 
 #[tokio::test]
+async fn api_get_ebook_image_file_returns_400_for_a_wildcard_if_none_match_on_a_non_image_href() {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let res = app
+        .oneshot(get_with_bearer_and_if_none_match(
+            &format!("/api/ebooks/{uuid}/images/file?href=c1.xhtml"),
+            &token,
+            "*",
+        ))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
 async fn api_get_ebook_image_file_returns_400_for_a_manifest_image_missing_from_the_archive() {
     let (_, _, pool) = fixture().await;
     let user = auth_test_support::create_user(&pool, "alice").await;
