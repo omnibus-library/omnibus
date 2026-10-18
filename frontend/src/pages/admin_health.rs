@@ -164,12 +164,9 @@ fn IndexStatusCard(status: IndexStatus) -> Element {
 
 /// "N books have no file on disk …", agreeing with the count.
 fn ghosted_line(count: i64) -> String {
-    let (noun, verb) = if count == 1 {
-        ("book", "has")
-    } else {
-        ("books", "have")
-    };
-    format!("{count} {noun} {verb} no file on disk (ghosted by a prior reindex).")
+    let verb = if count == 1 { "has" } else { "have" };
+    let books = crate::format::count_label(count, "book");
+    format!("{books} {verb} no file on disk (ghosted by a prior reindex).")
 }
 
 fn path_or_unconfigured(path: Option<&str>) -> String {

@@ -644,12 +644,8 @@ fn MaintenanceCommand(
 }
 
 fn library_summary_line(section: &LibrarySection) -> String {
-    let noun = if section.total_files == 1 {
-        "file"
-    } else {
-        "files"
-    };
-    let mut line = format!("{} {noun} found.", section.total_files);
+    let files = crate::format::count_label(section.total_files as i64, "file");
+    let mut line = format!("{files} found.");
     for (ext, count) in &section.counts_by_ext {
         line.push_str(&format!(" {count} .{ext} found."));
     }
