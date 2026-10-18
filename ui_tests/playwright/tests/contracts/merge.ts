@@ -6,6 +6,9 @@ export const mergeUrls = {
   undo: /\/api\/rpc\/merge-books\/undo(?:\?|$)/,
 };
 
+/** What a merge answers with: the log id that `merge.undo` takes back. */
+export type MergeResult = { merge_log_id: number; target_uuid: string };
+
 function mergeWrite(url: RegExp, body?: unknown): ExpectMutationOptions {
   return { method: "POST", url, expectedBody: body, expectedStatus: 200 };
 }

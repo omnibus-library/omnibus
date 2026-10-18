@@ -1,341 +1,273 @@
-import type { Page } from "@playwright/test";
+import { physical } from "../contracts/physical";
+import { SAMPLE_COPY, SAMPLE_WISHLIST_ENTRY } from "../data/physical";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
-import { logInThroughUi, provisionUser } from "../utils/users";
 
-// Physical-collection + wishlist book-detail UI (issue #1186). The physical /
-// wishlist RPCs are `/api/rpc/physical/*` server functions returning plain
-// JSON of their value (same envelope the check-in scanner's key-status mock
-// relies on), so every state is driven with `page.route` fulfilments. That
-// keeps the suite race-free: nothing here mutates library-wide physical copies
-// or the admin's real wishlist, so no parallel spec's assertions are disturbed
-// and no extra book leaks into any count.
-//
-// Layout note: the wishlist UI (tracking card / add affordance) lives in the
-// hero's rating rail card, and a wishlisted book shows a "Physical Wishlist"
-// badge next to the cover's format facets. The full-width panel below the
-// hero renders only checked-in physical copies.
-
-// A plain single-format ebook to land on. Which book is immaterial — the
-// physical endpoints are mocked — but a real uuid exercises the real SSR +
-// hydration path the panel loads under.
+// Every physical and wishlist read and write is stubbed, so nothing here
+// changes library-wide copies or the admin's wishlist. The target is immaterial,
+// but a real uuid exercises the SSR and hydration path the panel loads under.
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-island")!;
 
-type CopyMock = {
-  id: number;
-  book_uuid: string;
-  isbn: string | null;
-  added_by_user_id: number | null;
-  added_by_name?: string;
-  checked_in_at: number;
-  note: string | null;
-};
-
-type WishlistMock = {
-  id: number;
-  user_id: number;
-  book_uuid: string;
-  added_at: number;
-  source: "scan" | "detail" | "manual";
-};
-
-const SAMPLE_COPY: CopyMock = {
-  id: 42,
-  book_uuid: "uuid",
-  isbn: "9780262033848",
-  added_by_user_id: 1,
-  checked_in_at: 1_700_000_000,
-  note: "Trade paperback, MIT Press",
-};
-
-const SAMPLE_WISHLIST: WishlistMock = {
-  id: 7,
-  user_id: 1,
-  book_uuid: "uuid",
-  added_at: 1_700_000_000,
-  source: "detail",
-};
-
-// Fulfil the two on-mount load reads (copies + wishlist) so the panel settles
-// into a deterministic state regardless of ambient server data.
-async function mockPhysicalLoad(
-  page: Page,
-  copies: CopyMock[],
-  wishlist: WishlistMock | null,
-): Promise<void> {
-  await page.route("**/api/rpc/physical/copies", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(copies),
-    }),
-  );
-  await page.route("**/api/rpc/physical/wishlist/get", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(wishlist),
-    }),
-  );
-}
-
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
-
-test("renders the add-to-wishlist default state in the hero rail", async ({
-  page,
-  request,
-}) => {
-  // Mock the load reads empty so the default state is deterministic — a real
-  // physical copy or wishlist entry for this fixture (from ambient server
-  // state) must not flake this assertion.
-  await mockPhysicalLoad(page, [], null);
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-  await expectNavVisible(page);
-
-  await expect(page.getByTestId("add-to-wishlist")).toBeVisible();
-  // Nothing checked in, so no physical pill — and the full-width copies
-  // panel renders nothing at all for a copy-less book.
-  await expect(page.getByTestId("physical-pill")).toBeHidden();
-  await expect(page.getByTestId("bd-physical-panel")).toBeHidden();
-});
-
-test("adds then removes a wishlist entry", async ({ page, request }) => {
-  await mockPhysicalLoad(page, [], null);
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  await expect(page.getByTestId("add-to-wishlist")).toBeVisible();
-
-  await page.route("**/api/rpc/physical/wishlist/add", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(SAMPLE_WISHLIST),
-    }),
-  );
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/physical/wishlist/add",
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("add-to-wishlist").click(),
-  );
-
-  // Wishlisted: the cover badge row gains the "Physical Wishlist" facet and
-  // the rail slot shows the tracking card.
-  await expect(page.getByTestId("format-badge-wishlist")).toBeVisible();
-  await expect(page.getByTestId("wishlist-card")).toBeVisible();
-  await expect(page.getByTestId("find-a-copy")).toBeVisible();
-  // The viewer's own Wishlist shelf holds the book now, and the More stop's
-  // shelf list says so off the same signal the card reads — no refetch.
-  const wishlistTile = page
-    .getByTestId(/^bdmq-shelf-\d+$/)
-    .filter({ has: page.locator(".shv-facet--kind", { hasText: "Wishlist" }) });
-  await expect(wishlistTile).toBeVisible();
-
-  await page.route("**/api/rpc/physical/wishlist/remove", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ book_deleted: false }),
-    }),
-  );
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/physical/wishlist/remove",
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("wishlist-remove").click(),
-  );
-
-  await expect(page.getByTestId("add-to-wishlist")).toBeVisible();
-  // Other shelves (a smart shelf matching the book) may stay; the Wishlist goes.
-  await expect(wishlistTile).toHaveCount(0);
-});
-
-test("surfaces an error when the wishlist add fails", async ({
-  page,
-  request,
-}) => {
-  await mockPhysicalLoad(page, [], null);
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  await page.route("**/api/rpc/physical/wishlist/add", (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "text/plain",
-      body: "boom",
-    }),
-  );
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/physical/wishlist/add",
-      expectedStatus: 500,
-    },
-    async () => page.getByTestId("add-to-wishlist").click(),
-  );
-
-  await expect(page.getByTestId("wishlist-error")).toBeVisible();
-  // The optimistic state reverted — still offering to add.
-  await expect(page.getByTestId("add-to-wishlist")).toBeVisible();
-});
-
-test("surfaces an error when the initial copies load fails", async ({
-  page,
-  request,
-}) => {
-  // A failed read must not silently masquerade as the empty state.
-  await page.route("**/api/rpc/physical/copies", (route) =>
-    route.fulfill({ status: 500, contentType: "text/plain", body: "boom" }),
-  );
-  await page.route("**/api/rpc/physical/wishlist/get", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: "null",
-    }),
-  );
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  await expect(page.getByTestId("physical-error")).toBeVisible();
-});
-
-test("shows the physical copy card for a checked-in book", async ({
-  page,
-  request,
-}) => {
-  await mockPhysicalLoad(page, [SAMPLE_COPY], null);
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  // The marquee copies list marks a physical copy with a status dot on its row
-  // rather than a standalone text pill, so the wording lives in the
-  // accessible name.
-  await expect(page.getByTestId("physical-pill")).toBeVisible();
-  await expect(page.getByTestId("physical-pill")).toHaveAttribute(
-    "aria-label",
-    "In your physical collection",
-  );
-  const card = page.getByTestId("physical-copy-card");
-  await expect(card).toBeVisible();
-  await expect(card).toContainText("Trade paperback, MIT Press");
-  await expect(card).toContainText("9780262033848");
-});
-
-test("edits a copy note", async ({ page, request }) => {
-  await mockPhysicalLoad(page, [SAMPLE_COPY], null);
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  await page.getByTestId("copy-edit-note").click();
-  await page.getByLabel("Edition note").fill("Hardcover, first printing");
-
-  await page.route("**/api/rpc/physical/copies/note", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ...SAMPLE_COPY,
-        note: "Hardcover, first printing",
-      }),
-    }),
-  );
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/physical/copies/note",
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("copy-note-save").click(),
-  );
-
-  await expect(page.getByTestId("physical-copy-card")).toContainText(
-    "Hardcover, first printing",
-  );
-});
-
-test("deletes a copy through the I-sold-it confirm", async ({
-  page,
-  request,
-}) => {
-  await mockPhysicalLoad(page, [SAMPLE_COPY], null);
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  // A file-backed book, so a copy delete is the plain confirm — not the
-  // last-copy remove-or-wishlist prompt.
-  await page.getByTestId("copy-delete").click();
-  await expect(page.getByTestId("copy-delete-modal")).toBeVisible();
-
-  await page.route("**/api/rpc/physical/copies/delete", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: "null",
-    }),
-  );
-  // The panel drops the copy from local state on delete; the page refresh
-  // refetches the book (not the copies list), so no copies re-route is needed.
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/physical/copies/delete",
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("copy-delete-confirm").click(),
-  );
-
-  await expect(page.getByTestId("physical-copy-card")).toBeHidden();
-});
-
-test("names another reader's copy and offers its viewer no controls", async ({
-  browser,
-  request,
-}) => {
-  // A copy's note and removal belong to whoever filed it (or an admin), so a
-  // plain reader looking at someone else's copy sees who filed it and nothing
-  // to press. The copy is mocked, so no library-wide state changes.
-  // A fixed account: `provisionUser` tolerates the 409 of a rerun.
-  const username = "e2e_copy_viewer";
-  const password = "copy-viewer-pw-0001";
-  await provisionUser(request, username, password);
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  const context = await browser.newContext({
-    storageState: { cookies: [], origins: [] },
+test.describe("physical collection", () => {
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
-  const page = await context.newPage();
-  try {
-    await logInThroughUi(page, username, password);
-    await mockPhysicalLoad(
-      page,
-      [{ ...SAMPLE_COPY, added_by_user_id: 424242, added_by_name: "Ada" }],
-      null,
-    );
-    await gotoReady(page, `/books/${uuid}`);
 
-    const card = page.getByTestId("physical-copy-card");
-    await expect(card).toContainText("by Ada");
-    await expect(card).toContainText("Trade paperback, MIT Press");
-    await expect(page.getByTestId("copy-edit-note")).toHaveCount(0);
-    await expect(page.getByTestId("copy-delete")).toHaveCount(0);
-  } finally {
-    await context.close();
-  }
+  test("show the physical collection layout", async ({
+    request,
+    bookDetailPage,
+  }) => {
+    const { wishlist, physicalCopy } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+    // Stubbed empty, so ambient copies or wishlist entries can't flake it.
+    await test.step("open a book with no copies and no wish", async () => {
+      await bookDetailPage.stubPhysicalLoad([], null);
+      await bookDetailPage.goto(uuid);
+    });
+
+    await test.step("check the hero rail offers the wishlist", async () => {
+      await bookDetailPage.assertDisplayed();
+      await bookDetailPage.topNav.assertDisplayed();
+      await expect(wishlist.addButton).toBeVisible();
+    });
+
+    // The copies panel renders nothing at all for a copy-less book.
+    await test.step("check there are no copies to show", async () => {
+      await expect(bookDetailPage.physicalPill).toBeHidden();
+      await expect(physicalCopy.panel).toBeHidden();
+    });
+  });
+
+  test.describe("wishlist", () => {
+    test("add a book to the wishlist", async ({
+      request,
+      bookDetailPage,
+      expectMutation,
+    }) => {
+      const { wishlist } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open a book that is not wished for", async () => {
+        await bookDetailPage.stubPhysicalLoad([], null);
+        await bookDetailPage.goto(uuid);
+        await expect(wishlist.addButton).toBeVisible();
+      });
+
+      await test.step("add it to the wishlist", async () => {
+        await wishlist.stubAdd(SAMPLE_WISHLIST_ENTRY);
+        await expectMutation(physical.wishlistAdd(), () => wishlist.add());
+      });
+
+      // The cover badge row gains the "Physical Wishlist" facet and the rail
+      // slot shows the tracking card, and the More stop's shelf list holds the
+      // viewer's Wishlist off the same signal, with no refetch.
+      await test.step("check the book shows as wished for", async () => {
+        await expect(wishlist.coverBadge).toBeVisible();
+        await expect(wishlist.card).toBeVisible();
+        await expect(wishlist.findCopyLink).toBeVisible();
+        await expect(wishlist.shelfTile).toBeVisible();
+      });
+    });
+
+    test("remove a book from the wishlist", async ({
+      request,
+      bookDetailPage,
+      expectMutation,
+    }) => {
+      const { wishlist } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open a book that is wished for", async () => {
+        await bookDetailPage.stubPhysicalLoad([], SAMPLE_WISHLIST_ENTRY);
+        await bookDetailPage.goto(uuid);
+        await expect(wishlist.card).toBeVisible();
+        await expect(wishlist.shelfTile).toBeVisible();
+      });
+
+      await test.step("remove it from the wishlist", async () => {
+        await wishlist.stubRemove();
+        await expectMutation(physical.wishlistRemove(), () =>
+          wishlist.remove(),
+        );
+      });
+
+      await test.step("check the book offers the wishlist again", async () => {
+        await expect(wishlist.addButton).toBeVisible();
+        // Other shelves (a smart shelf matching the book) may stay.
+        await expect(wishlist.shelfTile).toHaveCount(0);
+      });
+    });
+
+    test("show an error when adding to the wishlist fails", async ({
+      request,
+      bookDetailPage,
+      expectMutation,
+    }) => {
+      const { wishlist } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open a book that is not wished for", async () => {
+        await bookDetailPage.stubPhysicalLoad([], null);
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("add it while adds fail", async () => {
+        await bookDetailPage.forceServerError(physical.wishlistAdd());
+        await expectMutation(failing(physical.wishlistAdd()), () =>
+          wishlist.add(),
+        );
+      });
+
+      // The optimistic state reverted, so the page still offers to add.
+      await test.step("check the error shows", async () => {
+        await expect(wishlist.errorMessage).toBeVisible();
+        await expect(wishlist.addButton).toBeVisible();
+      });
+    });
+  });
+
+  test.describe("copies", () => {
+    test("show an error when the copies fail to load", async ({
+      request,
+      bookDetailPage,
+    }) => {
+      const { physicalCopy, wishlist } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open a book while the copies read fails", async () => {
+        await bookDetailPage.forceServerError(physical.copies());
+        await wishlist.stubLoad(null);
+        await bookDetailPage.goto(uuid);
+      });
+
+      // A failed read must not masquerade as the empty state.
+      await test.step("check the panel shows the error", async () => {
+        await expect(physicalCopy.loadError).toBeVisible();
+      });
+    });
+
+    test("show the physical copy card for a checked-in book", async ({
+      request,
+      bookDetailPage,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open a book with one copy", async () => {
+        await bookDetailPage.stubPhysicalLoad([SAMPLE_COPY], null);
+        await bookDetailPage.goto(uuid);
+      });
+
+      // The copies list marks a physical copy with a status dot rather than a
+      // text pill, so the wording lives in the accessible name.
+      await test.step("check the copy shows", async () => {
+        await expect(bookDetailPage.physicalPill).toBeVisible();
+        await expect(bookDetailPage.physicalPill).toHaveAttribute(
+          "aria-label",
+          "In your physical collection",
+        );
+        await expect(bookDetailPage.physicalCopyCards).toBeVisible();
+        await expect(bookDetailPage.physicalCopyCards).toContainText(
+          "Trade paperback, MIT Press",
+        );
+        await expect(bookDetailPage.physicalCopyCards).toContainText(
+          "9780262033848",
+        );
+      });
+    });
+
+    test("edit a copy note", async ({
+      request,
+      bookDetailPage,
+      expectMutation,
+    }) => {
+      const { physicalCopy } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      const note = "Hardcover, first printing";
+
+      await test.step("open a book with one copy", async () => {
+        await bookDetailPage.stubPhysicalLoad([SAMPLE_COPY], null);
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("write a new note", async () => {
+        await physicalCopy.editNote(note);
+      });
+
+      await test.step("save the note", async () => {
+        await physicalCopy.stubNoteSave({ ...SAMPLE_COPY, note });
+        await expectMutation(physical.copyNote(), () =>
+          physicalCopy.saveNote(),
+        );
+      });
+
+      await test.step("check the card shows the note", async () => {
+        await expect(bookDetailPage.physicalCopyCards).toContainText(note);
+      });
+    });
+
+    test("delete a copy through the sold-it confirm", async ({
+      request,
+      bookDetailPage,
+      expectMutation,
+    }) => {
+      const { physicalCopy } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open a book with one copy", async () => {
+        await bookDetailPage.stubPhysicalLoad([SAMPLE_COPY], null);
+        await bookDetailPage.goto(uuid);
+      });
+
+      // A file-backed book, so this is the plain confirm, not the last-copy
+      // remove-or-wishlist prompt.
+      await test.step("ask to delete the copy", async () => {
+        await bookDetailPage.openRemoveCopyDialog();
+        await expect(physicalCopy.deleteDialog).toBeVisible();
+      });
+
+      await test.step("confirm the delete", async () => {
+        await physicalCopy.stubDelete();
+        await expectMutation(physical.deleteCopy(), () =>
+          physicalCopy.confirmDelete(),
+        );
+      });
+
+      await test.step("check the copy is gone", async () => {
+        await expect(bookDetailPage.physicalCopyCards).toBeHidden();
+      });
+    });
+
+    // A copy's note and removal belong to whoever filed it or an admin, so a
+    // plain reader sees who filed it and nothing to press.
+    test("show another reader's copy without controls", async ({
+      request,
+      readerBookDetailPage,
+    }) => {
+      const { physicalCopy } = readerBookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open a book with a copy another reader filed", async () => {
+        await readerBookDetailPage.stubPhysicalLoad(
+          [{ ...SAMPLE_COPY, added_by_user_id: 424242, added_by_name: "Ada" }],
+          null,
+        );
+        await readerBookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the copy names its filer and offers no controls", async () => {
+        await expect(readerBookDetailPage.physicalCopyCards).toContainText(
+          "by Ada",
+        );
+        await expect(readerBookDetailPage.physicalCopyCards).toContainText(
+          "Trade paperback, MIT Press",
+        );
+        await expect(physicalCopy.editNoteButton).toHaveCount(0);
+        await expect(readerBookDetailPage.removeCopyButton).toHaveCount(0);
+      });
+    });
+  });
 });
