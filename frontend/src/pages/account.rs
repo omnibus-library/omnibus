@@ -138,10 +138,26 @@ pub fn AccountPage() -> Element {
 /// isn't).
 #[cfg(not(feature = "mobile"))]
 pub(crate) fn live_status(testid: &str, msg: Option<&str>, is_error: bool) -> Element {
+    status_line("settings-status", testid, msg, is_error)
+}
+
+/// [`live_status`] for a card's footer row, where it sits beside the actions.
+#[cfg(not(feature = "mobile"))]
+pub(crate) fn action_status(testid: &str, msg: Option<&str>, is_error: bool) -> Element {
+    status_line(
+        "settings-status settings-action-status",
+        testid,
+        msg,
+        is_error,
+    )
+}
+
+#[cfg(not(feature = "mobile"))]
+fn status_line(base: &str, testid: &str, msg: Option<&str>, is_error: bool) -> Element {
     let class = match (msg, is_error) {
-        (Some(_), true) => "settings-status error",
-        (Some(_), false) => "settings-status success",
-        (None, _) => "settings-status",
+        (Some(_), true) => format!("{base} error"),
+        (Some(_), false) => format!("{base} success"),
+        (None, _) => base.to_string(),
     };
     rsx! {
         p { role: "status", class, "data-testid": "{testid}", {msg.unwrap_or_default()} }
@@ -328,7 +344,7 @@ pub(crate) fn ChangePasswordCard() -> Element {
                 div { class: "settings-actions",
                     button {
                         r#type: "submit",
-                        class: "btn",
+                        class: "btn primary",
                         disabled: in_flight(),
                         "aria-busy": "{in_flight()}",
                         "data-testid": "change-password-submit",

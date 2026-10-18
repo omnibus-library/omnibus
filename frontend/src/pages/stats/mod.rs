@@ -177,9 +177,6 @@ fn ReaderStats(
     // Which tile's drill-in is open, if any — the sheet only ever opens from a
     // client click.
     let expanded: Signal<Option<Metric>> = use_signal(|| None);
-    // Bumped when the reader edits their goals in the hero, so the figures
-    // drawn against those goals are fetched again.
-    let mut goals_saved = use_signal(|| 0u32);
     use_reader_switch_reset_effect(
         user,
         period,
@@ -190,14 +187,7 @@ fn ReaderStats(
         expanded,
     );
     use_period_fetch_effect(server_url.clone(), user, range, period, error);
-    use_all_time_fetch_effect(
-        server_url.clone(),
-        user,
-        goals_saved,
-        all_time,
-        loading,
-        error,
-    );
+    use_all_time_fetch_effect(server_url.clone(), user, all_time, loading, error);
     use_in_progress_fetch_effect(server_url.clone(), user, in_progress);
 
     // Rule 12: hold the page loader until both this reader's all-time summary
@@ -228,7 +218,6 @@ fn ReaderStats(
             StatsHero {
                 summary: standing.clone(),
                 who: who.clone(),
-                on_goals_saved: move |_| goals_saved += 1,
                 div { class: "st-hero-bar",
                     ReaderPicker { readers: reader_list, selected: user }
                     // Only the caller's own sharing is theirs to change.
@@ -581,16 +570,14 @@ fn use_period_fetch_effect(
     }));
 }
 
-/// One-shot fetch of the all-time summary, re-run when the viewed reader does
-/// or `goals_saved` moves, and deliberately not keyed on the switcher: it
-/// feeds the standing hero and band, which a range change may not move.
-/// Carries the same `epoch` ticket as [`use_period_fetch_effect`], so a slower
-/// fetch for the reader just switched away from can't overwrite the new one's
-/// summary, error and loading state.
+/// One-shot fetch of the all-time summary, re-run when the viewed reader does,
+/// and deliberately not keyed on the switcher: it feeds the standing hero and
+/// band, which a range change may not move. Carries the same `epoch` ticket as
+/// [`use_period_fetch_effect`], so a slower fetch for the reader just switched
+/// away from can't overwrite the new one's summary, error and loading state.
 fn use_all_time_fetch_effect(
     server_url: String,
     user: Option<i64>,
-    goals_saved: Signal<u32>,
     all_time: Signal<Option<StatsSummary>>,
     loading: Signal<bool>,
     error: Signal<Option<Failure>>,
@@ -602,7 +589,6 @@ fn use_all_time_fetch_effect(
         if user.is_none() {
             let _ = generation();
         }
-        let _ = goals_saved();
         let ticket = *epoch.peek() + 1;
         epoch.set(ticket);
         let url = server_url.clone();

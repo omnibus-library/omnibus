@@ -200,3 +200,19 @@ fn profile_card_keeps_the_size_limit_on_one_line() {
     let html = render_in_vdom(card_with_avatar);
     assert!(html.contains("10\u{a0}MB"), "{html}");
 }
+
+#[test]
+fn profile_card_makes_save_display_name_the_primary_footer_action() {
+    let html = render_in_vdom(card_with_avatar);
+    let footer = html
+        .find(r#"class="settings-actions""#)
+        .expect("a footer row");
+    let save = html
+        .find(r#"data-testid="display-name-save""#)
+        .expect("save");
+    assert!(footer < save, "{html}");
+    assert!(
+        html[footer..save].contains(r#"class="btn primary""#),
+        "{html}"
+    );
+}

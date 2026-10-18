@@ -155,20 +155,20 @@ fn kindle_email_form(
             }
             div { class: "settings-actions",
                 button {
-                    r#type: "submit",
-                    class: "btn",
-                    disabled: in_flight(),
-                    "aria-busy": "{in_flight()}",
-                    "data-testid": "kindle-email-save",
-                    BusyLabel { busy: in_flight(), label: "Save Kindle email", busy_label: "Saving\u{2026}" }
-                }
-                button {
                     r#type: "button",
-                    class: "btn ghost",
+                    class: "btn ghost danger settings-action-start",
                     disabled: in_flight() || !connected,
                     "data-testid": "kindle-email-clear",
                     onclick: on_clear,
                     "Clear"
+                }
+                button {
+                    r#type: "submit",
+                    class: "btn primary",
+                    disabled: in_flight(),
+                    "aria-busy": "{in_flight()}",
+                    "data-testid": "kindle-email-save",
+                    BusyLabel { busy: in_flight(), label: "Save Kindle email", busy_label: "Saving\u{2026}" }
                 }
             }
         }

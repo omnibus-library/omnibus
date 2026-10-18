@@ -152,11 +152,9 @@ test("picking the target shows their figures under a third-person heading", asyn
   await expect(viewer.getByTestId("stats-in-progress")).toContainText(
     "Beta in the Series",
   );
-  await expect(viewer.getByTestId("stats-goal-set-link")).toHaveCount(0);
-  await expect(viewer.getByTestId("stats-daily-set-link")).toHaveCount(0);
   // Someone else's sharing and goals aren't the viewer's to change.
   await expect(viewer.getByTestId("stats-share-toggle")).toHaveCount(0);
-  await expect(viewer.getByTestId("stats-goals-edit")).toHaveCount(0);
+  await expect(viewer.getByTestId("stats-goals-link")).toHaveCount(0);
 
   await expectMutation(
     viewer,

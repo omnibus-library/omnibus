@@ -289,7 +289,7 @@ fn profile_name_form(
             div { class: "settings-actions",
                 button {
                     r#type: "submit",
-                    class: "btn",
+                    class: "btn primary",
                     disabled: in_flight || !changed,
                     "aria-busy": "{in_flight}",
                     "data-testid": "display-name-save",

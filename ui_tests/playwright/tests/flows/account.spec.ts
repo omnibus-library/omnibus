@@ -28,6 +28,26 @@ const displayNameInput = (page: Page) => page.getByTestId("display-name-input");
 const profileStatus = (page: Page) => page.getByTestId("profile-status");
 const saveDisplayName = (page: Page) => page.getByTestId("display-name-save");
 
+/** Answer the Kobo device list read with `devices`. */
+async function stubKoboDevices(
+  page: Page,
+  devices: { id: number; name: string }[],
+): Promise<void> {
+  await page.route(
+    (url) => url.pathname === "/api/rpc/kobo/devices",
+    (route) =>
+      route.fulfill({
+        status: 200,
+        json: devices.map((d) => ({
+          ...d,
+          token: `tok-${d.id}`,
+          created_at: 0,
+          last_seen_at: 0,
+        })),
+      }),
+  );
+}
+
 /** Answer the Kindle delivery read with `body`. */
 async function stubKindleDelivery(
   page: Page,
@@ -112,6 +132,8 @@ test("renders the devices section layout", async ({ page }) => {
   await expect(page.getByTestId("kindle-email-connected")).toBeAttached();
   await expect(page.getByTestId("kindle-delivery")).toBeVisible();
   await expect(page.getByTestId("kobo-devices-card")).toBeVisible();
+  await expect(page.getByTestId("kobo-data-loss-warning")).toBeVisible();
+  await expect(page.getByText("How to connect a Kobo")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Choose shelves to sync" }),
   ).toHaveAttribute("href", "/shelves");
@@ -196,6 +218,11 @@ test("adds a Kobo device with an absolute endpoint URL, then removes it", async 
     await expect(page.getByTestId("kobo-endpoint-url").last()).toHaveValue(
       /^https?:\/\/[^/]+\/kobo\/[^/]+$/,
     );
+    // The new device joins the list below the form it was added from.
+    const row = page.getByTestId("kobo-device-row").filter({ hasText: name });
+    const rowTop = (await row.boundingBox())?.y ?? 0;
+    const addTop = (await page.getByTestId("kobo-device-add").boundingBox())?.y;
+    expect(rowTop).toBeGreaterThan(addTop ?? Number.POSITIVE_INFINITY);
   } finally {
     // Remove asks first, naming the device it would stop syncing.
     await page.getByRole("button", { name: `Remove ${name}` }).click();
@@ -214,6 +241,33 @@ test("adds a Kobo device with an absolute endpoint URL, then removes it", async 
     );
     await expect(page.getByTestId("kobo-remove-dialog")).toHaveCount(0);
   }
+});
+
+// The device list is per-user state on the shared admin, so both disclosure
+// states are stubbed: whether it opens on its own depends on the list.
+test("open the kobo setup steps from their disclosure", async ({ page }) => {
+  await stubKoboDevices(page, [{ id: 1, name: "Kobo Clara" }]);
+  await gotoReady(page, DEVICES);
+  await expect(page.getByTestId("kobo-device-row")).toHaveCount(1);
+
+  // A reader who already has a Kobo starts with the steps folded away.
+  const steps = page.getByTestId("kobo-setup-steps");
+  await expect(steps).toBeHidden();
+  await page.getByText("How to connect a Kobo").click();
+  await expect(steps).toBeVisible();
+  await expect(
+    steps.getByRole("link", { name: "omnibus-library/kobo-backup" }),
+  ).toHaveAttribute("href", "https://github.com/omnibus-library/kobo-backup");
+});
+
+test("show the kobo setup steps to a reader with no kobo yet", async ({
+  page,
+}) => {
+  await stubKoboDevices(page, []);
+  await gotoReady(page, DEVICES);
+
+  await expect(page.getByTestId("kobo-devices-empty")).toBeVisible();
+  await expect(page.getByTestId("kobo-setup-steps")).toBeVisible();
 });
 
 test("the legacy /account route redirects into Settings", async ({ page }) => {
@@ -599,34 +653,34 @@ test.describe
       }
     }
 
-    test("the goals card sets all three targets behind one control", async ({
-      page,
-      request,
-    }) => {
+    const goalInput = (page: Page, kind: string) =>
+      page.getByTestId(`goal-${kind}-input`);
+    const saveAll = (page: Page) => page.getByTestId("goals-save");
+
+    test("edit goals inline and save all", async ({ page, request }) => {
       await clearAllGoals(request);
       await gotoReady(page, GOALS);
 
       const card = page.getByTestId("account-goals-card");
-      await expect(card).toBeVisible();
       await expect(
-        page.getByRole("heading", { name: "Reading goals" }),
+        card.getByRole("heading", { level: 3, name: "Reading goals" }),
       ).toBeVisible();
-
-      // Read mode: every kind states its target or that it has none, and there is
-      // exactly one control — the point of consolidating them here.
-      for (const testid of ["goal-books", "goal-pages", "goal-minutes"]) {
-        await expect(page.getByTestId(`${testid}-value`)).toHaveText("Not set");
+      // Always a form: three fields and one Save all, which waits for a change.
+      for (const kind of ["books", "pages", "minutes"]) {
+        await expect(goalInput(page, kind)).toBeEnabled();
+        await expect(goalInput(page, kind)).toHaveValue("");
       }
       await expect(card.getByRole("button")).toHaveCount(1);
-      await expect(page.getByTestId("goals-edit")).toBeVisible();
+      await expect(saveAll(page)).toHaveText("Save all");
+      await expect(saveAll(page)).toBeDisabled();
 
-      await page.getByTestId("goals-edit").click();
-      await page.getByTestId("goal-books-input").fill("24");
-      await page.getByTestId("goal-pages-input").fill("30");
-      await page.getByTestId("goal-minutes-input").fill("45");
+      await goalInput(page, "books").fill("24");
+      await goalInput(page, "pages").fill("30");
+      await goalInput(page, "minutes").fill("45");
+      await expect(saveAll(page)).toBeEnabled();
 
-      // One Save, three per-kind writes: the annual route and the daily route
-      // can't be batched, so the card fans out and reports what landed.
+      // One Save all, three per-kind writes: the annual route and the daily
+      // route can't be batched, so the card fans out and reports what landed.
       await expectMutation(
         page,
         {
@@ -638,24 +692,18 @@ test.describe
           expectedBody: { update: { target: 24 }, utc_offset_minutes: 0 },
           expectedStatus: 200,
         },
-        async () => page.getByTestId("goals-save").click(),
+        async () => saveAll(page).click(),
       );
 
       await expect(page.getByTestId("goals-status")).toHaveText("Goals saved.");
-      await expect(page.getByTestId("goal-books-value")).toHaveText("24 books");
-      await expect(page.getByTestId("goal-pages-value")).toHaveText("30 pages");
-      await expect(page.getByTestId("goal-minutes-value")).toHaveText(
-        "45 minutes",
-      );
+      await expect(saveAll(page)).toBeDisabled();
 
       // They survive a reload — the card reads all three back off the server,
       // which is what tells an optimistic render apart from a real write.
       await gotoReady(page, GOALS);
-      await expect(page.getByTestId("goal-books-value")).toHaveText("24 books");
-      await expect(page.getByTestId("goal-pages-value")).toHaveText("30 pages");
-      await expect(page.getByTestId("goal-minutes-value")).toHaveText(
-        "45 minutes",
-      );
+      await expect(goalInput(page, "books")).toHaveValue("24");
+      await expect(goalInput(page, "pages")).toHaveValue("30");
+      await expect(goalInput(page, "minutes")).toHaveValue("45");
     });
 
     test("an emptied field clears that goal and leaves the others alone", async ({
@@ -669,10 +717,10 @@ test.describe
         target: 30,
       });
       await gotoReady(page, GOALS);
+      await expect(goalInput(page, "pages")).toHaveValue("30");
 
-      await page.getByTestId("goals-edit").click();
-      // Blanking is how a single form drops a goal — there is no Clear per row.
-      await page.getByTestId("goal-pages-input").fill("");
+      // Blanking is how the form drops a goal — there is no Clear per row.
+      await goalInput(page, "pages").fill("");
 
       await expectMutation(
         page,
@@ -685,13 +733,15 @@ test.describe
           expectedBody: { update: { kind: "pages" }, utc_offset_minutes: 0 },
           expectedStatus: 200,
         },
-        async () => page.getByTestId("goals-save").click(),
+        async () => saveAll(page).click(),
       );
+      await expect(page.getByTestId("goals-status")).toHaveText("Goals saved.");
 
-      await expect(page.getByTestId("goal-pages-value")).toHaveText("Not set");
       // The untouched annual target is not restated — only changed kinds are
       // written, so another device's value can't be clobbered by a no-op save.
-      await expect(page.getByTestId("goal-books-value")).toHaveText("24 books");
+      await gotoReady(page, GOALS);
+      await expect(goalInput(page, "books")).toHaveValue("24");
+      await expect(goalInput(page, "pages")).toHaveValue("");
     });
 
     test("an out-of-range target is refused before it costs a round trip", async ({
@@ -701,18 +751,25 @@ test.describe
       await clearAllGoals(request);
       await gotoReady(page, GOALS);
 
-      await page.getByTestId("goals-edit").click();
       // 1,500 is a legal day of pages and an impossible day of minutes, so the
       // same number has to be accepted by one field and refused by the other.
-      await page.getByTestId("goal-pages-input").fill("1500");
-      await page.getByTestId("goal-minutes-input").fill("1500");
-      await page.getByTestId("goals-save").click();
+      await goalInput(page, "pages").fill("1500");
+      await goalInput(page, "minutes").fill("1500");
+      await saveAll(page).click();
 
-      const status = page.getByTestId("goals-status");
-      await expect(status).toContainText("Minutes a day");
-      await expect(status).toContainText("1440");
-      // Nothing was written — the form stays open on the value it rejected.
-      await expect(page.getByTestId("goal-pages-input")).toHaveValue("1500");
+      await expect(page.getByTestId("goal-minutes-error")).toContainText(
+        "1440",
+      );
+      await expect(goalInput(page, "minutes")).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      );
+      await expect(page.getByTestId("goal-pages-error")).toHaveCount(0);
+      await expect(page.getByTestId("goals-status")).toContainText(
+        "Nothing saved",
+      );
+      // Nothing was written — the form keeps the value it rejected.
+      await expect(goalInput(page, "pages")).toHaveValue("1500");
     });
 
     test("a failed save names the kind that didn't land", async ({
@@ -725,35 +782,39 @@ test.describe
       );
 
       await gotoReady(page, GOALS);
-      await page.getByTestId("goals-edit").click();
-      await page.getByTestId("goal-books-input").fill("24");
-      await page.getByTestId("goal-pages-input").fill("30");
-      await page.getByTestId("goals-save").click();
+      await goalInput(page, "books").fill("24");
+      await goalInput(page, "pages").fill("30");
+      await saveAll(page).click();
 
       // Three goals are three writes: the reader has to know which one to retry
       // rather than being told "something went wrong".
       const status = page.getByTestId("goals-status");
       await expect(status).toContainText("Pages a day");
       await expect(status).toHaveClass(/error/);
-      // The annual write did land, and the form stays open on the failure.
-      await expect(page.getByTestId("goal-books-input")).toHaveValue("24");
+      await expect(page.getByTestId("goal-pages-error")).toBeVisible();
+      // The annual write did land; the failed kind keeps its draft to retry.
+      await expect(goalInput(page, "books")).toHaveValue("24");
+      await expect(goalInput(page, "pages")).toHaveValue("30");
+      await expect(saveAll(page)).toBeEnabled();
     });
 
-    test("cancel drops the drafts back to what the server confirmed", async ({
-      page,
-      request,
-    }) => {
+    test("asks before leaving unsaved goals", async ({ page, request }) => {
       await clearAllGoals(request);
       await seedGoal(request, "/api/stats/goal", { target: 24 });
       await gotoReady(page, GOALS);
+      await expect(goalInput(page, "books")).toHaveValue("24");
 
-      await page.getByTestId("goals-edit").click();
-      await page.getByTestId("goal-books-input").fill("99");
-      await page.getByTestId("goals-cancel").click();
+      await goalInput(page, "books").fill("99");
+      await page.getByTestId("settings-nav-profile").click();
+      await expect(page.getByTestId("unsaved-confirm")).toBeVisible();
+      await page.getByTestId("unsaved-keep").click();
+      await expect(goalInput(page, "books")).toHaveValue("99");
 
-      await expect(page.getByTestId("goal-books-value")).toHaveText("24 books");
-      await page.getByTestId("goals-edit").click();
-      await expect(page.getByTestId("goal-books-input")).toHaveValue("24");
+      // Typing the saved value back leaves nothing to lose.
+      await goalInput(page, "books").fill("24");
+      await expect(saveAll(page)).toBeDisabled();
+      await page.getByTestId("settings-nav-profile").click();
+      await expect(page).toHaveURL(/section=profile$/);
     });
   });
 

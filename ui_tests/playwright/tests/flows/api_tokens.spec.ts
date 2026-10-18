@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
 import { expectNavVisible, gotoReady } from "../utils/nav";
@@ -39,7 +39,9 @@ async function createToken(page: Page, name: string): Promise<void> {
 // Revoke is two-step: the row's Revoke swaps in a confirmation row, and only
 // its "Revoke token" fires the mutation.
 async function revokeToken(page: Page, name: string): Promise<void> {
-  await rowFor(page, name).getByRole("button", { name: `Revoke ${name}`, exact: true }).click();
+  await rowFor(page, name)
+    .getByRole("button", { name: `Revoke ${name}`, exact: true })
+    .click();
   const confirm = page.getByTestId("api-token-revoke-confirm");
   await expect(confirm).toBeVisible();
   await expectMutation(
@@ -93,10 +95,19 @@ test("creates a token, hands off the secret exactly once, and revokes it", async
   await expect(command).toContainText(`${new URL(page.url()).origin}/mcp`);
   await expect(page.getByTestId("api-token-mcp-command-copy")).toBeVisible();
 
-  // The new row lists the token with its omni_…xxxx identifier and the
-  // never-used pill.
+  // The form stays on top; the secret lands directly under it and the new
+  // row joins the list below, rather than appearing above where it was made.
   const row = rowFor(page, name);
   await expect(row).toBeVisible();
+  await expect(nameInput(page)).toBeVisible();
+  const top = async (l: Locator) => (await l.boundingBox())?.y ?? Number.NaN;
+  const formTop = await top(createButton(page));
+  const secretTop = await top(secretPanel(page));
+  expect(secretTop).toBeGreaterThan(formTop);
+  expect(await top(row)).toBeGreaterThan(secretTop);
+
+  // The row lists the token with its omni_…xxxx identifier and the
+  // never-used pill.
   await expect(row.getByText(`omni_…${secret.slice(-4)}`)).toBeVisible();
   await expect(row.getByTestId("api-token-pill")).toHaveText("Never used");
 
@@ -124,7 +135,9 @@ test("cancels an in-row revoke confirmation without revoking", async ({
   await createToken(page, name);
   await page.getByTestId("api-token-secret-dismiss").click();
 
-  await rowFor(page, name).getByRole("button", { name: `Revoke ${name}`, exact: true }).click();
+  await rowFor(page, name)
+    .getByRole("button", { name: `Revoke ${name}`, exact: true })
+    .click();
   const confirm = page.getByTestId("api-token-revoke-confirm");
   await expect(confirm).toBeVisible();
   await confirm.getByRole("button", { name: "Cancel" }).click();
@@ -141,7 +154,9 @@ test("renames a token in place", async ({ page }) => {
   await createToken(page, name);
   await page.getByTestId("api-token-secret-dismiss").click();
 
-  await rowFor(page, name).getByRole("button", { name: `Rename ${name}`, exact: true }).click();
+  await rowFor(page, name)
+    .getByRole("button", { name: `Rename ${name}`, exact: true })
+    .click();
   const input = page.getByTestId("api-token-rename-input");
   await expect(input).toHaveValue(name);
   await input.fill(renamed);
@@ -199,7 +214,9 @@ test("shows an error and keeps the row when rename fails", async ({ page }) => {
   await page.route("**/api/rpc/api-tokens/rename", (route) =>
     route.fulfill({ status: 500, body: "internal server error" }),
   );
-  await rowFor(page, name).getByRole("button", { name: `Rename ${name}`, exact: true }).click();
+  await rowFor(page, name)
+    .getByRole("button", { name: `Rename ${name}`, exact: true })
+    .click();
   await page.getByTestId("api-token-rename-input").fill(`${name} v2`);
   await expectMutation(
     page,
@@ -230,7 +247,9 @@ test("shows an error and keeps the row when revoke fails", async ({ page }) => {
   await page.route("**/api/rpc/api-tokens/revoke", (route) =>
     route.fulfill({ status: 500, body: "internal server error" }),
   );
-  await rowFor(page, name).getByRole("button", { name: `Revoke ${name}`, exact: true }).click();
+  await rowFor(page, name)
+    .getByRole("button", { name: `Revoke ${name}`, exact: true })
+    .click();
   const confirm = page.getByTestId("api-token-revoke-confirm");
   await expect(confirm).toBeVisible();
   await expectMutation(
