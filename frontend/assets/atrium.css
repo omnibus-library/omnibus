@@ -5669,10 +5669,9 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .tkx-scope-chips { display: flex; gap: 5px; flex-wrap: wrap; margin-left: auto; }
 .tkx-scope-chip { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
 
-/* create row */
-.tkx-create { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
-.tkx-create .settings-field { flex: 1; min-width: 240px; }
-.tkx-create-hint { margin: 8px 0 0; font-size: 11.5px; color: var(--ink-3); }
+/* create form: the field, its hint, then the footer's Create token */
+.tkx-create.settings-form { margin-top: 0; }
+.tkx-create-hint { margin: 0; font-size: 11.5px; color: var(--ink-3); }
 
 /* the one-time secret */
 .tkx-secret { border: 1px solid color-mix(in oklch, var(--accent) 55%, transparent); background: color-mix(in oklch, var(--accent) 8%, var(--bg-1)); border-radius: var(--r-lg); padding: 20px 22px; }
