@@ -14,11 +14,11 @@ One file per user flow: `ui_tests/playwright/tests/flows/<flow-name>.spec.ts`.
 `tests/ios_glue/` and its own recipe — see
 [04b-playwright-ios-glue.md](../../rules/04b-playwright-ios-glue.md).)
 
-New specs use page objects; see
+Specs use page objects; see
 [04d-playwright-page-objects.md](../../rules/04d-playwright-page-objects.md) for
 the layout and rules, and the `tests/flows/check_in_*.spec.ts` specs for worked
-examples. Import `test`
-and `expect` from a fixtures file, never from `@playwright/test`:
+examples. Import `test` and `expect` from a fixtures file, never from
+`@playwright/test`:
 
 ```ts
 import { scan } from "../contracts/scan";
@@ -28,7 +28,8 @@ import { expect, test } from "../fixtures/pageFixtures";
 ## 2. Add the page objects the flow needs
 
 Extend an existing page or component before adding one. A new page extends
-`BasePage`, and its fixture goes in `fixtures/pageFixtures.ts`:
+`BasePage`, and its fixture goes in `fixtures/pageFixtures.ts` (a sketch of the
+shape; the real `SettingsPage` also holds the sidebar and its sections):
 
 ```ts
 export class SettingsPage extends BasePage {
@@ -126,17 +127,16 @@ await expect(flow.errorMessage).toBeVisible();
 ## 6. Where everything else goes
 
 A spec holds tests and nothing else — no helper functions. Biome enforces the
-locator half: see [04d](../../rules/04d-playwright-page-objects.md#lint). When
-migrating an existing spec, delete its `!` line from `biome.json`'s `overrides`.
+locator half: see [04d](../../rules/04d-playwright-page-objects.md#lint).
 
 | You need | Put it in |
 |---|---|
 | a locator or a UI action | the page or component object |
 | a read of rendered content (an iframe, geometry) or a `page.on` listener | a page or component query or `record*` method |
-| an API call to seed, clean up or read back | an `apiRequests/` class |
+| an API call to seed, clean up or read back | an `apiRequests/` class, injected from `fixtures/requestFixtures.ts` |
 | a mutation's method, URL, body and status | a `contracts/` builder |
 | a payload type or a unique test value | `data/` |
-| data that must be deleted after the test | a fixture that cleans up after `use` |
+| data that must be deleted after the test | a fixture that cleans up after `use`, in `fixtures/dataFixtures.ts` |
 
 ## 7. Run
 

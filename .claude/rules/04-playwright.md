@@ -24,7 +24,7 @@ The `playwright-driver.browsers` package in [flake.nix](../../flake.nix) provide
 
 ## Style — page objects, injected by fixtures
 
-New specs are built from page, component and request objects that fixtures inject; the suite is migrating to them one surface at a time (#2744). The layout, the rules and the worked example live in [04d-playwright-page-objects.md](04d-playwright-page-objects.md). An unmigrated spec keeps its functional helpers until its surface moves.
+Every spec is built from page, component and request objects that fixtures inject. The layout, the rules and the worked example live in [04d-playwright-page-objects.md](04d-playwright-page-objects.md).
 
 ## Selectors — semantic first, `locator()` last, never XPath
 
@@ -63,10 +63,9 @@ control that no longer exists.
 
 - The section's `gallery-all-shelves` link **navigates** to the `/shelves`
   index, whose cards (`shelf-card-<id>`) then open `/shelves/:id` — use
-  `openShelfFromIndex()` from `utils/shelves.ts` (`ShelfPage.goto(id)` in a
-  page-object spec), never a bare `page.goto` to an id.
+  `ShelfPage.goto(id)`, never a bare `page.goto` to an id.
 - Selecting a shelf *card* in that same section **does not navigate**: it
-  filters the book list in place. Open one with `selectShelfInGallery()` and
+  filters the book list in place. Open one with `LibraryPage.selectShelf()` and
   assert against the landing surface — `lib-section-title` for the name,
   `shelf-facets` for kind/visibility/rules, `shelf-edit` for the pencil,
   `lib-grid` for members, `lib-page-error` for a failed member fetch, and on
@@ -81,14 +80,14 @@ both, but the landing *hides* it from a viewer who can't change the shelf.
 
 Under `tests/flows/`, each `*.spec.ts` contains:
 
-1. **One layout test** (`renders the <page> layout`; `show the <page> layout` in a page-object spec) asserting the destination page's structure: key elements visible, shared nav present (via `expectNavVisible` from `utils/nav.ts`). No user actions.
+1. **One layout test** (`show the <page> layout`) asserting the destination page's structure: key elements visible, shared nav present (`topNav.assertDisplayed()`). No user actions.
 2. **One or more action tests**, one per user action, covering happy path and error path. Action tests drive the UI, assert network contracts, then assert UI state.
 
-A page-object spec holds tests and nothing else: its locators and actions are page-object members, its API calls request objects, its payloads contracts. In an unmigrated spec, flow-specific helpers (e.g. `fillSettingsForm`) live inside the spec file, and only cross-flow helpers go to `utils/`.
+A spec holds tests and nothing else: its locators and actions are page-object members, its API calls request objects, its payloads contracts.
 
 ## Waits — `expect.poll` and auto-waiting only
 
-No `waitForTimeout`. If the DOM is going to change, poll for it. If a request must complete before asserting, `await` the response via `expectMutation` from `utils/api.ts`.
+No `waitForTimeout`. If the DOM is going to change, poll for it. If a request must complete before asserting, `await` the response via the `expectMutation` fixture.
 
 ## Multi-touch goes through CDP, in a touch context
 
@@ -116,40 +115,40 @@ each learned by getting it wrong:
 
 ## Network — every mutation must be asserted
 
-Wrap every mutating request (POST/PUT/PATCH/DELETE) in `expectMutation`:
+Wrap every mutating request (POST/PUT/PATCH/DELETE) in the `expectMutation` fixture, with a named contract from `tests/contracts/` (see the Example). It arms `waitForRequest`/`waitForResponse`, runs the action, checks payload and status, and guarantees the test waited for the response before any subsequent UI assertion. Reads (GET) are not asserted unless the assertion depends on their data. A spec whose UI runs on a reader's page uses `readerExpectMutation` (`secondReaderExpectMutation` for the second reader).
 
-```ts
-await expectMutation(
-  page,
-  { method: "POST", url: "/api/settings", expectedBody: {...}, expectedStatus: 200 },
-  async () => page.getByRole("button", { name: "Save" }).click(),
-);
-```
+## Error paths — force failures with a stub
 
-It arms `waitForRequest`/`waitForResponse`, runs the action, checks payload and status, and guarantees the test waited for the response before any subsequent UI assertion. Reads (GET) are not asserted unless the assertion depends on their data.
-
-## Error paths — force failures with `page.route`
-
-Intercept the mutating route and `route.fulfill({ status: 500, ... })` before triggering the action, then still use `expectMutation` to verify the request fired with the expected payload and observed the forced status. Assert the UI surfaces the error (status text, error class, unchanged state). In a page-object spec the intercept is a stub method on the page or component object, never a `page.route` in the spec.
+Call the page's `forceServerError(contract)` before triggering the action, then still wrap the action in `expectMutation(failing(contract), …)` to verify the request fired with the expected payload and observed the 500. Assert the UI surfaces the error (status text, error class, unchanged state). Stubs are methods on the page or component object, never a `page.route` in the spec.
 
 ## Example
 
 ```ts
-test("saves library paths and shows a success status", async ({ page }) => {
-  await page.goto("/settings");
-  await page.getByLabel("Ebook Library Path").fill(path);
+test("save the library paths", async ({
+  settingsPage,
+  scratchLibrary,
+  expectMutation,
+}) => {
+  const { library } = settingsPage;
 
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/settings", expectedBody: { ... }, expectedStatus: 200 },
-    async () => page.getByRole("button", { name: "Save" }).click(),
-  );
+  await test.step("fill in the library paths", async () => {
+    await settingsPage.goto("library");
+    await library.fillForm(scratchLibrary);
+  });
 
-  await expect(page.getByRole("status")).toHaveText("Settings saved.");
+  await test.step("save the settings", async () => {
+    await expectMutation(settings.saveLibrary(scratchLibrary), () =>
+      library.save(),
+    );
+  });
+
+  await test.step("check the form reports the save", async () => {
+    await library.assertSaved();
+  });
 });
 ```
 
-See `ui_tests/playwright/tests/flows/settings.spec.ts` for the full version.
+See `ui_tests/playwright/tests/flows/settings.spec.ts` for the full version. The `scratchLibrary` fixture holds the paths a test saves and restores the saved ones on teardown.
 
 ## Seeding — point the server at fixtures, then poll
 
@@ -157,11 +156,11 @@ Specs that need real DB content (e.g. landing) call `seedLibrary(request, fixtur
 
 The committed fixtures live under `test_data/epubs/generated/` and are produced by `ui_tests/playwright/tools/make_epub.ts` (run via `pnpm exec tsx`); CBZ comic fixtures come from the sibling `tools/make_cbz.ts`. The single source of truth for expected per-row metadata is `tests/fixtures/epubs.ts` (`FIXTURE_BOOKS`); audiobooks have the parallel `tests/fixtures/audiobooks.ts` (`AUDIOBOOK_BOOKS`, generated by `tools/make_audiobook.ts`). When you add a fixture, regenerate the files and update the matching table — plus the Rust mirror in `db/tests/fixture_epubs.rs` — in the same change.
 
-**Never mutate a fixture another spec reads.** The suite is `fullyParallel` against one shared server, so a merge, delete, or reindex is globally visible the moment it lands. A cross-worker lock (`withLock` in `utils/lock.ts`) only serializes the writers — readers don't take it, so serializing writers alone does *not* protect readers. Give the mutating spec its own fixture instead: `MERGE_PRIMARY` / `MERGE_SECONDARY` in `tests/fixtures/audiobooks.ts` are reserved for the `/api/rpc/merge-books` specs and read by nothing else. Likewise `frankenstein` / `great-gatsby` in `tests/fixtures/epubs.ts` are reserved for the reader progress-restore specs — saved position is per-(user, book) server state, so any other spec opening them in the reader would race those assertions. `picture-of-dorian-gray` is reserved on the same grounds for the percent-only restore test (#2446), which stores a position with no CFI and asserts that opening the reader leaves it untouched. `RESUME_BOOK` ("The Resumable Reverie") in `tests/fixtures/audiobooks.ts` is the audiobook counterpart, reserved for the #2458 resume-paint test: every *other* listen test asserts a book opens at zero, which the position that spec writes would falsify. `SLEEP_SEAM_BOOK` ("The Seamful Suite") is reserved on the same grounds and one more: the #2494 spec *plays* it across a chapter seam, so it writes both a position and a read status, and its two ~12s chapters exist so the end-of-chapter timer can be armed a fractional 2.1s before the seam — the race a 2s generated chapter cannot express.
+**Never mutate a fixture another spec reads.** The suite is `fullyParallel` against one shared server, so a merge, delete, or reindex is globally visible the moment it lands. A cross-worker lock (`withLock` in `utils/lock.ts`) only serializes the writers — readers don't take it, so serializing writers alone does *not* protect readers. Give the mutating spec its own fixture instead: `MERGE_PRIMARY` / `MERGE_SECONDARY` in `tests/fixtures/audiobooks.ts` are reserved for `merge.spec.ts` and the merge fixtures (`mergeLock`, `mergedMp3Book`), and read by nothing else. Likewise `frankenstein` / `great-gatsby` in `tests/fixtures/epubs.ts` are reserved for the reader progress-restore specs — saved position is per-(user, book) server state, so any other spec opening them in the reader would race those assertions. `picture-of-dorian-gray` is reserved on the same grounds for the percent-only restore test (#2446), which stores a position with no CFI and asserts that opening the reader leaves it untouched. `RESUME_BOOK` ("The Resumable Reverie") in `tests/fixtures/audiobooks.ts` is the audiobook counterpart, reserved for the #2458 resume-paint test: every *other* listen test asserts a book opens at zero, which the position that spec writes would falsify. `SLEEP_SEAM_BOOK` ("The Seamful Suite") is reserved on the same grounds and one more: the #2494 spec *plays* it across a chapter seam, so it writes both a position and a read status, and its two ~12s chapters exist so the end-of-chapter timer can be armed a fractional 2.1s before the seam — the race a 2s generated chapter cannot express.
 
-**A test that needs a book at a known position must say so.** Two specs in `listen.spec.ts` shared `MULTIPART_MP3_BOOK` while one of them (#1897) seeked it to chapter 2 and persisted that immediately — so whether the other found an "upcoming" chapter row depended on run order. It went unnoticed because the transport painted `0:00` until the media metadata landed; once #2458 made it paint the *restored* position, the accidental precondition became a visible flake. Both now park the playhead with an explicit `OmnibusAudio.seek(0)` (`parkAtStart`) rather than trusting whatever the last spec left behind. The two CBZ fixtures (`aurora-station-01` / `aurora-station-02`) are reserved for `comic_reader.spec.ts` on the same grounds: `-01` receives that spec's progress and read-status writes and `-02` must stay progress-free (its layout test asserts a page-1 open). Every reading surface auto-writes read status (unread → `reading` on open, `finished` on reaching the end) — both web readers, both native iOS readers, and the audio players (on first play and once every file has played through). Only the web ones are in reach of this suite, but the *contract* is shared, so a spec that asserts read-status *values* must use a book no other spec ever opens in a reader or player — `standalone-canyon` is that book for `book_detail.spec.ts`. Read status also **filters the Continue-reading hero** (`db::progress::recent_progress` drops `unread` and `finished`), so marking a book is doubly global: `standalone-desert` is reserved for the hero's finished-book test, and `standalone-mountain` for its happy-path test (whose status row stays absent — an absent row is *not* treated as `unread` there; see the query's comment). Both hero specs also **re-seed and reload until the card lands** rather than asserting once: the rail is the five newest positions ordered on a *second*-granularity timestamp with `book_uuid` as the tiebreak, so a single seeded book can be ordered off the end by uuid alone.
+**A test that needs a book at a known position must say so.** Two specs in `listen.spec.ts` shared `MULTIPART_MP3_BOOK` while one of them (#1897) seeked it to chapter 2 and persisted that immediately — so whether the other found an "upcoming" chapter row depended on run order. It went unnoticed because the transport painted `0:00` until the media metadata landed; once #2458 made it paint the *restored* position, the accidental precondition became a visible flake. Both now park the playhead with an explicit `OmnibusAudio.seek(0)` (`ListenPage.parkAtStart`) rather than trusting whatever the last spec left behind. The two CBZ fixtures (`aurora-station-01` / `aurora-station-02`) are reserved for `comic_reader.spec.ts` on the same grounds: `-01` receives that spec's progress and read-status writes and `-02` must stay progress-free (its layout test asserts a page-1 open). Every reading surface auto-writes read status (unread → `reading` on open, `finished` on reaching the end) — both web readers, both native iOS readers, and the audio players (on first play and once every file has played through). Only the web ones are in reach of this suite, but the *contract* is shared, so a spec that asserts read-status *values* must use a book no other spec ever opens in a reader or player — `standalone-canyon` is that book for `book_detail.spec.ts`. Read status also **filters the Continue-reading hero** (`db::progress::recent_progress` drops `unread` and `finished`), so marking a book is doubly global: `standalone-desert` is reserved for the hero's finished-book test, and `standalone-mountain` for its happy-path test (whose status row stays absent — an absent row is *not* treated as `unread` there; see the query's comment). Both hero specs also **re-seed and reload until the card lands** rather than asserting once: the rail is the five newest positions ordered on a *second*-granularity timestamp with `book_uuid` as the tiebreak, so a single seeded book can be ordered off the end by uuid alone.
 
-A book another spec **merges** is not safe to assert against either, even under `withLock` — the lock serializes writers, and a reader takes nothing. The hero happy-path test used Alpha until `merge.spec.ts`'s merge-and-undo of an audiobook into it started intermittently emptying its card off the rail. `standalone-ocean` is reserved for `landing_inline_edit.spec.ts`'s Tags-cell tests, which hold a `subjects` override on it mid-test (its fixture entry leaves `tags` unasserted for the same reason). `standalone-tundra` is reserved for `genres.spec.ts` on stronger grounds still: **genres exist only as a `metadata_overrides` entry** (migration `0066`), so every genre assertion is a write against shared state that outlives the test *and* flips `has_override` on the book — nothing else may read or write it. Pick an author that appears in no other fixture too — `shelves.spec.ts` asserts exact author-scoped match counts. `standalone-glacier` is reserved for `book_detail_chips.spec.ts` on the same grounds: the book-detail hero's "+ genres"/"+ tags" editors write genre *and* subjects overrides on it. Both specs opt themselves out of intra-file parallelism (`test.describe.configure({ mode: "default" })`) because each of their tests clears the shared book's overrides in a `beforeEach` — under `fullyParallel`, one test's cleanup wipes another's just-saved chip mid-assertion. Any spec that resets a reserved fixture per-test needs the same opt-out. `polyglot-2` is reserved for `check_in_link_existing.spec.ts`, which files a real `physical_copies` row against it: copies are library-wide (a PHYS badge on the formats cell, the physical pill on the detail page, for every user), and the ISBN it files under then resolves to that book on the exact-identifier rung permanently — the spec deletes its own copy on the way out, but the binding it proves is the point, so nothing else may read the book. `standalone-lagoon` is reserved for `reader.spec.ts`'s typeface tests: it is the one fixture whose publisher CSS embeds a font and applies it at element level, which is what makes "Original keeps the publisher's face, a named face beats it" assertable — and those tests seed a highlight and drive typography on it, so no other spec may open it in the reader. `mariucha` is reserved for the same file's two-finger gesture tests, which park a position several turns in and assert where the page lands, so no other spec may write one on it. Two more are reserved in `reader.spec.ts` on read-only grounds: `room-with-a-view` for the page-turn gutter tests, and `moby-dick` for the shared-spine chapter-label test — each opens at a deep link and asserts what that page shows, so no other spec may open either in the reader. `standalone-forest` is reserved for `book_detail_shelves.spec.ts`, whose tests file it on shelves of their own through the More stop's picker — a shelf's members are library state every reader of the book sees. Its author appears in no other fixture, so the spec's private smart shelf ("author is Henri Poincare") matches this book alone.
+A book another spec **merges** is not safe to assert against either, even under `withLock` — the lock serializes writers, and a reader takes nothing. The hero happy-path test used Alpha until `merge.spec.ts` merging an audiobook into it, and undoing it, started intermittently emptying its card off the rail. `standalone-ocean` is reserved for `landing_inline_edit.spec.ts`, whose tests hold title, author and `subjects` overrides on it mid-test and run one at a time (its fixture entry leaves `tags` unasserted for the same reason); alpha's overrides are `metadata_edit.spec.ts`'s. `standalone-tundra` is reserved for `genres.spec.ts` on stronger grounds still: **genres exist only as a `metadata_overrides` entry** (migration `0066`), so every genre assertion is a write against shared state that outlives the test *and* flips `has_override` on the book — nothing else may read or write it. Pick an author that appears in no other fixture too — `shelves.spec.ts` asserts exact author-scoped match counts. `standalone-glacier` is reserved for `book_detail_chips.spec.ts` on the same grounds: the book-detail hero's "+ genres"/"+ tags" editors write genre *and* subjects overrides on it. Both specs opt themselves out of intra-file parallelism (`test.describe.configure({ mode: "default" })`) because each of their tests clears the shared book's overrides in a `beforeEach` — under `fullyParallel`, one test's cleanup wipes another's just-saved chip mid-assertion. Any spec that resets a reserved fixture per-test needs the same opt-out. `polyglot-2` is reserved for `check_in_link_existing.spec.ts`, which files a real `physical_copies` row against it: copies are library-wide (a PHYS badge on the formats cell, the physical pill on the detail page, for every user), and the ISBN it files under then resolves to that book on the exact-identifier rung permanently — the spec deletes its own copy on the way out, but the binding it proves is the point, so nothing else may read the book. `standalone-lagoon` is reserved for `reader.spec.ts`'s typeface tests: it is the one fixture whose publisher CSS embeds a font and applies it at element level, which is what makes "Original keeps the publisher's face, a named face beats it" assertable — and those tests seed a highlight and drive typography on it, so no other spec may open it in the reader. `mariucha` is reserved for the same file's two-finger gesture tests, which park a position several turns in and assert where the page lands, so no other spec may write one on it. Two more are reserved in `reader.spec.ts` on read-only grounds: `room-with-a-view` for the page-turn gutter tests, and `moby-dick` for the shared-spine chapter-label test — each opens at a deep link and asserts what that page shows, so no other spec may open either in the reader. `standalone-forest` is reserved for `book_detail_shelves.spec.ts`, whose tests file it on shelves of their own through the More stop's picker — a shelf's members are library state every reader of the book sees. Its author appears in no other fixture, so the spec's private smart shelf ("author is Henri Poincare") matches this book alone.
 
 **PDF fixtures are reserved too.** `time-machine` (`public_domain/time_machine.pdf`) takes every write the PDF reader specs make — progress, read status, highlights, bookmarks — and `flatland` (`public_domain/flatland.pdf`) must stay pristine so a layout test can assert it opens on page 1. Both were converted from Gutenberg EPUBs of titles that have no EPUB fixture, because a PDF twin of an existing EPUB would share its normalized (title, author): `DetectCleanup` would flag the pair and `shelves.spec.ts`'s exact author counts would move. Keep it that way when adding a PDF. A PDF carries no language or date, so those cells are empty in the table, like a CBZ's.
 The JPEG 2000 decode test in `pdf_reader.spec.ts` opens `flatland`'s route but

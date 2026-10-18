@@ -229,7 +229,7 @@ pub fn use_hydrated() -> ReadSignal<bool> {
 
 /// Stamp `data-hydrated` on `<html>` once the client has mounted.
 ///
-/// Playwright's `gotoReady` waits for it, and CSS may key on it. Also installs the image watcher where no boot script ran (the
+/// The Playwright page objects wait for it, and CSS may key on it. Also installs the image watcher where no boot script ran (the
 /// Android shell renders client-side only). An effect, so never during SSR.
 pub fn use_hydration_marker() {
     use_effect(|| {

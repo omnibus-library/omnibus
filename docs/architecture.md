@@ -65,8 +65,9 @@ Beside the workspace:
 - **`omnibus-ios/`** — the native SwiftUI client, an Xcode project rather than a
   crate. See [ios.md](ios.md).
 - **`ui_tests/playwright/`** — the E2E suite: `tests/flows/` (one spec per user
-  flow), `tests/ios_glue/` (the iOS reader glue, driven in Chromium),
-  `tests/utils/`, `tests/fixtures/`. Conventions in
+  flow), `tests/ios_glue/` (the iOS reader glue, driven in Chromium), and the
+  page-object layers they use: `pages/`, `components/`, `apiRequests/`,
+  `contracts/`, `data/`, `fixtures/` (plus `utils/`). Conventions in
   [rule 04](../.claude/rules/04-playwright.md).
 - **`site/`** — the marketing site; see [below](#site).
 
