@@ -18,8 +18,10 @@ import { BookmarksRequests } from "../apiRequests/BookmarksRequests";
 import { EbooksRequests } from "../apiRequests/EbooksRequests";
 import { GoalsRequests } from "../apiRequests/GoalsRequests";
 import { HighlightsRequests } from "../apiRequests/HighlightsRequests";
+import { LogViewerRequests } from "../apiRequests/LogViewerRequests";
 import { McpRequests } from "../apiRequests/McpRequests";
 import { MergeRequests } from "../apiRequests/MergeRequests";
+import { MetadataKeysRequests } from "../apiRequests/MetadataKeysRequests";
 import { OverridesRequests } from "../apiRequests/OverridesRequests";
 import { PhysicalRequests } from "../apiRequests/PhysicalRequests";
 import { ProgressRequests } from "../apiRequests/ProgressRequests";
@@ -39,6 +41,7 @@ import {
   type NewHighlight,
   type SeededHighlight,
 } from "../data/highlights";
+import type { MetadataProvider } from "../data/metadataKeys";
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
 import type { BookProgress, ProgressRecord } from "../data/progress";
 import type { ReadStatus, ReadStatusRecord } from "../data/readStatus";
@@ -48,10 +51,12 @@ import {
   type ShelfRef,
   wishlistOf,
 } from "../data/shelves";
-import { buildReader, type Credentials } from "../data/users";
+import { buildReader, type Credentials, type SeededUser } from "../data/users";
+import { AdminHealthPage } from "../pages/AdminHealthPage";
 import { AuthorsIndexPage } from "../pages/AuthorsIndexPage";
 import { BookDetailPage } from "../pages/BookDetailPage";
 import { CheckInPage } from "../pages/CheckInPage";
+import { CleanupReviewPage } from "../pages/CleanupReviewPage";
 import { ComicReaderPage } from "../pages/ComicReaderPage";
 import { EpubReaderPage } from "../pages/EpubReaderPage";
 import { LibraryPage } from "../pages/LibraryPage";
@@ -177,6 +182,15 @@ type PageFixtures = {
   // #endregion batch-A
 
   // #region batch-B: admin settings
+  usersRequests: UsersRequests;
+  createdUserIds: Set<number>;
+  seedUser: () => Promise<SeededUser>;
+  anonymousRequest: APIRequestContext;
+  anonymousLogViewerRequests: LogViewerRequests;
+  metadataKeysRequests: MetadataKeysRequests;
+  savedMetadataKeys: Set<MetadataProvider>;
+  cleanupReviewPage: CleanupReviewPage;
+  adminHealthPage: AdminHealthPage;
   // #endregion batch-B
 
   // #region batch-C: book detail
@@ -805,6 +819,63 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // #endregion batch-A
 
   // #region batch-B: admin settings
+  usersRequests: async ({ request }, use) => {
+    await use(new UsersRequests(request));
+  },
+
+  createdUserIds: async ({ usersRequests }, use) => {
+    const ids = new Set<number>();
+    await use(ids);
+    for (const id of ids) {
+      const deleted = await usersRequests.deleteUser(id);
+      await expect(deleted, `delete user ${id}`).toBeOK();
+    }
+  },
+
+  seedUser: async ({ usersRequests, createdUserIds }, use) => {
+    await use(async () => {
+      const user = buildReader();
+      const created = await usersRequests.postUser(user);
+      await expect(created, `create ${user.username}`).toBeOK();
+      const { id } = await created.json();
+      createdUserIds.add(id);
+      return { ...user, id };
+    });
+  },
+
+  anonymousRequest: async ({ playwright, baseURL, extraHTTPHeaders }, use) => {
+    const context = await newBearerContext(
+      playwright.request,
+      { baseURL, extraHTTPHeaders },
+      null,
+    );
+    await use(context);
+    await context.dispose();
+  },
+
+  anonymousLogViewerRequests: async ({ anonymousRequest }, use) => {
+    await use(new LogViewerRequests(anonymousRequest));
+  },
+
+  metadataKeysRequests: async ({ request }, use) => {
+    await use(new MetadataKeysRequests(request));
+  },
+
+  savedMetadataKeys: async ({ metadataKeysRequests }, use) => {
+    const providers = new Set<MetadataProvider>();
+    await use(providers);
+    for (const provider of providers) {
+      const cleared = await metadataKeysRequests.postKey(provider, null);
+      await expect(cleared, `clear ${provider} key`).toBeOK();
+    }
+  },
+
+  cleanupReviewPage: async ({ page }, use) => {
+    await use(new CleanupReviewPage(page));
+  },
+  adminHealthPage: async ({ page }, use) => {
+    await use(new AdminHealthPage(page));
+  },
   // #endregion batch-B
 
   // #region batch-C: book detail
