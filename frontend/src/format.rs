@@ -298,5 +298,14 @@ pub fn format_date_month_year_opt(raw: &str) -> Option<String> {
     })
 }
 
+/// `text` with its first letter upper-cased, to open a sentence.
+pub fn capitalize(text: &str) -> String {
+    let mut chars = text.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests;

@@ -4,6 +4,7 @@
 
 use dioxus::prelude::*;
 
+use crate::components::setting_row::SettingRow;
 use crate::data;
 
 /// Subtitle describing what the current self-registration setting means, in
@@ -116,24 +117,26 @@ pub(super) fn RegistrationToggle() -> Element {
 
     rsx! {
         section { class: "card", "data-testid": "registration-card",
-            div { class: "users-head",
-                div {
-                    h2 { "Self-registration" }
-                    p { class: "subtitle",
-                        span { class: if pending { "ld-sheen" } else { "registration-status" }, "{status}" }
-                    }
-                }
-                label { class: "auth-checkbox",
+            h3 { "Self-registration" }
+            p { class: "subtitle", "Whether people can create their own accounts." }
+            SettingRow {
+                label: "Allow new users to register",
+                description: status,
+                control_id: "registration-toggle",
+                pending,
+                span { class: "settings-switch",
                     input {
                         r#type: "checkbox",
-                        // Unknown is drawn as neither ticked nor clear.
+                        role: "switch",
+                        id: "registration-toggle",
+                        "aria-describedby": "registration-toggle-desc",
+                        // While unknown, the knob waits at centre rather than claim either policy.
                         class: if pending { "ld-unknown" } else { "registration-check" },
                         "data-testid": "registration-toggle",
                         checked: is_on,
                         disabled: confirmed().is_none() || saving(),
                         onchange: toggle,
                     }
-                    span { "Allow new users to register" }
                 }
             }
             if let Some(err) = error() {

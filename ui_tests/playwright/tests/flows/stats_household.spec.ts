@@ -19,10 +19,11 @@ test.describe.configure({ mode: "serial" });
 const VIEWER = "household-viewer";
 const TARGET = "household-target";
 const PASSWORD = "household-stats-pw-01";
-const ACCOUNT = "/settings?section=account";
 const NOT_SHARING = "This reader isn't sharing their stats";
 
 const readerTrigger = (page: Page) => page.getByTestId("stats-reader-trigger");
+const shareSwitch = (page: Page) =>
+  page.getByRole("switch", { name: "Visible to your household" });
 
 let viewer: Page;
 let target: Page;
@@ -123,6 +124,8 @@ test("renders the stats page layout with a picker listing the sharing target", a
   );
   await expect(viewer.getByTestId("stats-hero-who")).toHaveCount(0);
   await expect(viewer.getByTestId("stats-empty")).toBeVisible();
+  // The caller's own page offers their sharing switch, on by default.
+  await expect(shareSwitch(viewer)).toBeChecked();
 
   // Options live in the DOM while the menu is `hidden` — asserted without
   // opening it (rule 04: a layout test takes no actions).
@@ -149,8 +152,9 @@ test("picking the target shows their figures under a third-person heading", asyn
   await expect(viewer.getByTestId("stats-in-progress")).toContainText(
     "Beta in the Series",
   );
-  await expect(viewer.getByTestId("stats-goal-set-link")).toHaveCount(0);
-  await expect(viewer.getByTestId("stats-daily-set-link")).toHaveCount(0);
+  // Someone else's sharing and goals aren't the viewer's to change.
+  await expect(viewer.getByTestId("stats-share-toggle")).toHaveCount(0);
+  await expect(viewer.getByTestId("stats-goals-link")).toHaveCount(0);
 
   await expectMutation(
     viewer,
@@ -263,12 +267,42 @@ test("a failed reader-list fetch still renders the hero, without a picker", asyn
   await viewer.unroute("**/api/rpc/household-readers");
 });
 
+test("a refused sharing change puts the switch back and says so", async () => {
+  await gotoReady(target, "/stats");
+  await target.route("**/api/rpc/account/share-stats", (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: "text/plain",
+      body: "forced failure",
+    }),
+  );
+  await expect(shareSwitch(target)).toBeChecked();
+  await expectMutation(
+    target,
+    {
+      method: "POST",
+      url: "/api/rpc/account/share-stats",
+      expectedBody: { enabled: false },
+      expectedStatus: 500,
+    },
+    async () => shareSwitch(target).click(),
+  );
+
+  await expect(target.getByTestId("stats-share-error")).toBeVisible();
+  await expect(shareSwitch(target)).toBeChecked();
+  await target.unroute("**/api/rpc/account/share-stats");
+
+  // Still shared, so the viewer still finds them.
+  await gotoReady(viewer, "/stats");
+  await expect(
+    viewer.getByTestId(`stats-reader-option-${targetId}`),
+  ).toHaveCount(1);
+});
+
 test("turning sharing off drops the target from the picker and refuses a direct link", async () => {
-  await gotoReady(target, ACCOUNT);
-  const shareSwitch = target.getByRole("switch", {
-    name: "Share stats with household",
-  });
-  await expect(shareSwitch).toBeChecked();
+  // Turned off from the target's own stats page, where its effect is seen.
+  await gotoReady(target, "/stats");
+  await expect(shareSwitch(target)).toBeChecked();
   await expectMutation(
     target,
     {
@@ -277,8 +311,9 @@ test("turning sharing off drops the target from the picker and refuses a direct 
       expectedBody: { enabled: false },
       expectedStatus: 200,
     },
-    async () => shareSwitch.click(),
+    async () => shareSwitch(target).click(),
   );
+  await expect(shareSwitch(target)).not.toBeChecked();
 
   // Options live in the DOM even while the menu is closed, so this doesn't
   // need to open it first.

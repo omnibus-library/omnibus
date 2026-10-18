@@ -75,3 +75,38 @@ export function failing(
 ): ExpectMutationOptions {
   return { ...contract, expectedStatus: 500 };
 }
+
+/**
+ * POST `body` as JSON from inside `page`, which must be on the app origin, and
+ * return the status. The browser attaches its own session cookie; Playwright's
+ * request client drops the Secure cookie on plain-http `127.0.0.1`.
+ */
+export async function postFromPage(
+  page: Page,
+  url: string,
+  body: unknown,
+): Promise<number> {
+  return page.evaluate(
+    async ([target, payload]) => {
+      const resp = await fetch(target, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      return resp.status;
+    },
+    [url, body] as const,
+  );
+}
+
+/**
+ * Methods of every request whose URL contains `path`, from now on, so a test
+ * can show a cancelled confirm sent nothing.
+ */
+export function recordRequests(page: Page, path: string): string[] {
+  const seen: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes(path)) seen.push(request.method());
+  });
+  return seen;
+}

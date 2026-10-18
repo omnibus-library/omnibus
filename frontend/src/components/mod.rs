@@ -71,9 +71,8 @@ pub use page_state::{PageError, PageNotFound};
 pub mod cover_tile;
 pub use cover_tile::{CoverTile, CoverTileKind};
 
-// Shared "credential card" status primitives (the configured dot line + the
-// save/clear/test result message) used by the Hardcover/Google Books secret
-// key cards, the SMTP relay card, and the account Kindle-email card.
+// Shared settings-card status helpers: the credential cards' configured dot
+// line and every settings card's save/clear/test result line.
 pub mod credential_card;
 
 // The mobile-only `←` "back to index" link shared by the series/author
@@ -135,6 +134,13 @@ pub use delete_book_dialog::DeleteBookDialog;
 
 #[cfg(not(feature = "mobile"))]
 pub mod search_palette;
+pub mod setting_row;
+pub mod unsaved;
+// Copy-to-clipboard with visible feedback, for values a reader carries
+// elsewhere (an endpoint URL, a one-time token secret).
+pub mod clipboard;
+// Dark / Black / Light / Sepia, shared by the user menu and Preferences.
+pub mod theme_picker;
 
 // F0.5 / issue #69 worker-progress indicator. Mounted on the settings
 // page today; the data plane is generic so future surfaces (e.g. the

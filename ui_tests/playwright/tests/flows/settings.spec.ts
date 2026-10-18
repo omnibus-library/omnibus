@@ -1,55 +1,53 @@
 import type { Page } from "@playwright/test";
+import { test as readerTest } from "../fixtures/readerFixtures";
 import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expectMutation, recordRequests } from "../utils/api";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
-// The Settings page is a permission-gated sidebar (#1324): each configuration
-// group lives behind a `?section=` slug, so tests navigate straight to the
-// section whose controls they exercise. The seeded dev user is an admin, so
-// every section is present.
-const SETTINGS_LIBRARY = "/settings?section=library";
-const SETTINGS_METADATA = "/settings?section=metadata";
-const SETTINGS_EMAIL = "/settings?section=email";
+// Settings splits in two shells. `/settings` holds each reader's own sections
+// and `/admin` the server's, each section behind a `?section=` slug, so tests
+// navigate straight to the section whose controls they exercise. The seeded
+// dev user is an admin, so every admin section is present.
+const ADMIN_SOURCES = "/admin?section=sources";
+const ADMIN_INTEGRATIONS = "/admin?section=integrations";
+const ADMIN_MAINTENANCE = "/admin?section=maintenance";
 
-const ebookInput = (page: Page) => page.getByLabel("Ebook Library Path");
+const ebookInput = (page: Page) => page.getByLabel("Ebook library path");
 const audiobookInput = (page: Page) =>
-  page.getByLabel("Audiobook Library Path");
+  page.getByLabel("Audiobook library path");
 const scanIntervalInput = (page: Page) =>
-  page.getByLabel("Automatic Rescan Interval (hours)");
-// Scope the Save button to the library-paths form — the page now also has a
-// "Suggestions (Hardcover)" card with its own Save button (F3.3), so an
-// unscoped `name: "Save"` would match both and trip Playwright strict mode.
+  page.getByLabel("Automatic rescan interval (hours)");
 const saveButton = (page: Page) =>
-  page.locator("#settings-form").getByRole("button", { name: "Save" });
-// The settings page now has two `role=status` regions — the inline form
-// status (this locator) and the worker-progress indicator above the Save
-// button (`data-testid="worker-status"`, issue #69). Target by testid so
-// the assertions stay specific to the form's "Settings saved." line.
+  page.getByRole("button", { name: "Save library settings" });
 const settingsStatus = (page: Page) => page.getByTestId("settings-status");
-// F3.3 Hardcover-key card controls — testid-scoped since the card has its
-// own "Save"/"Clear" buttons that would otherwise collide with the
-// library-paths form's "Save" button (see `saveButton` above).
-const hardcoverKeyInput = (page: Page) => page.getByLabel("Hardcover API Key");
+// The maintenance commands report on their own line, apart from the form's.
+const maintenanceStatus = (page: Page) =>
+  page.getByTestId("maintenance-status");
+// The key cards share Integrations with SMTP, so their controls are
+// testid-scoped rather than named "Save"/"Clear…".
+const hardcoverKeyInput = (page: Page) => page.getByLabel("Hardcover API key");
 const hardcoverSaveButton = (page: Page) => page.getByTestId("hardcover-save");
 const hardcoverClearButton = (page: Page) =>
   page.getByTestId("hardcover-clear");
+const hardcoverClearConfirm = (page: Page) =>
+  page.getByTestId("hardcover-clear-dialog-confirm");
 const hardcoverStatus = (page: Page) => page.getByTestId("hardcover-status");
 const hardcoverMessage = (page: Page) =>
   page.getByTestId("hardcover-key-status");
-// Google Books key card controls — testid-scoped for the same reason as the
-// Hardcover card (its own Save/Clear buttons would collide otherwise).
 const googleBooksKeyInput = (page: Page) =>
-  page.getByLabel("Google Books API Key");
+  page.getByLabel("Google Books API key");
 const googleBooksSaveButton = (page: Page) =>
   page.getByTestId("google-books-save");
 const googleBooksClearButton = (page: Page) =>
   page.getByTestId("google-books-clear");
+const googleBooksClearConfirm = (page: Page) =>
+  page.getByTestId("google-books-clear-dialog-confirm");
 const googleBooksStatus = (page: Page) =>
   page.getByTestId("google-books-status");
 const googleBooksMessage = (page: Page) =>
   page.getByTestId("google-books-key-status");
 
-test("renders the settings sidebar with every admin section", async ({
+test("renders the settings sidebar with the personal sections", async ({
   page,
 }) => {
   await gotoReady(page, "/settings");
@@ -58,70 +56,135 @@ test("renders the settings sidebar with every admin section", async ({
   await expect(
     page.getByRole("heading", { level: 1, name: "Settings" }),
   ).toBeVisible();
-  // The seeded admin sees the per-user items plus every server-config section.
-  await expect(page.getByTestId("settings-nav-account")).toBeVisible();
-  await expect(page.getByTestId("settings-nav-kindle")).toBeVisible();
-  await expect(page.getByTestId("settings-nav-kobo")).toBeVisible();
-  await expect(page.getByTestId("settings-nav-api-tokens")).toBeVisible();
-  await expect(page.getByTestId("settings-nav-library")).toBeVisible();
-  await expect(page.getByTestId("settings-nav-metadata")).toBeVisible();
-  await expect(page.getByTestId("settings-nav-email")).toBeVisible();
-  await expect(page.getByTestId("settings-nav-logs")).toBeVisible();
+  for (const slug of [
+    "profile",
+    "preferences",
+    "goals",
+    "devices",
+    "security",
+  ]) {
+    await expect(page.getByTestId(`settings-nav-${slug}`)).toBeVisible();
+  }
+  // An admin also gets the way into Administration.
+  await expect(page.getByTestId("settings-nav-admin")).toBeVisible();
   await expectNavVisible(page);
 });
 
-test("renders the Library Location section controls", async ({ page }) => {
-  await gotoReady(page, SETTINGS_LIBRARY);
+test("renders the administration sidebar with every admin section", async ({
+  page,
+}) => {
+  await gotoReady(page, "/admin");
 
-  await expect(page.getByTestId("settings-nav-library")).toHaveAttribute(
+  await expect(page.getByTestId("admin-layout")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Administration" }),
+  ).toBeVisible();
+  for (const slug of [
+    "sources",
+    "maintenance",
+    "metadata",
+    "cleanup",
+    "people",
+    "integrations",
+    "health",
+    "logs",
+  ]) {
+    await expect(page.getByTestId(`admin-nav-${slug}`)).toBeVisible();
+  }
+  await expect(page.getByTestId("admin-nav-sources")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(page.getByTestId("admin-nav-settings")).toBeVisible();
+  await expectNavVisible(page);
+});
+
+readerTest(
+  "refuses administration to a reader who is not an admin",
+  async ({ page }) => {
+    await gotoReady(page, "/admin?section=people");
+
+    await expect(page.getByTestId("admin-forbidden")).toBeVisible();
+    await expect(page.getByTestId("users-card")).toHaveCount(0);
+  },
+);
+
+test("renders the Sources section controls", async ({ page }) => {
+  await gotoReady(page, ADMIN_SOURCES);
+
+  await expect(page.getByTestId("admin-nav-sources")).toHaveAttribute(
     "aria-current",
     "page",
   );
   await expect(ebookInput(page)).toBeVisible();
   await expect(audiobookInput(page)).toBeVisible();
   await expect(scanIntervalInput(page)).toBeVisible();
-  await expect(saveButton(page)).toBeVisible();
-  await expect(page.getByTestId("scan-library")).toBeVisible();
-  await expect(page.getByTestId("rewrite-all-epubs")).toBeVisible();
+  await expect(saveButton(page)).toBeEnabled();
+  // The maintenance commands are their own section, not part of this form.
+  await expect(page.getByTestId("scan-library")).toHaveCount(0);
   await expect(settingsStatus(page)).toBeAttached();
   await expect(page.getByTestId("ebook-library-summary")).toBeAttached();
   await expect(page.getByTestId("audiobook-library-summary")).toBeAttached();
 });
 
-test("navigates between sections from the sidebar and updates the URL", async ({
+test("holds the library save after the saved settings fail to load", async ({
   page,
 }) => {
-  await gotoReady(page, "/settings");
+  await page.route("**/api/rpc/settings", (route) => {
+    if (route.request().method() === "GET") {
+      return route.fulfill({
+        status: 500,
+        contentType: "text/plain",
+        body: "forced failure",
+      });
+    }
+    return route.continue();
+  });
 
-  // Metadata Lookup — the Hardcover + Google Books key cards.
-  await page.getByTestId("settings-nav-metadata").click();
-  await expect(page).toHaveURL(/\/settings\?section=metadata$/);
+  await gotoReady(page, ADMIN_SOURCES);
+
+  // Blank fields saved over a failed read would clear both library paths.
+  await expect(saveButton(page)).toBeDisabled();
+  await expect(page.getByTestId("library-retry")).toBeVisible();
+  await expect(settingsStatus(page)).toHaveClass(/error/);
+});
+
+test("navigates between admin sections from the sidebar and updates the URL", async ({
+  page,
+}) => {
+  await gotoReady(page, "/admin");
+
+  await page.getByTestId("admin-nav-integrations").click();
+  await expect(page).toHaveURL(/\/admin\?section=integrations$/);
+  await expect(page.getByTestId("smtp-card")).toBeVisible();
   await expect(page.getByTestId("hardcover-key-card")).toBeVisible();
   await expect(page.getByTestId("google-books-key-card")).toBeVisible();
 
-  // Email delivery — the SMTP config card.
-  await page.getByTestId("settings-nav-email").click();
-  await expect(page).toHaveURL(/\/settings\?section=email$/);
-  await expect(page.getByTestId("smtp-card")).toBeVisible();
+  await page.getByTestId("admin-nav-people").click();
+  await expect(page).toHaveURL(/\/admin\?section=people$/);
+  await expect(page.getByTestId("users-card")).toBeVisible();
 
-  // Kindle — the per-user Send-to-Kindle destination address.
-  await page.getByTestId("settings-nav-kindle").click();
-  await expect(page).toHaveURL(/\/settings\?section=kindle$/);
-  await expect(page.getByTestId("account-kindle-card")).toBeVisible();
+  await page.getByTestId("admin-nav-health").click();
+  await expect(page).toHaveURL(/\/admin\?section=health$/);
+  await expect(page.getByTestId("admin-health-page")).toBeVisible();
 
-  // Kobo — the per-user wireless-sync device list.
-  await page.getByTestId("settings-nav-kobo").click();
-  await expect(page).toHaveURL(/\/settings\?section=kobo$/);
-  await expect(page.getByTestId("kobo-devices-card")).toBeVisible();
+  await page.getByTestId("admin-nav-maintenance").click();
+  await expect(page).toHaveURL(/\/admin\?section=maintenance$/);
+  await expect(page.getByTestId("maintenance-card")).toBeVisible();
+  await expect(page.getByTestId("background-tasks-card")).toBeVisible();
+
+  await page.getByTestId("admin-nav-logs").click();
+  await expect(page).toHaveURL(/\/admin\?section=logs$/);
+  await expect(page.getByTestId("logs-page")).toBeVisible();
 });
 
 test("saves the SMTP config and shows a configured status", async ({
   page,
 }) => {
-  await gotoReady(page, SETTINGS_EMAIL);
+  await gotoReady(page, ADMIN_INTEGRATIONS);
 
-  await page.getByLabel("SMTP Host").fill("smtp.example.com");
-  await page.getByLabel("From Email").fill("library@example.com");
+  await page.getByLabel("SMTP host").fill("smtp.example.com");
+  await page.getByLabel("From address").fill("library@example.com");
   await page.getByLabel("Password").fill("s3cret-pass");
 
   // Mock the save so the test never depends on a real SMTP relay and never
@@ -159,8 +222,141 @@ test("saves the SMTP config and shows a configured status", async ({
   await expect(page.getByTestId("smtp-status")).toContainText("Configured");
 });
 
+test("asks before clearing the SMTP settings", async ({ page }) => {
+  // Configured is instance state, so the read is stubbed rather than set.
+  await page.route("**/api/rpc/smtp", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({
+          json: {
+            configured: true,
+            host: "smtp.example.com",
+            port: 587,
+            username: null,
+            from_email: "library@example.com",
+            security: "starttls",
+            password_masked: "s3…ss",
+            source: "settings",
+          },
+        })
+      : route.continue(),
+  );
+  await gotoReady(page, ADMIN_INTEGRATIONS);
+  const clears = recordRequests(page, "/api/rpc/smtp/clear");
+
+  await page.getByTestId("smtp-clear").click();
+  await expect(page.getByTestId("smtp-clear-dialog")).toBeVisible();
+  await page.getByTestId("smtp-clear-dialog-cancel").click();
+
+  await expect(page.getByTestId("smtp-clear-dialog")).toHaveCount(0);
+  expect(clears).toEqual([]);
+});
+
+test("asks before leaving unsaved library paths", async ({ page }) => {
+  await gotoReady(page, ADMIN_SOURCES);
+  await expect(saveButton(page)).toBeEnabled();
+  await ebookInput(page).fill("/srv/unsaved-path");
+
+  await page.getByTestId("admin-nav-people").click();
+  await expect(page.getByTestId("unsaved-confirm")).toBeVisible();
+  await page.getByTestId("unsaved-keep").click();
+
+  await expect(page).toHaveURL(/section=sources$/);
+  await expect(ebookInput(page)).toHaveValue("/srv/unsaved-path");
+});
+
+test("asks before leaving a typed but unsaved key", async ({ page }) => {
+  await gotoReady(page, ADMIN_INTEGRATIONS);
+  await hardcoverKeyInput(page).fill("hc_unsaved");
+
+  await page.getByTestId("admin-nav-people").click();
+  await expect(page.getByTestId("unsaved-confirm")).toBeVisible();
+  await page.getByTestId("unsaved-discard").click();
+
+  await expect(page).toHaveURL(/section=people$/);
+});
+
+test("saves only the metadata order that changed", async ({ page }) => {
+  // The order is instance configuration other specs index under, so the
+  // write is answered here with the order it was sent.
+  await page.route("**/api/rpc/metadata-precedence/set", (route) =>
+    route.fulfill({ json: route.request().postDataJSON().precedence }),
+  );
+  await gotoReady(page, "/admin?section=metadata");
+  const save = page.getByTestId("metadata-precedence-save");
+  await expect(
+    page.getByTestId("ebook-metadata-precedence-item-0"),
+  ).toBeVisible();
+  await expect(save).toBeDisabled();
+  const writes = recordRequests(page, "/api/rpc/metadata-precedence/set");
+
+  await page.getByTestId("ebook-metadata-precedence-down-0").click();
+  await expect(save).toBeEnabled();
+  const { request } = await expectMutation(
+    page,
+    {
+      method: "POST",
+      url: "/api/rpc/metadata-precedence/set",
+      expectedStatus: 200,
+    },
+    async () => save.click(),
+  );
+
+  expect(request.postDataJSON().library).toBe("ebook");
+  await expect(page.getByTestId("metadata-precedence-status")).toHaveText(
+    "Metadata order saved.",
+  );
+  await expect(save).toBeDisabled();
+  expect(writes).toHaveLength(1);
+});
+
+test("follows an old settings link to its new home", async ({ page }) => {
+  await gotoReady(page, "/settings?section=users");
+  await expect(page).toHaveURL(/\/admin\?section=people$/);
+
+  await gotoReady(page, "/settings/cleanup/authors");
+  await expect(page).toHaveURL(/\/admin\/cleanup\/authors$/);
+});
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  /** Whether the page scrolls sideways. */
+  const scrollsSideways = (page: Page) =>
+    page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth,
+    );
+
+  test("pick a settings section from the list, then go back", async ({
+    page,
+  }) => {
+    await gotoReady(page, "/settings");
+    await expect(page.getByTestId("settings-nav-devices")).toBeVisible();
+    await expect(page.getByTestId("settings-back")).toBeHidden();
+    expect(await scrollsSideways(page)).toBe(false);
+
+    await page.getByTestId("settings-nav-devices").click();
+    await expect(page).toHaveURL(/\/settings\?section=devices$/);
+    await expect(page.getByTestId("account-kindle-card")).toBeVisible();
+    await expect(page.getByTestId("settings-nav-devices")).toBeHidden();
+    expect(await scrollsSideways(page)).toBe(false);
+
+    await page.getByTestId("settings-back").click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page.getByTestId("settings-nav-devices")).toBeVisible();
+  });
+
+  test("pick an administration section from the list", async ({ page }) => {
+    await gotoReady(page, "/admin");
+    await page.getByTestId("admin-nav-people").click();
+
+    await expect(page).toHaveURL(/\/admin\?section=people$/);
+    await expect(page.getByTestId("users-table")).toBeVisible();
+    expect(await scrollsSideways(page)).toBe(false);
+  });
+});
+
 test("saves library paths and shows a success status", async ({ page }) => {
-  await gotoReady(page, SETTINGS_LIBRARY);
+  await gotoReady(page, ADMIN_SOURCES);
 
   const ebookPath = "/tmp/omnibus-test-ebooks";
   const audiobookPath = "/tmp/omnibus-test-audiobooks";
@@ -184,14 +380,14 @@ test("saves library paths and shows a success status", async ({ page }) => {
     async () => saveButton(page).click(),
   );
 
-  await expect(settingsStatus(page)).toHaveText("Settings saved.");
+  await expect(settingsStatus(page)).toHaveText("Library settings saved.");
   await expect(settingsStatus(page)).toHaveClass(/success/);
 });
 
 test("saves an automatic rescan interval alongside the library paths", async ({
   page,
 }) => {
-  await gotoReady(page, SETTINGS_LIBRARY);
+  await gotoReady(page, ADMIN_SOURCES);
 
   const ebookPath = "/tmp/omnibus-test-ebooks";
   const audiobookPath = "/tmp/omnibus-test-audiobooks";
@@ -217,14 +413,14 @@ test("saves an automatic rescan interval alongside the library paths", async ({
     async () => saveButton(page).click(),
   );
 
-  await expect(settingsStatus(page)).toHaveText("Settings saved.");
+  await expect(settingsStatus(page)).toHaveText("Library settings saved.");
   await expect(settingsStatus(page)).toHaveClass(/success/);
 });
 
 test("shows an error status when the server rejects an invalid rescan interval", async ({
   page,
 }) => {
-  await gotoReady(page, SETTINGS_LIBRARY);
+  await gotoReady(page, ADMIN_SOURCES);
 
   // Fill every field explicitly (rather than relying on whatever an
   // earlier test left saved) so the expected request body below is
@@ -265,12 +461,14 @@ test("shows an error status when the server rejects an invalid rescan interval",
     async () => saveButton(page).click(),
   );
 
-  await expect(settingsStatus(page)).toHaveText("Failed to save settings.");
+  await expect(settingsStatus(page)).toContainText(
+    "Couldn’t save the library settings",
+  );
   await expect(settingsStatus(page)).toHaveClass(/error/);
 });
 
 test("shows an error status when saving settings fails", async ({ page }) => {
-  await gotoReady(page, SETTINGS_LIBRARY);
+  await gotoReady(page, ADMIN_SOURCES);
 
   await ebookInput(page).fill("/tmp/whatever");
   await audiobookInput(page).fill("/tmp/whatever-audio");
@@ -306,14 +504,16 @@ test("shows an error status when saving settings fails", async ({ page }) => {
     async () => saveButton(page).click(),
   );
 
-  await expect(settingsStatus(page)).toHaveText("Failed to save settings.");
+  await expect(settingsStatus(page)).toContainText(
+    "Couldn’t save the library settings",
+  );
   await expect(settingsStatus(page)).toHaveClass(/error/);
 });
 
 test("shows an error status when a manual library scan fails", async ({
   page,
 }) => {
-  await gotoReady(page, SETTINGS_LIBRARY);
+  await gotoReady(page, ADMIN_MAINTENANCE);
 
   await page.route("**/api/rpc/scan-library", (route) => {
     if (route.request().method() === "POST") {
@@ -332,16 +532,16 @@ test("shows an error status when a manual library scan fails", async ({
     async () => page.getByTestId("scan-library").click(),
   );
 
-  await expect(settingsStatus(page)).toContainText(
+  await expect(maintenanceStatus(page)).toContainText(
     "Failed to start library scan",
   );
-  await expect(settingsStatus(page)).toHaveClass(/error/);
+  await expect(maintenanceStatus(page)).toHaveClass(/error/);
 });
 
 test("bakes overrides into every EPUB and shows a queued status", async ({
   page,
 }) => {
-  await gotoReady(page, SETTINGS_LIBRARY);
+  await gotoReady(page, ADMIN_MAINTENANCE);
 
   await page.route("**/api/rpc/admin/rewrite-all-epubs", (route) => {
     if (route.request().method() === "POST") {
@@ -364,14 +564,16 @@ test("bakes overrides into every EPUB and shows a queued status", async ({
     async () => page.getByTestId("rewrite-all-epubs").click(),
   );
 
-  await expect(settingsStatus(page)).toHaveText("EPUB override bake queued.");
-  await expect(settingsStatus(page)).not.toHaveClass(/error/);
+  await expect(maintenanceStatus(page)).toHaveText(
+    "EPUB override bake queued.",
+  );
+  await expect(maintenanceStatus(page)).not.toHaveClass(/error/);
 });
 
 test("shows an error status when the bulk EPUB rewrite fails to queue", async ({
   page,
 }) => {
-  await gotoReady(page, SETTINGS_LIBRARY);
+  await gotoReady(page, ADMIN_MAINTENANCE);
 
   await page.route("**/api/rpc/admin/rewrite-all-epubs", (route) => {
     if (route.request().method() === "POST") {
@@ -394,20 +596,20 @@ test("shows an error status when the bulk EPUB rewrite fails to queue", async ({
     async () => page.getByTestId("rewrite-all-epubs").click(),
   );
 
-  await expect(settingsStatus(page)).toContainText(
+  await expect(maintenanceStatus(page)).toContainText(
     "Failed to start EPUB override bake",
   );
-  await expect(settingsStatus(page)).toHaveClass(/error/);
+  await expect(maintenanceStatus(page)).toHaveClass(/error/);
 });
 
 // ---------------------------------------------------------------------------
-// Action — F3.3 Hardcover key save/clear
+// Action — Hardcover and Google Books key save/clear
 // ---------------------------------------------------------------------------
 
 test("saves a Hardcover key, shows a connected status, then clears it", async ({
   page,
 }) => {
-  await gotoReady(page, SETTINGS_METADATA);
+  await gotoReady(page, ADMIN_INTEGRATIONS);
 
   const key = `hc_test_${Date.now()}`;
 
@@ -438,7 +640,11 @@ test("saves a Hardcover key, shows a connected status, then clears it", async ({
       expectedBody: { key: null },
       expectedStatus: 200,
     },
-    async () => hardcoverClearButton(page).click(),
+    async () => {
+      // Clearing asks first, since the key can't be read back to restore it.
+      await hardcoverClearButton(page).click();
+      await hardcoverClearConfirm(page).click();
+    },
   );
 
   await expect(hardcoverMessage(page)).toHaveText("Hardcover key cleared.");
@@ -450,7 +656,7 @@ test("saves a Hardcover key, shows a connected status, then clears it", async ({
 test("shows an error status when saving the Hardcover key fails", async ({
   page,
 }) => {
-  await gotoReady(page, SETTINGS_METADATA);
+  await gotoReady(page, ADMIN_INTEGRATIONS);
 
   // Only fail the write — the mount-time GET status fetch must still pass
   // through, otherwise the card never renders the fields under test.
@@ -479,8 +685,8 @@ test("shows an error status when saving the Hardcover key fails", async ({
     async () => hardcoverSaveButton(page).click(),
   );
 
-  await expect(hardcoverMessage(page)).toHaveText(
-    "Failed to save Hardcover key.",
+  await expect(hardcoverMessage(page)).toContainText(
+    "Couldn’t save the Hardcover key",
   );
   await expect(hardcoverMessage(page)).toHaveClass(/error/);
   // The failed save must not clear the admin's typed-in draft.
@@ -490,7 +696,7 @@ test("shows an error status when saving the Hardcover key fails", async ({
 test("saves a Google Books key, shows a connected status, then clears it", async ({
   page,
 }) => {
-  await gotoReady(page, SETTINGS_METADATA);
+  await gotoReady(page, ADMIN_INTEGRATIONS);
 
   const key = `AIza_test_${Date.now()}`;
 
@@ -521,7 +727,10 @@ test("saves a Google Books key, shows a connected status, then clears it", async
       expectedBody: { key: null },
       expectedStatus: 200,
     },
-    async () => googleBooksClearButton(page).click(),
+    async () => {
+      await googleBooksClearButton(page).click();
+      await googleBooksClearConfirm(page).click();
+    },
   );
 
   await expect(googleBooksMessage(page)).toHaveText(
@@ -535,7 +744,7 @@ test("saves a Google Books key, shows a connected status, then clears it", async
 test("shows an error status when saving the Google Books key fails", async ({
   page,
 }) => {
-  await gotoReady(page, SETTINGS_METADATA);
+  await gotoReady(page, ADMIN_INTEGRATIONS);
 
   // Only fail the write — the mount-time GET status fetch must still pass
   // through, otherwise the card never renders the fields under test.
@@ -564,8 +773,8 @@ test("shows an error status when saving the Google Books key fails", async ({
     async () => googleBooksSaveButton(page).click(),
   );
 
-  await expect(googleBooksMessage(page)).toHaveText(
-    "Failed to save Google Books key.",
+  await expect(googleBooksMessage(page)).toContainText(
+    "Couldn’t save the Google Books key",
   );
   await expect(googleBooksMessage(page)).toHaveClass(/error/);
   // The failed save must not clear the admin's typed-in draft.

@@ -1,7 +1,7 @@
 //! Send-to-Kindle REST handlers (mobile-facing). Mirrors the web server
 //! functions in `frontend/src/rpc/{kindle,account}.rs` and the SMTP admin RPCs
-//! in `frontend/src/rpc/settings.rs`: per-user send + Kindle-email, and the
-//! admin-only SMTP config (get / set / clear / test).
+//! in `frontend/src/rpc/settings.rs`: per-user send + Kindle-email, delivery
+//! readiness, and the admin-only SMTP config (get / set / clear / test).
 
 use axum::{
     extract::{Query, State},
@@ -55,7 +55,7 @@ pub(super) async fn post_send(
         Ok(None) => {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
-                "add your Kindle email on your account page before sending",
+                "add your Kindle email in Settings › Devices before sending",
             )
                 .into_response();
         }
@@ -185,7 +185,7 @@ pub(super) async fn post_smtp_test(admin: AdminUser, State(state): State<AppStat
         Ok(None) => {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
-                "set your Kindle email on your account page first, then send a test",
+                "set your Kindle email in Settings › Devices first, then send a test",
             )
                 .into_response();
         }

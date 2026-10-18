@@ -61,7 +61,14 @@ pub fn SuggestionCardView(
                         span { class: "crx-side-label", "{scanned_label(card.action)}" }
                         ScannedValue { card: card.clone() }
                     }
-                    div { class: "crx-arrow", "aria-hidden": "true", "\u{2192}" }
+                    div { class: "crx-arrow", "aria-hidden": "true",
+                        svg {
+                            width: "16", height: "16", view_box: "0 0 24 24", fill: "none",
+                            stroke: "currentColor", stroke_width: "2", stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            path { d: "M5 12h14M13 6l6 6-6 6" }
+                        }
+                    }
                     div { class: "crx-proposed-wrap",
                         span { class: "crx-side-label",
                             "{proposed_label(card.action)}"
@@ -81,7 +88,7 @@ pub fn SuggestionCardView(
                 img {
                     class: "cleanup-card-photo",
                     src: "{photo}",
-                    alt: "",
+                    alt: "Photo of {card.primary_name}",
                     "data-testid": "cleanup-card-photo",
                 }
             }
@@ -181,6 +188,7 @@ pub fn DecideBar(
             button {
                 class: "btn ghost",
                 "data-testid": "cleanup-skip",
+                disabled: in_flight,
                 onclick: move |_| on_skip.call(()),
                 "Skip (Space)"
             }
@@ -197,7 +205,7 @@ fn decide_note(edited: bool, editable: bool) -> &'static str {
     if edited {
         "your wording replaces the proposal"
     } else if editable {
-        "accepting applies at once \u{b7} undo from Logs"
+        "accepting applies at once \u{b7} you can undo it"
     } else {
         "accepting applies at once"
     }

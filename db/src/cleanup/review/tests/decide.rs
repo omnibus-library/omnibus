@@ -47,6 +47,55 @@ async fn decide_suggestion_applies_the_merge_and_stamps_an_accepted_row() {
 }
 
 #[tokio::test]
+async fn decide_suggestion_returns_the_cleanup_log_id_of_an_applied_accept() {
+    let pool = new_pool().await;
+    let authors = seed_authors_with_books(&pool, 2).await;
+    let admin_id = seed_reviewer(&pool).await;
+    let id = seed_suggestion(
+        &pool,
+        CleanupKind::Author,
+        CleanupAction::Merge,
+        &merge_payload(&[authors[0]], authors[1]),
+        Decision::Pending,
+    )
+    .await;
+
+    let log_id = decide_suggestion(&pool, id, Decision::Accepted, admin_id, None)
+        .await
+        .unwrap();
+
+    let logged: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM cleanup_log WHERE suggestion_id = ?")
+            .bind(id)
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+    assert!(logged.is_some());
+    assert_eq!(log_id, logged);
+}
+
+#[tokio::test]
+async fn decide_suggestion_returns_no_log_id_for_a_reject() {
+    let pool = new_pool().await;
+    let authors = seed_authors_with_books(&pool, 2).await;
+    let admin_id = seed_reviewer(&pool).await;
+    let id = seed_suggestion(
+        &pool,
+        CleanupKind::Author,
+        CleanupAction::Merge,
+        &merge_payload(&[authors[0]], authors[1]),
+        Decision::Pending,
+    )
+    .await;
+
+    let log_id = decide_suggestion(&pool, id, Decision::Rejected, admin_id, None)
+        .await
+        .unwrap();
+
+    assert_eq!(log_id, None);
+}
+
+#[tokio::test]
 async fn decide_suggestion_stamps_a_rejected_row_without_applying_anything() {
     let pool = new_pool().await;
     let authors = seed_authors_with_books(&pool, 2).await;
@@ -168,6 +217,26 @@ async fn decide_suggestion_writes_the_detected_proposal_when_nothing_was_edited(
         stored_title_override(&pool, &uuid).await.as_deref(),
         Some("Frankenstein")
     );
+}
+
+#[tokio::test]
+async fn decide_suggestion_log_id_undoes_the_rename_and_reopens_the_suggestion() {
+    let pool = new_pool().await;
+    let (uuid, id) = seed_rename(&pool).await;
+    let admin_id = seed_reviewer(&pool).await;
+    let log_id = decide_suggestion(&pool, id, Decision::Accepted, admin_id, None)
+        .await
+        .unwrap()
+        .unwrap();
+
+    crate::cleanup::undo(&pool, log_id).await.unwrap();
+
+    assert_eq!(stored_title_override(&pool, &uuid).await, None);
+    assert_eq!(stored_decision(&pool, id).await, "pending");
+    // Reopened, so it can be decided again rather than refused as reviewed.
+    decide_suggestion(&pool, id, Decision::Rejected, admin_id, None)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

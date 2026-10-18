@@ -3,16 +3,16 @@
 //! so it sits outside the windowed band and never moves when the period
 //! switcher does.
 //!
-//! **Read-only.** Goals are account configuration, and all three are set
-//! together in Settings → Account (`pages::account::goals`). This surface
-//! reports them; it does not edit them.
+//! The cluster itself only reports. Goals are account configuration, set
+//! together in Settings → Goals, which the hero's one [`GoalsLink`] opens.
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{DailyGoal, DailyGoals, ReadingGoal};
 
 use super::heatmap::{civil_from_days, day_number, days_from_civil};
-use crate::Route;
+use crate::pages::settings::sections::{SettingsSection, SettingsTarget};
+use crate::routes::link_target;
 
 /// Pluralize a unit noun. The captions read as sentences, so "1 book" has to
 /// win over a parenthesised "(s)".
@@ -88,16 +88,16 @@ fn pace_note(goal: &ReadingGoal, as_of_day: &str) -> Option<String> {
     })
 }
 
-/// The link every "no goal set" state offers — one destination, because there
-/// is one place goals are set.
+/// The hero's one goals control, a link to Settings → Goals worded by whether
+/// any goal is set yet.
 #[component]
-fn SetGoalsLink(label: &'static str, testid: &'static str) -> Element {
+pub(super) fn GoalsLink(any_set: bool) -> Element {
     rsx! {
         Link {
-            class: "st-goal-link",
-            "data-testid": testid,
-            to: Route::Settings { section: Some("account".to_string()) },
-            {label}
+            class: "st-goals-edit",
+            "data-testid": "stats-goals-link",
+            to: link_target(SettingsTarget::Personal(SettingsSection::Goals).route()),
+            if any_set { "Edit goals" } else { "Set goals" }
         }
     }
 }
@@ -106,14 +106,12 @@ fn SetGoalsLink(label: &'static str, testid: &'static str) -> Element {
 /// pace beside it. With no target it drops the ring and reports `finished` (the
 /// year's real count) under a "so far" qualifier, like the daily rows; a ring is
 /// a claim only a target can support. `year` and `as_of_day` are the server's.
-/// `editable` gates the "Set a goal" link: `false` on another reader's page.
 #[component]
 pub(super) fn AnnualGoalRing(
     goal: Option<ReadingGoal>,
     finished: Option<i64>,
     year: String,
     as_of_day: String,
-    #[props(default = true)] editable: bool,
 ) -> Element {
     // The kicker carries the timeframe rather than repeating it under the
     // figure: "This year" over "22 books" over "2026 so far" said the same
@@ -169,15 +167,9 @@ pub(super) fn AnnualGoalRing(
                             span { class: "st-year-bare-unit", {plural("book", n)} }
                         }
                     }
-                    if editable {
-                        SetGoalsLink { label: "Set a goal", testid: "stats-goal-set-link" }
-                    }
                 } else {
                     p { class: "st-year-invite", "data-testid": "stats-goal-invite",
                         "No target for the year yet."
-                    }
-                    if editable {
-                        SetGoalsLink { label: "Set a goal", testid: "stats-goal-set-link" }
                     }
                 }
             }
@@ -185,15 +177,11 @@ pub(super) fn AnnualGoalRing(
     }
 }
 
-/// The standing daily goals card: the pages and minutes rows, and the one link
-/// to where they are set. `editable` gates the "Set goals" link, same as
-/// [`AnnualGoalRing`]'s. `DailyGoals::unzoned_seconds` is always zero (rule 10),
-/// so there is no unplaceable-sessions disclosure.
+/// The standing daily goals card: the pages and minutes rows.
+/// `DailyGoals::unzoned_seconds` is always zero (rule 10), so there is no
+/// unplaceable-sessions disclosure.
 #[component]
-pub(super) fn DailyGoalsCard(
-    daily: DailyGoals,
-    #[props(default = true)] editable: bool,
-) -> Element {
+pub(super) fn DailyGoalsCard(daily: DailyGoals) -> Element {
     // "Every day" promises a recurrence, which is only true once something
     // recurs; with no target at all the rows are just what happened today.
     let neither = daily.pages.is_none() && daily.minutes.is_none();
@@ -222,12 +210,6 @@ pub(super) fn DailyGoalsCard(
                 goal: daily.minutes.clone(),
                 today: daily.minutes_today,
                 alone: neither,
-            }
-            // One short call to action while either kind is still unset, at the
-            // card's foot rather than in each row: there is one place to set
-            // them, so there is one thing to click.
-            if editable && (daily.pages.is_none() || daily.minutes.is_none()) {
-                SetGoalsLink { label: "Set goals", testid: "stats-daily-set-link" }
             }
         }
     }

@@ -147,6 +147,15 @@ test("renders the stats page layout", async ({ page }) => {
   // the switcher entirely.
   await expect(page.getByTestId("stats-hero")).toBeVisible();
   await expect(page.getByTestId("stats-current-streak")).toContainText(/\d/);
+  // The reader's own page carries the two preferences it reports on: who may
+  // see it, and the goals it measures against.
+  await expect(
+    page.getByRole("switch", { name: "Visible to your household" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("stats-goals-link")).toHaveAttribute(
+    "href",
+    "/settings?section=goals",
+  );
 
   // The scope switch, then the windowed band with its own pills. All four
   // periods are offered, Month pre-selected (the default range).
@@ -1128,13 +1137,11 @@ async function clearAllGoals(request: APIRequestContext) {
   }
 }
 
-test("the stats page reports goals but never edits them", async ({
+test("open the goals section from the hero to edit set goals", async ({
   page,
   request,
 }) => {
-  // Goals are account configuration and all three are set together in
-  // Settings → Account. The page that *reports* them must not grow an editor
-  // back: that split is the whole reason there is one Edit button.
+  // Goals are edited in Settings; the hero only reports them and links there.
   await request.put("/api/stats/goal", { data: { target: 24 } });
   await request.put("/api/stats/goal/daily", {
     data: { kind: "pages", target: 30 },
@@ -1160,17 +1167,22 @@ test("the stats page reports goals but never edits them", async ({
   );
 
   for (const gone of [
-    "stats-goal-edit",
-    "stats-goal-input",
-    "stats-goal-save",
-    "stats-daily-pages-edit",
-    "stats-daily-minutes-edit",
+    "stats-goals-edit",
+    "stats-goals-editor",
+    "stats-goal-set-link",
+    "stats-daily-set-link",
   ]) {
     await expect(page.getByTestId(gone)).toHaveCount(0);
   }
+
+  const link = page.getByTestId("stats-goals-link");
+  await expect(link).toHaveText("Edit goals");
+  await link.click();
+  await expect(page).toHaveURL(/\/settings\?section=goals$/);
+  await expect(page.getByTestId("goal-books-input")).toHaveValue("24");
 });
 
-test("with no goals the hero reports the real figures and links to the editor", async ({
+test("with no goals the hero reports the real figures and links to the goals section", async ({
   page,
   request,
 }) => {
@@ -1195,9 +1207,11 @@ test("with no goals the hero reports the real figures and links to the editor", 
     "Pages a day",
   );
 
-  // Both halves link to the one place goals are set.
-  await expect(page.getByTestId("stats-daily-set-link")).toBeVisible();
-  await page.getByTestId("stats-goal-set-link").click();
-  await expect(page).toHaveURL(/\/settings\?section=account$/);
+  // One link for every goal, into the Goals section of Settings.
+  const link = page.getByTestId("stats-goals-link");
+  await expect(link).toHaveText("Set goals");
+  await expect(page.getByTestId("stats-daily-set-link")).toHaveCount(0);
+  await link.click();
+  await expect(page).toHaveURL(/\/settings\?section=goals$/);
   await expect(page.getByTestId("account-goals-card")).toBeVisible();
 });

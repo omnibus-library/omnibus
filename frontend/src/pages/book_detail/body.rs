@@ -287,7 +287,9 @@ fn SuggestionsConnectCard(is_admin: bool) -> Element {
             }
             if is_admin {
                 Link {
-                    to: Route::Settings { section: Some("metadata".into()) },
+                    to: crate::routes::link_target(
+                        crate::pages::admin::sections::AdminSection::Integrations.route(),
+                    ),
                     class: "btn primary sm",
                     "data-testid": "suggestions-connect-link",
                     "Add Hardcover API key \u{2192}"

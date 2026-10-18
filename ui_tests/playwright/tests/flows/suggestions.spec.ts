@@ -103,13 +103,13 @@ test("shows a connect prompt when no Hardcover key is configured", async ({
       "Add a Hardcover API key to pull read-alikes for this book.",
     ),
   ).toBeVisible();
-  // The seeded dev user is an admin, so the connect card deep-links to the
-  // Metadata Lookup settings section where the Hardcover key lives (#1324).
+  // The seeded dev user is an admin, so the connect card deep-links to
+  // Administration › Integrations, where the Hardcover key lives.
   const connectLink = page.getByTestId("suggestions-connect-link");
   await expect(connectLink).toBeVisible();
   await expect(connectLink).toHaveAttribute(
     "href",
-    "/settings?section=metadata",
+    "/admin?section=integrations",
   );
 });
 

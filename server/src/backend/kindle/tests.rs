@@ -122,6 +122,7 @@ async fn smtp_test_returns_422_when_admin_has_no_kindle_email() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(body_text(response).await.contains("Settings › Devices"));
 }
 
 // ── Per-user Kindle email ────────────────────────────────────────
@@ -197,6 +198,7 @@ async fn send_returns_422_when_user_has_no_kindle_email() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(body_text(response).await.contains("Settings › Devices"));
 }
 
 #[tokio::test]

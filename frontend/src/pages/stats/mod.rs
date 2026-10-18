@@ -25,6 +25,7 @@ mod library;
 mod monthly;
 mod picker;
 mod reading_now;
+mod share;
 mod superlatives;
 mod tiles;
 
@@ -38,6 +39,7 @@ use library::LibrarySizeHero;
 use monthly::MonthlyChart;
 use picker::{viewing, ReaderPicker, Viewing};
 use reading_now::{InProgressCard, RecentlyFinishedCard};
+use share::ShareStatsToggle;
 use superlatives::StandoutsGrid;
 use tiles::HeadlineTiles;
 
@@ -213,8 +215,16 @@ fn ReaderStats(
 
     rsx! {
         div { class: "st-page",
-            StatsHero { summary: standing.clone(), who: who.clone(),
-                ReaderPicker { readers: reader_list, selected: user }
+            StatsHero {
+                summary: standing.clone(),
+                who: who.clone(),
+                div { class: "st-hero-bar",
+                    ReaderPicker { readers: reader_list, selected: user }
+                    // Only the caller's own sharing is theirs to change.
+                    if who.is_none() {
+                        ShareStatsToggle {}
+                    }
+                }
             }
             ScopeSwitch { scope }
             div { class: "st-body",

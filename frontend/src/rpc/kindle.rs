@@ -4,13 +4,13 @@
 //! result. Returning right away keeps the request well under the server's 30s
 //! timeout guard, so a hung SMTP relay never leaves the request open.
 
-use dioxus::fullstack::post;
+use dioxus::fullstack::{get, post};
 use dioxus::prelude::*;
 #[cfg(feature = "server")]
 use omnibus_db as db;
-use omnibus_shared::KindleSendStatus;
 #[cfg(feature = "server")]
 use omnibus_shared::ProgressState;
+use omnibus_shared::{KindleDelivery, KindleSendStatus};
 
 #[cfg(feature = "server")]
 use super::{internal_rpc_error, AuthUser, PoolExt, WorkerExt};
@@ -48,7 +48,7 @@ async fn send_to_kindle(
         .map_err(|e| internal_rpc_error("get kindle email", e))?;
     let Some(recipient) = recipient else {
         return Err(ServerFnError::new(
-            "add your Kindle email on your account page before sending",
+            "add your Kindle email in Settings › Devices before sending",
         ));
     };
     let smtp_configured = db::effective_smtp_config(pool)
@@ -93,6 +93,24 @@ pub async fn rpc_kindle_send_status(task_id: u64) -> Result<Option<KindleSendSta
             ProgressState::Done { .. } => KindleSendStatus::Sent,
             ProgressState::Failed { message } => KindleSendStatus::Failed { message },
         }))
+}
+
+/// Whether Send-to-Kindle can deliver, and the sender address a reader must
+/// approve at Amazon. Never carries the relay's host or credentials.
+#[get("/api/rpc/kindle/delivery", pool: PoolExt, _user: AuthUser)]
+pub async fn rpc_kindle_delivery() -> Result<KindleDelivery> {
+    Ok(kindle_delivery(&pool.0).await?)
+}
+
+/// Server-side body of [`rpc_kindle_delivery`].
+#[cfg(feature = "server")]
+async fn kindle_delivery(pool: &sqlx::SqlitePool) -> Result<KindleDelivery, ServerFnError> {
+    let config = db::effective_smtp_config(pool)
+        .await
+        .map_err(|e| internal_rpc_error("get smtp config", e))?;
+    Ok(KindleDelivery {
+        sender_address: config.map(|c| c.from_email),
+    })
 }
 
 // `server`-gated: exercises the precondition chain and the task-owner

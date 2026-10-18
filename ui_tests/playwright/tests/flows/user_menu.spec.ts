@@ -8,9 +8,9 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 // The user menu replaces the old top-bar cluster (ThemeToggle, Settings
 // link, Log out button) with a single avatar trigger that opens a dropdown.
 // Some rows are forward-looking stubs (disabled <a>); real wiring covers
-// recent progress, Settings, Switch user, Sign out, and theme selection.
-// Account, "Admin · server health", and Notifications were folded into the
-// unified Settings sidebar (#1324), so they no longer appear here.
+// recent progress, Settings, Administration (admins only), Switch user, Sign
+// out, and theme selection. Account and Notifications were folded into
+// Settings (#1324), and server health into Administration (#2763).
 
 test.beforeAll(async ({ request }) => {
   await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
@@ -123,8 +123,18 @@ test("Settings link routes to the settings page", async ({ page }) => {
   await page.getByRole("link", { name: "Settings" }).click();
   // `routes::link_target` trims the bare trailing `?` dioxus-router writes
   // for the absent optional query param (#2256); the section-less URL lands
-  // on the default Account section.
+  // on the default Profile section.
   await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByTestId("account-profile-card")).toBeVisible();
+});
+
+test("an admin's Administration row routes to /admin", async ({ page }) => {
+  await gotoReady(page, "/");
+  await page.getByTestId("user-menu-trigger").click();
+  const admin = page.getByTestId("user-menu-admin");
+  await expect(admin).toHaveText("Administration");
+  await admin.click();
+  await expect(page).toHaveURL(/\/admin$/);
 });
 
 test("the dropdown no longer surfaces the folded-in rows (#1324)", async ({
@@ -134,12 +144,14 @@ test("the dropdown no longer surfaces the folded-in rows (#1324)", async ({
   await page.getByTestId("user-menu-trigger").click();
   const panel = page.getByTestId("user-menu-panel");
   await expect(panel).toBeVisible();
-  // Account / Admin · server health / Notifications now live under Settings.
-  // Scope to the open panel so unrelated page text can't flake the assertion.
+  // Account / Notifications live under Settings, server health under
+  // Administration. Scope to the open panel so unrelated page text can't
+  // flake the assertion.
   await expect(panel.getByRole("link", { name: "Account" })).toHaveCount(0);
   await expect(
     panel.getByRole("link", { name: "Admin · server health" }),
   ).toHaveCount(0);
+  await expect(panel.getByText("Server health")).toHaveCount(0);
   await expect(panel.getByText("Notifications")).toHaveCount(0);
 });
 
@@ -252,12 +264,12 @@ test("Sign out clears the session and routes to /login", async ({ page }) => {
   await expect(page).toHaveURL(/\/login$/);
 });
 
-test("the Edit link opens the Account settings section", async ({ page }) => {
+test("the Edit link opens the Profile settings section", async ({ page }) => {
   await gotoReady(page, "/");
   await page.getByTestId("user-menu-trigger").click();
 
   await page.getByRole("link", { name: "Edit" }).click();
 
-  await expect(page).toHaveURL(/\/settings\?section=account$/);
+  await expect(page).toHaveURL(/\/settings\?section=profile$/);
   await expect(page.getByTestId("account-profile-card")).toBeVisible();
 });
