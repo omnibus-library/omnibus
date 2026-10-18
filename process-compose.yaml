@@ -8,6 +8,12 @@ processes:
     # .claude/runtime/ — see the script for the LAN-exposure caveat.
     command: nix develop .#web --command scripts/dev-serve-fg.sh
 
+  react:
+    # The React client (frontend-js/): waits for the server process, then runs
+    # Vite on the port it reserved, proxying /api to it.
+    command: nix develop .#web --command scripts/react-dev-fg.sh
+    disabled: true
+
   android:
     command: nix develop .#mobile --command dx serve --platform android --package omnibus-mobile
     disabled: true
