@@ -252,7 +252,7 @@ test.describe("sources section", () => {
     const { library } = adminPage;
 
     await test.step("open the sources section with the read failing", async () => {
-      await library.stubSettingsUnreadable();
+      await adminPage.forceServerError(settings.load());
       await adminPage.goto("sources");
     });
 

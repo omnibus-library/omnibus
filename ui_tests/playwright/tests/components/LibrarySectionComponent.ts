@@ -61,19 +61,6 @@ export class LibrarySectionComponent extends BaseComponent {
     );
   }
 
-  /** Fails the read of the saved settings, which the form fills itself from. */
-  async stubSettingsUnreadable(): Promise<void> {
-    await this.page.route(settingsUrls.save, (route) =>
-      route.request().method() === "GET"
-        ? route.fulfill({
-            status: 500,
-            contentType: "text/plain",
-            body: "forced failure",
-          })
-        : route.continue(),
-    );
-  }
-
   /** Checks the form reports its save as done. */
   async assertSaved(): Promise<void> {
     await expect(this.status).toHaveText("Library settings saved.");

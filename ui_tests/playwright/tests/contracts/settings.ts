@@ -1,6 +1,10 @@
 import type { MetadataProvider } from "../data/metadataKeys";
 import type { LibrarySettings } from "../data/settings";
-import { type ExpectMutationOptions, post } from "../utils/api";
+import {
+  type ExpectMutationOptions,
+  type ForcedRequest,
+  post,
+} from "../utils/api";
 
 /** The endpoints the Administration sections post to. */
 export const settingsUrls = {
@@ -19,6 +23,9 @@ export const settingsUrls = {
 
 /** The writes an admin makes from the Administration sections. */
 export const settings = {
+  /** The read the library form fills itself from. */
+  load: (): ForcedRequest => ({ method: "GET", url: settingsUrls.save }),
+
   saveLibrary: (
     library: LibrarySettings,
     status = 200,
