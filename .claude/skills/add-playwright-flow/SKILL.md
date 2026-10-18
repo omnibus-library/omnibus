@@ -136,11 +136,11 @@ locator half: see [04d](../../rules/04d-playwright-page-objects.md#lint).
 | You need | Put it in |
 |---|---|
 | a locator or a UI action | the page or component object |
-| a read of rendered content (an iframe, geometry) or a `page.on` listener | a page or component query or `record*` method |
+| a read of rendered content (an iframe, geometry) or a `page.on` listener | a page or component query or `record*` method (a locator's edges: `topEdge`/`bottomEdge` in `utils/dom.ts`) |
 | an API call to seed, clean up or read back | an `apiRequests/` class, injected from `fixtures/requestFixtures.ts` |
 | a mutation's method, URL, body and status | a `contracts/` builder |
 | a payload type or a unique test value | `data/` |
-| data that must be deleted after the test | a fixture that cleans up after `use` (`cleanupSet` in `fixtures/lifecycle.ts`), in `fixtures/dataFixtures.ts`, or `fixtures/accountFixtures.ts` for account state |
+| data that must be deleted after the test | a `cleanupSet` fixture (`fixtures/lifecycle.ts`) in `dataFixtures.ts`, or `accountFixtures.ts` for account state |
 
 ## 7. Run
 

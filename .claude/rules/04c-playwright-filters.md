@@ -48,7 +48,7 @@ with the hand-picked `filterShelf` only that reader owns.
 - A state that exists only between two events (a tile re-enabled before it
   leaves) is recorded by a `record*` observer (`recordRemoveButtonStates`) and
   asserted afterwards, never polled for.
-- The shelf a spec edits comes from `ownShelf`, which deletes it after the
-  test, so the specs that count members never see it.
+- The shelf a spec edits comes from `ownShelf`, whose `created*ShelfIds` set
+  deletes it after the test, so the specs that count members never see it.
 - The mobile sheet has no Playwright lane: it is mobile-only, so its logic is
   pure functions tested under `--features mobile`.
