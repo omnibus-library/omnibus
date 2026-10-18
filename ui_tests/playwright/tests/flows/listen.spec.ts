@@ -173,9 +173,9 @@ test.describe("listen page", () => {
     // Direct-play books flip hls_ready in <10 ms, so without the hold the
     // overlay is never observable. The hold also proves hls_ready was reset: if
     // it leaked as true from the first book, the overlay would never appear.
-    await test.step("hold the second audiobook's manifest", async () => {
-      await listenPage.holdManifest(uuid2);
-    });
+    const release =
+      await test.step("hold the second audiobook's manifest", () =>
+        listenPage.holdManifest(uuid2));
 
     await test.step("switch to the second audiobook", async () => {
       await listenPage.switchToAudiobook(uuid2);
@@ -192,7 +192,7 @@ test.describe("listen page", () => {
     });
 
     await test.step("release the manifest", async () => {
-      listenPage.releaseHeld();
+      release();
       await listenPage.waitUntilPlayerReady();
     });
 
@@ -440,11 +440,13 @@ test.describe("listen page", () => {
       // Without the hold, the seek lands within milliseconds on a local server
       // and the test would pass whether or not the transport was seeded. The
       // held media request never idles, so the page is not settled on.
-      await test.step("open the player while the media bytes are held", async () => {
-        await listenPage.holdAudioParts();
-        await listenPage.gotoUnsettled(uuid);
-        await listenPage.waitUntilPlayerReady();
-      });
+      const release =
+        await test.step("open the player while the media bytes are held", async () => {
+          const release = await listenPage.holdAudioParts();
+          await listenPage.gotoUnsettled(uuid);
+          await listenPage.waitUntilPlayerReady();
+          return release;
+        });
 
       // Bug #2458: the scrub row read "0:00 · <full duration> remaining" for a
       // book the detail page had just offered to resume from 18 s.
@@ -463,7 +465,7 @@ test.describe("listen page", () => {
       // The position the element settles on is the one already on screen, so
       // the readout confirms rather than jumps.
       await test.step("release the media bytes", async () => {
-        listenPage.releaseHeld();
+        release();
         await expect
           .poll(async () => (await listenPage.scrubStamps()).elapsed, {
             message:

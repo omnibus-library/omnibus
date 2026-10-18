@@ -15,10 +15,10 @@ import { ShelfGalleryComponent } from "../components/ShelfGalleryComponent";
 import { TabBarComponent } from "../components/TabBarComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { ebooksUrls } from "../contracts/ebooks";
-import { shelvesUrls } from "../contracts/shelves";
 import { thumbsUrls } from "../contracts/thumbs";
 import type { ShelfRef } from "../data/shelves";
 import { expect } from "../fixtures/test";
+import { holdRequests } from "../utils/api";
 import { BasePage } from "./BasePage";
 
 export class LibraryPage extends BasePage {
@@ -71,9 +71,6 @@ export class LibraryPage extends BasePage {
   readonly loading: Locator;
   readonly noMatchesMessage: Locator;
   readonly clearFiltersButton: Locator;
-
-  private releaseHeldShelfReads: (() => void) | undefined;
-  private releaseHeldThumbnails: (() => void) | undefined;
 
   constructor(page: Page) {
     super(page);
@@ -278,36 +275,13 @@ export class LibraryPage extends BasePage {
     await this.shelfEditButton.click();
   }
 
-  /** Parks every thumbnail until `releaseThumbnails`, so a cover can be seen mid-load. */
-  async holdThumbnails(): Promise<void> {
-    const held = new Promise<void>((resolve) => {
-      this.releaseHeldThumbnails = resolve;
-    });
-    await this.page.route(thumbsUrls.any, async (route) => {
-      await held;
-      await route.continue();
-    });
-  }
-
-  async releaseThumbnails(): Promise<void> {
-    this.releaseHeldThumbnails?.();
-    await this.page.unrouteAll({ behavior: "wait" });
-  }
-
-  /** Parks every shelf member read until `releaseShelfReads`. */
-  async holdShelfReads(): Promise<void> {
-    const held = new Promise<void>((resolve) => {
-      this.releaseHeldShelfReads = resolve;
-    });
-    await this.page.route(shelvesUrls.page, async (route) => {
-      await held;
-      await route.continue();
-    });
-  }
-
-  async releaseShelfReads(): Promise<void> {
-    this.releaseHeldShelfReads?.();
-    await this.page.unrouteAll({ behavior: "wait" });
+  /** Parks every thumbnail, so a cover can be seen mid-load; the release lets them through. */
+  async holdThumbnails(): Promise<() => Promise<void>> {
+    const release = await holdRequests(this.page, thumbsUrls.any);
+    return async () => {
+      release();
+      await this.page.unrouteAll({ behavior: "wait" });
+    };
   }
 
   async clearFilters(): Promise<void> {

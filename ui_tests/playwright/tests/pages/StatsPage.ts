@@ -5,7 +5,7 @@ import { TopNavComponent } from "../components/TopNavComponent";
 import { statsUrls } from "../contracts/stats";
 import type { StatsRange, StatsTile } from "../data/stats";
 import { expect } from "../fixtures/test";
-import { isPostTo } from "../utils/api";
+import { holdRequests, isPostTo } from "../utils/api";
 import { BasePage } from "./BasePage";
 
 /**
@@ -87,8 +87,6 @@ export class StatsPage extends BasePage {
   readonly compositionPublishers: Locator;
   readonly compositionPublisherBars: Locator;
   readonly compositionGhosted: Locator;
-
-  private releaseHeldFetch: () => void = () => {};
 
   constructor(page: Page) {
     super(page);
@@ -272,30 +270,28 @@ export class StatsPage extends BasePage {
   }
 
   /**
-   * Holds the page's own in-progress fetch until `releaseOwnInProgress`; the
-   * user menu's one-card call goes through, so the nav still settles.
+   * Holds the page's own in-progress fetch; the user menu's one-card call goes
+   * through, so the nav still settles. The release waits for the answer to land.
    */
-  async holdOwnInProgress(): Promise<void> {
-    const held = new Promise<void>((resolve) => {
-      this.releaseHeldFetch = resolve;
-    });
-    await this.page.route(statsUrls.recentProgress, async (route) => {
-      const { limit, user_id }: { limit: number; user_id: number | null } =
-        route.request().postDataJSON();
-      if (user_id === null && limit > 1) await held;
-      await route.continue();
-    });
-  }
-
-  /** Lets the held fetch go and waits for its answer to reach the page. */
-  async releaseOwnInProgress(): Promise<void> {
-    const landed = this.page.waitForResponse(
-      (response) =>
-        isPostTo(statsUrls.recentProgress)(response) &&
-        response.request().postDataJSON().user_id === null,
+  async holdOwnInProgress(): Promise<() => Promise<void>> {
+    const release = await holdRequests(
+      this.page,
+      statsUrls.recentProgress,
+      (request) => {
+        const { limit, user_id }: { limit: number; user_id: number | null } =
+          request.postDataJSON();
+        return user_id === null && limit > 1;
+      },
     );
-    this.releaseHeldFetch();
-    await landed;
+    return async () => {
+      const landed = this.page.waitForResponse(
+        (response) =>
+          isPostTo(statsUrls.recentProgress)(response) &&
+          response.request().postDataJSON().user_id === null,
+      );
+      release();
+      await landed;
+    };
   }
 
   /** Checks the URL names `reader`'s page and the page has settled on it. */

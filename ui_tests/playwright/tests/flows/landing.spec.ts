@@ -62,10 +62,12 @@ test.describe("library page", () => {
   test("keep a cover hidden until its image has decoded", async ({
     libraryPage,
   }) => {
-    await test.step("open the library while every thumbnail is held", async () => {
-      await libraryPage.holdThumbnails();
-      await libraryPage.gotoUnsettled();
-    });
+    const release =
+      await test.step("open the library while every thumbnail is held", async () => {
+        const release = await libraryPage.holdThumbnails();
+        await libraryPage.gotoUnsettled();
+        return release;
+      });
 
     await test.step("check the cover waits, transparent and unstamped", async () => {
       await expect(libraryPage.firstCover).toBeAttached();
@@ -74,7 +76,7 @@ test.describe("library page", () => {
     });
 
     await test.step("release the thumbnails", async () => {
-      await libraryPage.releaseThumbnails();
+      await release();
     });
 
     await test.step("check the cover is stamped and shows", async () => {

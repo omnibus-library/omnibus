@@ -156,9 +156,8 @@ test.describe("household stats", () => {
   }) => {
     // The page's own in-progress fetch (user_id null, with its own limit; the
     // user menu makes a separate limit-1 call) resolves after the switch below.
-    await test.step("hold your own in-progress fetch", async () => {
-      await statsPage.holdOwnInProgress();
-    });
+    const release = await test.step("hold your own in-progress fetch", () =>
+      statsPage.holdOwnInProgress());
 
     await test.step("open the stats page", async () => {
       await statsPage.gotoUnsettled();
@@ -177,7 +176,7 @@ test.describe("household stats", () => {
     });
 
     await test.step("let the held fetch land", async () => {
-      await statsPage.releaseOwnInProgress();
+      await release();
     });
 
     await test.step("check the target's card survived the stale answer", async () => {

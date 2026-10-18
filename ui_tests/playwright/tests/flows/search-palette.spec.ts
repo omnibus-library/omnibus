@@ -147,11 +147,13 @@ test.describe("search palette", () => {
     }) => {
       const palette = libraryPage.topNav.searchPalette;
 
-      await test.step("search for a setting while the library search is held", async () => {
-        await libraryPage.goto();
-        await palette.holdLibrarySearch();
-        await palette.search("kobo");
-      });
+      const release =
+        await test.step("search for a setting while the library search is held", async () => {
+          await libraryPage.goto();
+          const release = await palette.holdLibrarySearch();
+          await palette.search("kobo");
+          return release;
+        });
 
       await test.step("check the setting shows without the result count", async () => {
         await expect(palette.row("setting")).toHaveCount(1);
@@ -169,7 +171,7 @@ test.describe("search palette", () => {
       });
 
       await test.step("release the library search", async () => {
-        await palette.releaseLibrarySearch();
+        await release();
       });
     });
 

@@ -8,9 +8,8 @@ test.describe("pre-hydration page", () => {
     libraryPage,
     preHydration,
   }) => {
-    await test.step("hold the client download", async () => {
-      await preHydration.hold();
-    });
+    const release = await test.step("hold the client download", () =>
+      preHydration.hold());
 
     await test.step("open the server-rendered library", async () => {
       await libraryPage.gotoBeforeHydration();
@@ -27,7 +26,7 @@ test.describe("pre-hydration page", () => {
     });
 
     await test.step("release the download", async () => {
-      await preHydration.release();
+      await release();
       await expect(libraryPage.loading).toHaveCount(0);
     });
   });
@@ -36,9 +35,8 @@ test.describe("pre-hydration page", () => {
     authorsIndexPage,
     preHydration,
   }) => {
-    await test.step("hold the client download", async () => {
-      await preHydration.hold();
-    });
+    const release = await test.step("hold the client download", () =>
+      preHydration.hold());
 
     await test.step("open the server-rendered authors page", async () => {
       await authorsIndexPage.gotoBeforeHydration();
@@ -51,7 +49,7 @@ test.describe("pre-hydration page", () => {
     });
 
     await test.step("release the download", async () => {
-      await preHydration.release();
+      await release();
       await expect(preHydration.authorsLoader).toHaveCount(0);
       await expect(authorsIndexPage.filterField).toBeVisible();
     });
@@ -61,10 +59,11 @@ test.describe("pre-hydration page", () => {
     libraryPage,
     preHydration,
   }) => {
-    await test.step("save a theme and hold the client download", async () => {
-      await libraryPage.presetTheme("sepia");
-      await preHydration.hold();
-    });
+    const release =
+      await test.step("save a theme and hold the client download", async () => {
+        await libraryPage.presetTheme("sepia");
+        return preHydration.hold();
+      });
 
     await test.step("open the server-rendered library", async () => {
       await libraryPage.gotoBeforeHydration();
@@ -81,7 +80,7 @@ test.describe("pre-hydration page", () => {
     });
 
     await test.step("release the download", async () => {
-      await preHydration.release();
+      await release();
       await expect(libraryPage.topNav.themeRoot).toHaveAttribute(
         "data-theme",
         "sepia",

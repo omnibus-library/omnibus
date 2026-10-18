@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { searchUrls } from "../contracts/search";
+import { holdRequests } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
 /** The command palette, opened from the top nav's search button. */
@@ -9,8 +10,6 @@ export class SearchPaletteComponent extends BaseComponent {
   readonly resultCountText: Locator;
   readonly booksGroupHeading: Locator;
   readonly errorMessage: Locator;
-
-  private releaseHeldSearch: (() => void) | undefined;
 
   constructor(
     page: Page,
@@ -80,20 +79,13 @@ export class SearchPaletteComponent extends BaseComponent {
     await this.input.press("ArrowUp");
   }
 
-  /** Parks the library search until `releaseLibrarySearch`; settings match in the browser. */
-  async holdLibrarySearch(): Promise<void> {
-    const held = new Promise<void>((resolve) => {
-      this.releaseHeldSearch = resolve;
-    });
-    await this.page.route(searchUrls.palette, async (route) => {
-      await held;
-      await route.continue();
-    });
-  }
-
-  async releaseLibrarySearch(): Promise<void> {
-    this.releaseHeldSearch?.();
-    await this.page.unrouteAll({ behavior: "wait" });
+  /** Parks the library search; settings match in the browser. The release lets it through. */
+  async holdLibrarySearch(): Promise<() => Promise<void>> {
+    const release = await holdRequests(this.page, searchUrls.palette);
+    return async () => {
+      release();
+      await this.page.unrouteAll({ behavior: "wait" });
+    };
   }
 
   async submit(): Promise<void> {

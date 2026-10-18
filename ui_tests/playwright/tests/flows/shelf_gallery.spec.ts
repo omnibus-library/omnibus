@@ -273,12 +273,14 @@ test.describe("shelf gallery", () => {
         await picker.pick(alpha);
       });
 
-      await test.step("add a book while the member refetch is held", async () => {
-        await libraryPage.holdShelfReads();
-        await expectMutation(shelves.addBooks(shelf.id, [alpha]), () =>
-          picker.submit(),
-        );
-      });
+      const release =
+        await test.step("add a book while the member refetch is held", async () => {
+          const release = await libraryPage.filterBar.holdShelfReads();
+          await expectMutation(shelves.addBooks(shelf.id, [alpha]), () =>
+            picker.submit(),
+          );
+          return release;
+        });
 
       // The grid keeps its books, but the stale list can't feed the picker.
       await test.step("check Add books waits for the refetch", async () => {
@@ -293,7 +295,7 @@ test.describe("shelf gallery", () => {
       });
 
       await test.step("release the refetch", async () => {
-        await libraryPage.releaseShelfReads();
+        await release();
       });
 
       await test.step("check the grid lists both books and the tile is back", async () => {

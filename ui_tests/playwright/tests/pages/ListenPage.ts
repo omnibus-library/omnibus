@@ -5,6 +5,7 @@ import { TopNavComponent } from "../components/TopNavComponent";
 import { crossFormatUrls } from "../contracts/crossFormat";
 import { playbackUrls } from "../contracts/playback";
 import { expect } from "../fixtures/test";
+import { holdRequests } from "../utils/api";
 import { BasePage } from "./BasePage";
 
 /** What the shared `<audio>` element reports, with `position` in book time across parts. */
@@ -61,7 +62,6 @@ export class ListenPage extends BasePage {
 
   private readonly scrubTimes: Locator;
   private readonly openPanel: Locator;
-  private releaseHeldRequests = (): void => {};
 
   constructor(page: Page) {
     super(page);
@@ -394,21 +394,17 @@ export class ListenPage extends BasePage {
   }
 
   /** Holds the media bytes, so `loadedmetadata` cannot fire while a test reads the transport. */
-  async holdAudioParts(): Promise<void> {
-    this.releaseHeldRequests = await this.hold("**/api/audiobooks/**/parts/**");
+  async holdAudioParts(): Promise<() => void> {
+    return holdRequests(this.page, "**/api/audiobooks/**/parts/**");
   }
 
   /** Holds a book's manifest, so its preparing overlay stays up long enough to observe. */
-  async holdManifest(bookUuid: string): Promise<void> {
-    this.releaseHeldRequests = await this.hold(
+  async holdManifest(bookUuid: string): Promise<() => void> {
+    return holdRequests(
+      this.page,
       (url) =>
         url.pathname.includes("/manifest") && url.pathname.includes(bookUuid),
     );
-  }
-
-  /** Lets the requests a hold has parked, and any later ones, through. */
-  releaseHeld(): void {
-    this.releaseHeldRequests();
   }
 
   /** Answers the saved-speed read with none, a state the server can only produce once per book and account. */
@@ -463,20 +459,6 @@ export class ListenPage extends BasePage {
       new RegExp(`/listen/${bookUuid}${query}$`),
     );
     await expect(this.chapterMap).toBeVisible();
-  }
-
-  private async hold(
-    url: string | ((url: URL) => boolean),
-  ): Promise<() => void> {
-    let release = (): void => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await this.page.route(url, async (route) => {
-      await gate;
-      await route.continue();
-    });
-    return release;
   }
 
   private async fireAudioCallback(

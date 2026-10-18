@@ -703,13 +703,15 @@ test.describe("library filters", () => {
         await expect(readerShelfPage.count).toHaveText("0");
       });
 
-      await test.step("drop the PDF clause while its read is held", async () => {
-        await readerShelfPage.holdShelfReads(1);
-        await filterBar.removeClause("format");
-        await expect
-          .poll(() => readerShelfPage.heldShelfReads())
-          .toBeGreaterThan(0);
-      });
+      const release =
+        await test.step("drop the PDF clause while its read is held", async () => {
+          const release = await filterBar.holdShelfReads(1);
+          await filterBar.removeClause("format");
+          await expect
+            .poll(() => filterBar.heldShelfReads())
+            .toBeGreaterThan(0);
+          return release;
+        });
 
       // The answer on screen belongs to the filters the reader just dropped.
       await test.step("check the old empty answer is gone", async () => {
@@ -719,7 +721,7 @@ test.describe("library filters", () => {
       });
 
       await test.step("release the read and check the new answer", async () => {
-        await readerShelfPage.releaseShelfReads();
+        await release();
         await readerShelfPage.assertShowsMembers(
           titlesOf(["compiler-compendium-2"]),
         );
@@ -750,21 +752,23 @@ test.describe("library filters", () => {
         await expect(readerShelfPage.refetchError).toBeVisible();
       });
 
-      await test.step("drop the PDF clause while its read is held", async () => {
-        await readerShelfPage.restoreShelfReads();
-        await readerShelfPage.holdShelfReads(1);
-        await filterBar.removeClause("format");
-        await expect
-          .poll(() => readerShelfPage.heldShelfReads())
-          .toBeGreaterThan(0);
-      });
+      const release =
+        await test.step("drop the PDF clause while its read is held", async () => {
+          await readerShelfPage.restoreShelfReads();
+          const release = await filterBar.holdShelfReads(1);
+          await filterBar.removeClause("format");
+          await expect
+            .poll(() => filterBar.heldShelfReads())
+            .toBeGreaterThan(0);
+          return release;
+        });
 
       await test.step("check the old error is gone", async () => {
         await expect(readerShelfPage.refetchError).toHaveCount(0);
       });
 
       await test.step("release the read and check the new answer", async () => {
-        await readerShelfPage.releaseShelfReads();
+        await release();
         await readerShelfPage.assertShowsMembers(
           titlesOf(["compiler-compendium-2"]),
         );
@@ -774,7 +778,6 @@ test.describe("library filters", () => {
 
     test("do not call a selected shelf empty on the landing page while a changed filter is out", async ({
       readerLibraryPage,
-      readerShelfPage,
       readerExpectMutation,
       filterShelf,
     }) => {
@@ -795,13 +798,15 @@ test.describe("library filters", () => {
         await expect(readerLibraryPage.clearFiltersButton).toBeVisible();
       });
 
-      await test.step("drop the PDF clause while its read is held", async () => {
-        await readerShelfPage.holdShelfReads(1);
-        await filterBar.removeClause("format");
-        await expect
-          .poll(() => readerShelfPage.heldShelfReads())
-          .toBeGreaterThan(0);
-      });
+      const release =
+        await test.step("drop the PDF clause while its read is held", async () => {
+          const release = await filterBar.holdShelfReads(1);
+          await filterBar.removeClause("format");
+          await expect
+            .poll(() => filterBar.heldShelfReads())
+            .toBeGreaterThan(0);
+          return release;
+        });
 
       await test.step("check the old empty answer is gone", async () => {
         await expect(readerLibraryPage.clearFiltersButton).toHaveCount(0);
@@ -812,7 +817,7 @@ test.describe("library filters", () => {
       });
 
       await test.step("release the read and check the new answer", async () => {
-        await readerShelfPage.releaseShelfReads();
+        await release();
         await readerLibraryPage.assertShowsBooks(["compiler-compendium-2"]);
       });
     });
@@ -884,20 +889,22 @@ test.describe("library filters", () => {
         );
       });
 
-      await test.step("remove a book while the narrowed re-read is held", async () => {
-        await readerShelfPage.recordRemoveButtonStates(target);
-        await readerShelfPage.holdShelfReads(1);
-        // The members refetch answers before the narrowed one is released.
-        await readerExpectMutation(shelves.removeBook(), () =>
-          readerShelfPage.removeMember(target),
-        );
-        await expect
-          .poll(() => readerShelfPage.heldShelfReads())
-          .toBeGreaterThan(0);
-      });
+      const release =
+        await test.step("remove a book while the narrowed re-read is held", async () => {
+          await readerShelfPage.recordRemoveButtonStates(target);
+          const release = await readerShelfPage.filterBar.holdShelfReads(1);
+          // The members refetch answers before the narrowed one is released.
+          await readerExpectMutation(shelves.removeBook(), () =>
+            readerShelfPage.removeMember(target),
+          );
+          await expect
+            .poll(() => readerShelfPage.filterBar.heldShelfReads())
+            .toBeGreaterThan(0);
+          return release;
+        });
 
       await test.step("release the read and check the book left", async () => {
-        await readerShelfPage.releaseShelfReads();
+        await release();
         await expect(readerShelfPage.removeButton(target)).toHaveCount(0);
       });
 

@@ -1,4 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
+import { holdRequests } from "../utils/api";
 import { waitForHydration } from "../utils/nav";
 import { BaseComponent } from "./BaseComponent";
 
@@ -14,8 +15,6 @@ export class PreHydrationComponent extends BaseComponent {
   readonly zeroBooksText: Locator;
   readonly authorsLoader: Locator;
 
-  private releaseDownload = () => {};
-
   constructor(page: Page) {
     super(page);
     this.hydratedMarker = page.locator("html[data-hydrated]");
@@ -27,20 +26,12 @@ export class PreHydrationComponent extends BaseComponent {
       .filter({ hasText: "Gathering every author" });
   }
 
-  /** Holds the client's wasm download until `release`. */
-  async hold(): Promise<void> {
-    const gate = new Promise<void>((resolve) => {
-      this.releaseDownload = resolve;
-    });
-    await this.page.route(CLIENT_WASM, async (route) => {
-      await gate;
-      await route.continue();
-    });
-  }
-
-  /** Lets the download go and waits for the client to hydrate the page. */
-  async release(): Promise<void> {
-    this.releaseDownload();
-    await waitForHydration(this.page);
+  /** Holds the client's wasm download; the release lets it go and waits for the page to hydrate. */
+  async hold(): Promise<() => Promise<void>> {
+    const release = await holdRequests(this.page, CLIENT_WASM);
+    return async () => {
+      release();
+      await waitForHydration(this.page);
+    };
   }
 }

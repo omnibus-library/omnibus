@@ -465,10 +465,12 @@ test.describe("book detail page", () => {
       const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
       const { fromSameHand } = bookDetailPage;
 
-      await test.step("hold the author fetch and open the book", async () => {
-        await fromSameHand.holdAuthorFetch();
-        await bookDetailPage.gotoUnsettled(uuid);
-      });
+      const release =
+        await test.step("hold the author fetch and open the book", async () => {
+          const release = await fromSameHand.holdAuthorFetch();
+          await bookDetailPage.gotoUnsettled(uuid);
+          return release;
+        });
 
       await test.step("check the block says it is still looking", async () => {
         await expect(fromSameHand.loadingNote).toBeVisible();
@@ -477,7 +479,7 @@ test.describe("book detail page", () => {
       });
 
       await test.step("release the fetch", async () => {
-        fromSameHand.releaseAuthorFetch();
+        release();
       });
 
       await test.step("check the real row replaces the note", async () => {

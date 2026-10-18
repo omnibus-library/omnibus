@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { authorBlockUrls } from "../contracts/authorBlock";
+import { holdRequests } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
 /** The More stop's author block: the other books by the book's lead author. */
@@ -10,8 +11,6 @@ export class FromSameHandComponent extends BaseComponent {
   readonly emptyMessage: Locator;
   readonly loadingNote: Locator;
   readonly onlyBookNote: Locator;
-
-  private releaseHeldFetch?: () => void;
 
   constructor(page: Page) {
     super(page);
@@ -35,18 +34,8 @@ export class FromSameHandComponent extends BaseComponent {
     await this.tiles.first().click();
   }
 
-  /** Holds the author fetch open until `releaseAuthorFetch` lets it through. */
-  async holdAuthorFetch(): Promise<void> {
-    const held = new Promise<void>((resolve) => {
-      this.releaseHeldFetch = resolve;
-    });
-    await this.page.route(authorBlockUrls.author, async (route) => {
-      await held;
-      await route.continue();
-    });
-  }
-
-  releaseAuthorFetch(): void {
-    this.releaseHeldFetch?.();
+  /** Holds the author fetch open until the returned release lets it through. */
+  async holdAuthorFetch(): Promise<() => void> {
+    return holdRequests(this.page, authorBlockUrls.author);
   }
 }

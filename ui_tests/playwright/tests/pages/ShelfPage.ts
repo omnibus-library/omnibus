@@ -3,7 +3,7 @@ import { AddBooksModalComponent } from "../components/AddBooksModalComponent";
 import { EditShelfModalComponent } from "../components/EditShelfModalComponent";
 import { FilterBarComponent } from "../components/FilterBarComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
-import { shelvesUrls } from "../contracts/shelves";
+import { clauseCount, shelvesUrls } from "../contracts/shelves";
 import { expect } from "../fixtures/test";
 import { isPostTo } from "../utils/api";
 import { BasePage } from "./BasePage";
@@ -45,9 +45,6 @@ export class ShelfPage extends BasePage {
   readonly filteredEmptyMessage: Locator;
   readonly refetchError: Locator;
   readonly clearFiltersButton: Locator;
-
-  private heldReads = 0;
-  private releaseHeldReads = () => {};
 
   constructor(page: Page) {
     super(page);
@@ -180,8 +177,7 @@ export class ShelfPage extends BasePage {
     const isShelfRead = isPostTo(shelvesUrls.page);
     const reread = this.page.waitForResponse(
       (response) =>
-        isShelfRead(response) &&
-        response.request().postDataJSON().filters.clauses.length === 0,
+        isShelfRead(response) && clauseCount(response.request()) === 0,
     );
     await this.removeButton(bookUuid).click();
     await reread;
@@ -216,33 +212,6 @@ export class ShelfPage extends BasePage {
   /** Lets member reads through again after a `fail*ShelfReads` stub. */
   async restoreShelfReads(): Promise<void> {
     await this.page.unroute(shelvesUrls.page);
-  }
-
-  /** Parks the member reads that carry exactly `clauses` filter clauses. */
-  async holdShelfReads(clauses: number): Promise<void> {
-    this.heldReads = 0;
-    const gate = new Promise<void>((resolve) => {
-      this.releaseHeldReads = resolve;
-    });
-    await this.page.route(shelvesUrls.page, async (route) => {
-      const { filters } = route.request().postDataJSON();
-      if (filters.clauses.length === clauses) {
-        this.heldReads += 1;
-        await gate;
-      }
-      await route.continue();
-    });
-  }
-
-  /** How many parked reads have reached the route. */
-  heldShelfReads(): number {
-    return this.heldReads;
-  }
-
-  /** Lets the parked reads through and drops every route on the page. */
-  async releaseShelfReads(): Promise<void> {
-    this.releaseHeldReads();
-    await this.page.unrouteAll({ behavior: "wait" });
   }
 
   /** Records whether a member's remove button is disabled on each DOM change. */

@@ -77,6 +77,26 @@ export function failing(
 }
 
 /**
+ * Parks the requests to `url` that `parks` accepts until the returned release
+ * runs; requests that arrive after it pass straight through.
+ */
+export async function holdRequests(
+  page: Page,
+  url: string | RegExp | ((url: URL) => boolean),
+  parks: (request: Request) => boolean = () => true,
+): Promise<() => void> {
+  let release = (): void => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(url, async (route) => {
+    if (parks(route.request())) await gate;
+    await route.continue();
+  });
+  return release;
+}
+
+/**
  * Methods of every request to `url` from now on, so a test can show a
  * cancelled confirm sent nothing.
  */

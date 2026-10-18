@@ -1,3 +1,4 @@
+import type { Request } from "@playwright/test";
 import type { ExpectMutationOptions } from "../utils/api";
 
 /** The shelf endpoints the library and shelf pages call. */
@@ -10,6 +11,11 @@ export const shelvesUrls = {
   removeBook: /\/api\/rpc\/shelves\/remove-book(?:\?|$)/,
   page: /\/api\/rpc\/shelves\/page(?:\?|$)/,
 };
+
+/** How many filter clauses a shelf member read carries. */
+export function clauseCount(request: Request): number {
+  return request.postDataJSON().filters.clauses.length;
+}
 
 function shelfWrite(
   url: RegExp,
