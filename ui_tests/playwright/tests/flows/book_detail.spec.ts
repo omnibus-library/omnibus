@@ -110,13 +110,13 @@ test.describe("book detail page", () => {
     test("show one continuous flow with numbered section rules by default", async ({
       bookDetailPage,
       request,
-      setScrollStops,
+      presetScrollStops,
     }) => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const { stops } = bookDetailPage;
 
       await test.step("open the book with the preference off", async () => {
-        await setScrollStops(false);
+        await presetScrollStops(false);
         await bookDetailPage.goto(uuid);
       });
 
@@ -159,7 +159,7 @@ test.describe("book detail page", () => {
       bookDetailPage,
       settingsPage,
       request,
-      setScrollStops,
+      presetScrollStops,
       expectMutation,
     }) => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
@@ -168,7 +168,7 @@ test.describe("book detail page", () => {
       // Arrive first, so the app-wide viewer already holds the old value, the
       // state the stale read came from.
       await test.step("open the book with the preference off", async () => {
-        await setScrollStops(false);
+        await presetScrollStops(false);
         await bookDetailPage.goto(uuid);
         await expect(stops.flow).toBeAttached();
       });
@@ -194,14 +194,14 @@ test.describe("book detail page", () => {
     test("flip between the flow and the stops with the page's own switch", async ({
       bookDetailPage,
       request,
-      setScrollStops,
+      presetScrollStops,
       expectMutation,
     }) => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const { stops } = bookDetailPage;
 
       await test.step("open the book with the preference off", async () => {
-        await setScrollStops(false);
+        await presetScrollStops(false);
         await bookDetailPage.goto(uuid);
         await expect(stops.modeToggle).toBeEnabled();
         await expect(stops.modeToggle).toHaveAttribute("aria-pressed", "false");
@@ -252,14 +252,14 @@ test.describe("book detail page", () => {
     test("keep the reading and say so when a flip is refused", async ({
       bookDetailPage,
       request,
-      setScrollStops,
+      presetScrollStops,
       expectMutation,
     }) => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const { stops } = bookDetailPage;
 
       await test.step("open the book with the preference off", async () => {
-        await setScrollStops(false);
+        await presetScrollStops(false);
         await bookDetailPage.goto(uuid);
         await bookDetailPage.forceServerError(account.scrollStops(true));
       });
@@ -281,13 +281,13 @@ test.describe("book detail page", () => {
     test("install the marquee's scroll glue when the preference is on", async ({
       bookDetailPage,
       request,
-      setScrollStops,
+      presetScrollStops,
     }) => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const { stops } = bookDetailPage;
 
       await test.step("open the book with the preference on", async () => {
-        await setScrollStops(true);
+        await presetScrollStops(true);
         await bookDetailPage.goto(uuid);
         await expect(stops.snap).toBeAttached();
       });
@@ -307,13 +307,13 @@ test.describe("book detail page", () => {
     test("restore the snap-stop marquee when the preference is on", async ({
       bookDetailPage,
       request,
-      setScrollStops,
+      presetScrollStops,
     }) => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const { stops } = bookDetailPage;
 
       await test.step("open the book with the preference on", async () => {
-        await setScrollStops(true);
+        await presetScrollStops(true);
         await bookDetailPage.goto(uuid);
       });
 

@@ -112,6 +112,7 @@ type DataFixtures = {
   adminWishlist: ShelfRef;
   dualFormatUuid: string;
   createdShelfIds: Set<number>;
+  createdReaderShelfIds: Set<number>;
   ownShelf: (
     label: string,
     shelf?: Partial<NewShelf>,
@@ -139,6 +140,7 @@ type DataFixtures = {
   seriesId: (name: string) => Promise<number>;
   linkedAuthorNames: () => Promise<string[]>;
   deletedAuthors: Set<string>;
+  createdAuthorPhotoIds: Set<number>;
   uploadAuthorPhoto: (authorId: number) => Promise<void>;
   recentBook: (
     format: "epub" | "audio",
@@ -321,26 +323,35 @@ export const test = base.extend<DataFixtures>({
       (id) => `delete shelf ${id}`,
     ),
 
-  // The admin's shelves join `createdShelfIds`; the reader's are deleted here.
-  ownShelf: async (
-    { shelvesRequests, readerShelvesRequests, createdShelfIds },
-    use,
-  ) =>
+  createdReaderShelfIds: async ({ readerShelvesRequests }, use) =>
     cleanupSet(
-      (readerShelfIds) =>
-        use(async (label, shelf, owner = "admin") => {
-          const requests =
-            owner === "admin" ? shelvesRequests : readerShelvesRequests;
-          const req = buildShelf(label, shelf);
-          const created = await requests.postShelf(req);
-          await expect(created, `create shelf ${req.name}`).toBeOK();
-          const { id } = await created.json();
-          (owner === "admin" ? createdShelfIds : readerShelfIds).add(id);
-          return { id, name: req.name };
-        }),
+      use,
       (id: number) => readerShelvesRequests.deleteShelf(id),
-      (id) => `delete shelf ${id}`,
+      (id) => `delete the reader's shelf ${id}`,
     ),
+
+  ownShelf: async (
+    {
+      shelvesRequests,
+      readerShelvesRequests,
+      createdShelfIds,
+      createdReaderShelfIds,
+    },
+    use,
+  ) => {
+    await use(async (label, shelf, owner = "admin") => {
+      const [requests, ids] =
+        owner === "admin"
+          ? [shelvesRequests, createdShelfIds]
+          : [readerShelvesRequests, createdReaderShelfIds];
+      const req = buildShelf(label, shelf);
+      const created = await requests.postShelf(req);
+      await expect(created, `create shelf ${req.name}`).toBeOK();
+      const { id } = await created.json();
+      ids.add(id);
+      return { id, name: req.name };
+    });
+  },
 
   // Holds the lock from setup to teardown, because a reader takes none and
   // the merged fixture must be restored before the next writer starts.
@@ -603,17 +614,22 @@ export const test = base.extend<DataFixtures>({
     }
   },
 
-  uploadAuthorPhoto: async ({ authorsRequests }, use) => {
-    const uploaded = new Set<number>();
+  createdAuthorPhotoIds: async ({ authorsRequests }, use) =>
+    cleanupSet(
+      use,
+      (id: number) => authorsRequests.deletePhoto(id),
+      (id) => `delete the photo of author ${id}`,
+    ),
+
+  uploadAuthorPhoto: async (
+    { authorsRequests, createdAuthorPhotoIds },
+    use,
+  ) => {
     await use(async (authorId) => {
       const put = await authorsRequests.putPhoto(authorId);
-      expect(put.status(), `upload a photo for author ${authorId}`).toBe(204);
-      uploaded.add(authorId);
+      await expect(put, `upload a photo for author ${authorId}`).toBeOK();
+      createdAuthorPhotoIds.add(authorId);
     });
-    for (const authorId of uploaded) {
-      const deleted = await authorsRequests.deletePhoto(authorId);
-      await expect(deleted, `delete the photo of author ${authorId}`).toBeOK();
-    }
   },
 
   recentBook: async ({ request, ebooksRequests }, use) => {

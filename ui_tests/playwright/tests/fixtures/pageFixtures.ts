@@ -58,7 +58,6 @@ type PageFixtures = {
   readerSettingsPage: SettingsPage;
   readerShelfPage: ShelfPage;
   readerSeriesPage: SeriesPage;
-  secondReaderSettingsPage: SettingsPage;
   settingsPage: SettingsPage;
   adminPage: AdminPage;
   readerAdminPage: AdminPage;
@@ -147,10 +146,6 @@ export const test = base.extend<PageFixtures>({
 
   readerSeriesPage: async ({ readerPage }, use) => {
     await use(new SeriesPage(readerPage));
-  },
-
-  secondReaderSettingsPage: async ({ secondReaderPage }, use) => {
-    await use(new SettingsPage(secondReaderPage));
   },
 
   settingsPage: async ({ page }, use) => {

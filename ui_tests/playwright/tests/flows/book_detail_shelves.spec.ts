@@ -416,7 +416,7 @@ test.describe("book detail shelves", () => {
   test("open the picker over the whole window when the page snaps between stops", async ({
     request,
     readerBookDetailPage,
-    setScrollStops,
+    presetScrollStops,
   }) => {
     const { stops, shelfPicker } = readerBookDetailPage;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
@@ -424,7 +424,7 @@ test.describe("book detail shelves", () => {
     // The switches that write the preference belong to the settings and book
     // page specs; this one opens its book with a full load, so it reads the value.
     await test.step("turn scroll stops on", async () => {
-      await setScrollStops(true, "reader");
+      await presetScrollStops(true, "reader");
     });
 
     await test.step("open the book and jump to the last stop", async () => {
@@ -457,13 +457,13 @@ test.describe("book detail shelves", () => {
   test("hide the back-to-the-book pill while the picker is open", async ({
     request,
     readerBookDetailPage,
-    setScrollStops,
+    presetScrollStops,
   }) => {
     const { stops } = readerBookDetailPage;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
     await test.step("turn scroll stops off", async () => {
-      await setScrollStops(false, "reader");
+      await presetScrollStops(false, "reader");
     });
 
     await test.step("open the book and jump to the last stop", async () => {

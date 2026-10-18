@@ -125,11 +125,9 @@ type AccountFixtures = {
   readerShelvesRequests: ShelvesRequests;
   readerAccountRequests: AccountRequests;
   readerScanRequests: ScanRequests;
+  accountFor: (owner: Owner) => AccountRequests;
   secondReaderPage: Page;
   secondReaderRequest: APIRequestContext;
-  secondReaderAccountRequests: AccountRequests;
-  secondReaderStatsRequests: StatsRequests;
-  secondReaderProgressRequests: ProgressRequests;
   adminSession: SignedInSession;
   presetGoals: (goals?: { books?: number; pages?: number }) => Promise<void>;
   presetShareStats: (enabled: boolean) => Promise<void>;
@@ -145,7 +143,7 @@ type AccountFixtures = {
   seedUser: () => Promise<SeededUser>;
   anonymousRequest: APIRequestContext;
   anonymousLogViewerRequests: LogViewerRequests;
-  setScrollStops: (enabled: boolean, owner?: Owner) => Promise<void>;
+  presetScrollStops: (enabled: boolean, owner?: Owner) => Promise<void>;
   presetStackSeries: (enabled: boolean, owner?: Owner) => Promise<void>;
   householdTarget: ReaderAccount;
 };
@@ -199,6 +197,13 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
     await use(new ScanRequests(readerRequest));
   },
 
+  // The one place an owner picks whose account a preset writes to.
+  accountFor: async ({ accountRequests, readerAccountRequests }, use) => {
+    await use((owner) =>
+      owner === "admin" ? accountRequests : readerAccountRequests,
+    );
+  },
+
   secondReaderPage: async ({ browser, secondReaderAccount, viewport }, use) => {
     await usePageAs(browser, secondReaderAccount, viewport, use);
   },
@@ -214,18 +219,6 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
     );
     await use(context);
     await context.dispose();
-  },
-
-  secondReaderAccountRequests: async ({ secondReaderRequest }, use) => {
-    await use(new AccountRequests(secondReaderRequest));
-  },
-
-  secondReaderStatsRequests: async ({ secondReaderRequest }, use) => {
-    await use(new StatsRequests(secondReaderRequest));
-  },
-
-  secondReaderProgressRequests: async ({ secondReaderRequest }, use) => {
-    await use(new ProgressRequests(secondReaderRequest));
   },
 
   adminSession: async ({ request }, use) => {
@@ -264,55 +257,45 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
 
   // Sharing is on for every other spec, so that is where a test leaves it.
   presetShareStats: async ({ accountRequests }, use) =>
-    presetting(
-      use,
-      (enabled) => accountRequests.postShareStats(enabled),
-      true,
-      (enabled) => `set share stats to ${enabled}`,
-    ),
+    presetting(use, {
+      write: (enabled: boolean) => accountRequests.postShareStats(enabled),
+      reset: true,
+      label: (enabled) => `set share stats to ${enabled}`,
+    }),
 
   presetDisplayName: async ({ accountRequests }, use) =>
-    presetting(
-      use,
-      (displayName: string | null) => accountRequests.postProfile(displayName),
-      null,
-      (displayName) => `set the display name to ${displayName}`,
-    ),
+    presetting(use, {
+      write: (displayName: string | null) =>
+        accountRequests.postProfile(displayName),
+      reset: null,
+      label: (displayName) => `set the display name to ${displayName}`,
+    }),
 
   presetKindleEmail: async ({ accountRequests }, use) =>
-    presetting(
-      use,
-      (email: string | null) => accountRequests.postKindleEmail(email),
-      null,
-      (email) => `set the Kindle email to ${email}`,
-    ),
+    presetting(use, {
+      write: (email: string | null) => accountRequests.postKindleEmail(email),
+      reset: null,
+      label: (email) => `set the Kindle email to ${email}`,
+    }),
 
   // The switch is instance-wide and a reader takes no lock, so the lock keeps
   // two writers from flipping it under each other.
   presetMcpEndpoint: async ({ mcpRequests }, use) =>
     withLock("mcp-endpoint", () =>
-      presetting(
-        use,
-        (enabled) => mcpRequests.postMcp(enabled),
-        false,
-        (enabled) => `set the MCP endpoint to ${enabled}`,
-      ),
+      presetting(use, {
+        write: (enabled: boolean) => mcpRequests.postMcp(enabled),
+        reset: false,
+        label: (enabled) => `set the MCP endpoint to ${enabled}`,
+      }),
     ),
 
-  presetHiddenFormats: async (
-    { accountRequests, readerAccountRequests },
-    use,
-  ) =>
-    presetting(
-      use,
-      (formats: string[], owner) =>
-        (owner === "admin"
-          ? accountRequests
-          : readerAccountRequests
-        ).postHiddenFormats(formats),
-      [],
-      (formats) => `hide formats [${formats}]`,
-    ),
+  presetHiddenFormats: async ({ accountFor }, use) =>
+    presetting(use, {
+      write: (formats: string[], owner: Owner) =>
+        accountFor(owner).postHiddenFormats(formats),
+      reset: [],
+      label: (formats) => `hide formats [${formats}]`,
+    }),
 
   createdKoboDeviceIds: async ({ accountRequests }, use) =>
     cleanupSet(
@@ -382,46 +365,35 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
 
   // Turns the switch back off for whoever it touched, because every other
   // detail test reads the flow.
-  setScrollStops: async ({ accountRequests, readerAccountRequests }, use) =>
-    presetting(
-      use,
-      (enabled: boolean, owner) =>
-        (owner === "admin"
-          ? accountRequests
-          : readerAccountRequests
-        ).postScrollStops(enabled),
-      false,
-      (enabled) => `set scroll stops to ${enabled}`,
-    ),
+  presetScrollStops: async ({ accountFor }, use) =>
+    presetting(use, {
+      write: (enabled: boolean, owner: Owner) =>
+        accountFor(owner).postScrollStops(enabled),
+      reset: false,
+      label: (enabled) => `set scroll stops to ${enabled}`,
+    }),
 
   // The preference outlives the test, so it goes back to off after.
-  presetStackSeries: async ({ accountRequests, readerAccountRequests }, use) =>
-    presetting(
-      use,
-      (enabled: boolean, owner) =>
-        (owner === "admin"
-          ? accountRequests
-          : readerAccountRequests
-        ).postStackSeries(enabled),
-      false,
-      (enabled) => `save stack series ${enabled}`,
-    ),
+  presetStackSeries: async ({ accountFor }, use) =>
+    presetting(use, {
+      write: (enabled: boolean, owner: Owner) =>
+        accountFor(owner).postStackSeries(enabled),
+      reset: false,
+      label: (enabled) => `save stack series ${enabled}`,
+    }),
 
   // Sharing is visible to every reader on the instance, so it goes back off
   // after each test; the library must be seeded before this runs.
   householdTarget: async (
-    {
-      request,
-      secondReaderAccount,
-      secondReaderAccountRequests,
-      secondReaderStatsRequests,
-      secondReaderProgressRequests,
-    },
+    { request, secondReaderAccount, secondReaderRequest },
     use,
   ) => {
+    const account = new AccountRequests(secondReaderRequest);
+    const stats = new StatsRequests(secondReaderRequest);
+    const progress = new ProgressRequests(secondReaderRequest);
     const bookUuid = await fetchBookUuidByTitle(request, TARGET_BOOK_TITLE);
     const now = Math.floor(Date.now() / 1000);
-    const sitting = await secondReaderStatsRequests.postSessions([
+    const sitting = await stats.postSessions([
       buildSession(bookUuid, {
         startedAt: now - 60,
         seconds: 60,
@@ -432,22 +404,19 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
     await expect(sitting, "seed the target's reading session").toBeOK();
     const { recorded } = await sitting.json();
     expect(recorded, "the target's session was skipped").toBe(1);
-    const placed = await secondReaderProgressRequests.postEpubPosition(
-      bookUuid,
-      TARGET_BOOK_CFI,
-    );
+    const placed = await progress.postEpubPosition(bookUuid, TARGET_BOOK_CFI);
     await expect(placed, "seed the target's reading position").toBeOK();
 
     // Last, so no reader sees the target shared before its records exist.
     await expect(
-      await secondReaderAccountRequests.postShareStats(true),
+      await account.postShareStats(true),
       "turn the target's sharing on",
     ).toBeOK();
 
     await use(secondReaderAccount);
 
     await expect(
-      await secondReaderAccountRequests.postShareStats(false),
+      await account.postShareStats(false),
       "turn the target's sharing off",
     ).toBeOK();
   },
