@@ -155,7 +155,6 @@ async fn kindle_delivery_names_the_sender_when_smtp_is_configured() {
 
     let expected = KindleDelivery {
         sender_address: Some("library@example.com".to_string()),
-        delivery_ready: true,
     };
     assert_eq!(delivery, expected);
 }
@@ -170,7 +169,6 @@ async fn kindle_delivery_reports_not_ready_when_smtp_is_unset() {
 
     let expected = KindleDelivery {
         sender_address: None,
-        delivery_ready: false,
     };
     assert_eq!(delivery, expected);
 }

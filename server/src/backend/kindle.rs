@@ -10,7 +10,7 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, worker::Task};
-use omnibus_shared::{KindleDelivery, KindleSendStatus, ProgressState, SmtpConfigUpdate};
+use omnibus_shared::{KindleSendStatus, ProgressState, SmtpConfigUpdate};
 use serde::Deserialize;
 
 use super::{internal, AppState};
@@ -136,18 +136,6 @@ pub(super) async fn post_kindle_email(
             (StatusCode::UNPROCESSABLE_ENTITY, msg).into_response()
         }
         Err(e) => internal("set kindle email", e),
-    }
-}
-
-/// Whether Send-to-Kindle can deliver, and the sender address to approve at
-/// Amazon. Any signed-in reader may ask; the relay's host and credentials
-/// never leave the server.
-pub(super) async fn get_delivery(_user: AuthUser, State(state): State<AppState>) -> Response {
-    match db::effective_smtp_config(&state.pool).await {
-        Ok(config) => {
-            Json(KindleDelivery::for_sender(config.map(|c| c.from_email))).into_response()
-        }
-        Err(e) => internal("read smtp config", e),
     }
 }
 

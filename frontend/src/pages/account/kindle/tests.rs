@@ -1,3 +1,7 @@
+//! Tests for the Kindle card: the saved-address line, the delivery line in
+//! each state the server and the reader's role can put it in, and Clear's
+//! confirm.
+
 use dioxus_router::{Routable, Router};
 use omnibus_shared::KindleDelivery;
 
@@ -6,13 +10,15 @@ use crate::test_support::{provide_current_user, render, render_in_vdom, test_use
 use crate::Access;
 
 fn ready() -> Option<Option<KindleDelivery>> {
-    Some(Some(KindleDelivery::for_sender(Some(
-        "library@example.com".to_string(),
-    ))))
+    Some(Some(KindleDelivery {
+        sender_address: Some("library@example.com".to_string()),
+    }))
 }
 
 fn not_set_up() -> Option<Option<KindleDelivery>> {
-    Some(Some(KindleDelivery::for_sender(None)))
+    Some(Some(KindleDelivery {
+        sender_address: None,
+    }))
 }
 
 #[derive(Clone, Debug, PartialEq, Routable)]
@@ -132,4 +138,16 @@ fn kindle_card_offers_no_clear_until_an_address_is_saved() {
         html[footer..save].contains(r#"class="btn primary""#),
         "{html}"
     );
+}
+
+#[test]
+fn kindle_delivery_line_still_asks_for_sender_approval_when_the_check_fails() {
+    let html = render_in_vdom(|| kindle_delivery_line(Some(None), Access::Denied));
+    assert!(html.contains("approved sender"), "{html}");
+}
+
+#[test]
+fn kindle_clear_warning_names_the_address_it_clears() {
+    let warning = kindle_clear_warning("reader@kindle.com");
+    assert!(warning.contains("reader@kindle.com"), "{warning}");
 }

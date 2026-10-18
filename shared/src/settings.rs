@@ -195,20 +195,10 @@ pub struct SmtpConfigStatus {
 /// Whether Send-to-Kindle can deliver, for any signed-in reader. Names only the
 /// sender address a reader must approve at Amazon — never the relay's host or
 /// credentials.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+/// Delivery is ready exactly when a relay with a sender is configured.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct KindleDelivery {
     pub sender_address: Option<String>,
-    pub delivery_ready: bool,
-}
-
-impl KindleDelivery {
-    /// Delivery is ready exactly when a relay with a sender is configured.
-    pub fn for_sender(sender_address: Option<String>) -> Self {
-        Self {
-            delivery_ready: sender_address.is_some(),
-            sender_address,
-        }
-    }
 }
 
 /// Default `ebook-convert` command used when neither the settings override nor

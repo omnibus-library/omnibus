@@ -108,7 +108,9 @@ async fn kindle_delivery(pool: &sqlx::SqlitePool) -> Result<KindleDelivery, Serv
     let config = db::effective_smtp_config(pool)
         .await
         .map_err(|e| internal_rpc_error("get smtp config", e))?;
-    Ok(KindleDelivery::for_sender(config.map(|c| c.from_email)))
+    Ok(KindleDelivery {
+        sender_address: config.map(|c| c.from_email),
+    })
 }
 
 // `server`-gated: exercises the precondition chain and the task-owner

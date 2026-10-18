@@ -9,7 +9,9 @@ use dioxus_router::Link;
 use omnibus_shared::KindleDelivery;
 
 use crate::components::clipboard::CopyButton;
+use crate::components::confirm_modal::{confirm_dialog, Confirm};
 use crate::components::credential_card::live_status;
+use crate::components::unsaved::use_unsaved_guard;
 use crate::components::{BusyLabel, Loading, LoadingKind};
 use crate::{data, use_server_url, Access, Route};
 
@@ -25,6 +27,8 @@ struct KindleEmailSignals {
     msg: Signal<Option<String>>,
     msg_is_error: Signal<bool>,
     in_flight: Signal<bool>,
+    /// Clear's confirm is open.
+    confirm_clear: Signal<bool>,
 }
 
 /// Reads whether the server can deliver after mount: `None` while asking,
@@ -94,12 +98,17 @@ fn kindle_save_handler(
     }
 }
 
-/// Click handler for the Kindle email clear button.
+/// What Clear's confirm says: the address it removes, and what stops.
+fn kindle_clear_warning(address: &str) -> String {
+    format!("Send to Kindle stops delivering to {address} until you save an address again.")
+}
+
+/// The confirmed clear: remove the saved address, then close the confirm.
 fn kindle_clear_handler(
     server_url: String,
     mut signals: KindleEmailSignals,
-) -> impl FnMut(Event<MouseData>) + 'static {
-    move |_| {
+) -> impl FnMut(()) + 'static {
+    move |()| {
         let url = server_url.clone();
         signals.in_flight.set(true);
         spawn(async move {
@@ -118,6 +127,7 @@ fn kindle_clear_handler(
                 }
             }
             signals.in_flight.set(false);
+            signals.confirm_clear.set(false);
         });
     }
 }
@@ -192,25 +202,47 @@ pub(crate) fn KindleEmailCard() -> Element {
         msg: use_signal(|| None::<String>),
         msg_is_error: use_signal(|| false),
         in_flight: use_signal(|| false),
+        confirm_clear: use_signal(|| false),
     };
     use_kindle_email_hydration(signals);
+    let edited = use_memo(move || {
+        (signals.hydrated)() == Some(true)
+            && (signals.email_input)().trim() != (signals.saved_email)().unwrap_or_default()
+    });
+    use_unsaved_guard("kindle-email", edited);
 
     let on_save = kindle_save_handler(server_url.clone(), signals);
     let on_clear = kindle_clear_handler(server_url, signals);
-    let connected = (signals.saved_email)().is_some();
+    let mut confirm_clear = signals.confirm_clear;
+    let saved_email = (signals.saved_email)();
+    let connected = saved_email.is_some();
 
     rsx! {
         section { class: "card", "data-testid": "account-kindle-card",
             h3 { "Kindle" }
             p { class: "subtitle", "The address Send to Kindle delivers your books to." }
 
-            {kindle_email_form(signals.email_input, signals.in_flight, connected, on_save, on_clear)}
+            {kindle_email_form(signals.email_input, signals.in_flight, connected, on_save, move |_| confirm_clear.set(true))}
 
             {kindle_connected_line(connected, (signals.hydrated)())}
 
             {kindle_delivery_line(delivery(), access())}
 
             {live_status("kindle-email-status", (signals.msg)().as_deref(), (signals.msg_is_error)())}
+        }
+        if let Some(address) = saved_email.filter(|_| confirm_clear()) {
+            {confirm_dialog(
+                Confirm {
+                    testid: "kindle-email-clear-dialog",
+                    title: "Clear your Kindle email?",
+                    body: &kindle_clear_warning(&address),
+                    action: "Clear Kindle email",
+                    busy_label: "Clearing\u{2026}",
+                },
+                (signals.in_flight)(),
+                EventHandler::new(move |()| confirm_clear.set(false)),
+                EventHandler::new(on_clear),
+            )}
         }
     }
 }
@@ -255,7 +287,15 @@ fn kindle_delivery_line(delivery: Option<Option<KindleDelivery>>, access: Access
     let Some(delivery) = answer else {
         return rsx! {
             p { class: "subtitle", "data-testid": "kindle-delivery",
-                "Couldn\u{2019}t check whether email delivery is set up on this server."
+                "Couldn\u{2019}t check whether email delivery is set up on this server. Either way, add "
+                "the library\u{2019}s sender address to your Amazon "
+                a {
+                    href: "https://www.amazon.com/sendtokindle/email",
+                    target: "_blank",
+                    rel: "noopener",
+                    "approved sender list"
+                }
+                " or Amazon drops the delivery."
             }
         };
     };

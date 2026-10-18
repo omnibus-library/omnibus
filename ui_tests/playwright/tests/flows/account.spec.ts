@@ -51,7 +51,7 @@ async function stubKoboDevices(
 /** Answer the Kindle delivery read with `body`. */
 async function stubKindleDelivery(
   page: Page,
-  body: { sender_address: string | null; delivery_ready: boolean },
+  body: { sender_address: string | null },
 ): Promise<void> {
   await page.route(
     (url) => url.pathname === "/api/rpc/kindle/delivery",
@@ -168,7 +168,6 @@ test("names the sender to approve when Kindle delivery is ready", async ({
 }) => {
   await stubKindleDelivery(page, {
     sender_address: "library@example.com",
-    delivery_ready: true,
   });
   await gotoReady(page, DEVICES);
 
@@ -183,7 +182,6 @@ test("links an admin to integrations when Kindle delivery isn't set up", async (
 }) => {
   await stubKindleDelivery(page, {
     sender_address: null,
-    delivery_ready: false,
   });
   await gotoReady(page, DEVICES);
 
