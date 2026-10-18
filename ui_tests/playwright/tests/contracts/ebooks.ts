@@ -7,9 +7,11 @@ export const ebooksUrls = {
 
 /** The landing page's keyset page read, a POST that changes nothing. */
 export const ebooks = {
-  page: (): ExpectMutationOptions => ({
+  /** A read a full page load triggers passes a longer `timeout`. */
+  page: (timeout?: number): ExpectMutationOptions => ({
     method: "POST",
     url: ebooksUrls.page,
     expectedStatus: 200,
+    timeout,
   }),
 };

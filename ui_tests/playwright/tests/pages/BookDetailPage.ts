@@ -17,6 +17,7 @@ import { RatingComponent } from "../components/RatingComponent";
 import { ReadStatusControlComponent } from "../components/ReadStatusControlComponent";
 import { SavedPassageCardComponent } from "../components/SavedPassageCardComponent";
 import { SavedPassagesComponent } from "../components/SavedPassagesComponent";
+import { ShelfPickerComponent } from "../components/ShelfPickerComponent";
 import { SuggestionsStripComponent } from "../components/SuggestionsStripComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { WishlistCardComponent } from "../components/WishlistCardComponent";
@@ -257,6 +258,31 @@ export class BookDetailPage extends BasePage {
   // #endregion batch-E
 
   // #region batch-H: filters and book-detail shelves
+  readonly shelfPicker = new ShelfPickerComponent(this.page);
+
+  readonly addToShelfButton = this.page.getByTestId("bdmq-add-to-shelf");
+  readonly shelvesLoading = this.page.getByTestId("bdmq-shelves-loading");
+  readonly markFinishedButton = this.page.getByTestId("read-status-finished");
+
+  /** The More stop's tile for a shelf that holds the book. */
+  shelfTile(shelfId: number): Locator {
+    return this.page.getByTestId(`bdmq-shelf-${shelfId}`);
+  }
+
+  /** The Hand-picked or Smart facet on a shelf's tile. */
+  shelfTileKind(shelfId: number): Locator {
+    return this.shelfTile(shelfId).locator(".shv-facet--kind");
+  }
+
+  /** Opens the picker from the More stop and waits for it to list shelves. */
+  async openShelfPicker(): Promise<void> {
+    await this.addToShelfButton.click();
+    await this.shelfPicker.root.waitFor();
+  }
+
+  async markFinished(): Promise<void> {
+    await this.markFinishedButton.click();
+  }
   // #endregion batch-H
 
   // #region batch-I: search, nav and discovery

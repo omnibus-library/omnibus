@@ -7,11 +7,13 @@ import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
 import { ContinueStackComponent } from "../components/ContinueStackComponent";
 import { CreateShelfModalComponent } from "../components/CreateShelfModalComponent";
 import { EditShelfModalComponent } from "../components/EditShelfModalComponent";
+import { FilterBarComponent } from "../components/FilterBarComponent";
 import { LibraryTableComponent } from "../components/LibraryTableComponent";
 import { SeriesCapComponent } from "../components/SeriesCapComponent";
 import { ShelfGalleryComponent } from "../components/ShelfGalleryComponent";
 import { TabBarComponent } from "../components/TabBarComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
+import { ebooksUrls } from "../contracts/ebooks";
 import { shelvesUrls } from "../contracts/shelves";
 import type { ShelfRef } from "../data/shelves";
 import { expect } from "../fixtures/test";
@@ -344,6 +346,87 @@ export class LibraryPage extends BasePage {
   // #endregion batch-G
 
   // #region batch-H: filters and book-detail shelves
+  readonly filterBar = new FilterBarComponent(this.page);
+
+  readonly loading = this.page.getByTestId("lib-loading");
+  readonly emptyLibraryMessage = this.page.getByTestId("lib-empty");
+  readonly noMatchesMessage = this.page.getByText(
+    "No books match these filters.",
+  );
+  readonly clearFiltersButton = this.page.getByRole("button", {
+    name: "Clear filters",
+  });
+
+  async clearFilters(): Promise<void> {
+    await this.clearFiltersButton.click();
+  }
+
+  /** Lets the page fetch answer again after `forceServerError(ebooks.page())`. */
+  async restoreLibraryReads(): Promise<void> {
+    await this.page.unroute(ebooksUrls.page);
+  }
+
+  /** The slugs of the book tiles on the grid, sorted. */
+  async tileSlugs(): Promise<string[]> {
+    return this.page.getByTestId(/^ebook-tile-/).evaluateAll((tiles) =>
+      tiles
+        .map((t) => t.getAttribute("data-testid")?.slice("ebook-tile-".length))
+        .filter((slug): slug is string => slug !== undefined)
+        .sort(),
+    );
+  }
+
+  /** The header's book count, or NaN while it shows none. */
+  async shownCount(): Promise<number> {
+    const text = await this.sectionTitle.textContent();
+    return Number(/·\s*(\d+)\s+books?/.exec(text ?? "")?.[1]);
+  }
+
+  /** Counts every "No ebooks found." node the page inserts from now on. */
+  async recordEmptyLibraryInsertions(): Promise<void> {
+    await this.page.evaluate(() => {
+      const seen = { count: 0 };
+      Object.assign(window, { __emptyLibrarySeen: seen });
+      new MutationObserver((mutations) => {
+        for (const added of mutations.flatMap((m) => [...m.addedNodes])) {
+          if (
+            added instanceof Element &&
+            (added.matches('[data-testid="lib-empty"]') ||
+              added.querySelector('[data-testid="lib-empty"]'))
+          ) {
+            seen.count += 1;
+          }
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+  }
+
+  /** What `recordEmptyLibraryInsertions` has counted so far. */
+  async emptyLibraryInsertions(): Promise<number> {
+    return this.page.evaluate(
+      () =>
+        (window as unknown as { __emptyLibrarySeen: { count: number } })
+          .__emptyLibrarySeen.count,
+    );
+  }
+
+  /** Checks the grid shows exactly these books and the header counts them. */
+  async assertShowsBooks(slugs: string[]): Promise<void> {
+    await expect
+      .poll(() => this.tileSlugs(), { message: "tiles on the grid" })
+      .toEqual([...slugs].sort());
+    const count = slugs.length;
+    await expect(this.sectionTitle).toContainText(
+      `· ${count} ${count === 1 ? "book" : "books"}`,
+    );
+  }
+
+  /** Checks every one of these books is on the grid, whatever else it holds. */
+  async assertShowsBooksIncluding(slugs: string[]): Promise<void> {
+    await expect
+      .poll(() => this.tileSlugs(), { message: "tiles on the grid" })
+      .toEqual(expect.arrayContaining(slugs));
+  }
   // #endregion batch-H
 
   // #region batch-I: search, nav and discovery

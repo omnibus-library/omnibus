@@ -49,6 +49,11 @@ import {
   type SeededHighlight,
 } from "../data/highlights";
 import type { JournalEntryRef, JournalStatus } from "../data/journals";
+import {
+  bookBySlug,
+  FILTER_SHELF_SLUGS,
+  type FilterShelf,
+} from "../data/libraryFilters";
 import type { MetadataProvider } from "../data/metadataKeys";
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
 import type { BookProgress, ProgressRecord } from "../data/progress";
@@ -256,6 +261,9 @@ type PageFixtures = {
   // #endregion batch-G
 
   // #region batch-H: filters and book-detail shelves
+  filterShelf: FilterShelf;
+  changedReadStatusUuids: Set<string>;
+  scheduleScrollStopsReset: () => void;
   // #endregion batch-H
 
   // #region batch-I: search, nav and discovery
@@ -1159,6 +1167,51 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // #endregion batch-G
 
   // #region batch-H: filters and book-detail shelves
+  // The reader owns it, because a shelf on the admin would move every other
+  // spec's shelf counts.
+  filterShelf: async ({ request, ownShelf }, use) => {
+    const uuids = new Map<string, string>();
+    for (const slug of FILTER_SHELF_SLUGS) {
+      uuids.set(
+        slug,
+        await fetchBookUuidByTitle(request, bookBySlug(slug).title),
+      );
+    }
+    const shelf = await ownShelf(
+      "E2E Library Filters",
+      { book_uuids: [...uuids.values()] },
+      "reader",
+    );
+    await use({
+      ...shelf,
+      memberUuid: (slug) => {
+        const uuid = uuids.get(slug);
+        if (!uuid) throw new Error(`${slug} is not on the filter shelf`);
+        return uuid;
+      },
+    });
+  },
+
+  changedReadStatusUuids: async ({ readStatusRequests }, use) => {
+    const uuids = new Set<string>();
+    await use(uuids);
+    for (const uuid of uuids) {
+      const reset = await readStatusRequests.putReadStatus(uuid, "unread");
+      await expect(reset, `reset read status of ${uuid}`).toBeOK();
+    }
+  },
+
+  // The reader starts every test with scroll stops off, so a test that turns
+  // them on schedules this to put them back.
+  scheduleScrollStopsReset: async ({ readerAccountRequests }, use) => {
+    let scheduled = false;
+    await use(() => {
+      scheduled = true;
+    });
+    if (!scheduled) return;
+    const off = await readerAccountRequests.postScrollStops(false);
+    await expect(off, "turn the reader's scroll stops off").toBeOK();
+  },
   // #endregion batch-H
 
   // #region batch-I: search, nav and discovery
