@@ -36,7 +36,7 @@ export class AuthorPage extends BasePage {
     return this.heading;
   }
 
-  /** The heading of a series section, which links to that series' page. */
+  /** A series section's heading link to that series' page. */
   seriesLink(name: string): Locator {
     return this.page.getByRole("link", { name });
   }

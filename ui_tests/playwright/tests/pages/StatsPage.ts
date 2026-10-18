@@ -40,7 +40,6 @@ export class StatsPage extends BasePage {
   readonly dailyMinutesToday: Locator;
   readonly goalEditors: Locator;
   readonly shareSwitch: Locator;
-  readonly shareToggle: Locator;
   readonly shareError: Locator;
 
   readonly scopeSwitch: Locator;
@@ -125,7 +124,6 @@ export class StatsPage extends BasePage {
     this.shareSwitch = page.getByRole("switch", {
       name: "Visible to your household",
     });
-    this.shareToggle = page.getByTestId("stats-share-toggle");
     this.shareError = page.getByTestId("stats-share-error");
 
     this.scopeSwitch = page.getByTestId("stats-scope-switch");

@@ -1,5 +1,5 @@
 import type { Locator, Page, Request } from "@playwright/test";
-import type { Theme } from "../components/TopNavComponent";
+import type { PreferenceTheme } from "../components/TopNavComponent";
 import { authUrls } from "../contracts/auth";
 import { expect } from "../fixtures/test";
 import type { ForcedRequest } from "../utils/api";
@@ -69,7 +69,7 @@ export abstract class BasePage {
   }
 
   /** Stores the theme before every load of this page, as if chosen earlier. */
-  async presetTheme(theme: Theme | "sepia"): Promise<void> {
+  async presetTheme(theme: PreferenceTheme): Promise<void> {
     await this.presetLocalStorage("omn.theme", theme);
   }
 

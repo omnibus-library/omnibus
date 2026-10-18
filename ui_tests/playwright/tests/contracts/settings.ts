@@ -6,9 +6,9 @@ import {
   post,
 } from "../utils/api";
 
-/** The endpoints the Administration sections post to. */
+/** The endpoints the Administration sections read and write. */
 export const settingsUrls = {
-  save: /\/api\/rpc\/settings(?:\?|$)/,
+  settings: /\/api\/rpc\/settings(?:\?|$)/,
   smtp: /\/api\/rpc\/smtp(?:\?|$)/,
   smtpClear: /\/api\/rpc\/smtp\/clear(?:\?|$)/,
   metadataPrecedence: /\/api\/rpc\/metadata-precedence\/set(?:\?|$)/,
@@ -24,13 +24,13 @@ export const settingsUrls = {
 /** The writes an admin makes from the Administration sections. */
 export const settings = {
   /** The read the library form fills itself from. */
-  load: (): ForcedRequest => ({ method: "GET", url: settingsUrls.save }),
+  load: (): ForcedRequest => ({ method: "GET", url: settingsUrls.settings }),
 
   saveLibrary: (
     library: LibrarySettings,
     status = 200,
   ): ExpectMutationOptions =>
-    post(settingsUrls.save, { settings: library }, status),
+    post(settingsUrls.settings, { settings: library }, status),
 
   saveSmtp: (): ExpectMutationOptions => post(settingsUrls.smtp),
 

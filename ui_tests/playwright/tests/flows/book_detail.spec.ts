@@ -13,6 +13,7 @@ import {
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
+import { bottomEdge, topEdge } from "../utils/dom";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import {
   audiobookFixturesDir,
@@ -89,8 +90,8 @@ test.describe("book detail page", () => {
       const { stops } = bookDetailPage;
       await expect(stops.modeToggle).toBeVisible();
       await expect(stops.modeToggleInRail).toHaveCount(0);
-      expect(await stops.bottomEdge(stops.modeToggle)).toBeLessThan(
-        await stops.topEdge(stops.dotRail),
+      expect(await bottomEdge(stops.modeToggle)).toBeLessThan(
+        await topEdge(stops.dotRail),
       );
     });
 

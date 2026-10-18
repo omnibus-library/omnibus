@@ -65,11 +65,6 @@ export class ApiTokensSectionComponent extends BaseComponent {
     return this.row(name).getByText(`omni_…${secret.slice(-4)}`);
   }
 
-  /** The endpoint this instance serves MCP on, which the card and the command both carry. */
-  instanceMcpUrl(): string {
-    return `${new URL(this.page.url()).origin}/mcp`;
-  }
-
   /** The secret as the hand-off panel shows it, which exists only until it is dismissed. */
   async readSecret(): Promise<string> {
     return (await this.secretField.textContent()) ?? "";

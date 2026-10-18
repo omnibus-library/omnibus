@@ -1,9 +1,12 @@
 import type { Locator, Page } from "@playwright/test";
 import { settingsUrls } from "../contracts/settings";
 import { BaseComponent } from "./BaseComponent";
+import { WorkerStatusComponent } from "./WorkerStatusComponent";
 
 /** Administration › Maintenance: the library scan, the EPUB bake and the task list. */
 export class MaintenanceSectionComponent extends BaseComponent {
+  readonly workerStatus: WorkerStatusComponent;
+
   readonly card: Locator;
   readonly backgroundTasksCard: Locator;
   readonly scanButton: Locator;
@@ -12,6 +15,7 @@ export class MaintenanceSectionComponent extends BaseComponent {
 
   constructor(page: Page) {
     super(page);
+    this.workerStatus = new WorkerStatusComponent(page);
     this.card = page.getByTestId("maintenance-card");
     this.backgroundTasksCard = page.getByTestId("background-tasks-card");
     this.scanButton = page.getByTestId("scan-library");

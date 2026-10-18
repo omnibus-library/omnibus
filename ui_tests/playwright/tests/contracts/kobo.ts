@@ -9,7 +9,7 @@ export const koboUrls = {
 };
 
 /** The writes a reader makes to add and remove a Kobo device. */
-export const kobo = {
+export const koboDevices = {
   create: (name: string): ExpectMutationOptions =>
     post(koboUrls.create, { name }),
 

@@ -1,10 +1,11 @@
 import { account } from "../contracts/account";
-import { kobo } from "../contracts/kobo";
+import { koboDevices } from "../contracts/kobo";
 import type { CreatedKoboDevice } from "../data/account";
 import { uniqueSuffix } from "../data/unique";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
 import { TEST_PASSWORD } from "../utils/auth";
+import { topEdge } from "../utils/dom";
 
 // The seeded admin covers the plain-user sections: Profile, Preferences, Goals,
 // Devices and Sign-in & security. Other specs read its stack series, hidden
@@ -19,7 +20,7 @@ test.describe("profile section", () => {
     });
 
     await test.step("check the settings frame", async () => {
-      await settingsPage.assertDisplayed();
+      await settingsPage.assertDisplayedFor("profile");
       await settingsPage.topNav.assertDisplayed();
       await expect(settingsPage.sectionLink("profile")).toHaveAttribute(
         "aria-current",
@@ -78,7 +79,7 @@ test.describe("preferences section", () => {
 
     await test.step("check the preference groups", async () => {
       for (const group of ["Appearance", "Library", "Book page", "Privacy"]) {
-        await expect(section.preferenceGroup(group)).toBeVisible();
+        await expect(section.preferenceGroupHeading(group)).toBeVisible();
       }
       await expect(section.deviceNote).toBeVisible();
       await expect(section.themeButton("dark")).toBeVisible();
@@ -102,14 +103,14 @@ test.describe("preferences section", () => {
 
 test.describe("devices section", () => {
   test("show the devices section layout", async ({ settingsPage }) => {
-    const { kindle, kobo: devices } = settingsPage;
+    const { kindle, kobo } = settingsPage;
 
     await test.step("open the devices section", async () => {
       await settingsPage.goto("devices");
     });
 
     await test.step("check the settings frame", async () => {
-      await settingsPage.assertDisplayed();
+      await settingsPage.assertDisplayedFor("devices");
       await settingsPage.topNav.assertDisplayed();
       await expect(settingsPage.sectionLink("devices")).toHaveAttribute(
         "aria-current",
@@ -127,10 +128,10 @@ test.describe("devices section", () => {
     });
 
     await test.step("check the kobo card", async () => {
-      await expect(devices.devicesCard).toBeVisible();
-      await expect(devices.dataLossWarning).toBeVisible();
-      await expect(devices.setupToggle).toBeVisible();
-      await expect(devices.shelvesLink).toHaveAttribute("href", "/shelves");
+      await expect(kobo.devicesCard).toBeVisible();
+      await expect(kobo.dataLossWarning).toBeVisible();
+      await expect(kobo.setupToggle).toBeVisible();
+      await expect(kobo.shelvesLink).toHaveAttribute("href", "/shelves");
     });
   });
 
@@ -280,7 +281,7 @@ test.describe("devices section", () => {
     createdKoboDeviceIds,
     expectMutation,
   }) => {
-    const devices = settingsPage.kobo;
+    const { kobo } = settingsPage;
     const name = `E2E Kobo ${uniqueSuffix()}`;
 
     await test.step("open the devices section", async () => {
@@ -288,8 +289,8 @@ test.describe("devices section", () => {
     });
 
     await test.step("add a device", async () => {
-      const { response } = await expectMutation(kobo.create(name), () =>
-        devices.addDevice(name),
+      const { response } = await expectMutation(koboDevices.create(name), () =>
+        kobo.addDevice(name),
       );
       const created: CreatedKoboDevice = await response.json();
       createdKoboDeviceIds.add(created.id);
@@ -297,14 +298,14 @@ test.describe("devices section", () => {
 
     // A Kobo on its own Wi-Fi can't resolve a bare path against the web app's origin.
     await test.step("check its endpoint is a full url", async () => {
-      await expect(devices.endpointField(name)).toHaveValue(
+      await expect(kobo.endpointField(name)).toHaveValue(
         /^https?:\/\/[^/]+\/kobo\/[^/]+$/,
       );
     });
 
     await test.step("check the device joins the list below the form", async () => {
-      expect(await devices.topEdge(devices.deviceRow(name))).toBeGreaterThan(
-        await devices.topEdge(devices.addButton),
+      expect(await topEdge(kobo.deviceRow(name))).toBeGreaterThan(
+        await topEdge(kobo.addButton),
       );
     });
   });
@@ -313,7 +314,7 @@ test.describe("devices section", () => {
     settingsPage,
     ownKoboDevice,
   }) => {
-    const devices = settingsPage.kobo;
+    const { kobo } = settingsPage;
     const name = `E2E Kobo ${uniqueSuffix()}`;
 
     await test.step("add a device through the api", async () => {
@@ -324,16 +325,16 @@ test.describe("devices section", () => {
       await settingsPage.goto("devices");
     });
 
-    const regenerates = devices.recordRegenerates();
+    const regenerates = kobo.recordRegenerates();
 
     await test.step("ask to regenerate it and back out", async () => {
-      await devices.startRegenerate(name);
-      await expect(devices.regenerateConfirmation(name)).toBeVisible();
-      await devices.cancelRegenerate();
+      await kobo.startRegenerate(name);
+      await expect(kobo.regenerateConfirmation(name)).toBeVisible();
+      await kobo.cancelRegenerate();
     });
 
     await test.step("check the dialog closed and nothing was sent", async () => {
-      await expect(devices.regenerateDialog).toHaveCount(0);
+      await expect(kobo.regenerateConfirmation(name)).toHaveCount(0);
       expect(regenerates).toEqual([]);
     });
   });
@@ -344,7 +345,7 @@ test.describe("devices section", () => {
     createdKoboDeviceIds,
     expectMutation,
   }) => {
-    const devices = settingsPage.kobo;
+    const { kobo } = settingsPage;
     const name = `E2E Kobo ${uniqueSuffix()}`;
 
     const id = await test.step("add a device through the api", () =>
@@ -353,18 +354,18 @@ test.describe("devices section", () => {
     // Removing asks first, naming the device it would stop syncing.
     await test.step("ask to remove the device", async () => {
       await settingsPage.goto("devices");
-      await devices.startRemove(name);
-      await expect(devices.removeConfirmation(name)).toBeVisible();
+      await kobo.startRemove(name);
+      await expect(kobo.removeConfirmation(name)).toBeVisible();
     });
 
     await test.step("confirm the removal", async () => {
-      await expectMutation(kobo.revoke(id), () => devices.confirmRemove());
+      await expectMutation(koboDevices.revoke(id), () => kobo.confirmRemove());
       createdKoboDeviceIds.delete(id);
     });
 
     await test.step("check the dialog closed and the device is gone", async () => {
-      await expect(devices.removeDialog).toHaveCount(0);
-      await expect(devices.deviceRow(name)).toHaveCount(0);
+      await expect(kobo.removeConfirmation(name)).toHaveCount(0);
+      await expect(kobo.deviceRow(name)).toHaveCount(0);
     });
   });
 
@@ -373,22 +374,22 @@ test.describe("devices section", () => {
   test("open the kobo setup steps from their disclosure", async ({
     settingsPage,
   }) => {
-    const devices = settingsPage.kobo;
+    const { kobo } = settingsPage;
 
     await test.step("open the devices section with one kobo", async () => {
-      await devices.stubDevices([{ id: 1, name: "Kobo Clara" }]);
+      await kobo.stubDevices([{ id: 1, name: "Kobo Clara" }]);
       await settingsPage.goto("devices");
-      await expect(devices.deviceRows).toHaveCount(1);
+      await expect(kobo.deviceRows).toHaveCount(1);
     });
 
     await test.step("check the steps start folded away", async () => {
-      await expect(devices.setupSteps).toBeHidden();
+      await expect(kobo.setupSteps).toBeHidden();
     });
 
     await test.step("open the steps", async () => {
-      await devices.openSetupSteps();
-      await expect(devices.setupSteps).toBeVisible();
-      await expect(devices.backupToolLink()).toHaveAttribute(
+      await kobo.openSetupSteps();
+      await expect(kobo.setupSteps).toBeVisible();
+      await expect(kobo.backupToolLink).toHaveAttribute(
         "href",
         "https://github.com/omnibus-library/kobo-backup",
       );
@@ -398,16 +399,16 @@ test.describe("devices section", () => {
   test("show the kobo setup steps to a reader with no kobo yet", async ({
     settingsPage,
   }) => {
-    const devices = settingsPage.kobo;
+    const { kobo } = settingsPage;
 
     await test.step("open the devices section with no kobo", async () => {
-      await devices.stubDevices([]);
+      await kobo.stubDevices([]);
       await settingsPage.goto("devices");
     });
 
     await test.step("check the steps are already open", async () => {
-      await expect(devices.emptyMessage).toBeVisible();
-      await expect(devices.setupSteps).toBeVisible();
+      await expect(kobo.emptyMessage).toBeVisible();
+      await expect(kobo.setupSteps).toBeVisible();
     });
   });
 });

@@ -10,14 +10,13 @@ export class KoboSectionComponent extends BaseComponent {
   readonly dataLossWarning: Locator;
   readonly setupToggle: Locator;
   readonly setupSteps: Locator;
+  readonly backupToolLink: Locator;
   readonly shelvesLink: Locator;
   readonly emptyMessage: Locator;
   readonly deviceRows: Locator;
   readonly nameField: Locator;
   readonly addButton: Locator;
-  readonly regenerateDialog: Locator;
   readonly cancelRegenerateButton: Locator;
-  readonly removeDialog: Locator;
   readonly confirmRemoveButton: Locator;
 
   constructor(page: Page) {
@@ -26,6 +25,9 @@ export class KoboSectionComponent extends BaseComponent {
     this.dataLossWarning = page.getByTestId("kobo-data-loss-warning");
     this.setupToggle = page.getByText("How to connect a Kobo");
     this.setupSteps = page.getByTestId("kobo-setup-steps");
+    this.backupToolLink = this.setupSteps.getByRole("link", {
+      name: "omnibus-library/kobo-backup",
+    });
     this.shelvesLink = page.getByRole("link", {
       name: "Choose shelves to sync",
     });
@@ -33,11 +35,9 @@ export class KoboSectionComponent extends BaseComponent {
     this.deviceRows = page.getByTestId("kobo-device-row");
     this.nameField = page.getByTestId("kobo-device-name-input");
     this.addButton = page.getByTestId("kobo-device-add");
-    this.regenerateDialog = page.getByTestId("kobo-regenerate-dialog");
     this.cancelRegenerateButton = page.getByTestId(
       "kobo-regenerate-dialog-cancel",
     );
-    this.removeDialog = page.getByTestId("kobo-remove-dialog");
     this.confirmRemoveButton = page.getByTestId("kobo-remove-dialog-confirm");
   }
 
@@ -49,11 +49,14 @@ export class KoboSectionComponent extends BaseComponent {
     return this.deviceRow(name).getByTestId("kobo-endpoint-url");
   }
 
-  /** The link to the community backup tool, inside the open setup steps. */
-  backupToolLink(): Locator {
-    return this.setupSteps.getByRole("link", {
-      name: "omnibus-library/kobo-backup",
+  regenerateButton(name: string): Locator {
+    return this.page.getByRole("button", {
+      name: `Regenerate token for ${name}`,
     });
+  }
+
+  removeButton(name: string): Locator {
+    return this.page.getByRole("button", { name: `Remove ${name}` });
   }
 
   /** The confirmation naming the device whose token would be replaced. */
@@ -78,9 +81,7 @@ export class KoboSectionComponent extends BaseComponent {
   }
 
   async startRegenerate(name: string): Promise<void> {
-    await this.page
-      .getByRole("button", { name: `Regenerate token for ${name}` })
-      .click();
+    await this.regenerateButton(name).click();
   }
 
   async cancelRegenerate(): Promise<void> {
@@ -93,7 +94,7 @@ export class KoboSectionComponent extends BaseComponent {
   }
 
   async startRemove(name: string): Promise<void> {
-    await this.page.getByRole("button", { name: `Remove ${name}` }).click();
+    await this.removeButton(name).click();
   }
 
   async confirmRemove(): Promise<void> {

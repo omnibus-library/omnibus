@@ -24,7 +24,7 @@ test.describe("hidden formats", () => {
     });
 
     await test.step("check the card and its nav", async () => {
-      await settingsPage.assertDisplayed();
+      await settingsPage.assertDisplayedFor("preferences");
       await settingsPage.topNav.assertDisplayed();
       await expect(section.hiddenFormatsCard).toBeVisible();
       await expect(section.hiddenFormatToggle("cbz")).toBeVisible();

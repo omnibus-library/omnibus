@@ -25,3 +25,14 @@ export async function nextFrame(page: Page, frames = 1): Promise<void> {
     for (let i = 0; i < count; i++) await new Promise(requestAnimationFrame);
   }, frames);
 }
+
+/** `locator`'s top edge in CSS pixels, so a test can compare vertical order. */
+export async function topEdge(locator: Locator): Promise<number> {
+  return (await locator.boundingBox())?.y ?? Number.NaN;
+}
+
+/** `locator`'s bottom edge in CSS pixels. */
+export async function bottomEdge(locator: Locator): Promise<number> {
+  const box = await locator.boundingBox();
+  return box ? box.y + box.height : Number.NaN;
+}

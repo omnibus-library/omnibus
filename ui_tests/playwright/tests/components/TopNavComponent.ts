@@ -9,6 +9,9 @@ import { SearchPaletteComponent } from "./SearchPaletteComponent";
 /** A theme the user menu's segmented control offers. */
 export type Theme = "dark" | "black" | "light";
 
+/** The themes Preferences offers: the user menu's, plus sepia. */
+export type PreferenceTheme = Theme | "sepia";
+
 /** The primary navigation bar along the top of every web page. */
 export class TopNavComponent extends BaseComponent {
   readonly root: Locator;

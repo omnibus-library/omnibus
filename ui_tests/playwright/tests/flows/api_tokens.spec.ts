@@ -4,6 +4,7 @@ import type { CreatedApiToken } from "../data/account";
 import { uniqueSuffix } from "../data/unique";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
+import { topEdge } from "../utils/dom";
 
 // Tokens are per-user state on the shared admin, so every test names its own
 // uniquely and a fixture revokes what it made; counts are never asserted, only
@@ -18,7 +19,7 @@ test.describe("api tokens section", () => {
     });
 
     await test.step("check the settings frame", async () => {
-      await settingsPage.assertDisplayed();
+      await settingsPage.assertDisplayedFor("security");
       await settingsPage.topNav.assertDisplayed();
     });
 
@@ -76,10 +77,10 @@ test.describe("api tokens section", () => {
     // row joins the list below, rather than appearing above where it was made.
     await test.step("check the form, the secret and the row stack in order", async () => {
       await expect(tokens.nameField).toBeVisible();
-      const formTop = await tokens.topEdge(tokens.createButton);
-      const secretTop = await tokens.topEdge(tokens.secretPanel);
+      const formTop = await topEdge(tokens.createButton);
+      const secretTop = await topEdge(tokens.secretPanel);
       expect(secretTop).toBeGreaterThan(formTop);
-      expect(await tokens.topEdge(tokens.row(name))).toBeGreaterThan(secretTop);
+      expect(await topEdge(tokens.row(name))).toBeGreaterThan(secretTop);
     });
 
     await test.step("check the new row", async () => {
@@ -370,7 +371,7 @@ test.describe("hosted mcp endpoint", () => {
       await expect(mcp.card).toBeVisible();
       await expect(mcp.heading).toBeVisible();
       await expect(mcp.state).toBeVisible();
-      await expect(mcp.endpointField).toHaveText(mcp.instanceUrl());
+      await expect(mcp.endpointField).toHaveText(mcp.instanceMcpUrl());
     });
 
     // The card waits for the status read before offering the switch.

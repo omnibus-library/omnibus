@@ -8,7 +8,7 @@ const idle: WorkerStatus = { active: [], recent_complete: [] };
 
 test.describe("worker status indicator", () => {
   test("hide the indicator when the worker is idle", async ({ adminPage }) => {
-    const { workerStatus } = adminPage;
+    const { workerStatus } = adminPage.maintenance;
 
     await test.step("open the maintenance section while the worker is idle", async () => {
       await workerStatus.stubStatus(idle);
@@ -21,7 +21,7 @@ test.describe("worker status indicator", () => {
   });
 
   test("show an active scan", async ({ adminPage }) => {
-    const { workerStatus } = adminPage;
+    const { workerStatus } = adminPage.maintenance;
 
     await test.step("open the maintenance section during a scan", async () => {
       await workerStatus.stubStatus({
@@ -46,7 +46,7 @@ test.describe("worker status indicator", () => {
   test("show processed and total when the total is known", async ({
     adminPage,
   }) => {
-    const { workerStatus } = adminPage;
+    const { workerStatus } = adminPage.maintenance;
 
     await test.step("open the maintenance section during a scan with a known total", async () => {
       await workerStatus.stubStatus({
@@ -68,7 +68,7 @@ test.describe("worker status indicator", () => {
   });
 
   test("show the activity panel for a scan", async ({ adminPage }) => {
-    const { workerStatus } = adminPage;
+    const { workerStatus } = adminPage.maintenance;
 
     await test.step("open the maintenance section during a verbose scan", async () => {
       await workerStatus.stubStatus({
@@ -108,7 +108,7 @@ test.describe("worker status indicator", () => {
   });
 
   test("summarize a finished scan's tallies", async ({ adminPage }) => {
-    const { workerStatus } = adminPage;
+    const { workerStatus } = adminPage.maintenance;
 
     await test.step("open the maintenance section after a scan", async () => {
       await workerStatus.stubStatus({
@@ -143,7 +143,7 @@ test.describe("worker status indicator", () => {
   test("show a finished scan once the active one completes", async ({
     adminPage,
   }) => {
-    const { workerStatus } = adminPage;
+    const { workerStatus } = adminPage.maintenance;
 
     await test.step("open the maintenance section during a scan", async () => {
       await workerStatus.stubStatus({
@@ -181,7 +181,7 @@ test.describe("worker status indicator", () => {
   });
 
   test("dismiss a finished scan", async ({ adminPage }) => {
-    const { workerStatus } = adminPage;
+    const { workerStatus } = adminPage.maintenance;
 
     await test.step("open the maintenance section during a scan", async () => {
       await workerStatus.stubStatus({
@@ -224,7 +224,7 @@ test.describe("worker status indicator", () => {
   });
 
   test("show a failed scan with its error message", async ({ adminPage }) => {
-    const { workerStatus } = adminPage;
+    const { workerStatus } = adminPage.maintenance;
 
     await test.step("open the maintenance section after a failed scan", async () => {
       await workerStatus.stubStatus({

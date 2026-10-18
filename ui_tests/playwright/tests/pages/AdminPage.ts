@@ -7,7 +7,6 @@ import { LogsSectionComponent } from "../components/LogsSectionComponent";
 import { MaintenanceSectionComponent } from "../components/MaintenanceSectionComponent";
 import { MetadataSectionComponent } from "../components/MetadataSectionComponent";
 import { UsersSectionComponent } from "../components/UsersSectionComponent";
-import { WorkerStatusComponent } from "../components/WorkerStatusComponent";
 import { SettingsShellPage } from "./SettingsShellPage";
 
 /** A `?section=` slug of the administration sidebar. */
@@ -23,11 +22,8 @@ export type AdminSection =
 
 /** Server administration at `/admin`: the sections an administrator owns. */
 export class AdminPage extends SettingsShellPage<AdminSection> {
-  protected readonly urlPattern = /\/admin(?:\?|$)/;
-
   readonly library: LibrarySectionComponent;
   readonly maintenance: MaintenanceSectionComponent;
-  readonly workerStatus: WorkerStatusComponent;
   readonly metadata: MetadataSectionComponent;
   readonly cleanup: CleanupSectionComponent;
   readonly users: UsersSectionComponent;
@@ -47,7 +43,6 @@ export class AdminPage extends SettingsShellPage<AdminSection> {
     });
     this.library = new LibrarySectionComponent(page);
     this.maintenance = new MaintenanceSectionComponent(page);
-    this.workerStatus = new WorkerStatusComponent(page);
     this.metadata = new MetadataSectionComponent(page);
     this.cleanup = new CleanupSectionComponent(page);
     this.users = new UsersSectionComponent(page);

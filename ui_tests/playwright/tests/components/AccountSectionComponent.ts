@@ -3,13 +3,10 @@ import { accountUrls } from "../contracts/account";
 import { TINY_PNG } from "../data/covers";
 import { recordRequests } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
-import type { Theme } from "./TopNavComponent";
+import type { PreferenceTheme } from "./TopNavComponent";
 
 /** A reading goal's kind, as the goals form names its fields. */
 export type GoalKind = "books" | "pages" | "minutes";
-
-/** The themes Preferences offers: the user menu's, plus sepia. */
-export type PreferenceTheme = Theme | "sepia";
 
 /**
  * The reader's own controls across Settings: the profile, the preferences
@@ -106,8 +103,8 @@ export class AccountSectionComponent extends BaseComponent {
     this.hiddenFormatsStatus = page.getByTestId("hidden-formats-status");
   }
 
-  /** A group of the preferences, such as Appearance or Privacy. */
-  preferenceGroup(name: string): Locator {
+  /** The heading of a preferences group, such as Appearance or Privacy. */
+  preferenceGroupHeading(name: string): Locator {
     return this.page.getByRole("heading", { level: 3, name });
   }
 

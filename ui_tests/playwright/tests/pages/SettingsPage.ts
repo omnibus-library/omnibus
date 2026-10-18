@@ -15,8 +15,6 @@ export type SettingsSection =
 
 /** Personal settings at `/settings`: the reader's own sections, none of the server's. */
 export class SettingsPage extends SettingsShellPage<SettingsSection> {
-  protected readonly urlPattern = /\/settings(?:\?|$)/;
-
   readonly account: AccountSectionComponent;
   readonly kindle: KindleSectionComponent;
   readonly kobo: KoboSectionComponent;

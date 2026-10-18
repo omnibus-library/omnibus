@@ -18,6 +18,8 @@ type ShellIdentity = {
 export abstract class SettingsShellPage<
   Section extends string,
 > extends BasePage {
+  protected readonly urlPattern: RegExp;
+
   readonly topNav: TopNavComponent;
   readonly layout: Locator;
   readonly heading: Locator;
@@ -31,6 +33,7 @@ export abstract class SettingsShellPage<
     private readonly shell: ShellIdentity,
   ) {
     super(page);
+    this.urlPattern = new RegExp(`${shell.path}(?:\\?|$)`);
     this.topNav = new TopNavComponent(page);
     this.layout = page.getByTestId(shell.layoutTestId);
     this.heading = page.getByRole("heading", { level: 1, name: shell.title });

@@ -20,11 +20,6 @@ export class McpEndpointCardComponent extends BaseComponent {
     this.endpointField = page.getByTestId("mcp-endpoint-url");
   }
 
-  /** The endpoint this instance serves MCP on, which the card shows. */
-  instanceUrl(): string {
-    return `${new URL(this.page.url()).origin}/mcp`;
-  }
-
   async flip(): Promise<void> {
     await this.toggle.click();
   }

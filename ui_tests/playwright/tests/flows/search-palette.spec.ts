@@ -92,7 +92,7 @@ test.describe("search palette", () => {
     });
 
     await test.step("click outside the panel", async () => {
-      await palette.clickOutside();
+      await palette.clickPageBackground();
       await expect(palette.panel).toHaveCount(0);
     });
 

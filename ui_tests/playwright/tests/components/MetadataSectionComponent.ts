@@ -24,10 +24,15 @@ export class MetadataSectionComponent extends BaseComponent {
     );
   }
 
+  /** The button that moves the provider at `index` in `library`'s order down. */
+  moveDownButton(library: PrecedenceLibrary, index: number): Locator {
+    return this.page.getByTestId(
+      `${library}-metadata-precedence-down-${index}`,
+    );
+  }
+
   async moveDown(library: PrecedenceLibrary, index: number): Promise<void> {
-    await this.page
-      .getByTestId(`${library}-metadata-precedence-down-${index}`)
-      .click();
+    await this.moveDownButton(library, index).click();
   }
 
   async save(): Promise<void> {

@@ -75,7 +75,7 @@ test.describe("household stats", () => {
       await expect(statsPage.emptyState).toHaveCount(0);
       await expect(statsPage.inProgress).toContainText(TARGET_BOOK_TITLE);
       // Someone else's sharing and goals aren't the viewer's to change.
-      await expect(statsPage.shareToggle).toHaveCount(0);
+      await expect(statsPage.shareSwitch).toHaveCount(0);
       await expect(statsPage.goalsLink).toHaveCount(0);
     });
   });

@@ -50,7 +50,7 @@ export class LibrarySectionComponent extends BaseComponent {
 
   /** Answers a save with the server-side floor on the rescan interval. */
   async stubIntervalRejected(): Promise<void> {
-    await this.page.route(settingsUrls.save, (route) =>
+    await this.page.route(settingsUrls.settings, (route) =>
       route.request().method() === "POST"
         ? route.fulfill({
             status: 422,
