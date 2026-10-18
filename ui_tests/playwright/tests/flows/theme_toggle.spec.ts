@@ -1,8 +1,9 @@
 import { expect, test } from "../fixtures/test";
 import { gotoReady } from "../utils/nav";
 
-// F1.6 Atrium theme toggle. The theme controls now live inside the user-menu
-// dropdown (Dark / Black / Light / Sepia segmented control). The web build
+// F1.6 Atrium theme toggle. One segmented control (Dark / Black / Light /
+// Sepia) lives in the user-menu dropdown and again in Settings › Preferences,
+// where it is labelled as applying to this device alone. The web build
 // persists the choice under `omn.theme` in localStorage and applies it in a
 // post-hydration `use_effect` so SSR markup stays deterministic.
 //
@@ -27,8 +28,14 @@ test("renders the dark theme on first paint", async ({ page }) => {
   await expect(root).toHaveAttribute("data-theme", "dark");
 
   await openUserMenu(page);
-  await expect(page.getByTestId("theme-dark")).toBeVisible();
-  await expect(page.getByTestId("theme-light")).toBeVisible();
+  await expect(page.getByTestId("theme-dark")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByTestId("theme-light")).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
 });
 
 test("toggles dark to light, persists across reload", async ({ page }) => {
@@ -101,4 +108,25 @@ test("clicking light then dark flips back and clears divergence from default", a
     window.localStorage.getItem("omn.theme"),
   );
   expect(stored).toBe("dark");
+});
+
+test("switches the theme from Preferences and persists it", async ({
+  page,
+}) => {
+  await gotoReady(page, "/settings?section=preferences");
+
+  const root = page.locator("div.atrium").first();
+  await expect(root).toHaveAttribute("data-theme", "dark");
+
+  await page.getByTestId("theme-sepia").click();
+  await expect(root).toHaveAttribute("data-theme", "sepia");
+  await expect(page.getByTestId("theme-sepia")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  const stored = await page.evaluate(() =>
+    window.localStorage.getItem("omn.theme"),
+  );
+  expect(stored).toBe("sepia");
 });

@@ -4,16 +4,20 @@ import { expectMutation } from "../utils/api";
 import { TEST_PASSWORD } from "../utils/auth";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
-// The unified Settings sidebar (#1324, #1345) splits the per-user surfaces
-// into their own sections: Account holds the password card, Kindle the
-// Send-to-Kindle destination address (F4.3), Kobo the wireless-sync devices
-// (#927/#1439). The legacy standalone `/account` page redirects into Account
-// (mirroring `/logs`) so there is one consistently-chromed entry point.
-// The seeded session (global setup) is an authed admin, which is a superset
-// of the plain-user surface these sections need.
-const ACCOUNT = "/settings?section=account";
-const KINDLE = "/settings?section=kindle";
-const KOBO = "/settings?section=kobo";
+// Personal settings (#2763) are five sections: Profile (display name and
+// picture), Preferences (theme, Stack series, hidden formats, scroll stops,
+// share stats — every control saves as it changes), Goals, Devices (Kindle
+// delivery and Kobo wireless sync) and Sign-in & security (password,
+// sessions, API tokens). The legacy standalone `/account` page redirects
+// into Settings. The seeded session (global setup) is an authed admin, which
+// is a superset of the plain-user surface these sections need. The admin's
+// Stack series, hidden formats and scroll stops are read by other specs, so
+// this file only asserts those controls render; it never flips them.
+const PROFILE = "/settings?section=profile";
+const PREFERENCES = "/settings?section=preferences";
+const GOALS = "/settings?section=goals";
+const DEVICES = "/settings?section=devices";
+const SECURITY = "/settings?section=security";
 
 const emailInput = (page: Page) => page.getByTestId("kindle-email-input");
 const currentPassword = (page: Page) =>
@@ -22,87 +26,154 @@ const newPassword = (page: Page) => page.getByTestId("new-password-input");
 const changeStatus = (page: Page) => page.getByTestId("change-password-status");
 const displayNameInput = (page: Page) => page.getByTestId("display-name-input");
 const profileStatus = (page: Page) => page.getByTestId("profile-status");
+const saveDisplayName = (page: Page) => page.getByTestId("display-name-save");
 
-test("renders the account section layout", async ({ page }) => {
-  await gotoReady(page, ACCOUNT);
+/** Answer the Kindle delivery read with `body`. */
+async function stubKindleDelivery(
+  page: Page,
+  body: { sender_address: string | null; delivery_ready: boolean },
+): Promise<void> {
+  await page.route(
+    (url) => url.pathname === "/api/rpc/kindle/delivery",
+    (route) => route.fulfill({ status: 200, json: body }),
+  );
+}
 
-  await expect(page.getByTestId("settings-nav-account")).toHaveAttribute(
+test("renders the profile section layout", async ({ page }) => {
+  await gotoReady(page, PROFILE);
+
+  await expect(page.getByTestId("settings-nav-profile")).toHaveAttribute(
     "aria-current",
     "page",
   );
-  // Profile card sits at the top of the section.
   await expect(page.getByTestId("account-profile-card")).toBeVisible();
-  await expect(displayNameInput(page)).toBeVisible();
-  await expect(page.getByTestId("display-name-save")).toBeVisible();
   await expect(
-    page.getByRole("heading", { level: 2, name: "Password" }),
+    page.getByRole("heading", { level: 3, name: "Profile" }),
+  ).toBeVisible();
+  await expect(displayNameInput(page)).toBeVisible();
+  // Nothing to save until the name changes.
+  await expect(saveDisplayName(page)).toBeDisabled();
+  // The picker's file input is visually hidden but still in the tab order.
+  await page.getByTestId("avatar-file-input").focus();
+  await expect(page.getByTestId("avatar-file-input")).toBeFocused();
+  // Password lives under Sign-in & security now.
+  await expect(page.getByTestId("account-password-card")).toHaveCount(0);
+
+  await expectNavVisible(page);
+});
+
+test("renders the preferences section layout", async ({ page }) => {
+  await gotoReady(page, PREFERENCES);
+
+  await expect(page.getByTestId("settings-nav-preferences")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  for (const group of ["Appearance", "Library", "Book page", "Privacy"]) {
+    await expect(
+      page.getByRole("heading", { level: 3, name: group }),
+    ).toBeVisible();
+  }
+  await expect(page.getByText("Applies to this device.")).toBeVisible();
+  await expect(page.getByTestId("theme-dark")).toBeVisible();
+  for (const name of [
+    "Stack series",
+    "Scroll stops",
+    "Share stats with household",
+  ]) {
+    await expect(page.getByRole("switch", { name })).toBeEnabled();
+  }
+  // Hidden formats is one labelled group of checkboxes that saves on change
+  // (its behaviour is covered by hidden_formats.spec.ts).
+  await expect(
+    page.getByRole("group", { name: "Hidden formats" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("hidden-format-toggle-epub")).toBeVisible();
+  await expect(page.getByTestId("hidden-formats-save")).toHaveCount(0);
+
+  await expectNavVisible(page);
+});
+
+test("renders the devices section layout", async ({ page }) => {
+  await gotoReady(page, DEVICES);
+
+  await expect(page.getByTestId("settings-nav-devices")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(
+    page.getByRole("heading", { level: 3, name: "Kindle" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("account-kindle-card")).toBeVisible();
+  await expect(emailInput(page)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save Kindle email" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("kindle-email-connected")).toBeAttached();
+  await expect(page.getByTestId("kindle-delivery")).toBeVisible();
+  await expect(page.getByTestId("kobo-devices-card")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Choose shelves to sync" }),
+  ).toHaveAttribute("href", "/shelves");
+
+  await expectNavVisible(page);
+});
+
+test("renders the sign-in and security section layout", async ({ page }) => {
+  await gotoReady(page, SECURITY);
+
+  await expect(page.getByTestId("settings-nav-security")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(
+    page.getByRole("heading", { level: 3, name: "Password" }),
   ).toBeVisible();
   await expect(page.getByTestId("account-password-card")).toBeVisible();
   await expect(currentPassword(page)).toBeVisible();
   await expect(newPassword(page)).toBeVisible();
   await expect(page.getByTestId("change-password-submit")).toBeVisible();
-  // The per-user feature switches sit above the goals as a table — one row
-  // per setting, so a new one is a row rather than another card.
-  await expect(page.getByTestId("account-user-settings-card")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Omnibus User Settings" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("user-settings-table")).toBeVisible();
-  await expect(page.getByTestId("user-setting-scroll-stops")).toBeVisible();
-  const scrollStops = page.getByRole("switch", {
-    name: "Use book details scroll stops",
+  await expect(page.getByTestId("account-sessions-card")).toBeVisible();
+  await expect(page.getByTestId("api-tokens-card")).toBeVisible();
+
+  await expectNavVisible(page);
+});
+
+// Delivery readiness is instance configuration (an SMTP relay), so the two
+// states are stubbed rather than set up on the shared server.
+test("names the sender to approve when Kindle delivery is ready", async ({
+  page,
+}) => {
+  await stubKindleDelivery(page, {
+    sender_address: "library@example.com",
+    delivery_ready: true,
   });
-  await expect(scrollStops).toBeEnabled();
-  await expect(page.getByTestId("scroll-stops-soon")).toHaveCount(0);
-  // Share stats with household (its state is covered by the serial block below).
-  await expect(page.getByTestId("user-setting-share-stats")).toBeVisible();
-  await expect(
-    page.getByRole("switch", { name: "Share stats with household" }),
-  ).toBeEnabled();
-  // Hidden-formats card (its behavior is covered by hidden_formats.spec.ts).
-  await expect(page.getByTestId("account-hidden-formats-card")).toBeVisible();
+  await gotoReady(page, DEVICES);
 
-  // Kindle and Kobo have their own sections now — not this one.
-  await expect(page.getByTestId("account-kindle-card")).toHaveCount(0);
-  await expect(page.getByTestId("kobo-devices-card")).toHaveCount(0);
-
-  await expectNavVisible(page);
+  await expect(page.getByTestId("kindle-delivery")).toContainText(
+    "Approve library@example.com",
+  );
+  await expect(page.getByTestId("kindle-sender-copy")).toBeVisible();
 });
 
-test("renders the Kindle section layout", async ({ page }) => {
-  await gotoReady(page, KINDLE);
+test("links an admin to integrations when Kindle delivery isn't set up", async ({
+  page,
+}) => {
+  await stubKindleDelivery(page, {
+    sender_address: null,
+    delivery_ready: false,
+  });
+  await gotoReady(page, DEVICES);
 
-  await expect(page.getByTestId("settings-nav-kindle")).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
   await expect(
-    page.getByRole("heading", { level: 2, name: "Kindle" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("account-kindle-card")).toBeVisible();
-  await expect(emailInput(page)).toBeVisible();
-  await expect(page.getByTestId("kindle-email-save")).toBeVisible();
-  await expect(page.getByTestId("kindle-email-connected")).toBeAttached();
-
-  await expectNavVisible(page);
-});
-
-test("renders the Kobo section layout", async ({ page }) => {
-  await gotoReady(page, KOBO);
-
-  await expect(page.getByTestId("settings-nav-kobo")).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  await expect(page.getByTestId("kobo-devices-card")).toBeVisible();
-
-  await expectNavVisible(page);
+    page.getByRole("link", { name: "Set up email delivery" }),
+  ).toHaveAttribute("href", "/admin?section=integrations");
 });
 
 test("adds a Kobo device with an absolute endpoint URL, then removes it", async ({
   page,
 }) => {
-  await gotoReady(page, KOBO);
+  await gotoReady(page, DEVICES);
 
   const name = `E2E Kobo ${Date.now()}`;
   await page.getByTestId("kobo-device-name-input").fill(name);
@@ -126,6 +197,11 @@ test("adds a Kobo device with an absolute endpoint URL, then removes it", async 
       /^https?:\/\/[^/]+\/kobo\/[^/]+$/,
     );
   } finally {
+    // Remove asks first, naming the device it would stop syncing.
+    await page.getByRole("button", { name: `Remove ${name}` }).click();
+    await expect(
+      page.getByRole("dialog", { name: `Remove ${name}?` }),
+    ).toBeVisible();
     await expectMutation(
       page,
       {
@@ -134,22 +210,21 @@ test("adds a Kobo device with an absolute endpoint URL, then removes it", async 
         expectedBody: { id: created.id },
         expectedStatus: 200,
       },
-      async () => page.getByTestId("kobo-device-remove").last().click(),
+      async () => page.getByTestId("kobo-remove-dialog-confirm").click(),
     );
+    await expect(page.getByTestId("kobo-remove-dialog")).toHaveCount(0);
   }
 });
 
-test("the legacy /account route redirects into the Account section", async ({
-  page,
-}) => {
+test("the legacy /account route redirects into Settings", async ({ page }) => {
   await gotoReady(page, "/account");
 
   await expect(page).toHaveURL(/\/settings\??$/);
-  await expect(page.getByTestId("account-password-card")).toBeVisible();
+  await expect(page.getByTestId("account-profile-card")).toBeVisible();
 });
 
 test("saves the Kindle email and shows a success status", async ({ page }) => {
-  await gotoReady(page, KINDLE);
+  await gotoReady(page, DEVICES);
 
   const address = "reader@kindle.com";
   await emailInput(page).fill(address);
@@ -174,7 +249,7 @@ test("saves the Kindle email and shows a success status", async ({ page }) => {
 test("shows an error status when saving the Kindle email fails", async ({
   page,
 }) => {
-  await gotoReady(page, KINDLE);
+  await gotoReady(page, DEVICES);
 
   await emailInput(page).fill("reader@kindle.com");
 
@@ -212,7 +287,7 @@ test("shows an error status when saving the Kindle email fails", async ({
 test("changes the password and clears the form on success", async ({
   page,
 }) => {
-  await gotoReady(page, ACCOUNT);
+  await gotoReady(page, SECURITY);
 
   await page.route("**/api/rpc/account/change-password", (route) => {
     if (route.request().method() === "POST") {
@@ -251,7 +326,7 @@ test("changes the password and clears the form on success", async ({
 test("rejects a wrong current password and leaves the form untouched", async ({
   page,
 }) => {
-  await gotoReady(page, ACCOUNT);
+  await gotoReady(page, SECURITY);
 
   await currentPassword(page).fill("definitely-not-the-password");
   await newPassword(page).fill("Brand-New-Valid-9x");
@@ -281,7 +356,7 @@ test("rejects a wrong current password and leaves the form untouched", async ({
 });
 
 test("rejects an invalid new password", async ({ page }) => {
-  await gotoReady(page, ACCOUNT);
+  await gotoReady(page, SECURITY);
 
   // Correct current password authorizes; the too-short new password fails
   // policy on the server before any write happens.
@@ -308,7 +383,7 @@ test("rejects an invalid new password", async ({ page }) => {
 // `finally`, and the failure test mocks the response rather than writing.
 
 test("saves the display name and shows a success status", async ({ page }) => {
-  await gotoReady(page, ACCOUNT);
+  await gotoReady(page, PROFILE);
 
   try {
     await displayNameInput(page).fill("Seamus");
@@ -321,7 +396,7 @@ test("saves the display name and shows a success status", async ({ page }) => {
         expectedBody: { display_name: "Seamus" },
         expectedStatus: 200,
       },
-      async () => page.getByTestId("display-name-save").click(),
+      async () => saveDisplayName(page).click(),
     );
 
     await expect(profileStatus(page)).toHaveText("Profile saved.");
@@ -342,7 +417,7 @@ test("saves the display name and shows a success status", async ({ page }) => {
         expectedBody: { display_name: null },
         expectedStatus: 200,
       },
-      async () => page.getByTestId("display-name-save").click(),
+      async () => saveDisplayName(page).click(),
     );
   }
 });
@@ -350,7 +425,7 @@ test("saves the display name and shows a success status", async ({ page }) => {
 test("shows an error status when saving the display name fails", async ({
   page,
 }) => {
-  await gotoReady(page, ACCOUNT);
+  await gotoReady(page, PROFILE);
 
   await displayNameInput(page).fill("Seamus");
 
@@ -372,16 +447,44 @@ test("shows an error status when saving the display name fails", async ({
       url: "/api/rpc/account/profile",
       expectedStatus: 500,
     },
-    async () => page.getByTestId("display-name-save").click(),
+    async () => saveDisplayName(page).click(),
   );
 
   await expect(profileStatus(page)).toHaveClass(/error/);
 });
 
+test("offers Save display name only once the name changes", async ({
+  page,
+}) => {
+  await gotoReady(page, PROFILE);
+  const original = await displayNameInput(page).inputValue();
+
+  await expect(saveDisplayName(page)).toBeDisabled();
+  await displayNameInput(page).fill(`${original} draft`);
+  await expect(saveDisplayName(page)).toBeEnabled();
+  await displayNameInput(page).fill(original);
+  await expect(saveDisplayName(page)).toBeDisabled();
+});
+
+test("asks before leaving an unsaved display name", async ({ page }) => {
+  await gotoReady(page, PROFILE);
+  await displayNameInput(page).fill("Unsaved name");
+
+  await page.getByTestId("settings-nav-preferences").click();
+  await expect(page.getByTestId("unsaved-confirm")).toBeVisible();
+  await page.getByTestId("unsaved-keep").click();
+  await expect(page).toHaveURL(/section=profile$/);
+  await expect(displayNameInput(page)).toHaveValue("Unsaved name");
+
+  await page.getByTestId("settings-nav-preferences").click();
+  await page.getByTestId("unsaved-discard").click();
+  await expect(page).toHaveURL(/section=preferences$/);
+});
+
 test("confirms a replaced avatar and clears it when the next upload starts", async ({
   page,
 }) => {
-  await gotoReady(page, ACCOUNT);
+  await gotoReady(page, PROFILE);
 
   // Stubbed: the admin's real avatar would show in every other spec's menu.
   let answer = 204;
@@ -417,11 +520,11 @@ test("confirms a replaced avatar and clears it when the next upload starts", asy
     pick,
   );
   await expect(page.getByTestId("avatar-status")).toHaveClass(/error/);
-  await expect(profileStatus(page)).toHaveCount(0);
+  await expect(profileStatus(page)).toBeEmpty();
 });
 
 test("shows an error when the avatar upload fails", async ({ page }) => {
-  await gotoReady(page, ACCOUNT);
+  await gotoReady(page, PROFILE);
 
   await page.route("**/api/account/avatar", (route) => {
     if (route.request().method() === "POST") {
@@ -501,12 +604,12 @@ test.describe
       request,
     }) => {
       await clearAllGoals(request);
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, GOALS);
 
       const card = page.getByTestId("account-goals-card");
       await expect(card).toBeVisible();
       await expect(
-        page.getByRole("heading", { level: 2, name: "Reading goals" }),
+        page.getByRole("heading", { name: "Reading goals" }),
       ).toBeVisible();
 
       // Read mode: every kind states its target or that it has none, and there is
@@ -547,7 +650,7 @@ test.describe
 
       // They survive a reload — the card reads all three back off the server,
       // which is what tells an optimistic render apart from a real write.
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, GOALS);
       await expect(page.getByTestId("goal-books-value")).toHaveText("24 books");
       await expect(page.getByTestId("goal-pages-value")).toHaveText("30 pages");
       await expect(page.getByTestId("goal-minutes-value")).toHaveText(
@@ -565,7 +668,7 @@ test.describe
         kind: "pages",
         target: 30,
       });
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, GOALS);
 
       await page.getByTestId("goals-edit").click();
       // Blanking is how a single form drops a goal — there is no Clear per row.
@@ -596,7 +699,7 @@ test.describe
       request,
     }) => {
       await clearAllGoals(request);
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, GOALS);
 
       await page.getByTestId("goals-edit").click();
       // 1,500 is a legal day of pages and an impossible day of minutes, so the
@@ -621,7 +724,7 @@ test.describe
         route.fulfill({ status: 500, contentType: "text/plain", body: "boom" }),
       );
 
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, GOALS);
       await page.getByTestId("goals-edit").click();
       await page.getByTestId("goal-books-input").fill("24");
       await page.getByTestId("goal-pages-input").fill("30");
@@ -642,7 +745,7 @@ test.describe
     }) => {
       await clearAllGoals(request);
       await seedGoal(request, "/api/stats/goal", { target: 24 });
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, GOALS);
 
       await page.getByTestId("goals-edit").click();
       await page.getByTestId("goal-books-input").fill("99");
@@ -682,15 +785,17 @@ test.describe
 
     const shareStatsSwitch = (page: Page) =>
       page.getByRole("switch", { name: "Share stats with household" });
+    const shareStatsStatus = (page: Page) =>
+      page.getByTestId("share-stats-status");
 
     test("turning share stats off saves and survives a reload", async ({
       page,
     }) => {
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, PREFERENCES);
 
       await expect(shareStatsSwitch(page)).toBeChecked();
       await expect(page.getByTestId("user-setting-share-stats")).toContainText(
-        "Other readers on this server can see your stats page.",
+        "On by default.",
       );
 
       await expectMutation(
@@ -705,18 +810,16 @@ test.describe
       );
 
       await expect(shareStatsSwitch(page)).not.toBeChecked();
+      await expect(shareStatsStatus(page)).toHaveText("Saved");
 
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, PREFERENCES);
       await expect(shareStatsSwitch(page)).not.toBeChecked();
-      await expect(page.getByTestId("user-setting-share-stats")).toContainText(
-        "Only you can see your stats page.",
-      );
     });
 
     test("a failed share-stats save puts the switch back and shows the error", async ({
       page,
     }) => {
-      await gotoReady(page, ACCOUNT);
+      await gotoReady(page, PREFERENCES);
       await expect(shareStatsSwitch(page)).toBeChecked();
 
       await page.route("**/api/rpc/account/share-stats", (route) => {
@@ -742,6 +845,9 @@ test.describe
       );
 
       await expect(shareStatsSwitch(page)).toBeChecked();
-      await expect(page.getByTestId("share-stats-error")).toBeVisible();
+      await expect(shareStatsStatus(page)).toHaveText(
+        "Couldn’t save. Try again.",
+      );
+      await expect(shareStatsStatus(page)).toHaveClass(/error/);
     });
   });
