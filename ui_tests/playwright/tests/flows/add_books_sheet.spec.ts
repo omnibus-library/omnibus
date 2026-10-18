@@ -10,7 +10,7 @@ test.describe("add-books sheet (phone viewport)", () => {
     const { tabBar, topNav } = libraryPage;
 
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
     });
 
     // Series left the bar for the centre action, so four tabs split around it.
@@ -30,7 +30,7 @@ test.describe("add-books sheet (phone viewport)", () => {
     const { tabBar, addBooksSheet } = libraryPage;
 
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await expect(addBooksSheet.root).toHaveCount(0);
     });
 
@@ -59,7 +59,7 @@ test.describe("add-books sheet (phone viewport)", () => {
     const { tabBar, addBooksSheet, checkInOverlay } = libraryPage;
 
     await test.step("open the sheet", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await tabBar.openAddBooksSheet();
     });
 
@@ -83,7 +83,7 @@ test.describe("add-books sheet (phone viewport)", () => {
     const { tabBar, addBooksSheet } = libraryPage;
 
     await test.step("open the sheet", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await tabBar.openAddBooksSheet();
     });
 
@@ -104,7 +104,7 @@ test.describe("add-books sheet (phone viewport)", () => {
     const { tabBar, topNav, addBooksSheet } = readerLibraryPage;
 
     await test.step("open the library as the reader", async () => {
-      await readerLibraryPage.gotoSettled();
+      await readerLibraryPage.goto();
     });
 
     // The worker's reader may not upload (see `buildReader`), but checking in a
@@ -131,7 +131,7 @@ test.describe("add-books sheet (phone viewport)", () => {
     const { tabBar, addBooksSheet } = libraryPage;
 
     await test.step("open the sheet", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await tabBar.openAddBooksSheet();
       await expect(addBooksSheet.root).toBeVisible();
     });

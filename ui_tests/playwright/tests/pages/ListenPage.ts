@@ -134,7 +134,7 @@ export class ListenPage extends BasePage {
   }
 
   /** Opens the player without waiting for network idle, which a held request never reaches. */
-  async gotoWithoutSettling(bookUuid: string): Promise<void> {
+  async gotoUnsettled(bookUuid: string): Promise<void> {
     await this.open(`/listen/${bookUuid}`);
   }
 

@@ -20,7 +20,7 @@ test.describe("shelves on the library page", () => {
 
   test("show the shelf gallery layout", async ({ libraryPage }) => {
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
     });
 
     await test.step("check the gallery and its controls", async () => {
@@ -39,7 +39,7 @@ test.describe("shelves on the library page", () => {
       const modal = libraryPage.createShelfModal;
 
       await test.step("open the create-shelf modal", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await libraryPage.shelfGallery.openNewShelf();
         await expect(modal.root).toBeVisible();
       });
@@ -65,7 +65,7 @@ test.describe("shelves on the library page", () => {
       const modal = libraryPage.createShelfModal;
 
       await test.step("fill in the New shelf modal", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await libraryPage.shelfGallery.openNewShelf();
         await expect(modal.root).toBeVisible();
         await modal.fillHandPickedShelf(name);
@@ -93,7 +93,7 @@ test.describe("shelves on the library page", () => {
       const modal = libraryPage.createShelfModal;
 
       await test.step("fill in the New shelf modal", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await libraryPage.forceServerError(shelves.create());
         await libraryPage.shelfGallery.openNewShelf();
         await modal.fillHandPickedShelf("Doomed shelf");
@@ -120,7 +120,7 @@ test.describe("shelves on the library page", () => {
       // An empty shelf shows no error text, so only a forced 500 draws the banner.
       await test.step("fail the member fetch and open the library", async () => {
         await libraryPage.forceServerError(shelves.page());
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
       });
 
       await test.step("select the shelf", async () => {
@@ -147,7 +147,7 @@ test.describe("shelves on the library page", () => {
       const shelfB = await ownShelf("E2E Rail B", { book_uuids: [beta] });
 
       await test.step("select the first shelf", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await libraryPage.selectShelf(shelfA);
         await expect(libraryPage.grid).toContainText("Alpha");
       });
@@ -183,7 +183,7 @@ test.describe("shelves on the library page", () => {
       );
 
       await test.step("select the hand-picked shelf", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await libraryPage.selectShelf(manual);
       });
 
@@ -229,7 +229,7 @@ test.describe("shelves on the library page", () => {
       const editor = libraryPage.editShelfModal;
 
       await test.step("select the shelf", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await libraryPage.selectShelf(shelf);
         await expect(libraryPage.grid).toContainText("Alpha");
         await expect(libraryPage.grid).not.toContainText("Beta in the Series");
@@ -287,7 +287,7 @@ test.describe("shelves on the library page", () => {
       const editor = libraryPage.editShelfModal;
 
       await test.step("select the shelf", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await libraryPage.selectShelf(shelf);
         await expect(libraryPage.shelfFacets).toContainText(
           "Hand-picked shelf",
@@ -342,7 +342,7 @@ test.describe("shelves on the library page", () => {
       const editor = libraryPage.editShelfModal;
 
       await test.step("rename the selected shelf in the editor", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await libraryPage.selectShelf(shelf);
         await libraryPage.forceServerError(shelves.update());
         await libraryPage.openEditShelf();

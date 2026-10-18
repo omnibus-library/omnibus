@@ -38,7 +38,7 @@ test.describe("book detail shelves", () => {
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
     await test.step("open the book", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
     });
 
     await test.step("check the page and its nav", async () => {
@@ -60,7 +60,7 @@ test.describe("book detail shelves", () => {
     const uuid = await fetchBookUuidByTitle(request, SERIES_BOOK.title);
 
     await test.step("open the book", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
     });
 
     // The series shelf already fills the stop, so a book on no shelf gets the
@@ -87,7 +87,7 @@ test.describe("book detail shelves", () => {
     const onPage = bookDetailPage.shelfTile(shelf.id);
 
     await test.step("open the picker", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
       await bookDetailPage.openShelfPicker();
     });
 
@@ -129,7 +129,7 @@ test.describe("book detail shelves", () => {
     const onPage = bookDetailPage.shelfTile(shelf.id);
 
     await test.step("open the picker", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
       await bookDetailPage.openShelfPicker();
     });
 
@@ -170,7 +170,7 @@ test.describe("book detail shelves", () => {
     const onPage = bookDetailPage.shelfTile(shelf.id);
 
     await test.step("open the book", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
     });
 
     await test.step("check the shelf shows as a smart tile", async () => {
@@ -218,7 +218,7 @@ test.describe("book detail shelves", () => {
     });
 
     await test.step("open the book and check the shelf is not listed", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
       await expect(bookDetailPage.shelvesLoading).toHaveCount(0);
       await expect(onPage).toHaveCount(0);
     });
@@ -252,7 +252,7 @@ test.describe("book detail shelves", () => {
     const tile = shelfPicker.shelf(shelf.name);
 
     await test.step("open the picker", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
       await bookDetailPage.openShelfPicker();
     });
 
@@ -293,7 +293,7 @@ test.describe("book detail shelves", () => {
     const tile = shelfPicker.shelf(shelf.name);
 
     await test.step("open the picker", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
       await bookDetailPage.openShelfPicker();
       await expect(tile).toBeChecked();
     });
@@ -323,7 +323,7 @@ test.describe("book detail shelves", () => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("open the picker", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
         await bookDetailPage.openShelfPicker();
       });
 
@@ -343,7 +343,7 @@ test.describe("book detail shelves", () => {
 
       // Escape is handled on the dialog, which takes focus after it paints.
       await test.step("open the picker and wait for its focus", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
         await bookDetailPage.openShelfPicker();
         await expect(shelfPicker.dialog).toBeFocused();
       });
@@ -365,7 +365,7 @@ test.describe("book detail shelves", () => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("open the picker", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
         await bookDetailPage.openShelfPicker();
       });
 
@@ -386,7 +386,7 @@ test.describe("book detail shelves", () => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("open the picker", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
         await bookDetailPage.openShelfPicker();
       });
 
@@ -422,7 +422,7 @@ test.describe("book detail shelves", () => {
     });
 
     await test.step("open the book and jump to the last stop", async () => {
-      await readerBookDetailPage.gotoSettled(uuid);
+      await readerBookDetailPage.goto(uuid);
       // The mode is only known once the viewer resolves, so wait for the swap.
       await expect(stops.snap).toBeAttached();
       await stops.jumpTo(5);
@@ -464,7 +464,7 @@ test.describe("book detail shelves", () => {
     });
 
     await test.step("open the book and jump to the last stop", async () => {
-      await readerBookDetailPage.gotoSettled(uuid);
+      await readerBookDetailPage.goto(uuid);
       await expect(stops.flow).toBeAttached();
       await stops.jumpTo(5);
       await expect(stops.flowTopPill).toHaveClass(/\bon\b/);

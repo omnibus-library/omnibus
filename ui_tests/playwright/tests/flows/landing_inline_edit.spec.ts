@@ -20,7 +20,7 @@ test.describe("inline edit", () => {
 
   test("show the inline edit layout", async ({ libraryPage }) => {
     await test.step("open the table view", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await libraryPage.table.switchTo();
     });
 
@@ -41,7 +41,7 @@ test.describe("inline edit", () => {
     await revertOverridesOf(TARGET.title);
 
     await test.step("open the title editor", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
       await table.openCell(TARGET.slug, "title");
       await expect(table.cellInput(TARGET.slug, "title")).toBeVisible();
@@ -71,7 +71,7 @@ test.describe("inline edit", () => {
     const table = libraryPage.table;
 
     const priorTitle = await test.step("open the table view", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
       return table.cellText(TARGET.slug, "title");
     });
@@ -95,7 +95,7 @@ test.describe("inline edit", () => {
     const table = libraryPage.table;
 
     await test.step("open the table view", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
     });
 
@@ -116,7 +116,7 @@ test.describe("inline edit", () => {
     const table = libraryPage.table;
 
     await test.step("open the authors editor", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
       await table.openCell(TARGET.slug, "author");
     });
@@ -149,7 +149,7 @@ test.describe("inline edit", () => {
     const table = libraryPage.table;
 
     await test.step("open the authors editor", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
       await table.openCell(TARGET.slug, "author");
       await expect(table.cellInput(TARGET.slug, "author")).toBeVisible();
@@ -176,7 +176,7 @@ test.describe("inline edit", () => {
     const table = libraryPage.table;
 
     await test.step("open the authors editor", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
       await table.openCell(TARGET.slug, "author");
       await expect(table.cellInput(TARGET.slug, "author")).toBeVisible();
@@ -209,7 +209,7 @@ test.describe("inline edit", () => {
     await revertOverridesOf(TARGET.title);
 
     await test.step("search the authors editor for a suggestion", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
       await table.openCell(TARGET.slug, "author");
       await table.fillCell(TARGET.slug, "author", "Grace");
@@ -248,7 +248,7 @@ test.describe("inline edit", () => {
       const table = libraryPage.table;
 
       await test.step("open the tags editor", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await table.switchTo();
         await table.openCell(TARGET.slug, "tags");
       });
@@ -283,7 +283,7 @@ test.describe("inline edit", () => {
       await revertOverridesOf(TARGET.title);
 
       await test.step("open the tags editor", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await table.switchTo();
         await table.openCell(TARGET.slug, "tags");
         await expect(table.cellInput(TARGET.slug, "tags")).toBeVisible();
@@ -321,7 +321,7 @@ test.describe("inline edit", () => {
       });
 
       await test.step("open the tags editor", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await table.switchTo();
         await table.openCell(TARGET.slug, "tags");
         await expect(table.cellInput(TARGET.slug, "tags")).toBeVisible();

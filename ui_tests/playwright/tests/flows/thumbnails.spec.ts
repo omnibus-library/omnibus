@@ -16,7 +16,7 @@ test.describe("thumbnails", () => {
     ).toBeTruthy();
 
     await test.step("open the table view", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
     });
 
@@ -41,7 +41,7 @@ test.describe("thumbnails", () => {
     const table = libraryPage.table;
 
     await test.step("open the table view", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
       await expect(table.firstCoverImage).toBeVisible();
     });
@@ -86,7 +86,7 @@ test.describe("thumbnails", () => {
     const slug = bookWithoutCover!.slug;
 
     await test.step("open the table view", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
     });
 

@@ -36,7 +36,7 @@ test.describe("shelves index", () => {
     shelvesIndexPage,
   }) => {
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await expect(libraryPage.topNav.shelvesLink).toHaveCount(0);
     });
 

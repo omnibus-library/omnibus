@@ -96,7 +96,13 @@ export class BookDetailPage extends BasePage {
     );
   }
 
+  /** Opens the book and waits for its first fetches to settle. */
   async goto(bookUuid: string): Promise<void> {
+    await this.openAndSettle(`/books/${bookUuid}`);
+  }
+
+  /** Opens the book while a held fetch keeps the network from idling. */
+  async gotoUnsettled(bookUuid: string): Promise<void> {
     await this.open(`/books/${bookUuid}`);
   }
 
@@ -169,11 +175,6 @@ export class BookDetailPage extends BasePage {
   /** The first link named for the series, which the kicker leads the page with. */
   seriesLink(name: RegExp): Locator {
     return this.page.getByRole("link", { name }).first();
-  }
-
-  /** Opens the book and waits for its first fetches, as `goto` does not. */
-  async gotoSettled(bookUuid: string): Promise<void> {
-    await this.openAndSettle(`/books/${bookUuid}`);
   }
 
   /** Opens the reader through the Start reading action. */

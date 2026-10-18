@@ -15,7 +15,7 @@ test.describe("library page", () => {
 
   test("show the library layout", async ({ libraryPage }) => {
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
     });
 
     await test.step("check the page chrome shows", async () => {
@@ -39,7 +39,7 @@ test.describe("library page", () => {
 
   test("keep captions off the covers until hover", async ({ libraryPage }) => {
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await expect(libraryPage.firstBookTile).toBeVisible();
     });
 
@@ -61,7 +61,7 @@ test.describe("library page", () => {
     const table = libraryPage.table;
 
     await test.step("open the table view", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
     });
 
@@ -108,7 +108,7 @@ test.describe("library page", () => {
         const expected = addedDateText(addedMs, zone.offsetHours);
 
         await test.step("check the table cell", async () => {
-          await libraryPage.gotoSettled();
+          await libraryPage.goto();
           await libraryPage.table.switchTo();
           await expect(libraryPage.table.cell(book.slug, "added")).toHaveText(
             expected,
@@ -127,7 +127,7 @@ test.describe("library page", () => {
     libraryPage,
   }) => {
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await expect(libraryPage.firstBookTile).toBeVisible();
     });
 
@@ -148,7 +148,7 @@ test.describe("library page", () => {
     const table = libraryPage.table;
 
     await test.step("open the library as a grid", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await expect(libraryPage.grid).toBeVisible();
     });
 
@@ -180,7 +180,7 @@ test.describe("library page", () => {
     const table = libraryPage.table;
 
     await test.step("open the table view", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
     });
 
@@ -204,7 +204,7 @@ test.describe("library page", () => {
     libraryPage,
   }) => {
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await expect(libraryPage.sortSelect).toBeVisible();
       await expect(
         libraryPage.sortOption("Recently Interacted"),

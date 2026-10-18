@@ -442,7 +442,7 @@ test.describe("listen page", () => {
       // held media request never idles, so the page is not settled on.
       await test.step("open the player while the media bytes are held", async () => {
         await listenPage.holdAudioParts();
-        await listenPage.gotoWithoutSettling(uuid);
+        await listenPage.gotoUnsettled(uuid);
         await listenPage.waitUntilPlayerReady();
       });
 

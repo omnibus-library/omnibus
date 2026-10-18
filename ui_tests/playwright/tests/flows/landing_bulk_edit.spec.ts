@@ -22,7 +22,7 @@ test.describe("bulk edit", () => {
     const table = libraryPage.table;
 
     await test.step("open the table view", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
     });
 
@@ -38,7 +38,7 @@ test.describe("bulk edit", () => {
     const { table, bulkEditBar } = libraryPage;
 
     await test.step("open the table view", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
     });
 
@@ -65,7 +65,7 @@ test.describe("bulk edit", () => {
     const { table, bulkEditBar } = libraryPage;
 
     await test.step("open the table view", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
     });
 
@@ -92,7 +92,7 @@ test.describe("bulk edit", () => {
     await revertOverridesOf(PRIMARY.title, SECONDARY.title);
 
     await test.step("select two rows and open the editor", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
       await table.selectRows(SELECTED);
       await bulkEditBar.openEditor();
@@ -127,7 +127,7 @@ test.describe("bulk edit", () => {
     const { table, bulkEditBar, bulkEditModal } = libraryPage;
 
     await test.step("fill in the editor for two rows", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
       await table.selectRows(SELECTED);
       await bulkEditBar.openEditor();
@@ -169,7 +169,7 @@ test.describe("bulk edit", () => {
     const shelf = await ownShelf("E2E Bulk Shelf");
 
     await test.step("select two rows and open the shelf picker", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
       await table.selectRows(SELECTED);
       await bulkEditBar.openShelfPicker();
@@ -211,7 +211,7 @@ test.describe("bulk edit", () => {
     const shelf = await ownShelf("E2E Bulk Shelf");
 
     await test.step("select two rows and open the shelf picker", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await table.switchTo();
       await table.selectRows(SELECTED);
       await bulkEditBar.openShelfPicker();

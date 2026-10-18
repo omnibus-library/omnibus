@@ -25,7 +25,7 @@ test.describe("shelf gallery", () => {
       const tile = libraryPage.galleryShelfTile(shelf.id);
 
       await test.step("open the library as a table", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await libraryPage.table.switchTo();
         await expect(gallery.allBooksTile).toHaveAttribute(
           "aria-pressed",
@@ -69,7 +69,7 @@ test.describe("shelf gallery", () => {
       const tile = libraryPage.galleryShelfTile(shelf.id);
 
       await test.step("select the shelf", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await libraryPage.table.switchTo();
         await expectMutation(shelves.page(), () =>
           libraryPage.selectShelf(shelf),
@@ -101,7 +101,7 @@ test.describe("shelf gallery", () => {
       });
 
       await test.step("select the shelf", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await libraryPage.table.switchTo();
         await expectMutation(shelves.page(), () =>
           libraryPage.selectShelf(shelf),
@@ -134,7 +134,7 @@ test.describe("shelf gallery", () => {
       const shelf = await ownShelf("E2E Gallery Empty");
 
       await test.step("select the empty shelf", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await expectMutation(shelves.page(), () =>
           libraryPage.selectShelf(shelf),
         );
@@ -163,7 +163,7 @@ test.describe("shelf gallery", () => {
       const picker = libraryPage.addBooksModal;
 
       await test.step("select the empty shelf", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await expectMutation(shelves.page(), () =>
           libraryPage.selectShelf(shelf),
         );
@@ -202,7 +202,7 @@ test.describe("shelf gallery", () => {
       const picker = libraryPage.addBooksModal;
 
       await test.step("pick a book in the picker", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await expectMutation(shelves.page(), () =>
           libraryPage.selectShelf(shelf),
         );
@@ -250,7 +250,7 @@ test.describe("shelf gallery", () => {
       const picker = libraryPage.addBooksModal;
 
       await test.step("select the shelf", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await expectMutation(shelves.page(), () =>
           libraryPage.selectShelf(shelf),
         );
@@ -327,7 +327,7 @@ test.describe("shelf gallery", () => {
 
       // The facet row states the kind, visibility and rule once the full shelf lands.
       await test.step("select the shelf", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await expectMutation(shelves.page(), () =>
           libraryPage.selectShelf(shelf),
         );
@@ -382,7 +382,7 @@ test.describe("shelf gallery", () => {
         for (let shelf = 0; shelf < 8; shelf++) {
           await ownShelf(`E2E Paging ${shelf}`);
         }
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
       });
 
       // `marquee.js` toggles the `on` class and the tabindex together.
@@ -464,7 +464,7 @@ test.describe("shelf gallery", () => {
 
       // The stack hides itself when empty, so the page is anchored on the section title.
       await test.step("check the reopened library no longer stacks it", async () => {
-        await libraryPage.gotoSettled();
+        await libraryPage.goto();
         await expect(libraryPage.sectionTitle).toBeVisible();
         await expect(stack.card(uuid)).toBeHidden();
       });

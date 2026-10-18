@@ -36,7 +36,7 @@ test.describe("library filters", () => {
     const { filterBar } = libraryPage;
 
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
     });
 
     await test.step("check the page and its nav", async () => {
@@ -59,7 +59,7 @@ test.describe("library filters", () => {
     const { filterBar } = libraryPage;
 
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
     });
 
     await test.step("open the picker", async () => {
@@ -81,7 +81,7 @@ test.describe("library filters", () => {
     const { filterBar } = libraryPage;
 
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
     });
 
     await test.step("switch to the table", async () => {
@@ -100,7 +100,7 @@ test.describe("library filters", () => {
     const { filterBar } = libraryPage;
 
     await test.step("open the picker", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await filterBar.openPicker();
       await expect(filterBar.picker.root).toBeFocused();
     });
@@ -122,7 +122,7 @@ test.describe("library filters", () => {
     const { picker } = libraryPage.filterBar;
 
     await test.step("open the picker on a field with options", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await libraryPage.filterBar.openPicker();
       await expect(picker.root).toHaveAttribute("aria-modal", "true");
       await picker.chooseField("format");
@@ -148,7 +148,7 @@ test.describe("library filters", () => {
     const { filterBar } = libraryPage;
 
     await test.step("open the picker and choose a field", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await filterBar.openPicker();
       await filterBar.picker.chooseField("format");
     });
@@ -169,7 +169,7 @@ test.describe("library filters", () => {
     const { filterBar } = libraryPage;
 
     await test.step("open the picker", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await filterBar.openPicker();
     });
 
@@ -191,7 +191,7 @@ test.describe("library filters", () => {
     const pdfs = slugsWhere((b) => hasFormat(b, "pdf"));
 
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
     });
 
     const { request } = await test.step("filter to PDFs", () =>
@@ -220,7 +220,7 @@ test.describe("library filters", () => {
     const wanted = ["Monica Lam", "Ravi Sethi"];
 
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
     });
 
     await test.step("filter to two authors in one clause", async () => {
@@ -251,7 +251,7 @@ test.describe("library filters", () => {
     const { filterBar } = libraryPage;
 
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
     });
 
     await test.step("include Aho", async () => {
@@ -288,7 +288,7 @@ test.describe("library filters", () => {
     const hidden = slugsWhere((b) => authoredBy(b, "Alfred Aho"));
 
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
     });
 
     await test.step("filter to Aho", async () => {
@@ -335,7 +335,7 @@ test.describe("library filters", () => {
     const pdfs = slugsWhere((b) => hasFormat(b, "pdf"));
 
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
     });
 
     await test.step("filter to PDFs", async () => {
@@ -365,7 +365,7 @@ test.describe("library filters", () => {
     const hidden = ["time-machine", "compiler-compendium-1"];
 
     await test.step("open the library", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
     });
 
     await test.step("add two clauses", async () => {
@@ -408,7 +408,7 @@ test.describe("library filters", () => {
     const { filterBar } = libraryPage;
 
     await test.step("open the library and filter to PDFs", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await expectMutation(ebooks.page(), () =>
         filterBar.addClause(clauses.includePdf),
       );
@@ -458,7 +458,7 @@ test.describe("library filters", () => {
       const { filterBar, addBooksModal } = readerLibraryPage;
 
       await test.step("open the library and select the shelf", async () => {
-        await readerLibraryPage.gotoSettled();
+        await readerLibraryPage.goto();
         await readerLibraryPage.selectShelf(filterShelf);
         await readerLibraryPage.assertShowsBooks(FILTER_SHELF_SLUGS);
       });
@@ -499,7 +499,7 @@ test.describe("library filters", () => {
       const { filterBar } = readerShelfPage;
 
       await test.step("filter All Books to Ullman", async () => {
-        await readerLibraryPage.gotoSettled();
+        await readerLibraryPage.goto();
         await readerExpectMutation(ebooks.page(), () =>
           readerLibraryPage.filterBar.addClause(clauses.includeUllman),
         );
@@ -548,7 +548,7 @@ test.describe("library filters", () => {
       });
 
       await test.step("check All Books shows the same two chips", async () => {
-        await readerLibraryPage.gotoSettled();
+        await readerLibraryPage.goto();
         await expect(readerLibraryPage.filterBar.chips).toHaveCount(2);
         await expect(readerLibraryPage.filterBar.chip(1)).toContainText(
           "Author excludes any of Ravi Sethi",
@@ -565,7 +565,7 @@ test.describe("library filters", () => {
       const { filterBar } = readerShelfPage;
 
       await test.step("filter All Books to Lam", async () => {
-        await readerLibraryPage.gotoSettled();
+        await readerLibraryPage.goto();
         await readerExpectMutation(ebooks.page(), () =>
           readerLibraryPage.filterBar.addClause(clauses.includeLam),
         );
@@ -613,7 +613,7 @@ test.describe("library filters", () => {
       const { filterBar } = readerLibraryPage;
 
       await test.step("open the library and select the shelf", async () => {
-        await readerLibraryPage.gotoSettled();
+        await readerLibraryPage.goto();
         await readerLibraryPage.selectShelf(filterShelf);
       });
 
@@ -688,7 +688,7 @@ test.describe("library filters", () => {
       const { filterBar } = readerShelfPage;
 
       await test.step("filter All Books to Lam PDFs, which rule out the shelf", async () => {
-        await readerLibraryPage.gotoSettled();
+        await readerLibraryPage.goto();
         await readerExpectMutation(ebooks.page(), () =>
           readerLibraryPage.filterBar.addClause(clauses.includeLam),
         );
@@ -735,7 +735,7 @@ test.describe("library filters", () => {
       const { filterBar } = readerShelfPage;
 
       await test.step("filter All Books to Lam PDFs, which rule out the shelf", async () => {
-        await readerLibraryPage.gotoSettled();
+        await readerLibraryPage.goto();
         await readerExpectMutation(ebooks.page(), () =>
           readerLibraryPage.filterBar.addClause(clauses.includeLam),
         );
@@ -781,7 +781,7 @@ test.describe("library filters", () => {
       const { filterBar } = readerLibraryPage;
 
       await test.step("filter All Books to Lam PDFs, which rule out the shelf", async () => {
-        await readerLibraryPage.gotoSettled();
+        await readerLibraryPage.goto();
         await readerExpectMutation(ebooks.page(), () =>
           filterBar.addClause(clauses.includeLam),
         );
@@ -826,7 +826,7 @@ test.describe("library filters", () => {
       const { filterBar } = readerLibraryPage;
 
       await test.step("filter All Books to Lam", async () => {
-        await readerLibraryPage.gotoSettled();
+        await readerLibraryPage.goto();
         await readerExpectMutation(ebooks.page(), () =>
           filterBar.addClause(clauses.includeLam),
         );
@@ -867,7 +867,7 @@ test.describe("library filters", () => {
       const target = filterShelf.memberUuid("compiler-compendium-3");
 
       await test.step("filter All Books to Aho", async () => {
-        await readerLibraryPage.gotoSettled();
+        await readerLibraryPage.goto();
         await readerExpectMutation(ebooks.page(), () =>
           readerLibraryPage.filterBar.addClause(clauses.includeAho),
         );
@@ -917,7 +917,7 @@ test.describe("library filters", () => {
 
       // PDFs only, so the expected set is exact whatever else the library holds.
       await test.step("filter All Books to PDFs", async () => {
-        await readerLibraryPage.gotoSettled();
+        await readerLibraryPage.goto();
         await readerExpectMutation(ebooks.page(), () =>
           filterBar.addClause(clauses.includePdf),
         );

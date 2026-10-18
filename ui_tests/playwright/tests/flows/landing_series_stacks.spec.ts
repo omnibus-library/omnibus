@@ -33,7 +33,7 @@ test.describe("series stacks", () => {
 
   test("show the stack series layout", async ({ readerLibraryPage }) => {
     await test.step("open the library", async () => {
-      await readerLibraryPage.gotoSettled();
+      await readerLibraryPage.goto();
     });
 
     await test.step("check the switch is off with every volume tiled", async () => {
@@ -55,7 +55,7 @@ test.describe("series stacks", () => {
     readerExpectMutation,
   }) => {
     await test.step("open the library", async () => {
-      await readerLibraryPage.gotoSettled();
+      await readerLibraryPage.goto();
     });
 
     await test.step("turn the switch on", async () => {
@@ -94,7 +94,7 @@ test.describe("series stacks", () => {
     await presetStackSeries(true);
 
     await test.step("open the library", async () => {
-      await readerLibraryPage.gotoSettled();
+      await readerLibraryPage.goto();
     });
 
     await test.step("open the Pioneers stack", async () => {
@@ -120,7 +120,7 @@ test.describe("series stacks", () => {
     await presetStackSeries(true);
 
     await test.step("open the Pioneers stack", async () => {
-      await readerLibraryPage.gotoSettled();
+      await readerLibraryPage.goto();
       await readerLibraryPage.openSeriesStack(PIONEERS_STACK);
       await expect(cap.foldButton).toBeFocused();
     });
@@ -154,7 +154,7 @@ test.describe("series stacks", () => {
     await presetStackSeries(true);
 
     await test.step("open the library and mark its cells", async () => {
-      await readerLibraryPage.gotoSettled();
+      await readerLibraryPage.goto();
       await readerLibraryPage.markGridCells();
     });
 
@@ -192,7 +192,7 @@ test.describe("series stacks", () => {
     await presetStackSeries(true);
 
     await test.step("open the library with the stack dealt out", async () => {
-      await readerLibraryPage.gotoSettled();
+      await readerLibraryPage.goto();
       await expect(readerLibraryPage.sortDirectionButton).toHaveText("↑");
       await expect
         .poll(() => readerLibraryPage.stackLeadKey(PIONEERS_STACK))
@@ -228,7 +228,7 @@ test.describe("series stacks", () => {
     await presetStackSeries(true);
 
     await test.step("open the Pioneers stack", async () => {
-      await readerLibraryPage.gotoSettled();
+      await readerLibraryPage.goto();
       await readerLibraryPage.openSeriesStack(PIONEERS_STACK);
     });
 
@@ -248,7 +248,7 @@ test.describe("series stacks", () => {
     await presetStackSeries(true);
 
     await test.step("switch to the table", async () => {
-      await readerLibraryPage.gotoSettled();
+      await readerLibraryPage.goto();
       await readerLibraryPage.table.switchTo();
       await expect(readerLibraryPage.stackToggle).toHaveCount(0);
     });
@@ -271,7 +271,7 @@ test.describe("series stacks", () => {
     readerExpectMutation,
   }) => {
     await test.step("turn the switch on as the reader", async () => {
-      await readerLibraryPage.gotoSettled();
+      await readerLibraryPage.goto();
       await readerExpectMutation(account.stackSeries(true), () =>
         readerLibraryPage.toggleStackSeries(),
       );
@@ -291,7 +291,7 @@ test.describe("series stacks", () => {
 
     // The suite's admin never stacked, so its wall still tiles every volume.
     await test.step("check the admin's wall is unchanged", async () => {
-      await libraryPage.gotoSettled();
+      await libraryPage.goto();
       await expect(libraryPage.volumeTile("beta")).toBeVisible();
       await expect(libraryPage.stackTiles).toHaveCount(0);
     });
@@ -305,7 +305,7 @@ test.describe("series stacks", () => {
     await presetStackSeries(true);
 
     await test.step("open the library with the switch on", async () => {
-      await readerLibraryPage.gotoSettled();
+      await readerLibraryPage.goto();
       await expect(readerLibraryPage.stackToggle).toBeEnabled();
     });
 

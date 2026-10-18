@@ -43,7 +43,7 @@ test.describe("book detail chip editors", () => {
     const { heroChips } = bookDetailPage;
 
     await test.step("open the book", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
     });
 
     await test.step("check the nav shows", async () => {
@@ -78,7 +78,7 @@ test.describe("book detail chip editors", () => {
     const { heroChips } = bookDetailPage;
 
     await test.step("open the tag editor", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
       await heroChips.openTagEditor();
       await expect(heroChips.tagsInput).toBeVisible();
       await expect(heroChips.tagsInput).toHaveAttribute(
@@ -103,7 +103,7 @@ test.describe("book detail chip editors", () => {
 
     // The override is server state, not UI state.
     await test.step("check the tag survives a reload", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
       await expect(heroChips.tagList).toContainText("Alpine Computing");
     });
 
@@ -125,7 +125,7 @@ test.describe("book detail chip editors", () => {
     const { heroChips } = bookDetailPage;
 
     await test.step("open the genre editor", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
       await heroChips.openGenreEditor();
       await expect(heroChips.genresInput).toHaveAttribute(
         "placeholder",
@@ -164,7 +164,7 @@ test.describe("book detail chip editors", () => {
     const { heroChips } = bookDetailPage;
 
     await test.step("open the tag editor with saves failing", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
       await bookDetailPage.forceServerError(overrides.save());
       await heroChips.openTagEditor();
     });
@@ -182,7 +182,7 @@ test.describe("book detail chip editors", () => {
     });
 
     await test.step("check nothing was saved", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
       await expect(heroChips.tagList).not.toContainText("Never Saved");
     });
   });

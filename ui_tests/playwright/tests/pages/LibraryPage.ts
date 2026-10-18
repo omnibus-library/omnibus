@@ -57,8 +57,9 @@ export class LibraryPage extends BasePage {
     });
   }
 
+  /** Opens the landing page and waits for its first fetches to settle. */
   async goto(): Promise<void> {
-    await this.open("/");
+    await this.openAndSettle("/");
   }
 
   /** Filters the book list to `shelf` in place; the page does not navigate. */
@@ -111,11 +112,6 @@ export class LibraryPage extends BasePage {
 
   sortOption(name: string): Locator {
     return this.sortSelect.getByRole("option", { name });
-  }
-
-  /** Opens the landing page and waits for its first fetches to settle. */
-  async gotoSettled(): Promise<void> {
-    await this.openAndSettle("/");
   }
 
   /** Returns once the server-rendered HTML arrives, before the client runs. */
@@ -255,7 +251,7 @@ export class LibraryPage extends BasePage {
       .poll(
         async () => {
           await seed(bookUuid);
-          await this.gotoSettled();
+          await this.goto();
           return this.continueStack.card(bookUuid).count();
         },
         {

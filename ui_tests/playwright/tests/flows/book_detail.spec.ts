@@ -60,7 +60,7 @@ test.describe("book detail page", () => {
     const author = TARGET.authors[0]!;
 
     await test.step("open the book", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
     });
 
     await test.step("check the hero shows", async () => {
@@ -108,7 +108,7 @@ test.describe("book detail page", () => {
 
       await test.step("open the book with the preference off", async () => {
         await setScrollStops(false);
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       // The flow owns the scrolling, so the snap container is not rendered.
@@ -161,7 +161,7 @@ test.describe("book detail page", () => {
       // state the stale read came from.
       await test.step("open the book with the preference off", async () => {
         await setScrollStops(false);
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
         await expect(stops.flow).toBeAttached();
       });
 
@@ -174,7 +174,7 @@ test.describe("book detail page", () => {
 
       await test.step("open the book again", async () => {
         await libraryPage.topNav.openLibrary();
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       await test.step("check the snapped marquee shows", async () => {
@@ -193,7 +193,7 @@ test.describe("book detail page", () => {
 
       await test.step("open the book with the preference on", async () => {
         await setScrollStops(true);
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
         await expect(stops.snap).toBeAttached();
       });
 
@@ -219,7 +219,7 @@ test.describe("book detail page", () => {
 
       await test.step("open the book with the preference on", async () => {
         await setScrollStops(true);
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       // The same six sections either way; only the mechanics differ.
@@ -244,7 +244,7 @@ test.describe("book detail page", () => {
     const { stops, formats } = bookDetailPage;
 
     await test.step("open the book", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
     });
 
     // The scroll is smooth, so the active marker is polled.
@@ -267,7 +267,7 @@ test.describe("book detail page", () => {
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
     await test.step("open the book", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
     });
 
     await test.step("start reading", async () => {
@@ -285,7 +285,7 @@ test.describe("book detail page", () => {
       const { fromSameHand } = bookDetailPage;
 
       await test.step("open the book", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       // The page drops the book itself from its own row.
@@ -316,7 +316,7 @@ test.describe("book detail page", () => {
       const { fromSameHand } = bookDetailPage;
 
       await test.step("open the book", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       await test.step("check the empty note replaces the row", async () => {
@@ -337,7 +337,7 @@ test.describe("book detail page", () => {
 
       await test.step("hold the author fetch and open the book", async () => {
         await fromSameHand.holdAuthorFetch();
-        await bookDetailPage.goto(uuid);
+        await bookDetailPage.gotoUnsettled(uuid);
       });
 
       await test.step("check the block says it is still looking", async () => {
@@ -392,7 +392,7 @@ test.describe("book detail page", () => {
     const { formats, exportMenu, rating, suggestions } = bookDetailPage;
 
     await test.step("open the book", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
     });
 
     await test.step("check the title and author", async () => {
@@ -474,7 +474,7 @@ test.describe("book detail page", () => {
 
       await test.step("open the book without a directory picker", async () => {
         await formats.stubNoDirectoryPicker();
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       await test.step("check the kobo action is offered", async () => {
@@ -504,7 +504,7 @@ test.describe("book detail page", () => {
 
       await test.step("open the book with deliveries stubbed", async () => {
         await formats.stubKindleDelivered();
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
         await expect(formats.kindleButton).toBeEnabled();
       });
 
@@ -530,7 +530,7 @@ test.describe("book detail page", () => {
 
       await test.step("open the book with deliveries failing", async () => {
         await formats.stubKindleDeliveryFailed("SMTP delivery failed");
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       await test.step("send to the kindle", async () => {
@@ -562,7 +562,7 @@ test.describe("book detail page", () => {
 
       await test.step("open the book with no other ratings", async () => {
         await rating.stubOthers([]);
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       await test.step("check no other ratings show", async () => {
@@ -586,7 +586,7 @@ test.describe("book detail page", () => {
 
       await test.step("open the book with another reader's rating", async () => {
         await rating.stubOthers([other]);
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       await test.step("check the rating is attributed to them", async () => {
@@ -616,7 +616,7 @@ test.describe("book detail page", () => {
 
       await test.step("open the unrated book", async () => {
         ratedBookUuids.add(uuid);
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
         await expect(rating.stars).toBeVisible();
         await expect(rating.meta).toHaveText("Not rated yet");
       });
@@ -629,7 +629,7 @@ test.describe("book detail page", () => {
 
       // The post-mount effect refetches the saved rating.
       await test.step("check the rating survives a reload", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
         await expect(rating.meta).toContainText("4.5 of 5");
       });
     });
@@ -650,7 +650,7 @@ test.describe("book detail page", () => {
       });
 
       await test.step("open the rated book", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       // #2352: the lit half star announces the un-rate control instead of the
@@ -671,7 +671,7 @@ test.describe("book detail page", () => {
       const { rating } = bookDetailPage;
 
       await test.step("open the book with rating saves failing", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
         await bookDetailPage.forceServerError(ratings.set());
       });
 
@@ -697,7 +697,7 @@ test.describe("book detail page", () => {
       const { readStatusControl } = bookDetailPage;
 
       await test.step("open the book", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       await test.step("check the three segments show", async () => {
@@ -719,7 +719,7 @@ test.describe("book detail page", () => {
 
       await test.step("open the unread book", async () => {
         await startReadStatusAt(uuid, "unread");
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       await test.step("mark it finished", async () => {
@@ -732,7 +732,7 @@ test.describe("book detail page", () => {
 
       // The post-mount effect refetches the saved state.
       await test.step("check the status survives a reload", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
         await expect(readStatusControl.finishedSegment).toHaveClass(/active/);
       });
     });
@@ -748,7 +748,7 @@ test.describe("book detail page", () => {
 
       await test.step("open the finished book", async () => {
         await startReadStatusAt(uuid, "finished");
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       await test.step("mark it unread", async () => {
@@ -770,7 +770,7 @@ test.describe("book detail page", () => {
 
       await test.step("open the unread book", async () => {
         await startReadStatusAt(uuid, "unread");
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       await test.step("mark it reading", async () => {
@@ -828,7 +828,7 @@ test.describe("book detail page", () => {
         });
 
       await test.step("open the book", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       const card = bookDetailPage.savedPassageCard(passage.text);
@@ -864,7 +864,7 @@ test.describe("book detail page", () => {
 
       const card = bookDetailPage.savedPassageCard(passage.text);
       await test.step("open the book", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
         await expect(card.root).toHaveCount(1);
       });
 
@@ -895,7 +895,7 @@ test.describe("book detail page", () => {
 
       const card = bookDetailPage.savedPassageCard(passage.text);
       await test.step("open the book with deletes failing", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
         await expect(card.root).toHaveCount(1);
         await bookDetailPage.forceServerError(highlights.delete());
       });
@@ -925,7 +925,7 @@ test.describe("book detail page", () => {
 
       const card = bookDetailPage.savedPassageCard(passage.text);
       await test.step("open the book", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       // The decoded cfi is asserted, not the escaping: the Rust encoder escapes
@@ -960,7 +960,7 @@ test.describe("book detail page", () => {
 
       const card = bookDetailPage.savedPassageCard(passage.text);
       await test.step("open the book", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       await test.step("open the editor from the quote", async () => {
@@ -1016,7 +1016,7 @@ test.describe("book detail page", () => {
       });
 
       await test.step("open the book", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       // The stop scrolls its list rather than holding rows back.
@@ -1038,7 +1038,7 @@ test.describe("book detail page", () => {
       const author = TARGET.authors[0]!;
 
       await test.step("open the book", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
         await expect(bookDetailPage.authorLink(author)).toBeVisible();
       });
 
@@ -1059,7 +1059,7 @@ test.describe("book detail page", () => {
       const uuid = await fetchBookUuidByTitle(request, beta.title);
 
       await test.step("open the book", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
         await expect(bookDetailPage.seriesLink(/Pioneers/)).toBeVisible();
       });
 
@@ -1101,7 +1101,7 @@ test.describe("book detail page", () => {
       const uuid = await fetchBookUuidByTitle(request, SOLO_MP3.title);
 
       await test.step("open the book", async () => {
-        await bookDetailPage.gotoSettled(uuid);
+        await bookDetailPage.goto(uuid);
       });
 
       // #1005: a single-file audiobook shows no file picker next to the action.
@@ -1133,7 +1133,7 @@ test.describe("book detail page", () => {
         const { listenFilePicker } = bookDetailPage;
 
         await test.step("open the merged book", async () => {
-          await bookDetailPage.gotoSettled(uuid);
+          await bookDetailPage.goto(uuid);
         });
 
         // A book with more than one file of the format its action opens offers
@@ -1168,7 +1168,7 @@ test.describe("book detail page", () => {
         mergedMp3Book: uuid,
       }) => {
         await test.step("open the merged book", async () => {
-          await bookDetailPage.gotoSettled(uuid);
+          await bookDetailPage.goto(uuid);
         });
 
         // The second, non-default file's id travels with the route and the
@@ -1196,7 +1196,7 @@ test.describe("book detail page", () => {
         const { listenFilePicker } = bookDetailPage;
 
         await test.step("open the merged book", async () => {
-          await bookDetailPage.gotoSettled(uuid);
+          await bookDetailPage.goto(uuid);
           await bookDetailPage.plantFullLoadSentinel();
         });
 

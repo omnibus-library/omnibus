@@ -27,7 +27,7 @@ test.describe("suggestions strip", () => {
     await test.step("open the book with no key configured", async () => {
       await strip.stubNotConfigured();
       await expectMutation(suggestions.fetch(), () =>
-        bookDetailPage.gotoSettled(uuid),
+        bookDetailPage.goto(uuid),
       );
     });
 
@@ -59,7 +59,7 @@ test.describe("suggestions strip", () => {
     await test.step("open the book with nothing cached yet", async () => {
       await strip.stubPending();
       await expectMutation(suggestions.fetch(), () =>
-        bookDetailPage.gotoSettled(uuid),
+        bookDetailPage.goto(uuid),
       );
     });
 
@@ -81,7 +81,7 @@ test.describe("suggestions strip", () => {
     await test.step("open the book with a sticky negative cached", async () => {
       await strip.stubReady([]);
       await expectMutation(suggestions.fetch(), () =>
-        bookDetailPage.gotoSettled(uuid),
+        bookDetailPage.goto(uuid),
       );
     });
 
@@ -103,7 +103,7 @@ test.describe("suggestions strip", () => {
     await test.step("open the book with seven suggestions cached", async () => {
       await strip.stubReady(items);
       await expectMutation(suggestions.fetch(), () =>
-        bookDetailPage.gotoSettled(uuid),
+        bookDetailPage.goto(uuid),
       );
     });
 

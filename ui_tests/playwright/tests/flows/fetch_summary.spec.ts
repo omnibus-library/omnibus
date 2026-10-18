@@ -39,7 +39,7 @@ test.describe("fetch summary", () => {
     const { summary } = bookDetailPage;
 
     await test.step("open the book with a sparse summary", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
       await expect(summary.fetchButton).toBeVisible();
     });
 
@@ -69,7 +69,7 @@ test.describe("fetch summary", () => {
     const long = `${"Every clause here exists only to push this blurb past the clamp. ".repeat(8)}End.`;
 
     await test.step("fetch a long summary", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
       await summary.stubSummaryFound(long);
       await expectMutation(overrides.save(), () => summary.fetchSummary());
     });
@@ -115,7 +115,7 @@ test.describe("fetch summary", () => {
     const { summary } = bookDetailPage;
 
     await test.step("fetch a short summary", async () => {
-      await bookDetailPage.gotoSettled(uuid);
+      await bookDetailPage.goto(uuid);
       await summary.stubSummaryFound(SUMMARY);
       await expectMutation(overrides.save(), () => summary.fetchSummary());
     });
