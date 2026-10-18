@@ -1,6 +1,6 @@
 import type { APIRequestContext, Page } from "@playwright/test";
 import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expectMutation, postFromPage } from "../utils/api";
 import { TEST_PASSWORD } from "../utils/auth";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
@@ -27,6 +27,15 @@ const changeStatus = (page: Page) => page.getByTestId("change-password-status");
 const displayNameInput = (page: Page) => page.getByTestId("display-name-input");
 const profileStatus = (page: Page) => page.getByTestId("profile-status");
 const saveDisplayName = (page: Page) => page.getByTestId("display-name-save");
+
+/** Methods of every request to `path` from now on: a cancelled confirm sends none. */
+function recordRequests(page: Page, path: string): string[] {
+  const seen: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes(path)) seen.push(request.method());
+  });
+  return seen;
+}
 
 /** Answer the Kobo device list read with `devices`. */
 async function stubKoboDevices(
@@ -221,6 +230,21 @@ test("adds a Kobo device with an absolute endpoint URL, then removes it", async 
     const rowTop = (await row.boundingBox())?.y ?? 0;
     const addTop = (await page.getByTestId("kobo-device-add").boundingBox())?.y;
     expect(rowTop).toBeGreaterThan(addTop ?? Number.POSITIVE_INFINITY);
+
+    // Regenerate asks first as well, and backing out sends nothing.
+    const regenerates = recordRequests(
+      page,
+      "/api/rpc/kobo/devices/regenerate",
+    );
+    await page
+      .getByRole("button", { name: `Regenerate token for ${name}` })
+      .click();
+    await expect(
+      page.getByRole("dialog", { name: `Regenerate the token for ${name}?` }),
+    ).toBeVisible();
+    await page.getByTestId("kobo-regenerate-dialog-cancel").click();
+    await expect(page.getByTestId("kobo-regenerate-dialog")).toHaveCount(0);
+    expect(regenerates).toEqual([]);
   } finally {
     // Remove asks first, naming the device it would stop syncing.
     await page.getByRole("button", { name: `Remove ${name}` }).click();
@@ -296,6 +320,67 @@ test("saves the Kindle email and shows a success status", async ({ page }) => {
     "Kindle email saved.",
   );
   await expect(page.getByTestId("kindle-email-status")).toHaveClass(/success/);
+});
+
+test("asks before clearing the Kindle email, naming the address", async ({
+  page,
+}) => {
+  await gotoReady(page, DEVICES);
+  const address = "reader@kindle.com";
+  expect(
+    await postFromPage(page, "/api/rpc/account/kindle-email", {
+      email: address,
+    }),
+  ).toBe(200);
+  await gotoReady(page, DEVICES);
+  const writes = recordRequests(page, "/api/rpc/account/kindle-email");
+
+  await page.getByTestId("kindle-email-clear").click();
+  await expect(page.getByTestId("kindle-email-clear-dialog")).toContainText(
+    address,
+  );
+  await page.getByTestId("kindle-email-clear-dialog-cancel").click();
+
+  await expect(page.getByTestId("kindle-email-clear-dialog")).toHaveCount(0);
+  expect(writes).toEqual([]);
+});
+
+test("asks before revoking another session", async ({ page }) => {
+  // The admin's sessions are shared by every spec, so the list is stubbed.
+  const session = { kind: "cookie", created_at: 1, last_used_at: 1 };
+  await page.route("**/api/auth/sessions", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({
+          json: [
+            {
+              ...session,
+              id: 1,
+              client: "Firefox on Linux",
+              expires_at: 4e9,
+              is_current: true,
+            },
+            {
+              ...session,
+              id: 2,
+              client: "Kobo Libra",
+              expires_at: 4e9,
+              is_current: false,
+            },
+          ],
+        })
+      : route.continue(),
+  );
+  await gotoReady(page, SECURITY);
+  const revokes = recordRequests(page, "/api/auth/sessions/2");
+
+  await page
+    .getByRole("button", { name: "Revoke the session on Kobo Libra" })
+    .click();
+  await expect(page.getByTestId("session-revoke-dialog")).toBeVisible();
+  await page.getByTestId("session-revoke-dialog-cancel").click();
+
+  await expect(page.getByTestId("session-revoke-dialog")).toHaveCount(0);
+  expect(revokes).toEqual([]);
 });
 
 test("shows an error status when saving the Kindle email fails", async ({

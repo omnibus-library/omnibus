@@ -64,9 +64,29 @@ test("keeps typed details when the new user backdrop is clicked", async ({
   await modal.click({ position: { x: 5, y: 5 } });
 
   await expect(modal).toBeVisible();
-  await expect(page.getByTestId("new-user-username")).toHaveValue(
-    "half-typed",
-  );
+  await expect(page.getByTestId("new-user-username")).toHaveValue("half-typed");
+});
+
+test("keeps keyboard focus inside the new user dialog", async ({ page }) => {
+  await gotoReady(page, USERS);
+  await page.getByTestId("users-new").click();
+  const modal = page.getByTestId("users-new-modal");
+  await expect(modal).toBeFocused();
+
+  const focusInModal = () =>
+    page.evaluate(
+      () =>
+        document
+          .querySelector('[data-testid="users-new-modal"]')
+          ?.contains(document.activeElement) ?? false,
+    );
+  // More presses than the dialog has controls, so Tab must wrap at least once.
+  for (let press = 0; press < 12; press++) {
+    await page.keyboard.press("Tab");
+    expect(await focusInModal()).toBe(true);
+  }
+  await page.keyboard.press("Shift+Tab");
+  expect(await focusInModal()).toBe(true);
 });
 
 test("creates a user then deletes it", async ({ page }) => {

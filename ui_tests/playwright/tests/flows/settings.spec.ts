@@ -222,6 +222,85 @@ test("saves the SMTP config and shows a configured status", async ({
   await expect(page.getByTestId("smtp-status")).toContainText("Configured");
 });
 
+test("asks before clearing the SMTP settings", async ({ page }) => {
+  // Configured is instance state, so the read is stubbed rather than set.
+  await page.route("**/api/rpc/smtp", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({
+          json: {
+            configured: true,
+            host: "smtp.example.com",
+            port: 587,
+            username: null,
+            from_email: "library@example.com",
+            security: "starttls",
+            password_masked: "s3…ss",
+            source: "settings",
+          },
+        })
+      : route.continue(),
+  );
+  await gotoReady(page, ADMIN_INTEGRATIONS);
+  const clears: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/rpc/smtp/clear"))
+      clears.push(request.url());
+  });
+
+  await page.getByTestId("smtp-clear").click();
+  await expect(page.getByTestId("smtp-clear-dialog")).toBeVisible();
+  await page.getByTestId("smtp-clear-dialog-cancel").click();
+
+  await expect(page.getByTestId("smtp-clear-dialog")).toHaveCount(0);
+  expect(clears).toEqual([]);
+});
+
+test("follows an old settings link to its new home", async ({ page }) => {
+  await gotoReady(page, "/settings?section=users");
+  await expect(page).toHaveURL(/\/admin\?section=people$/);
+
+  await gotoReady(page, "/settings/cleanup/authors");
+  await expect(page).toHaveURL(/\/admin\/cleanup\/authors$/);
+});
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  /** Whether the page scrolls sideways. */
+  const scrollsSideways = (page: Page) =>
+    page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth,
+    );
+
+  test("pick a settings section from the list, then go back", async ({
+    page,
+  }) => {
+    await gotoReady(page, "/settings");
+    await expect(page.getByTestId("settings-nav-devices")).toBeVisible();
+    await expect(page.getByTestId("settings-back")).toBeHidden();
+    expect(await scrollsSideways(page)).toBe(false);
+
+    await page.getByTestId("settings-nav-devices").click();
+    await expect(page).toHaveURL(/\/settings\?section=devices$/);
+    await expect(page.getByTestId("account-kindle-card")).toBeVisible();
+    await expect(page.getByTestId("settings-nav-devices")).toBeHidden();
+    expect(await scrollsSideways(page)).toBe(false);
+
+    await page.getByTestId("settings-back").click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page.getByTestId("settings-nav-devices")).toBeVisible();
+  });
+
+  test("pick an administration section from the list", async ({ page }) => {
+    await gotoReady(page, "/admin");
+    await page.getByTestId("admin-nav-people").click();
+
+    await expect(page).toHaveURL(/\/admin\?section=people$/);
+    await expect(page.getByTestId("users-table")).toBeVisible();
+    expect(await scrollsSideways(page)).toBe(false);
+  });
+});
+
 test("saves library paths and shows a success status", async ({ page }) => {
   await gotoReady(page, ADMIN_SOURCES);
 

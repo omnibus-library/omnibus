@@ -1,4 +1,4 @@
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext, Browser, Page } from "@playwright/test";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
 import { expectMutation, postFromPage } from "../utils/api";
@@ -18,24 +18,34 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 // which their reservation explicitly allows.
 const PREFERENCES = "/settings?section=preferences";
 const HIDDEN_USER = "hiddenformats";
+// The Preferences tests save on their own user, so they never race the
+// landing test over one account's preference.
+const SAVE_USER = "hiddenformatssave";
 const HIDDEN_PASSWORD = "hidden-formats-pw-00";
 const HIDDEN_FORMATS_RPC = "/api/rpc/account/hidden-formats";
 
 const receipt = (page: Page) => page.getByTestId("lib-hidden-count");
+const formatToggle = (page: Page, format: string) =>
+  page.getByTestId(`hidden-format-toggle-${format}`);
+const saveStatus = (page: Page) => page.getByTestId("hidden-formats-status");
 const hiddenNote = (page: Page) => page.getByTestId("lib-hidden-formats");
 const auroraTiles = (page: Page) =>
   page.getByTestId(/^ebook-tile-aurora-station-/);
 
 test.beforeAll(async ({ request }) => {
   await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-  await ensureHiddenUser(request);
+  await ensureUser(request, HIDDEN_USER);
+  await ensureUser(request, SAVE_USER);
 });
 
-/** Provision the dedicated user via the admin API; 409 = already there. */
-async function ensureHiddenUser(request: APIRequestContext): Promise<void> {
+/** Provision a dedicated user via the admin API; 409 = already there. */
+async function ensureUser(
+  request: APIRequestContext,
+  username: string,
+): Promise<void> {
   const resp = await request.post("/api/admin/users", {
     data: {
-      username: HIDDEN_USER,
+      username,
       password: HIDDEN_PASSWORD,
       permissions: {
         is_admin: false,
@@ -48,10 +58,10 @@ async function ensureHiddenUser(request: APIRequestContext): Promise<void> {
   expect([201, 409]).toContain(resp.status());
 }
 
-/** Log the dedicated user in through the login UI on a cookie-less page. */
-async function logInAsHiddenUser(page: Page): Promise<void> {
+/** Log a dedicated user in through the login UI on a cookie-less page. */
+async function logInAs(page: Page, username: string): Promise<void> {
   await gotoReady(page, "/login");
-  await page.getByLabel("Username").fill(HIDDEN_USER);
+  await page.getByLabel("Username").fill(username);
   await page.getByLabel("Password").fill(HIDDEN_PASSWORD);
   await expectMutation(
     page,
@@ -66,10 +76,7 @@ async function logInAsHiddenUser(page: Page): Promise<void> {
  * card that writes them is account.spec.ts's to drive; this spec is about
  * what the library does with the preference.
  */
-async function saveHiddenFormats(
-  page: Page,
-  formats: string[],
-): Promise<void> {
+async function saveHiddenFormats(page: Page, formats: string[]): Promise<void> {
   const status = await postFromPage(page, HIDDEN_FORMATS_RPC, { formats });
   expect(status, `saving hidden formats ${formats} failed`).toBe(200);
 }
@@ -95,7 +102,7 @@ test("hiding cbz removes comics from the landing for that user only", async ({
   });
   const page = await context.newPage();
   try {
-    await logInAsHiddenUser(page);
+    await logInAs(page, HIDDEN_USER);
     await saveHiddenFormats(page, ["cbz"]);
 
     // Landing: both CBZ-only fixtures gone, receipt visible, and the note
@@ -139,12 +146,12 @@ test("hiding cbz removes comics from the landing for that user only", async ({
     // a hard assert (that would mask whichever failure got us here), but a
     // failed cleanup is loud so leaked state never reads as a mystery flake.
     try {
-      const resp = await context.request.post(HIDDEN_FORMATS_RPC, {
-        data: { formats: [] },
+      const status = await postFromPage(page, HIDDEN_FORMATS_RPC, {
+        formats: [],
       });
-      if (!resp.ok()) {
+      if (status !== 200) {
         console.warn(
-          `hidden_formats cleanup POST failed (${resp.status()}) — later runs may start with cbz hidden`,
+          `hidden_formats cleanup POST failed (${status}) — later runs may start with cbz hidden`,
         );
       }
     } catch (e) {
@@ -152,4 +159,107 @@ test("hiding cbz removes comics from the landing for that user only", async ({
     }
     await context.close();
   }
+});
+
+test.describe("the preference saves as it changes", () => {
+  // Every test resets the same account's preference first.
+  test.describe.configure({ mode: "serial" });
+
+  /** A page signed in as the save user, starting with nothing hidden. */
+  async function preferencesAsSaveUser(
+    browser: Browser,
+    hidden: string[] = [],
+  ) {
+    const context = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
+    });
+    const page = await context.newPage();
+    await logInAs(page, SAVE_USER);
+    expect(
+      await postFromPage(page, HIDDEN_FORMATS_RPC, { formats: hidden }),
+    ).toBe(200);
+    await gotoReady(page, PREFERENCES);
+    return { context, page };
+  }
+
+  test("hide and show a format by ticking it", async ({ browser }) => {
+    const { context, page } = await preferencesAsSaveUser(browser);
+    try {
+      await expectMutation(
+        page,
+        {
+          method: "POST",
+          url: HIDDEN_FORMATS_RPC,
+          expectedBody: { formats: ["cbz"] },
+          expectedStatus: 200,
+        },
+        async () => formatToggle(page, "cbz").check(),
+      );
+      await expect(saveStatus(page)).toHaveText("Saved");
+
+      await expectMutation(
+        page,
+        {
+          method: "POST",
+          url: HIDDEN_FORMATS_RPC,
+          expectedBody: { formats: [] },
+          expectedStatus: 200,
+        },
+        async () => formatToggle(page, "cbz").uncheck(),
+      );
+      await expect(saveStatus(page)).toHaveText("Saved");
+    } finally {
+      await postFromPage(page, HIDDEN_FORMATS_RPC, { formats: [] });
+      await context.close();
+    }
+  });
+
+  test("show a saved format the library doesn't list", async ({ browser }) => {
+    const { context, page } = await preferencesAsSaveUser(browser, ["djvu"]);
+    try {
+      await expect(formatToggle(page, "djvu")).toBeChecked();
+
+      await expectMutation(
+        page,
+        {
+          method: "POST",
+          url: HIDDEN_FORMATS_RPC,
+          expectedBody: { formats: [] },
+          expectedStatus: 200,
+        },
+        // A plain click: the box leaves the list once unhidden, so uncheck()
+        // would wait on a state it can no longer read.
+        async () => formatToggle(page, "djvu").click(),
+      );
+
+      await expect(saveStatus(page)).toHaveText("Saved");
+      await expect(formatToggle(page, "djvu")).toHaveCount(0);
+    } finally {
+      await postFromPage(page, HIDDEN_FORMATS_RPC, { formats: [] });
+      await context.close();
+    }
+  });
+
+  test("put a format back when the server refuses the save", async ({
+    browser,
+  }) => {
+    const { context, page } = await preferencesAsSaveUser(browser);
+    try {
+      await page.route(`**${HIDDEN_FORMATS_RPC}`, (route) =>
+        route.fulfill({ status: 500, body: "{}" }),
+      );
+
+      await expectMutation(
+        page,
+        { method: "POST", url: HIDDEN_FORMATS_RPC, expectedStatus: 500 },
+        async () => formatToggle(page, "cbz").click(),
+      );
+
+      await expect(saveStatus(page)).toHaveText(/Couldn.t save/);
+      await expect(formatToggle(page, "cbz")).not.toBeChecked();
+    } finally {
+      await page.unrouteAll({ behavior: "wait" });
+      await context.close();
+    }
+  });
 });
