@@ -1,6 +1,14 @@
 import type { Locator, Page } from "@playwright/test";
 import { AccountSectionComponent } from "../components/AccountSectionComponent";
+import { CleanupSectionComponent } from "../components/CleanupSectionComponent";
+import { EmailSectionComponent } from "../components/EmailSectionComponent";
+import { LibrarySectionComponent } from "../components/LibrarySectionComponent";
+import { LogsSectionComponent } from "../components/LogsSectionComponent";
+import { MetadataSectionComponent } from "../components/MetadataSectionComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
+import { UsersSectionComponent } from "../components/UsersSectionComponent";
+import { WorkerStatusComponent } from "../components/WorkerStatusComponent";
+import { expect } from "../fixtures/test";
 import { BasePage } from "./BasePage";
 
 /** A `?section=` slug of the settings sidebar. */
@@ -49,9 +57,35 @@ export class SettingsPage extends BasePage {
     );
   }
 
+  /** Opens the old `/logs` address, which redirects into the Logs section. */
+  async gotoLegacyLogs(): Promise<void> {
+    await this.openAndSettle("/logs");
+  }
+
+  async openSection(section: SettingsSection): Promise<void> {
+    await this.sectionLink(section).click();
+  }
+
+  /** Checks the address names `section`. */
+  async assertSectionOpen(section: SettingsSection): Promise<void> {
+    await expect(this.page).toHaveURL(
+      new RegExp(`/settings\\?section=${section}$`),
+    );
+  }
+
   // #region batch-A: auth and account settings
   // #endregion batch-A
 
   // #region batch-B: admin settings
+  readonly library = new LibrarySectionComponent(this.page);
+  readonly workerStatus = new WorkerStatusComponent(this.page);
+  readonly metadata = new MetadataSectionComponent(this.page);
+  readonly email = new EmailSectionComponent(this.page);
+  readonly users = new UsersSectionComponent(this.page);
+  readonly logs = new LogsSectionComponent(this.page);
+  readonly cleanup = new CleanupSectionComponent(this.page);
+  // The sidebar tour needs only these two cards of the Kindle and Kobo sections.
+  readonly kindleCard = this.page.getByTestId("account-kindle-card");
+  readonly koboDevicesCard = this.page.getByTestId("kobo-devices-card");
   // #endregion batch-B
 }

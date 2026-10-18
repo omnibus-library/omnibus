@@ -1,264 +1,215 @@
-import type { Page, Route } from "@playwright/test";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
-import { expectNavVisible, gotoReady } from "../utils/nav";
+import { logs } from "../contracts/logs";
+import { buildLogPage } from "../data/logs";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 
-// The admin log viewer — now the Logs section of Settings (#1324); the legacy
-// `/logs` route redirects here. The layout test runs against the real on-disk
-// logs the server is already writing (proving AC1 end-to-end); the filter /
-// error / pagination tests mock `/api/rpc/logs` after the initial load so the
-// rows under assertion are deterministic.
-const LOGS = "/settings?section=logs";
+// The layout test reads the real on-disk logs; the rest stub the read after the
+// first load so the rows they assert on are fixed.
 
-const levelFilter = (page: Page) => page.getByLabel("Level");
-const moduleFilter = (page: Page) => page.getByLabel("Module");
-const applyButton = (page: Page) => page.getByTestId("logs-apply");
-const rows = (page: Page) => page.getByTestId("logs-row");
+test.describe("logs section", () => {
+  test("show the logs layout", async ({ settingsPage, expectMutation }) => {
+    const { logs: section } = settingsPage;
 
-// Build a `LogPage` JSON body for a mocked response.
-function logPage(
-  records: Array<{
-    level: string;
-    target: string;
-    message: string;
-    fields?: string;
-  }>,
-  opts: { page?: number; per_page?: number; has_more?: boolean } = {},
-) {
-  return JSON.stringify({
-    records: records.map((r, i) => ({
-      timestamp: `2026-07-19T08:00:0${i}.000000Z`,
-      level: r.level,
-      target: r.target,
-      message: r.message,
-      ...(r.fields ? { fields: r.fields } : {}),
-    })),
-    page: opts.page ?? 0,
-    per_page: opts.per_page ?? 50,
-    has_more: opts.has_more ?? false,
-  });
-}
+    // The page reads the logs on mount, as a POST because the read carries a query.
+    await test.step("open the logs section", async () => {
+      await expectMutation(logs.read(), () => settingsPage.goto("logs"));
+    });
 
-// Fulfill a POST to the logs RPC with `body`; pass through everything else.
-function mockLogs(page: Page, body: string | ((route: Route) => string)) {
-  return page.route("**/api/rpc/logs", (route) => {
-    if (route.request().method() !== "POST") return route.continue();
-    const payload = typeof body === "function" ? body(route) : body;
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: payload,
+    await test.step("check the filters and the real records show", async () => {
+      await expect(section.heading).toBeVisible();
+      await expect(settingsPage.sectionLink("logs")).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      await expect(section.levelFilter).toBeVisible();
+      await expect(section.moduleFilter).toBeVisible();
+      await expect(section.fromField).toBeVisible();
+      await expect(section.toField).toBeVisible();
+      await expect(section.applyButton).toBeVisible();
+      // The server logs its own requests, so the real logs are never empty.
+      await expect(section.table).toBeVisible();
+      await expect(section.firstRow).toBeVisible();
+      await settingsPage.topNav.assertDisplayed();
     });
   });
-}
 
-test("renders the log viewer layout from the on-disk logs", async ({
-  page,
-}) => {
-  // The page fires a POST /api/rpc/logs on mount (the framework routes the
-  // arg-bearing read as POST); await it explicitly per rule 04 rather than
-  // leaning on networkidle.
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/logs", expectedStatus: 200 },
-    async () => gotoReady(page, LOGS),
-  );
+  test("filter the logs by level", async ({ settingsPage, expectMutation }) => {
+    const { logs: section } = settingsPage;
 
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Server logs" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("settings-nav-logs")).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  await expect(levelFilter(page)).toBeVisible();
-  await expect(moduleFilter(page)).toBeVisible();
-  await expect(page.getByLabel("From")).toBeVisible();
-  await expect(page.getByLabel("To")).toBeVisible();
-  await expect(applyButton(page)).toBeVisible();
-  // The server is continuously logging its own request handling, so the
-  // real on-disk logs are non-empty — the table renders actual records.
-  await expect(page.getByTestId("logs-table")).toBeVisible();
-  await expect(rows(page).first()).toBeVisible();
-  await expectNavVisible(page);
-});
+    await test.step("open the logs section", async () => {
+      await settingsPage.goto("logs");
+    });
 
-test("filtering by level narrows the results and sends the level in the query", async ({
-  page,
-}) => {
-  await gotoReady(page, LOGS);
+    await test.step("pick the error level", async () => {
+      await section.stubLogs(
+        buildLogPage([
+          {
+            level: "ERROR",
+            target: "omnibus_db::worker::queue",
+            message: "worker: task failed",
+          },
+        ]),
+      );
+      await section.selectLevel("ERROR");
+    });
 
-  // Mock only the post-Apply request so the rendered rows are deterministic.
-  await mockLogs(
-    page,
-    logPage([
-      {
-        level: "ERROR",
-        target: "omnibus_db::worker::queue",
-        message: "worker: task failed",
-      },
-    ]),
-  );
+    await test.step("apply the filter", async () => {
+      await expectMutation(logs.read({ level: "ERROR" }), () =>
+        section.apply(),
+      );
+    });
 
-  await levelFilter(page).selectOption("ERROR");
-  const { request } = await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/logs", expectedStatus: 200 },
-    async () => applyButton(page).click(),
-  );
-  // Lock the meaningful part of the query contract without asserting the whole
-  // serialized shape (page/per_page defaults ride along).
-  expect(request.postDataJSON()).toMatchObject({ query: { level: "ERROR" } });
-
-  await expect(rows(page)).toHaveCount(1);
-  await expect(rows(page).first()).toContainText("worker: task failed");
-  await expect(page.getByText("ERROR", { exact: true })).toBeVisible();
-});
-
-test("filtering by module sends the module substring in the query", async ({
-  page,
-}) => {
-  await gotoReady(page, LOGS);
-
-  await mockLogs(
-    page,
-    logPage([
-      {
-        level: "INFO",
-        target: "omnibus::backend::covers",
-        message: "served cover",
-      },
-    ]),
-  );
-
-  await moduleFilter(page).fill("omnibus::backend");
-  const { request } = await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/logs", expectedStatus: 200 },
-    async () => applyButton(page).click(),
-  );
-  expect(request.postDataJSON()).toMatchObject({
-    query: { module: "omnibus::backend" },
+    await test.step("check only the error record shows", async () => {
+      await expect(section.rows).toHaveCount(1);
+      await expect(section.firstRow).toContainText("worker: task failed");
+      await expect(section.levelText("ERROR")).toBeVisible();
+    });
   });
 
-  await expect(rows(page)).toHaveCount(1);
-  await expect(rows(page).first()).toContainText("omnibus::backend::covers");
-});
+  test("filter the logs by module", async ({
+    settingsPage,
+    expectMutation,
+  }) => {
+    const { logs: section } = settingsPage;
 
-test("paginates to older records and back", async ({ page }) => {
-  await gotoReady(page, LOGS);
+    await test.step("open the logs section", async () => {
+      await settingsPage.goto("logs");
+    });
 
-  // Page 0 has a further page; page 1 is the last. Branch on the requested
-  // page so Older/Newer render distinct, deterministic rows.
-  await mockLogs(page, (route) => {
-    const requestedPage = route.request().postDataJSON()?.query?.page ?? 0;
-    return requestedPage >= 1
-      ? logPage([{ level: "INFO", target: "a", message: "older-record" }], {
-          page: 1,
-          has_more: false,
-        })
-      : logPage([{ level: "INFO", target: "a", message: "newer-record" }], {
-          page: 0,
-          has_more: true,
-        });
+    await test.step("type a module", async () => {
+      await section.stubLogs(
+        buildLogPage([
+          {
+            level: "INFO",
+            target: "omnibus::backend::covers",
+            message: "served cover",
+          },
+        ]),
+      );
+      await section.filterModule("omnibus::backend");
+    });
+
+    await test.step("apply the filter", async () => {
+      await expectMutation(logs.read({ module: "omnibus::backend" }), () =>
+        section.apply(),
+      );
+    });
+
+    await test.step("check only the module's record shows", async () => {
+      await expect(section.rows).toHaveCount(1);
+      await expect(section.firstRow).toContainText("omnibus::backend::covers");
+    });
   });
 
-  // Apply with no filters to land on the mocked page 0.
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/logs", expectedStatus: 200 },
-    async () => applyButton(page).click(),
-  );
-  await expect(page.getByTestId("logs-page-indicator")).toHaveText("Page 1");
-  await expect(page.getByTestId("logs-prev")).toBeDisabled();
-  await expect(rows(page).first()).toContainText("newer-record");
+  test("page through older and newer records", async ({
+    settingsPage,
+    expectMutation,
+  }) => {
+    const { logs: section } = settingsPage;
 
-  // Older → page 1.
-  const { request: olderReq } = await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/logs", expectedStatus: 200 },
-    async () => page.getByTestId("logs-next").click(),
-  );
-  expect(olderReq.postDataJSON()).toMatchObject({ query: { page: 1 } });
-  await expect(page.getByTestId("logs-page-indicator")).toHaveText("Page 2");
-  await expect(page.getByTestId("logs-prev")).toBeEnabled();
-  await expect(page.getByTestId("logs-next")).toBeDisabled();
-  await expect(rows(page).first()).toContainText("older-record");
+    await test.step("open the logs section", async () => {
+      await settingsPage.goto("logs");
+    });
 
-  // Newer → back to page 0.
-  const { request: newerReq } = await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/logs", expectedStatus: 200 },
-    async () => page.getByTestId("logs-prev").click(),
-  );
-  expect(newerReq.postDataJSON()).toMatchObject({ query: { page: 0 } });
-  await expect(page.getByTestId("logs-page-indicator")).toHaveText("Page 1");
-  await expect(page.getByTestId("logs-prev")).toBeDisabled();
-  await expect(rows(page).first()).toContainText("newer-record");
-});
+    // Page 0 has a further page and page 1 is the last, so each shows its own row.
+    await test.step("apply with no filters to land on the first page", async () => {
+      await section.stubLogs((requestedPage) =>
+        requestedPage >= 1
+          ? buildLogPage(
+              [{ level: "INFO", target: "a", message: "older-record" }],
+              { page: 1 },
+            )
+          : buildLogPage(
+              [{ level: "INFO", target: "a", message: "newer-record" }],
+              { page: 0, hasMore: true },
+            ),
+      );
+      await expectMutation(logs.read(), () => section.apply());
+      await expect(section.pageIndicator).toHaveText("Page 1");
+      await expect(section.newerButton).toBeDisabled();
+      await expect(section.firstRow).toContainText("newer-record");
+    });
 
-test("rejects an unauthenticated request to the log endpoint (AC4)", async ({
-  playwright,
-  baseURL,
-}) => {
-  // A fresh request context carries neither the admin bearer (the suite's
-  // default `request` fixture) nor the browser session cookie, so the
-  // `require_auth` boundary must turn it away before any log is read.
-  const anon = await playwright.request.newContext({ baseURL });
-  const response = await anon.post("/api/rpc/logs", {
-    data: { query: { page: 0, per_page: 5 } },
-  });
-  expect(response.status()).toBe(401);
-  await anon.dispose();
-});
+    await test.step("go to older records", async () => {
+      await expectMutation(logs.read({ page: 1 }), () => section.showOlder());
+      await expect(section.pageIndicator).toHaveText("Page 2");
+      await expect(section.newerButton).toBeEnabled();
+      await expect(section.olderButton).toBeDisabled();
+      await expect(section.firstRow).toContainText("older-record");
+    });
 
-test("shows an error status when the log read fails", async ({ page }) => {
-  await gotoReady(page, LOGS);
-
-  await page.route("**/api/rpc/logs", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 500,
-        contentType: "text/plain",
-        body: "forced failure",
-      });
-    }
-    return route.continue();
+    await test.step("go back to newer records", async () => {
+      await expectMutation(logs.read({ page: 0 }), () => section.showNewer());
+      await expect(section.pageIndicator).toHaveText("Page 1");
+      await expect(section.newerButton).toBeDisabled();
+      await expect(section.firstRow).toContainText("newer-record");
+    });
   });
 
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/logs", expectedStatus: 500 },
-    async () => applyButton(page).click(),
-  );
+  // `require_auth` must turn it away before any log is read.
+  test("reject an unauthenticated log request", async ({
+    anonymousLogViewerRequests,
+  }) => {
+    const response = await anonymousLogViewerRequests.postLogs({
+      page: 0,
+      per_page: 5,
+    });
 
-  await expect(page.getByTestId("logs-error")).toBeVisible();
-  await expect(page.getByTestId("logs-error")).toContainText(
-    "Failed to load logs",
-  );
-});
+    expect(response.status()).toBe(401);
+  });
 
-test("reaches the log viewer from the sidebar Logs item (AC3)", async ({
-  page,
-}) => {
-  await gotoReady(page, "/settings");
+  test("show an error when the log read fails", async ({
+    settingsPage,
+    expectMutation,
+  }) => {
+    const { logs: section } = settingsPage;
+    const read = logs.read();
 
-  await page.getByTestId("settings-nav-logs").click();
+    await test.step("open the logs section", async () => {
+      await settingsPage.goto("logs");
+      await settingsPage.forceServerError(read);
+    });
 
-  await expect(page).toHaveURL(/\/settings\?section=logs$/);
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Server logs" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("logs-page")).toBeVisible();
-});
+    await test.step("apply the filters", async () => {
+      await expectMutation(failing(read), () => section.apply());
+    });
 
-test("the legacy /logs route redirects into the Logs section", async ({
-  page,
-}) => {
-  await gotoReady(page, "/logs");
+    await test.step("check the viewer reports the failure", async () => {
+      await expect(section.error).toBeVisible();
+      await expect(section.error).toContainText("Failed to load logs");
+    });
+  });
 
-  await expect(page).toHaveURL(/\/settings\?section=logs$/);
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Server logs" }),
-  ).toBeVisible();
+  test("open the logs from the sidebar", async ({ settingsPage }) => {
+    const { logs: section } = settingsPage;
+
+    await test.step("open settings", async () => {
+      await settingsPage.goto();
+    });
+
+    await test.step("open the logs item", async () => {
+      await settingsPage.openSection("logs");
+    });
+
+    await test.step("check the viewer shows", async () => {
+      await settingsPage.assertSectionOpen("logs");
+      await expect(section.heading).toBeVisible();
+      await expect(section.root).toBeVisible();
+    });
+  });
+
+  test("redirect the legacy logs route into the logs section", async ({
+    settingsPage,
+  }) => {
+    const { logs: section } = settingsPage;
+
+    await test.step("open the old address", async () => {
+      await settingsPage.gotoLegacyLogs();
+    });
+
+    await test.step("check the logs section shows", async () => {
+      await settingsPage.assertSectionOpen("logs");
+      await expect(section.heading).toBeVisible();
+    });
+  });
 });
