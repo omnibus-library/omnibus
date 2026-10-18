@@ -58,6 +58,16 @@ impl AdminSection {
         }
     }
 
+    /// Where copy sends an admin for this section. The native shell has no
+    /// `/admin`; its admin cards sit on its own Settings screen.
+    pub(crate) fn place(self) -> String {
+        if cfg!(feature = "mobile") {
+            "Settings".to_string()
+        } else {
+            format!("Administration \u{203a} {}", self.label())
+        }
+    }
+
     /// Resolve a `?section=` slug; anything unrecognised opens Sources.
     pub(crate) fn parse(raw: Option<&str>) -> AdminSection {
         AdminSection::ALL

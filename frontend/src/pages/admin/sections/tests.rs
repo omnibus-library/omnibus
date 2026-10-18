@@ -35,3 +35,12 @@ fn admin_page_title_names_the_open_section() {
     assert_eq!(admin_page_title(Some("logs")), "Logs · Administration");
     assert_eq!(admin_page_title(None), "Sources · Administration");
 }
+
+#[cfg(not(feature = "mobile"))]
+#[test]
+fn admin_section_place_names_the_administration_section_on_the_web() {
+    assert_eq!(
+        AdminSection::Integrations.place(),
+        "Administration \u{203a} Integrations"
+    );
+}

@@ -17,6 +17,7 @@ use crate::components::loading::{CoverSkeletons, RowSkeletons};
 use crate::components::shelf_facets::pencil_glyph;
 use crate::components::shelf_glyphs::plus_icon;
 use crate::components::{BusyLabel, ShelfFacets, ShelfList};
+use crate::pages::admin::sections::AdminSection;
 use crate::shelf_selection::ShelfSelection;
 
 /// Header banner fields sourced from the page's derived view state.
@@ -235,7 +236,7 @@ fn LandingHeaderMessages(
     rsx! {
         if path_missing {
             p { class: "lib-header-hint",
-                "Configure your ebook library path in Settings."
+                "Configure your ebook library path in {AdminSection::Sources.place()}."
             }
         }
         if let Some(msg) = page_error.as_ref() {
