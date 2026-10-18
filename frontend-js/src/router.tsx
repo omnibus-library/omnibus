@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from "react-router";
+import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
 import { AppShell } from "./layouts/AppShell";
 import { RequireAuth } from "./layouts/RequireAuth";
 import { Account } from "./pages/Account/Account";
@@ -30,7 +30,7 @@ import { StatsChart } from "./pages/StatsChart/StatsChart";
 
 // Mirrors frontend/src/routes.rs: the readers and the player fill the screen,
 // everything else sits under the top bar.
-export const router = createBrowserRouter([
+export const routes: RouteObject[] = [
   { path: "/login", element: <Login /> },
   { path: "/register", element: <Register /> },
   { path: "/connect", element: <Connect /> },
@@ -72,4 +72,6 @@ export const router = createBrowserRouter([
       },
     ],
   },
-]);
+];
+
+export const router = createBrowserRouter(routes);

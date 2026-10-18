@@ -2,3 +2,7 @@
 minimumReleaseAge: 20160
 allowBuilds:
   esbuild: true
+  # Ladle's: swc ships its binary as an optional dependency, and msw's script
+  # only copies a service worker Ladle never registers.
+  "@swc/core": false
+  msw: false

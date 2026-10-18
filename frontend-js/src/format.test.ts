@@ -1,14 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { BookDetail, BookUuid } from "./api";
+import type { BookDetail } from "./api";
 import { descriptionOverflows, homeKicker, plateAuthor } from "./format";
+import { aBook } from "./testing/books";
 
 const book: BookDetail = {
-  uuid: "u1" as BookUuid,
-  title: "Alpha",
-  authors: ["Ada Lovelace"],
-  series: null,
-  accent: null,
-  hasCover: false,
+  ...aBook({ title: "Alpha", authors: ["Ada Lovelace"], series: null }),
   description: null,
   published: "1843-10-01",
   genres: [],
