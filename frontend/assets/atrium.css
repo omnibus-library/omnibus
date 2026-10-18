@@ -11767,7 +11767,11 @@ html {
   position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
   z-index: 6;
   display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+  /* The box is as wide as the toggle, so its empty part beside the dots would
+     take the clicks meant for the panel under it. */
+  pointer-events: none;
 }
+.bdmq-rail > * { pointer-events: auto; }
 .bdmq-dots {
   display: flex; flex-direction: column; gap: 6px; align-items: stretch;
   padding: 10px 7px;
