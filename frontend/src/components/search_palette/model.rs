@@ -37,6 +37,16 @@ pub(super) fn build_flat_items(
     items
 }
 
+/// Where the highlight goes when the list changes under it: the same item in
+/// `after`, or the top when it's gone. Settings list before the server answers
+/// and books land ahead of them, so a plain reset would move it to a book.
+pub(super) fn keep_selection(before: &[FlatItem], selected: usize, after: &[FlatItem]) -> usize {
+    before
+        .get(selected)
+        .and_then(|item| after.iter().position(|candidate| candidate == item))
+        .unwrap_or(0)
+}
+
 fn push_result_items(r: &PaletteResults, items: &mut Vec<FlatItem>) {
     for b in &r.books {
         items.push(FlatItem::Book {

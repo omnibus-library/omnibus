@@ -12,7 +12,7 @@ use dioxus_router::use_navigator;
 use omnibus_shared::PaletteResults;
 
 use super::keyboard::{make_keydown_handler, KeyboardContext};
-use super::model::{build_flat_items, plural, FlatItem};
+use super::model::{build_flat_items, keep_selection, plural, FlatItem};
 use super::results::SpResultsList;
 use super::PaletteOpen;
 use crate::components::glyphs::search_glyph;
@@ -29,6 +29,7 @@ use crate::{data, use_server_url};
 /// server.
 fn build_search_dispatcher(
     server_url: String,
+    settings: Memo<Vec<&'static SettingsEntry>>,
     mut results: Signal<Option<PaletteResults>>,
     mut selected: Signal<usize>,
     mut loading: Signal<bool>,
@@ -53,7 +54,11 @@ fn build_search_dispatcher(
             errored.set(false);
             match data::search_palette(&url, &trimmed).await {
                 Ok(r) => {
-                    selected.set(0);
+                    let settings = settings.peek().clone();
+                    let before = build_flat_items(&results.peek(), &settings);
+                    let after = build_flat_items(&Some(r.clone()), &settings);
+                    let kept = keep_selection(&before, *selected.peek(), &after);
+                    selected.set(kept);
                     results.set(Some(r));
                 }
                 Err(_) => {
@@ -181,6 +186,7 @@ fn build_overlay_wiring(
     });
     let spawn_search = build_search_dispatcher(
         server_url,
+        state.settings,
         results,
         selected,
         loading,
