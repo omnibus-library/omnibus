@@ -77,9 +77,9 @@ final class FirstFillCascade {
     private var lastStart: ContinuousClock.Instant?
 
     /// The delay for the `slot`th cell of a fill: 40ms apart at first, closing
-    /// on 0.32s without reaching it. A linear step clamped at the cap started
-    /// every cell past the eighth together, so a wide grid's fill ended in a
-    /// block; this one decelerates into its tail and keeps every cell in order.
+    /// on 0.32s without reaching it, so every cell starts after the one before.
+    /// The steps shrink as they go: a fill much larger than a phone screen, an
+    /// iPad's, still lands its last rows within a frame or two of each other.
     static func stagger(slot: Int) -> Double {
         0.32 * (1 - pow(0.875, Double(slot)))
     }

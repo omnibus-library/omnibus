@@ -19,7 +19,7 @@ struct FirstFillCascadeTests {
         #expect(delays[0] == 0 && delays[3] > delays[2])
     }
 
-    @Test func aCellAfterTheWindowArrivesWithoutADelayOnceTheFillHasStarted() {
+    @Test func aCellAfterTheWindowArrivesWithoutADelayOnceTheFillsLastCellHasStarted() {
         let cascade = FirstFillCascade()
         let start = ContinuousClock.now
 
@@ -43,7 +43,7 @@ struct FirstFillCascadeTests {
 
         // A mid-fill row starts with the fill's last cell, so allow rounding.
         #expect(zip(starts, starts.dropFirst()).allSatisfy { $1 >= $0 - 1e-9 })
-        #expect(starts[12] > 0.16, "the row scrolled in mid-fill waits for it")
+        #expect(abs(starts[12] - starts[11]) < 1e-9, "the row scrolled in mid-fill starts with its last cell")
         #expect(starts[15] == 0.6, "the row scrolled in afterwards does not")
     }
 
