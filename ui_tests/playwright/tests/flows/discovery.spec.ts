@@ -4,6 +4,7 @@ import { expect, test } from "../fixtures/test";
 import { fetchBookIdByTitle } from "../utils/ebooks";
 import { gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
+import { selectShelfInGallery, withManualShelf } from "../utils/shelves";
 
 // Seed before all tests so the indexer has populated authors/series/tags.
 test.beforeAll(async ({ request }) => {
@@ -119,6 +120,29 @@ test("author page shows the author's books in the library", async ({
   await expect(page.getByTestId("filter-chip-0")).toContainText(
     "Niklaus Wirth",
   );
+});
+
+test("author page leaves a selected shelf to show the author's books", async ({
+  page,
+  request,
+}) => {
+  // The landing restores its last shelf pick, which would otherwise narrow
+  // the author's books to that shelf's (here, none of them).
+  const authorId = await fetchAuthorIdByName(request, "Niklaus Wirth");
+  await withManualShelf(request, "Show in library", async (shelf) => {
+    await gotoReady(page, "/");
+    await selectShelfInGallery(page, shelf.id, shelf.name);
+
+    await gotoReady(page, `/authors/${authorId}`);
+    await page.getByTestId("author-show-in-library").click();
+
+    await expect(page.getByTestId("lib-section-title")).toContainText(
+      "All Books",
+    );
+    await expect(page.getByTestId("filter-chip-0")).toContainText(
+      "Niklaus Wirth",
+    );
+  });
 });
 
 test("author series section heading links to the series page", async ({

@@ -82,7 +82,7 @@ fn current_meta_names_series_percent_and_when() {
     let b = book("a", Some(("Earthsea", "2")));
     let (_, s) = state("a", ReadStatus::Reading, Some(42), Some(10 * DAY));
     assert_eq!(
-        current_meta(&b, &s, 13 * DAY, |t| t),
+        current_meta(&b, &s, 13 * DAY, Some(0)),
         "Earthsea 2 \u{b7} 42% \u{b7} read 3 days ago"
     );
 }
@@ -91,19 +91,32 @@ fn current_meta_names_series_percent_and_when() {
 fn current_meta_drops_what_it_does_not_know() {
     let b = book("a", None);
     let (_, s) = state("a", ReadStatus::Reading, None, None);
-    assert_eq!(current_meta(&b, &s, DAY, |t| t), "");
+    assert_eq!(current_meta(&b, &s, DAY, Some(0)), "");
 }
 
 #[test]
 fn ago_steps_from_days_to_weeks_months_and_years() {
-    assert_eq!(ago(DAY / 2, 0), "today");
-    // Calendar days, not 24-hour spans: 23:00 then 08:00 is yesterday.
-    assert_eq!(ago(DAY + 8 * 3_600, 23 * 3_600), "yesterday");
-    assert_eq!(ago(DAY - 1, DAY / 2), "today");
-    assert_eq!(ago(DAY, 0), "yesterday");
-    assert_eq!(ago(20 * DAY, 0), "2 weeks ago");
-    assert_eq!(ago(95 * DAY, 0), "3 months ago");
-    assert_eq!(ago(800 * DAY, 0), "2 years ago");
+    let utc = Some(0);
+    assert_eq!(ago(DAY / 2, 0, utc), "today");
+    assert_eq!(ago(DAY, 0, utc), "yesterday");
+    assert_eq!(ago(20 * DAY, 0, utc), "2 weeks ago");
+    assert_eq!(ago(95 * DAY, 0, utc), "3 months ago");
+    assert_eq!(ago(800 * DAY, 0, utc), "2 years ago");
+}
+
+#[test]
+fn ago_counts_calendar_days_in_the_readers_zone() {
+    // 23:00 then 08:00 the next morning is yesterday, not today.
+    assert_eq!(ago(DAY + 8 * 3_600, 23 * 3_600, Some(0)), "yesterday");
+    // 18:00 and 20:00 at UTC-5 are one evening, though UTC midnight falls between.
+    let at = |h: i64| DAY + h * 3_600 + 5 * 3_600;
+    assert_eq!(ago(at(20), at(18), Some(-5 * 3_600)), "today");
+}
+
+#[test]
+fn ago_counts_whole_days_when_the_zone_is_unknown() {
+    assert_eq!(ago(DAY + 8 * 3_600, 23 * 3_600, None), "today");
+    assert_eq!(ago(2 * DAY, 0, None), "2 days ago");
 }
 
 #[test]

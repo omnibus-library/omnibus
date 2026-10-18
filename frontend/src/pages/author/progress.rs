@@ -60,7 +60,7 @@ pub fn current_meta(
     book: &EbookMetadata,
     state: &BookReading,
     now: i64,
-    to_local: impl Fn(i64) -> i64,
+    zone_secs: Option<i64>,
 ) -> String {
     let series = book.series.as_ref().map(|s| match &book.series_index {
         Some(i) => format!("{s} {i}"),
@@ -69,7 +69,7 @@ pub fn current_meta(
     let percent = state.percent.map(|p| format!("{p}%"));
     let when = state
         .last_read_at
-        .map(|at| format!("read {}", ago(to_local(now), to_local(at))));
+        .map(|at| format!("read {}", ago(now, at, zone_secs)));
     [series, percent, when]
         .into_iter()
         .flatten()
@@ -77,10 +77,14 @@ pub fn current_meta(
         .join(" \u{b7} ")
 }
 
-/// "today", "yesterday", "3 days ago", "5 weeks ago", "2 years ago", counted
-/// in calendar days: both times are already on the reader's local clock.
-pub fn ago(now: i64, then: i64) -> String {
-    let days = (now.div_euclid(86_400) - then.div_euclid(86_400)).max(0);
+/// "today", "yesterday", "3 days ago", "5 weeks ago", "2 years ago": calendar
+/// days in the reader's zone (`zone_secs` east of UTC); whole 24-hour days
+/// when the zone is unknown, rather than a guessed midnight.
+pub fn ago(now: i64, then: i64, zone_secs: Option<i64>) -> String {
+    let days = match zone_secs {
+        Some(z) => ((now + z).div_euclid(86_400) - (then + z).div_euclid(86_400)).max(0),
+        None => (now - then).max(0) / 86_400,
+    };
     let plural = |n: i64, unit: &str| format!("{n} {unit}{} ago", if n == 1 { "" } else { "s" });
     match days {
         0 => "today".to_string(),
@@ -93,7 +97,12 @@ pub fn ago(now: i64, then: i64) -> String {
 }
 
 /// The progress strip and, when there is one, the book in progress.
-pub fn reading_strip(books: &[EbookMetadata], states: &BookStates, server_url: &str) -> Element {
+pub fn reading_strip(
+    books: &[EbookMetadata],
+    states: &BookStates,
+    server_url: &str,
+    zone_secs: Option<i64>,
+) -> Element {
     if books.is_empty() {
         return rsx! {};
     }
@@ -110,7 +119,7 @@ pub fn reading_strip(books: &[EbookMetadata], states: &BookStates, server_url: &
                 }
             }
             if let Some((book, state)) = current {
-                {current_card(book, state, server_url)}
+                {current_card(book, state, server_url, zone_secs)}
             }
         }
     }
@@ -130,13 +139,15 @@ fn progress_bar(total: usize, t: Tally) -> Element {
 }
 
 /// The book in progress: cover, title, where the reader is, and Resume.
-fn current_card(book: &EbookMetadata, state: &BookReading, server_url: &str) -> Element {
+fn current_card(
+    book: &EbookMetadata,
+    state: &BookReading,
+    server_url: &str,
+    zone_secs: Option<i64>,
+) -> Element {
     let uuid = book.unique_identifier.clone().unwrap_or_default();
     let title = book.display_title();
-    // Day boundaries are the reader's own midnights.
-    let meta = current_meta(book, state, crate::time::now_unix(), |t| {
-        t + crate::time::local_utc_offset_secs(t)
-    });
+    let meta = current_meta(book, state, crate::time::now_unix(), zone_secs);
     let resume = reader_route(
         uuid.clone(),
         state.format,

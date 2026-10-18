@@ -123,10 +123,12 @@ pub fn AuthorsBrowser(routed: Option<i64>) -> Element {
         .read()
         .ready()
         .map(|m| m.values().filter(|r| r.reading > 0).count());
-    let total = (!loading() && error.read().is_none()).then(|| authors.read().len());
+    // A failed refresh keeps its rows, so only an empty list has no count.
+    let have_rows = !authors.read().is_empty();
+    let total = (!loading() && (have_rows || error.read().is_none())).then(|| authors.read().len());
     let rows_pending =
         loading() || (sort() == AuthorSort::Recent && *reading.read() == ReadingState::Pending);
-    use_reveal_current_row(shown.is_some() && !rows_pending);
+    use_reveal_current_row(shown.is_some() && have_rows && !rows_pending);
 
     rsx! {
         div {

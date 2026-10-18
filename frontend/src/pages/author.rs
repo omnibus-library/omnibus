@@ -51,6 +51,8 @@ pub fn AuthorPage(id: i64, #[props(default)] preview: bool) -> Element {
     let url = server_url.clone();
     let generation = crate::use_cache_generation();
     let mut wanted = use_signal(|| id);
+    // The reader's zone for "read today"; asked in the effect, as rule 07 wants.
+    let mut zone_secs: Signal<Option<i64>> = use_signal(|| None);
     use_effect(use_reactive!(|id| {
         // Re-run on cache-revalidation bumps; the refetch is a cache hit.
         let _ = generation();
@@ -64,6 +66,7 @@ pub fn AuthorPage(id: i64, #[props(default)] preview: bool) -> Element {
             if *wanted.peek() != id {
                 return;
             }
+            zone_secs.set(crate::time::local_utc_offset_minutes().map(|m| m * 60));
             match reply {
                 Ok(a) => {
                     author.set(a);
@@ -82,7 +85,7 @@ pub fn AuthorPage(id: i64, #[props(default)] preview: bool) -> Element {
         (Some(a), err) if a.id == id || err.is_none() => rsx! {
             // A different author still on screen while this one loads stays,
             // dimmed, rather than blanking the pane between two clicks.
-            Stale { stale, {render_author(a, server_url, author, is_admin())} }
+            Stale { stale, {render_author(a, server_url, author, is_admin(), zone_secs())} }
         },
         (_, Some(msg)) if !loading() => rsx! {
             PageError { message: msg, back_to: Route::AuthorsIndex {} }
@@ -102,6 +105,7 @@ fn render_author(
     server_url: String,
     author: Signal<Option<AuthorDetail>>,
     is_admin: bool,
+    zone_secs: Option<i64>,
 ) -> Element {
     // The first cover-derived accent tints the pane (`authors.css` evens out
     // its lightness); the theme's otherwise.
@@ -131,7 +135,7 @@ fn render_author(
                 author,
                 is_admin,
             }
-            {reading_strip(&books, &states, &server_url)}
+            {reading_strip(&books, &states, &server_url, zone_secs)}
             {author_shelves(books, &states, &server_url)}
         }
     }
