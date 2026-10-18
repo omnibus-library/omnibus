@@ -431,6 +431,22 @@ async fn ebook_image_file_get_with_a_sig_param_passes_without_a_session() {
 }
 
 #[tokio::test]
+async fn ebook_image_file_head_with_a_sig_param_passes_without_a_session() {
+    let (app, _pool) = app().await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("HEAD")
+                .uri("/api/ebooks/some-uuid/images/file?href=map.png&expires=1&sig=abc")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn ebook_image_file_get_without_sig_or_session_is_401() {
     let (app, _pool) = app().await;
     let res = app

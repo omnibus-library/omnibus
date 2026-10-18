@@ -56,7 +56,7 @@ fn is_media_read_path(path: &str) -> bool {
 /// signature itself.
 fn is_signed_image_fetch(req: &Request) -> bool {
     let path = req.uri().path();
-    req.method() == Method::GET
+    matches!(*req.method(), Method::GET | Method::HEAD)
         && path.starts_with("/api/ebooks/")
         && path.ends_with("/images/file")
         && req
