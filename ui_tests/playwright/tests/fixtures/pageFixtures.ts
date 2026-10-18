@@ -1357,11 +1357,11 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   },
 
   uploadAuthorPhoto: async ({ authorsRequests }, use) => {
-    const uploaded: number[] = [];
+    const uploaded = new Set<number>();
     await use(async (authorId) => {
       const put = await authorsRequests.putPhoto(authorId);
       expect(put.status(), `upload a photo for author ${authorId}`).toBe(204);
-      uploaded.push(authorId);
+      uploaded.add(authorId);
     });
     for (const authorId of uploaded) {
       const deleted = await authorsRequests.deletePhoto(authorId);
