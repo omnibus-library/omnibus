@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{BufReader, Cursor, Read};
+use std::io::{BufReader, Read};
 use std::path::Path;
 
 use anyhow::Context;
@@ -71,7 +71,7 @@ fn manifest_images(doc: &Package, archive: &mut Archive) -> BTreeMap<String, Boo
             .take(DIMENSION_PREFIX_BYTES)
             .read_to_end(&mut prefix)
             .ok()
-            .and_then(|_| pixel_size(&prefix));
+            .and_then(|_| crate::metadata_lookup::cover::dimensions(&prefix));
         images.entry(href.clone()).or_insert(BookImage {
             href,
             media_type: item.mime.clone(),
@@ -170,14 +170,6 @@ fn archive_entry<'a>(archive: &'a mut Archive, href: &str) -> ZipResult<ZipFile<
         .or_else(|| archive.index_for_name(&urlencoding::decode(href).ok()?))
         .ok_or(ZipError::FileNotFound)?;
     archive.by_index(index)
-}
-
-fn pixel_size(prefix: &[u8]) -> Option<(u32, u32)> {
-    image::ImageReader::new(Cursor::new(prefix))
-        .with_guessed_format()
-        .ok()?
-        .into_dimensions()
-        .ok()
 }
 
 /// Every image reference in an XHTML page, in document order.

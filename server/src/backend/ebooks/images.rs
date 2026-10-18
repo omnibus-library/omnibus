@@ -7,6 +7,8 @@
 //! A link is an HMAC over (uuid, href, expiry) under the server's secret: it opens
 //! that one image until it expires and nothing else, so a leaked URL is not a session.
 
+use std::path::PathBuf;
+
 use axum::{
     extract::{Path, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
@@ -136,15 +138,9 @@ pub(crate) async fn get_ebook_images(
     State(state): State<AppState>,
     Path(uuid): Path<String>,
 ) -> Response {
-    let id = match db::resolve_book_id_by_uuid(&state.pool, &uuid).await {
-        Ok(Some(id)) => id,
-        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-        Err(e) => return internal("resolve_book_id_by_uuid", e),
-    };
-    let path = match db::book_file_path(&state.pool, id, "EPUB").await {
-        Ok(Some(p)) => p,
-        Ok(None) => return no_epub(),
-        Err(e) => return internal("book_file_path", e),
+    let path = match epub_path(&state, &uuid).await {
+        Ok(path) => path,
+        Err(rejection) => return rejection,
     };
     let listed = tokio::task::spawn_blocking(move || list_images(&path)).await;
     let images = match listed {
@@ -159,8 +155,20 @@ pub(crate) async fn get_ebook_images(
     .into_response()
 }
 
-fn no_epub() -> Response {
-    (StatusCode::UNPROCESSABLE_ENTITY, "book has no EPUB file").into_response()
+/// The book's EPUB path, or the rejection: 404 unknown uuid, 422 no EPUB, 500 lookup failure.
+async fn epub_path(state: &AppState, uuid: &str) -> Result<PathBuf, Response> {
+    let id = match db::resolve_book_id_by_uuid(&state.pool, uuid).await {
+        Ok(Some(id)) => id,
+        Ok(None) => return Err(StatusCode::NOT_FOUND.into_response()),
+        Err(e) => return Err(internal("resolve_book_id_by_uuid", e)),
+    };
+    match db::book_file_path(&state.pool, id, "EPUB").await {
+        Ok(Some(path)) => Ok(path),
+        Ok(None) => {
+            Err((StatusCode::UNPROCESSABLE_ENTITY, "book has no EPUB file").into_response())
+        }
+        Err(e) => Err(internal("book_file_path", e)),
+    }
 }
 
 /// Query params for `GET /api/ebooks/{uuid}/images/file`. `expires` and `sig` are
@@ -232,15 +240,9 @@ async fn reject_bad_link(
 /// `If-None-Match` answers 304 before the EPUB is parsed, since it proves this
 /// exact (file, href) was served before.
 async fn serve_image(state: &AppState, uuid: &str, href: &str, headers: &HeaderMap) -> Response {
-    let id = match db::resolve_book_id_by_uuid(&state.pool, uuid).await {
-        Ok(Some(id)) => id,
-        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-        Err(e) => return internal("resolve_book_id_by_uuid", e),
-    };
-    let path = match db::book_file_path(&state.pool, id, "EPUB").await {
-        Ok(Some(p)) => p,
-        Ok(None) => return no_epub(),
-        Err(e) => return internal("book_file_path", e),
+    let path = match epub_path(state, uuid).await {
+        Ok(path) => path,
+        Err(rejection) => return rejection,
     };
     let open = match conditional::open(&path).await {
         Ok(o) => o,

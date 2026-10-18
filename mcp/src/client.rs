@@ -299,19 +299,27 @@ impl OmnibusClient {
 
     /// `GET path`, re-logging-in transparently on a 401: bearer sessions
     /// idle-expire after 7 days, so a long-idle MCP server's next tool call
-    /// must re-establish the session without user intervention.
+    /// must re-establish the session without user intervention. Any other
+    /// non-success status is a [`ClientError::Status`].
     async fn get_with_relogin(
         &self,
         path: &str,
         query: &[(&str, String)],
     ) -> Result<reqwest::Response, ClientError> {
         let token = self.bearer().await?;
-        let resp = self.send_get(path, query, &token).await?;
-        if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
-            return Ok(resp);
+        let mut resp = self.send_get(path, query, &token).await?;
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            let token = self.login_once(Some(&token)).await?;
+            resp = self.send_get(path, query, &token).await?;
         }
-        let token = self.login_once(Some(&token)).await?;
-        self.send_get(path, query, &token).await
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(ClientError::Status {
+                path: path.to_string(),
+                status: status.as_u16(),
+            });
+        }
+        Ok(resp)
     }
 
     /// `GET path` and decode the body as `T`, with the pagination headers.
@@ -321,13 +329,6 @@ impl OmnibusClient {
         query: &[(&str, String)],
     ) -> Result<(T, PageMeta), ClientError> {
         let resp = self.get_with_relogin(path, query).await?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(ClientError::Status {
-                path: path.to_string(),
-                status: status.as_u16(),
-            });
-        }
         let header = |name: &str| {
             resp.headers()
                 .get(name)
@@ -363,13 +364,6 @@ impl OmnibusClient {
         query: &[(&str, String)],
     ) -> Result<(String, Vec<u8>), ClientError> {
         let resp = self.get_with_relogin(path, query).await?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(ClientError::Status {
-                path: path.to_string(),
-                status: status.as_u16(),
-            });
-        }
         let content_type = resp
             .headers()
             .get(reqwest::header::CONTENT_TYPE)

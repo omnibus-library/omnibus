@@ -6,7 +6,7 @@
 //! answers attributed and un-collapsed — right for the editor's edition picker.
 
 mod config;
-mod cover;
+pub(crate) mod cover;
 mod hydrate;
 mod providers;
 pub mod query;

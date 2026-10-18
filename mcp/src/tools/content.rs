@@ -280,12 +280,6 @@ impl OmnibusMcp {
         Parameters(p): Parameters<ReadBookImageParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let uuid = crate::tools::path_segment(&p.book_uuid, "book_uuid")?;
-        if p.href.trim().is_empty() {
-            return Err(ErrorData::invalid_params(
-                "href must be an image href from list_book_images",
-                None,
-            ));
-        }
         let query = [("href", p.href.clone())];
         // Fetching the original proves the href is a manifest image and gives its
         // true size and type before a link is minted for it.

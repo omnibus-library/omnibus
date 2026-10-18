@@ -122,7 +122,7 @@ fn ratio(width: u32, height: u32) -> Option<f64> {
 }
 
 /// Pixel dimensions from an image header, without decoding the pixels.
-fn dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+pub(crate) fn dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     image::ImageReader::new(std::io::Cursor::new(bytes))
         .with_guessed_format()
         .ok()?

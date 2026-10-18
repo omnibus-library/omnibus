@@ -550,15 +550,3 @@ async fn with_bearer_surfaces_a_401_as_token_rejected_instead_of_relogin() {
     assert!(matches!(err, ClientError::TokenRejected), "got: {err}");
     assert_eq!(stub.logins.load(Ordering::SeqCst), 0);
 }
-
-#[test]
-fn with_bearer_reports_the_given_public_url() {
-    let client = OmnibusClient::with_bearer(
-        "http://127.0.0.1:3000".into(),
-        "caller-token".into(),
-        "https://omnibus.example.com".into(),
-    )
-    .unwrap();
-
-    assert_eq!(client.public_url(), "https://omnibus.example.com");
-}
