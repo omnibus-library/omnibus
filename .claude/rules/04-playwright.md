@@ -1,3 +1,6 @@
+---
+paths: "ui_tests/**, test_data/**, db/tests/fixture_epubs.rs, .github/workflows/e2e.yml, omnibus-ios/omnibusUITests/**, scripts/explore/driver/package.json, flake.nix"
+---
 # 04 — Playwright E2E conventions
 
 These rules exist so every flow is tested the same way. Don't diverge without updating this file first.

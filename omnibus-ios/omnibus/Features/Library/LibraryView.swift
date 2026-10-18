@@ -340,14 +340,6 @@ struct LibraryView: View {
     private var connectivity = Connectivity.shared
     private var invalidations = ReplicaInvalidations.shared
 
-    // `alignment: .top` matters here: GridItem defaults to centering each
-    // item within its row, so a row of `BookGridCell`s whose captions wrap to
-    // a different number of lines (a book with a one-line title next to one
-    // that wraps to two) gets its shorter cells pushed down to stay centered
-    // — the cover art itself renders at the same 2:3 size, but sits at a
-    // different vertical offset, which reads as "a different size" (#1481).
-    private let columns = [GridItem(.adaptive(minimum: 112, maximum: 168), spacing: 16, alignment: .top)]
-
     /// Named so a test can prove it resolves. A misspelt SF Symbol doesn't fail
     /// to compile or warn — `Image(systemName:)` just draws nothing, so the
     /// button would ship as an empty circle.
@@ -513,12 +505,9 @@ struct LibraryView: View {
     }
 
     private var grid: some View {
-        LazyVGrid(columns: columns, spacing: 26) {
-            ForEach(Array(model.gridItems.enumerated()), id: \.element.id) { index, item in
-                gridCell(item)
-                    .cascadeIn(index: index)
-                    .task { await model.loadMoreIfNeeded(currentItem: item.anchor) }
-            }
+        CoverGrid(model.gridItems) { item in
+            gridCell(item)
+                .task { await model.loadMoreIfNeeded(currentItem: item.anchor) }
         }
         .screenPadding()
         .overlay(alignment: .bottom) {

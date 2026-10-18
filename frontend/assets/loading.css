@@ -366,9 +366,10 @@ input[type="checkbox"].ld-unknown:not(.settings-switch *)::after {
 }
 
 /* ── Cover plate · an image still arriving ──────────────────────── */
-/* Painted behind the <img>, which covers it the moment it has pixels — no
-   load event to miss across hydration. A few passes, then it rests: a grid of
-   a hundred covers must not keep a hundred animations alive underneath. */
+/* Painted behind the <img>, which stays out until it has decoded — keyed on
+   `data-loaded`, so there's no load event to miss across hydration. A few
+   passes, then it rests: a grid of a hundred covers must not keep a hundred
+   animations alive underneath. */
 .ld-cover-glint { position: relative; overflow: hidden; }
 .ld-cover-glint::before {
   content: ""; position: absolute; inset: 0; z-index: 0; transform: translateX(-100%);
@@ -376,7 +377,14 @@ input[type="checkbox"].ld-unknown:not(.settings-switch *)::after {
   animation: ld-glint 2.2s var(--ld-ease) 3;
   animation-delay: calc(var(--i, 0) * 60ms);
 }
-.ld-cover-glint > img { position: relative; z-index: 1; }
+/* The cover fades in whole. A browser draws an image as its bytes arrive, and
+   may paint the rows still missing white — shown, that is a white sheet wiping
+   slowly down the plate. */
+.ld-cover-glint > img {
+  position: relative; z-index: 1;
+  opacity: 0; transition: opacity .25s var(--ld-ease-out);
+}
+.ld-cover-glint > img[data-loaded] { opacity: 1; }
 /* Stop the moment the image is in. `data-loaded` is stamped by the page's
    early load listener (see `BootScript`) — a cover that loaded but is
    transparent, like a 1×1 placeholder, would otherwise glint through it. */
@@ -432,6 +440,7 @@ input[type="checkbox"].ld-unknown:not(.settings-switch *)::after {
   .ld, .ld-busy-face > .ld-ring { animation: none; }
   .ld-skel::after, .ld-cover-glint::before,
   .ld-toggle-unknown::after, .ld-stale.is-stale::before { animation: none; display: none; }
+  .ld-cover-glint > img { transition: none; }
   .ld-ring::before { animation: none; transform: rotate(.35turn); }
   .ld-ring, .ld-line, .ld-riffle, .ld-sheen, .ld-toggle-unknown, .ld-dot {
     animation: ld-breathe 2.4s ease-in-out infinite;
