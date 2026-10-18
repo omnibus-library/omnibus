@@ -91,6 +91,23 @@ test("author page shows books by the author", async ({ page, request }) => {
   await expect(page.getByText("Quartet I: Lexer")).toBeVisible();
 });
 
+test("author page shows the author's books in the library", async ({
+  page,
+  request,
+}) => {
+  // A fresh browser context has never saved library prefs, which is the case
+  // a saved filter alone can't reach: the filter must be handed over.
+  const authorId = await fetchAuthorIdByName(request, "Niklaus Wirth");
+  await gotoReady(page, `/authors/${authorId}`);
+
+  await page.getByTestId("author-show-in-library").click();
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("filter-chip-0")).toContainText(
+    "Niklaus Wirth",
+  );
+});
+
 test("author series section heading links to the series page", async ({
   page,
   request,

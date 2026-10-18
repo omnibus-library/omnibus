@@ -393,17 +393,26 @@ fn wire_bulk_selection_clear(
 
 /// Two-stage view-prefs hydration: the last-browsed library on mount (so the
 /// grid's first paint is already sorted), then the authoritative path
-/// once a fetch reveals it (covering the pointer having guessed wrong).
+/// once a fetch reveals it (covering the pointer having guessed wrong). A
+/// [`crate::LibraryFilterHandoff`] filter replaces the stored one on mount.
 fn wire_prefs_hydration(mut prefs: Signal<ViewPrefs>, fetch_sigs: FetchSignals) {
     // Reads nothing reactively, so it runs exactly once after mount — and
     // `prefs_ready` flips either way, since a first-ever visit has no pointer
     // and must still proceed on the defaults rather than never fetching.
     let mut prefs_ready = fetch_sigs.prefs_ready;
+    let mut unsaved = fetch_sigs.prefs_unsaved;
+    let mut handoff = crate::use_library_filter_handoff();
     use_effect(move || {
         if let Some(stored) = view_prefs::load_last() {
             if stored != *prefs.peek() {
                 prefs.set(stored);
             }
+        }
+        // A filter handed over by another page wins, and is saved like an
+        // edit made before the library was known: by the reconcile below.
+        if let Some(filters) = handoff.write().take() {
+            prefs.write().filters = filters;
+            unsaved.set(true);
         }
         prefs_ready.set(true);
     });
@@ -414,7 +423,6 @@ fn wire_prefs_hydration(mut prefs: Signal<ViewPrefs>, fetch_sigs: FetchSignals) 
     // answer, so `reconcile_action` acts only on a path not yet reconciled (or
     // on edits made before it was known) and never reloads over live prefs.
     let lib_path = fetch_sigs.lib_path;
-    let mut unsaved = fetch_sigs.prefs_unsaved;
     let mut reconciled = use_signal(|| None::<String>);
     use_effect(move || {
         let Some(path) = lib_path.read().clone() else {

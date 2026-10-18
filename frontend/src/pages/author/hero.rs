@@ -24,18 +24,18 @@ pub fn AuthorHero(
     is_admin: bool,
 ) -> Element {
     let nav = use_navigator();
+    let mut handoff = crate::use_library_filter_handoff();
     let show_in_library = {
         let name = name.clone();
         move |_| {
-            // The landing reads the filter it saved, so a saved author clause
-            // is how it opens narrowed to them.
-            crate::view_prefs::save_filters(&ViewFilters {
+            // Replaces the library's filter with this author alone.
+            handoff.set(Some(ViewFilters {
                 clauses: vec![FilterClause::new(
                     FilterField::Author,
                     FilterMode::Include,
                     &[name.as_str()],
                 )],
-            });
+            }));
             nav.push(Route::Landing {});
         }
     };

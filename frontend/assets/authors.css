@@ -195,8 +195,10 @@
 }
 .au-progress { flex: 1 1 280px; max-width: 460px; }
 .au-segs { display: flex; gap: 6px; height: 8px; }
+/* Capped, so an author with two books gets two short pills, not two halves. */
 .au-seg {
-  position: relative; flex: 1; overflow: hidden; border-radius: 4px; background: var(--bg-3);
+  position: relative; flex: 1; max-width: 44px; overflow: hidden;
+  border-radius: 4px; background: var(--bg-3);
 }
 .au-seg.is-done { background: var(--au-tint); }
 .au-seg.is-now { background: color-mix(in oklch, var(--au-tint) 30%, var(--bg-3)); }
