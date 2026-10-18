@@ -5432,6 +5432,20 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   .settings-nav-item, .settings-tab { transition: none; }
 }
 
+/* Small print in settings stays legible: the muted ink and an 11px floor. */
+.settings-nav-group-label,
+.settings-content .settings-hint,
+.settings-content .tkx-create-hint,
+.settings-content .tkx-row-id,
+.settings-content .tkx-admin-tag,
+.settings-content .tkx-count { color: var(--ink-2); }
+.settings-content .tkx-count,
+.settings-content .tkx-scope-chip,
+.settings-content .tkx-pill,
+.settings-content .tkx-switch-state,
+.settings-content .tkx-admin-tag,
+.settings-content .users-table .mono { font-size: 11px; }
+
 .users-created { white-space: nowrap; }
 /* On a phone the accounts table reads as a list: one block per person, the
    columns run inline and the actions get their own line. */
