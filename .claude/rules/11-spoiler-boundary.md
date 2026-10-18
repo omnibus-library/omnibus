@@ -1,3 +1,6 @@
+---
+paths: "db/src/content_fts/**, db/src/progress.rs, db/src/progress/**, mcp/**, shared/src/content_search/**, server/src/backend/search.rs, server/src/backend/search/**"
+---
 # 11 — What a reader may be shown
 
 The content tools answer one question with a safety property attached: *may I

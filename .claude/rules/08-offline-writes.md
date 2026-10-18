@@ -1,3 +1,6 @@
+---
+paths: "frontend/src/offline/**, frontend/src/data.rs, frontend/src/data/**, omnibus-ios/omnibus/Offline/**, omnibus-ios/omnibus/Services/**, omnibus-ios/omnibusTests/OfflineSyncTests.swift"
+---
 # 08 — What may be queued offline
 
 Both clients hold a durable mutation outbox — `OpKind` in

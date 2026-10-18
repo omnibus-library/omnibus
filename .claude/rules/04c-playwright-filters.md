@@ -1,3 +1,6 @@
+---
+paths: "ui_tests/**, frontend/src/components/filter_bar/**"
+---
 # 04c — Playwright: the library filter
 
 Companion to [04a-playwright-surfaces.md](04a-playwright-surfaces.md): the filter

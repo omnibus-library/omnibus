@@ -1,3 +1,6 @@
+---
+paths: "frontend/**"
+---
 # 12 — Loading states
 
 Every surface that waits draws from one vocabulary:

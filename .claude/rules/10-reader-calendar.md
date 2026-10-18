@@ -1,3 +1,6 @@
+---
+paths: "db/src/stats/**, db/src/user_offset.rs, db/src/user_offset/**, db/src/progress/ledger/**, db/migrations/**, server/src/backend/stats.rs, server/src/backend/stats/**, frontend/src/pages/stats/**, frontend/src/pages/chart_builder/**"
+---
 # 10 — Which calendar a figure is cut on
 
 Two questions look alike and take different answers. Getting them the wrong way
