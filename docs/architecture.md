@@ -183,6 +183,15 @@ value as a nullable field (`{ "progress": null }`). MCP requires an
 server over one tool that breaks the rule. rmcp no longer enforces this, so
 `every_tool_advertises_an_object_rooted_output_schema` does.
 
+`read_book_image` returns a download URL for an EPUB image's original, for a
+person to open rather than the tool layer to call. It is a per-image HMAC-signed
+link: 15 minutes, minted by `GET /api/ebooks/{uuid}/images/link` for
+download-permitted users and verified by the fetch without a session, so a leaked
+URL opens that one image and nothing else. It is built on the caller's public
+origin — the configured base URL over stdio, the `/mcp` request's own origin when
+hosted (`AppState::request_origin`) — never the loopback the hosted tools call
+through.
+
 MCP sessions are separable everywhere: `User-Agent: omnibus-mcp/<ver>` on every
 request (logged by the server's request span), and login sends
 `client_kind: "bearer"` + `device_name: "omnibus-mcp"` so a dedicated device

@@ -14,9 +14,10 @@
 //!   permission gate is enforced by the same handlers.
 //!
 //! Tools expose the library, search, discovery, shelf, stats, progress, and
-//! annotation reads — plus the check-in, wishlist, shelf, and metadata
-//! repair tools — with result schemas derived from the `omnibus_shared`
-//! wire types. Write policy is [`client::WRITE_ALLOWLIST`]; stdio
+//! annotation reads, the book-content reads (chapter text, full-text search,
+//! and an EPUB's images with expiring download links) — plus the check-in,
+//! wishlist, shelf, and metadata repair tools — with result schemas derived
+//! from the `omnibus_shared` wire types. Write policy is [`client::WRITE_ALLOWLIST`]; stdio
 //! configuration is documented on [`config`].
 
 pub mod client;
