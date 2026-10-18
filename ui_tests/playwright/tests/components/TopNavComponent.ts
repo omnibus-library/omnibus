@@ -79,7 +79,7 @@ export class TopNavComponent extends BaseComponent {
   }
 
   /** A link in the bar, by its label. */
-  navLink(name: "Authors" | "Series"): Locator {
+  navLink(name: "Authors" | "Series" | "Stats"): Locator {
     return this.root.getByRole("link", { name });
   }
 
@@ -156,6 +156,6 @@ export class TopNavComponent extends BaseComponent {
   }
 
   async openStats(): Promise<void> {
-    await this.root.getByRole("link", { name: "Stats" }).click();
+    await this.navLink("Stats").click();
   }
 }

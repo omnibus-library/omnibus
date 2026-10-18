@@ -17,12 +17,12 @@ export type SettingsSection =
 export class SettingsPage extends SettingsShellPage<SettingsSection> {
   protected readonly urlPattern = /\/settings(?:\?|$)/;
 
-  readonly adminLink: Locator;
+  readonly account: AccountSectionComponent;
+  readonly kindle: KindleSectionComponent;
+  readonly kobo: KoboSectionComponent;
+  readonly apiTokens: ApiTokensSectionComponent;
 
-  readonly account = new AccountSectionComponent(this.page);
-  readonly kindle = new KindleSectionComponent(this.page);
-  readonly kobo = new KoboSectionComponent(this.page);
-  readonly apiTokens = new ApiTokensSectionComponent(this.page);
+  readonly adminLink: Locator;
 
   constructor(page: Page) {
     super(page, {
@@ -31,6 +31,10 @@ export class SettingsPage extends SettingsShellPage<SettingsSection> {
       title: "Settings",
       navTestId: "settings-nav",
     });
+    this.account = new AccountSectionComponent(page);
+    this.kindle = new KindleSectionComponent(page);
+    this.kobo = new KoboSectionComponent(page);
+    this.apiTokens = new ApiTokensSectionComponent(page);
     this.adminLink = page.getByTestId("settings-nav-admin");
   }
 

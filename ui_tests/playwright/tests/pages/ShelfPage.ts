@@ -16,6 +16,7 @@ export class ShelfPage extends BasePage {
   readonly topNav: TopNavComponent;
   readonly addBooksModal: AddBooksModalComponent;
   readonly editShelfModal: EditShelfModalComponent;
+  readonly filterBar: FilterBarComponent;
 
   readonly titleHeading: Locator;
   readonly kickerText: Locator;
@@ -38,12 +39,22 @@ export class ShelfPage extends BasePage {
   readonly deleteDialog: Locator;
   readonly deleteConfirmButton: Locator;
   readonly deleteError: Locator;
+  readonly count: Locator;
+  readonly countPending: Locator;
+  readonly loading: Locator;
+  readonly filteredEmptyMessage: Locator;
+  readonly refetchError: Locator;
+  readonly clearFiltersButton: Locator;
+
+  private heldReads = 0;
+  private releaseHeldReads = () => {};
 
   constructor(page: Page) {
     super(page);
     this.topNav = new TopNavComponent(page);
     this.addBooksModal = new AddBooksModalComponent(page);
     this.editShelfModal = new EditShelfModalComponent(page);
+    this.filterBar = new FilterBarComponent(page);
     this.titleHeading = page.getByRole("heading", { level: 1 });
     this.kickerText = page.getByTestId("shelf-kicker");
     this.ownerBadge = page.getByTestId("shelf-owner");
@@ -67,6 +78,14 @@ export class ShelfPage extends BasePage {
     this.deleteDialog = page.getByTestId("shelf-delete-modal");
     this.deleteConfirmButton = page.getByTestId("shelf-delete-confirm");
     this.deleteError = page.getByTestId("shelf-delete-error");
+    this.count = page.getByTestId("shelf-count");
+    this.countPending = page.getByTestId("shelf-count-pending");
+    this.loading = page.getByTestId("shelf-loading");
+    this.filteredEmptyMessage = page.getByTestId("shelf-filtered-empty");
+    this.refetchError = page.getByTestId("shelf-refetch-error");
+    this.clearFiltersButton = page.getByRole("button", {
+      name: "Clear filters",
+    });
   }
 
   protected get readyLocator(): Locator {
@@ -83,6 +102,11 @@ export class ShelfPage extends BasePage {
     return this.page.getByRole("listitem", {
       name: `Open details for ${title}`,
     });
+  }
+
+  /** The button on a member's tile that takes it off a hand-picked shelf. */
+  removeButton(bookUuid: string): Locator {
+    return this.page.getByTestId(`shelf-remove-${bookUuid}`);
   }
 
   /** Opens the shelf from the `/shelves` index, as a reader does. */
@@ -147,31 +171,6 @@ export class ShelfPage extends BasePage {
     await this.sortSelect.selectOption(order);
   }
 
-  /** Checks the page is showing shelf `shelfId`, not just any shelf. */
-  async assertDisplayedFor(shelfId: number): Promise<void> {
-    await expect(this.page).toHaveURL(new RegExp(`/shelves/${shelfId}$`));
-    await expect(this.titleHeading).toBeVisible();
-  }
-
-  readonly filterBar = new FilterBarComponent(this.page);
-
-  readonly count = this.page.getByTestId("shelf-count");
-  readonly countPending = this.page.getByTestId("shelf-count-pending");
-  readonly loading = this.page.getByTestId("shelf-loading");
-  readonly filteredEmptyMessage = this.page.getByTestId("shelf-filtered-empty");
-  readonly refetchError = this.page.getByTestId("shelf-refetch-error");
-  readonly clearFiltersButton = this.page.getByRole("button", {
-    name: "Clear filters",
-  });
-
-  private heldReads = 0;
-  private releaseHeldReads = () => {};
-
-  /** The button on a member's tile that takes it off a hand-picked shelf. */
-  removeButton(bookUuid: string): Locator {
-    return this.page.getByTestId(`shelf-remove-${bookUuid}`);
-  }
-
   async clearFilters(): Promise<void> {
     await this.clearFiltersButton.click();
   }
@@ -202,14 +201,6 @@ export class ShelfPage extends BasePage {
           )
           .sort(),
       );
-  }
-
-  /** Checks the grid shows exactly these members and the count says so. */
-  async assertShowsMembers(titles: string[]): Promise<void> {
-    await expect
-      .poll(() => this.memberTitles(), { message: "tiles on the shelf page" })
-      .toEqual([...titles].sort());
-    await expect(this.count).toHaveText(String(titles.length));
   }
 
   /** Answers 500 to member reads that carry a filter; the rest go through. */
@@ -295,5 +286,19 @@ export class ShelfPage extends BasePage {
         await route.continue();
       }
     });
+  }
+
+  /** Checks the page is showing shelf `shelfId`, not just any shelf. */
+  async assertDisplayedFor(shelfId: number): Promise<void> {
+    await expect(this.page).toHaveURL(new RegExp(`/shelves/${shelfId}$`));
+    await expect(this.titleHeading).toBeVisible();
+  }
+
+  /** Checks the grid shows exactly these members and the count says so. */
+  async assertShowsMembers(titles: string[]): Promise<void> {
+    await expect
+      .poll(() => this.memberTitles(), { message: "tiles on the shelf page" })
+      .toEqual([...titles].sort());
+    await expect(this.count).toHaveText(String(titles.length));
   }
 }

@@ -35,6 +35,26 @@ export class BookDetailPage extends BasePage {
   readonly topNav: TopNavComponent;
   readonly checkInOverlay: CheckInOverlayComponent;
   readonly stops: BookDetailStopsComponent;
+  readonly formats: FormatSwitcherComponent;
+  readonly exportMenu: BookExportComponent;
+  readonly rating: RatingComponent;
+  readonly readStatusControl: ReadStatusControlComponent;
+  readonly savedPassages: SavedPassagesComponent;
+  readonly quoteCard: QuoteCardModalComponent;
+  readonly fromSameHand: FromSameHandComponent;
+  readonly listenFilePicker: ListenFilePickerComponent;
+  readonly heroChips: HeroChipsComponent;
+  readonly summary: BookSummaryComponent;
+  readonly suggestions: SuggestionsStripComponent;
+  readonly journal: JournalSectionComponent;
+  readonly journalEntry: JournalEntryOverlayComponent;
+  readonly deleteFilesDialog: DeleteFilesDialogComponent;
+  readonly mergeDialog: MergeDialogComponent;
+  readonly wishlist: WishlistCardComponent;
+  readonly physicalCopy: PhysicalCopyCardComponent;
+  readonly shelfPicker: ShelfPickerComponent;
+  readonly syncLink: SyncLinkComponent;
+  readonly alignmentModal: AlignmentModalComponent;
 
   readonly titleHeading: Locator;
   readonly readButton: Locator;
@@ -51,12 +71,39 @@ export class BookDetailPage extends BasePage {
   readonly removeCopyButton: Locator;
   readonly lastCopyDialog: Locator;
   readonly removeFromLibraryButton: Locator;
+  readonly authorsLine: Locator;
+  readonly heroCover: Locator;
+  readonly startListeningButton: Locator;
+  readonly editMetadataLink: Locator;
+  readonly notFoundMessage: Locator;
+  readonly addToShelfButton: Locator;
+  readonly shelvesLoading: Locator;
 
   constructor(page: Page) {
     super(page);
     this.topNav = new TopNavComponent(page);
     this.checkInOverlay = new CheckInOverlayComponent(page);
     this.stops = new BookDetailStopsComponent(page);
+    this.formats = new FormatSwitcherComponent(page);
+    this.exportMenu = new BookExportComponent(page);
+    this.rating = new RatingComponent(page);
+    this.readStatusControl = new ReadStatusControlComponent(page);
+    this.savedPassages = new SavedPassagesComponent(page);
+    this.quoteCard = new QuoteCardModalComponent(page);
+    this.fromSameHand = new FromSameHandComponent(page);
+    this.listenFilePicker = new ListenFilePickerComponent(page);
+    this.heroChips = new HeroChipsComponent(page);
+    this.summary = new BookSummaryComponent(page);
+    this.suggestions = new SuggestionsStripComponent(page);
+    this.journal = new JournalSectionComponent(page);
+    this.journalEntry = new JournalEntryOverlayComponent(page);
+    this.deleteFilesDialog = new DeleteFilesDialogComponent(page);
+    this.mergeDialog = new MergeDialogComponent(page);
+    this.wishlist = new WishlistCardComponent(page);
+    this.physicalCopy = new PhysicalCopyCardComponent(page);
+    this.shelfPicker = new ShelfPickerComponent(page);
+    this.syncLink = new SyncLinkComponent(page);
+    this.alignmentModal = new AlignmentModalComponent(page);
     this.titleHeading = page.getByRole("heading", { level: 1 });
     this.readButton = page.getByTestId("action-read");
     // The labels change with reading progress, so the row is found by test id.
@@ -77,15 +124,18 @@ export class BookDetailPage extends BasePage {
     this.removeFromLibraryButton = this.lastCopyDialog.getByRole("button", {
       name: "Remove from library",
     });
+    this.authorsLine = page.getByTestId("book-authors");
+    // "From the same hand" adds a cover per tile, so the first is the hero's.
+    this.heroCover = page.getByTestId("cover").first();
+    this.startListeningButton = page.getByTestId("start-listening");
+    this.editMetadataLink = page.getByTestId("edit-metadata");
+    this.notFoundMessage = page.getByText("Book not found.");
+    this.addToShelfButton = page.getByTestId("bdmq-add-to-shelf");
+    this.shelvesLoading = page.getByTestId("bdmq-shelves-loading");
   }
 
   protected get readyLocator(): Locator {
     return this.titleHeading;
-  }
-
-  /** The copy card a test filed, picked out by its unique note. */
-  physicalCopyCard(note: string): Locator {
-    return this.physicalCopyCards.filter({ hasText: note });
   }
 
   /** The saved-passage card whose quote contains `quote`. */
@@ -94,6 +144,42 @@ export class BookDetailPage extends BasePage {
       this.page,
       this.savedPassages.cards.filter({ hasText: quote }),
     );
+  }
+
+  /** The copy card a test filed, picked out by its unique note. */
+  physicalCopyCard(note: string): Locator {
+    return this.physicalCopyCards.filter({ hasText: note });
+  }
+
+  /** The authors line's link to `name`'s page. */
+  authorLink(name: string): Locator {
+    return this.authorsLine.getByRole("link", { name });
+  }
+
+  /** The first link named for the series, which the kicker leads the page with. */
+  seriesLink(name: RegExp): Locator {
+    return this.page.getByRole("link", { name }).first();
+  }
+
+  /** The More stop's tile for a shelf that holds the book. */
+  shelfTile(shelfId: number): Locator {
+    return this.page.getByTestId(`bdmq-shelf-${shelfId}`);
+  }
+
+  /** The Hand-picked or Smart facet on a shelf's tile. */
+  shelfTileKind(shelfId: number): Locator {
+    return this.shelfTile(shelfId).locator(".shv-facet--kind");
+  }
+
+  /** The book's details table: label and value rows such as `Added`. */
+  metaValue(label: string): Locator {
+    const labelCell = this.page.locator(".bd-meta-k", {
+      hasText: new RegExp(`^${label}$`),
+    });
+    return this.page
+      .locator("tr.bd-meta-row")
+      .filter({ has: labelCell })
+      .locator(".bd-meta-v");
   }
 
   /** Opens the book and waits for its first fetches to settle. */
@@ -144,39 +230,6 @@ export class BookDetailPage extends BasePage {
     await removed;
   }
 
-  /** Checks the page is showing the book `bookUuid`, not just any book. */
-  async assertDisplayedFor(bookUuid: string): Promise<void> {
-    await expect(this.page).toHaveURL(new RegExp(`/books/${bookUuid}$`));
-    await expect(this.titleHeading).toBeVisible();
-  }
-
-  readonly formats = new FormatSwitcherComponent(this.page);
-  readonly exportMenu = new BookExportComponent(this.page);
-  readonly rating = new RatingComponent(this.page);
-  readonly readStatusControl = new ReadStatusControlComponent(this.page);
-  readonly savedPassages = new SavedPassagesComponent(this.page);
-  readonly quoteCard = new QuoteCardModalComponent(this.page);
-  readonly fromSameHand = new FromSameHandComponent(this.page);
-  readonly listenFilePicker = new ListenFilePickerComponent(this.page);
-  readonly heroChips = new HeroChipsComponent(this.page);
-  readonly summary = new BookSummaryComponent(this.page);
-  readonly suggestions = new SuggestionsStripComponent(this.page);
-
-  readonly authorsLine = this.page.getByTestId("book-authors");
-  // "From the same hand" adds a cover per tile, so the first is the hero's.
-  readonly heroCover = this.page.getByTestId("cover").first();
-  readonly startListeningButton = this.page.getByTestId("start-listening");
-
-  /** The authors line's link to `name`'s page. */
-  authorLink(name: string): Locator {
-    return this.authorsLine.getByRole("link", { name });
-  }
-
-  /** The first link named for the series, which the kicker leads the page with. */
-  seriesLink(name: RegExp): Locator {
-    return this.page.getByRole("link", { name }).first();
-  }
-
   /** Opens the reader through the Start reading action. */
   async startReading(): Promise<void> {
     await this.startReadingButton.click();
@@ -213,16 +266,6 @@ export class BookDetailPage extends BasePage {
     );
   }
 
-  readonly journal = new JournalSectionComponent(this.page);
-  readonly journalEntry = new JournalEntryOverlayComponent(this.page);
-  readonly deleteFilesDialog = new DeleteFilesDialogComponent(this.page);
-  readonly mergeDialog = new MergeDialogComponent(this.page);
-  readonly wishlist = new WishlistCardComponent(this.page);
-  readonly physicalCopy = new PhysicalCopyCardComponent(this.page);
-
-  readonly editMetadataLink = this.page.getByTestId("edit-metadata");
-  readonly notFoundMessage = this.page.getByText("Book not found.");
-
   /** Answers the panel's two on-mount reads, so a stub fixes what it settles on. */
   async stubPhysicalLoad(
     copies: CopyRow[],
@@ -236,21 +279,6 @@ export class BookDetailPage extends BasePage {
     await this.editMetadataLink.click();
   }
 
-  readonly shelfPicker = new ShelfPickerComponent(this.page);
-
-  readonly addToShelfButton = this.page.getByTestId("bdmq-add-to-shelf");
-  readonly shelvesLoading = this.page.getByTestId("bdmq-shelves-loading");
-
-  /** The More stop's tile for a shelf that holds the book. */
-  shelfTile(shelfId: number): Locator {
-    return this.page.getByTestId(`bdmq-shelf-${shelfId}`);
-  }
-
-  /** The Hand-picked or Smart facet on a shelf's tile. */
-  shelfTileKind(shelfId: number): Locator {
-    return this.shelfTile(shelfId).locator(".shv-facet--kind");
-  }
-
   /** Opens the picker from the More stop and waits for it to list shelves. */
   async openShelfPicker(): Promise<void> {
     await this.addToShelfButton.click();
@@ -261,23 +289,15 @@ export class BookDetailPage extends BasePage {
     await this.stops.seriesPageLink.click();
   }
 
+  /** Checks the page is showing the book `bookUuid`, not just any book. */
+  async assertDisplayedFor(bookUuid: string): Promise<void> {
+    await expect(this.page).toHaveURL(new RegExp(`/books/${bookUuid}$`));
+    await expect(this.titleHeading).toBeVisible();
+  }
+
   /** Checks the page is a book's uuid route, whichever book, and not a numeric id. */
   async assertDisplayedByUuid(): Promise<void> {
     await expect(this.page).toHaveURL(/\/books\/[0-9a-fA-F-]{36}$/);
     await expect(this.titleHeading).toBeVisible();
-  }
-
-  readonly syncLink = new SyncLinkComponent(this.page);
-  readonly alignmentModal = new AlignmentModalComponent(this.page);
-
-  /** The book's details table: label and value rows such as `Added`. */
-  metaValue(label: string): Locator {
-    const labelCell = this.page.locator(".bd-meta-k", {
-      hasText: new RegExp(`^${label}$`),
-    });
-    return this.page
-      .locator("tr.bd-meta-row")
-      .filter({ has: labelCell })
-      .locator(".bd-meta-v");
   }
 }

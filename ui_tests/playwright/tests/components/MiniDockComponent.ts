@@ -5,41 +5,56 @@ import { BaseComponent } from "./BaseComponent";
 export class MiniDockComponent extends BaseComponent {
   readonly root: Locator;
   readonly titleLabel: Locator;
+  readonly toggleButton: Locator;
+  readonly expandButton: Locator;
+  readonly dismissButton: Locator;
+  readonly previousChapterButton: Locator;
+  readonly nextChapterButton: Locator;
+  readonly skipBackButton: Locator;
+  readonly skipForwardButton: Locator;
+  readonly volumeButton: Locator;
+  readonly speedChip: Locator;
+  readonly sleepChip: Locator;
+  readonly volumePopover: Locator;
+  readonly speedPopover: Locator;
+  readonly sleepPopover: Locator;
+  readonly volumeSlider: Locator;
+  /** What the dock sheds below 900px, leaving play, expand and dismiss. */
+  readonly secondaryControls: Locator[];
+
+  private readonly scrim: Locator;
 
   constructor(page: Page) {
     super(page);
     this.root = page.getByRole("region", { name: "Now playing" });
     this.titleLabel = this.root.getByTestId("mini-dock-title");
+    this.toggleButton = page.getByTestId("mini-dock-toggle");
+    this.expandButton = page.getByTestId("mini-dock-expand-btn");
+    this.dismissButton = page.getByTestId("mini-dock-dismiss");
+    this.previousChapterButton = page.getByTestId("mini-dock-ch-prev");
+    this.nextChapterButton = page.getByTestId("mini-dock-ch-next");
+    this.skipBackButton = page.getByTestId("mini-dock-skip-back");
+    this.skipForwardButton = page.getByTestId("mini-dock-skip-forward");
+    this.volumeButton = page.getByTestId("mini-dock-volume");
+    this.speedChip = page.getByTestId("mini-dock-speed");
+    this.sleepChip = page.getByTestId("mini-dock-sleep");
+    this.volumePopover = page.getByTestId("mini-dock-pop-vol");
+    this.speedPopover = page.getByTestId("mini-dock-pop-speed");
+    this.sleepPopover = page.getByTestId("mini-dock-pop-sleep");
+    this.volumeSlider = this.volumePopover.getByRole("slider", {
+      name: "Volume",
+    });
+    this.scrim = page.getByTestId("mini-dock-scrim");
+    this.secondaryControls = [
+      this.previousChapterButton,
+      this.nextChapterButton,
+      this.skipBackButton,
+      this.skipForwardButton,
+      this.volumeButton,
+      this.speedChip,
+      this.sleepChip,
+    ];
   }
-
-  readonly toggleButton = this.page.getByTestId("mini-dock-toggle");
-  readonly expandButton = this.page.getByTestId("mini-dock-expand-btn");
-  readonly dismissButton = this.page.getByTestId("mini-dock-dismiss");
-  readonly previousChapterButton = this.page.getByTestId("mini-dock-ch-prev");
-  readonly nextChapterButton = this.page.getByTestId("mini-dock-ch-next");
-  readonly skipBackButton = this.page.getByTestId("mini-dock-skip-back");
-  readonly skipForwardButton = this.page.getByTestId("mini-dock-skip-forward");
-  readonly volumeButton = this.page.getByTestId("mini-dock-volume");
-  readonly speedChip = this.page.getByTestId("mini-dock-speed");
-  readonly sleepChip = this.page.getByTestId("mini-dock-sleep");
-  readonly volumePopover = this.page.getByTestId("mini-dock-pop-vol");
-  readonly speedPopover = this.page.getByTestId("mini-dock-pop-speed");
-  readonly sleepPopover = this.page.getByTestId("mini-dock-pop-sleep");
-  readonly volumeSlider = this.volumePopover.getByRole("slider", {
-    name: "Volume",
-  });
-  private readonly scrim = this.page.getByTestId("mini-dock-scrim");
-
-  /** What the dock sheds below 900px, leaving play, expand and dismiss. */
-  readonly secondaryControls = [
-    this.previousChapterButton,
-    this.nextChapterButton,
-    this.skipBackButton,
-    this.skipForwardButton,
-    this.volumeButton,
-    this.speedChip,
-    this.sleepChip,
-  ];
 
   /** A speed preset in the speed popover. */
   speedOption(rate: number): Locator {

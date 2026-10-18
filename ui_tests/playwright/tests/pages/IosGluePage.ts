@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import type { Locator } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 import type {
   Direction,
@@ -44,7 +44,12 @@ const PREVIOUS_GUTTER_X = 20;
 export class IosGluePage extends BasePage {
   protected readonly urlPattern = /ios-glue\.test\/reader\.html$/;
 
-  readonly stageFrame = this.page.locator("#stage iframe");
+  readonly stageFrame: Locator;
+
+  constructor(page: Page) {
+    super(page);
+    this.stageFrame = page.locator("#stage iframe");
+  }
 
   protected get readyLocator(): Locator {
     return this.stageFrame;

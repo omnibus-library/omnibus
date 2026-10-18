@@ -4,6 +4,9 @@ import { BaseComponent } from "./BaseComponent";
 /** One saved passage on the book detail page: where it sits, and its link. */
 export class SavedPassageCardComponent extends BaseComponent {
   readonly metaText: Locator;
+  readonly noteText: Locator;
+  readonly deleteButton: Locator;
+  readonly quoteButton: Locator;
   readonly openLink: Locator;
 
   constructor(
@@ -12,23 +15,14 @@ export class SavedPassageCardComponent extends BaseComponent {
   ) {
     super(page);
     this.metaText = root.getByTestId("highlight-meta");
+    this.noteText = root.getByTestId("highlight-note");
+    this.deleteButton = root.getByTestId("highlight-delete");
+    this.quoteButton = root.getByTestId("highlight-quote");
     this.openLink = root.getByRole("link", { name: "open in book" });
   }
 
   async openInBook(): Promise<void> {
     await this.openLink.click();
-  }
-
-  get noteText(): Locator {
-    return this.root.getByTestId("highlight-note");
-  }
-
-  get deleteButton(): Locator {
-    return this.root.getByTestId("highlight-delete");
-  }
-
-  get quoteButton(): Locator {
-    return this.root.getByTestId("highlight-quote");
   }
 
   async delete(): Promise<void> {

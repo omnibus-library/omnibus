@@ -25,18 +25,18 @@ export type AdminSection =
 export class AdminPage extends SettingsShellPage<AdminSection> {
   protected readonly urlPattern = /\/admin(?:\?|$)/;
 
+  readonly library: LibrarySectionComponent;
+  readonly maintenance: MaintenanceSectionComponent;
+  readonly workerStatus: WorkerStatusComponent;
+  readonly metadata: MetadataSectionComponent;
+  readonly cleanup: CleanupSectionComponent;
+  readonly users: UsersSectionComponent;
+  readonly integrations: IntegrationsSectionComponent;
+  readonly health: HealthSectionComponent;
+  readonly logs: LogsSectionComponent;
+
   readonly forbiddenNotice: Locator;
   readonly settingsLink: Locator;
-
-  readonly library = new LibrarySectionComponent(this.page);
-  readonly maintenance = new MaintenanceSectionComponent(this.page);
-  readonly workerStatus = new WorkerStatusComponent(this.page);
-  readonly metadata = new MetadataSectionComponent(this.page);
-  readonly cleanup = new CleanupSectionComponent(this.page);
-  readonly users = new UsersSectionComponent(this.page);
-  readonly integrations = new IntegrationsSectionComponent(this.page);
-  readonly health = new HealthSectionComponent(this.page);
-  readonly logs = new LogsSectionComponent(this.page);
 
   constructor(page: Page) {
     super(page, {
@@ -45,6 +45,15 @@ export class AdminPage extends SettingsShellPage<AdminSection> {
       title: "Administration",
       navTestId: "admin-nav",
     });
+    this.library = new LibrarySectionComponent(page);
+    this.maintenance = new MaintenanceSectionComponent(page);
+    this.workerStatus = new WorkerStatusComponent(page);
+    this.metadata = new MetadataSectionComponent(page);
+    this.cleanup = new CleanupSectionComponent(page);
+    this.users = new UsersSectionComponent(page);
+    this.integrations = new IntegrationsSectionComponent(page);
+    this.health = new HealthSectionComponent(page);
+    this.logs = new LogsSectionComponent(page);
     this.forbiddenNotice = page.getByTestId("admin-forbidden");
     this.settingsLink = page.getByTestId("admin-nav-settings");
   }

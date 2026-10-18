@@ -36,8 +36,12 @@ export class CleanupSectionComponent extends BaseComponent {
     await this.detectButton.click();
   }
 
-  /** Follows a kind's Review link, the only way in to its review page. */
+  /** A kind's Review link, the only way in to its review page. */
+  reviewLink(kind: CleanupKind): Locator {
+    return this.page.getByTestId(`cleanup-review-${kind}`);
+  }
+
   async openReview(kind: CleanupKind): Promise<void> {
-    await this.page.getByTestId(`cleanup-review-${kind}`).click();
+    await this.reviewLink(kind).click();
   }
 }

@@ -60,6 +60,7 @@ export class EpubReaderPage extends BasePage {
   readonly annotationsSheet: Locator;
   readonly bookmarksFilterButton: Locator;
   readonly addAnnotationButton: Locator;
+  readonly progressRibbon: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -96,6 +97,7 @@ export class EpubReaderPage extends BasePage {
       "annotations-filter-bookmarks",
     );
     this.addAnnotationButton = page.getByTestId("reader-annotations-add");
+    this.progressRibbon = page.locator(".rd-ribbon");
   }
 
   protected get readyLocator(): Locator {
@@ -348,8 +350,6 @@ export class EpubReaderPage extends BasePage {
     );
     await expect(this.viewerPanel).toBeVisible();
   }
-
-  readonly progressRibbon = this.page.locator(".rd-ribbon");
 
   /** The footer's bottom edge in viewport pixels. */
   async footerBottom(): Promise<number> {
