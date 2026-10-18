@@ -1,6 +1,6 @@
 import type { MetadataProvider } from "../data/metadataKeys";
 import type { LibrarySettings } from "../data/settings";
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The endpoints the Administration sections post to. */
 export const settingsUrls = {
@@ -22,52 +22,25 @@ export const settings = {
   saveLibrary: (
     library: LibrarySettings,
     status = 200,
-  ): ExpectMutationOptions => ({
-    method: "POST",
-    url: settingsUrls.save,
-    expectedBody: { settings: library },
-    expectedStatus: status,
-  }),
+  ): ExpectMutationOptions =>
+    post(settingsUrls.save, { settings: library }, status),
 
-  saveSmtp: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: settingsUrls.smtp,
-    expectedStatus: 200,
-  }),
+  saveSmtp: (): ExpectMutationOptions => post(settingsUrls.smtp),
 
-  scanLibrary: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: settingsUrls.scanLibrary,
-    expectedStatus: 200,
-  }),
+  scanLibrary: (): ExpectMutationOptions => post(settingsUrls.scanLibrary),
 
-  rewriteAllEpubs: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: settingsUrls.rewriteAllEpubs,
-    expectedStatus: 200,
-  }),
+  rewriteAllEpubs: (): ExpectMutationOptions =>
+    post(settingsUrls.rewriteAllEpubs),
 
-  saveMetadataPrecedence: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: settingsUrls.metadataPrecedence,
-    expectedStatus: 200,
-  }),
+  saveMetadataPrecedence: (): ExpectMutationOptions =>
+    post(settingsUrls.metadataPrecedence),
 
-  setMcp: (enabled: boolean): ExpectMutationOptions => ({
-    method: "POST",
-    url: settingsUrls.mcp,
-    expectedBody: { enabled },
-    expectedStatus: 204,
-  }),
+  setMcp: (enabled: boolean): ExpectMutationOptions =>
+    post(settingsUrls.mcp, { enabled }, 204),
 
   /** Saves `key`, or clears the provider's key when it is null. */
   saveMetadataKey: (
     provider: MetadataProvider,
     key: string | null,
-  ): ExpectMutationOptions => ({
-    method: "POST",
-    url: settingsUrls.metadataKey[provider],
-    expectedBody: { key },
-    expectedStatus: 200,
-  }),
+  ): ExpectMutationOptions => post(settingsUrls.metadataKey[provider], { key }),
 };

@@ -1,4 +1,4 @@
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The account endpoints the personal Settings sections post to. */
 export const accountUrls = {
@@ -17,16 +17,8 @@ export const accountUrls = {
   dailyGoal: /\/api\/rpc\/stats-goal-daily(?:\?|$)/,
 };
 
-function write(
-  url: RegExp,
-  expectedBody?: unknown,
-  expectedStatus = 200,
-): ExpectMutationOptions {
-  return { method: "POST", url, expectedBody, expectedStatus };
-}
-
 function switchWrite(url: RegExp, enabled?: boolean): ExpectMutationOptions {
-  return write(url, enabled === undefined ? undefined : { enabled });
+  return post(url, enabled === undefined ? undefined : { enabled });
 }
 
 // The config pins the browser to UTC, so every stats write declares offset 0 (rule 10).
@@ -45,43 +37,43 @@ export const account = {
 
   /** A null address is the clear. */
   kindleEmail: (email?: string | null): ExpectMutationOptions =>
-    write(accountUrls.kindleEmail, email === undefined ? undefined : { email }),
+    post(accountUrls.kindleEmail, email === undefined ? undefined : { email }),
 
   changePassword: (
     current: string,
     replacement: string,
     status = 200,
   ): ExpectMutationOptions =>
-    write(
+    post(
       accountUrls.changePassword,
       { current_password: current, new_password: replacement },
       status,
     ),
 
   profile: (displayName?: string): ExpectMutationOptions =>
-    write(
+    post(
       accountUrls.profile,
       displayName === undefined ? undefined : { display_name: displayName },
     ),
 
   avatar: (status = 204): ExpectMutationOptions =>
-    write(accountUrls.avatar, undefined, status),
+    post(accountUrls.avatar, undefined, status),
 
   hiddenFormats: (formats?: string[]): ExpectMutationOptions =>
-    write(
+    post(
       accountUrls.hiddenFormats,
       formats === undefined ? undefined : { formats },
     ),
 
   annualGoal: (target: number): ExpectMutationOptions =>
-    write(accountUrls.annualGoal, { update: { target }, ...UTC }),
+    post(accountUrls.annualGoal, { update: { target }, ...UTC }),
 
   /** Without a target the write clears the goal: `target` is omitted on the wire. */
   dailyGoal: (
     kind: "pages" | "minutes",
     target?: number,
   ): ExpectMutationOptions =>
-    write(accountUrls.dailyGoal, {
+    post(accountUrls.dailyGoal, {
       update: target === undefined ? { kind } : { kind, target },
       ...UTC,
     }),

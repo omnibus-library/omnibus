@@ -1,4 +1,4 @@
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The cover endpoints the edit page and the edition picker write to. */
 export const coversUrls = {
@@ -13,24 +13,13 @@ function fromUrlOf(bookUuid: string): RegExp {
 /** The writes that change a book's cover override. */
 export const covers = {
   /** Applies the image at `url` as `bookUuid`'s cover. */
-  fromUrl: (bookUuid: string, url: string): ExpectMutationOptions => ({
-    method: "POST",
-    url: fromUrlOf(bookUuid),
-    expectedBody: { url },
-    expectedStatus: 200,
-  }),
+  fromUrl: (bookUuid: string, url: string): ExpectMutationOptions =>
+    post(fromUrlOf(bookUuid), { url }),
 
   /** The same write, answered 400 as the server does a disallowed host. */
-  fromUrlRefused: (bookUuid: string): ExpectMutationOptions => ({
-    method: "POST",
-    url: fromUrlOf(bookUuid),
-    expectedStatus: 400,
-  }),
+  fromUrlRefused: (bookUuid: string): ExpectMutationOptions =>
+    post(fromUrlOf(bookUuid), undefined, 400),
 
   /** Drops the cover override and keeps the field overrides. */
-  revert: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: coversUrls.revert,
-    expectedStatus: 200,
-  }),
+  revert: (): ExpectMutationOptions => post(coversUrls.revert),
 };

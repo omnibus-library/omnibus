@@ -1,4 +1,4 @@
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The progress endpoints the reader posts to. */
 export const progressUrls = {
@@ -10,11 +10,7 @@ export const progressUrls = {
 /** The writes the reader makes to the reader's saved position. */
 export const progress = {
   /** The save a page turn makes. */
-  save: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: progressUrls.save,
-    expectedStatus: 200,
-  }),
+  save: (): ExpectMutationOptions => post(progressUrls.save),
 
   /** The save a paged reader makes, with the page anchor and percent it sends. */
   savePage: (
@@ -40,11 +36,7 @@ export const progress = {
   }),
 
   /** The read the user menu makes for its resume rows, a POST that changes nothing. */
-  recent: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: progressUrls.recent,
-    expectedStatus: 200,
-  }),
+  recent: (): ExpectMutationOptions => post(progressUrls.recent),
 
   /** The save the audio player makes for a position, filed under the part it plays. */
   saveAudio: (

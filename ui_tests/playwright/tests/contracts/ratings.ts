@@ -1,4 +1,4 @@
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The rating endpoints the book page's stars post to, and the read it stubs. */
 export const ratingsUrls = {
@@ -9,15 +9,7 @@ export const ratingsUrls = {
 
 /** The writes a reader makes by clicking the rating stars. */
 export const ratings = {
-  set: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: ratingsUrls.set,
-    expectedStatus: 200,
-  }),
+  set: (): ExpectMutationOptions => post(ratingsUrls.set),
 
-  clear: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: ratingsUrls.clear,
-    expectedStatus: 200,
-  }),
+  clear: (): ExpectMutationOptions => post(ratingsUrls.clear),
 };

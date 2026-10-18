@@ -1,4 +1,4 @@
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The library listing endpoint the landing page reads. */
 export const ebooksUrls = {
@@ -9,9 +9,7 @@ export const ebooksUrls = {
 export const ebooks = {
   /** A read a full page load triggers passes a longer `timeout`. */
   page: (timeout?: number): ExpectMutationOptions => ({
-    method: "POST",
-    url: ebooksUrls.page,
-    expectedStatus: 200,
+    ...post(ebooksUrls.page),
     timeout,
   }),
 };

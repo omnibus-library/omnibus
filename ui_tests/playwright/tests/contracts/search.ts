@@ -1,4 +1,4 @@
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The search endpoints; both are server functions, so reads arrive as POSTs. */
 export const searchUrls = {
@@ -9,18 +9,10 @@ export const searchUrls = {
 /** The searches the palette and the results page run. */
 export const search = {
   /** The library search; a query also pins the body, none leaves it unchecked. */
-  palette: (query?: string): ExpectMutationOptions => ({
-    method: "POST",
-    url: searchUrls.palette,
-    expectedBody: query === undefined ? undefined : { q: query },
-    expectedStatus: 200,
-  }),
+  palette: (query?: string): ExpectMutationOptions =>
+    post(searchUrls.palette, query === undefined ? undefined : { q: query }),
 
   /** The fetch behind a section's Show all; no body leaves it unchecked. */
-  results: (body?: { q: string; limit: number }): ExpectMutationOptions => ({
-    method: "POST",
-    url: searchUrls.results,
-    expectedBody: body,
-    expectedStatus: 200,
-  }),
+  results: (body?: { q: string; limit: number }): ExpectMutationOptions =>
+    post(searchUrls.results, body),
 };

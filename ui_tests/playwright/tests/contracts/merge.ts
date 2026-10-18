@@ -1,4 +1,4 @@
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The merge endpoints; `books` excludes the `/undo` suffix. */
 export const mergeUrls = {
@@ -9,17 +9,13 @@ export const mergeUrls = {
 /** What a merge answers with: the log id that `merge.undo` takes back. */
 export type MergeResult = { merge_log_id: number; target_uuid: string };
 
-function mergeWrite(url: RegExp, body?: unknown): ExpectMutationOptions {
-  return { method: "POST", url, expectedBody: body, expectedStatus: 200 };
-}
-
 /** The writes an admin makes to merge two books and take it back. */
 export const merge = {
   books: (body?: {
     source_uuid: string;
     target_uuid: string;
-  }): ExpectMutationOptions => mergeWrite(mergeUrls.books, body),
+  }): ExpectMutationOptions => post(mergeUrls.books, body),
 
   undo: (body?: { merge_log_id: number }): ExpectMutationOptions =>
-    mergeWrite(mergeUrls.undo, body),
+    post(mergeUrls.undo, body),
 };

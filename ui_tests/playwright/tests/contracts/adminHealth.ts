@@ -1,4 +1,4 @@
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The endpoint the admin health page polls. */
 export const adminHealthUrls = {
@@ -12,9 +12,7 @@ export const adminHealth = {
    * the first request lands a full interval after mount.
    */
   poll: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: adminHealthUrls.poll,
-    expectedStatus: 200,
+    ...post(adminHealthUrls.poll),
     timeout: 12_000,
   }),
 };

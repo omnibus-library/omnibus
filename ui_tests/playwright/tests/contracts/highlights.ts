@@ -1,4 +1,4 @@
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The highlight endpoints the reader posts to. */
 export const highlightsUrls = {
@@ -10,27 +10,11 @@ export const highlightsUrls = {
 
 /** The writes the reader makes on highlights. */
 export const highlights = {
-  create: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: highlightsUrls.create,
-    expectedStatus: 200,
-  }),
+  create: (): ExpectMutationOptions => post(highlightsUrls.create),
 
-  delete: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: highlightsUrls.delete,
-    expectedStatus: 200,
-  }),
+  delete: (): ExpectMutationOptions => post(highlightsUrls.delete),
 
-  updateNote: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: highlightsUrls.updateNote,
-    expectedStatus: 200,
-  }),
+  updateNote: (): ExpectMutationOptions => post(highlightsUrls.updateNote),
 
-  updateColor: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: highlightsUrls.updateColor,
-    expectedStatus: 200,
-  }),
+  updateColor: (): ExpectMutationOptions => post(highlightsUrls.updateColor),
 };

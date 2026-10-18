@@ -1,5 +1,9 @@
 import type { Request } from "@playwright/test";
-import type { ExpectMutationOptions, ForcedRequest } from "../utils/api";
+import {
+  type ExpectMutationOptions,
+  type ForcedRequest,
+  post,
+} from "../utils/api";
 
 /** The shelf endpoints the library and shelf pages call. */
 export const shelvesUrls = {
@@ -25,36 +29,26 @@ export const filteredShelfRead = (request: Request): boolean =>
 export const unfilteredShelfRead = (request: Request): boolean =>
   clauseCount(request) === 0;
 
-function shelfWrite(
-  url: RegExp,
-  expectedBody?: unknown,
-): ExpectMutationOptions {
-  return { method: "POST", url, expectedBody, expectedStatus: 200 };
-}
-
 /** Each omitted argument leaves the body unchecked, as the originals did. */
 export const shelves = {
   create: (req?: unknown): ExpectMutationOptions =>
-    shelfWrite(shelvesUrls.create, req && { req }),
+    post(shelvesUrls.create, req && { req }),
 
   update: (id?: number, req?: unknown): ExpectMutationOptions =>
-    shelfWrite(shelvesUrls.update, req && { id, req }),
+    post(shelvesUrls.update, req && { id, req }),
 
   delete: (id?: number): ExpectMutationOptions =>
-    shelfWrite(shelvesUrls.delete, id === undefined ? undefined : { id }),
+    post(shelvesUrls.delete, id === undefined ? undefined : { id }),
 
   addBooks: (id?: number, bookUuids?: string[]): ExpectMutationOptions =>
-    shelfWrite(
-      shelvesUrls.addBooks,
-      bookUuids && { id, book_uuids: bookUuids },
-    ),
+    post(shelvesUrls.addBooks, bookUuids && { id, book_uuids: bookUuids }),
 
   removeBook: (id?: number, bookUuid?: string): ExpectMutationOptions =>
-    shelfWrite(shelvesUrls.removeBook, bookUuid && { id, book_uuid: bookUuid }),
+    post(shelvesUrls.removeBook, bookUuid && { id, book_uuid: bookUuid }),
 
   /** The shelf list read behind the `/shelves` index. */
   list: (): ForcedRequest => ({ method: "GET", url: shelvesUrls.list }),
 
   /** A shelf's member read, a POST that changes nothing. */
-  page: (): ExpectMutationOptions => shelfWrite(shelvesUrls.page),
+  page: (): ExpectMutationOptions => post(shelvesUrls.page),
 };

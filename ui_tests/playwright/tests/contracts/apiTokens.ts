@@ -1,4 +1,4 @@
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The endpoints Settings › Sign-in & security posts to for API tokens. */
 export const apiTokensUrls = {
@@ -9,22 +9,10 @@ export const apiTokensUrls = {
 
 /** The writes a reader makes to manage tokens. */
 export const apiTokens = {
-  create: (name: string): ExpectMutationOptions => ({
-    method: "POST",
-    url: apiTokensUrls.create,
-    expectedBody: { name },
-    expectedStatus: 200,
-  }),
+  create: (name: string): ExpectMutationOptions =>
+    post(apiTokensUrls.create, { name }),
 
-  rename: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: apiTokensUrls.rename,
-    expectedStatus: 200,
-  }),
+  rename: (): ExpectMutationOptions => post(apiTokensUrls.rename),
 
-  revoke: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: apiTokensUrls.revoke,
-    expectedStatus: 200,
-  }),
+  revoke: (): ExpectMutationOptions => post(apiTokensUrls.revoke),
 };

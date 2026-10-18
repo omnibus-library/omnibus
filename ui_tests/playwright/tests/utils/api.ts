@@ -75,6 +75,15 @@ export function isPostTo(url: RegExp): (response: Response) => boolean {
     response.request().method() === "POST" && url.test(response.url());
 }
 
+/** A POST to `url`; `expectedBody`, when given, is checked exactly. */
+export function post(
+  url: RegExp,
+  expectedBody?: unknown,
+  expectedStatus = 200,
+): ExpectMutationOptions {
+  return { method: "POST", url, expectedBody, expectedStatus };
+}
+
 /** Returns `contract` expecting the 500 a forced-failure stub answers with. */
 export function failing(
   contract: ExpectMutationOptions,

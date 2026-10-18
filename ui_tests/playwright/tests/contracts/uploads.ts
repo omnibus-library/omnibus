@@ -1,4 +1,4 @@
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The inspect endpoints the add-books page posts a pick to. */
 export const uploadsUrls = {
@@ -6,14 +6,10 @@ export const uploadsUrls = {
   inspectAudiobook: /\/api\/uploads\/audiobooks\/inspect(?:\?|$)/,
 };
 
-function inspect(url: RegExp): ExpectMutationOptions {
-  return { method: "POST", url, expectedStatus: 200 };
-}
-
 /** The reads that open the review form; they create nothing. */
 export const uploads = {
-  inspectEbook: (): ExpectMutationOptions => inspect(uploadsUrls.inspectEbook),
+  inspectEbook: (): ExpectMutationOptions => post(uploadsUrls.inspectEbook),
 
   inspectAudiobook: (): ExpectMutationOptions =>
-    inspect(uploadsUrls.inspectAudiobook),
+    post(uploadsUrls.inspectAudiobook),
 };

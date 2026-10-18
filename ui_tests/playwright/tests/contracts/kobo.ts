@@ -1,4 +1,4 @@
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The Kobo device endpoints Settings › Devices reads and posts to. */
 export const koboUrls = {
@@ -10,17 +10,8 @@ export const koboUrls = {
 
 /** The writes a reader makes to add and remove a Kobo device. */
 export const kobo = {
-  create: (name: string): ExpectMutationOptions => ({
-    method: "POST",
-    url: koboUrls.create,
-    expectedBody: { name },
-    expectedStatus: 200,
-  }),
+  create: (name: string): ExpectMutationOptions =>
+    post(koboUrls.create, { name }),
 
-  revoke: (id: number): ExpectMutationOptions => ({
-    method: "POST",
-    url: koboUrls.revoke,
-    expectedBody: { id },
-    expectedStatus: 200,
-  }),
+  revoke: (id: number): ExpectMutationOptions => post(koboUrls.revoke, { id }),
 };

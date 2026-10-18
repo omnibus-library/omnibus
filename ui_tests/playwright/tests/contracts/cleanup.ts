@@ -3,7 +3,7 @@ import type {
   CleanupKind,
   SuggestionCard,
 } from "../data/cleanup";
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The endpoints the Library cleanup section and its review page call. */
 export const cleanupUrls = {
@@ -17,25 +17,12 @@ export const cleanupUrls = {
 /** The reads and writes of reviewing a library's cleanup suggestions. */
 export const cleanup = {
   /** A read the section makes on load, not on a click. */
-  counts: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: cleanupUrls.counts,
-    expectedStatus: 200,
-  }),
+  counts: (): ExpectMutationOptions => post(cleanupUrls.counts),
 
-  detect: (): ExpectMutationOptions => ({
-    method: "POST",
-    url: cleanupUrls.detect,
-    expectedBody: { kind: null },
-    expectedStatus: 200,
-  }),
+  detect: (): ExpectMutationOptions => post(cleanupUrls.detect, { kind: null }),
 
-  queue: (kind: CleanupKind): ExpectMutationOptions => ({
-    method: "POST",
-    url: cleanupUrls.queue,
-    expectedBody: { kind, limit: 50 },
-    expectedStatus: 200,
-  }),
+  queue: (kind: CleanupKind): ExpectMutationOptions =>
+    post(cleanupUrls.queue, { kind, limit: 50 }),
 
   /**
    * `value` is the reviewer's own wording, or null to accept the proposal.
@@ -45,19 +32,13 @@ export const cleanup = {
     card?: Pick<SuggestionCard, "id">,
     decision?: CleanupDecision,
     value: string | null = null,
-  ): ExpectMutationOptions => ({
-    method: "POST",
-    url: cleanupUrls.decide,
-    expectedBody:
+  ): ExpectMutationOptions =>
+    post(
+      cleanupUrls.decide,
       card && decision ? { id: card.id, decision, value } : undefined,
-    expectedStatus: 200,
-  }),
+    ),
 
   /** `logId` names the `cleanup_log` row of the decision being taken back. */
-  undo: (logId: number): ExpectMutationOptions => ({
-    method: "POST",
-    url: cleanupUrls.undo,
-    expectedBody: { log_id: logId },
-    expectedStatus: 200,
-  }),
+  undo: (logId: number): ExpectMutationOptions =>
+    post(cleanupUrls.undo, { log_id: logId }),
 };
