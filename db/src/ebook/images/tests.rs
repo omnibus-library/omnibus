@@ -7,8 +7,7 @@ use std::path::PathBuf;
 use omnibus_shared::{BookImage, BookImageReference};
 
 use crate::test_support::{
-    assemble_test_epub, build_stored_zip, build_test_epub_with_images, make_test_dir,
-    solid_color_png,
+    assemble_test_epub, build_test_epub_with_images, make_test_dir, solid_color_png,
 };
 
 use super::*;
@@ -23,34 +22,6 @@ fn page(body: &str) -> String {
 fn write_epub(spine: &[(&str, &str)], images: &[(&str, &str, &[u8])]) -> PathBuf {
     let path = make_test_dir("book_images").join("book.epub");
     std::fs::write(&path, build_test_epub_with_images(spine, images)).unwrap();
-    path
-}
-
-/// An EPUB whose manifest hrefs are percent-encoded while its zip entries are
-/// named with the literal spaces, as exporters write them.
-fn write_encoded_href_epub(chapter: &str, png: &[u8]) -> PathBuf {
-    let container = br#"<?xml version="1.0"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-  <rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles>
-</container>"#;
-    let opf = br#"<?xml version="1.0"?>
-<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">x</dc:identifier><dc:title>T</dc:title></metadata>
-  <manifest>
-    <item id="p" href="Text/Chapter%201.xhtml" media-type="application/xhtml+xml"/>
-    <item id="i" href="Images/my%20map.png" media-type="image/png"/>
-  </manifest>
-  <spine><itemref idref="p"/></spine>
-</package>"#;
-    let zip = build_stored_zip(&[
-        ("mimetype", b"application/epub+zip"),
-        ("META-INF/container.xml", container),
-        ("content.opf", opf),
-        ("Text/Chapter 1.xhtml", chapter.as_bytes()),
-        ("Images/my map.png", png),
-    ]);
-    let path = make_test_dir("book_images_encoded").join("book.epub");
-    std::fs::write(&path, zip).unwrap();
     path
 }
 
@@ -113,9 +84,12 @@ fn list_images_resolves_a_reference_relative_to_its_spine_document() {
 #[test]
 fn list_images_reads_an_image_and_spine_document_whose_manifest_hrefs_are_percent_encoded() {
     let png = solid_color_png(1, 2, 3, 4, 3);
-    let path = write_encoded_href_epub(
-        &page(r#"<img src="../Images/my%20map.png" alt="Map"/>"#),
-        &png,
+    let path = write_epub(
+        &[(
+            "Text/Chapter%201.xhtml",
+            &page(r#"<img src="../Images/my%20map.png" alt="Map"/>"#),
+        )],
+        &[("Images/my%20map.png", "image/png", &png)],
     );
 
     let images = list_images(&path).unwrap();
@@ -373,7 +347,10 @@ fn read_image_returns_the_media_type_and_original_bytes_for_a_manifest_href() {
 #[test]
 fn read_image_returns_the_bytes_for_a_percent_encoded_manifest_href() {
     let png = solid_color_png(9, 9, 9, 3, 3);
-    let path = write_encoded_href_epub(&page("<p>text</p>"), &png);
+    let path = write_epub(
+        &[("c1.xhtml", &page("<p>text</p>"))],
+        &[("Images/my%20map.png", "image/png", &png)],
+    );
 
     let read = read_image(File::open(&path).unwrap(), "Images/my%20map.png").unwrap();
 
