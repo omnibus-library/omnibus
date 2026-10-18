@@ -4,9 +4,10 @@
 //! inside a rebuilt `VirtualDom` so `Signal::new` has a runtime without a
 //! browser.
 
-use super::*;
 #[cfg(feature = "server")]
 use crate::test_support::blank_form_event;
+
+use super::*;
 
 #[test]
 fn registration_status_line_describes_who_can_create_an_account() {

@@ -6,6 +6,7 @@
 use dioxus::prelude::*;
 use omnibus_shared::{LibraryContents, LibrarySection, Settings, SCAN_INTERVAL_MIN_HOURS};
 
+use crate::components::credential_card::live_status;
 use crate::components::unsaved::use_saved_snapshot;
 #[cfg(not(feature = "mobile"))]
 use crate::components::worker_status::WorkerStatusIndicator;
@@ -145,13 +146,7 @@ pub fn LibraryLocationSection() -> Element {
                 }
             }
 
-            p {
-                id: "settings-status",
-                "data-testid": "settings-status",
-                role: "status",
-                class: if (form.status_is_error)() { "settings-status error" } else { "settings-status success" },
-                if let Some(msg) = status { "{msg}" }
-            }
+            {live_status("settings-status", status.as_deref(), (form.status_is_error)())}
         }
     }
 }
@@ -178,12 +173,7 @@ pub(crate) fn MaintenancePanel() -> Element {
             p { class: "subtitle", "Each job runs once on the server\u{2019}s background worker; progress shows here." }
             {worker_status_slot()}
             MaintenanceActions { io }
-            p {
-                "data-testid": "maintenance-status",
-                role: "status",
-                class: if status_is_error() { "settings-status error" } else { "settings-status success" },
-                if let Some(msg) = status() { "{msg}" }
-            }
+            {live_status("maintenance-status", status().as_deref(), status_is_error())}
         }
     }
 }

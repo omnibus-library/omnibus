@@ -363,14 +363,14 @@ fn DotRail() -> Element {
 const SCROLL_STOPS_SAVE_ERROR: &str = "Couldn't save scroll stops. Try again.";
 
 /// What the scroll-stops toggle shows this render.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct ScrollStopsView {
     /// The viewer's saved preference.
     on: bool,
     /// `/me` has resolved; until then `on` is only the default.
     ready: bool,
-    /// The last save's failure, cleared by the next press.
-    error: Option<String>,
+    /// The last save failed; the next press clears it.
+    failed: bool,
 }
 
 /// The stage's Scroll stops switch, pinned to its top-right corner: pressed
@@ -395,9 +395,9 @@ fn ScrollStopsToggle(view: ScrollStopsView, on_toggle: EventHandler<()>) -> Elem
                     aria_hidden: true,
                 }
             }
-            if let Some(message) = view.error.as_ref() {
+            if view.failed {
                 span { class: "bdmq-mode-error", role: "alert", "data-testid": "bdmq-mode-error",
-                    "{message}"
+                    "{SCROLL_STOPS_SAVE_ERROR}"
                 }
             }
         }
@@ -419,7 +419,7 @@ fn use_scroll_stops_toggle() -> (ScrollStopsView, EventHandler<()>) {
     let view = ScrollStopsView {
         on: saved.unwrap_or(false),
         ready: saved.is_some(),
-        error: (state() == SaveState::Failed).then(|| SCROLL_STOPS_SAVE_ERROR.to_string()),
+        failed: state() == SaveState::Failed,
     };
     let on_toggle = EventHandler::new(move |_: ()| toggle(UserSetting::ScrollStops, viewer, state));
     (view, on_toggle)

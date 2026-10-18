@@ -5,8 +5,9 @@
 
 use omnibus_shared::worker::TaskKind;
 
-use super::*;
 use crate::test_support::in_root_scope;
+
+use super::*;
 
 // ---------- poll gating ----------
 

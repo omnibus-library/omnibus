@@ -3,10 +3,11 @@
 //! live root scope so they can touch signals; the futures they spawn are never
 //! polled, so no network call fires.
 
-use super::*;
 #[cfg(feature = "server")]
 use crate::test_support::tag_with_testid;
 use crate::test_support::{blank_form_event, blank_mouse_event, in_root_scope};
+
+use super::*;
 
 fn section(total: usize, counts: &[(&str, usize)]) -> LibrarySection {
     LibrarySection {

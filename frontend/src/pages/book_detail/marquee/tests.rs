@@ -53,7 +53,7 @@ mod scroll_stops_toggle {
         let view = ScrollStopsView {
             on: true,
             ready: true,
-            error: None,
+            failed: false,
         };
         rsx! { ScrollStopsToggle { view, on_toggle: move |_| {} } }
     }
@@ -63,7 +63,7 @@ mod scroll_stops_toggle {
         let view = ScrollStopsView {
             on: false,
             ready: true,
-            error: Some("Couldn't save scroll stops. Try again.".to_string()),
+            failed: true,
         };
         rsx! { ScrollStopsToggle { view, on_toggle: move |_| {} } }
     }

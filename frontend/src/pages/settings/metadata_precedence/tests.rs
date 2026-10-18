@@ -45,11 +45,10 @@ fn precedence_field_waits_for_the_saved_order_instead_of_showing_defaults() {
     let html = render_in_vdom(MetadataPrecedenceField);
     assert!(html.contains("metadata-precedence-loading"), "{html}");
     assert!(!html.contains("Folder structure"), "{html}");
-    let at = html
-        .find(r#"data-testid="metadata-precedence-save""#)
-        .expect("save");
-    let tag = &html[html[..at].rfind('<').unwrap()..at + html[at..].find('>').unwrap()];
-    assert!(tag.contains("disabled"), "{html}");
+    assert!(
+        tag_with_testid(&html, "metadata-precedence-save").contains("disabled"),
+        "{html}"
+    );
 }
 
 #[component]

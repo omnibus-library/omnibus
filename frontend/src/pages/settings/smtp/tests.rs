@@ -1,8 +1,9 @@
 //! Tests for the SMTP card: the Save guard that keeps a failed read from
 //! overwriting the relay, and the card's first paint.
 
-use super::*;
 use crate::test_support::{blank_form_event, in_root_scope};
+
+use super::*;
 
 /// The card's signals as a failed read leaves them: seeded defaults, no status.
 fn unloaded_card() -> (SmtpFields, SmtpIo) {
@@ -43,10 +44,9 @@ fn smtp_save_refuses_to_overwrite_the_relay_before_its_settings_load() {
 #[test]
 fn smtp_config_field_holds_save_until_the_settings_load() {
     let html = crate::test_support::render_in_vdom(SmtpConfigField);
-    let at = html
-        .find(r#"data-testid="smtp-save""#)
-        .expect("save button");
-    let tag = &html[html[..at].rfind('<').unwrap()..at + html[at..].find('>').unwrap()];
-    assert!(tag.contains("disabled"), "{html}");
+    assert!(
+        crate::test_support::tag_with_testid(&html, "smtp-save").contains("disabled"),
+        "{html}"
+    );
     assert!(html.contains("Save SMTP settings"), "{html}");
 }
