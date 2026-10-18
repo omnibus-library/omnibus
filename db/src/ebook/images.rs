@@ -98,7 +98,8 @@ fn attach_references(
         {
             Ok(page) => page,
             Err(e) => {
-                tracing::warn!(page = %page_path, error = %e, "book images: spine document unreadable");
+                // Debug-quoted (the error text embeds the path too) so a newline in a manifest path cannot forge a log line.
+                tracing::warn!(page = ?page_path, error = ?e.to_string(), "book images: spine document unreadable");
                 continue;
             }
         };
