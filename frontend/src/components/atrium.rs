@@ -198,10 +198,10 @@ pub fn Cover(
     }
 }
 
-/// The cover plate's classes. A plate waiting on an image glints behind it
-/// until the pixels land — CSS rather than a load event, which an SSR'd
-/// `<img>` can fire before hydration and never repeat. The typographic plate
-/// is already final, so it stays still.
+/// The cover plate's classes. A plate waiting on an image glints, and holds the
+/// image hidden, until it has decoded — CSS rather than a load event, which an
+/// SSR'd `<img>` can fire before hydration and never repeat. The typographic
+/// plate is already final, so it stays still.
 fn cover_class(has_image: bool) -> &'static str {
     if has_image {
         "cover tpl-plate ld-cover-glint"
