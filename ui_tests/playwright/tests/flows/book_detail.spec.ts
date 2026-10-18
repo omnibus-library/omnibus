@@ -115,6 +115,16 @@ test("renders the book detail layout", async ({ page, request }) => {
   await expect(dots.getByRole("button")).toHaveCount(6);
   await expect(page.getByTestId("bdmq-dot-0")).toHaveClass(/\bon\b/);
 
+  // The Scroll stops switch sits at the top of the stage, apart from the rail.
+  const modeToggle = page.getByTestId("bdmq-mode-toggle");
+  await expect(modeToggle).toBeVisible();
+  await expect(dots.getByTestId("bdmq-mode-toggle")).toHaveCount(0);
+  const [toggleBox, dotsBox] = await Promise.all([
+    modeToggle.boundingBox(),
+    dots.boundingBox(),
+  ]);
+  expect(toggleBox!.y + toggleBox!.height).toBeLessThan(dotsBox!.y);
+
   // Stops — "Passages you saved" (stop 03) is always rendered. Only its
   // presence is asserted here: `journal.spec.ts` seeds a highlight on this
   // same book, so whether the list or the empty state fills it depends on
@@ -240,7 +250,7 @@ test.describe("scroll stops preference", () => {
     await expect(page.locator("#bdmq-flow")).toHaveCount(0);
   });
 
-  test("the page's own toggle flips between the flow and the stops in place", async ({
+  test("the page's own toggle flips between the flow and the stops on the same section", async ({
     page,
     request,
   }) => {
@@ -253,6 +263,15 @@ test.describe("scroll stops preference", () => {
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await expect(page.locator("#bdmq-flow")).toBeAttached();
 
+    // Read down to the journal first: a flip keeps the reader where they are.
+    await page.locator("#bdmq-flow").evaluate((el) => {
+      const journal = el.querySelector<HTMLElement>(
+        '[data-testid="bdmq-sec-3"]',
+      )!;
+      el.scrollTop = journal.offsetTop;
+    });
+    await expect(page.getByTestId("bdmq-dot-3")).toHaveClass(/\bon\b/);
+
     await expectMutation(
       page,
       {
@@ -264,17 +283,19 @@ test.describe("scroll stops preference", () => {
       async () => toggle.click(),
     );
 
-    // No reload: the stage re-renders in the other reading, the toggle keeps
-    // focus, and the marquee's glue follows the swap — the rail tracks the
-    // snapped stops.
+    // No reload: the stage re-renders in the other reading on the same stop,
+    // the toggle keeps focus, and the marquee's glue follows the swap — the
+    // rail tracks the snapped stops.
     await expect(page.locator("#bdmq-snap")).toBeAttached();
     await expect(page.locator("#bdmq-flow")).toHaveCount(0);
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await expect(toggle).toBeFocused();
-    await page.locator("#bdmq-snap").evaluate((el) => {
-      el.scrollTop = 3 * el.clientHeight;
-    });
+    await expect(page.getByTestId("bdmq-sec-3")).toBeInViewport();
     await expect(page.getByTestId("bdmq-dot-3")).toHaveClass(/\bon\b/);
+    await page.locator("#bdmq-snap").evaluate((el) => {
+      el.scrollTop = 4 * el.clientHeight;
+    });
+    await expect(page.getByTestId("bdmq-dot-4")).toHaveClass(/\bon\b/);
 
     // And back again, with the toggle still live after the swap.
     await expectMutation(
@@ -290,6 +311,8 @@ test.describe("scroll stops preference", () => {
     await expect(page.locator("#bdmq-flow")).toBeAttached();
     await expect(page.locator("#bdmq-snap")).toHaveCount(0);
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("bdmq-sec-4")).toBeInViewport();
+    await expect(page.getByTestId("bdmq-dot-4")).toHaveClass(/\bon\b/);
   });
 
   test("a refused toggle keeps the reading it had and says so", async ({
@@ -384,6 +407,39 @@ test("dot rail jumps between stops and tracks the active section", async ({
 
   // The files stop's content is on screen once the snap settles.
   await expect(page.getByTestId("format-switcher")).toBeInViewport();
+});
+
+// The rail floats over the panel's right edge, so a box any wider than its six
+// dots takes the clicks meant for whatever scrolls beside it.
+test("the dot rail leaves the journal's New entry beside it clickable", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+  await gotoReady(page, `/books/${uuid}`);
+  const newEntry = page.getByTestId("journal-open-composer");
+  await expect(newEntry).toBeVisible();
+
+  // Park the button level with the rail, where the reader's click went dead.
+  await page.locator("#bdmq-flow").evaluate((scroller) => {
+    const middle = (el: Element | null) => {
+      const box = el!.getBoundingClientRect();
+      return box.top + box.height / 2;
+    };
+    scroller.scrollTop +=
+      middle(scroller.querySelector('[data-testid="journal-open-composer"]')) -
+      middle(document.querySelector('[data-testid="bdmq-dots"]'));
+  });
+
+  // A real pointer at the button's rail-side end: `click()` would scroll and
+  // retry until it found a spot the rail doesn't cover.
+  const box = (await newEntry.boundingBox())!;
+  await page.mouse.click(box.x + box.width - 4, box.y + box.height / 2);
+  await expect(page.getByTestId("journal-composer")).toBeVisible();
+
+  // Nothing was typed, so closing writes nothing.
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByTestId("journal-composer")).toHaveCount(0);
 });
 
 // ---------------------------------------------------------------------------

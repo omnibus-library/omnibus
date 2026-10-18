@@ -11680,11 +11680,11 @@ html {
 }
 .bdmq-flowscroll::-webkit-scrollbar-track { background: transparent; }
 
-.bdmq-flow { padding: 44px 74px 90px 60px; display: flex; flex-direction: column; }
+/* The top padding clears the scroll-stops switch pinned above the column. */
+.bdmq-flow { padding: 64px 74px 90px 60px; display: flex; flex-direction: column; }
 
-/* A jump lands the heading clear of the scroller's top edge rather than
-   flush against it. */
-.bdmq-flowsec { scroll-margin-top: 44px; }
+/* A jump lands the heading clear of the scroller's top edge and the switch. */
+.bdmq-flowsec { scroll-margin-top: 64px; }
 .bdmq-flowsec + .bdmq-flowsec {
   margin-top: 64px;
   padding-top: 56px;
@@ -11737,13 +11737,11 @@ html {
 }
 
 /* ── Dot rail TOC ── */
-/* The rail and the Scroll stops toggle under it, pinned to the stage's edge. */
-.bdmq-rail {
+/* Positioned on its own: a box shared with anything wider would hang over the
+   panel and take the clicks meant for it. */
+.bdmq-dots {
   position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
   z-index: 6;
-  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
-}
-.bdmq-dots {
   display: flex; flex-direction: column; gap: 6px; align-items: stretch;
   padding: 10px 7px;
   background: color-mix(in oklch, var(--bg-0) 55%, transparent);
@@ -11759,7 +11757,7 @@ html {
    over (and take clicks through) a panel-hosted overlay's dimmed scrim, so it
    steps aside while one is up. */
 .bdmq-stage:has(:is(.bdmq-overlay, .author-photo-modal-backdrop, .shelf-modal-overlay))
-  :is(.bdmq-rail, .bdmq-flowtop, .bdmq-seclab, .bdmq-next) {
+  :is(.bdmq-dots, .bdmq-modebar, .bdmq-flowtop, .bdmq-seclab, .bdmq-next) {
   opacity: 0; pointer-events: none;
 }
 .bdmq-dotrow {
@@ -13398,35 +13396,33 @@ html {
 /* The book page's two readings swap inside one box that draws nothing, so
    the stage lays out its children exactly as before. */
 .bdmq-mode { display: contents; }
-/* Scroll stops: glass to match the rail it hangs from. */
+/* Scroll stops: a glass pill, placed by `.bdmq-modebar` (#2763 block below). */
 .bdmq-mode-toggle {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 6px 11px;
+  display: inline-flex; align-items: center; gap: 9px;
+  height: 30px; padding: 0 6px 0 12px;
   border: 1px solid var(--line-2); border-radius: 999px;
   background: color-mix(in oklch, var(--bg-0) 55%, transparent);
   backdrop-filter: blur(8px);
-  color: var(--ink-2);
-  font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em;
+  color: var(--ink-1);
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
   text-transform: uppercase; white-space: nowrap; cursor: pointer;
   transition: color .15s, border-color .15s;
 }
-.bdmq-mode-toggle i {
-  width: 6px; height: 6px; border-radius: 50%; background: var(--bg-3);
-  transition: background .15s;
+.bdmq-mode-toggle[aria-pressed="true"] {
+  color: var(--ink-0);
+  border-color: color-mix(in oklch, var(--accent) 45%, transparent);
 }
-.bdmq-mode-toggle[aria-pressed="true"] { color: var(--ink-0); }
-.bdmq-mode-toggle[aria-pressed="true"] i { background: var(--accent); }
 .bdmq-mode-toggle:hover:not(:disabled) { color: var(--ink-0); border-color: var(--ink-3); }
-.bdmq-mode-toggle:disabled { cursor: default; opacity: .6; }
+.bdmq-mode-toggle:disabled { cursor: progress; }
 .bdmq-mode-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .bdmq-mode-error {
-  max-width: 200px; padding: 6px 10px;
+  padding: 6px 10px; white-space: nowrap;
   border-radius: 10px;
   background: color-mix(in oklch, var(--bg-0) 82%, transparent);
   color: var(--bad); font-size: 11.5px; text-align: right;
 }
 @media (prefers-reduced-motion: reduce) {
-  .bdmq-mode-toggle, .bdmq-mode-toggle i { transition: none; }
+  .bdmq-mode-toggle { transition: none; }
 }
 
 /* ── Settings · personal sections (#2763) ── */
@@ -13529,4 +13525,43 @@ html {
 
 @media (max-width: 720px) {
   .maint-row { flex-direction: column; align-items: flex-start; gap: 0.6rem; }
+}
+
+/* ── Book page scroll-stops control (#2763) ── */
+/* The switch sits in the stage's top-right corner, on the dot rail's edge
+   line, a failed save's alert beside it. The bar is wider than the switch,
+   so it lets clicks through wherever it draws nothing. */
+.bdmq-modebar {
+  position: absolute; top: 14px; right: 16px; z-index: 6;
+  display: flex; flex-direction: row-reverse; align-items: center; gap: 8px;
+  pointer-events: none;
+}
+.bdmq-modebar > * { pointer-events: auto; }
+/* The switch's track, drawn like the library's Stack series. Known states key
+   on `aria-pressed`, which is absent until the viewer resolves; until then the
+   track is loading.css's waiting knob, at this track's size. */
+.bdmq-mode-sw {
+  position: relative; flex: 0 0 28px; width: 28px; height: 16px;
+  border-radius: 999px;
+}
+.bdmq-mode-toggle[aria-pressed] .bdmq-mode-sw { background: var(--bg-3); transition: background .2s; }
+.bdmq-mode-toggle[aria-pressed] .bdmq-mode-sw::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 12px; height: 12px; border-radius: 999px; background: var(--ink-2);
+  transition: transform .2s cubic-bezier(.2,.7,.2,1), background .2s;
+}
+.bdmq-mode-toggle[aria-pressed="true"] .bdmq-mode-sw {
+  background: color-mix(in oklch, var(--accent) 75%, transparent);
+}
+.bdmq-mode-toggle[aria-pressed="true"] .bdmq-mode-sw::after {
+  transform: translateX(12px); background: var(--accent-ink);
+}
+.bdmq-mode-sw.ld-toggle-unknown { width: 28px; height: 16px; }
+.bdmq-mode-sw.ld-toggle-unknown::before { width: 12px; height: 12px; margin: -6px 0 0 -6px; }
+/* The flow's Edit sits on its text column's corner, as in the snapped panel,
+   rather than under the switch in the stage's. */
+.bdmq-flowsec.lead { position: relative; }
+@media (prefers-reduced-motion: reduce) {
+  .bdmq-mode-toggle[aria-pressed] .bdmq-mode-sw,
+  .bdmq-mode-toggle[aria-pressed] .bdmq-mode-sw::after { transition: none; }
 }

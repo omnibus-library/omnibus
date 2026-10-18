@@ -61,9 +61,11 @@ sections introduced by `.bdmq-flowlab` rules, a `bdmq-flowtop` back-to-the-book
 pill, and no `.bdmq-next` cue — and the snapped marquee, `#bdmq-snap` with
 `.bdmq-sec` screens. Only one exists in the DOM at a time, so a spec asserting
 either must set the preference first
-(`POST /api/account/book-detail-scroll-stops`) and put it back afterwards; the
-dot rail (`bdmq-dots`, six rows) and the `bdmq-mode-toggle` under it (in
-`.bdmq-rail`, flips the preference in place) are the controls common to both.
+(`POST /api/account/book-detail-scroll-stops`) and put it back afterwards. Two
+controls are common to both: the dot rail (`bdmq-dots`, six rows, nothing
+else in its box) and the `bdmq-mode-toggle` switch in the stage's top-right
+corner, which flips the preference in place and has no `aria-pressed` until
+the viewer resolves.
 
 **"From the same hand" has three states, not two.** The author block fetches
 after the page renders, so `from-same-hand-loading` (a quiet note, no count)
