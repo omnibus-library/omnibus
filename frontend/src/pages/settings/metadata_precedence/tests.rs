@@ -117,7 +117,10 @@ fn save_summary_reports_success_when_every_changed_order_saved() {
 fn save_summary_names_the_saved_order_beside_the_one_the_server_refused() {
     let outcomes = [
         ("ebook", Ok(())),
-        ("audiobook", Err("configure the library path first".to_string())),
+        (
+            "audiobook",
+            Err("configure the library path first".to_string()),
+        ),
     ];
     assert_eq!(
         save_summary(&outcomes),

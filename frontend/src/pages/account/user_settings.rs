@@ -1,9 +1,9 @@
 //! The per-user preference switches in Settings › Preferences — Stack series,
 //! the book page's scroll stops, sharing stats with the household — plus the
-//! inline autosave status every Preferences control shares. Each switch is
-//! account configuration (rule 08): a change saves straight to the server,
-//! patching the cached viewer optimistically and putting it back if the
-//! server refuses, the way the landing's Stack series toggle does.
+//! inline autosave status every Preferences control shares, and the one save
+//! the same switches on Stats and the book page also use. Each is account
+//! configuration (rule 08): a change saves straight to the server, patching
+//! the cached viewer optimistically and putting it back if the server refuses.
 
 use dioxus::prelude::*;
 use omnibus_shared::UserSummary;
@@ -152,13 +152,26 @@ pub(crate) fn UserSettingSwitch(setting: UserSetting) -> Element {
 }
 
 /// Flip `setting` on the cached viewer and save it, putting it back on failure.
-/// The click already flipped the DOM checkbox, so the rendered value has to
-/// move with it for a revert to be a real vdom change.
-fn toggle(
+pub(crate) fn toggle(
+    setting: UserSetting,
+    viewer: Signal<Option<Option<UserSummary>>>,
+    state: Signal<SaveState>,
+) {
+    flip_and_save(setting, viewer, state, move |enabled| setting.save(enabled));
+}
+
+/// [`toggle`] with the save passed in. The click already flipped the DOM
+/// checkbox, so the rendered value has to move with it for a revert to be a
+/// real vdom change. The save runs at the root so a switch that unmounts
+/// mid-save still puts the viewer back; its own `state` goes with it.
+fn flip_and_save<F>(
     setting: UserSetting,
     viewer: Signal<Option<Option<UserSummary>>>,
     mut state: Signal<SaveState>,
-) {
+    save: impl FnOnce(bool) -> F,
+) where
+    F: std::future::Future<Output = Result<(), data::DataError>> + 'static,
+{
     let Some(Some(was)) = viewer
         .peek()
         .as_ref()
@@ -171,13 +184,17 @@ fn toggle(
     }
     state.set(SaveState::Saving);
     write_viewer(viewer, setting, !was);
-    spawn(async move {
-        match setting.save(!was).await {
-            Ok(()) => state.set(SaveState::Saved),
+    let saving = save(!was);
+    dioxus::core::spawn_forever(async move {
+        let settled = match saving.await {
+            Ok(()) => SaveState::Saved,
             Err(_) => {
                 write_viewer(viewer, setting, was);
-                state.set(SaveState::Failed);
+                SaveState::Failed
             }
+        };
+        if let Ok(mut state) = state.try_write() {
+            *state = settled;
         }
     });
 }

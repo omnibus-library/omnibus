@@ -48,8 +48,6 @@ fn hidden_of(viewer: &Option<Option<UserSummary>>) -> Option<Vec<String>> {
 pub(crate) fn HiddenFormatsField() -> Element {
     let viewer = crate::use_current_user().0;
     let state = use_signal(|| SaveState::Idle);
-    // What the server last accepted; taken from the viewer at the first change.
-    let confirmed = use_signal(|| None::<Vec<String>>);
     let hidden = hidden_of(&viewer.read());
 
     rsx! {
@@ -71,7 +69,6 @@ pub(crate) fn HiddenFormatsField() -> Element {
                                 checked: hidden.contains(&fmt),
                                 fmt,
                                 viewer,
-                                confirmed,
                                 state,
                             }
                         }
@@ -97,7 +94,6 @@ fn FormatToggle(
     fmt: String,
     checked: bool,
     viewer: Signal<Option<Option<UserSummary>>>,
-    confirmed: Signal<Option<Vec<String>>>,
     state: Signal<SaveState>,
 ) -> Element {
     let label = fmt.to_uppercase();
@@ -109,7 +105,7 @@ fn FormatToggle(
                 id: "hidden-format-{fmt}",
                 "data-testid": "hidden-format-toggle-{fmt}",
                 checked,
-                onchange: move |e| change_format(&toggle_fmt, e.checked(), viewer, confirmed, state),
+                onchange: move |e| change_format(&toggle_fmt, e.checked(), viewer, state),
             }
             span { class: "mono", "{label}" }
         }
@@ -122,34 +118,42 @@ fn change_format(
     fmt: &str,
     on: bool,
     mut viewer: Signal<Option<Option<UserSummary>>>,
-    mut confirmed: Signal<Option<Vec<String>>>,
     mut state: Signal<SaveState>,
 ) {
     let Some(current) = hidden_of(&viewer.peek()) else {
         return;
     };
-    if confirmed.peek().is_none() {
-        confirmed.set(Some(current.clone()));
-    }
-    write_hidden(&mut viewer, with_format(current, fmt, on));
+    write_hidden(&mut viewer, with_format(current.clone(), fmt, on));
     if *state.peek() == SaveState::Saving {
         return;
     }
     state.set(SaveState::Saving);
-    spawn(async move {
-        loop {
+    spawn_save_loop(viewer, current, state);
+}
+
+/// Save the viewer's set until the server holds it, putting back `confirmed`
+/// (what it last accepted) if a save fails. Runs at the root: unchecking a
+/// format the list doesn't know unmounts its checkbox, and leaving the page
+/// unmounts the field, but the save still has to settle the viewer.
+fn spawn_save_loop(
+    mut viewer: Signal<Option<Option<UserSummary>>>,
+    mut confirmed: Vec<String>,
+    mut state: Signal<SaveState>,
+) {
+    dioxus::core::spawn_forever(async move {
+        let settled = loop {
             let want = hidden_of(&viewer.peek()).unwrap_or_default();
-            if confirmed.peek().as_ref() == Some(&want) {
-                state.set(SaveState::Saved);
-                return;
+            if want == confirmed {
+                break SaveState::Saved;
             }
             if data::set_hidden_formats("", want.clone()).await.is_err() {
-                let back = confirmed.peek().clone().unwrap_or_default();
-                write_hidden(&mut viewer, back);
-                state.set(SaveState::Failed);
-                return;
+                write_hidden(&mut viewer, confirmed);
+                break SaveState::Failed;
             }
-            confirmed.set(Some(want));
+            confirmed = want;
+        };
+        if let Ok(mut state) = state.try_write() {
+            *state = settled;
         }
     });
 }

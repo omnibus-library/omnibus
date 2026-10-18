@@ -10,7 +10,6 @@ use dioxus::prelude::*;
 use omnibus_shared::progress::ProgressFormat;
 use omnibus_shared::{
     AlignmentView, BookInsights, EbookMetadata, ProgressRecord, SeriesDetail, SuggestionsResponse,
-    UserSummary,
 };
 
 use crate::components::atrium::Cover;
@@ -406,51 +405,24 @@ fn ScrollStopsToggle(view: ScrollStopsView, on_toggle: EventHandler<()>) -> Elem
 }
 
 /// The toggle's state and press handler: flip the cached viewer (the stage
-/// re-renders in the other mode at once), save, and flip back if refused.
-/// Account configuration (rule 08) — never queued.
+/// re-renders in the other mode at once), save, and flip back if refused —
+/// the save Preferences' switch makes.
 fn use_scroll_stops_toggle() -> (ScrollStopsView, EventHandler<()>) {
-    let error = use_signal(|| None::<String>);
-    let saving = use_signal(|| false);
-    let viewer_slot = crate::use_current_user().0;
-    let saved = match &*viewer_slot.read() {
+    use crate::pages::account::user_settings::{toggle, SaveState, UserSetting};
+
+    let state = use_signal(|| SaveState::Idle);
+    let viewer = crate::use_current_user().0;
+    let saved = match &*viewer.read() {
         Some(Some(user)) => Some(user.book_detail_scroll_stops),
         _ => None,
     };
     let view = ScrollStopsView {
         on: saved.unwrap_or(false),
         ready: saved.is_some(),
-        error: error(),
+        error: (state() == SaveState::Failed).then(|| SCROLL_STOPS_SAVE_ERROR.to_string()),
     };
-    let on_toggle = EventHandler::new(move |_: ()| {
-        let was = match &*viewer_slot.peek() {
-            Some(Some(user)) => user.book_detail_scroll_stops,
-            _ => return,
-        };
-        if *saving.peek() {
-            return;
-        }
-        let (mut error, mut saving) = (error, saving);
-        saving.set(true);
-        error.set(None);
-        set_viewer_scroll_stops(viewer_slot, !was);
-        spawn(async move {
-            if data::set_book_detail_scroll_stops("", !was).await.is_err() {
-                set_viewer_scroll_stops(viewer_slot, was);
-                error.set(Some(SCROLL_STOPS_SAVE_ERROR.to_string()));
-            }
-            saving.set(false);
-        });
-    });
+    let on_toggle = EventHandler::new(move |_: ()| toggle(UserSetting::ScrollStops, viewer, state));
     (view, on_toggle)
-}
-
-/// Write `value` into the cached viewer's scroll-stops preference, if cached.
-fn set_viewer_scroll_stops(mut slot: Signal<Option<Option<UserSummary>>>, value: bool) {
-    slot.with_mut(|s| {
-        if let Some(Some(user)) = s.as_mut() {
-            user.book_detail_scroll_stops = value;
-        }
-    });
 }
 
 /// Display facts shared by every stop, derived once in `view.rs` from the
