@@ -98,7 +98,7 @@ test.describe("authors index", () => {
       const path = await authorsIndexPage.firstCardPath();
       expect(path).toMatch(/^\/authors\/\d+$/);
       await authorsIndexPage.openFirstCard();
-      await authorPage.assertDisplayedAt(path);
+      await authorPage.assertDisplayedFor(path);
     });
   });
 });

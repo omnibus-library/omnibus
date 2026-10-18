@@ -1,6 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
 import { TopNavComponent } from "../components/TopNavComponent";
-import { expect } from "../fixtures/test";
 import { BasePage } from "./BasePage";
 
 /** The full results for a query at `/search/:query`, in sections by kind. */
@@ -62,7 +61,6 @@ export class SearchResultsPage extends BasePage {
 
   /** Checks the page is showing the results for `query`. */
   async assertDisplayedFor(query: string): Promise<void> {
-    await expect(this.page).toHaveURL(new RegExp(`/search/${query}$`));
-    await expect(this.heading).toBeVisible();
+    await this.assertDisplayedAt(new RegExp(`/search/${query}$`));
   }
 }

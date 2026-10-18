@@ -108,7 +108,7 @@ test.describe("delete an author", () => {
     await test.step("check the dialog stays open with the error", async () => {
       await expect(authorPage.deleteDialog).toBeVisible();
       await expect(authorPage.deleteErrorMessage).toBeVisible();
-      await authorPage.assertDisplayedAt(`/authors/${id}`);
+      await authorPage.assertDisplayedFor(`/authors/${id}`);
     });
   });
 });

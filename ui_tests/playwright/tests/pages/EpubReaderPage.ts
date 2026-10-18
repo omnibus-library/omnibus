@@ -321,8 +321,7 @@ export class EpubReaderPage extends BasePage {
 
   /** Checks the page is reading the book `bookUuid`, not just any book. */
   async assertDisplayedFor(bookUuid: string): Promise<void> {
-    await expect(this.page).toHaveURL(new RegExp(`/read/${bookUuid}$`));
-    await expect(this.viewerPanel).toBeVisible();
+    await this.assertDisplayedAt(new RegExp(`/read/${bookUuid}$`));
   }
 
   /** CSP violations reach the console as error entries, iframe ones included. */

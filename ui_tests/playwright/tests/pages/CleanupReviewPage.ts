@@ -65,11 +65,6 @@ export class CleanupReviewPage extends BasePage {
     return this.review;
   }
 
-  /** Opens an address that predates Administration, which redirects here. */
-  async gotoLegacy(path: string): Promise<void> {
-    await this.openAndSettle(path);
-  }
-
   /** The page's title, such as "Review authors". */
   heading(title: string): Locator {
     return this.page.getByRole("heading", { level: 1, name: title });

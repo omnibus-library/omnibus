@@ -57,9 +57,4 @@ export class AdminPage extends SettingsShellPage<AdminSection> {
     this.forbiddenNotice = page.getByTestId("admin-forbidden");
     this.settingsLink = page.getByTestId("admin-nav-settings");
   }
-
-  /** Opens an address that predates Administration, which redirects into it. */
-  async gotoLegacy(path: string): Promise<void> {
-    await this.openAndSettle(path);
-  }
 }

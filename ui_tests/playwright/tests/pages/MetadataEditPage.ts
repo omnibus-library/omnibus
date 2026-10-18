@@ -4,7 +4,6 @@ import { MetadataSearchOverlayComponent } from "../components/MetadataSearchOver
 import { TopNavComponent } from "../components/TopNavComponent";
 import { coversUrls } from "../contracts/covers";
 import type { EditionAnswers } from "../data/editions";
-import { expect } from "../fixtures/test";
 import { BasePage } from "./BasePage";
 
 /** A book's metadata edit page at `/books/:uuid/edit`. */
@@ -63,8 +62,7 @@ export class MetadataEditPage extends BasePage {
 
   /** Checks the page is editing the book `bookUuid`, not just any book. */
   async assertDisplayedFor(bookUuid: string): Promise<void> {
-    await expect(this.page).toHaveURL(new RegExp(`/books/${bookUuid}/edit$`));
-    await expect(this.pageTitleLabel).toBeVisible();
+    await this.assertDisplayedAt(new RegExp(`/books/${bookUuid}/edit$`));
   }
 
   /** Clicks Revert to scanned values; a test that asserts the write wraps it. */

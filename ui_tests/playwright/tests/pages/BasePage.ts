@@ -22,7 +22,12 @@ export abstract class BasePage {
 
   /** Checks the URL and that the page's ready marker is showing. */
   async assertDisplayed(): Promise<void> {
-    await expect(this.page).toHaveURL(this.urlPattern);
+    await this.assertDisplayedAt(this.urlPattern);
+  }
+
+  /** Checks the URL matches `url` and the page's ready marker is showing. */
+  protected async assertDisplayedAt(url: RegExp): Promise<void> {
+    await expect(this.page).toHaveURL(url);
     await expect(this.readyLocator).toBeVisible();
   }
 
@@ -92,6 +97,11 @@ export abstract class BasePage {
   async reload(): Promise<void> {
     await this.page.reload();
     await this.waitUntilReady();
+  }
+
+  /** Opens an address that predates this page, which redirects here. */
+  async gotoLegacy(path: string): Promise<void> {
+    await this.openAndSettle(path);
   }
 
   /** Navigates to `path` and waits until the hydrated page is ready. */

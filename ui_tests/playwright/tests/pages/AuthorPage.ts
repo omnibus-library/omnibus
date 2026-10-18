@@ -1,6 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
 import { TopNavComponent } from "../components/TopNavComponent";
-import { expect } from "../fixtures/test";
 import { BasePage } from "./BasePage";
 
 /** One author at `/authors/:id`: their books, series and photo. */
@@ -75,8 +74,7 @@ export class AuthorPage extends BasePage {
   }
 
   /** Checks the page is the author at `path`, such as `/authors/12`. */
-  async assertDisplayedAt(path: string): Promise<void> {
-    await expect(this.page).toHaveURL(new RegExp(`${path}$`));
-    await expect(this.heading).toBeVisible();
+  async assertDisplayedFor(path: string): Promise<void> {
+    await this.assertDisplayedAt(new RegExp(`${path}$`));
   }
 }

@@ -53,7 +53,7 @@ test.describe("profile section", () => {
     settingsPage,
   }) => {
     await test.step("open the legacy route", async () => {
-      await settingsPage.gotoLegacyAccountRoute();
+      await settingsPage.gotoLegacy("/account");
     });
 
     await test.step("check the settings page shows the profile card", async () => {

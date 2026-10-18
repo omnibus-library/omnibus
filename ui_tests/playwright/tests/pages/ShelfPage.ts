@@ -231,8 +231,7 @@ export class ShelfPage extends BasePage {
 
   /** Checks the page is showing shelf `shelfId`, not just any shelf. */
   async assertDisplayedFor(shelfId: number): Promise<void> {
-    await expect(this.page).toHaveURL(new RegExp(`/shelves/${shelfId}$`));
-    await expect(this.titleHeading).toBeVisible();
+    await this.assertDisplayedAt(new RegExp(`/shelves/${shelfId}$`));
   }
 
   /** Checks the grid shows exactly these members and the count says so. */

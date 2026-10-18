@@ -37,9 +37,4 @@ export class SettingsPage extends SettingsShellPage<SettingsSection> {
     this.apiTokens = new ApiTokensSectionComponent(page);
     this.adminLink = page.getByTestId("settings-nav-admin");
   }
-
-  /** Opens `/account`, the old route that redirects into Settings. */
-  async gotoLegacyAccountRoute(): Promise<void> {
-    await this.openAndSettle("/account");
-  }
 }

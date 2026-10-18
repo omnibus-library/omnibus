@@ -25,7 +25,6 @@ import { SyncLinkComponent } from "../components/SyncLinkComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { WishlistCardComponent } from "../components/WishlistCardComponent";
 import type { CopyRow, WishlistRow } from "../data/physical";
-import { expect } from "../fixtures/test";
 import { BasePage } from "./BasePage";
 
 export class BookDetailPage extends BasePage {
@@ -265,13 +264,11 @@ export class BookDetailPage extends BasePage {
 
   /** Checks the page is showing the book `bookUuid`, not just any book. */
   async assertDisplayedFor(bookUuid: string): Promise<void> {
-    await expect(this.page).toHaveURL(new RegExp(`/books/${bookUuid}$`));
-    await expect(this.titleHeading).toBeVisible();
+    await this.assertDisplayedAt(new RegExp(`/books/${bookUuid}$`));
   }
 
   /** Checks the page is a book's uuid route, whichever book, and not a numeric id. */
   async assertDisplayedByUuid(): Promise<void> {
-    await expect(this.page).toHaveURL(/\/books\/[0-9a-fA-F-]{36}$/);
-    await expect(this.titleHeading).toBeVisible();
+    await this.assertDisplayedAt(/\/books\/[0-9a-fA-F-]{36}$/);
   }
 }

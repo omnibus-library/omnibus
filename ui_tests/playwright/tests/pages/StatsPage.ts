@@ -297,8 +297,7 @@ export class StatsPage extends BasePage {
 
   /** Checks the URL names `reader`'s page and the page has settled on it. */
   async assertDisplayedFor(reader: number): Promise<void> {
-    await expect(this.page).toHaveURL(new RegExp(`/stats\\?user=${reader}$`));
-    await expect(this.readyLocator).toBeVisible();
+    await this.assertDisplayedAt(new RegExp(`/stats\\?user=${reader}$`));
   }
 
   async assertPeriodSelected(range: StatsRange): Promise<void> {

@@ -1,5 +1,4 @@
 import type { Locator, Page } from "@playwright/test";
-import { expect } from "../fixtures/test";
 import { PagedReaderPage } from "./PagedReaderPage";
 
 /** The comic pager at `/comic/:uuid`: one page image at a time. */
@@ -38,7 +37,6 @@ export class ComicReaderPage extends PagedReaderPage {
 
   /** Checks the pager is showing the book `bookUuid`, not just any comic. */
   async assertDisplayedFor(bookUuid: string): Promise<void> {
-    await expect(this.page).toHaveURL(new RegExp(`/comic/${bookUuid}$`));
-    await expect(this.footerBar).toBeVisible();
+    await this.assertDisplayedAt(new RegExp(`/comic/${bookUuid}$`));
   }
 }

@@ -1,6 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
 import { TopNavComponent } from "../components/TopNavComponent";
-import { expect } from "../fixtures/test";
 import { BasePage } from "./BasePage";
 
 /** What names one of the two shells that draw the settings frame. */
@@ -85,11 +84,10 @@ export abstract class SettingsShellPage<
   /** Checks the address names `section`, or the default one with no bare `?`. */
   async assertDisplayedFor(section?: Section): Promise<void> {
     const path = this.shell.path;
-    await expect(this.page).toHaveURL(
+    await this.assertDisplayedAt(
       section === undefined
         ? new RegExp(`${path}$`)
         : new RegExp(`${path}\\?section=${section}$`),
     );
-    await expect(this.layout).toBeVisible();
   }
 }
