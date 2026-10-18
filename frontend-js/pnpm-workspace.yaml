@@ -1,0 +1,4 @@
+# Refuse versions published in the last 14 days (minutes).
+minimumReleaseAge: 20160
+allowBuilds:
+  esbuild: true
