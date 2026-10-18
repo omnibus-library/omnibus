@@ -12,6 +12,8 @@ use anyhow::Context;
 use epub::doc::EpubDoc;
 use omnibus_shared::{BookImage, BookImageReference};
 use quick_xml::events::Event;
+use zip::read::ZipFile;
+use zip::result::{ZipError, ZipResult};
 
 use crate::comic::read_capped;
 use crate::ebook::toc::join_href;
@@ -56,7 +58,7 @@ fn manifest_images(doc: &Package, archive: &mut Archive) -> BTreeMap<String, Boo
         .filter(|i| i.mime.starts_with("image/"))
     {
         let href = archive_path(&item.path);
-        let Ok(entry) = archive.by_name(&href) else {
+        let Ok(entry) = archive_entry(archive, &href) else {
             continue;
         };
         let byte_size = entry.size() as i64;
@@ -90,8 +92,7 @@ fn attach_references(
             continue;
         };
         let page_path = archive_path(&resource.path);
-        let page = match archive
-            .by_name(&page_path)
+        let page = match archive_entry(archive, &page_path)
             .map_err(anyhow::Error::from)
             .and_then(|entry| read_capped(entry, &page_path))
         {
@@ -135,7 +136,7 @@ pub fn read_image(file: File, href: &str) -> anyhow::Result<Option<(String, Vec<
     else {
         return Ok(None);
     };
-    let bytes = read_capped(archive.by_name(href)?, href)?;
+    let bytes = read_capped(archive_entry(&mut archive, href)?, href)?;
     Ok(Some((item.mime.clone(), bytes)))
 }
 
@@ -144,6 +145,16 @@ pub fn read_image(file: File, href: &str) -> anyhow::Result<Option<(String, Vec<
 fn open(file: File) -> anyhow::Result<(Package, Archive)> {
     let doc = EpubDoc::from_reader(BufReader::new(file.try_clone()?))?;
     Ok((doc, zip::ZipArchive::new(file)?))
+}
+
+/// An entry by manifest href: the epub crate keeps hrefs percent-encoded while
+/// entry names are literal, so retry decoded as its own lookup does.
+fn archive_entry<'a>(archive: &'a mut Archive, href: &str) -> ZipResult<ZipFile<'a, File>> {
+    let index = archive
+        .index_for_name(href)
+        .or_else(|| archive.index_for_name(&urlencoding::decode(href).ok()?))
+        .ok_or(ZipError::FileNotFound)?;
+    archive.by_index(index)
 }
 
 fn pixel_size(prefix: &[u8]) -> Option<(u32, u32)> {
