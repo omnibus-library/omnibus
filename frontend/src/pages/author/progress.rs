@@ -1,6 +1,6 @@
-//! How far the reader is through an author: one segment per book (finished,
-//! then in progress, then unread), the three counts under it, and the book
-//! they're reading now with a Resume. All from the pane's one payload.
+//! How far the reader is through an author: one bar (finished, then in
+//! progress), the three counts under it, and the book they're reading now
+//! with a Resume. All from the pane's one payload.
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
@@ -10,10 +10,6 @@ use super::BookStates;
 use crate::components::atrium::Cover;
 use crate::components::cover_tile::thumb_srcs;
 use crate::{reader_route, Route};
-
-/// Past this many books a segment per book is too thin to read, so the strip
-/// draws one proportional bar instead.
-const MAX_SEGMENTS: usize = 24;
 
 /// Finished / reading / unread counts over the author's books.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -99,7 +95,7 @@ pub fn reading_strip(books: &[EbookMetadata], states: &BookStates, server_url: &
     rsx! {
         section { class: "au-reading", "data-testid": "author-reading",
             div { class: "au-progress",
-                {segments(books, states, t)}
+                {progress_bar(books.len(), t)}
                 p { class: "au-tally",
                     span { b { "{t.finished}" } " finished" }
                     span { b { "{t.reading}" } " reading" }
@@ -113,53 +109,15 @@ pub fn reading_strip(books: &[EbookMetadata], states: &BookStates, server_url: &
     }
 }
 
-/// One segment per book, finished first; past [`MAX_SEGMENTS`], one bar.
-fn segments(books: &[EbookMetadata], states: &BookStates, t: Tally) -> Element {
-    let label = format!(
-        "{} of {} finished, {} reading",
-        t.finished,
-        books.len(),
-        t.reading
-    );
-    if books.len() > MAX_SEGMENTS {
-        let pct = |n: usize| (n as f64 * 100.0 / books.len() as f64).floor();
-        return rsx! {
-            div { class: "au-segs is-bar", role: "img", "aria-label": "{label}",
-                span { class: "au-seg-fill is-done", style: "width: {pct(t.finished)}%" }
-                span { class: "au-seg-fill is-now", style: "width: {pct(t.reading)}%" }
-            }
-        };
-    }
-    let mut order: Vec<(ReadStatus, Option<i64>)> = books
-        .iter()
-        .map(|b| {
-            (
-                status_of(b, states),
-                state_of(b, states).and_then(|s| s.percent),
-            )
-        })
-        .collect();
-    let rank = |s: ReadStatus| match s {
-        ReadStatus::Finished => 0,
-        ReadStatus::Reading => 1,
-        ReadStatus::Unread => 2,
-    };
-    order.sort_by_key(|(s, _)| rank(*s));
+/// One bar: the share of books finished, then the share in progress — the
+/// same reading as the list row's bar, at the pane's scale.
+fn progress_bar(total: usize, t: Tally) -> Element {
+    let label = format!("{} of {total} finished, {} reading", t.finished, t.reading);
+    let pct = |n: usize| (n as f64 * 100.0 / total.max(1) as f64).floor();
     rsx! {
-        div { class: "au-segs", role: "img", "aria-label": "{label}",
-            for (i, (status, percent)) in order.into_iter().enumerate() {
-                span {
-                    key: "{i}",
-                    class: match status {
-                        ReadStatus::Finished => "au-seg is-done",
-                        ReadStatus::Reading => "au-seg is-now",
-                        ReadStatus::Unread => "au-seg",
-                    },
-                    if status == ReadStatus::Reading {
-                        span { class: "au-seg-fill", style: "width: {percent.unwrap_or(0).clamp(0, 100)}%" }
-                    }
-                }
-            }
+        div { class: "au-meter", role: "img", "aria-label": "{label}",
+            span { class: "au-meter-done", style: "width: {pct(t.finished)}%" }
+            span { class: "au-meter-now", style: "width: {pct(t.reading)}%" }
         }
     }
 }

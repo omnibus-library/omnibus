@@ -194,18 +194,12 @@
   flex-wrap: wrap; padding: 26px 0; border-bottom: 1px solid var(--line-2);
 }
 .au-progress { flex: 1 1 280px; max-width: 460px; }
-.au-segs { display: flex; gap: 6px; height: 8px; }
-/* Capped, so an author with two books gets two short pills, not two halves. */
-.au-seg {
-  position: relative; flex: 1; max-width: 44px; overflow: hidden;
-  border-radius: 4px; background: var(--bg-3);
+/* Finished in the author's tint, in progress a paler run after it. */
+.au-meter {
+  display: flex; height: 8px; overflow: hidden; border-radius: 4px; background: var(--bg-3);
 }
-.au-seg.is-done { background: var(--au-tint); }
-.au-seg.is-now { background: color-mix(in oklch, var(--au-tint) 30%, var(--bg-3)); }
-.au-seg-fill { position: absolute; inset: 0 auto 0 0; background: var(--au-tint); }
-.au-segs.is-bar { gap: 0; overflow: hidden; border-radius: 4px; background: var(--bg-3); }
-.au-segs.is-bar .au-seg-fill { position: static; }
-.au-segs.is-bar .is-now { background: color-mix(in oklch, var(--au-tint) 42%, transparent); }
+.au-meter-done { background: var(--au-tint); }
+.au-meter-now { background: color-mix(in oklch, var(--au-tint) 42%, transparent); }
 .au-tally {
   display: flex; gap: 24px; margin: 14px 0 0;
   font-family: var(--mono); font-size: 13px; color: var(--ink-2);
