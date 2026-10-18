@@ -1,7 +1,12 @@
 import type { Locator, Page } from "@playwright/test";
+import { AddBooksSheetComponent } from "../components/AddBooksSheetComponent";
+import { BulkEditBarComponent } from "../components/BulkEditBarComponent";
+import { BulkEditModalComponent } from "../components/BulkEditModalComponent";
 import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
 import { ContinueStackComponent } from "../components/ContinueStackComponent";
 import { LibraryTableComponent } from "../components/LibraryTableComponent";
+import { SeriesCapComponent } from "../components/SeriesCapComponent";
+import { TabBarComponent } from "../components/TabBarComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import type { ShelfRef } from "../data/shelves";
 import { BasePage } from "./BasePage";
@@ -118,6 +123,134 @@ export class LibraryPage extends BasePage {
   // #endregion batch-E
 
   // #region batch-F: landing and add books
+  readonly bulkEditBar = new BulkEditBarComponent(this.page);
+  readonly bulkEditModal = new BulkEditModalComponent(this.page);
+  readonly seriesCap = new SeriesCapComponent(this.page);
+  readonly tabBar = new TabBarComponent(this.page);
+  readonly addBooksSheet = new AddBooksSheetComponent(this.page);
+
+  readonly libraryHeading = this.page.getByRole("heading", {
+    level: 1,
+    name: "Your Library",
+  });
+  readonly grid = this.page.getByTestId("lib-grid");
+  readonly toolbar = this.page.getByTestId("lib-toolbar");
+  readonly shelfRow = this.page.getByTestId("shelf-gallery");
+  readonly allBooksShelfTile = this.page.getByTestId("gallery-all-books");
+  readonly newShelfButton = this.page.getByTestId("new-shelf");
+  readonly shelfRowPrevButton = this.page.getByTestId("shelf-row-prev");
+  readonly shelfRowNextButton = this.page.getByTestId("shelf-row-next");
+  readonly gridViewButton = this.page.getByTestId("view-toggle-grid");
+  readonly bookTiles = this.page.getByTestId(/^ebook-tile-/);
+  readonly firstBookTile = this.bookTiles.first();
+  readonly firstBookTileCaption = this.firstBookTile.locator(".lib-tile-cap");
+  readonly loadMoreButton = this.page.getByTestId("lib-load-more");
+  readonly sortSelect = this.page.getByTestId("lib-sort-select");
+  readonly sortDirectionButton = this.page.getByTestId("lib-sort-dir");
+  readonly stackToggle = this.page.getByRole("button", {
+    name: "Stack series",
+  });
+  readonly stackTiles = this.page.getByTestId(/^series-stack-/);
+  readonly stackError = this.page.getByTestId("lib-stack-error");
+
+  /** A folded series, named as its button reads: `Pioneers, 5 books`. */
+  seriesStack(label: string): Locator {
+    return this.page.getByRole("button", { name: label });
+  }
+
+  /** The grid cell that holds a folded series. */
+  stackCell(label: string): Locator {
+    return this.grid
+      .getByRole("listitem")
+      .filter({ has: this.seriesStack(label) });
+  }
+
+  /** A book's grid tile, found by its fixture slug. */
+  volumeTile(slug: string): Locator {
+    return this.page.getByTestId(`ebook-tile-${slug}`);
+  }
+
+  sortOption(name: string): Locator {
+    return this.sortSelect.getByRole("option", { name });
+  }
+
+  async gotoSettled(): Promise<void> {
+    await this.openAndSettle("/");
+  }
+
+  /** Returns once the server-rendered HTML arrives, before the client runs. */
+  async gotoBeforeHydration(): Promise<void> {
+    await this.page.goto("/", { waitUntil: "domcontentloaded" });
+  }
+
+  async switchToGrid(): Promise<void> {
+    await this.gridViewButton.click();
+  }
+
+  async hoverFirstBookTile(): Promise<void> {
+    await this.firstBookTile.hover();
+  }
+
+  async sortBy(value: string): Promise<void> {
+    await this.sortSelect.selectOption(value);
+  }
+
+  async toggleSortDirection(): Promise<void> {
+    await this.sortDirectionButton.click();
+  }
+
+  async toggleStackSeries(): Promise<void> {
+    await this.stackToggle.click();
+  }
+
+  async openSeriesStack(label: string): Promise<void> {
+    await this.seriesStack(label).click();
+  }
+
+  /** Clicks the page heading, a neutral spot well outside the table. */
+  async clickAway(): Promise<void> {
+    await this.libraryHeading.click();
+  }
+
+  /** Marks every grid cell, so a cell the diff re-creates loses its mark. */
+  async markGridCells(): Promise<void> {
+    await this.grid.evaluate((grid) => {
+      for (const cell of grid.children) cell.setAttribute("data-e2e-kept", "");
+    });
+  }
+
+  /** How many grid cells are new since `markGridCells`. */
+  async countUnmarkedGridCells(): Promise<number> {
+    return this.grid.evaluate(
+      (grid) => grid.querySelectorAll(":scope > :not([data-e2e-kept])").length,
+    );
+  }
+
+  /** How many of the wall's mount sweeps a folded series is still playing. */
+  async sweepAnimationCount(label: string): Promise<number> {
+    return this.seriesStack(label).evaluate(
+      (stack) =>
+        stack
+          .getAnimations()
+          .filter(
+            (animation) =>
+              animation instanceof CSSAnimation &&
+              animation.animationName === "lib-sweep-in",
+          ).length,
+    );
+  }
+
+  /** The key of the grid cell holding a folded series, or null once dealt out. */
+  async stackLeadKey(label: string): Promise<string | null> {
+    return this.page.evaluate(
+      (name) =>
+        document
+          .querySelector(`[aria-label="${name}"]`)
+          ?.closest("[data-flip-key]")
+          ?.getAttribute("data-flip-key") ?? null,
+      label,
+    );
+  }
   // #endregion batch-F
 
   // #region batch-G: shelves

@@ -30,8 +30,11 @@ import { ProgressRequests } from "../apiRequests/ProgressRequests";
 import { ReadStatusRequests } from "../apiRequests/ReadStatusRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
+import { ThumbsRequests } from "../apiRequests/ThumbsRequests";
 import { UploadsRequests } from "../apiRequests/UploadsRequests";
 import { UsersRequests } from "../apiRequests/UsersRequests";
+import { BookMetaRowsComponent } from "../components/BookMetaRowsComponent";
+import { PreHydrationComponent } from "../components/PreHydrationComponent";
 import type {
   CreatedApiToken,
   CreatedKoboDevice,
@@ -57,6 +60,7 @@ import {
   wishlistOf,
 } from "../data/shelves";
 import { buildReader, type Credentials, type SeededUser } from "../data/users";
+import { AddBooksPage } from "../pages/AddBooksPage";
 import { AdminHealthPage } from "../pages/AdminHealthPage";
 import { AuthorsIndexPage } from "../pages/AuthorsIndexPage";
 import { BookDetailPage } from "../pages/BookDetailPage";
@@ -69,6 +73,7 @@ import { LibraryPage } from "../pages/LibraryPage";
 import { ListenPage } from "../pages/ListenPage";
 import { LoginPage } from "../pages/LoginPage";
 import { MetadataEditPage } from "../pages/MetadataEditPage";
+import { NotFoundPage } from "../pages/NotFoundPage";
 import { PdfReaderPage } from "../pages/PdfReaderPage";
 import { RegisterPage } from "../pages/RegisterPage";
 import { SettingsPage } from "../pages/SettingsPage";
@@ -235,6 +240,13 @@ type PageFixtures = {
   // #endregion batch-E
 
   // #region batch-F: landing and add books
+  addBooksPage: AddBooksPage;
+  notFoundPage: NotFoundPage;
+  preHydration: PreHydrationComponent;
+  bookMetaRows: BookMetaRowsComponent;
+  thumbsRequests: ThumbsRequests;
+  revertOverridesOf: (...titles: string[]) => Promise<void>;
+  presetStackSeries: (enabled: boolean) => Promise<void>;
   // #endregion batch-F
 
   // #region batch-G: shelves
@@ -1090,6 +1102,45 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // #endregion batch-E
 
   // #region batch-F: landing and add books
+  addBooksPage: async ({ page }, use) => {
+    await use(new AddBooksPage(page));
+  },
+  notFoundPage: async ({ page }, use) => {
+    await use(new NotFoundPage(page));
+  },
+  preHydration: async ({ page }, use) => {
+    await use(new PreHydrationComponent(page));
+  },
+  bookMetaRows: async ({ page }, use) => {
+    await use(new BookMetaRowsComponent(page));
+  },
+  thumbsRequests: async ({ request }, use) => {
+    await use(new ThumbsRequests(request));
+  },
+
+  // Registered before the edit, so the revert runs even when the edit fails.
+  revertOverridesOf: async ({ request, overridesRequests }, use) => {
+    const uuids = new Set<string>();
+    await use(async (...titles) => {
+      for (const title of titles) {
+        uuids.add(await fetchBookUuidByTitle(request, title));
+      }
+    });
+    for (const uuid of uuids) {
+      const reverted = await overridesRequests.deleteOverrides(uuid);
+      await expect(reverted, `revert overrides on ${uuid}`).toBeOK();
+    }
+  },
+
+  // The reader's preference outlives the test, so it goes back to off after.
+  presetStackSeries: async ({ readerAccountRequests }, use) => {
+    const save = async (enabled: boolean) => {
+      const saved = await readerAccountRequests.postStackSeries(enabled);
+      await expect(saved, `save stack series ${enabled}`).toBeOK();
+    };
+    await use(save);
+    await save(false);
+  },
   // #endregion batch-F
 
   // #region batch-G: shelves
