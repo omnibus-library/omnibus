@@ -311,9 +311,7 @@ test("says so when the secret can't be copied", async ({ page }) => {
   await page.getByTestId("api-token-secret-copy").click();
 
   const feedback = page.getByTestId("api-token-secret-copy-feedback");
-  await expect(feedback).toHaveText(
-    "Couldn\u2019t copy. Select and copy it.",
-  );
+  await expect(feedback).toHaveText("Couldn\u2019t copy. Select and copy it.");
   await expect(feedback).toHaveClass(/error/);
   await expect(secretPanel(page)).toBeVisible();
 
