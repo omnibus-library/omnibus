@@ -38,8 +38,9 @@ export function Toolbar({
             type="button"
             className={stack.on ? "ss-tog on" : "ss-tog"}
             aria-pressed={stack.on}
-            disabled={stack.pending}
-            onClick={stack.onToggle}
+            // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
+            aria-disabled={stack.pending}
+            onClick={stack.pending ? undefined : stack.onToggle}
           >
             <span className="ss-sw" aria-hidden="true" />
             Stack series

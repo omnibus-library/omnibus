@@ -998,13 +998,18 @@ export const StackToggle: Story = {
     const toggle = canvas.getByRole("button", { name: "Stack series" });
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
 
-    await userEvent.click(toggle);
+    toggle.focus();
+    await userEvent.keyboard(" ");
 
     // The switch flips before the save answers, and stays put until it does.
     await waitFor(() => expect(toggle).toHaveAttribute("aria-pressed", "true"));
-    await expect(toggle).toBeDisabled();
+    await expect(toggle).toHaveAttribute("aria-disabled", "true");
+    // Keyboard focus stays on the switch while it waits.
+    await expect(document.activeElement).toBe(toggle);
     release();
-    await waitFor(() => expect(toggle).toBeEnabled());
+    await waitFor(() =>
+      expect(toggle).toHaveAttribute("aria-disabled", "false"),
+    );
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await expect(
       await canvas.findByRole("button", { name: "Saga, 3 books" }),
