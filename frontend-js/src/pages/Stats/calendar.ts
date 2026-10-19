@@ -109,3 +109,15 @@ export function streakSpan(
   const last = Math.max(...behind);
   return [last - (streakDays - 1), last];
 }
+
+/**
+ * How far through its year `asOfDay` is, 0 to 1: the pace an annual target is read against.
+ * `null` for a day the server never sent.
+ */
+export function yearFraction(asOfDay: string): number | null {
+  const today = dayNumber(asOfDay);
+  if (today === null) return null;
+  const [year] = civilFromDays(today);
+  const start = daysFromCivil(year, 1, 1);
+  return (today - start + 1) / (daysFromCivil(year + 1, 1, 1) - start);
+}

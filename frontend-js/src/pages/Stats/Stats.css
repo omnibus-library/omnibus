@@ -122,6 +122,189 @@
   font-size: 10px;
   color: var(--ink-3);
 }
+
+.st-hero-goals {
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: st-settle 0.5s 0.08s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.st-year {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.st-year-ring {
+  width: 132px;
+  height: 132px;
+  flex: none;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(
+    var(--accent) 0% var(--st-ring-pct, 0%),
+    var(--bg-2) var(--st-ring-pct, 0%) 100%
+  );
+  transition: background 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.st-year-disc {
+  width: 76%;
+  height: 76%;
+  border-radius: 999px;
+  background: var(--st-hero-bg);
+  display: grid;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+}
+.st-year-figure {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 38px;
+  line-height: 1;
+}
+.st-year-target {
+  font-size: 18px;
+  color: var(--ink-3);
+}
+.st-year-caption {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin-top: 4px;
+}
+.st-year-side {
+  min-width: 0;
+}
+.st-year-kicker {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.st-year-line {
+  margin: 5px 0 0;
+  font-size: 14px;
+  color: var(--ink-1);
+}
+.st-year-invite {
+  margin: 5px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.st-year-bare {
+  margin-top: 6px;
+}
+.atrium .st-year-figure.bare {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 34px;
+  line-height: 1;
+  color: var(--ink-1);
+}
+.st-year-bare-unit {
+  font-size: 17px;
+  color: var(--ink-3);
+}
+.st-year-bare .st-year-note {
+  margin-top: 4px;
+}
+.st-year-note {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.st-year-pace {
+  color: var(--accent);
+}
+.st-daily {
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  padding: 16px 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.st-daily-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.st-daily-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.st-daily-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.st-daily-top {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.st-daily-label {
+  font-size: 13px;
+  color: var(--ink-1);
+}
+.st-daily-figures {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.st-daily-figure {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 26px;
+  line-height: 1;
+  color: var(--ink-0);
+}
+.st-daily-figure.bare {
+  color: var(--ink-1);
+}
+.atrium .st-daily-note {
+  margin: 0 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.st-daily-note.met {
+  color: var(--accent);
+}
+.st-daily-invite {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.st-goal-track {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  overflow: hidden;
+}
+.st-goal-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--accent) 55%, var(--bg-3));
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.st-goal-fill.met {
+  background: var(--accent);
+}
 .st-scope {
   display: flex;
   flex-direction: column;
@@ -240,11 +423,15 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .st-hero-run,
+  .st-hero-goals,
   .st-scope,
+  .st-goal-fill,
+  .st-year-ring,
   .st-range-pill {
     transition: none;
   }
   .st-hero-run,
+  .st-hero-goals,
   .st-scope {
     animation: none;
   }
@@ -253,6 +440,9 @@
   .st-hero-inner {
     grid-template-columns: 1fr;
     gap: 28px;
+  }
+  .st-hero-goals {
+    width: 100%;
   }
   .atrium .st-hero-figure,
   .st-hero-unit {
@@ -291,6 +481,33 @@
     flex: 1;
     padding: 8px 6px;
     text-align: center;
+  }
+}
+.st-goals-edit {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--ink-1);
+  font-size: 0.8rem;
+  text-decoration: none;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.st-goals-edit:hover {
+  color: var(--ink-0);
+  border-color: color-mix(in oklch, var(--accent) 45%, var(--line-2));
+}
+.st-goals-edit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-goals-edit {
+    transition: none;
   }
 }
 @keyframes st-settle {

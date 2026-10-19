@@ -20,6 +20,7 @@ export function Page() {
     <Routes>
       <Route path="/stats" element={<Stats />} />
       <Route path="/" element={<h1>Library</h1>} />
+      <Route path="/settings" element={<h1>Settings</h1>} />
     </Routes>
   );
 }

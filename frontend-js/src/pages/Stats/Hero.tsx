@@ -1,6 +1,7 @@
 import type { StatsSummary } from "../../api";
 import { plural } from "../../format";
 import { dayNumber } from "./calendar";
+import { AnnualGoalRing, DailyGoalsCard, GoalsLink } from "./Goal";
 import { buildSpark, type SparkBar, streakLine } from "./hero";
 
 // Spelled out so tools/extract-atrium.cjs sees each class.
@@ -27,6 +28,9 @@ export function Hero({
   const anchor = dayNumber(summary.as_of_day);
   const bars = anchor === null ? [] : buildSpark(summary, anchor);
   const line = streakLine(current, summary.longest_streak_days, yours);
+  const { goal, daily_goals: daily } = summary;
+  const anyGoalSet =
+    goal !== null || daily.pages !== null || daily.minutes !== null;
   return (
     <header className="st-hero" data-testid="stats-hero">
       <div className="st-hero-inner">
@@ -69,6 +73,16 @@ export function Hero({
               </div>
             </>
           )}
+        </div>
+        <div className="st-hero-goals">
+          <AnnualGoalRing
+            goal={goal}
+            finished={summary.books_this_year}
+            year={summary.as_of_day.slice(0, 4)}
+            asOfDay={summary.as_of_day}
+          />
+          <DailyGoalsCard daily={daily} />
+          {yours && <GoalsLink anySet={anyGoalSet} />}
         </div>
       </div>
     </header>

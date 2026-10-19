@@ -6,6 +6,7 @@ import {
   monthName,
   streakSpan,
   windowLabel,
+  yearFraction,
 } from "./calendar";
 
 function day(n: number) {
@@ -97,5 +98,19 @@ describe("streakSpan", () => {
 
   it("ignores activity after the anchor, which can't end a run", () => {
     expect(streakSpan(day(12), [day(20)], 3)).toBeNull();
+  });
+});
+
+describe("yearFraction", () => {
+  it("runs from one day in to the whole year", () => {
+    expect(yearFraction("2026-01-01")).toBeCloseTo(1 / 365, 9);
+    expect(yearFraction("2026-12-31")).toBe(1);
+    // 2024 is a leap year, so its last day is still exactly one.
+    expect(yearFraction("2024-12-31")).toBe(1);
+  });
+
+  // A server too old to send the day leaves the pace note unrendered rather than measured against a guess.
+  it("is none without a server day", () => {
+    expect(yearFraction("")).toBeNull();
   });
 });
