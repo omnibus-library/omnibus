@@ -2,6 +2,7 @@ import { skipToken, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
   fetchBookPage,
+  fetchRecentProgress,
   fetchShelfPage,
   fetchShelves,
   type LibraryQuery,
@@ -33,10 +34,19 @@ import {
 import { BookGrid } from "./BookGrid";
 import { BookTable } from "./BookTable";
 import { emptyState, headerCount } from "./libraryView";
+import {
+  EdgeResume,
+  leadAccent,
+  ResumeStack,
+  ResumeStackPending,
+} from "./ResumeStack";
 import { ShelfGallery } from "./ShelfGallery";
 import { headerSort, sortLockReason } from "./sorting";
 import { Toolbar } from "./Toolbar";
 import "./Library.css";
+
+const RESUME_POINTS = 5;
+const PAST_STACK_PX = 240;
 
 function Receipt({
   count,
@@ -91,6 +101,25 @@ export function Library() {
   const browseBooks = pages.data?.pages.flatMap((page) => page.books) ?? [];
   const firstPage = pages.data?.pages[0];
   const filtered = prefs.clauses.length > 0;
+
+  // The books you have open; a failed feed settles to none, which hides the stack.
+  const recent = useQuery({
+    queryKey: ["progress", "recent", RESUME_POINTS],
+    queryFn: () => fetchRecentProgress(RESUME_POINTS),
+  });
+  const points = recent.data ?? [];
+  const [leadIndex, setLeadIndex] = useState(0);
+  const lead = Math.min(leadIndex, points.length - 1);
+  const leadPoint = points[lead];
+
+  // Past this much scroll the stack is off-screen, so the edge ribbon takes over.
+  const [past, setPast] = useState(false);
+  useEffect(() => {
+    const paint = () => setPast(window.scrollY > PAST_STACK_PX);
+    paint();
+    window.addEventListener("scroll", paint, { passive: true });
+    return () => window.removeEventListener("scroll", paint);
+  }, []);
 
   const [selection, setSelection] = useState(loadShelfSelection);
   const shelfId = selection.kind === "shelf" ? selection.id : null;
@@ -178,8 +207,17 @@ export function Library() {
   };
 
   return (
-    <div className="landing-col lmq" id="lmq-root">
+    <div
+      className={past ? "landing-col lmq lmq--past" : "landing-col lmq"}
+      id="lmq-root"
+      style={leadAccent(leadPoint)}
+    >
       <PageTitle />
+      {leadPoint ? (
+        <ResumeStack points={points} lead={lead} onLead={setLeadIndex} />
+      ) : (
+        recent.isPending && <ResumeStackPending />
+      )}
       <ShelfGallery
         shelves={shelves}
         viewerId={user.id}
@@ -299,6 +337,7 @@ export function Library() {
           )}
         </div>
       </div>
+      {leadPoint && <EdgeResume point={leadPoint} />}
     </div>
   );
 }

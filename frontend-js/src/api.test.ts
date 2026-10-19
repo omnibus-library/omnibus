@@ -156,6 +156,40 @@ describe("toResumePoint", () => {
       formats: ["M4B", "EPUB"],
     });
   });
+
+  it("carries the position, the rate and the readout the stack draws", () => {
+    const wire = {
+      ...aWireResumePoint({
+        format: "audio",
+        audio_position_seconds: 3600,
+        total_duration_seconds: 7200,
+        progress_percent: 50,
+        resolved: { confidence: "high", chapter_ordinal: 7 },
+      }),
+      playback_rate: 1.5,
+      linked: true,
+      audio_part: 3,
+    };
+
+    expect(toResumePoint(wire)).toMatchObject({
+      key: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0:audio",
+      percent: 50,
+      positionSeconds: 3600,
+      totalSeconds: 7200,
+      playbackRate: 1.5,
+      linked: true,
+      chapter: 7,
+      part: 3,
+    });
+  });
+
+  it("reads a low-confidence chapter as none", () => {
+    const wire = aWireResumePoint({
+      resolved: { confidence: "low", chapter_ordinal: 7 },
+    });
+
+    expect(toResumePoint(wire).chapter).toBeNull();
+  });
 });
 
 describe("toShelf", () => {

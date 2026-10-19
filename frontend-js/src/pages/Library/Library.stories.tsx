@@ -7,6 +7,7 @@ import {
   hanging,
   LIBRARY_PATH,
   libraryHandler,
+  recentProgressHandler,
   shelfPageHandler,
   shelvesHandler,
   stackSeriesHandler,
@@ -14,6 +15,7 @@ import {
 import {
   aWireBook,
   aWireLibrary,
+  aWireResumePoint,
   aWireShelf,
   aWireStack,
   WIRE_ADA,
@@ -27,7 +29,7 @@ const meta = {
   component: Library,
   // The three keys the page reads, so no story inherits another's prefs.
   beforeEach({ msw }) {
-    msw.use(shelvesHandler([]));
+    msw.use(shelvesHandler([]), recentProgressHandler([]));
     for (const key of [
       PREFS_KEY,
       "omnibus.view_prefs.last_library",
@@ -698,7 +700,7 @@ export const ShelfPickPersists: Story = {
 export const StaleShelfSnapsBack: Story = {
   beforeEach({ msw }) {
     localStorage.setItem(SHELF_KEY, '{"kind":"shelf","id":99}');
-    msw.use(libraryHandler(aWireLibrary(6), 10), SHELVES);
+    msw.use(libraryHandler(aWireLibrary(6), 10), SHELVES, shelfPageHandler({}));
   },
   play: async ({ canvas }) => {
     await waitFor(() =>
@@ -942,5 +944,193 @@ export const StackToggleFails: Story = {
     );
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await waitFor(() => expect(tiles(canvas)).toHaveLength(6));
+  },
+};
+
+// Three open books: an ebook 42% read, an audiobook an hour into two at double speed, a synced one.
+const AURORA = aWireResumePoint({ progress_percent: 42 });
+const MARTIAN = {
+  ...aWireResumePoint(
+    {
+      book_uuid: uuidOf(401),
+      format: "audio",
+      audio_position_seconds: 3600,
+      total_duration_seconds: 7200,
+      book_file_id: 7,
+    },
+    {
+      id: 401,
+      title: "The Martian",
+      unique_identifier: uuidOf(401),
+      formats: ["M4B"],
+      accent: "oklch(0.6 0.1 200)",
+    },
+  ),
+  audio_part: 3,
+  playback_rate: 2,
+};
+const DUNE = {
+  ...aWireResumePoint(
+    { book_uuid: uuidOf(402), progress_percent: 10 },
+    { id: 402, title: "Dune", unique_identifier: uuidOf(402) },
+  ),
+  linked: true,
+};
+
+const resumeRegion = (canvas: ReturnType<typeof within>) =>
+  canvas.findByRole("region", { name: "Continue reading" });
+
+const pageAccent = (canvasElement: HTMLElement) =>
+  (canvasElement.querySelector("#lmq-root") as HTMLElement).style
+    .getPropertyValue("--accent")
+    .trim();
+
+export const ResumeStackShown: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      libraryHandler(aWireLibrary(3), 10),
+      recentProgressHandler([AURORA, MARTIAN, DUNE]),
+    );
+  },
+  play: async ({ canvas, canvasElement }) => {
+    const stack = within(await resumeRegion(canvas));
+
+    const title = stack.getByRole("heading", {
+      level: 2,
+      name: "Aurora Station, Vol. 1",
+    });
+    await expect(title.closest("a")).toHaveAttribute(
+      "href",
+      "/books/ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    );
+    await expect(canvasElement.querySelector(".lmq-by")).toHaveTextContent(
+      "Sora Inkwell · 42%",
+    );
+    const front = stack.getByRole("link", {
+      name: "Continue reading: Aurora Station, Vol. 1",
+    });
+    await expect(front).toHaveAttribute(
+      "href",
+      "/read/ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    );
+    await expect(front).toHaveTextContent("resume · 42%");
+    await expect(
+      stack.getByRole("button", { name: "Bring The Martian forward" }),
+    ).toBeInTheDocument();
+    await expect(
+      stack.getByRole("button", { name: "Bring Dune forward" }),
+    ).toBeInTheDocument();
+    await expect(pageAccent(canvasElement)).toBe("oklch(0.555 0.153 28.4)");
+  },
+};
+
+export const BringForward: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      libraryHandler(aWireLibrary(3), 10),
+      recentProgressHandler([AURORA, MARTIAN, DUNE]),
+    );
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const stack = within(await resumeRegion(canvas));
+
+    await userEvent.click(
+      stack.getByRole("button", { name: "Bring The Martian forward" }),
+    );
+
+    await expect(
+      stack.getByRole("heading", { level: 2, name: "The Martian" }),
+    ).toBeInTheDocument();
+    await expect(canvasElement.querySelector(".lmq-by")).toHaveTextContent(
+      "Sora Inkwell · Pt. 3 · 50% · 30m left",
+    );
+    await expect(
+      stack.getByRole("link", { name: "Continue listening: The Martian" }),
+    ).toHaveAttribute("href", `/listen/${uuidOf(401)}?file_id=7`);
+    await expect(
+      stack.getByRole("button", {
+        name: "Bring Aurora Station, Vol. 1 forward",
+      }),
+    ).toBeInTheDocument();
+    await expect(pageAccent(canvasElement)).toBe("oklch(0.6 0.1 200)");
+
+    await userEvent.click(
+      stack.getByRole("button", { name: "Bring Dune forward" }),
+    );
+
+    await expect(
+      stack.getByRole("link", { name: "Continue · synced: Dune" }),
+    ).toBeInTheDocument();
+    await expect(canvasElement.querySelector(".lmq-by")).toHaveTextContent(
+      "synced",
+    );
+  },
+};
+
+export const ResumeStackPending: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      libraryHandler(aWireLibrary(3), 10),
+      hanging("/api/progress/recent"),
+    );
+  },
+  play: async ({ canvas, canvasElement }) => {
+    const pending = canvasElement.querySelector(".lmq-stack-pending");
+    await expect(pending).toHaveAttribute("aria-hidden", "true");
+    await expect(
+      canvas.queryByRole("region", { name: "Continue reading" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const NothingToResume: Story = {
+  beforeEach({ msw }) {
+    msw.use(libraryHandler(aWireLibrary(3), 10), recentProgressHandler([]));
+  },
+  play: async ({ canvas, canvasElement }) => {
+    await waitFor(() =>
+      expect(canvasElement.querySelector(".lmq-stack-pending")).toBeNull(),
+    );
+    await expect(
+      canvas.queryByRole("region", { name: "Continue reading" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const ResumeFailing: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      libraryHandler(aWireLibrary(3), 10),
+      failing("get", "/api/progress/recent", 500),
+    );
+  },
+  play: async ({ canvas, canvasElement }) => {
+    await waitFor(() =>
+      expect(canvasElement.querySelector(".lmq-stack-pending")).toBeNull(),
+    );
+    await expect(
+      canvas.queryByRole("region", { name: "Continue reading" }),
+    ).not.toBeInTheDocument();
+    await expect(canvas.queryByRole("alert")).not.toBeInTheDocument();
+  },
+};
+
+export const ScrolledPastStack: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      libraryHandler(aWireLibrary(60), 60),
+      recentProgressHandler([AURORA]),
+    );
+  },
+  play: async ({ canvas, canvasElement }) => {
+    await canvas.findAllByRole("link", { name: /^Open details for/ });
+    const root = canvasElement.querySelector("#lmq-root");
+    await expect(root).not.toHaveClass("lmq--past");
+
+    window.scrollTo(0, 600);
+    await waitFor(() => expect(root).toHaveClass("lmq--past"));
+
+    window.scrollTo(0, 0);
+    await waitFor(() => expect(root).not.toHaveClass("lmq--past"));
   },
 };

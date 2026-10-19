@@ -251,3 +251,25 @@ export function StackGlyph({ size = 10 }: GlyphProps) {
     </svg>
   );
 }
+
+/** Paired arrows, the mark of a book whose ebook and audiobook share a position. */
+export function SyncGlyph({ size = 14 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 9h13.5" />
+      <path d="M13.5 5.5 17.5 9l-4 3.5" />
+      <path d="M20 15H6.5" />
+      <path d="M10.5 18.5 6.5 15l4-3.5" />
+    </svg>
+  );
+}
