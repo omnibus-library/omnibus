@@ -186,13 +186,13 @@ async fn regenerate_kobo_device_replaces_the_token_at_the_sync_address() {
     let renewed: KoboDeviceView = json_of(res).await;
     assert_ne!(renewed.token, device.token);
     assert_eq!(renewed.name, "Clara");
-    assert_ne!(
+    assert_eq!(
         sync.clone()
             .oneshot(init(&device.token))
             .await
             .unwrap()
             .status(),
-        StatusCode::OK
+        StatusCode::UNAUTHORIZED
     );
     assert_eq!(
         sync.oneshot(init(&renewed.token)).await.unwrap().status(),
@@ -218,6 +218,7 @@ async fn regenerate_kobo_device_returns_404_for_another_readers_or_unknown_devic
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        assert_eq!(body_text(res).await, "kobo device not found");
     }
     let untouched = db::kobo_devices::get_device_for_user(&pool, theirs.user_id, theirs.id)
         .await
@@ -268,6 +269,7 @@ async fn delete_kobo_device_returns_404_for_another_readers_or_unknown_device() 
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        assert_eq!(body_text(res).await, "kobo device not found");
     }
     let remaining = db::kobo_devices::list_devices(&pool, theirs.user_id)
         .await

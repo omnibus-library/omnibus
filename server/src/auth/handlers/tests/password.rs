@@ -123,6 +123,10 @@ async fn change_password_handler_returns_400_when_new_password_fails_policy() {
         .unwrap();
 
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(&body[..], b"password too short (min 10)");
     assert_eq!(login_status(&app, OLD).await, StatusCode::OK);
 }
 

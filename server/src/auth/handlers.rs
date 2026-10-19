@@ -484,7 +484,11 @@ async fn delete_session_handler(
     }
     match auth_db::revoke_session_for_user(state.pool(), user.id, session_id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(AuthError::SessionNotFound) => StatusCode::NOT_FOUND.into_response(),
+        Err(AuthError::SessionNotFound) => (
+            StatusCode::NOT_FOUND,
+            "you have no live session with that id",
+        )
+            .into_response(),
         Err(e) => internal("revoke own session", e),
     }
 }

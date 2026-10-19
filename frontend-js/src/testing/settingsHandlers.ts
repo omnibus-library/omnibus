@@ -205,7 +205,7 @@ export function settingsHandlers(server: SettingsServer) {
         });
       }
       if (body.new_password.length < 10) {
-        return new HttpResponse("password must be at least 10 characters", {
+        return new HttpResponse("password too short (min 10)", {
           status: 400,
         });
       }

@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Maximum byte length of a user-supplied Kobo device label.
+/// Maximum length, in characters, of a user-supplied Kobo device label.
 pub const KOBO_DEVICE_NAME_MAX_LEN: usize = 100;
 
 /// A Kobo e-reader registered to your account. Its `token` is the secret in the sync
@@ -31,7 +31,7 @@ pub struct KoboDeviceView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateKoboDevice {
-    /// A label of 1 to 100 bytes once trimmed, such as "Clara HD".
+    /// A label of 1 to 100 characters once trimmed, such as "Clara HD".
     pub name: String,
 }
 
@@ -40,7 +40,7 @@ pub struct CreateKoboDevice {
 /// pre-check so both reject the same inputs.
 pub fn kobo_device_name_invalid(name: &str) -> bool {
     let trimmed = name.trim();
-    trimmed.is_empty() || trimmed.len() > KOBO_DEVICE_NAME_MAX_LEN
+    trimmed.is_empty() || trimmed.chars().count() > KOBO_DEVICE_NAME_MAX_LEN
 }
 
 #[cfg(test)]
@@ -72,6 +72,15 @@ mod tests {
     fn kobo_device_name_invalid_accepts_a_name_exactly_at_the_max_length() {
         let name = "x".repeat(KOBO_DEVICE_NAME_MAX_LEN);
         assert!(!kobo_device_name_invalid(&name));
+    }
+
+    #[test]
+    fn kobo_device_name_invalid_counts_characters_not_bytes() {
+        // 60 two-byte characters are 120 bytes but within the limit; 101 are not.
+        assert!(!kobo_device_name_invalid(&"é".repeat(60)));
+        assert!(kobo_device_name_invalid(
+            &"é".repeat(KOBO_DEVICE_NAME_MAX_LEN + 1)
+        ));
     }
 
     #[test]

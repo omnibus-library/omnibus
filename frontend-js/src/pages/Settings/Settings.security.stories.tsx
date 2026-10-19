@@ -141,7 +141,7 @@ export const RefusesAWeakNewPassword: Story = {
     await said(
       canvas,
       "change-password-status",
-      "password must be at least 10 characters",
+      "password too short (min 10)",
     );
     await expect(canvas.getByLabelText("Current password")).toHaveValue(
       "old-password-123",

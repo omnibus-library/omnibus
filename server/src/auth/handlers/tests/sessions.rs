@@ -198,6 +198,10 @@ async fn delete_session_returns_404_for_another_users_session() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(&body[..], b"you have no live session with that id");
 
     // Bob's session must be untouched by alice's attempt.
     let res = app
@@ -217,6 +221,10 @@ async fn delete_session_returns_404_for_unknown_id() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(&body[..], b"you have no live session with that id");
 }
 
 #[tokio::test]

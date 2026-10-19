@@ -29,7 +29,9 @@ fn to_view(d: db::kobo_devices::KoboDevice) -> KoboDeviceView {
 /// A missing device is the caller's 404; anything else is a server fault.
 fn failed(context: &'static str, e: KoboDeviceError) -> Response {
     match e {
-        KoboDeviceError::NotFound => StatusCode::NOT_FOUND.into_response(),
+        KoboDeviceError::NotFound => {
+            (StatusCode::NOT_FOUND, "kobo device not found").into_response()
+        }
         other => internal(context, other),
     }
 }
@@ -63,7 +65,7 @@ pub(super) async fn list_kobo_devices(user: AuthUser, State(state): State<AppSta
     request_body = CreateKoboDevice,
     responses(
         (status = 200, description = "The new device, with its token.", body = KoboDeviceView),
-        (status = 422, description = "The name is empty or longer than 100 bytes once trimmed."),
+        (status = 422, description = "The name is empty or longer than 100 characters once trimmed."),
     ),
 )]
 pub(super) async fn create_kobo_device(

@@ -102,7 +102,9 @@ pub async fn patch_api_token_handler(
     match auth_db::rename_api_token_for_user(state.pool(), user.id, token_id, &req.name).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(AuthError::Validation(msg)) => (StatusCode::BAD_REQUEST, msg).into_response(),
-        Err(AuthError::ApiTokenNotFound) => StatusCode::NOT_FOUND.into_response(),
+        Err(AuthError::ApiTokenNotFound) => {
+            (StatusCode::NOT_FOUND, "api token not found").into_response()
+        }
         Err(e) => internal("rename api token", e),
     }
 }
@@ -129,7 +131,9 @@ pub async fn delete_api_token_handler(
 ) -> Response {
     match auth_db::revoke_api_token_for_user(state.pool(), user.id, token_id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(AuthError::ApiTokenNotFound) => StatusCode::NOT_FOUND.into_response(),
+        Err(AuthError::ApiTokenNotFound) => {
+            (StatusCode::NOT_FOUND, "api token not found").into_response()
+        }
         Err(e) => internal("revoke api token", e),
     }
 }
