@@ -57,19 +57,14 @@ function requireUuid(raw: string | null | undefined, id: number): BookUuid {
   return uuid;
 }
 
-export type FilterField =
-  | "tag"
-  | "genre"
-  | "author"
-  | "series"
-  | "format"
-  | "shelf";
-export type FilterMode = "include" | "exclude";
-export type FilterClause = {
-  field: FilterField;
-  mode: FilterMode;
-  values: string[];
-};
+export const FilterClauseSchema = z.object({
+  field: z.enum(["tag", "genre", "author", "series", "format", "shelf"]),
+  mode: z.enum(["include", "exclude"]),
+  values: z.array(z.string()),
+});
+export type FilterClause = z.infer<typeof FilterClauseSchema>;
+export type FilterField = FilterClause["field"];
+export type FilterMode = FilterClause["mode"];
 
 export type UserId = number & { readonly __brand: "UserId" };
 

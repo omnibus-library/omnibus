@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type FilterClause, SortDir, SortKey } from "./api";
+import { type FilterClause, FilterClauseSchema, SortDir, SortKey } from "./api";
 
 // The Dioxus client keeps the same keys and JSON (frontend/src/view_prefs.rs,
 // shelf_selection.rs), and the React build is served on its origin, so the two
@@ -24,28 +24,23 @@ export const DEFAULT_PREFS: Prefs = {
   filtersOpen: false,
 };
 
+// The facet lists an older client stored, read as include clauses.
+const names = z.array(z.string()).default([]);
+
 const Stored = z.object({
   view_mode: z.enum(["grid", "table"]),
   sort_key: SortKey,
   sort_dir: SortDir,
   filters: z
     .object({
-      clauses: z.array(
-        z.object({
-          field: z.enum([
-            "tag",
-            "genre",
-            "author",
-            "series",
-            "format",
-            "shelf",
-          ]),
-          mode: z.enum(["include", "exclude"]),
-          values: z.array(z.string()),
-        }),
-      ),
+      clauses: z.array(FilterClauseSchema).default([]),
+      authors: names,
+      series: names,
+      formats: names,
+      tags: names,
+      genres: names,
     })
-    .default({ clauses: [] }),
+    .prefault({}),
   filters_open: z.boolean().default(false),
 });
 
@@ -87,11 +82,25 @@ export function loadPrefs(path: string): Prefs {
   const parsed = Stored.safeParse(readJson(PREFS_PREFIX + path));
   if (!parsed.success) return DEFAULT_PREFS;
   const stored = parsed.data;
+  const { filters } = stored;
+  const legacy = (
+    [
+      ["author", filters.authors],
+      ["series", filters.series],
+      ["format", filters.formats],
+      ["tag", filters.tags],
+      ["genre", filters.genres],
+    ] as const
+  )
+    .filter(([, values]) => values.length > 0)
+    .map(
+      ([field, values]): FilterClause => ({ field, mode: "include", values }),
+    );
   return {
     view: stored.view_mode,
     sort: stored.sort_key,
     dir: stored.sort_dir,
-    clauses: stored.filters.clauses,
+    clauses: [...legacy, ...filters.clauses],
     filtersOpen: stored.filters_open,
   };
 }
@@ -135,12 +144,12 @@ export function reconcile(
   return reconciled === path ? "keep" : "adopt";
 }
 
-export type ShelfSelection = { kind: "all" } | { kind: "shelf"; id: number };
-
 const StoredShelf = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("all") }),
   z.object({ kind: z.literal("shelf"), id: z.number().int() }),
 ]);
+
+export type ShelfSelection = z.infer<typeof StoredShelf>;
 
 /** The lens the landing was last on, or the whole library. */
 export function loadShelfSelection(): ShelfSelection {

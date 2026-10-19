@@ -50,6 +50,21 @@ describe("loadPrefs", () => {
     expect(loadPrefs("/books")).toEqual({ ...DEFAULT_PREFS, sort: "series" });
   });
 
+  it("reads the facet lists an older client stored as include clauses", () => {
+    localStorage.setItem(
+      "omnibus.view_prefs::/books",
+      '{"view_mode":"table","sort_key":"author","sort_dir":"desc","filters":{"authors":["Ada"]}}',
+    );
+
+    expect(loadPrefs("/books")).toEqual({
+      ...DEFAULT_PREFS,
+      view: "table",
+      sort: "author",
+      dir: "desc",
+      clauses: [{ field: "author", mode: "include", values: ["Ada"] }],
+    });
+  });
+
   it.each([
     ["not json", "{"],
     [
