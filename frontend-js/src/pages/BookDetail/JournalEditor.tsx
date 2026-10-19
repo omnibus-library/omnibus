@@ -33,8 +33,9 @@ function offsetAt(root: Node, node: Node | null, offset: number) {
 }
 
 function caret(root: HTMLElement): Selection | null {
-  const range = window.getSelection()?.getRangeAt(0);
-  if (!range) return null;
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const range = sel.getRangeAt(0);
   const start = offsetAt(root, range.startContainer, range.startOffset);
   return start === null
     ? null

@@ -200,6 +200,18 @@ export const ToolbarWrapsTheSelection: Story = {
   },
 };
 
+export const ToolbarWorksWithNoSelectionRange: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const editor = canvas.getByRole("textbox", { name: "Journal entry" });
+    await userEvent.type(editor, "word");
+    getSelection()?.removeAllRanges();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Bold" }));
+
+    await expect(editor.textContent).toContain("****");
+  },
+};
+
 export const EnterInsertsALineBreakAndDecoratesTheLine: Story = {
   play: async ({ canvas, userEvent }) => {
     const editor = canvas.getByRole("textbox", { name: "Journal entry" });
