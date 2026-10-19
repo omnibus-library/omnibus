@@ -116,19 +116,16 @@ export function GoalsSection() {
         id="goals-form"
         className="settings-form"
         noValidate
-        onSubmit={(event) => {
-          event.preventDefault();
-          void form.handleSubmit(
-            ({ drafts }) => {
-              if (saved) save.mutate(changedUpdates(drafts, saved));
-            },
-            () =>
-              setOutcome({
-                message: "Nothing saved yet. Check the targets marked above.",
-                error: true,
-              }),
-          )();
-        }}
+        onSubmit={form.handleSubmit(
+          ({ drafts }) => {
+            if (saved) save.mutate(changedUpdates(drafts, saved));
+          },
+          () =>
+            setOutcome({
+              message: "Nothing saved yet. Check the targets marked above.",
+              error: true,
+            }),
+        )}
       >
         {GOAL_INDEXES.map((index) => {
           const field = GOAL_FIELDS[index];
@@ -137,12 +134,11 @@ export function GoalsSection() {
             <div className="settings-field" key={field.testId}>
               <label htmlFor={field.testId}>{field.label}</label>
               <input
-                type="number"
+                // Text, not number: a browser reads "24e" as "", which would clear the goal.
+                type="text"
                 id={field.testId}
                 className={known ? undefined : "ld-unknown"}
                 data-testid={`${field.testId}-input`}
-                min={1}
-                max={field.max}
                 inputMode="numeric"
                 placeholder={known ? "No target" : undefined}
                 disabled={!known || save.isPending}

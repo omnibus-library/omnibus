@@ -11,15 +11,14 @@ export type GoalTargets = [number | null, number | null, number | null];
 
 export type DailyGoalKind = "pages" | "minutes";
 
+// Days are cut on the reader's clock (rule 10).
+const readerClock = () => ({
+  utc_offset_minutes: -new Date().getTimezoneOffset(),
+});
+
 /** The saved targets, read off the all-time summary, which carries both goals whatever the range. */
 export async function fetchGoals(): Promise<GoalTargets> {
-  const summary = ok(
-    await getStats({
-      range: "all_time",
-      // Days are cut on the reader's clock (rule 10).
-      utc_offset_minutes: -new Date().getTimezoneOffset(),
-    }),
-  );
+  const summary = ok(await getStats({ range: "all_time", ...readerClock() }));
   return [
     summary.goal?.target ?? null,
     summary.daily_goals?.pages?.target ?? null,
@@ -37,7 +36,7 @@ export const goalsQuery = queryOptions({
 
 /** Sets how many books to finish this year; `null` clears the target and keeps the progress. */
 export async function saveAnnualGoal(target: number | null): Promise<void> {
-  await send(getPutStatsGoalUrl(), "PUT", { target });
+  await send(getPutStatsGoalUrl(readerClock()), "PUT", { target });
 }
 
 /** Sets the pages or minutes a day; `null` clears that target only. */
@@ -45,5 +44,5 @@ export async function saveDailyGoal(
   kind: DailyGoalKind,
   target: number | null,
 ): Promise<void> {
-  await send(getPutStatsDailyGoalUrl(), "PUT", { kind, target });
+  await send(getPutStatsDailyGoalUrl(readerClock()), "PUT", { kind, target });
 }

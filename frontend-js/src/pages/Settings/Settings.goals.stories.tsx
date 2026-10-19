@@ -68,18 +68,8 @@ export const ShowsNoTargets: Story = {
   play: async ({ canvas }) => {
     const books = await canvas.findByLabelText("Books this year");
     await waitFor(() => expect(books).toBeEnabled());
-    await expect(books).toHaveValue(null);
+    await expect(books).toHaveValue("");
     await expect(books).toHaveAttribute("placeholder", "No target");
-    await expect(books).toHaveAttribute("min", "1");
-    await expect(books).toHaveAttribute("max", "10000");
-    await expect(canvas.getByLabelText("Pages a day")).toHaveAttribute(
-      "max",
-      "2000",
-    );
-    await expect(canvas.getByLabelText("Minutes a day")).toHaveAttribute(
-      "max",
-      "1440",
-    );
     await expect(canvas.getByTestId("goals-save")).toBeDisabled();
   },
 };
@@ -88,10 +78,10 @@ export const ShowsTheSavedTargets: Story = {
   beforeEach: savedTargets,
   play: async ({ canvas }) => {
     await waitFor(() =>
-      expect(canvas.getByLabelText("Books this year")).toHaveValue(24),
+      expect(canvas.getByLabelText("Books this year")).toHaveValue("24"),
     );
-    await expect(canvas.getByLabelText("Pages a day")).toHaveValue(30);
-    await expect(canvas.getByLabelText("Minutes a day")).toHaveValue(45);
+    await expect(canvas.getByLabelText("Pages a day")).toHaveValue("30");
+    await expect(canvas.getByLabelText("Minutes a day")).toHaveValue("45");
     await expect(canvas.getByTestId("goals-save")).toBeDisabled();
   },
 };
@@ -100,7 +90,7 @@ export const SavesOnlyTheChangedTargets: Story = {
   beforeEach: savedTargets,
   play: async ({ canvas, userEvent }) => {
     const pages = await canvas.findByLabelText("Pages a day");
-    await waitFor(() => expect(pages).toHaveValue(30));
+    await waitFor(() => expect(pages).toHaveValue("30"));
     await userEvent.clear(pages);
     await userEvent.type(pages, "40");
     await userEvent.click(canvas.getByTestId("goals-save"));
@@ -109,6 +99,10 @@ export const SavesOnlyTheChangedTargets: Story = {
       expect(status(canvas)).toHaveTextContent("Goals saved."),
     );
     await expect(server.goalWrites).toEqual(["pages=40"]);
+    // Days are cut on the reader's clock.
+    await expect(server.goalOffsets).toEqual([
+      String(-new Date().getTimezoneOffset()),
+    ]);
     await expect(canvas.getByTestId("goals-save")).toBeDisabled();
   },
 };
@@ -117,7 +111,7 @@ export const ClearsATargetWhenEmptied: Story = {
   beforeEach: savedTargets,
   play: async ({ canvas, userEvent }) => {
     const minutes = await canvas.findByLabelText("Minutes a day");
-    await waitFor(() => expect(minutes).toHaveValue(45));
+    await waitFor(() => expect(minutes).toHaveValue("45"));
     await userEvent.clear(minutes);
     await userEvent.click(canvas.getByTestId("goals-save"));
 
@@ -133,7 +127,7 @@ export const MarksAnInvalidDraft: Story = {
   beforeEach: savedTargets,
   play: async ({ canvas, userEvent }) => {
     const pages = await canvas.findByLabelText("Pages a day");
-    await waitFor(() => expect(pages).toHaveValue(30));
+    await waitFor(() => expect(pages).toHaveValue("30"));
     await userEvent.clear(pages);
     await userEvent.type(pages, "0");
     await userEvent.click(canvas.getByTestId("goals-save"));
@@ -147,6 +141,21 @@ export const MarksAnInvalidDraft: Story = {
         "Nothing saved yet. Check the targets marked above.",
       ),
     );
+    await expect(server.goalWrites).toEqual([]);
+  },
+};
+
+export const RefusesATypoInsteadOfClearingTheGoal: Story = {
+  beforeEach: savedTargets,
+  play: async ({ canvas, userEvent }) => {
+    const books = await canvas.findByLabelText("Books this year");
+    await waitFor(() => expect(books).toHaveValue("24"));
+    await userEvent.type(books, "e");
+    await userEvent.click(canvas.getByTestId("goals-save"));
+
+    await expect(
+      await canvas.findByTestId("goal-books-error"),
+    ).toHaveTextContent("Enter a whole number of books.");
     await expect(server.goalWrites).toEqual([]);
   },
 };
@@ -175,7 +184,7 @@ export const ReportsWhichGoalDidNotSave: Story = {
       canvas.getByLabelText("Pages a day"),
       canvas.getByLabelText("Minutes a day"),
     ];
-    await waitFor(() => expect(pages).toHaveValue(30));
+    await waitFor(() => expect(pages).toHaveValue("30"));
     for (const [input, value] of [
       [books, "30"],
       [pages, "40"],
@@ -194,7 +203,7 @@ export const ReportsWhichGoalDidNotSave: Story = {
     await expect(canvas.getByTestId("goal-pages-error")).toHaveTextContent(
       "This one didn’t save. Try again.",
     );
-    await expect(pages).toHaveValue(40);
+    await expect(pages).toHaveValue("40");
     await expect(server.goalWrites).toEqual(["books=30", "minutes=50"]);
     await expect(canvas.getByTestId("goals-save")).toBeEnabled();
   },

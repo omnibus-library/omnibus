@@ -30,6 +30,8 @@ export type SettingsServer = {
   goals: GoalTargets;
   /** Each goal write that landed, as `kind=target`. */
   goalWrites: string[];
+  /** The `utc_offset_minutes` each goal write carried. */
+  goalOffsets: (string | null)[];
   /** Goal kinds whose write the server refuses. */
   refuseGoals: string[];
   /** The address `GET /api/kindle/delivery` sends from; `null` is no email delivery. */
@@ -50,6 +52,7 @@ export const aSettingsServer = (
   user: WIRE_ADA,
   goals: [null, null, null],
   goalWrites: [],
+  goalOffsets: [],
   refuseGoals: [],
   sender: "library@example.com",
   kobo: [],
@@ -107,6 +110,9 @@ export function settingsHandlers(server: SettingsServer) {
       HttpResponse.json(aWireStatsGoals(...server.goals)),
     ),
     http.put("/api/stats/goal", async ({ request }) => {
+      server.goalOffsets.push(
+        new URL(request.url).searchParams.get("utc_offset_minutes"),
+      );
       const { target } = ReadingGoalUpdate.parse(await request.json());
       if (server.refuseGoals.includes("books")) return refused();
       server.goalWrites.push(`books=${target}`);
@@ -114,6 +120,9 @@ export function settingsHandlers(server: SettingsServer) {
       return HttpResponse.json(null);
     }),
     http.put("/api/stats/goal/daily", async ({ request }) => {
+      server.goalOffsets.push(
+        new URL(request.url).searchParams.get("utc_offset_minutes"),
+      );
       const { kind, target } = DailyGoalUpdate.parse(await request.json());
       if (server.refuseGoals.includes(kind)) return refused();
       server.goalWrites.push(`${kind}=${target}`);
