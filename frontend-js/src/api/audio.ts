@@ -1,5 +1,5 @@
 import type { BookUuid } from "./core";
-import { fetchJson, ok, send } from "./core";
+import { fetchJson, inOrder, ok, send } from "./core";
 import {
   getAudiobookManifest,
   getAudiobookStatus,
@@ -106,12 +106,14 @@ export async function fetchPlaybackRate(
   return record?.playback_rate ?? null;
 }
 
-export async function savePlaybackRate(
-  uuid: BookUuid,
-  rate: number,
-): Promise<void> {
-  await send(getPutPlaybackRateUrl(encodeURIComponent(uuid)), "PUT", {
-    playback_rate: rate,
+const rateWrites = new Map<string, Promise<void>>();
+
+export function savePlaybackRate(uuid: BookUuid, rate: number): Promise<void> {
+  // In order, so a fine-tune slider's last step is the speed the server keeps.
+  return inOrder(rateWrites, uuid, async () => {
+    await send(getPutPlaybackRateUrl(encodeURIComponent(uuid)), "PUT", {
+      playback_rate: rate,
+    });
   });
 }
 
@@ -135,6 +137,8 @@ export async function fetchListeningRow(
     : null;
 }
 
+const positionWrites = new Map<string, Promise<void>>();
+
 /** Saves the listening position; a failed save is dropped, the next heartbeat writes it again. */
 export async function saveListeningPosition(
   uuid: BookUuid,
@@ -148,7 +152,10 @@ export async function saveListeningPosition(
     audio_position_seconds: seconds,
     ...(fileId === null ? {} : { book_file_id: fileId }),
   };
-  await send(getPostProgressUrl(), "POST", body).catch(() => {});
+  // In order, so a slow save never lands after a later one and rolls the position back.
+  await inOrder(positionWrites, uuid, () =>
+    send(getPostProgressUrl(), "POST", body),
+  ).catch(() => {});
 }
 
 /** The other format's position mapped onto this one, with whether the link follows it. */
