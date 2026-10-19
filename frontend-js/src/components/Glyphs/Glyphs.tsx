@@ -442,23 +442,3 @@ export function SyncGlyph({ size = 14 }: GlyphProps) {
     </svg>
   );
 }
-
-/** Two sparks, the mark of fetching a book's details from outside the library. */
-export function SparkleGlyph({ size = 16 }: GlyphProps) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 3l1.7 4.8L18.5 9.5l-4.8 1.7L12 16l-1.7-4.8L5.5 9.5l4.8-1.7z" />
-      <path d="M18.5 14.5l.85 2.15L21.5 17.5l-2.15.85L18.5 20.5l-.85-2.15L15.5 17.5l2.15-.85z" />
-    </svg>
-  );
-}

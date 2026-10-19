@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
-import { type BookUuid, failure, requireUuid } from "../api";
+import { type BookUuid, failure, ok, requireUuid } from "./core";
 import {
   deleteEbookCover,
   deleteEbookOverrides,
@@ -21,8 +21,7 @@ import {
   ProviderEdition,
 } from "./generated/schemas";
 
-// The metadata edit page's reads and writes. It imports `../api` only inside
-// function bodies: `api.ts` re-exports this module.
+// The metadata edit page's reads and writes.
 
 /** What the edit form holds: every field as the text or list the reader edits. */
 export const MetaFormSchema = z.object({
@@ -151,14 +150,12 @@ export async function saveOverrides(
   edit: MetadataOverrides,
 ): Promise<void> {
   if (Object.keys(edit).length === 0) return;
-  const res = await postEbookOverrides(uuid, edit);
-  if (res.status !== 200) throw failure(res);
+  ok(await postEbookOverrides(uuid, edit));
 }
 
 /** Drops every edit to the book, its cover included. */
 export async function revertOverrides(uuid: BookUuid): Promise<void> {
-  const res = await deleteEbookOverrides(uuid);
-  if (res.status !== 200) throw failure(res);
+  ok(await deleteEbookOverrides(uuid));
 }
 
 /** Replaces the book's cover with an image the reader picked; answers with the book as it now reads. */
@@ -166,9 +163,7 @@ export async function uploadCover(
   uuid: BookUuid,
   cover: File,
 ): Promise<EditableBook> {
-  const res = await postEbookCover(uuid, { cover });
-  if (res.status !== 200) throw failure(res);
-  return toEditableBook(res.data);
+  return toEditableBook(ok(await postEbookCover(uuid, { cover })));
 }
 
 /** Has the server fetch `url` as the book's cover; answers with the book as it now reads. */
@@ -176,16 +171,12 @@ export async function coverFromUrl(
   uuid: BookUuid,
   url: string,
 ): Promise<EditableBook> {
-  const res = await postEbookCoverFromUrl(uuid, { url });
-  if (res.status !== 200) throw failure(res);
-  return toEditableBook(res.data);
+  return toEditableBook(ok(await postEbookCoverFromUrl(uuid, { url })));
 }
 
 /** Puts the scanned cover back; answers with the book as it now reads. */
 export async function revertCover(uuid: BookUuid): Promise<EditableBook> {
-  const res = await deleteEbookCover(uuid);
-  if (res.status !== 200) throw failure(res);
-  return toEditableBook(res.data);
+  return toEditableBook(ok(await deleteEbookCover(uuid)));
 }
 
 /** The metadata providers, by the name and the stable slug the UI shows them under. */
@@ -199,9 +190,7 @@ export const PROVIDERS = {
 export const hasProviderQuery = queryOptions({
   queryKey: ["metadata-providers"],
   queryFn: async () => {
-    const res = await listMetadataProviders();
-    if (res.status !== 200) throw failure(res);
-    return res.data.some((p) => p.configured);
+    return ok(await listMetadataProviders()).some((p) => p.configured);
   },
 });
 
@@ -226,9 +215,7 @@ export function editionRequest(
 export async function searchEditions(
   req: EditionSearchRequest,
 ): Promise<EditionSearchResponse> {
-  const res = await postEditionSearch(req);
-  if (res.status !== 200) throw failure(res);
-  return res.data;
+  return ok(await postEditionSearch(req));
 }
 
 const STOP_WORDS = new Set(
