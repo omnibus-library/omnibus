@@ -8,6 +8,10 @@ use sqlx::{Row, SqlitePool};
 
 pub use omnibus_shared::worker::{BackgroundTaskRecord, BackgroundTaskStatus};
 
+/// Cap on the rows the admin history returns — enough history for an operator to spot a
+/// pattern without an unbounded response. Both the RPC and the REST route read it.
+pub const RECENT_TASKS_LIMIT: i64 = 100;
+
 /// Column list shared by every row-returning query, matched by [`row_to_record`].
 const COLS: &str = "id, task_kind, status, started_at, finished_at, error";
 

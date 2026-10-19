@@ -61,6 +61,7 @@ mod stats;
 mod suggestions;
 mod summary;
 mod tags;
+mod tasks;
 mod uploads;
 mod users;
 

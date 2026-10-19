@@ -261,6 +261,34 @@
         }
       }
     },
+    "/api/admin/background-tasks": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List recent background tasks",
+        "description": "The most recent recorded runs of background tasks, newest first, up to 100. Each has its\nkind, status and timing and, for a failed run, why it failed. Needs an admin account.",
+        "operationId": "get_background_tasks",
+        "responses": {
+          "200": {
+            "description": "The recorded runs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BackgroundTaskRecord"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
     "/api/admin/devices/{id}": {
       "delete": {
         "tags": [
@@ -677,6 +705,27 @@
           },
           "404": {
             "description": "No user has that id."
+          }
+        }
+      }
+    },
+    "/api/audiobooks/backfill-chapters": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Extract audiobook chapters",
+        "description": "Queues a job that reads chapter markers from audiobooks added before chapters were\nrecorded, and answers without waiting for it. Needs an admin account.",
+        "operationId": "post_backfill_chapters",
+        "responses": {
+          "200": {
+            "description": "The job is queued."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "409": {
+            "description": "No audiobook library path is set."
           }
         }
       }
@@ -5946,6 +5995,67 @@
         }
       }
     },
+    "/api/settings/ebook-convert": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the Calibre setting",
+        "description": "Whether the server can run Calibre's `ebook-convert`, which command it runs and where\nthat command came from. Calibre is optional, so a command that can't run is a normal\nanswer, not an error. Needs an admin account.",
+        "operationId": "get_ebook_convert",
+        "responses": {
+          "200": {
+            "description": "The command in effect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EbookConvertStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Set the Calibre path",
+        "description": "Saves the path of `ebook-convert`. A null or blank `path` clears it, so the server falls\nback to the `OMNIBUS_EBOOK_CONVERT_PATH` environment variable and then to `ebook-convert`\non its `PATH`. Needs an admin account.",
+        "operationId": "post_ebook_convert",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EbookConvertUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The path is saved; the body is the command now in effect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EbookConvertStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`path` is over 4096 bytes."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
     "/api/settings/mcp": {
       "get": {
         "tags": [
@@ -5993,6 +6103,104 @@
           },
           "403": {
             "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/settings/metadata-precedence/{library}": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get a library's metadata order",
+        "description": "The order of metadata sources for the ebook or audiobook library, lowest priority first:\na later source wins over an earlier one. It is the default order until the library's\nfolder is set. Needs an admin account.",
+        "operationId": "get_metadata_precedence",
+        "parameters": [
+          {
+            "name": "library",
+            "in": "path",
+            "description": "`ebook` or `audiobook`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The sources, lowest priority first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MetadataSource"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`library` isn't `ebook` or `audiobook`."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Set a library's metadata order",
+        "description": "Saves the order of metadata sources for the ebook or audiobook library, lowest priority\nfirst. The list must name each of the five sources exactly once, and the library's folder\nmust already be set. Needs an admin account.",
+        "operationId": "post_metadata_precedence",
+        "parameters": [
+          {
+            "name": "library",
+            "in": "path",
+            "description": "`ebook` or `audiobook`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MetadataSource"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The order is saved; the body is what is now set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MetadataSource"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`library` isn't `ebook` or `audiobook`, or the list doesn't name each source exactly once."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "409": {
+            "description": "The library's folder isn't set."
           }
         }
       }
@@ -7385,6 +7593,28 @@
           }
         ]
       }
+    },
+    "/api/worker/status": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the background task feed",
+        "description": "The background tasks running now and those that finished in the last 10 seconds or so,\nfor a progress display to poll. A task one user started, such as a Send to Kindle,\nshows only to that user.",
+        "operationId": "get_worker_status",
+        "responses": {
+          "200": {
+            "description": "The task feed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerStatus"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8229,6 +8459,57 @@
             ]
           }
         }
+      },
+      "BackgroundTaskRecord": {
+        "type": "object",
+        "description": "One recorded run of a background task: its kind, status and timing. Clients can read\nthese but never write them.",
+        "required": [
+          "id",
+          "task_kind",
+          "status",
+          "started_at"
+        ],
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the run failed. Null unless `status` is `failed`. The text is safe to show\nand holds no server internals."
+          },
+          "finished_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "When the run finished, in Unix seconds. Null while `status` is `running`."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the run started, in Unix seconds."
+          },
+          "status": {
+            "$ref": "#/components/schemas/BackgroundTaskStatus"
+          },
+          "task_kind": {
+            "type": "string"
+          }
+        }
+      },
+      "BackgroundTaskStatus": {
+        "type": "string",
+        "description": "Where a recorded background task run ended up. `running` also covers a run that never\nfinished because the server stopped abruptly.",
+        "enum": [
+          "running",
+          "success",
+          "failed"
+        ]
       },
       "BookDeletionImpact": {
         "type": "object",
@@ -10073,6 +10354,42 @@
           }
         }
       },
+      "EbookConvertStatus": {
+        "type": "object",
+        "description": "Whether the server can run Calibre's `ebook-convert` to convert book formats.\nCalibre is optional. Without it, format conversion is off and nothing else is wrong.",
+        "required": [
+          "available",
+          "path",
+          "source"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "True when `path` exists and runs."
+          },
+          "path": {
+            "type": "string",
+            "description": "The command the server runs: a saved path, the `OMNIBUS_EBOOK_CONVERT_PATH`\nenvironment variable, or plain `ebook-convert` found on the server's `PATH`."
+          },
+          "source": {
+            "type": "string",
+            "description": "Where `path` came from: `settings`, `env` or `path`."
+          }
+        }
+      },
+      "EbookConvertUpdate": {
+        "type": "object",
+        "description": "The `ebook-convert` path to save.",
+        "properties": {
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The path of Calibre's `ebook-convert`, up to 4096 bytes. Null or blank clears the\nsaved path."
+          }
+        }
+      },
       "EbookLibrary": {
         "type": "object",
         "description": "A list of books, either the whole library from `GET /api/ebooks` or the matches from\n`GET /api/search`.",
@@ -10621,6 +10938,26 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "GhostFilesWarning": {
+        "type": "object",
+        "description": "How many books lost their files in one scan. `removed` books lost theirs, out of the\n`total` that had files. The share was high enough to warn about, but below the point\nwhere the scan stops.",
+        "required": [
+          "removed",
+          "total"
+        ],
+        "properties": {
+          "removed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -11523,6 +11860,17 @@
           "hardcover"
         ]
       },
+      "MetadataSource": {
+        "type": "string",
+        "description": "A source of book metadata, as a library's precedence list orders them. Only\n`embedded_tags`, the metadata inside the book file, and `omnibus_overrides`, the\nedits made in Omnibus, supply data today. The others are stored but change nothing.",
+        "enum": [
+          "folder_structure",
+          "embedded_tags",
+          "opf_sidecar",
+          "omnibus_overrides",
+          "provider_match"
+        ]
+      },
       "MonthCount": {
         "type": "object",
         "description": "How many books were finished in one calendar month.",
@@ -12031,6 +12379,98 @@
             "description": "When the server received the position, in Unix seconds."
           }
         }
+      },
+      "ProgressState": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "processed",
+              "state"
+            ],
+            "properties": {
+              "processed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "running"
+                ]
+              },
+              "total": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "processed",
+              "state"
+            ],
+            "properties": {
+              "bake_errors": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "The uuids of books whose EPUB couldn't be rebuilt with their edited metadata,\nafter a rebuild of every EPUB. Absent otherwise, and never present together\nwith `ghost_warning`."
+              },
+              "ghost_warning": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/GhostFilesWarning",
+                    "description": "Present when a scan found many books' files missing, though not so many that\nit stopped. Clients warn about it."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "processed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "done"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "state"
+            ],
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "failed"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Where a background task stands. `state` says which case it is. A `running` task\nwithout `total` hasn't counted its work yet. With `total`, `processed` out of `total`\nis its progress. `done` and `failed` tasks stay in `recent_complete` for about 10\nseconds."
       },
       "ProgressUpdate": {
         "type": "object",
@@ -13012,6 +13452,50 @@
             "items": {
               "$ref": "#/components/schemas/ExternalBookMeta"
             }
+          }
+        }
+      },
+      "ScanTallies": {
+        "type": "object",
+        "description": "File counts from a library scan. `found` is how many files it found on disk, and the\nother counts say how it sorted them against the index. The counts are final once the\nscan has compared every file.",
+        "required": [
+          "found",
+          "new",
+          "changed",
+          "removed",
+          "moved",
+          "unchanged"
+        ],
+        "properties": {
+          "changed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "found": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "moved": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "new": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "removed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "unchanged": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -14288,6 +14772,37 @@
           }
         }
       },
+      "TaskDetail": {
+        "type": "object",
+        "description": "Live detail about a task: its phase, the item it is on and, for a scan, its file\ncounts. Every field may be absent.",
+        "properties": {
+          "current_item": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The item the task is working on, such as \"books/Author/Title.epub\"."
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A short label for the task's current phase, such as \"Walking the library\"."
+          },
+          "tallies": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ScanTallies",
+                "description": "A scan's file counts. They stay on the finished task, so a client can sum up what\nthe scan changed."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "TaskKind": {
         "type": "string",
         "description": "The kind of a background task. `scan` also covers the jobs that follow a scan and\nother jobs without a kind of their own. More kinds may come, so clients should accept\nvalues they don't know.",
@@ -14299,6 +14814,57 @@
           "backfill_chapters",
           "resolve_suggestions"
         ]
+      },
+      "TaskProgress": {
+        "type": "object",
+        "description": "One background task in the progress feed. `task_id` identifies it until the server\nrestarts.",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "started_at_ms",
+          "last_update_ms"
+        ],
+        "properties": {
+          "detail": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TaskDetail",
+                "description": "Live detail about the task. Absent for kinds of task that don't report it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TaskKind"
+          },
+          "last_update_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the task last reported progress, in Unix milliseconds."
+          },
+          "resource_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the task started, in Unix milliseconds by the server's clock. It is for\nshowing elapsed time only."
+          },
+          "state": {
+            "$ref": "#/components/schemas/ProgressState"
+          },
+          "task_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
       },
       "TrendPoint": {
         "type": "object",
@@ -14825,6 +15391,28 @@
               "minimum": 0
             },
             "description": "How long each of the last 20 finished tasks took, in milliseconds, oldest first.\nFailed tasks count too."
+          }
+        }
+      },
+      "WorkerStatus": {
+        "type": "object",
+        "description": "The background task progress feed: tasks running now, and tasks that finished in the\nlast 10 seconds or so. Both lists are sorted by `task_id`.",
+        "required": [
+          "active",
+          "recent_complete"
+        ],
+        "properties": {
+          "active": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskProgress"
+            }
+          },
+          "recent_complete": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskProgress"
+            }
           }
         }
       }

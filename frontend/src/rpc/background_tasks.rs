@@ -13,11 +13,6 @@ use omnibus_shared::BackgroundTaskRecord;
 #[cfg(feature = "server")]
 use super::{internal_rpc_error, AdminUser, PoolExt};
 
-/// Cap on rows returned by [`rpc_get_background_tasks`] — enough history for
-/// an operator to spot a pattern without an unbounded response.
-#[cfg(feature = "server")]
-const RECENT_TASKS_LIMIT: i64 = 100;
-
 /// Fetch the recent-task rows and genericize a DB failure into an internal
 /// RPC error. Split out of [`rpc_get_background_tasks`] so the DB-failure
 /// path is unit-testable without the `#[get]` macro's request-extraction
@@ -26,7 +21,7 @@ const RECENT_TASKS_LIMIT: i64 = 100;
 async fn fetch_recent_tasks(
     pool: &sqlx::SqlitePool,
 ) -> Result<Vec<BackgroundTaskRecord>, ServerFnError> {
-    db::background_tasks::recent_tasks(pool, RECENT_TASKS_LIMIT)
+    db::background_tasks::recent_tasks(pool, db::background_tasks::RECENT_TASKS_LIMIT)
         .await
         .map_err(|e| internal_rpc_error("recent background tasks", e))
 }
