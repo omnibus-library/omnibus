@@ -3393,7 +3393,18 @@
           "422": {
             "description": "The book has no EPUB."
           }
-        }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session_cookie": []
+          },
+          {
+            "media_token": []
+          }
+        ]
       }
     },
     "/api/ebooks/{uuid}/images/link": {
