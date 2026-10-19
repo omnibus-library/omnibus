@@ -12,6 +12,7 @@ import {
 import { Button } from "../../components/Button/Button";
 import { BusyLabel } from "../../components/Loading/Loading";
 import {
+  type Status,
   StatusLine,
   useUnsavedGuard,
 } from "../../components/SettingsShell/SettingsShell";
@@ -42,14 +43,12 @@ const write = (index: GoalIndex, target: number | null) => {
     : saveDailyGoal(kind, target);
 };
 
-type Outcome = { message: string; error: boolean };
-
 /** The three reading targets, saved together by one Save all. */
 export function GoalsSection() {
   const queryClient = useQueryClient();
   const goals = useQuery(goalsQuery);
   const saved = goals.data ?? null;
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [outcome, setOutcome] = useState<Status | null>(null);
   const form = useForm({
     resolver: zodResolver(FormSchema),
     defaultValues: { drafts: toDrafts([null, null, null]) },
@@ -91,14 +90,11 @@ export function GoalsSection() {
   });
 
   const known = saved !== null;
-  let status: Outcome & { pending?: boolean } = outcome ?? {
-    message: "",
-    error: false,
-  };
+  let shown = outcome;
   if (goals.isPending) {
-    status = { message: "Reading your goals", error: false, pending: true };
+    shown = { message: "Reading your goals", error: false };
   } else if (goals.isError) {
-    status = {
+    shown = {
       message: "Couldn’t load your goals. Reload to try again.",
       error: true,
     };
@@ -173,9 +169,8 @@ export function GoalsSection() {
         <div className="settings-actions">
           <StatusLine
             testId="goals-status"
-            message={status.message || null}
-            error={status.error}
-            pending={status.pending}
+            status={shown}
+            pending={goals.isPending}
             action
           />
           <Button

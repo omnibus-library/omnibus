@@ -4,18 +4,19 @@ import { revokeSession, type SessionView, sessionsQuery } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
 import { RowSkeletons } from "../../components/Loading/Loading";
-import { StatusLine } from "../../components/SettingsShell/SettingsShell";
+import {
+  type Status,
+  StatusLine,
+} from "../../components/SettingsShell/SettingsShell";
 import { utcDay } from "../../format";
 
 const clientOf = (session: SessionView) => session.client ?? "Unknown client";
-
-type Status = { message: string; error: boolean } | null;
 
 /** The reader's live sign-ins; each other one can be revoked, after asking. */
 export function SessionsCard() {
   const queryClient = useQueryClient();
   const sessions = useQuery(sessionsQuery);
-  const [status, setStatus] = useState<Status>(null);
+  const [status, setStatus] = useState<Status | null>(null);
   const [confirming, setConfirming] = useState<SessionView | null>(null);
   const revoke = useMutation({
     mutationFn: (session: SessionView) => revokeSession(session.id),
@@ -100,11 +101,7 @@ export function SessionsCard() {
           </table>
         </div>
       )}
-      <StatusLine
-        testId="account-sessions-status"
-        message={shown?.message ?? null}
-        error={shown?.error ?? false}
-      />
+      <StatusLine testId="account-sessions-status" status={shown} />
       {confirming && (
         <ConfirmDialog
           testId="session-revoke-dialog"

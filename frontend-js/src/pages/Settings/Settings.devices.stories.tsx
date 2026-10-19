@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor } from "storybook/test";
 import { failing, hanging } from "../../testing/handlers";
-import { SettingsRoutes } from "../../testing/SettingsRoutes";
+import { SettingsRoutes, said } from "../../testing/SettingsRoutes";
 import {
   aSettingsServer,
   type SettingsServer,
@@ -27,13 +27,6 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
-
-// The always-mounted status gets its text a moment after the click.
-const said = (
-  canvas: { getByTestId: (id: string) => HTMLElement },
-  testId: string,
-  text: string,
-) => waitFor(() => expect(canvas.getByTestId(testId)).toHaveTextContent(text));
 
 export const ChecksDeliveryBeforeSayingAnything: Story = {
   beforeEach({ msw }) {

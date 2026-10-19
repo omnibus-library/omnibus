@@ -144,10 +144,12 @@ export function SectionHeader({ title }: { title: string }) {
   );
 }
 
+/** A card's last result: what it says and whether it was a refusal. */
+export type Status = { message: string; error: boolean };
+
 type StatusLineProps = {
   testId: string;
-  message: string | null;
-  error: boolean;
+  status: Status | null;
   /** Sits in a card's footer row beside the actions. */
   action?: boolean;
   /** The message is a wait, drawn as a sheen rather than a result. */
@@ -157,22 +159,37 @@ type StatusLineProps = {
 /** A card's save result: a live region mounted empty, so its first message is announced. */
 export function StatusLine({
   testId,
-  message,
-  error,
+  status,
   action = false,
   pending = false,
 }: StatusLineProps) {
+  const message = status?.message;
   return (
     <p
       role="status"
       className={classes(
         "settings-status",
         action && "settings-action-status",
-        message && !pending && (error ? "error" : "success"),
+        message && !pending && (status.error ? "error" : "success"),
       )}
       data-testid={testId}
     >
       {pending ? <span className="ld-sheen">{message}</span> : message}
     </p>
+  );
+}
+
+/** A link out of the app, opened in a new tab. */
+export function External({
+  href,
+  children,
+}: {
+  href: string;
+  children: string;
+}) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
   );
 }

@@ -1,6 +1,8 @@
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { z } from "zod";
 import {
   bumpAvatarBust,
   deleteAvatar,
@@ -11,22 +13,25 @@ import { Button } from "../../components/Button/Button";
 import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
 import { BusyLabel } from "../../components/Loading/Loading";
 import {
+  type Status,
   StatusLine,
   useUnsavedGuard,
 } from "../../components/SettingsShell/SettingsShell";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
 import { refreshMe, useCurrentUser } from "../../session";
 
-type Status = { message: string; error: boolean } | null;
+// The server judges the rest (control characters); the input already stops at 64.
+const NameSchema = z.object({ name: z.string().trim().max(64) });
 
 /** Display name and picture. Both are account configuration, so they go straight to the server and fail inline. */
 export function ProfileSection() {
   const user = useCurrentUser();
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<Status>(null);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [status, setStatus] = useState<Status | null>(null);
+  const [avatarStatus, setAvatarStatus] = useState<Status | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const form = useForm<{ name: string }>({
+  const form = useForm({
+    resolver: zodResolver(NameSchema),
     defaultValues: { name: user.displayName ?? "" },
   });
   const changed = form.watch("name").trim() !== (user.displayName ?? "");
@@ -34,7 +39,7 @@ export function ProfileSection() {
 
   const clear = () => {
     setStatus(null);
-    setAvatarError(null);
+    setAvatarStatus(null);
   };
   const saveName = useMutation({
     mutationFn: async (name: string) => {
@@ -54,7 +59,11 @@ export function ProfileSection() {
     onMutate: clear,
     onSuccess: () =>
       setStatus({ message: "Profile picture saved.", error: false }),
-    onError: (error) => setAvatarError(`Upload failed: ${error.message}`),
+    onError: (error) =>
+      setAvatarStatus({
+        message: `Upload failed: ${error.message}`,
+        error: true,
+      }),
   });
   const remove = useMutation({
     mutationFn: async () => {
@@ -66,7 +75,11 @@ export function ProfileSection() {
     onMutate: clear,
     onSuccess: () =>
       setStatus({ message: "Profile picture removed.", error: false }),
-    onError: (error) => setAvatarError(`Remove failed: ${error.message}`),
+    onError: (error) =>
+      setAvatarStatus({
+        message: `Remove failed: ${error.message}`,
+        error: true,
+      }),
     onSettled: () => setConfirmRemove(false),
   });
   const uploading = upload.isPending || remove.isPending;
@@ -119,7 +132,7 @@ export function ProfileSection() {
           <p className="subtitle">JPEG, PNG, WebP or GIF, up to 10 MB.</p>
         </div>
       </div>
-      <StatusLine testId="avatar-status" message={avatarError} error />
+      <StatusLine testId="avatar-status" status={avatarStatus} />
 
       <form
         id="profile-form"
@@ -158,11 +171,7 @@ export function ProfileSection() {
           </Button>
         </div>
       </form>
-      <StatusLine
-        testId="profile-status"
-        message={status?.message ?? null}
-        error={status?.error ?? false}
-      />
+      <StatusLine testId="profile-status" status={status} />
 
       {confirmRemove && (
         <ConfirmDialog

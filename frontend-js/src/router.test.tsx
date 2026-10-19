@@ -331,6 +331,7 @@ describe("routes", () => {
     await waitFor(() =>
       expect(router.state.location.search).toBe("?section=devices"),
     );
+    expect(router.state.historyAction).toBe("REPLACE");
   });
 
   it("redirects /connect to the library", async () => {

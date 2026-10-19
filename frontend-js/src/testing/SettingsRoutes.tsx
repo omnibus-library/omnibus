@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { createMemoryRouter, RouterProvider, useLocation } from "react-router";
+import { expect, waitFor } from "storybook/test";
 import { Settings } from "../pages/Settings/Settings";
 
 // Where a link out of the page lands, naming the place so a play can assert it.
@@ -21,3 +22,10 @@ export function SettingsRoutes({ path = "/settings" }: { path?: string }) {
   );
   return <RouterProvider router={router} />;
 }
+
+/** Waits for an always-mounted status line to say `text`: it fills in a moment after the action. */
+export const said = (
+  canvas: { getByTestId: (id: string) => HTMLElement },
+  testId: string,
+  text: string,
+) => waitFor(() => expect(canvas.getByTestId(testId)).toHaveTextContent(text));

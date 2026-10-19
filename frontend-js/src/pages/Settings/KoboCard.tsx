@@ -15,21 +15,17 @@ import { Button } from "../../components/Button/Button";
 import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
 import { CopyButton } from "../../components/CopyButton/CopyButton";
 import { BusyLabel, RowSkeletons } from "../../components/Loading/Loading";
-import { StatusLine } from "../../components/SettingsShell/SettingsShell";
+import {
+  External,
+  type Status,
+  StatusLine,
+} from "../../components/SettingsShell/SettingsShell";
 
 const NameSchema = z.object({
   name: z.string().trim().min(1, "Enter a name for your Kobo."),
 });
 
 const KOBO_BACKUP_URL = "https://github.com/omnibus-library/kobo-backup";
-
-function External({ href, children }: { href: string; children: string }) {
-  return (
-    <a href={href} target="_blank" rel="noopener noreferrer">
-      {children}
-    </a>
-  );
-}
 
 /** The unconditional first-sync data-loss warning: the hazard applies the moment a URL is copied. */
 function Warning() {
@@ -186,13 +182,11 @@ function DeviceRow({ device, disabled, onAsk }: RowProps) {
   );
 }
 
-type Status = { message: string; error: boolean } | null;
-
 /** The reader's Kobos: add one, copy its sync address, regenerate that address or remove the device. */
 export function KoboCard() {
   const queryClient = useQueryClient();
   const devices = useQuery(koboDevicesQuery);
-  const [status, setStatus] = useState<Status>(null);
+  const [status, setStatus] = useState<Status | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   // Decided when the list first answers: adding the first Kobo must not fold the steps away mid-read.
   const [setupOpen, setSetupOpen] = useState<boolean | null>(null);
@@ -290,12 +284,7 @@ export function KoboCard() {
           />
         </div>
         <div className="settings-actions">
-          <StatusLine
-            testId="kobo-devices-status"
-            message={shown?.message || null}
-            error={shown?.error ?? false}
-            action
-          />
+          <StatusLine testId="kobo-devices-status" status={shown} action />
           <Button
             type="submit"
             variant="primary"

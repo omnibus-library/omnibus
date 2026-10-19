@@ -13,7 +13,10 @@ import {
 import { Button } from "../../components/Button/Button";
 import { CopyButton } from "../../components/CopyButton/CopyButton";
 import { BusyLabel } from "../../components/Loading/Loading";
-import { StatusLine } from "../../components/SettingsShell/SettingsShell";
+import {
+  type Status,
+  StatusLine,
+} from "../../components/SettingsShell/SettingsShell";
 import { initialsFor, nowSecs, utcDay } from "../../format";
 import { useCurrentUser } from "../../session";
 import { mcpCommand, type PillTone, relDate, statusPill } from "./apiTokens";
@@ -31,7 +34,6 @@ const PILL_CLASS = {
 const CREATE_HINT =
   "Name it after the machine or client that will hold it — that name is all you get when deciding what to revoke later.";
 
-type Status = { message: string; error: boolean } | null;
 type Secret = { name: string; secret: string };
 
 type CreateFormProps = {
@@ -324,7 +326,7 @@ export function ApiTokensCard() {
   const user = useCurrentUser();
   const queryClient = useQueryClient();
   const tokens = useQuery(apiTokensQuery);
-  const [status, setStatus] = useState<Status>(null);
+  const [status, setStatus] = useState<Status | null>(null);
   const [secret, setSecret] = useState<Secret | null>(null);
   const [revoking, setRevoking] = useState<number | null>(null);
   const [renaming, setRenaming] = useState<number | null>(null);
@@ -538,11 +540,7 @@ export function ApiTokensCard() {
         </section>
       )}
 
-      <StatusLine
-        testId="api-tokens-status"
-        message={shown?.message ?? null}
-        error={shown?.error ?? false}
-      />
+      <StatusLine testId="api-tokens-status" status={shown} />
     </div>
   );
 }

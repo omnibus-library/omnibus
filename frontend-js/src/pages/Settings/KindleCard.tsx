@@ -10,6 +10,8 @@ import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
 import { CopyButton } from "../../components/CopyButton/CopyButton";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import {
+  External,
+  type Status,
   StatusLine,
   useUnsavedGuard,
 } from "../../components/SettingsShell/SettingsShell";
@@ -20,14 +22,6 @@ const EmailSchema = z.object({
 });
 
 const APPROVED_SENDERS = "https://www.amazon.com/sendtokindle/email";
-
-function Approved({ children }: { children: string }) {
-  return (
-    <a href={APPROVED_SENDERS} target="_blank" rel="noopener noreferrer">
-      {children}
-    </a>
-  );
-}
 
 /** Whether this server can deliver at all, and the sender to approve at Amazon. */
 function DeliveryLine() {
@@ -49,7 +43,8 @@ function DeliveryLine() {
       <p className="subtitle" data-testid="kindle-delivery">
         Couldn’t check whether email delivery is set up on this server. Either
         way, add the library’s sender address to your Amazon{" "}
-        <Approved>approved sender list</Approved> or Amazon drops the delivery.
+        <External href={APPROVED_SENDERS}>approved sender list</External> or
+        Amazon drops the delivery.
       </p>
     );
   }
@@ -58,8 +53,9 @@ function DeliveryLine() {
       <div className="kindle-delivery" data-testid="kindle-delivery">
         <p className="subtitle">
           Approve <code translate="no">{sender.data}</code> in your Amazon
-          account’s <Approved>approved senders</Approved>, or Amazon drops the
-          delivery.
+          account’s{" "}
+          <External href={APPROVED_SENDERS}>approved senders</External>, or
+          Amazon drops the delivery.
         </p>
         <CopyButton
           text={sender.data}
@@ -84,14 +80,12 @@ function DeliveryLine() {
   );
 }
 
-type Status = { message: string; error: boolean } | null;
-
 /** The address Send to Kindle delivers to: saved, cleared, and whether this server can deliver. */
 export function KindleCard() {
   const user = useCurrentUser();
   const queryClient = useQueryClient();
   const saved = user.kindleEmail ?? "";
-  const [status, setStatus] = useState<Status>(null);
+  const [status, setStatus] = useState<Status | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const form = useForm({
     resolver: zodResolver(EmailSchema),
@@ -182,11 +176,7 @@ export function KindleCard() {
           : "No Kindle email configured yet."}
       </p>
       <DeliveryLine />
-      <StatusLine
-        testId="kindle-email-status"
-        message={status?.message || null}
-        error={status?.error ?? false}
-      />
+      <StatusLine testId="kindle-email-status" status={status} />
       {confirmClear && (
         <ConfirmDialog
           testId="kindle-email-clear-dialog"

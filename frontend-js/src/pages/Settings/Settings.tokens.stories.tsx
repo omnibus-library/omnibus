@@ -3,7 +3,7 @@ import { HttpResponse, http } from "msw";
 import { expect, waitFor } from "storybook/test";
 import { nowSecs } from "../../format";
 import { hanging } from "../../testing/handlers";
-import { SettingsRoutes } from "../../testing/SettingsRoutes";
+import { SettingsRoutes, said } from "../../testing/SettingsRoutes";
 import {
   aSettingsServer,
   type SettingsServer,
@@ -26,15 +26,6 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
-
-// The always-mounted status gets its text a moment after the click.
-const said = (
-  canvas: { getByTestId: (id: string) => HTMLElement },
-  text: string,
-) =>
-  waitFor(() =>
-    expect(canvas.getByTestId("api-tokens-status")).toHaveTextContent(text),
-  );
 
 const day = 86_400;
 const withTokens = () => {
@@ -121,7 +112,11 @@ export const CreatesATokenAndHandsOverItsSecretOnce: Story = {
     await expect(canvas.getByTestId("api-token-mcp-command")).toHaveTextContent(
       `claude mcp add --transport http omnibus ${window.location.origin}/mcp --header "Authorization: Bearer omni_secretvalue-Zz9x"`,
     );
-    await said(canvas, "Token created. Copy its secret now");
+    await said(
+      canvas,
+      "api-tokens-status",
+      "Token created. Copy its secret now",
+    );
     await expect(await canvas.findAllByTestId("api-token-row")).toHaveLength(1);
     await expect(canvas.queryByTestId("api-tokens-empty")).toBeNull();
 
@@ -138,7 +133,7 @@ export const RefusesATokenWithoutAName: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByTestId("api-token-create"));
 
-    await said(canvas, "Enter a name for the token.");
+    await said(canvas, "api-tokens-status", "Enter a name for the token.");
     await expect(server.tokens).toEqual([]);
   },
 };
@@ -156,7 +151,7 @@ export const RefusesToCreateAToken: Story = {
     await userEvent.type(await canvas.findByLabelText("Token name"), "Laptop");
     await userEvent.click(canvas.getByTestId("api-token-create"));
 
-    await said(canvas, "too many tokens");
+    await said(canvas, "api-tokens-status", "too many tokens");
     await expect(canvas.getByTestId("api-tokens-status")).toHaveClass("error");
     await expect(canvas.queryByTestId("api-token-secret")).toBeNull();
     await expect(canvas.getByLabelText("Token name")).toHaveValue("Laptop");
@@ -207,7 +202,7 @@ export const RevokesATokenOnceConfirmedInItsRow: Story = {
     ).toHaveTextContent("Revoke Old script?");
     await userEvent.click(canvas.getByTestId("api-token-revoke-confirm-3"));
 
-    await said(canvas, "Token revoked.");
+    await said(canvas, "api-tokens-status", "Token revoked.");
     await waitFor(() =>
       expect(canvas.getAllByTestId("api-token-row")).toHaveLength(2),
     );
@@ -239,7 +234,11 @@ export const ShowsWhyARevokeWasRefused: Story = {
       await canvas.findByTestId("api-token-revoke-confirm-3"),
     );
 
-    await said(canvas, "you have no live token with that id");
+    await said(
+      canvas,
+      "api-tokens-status",
+      "you have no live token with that id",
+    );
     // The list is read again, so the row that is gone is gone.
     await waitFor(() =>
       expect(canvas.queryByTestId("api-token-revoke-confirm")).toBeNull(),
@@ -268,7 +267,11 @@ export const ShowsWhyARenameWasRefused: Story = {
     server.tokens = server.tokens.filter((t) => t.id !== 3);
     await userEvent.click(await canvas.findByTestId("api-token-rename-save"));
 
-    await said(canvas, "you have no live token with that id");
+    await said(
+      canvas,
+      "api-tokens-status",
+      "you have no live token with that id",
+    );
     await waitFor(() =>
       expect(canvas.queryByTestId("api-token-rename-row")).toBeNull(),
     );
@@ -290,7 +293,7 @@ export const KeepsEarlierTokensWhenTheListFailedBeforeACreate: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    await said(canvas, "list is down");
+    await said(canvas, "api-tokens-status", "list is down");
     await userEvent.type(await canvas.findByLabelText("Token name"), "Laptop");
     await userEvent.click(canvas.getByTestId("api-token-create"));
 

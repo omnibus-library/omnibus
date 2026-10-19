@@ -58,8 +58,15 @@ export const Copies: Story = {
 };
 
 export const CopiesThroughASelectedFieldWithoutTheClipboardApi: Story = {
-  beforeEach: () => stubClipboard(undefined, () => true),
-  play: async ({ canvas, userEvent }) => {
+  beforeEach() {
+    written.length = 0;
+    // The copy command copies what the hidden field holds.
+    return stubClipboard(undefined, () => {
+      written.push(document.querySelector("textarea")?.value ?? "");
+      return true;
+    });
+  },
+  play: async ({ canvas, userEvent, args }) => {
     await userEvent.click(canvas.getByRole("button", { name: "Copy URL" }));
 
     await waitFor(() =>
@@ -67,6 +74,8 @@ export const CopiesThroughASelectedFieldWithoutTheClipboardApi: Story = {
         "Copied",
       ),
     );
+    await expect(written).toEqual([args.text]);
+    await expect(document.querySelector("textarea")).toBeNull();
   },
 };
 

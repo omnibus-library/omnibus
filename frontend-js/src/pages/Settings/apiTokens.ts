@@ -1,19 +1,7 @@
+import { MONTHS, unitsAgo } from "../../format";
+
 const DAY = 86_400;
 const IDLE_AFTER = 30 * DAY;
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
 
 export type PillTone = "unused" | "active" | "idle";
 
@@ -35,7 +23,7 @@ export function relDate(now: number, ts: number): string {
   const days = Math.floor(now / DAY) - Math.floor(ts / DAY);
   if (days <= 0) return "today";
   if (days === 1) return "yesterday";
-  if (days <= 30) return `${days} days ago`;
+  if (days <= 30) return unitsAgo(days, "day");
   const then = new Date(ts * 1000);
   const day = `${then.getUTCDate()} ${MONTHS[then.getUTCMonth()]}`;
   return then.getUTCFullYear() === new Date(now * 1000).getUTCFullYear()

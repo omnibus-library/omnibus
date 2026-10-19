@@ -6,7 +6,10 @@ import { z } from "zod";
 import { changePassword, sessionsQuery } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel } from "../../components/Loading/Loading";
-import { StatusLine } from "../../components/SettingsShell/SettingsShell";
+import {
+  type Status,
+  StatusLine,
+} from "../../components/SettingsShell/SettingsShell";
 import { StrengthMeter } from "../../components/StrengthMeter/StrengthMeter";
 import { scorePassword } from "../../password";
 
@@ -18,8 +21,6 @@ const PasswordSchema = z.object({
   next: z.string().min(1, EMPTY),
 });
 
-type Status = { message: string; error: boolean } | null;
-
 const PASSWORD_ATTRS = {
   type: "password",
   autoCapitalize: "none",
@@ -30,7 +31,7 @@ const PASSWORD_ATTRS = {
 /** Change the password you sign in with: the current one authorizes, the server judges the new one. */
 export function PasswordCard() {
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<Status>(null);
+  const [status, setStatus] = useState<Status | null>(null);
   const form = useForm({
     resolver: zodResolver(PasswordSchema),
     defaultValues: { current: "", next: "" },
@@ -102,11 +103,7 @@ export function PasswordCard() {
           </Button>
         </div>
       </form>
-      <StatusLine
-        testId="change-password-status"
-        message={status?.message ?? null}
-        error={status?.error ?? false}
-      />
+      <StatusLine testId="change-password-status" status={status} />
     </section>
   );
 }

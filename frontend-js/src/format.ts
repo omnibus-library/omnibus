@@ -129,7 +129,7 @@ export function formatYear(raw: string): string | null {
   return year > SENTINEL_YEAR_MAX ? String(year) : null;
 }
 
-const MONTHS = [
+export const MONTHS = [
   "Jan",
   "Feb",
   "Mar",
