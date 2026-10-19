@@ -229,11 +229,7 @@
       clearTimeout(state.timer);
       state.timer = null;
     }
-    if (state.stream) {
-      state.stream.getTracks().forEach(function (t) {
-        t.stop();
-      });
-    }
+    if (state.stream) release(state.stream);
     if (state.video) state.video.srcObject = null;
     state.stream = null;
     state.track = null;
@@ -294,7 +290,9 @@
       video.setAttribute("playsinline", "");
       video.muted = true;
       await video.play();
-      if (gen !== state.gen) return release(stream);
+      // stop() or the newer start() already released the stream it found in state.
+      if (gen !== state.gen) return;
+      reportTorch(state.track);
     } catch (err) {
       // stop() here would tear down the stream of the start that replaced this one.
       if (gen !== state.gen) return;
@@ -302,7 +300,6 @@
       status(classifyError(err));
       return;
     }
-    reportTorch(state.track);
     state.running = true;
     status("ready");
     schedule();
