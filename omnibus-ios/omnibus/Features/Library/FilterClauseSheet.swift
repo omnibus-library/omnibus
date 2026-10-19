@@ -62,7 +62,7 @@ struct FilterOption: Hashable, Sendable, Identifiable {
     /// longer in use), so each can still be seen and unticked.
     static func stranded(_ picked: [String], in options: [FilterOption], field: FilterField) -> [FilterOption] {
         picked
-            .filter { value in !options.contains { $0.value.caseInsensitiveCompare(value) == .orderedSame } }
+            .filter { value in !options.contains { isPicked($0.value, in: [value]) } }
             .map { value in
                 let label = switch field {
                 case .format: value.uppercased()
@@ -71,6 +71,20 @@ struct FilterOption: Hashable, Sendable, Identifiable {
                 }
                 return FilterOption(value: value, label: label, count: nil)
             }
+    }
+
+    /// Whether `value` is among `picked`, ignoring case as the server does.
+    static func isPicked(_ value: String, in picked: [String]) -> Bool {
+        picked.contains { $0.caseInsensitiveCompare(value) == .orderedSame }
+    }
+
+    /// `picked` with `value` flipped, ignoring case; a new pick past the value
+    /// cap is refused.
+    static func toggling(_ value: String, in picked: [String]) -> [String] {
+        if isPicked(value, in: picked) {
+            return picked.filter { $0.caseInsensitiveCompare(value) != .orderedSame }
+        }
+        return picked.count < FilterClause.maxValues ? picked + [value] : picked
     }
 
     /// Every format the category strip knows.
@@ -137,7 +151,6 @@ struct FilterClauseSheet: View {
                         onApply(FilterClause(field: field, mode: mode, values: picked))
                         dismiss()
                     }
-                    .disabled(picked.isEmpty)
                     .accessibilityIdentifier("filter-apply")
                 }
             }
@@ -174,16 +187,12 @@ struct FilterClauseSheet: View {
     }
 
     private func row(_ option: FilterOption) -> some View {
-        let isPicked = picked.contains(option.value)
+        let isPicked = FilterOption.isPicked(option.value, in: picked)
         let isFull = picked.count >= FilterClause.maxValues
 
         return Button {
             Haptics.select()
-            if isPicked {
-                picked.removeAll { $0 == option.value }
-            } else if !isFull {
-                picked.append(option.value)
-            }
+            picked = FilterOption.toggling(option.value, in: picked)
         } label: {
             HStack(spacing: Spacing.md) {
                 Text(option.label)

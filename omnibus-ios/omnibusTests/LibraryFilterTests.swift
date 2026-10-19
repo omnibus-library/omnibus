@@ -605,6 +605,19 @@ struct FilterOptionTests {
         )
     }
 
+    @Test func togglingUnticksASavedPickThatDiffersOnlyByCase() {
+        #expect(FilterOption.toggling("Fantasy", in: ["fantasy", "Horror"]) == ["Horror"])
+    }
+
+    @Test func togglingAddsAValueThatIsNotPicked() {
+        #expect(FilterOption.toggling("Fantasy", in: ["Horror"]) == ["Horror", "Fantasy"])
+    }
+
+    @Test func togglingRefusesANewPickPastTheValueCap() {
+        let full = (0..<FilterClause.maxValues).map { "v\($0)" }
+        #expect(FilterOption.toggling("new", in: full) == full)
+    }
+
     @Test func aStrandedShelfReadsAsUnavailable() {
         #expect(FilterOption.stranded(["99"], in: [], field: .shelf).map(\.label) == ["unavailable shelf"])
     }
