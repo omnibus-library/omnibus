@@ -280,23 +280,42 @@ export const FailedUndoKeepsTheToastWithTheReason: Story = {
 
 export const PartialDeleteRefetchesThePage: Story = {
   beforeEach({ msw }) {
+    const both = aWireBook({
+      ...BOOK,
+      formats: ["EPUB", "PDF"],
+      book_files: [aWireFile(), aWireFile({ id: 12, format: "PDF" })],
+    });
+    let reads = 0;
     msw.use(
-      ...deletionHandlers(aWireManifest(), writes),
-      ...bookDetailHandlers(BOOK),
+      ...deletionHandlers(aWireManifest({ files: both.book_files }), writes),
+      // The second read is the refetch, after the PDF went.
+      http.get("/api/ebooks/:uuid", () =>
+        HttpResponse.json(
+          reads++ === 0
+            ? both
+            : { ...both, formats: ["EPUB"], book_files: [aWireFile()] },
+        ),
+      ),
+      ...bookDetailHandlers(both),
     );
   },
   play: async ({ canvas, userEvent }) => {
+    await canvas.findByTestId("format-row-pdf");
     await userEvent.click(await canvas.findByTestId("delete-files"));
-    await userEvent.click(await canvas.findByTestId("delete-file-11"));
+    await userEvent.click(await canvas.findByTestId("delete-file-12"));
     await userEvent.click(canvas.getByTestId("delete-continue"));
     await userEvent.click(canvas.getByTestId("delete-confirm"));
 
-    await waitFor(() => expect(writes).toEqual(["delete:files=11;copies="]));
+    await waitFor(() => expect(writes).toEqual(["delete:files=12;copies="]));
     await waitFor(() =>
       expect(
         canvas.queryByTestId("delete-book-dialog"),
       ).not.toBeInTheDocument(),
     );
+    await waitFor(() =>
+      expect(canvas.queryByTestId("format-row-pdf")).not.toBeInTheDocument(),
+    );
+    await expect(canvas.getByTestId("format-row-epub")).toBeInTheDocument();
   },
 };
 

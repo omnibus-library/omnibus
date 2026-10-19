@@ -103,6 +103,34 @@ export const AutosavesThenPublishesTheSameDraft: Story = {
   },
 };
 
+let autosaveAttempts = 0;
+
+export const AutosaveFailureStaysQuiet: Story = {
+  beforeEach({ msw }) {
+    autosaveAttempts = 0;
+    msw.use(
+      http.post("/api/journals", () => {
+        autosaveAttempts++;
+        return new HttpResponse("failed with 500", { status: 500 });
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.type(
+      canvas.getByRole("textbox", { name: "Journal entry" }),
+      "Typing away",
+    );
+
+    await waitFor(() => expect(autosaveAttempts).toBe(1), { timeout: 5000 });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    await expect(canvas.queryByRole("alert")).not.toBeInTheDocument();
+    await expect(
+      canvas.queryByTestId("journal-autosaved"),
+    ).not.toBeInTheDocument();
+  },
+};
+
 export const CancelDiscardsTheAutosavedDraft: Story = {
   play: async ({ args, canvas, userEvent }) => {
     await userEvent.type(

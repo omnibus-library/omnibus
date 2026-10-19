@@ -220,6 +220,8 @@ export const DeleteInFlightIsGuardedAndCannotBeDismissed: Story = {
     await expect(confirm).toBeDisabled();
     await expect(confirm).toHaveTextContent("Deleting…");
     await expect(canvas.getByTestId("delete-cancel")).toBeDisabled();
+    // Aim at the dialog itself: a disabled button takes the keys of nobody.
+    canvas.getByRole("dialog").focus();
     await userEvent.keyboard("{Escape}");
     await expect(args.onClose).not.toHaveBeenCalled();
     await waitFor(() => expect(args.onDeleted).toHaveBeenCalled());

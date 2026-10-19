@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useQuery } from "@tanstack/react-query";
 import { delay, HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
-import { toBookDetail } from "../../api";
+import { type BookUuid, toBookDetail } from "../../api";
 import {
   getGetBookInsightsMockHandler200,
   getGetOtherRatingsMockHandler200,
@@ -27,6 +28,7 @@ import {
   aWireSession,
   aWireWishlist,
 } from "../../testing/wire";
+import { shelvesQuery } from "./queries";
 import { StatsStop } from "./StatsStop";
 
 const nowSecs = () => Math.floor(Date.now() / 1000);
@@ -107,7 +109,7 @@ export const RecordShowsTheFourFigures: Story = {
       getGetBookInsightsMockHandler200(
         aWireInsights({
           started_at: nowSecs() - 3 * 86_400 - 60,
-          longest_started_at: 1_760_011_200,
+          longest_started_at: 1_760_004_000,
         }),
       ),
     );
@@ -260,10 +262,30 @@ export const Rated: Story = {
 
 const writes: (number | null)[] = [];
 
+let shelfReads = 0;
+
+// Stands in for the More stop, which holds the shelves a rating save must refresh.
+function ShelfObserver({ uuid }: { uuid: BookUuid }) {
+  useQuery(shelvesQuery(uuid));
+  return null;
+}
+
 export const RatingSavesAndClears: Story = {
+  render: (args) => (
+    <>
+      <ShelfObserver uuid={args.book.uuid} />
+      <StatsStop {...args} />
+    </>
+  ),
   beforeEach({ msw }) {
     writes.length = 0;
-    msw.use(...ratingHandlers(null, writes));
+    shelfReads = 0;
+    msw.use(
+      http.get("/api/shelves", () => {
+        shelfReads++;
+      }),
+      ...ratingHandlers(null, writes),
+    );
   },
   play: async ({ canvas, canvasElement, userEvent }) => {
     await userEvent.hover(
@@ -287,6 +309,8 @@ export const RatingSavesAndClears: Story = {
         "rated just now · 3.5 of 5",
       ),
     );
+    // A smart shelf may now hold the book: the shelf facts are read again.
+    await waitFor(() => expect(shelfReads).toBe(2));
 
     await userEvent.click(
       canvas.getByRole("button", { name: "Clear your 3.5-star rating" }),

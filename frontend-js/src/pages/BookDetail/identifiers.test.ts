@@ -129,7 +129,7 @@ describe("identifierRows", () => {
       ]);
     });
 
-    it("replaces the row a saved ISBN-10 corrects", () => {
+    it("adds a saved ISBN-10 beside the ISBN-13", () => {
       const out = rows(
         [ident("02", "9780316259088")],
         "9780316259088",
@@ -138,6 +138,14 @@ describe("identifierRows", () => {
 
       expect(out.map((r) => [r.label, r.value])).toEqual([
         ["ISBN-13", "9780316259088"],
+        ["ISBN-10", "031625908X"],
+      ]);
+    });
+
+    it("replaces the row a saved ISBN-10 corrects", () => {
+      const out = rows([ident("02", "0316769487")], null, "031625908X");
+
+      expect(out.map((r) => [r.label, r.value])).toEqual([
         ["ISBN-10", "031625908X"],
       ]);
     });

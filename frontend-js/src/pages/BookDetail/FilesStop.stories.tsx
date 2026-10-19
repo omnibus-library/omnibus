@@ -20,7 +20,7 @@ function aBook(overrides: Parameters<typeof aWireBook>[0] = {}) {
       publisher: "Inkwell Press",
       language: "en",
       identifiers: [{ scheme: "15", value: "9780316769488" }],
-      added_at: "2024-05-01T12:00:00Z",
+      added_at: "2024-05-01T10:00:00Z",
       ...overrides,
     }),
   );

@@ -168,6 +168,8 @@ export const MergeInFlightIsGuardedAndCannotBeDismissed: Story = {
     await expect(confirm).toHaveAttribute("aria-busy", "true");
     await expect(confirm).toHaveTextContent("Merging…");
     await expect(canvas.getByTestId("merge-cancel")).toBeDisabled();
+    // Aim at the dialog itself: a disabled button takes the keys of nobody.
+    canvas.getByRole("dialog").focus();
     await userEvent.keyboard("{Escape}");
     await expect(args.onClose).not.toHaveBeenCalled();
     await waitFor(() => expect(args.onMerged).toHaveBeenCalled());

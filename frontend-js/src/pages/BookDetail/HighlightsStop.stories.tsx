@@ -332,6 +332,8 @@ export const DeleteInFlightIgnoresEscape: Story = {
       await canvas.findByRole("button", { name: "Deleting…" }),
     ).toBeDisabled();
 
+    // Aim at the dialog itself: a disabled button takes the keys of nobody.
+    canvas.getByRole("dialog").focus();
     await userEvent.keyboard("{Escape}");
 
     await expect(canvas.getByRole("dialog")).toBeInTheDocument();

@@ -231,6 +231,7 @@ export const RemoveFailsKeepsTheCopyAndTheDialog: Story = {
 
 const lastCopy = {
   args: { book: fileless },
+  parameters: { path: `/books/${UUID}` },
   beforeEach({ msw }) {
     msw.use(...physicalHandlers({ copies: [MINE] }, writes));
   },
@@ -298,7 +299,7 @@ export const LastCopyRemovesTheBookAndLeaves: Story = {
       expect(writes).toEqual(["delete-copy:4", "delete-book"]),
     );
     await waitFor(() =>
-      expect(canvas.getByTestId("location")).toHaveTextContent("/"),
+      expect(canvas.getByTestId("location")).toHaveTextContent(/^\/$/),
     );
   },
 };
@@ -353,13 +354,14 @@ export const FailedRemovalCanBeRetriedAndLeaves: Story = {
       expect(writes).toEqual(["delete-copy:4", "delete-book"]),
     );
     await waitFor(() =>
-      expect(canvas.getByTestId("location")).toHaveTextContent("/"),
+      expect(canvas.getByTestId("location")).toHaveTextContent(/^\/$/),
     );
   },
 };
 
 const tracked = (deletesBook = false) =>
   ({
+    parameters: { path: `/books/${UUID}` },
     beforeEach({ msw }) {
       msw.use(
         ...physicalHandlers(
@@ -398,7 +400,10 @@ export const TrackedBookOffersFindAndRemove: Story = {
     await expect(
       await canvas.findByTestId("wishlist-add-card"),
     ).toBeInTheDocument();
-    await expect(canvas.getByTestId("location")).toHaveTextContent("/");
+    // The book is still there, so the reader stays on it.
+    await expect(canvas.getByTestId("location")).toHaveTextContent(
+      `/books/${UUID}`,
+    );
   },
 };
 

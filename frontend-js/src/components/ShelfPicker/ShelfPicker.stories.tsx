@@ -141,6 +141,8 @@ export const WriteInFlightMakesEveryTileInert: Story = {
       canvas.getByRole("checkbox", { name: "To reread" }),
     ).toBeDisabled();
     await expect(canvas.getByTestId("shelf-picker-close")).toBeDisabled();
+    // Aim at the dialog itself: a disabled button takes the keys of nobody.
+    canvas.getByRole("dialog").focus();
     await userEvent.keyboard("{Escape}");
     await expect(args.onClose).not.toHaveBeenCalled();
   },

@@ -79,6 +79,8 @@ export const KeepsTabInside: Story = {
 export const WorkingIgnoresDismissal: Story = {
   args: { busy: true },
   play: async ({ canvas, userEvent, args }) => {
+    // Aim at the dialog itself: a disabled button takes the keys of nobody.
+    canvas.getByRole("dialog").focus();
     await userEvent.keyboard("{Escape}");
     await userEvent.click(canvas.getByRole("dialog"));
 

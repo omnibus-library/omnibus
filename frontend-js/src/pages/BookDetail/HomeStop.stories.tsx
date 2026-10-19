@@ -10,7 +10,7 @@ import {
 import {
   bookDetailHandlers,
   failing,
-  followHandler,
+  followHandlers,
   hanging,
   physicalHandlers,
   readStatusHandlers,
@@ -85,11 +85,22 @@ export const SeriesCountLoading: Story = {
   },
 };
 
+let seriesAsked = false;
+
 export const SeriesCountFailing: Story = {
   beforeEach({ msw }) {
-    msw.use(failing("get", "/api/series/:id", 500));
+    seriesAsked = false;
+    msw.use(
+      http.get("/api/series/:id", () => {
+        seriesAsked = true;
+        return new HttpResponse("failed with 500", { status: 500 });
+      }),
+    );
   },
   play: async ({ canvas }) => {
+    // Absence only means something once the series has answered.
+    await waitFor(() => expect(seriesAsked).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 100));
     await expect(canvas.getByText(/· Book 1 · 2021/)).toBeInTheDocument();
     await expect(canvas.queryByText(/in your library/)).not.toBeInTheDocument();
   },
@@ -640,10 +651,7 @@ export const SyncFollowSwitch: Story = {
   args: { book: DUAL },
   beforeEach({ msw }) {
     followWrites.length = 0;
-    msw.use(
-      getGetAlignmentMockHandler200(ALIGNED),
-      followHandler(followWrites),
-    );
+    msw.use(...followHandlers(ALIGNED, followWrites));
   },
   play: async ({ canvas, userEvent }) => {
     const toggle = await canvas.findByRole("switch", {
@@ -658,6 +666,10 @@ export const SyncFollowSwitch: Story = {
     await waitFor(() =>
       expect(toggle).toHaveAttribute("aria-checked", "false"),
     );
+    await expect(toggle).toHaveTextContent("not following");
+
+    // And it holds once the page has asked the server again.
+    await new Promise((resolve) => setTimeout(resolve, 300));
     await expect(toggle).toHaveTextContent("not following");
   },
 };

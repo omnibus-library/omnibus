@@ -22,6 +22,7 @@ import {
   getSmartShelvesContainingMockHandler200,
 } from "../api/generated/omnibus.msw";
 import {
+  type AlignmentView,
   type BookDeletionManifest,
   DeleteBookFilesRequest,
   type EbookMetadata,
@@ -466,15 +467,29 @@ export function readStatusHandlers(
   ];
 }
 
-/** `POST /api/books/:uuid/cross-format-follow`, answering `204` and appending the body to `writes`. */
-export function followHandler(writes: { enabled: boolean }[]) {
-  return http.post(
-    "/api/books/:uuid/cross-format-follow",
-    async ({ request }) => {
-      writes.push(PostCrossFormatFollowBody.parse(await request.json()));
+/**
+ * The alignment `GET` serves `aligned`, its link's `follow` the last one `POST`ed to
+ * `/api/books/:uuid/cross-format-follow` (answering `204` and appending the body to `writes`).
+ */
+export function followHandlers(
+  aligned: AlignmentView,
+  writes: { enabled: boolean }[],
+) {
+  let follow = aligned.link?.follow;
+  return [
+    http.get("/api/books/:uuid/alignment", () =>
+      HttpResponse.json({
+        ...aligned,
+        link: aligned.link && { ...aligned.link, follow },
+      }),
+    ),
+    http.post("/api/books/:uuid/cross-format-follow", async ({ request }) => {
+      const body = PostCrossFormatFollowBody.parse(await request.json());
+      writes.push(body);
+      follow = body.enabled;
       return new HttpResponse(null, { status: 204 });
-    },
-  );
+    }),
+  ];
 }
 
 /** `GET /api/progress/recent`, answering the first `limit` of `points`. */
