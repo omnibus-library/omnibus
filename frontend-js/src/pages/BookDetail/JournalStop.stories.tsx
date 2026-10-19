@@ -190,6 +190,18 @@ export const OpensTheFullCard: Story = {
     await expect(
       canvas.queryByTestId("journal-overlay"),
     ).not.toBeInTheDocument();
+
+    await userEvent.click(
+      (await canvas.findAllByTestId("journal-ladder-row"))[1] as HTMLElement,
+    );
+    await expect(
+      canvas.getByRole("dialog", { name: "Journal entry" }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(canvas.getByRole("dialog")).toHaveFocus());
+    await userEvent.keyboard("{Escape}");
+    await expect(
+      canvas.queryByTestId("journal-overlay"),
+    ).not.toBeInTheDocument();
   },
 };
 
@@ -331,10 +343,19 @@ export const DeleteFailsKeepsTheEntry: Story = {
     await userEvent.click(canvas.getByTestId("journal-delete"));
     await userEvent.click(canvas.getByTestId("journal-delete-modal-confirm"));
 
-    await expect(
-      await within(canvas.getByRole("dialog")).findByRole("alert"),
-    ).toHaveTextContent("failed with 500");
+    const confirm = canvas.getByRole("dialog", { name: "Delete entry?" });
+    await expect(await within(confirm).findByRole("alert")).toHaveTextContent(
+      "failed with 500",
+    );
     await expect(canvas.getAllByTestId("journal-ladder-row")).toHaveLength(3);
+
+    // Escape closes only the confirm, not the entry it sits in.
+    await waitFor(() =>
+      expect(confirm).toContainElement(document.activeElement as HTMLElement),
+    );
+    await userEvent.keyboard("{Escape}");
+    await expect(confirm).not.toBeInTheDocument();
+    await expect(canvas.getByTestId("journal-overlay")).toBeInTheDocument();
   },
 };
 

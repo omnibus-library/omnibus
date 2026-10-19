@@ -8,6 +8,8 @@ const TABBABLE =
 // Wraps Tab from the dialog's last tabbable element to its first, and Shift+Tab the other way.
 function trapTab(event: KeyboardEvent<HTMLElement>) {
   if (event.key !== "Tab") return;
+  // A dialog opened inside another is the only one that handles its keys.
+  event.stopPropagation();
   const dialog = event.currentTarget;
   const tabbable = [...dialog.querySelectorAll<HTMLElement>(TABBABLE)];
   const [first, last] = [tabbable.at(0), tabbable.at(-1)];
@@ -53,11 +55,15 @@ export function ConfirmModal({
   const dismiss = () => {
     if (!busy) onDismiss();
   };
-  // Again when `busy` clears: the button that was working is disabled, which drops focus to the page.
+  // Again when `busy` flips: the button that was working is disabled, which drops focus to the page.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `busy` is the trigger, not an input
   useEffect(() => {
-    if (!focusOnOpen || busy) return;
-    // After paint, or the focus ring never shows.
-    const frame = requestAnimationFrame(() => backdrop.current?.focus());
+    if (!focusOnOpen) return;
+    // After paint, or the focus ring never shows; and not over a field that already has it.
+    const frame = requestAnimationFrame(() => {
+      const dialog = backdrop.current;
+      if (!dialog?.contains(document.activeElement)) dialog?.focus();
+    });
     return () => cancelAnimationFrame(frame);
   }, [focusOnOpen, busy]);
   return (
@@ -77,6 +83,7 @@ export function ConfirmModal({
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault();
+          event.stopPropagation();
           dismiss();
         }
         trapTab(event);

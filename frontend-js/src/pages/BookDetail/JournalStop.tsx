@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { BookDetail, JournalEntry } from "../../api";
 import { Button } from "../../components/Button/Button";
+import { ConfirmModal } from "../../components/ConfirmModal/ConfirmModal";
 import { Loading } from "../../components/Loading/Loading";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
 import { formatLongDate } from "../../format";
@@ -141,22 +142,20 @@ function Journal({ book }: { book: BookDetail }) {
       </div>
       {composing && (
         // Not dismissable by a click outside: a stray one must not throw away an open draft.
-        <div
-          className="bdmq-overlay bdmq-overlay-static"
-          data-testid="journal-composer-overlay"
+        <ConfirmModal
+          testId="journal-composer-overlay"
+          ariaLabel="New journal entry"
+          backdropClass="bdmq-overlay bdmq-overlay-static"
+          dialogClass="bdmq-ocard bdmq-ocard-composer"
+          busy
+          onDismiss={() => setComposing(false)}
+          focusOnOpen
         >
-          <div
-            className="bdmq-ocard bdmq-ocard-composer"
-            role="dialog"
-            aria-modal="true"
-            aria-label="New journal entry"
-          >
-            <JournalComposer
-              uuid={book.uuid}
-              onClose={() => setComposing(false)}
-            />
-          </div>
-        </div>
+          <JournalComposer
+            uuid={book.uuid}
+            onClose={() => setComposing(false)}
+          />
+        </ConfirmModal>
       )}
       {entries === undefined ? (
         feed.isError ? (
@@ -191,35 +190,32 @@ function Journal({ book }: { book: BookDetail }) {
         </div>
       )}
       {opened && (
-        // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: the Close button is the keyboard's way out; the scrim is the pointer's
-        <div
-          className="bdmq-overlay"
-          data-testid="journal-overlay"
-          onClick={() => setOpenId(null)}
+        <ConfirmModal
+          testId="journal-overlay"
+          ariaLabel="Journal entry"
+          backdropClass="bdmq-overlay"
+          dialogClass="bdmq-ocard"
+          busy={false}
+          onDismiss={() => setOpenId(null)}
+          focusOnOpen
         >
-          {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: only keeps a click inside the card from reaching the scrim */}
-          <div
-            className="bdmq-ocard"
-            onClick={(event) => event.stopPropagation()}
+          {/* Opening the row was the request for the whole entry, so no Show more. */}
+          <JournalEntryCard
+            uuid={book.uuid}
+            entry={opened}
+            viewer={viewer}
+            collapsible={false}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="bdmq-ocard-close"
+            data-testid="journal-overlay-close"
+            onClick={() => setOpenId(null)}
           >
-            {/* Opening the row was the request for the whole entry, so no Show more. */}
-            <JournalEntryCard
-              uuid={book.uuid}
-              entry={opened}
-              viewer={viewer}
-              collapsible={false}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="bdmq-ocard-close"
-              data-testid="journal-overlay-close"
-              onClick={() => setOpenId(null)}
-            >
-              ✕ Close
-            </Button>
-          </div>
-        </div>
+            ✕ Close
+          </Button>
+        </ConfirmModal>
       )}
     </div>
   );
