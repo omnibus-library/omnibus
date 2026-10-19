@@ -1,3 +1,5 @@
+use omnibus_shared::MAX_FILTER_CLAUSES;
+
 use super::*;
 
 const VIEWER: i64 = 1;
@@ -332,4 +334,24 @@ fn filter_bar_names_the_owner_on_a_shelf_facet_for_another_readers_shelf() {
     let html = render_bar(shelf_clause(), shelves);
 
     assert!(html.contains(">Favourites \u{b7} alice<"), "{html}");
+}
+
+#[test]
+fn filter_bar_disables_only_inactive_facets_at_the_clause_cap() {
+    let filters = ViewFilters {
+        clauses: (0..MAX_FILTER_CLAUSES)
+            .map(|i| clause(FilterField::Tag, FilterMode::Include, &[&format!("t{i}")]))
+            .collect(),
+    };
+
+    let html = render_bar(filters, ShelfList::Pending);
+
+    assert!(
+        button_tag(&html, "filter-facet-author").contains("disabled"),
+        "{html}"
+    );
+    assert!(
+        !button_tag(&html, "filter-facet-tag").contains("disabled"),
+        "{html}"
+    );
 }

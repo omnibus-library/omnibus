@@ -5,7 +5,9 @@
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use omnibus_shared::{FilterClause, FilterField, FilterMode, ShelfSummary, ViewFilters};
+use omnibus_shared::{
+    FilterClause, FilterField, FilterMode, ShelfSummary, ViewFilters, MAX_FILTER_CLAUSES,
+};
 
 use crate::components::glyphs::chevron_down_glyph;
 use crate::components::shelf_glyphs::x_icon;
@@ -187,6 +189,8 @@ fn Facet(
     let clause = filters.clauses.iter().find(|c| c.field == field).cloned();
     let value = clause.as_ref().map(|c| facet_value(c, &shelves, viewer_id));
     let active = value.is_some();
+    // A filter saved before one clause per field can already be at the cap.
+    let at_cap = !active && filters.clauses.len() >= MAX_FILTER_CLAUSES;
     let label = field_label(field);
     let token = field_token(field);
     let initial = clause.unwrap_or_else(|| FilterClause::new(field, FilterMode::Include, &[]));
@@ -199,6 +203,8 @@ fn Facet(
                 "aria-haspopup": "dialog",
                 "aria-expanded": "{open()}",
                 "data-testid": "filter-facet-{token}",
+                disabled: at_cap,
+                title: at_cap.then(|| format!("At most {MAX_FILTER_CLAUSES} filters")),
                 onmounted: move |evt: MountedEvent| button.set(Some(evt.data())),
                 onclick: move |_| {
                     if !open() {
@@ -271,6 +277,9 @@ pub fn without_field(filters: &ViewFilters, field: FilterField) -> ViewFilters {
     }
 }
 
+/// Room a full menu needs under its facet: mode, search, list, footer and gaps.
+const MENU_ROOM: u32 = 460;
+
 /// Menus open below their facet. When the window has too little room under
 /// the facet for a menu, scroll the facet up under the top bar first; phones
 /// use a bottom sheet and need no room.
@@ -279,7 +288,7 @@ fn reveal_below(field: FilterField) {
         r#"const el = document.querySelector('[data-testid="filter-facet-{}"]');
 if (el && !matchMedia('(max-width: 720px)').matches) {{
   const room = innerHeight - el.getBoundingClientRect().bottom;
-  if (room < Math.min(480, innerHeight * 0.6)) el.scrollIntoView({{ block: 'start', behavior: 'instant' }});
+  if (room < {MENU_ROOM}) el.scrollIntoView({{ block: 'start', behavior: 'instant' }});
 }}"#,
         field_token(field)
     ));

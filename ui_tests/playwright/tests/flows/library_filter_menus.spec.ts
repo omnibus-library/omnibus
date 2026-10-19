@@ -7,6 +7,7 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 
 const WIDE_WINDOWS = [
   { width: 768, height: 1024 },
+  { width: 1280, height: 600 },
   { width: 1440, height: 900 },
 ];
 
@@ -16,7 +17,7 @@ test.describe("library filter menus", () => {
   });
 
   for (const viewport of WIDE_WINDOWS) {
-    test.describe(`${viewport.width} wide`, () => {
+    test.describe(`${viewport.width} by ${viewport.height}`, () => {
       test.use({ viewport });
 
       for (const field of FILTER_FIELDS) {

@@ -28,6 +28,8 @@
 .fb-pop {
   position: absolute; top: calc(100% + 8px); left: 0; z-index: 61;
   width: min(380px, calc(100vw - 24px));
+  /* Fits under a facet scrolled up beneath the top bar, however short the window. */
+  max-height: calc(100dvh - 140px); overflow-y: auto;
   display: flex; flex-direction: column; gap: 12px; padding: 14px;
   background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 14px;
   box-shadow: 0 18px 40px color-mix(in oklch, black 55%, transparent);

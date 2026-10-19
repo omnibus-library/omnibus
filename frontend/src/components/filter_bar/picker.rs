@@ -93,6 +93,7 @@ pub fn FilterPicker(
                         })
                 },
                 on_cancel: move |_| on_close.call(()),
+                can_clear: !initial.values.is_empty(),
             }
         }
     }
@@ -216,7 +217,8 @@ pub fn toggle_pick(picked: &mut Vec<String>, value: &str) {
 
 /// A field's mode, search and values, then Cancel / Apply. With `footer` off the
 /// Cancel / Apply row is left out, for a caller that applies each tick as it
-/// happens (the mobile sheet) and so has nothing to confirm.
+/// happens (the mobile sheet) and so has nothing to confirm. With `can_clear`
+/// Apply stays live with nothing picked, so unticking every value clears.
 #[component]
 pub fn PickerBody(
     field: FilterField,
@@ -231,6 +233,7 @@ pub fn PickerBody(
     #[props(default)] on_apply: EventHandler<()>,
     #[props(default)] on_cancel: EventHandler<()>,
     #[props(default = true)] footer: bool,
+    #[props(default)] can_clear: bool,
 ) -> Element {
     let plural = field_plural(field);
     let apply_label = match picked.len() {
@@ -273,7 +276,7 @@ pub fn PickerBody(
                         r#type: "button",
                         class: "btn primary sm",
                         "data-testid": "filter-picker-apply",
-                        disabled: picked.is_empty(),
+                        disabled: picked.is_empty() && !can_clear,
                         onclick: move |_| on_apply.call(()),
                         "{apply_label}"
                     }

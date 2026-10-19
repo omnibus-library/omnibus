@@ -26,6 +26,7 @@ fn BodyHarness(
     query: String,
     picked: Vec<String>,
     state: picker::LoadState,
+    #[props(default)] can_clear: bool,
 ) -> Element {
     rsx! {
         picker::PickerBody {
@@ -34,6 +35,7 @@ fn BodyHarness(
             query,
             picked,
             state,
+            can_clear,
             on_mode: move |_| {},
             on_query: move |_| {},
             on_toggle: move |_| {},
@@ -223,6 +225,25 @@ fn picker_body_caps_the_rows_it_draws_and_says_how_many_matched() {
     );
     assert!(html.contains("data-testid=\"filter-picker-status\""));
     assert!(html.contains(&format!("of {}", picker::MAX_SHOWN_OPTIONS + 5)));
+}
+
+#[test]
+fn picker_body_keeps_apply_live_with_nothing_picked_when_it_can_clear() {
+    let html = render(rsx! {
+        BodyHarness {
+            field: FilterField::Tag,
+            mode: FilterMode::Include,
+            query: String::new(),
+            picked: Vec::new(),
+            state: ready(&["a"]),
+            can_clear: true,
+        }
+    });
+
+    assert!(
+        !button_tag(&html, "filter-picker-apply").contains("disabled"),
+        "{html}"
+    );
 }
 
 #[test]
