@@ -116,7 +116,7 @@ struct UserSettingsSection: View {
                     label: "Stack series", isFirst: true,
                     detail: captionText(.stackSeries, isOn: stack.value, error: stack.error)
                 ) {
-                    Toggle("", isOn: $stack.value)
+                    Toggle("Stack series", isOn: $stack.value)
                         .labelsHidden()
                         .tint(palette.accentColor)
                         .disabled(stack.isDisabled(online: connectivity.isOnline))
@@ -126,7 +126,7 @@ struct UserSettingsSection: View {
                     label: "Book details scroll stops",
                     detail: captionText(.scrollStops, isOn: scrollStops, error: scrollStopsError)
                 ) {
-                    Toggle("", isOn: $scrollStops)
+                    Toggle("Book details scroll stops", isOn: $scrollStops)
                         .labelsHidden()
                         .tint(palette.accentColor)
                         .disabled(!connectivity.isOnline)
@@ -137,7 +137,7 @@ struct UserSettingsSection: View {
                         label: "Share stats with household",
                         detail: captionText(.shareStats, isOn: share.value, error: share.error)
                     ) {
-                        Toggle("", isOn: $share.value)
+                        Toggle("Share stats with household", isOn: $share.value)
                             .labelsHidden()
                             .tint(palette.accentColor)
                             .disabled(share.isDisabled(online: connectivity.isOnline))
@@ -153,24 +153,31 @@ struct UserSettingsSection: View {
         .onChange(of: app.user?.stackSeries) { _, next in stack.serverChanged(to: next) }
         .onChange(of: app.user?.shareStats) { _, next in share.serverChanged(to: next) }
         .onChange(of: stack.value) { previous, next in
-            save($stack, from: previous, to: next, write: AuthService.setStackSeries)
+            save($stack, from: previous, to: next, write: AuthService.setStackSeries) {
+                $0.stackSeries = next
+            }
         }
         .onChange(of: share.value) { previous, next in
-            save($share, from: previous, to: next, write: AuthService.setShareStats)
+            save($share, from: previous, to: next, write: AuthService.setShareStats) {
+                $0.shareStatsSetting = next
+            }
         }
     }
 
     /// Writes a flipped switch to the account; a refusal puts it back with the reason.
+    /// `confirm` sets the written value on `app.user`, which every reader of it follows.
     private func save(
         _ toggle: Binding<AccountSettingToggle>, from previous: Bool, to next: Bool,
-        write: @escaping (Bool) async throws -> Void
+        write: @escaping (Bool) async throws -> Void,
+        confirm: @escaping (inout UserSummary) -> Void
     ) {
         guard toggle.wrappedValue.beginSave() else { return }
         Task {
             do {
                 try await write(next)
                 toggle.wrappedValue.saveSucceeded(wrote: next)
-                // Every book grid reads the setting off `app.user`, so this is what restacks them.
+                // Before the refresh, which keeps the old identity if it fails.
+                app.applyConfirmed(confirm)
                 await app.refreshUser()
                 Haptics.success()
             } catch let failure {

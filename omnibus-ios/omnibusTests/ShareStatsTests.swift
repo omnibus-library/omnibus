@@ -1,7 +1,7 @@
 //  ShareStatsTests.swift
 //  The `share_stats` wire decode (missing means on, per the household
-//  contract), the exact shape of the toggle's POST body, and the save rules
-//  every account switch shares.
+//  contract), the exact shape of the toggle's POST body, the save rules
+//  every account switch shares, and the confirmed value a save publishes.
 
 import Foundation
 import Testing
@@ -117,5 +117,18 @@ struct AccountSettingToggleTests {
         let toggle = seeded(true)
         #expect(toggle.isDisabled(online: false))
         #expect(!toggle.isDisabled(online: true))
+    }
+}
+
+struct ConfirmedSettingTests {
+    @Test func applyingSetsTheConfirmedValueOnTheSignedInUser() throws {
+        let me = try JSONDecoder().decode(UserSummary.self, from: Data("{\(minimalUserFields)}".utf8))
+        let patched = AppState.applying({ $0.stackSeries = true }, to: me)
+        #expect(patched?.stackSeries == true)
+        #expect(patched?.username == "a", "the rest of the identity is kept")
+    }
+
+    @Test func applyingWithNoOneSignedInPatchesNothing() {
+        #expect(AppState.applying({ $0.stackSeries = true }, to: nil) == nil)
     }
 }
