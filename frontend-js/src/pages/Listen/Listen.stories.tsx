@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { act } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
+import { act } from "react";
 import { Link, Route, Routes } from "react-router";
 import { expect, fireEvent, waitFor, within } from "storybook/test";
 import {
