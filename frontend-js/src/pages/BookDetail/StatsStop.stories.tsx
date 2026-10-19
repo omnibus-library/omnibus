@@ -7,6 +7,7 @@ import {
   bookDetailHandlers,
   failing,
   hanging,
+  physicalHandlers,
   ratingHandlers,
   sessionLogHandler,
 } from "../../testing/handlers";
@@ -15,6 +16,7 @@ import {
   aWireOtherRating,
   aWireRating,
   aWireSession,
+  aWireWishlist,
 } from "../../testing/wire";
 import { StatsStop } from "./StatsStop";
 
@@ -233,5 +235,19 @@ export const NoOtherReaders: Story = {
     await expect(
       canvas.queryByRole("group", { name: "Other ratings" }),
     ).not.toBeInTheDocument();
+  },
+};
+
+export const WishlistOnlyBookHasNothingToTally: Story = {
+  args: { book: toBookDetail(aWireBook({ formats: [] })) },
+  beforeEach({ msw }) {
+    msw.use(...physicalHandlers({ wishlist: aWireWishlist() }));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Stats")).toBeInTheDocument();
+    await expect(
+      canvas.getByText(/Add an ebook or an audiobook to start tracking/),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("bdmq-rating")).toBeInTheDocument();
   },
 };

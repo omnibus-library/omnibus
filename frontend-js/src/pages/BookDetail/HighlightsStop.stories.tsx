@@ -8,12 +8,14 @@ import {
   failing,
   hanging,
   highlightsHandlers,
+  physicalHandlers,
 } from "../../testing/handlers";
 import {
   aWireAlignment,
   aWireBook,
   aWireFile,
   aWireHighlight,
+  aWireWishlist,
 } from "../../testing/wire";
 import { HighlightsStop } from "./HighlightsStop";
 
@@ -327,5 +329,23 @@ export const DeleteInFlightIgnoresEscape: Story = {
     await userEvent.keyboard("{Escape}");
 
     await expect(canvas.getByRole("dialog")).toBeInTheDocument();
+  },
+};
+
+export const WishlistOnlyBookKeepsNoLines: Story = {
+  args: { book: toBookDetail(aWireBook({ formats: [] })) },
+  beforeEach({ msw }) {
+    msw.use(...physicalHandlers({ wishlist: aWireWishlist() }));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText("Kept lines · none"),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByText("Highlight while you read to keep lines here."),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByTestId("highlights-section"),
+    ).not.toBeInTheDocument();
   },
 };

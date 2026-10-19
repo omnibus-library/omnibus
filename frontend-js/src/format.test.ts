@@ -81,6 +81,20 @@ describe("homeKicker", () => {
       "Book · standalone",
     );
   });
+
+  it.each([
+    ["scan", "a scan"],
+    ["detail", "this page"],
+    ["manual", "an ISBN you entered"],
+    ["search", "a title search"],
+  ] as const)("names a wishlist entry added from a %s", (source, phrase) => {
+    expect(homeKicker(inSeries, 3, { addedAt: 1_760_000_000, source })).toEqual(
+      {
+        series: null,
+        tail: `On your wishlist · added from ${phrase}`,
+      },
+    );
+  });
 });
 
 describe("initialsFor", () => {

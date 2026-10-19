@@ -6,16 +6,38 @@ import {
   SessionLogError,
   sessionLogQuery,
 } from "../../components/SessionLog/SessionLog";
+import { useWish } from "./queries";
 import { RatingWidget } from "./RatingWidget";
+
+function NoStats({ children }: { children: string }) {
+  return (
+    <>
+      <div className="bdmq-bigquiet" data-testid="bdmq-no-stats">
+        No stats yet.
+      </div>
+      <p className="bdmq-quiet-body">{children}</p>
+    </>
+  );
+}
 
 /** Stop 02: the reader's sittings in the book, and their rating of it. */
 export function StatsStop({ book }: { book: BookDetail }) {
-  const sessions = useInfiniteQuery(sessionLogQuery(book.uuid));
+  const wish = useWish(book);
+  const sessions = useInfiniteQuery({
+    ...sessionLogQuery(book.uuid),
+    // A wish has no reading to tally.
+    enabled: !wish,
+  });
   const recorded = sessions.data?.pages[0]?.sittings.length ?? 0;
   return (
     <>
-      <div className="bdmq-k">At a glance stats</div>
-      {sessions.isPending ? (
+      <div className="bdmq-k">{wish ? "Stats" : "At a glance stats"}</div>
+      {wish ? (
+        <NoStats>
+          Add an ebook or an audiobook to start tracking your reading stats for
+          this book.
+        </NoStats>
+      ) : sessions.isPending ? (
         <Loading
           kind="section"
           className="start"
@@ -29,15 +51,10 @@ export function StatsStop({ book }: { book: BookDetail }) {
           <SessionLog uuid={book.uuid} />
         </>
       ) : (
-        <>
-          <div className="bdmq-bigquiet" data-testid="bdmq-no-stats">
-            No stats yet.
-          </div>
-          <p className="bdmq-quiet-body">
-            Open the book and the record starts itself — time, pickups, and pace
-            all land here.
-          </p>
-        </>
+        <NoStats>
+          Open the book and the record starts itself — time, pickups, and pace
+          all land here.
+        </NoStats>
       )}
       <div className="bdmq-ratingrow" data-testid="bdmq-rating">
         <RatingWidget uuid={book.uuid} />

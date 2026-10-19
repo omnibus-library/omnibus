@@ -9,7 +9,7 @@ import { useCurrentUser } from "../../session";
 import { JournalComposer } from "./JournalComposer";
 import { JournalEntryCard } from "./JournalEntryCard";
 import { journalExcerpt, marqueeJournalKicker } from "./journal";
-import { journalQuery } from "./queries";
+import { journalQuery, useWish } from "./queries";
 
 const MAX_STACKED = 5;
 
@@ -65,6 +65,30 @@ function LadderRow({
 
 /** Stop 04: everyone's journal entries as a ladder of excerpts, each opening its full card. */
 export function JournalStop({ book }: { book: BookDetail }) {
+  return useWish(book) ? (
+    <div
+      id="journal"
+      className="bd-journal bdmq-journal"
+      data-testid="journal-section"
+    >
+      <div className="bdmq-journalhead">
+        <div className="bdmq-k" data-testid="journal-kicker">
+          Empty
+        </div>
+      </div>
+      <div className="bdmq-bigquiet">
+        No entries yet — the journal begins when you do.
+      </div>
+      <p className="mono bdmq-quiet-hint">
+        a shared log — anyone reading this book can write here
+      </p>
+    </div>
+  ) : (
+    <Journal book={book} />
+  );
+}
+
+function Journal({ book }: { book: BookDetail }) {
   const viewer = useCurrentUser();
   const feed = useQuery(journalQuery(book.uuid));
   // By id, not position: a refetch keeps the same entry open, or drops it if it went away.

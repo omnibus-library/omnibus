@@ -12,7 +12,7 @@ import {
 import { StarRating } from "../../components/StarRating/StarRating";
 import { fillPercent } from "../../components/StarRating/stars";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
-import { ago } from "../../format";
+import { ago, nowSecs } from "../../format";
 import { halfStarLabel, ratingAfterClick, ratingMeta } from "./rating";
 
 const SLOTS = [1, 2, 3, 4, 5] as const;
@@ -20,8 +20,6 @@ const HALVES = [
   { side: "left", className: "bd-star-half bd-star-half-left" },
   { side: "right", className: "bd-star-half bd-star-half-right" },
 ] as const;
-const nowSecs = () => Math.floor(Date.now() / 1000);
-
 function OtherRatings({ ratings }: { ratings: OtherRating[] }) {
   return (
     // biome-ignore lint/a11y/useSemanticElements: a fieldset brings a border and min-width Atrium never resets

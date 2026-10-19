@@ -5,6 +5,7 @@ import {
   type BookDetail as Detail,
   type Progress,
   saveDescription,
+  type WishlistEntry,
 } from "../../api";
 import { Button, ButtonLink } from "../../components/Button/Button";
 import { Chip } from "../../components/Chip/Chip";
@@ -18,7 +19,8 @@ import {
   summaryIsSparse,
 } from "../../format";
 import { FilePicker, isAudioFile, isReadableFile } from "./FilePicker";
-import { alignmentQuery, progressQuery, seriesQuery } from "./queries";
+import { WishlistCtas } from "./PhysicalCopies";
+import { alignmentQuery, progressQuery, seriesQuery, useWish } from "./queries";
 import { ReadStatus } from "./ReadStatus";
 import { type HomeReadout, homeReadout, newestPercent } from "./readout";
 import { SyncLine } from "./SyncLine";
@@ -76,12 +78,13 @@ function Description({ book }: { book: Detail }) {
   );
 }
 
-function Kicker({ book }: { book: Detail }) {
+function Kicker({ book, wish }: { book: Detail; wish: WishlistEntry | null }) {
   const { seriesId } = book;
   const series = useQuery(seriesQuery(seriesId));
   const { series: name, tail } = homeKicker(
     book,
     series.data?.bookCount ?? null,
+    wish,
   );
   return (
     <div className="bdmq-k">
@@ -268,6 +271,7 @@ function Ruler({ pct, readout, lastOpened }: RulerProps) {
 /** Stop 01: the hero, with the kicker, title, authors, chips, description, the read and listen buttons, and where the reader stands. */
 export function HomeStop({ book }: { book: Detail }) {
   const client = useQueryClient();
+  const wish = useWish(book);
   const hasFiles =
     book.hasEbook || book.hasAudio || book.hasComic || book.hasPdf;
   const progress = useQuery({ ...progressQuery(book.uuid), enabled: hasFiles });
@@ -285,7 +289,7 @@ export function HomeStop({ book }: { book: Detail }) {
   );
   return (
     <>
-      <Kicker book={book} />
+      <Kicker book={book} wish={wish} />
       <div className="bdmq-titlerow">
         <h1 className="bdmq-title">{book.title}</h1>
       </div>
@@ -327,9 +331,18 @@ export function HomeStop({ book }: { book: Detail }) {
           }
         />
       )}
-      <CtaRow book={book} progress={positions} readout={readout} />
+      {wish ? (
+        <WishlistCtas book={book} />
+      ) : (
+        <CtaRow book={book} progress={positions} readout={readout} />
+      )}
       <div className="bdmq-statusrow">
         <ReadStatus uuid={book.uuid} />
+        {wish && (
+          <span className="mono bdmq-statusnote">
+            tracking since {formatLongDate(wish.addedAt)}
+          </span>
+        )}
       </div>
       {percent !== null && (
         <Ruler

@@ -8,6 +8,7 @@ import type {
   JournalEntry,
   PaletteBookHit,
   PaletteResults,
+  PhysicalCopy,
   ProgressRecord,
   RatingRecord,
   ReadStatusRecord,
@@ -15,6 +16,7 @@ import type {
   SeriesDetail,
   SessionLogEntry,
   UserSummary,
+  WishlistEntry,
 } from "../api/generated/schemas";
 
 // Fixtures in the shape the server sends them: snake_case JSON, typed by the
@@ -186,6 +188,34 @@ export function aWireJournalEntry(
     status: "published",
     created_at: 1_760_000_000,
     updated_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** A checked-in copy as `GET /api/physical/{uuid}/copies` sends it: Ada's, with an ISBN and no note. */
+export function aWireCopy(overrides: Partial<PhysicalCopy> = {}): PhysicalCopy {
+  return {
+    id: 4,
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    added_by_user_id: 1,
+    added_by_name: "Ada Lovelace",
+    checked_in_at: 1_760_000_000,
+    isbn: "9781234567897",
+    note: null,
+    ...overrides,
+  };
+}
+
+/** The reader's wishlist entry as `GET /api/physical/{uuid}/wishlist` sends it. */
+export function aWireWishlist(
+  overrides: Partial<WishlistEntry> = {},
+): WishlistEntry {
+  return {
+    id: 1,
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    user_id: 1,
+    source: "detail",
+    added_at: 1_760_000_000,
     ...overrides,
   };
 }

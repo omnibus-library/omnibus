@@ -3,6 +3,7 @@ import { ButtonLink } from "../../components/Button/Button";
 import { FormatSwitcher } from "../../components/FormatSwitcher/FormatSwitcher";
 import { formatDateShort, formatInstantShort } from "../../format";
 import { identifierRows } from "./identifiers";
+import { PhysicalCopies, WishlistRow } from "./PhysicalCopies";
 
 /** Stop 05: formats and copies, the metadata table, and the edit actions. */
 export function FilesStop({ book }: { book: BookDetail }) {
@@ -34,6 +35,8 @@ export function FilesStop({ book }: { book: BookDetail }) {
           formats={book.formats}
           files={book.bookFiles}
         />
+        <PhysicalCopies book={book} />
+        <WishlistRow book={book} />
       </div>
       <div className="divider bdmq-files-div" />
       <table className="rx-kv bd-meta-table mono">

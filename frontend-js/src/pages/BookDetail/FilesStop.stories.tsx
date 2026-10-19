@@ -1,7 +1,13 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, within } from "storybook/test";
 import { toBookDetail } from "../../api";
-import { aWireBook, aWireFile } from "../../testing/wire";
+import { physicalHandlers } from "../../testing/handlers";
+import {
+  aWireBook,
+  aWireCopy,
+  aWireFile,
+  aWireWishlist,
+} from "../../testing/wire";
 import { FilesStop } from "./FilesStop";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
@@ -24,6 +30,9 @@ const meta = {
   title: "Pages/BookDetail/FilesStop",
   component: FilesStop,
   args: { book: aBook() },
+  beforeEach({ msw }) {
+    msw.use(...physicalHandlers({}));
+  },
 } satisfies Meta<typeof FilesStop>;
 
 export default meta;
@@ -100,5 +109,23 @@ export const Fileless: Story = {
       canvas.queryByRole("group", { name: "Available formats" }),
     ).not.toBeInTheDocument();
     await expect(canvas.getByRole("table")).toBeInTheDocument();
+  },
+};
+
+export const ListsCopiesAndTheWishlistAmongTheFormats: Story = {
+  args: { book: aBook({ formats: [], book_files: [] }) },
+  beforeEach({ msw }) {
+    msw.use(
+      ...physicalHandlers({
+        copies: [aWireCopy()],
+        wishlist: aWireWishlist(),
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("physical-copy-card"),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("wishlist-card")).toBeInTheDocument();
   },
 };

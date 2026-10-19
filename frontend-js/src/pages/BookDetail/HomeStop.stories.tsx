@@ -11,6 +11,7 @@ import {
   failing,
   followHandler,
   hanging,
+  physicalHandlers,
   readStatusHandlers,
 } from "../../testing/handlers";
 import {
@@ -20,6 +21,7 @@ import {
   aWirePosition,
   aWireProgress,
   aWireReadStatus,
+  aWireWishlist,
 } from "../../testing/wire";
 import { HomeStop } from "./HomeStop";
 
@@ -684,5 +686,51 @@ export const LongDescriptionHasNoFetchSummary: Story = {
     await expect(
       canvas.queryByRole("button", { name: "Fetch Summary" }),
     ).not.toBeInTheDocument();
+  },
+};
+
+export const WishlistOnlyBook: Story = {
+  args: {
+    book: aBook({ formats: [], book_files: [], series: null, series_id: null }),
+  },
+  beforeEach({ msw }) {
+    msw.use(
+      ...physicalHandlers({
+        wishlist: aWireWishlist({ added_at: 1_760_000_000, source: "scan" }),
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText("On your wishlist · added from a scan"),
+    ).toBeInTheDocument();
+    const find = canvas.getByRole("link", { name: "Find a copy" });
+    await expect(find).toHaveAttribute("target", "_blank");
+    await expect(
+      canvas.getByRole("link", { name: "Check in when acquired" }),
+    ).toHaveAttribute("href", "/check-in");
+    await expect(canvas.getByTestId("wishlist-remove")).toHaveTextContent(
+      "Remove from wishlist",
+    );
+    await expect(
+      canvas.getByText(/tracking since Oct 9th, 2025|tracking since October/),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByTestId("start-reading")).not.toBeInTheDocument();
+    await expect(
+      canvas.queryByTestId("no-files-disclaimer"),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const FilelessBookNotOnTheWishlist: Story = {
+  args: { book: aBook({ formats: [], book_files: [] }) },
+  beforeEach({ msw }) {
+    msw.use(...physicalHandlers({}));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("no-files-disclaimer"),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByTestId("find-a-copy")).not.toBeInTheDocument();
   },
 };

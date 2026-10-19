@@ -10,7 +10,7 @@ import { Loading } from "../../components/Loading/Loading";
 import { QuoteCard } from "../../components/QuoteCard/QuoteCard";
 import { formatLongDate } from "../../format";
 import { highlightLocator, passagesKicker, readerDeepLink } from "./highlights";
-import { alignmentQuery, highlightsQuery } from "./queries";
+import { alignmentQuery, highlightsQuery, useWish } from "./queries";
 import type { Chapter } from "./readout";
 
 function SectionHead({ kicker }: { kicker: string }) {
@@ -116,6 +116,22 @@ function HighlightCard({ highlight, chapters, onQuote, onDelete }: CardProps) {
 
 /** Stop 03: the passages the reader saved, with open, copy and delete on each. */
 export function HighlightsStop({ book }: { book: BookDetail }) {
+  return useWish(book) ? (
+    <>
+      <div className="bdmq-k">Kept lines · none</div>
+      <div className="bdmq-bigquiet">
+        Highlight while you read to keep lines here.
+      </div>
+      <p className="mono bdmq-quiet-hint">
+        find a copy first — check in when it arrives
+      </p>
+    </>
+  ) : (
+    <Passages book={book} />
+  );
+}
+
+function Passages({ book }: { book: BookDetail }) {
   const client = useQueryClient();
   const { queryKey } = highlightsQuery(book.uuid);
   const highlights = useQuery(highlightsQuery(book.uuid));

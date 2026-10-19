@@ -1,8 +1,11 @@
 import { z } from "zod";
 import {
+  deleteWishlistEntry,
   getAlignment,
+  getDeleteFilelessBookUrl,
   getDeleteHighlightUrl,
   getDeleteJournalUrl,
+  getDeletePhysicalCopyUrl,
   getDeleteRatingUrl,
   getEbookByUuid,
   getEbooks,
@@ -23,6 +26,9 @@ import {
   getSeriesById,
   getSessionLog,
   getSummarySources,
+  getWishlistEntry,
+  listPhysicalCopies,
+  patchCopyNote,
   patchJournal,
   postEbookOverrides,
   postJournal,
@@ -30,6 +36,7 @@ import {
   login as postLogin,
   postRating,
   register as postRegister,
+  postWishlistEntry,
   putReadStatus,
 } from "./api/generated/omnibus";
 import type {
@@ -41,6 +48,7 @@ import type {
   JournalEntryOutput as JournalEntryWire,
   AttributedRating as OtherRatingWire,
   PaletteResults as PaletteWire,
+  PhysicalCopy as PhysicalCopyWire,
   ProgressRecord as PositionWire,
   RatingRecord as RatingWire,
   ReadStatus as ReadState,
@@ -49,6 +57,7 @@ import type {
   SessionLogPageOutput,
   SummarySource,
   UserSummary,
+  WishlistEntry as WishlistEntryWire,
 } from "./api/generated/schemas";
 
 // The wire types and their zod schemas are generated from openapi/openapi.json
@@ -692,6 +701,77 @@ export async function uploadJournalImage(image: File): Promise<string> {
 
 export async function deleteJournalEntry(id: number): Promise<void> {
   await send(getDeleteJournalUrl(String(id)), "DELETE");
+}
+
+function toCopy(wire: PhysicalCopyWire) {
+  return {
+    id: wire.id,
+    filerId:
+      wire.added_by_user_id == null ? null : (wire.added_by_user_id as UserId),
+    // Absent once the filer's account is gone.
+    filerName: wire.added_by_name ?? null,
+    checkedInAt: wire.checked_in_at,
+    isbn: wire.isbn ?? null,
+    note: wire.note ?? null,
+  };
+}
+
+export type PhysicalCopy = ReturnType<typeof toCopy>;
+
+/** The checked-in physical copies of a book, every reader's. */
+export async function fetchCopies(uuid: BookUuid): Promise<PhysicalCopy[]> {
+  const res = await listPhysicalCopies(encodeURIComponent(uuid));
+  if (res.status !== 200) throw failure(res);
+  return res.data.map(toCopy);
+}
+
+/** Replaces a copy's note; a blank one clears it. */
+export async function saveCopyNote(
+  id: number,
+  note: string,
+): Promise<PhysicalCopy> {
+  const res = await patchCopyNote(id, { note });
+  if (res.status !== 200) throw failure(res);
+  return toCopy(res.data);
+}
+
+export async function deleteCopy(id: number): Promise<void> {
+  await send(getDeletePhysicalCopyUrl(id), "DELETE");
+}
+
+/** Deletes a book that has no files and no copies left. */
+export async function deleteFilelessBook(uuid: BookUuid): Promise<void> {
+  await send(getDeleteFilelessBookUrl(encodeURIComponent(uuid)), "DELETE");
+}
+
+function toWishlistEntry(wire: WishlistEntryWire) {
+  return { addedAt: wire.added_at, source: wire.source };
+}
+
+export type WishlistEntry = ReturnType<typeof toWishlistEntry>;
+
+/** The reader's wishlist entry for a book, or `null` when it is not on the list. */
+export async function fetchWishlist(
+  uuid: BookUuid,
+): Promise<WishlistEntry | null> {
+  const res = await getWishlistEntry(encodeURIComponent(uuid));
+  if (res.status !== 200) throw failure(res);
+  return res.data && toWishlistEntry(res.data);
+}
+
+export async function addToWishlist(uuid: BookUuid): Promise<WishlistEntry> {
+  const res = await postWishlistEntry(encodeURIComponent(uuid));
+  if (res.status !== 200) throw failure(res);
+  return toWishlistEntry(res.data);
+}
+
+/** Takes a book off the wishlist; `bookDeleted` is true when a book with nothing else went with it. */
+export async function removeFromWishlist(
+  uuid: BookUuid,
+): Promise<{ bookDeleted: boolean }> {
+  const res = await deleteWishlistEntry(encodeURIComponent(uuid));
+  if (res.status !== 200) throw failure(res);
+  return { bookDeleted: res.data.book_deleted };
 }
 
 export const thumbUrl = (uuid: BookUuid, size: "sm" | "md" = "md") =>

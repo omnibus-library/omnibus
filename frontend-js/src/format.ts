@@ -1,4 +1,4 @@
-import type { BookDetail } from "./api";
+import type { BookDetail, WishlistEntry } from "./api";
 
 /** The cover plate's author line: the first author's surname, uppercased. */
 export function plateAuthor(authors: readonly string[]): string {
@@ -32,7 +32,17 @@ export const plural = (n: number) => (n === 1 ? "" : "s");
  * The detail kicker: the series name (to link) and what follows it, or just the
  * tail for a standalone, which leads with its category.
  */
-export function homeKicker(book: BookDetail, seriesTotal: number | null) {
+export function homeKicker(
+  book: BookDetail,
+  seriesTotal: number | null,
+  wish: WishlistEntry | null = null,
+) {
+  if (wish) {
+    return {
+      series: null,
+      tail: `On your wishlist · added from ${wishlistSource(wish.source)}`,
+    };
+  }
   const year = book.published ? formatYear(book.published) : null;
   const yearTail = year ? ` · ${year}` : "";
   if (book.series) {
@@ -47,6 +57,17 @@ export function homeKicker(book: BookDetail, seriesTotal: number | null) {
   const lead = book.genres[0] ?? book.subjects[0] ?? "Book";
   return { series: null, tail: `${lead} · standalone${yearTail}` };
 }
+
+const WISH_SOURCES = {
+  scan: "a scan",
+  detail: "this page",
+  manual: "an ISBN you entered",
+  search: "a title search",
+} as const;
+
+/** Where a wishlist entry came from, as a phrase after "added from". */
+export const wishlistSource = (source: WishlistEntry["source"]) =>
+  WISH_SOURCES[source];
 
 const wordCount = (html: string) =>
   html
@@ -170,6 +191,8 @@ export function formatInstantShort(
     Number(parts.find((p) => p.type === type)?.value);
   return shortDate(part("year"), part("month"), part("day"));
 }
+
+export const nowSecs = () => Math.floor(Date.now() / 1000);
 
 const unitsAgo = (n: number, unit: string) => `${n} ${unit}${plural(n)} ago`;
 

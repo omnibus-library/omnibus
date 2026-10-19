@@ -7,8 +7,13 @@ import {
   failing,
   hanging,
   journalHandlers,
+  physicalHandlers,
 } from "../../testing/handlers";
-import { aWireBook, aWireJournalEntry } from "../../testing/wire";
+import {
+  aWireBook,
+  aWireJournalEntry,
+  aWireWishlist,
+} from "../../testing/wire";
 import { JournalStop } from "./JournalStop";
 
 const ADA = 1;
@@ -467,5 +472,25 @@ export const OthersEntriesOfferNoEdit: Story = {
       (await canvas.findAllByTestId("journal-ladder-row"))[1] as HTMLElement,
     );
     await expect(canvas.queryByTestId("journal-edit")).not.toBeInTheDocument();
+  },
+};
+
+export const WishlistOnlyBookHasNoJournalYet: Story = {
+  args: { book: toBookDetail(aWireBook({ formats: [] })) },
+  beforeEach({ msw }) {
+    msw.use(...physicalHandlers({ wishlist: aWireWishlist() }));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText(
+        "No entries yet — the journal begins when you do.",
+      ),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("journal-kicker")).toHaveTextContent(
+      "Empty",
+    );
+    await expect(
+      canvas.queryByTestId("journal-open-composer"),
+    ).not.toBeInTheDocument();
   },
 };

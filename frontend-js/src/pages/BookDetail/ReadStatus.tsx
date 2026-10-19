@@ -5,7 +5,7 @@ import {
   type ReadStatusValue,
   saveReadStatus,
 } from "../../api";
-import { ago } from "../../format";
+import { ago, nowSecs } from "../../format";
 import { readStatusQuery } from "./queries";
 
 const SEGMENTS = [
@@ -13,8 +13,6 @@ const SEGMENTS = [
   ["reading", "Reading"],
   ["finished", "Finished"],
 ] as const satisfies readonly (readonly [ReadStatusValue, string])[];
-
-const nowSecs = () => Math.floor(Date.now() / 1000);
 
 function statusMeta(
   failed: boolean,

@@ -12,6 +12,8 @@ import {
   getGetRegistrationMockHandler200,
   getGetSeriesByIdMockHandler200,
   getGetSessionLogMockHandler200,
+  getGetWishlistEntryMockHandler200,
+  getListPhysicalCopiesMockHandler200,
 } from "../api/generated/omnibus.msw";
 import {
   type EbookMetadata,
@@ -20,6 +22,7 @@ import {
   type JournalEntry,
   type LoginResponse,
   type PaletteResults,
+  type PhysicalCopy,
   PostCrossFormatFollowBody,
   PostJournalBody,
   PostJournalPreviewBody,
@@ -29,7 +32,9 @@ import {
   type ReadStatusRecord,
   type ResumePoint,
   type SessionLogEntry,
+  UpdateCopyNoteRequest,
   UpdateJournalEntry,
+  type WishlistEntry,
 } from "../api/generated/schemas";
 import { COVER_SVG } from "./books";
 import {
@@ -38,6 +43,7 @@ import {
   aWireProgress,
   aWireReadStatus,
   aWireSeries,
+  aWireWishlist,
   WIRE_ADA,
 } from "./wire";
 
@@ -104,6 +110,8 @@ export function bookDetailHandlers(book: EbookMetadata) {
     getGetSessionLogMockHandler200({ entries: [] }),
     getGetHighlightsMockHandler200([]),
     getGetJournalEntriesMockHandler200([]),
+    getListPhysicalCopiesMockHandler200([]),
+    getGetWishlistEntryMockHandler200(null),
   ];
 }
 
@@ -209,6 +217,50 @@ export function journalHandlers(
       writes.push({ id });
       current = current.filter((e) => e.id !== id);
       return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+}
+
+/**
+ * The book's physical copies and the reader's wishlist entry, kept between reads and writes.
+ * Each write appends a line to `writes`: `note:<id>:<text>`, `delete-copy:<id>`,
+ * `delete-book`, `wishlist:add` or `wishlist:remove` (which also deletes the book when `removalDeletesBook`).
+ */
+export function physicalHandlers(
+  initial: { copies?: PhysicalCopy[]; wishlist?: WishlistEntry | null },
+  writes: string[] = [],
+  removalDeletesBook = false,
+) {
+  let copies = initial.copies ?? [];
+  let wishlist = initial.wishlist ?? null;
+  return [
+    http.get("/api/physical/:uuid/copies", () => HttpResponse.json(copies)),
+    http.patch("/api/physical/copies/:id", async ({ params, request }) => {
+      const id = Number(params.id);
+      const { note } = UpdateCopyNoteRequest.parse(await request.json());
+      writes.push(`note:${id}:${note ?? ""}`);
+      copies = copies.map((c) => (c.id === id ? { ...c, note } : c));
+      return HttpResponse.json(copies.find((c) => c.id === id));
+    }),
+    http.delete("/api/physical/copies/:id", ({ params }) => {
+      writes.push(`delete-copy:${params.id}`);
+      copies = copies.filter((c) => c.id !== Number(params.id));
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.delete("/api/physical/:uuid", () => {
+      writes.push("delete-book");
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.get("/api/physical/:uuid/wishlist", () => HttpResponse.json(wishlist)),
+    http.post("/api/physical/:uuid/wishlist", () => {
+      writes.push("wishlist:add");
+      wishlist = aWireWishlist();
+      return HttpResponse.json(wishlist);
+    }),
+    http.delete("/api/physical/:uuid/wishlist", () => {
+      writes.push("wishlist:remove");
+      wishlist = null;
+      return HttpResponse.json({ book_deleted: removalDeletesBook });
     }),
   ];
 }

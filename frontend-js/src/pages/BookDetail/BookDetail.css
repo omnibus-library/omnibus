@@ -2,6 +2,46 @@
   width: 100vw;
   margin-left: calc(-50vw + 50%);
 }
+.bd-physical-panel {
+  max-width: var(--content-w, 1120px);
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.bd-phys-copy-note {
+  margin: 8px 0 0;
+  color: var(--ink-1);
+}
+.bd-phys-danger {
+  color: var(--bad);
+}
+.bd-phys-note-editor {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bd-phys-note-input {
+  width: 100%;
+  resize: vertical;
+  padding: 8px 10px;
+  background: var(--bg-2);
+  color: var(--ink-1);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+}
+.bd-phys-note-actions {
+  display: flex;
+  gap: 8px;
+}
+.bd-phys-error {
+  color: var(--bad);
+  margin: 0;
+}
 .bd-author-link {
   color: var(--ink-0);
   border-bottom: 1px solid var(--line-2);
@@ -951,6 +991,12 @@ button.spoiler.revealed {
   right: 0;
   z-index: 3;
 }
+
+.bdmq-danger:hover {
+  color: var(--bad);
+  background: color-mix(in oklch, var(--bad) 12%, transparent);
+  border-color: color-mix(in oklch, var(--bad) 45%, transparent);
+}
 .bdmq-flowscroll {
   position: absolute;
   top: 0;
@@ -1243,6 +1289,10 @@ button.spoiler.revealed {
   align-items: center;
   gap: 12px;
 }
+.bdmq-statusnote {
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
 .bdmq-rulerwrap {
   margin-top: 30px;
   max-width: 560px;
@@ -1345,6 +1395,12 @@ button.spoiler.revealed {
   margin-top: 14px;
   max-width: 440px;
   line-height: 1.6;
+}
+.bdmq-quiet-hint {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  margin-top: 18px;
+  font-family: var(--mono);
 }
 .bdmq .bd-highlights .bd-section-head {
   margin-bottom: 4px;
@@ -1759,6 +1815,13 @@ button.spoiler.revealed {
   flex-wrap: wrap;
   align-items: center;
 }
+.bdmq .bd-physical-panel {
+  max-width: 620px;
+  margin-top: 4px;
+}
+.bdmq .bd-physical-panel .bd-section-head {
+  display: none;
+}
 .bdmq .bd-section-head .bd-section-kicker {
   font-family: var(--mono);
   font-size: 10.5px;
@@ -1973,6 +2036,32 @@ button.spoiler.revealed {
 }
 .bdmq .bd-immersive-cta .bd-immersive-mark {
   color: inherit;
+}
+.bdmq .rx-copy.wish .rx-ic {
+  border-style: dashed;
+  background: transparent;
+  color: var(--ink-3);
+}
+.bdmq .rx-copy .rx-copy-editor {
+  grid-column: 2;
+  margin-top: 8px;
+}
+.bdmq .rx-copy .bd-phys-copy-note {
+  font-size: 13px;
+  color: var(--ink-1);
+  margin-top: 6px;
+}
+.bdmq .bd-physical-panel-marquee {
+  display: contents;
+}
+.bdmq .rx-statusdot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  margin-right: 6px;
+  vertical-align: 1px;
 }
 .bdmq .st-log-compact {
   max-width: 560px;
