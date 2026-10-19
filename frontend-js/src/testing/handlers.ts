@@ -10,20 +10,21 @@ import {
   getListSeriesMockHandler200,
   getListShelvesMockHandler200,
 } from "../api/generated/omnibus.msw";
-import type {
-  AuthorSummary,
-  EbookMetadata,
-  EbookPage,
-  GenreWeight,
-  LoginResponse,
-  PaletteResults,
-  ResumePoint,
-  SeriesStack,
-  SeriesSummary,
-  ShelfSummary,
-  TagWeight,
+import {
+  AddShelfBooksBody,
+  type AuthorSummary,
+  type EbookMetadata,
+  type EbookPage,
+  type GenreWeight,
+  type LoginResponse,
+  MetadataOverrides,
+  type PaletteResults,
+  type ResumePoint,
+  type SeriesStack,
+  type SeriesSummary,
+  type ShelfSummary,
+  type TagWeight,
 } from "../api/generated/schemas";
-import { MetadataOverrides } from "../api/generated/schemas";
 import { COVER_SVG } from "./books";
 import { WIRE_ADA } from "./wire";
 
@@ -219,6 +220,25 @@ export function overridesHandler(
       return HttpResponse.json(book);
     },
   );
+}
+
+/**
+ * `POST /api/shelves/{id}/books`: a 204 for any shelf. Each request lands in
+ * `added`; with `refuse` set, a 403 whose plain text is that reason.
+ */
+export function addShelfBooksHandler({
+  added = [],
+  refuse,
+}: {
+  added?: { id: number; uuids: string[] }[];
+  refuse?: string;
+} = {}) {
+  return http.post("/api/shelves/:id/books", async ({ params, request }) => {
+    if (refuse) return new HttpResponse(refuse, { status: 403 });
+    const body = AddShelfBooksBody.parse(await request.json());
+    added.push({ id: Number(params.id), uuids: body.book_uuids });
+    return new HttpResponse(null, { status: 204 });
+  });
 }
 
 /** The four lists the filter menus draw their values from. */

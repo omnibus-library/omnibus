@@ -33,7 +33,7 @@ import {
 } from "../../viewPrefs";
 import { BookGrid } from "./BookGrid";
 import { BookTable } from "./BookTable";
-import { BulkEditBar, BulkEditModal } from "./BulkEdit";
+import { BulkEditBar, BulkEditModal, BulkShelfPicker } from "./BulkEdit";
 import { emptyState, headerCount } from "./libraryView";
 import {
   EdgeResume,
@@ -156,12 +156,14 @@ export function Library() {
   const bulk = user.isAdmin && prefs.view === "table";
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [editing, setEditing] = useState(false);
+  const [filing, setFiling] = useState(false);
   const listing = JSON.stringify([query, shelfId, prefs.view]);
   const [selectedIn, setSelectedIn] = useState(listing);
   if (selectedIn !== listing) {
     setSelectedIn(listing);
     setSelected(new Set());
     setEditing(false);
+    setFiling(false);
   }
   const chosen = books.filter((book) => selected.has(book.uuid));
   const select = (uuids: string[], checked: boolean) =>
@@ -365,6 +367,7 @@ export function Library() {
         <BulkEditBar
           count={chosen.length}
           onEdit={() => setEditing(true)}
+          onAddToShelf={() => setFiling(true)}
           onClear={() => setSelected(new Set())}
         />
       )}
@@ -374,6 +377,16 @@ export function Library() {
           onClose={() => setEditing(false)}
           onSaved={() => {
             setEditing(false);
+            setSelected(new Set());
+          }}
+        />
+      )}
+      {filing && chosen.length > 0 && (
+        <BulkShelfPicker
+          books={chosen}
+          onClose={() => setFiling(false)}
+          onAdded={() => {
+            setFiling(false);
             setSelected(new Set());
           }}
         />

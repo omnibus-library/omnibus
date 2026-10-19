@@ -47,3 +47,13 @@ export function shelfAriaLabel(
   ];
   return `${kindWord[shelf.kind]}${shelf.name}, ${meta.join(" · ")}`;
 }
+
+/** The hand-picked shelves the reader may file books on: their own, or any for an admin. Never smart or wishlist, which fill themselves. */
+export function addTargets(
+  shelves: Shelf[],
+  viewer: { id: UserId; isAdmin: boolean },
+): Shelf[] {
+  return shelves.filter(
+    (s) => s.kind === "manual" && (viewer.isAdmin || s.ownerId === viewer.id),
+  );
+}

@@ -1,8 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { http } from "msw";
+import { HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 import type { MetadataOverrides } from "../../api/generated/schemas";
 import {
+  addShelfBooksHandler,
   failing,
   filterOptionHandlers,
   hanging,
@@ -466,7 +467,7 @@ const WINTER = '{"kind":"shelf","id":3}';
 const FIRST_COVER = "00000000-0000-4000-8000-000000000001";
 
 // Winter reads is hand-picked and summarises five books though it holds two.
-const SHELVES = shelvesHandler([
+const SHELF_LIST = [
   aWireShelf({ id: 3, book_count: 5, cover_uuids: [FIRST_COVER] }),
   aWireShelf({
     id: 5,
@@ -496,7 +497,8 @@ const SHELVES = shelvesHandler([
     name: "Empty wishlist",
     book_count: 0,
   }),
-]);
+];
+const SHELVES = shelvesHandler(SHELF_LIST);
 
 const SHELF_MEMBERS = BY_TWO_AUTHORS.slice(0, 4);
 
@@ -1156,11 +1158,13 @@ const BULK_OPTIONS = filterOptionHandlers({
 
 const saved: { uuid: string; body: MetadataOverrides }[] = [];
 
-// Table view with the first two rows checked and the edit dialog open.
-async function openBulkEdit({
-  canvas,
-  userEvent,
-}: Pick<Parameters<NonNullable<Story["play"]>>[0], "canvas" | "userEvent">) {
+type Play = Pick<
+  Parameters<NonNullable<Story["play"]>>[0],
+  "canvas" | "userEvent"
+>;
+
+// Table view with the first two rows checked.
+async function selectTwo({ canvas, userEvent }: Play) {
   await userEvent.click(
     await canvas.findByRole("checkbox", {
       name: "Select Aurora Station, Vol. 1",
@@ -1169,9 +1173,20 @@ async function openBulkEdit({
   await userEvent.click(
     canvas.getByRole("checkbox", { name: "Select Aurora Station, Vol. 2" }),
   );
-  await userEvent.click(canvas.getByRole("button", { name: "Edit" }));
-  return within(canvas.getByRole("dialog", { name: "Bulk edit 2 books" }));
 }
+
+// Those two rows checked and the bar's button pressed: the dialog it opens.
+async function openFromBar(play: Play, button: string, dialog: string) {
+  await selectTwo(play);
+  await play.userEvent.click(play.canvas.getByRole("button", { name: button }));
+  return within(play.canvas.getByRole("dialog", { name: dialog }));
+}
+
+const openBulkEdit = (play: Play) =>
+  openFromBar(play, "Edit", "Bulk edit 2 books");
+
+const openShelfPicker = (play: Play) =>
+  openFromBar(play, "Add to shelf", "Add 2 books to a shelf");
 
 // What a chip input offers: the values of its datalist.
 function suggestions(field: HTMLElement) {
@@ -1442,5 +1457,130 @@ export const SelectionClearsOnSort: Story = {
         name: "Select Aurora Station, Vol. 1",
       }),
     ).not.toBeChecked();
+  },
+};
+
+let shelfReads = 0;
+const added: { id: number; uuids: string[] }[] = [];
+
+export const BulkAddToShelf: Story = {
+  beforeEach({ msw }) {
+    seedTable();
+    added.length = 0;
+    shelfReads = 0;
+    msw.use(
+      libraryHandler(bulkBooks(), 10),
+      http.get("/api/shelves", () => {
+        shelfReads += 1;
+        return HttpResponse.json(SHELF_LIST);
+      }),
+      addShelfBooksHandler({ added }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const form = await openShelfPicker({ canvas, userEvent });
+
+    // The admin may file on another reader's hand-picked shelf, never on a smart one or a wishlist.
+    await expect(
+      form.getByRole("button", { name: /^Book club/ }),
+    ).toHaveTextContent("3 books · bo");
+    await expect(
+      form.queryByRole("button", { name: /Space Operas/ }),
+    ).toBeNull();
+    await expect(form.queryByRole("button", { name: /Wishlist/ })).toBeNull();
+    const reads = shelfReads;
+
+    await userEvent.click(form.getByRole("button", { name: /^Winter reads/ }));
+
+    await waitFor(() =>
+      expect(canvas.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await expect(added).toEqual([{ id: 3, uuids: [AURORA_1, AURORA_2] }]);
+    await expect(canvas.queryByText(/selected$/)).not.toBeInTheDocument();
+    // The shelves refetch, so the new count shows.
+    await waitFor(() => expect(shelfReads).toBeGreaterThan(reads));
+  },
+};
+
+export const BulkAddToShelfFails: Story = {
+  beforeEach({ msw }) {
+    seedTable();
+    msw.use(
+      libraryHandler(bulkBooks(), 10),
+      SHELVES,
+      addShelfBooksHandler({ refuse: "not your shelf" }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const form = await openShelfPicker({ canvas, userEvent });
+    const winter = form.getByRole("button", { name: /^Winter reads/ });
+
+    await userEvent.click(winter);
+
+    await expect(await form.findByRole("alert")).toHaveTextContent(
+      "Couldn't add to Winter reads: not your shelf",
+    );
+    // Everything stays as it was, ready for another try.
+    await expect(winter).toBeEnabled();
+    await expect(canvas.getByText("2 books selected")).toBeInTheDocument();
+  },
+};
+
+export const BulkAddNoShelves: Story = {
+  beforeEach({ msw }) {
+    seedTable();
+    msw.use(
+      libraryHandler(bulkBooks(), 10),
+      shelvesHandler([aWireShelf({ id: 5, kind: "smart" })]),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const form = await openShelfPicker({ canvas, userEvent });
+
+    await expect(
+      form.getByText("You have no hand-picked shelves yet."),
+    ).toBeInTheDocument();
+    await expect(
+      form.getByRole("link", { name: "shelves page →" }),
+    ).toHaveAttribute("href", "/shelves");
+
+    await userEvent.keyboard("{Escape}");
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", { name: "Add to shelf" }),
+    ).toHaveFocus();
+  },
+};
+
+export const BulkAddShelvesFailing: Story = {
+  beforeEach({ msw }) {
+    seedTable();
+    msw.use(
+      libraryHandler(bulkBooks(), 10),
+      failing("get", "/api/shelves", 500),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const form = await openShelfPicker({ canvas, userEvent });
+
+    await expect(
+      await form.findByText(
+        "Your shelves didn’t load. Close this and try again.",
+      ),
+    ).toBeInTheDocument();
+  },
+};
+
+export const BulkAddShelvesLoading: Story = {
+  beforeEach({ msw }) {
+    seedTable();
+    msw.use(libraryHandler(bulkBooks(), 10), hanging("/api/shelves"));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const form = await openShelfPicker({ canvas, userEvent });
+
+    await expect(form.getByRole("status")).toHaveTextContent(
+      "Gathering your shelves",
+    );
   },
 };

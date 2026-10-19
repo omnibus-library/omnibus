@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  getAddShelfBooksUrl,
   getAuthors,
   getEbookByUuid,
   getEbooks,
@@ -445,6 +446,22 @@ export async function saveOverrides(
 ): Promise<void> {
   const res = await postEbookOverrides(encodeURIComponent(uuid), overrides);
   if (res.status !== 200) throw failure(res);
+}
+
+/** Appends the books to a hand-picked shelf. */
+export async function addShelfBooks(
+  shelfId: number,
+  uuids: BookUuid[],
+): Promise<void> {
+  // The generated fetcher JSON-parses any body, and an error's is plain text.
+  const res = await fetch(getAddShelfBooksUrl(shelfId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ book_uuids: uuids }),
+  });
+  if (res.status !== 204) {
+    throw failure({ status: res.status, data: await res.text() });
+  }
 }
 
 /** The full record for one book, or `null` when no book has that uuid. */

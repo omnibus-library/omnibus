@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { UserId } from "../../api";
 import { aShelf } from "../../testing/books";
 import {
+  addTargets,
   attributedOwner,
   railShelves,
   shelfAriaLabel,
@@ -100,6 +101,27 @@ describe("shelfAriaLabel", () => {
   it("speaks the owner of someone elses shelf", () => {
     expect(shelfAriaLabel(aShelf({ name: "Picks" }), 0, "bo")).toBe(
       "Picks, 0 books · by bo",
+    );
+  });
+});
+
+describe("addTargets", () => {
+  const all = [
+    aShelf({ id: 1 }),
+    aShelf({ id: 2, ownerId: THEM }),
+    aShelf({ id: 3, kind: "smart" }),
+    aShelf({ id: 4, kind: "wishlist" }),
+  ];
+
+  it("keeps the readers own hand-picked shelves in list order", () => {
+    expect(
+      addTargets(all, { id: ME, isAdmin: false }).map((s) => s.id),
+    ).toEqual([1]);
+  });
+
+  it("opens every hand-picked shelf to an admin, still never smart or wishlist", () => {
+    expect(addTargets(all, { id: ME, isAdmin: true }).map((s) => s.id)).toEqual(
+      [1, 2],
     );
   });
 });
