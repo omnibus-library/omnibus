@@ -22,6 +22,32 @@
   box-shadow: 0 24px 60px color-mix(in oklch, black 55%, transparent);
   overflow: hidden;
 }
+.shelf-btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-1);
+}
+@media (hover: hover) {
+  .shelf-btn-ghost:hover {
+    color: var(--ink-0);
+    background: var(--bg-2);
+  }
+}
+.shelf-btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+  font-weight: 600;
+}
+@media (hover: hover) {
+  .shelf-btn-primary:hover {
+    background: color-mix(in oklch, var(--accent) 88%, white);
+  }
+}
+.shelf-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 .shelf-modal-error {
   color: var(--bad);
   font-size: 12.5px;
