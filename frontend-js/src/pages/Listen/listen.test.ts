@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiError, type BookDetail, type BookUuid } from "../../api";
+import { ApiError, type BookDetail } from "../../api";
 import {
   chapterFillPct,
   chapterIndexForElapsed,

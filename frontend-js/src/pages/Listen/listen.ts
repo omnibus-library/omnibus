@@ -1,9 +1,4 @@
-import {
-  ApiError,
-  type BookDetail,
-  type BookUuid,
-  type Chapter,
-} from "../../api";
+import { ApiError, type BookDetail, type Chapter } from "../../api";
 import { MAX_RATE, MIN_RATE } from "../../playback/boot";
 import type { Playback } from "../../playback/PlaybackProvider";
 import { formatHmsShort } from "../../resume";

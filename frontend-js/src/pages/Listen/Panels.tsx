@@ -1,5 +1,3 @@
-import { Button } from "../../components/Button/Button";
-import { Modal } from "../../components/Modal/Modal";
 import { MAX_RATE, MIN_RATE } from "../../playback/boot";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import { SLEEP_PRESETS } from "../../playback/sleep";
