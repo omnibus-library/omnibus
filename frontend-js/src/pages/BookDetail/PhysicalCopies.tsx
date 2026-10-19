@@ -5,7 +5,6 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useState } from "react";
-import { useNavigate } from "react-router";
 import {
   addToWishlist,
   type BookDetail,
@@ -25,7 +24,13 @@ import {
 import { BookGlyph } from "../../components/Glyphs/Glyphs";
 import { ago, nowSecs, wishlistSource } from "../../format";
 import { useCurrentUser } from "../../session";
-import { copiesQuery, shelvesQuery, wishlistQuery } from "./queries";
+import {
+  bookQuery,
+  copiesQuery,
+  shelvesQuery,
+  useLeaveBook,
+  wishlistQuery,
+} from "./queries";
 
 /** An Amazon search on the ISBN, or on title and author when the book has none. */
 function findCopyUrl(book: BookDetail) {
@@ -37,7 +42,10 @@ function findCopyUrl(book: BookDetail) {
 // and the shelf facts, but nothing else on the page.
 function refreshAround(client: QueryClient, uuid: BookUuid) {
   return Promise.all([
-    client.invalidateQueries({ queryKey: ["book", uuid], exact: true }),
+    client.invalidateQueries({
+      queryKey: bookQuery(uuid).queryKey,
+      exact: true,
+    }),
     ...[copiesQuery, wishlistQuery, shelvesQuery].map((query) =>
       client.invalidateQueries({ queryKey: query(uuid).queryKey }),
     ),
@@ -46,7 +54,7 @@ function refreshAround(client: QueryClient, uuid: BookUuid) {
 
 function useWishlistWrites(uuid: BookUuid) {
   const client = useQueryClient();
-  const navigate = useNavigate();
+  const leave = useLeaveBook(uuid);
   const refresh = () => refreshAround(client, uuid);
   const add = useMutation({
     mutationFn: () => addToWishlist(uuid),
@@ -56,9 +64,7 @@ function useWishlistWrites(uuid: BookUuid) {
     mutationFn: () => removeFromWishlist(uuid),
     onSuccess: ({ bookDeleted }) => {
       // A wishlist-only book nobody else wants went with the entry.
-      if (!bookDeleted) return refresh();
-      client.removeQueries({ queryKey: ["book", uuid] });
-      navigate("/", { replace: true });
+      return bookDeleted ? leave() : refresh();
     },
   });
   return { add, remove };
@@ -415,16 +421,12 @@ function RemovalDialog({
 /** The book's checked-in copies, one row each; a note and Remove belong to the filer or an admin. */
 export function PhysicalCopies({ book }: { book: BookDetail }) {
   const client = useQueryClient();
-  const navigate = useNavigate();
   const viewer = useCurrentUser();
   const copies = useQuery(copiesQuery(book.uuid));
   const [editing, setEditing] = useState<number | null>(null);
   const [removing, setRemoving] = useState<number | null>(null);
   const refresh = () => refreshAround(client, book.uuid);
-  const leave = () => {
-    client.removeQueries({ queryKey: ["book", book.uuid] });
-    navigate("/", { replace: true });
-  };
+  const leave = useLeaveBook(book.uuid);
   const mayRemoveBook = viewer.isAdmin || viewer.canEdit;
   // The copy is gone whatever follows, so a failed follow-up leaves a retryable page.
   const followUp = useMutation({

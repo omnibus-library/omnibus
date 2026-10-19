@@ -24,6 +24,7 @@ import { FilePicker, isAudioFile, isReadableFile } from "./FilePicker";
 import { WishlistCtas } from "./PhysicalCopies";
 import {
   alignmentQuery,
+  bookQuery,
   insightsQuery,
   progressQuery,
   seriesQuery,
@@ -343,7 +344,7 @@ export function HomeStop({ book }: { book: Detail }) {
           uuid={book.uuid}
           onFetched={async (text) =>
             client.setQueryData(
-              ["book", book.uuid],
+              bookQuery(book.uuid).queryKey,
               await saveDescription(book.uuid, text),
             )
           }

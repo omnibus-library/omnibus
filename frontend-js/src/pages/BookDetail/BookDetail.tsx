@@ -1,11 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   type BookUuid,
   coverUrl,
   type BookDetail as Detail,
-  fetchBook,
   parseBookUuid,
 } from "../../api";
 import { Cover } from "../../components/Cover/Cover";
@@ -17,35 +16,23 @@ import { HighlightsStop } from "./HighlightsStop";
 import { HomeStop } from "./HomeStop";
 import { JournalStop } from "./JournalStop";
 import { MoreStop } from "./MoreStop";
+import { bookQuery } from "./queries";
 import { StatsStop } from "./StatsStop";
 import { useFlowScroll } from "./useFlowScroll";
 import "./BookDetail.css";
 
-// iOS pins the same order; a dot's number is its place here.
-export const MARQUEE_SECTIONS = [
-  "Home",
-  "Stats",
-  "Highlights",
-  "Journals",
-  "The files",
-  "More",
-] as const;
-
 function Marquee({ book }: { book: Detail }) {
   const stage = useRef<HTMLDivElement>(null);
   const { active, backOn, goTo } = useFlowScroll(stage);
-  const stops: Partial<Record<(typeof MARQUEE_SECTIONS)[number], ReactNode>> = {
-    Home: <HomeStop book={book} />,
-    Stats: <StatsStop book={book} />,
-    Highlights: <HighlightsStop book={book} />,
-    Journals: <JournalStop book={book} />,
-    "The files": <FilesStop book={book} />,
-    More: <MoreStop book={book} />,
-  };
-  const sections = MARQUEE_SECTIONS.flatMap((name, i) => {
-    const stop = stops[name];
-    return stop ? [{ name, no: String(i + 1).padStart(2, "0"), stop }] : [];
-  });
+  // iOS pins the same order; a dot's number is its place here.
+  const sections = [
+    { name: "Home", stop: <HomeStop book={book} /> },
+    { name: "Stats", stop: <StatsStop book={book} /> },
+    { name: "Highlights", stop: <HighlightsStop book={book} /> },
+    { name: "Journals", stop: <JournalStop book={book} /> },
+    { name: "The files", stop: <FilesStop book={book} /> },
+    { name: "More", stop: <MoreStop book={book} /> },
+  ].map((section, i) => ({ ...section, no: String(i + 1).padStart(2, "0") }));
   return (
     <div
       className="bd-root bdmq"
@@ -119,17 +106,14 @@ function Marquee({ book }: { book: Detail }) {
 }
 
 function BookDetailFor({ uuid }: { uuid: BookUuid }) {
-  const book = useQuery({
-    queryKey: ["book", uuid],
-    queryFn: () => fetchBook(uuid),
-  });
+  const book = useQuery(bookQuery(uuid));
   const navigate = useNavigate();
   const client = useQueryClient();
   // A merged-away uuid resolves to the surviving book; its page keys are the survivor's.
   useEffect(() => {
     if (book.data && book.data.uuid !== uuid) {
       // Seeded so the survivor's page opens on this answer instead of a loader and a refetch.
-      client.setQueryData(["book", book.data.uuid], book.data);
+      client.setQueryData(bookQuery(book.data.uuid).queryKey, book.data);
       navigate(`/books/${book.data.uuid}`, { replace: true });
     }
   }, [book.data, uuid, navigate, client]);

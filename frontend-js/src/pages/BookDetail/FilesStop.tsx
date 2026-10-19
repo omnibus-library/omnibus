@@ -1,6 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useNavigate } from "react-router";
 import { type BookDetail, undoBookMerge } from "../../api";
 import { Button, ButtonLink } from "../../components/Button/Button";
 import { DeleteBookDialog } from "../../components/DeleteBookDialog/DeleteBookDialog";
@@ -10,16 +9,17 @@ import { formatDateShort, formatInstantShort } from "../../format";
 import { useCurrentUser } from "../../session";
 import { identifierRows } from "./identifiers";
 import { PhysicalCopies, WishlistRow } from "./PhysicalCopies";
+import { bookQuery, useLeaveBook } from "./queries";
 
 /** Merge and delete, for admins; each leaves the page refetched, or gone when the book is. */
 function AdminActions({ book }: { book: BookDetail }) {
   const client = useQueryClient();
-  const navigate = useNavigate();
+  const leave = useLeaveBook(book.uuid);
   const viewer = useCurrentUser();
   const [dialog, setDialog] = useState<"merge" | "delete" | null>(null);
   const [mergeLogId, setMergeLogId] = useState<number | null>(null);
   const refresh = () =>
-    client.invalidateQueries({ queryKey: ["book", book.uuid] });
+    client.invalidateQueries({ queryKey: bookQuery(book.uuid).queryKey });
   const undo = useMutation({
     mutationFn: undoBookMerge,
     onSuccess: () => {
@@ -72,8 +72,7 @@ function AdminActions({ book }: { book: BookDetail }) {
           onDeleted={(bookDeleted) => {
             setDialog(null);
             if (!bookDeleted) return refresh();
-            client.removeQueries({ queryKey: ["book", book.uuid] });
-            navigate("/", { replace: true });
+            leave();
           }}
           onClose={() => setDialog(null)}
         />

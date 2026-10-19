@@ -1,10 +1,18 @@
-import { queryOptions, skipToken, useQuery } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  queryOptions,
+  skipToken,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 import {
   type AuthorId,
   type BookDetail,
   type BookUuid,
   fetchAlignment,
   fetchAuthorBooks,
+  fetchBook,
   fetchCopies,
   fetchHighlights,
   fetchInsights,
@@ -23,6 +31,26 @@ import {
 import type { ShelfFacts } from "./shelves";
 
 // The cached answers more than one stop reads; the keys let a write invalidate by prefix.
+
+export const bookQuery = (uuid: BookUuid) =>
+  queryOptions({
+    queryKey: ["book", uuid],
+    queryFn: () => fetchBook(uuid),
+  });
+
+/** Drops every cached answer about a book, for a page that is about to leave it. */
+export const forgetBook = (client: QueryClient, uuid: BookUuid) =>
+  client.removeQueries({ queryKey: bookQuery(uuid).queryKey });
+
+/** Forgets the book and goes home, for a delete that took the whole book with it. */
+export function useLeaveBook(uuid: BookUuid) {
+  const client = useQueryClient();
+  const navigate = useNavigate();
+  return () => {
+    forgetBook(client, uuid);
+    navigate("/", { replace: true });
+  };
+}
 
 export const seriesQuery = (id: SeriesId | null) =>
   queryOptions({
