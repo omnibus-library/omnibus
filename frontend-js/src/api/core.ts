@@ -27,7 +27,7 @@ export type UserId = number & { readonly __brand: "UserId" };
 export type AuthorId = number & { readonly __brand: "AuthorId" };
 export type SeriesId = number & { readonly __brand: "SeriesId" };
 
-const positiveInt = (raw: string | null | undefined) =>
+export const positiveInt = (raw: string | null | undefined) =>
   raw && /^[1-9]\d*$/.test(raw) ? Number(raw) : null;
 
 /** Brands a route parameter as an author id, or `null` unless it is a positive integer. */

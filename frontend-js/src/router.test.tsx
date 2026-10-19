@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   createMemoryRouter,
@@ -81,7 +81,6 @@ describe("routes", () => {
       [`/read/${UUID}`, "Reader", UUID],
       [`/comic/${UUID}`, "Comic reader", UUID],
       [`/pdf/${UUID}?file_id=3&page=7`, "PDF reader", "7"],
-      [`/listen/${UUID}?file_id=2`, "Listen", "2"],
       ["/stats?user=2", "Stats", "2"],
       ["/stats/chart", "Chart builder", null],
       ["/settings?section=smtp", "Settings", "smtp"],
@@ -134,6 +133,16 @@ describe("routes", () => {
       ).toHaveAttribute("href", `/books/${UUID}`);
     });
 
+    it("renders the player page at /listen/:uuid", async () => {
+      renderRoute(`/listen/${UUID}?file_id=2`);
+
+      // jsdom has no server to fetch from, so the player settles on its error page.
+      expect(
+        await screen.findByRole("link", { name: "Back to library" }),
+      ).toHaveAttribute("href", "/");
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+
     it("renders the upload page at /add-books", async () => {
       renderRoute("/add-books");
 
@@ -170,6 +179,26 @@ describe("routes", () => {
       expect(
         screen.queryByRole("navigation", { name: "Primary" }),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("audio", () => {
+    it("stops the element when the session ends", async () => {
+      const pause = vi.spyOn(HTMLMediaElement.prototype, "pause");
+      const client = harnessClient();
+      const router = createMemoryRouter(routes, { initialEntries: ["/"] });
+      render(
+        <QueryClientProvider client={client}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>,
+      );
+      await screen.findByRole("heading", { level: 1, name: "Your Library" });
+      pause.mockClear();
+
+      act(() => client.setQueryData(meQuery.queryKey, null));
+
+      await waitFor(() => expect(pause).toHaveBeenCalled());
+      vi.restoreAllMocks();
     });
   });
 
