@@ -170,8 +170,11 @@ export const SaveFailsKeepsTheComposerOpen: Story = {
     );
     await userEvent.click(canvas.getByTestId("journal-publish"));
 
-    await expect(await canvas.findByRole("alert")).toHaveTextContent(
-      "failed with 500",
+    // An empty alert can render first, so wait for its text rather than its role.
+    await waitFor(async () =>
+      expect(await canvas.findByRole("alert")).toHaveTextContent(
+        "failed with 500",
+      ),
     );
     await expect(args.onClose).not.toHaveBeenCalled();
     await expect(canvas.getByTestId("journal-publish")).toBeEnabled();
