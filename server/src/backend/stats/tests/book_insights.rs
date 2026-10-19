@@ -64,9 +64,10 @@ async fn api_get_book_insights_returns_the_aggregate_for_a_book_with_sessions() 
     let (_, other) = seed_book_with_uuid(&pool, "/lib", "Book B").await;
     let user = auth_test_support::create_user(&pool, "alice").await;
     let token = auth_test_support::bearer_token(&pool, user.id).await;
-    let t0 = now_secs() - 200_000;
+    // UTC-midnight anchored so the two sessions always land on two days at offset 0.
+    let t0 = (now_secs() / 86_400 - 3) * 86_400 + 3_600;
     seed_reading_session(&pool, user.id, &uuid, t0, 600).await;
-    seed_reading_session(&pool, user.id, &uuid, t0 + 50_000, 900).await;
+    seed_reading_session(&pool, user.id, &uuid, t0 + 86_400, 900).await;
     seed_reading_session(&pool, user.id, &other, t0, 1_200).await;
 
     let res = app
@@ -84,7 +85,7 @@ async fn api_get_book_insights_returns_the_aggregate_for_a_book_with_sessions() 
     assert_eq!(insights.sessions, 2);
     assert_eq!(insights.seconds_total, 1_500);
     assert_eq!(insights.longest_seconds, 900);
-    assert_eq!(insights.longest_started_at, t0 + 50_000);
+    assert_eq!(insights.longest_started_at, t0 + 86_400);
     assert_eq!(insights.daily.len(), 2);
 }
 
