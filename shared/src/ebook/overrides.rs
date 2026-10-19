@@ -300,6 +300,20 @@ pub struct BulkOverridesRequest {
     pub edit: BulkMetadataEdit,
 }
 
+impl BulkOverridesRequest {
+    /// Check the request before any DB work: books chosen, a real edit, every field within its cap.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.uuids.is_empty() {
+            return Err("no books selected".into());
+        }
+        crate::validate_book_uuids(&self.uuids)?;
+        if self.edit.is_empty() {
+            return Err("no fields to apply".into());
+        }
+        self.edit.validate()
+    }
+}
+
 impl BulkMetadataEdit {
     /// True when no field would change any book — callers reject such an
     /// edit rather than writing no-op override rows.

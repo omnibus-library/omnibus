@@ -13,8 +13,8 @@ use axum::{
 };
 use omnibus_db::{self as db, worker::Task};
 use omnibus_shared::{
-    detect_image_format, validate_book_uuids, BulkOverridesRequest, CoverFromUrlBody,
-    CoverUploadForm, EbookMetadata, ExternalBookMeta, MetadataOverrides,
+    detect_image_format, BulkOverridesRequest, CoverFromUrlBody, CoverUploadForm, EbookMetadata,
+    ExternalBookMeta, MetadataOverrides,
 };
 
 use super::image_upload::extract_validated_image;
@@ -107,13 +107,7 @@ pub(super) async fn post_bulk_overrides(
         )
             .into_response();
     }
-    if req.uuids.is_empty() {
-        return (axum::http::StatusCode::BAD_REQUEST, "no books selected").into_response();
-    }
-    if req.edit.is_empty() {
-        return (axum::http::StatusCode::BAD_REQUEST, "no fields to apply").into_response();
-    }
-    if let Err(msg) = validate_book_uuids(&req.uuids).and_then(|()| req.edit.validate()) {
+    if let Err(msg) = req.validate() {
         return (axum::http::StatusCode::BAD_REQUEST, msg).into_response();
     }
     match db::bulk_merge_metadata_overrides(&state.pool, &req.uuids, &req.edit, user.id).await {

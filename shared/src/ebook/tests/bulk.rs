@@ -1,6 +1,6 @@
 //! `BulkMetadataEdit` tests: emptiness, validation, scalar-override
 //! mapping to a `MetadataOverrides` layer, and tag/genre delta
-//! application (`apply_tags`/`apply_genres`).
+//! application (`apply_tags`/`apply_genres`); plus `BulkOverridesRequest::validate`.
 
 use super::super::*;
 use super::tags;
@@ -193,4 +193,55 @@ fn bulk_metadata_edit_validate_caps_each_genre_list_separately_not_combined() {
         ..Default::default()
     };
     assert!(edit.validate().is_err());
+}
+
+fn bulk_request(uuids: &[&str], edit: BulkMetadataEdit) -> BulkOverridesRequest {
+    BulkOverridesRequest {
+        uuids: uuids.iter().map(|u| u.to_string()).collect(),
+        edit,
+    }
+}
+
+#[test]
+fn bulk_overrides_request_validate_accepts_books_with_a_real_edit() {
+    let edit = BulkMetadataEdit {
+        add_tags: tags(&["t"]),
+        ..Default::default()
+    };
+    assert_eq!(bulk_request(&["a"], edit).validate(), Ok(()));
+}
+
+#[test]
+fn bulk_overrides_request_validate_rejects_no_books_and_an_empty_edit() {
+    let edit = BulkMetadataEdit {
+        add_tags: tags(&["t"]),
+        ..Default::default()
+    };
+    assert_eq!(
+        bulk_request(&[], edit).validate(),
+        Err("no books selected".to_string())
+    );
+    assert_eq!(
+        bulk_request(&["a"], BulkMetadataEdit::default()).validate(),
+        Err("no fields to apply".to_string())
+    );
+}
+
+#[test]
+fn bulk_overrides_request_validate_rejects_an_over_long_uuid_and_an_invalid_edit() {
+    let edit = BulkMetadataEdit {
+        add_tags: tags(&["t"]),
+        ..Default::default()
+    };
+    let long = "u".repeat(crate::BOOK_UUID_MAX_LEN + 1);
+    assert!(bulk_request(&[&long], edit).validate().is_err());
+
+    let too_long_tag = BulkMetadataEdit {
+        add_tags: vec!["x".repeat(MetadataOverrides::TAG_MAX_LEN + 1)],
+        ..Default::default()
+    };
+    assert!(bulk_request(&["a"], too_long_tag)
+        .validate()
+        .unwrap_err()
+        .contains("tag exceeds"));
 }
