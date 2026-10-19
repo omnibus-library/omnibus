@@ -47,7 +47,6 @@ export function CheckIn() {
   const [params] = useSearchParams();
   const [isbn, setIsbn] = useState(params.get("isbn") ?? "");
   const [note, setNote] = useState("");
-  const [via, setVia] = useState<FoundVia>("isbn");
   const [error, setError] = useState<string | null>(null);
 
   // A copy or wishlist entry changes the book, the lists and the shelves that count it.
@@ -61,11 +60,11 @@ export function CheckIn() {
       queryClient.invalidateQueries({ queryKey });
     }
   };
-  const arrive = (outcome: ScanOutcome, isbn: string) => {
-    const next = stageFor(outcome, isbn);
-    if (next) setStage(next);
-    else if (outcome.kind === "already_owned") {
+  const arrive = (outcome: ScanOutcome, isbn: string, via: FoundVia) => {
+    if (outcome.kind === "already_owned") {
       navigate(`/books/${outcome.book.uuid}`);
+    } else {
+      setStage(stageFor(outcome, isbn, via));
     }
   };
   const toStage = (next: Stage) => () => {
@@ -74,15 +73,14 @@ export function CheckIn() {
   };
   const toSearch = toStage(LOOKUP);
   // Linking opens from the screen the reader is on, which Back returns to.
-  const toLink = (isbn: string) => {
+  const toLink = (isbn: string, via: FoundVia) => {
     setError(null);
-    setStage({ kind: "link", isbn, origin: stage });
+    setStage({ kind: "link", isbn, origin: stage, via });
   };
   const restart = () => {
     setError(null);
     setNote("");
     setIsbn("");
-    setVia("isbn");
     setStage(LOOKUP);
   };
 
@@ -97,10 +95,7 @@ export function CheckIn() {
   });
   const pick = useMutation({
     mutationFn: resolveMeta,
-    onMutate: () => {
-      setVia("search");
-      setError(null);
-    },
+    onMutate: () => setError(null),
     // Stays on the search screen with its results to retry from.
     onError: (e) => setError(`Could not match that book: ${e.message}`),
   });
@@ -153,7 +148,7 @@ export function CheckIn() {
 
   const onResolve = (raw: string) => {
     // Only the camera produces a barcode read; the keypad and the lookup field are both typing.
-    setVia(stage.kind === "scan" ? "scan" : "isbn");
+    const via = stage.kind === "scan" ? "scan" : "isbn";
     const cleaned = cleanIsbn(raw);
     const rejection = isbnRejection(cleaned);
     // A bad decode must not strand the reader on a blank screen: back to a typing screen, digits in place.
@@ -167,7 +162,7 @@ export function CheckIn() {
     setStage({ kind: "resolving" });
     resolve.mutate(
       { isbn: cleaned, fallback },
-      { onSuccess: (outcome) => arrive(outcome, cleaned) },
+      { onSuccess: (outcome) => arrive(outcome, cleaned, via) },
     );
   };
 
@@ -184,7 +179,7 @@ export function CheckIn() {
             onScan={toStage({ kind: "scan" })}
             onPick={(meta) =>
               pick.mutate(meta, {
-                onSuccess: (outcome) => arrive(outcome, meta.isbn13),
+                onSuccess: (outcome) => arrive(outcome, meta.isbn13, "search"),
               })
             }
             onError={setError}
@@ -220,7 +215,7 @@ export function CheckIn() {
             book={stage.book}
             isbn={stage.isbn}
             wishlisted={stage.wishlisted}
-            via={via}
+            via={stage.via}
             note={note}
             busy={busy}
             onNote={setNote}
@@ -233,26 +228,29 @@ export function CheckIn() {
           <CloseMatchScreen
             books={stage.books}
             scanned={stage.scanned}
-            via={via}
+            via={stage.via}
             onYes={(book) =>
               setStage({
                 kind: "confirm",
                 book,
                 isbn: stage.scanned.isbn13,
                 wishlisted: false,
+                via: stage.via,
               })
             }
-            onNo={(online) => setStage({ kind: "choose", online })}
+            onNo={(online) =>
+              setStage({ kind: "choose", online, via: stage.via })
+            }
           />
         );
       case "choose":
         return (
           <ChooseScreen
             online={stage.online}
-            via={via}
+            via={stage.via}
             busy={busy}
             onOwnIt={(meta) => ownIt.mutate(meta)}
-            onLink={() => toLink(stage.online.isbn13)}
+            onLink={() => toLink(stage.online.isbn13, stage.via)}
             onWishlist={(req) => wishlist.mutate(req)}
             onRestart={restart}
           />
@@ -267,6 +265,7 @@ export function CheckIn() {
                 book,
                 isbn: stage.isbn,
                 wishlisted: false,
+                via: stage.via,
               })
             }
             onBack={() => setStage(stage.origin)}
@@ -278,7 +277,7 @@ export function CheckIn() {
           <UnresolvedScreen
             isbn={stage.isbn}
             onSearch={toSearch}
-            onLink={() => toLink(stage.isbn)}
+            onLink={() => toLink(stage.isbn, stage.via)}
             onRestart={restart}
           />
         );

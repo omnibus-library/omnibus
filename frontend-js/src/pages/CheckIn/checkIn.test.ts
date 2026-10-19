@@ -60,19 +60,16 @@ describe("stageFor", () => {
   const book = aScanBook();
   const online = anExternalBook();
 
-  it("opens no screen for a book that is already owned", () => {
-    expect(stageFor({ kind: "already_owned", book }, "1")).toBeNull();
-  });
-
   it.each([
     ["in_library_unowned", false],
     ["on_wishlist", true],
   ] as const)("confirms a %s book, wishlisted=%s", (kind, wishlisted) => {
-    expect(stageFor({ kind, book }, "9780134685991")).toEqual({
+    expect(stageFor({ kind, book }, "9780134685991", "scan")).toEqual({
       kind: "confirm",
       book,
       isbn: "9780134685991",
       wishlisted,
+      via: "scan",
     });
   });
 
@@ -83,27 +80,35 @@ describe("stageFor", () => {
       stageFor(
         { kind: "close_match", book, others: [other], scanned: online },
         "1",
+        "scan",
       ),
-    ).toEqual({ kind: "closeMatch", books: [book, other], scanned: online });
+    ).toEqual({
+      kind: "closeMatch",
+      books: [book, other],
+      scanned: online,
+      via: "scan",
+    });
   });
 
   it("lists the head alone when a close match has no others", () => {
     expect(
-      stageFor({ kind: "close_match", book, scanned: online }, "1"),
+      stageFor({ kind: "close_match", book, scanned: online }, "1", "isbn"),
     ).toMatchObject({ books: [book] });
   });
 
   it("offers the chooser for a book found only online", () => {
-    expect(stageFor({ kind: "not_in_library", online }, "1")).toEqual({
+    expect(stageFor({ kind: "not_in_library", online }, "1", "scan")).toEqual({
       kind: "choose",
       online,
+      via: "scan",
     });
   });
 
   it("keeps the ISBN for an unresolved lookup", () => {
-    expect(stageFor({ kind: "unresolved" }, "9780134685991")).toEqual({
+    expect(stageFor({ kind: "unresolved" }, "9780134685991", "scan")).toEqual({
       kind: "unresolved",
       isbn: "9780134685991",
+      via: "scan",
     });
   });
 });

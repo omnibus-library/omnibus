@@ -17,35 +17,61 @@ export type Stage =
   /** The keypad, reached from the scanner when asked for or when the camera won't start. */
   | { kind: "entry" }
   | { kind: "resolving" }
-  | { kind: "confirm"; book: ScanBook; isbn: string; wishlisted: boolean }
-  | { kind: "closeMatch"; books: ScanBook[]; scanned: ExternalBookMeta }
-  | { kind: "choose"; online: ExternalBookMeta }
+  | {
+      kind: "confirm";
+      book: ScanBook;
+      isbn: string;
+      wishlisted: boolean;
+      via: FoundVia;
+    }
+  | {
+      kind: "closeMatch";
+      books: ScanBook[];
+      scanned: ExternalBookMeta;
+      via: FoundVia;
+    }
+  | { kind: "choose"; online: ExternalBookMeta; via: FoundVia }
   /** Picking the library book a copy belongs to; `origin` is the screen Back returns to. */
-  | { kind: "link"; isbn: string; origin: Stage }
-  | { kind: "unresolved"; isbn: string }
+  | { kind: "link"; isbn: string; origin: Stage; via: FoundVia }
+  | { kind: "unresolved"; isbn: string; via: FoundVia }
   | { kind: "checkedIn"; uuid: string; title: string; offWishlist: boolean }
   | { kind: "wishlisted"; title: string };
 
-/** The screen an outcome opens; `null` for `already_owned`, where the caller navigates to the book. */
-export function stageFor(outcome: ScanOutcome, isbn: string): Stage | null {
+/** The screen an outcome opens; an `already_owned` one opens the book instead, so the caller handles it first. */
+export function stageFor(
+  outcome: Exclude<ScanOutcome, { kind: "already_owned" }>,
+  isbn: string,
+  via: FoundVia,
+): Stage {
   switch (outcome.kind) {
-    case "already_owned":
-      return null;
     case "on_wishlist":
-      return { kind: "confirm", book: outcome.book, isbn, wishlisted: true };
+      return {
+        kind: "confirm",
+        book: outcome.book,
+        isbn,
+        wishlisted: true,
+        via,
+      };
     case "in_library_unowned":
-      return { kind: "confirm", book: outcome.book, isbn, wishlisted: false };
+      return {
+        kind: "confirm",
+        book: outcome.book,
+        isbn,
+        wishlisted: false,
+        via,
+      };
     case "close_match":
       // Head and tail on the wire; the picker wants one list.
       return {
         kind: "closeMatch",
         books: [outcome.book, ...(outcome.others ?? [])],
         scanned: outcome.scanned,
+        via,
       };
     case "not_in_library":
-      return { kind: "choose", online: outcome.online };
+      return { kind: "choose", online: outcome.online, via };
     case "unresolved":
-      return { kind: "unresolved", isbn };
+      return { kind: "unresolved", isbn, via };
     default: {
       const _exhaustive: never = outcome;
       return _exhaustive;
