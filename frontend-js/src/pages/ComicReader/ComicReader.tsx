@@ -7,9 +7,11 @@ import {
   parseBookUuid,
   saveReadingPosition,
 } from "../../api";
+import { useAutoReadStatus } from "../../autoReadStatus";
 import { classes } from "../../classes";
 import { Loading } from "../../components/Loading/Loading";
 import { PageNotFound } from "../../components/PageState/PageState";
+import { useReadingSession } from "../../readingSession";
 import { bookQuery, progressQuery } from "../BookDetail/queries";
 import { comicPageAnchor, comicStartPage, pagePercent } from "./pager";
 import "./ComicReader.css";
@@ -92,6 +94,9 @@ function Pager({ uuid }: { uuid: BookUuid }) {
 
   const loaded = book !== null && book !== "failed";
   const count = loaded ? (book.pageCount ?? 0) : 0;
+
+  useReadingSession(uuid);
+  useAutoReadStatus(uuid, count > 0 && page + 1 === count);
 
   // Every control funnels through here, so a page is never shown without being saved.
   function goto(target: number) {

@@ -18,6 +18,7 @@ import {
   postProgress,
   postRating,
   putReadStatus,
+  postSessions as sendSessions,
 } from "./generated/omnibus";
 import type {
   AlignmentViewOutput,
@@ -31,6 +32,7 @@ import type {
   ReadStatusRecord as ReadStatusWire,
   ResumePoint as ResumePointWire,
   SessionLogPageOutput,
+  SessionReport as SessionReportWire,
 } from "./generated/schemas";
 import {
   BookInsights as BookInsightsSchema,
@@ -122,6 +124,14 @@ export async function saveReadingPosition(
       client_updated_at: nowSecs(),
     }),
   );
+}
+
+export type SessionReport = SessionReportWire;
+
+/** Reports reading sittings, best-effort: `keepalive` lets an unload flush finish, and a lost batch costs one heartbeat of stats. */
+export async function postSessions(reports: SessionReport[]): Promise<void> {
+  if (reports.length === 0) return;
+  await sendSessions(reports, { keepalive: true }).catch(() => {});
 }
 
 /** The screen's shape of `GET /api/books/{uuid}/alignment`. */

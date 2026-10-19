@@ -2,12 +2,16 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Route, Routes } from "react-router";
 import { expect, fireEvent, waitFor } from "storybook/test";
 import type { ProgressUpdate } from "../../api/generated/schemas";
-import { bookHandler, hanging } from "../../testing/handlers";
+import {
+  bookHandler,
+  hanging,
+  readStatusHandlers,
+} from "../../testing/handlers";
 import {
   comicPageHandler,
   progressHandlers,
 } from "../../testing/readerHandlers";
-import { aWireBook, aWirePosition } from "../../testing/wire";
+import { aWireBook, aWirePosition, aWireReadStatus } from "../../testing/wire";
 import { ComicReader } from "./ComicReader";
 
 const BOOK = aWireBook({ formats: ["CBZ"], page_count: 5 });
@@ -15,6 +19,16 @@ const UUID = BOOK.unique_identifier;
 const SAVED = aWirePosition({ epub_cfi: "comic-page:2", progress_percent: 60 });
 
 const writes: ProgressUpdate[] = [];
+const statusWrites: { status: string }[] = [];
+const statusReads = { count: 0 };
+
+/** The comic's read status as the server holds it; `reading` unless a story says otherwise. */
+const stored = (status: "unread" | "reading" | "finished" | null) =>
+  readStatusHandlers(
+    status && aWireReadStatus({ status }),
+    statusWrites,
+    statusReads,
+  );
 
 const meta = {
   title: "Pages/ComicReader",
@@ -22,7 +36,13 @@ const meta = {
   parameters: { path: `/comic/${UUID}` },
   beforeEach({ msw }) {
     writes.length = 0;
-    msw.use(comicPageHandler, ...progressHandlers([], writes));
+    statusWrites.length = 0;
+    statusReads.count = 0;
+    msw.use(
+      comicPageHandler,
+      ...progressHandlers([], writes),
+      ...stored("reading"),
+    );
   },
   render: () => (
     <Routes>
@@ -192,5 +212,70 @@ export const BackLeavesForTheBook: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Back" }));
 
     await expect(await canvas.findByText("Book page")).toBeInTheDocument();
+  },
+};
+
+export const MarksAnUnreadComicReading: Story = {
+  beforeEach({ msw }) {
+    msw.use(bookHandler(BOOK), ...stored("unread"));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("comic-page-image");
+
+    await waitFor(() =>
+      expect(statusWrites).toEqual([
+        expect.objectContaining({ status: "reading" }),
+      ]),
+    );
+  },
+};
+
+export const MarksTheLastPageFinished: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      bookHandler(BOOK),
+      ...progressHandlers(
+        [aWirePosition({ epub_cfi: "comic-page:3" })],
+        writes,
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByText("Page 4 of 5");
+    await waitFor(() => expect(statusReads.count).toBe(1));
+    await expect(statusWrites).toEqual([]);
+
+    await userEvent.click(canvas.getByRole("button", { name: "Next page" }));
+
+    await waitFor(() =>
+      expect(statusWrites).toEqual([
+        expect.objectContaining({ status: "finished" }),
+      ]),
+    );
+  },
+};
+
+export const LeavesAFinishedComicFinished: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      bookHandler(BOOK),
+      ...progressHandlers(
+        [aWirePosition({ epub_cfi: "comic-page:3" })],
+        writes,
+      ),
+      ...stored("finished"),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByText("Page 4 of 5");
+    await waitFor(() => expect(statusReads.count).toBe(1));
+
+    await userEvent.click(canvas.getByRole("button", { name: "Next page" }));
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Previous page" }),
+    );
+
+    await waitFor(() => expect(writes).toHaveLength(2));
+    await expect(statusWrites).toEqual([]);
   },
 };

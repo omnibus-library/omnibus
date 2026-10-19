@@ -687,14 +687,19 @@ export function sessionLogHandler(entries: SessionLogEntry[], pageSize = 2) {
 /**
  * The read status `GET` and `PUT` keep between them, starting at `initial`;
  * a `PUT` answers the record it stored and appends its body to `writes`.
+ * Each `GET` counts itself in `reads.count`.
  */
 export function readStatusHandlers(
   initial: ReadStatusRecord | null,
   writes: { status: string }[] = [],
+  reads = { count: 0 },
 ) {
   let current = initial;
   return [
-    http.get("/api/read-status/:uuid", () => HttpResponse.json(current)),
+    http.get("/api/read-status/:uuid", () => {
+      reads.count++;
+      return HttpResponse.json(current);
+    }),
     http.put("/api/read-status", async ({ request }) => {
       const body = PutReadStatusBody.parse(await request.json());
       writes.push(body);
