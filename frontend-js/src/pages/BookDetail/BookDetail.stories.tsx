@@ -359,7 +359,18 @@ export const WishlistWriteRefetchesOnlyWhatItChanged: Story = {
     await new Promise((resolve) => setTimeout(resolve, 600));
 
     // The record, the copies and the wish, and the shelf facts that read it.
-    await expect(reads.length - before).toBeLessThanOrEqual(8);
+    // The record, the copies and the wish, and the shelf facts that read it: each exactly once.
+    const uuid = BOOK.unique_identifier;
+    await expect(reads.slice(before).sort()).toEqual(
+      [
+        `/api/ebooks/${uuid}`,
+        `/api/physical/${uuid}/copies`,
+        `/api/physical/${uuid}/wishlist`,
+        "/api/shelves",
+        `/api/shelves/containing/${uuid}`,
+        `/api/shelves/containing/${uuid}/smart`,
+      ].sort(),
+    );
   },
 };
 
