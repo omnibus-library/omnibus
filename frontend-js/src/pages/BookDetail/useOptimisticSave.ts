@@ -19,9 +19,18 @@ export function useOptimisticSave<TData, TVars>(
 ) {
   const client = useQueryClient();
   const newest = useRef(0);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
   return useMutation({
     mutationKey: queryKey,
-    mutationFn,
+    // The server applies writes in arrival order, so an older write must not land after a newer one.
+    mutationFn: (vars: TVars) => {
+      const run = queue.current.then(
+        () => mutationFn(vars),
+        () => mutationFn(vars),
+      );
+      queue.current = run.catch(() => {});
+      return run;
+    },
     onMutate: async (vars: TVars) => {
       const id = ++newest.current;
       await client.cancelQueries({ queryKey });

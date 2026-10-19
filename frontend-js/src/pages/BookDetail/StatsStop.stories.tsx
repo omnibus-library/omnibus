@@ -335,11 +335,10 @@ export const TheNewestRatingWinsWhenAnOlderOneLandsLate: Story = {
       http.get("/api/ratings/:uuid", () => HttpResponse.json(stored)),
       http.post("/api/ratings", async ({ request }) => {
         const body = PostRatingBody.parse(await request.json());
-        const saved = { ...body, updated_at: nowSecs() };
-        stored = saved;
-        // Only the first answer is slow, so it lands after the second.
+        // Only the first write is slow; the server stores whichever arrives last.
         if (calls++ === 0) await delay(400);
-        return HttpResponse.json(saved);
+        stored = { ...body, updated_at: nowSecs() };
+        return HttpResponse.json(stored);
       }),
     );
   },
@@ -349,9 +348,11 @@ export const TheNewestRatingWinsWhenAnOlderOneLandsLate: Story = {
     );
     await userEvent.click(canvas.getByRole("button", { name: "Rate 5 stars" }));
 
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     await expect(canvas.getByTestId("rating-meta")).toHaveTextContent("5 of 5");
+    const stored = await (await fetch("/api/ratings/any")).json();
+    await expect(stored.stars).toBe(5);
   },
 };
 
