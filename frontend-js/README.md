@@ -40,10 +40,10 @@ throws (the session gate, the shell, a reader) renders it full-screen.
 ## Styling, copied out of Atrium
 
 Each CSS file holds only the `atrium.css`, `loading.css` and `filter_bar.css` rules
-its markup can match, copied by `tools/extract-atrium.cjs` — 1,282 of Atrium's 13,178 lines.
+its markup can match, copied by `tools/extract-atrium.cjs`.
 The components keep the Dioxus class names, which is what lets the copy apply
-unchanged: computed styles and screenshots of all three screens match the
-`atrium.css` build exactly.
+unchanged: when sign-in, the library grid and book detail were first ported,
+their computed styles and screenshots matched the `atrium.css` build exactly.
 
 To port a screen: write its markup with the Dioxus class names, map its class
 prefix to its CSS file in the script's `OWNERS`, then run
@@ -123,8 +123,10 @@ shell provides it.
   sign-in page), so a form's rules live in the same schema style as the API's.
 - **Unit tests** (`pnpm run test:unit`, jsdom) cover the API parsers,
   formatting, `safeNext`, the theme root, the session, and the pure helpers
-  behind the screens (`resume`, `password`, `settingsIndex`, the palette's
-  `selection`, the results page's `results`, Register's `refusal`), plus the
+  behind the screens (`resume`, `password`, `settingsIndex`, `viewPrefs`,
+  `focusTrap`, the palette's `selection`, the results page's `results`,
+  Register's `refusal`, the library's `filters`, `libraryView`, `seriesStacks`,
+  `shelfGallery`, `sorting` and `bulkEdit`), plus the
   real route table in `src/router.test.tsx`: every unported page, the layout
   split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI
