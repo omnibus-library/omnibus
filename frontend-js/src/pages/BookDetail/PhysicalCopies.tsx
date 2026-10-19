@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import {
@@ -20,7 +25,7 @@ import {
 import { BookGlyph } from "../../components/Glyphs/Glyphs";
 import { ago, nowSecs, wishlistSource } from "../../format";
 import { useCurrentUser } from "../../session";
-import { copiesQuery, wishlistQuery } from "./queries";
+import { copiesQuery, shelvesQuery, wishlistQuery } from "./queries";
 
 /** An Amazon search on the ISBN, or on title and author when the book has none. */
 function findCopyUrl(book: BookDetail) {
@@ -28,11 +33,21 @@ function findCopyUrl(book: BookDetail) {
   return `https://www.amazon.com/s?k=${encodeURIComponent(query.trim())}`;
 }
 
-// A write to the wishlist changes `hasPhysical` and visibility, so the whole page refetches.
+// A wishlist or copy write changes the record (`hasPhysical`, visibility), the copies, the wish
+// and the shelf facts, but nothing else on the page.
+function refreshAround(client: QueryClient, uuid: BookUuid) {
+  return Promise.all([
+    client.invalidateQueries({ queryKey: ["book", uuid], exact: true }),
+    ...[copiesQuery, wishlistQuery, shelvesQuery].map((query) =>
+      client.invalidateQueries({ queryKey: query(uuid).queryKey }),
+    ),
+  ]);
+}
+
 function useWishlistWrites(uuid: BookUuid) {
   const client = useQueryClient();
   const navigate = useNavigate();
-  const refresh = () => client.invalidateQueries({ queryKey: ["book", uuid] });
+  const refresh = () => refreshAround(client, uuid);
   const add = useMutation({
     mutationFn: () => addToWishlist(uuid),
     onSuccess: refresh,
@@ -405,8 +420,7 @@ export function PhysicalCopies({ book }: { book: BookDetail }) {
   const copies = useQuery(copiesQuery(book.uuid));
   const [editing, setEditing] = useState<number | null>(null);
   const [removing, setRemoving] = useState<number | null>(null);
-  const refresh = () =>
-    client.invalidateQueries({ queryKey: ["book", book.uuid] });
+  const refresh = () => refreshAround(client, book.uuid);
   const leave = () => {
     client.removeQueries({ queryKey: ["book", book.uuid] });
     navigate("/", { replace: true });

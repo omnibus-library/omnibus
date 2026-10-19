@@ -11,6 +11,7 @@ import {
   deletionHandlers,
   failing,
   mergeHandlers,
+  physicalHandlers,
 } from "../../testing/handlers";
 import {
   aWireBook,
@@ -30,6 +31,7 @@ const BOOK = aWireBook({
 });
 
 const writes: string[] = [];
+const reads: string[] = [];
 
 const meta = {
   title: "Pages/BookDetail",
@@ -312,5 +314,32 @@ export const TotalDeleteLeavesForTheLibrary: Story = {
     await userEvent.click(canvas.getByTestId("delete-confirm"));
 
     await expect(await canvas.findByText("The library")).toBeInTheDocument();
+  },
+};
+
+export const WishlistWriteRefetchesOnlyWhatItChanged: Story = {
+  beforeEach({ msw }) {
+    const fileless = aWireBook({ ...BOOK, formats: [], book_files: [] });
+    reads.length = 0;
+    msw.use(
+      // Records every read, then lets the real handler answer.
+      http.get("/api/*", ({ request }) => {
+        reads.push(new URL(request.url).pathname);
+      }),
+      ...physicalHandlers({}, writes),
+      ...bookDetailHandlers(fileless),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const add = await canvas.findByTestId("add-to-wishlist");
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    const before = reads.length;
+
+    await userEvent.click(add);
+    await canvas.findByTestId("wishlist-card");
+    await new Promise((resolve) => setTimeout(resolve, 600));
+
+    // The record, the copies and the wish, and the shelf facts that read it.
+    await expect(reads.length - before).toBeLessThanOrEqual(8);
   },
 };

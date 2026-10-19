@@ -85,12 +85,13 @@ export function useWish(book: BookDetail) {
 export const shelvesQuery = (uuid: BookUuid) =>
   queryOptions({
     queryKey: ["book", uuid, "shelves"],
-    queryFn: async (): Promise<ShelfFacts> => {
+    queryFn: async ({ client }): Promise<ShelfFacts> => {
       const [all, manualIds, smartIds, wishlist] = await Promise.all([
         fetchShelves(),
         fetchShelvesContaining(uuid),
         fetchSmartShelvesContaining(uuid),
-        fetchWishlist(uuid),
+        // Through the cache, so a wishlist refetch already under way is shared.
+        client.fetchQuery(wishlistQuery(uuid)),
       ]);
       return { all, manualIds, smartIds, wished: wishlist !== null };
     },
