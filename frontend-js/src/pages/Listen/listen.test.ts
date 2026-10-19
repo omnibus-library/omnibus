@@ -275,13 +275,15 @@ describe("dockSubText", () => {
 
 describe("dockBook", () => {
   const ready = { status: "ready", book: { uuid: "u" } as BookDetail } as const;
-  const uuid = "u" as BookUuid;
 
-  it("hands over the book only once it has loaded and has a uuid to link to", () => {
-    expect(dockBook({ status: "idle" }, null)).toBeNull();
-    expect(dockBook({ status: "pending" }, uuid)).toBeNull();
-    expect(dockBook({ status: "missing" }, uuid)).toBeNull();
-    expect(dockBook(ready, null)).toBeNull();
-    expect(dockBook(ready, uuid)).toBe(ready.book);
+  it("hands over the book only once it has loaded", () => {
+    expect(dockBook({ book: { status: "idle" }, failed: false })).toBeNull();
+    expect(dockBook({ book: { status: "pending" }, failed: false })).toBeNull();
+    expect(dockBook({ book: { status: "missing" }, failed: false })).toBeNull();
+    expect(dockBook({ book: ready, failed: false })).toBe(ready.book);
+  });
+
+  it("hands over nothing while playback has failed, so the dock never offers a Play that does nothing", () => {
+    expect(dockBook({ book: ready, failed: true })).toBeNull();
   });
 });

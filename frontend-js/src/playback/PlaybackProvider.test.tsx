@@ -92,6 +92,24 @@ describe("PlaybackProvider", () => {
       expect(player.ready).toBe(false);
     });
 
+    it("boots again when the book that failed is opened again", async () => {
+      server.use(
+        http.get(
+          "/api/progress/:uuid",
+          () => new HttpResponse("no", { status: 500 }),
+          { once: true },
+        ),
+      );
+      mount();
+      act(() => player.open(UUID, null));
+      await waitFor(() => expect(player.failed).toBe(true));
+
+      act(() => player.open(UUID, null));
+
+      await waitFor(() => expect(player.ready).toBe(true));
+      expect(player.failed).toBe(false);
+    });
+
     it("hands an hls stream to a native player when hls.js cannot load", async () => {
       vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockReturnValue(
         "maybe",

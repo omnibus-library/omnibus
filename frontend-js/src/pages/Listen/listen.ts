@@ -5,7 +5,7 @@ import {
   type Chapter,
 } from "../../api";
 import { MAX_RATE, MIN_RATE } from "../../playback/boot";
-import type { BookState } from "../../playback/PlaybackProvider";
+import type { Playback } from "../../playback/PlaybackProvider";
 import { formatHmsShort } from "../../resume";
 
 /** The chapter `elapsed` is in: the last one that has started, or the first. */
@@ -132,11 +132,12 @@ export function syncLabel(failure: unknown): string {
     : "Sync failed";
 }
 
-/** The book the dock shows, or `null` while it has none to: a book not yet loaded, or no uuid to link to. */
-export const dockBook = (
-  book: BookState,
-  uuid: BookUuid | null,
-): BookDetail | null => (uuid && book.status === "ready" ? book.book : null);
+/** The book the dock shows, or `null` while it has none to: a book not yet loaded, or a boot that failed (its Play does nothing). */
+export const dockBook = ({
+  book,
+  failed,
+}: Pick<Playback, "book" | "failed">): BookDetail | null =>
+  !failed && book.status === "ready" ? book.book : null;
 
 /** Wall-clock listening time left at `rate`, as "about 1h 50m left"; `null` while unknown or once the end is reached. */
 export function timeLeftText(

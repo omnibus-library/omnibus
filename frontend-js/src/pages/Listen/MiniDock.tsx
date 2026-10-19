@@ -335,8 +335,7 @@ function DockBar({ book }: { book: BookDetail }) {
 
 /** The persistent audiobook bar: an empty host until a book is loaded (the shell's `:empty` rules rely on it). */
 export function MiniDock() {
-  const { book, uuid } = usePlayback();
-  const loaded = dockBook(book, uuid);
+  const loaded = dockBook(usePlayback());
   return (
     <div className="mini-dock-host">{loaded && <DockBar book={loaded} />}</div>
   );

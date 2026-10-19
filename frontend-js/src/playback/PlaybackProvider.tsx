@@ -389,7 +389,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const open = useCallback(
     (uuid: BookUuid, fileId: number | null) => {
       const engine = engineRef.current;
-      if (!engine || !needsReload(sessionRef.current, uuid, fileId)) return;
+      // A failed boot is retried by opening the book again.
+      const loaded = live.current.failed ? null : sessionRef.current;
+      if (!engine || !needsReload(loaded, uuid, fileId)) return;
       const sameBook = sessionRef.current?.uuid === uuid;
       const s: Session = {
         uuid,
