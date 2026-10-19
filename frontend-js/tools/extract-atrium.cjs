@@ -31,8 +31,9 @@ const OWNERS = [
   ["layouts/AppShell.css", (c) => c === "app-shell"],
   ["components/DiscPage/DiscPage.css", (c) => c.startsWith("disc-")],
   ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || ["landing-col", "library-empty", "cover-link"].includes(c)],
-  ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || c.startsWith("bd-")],
-  ["styles/base.css", (c) => ["divider", "label", "mono", "sr-only", "subtitle"].includes(c)],
+  ["components/FormatSwitcher/FormatSwitcher.css", (c) => c.startsWith("format-") || c.startsWith("kindle-") || c.startsWith("kobo-")],
+  ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || c.startsWith("bd-") || c.startsWith("rx-")],
+  ["styles/base.css", (c) => ["card", "divider", "label", "mono", "sr-only", "subtitle"].includes(c)],
 ];
 const CONTEXT = new Set(["atrium", "theme-snap"]);
 

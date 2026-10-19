@@ -28,16 +28,24 @@ export function initialOf(name: string): string {
 /** The plural suffix for `n` of something: "1 book", "2 books". */
 export const plural = (n: number) => (n === 1 ? "" : "s");
 
-/** The detail kicker: series and position, else the category, then the year. */
-export function homeKicker(book: BookDetail): string {
-  const year = book.published?.match(/^\d{4}/)?.[0];
+/**
+ * The detail kicker: the series name (to link) and what follows it, or just the
+ * tail for a standalone, which leads with its category.
+ */
+export function homeKicker(book: BookDetail, seriesTotal: number | null) {
+  const year = book.published ? formatYear(book.published) : null;
   const yearTail = year ? ` · ${year}` : "";
   if (book.series) {
-    const position = book.series.index ? ` · Book ${book.series.index}` : "";
-    return `${book.series.name}${position}${yearTail}`;
+    const { name, index } = book.series;
+    // The index is the book's place in the series and the count is how many the
+    // library holds: two unrelated numbers, never "Book 2 of 1".
+    const position = index
+      ? ` · Book ${index}${seriesTotal ? ` · ${seriesTotal} in your library` : ""}`
+      : "";
+    return { series: name, tail: position + yearTail };
   }
   const lead = book.genres[0] ?? book.subjects[0] ?? "Book";
-  return `${lead} · standalone${yearTail}`;
+  return { series: null, tail: `${lead} · standalone${yearTail}` };
 }
 
 const DESCRIPTION_CLAMP_WORDS = 50;
@@ -86,4 +94,70 @@ export function formatYear(raw: string): string | null {
   const lead = raw.trim().split(/[T -]/)[0] ?? "";
   const year = /^\d+$/.test(lead) ? Number(lead) : 0;
   return year > SENTINEL_YEAR_MAX ? String(year) : null;
+}
+
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+function ordinal(day: number): string {
+  if (day % 100 >= 11 && day % 100 <= 13) return `${day}th`;
+  return `${day}${["th", "st", "nd", "rd"][day % 10 < 4 ? day % 10 : 0]}`;
+}
+
+function shortDate(
+  year: number,
+  month: number | null,
+  day: number | null,
+): string | null {
+  if (year <= SENTINEL_YEAR_MAX) return null;
+  const name = month ? MONTHS[month - 1] : undefined;
+  if (!name) return String(year);
+  return day ? `${name} ${ordinal(day)}, ${year}` : `${name} ${year}`;
+}
+
+/** A stored date as the reader sees it, `Mar 1st, 2021`, narrowing to month or year; `null` when it names no real year. */
+export function formatDateShort(raw: string): string | null {
+  const [year, month, day] = (raw.trim().split(/[T ]/)[0] ?? "")
+    .split("-")
+    .map(Number);
+  if (year === undefined || Number.isNaN(year)) return null;
+  const validDay = day !== undefined && day >= 1 && day <= 31 ? day : null;
+  return shortDate(year, month || null, validDay);
+}
+
+const INSTANT = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/;
+
+/**
+ * `formatDateShort` for a stored instant, on the calendar of `timeZone` (the
+ * reader's by default). A publication date has no zone and keeps `formatDateShort`.
+ */
+export function formatInstantShort(
+  raw: string,
+  timeZone?: string,
+): string | null {
+  const m = INSTANT.exec(raw.trim());
+  const when =
+    m && new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6] ?? "00"}Z`);
+  if (!when || Number.isNaN(when.getTime())) return formatDateShort(raw);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(when);
+  const part = (type: string) =>
+    Number(parts.find((p) => p.type === type)?.value);
+  return shortDate(part("year"), part("month"), part("day"));
 }

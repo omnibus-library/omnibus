@@ -1,12 +1,15 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Route, Routes } from "react-router";
-import { expect } from "storybook/test";
+import { expect, waitFor, within } from "storybook/test";
 import { getGetEbookByUuidMockHandler404 } from "../../api/generated/omnibus.msw";
-import { bookHandler, failing } from "../../testing/handlers";
-import { aWireBook } from "../../testing/wire";
+import { bookDetailHandlers, failing } from "../../testing/handlers";
+import { aWireBook, aWireFile } from "../../testing/wire";
 import { BookDetail } from "./BookDetail";
 
 const BOOK = aWireBook({
+  series_id: 4,
+  formats: ["EPUB"],
+  book_files: [aWireFile()],
   genres: ["Science fiction"],
   subjects: ["Space opera", "First contact"],
   description: `<p>${"A station at the edge of the map hears something answer. ".repeat(6)}</p>`,
@@ -29,21 +32,64 @@ type Story = StoryObj<typeof meta>;
 
 export const Loaded: Story = {
   beforeEach({ msw }) {
-    msw.use(bookHandler(BOOK));
+    msw.use(...bookDetailHandlers(BOOK));
   },
   play: async ({ canvas, userEvent }) => {
     await expect(
       await canvas.findByRole("heading", { name: "Aurora Station, Vol. 1" }),
     ).toBeInTheDocument();
-    await expect(
-      canvas.getByText("Aurora Station · Book 1 · 2021"),
-    ).toBeInTheDocument();
+    const series = await canvas.findByRole("link", { name: "Aurora Station" });
+    await waitFor(() =>
+      expect(series.parentElement).toHaveTextContent(
+        "Aurora Station · Book 1 · 3 in your library · 2021",
+      ),
+    );
     await expect(canvas.getByText("First contact")).toBeInTheDocument();
 
     const toggle = canvas.getByRole("button", { name: "Show more" });
     await userEvent.click(toggle);
 
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  },
+};
+
+export const SectionRail: Story = {
+  // Two short sections can't scroll far enough to pass the reading line.
+  decorators: [
+    (Story) => (
+      <>
+        <style>{".bdmq-flowsec { min-height: 100vh; }"}</style>
+        <Story />
+      </>
+    ),
+  ],
+  beforeEach({ msw }) {
+    msw.use(...bookDetailHandlers(BOOK));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const rail = await canvas.findByRole("navigation", {
+      name: "Page sections",
+    });
+    const dots = within(rail).getAllByRole("button");
+    await expect(dots.map((dot) => dot.textContent)).toEqual([
+      "01 · Home",
+      "05 · The files",
+    ]);
+    await expect(dots[0]).toHaveClass("on");
+
+    await userEvent.click(dots[1] as HTMLElement);
+
+    await waitFor(() => expect(dots[1]).toHaveClass("on"));
+    await expect(dots[0]).not.toHaveClass("on");
+    await expect(
+      canvas.getByRole("button", { name: "↑ back to the book" }),
+    ).toHaveClass("on");
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "↑ back to the book" }),
+    );
+
+    await waitFor(() => expect(dots[0]).toHaveClass("on"));
   },
 };
 

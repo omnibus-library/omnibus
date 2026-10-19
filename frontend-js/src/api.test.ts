@@ -87,6 +87,17 @@ describe("toBookDetail", () => {
 
     expect(toBookDetail(wire).series).toBeNull();
   });
+
+  it("reads each format flag from the formats, M4A counting as audio", () => {
+    const wire = { ...auroraWire, formats: ["EPUB", "m4a"] };
+
+    expect(toBookDetail(wire)).toMatchObject({
+      hasEbook: true,
+      hasAudio: true,
+      hasComic: false,
+      hasPdf: false,
+    });
+  });
 });
 
 describe("toResumePoint", () => {
@@ -120,6 +131,7 @@ describe("toUser", () => {
       name: "Ada Lovelace",
       isAdmin: true,
       canUpload: true,
+      canEdit: true,
       hasAvatar: true,
     });
   });

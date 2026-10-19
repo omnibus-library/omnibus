@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { BookDetail } from "./api";
+import { type BookDetail, toBookDetail } from "./api";
 import {
   descriptionOverflows,
   facetQuery,
+  formatDateShort,
+  formatInstantShort,
   formatYear,
   homeKicker,
   initialOf,
@@ -10,15 +12,16 @@ import {
   plateAuthor,
   singleFacetValue,
 } from "./format";
-import { aBook } from "./testing/books";
+import { aWireBook } from "./testing/wire";
 
-const book: BookDetail = {
-  ...aBook({ title: "Alpha", authors: ["Ada Lovelace"], series: null }),
-  description: null,
-  published: "1843-10-01",
-  genres: [],
-  subjects: [],
-};
+const book: BookDetail = toBookDetail(
+  aWireBook({
+    title: "Alpha",
+    creators: [{ name: "Ada Lovelace" }],
+    series: null,
+    published: "1843-10-01",
+  }),
+);
 
 describe("plateAuthor", () => {
   it.each([
@@ -31,20 +34,46 @@ describe("plateAuthor", () => {
 });
 
 describe("homeKicker", () => {
-  it("leads a series book with its position and year", () => {
-    const inSeries = { ...book, series: { name: "Aurora", index: "2" } };
+  const inSeries = { ...book, series: { name: "Aurora", index: "2" } };
 
-    expect(homeKicker(inSeries)).toBe("Aurora · Book 2 · 1843");
+  it("leads a series book with its name, position and year", () => {
+    expect(homeKicker(inSeries, null)).toEqual({
+      series: "Aurora",
+      tail: " · Book 2 · 1843",
+    });
+  });
+
+  it("adds how many of the series the library holds once it is known", () => {
+    expect(homeKicker(inSeries, 3).tail).toBe(
+      " · Book 2 · 3 in your library · 1843",
+    );
+  });
+
+  it("leaves a series book with no index at its name and year", () => {
+    const unindexed = { ...book, series: { name: "Aurora", index: null } };
+
+    expect(homeKicker(unindexed, 3).tail).toBe(" · 1843");
   });
 
   it("leads a standalone with its first genre, then subject, then Book", () => {
     expect(
-      homeKicker({ ...book, genres: ["Sci-fi"], subjects: ["Space"] }),
-    ).toBe("Sci-fi · standalone · 1843");
-    expect(homeKicker({ ...book, subjects: ["Space"] })).toBe(
+      homeKicker({ ...book, genres: ["Sci-fi"], subjects: ["Space"] }, null),
+    ).toEqual({
+      series: null,
+      tail: "Sci-fi · standalone · 1843",
+    });
+    expect(homeKicker({ ...book, subjects: ["Space"] }, null).tail).toBe(
       "Space · standalone · 1843",
     );
-    expect(homeKicker({ ...book, published: null })).toBe("Book · standalone");
+    expect(homeKicker({ ...book, published: null }, null).tail).toBe(
+      "Book · standalone",
+    );
+  });
+
+  it("leaves out the year of calibre's placeholder date", () => {
+    expect(homeKicker({ ...book, published: "0101-01-01" }, null).tail).toBe(
+      "Book · standalone",
+    );
   });
 });
 
@@ -131,5 +160,50 @@ describe("formatYear", () => {
 
   it("returns null for calibre's 0101 placeholder", () => {
     expect(formatYear("0101")).toBeNull();
+  });
+});
+
+describe("formatDateShort", () => {
+  it.each([
+    ["a full date", "2021-03-01", "Mar 1st, 2021"],
+    ["an ISO timestamp", "2026-07-31T00:01:35Z", "Jul 31st, 2026"],
+    ["the 11th to 13th", "2026-08-12", "Aug 12th, 2026"],
+    ["a 2nd and a 23rd", "2026-08-22", "Aug 22nd, 2026"],
+    ["a month alone", "2026-08", "Aug 2026"],
+    ["a year alone", "2026", "2026"],
+    ["a month out of range", "2026-13-05", "2026"],
+    ["a day out of range", "2026-08-40", "Aug 2026"],
+  ])("reads %s", (_condition, raw, shown) => {
+    expect(formatDateShort(raw)).toBe(shown);
+  });
+
+  it.each([
+    ["calibre's placeholder", "0101-01-01T00:00:00+00:00"],
+    ["text", "unknown"],
+  ])("returns null for %s", (_condition, raw) => {
+    expect(formatDateShort(raw)).toBeNull();
+  });
+});
+
+describe("formatInstantShort", () => {
+  it("puts an instant on the calendar of the zone asked for", () => {
+    expect(formatInstantShort("2026-09-08T03:36:00Z", "UTC")).toBe(
+      "Sep 8th, 2026",
+    );
+    expect(formatInstantShort("2026-09-08T03:36:00Z", "America/Detroit")).toBe(
+      "Sep 7th, 2026",
+    );
+  });
+
+  it("reads the SQLite datetime shape as UTC", () => {
+    expect(formatInstantShort("2024-01-02 03:04:05", "UTC")).toBe(
+      "Jan 2nd, 2024",
+    );
+  });
+
+  it("leaves a bare calendar date unshifted", () => {
+    expect(formatInstantShort("2021-03-01", "Pacific/Kiritimati")).toBe(
+      "Mar 1st, 2021",
+    );
   });
 });

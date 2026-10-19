@@ -101,3 +101,23 @@ html {
 button[aria-busy="true"] {
   cursor: progress;
 }
+
+.card {
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  padding: 20px;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+@media (hover: hover) {
+  .card:hover {
+    border-color: var(--line);
+  }
+}
+@media (hover: none) {
+  .card:active {
+    border-color: var(--line);
+  }
+}

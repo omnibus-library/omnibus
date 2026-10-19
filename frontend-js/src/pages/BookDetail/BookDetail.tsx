@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { type ReactNode, useRef } from "react";
 import { useParams } from "react-router";
 import {
   type BookUuid,
@@ -8,113 +8,103 @@ import {
   fetchBook,
   parseBookUuid,
 } from "../../api";
-import { Button } from "../../components/Button/Button";
-import { Chip } from "../../components/Chip/Chip";
 import { Cover } from "../../components/Cover/Cover";
 import { Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
-import { descriptionOverflows, homeKicker } from "../../format";
+import { FilesStop } from "./FilesStop";
+import { HomeStop } from "./HomeStop";
+import { useFlowScroll } from "./useFlowScroll";
 import "./BookDetail.css";
 
-type ChipRowProps = {
-  label: string;
-  listClass: string;
-  tone: "plain" | "genre";
-  values: string[];
-};
-
-function ChipRow({ label, listClass, tone, values }: ChipRowProps) {
-  if (values.length === 0) return null;
-  return (
-    <div className="bd-chip-row">
-      <span className="label bd-chip-row-label">{label}</span>
-      <ul className={listClass}>
-        {values.map((value) => (
-          <Chip key={value} tone={tone}>
-            {value}
-          </Chip>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function Description({ book }: { book: Detail }) {
-  const [open, setOpen] = useState(false);
-  if (!book.description) return null;
-  const id = `bdmq-desc-${book.uuid}`;
-  return (
-    <>
-      <div
-        id={id}
-        className={open ? "bdmq-desc bd-desc is-open" : "bdmq-desc bd-desc"}
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: the API runs descriptions through ammonia, which the Dioxus page relies on too
-        dangerouslySetInnerHTML={{ __html: book.description }}
-      />
-      {descriptionOverflows(book.description) && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="bdmq-desc-toggle"
-          aria-expanded={open}
-          aria-controls={id}
-          onClick={() => setOpen(!open)}
-        >
-          {open ? "Show less" : "Show more"}
-        </Button>
-      )}
-    </>
-  );
-}
+// iOS pins the same order; a dot's number is its place here.
+export const MARQUEE_SECTIONS = [
+  "Home",
+  "Stats",
+  "Highlights",
+  "Journals",
+  "The files",
+  "More",
+] as const;
 
 function Marquee({ book }: { book: Detail }) {
+  const stage = useRef<HTMLDivElement>(null);
+  const { active, backOn, goTo } = useFlowScroll(stage);
+  const stops: Partial<Record<(typeof MARQUEE_SECTIONS)[number], ReactNode>> = {
+    Home: <HomeStop book={book} />,
+    "The files": <FilesStop book={book} />,
+  };
+  const sections = MARQUEE_SECTIONS.flatMap((name, i) => {
+    const stop = stops[name];
+    return stop ? [{ name, no: String(i + 1).padStart(2, "0"), stop }] : [];
+  });
   return (
-    <div className="bdmq-stage" id="bdmq-stage">
-      <PageTitle page={book.title} />
-      <div className="bdmq-coverwrap" aria-hidden="true">
-        <div className="bdmq-coverpx" id="bdmq-coverpx">
-          <Cover book={book} src={book.hasCover ? coverUrl(book.uuid) : null} />
+    <div
+      className="bd-root bdmq"
+      style={book.accent ? { "--accent": book.accent } : undefined}
+    >
+      <div className="bdmq-stage" id="bdmq-stage" ref={stage}>
+        <PageTitle page={book.title} />
+        <div className="bdmq-coverwrap" aria-hidden="true">
+          <div className="bdmq-coverpx" id="bdmq-coverpx">
+            <Cover
+              book={book}
+              src={book.hasCover ? coverUrl(book.uuid) : null}
+            />
+          </div>
         </div>
-      </div>
-      <div className="bdmq-flowscrim" aria-hidden="true" />
-      <div className="bdmq-flowscroll" id="bdmq-flow">
-        <div className="bdmq-flow">
-          <section className="bdmq-flowsec lead">
-            <div className="bdmq-flowbody">
-              <div className="bdmq-k">{homeKicker(book)}</div>
-              <div className="bdmq-titlerow">
-                <h1 className="bdmq-title">{book.title}</h1>
-              </div>
-              {book.authors.length > 0 && (
-                <p className="bdmq-by">
-                  {"by "}
-                  {book.authors.map((name, i) => (
-                    <span key={name}>
-                      {i > 0 && ", "}
-                      <span className="bd-author-link">{name}</span>
-                    </span>
-                  ))}
-                </p>
-              )}
-              <div className="bdmq-chips">
-                <ChipRow
-                  label="Genres"
-                  listClass="bd-tag-list bd-genre-list"
-                  tone="genre"
-                  values={book.genres}
-                />
-                <ChipRow
-                  label="Tags"
-                  listClass="bd-tag-list"
-                  tone="plain"
-                  values={book.subjects}
-                />
-              </div>
-              <Description book={book} />
-            </div>
-          </section>
+        <nav
+          className="bdmq-dots"
+          aria-label="Page sections"
+          data-testid="bdmq-dots"
+        >
+          {sections.map(({ name, no }, i) => (
+            <button
+              key={name}
+              type="button"
+              className={i === active ? "bdmq-dotrow on" : "bdmq-dotrow"}
+              title={name}
+              data-testid={`bdmq-dot-${i}`}
+              onClick={() => goTo(i)}
+            >
+              <i />
+              <span className="lb">
+                {no} · {name}
+              </span>
+            </button>
+          ))}
+        </nav>
+        <div className="bdmq-flowscrim" aria-hidden="true" />
+        <div className="bdmq-flowscroll" id="bdmq-flow">
+          <div className="bdmq-flow">
+            {sections.map(({ name, no, stop }, i) => (
+              <section
+                key={name}
+                className={i === 0 ? "bdmq-flowsec lead" : "bdmq-flowsec"}
+                data-testid={`bdmq-sec-${i}`}
+              >
+                {/* The first section is the book itself: its title is the heading. */}
+                {i > 0 && (
+                  <div className="bdmq-flowlab">
+                    {no}
+                    <b>{name}</b>
+                    <i className="rule" aria-hidden="true" />
+                  </div>
+                )}
+                <div className="bdmq-flowbody">{stop}</div>
+              </section>
+            ))}
+          </div>
         </div>
+        <button
+          type="button"
+          className={backOn ? "bdmq-flowtop on" : "bdmq-flowtop"}
+          id="bdmq-flowtop"
+          data-testid="bdmq-flowtop"
+          onClick={() => goTo(0)}
+        >
+          ↑ back to the book
+        </button>
       </div>
     </div>
   );
@@ -134,7 +124,7 @@ function BookDetailFor({ uuid }: { uuid: BookUuid }) {
       );
     case "success":
       return book.data ? (
-        <Marquee book={book.data} />
+        <Marquee key={book.data.uuid} book={book.data} />
       ) : (
         <PageNotFound subject="Book" />
       );

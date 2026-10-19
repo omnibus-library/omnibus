@@ -7,6 +7,7 @@ import {
   getRecentProgress,
   getRegistration,
   getSearchPalette,
+  getSeriesById,
   login as postLogin,
   register as postRegister,
 } from "./api/generated/omnibus";
@@ -51,6 +52,7 @@ export function toUser(user: UserSummary) {
     name: user.display_name ?? user.username,
     isAdmin: user.is_admin,
     canUpload: user.can_upload,
+    canEdit: user.can_edit,
     hasAvatar: user.has_avatar ?? false,
   };
 }
@@ -74,14 +76,47 @@ function toBook(wire: EbookMetadata) {
 
 export type Book = ReturnType<typeof toBook>;
 
+const hasFormat = (formats: readonly string[], ...names: string[]) =>
+  formats.some((f) => names.includes(f.toLowerCase()));
+
 /** The screen's shape of `GET /api/ebooks/{uuid}`. */
 export function toBookDetail(wire: EbookMetadata) {
+  const formats = wire.formats ?? [];
   return {
     ...toBook(wire),
     description: wire.description ?? null,
     published: wire.published ?? null,
     genres: wire.genres ?? [],
     subjects: wire.subjects,
+    seriesId: wire.series_id == null ? null : (wire.series_id as SeriesId),
+    creators: wire.creators.map((c) => ({
+      name: c.name,
+      id: c.id == null ? null : (c.id as AuthorId),
+    })),
+    formats,
+    // M4A shares the M4B container and code path, so it counts as audio too.
+    hasAudio: hasFormat(formats, "m4b", "m4a", "mp3"),
+    hasEbook: hasFormat(formats, "epub"),
+    hasComic: hasFormat(formats, "cbz"),
+    hasPdf: hasFormat(formats, "pdf"),
+    bookFiles: (wire.book_files ?? []).map((f) => ({
+      id: f.id,
+      format: f.format,
+      label: f.label ?? null,
+      ordinal: f.ordinal,
+      sizeBytes: f.size_bytes ?? 0,
+    })),
+    epubSizeBytes: wire.epub_size_bytes ?? null,
+    publisher: wire.publisher ?? null,
+    language: wire.language ?? null,
+    identifiers: wire.identifiers.map((i) => ({
+      scheme: i.scheme ?? null,
+      value: i.value,
+    })),
+    isbn10: wire.isbn10 ?? null,
+    isbn13: wire.isbn13 ?? null,
+    addedAt: wire.added_at ?? null,
+    hasPhysical: wire.has_physical ?? false,
   };
 }
 
@@ -251,6 +286,13 @@ export async function fetchBook(uuid: BookUuid): Promise<BookDetail | null> {
   if (res.status === 404) return null;
   if (res.status !== 200) throw failure(res);
   return toBookDetail(res.data);
+}
+
+/** A series' name and how many of its books the library holds. */
+export async function fetchSeries(id: SeriesId) {
+  const res = await getSeriesById(id);
+  if (res.status !== 200) throw failure(res);
+  return { name: res.data.name, bookCount: res.data.book_count };
 }
 
 /** The reader's most recent reading and listening positions, newest first. */

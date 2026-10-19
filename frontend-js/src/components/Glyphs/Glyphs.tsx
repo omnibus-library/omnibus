@@ -96,3 +96,46 @@ export function SearchGlyph({
     </svg>
   );
 }
+
+/** Headphones, for an audiobook. */
+export function HeadphonesGlyph({ size = 15 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.35}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 10V8.5a5 5 0 0 1 10 0V10" />
+      <path
+        d="M2.75 10h2.5v3.75h-1.5a1 1 0 0 1-1-1zM13.25 10h-2.5v3.75h1.5a1 1 0 0 0 1-1z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+/** A book beside a soundwave, for reading and listening together. */
+export function ImmersiveGlyph({ size = 17 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 5.2A2 2 0 0 1 6 4h4.2a1.8 1.8 0 0 1 1.8 1.8V18a1.6 1.6 0 0 0-1.6-1.6H6A2 2 0 0 1 4 14.4V5.2z" />
+      <path d="M15.5 8v8M18.5 6v12M21 9.5v5" />
+    </svg>
+  );
+}

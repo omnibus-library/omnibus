@@ -3,6 +3,7 @@ import {
   getGetMeMockHandler200,
   getGetMeMockHandler401,
   getGetRegistrationMockHandler200,
+  getGetSeriesByIdMockHandler200,
 } from "../api/generated/omnibus.msw";
 import type {
   EbookMetadata,
@@ -12,7 +13,7 @@ import type {
   ResumePoint,
 } from "../api/generated/schemas";
 import { COVER_SVG } from "./books";
-import { WIRE_ADA } from "./wire";
+import { aWireSeries, WIRE_ADA } from "./wire";
 
 // The MSW fake of the `/api/*` routes the client calls. orval generates a
 // handler per documented status (`../api/generated/omnibus.msw`); the ones here
@@ -62,6 +63,11 @@ export function bookHandler(book: EbookMetadata) {
       ? HttpResponse.json(book)
       : new HttpResponse(null, { status: 404 }),
   );
+}
+
+/** Every GET the whole book page fires, answered quietly for `book`: its series holds three. */
+export function bookDetailHandlers(book: EbookMetadata) {
+  return [bookHandler(book), getGetSeriesByIdMockHandler200(aWireSeries())];
 }
 
 /** `GET /api/progress/recent`, answering the first `limit` of `points`. */

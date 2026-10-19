@@ -1,8 +1,10 @@
 import type {
+  BookFileInfo,
   EbookMetadata,
   PaletteBookHit,
   PaletteResults,
   ResumePoint,
+  SeriesDetail,
   UserSummary,
 } from "../api/generated/schemas";
 
@@ -34,6 +36,32 @@ export function aWireBook(
     error: null,
     has_override: false,
     has_cover_override: false,
+    ...overrides,
+  };
+}
+
+/** One of a book's files as `GET /api/ebooks/{uuid}` sends it. */
+export function aWireFile(overrides: Partial<BookFileInfo> = {}): BookFileInfo {
+  return {
+    id: 11,
+    format: "EPUB",
+    filename: "aurora-station-01.epub",
+    ordinal: 0,
+    label: null,
+    size_bytes: 3_100_000,
+    ...overrides,
+  };
+}
+
+/** A series as `GET /api/series/{id}` sends it. */
+export function aWireSeries(
+  overrides: Partial<SeriesDetail> = {},
+): SeriesDetail {
+  return {
+    id: 4,
+    name: "Aurora Station",
+    book_count: 3,
+    books: [],
     ...overrides,
   };
 }
