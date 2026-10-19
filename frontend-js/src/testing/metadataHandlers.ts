@@ -2,7 +2,11 @@ import { HttpResponse, http } from "msw";
 import {
   CoverFromUrlBody,
   type EbookMetadata,
+  EditionSearchRequest,
+  type EditionSearchResponse,
   MetadataOverrides,
+  type ProviderEdition,
+  type ProviderInfo,
 } from "../api/generated/schemas";
 import { aWireBook } from "./wire";
 
@@ -110,4 +114,60 @@ export function coverWriteHandlers(
       return answer({ has_cover_override: false });
     }),
   ];
+}
+
+/** One edition a provider returned, as `POST /api/metadata/editions/search` sends it. */
+export function aProviderEdition(
+  overrides: Partial<ProviderEdition> = {},
+): ProviderEdition {
+  return {
+    source: "open_library",
+    provider_ref: "OL1M",
+    title: "Aurora Station, Vol. 1",
+    authors: ["Sora Inkwell"],
+    year: "2021",
+    publisher: "Lantern Press",
+    isbn13: "9780134685991",
+    ...overrides,
+  };
+}
+
+/** `GET /api/metadata/providers` with one provider that is `configured` or not. */
+export function providersHandler(configured: boolean, calls = { count: 0 }) {
+  return http.get("/api/metadata/providers", () => {
+    calls.count += 1;
+    return HttpResponse.json([
+      {
+        id: "open_library",
+        display_name: "Open Library",
+        configured,
+        requires_key: false,
+        capabilities: {
+          carries_cover: true,
+          carries_genres: false,
+          carries_ratings: false,
+          search_by_isbn: true,
+          search_by_title: true,
+        },
+      },
+    ] satisfies ProviderInfo[]);
+  });
+}
+
+/**
+ * `POST /api/metadata/editions/search` answering `found`. Each request body
+ * lands in `searched`; `gate` holds the answer until it resolves.
+ */
+export function editionSearchHandler(
+  found: EditionSearchResponse,
+  {
+    searched = [],
+    gate,
+  }: { searched?: EditionSearchRequest[]; gate?: Promise<void> } = {},
+) {
+  return http.post("/api/metadata/editions/search", async ({ request }) => {
+    searched.push(EditionSearchRequest.parse(await request.json()));
+    await gate;
+    return HttpResponse.json(found);
+  });
 }

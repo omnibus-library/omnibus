@@ -1,0 +1,314 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import type { UseFormReturn } from "react-hook-form";
+import {
+  editionRequest,
+  hasProviderQuery,
+  inStableOrder,
+  type MetaForm,
+  PROVIDERS,
+  searchEditions,
+} from "../../api";
+import type {
+  EditionSearchRequest,
+  EditionSearchResponse,
+  ProviderEdition,
+} from "../../api/generated/schemas";
+import { Button } from "../../components/Button/Button";
+import { SparkleGlyph } from "../../components/Glyphs/Glyphs";
+import { BusyLabel, Loading } from "../../components/Loading/Loading";
+import { trapTab } from "../../focusTrap";
+import { sourceStatusText } from "./editionFields";
+
+/** Shown where a candidate has no value to show. */
+const EMPTY = "—";
+
+type FieldProps = {
+  slug: "title" | "author" | "isbn";
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+};
+
+/** One labelled field of the query; each provider is asked in its own terms, so they stay apart. */
+function QueryField({ slug, label, value, onChange }: FieldProps) {
+  return (
+    <label className="mes-query-field" htmlFor={`mes-query-${slug}`}>
+      <span className="mes-query-label">{label}</span>
+      <input
+        id={`mes-query-${slug}`}
+        className="mes-query-input"
+        data-testid={`mes-query-${slug}`}
+        type={slug === "isbn" ? "text" : "search"}
+        value={value}
+        // The ISBN narrows every provider to one edition, so its placeholder says what filling it does.
+        placeholder={slug === "isbn" ? "one exact edition" : label}
+        // biome-ignore lint/a11y/noAutofocus: the dialog opens on the field a reader most likely corrects
+        autoFocus={slug === "title"}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  );
+}
+
+/** A candidate's cover address, or `null` when blank: a blank `src` would pull the page down as an image. */
+const coverSrc = (edition: ProviderEdition) =>
+  edition.cover_url?.trim() || null;
+
+function imprint(edition: ProviderEdition) {
+  const parts = [edition.year, edition.publisher, edition.isbn13].filter(
+    (part): part is string => !!part?.trim(),
+  );
+  return parts.length ? parts.join(" · ") : EMPTY;
+}
+
+function CandidateRow({
+  index,
+  edition,
+  onSelect,
+}: {
+  index: number;
+  edition: ProviderEdition;
+  onSelect: (edition: ProviderEdition) => void;
+}) {
+  const source = PROVIDERS[edition.source];
+  const cover = coverSrc(edition);
+  return (
+    <li className="mes-row-item">
+      <button
+        type="button"
+        className="mes-row"
+        data-testid={`mes-candidate-${index}`}
+        aria-label={`Compare ${edition.title} from ${source.name}`}
+        onClick={() => onSelect(edition)}
+      >
+        {cover ? (
+          <img className="mes-row-cover" src={cover} alt="" loading="lazy" />
+        ) : (
+          <span className="mes-row-cover mes-row-plate" aria-hidden="true">
+            {EMPTY}
+          </span>
+        )}
+        <span className="mes-row-body">
+          <span
+            className="mes-row-title"
+            data-testid={`mes-candidate-${index}-title`}
+          >
+            {edition.title}
+          </span>
+          <span
+            className="mes-row-authors"
+            data-testid={`mes-candidate-${index}-authors`}
+          >
+            {edition.authors.length ? edition.authors.join(", ") : EMPTY}
+          </span>
+          <span
+            className="mono mes-row-imprint"
+            data-testid={`mes-candidate-${index}-imprint`}
+          >
+            {imprint(edition)}
+          </span>
+        </span>
+        <span
+          className="mes-badge"
+          data-testid={`mes-candidate-${index}-source`}
+          data-source={source.slug}
+        >
+          {source.name}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+/** One line saying what each source contributed, so an outage never reads as an empty result. */
+function SourceSummary({
+  sources,
+}: {
+  sources: EditionSearchResponse["sources"];
+}) {
+  if (sources.length === 0) return null;
+  return (
+    <p className="mes-sources" data-testid="mes-sources" role="status">
+      {sources.map((source) => {
+        const { text, problem, detail } = sourceStatusText(source);
+        return (
+          <span
+            key={source.provider}
+            className={problem ? "mes-source mes-source-problem" : "mes-source"}
+            data-testid={`mes-source-${PROVIDERS[source.provider].slug}`}
+            title={detail}
+          >
+            {source.display_name} {text}
+          </span>
+        );
+      })}
+    </p>
+  );
+}
+
+type Found = Pick<EditionSearchResponse, "sources"> & {
+  editions: ProviderEdition[];
+};
+
+/** Screen one: the query, already filled in, and what the providers found. */
+function ResultsScreen({
+  form,
+  onSelect,
+}: {
+  form: UseFormReturn<MetaForm>;
+  onSelect: (edition: ProviderEdition) => void;
+}) {
+  // Seeded from the book, ISBN included, but never searched on open: the reader sees what is about to be asked first.
+  const [seed] = useState(() => form.getValues());
+  const [title, setTitle] = useState(seed.title.trim());
+  const [author, setAuthor] = useState(seed.authors[0]?.trim() ?? "");
+  const [isbn, setIsbn] = useState(seed.isbn13.trim());
+  const search = useMutation({
+    mutationFn: async (req: EditionSearchRequest) => {
+      const found = await searchEditions(req);
+      return {
+        sources: found.sources,
+        editions: inStableOrder(found.editions, req.query),
+      } satisfies Found;
+    },
+  });
+  const request = editionRequest(title, author, isbn);
+  return (
+    <div className="mes-screen mes-screen-results" data-testid="mes-results">
+      <h2 className="mes-title">Find this edition</h2>
+      <form
+        className="mes-query"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (request) search.mutate(request);
+        }}
+      >
+        <QueryField
+          slug="title"
+          label="Title"
+          value={title}
+          onChange={setTitle}
+        />
+        <QueryField
+          slug="author"
+          label="Author"
+          value={author}
+          onChange={setAuthor}
+        />
+        <QueryField slug="isbn" label="ISBN" value={isbn} onChange={setIsbn} />
+        <Button
+          type="submit"
+          className="mes-query-btn"
+          data-testid="mes-search"
+          disabled={search.isPending || !request}
+          aria-busy={search.isPending}
+        >
+          <BusyLabel
+            busy={search.isPending}
+            label="Search"
+            busyLabel="Searching…"
+          />
+        </Button>
+      </form>
+      {search.isPending && (
+        <Loading
+          kind="sheet"
+          testId="mes-searching"
+          label="Asking every configured source…"
+        />
+      )}
+      {search.isError && (
+        <p className="mes-error" role="alert" data-testid="mes-error">
+          {search.error.message}
+        </p>
+      )}
+      {search.isIdle && (
+        <p className="mes-note" data-testid="mes-ready">
+          Check the fields, then search. An ISBN narrows every source to that
+          one edition.
+        </p>
+      )}
+      {search.data &&
+        (search.data.editions.length === 0 ? (
+          <p className="mes-note" role="status" data-testid="mes-empty">
+            No editions matched. Try a shorter title, or just the author.
+          </p>
+        ) : (
+          <ul className="mes-list" data-testid="mes-candidates">
+            {search.data.editions.map((edition, index) => (
+              <CandidateRow
+                key={`${edition.source}:${edition.provider_ref}`}
+                index={index}
+                edition={edition}
+                onSelect={onSelect}
+              />
+            ))}
+          </ul>
+        ))}
+      {search.data && <SourceSummary sources={search.data.sources} />}
+    </div>
+  );
+}
+
+function SearchOverlay({
+  form,
+  onClose,
+}: {
+  form: UseFormReturn<MetaForm>;
+  onClose: () => void;
+}) {
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: the scrim only dismisses; the dialog inside carries the semantics, and the keyboard has Escape and ×
+    <div
+      className="mes-scrim"
+      data-testid="metadata-search-scrim"
+      onClick={onClose}
+      onKeyDown={(e) => e.key === "Escape" && onClose()}
+    >
+      <div
+        className="mes-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Find this edition"
+        data-testid="metadata-search"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => trapTab(e, e.currentTarget)}
+      >
+        <button
+          type="button"
+          className="mes-close"
+          data-testid="mes-close"
+          aria-label="Close"
+          onClick={onClose}
+        >
+          ×
+        </button>
+        <ResultsScreen form={form} onSelect={() => {}} />
+      </div>
+    </div>
+  );
+}
+
+/** The "Fetch metadata" button and, while open, the overlay it opens. Absent until a provider is set up. */
+export function EditionPicker({ form }: { form: UseFormReturn<MetaForm> }) {
+  const available = useQuery(hasProviderQuery);
+  const [open, setOpen] = useState(false);
+  if (!available.data) return null;
+  return (
+    <>
+      <Button
+        className="mes-open-btn"
+        data-testid="metadata-search-btn"
+        onClick={() => setOpen(true)}
+      >
+        <span className="mes-open-mark" aria-hidden="true">
+          <SparkleGlyph />
+        </span>
+        Fetch metadata
+      </Button>
+      {/* Mounted only while open, so every open starts a fresh search. */}
+      {open && <SearchOverlay form={form} onClose={() => setOpen(false)} />}
+    </>
+  );
+}

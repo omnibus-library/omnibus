@@ -379,11 +379,292 @@
   display: flex;
   gap: 8px;
 }
+.mes-open-btn {
+  gap: 9px;
+  background: color-mix(in oklch, var(--accent) 16%, var(--bg-1));
+  border-color: color-mix(in oklch, var(--accent) 55%, transparent);
+  color: var(--ink-0);
+}
+@media (hover: hover) {
+  .mes-open-btn:hover {
+    background: color-mix(in oklch, var(--accent) 24%, var(--bg-1));
+    border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+  }
+}
+.mes-open-mark {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.mes-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in oklch, var(--bg-0) 70%, transparent);
+  backdrop-filter: blur(6px);
+  animation: sp-fade-in 0.12s ease-out;
+  /* A wheel over the scrim would otherwise scroll the page behind it, and
+     reaching the end of the panel's own scroll would hand the rest of the
+     gesture to the page ("scroll chaining"). Making the scrim a scroll
+     container that contains its overscroll stops both — the page stays
+     exactly where the reader left it. */
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+.mes-panel {
+  position: relative;
+  width: min(680px, 100%);
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  padding: 26px 26px 0;
+  box-shadow: 0 24px 60px color-mix(in oklch, black 55%, transparent);
+  animation: mes-panel-in 0.16s ease-out;
+}
+.mes-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mes-close:hover {
+  background: var(--bg-2);
+  color: var(--ink-0);
+}
+
+.mes-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.mes-screen-results {
+  padding-bottom: 22px;
+}
+.mes-title {
+  margin: 0;
+  font-family: var(--serif, inherit);
+  font-size: 21px;
+  --lh: 1.25;
+  line-height: var(--lh);
+  color: var(--ink-0);
+  overflow-wrap: anywhere;
+}
+.mes-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.mes-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--bad);
+}
+.mes-empty {
+  color: var(--ink-3);
+}
+.mes-query {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+.mes-query-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 150px;
+  min-width: 0;
+}
+.mes-query-field:has(> #mes-query-isbn) {
+  flex: 1 1 110px;
+}
+.mes-query-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.mes-query-input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  color: var(--ink-0);
+  font-size: 14px;
+}
+.mes-query-input:focus-visible {
+  outline: none;
+  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+}
+.mes-query-btn {
+  height: 38px;
+}
+
+.mes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(52vh, 460px);
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.mes-row-item {
+  margin: 0;
+}
+.mes-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: inherit;
+  cursor: pointer;
+}
+.mes-row:hover,
+.mes-row:focus-visible {
+  background: var(--bg-2);
+  border-color: color-mix(in oklch, var(--accent) 45%, transparent);
+  outline: none;
+}
+.mes-row-cover {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--bg-2);
+}
+.mes-row-plate {
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+}
+.mes-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.mes-row-title {
+  font-size: 14.5px;
+  color: var(--ink-0);
+  overflow-wrap: anywhere;
+}
+.mes-row-authors {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.mes-row-imprint {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.mes-badge {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.mes-sources {
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.mes-source-problem {
+  color: var(--bad);
+}
 .me-cover-ring {
   margin-right: 0.5em;
+}
+@media (max-width: 640px) {
+  .mes-scrim {
+    padding: 0;
+    align-items: stretch;
+  }
+  .mes-screen-results {
+    padding-bottom: calc(22px + env(safe-area-inset-bottom));
+  }
+  .mes-panel {
+    width: 100%;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    /* Bottom padding stays zero here for the same reason it is zero on
+       desktop: the action bar is sticky against the panel's *padding* box, so
+       any padding beneath it becomes a strip the rows scroll through under
+       the buttons. The bar carries the inset instead. */
+    padding: 22px 18px 0;
+  }
+  .mes-list {
+    max-height: none;
+    overflow-y: visible;
+  }
 }
 @media (max-width: 560px) {
   .me-field-grid {
     grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mes-scrim,
+  .mes-panel {
+    animation: none;
+  }
+}
+@keyframes mes-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

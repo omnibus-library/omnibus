@@ -5,11 +5,20 @@ import {
   deleteEbookCover,
   deleteEbookOverrides,
   getEbookByUuid,
+  listMetadataProviders,
   postEbookCover,
   postEbookCoverFromUrl,
   postEbookOverrides,
+  postEditionSearch,
 } from "./generated/omnibus";
-import type { EbookMetadata, MetadataOverrides } from "./generated/schemas";
+import type {
+  EbookMetadata,
+  EditionSearchRequest,
+  EditionSearchResponse,
+  MetadataOverrides,
+  MetadataProvider,
+  ProviderEdition,
+} from "./generated/schemas";
 
 // The metadata edit page's reads and writes. It imports `../api` only inside
 // function bodies: `api.ts` re-exports this module.
@@ -176,4 +185,97 @@ export async function revertCover(uuid: BookUuid): Promise<EditableBook> {
   const res = await deleteEbookCover(uuid);
   if (res.status !== 200) throw failure(res);
   return toEditableBook(res.data);
+}
+
+/** The metadata providers, by the name and the stable slug the UI shows them under. */
+export const PROVIDERS = {
+  open_library: { name: "Open Library", slug: "open-library" },
+  google_books: { name: "Google Books", slug: "google-books" },
+  hardcover: { name: "Hardcover", slug: "hardcover" },
+} satisfies Record<MetadataProvider, { name: string; slug: string }>;
+
+/** Whether at least one provider is set up to answer a search. */
+export const hasProviderQuery = queryOptions({
+  queryKey: ["metadata-providers"],
+  queryFn: async () => {
+    const res = await listMetadataProviders();
+    if (res.status !== 200) throw failure(res);
+    return res.data.some((p) => p.configured);
+  },
+});
+
+/** The search the three fields describe, or `null` when all are blank; a blank field is left out. */
+export function editionRequest(
+  title: string,
+  author: string,
+  isbn: string,
+): EditionSearchRequest | null {
+  const [t, a, i] = [title, author, isbn].map((v) => v.trim() || undefined);
+  if (!t && !a && !i) return null;
+  // `query` is free text for clients with no picker; the provider asks read the fields.
+  return {
+    query: [t, a].filter(Boolean).join(" "),
+    title: t,
+    author: a,
+    isbn: i,
+  };
+}
+
+/** The editions each provider found for a search, and what each provider did. */
+export async function searchEditions(
+  req: EditionSearchRequest,
+): Promise<EditionSearchResponse> {
+  const res = await postEditionSearch(req);
+  if (res.status !== 200) throw failure(res);
+  return res.data;
+}
+
+const STOP_WORDS = new Set(
+  "a an and by for from in of on or the to with".split(" "),
+);
+
+/** The query's words, lowercased and stripped of punctuation, minus stop words and initials. */
+function queryWords(query: string): string[] {
+  return query
+    .split(/\s+/)
+    .map((w) =>
+      w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").toLowerCase(),
+    )
+    .filter((w) => [...w].length > 1 && !STOP_WORDS.has(w));
+}
+
+/**
+ * The order the candidates read in, derived from the candidates alone so a slow
+ * or missing provider moves nothing else: relevance (unscored last), whole query
+ * covered by title and authors, shorter title, then title, ISBN, provider, ref.
+ */
+export function inStableOrder(
+  editions: ProviderEdition[],
+  query: string,
+): ProviderEdition[] {
+  const words = queryWords(query);
+  const keyed = editions.map((e) => {
+    const title = e.title.trim().toLowerCase();
+    const hay = `${e.title} ${e.authors.join(" ")}`.toLowerCase();
+    return {
+      e,
+      title,
+      relevance: e.relevance ?? Number.NEGATIVE_INFINITY,
+      // A blank query covers nothing, so it leaves the order to the later keys.
+      partial: !(words.length > 0 && words.every((w) => hay.includes(w))),
+    };
+  });
+  const text = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  return keyed
+    .sort(
+      (a, b) =>
+        b.relevance - a.relevance ||
+        Number(a.partial) - Number(b.partial) ||
+        [...a.title].length - [...b.title].length ||
+        text(a.title, b.title) ||
+        text(a.e.isbn13 ?? "", b.e.isbn13 ?? "") ||
+        text(PROVIDERS[a.e.source].slug, PROVIDERS[b.e.source].slug) ||
+        text(a.e.provider_ref, b.e.provider_ref),
+    )
+    .map((k) => k.e);
 }

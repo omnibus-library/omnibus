@@ -4,6 +4,7 @@ import { Controller, type UseFormReturn } from "react-hook-form";
 import { type MetaForm, nameCountsQuery } from "../../api";
 import { ChipInput } from "../../components/ChipInput/ChipInput";
 import { bookCount } from "../../format";
+import { EditionPicker } from "./EditionPicker";
 import { MeArea, MeField, MeLabel } from "./MetaFields";
 
 type Props = {
@@ -118,6 +119,9 @@ export function MetaFormGrid({ form, dirty, sortBy, filename }: Props) {
           edited={edited("Description")}
           input={register("description")}
         />
+        <div className="me-field-full">
+          <EditionPicker form={form} />
+        </div>
       </div>
       <div className="divider" />
       <div className="me-tags-header">

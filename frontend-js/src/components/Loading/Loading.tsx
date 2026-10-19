@@ -128,6 +128,7 @@ type LoadingProps = {
   label?: string;
   title?: string;
   className?: string;
+  testId?: string;
   children?: ReactNode;
 };
 
@@ -138,11 +139,13 @@ export function Loading({
   label = "Loading…",
   title,
   className,
+  testId,
   children,
 }: LoadingProps) {
   return (
     <div
       className={classes("ld", KIND_CLASS[kind], className)}
+      data-testid={testId}
       role="status"
       aria-live="polite"
     >

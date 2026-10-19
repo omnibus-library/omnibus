@@ -14,6 +14,7 @@ import {
   anEditableWireBook,
   coverWriteHandlers,
   overridesHandlers,
+  providersHandler,
 } from "../../testing/metadataHandlers";
 import { BookEdit } from "./BookEdit";
 
@@ -51,6 +52,7 @@ const meta = {
       bookHandler(BOOK),
       ...overridesHandlers(BOOK, { saved, reverted }),
       ...coverWriteHandlers(BOOK),
+      providersHandler(false),
       ...filterOptionHandlers(),
     );
   },

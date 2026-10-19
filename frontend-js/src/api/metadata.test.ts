@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  editionRequest,
   formFromBook,
+  inStableOrder,
   type MetaForm,
   MetaFormSchema,
   overridesFrom,
 } from "../api";
-import { anEditableWireBook } from "../testing/metadataHandlers";
+import {
+  anEditableWireBook,
+  aProviderEdition,
+} from "../testing/metadataHandlers";
 
 const BASE = formFromBook(anEditableWireBook());
 const edit = (changes: Partial<MetaForm>): MetaForm => ({
@@ -99,5 +104,121 @@ describe("overridesFrom", () => {
 
   it("leaves the page count alone when the field is blank", () => {
     expect(overridesFrom(BASE, edit({ printPages: "" }))).toEqual({});
+  });
+});
+
+describe("editionRequest", () => {
+  it("is null when every field is blank", () => {
+    expect(editionRequest(" ", "", "\t")).toBeNull();
+  });
+
+  it("composes the free-text query from title and author and leaves a blank field out", () => {
+    expect(editionRequest(" Dune ", "Frank Herbert", "")).toEqual({
+      query: "Dune Frank Herbert",
+      title: "Dune",
+      author: "Frank Herbert",
+      isbn: undefined,
+    });
+  });
+
+  it("asks for an ISBN alone", () => {
+    expect(editionRequest("", "", "9780441013593")).toMatchObject({
+      query: "",
+      isbn: "9780441013593",
+    });
+  });
+});
+
+describe("inStableOrder", () => {
+  const edition = (
+    title: string,
+    isbn13: string,
+    source: "open_library" | "google_books" | "hardcover" = "open_library",
+    more: Parameters<typeof aProviderEdition>[0] = {},
+  ) =>
+    aProviderEdition({
+      title,
+      isbn13,
+      source,
+      provider_ref: `${source}-${isbn13}`,
+      ...more,
+    });
+
+  it("gives the same order however the providers answered", () => {
+    const a = edition("Effective Java", "9780134685991");
+    const b = edition("Effective Java", "9780134685991", "google_books");
+    const c = edition("Dune", "9780441013593", "hardcover");
+
+    const one = inStableOrder([a, b, c], "Effective Java");
+
+    expect(inStableOrder([c, b, a], "Effective Java")).toEqual(one);
+    expect(inStableOrder([b, a, c], "Effective Java")).toEqual(one);
+  });
+
+  it("moves nothing else when a provider drops out", () => {
+    const ol = edition("Effective Java", "9780134685991");
+    const gb = edition("Dune", "9780441013593", "google_books");
+    const hc = edition("Neuromancer", "9780441569595", "hardcover");
+
+    const full = inStableOrder([ol, gb, hc], "Effective Java");
+
+    expect(inStableOrder([ol, hc], "Effective Java")).toEqual(
+      full.filter((e) => e !== gb),
+    );
+  });
+
+  it("leads with the titles that account for the whole query", () => {
+    const sorted = inStableOrder(
+      [
+        edition(
+          "A Study Guide for Ursula K. LeGuin's The Left Hand of Darkness",
+          "9781410336088",
+          "open_library",
+          { authors: ["Gale"] },
+        ),
+        edition(
+          "Gender under the Viking Age",
+          "9798745605864",
+          "open_library",
+          { authors: ["Rusty Brient"] },
+        ),
+        edition("The Left Hand of Darkness", "9780441478125", "open_library", {
+          authors: ["Ursula K. Le Guin"],
+        }),
+      ],
+      "The Left Hand of Darkness Ursula K. Le Guin",
+    );
+
+    expect(sorted.map((e) => e.title)).toEqual([
+      "The Left Hand of Darkness",
+      "A Study Guide for Ursula K. LeGuin's The Left Hand of Darkness",
+      "Gender under the Viking Age",
+    ]);
+  });
+
+  it("leads with the server's relevance and puts the unscored last", () => {
+    const sorted = inStableOrder(
+      [
+        edition("Dune", "1"),
+        edition("Dune Messiah", "2", "open_library", { relevance: 500 }),
+        edition("Dune Study Guide", "3", "open_library", { relevance: 900 }),
+      ],
+      "Dune",
+    );
+
+    expect(sorted.map((e) => e.title)).toEqual([
+      "Dune Study Guide",
+      "Dune Messiah",
+      "Dune",
+    ]);
+  });
+
+  it("falls back to the editions' own fields for a blank query", () => {
+    const sorted = inStableOrder(
+      [edition("Zebra", "1", "google_books"), edition("Alpha", "2")],
+      "   ",
+    );
+
+    expect(sorted[0]?.title).toBe("Alpha");
   });
 });
