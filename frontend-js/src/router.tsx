@@ -1,4 +1,6 @@
+import { lazy, type ReactNode, Suspense } from "react";
 import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
+import { Loading } from "./components/Loading/Loading";
 import { RouteError } from "./components/RouteError/RouteError";
 import { AppShell } from "./layouts/AppShell";
 import { ReaderDock } from "./layouts/ReaderDock";
@@ -13,13 +15,10 @@ import { BookDetail } from "./pages/BookDetail/BookDetail";
 import { BookEdit } from "./pages/BookEdit/BookEdit";
 import { CheckIn } from "./pages/CheckIn/CheckIn";
 import { CleanupReview } from "./pages/CleanupReview/CleanupReview";
-import { ComicReader } from "./pages/ComicReader/ComicReader";
 import { Library } from "./pages/Library/Library";
 import { Listen } from "./pages/Listen/Listen";
 import { Login } from "./pages/Login/Login";
 import { NotFound } from "./pages/NotFound/NotFound";
-import { PdfReader } from "./pages/PdfReader/PdfReader";
-import { Reader } from "./pages/Reader/Reader";
 import { Register } from "./pages/Register/Register";
 import { Search } from "./pages/Search/Search";
 import { Series } from "./pages/Series/Series";
@@ -29,6 +28,23 @@ import { ShelfDetail } from "./pages/ShelfDetail/ShelfDetail";
 import { Shelves } from "./pages/Shelves/Shelves";
 import { Stats } from "./pages/Stats/Stats";
 import { StatsChart } from "./pages/StatsChart/StatsChart";
+
+// Each reader is its own chunk, so the library never downloads one.
+const Reader = lazy(() =>
+  import("./pages/Reader/Reader").then((m) => ({ default: m.Reader })),
+);
+const ComicReader = lazy(() =>
+  import("./pages/ComicReader/ComicReader").then((m) => ({
+    default: m.ComicReader,
+  })),
+);
+const PdfReader = lazy(() =>
+  import("./pages/PdfReader/PdfReader").then((m) => ({ default: m.PdfReader })),
+);
+
+const reader = (element: ReactNode) => (
+  <Suspense fallback={<Loading kind="stage" />}>{element}</Suspense>
+);
 
 // Mirrors frontend/src/routes.rs: the readers (with the audiobook dock beneath) and the player fill the screen,
 // everything else sits under the top bar. Two error boundaries: one inside the
@@ -48,9 +64,9 @@ export const routes: RouteObject[] = [
           {
             element: <ReaderDock />,
             children: [
-              { path: "/read/:uuid", element: <Reader /> },
-              { path: "/comic/:uuid", element: <ComicReader /> },
-              { path: "/pdf/:uuid", element: <PdfReader /> },
+              { path: "/read/:uuid", element: reader(<Reader />) },
+              { path: "/comic/:uuid", element: reader(<ComicReader />) },
+              { path: "/pdf/:uuid", element: reader(<PdfReader />) },
             ],
           },
           { path: "/listen/:uuid", element: <Listen /> },

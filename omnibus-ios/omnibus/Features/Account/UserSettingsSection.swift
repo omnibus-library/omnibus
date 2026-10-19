@@ -1,14 +1,14 @@
 //  UserSettingsSection.swift
-//  The You tab's per-account switches: book-detail scroll stops and sharing
-//  stats with the household. Account configuration under rule 08: saved
+//  The You tab's per-account switches: Stack series, book-detail scroll stops
+//  and sharing stats with the household. Account configuration under rule 08: saved
 //  directly, never queued, disabled offline, and a failed save shows its error
 //  rather than claiming a change that exists nowhere.
 
 import SwiftUI
 
-/// The share switch's save rules, separated from the view so they're testable
+/// An account switch's save rules, separated from the view so they're testable
 /// without a UI or a server.
-struct ShareStatsToggle: Equatable {
+struct AccountSettingToggle: Equatable {
     /// What the switch shows.
     var value = true
     /// The last value this device confirmed the server holds. Compared
@@ -73,7 +73,8 @@ struct UserSettingsSection: View {
     @Environment(AppState.self) private var app
     @Environment(\.palette) private var palette
 
-    @State private var share = ShareStatsToggle()
+    @State private var stack = AccountSettingToggle(value: false, saved: false)
+    @State private var share = AccountSettingToggle()
     private var connectivity = Connectivity.shared
 
     // Explicit: the private stored properties would make the memberwise init private.
@@ -82,12 +83,16 @@ struct UserSettingsSection: View {
         self.scrollStopsError = scrollStopsError
     }
 
-    enum Row { case scrollStops, shareStats }
+    enum Row { case stackSeries, scrollStops, shareStats }
 
     /// A row's error, else what the setting does in its current state (web's wording).
     nonisolated static func caption(_ row: Row, isOn: Bool, error: String?) -> String {
         if let error { return error }
         switch row {
+        case .stackSeries:
+            return isOn
+                ? "Each series folds into one stack wherever books are listed."
+                : "Every book in a series keeps its own cover."
         case .scrollStops:
             return isOn
                 ? "Book details snap through one panel at a time."
@@ -108,10 +113,20 @@ struct UserSettingsSection: View {
 
             Plate {
                 PlateRow(
-                    label: "Book details scroll stops", isFirst: true,
+                    label: "Stack series", isFirst: true,
+                    detail: captionText(.stackSeries, isOn: stack.value, error: stack.error)
+                ) {
+                    Toggle("Stack series", isOn: $stack.value)
+                        .labelsHidden()
+                        .tint(palette.accentColor)
+                        .disabled(stack.isDisabled(online: connectivity.isOnline))
+                }
+
+                PlateRow(
+                    label: "Book details scroll stops",
                     detail: captionText(.scrollStops, isOn: scrollStops, error: scrollStopsError)
                 ) {
-                    Toggle("", isOn: $scrollStops)
+                    Toggle("Book details scroll stops", isOn: $scrollStops)
                         .labelsHidden()
                         .tint(palette.accentColor)
                         .disabled(!connectivity.isOnline)
@@ -122,7 +137,7 @@ struct UserSettingsSection: View {
                         label: "Share stats with household",
                         detail: captionText(.shareStats, isOn: share.value, error: share.error)
                     ) {
-                        Toggle("", isOn: $share.value)
+                        Toggle("Share stats with household", isOn: $share.value)
                             .labelsHidden()
                             .tint(palette.accentColor)
                             .disabled(share.isDisabled(online: connectivity.isOnline))
@@ -131,25 +146,48 @@ struct UserSettingsSection: View {
             }
         }
         .screenPadding()
-        .task { share.seed(app.user?.shareStats ?? true) }
+        .task {
+            stack.seed(app.user?.stackSeries ?? false)
+            share.seed(app.user?.shareStats ?? true)
+        }
+        .onChange(of: app.user?.stackSeries) { _, next in stack.serverChanged(to: next) }
         .onChange(of: app.user?.shareStats) { _, next in share.serverChanged(to: next) }
-        .onChange(of: share.value) { previous, next in
-            guard share.beginSave() else { return }
-            Task {
-                do {
-                    try await AuthService.setShareStats(next)
-                    share.saveSucceeded(wrote: next)
-                    await app.refreshUser()
-                    Haptics.success()
-                } catch let failure {
-                    share.saveFailed(
-                        revertTo: previous,
-                        message: (failure as? APIError)?.errorDescription ?? failure.localizedDescription
-                    )
-                    Haptics.warning()
-                }
-                share.finishSave()
+        .onChange(of: stack.value) { previous, next in
+            save($stack, from: previous, to: next, write: AuthService.setStackSeries) {
+                $0.stackSeries = next
             }
+        }
+        .onChange(of: share.value) { previous, next in
+            save($share, from: previous, to: next, write: AuthService.setShareStats) {
+                $0.shareStatsSetting = next
+            }
+        }
+    }
+
+    /// Writes a flipped switch to the account; a refusal puts it back with the reason.
+    /// `confirm` sets the written value on `app.user`, which every reader of it follows.
+    private func save(
+        _ toggle: Binding<AccountSettingToggle>, from previous: Bool, to next: Bool,
+        write: @escaping (Bool) async throws -> Void,
+        confirm: @escaping (inout UserSummary) -> Void
+    ) {
+        guard toggle.wrappedValue.beginSave() else { return }
+        Task {
+            do {
+                try await write(next)
+                toggle.wrappedValue.saveSucceeded(wrote: next)
+                // Before the refresh, which keeps the old identity if it fails.
+                app.applyConfirmed(confirm)
+                await app.refreshUser()
+                Haptics.success()
+            } catch let failure {
+                toggle.wrappedValue.saveFailed(
+                    revertTo: previous,
+                    message: (failure as? APIError)?.errorDescription ?? failure.localizedDescription
+                )
+                Haptics.warning()
+            }
+            toggle.wrappedValue.finishSave()
         }
     }
 

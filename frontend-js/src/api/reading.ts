@@ -1,8 +1,12 @@
+import { nowSecs } from "../format";
 import { toBook } from "./books";
 import type { BookUuid, UserId } from "./core";
-import { fetchJson, ok, send } from "./core";
+import { fetchJson, inOrder, ok, send } from "./core";
 import {
   getAlignment,
+  getBookmarks,
+  getCrossFormatResume,
+  getDeleteBookmarkUrl,
   getDeleteHighlightUrl,
   getDeleteRatingUrl,
   getGetBookInsightsUrl,
@@ -11,16 +15,25 @@ import {
   getGetReadStatusUrl,
   getHighlights,
   getOtherRatings,
+  getPatchHighlightColorUrl,
+  getPatchHighlightNoteUrl,
   getPostCrossFormatFollowUrl,
+  getPostSyncPointUrl,
   getRecentProgress,
   getSessionLog,
+  postBookmark,
+  postHighlight,
+  postProgress,
   postRating,
   putReadStatus,
+  postSessions as sendSessions,
 } from "./generated/omnibus";
 import type {
   AlignmentViewOutput,
   BookInsights as BookInsightsWire,
+  Bookmark as BookmarkWire,
   BookProgress as BookProgressWire,
+  CrossFormatResumeOutput as CrossFormatResume,
   Highlight as HighlightWire,
   AttributedRating as OtherRatingWire,
   ProgressRecord as PositionWire,
@@ -29,6 +42,7 @@ import type {
   ReadStatusRecord as ReadStatusWire,
   ResumePoint as ResumePointWire,
   SessionLogPageOutput,
+  SessionReport as SessionReportWire,
 } from "./generated/schemas";
 import {
   BookInsights as BookInsightsSchema,
@@ -80,6 +94,8 @@ function toPosition(wire: PositionWire) {
   return {
     cfi: wire.epub_cfi ?? null,
     percent: wire.progress_percent ?? null,
+    // A CFI the server placed for a percent-only row, such as a Kobo's.
+    derivedCfi: wire.derived_epub_cfi ?? null,
     audioSeconds: wire.audio_position_seconds ?? null,
     updatedAt: wire.client_updated_at,
   };
@@ -104,6 +120,35 @@ export async function fetchProgress(uuid: BookUuid): Promise<Progress> {
     BookProgressSchema.nullable(),
   );
   return toProgress(data);
+}
+
+const positionWrites = new Map<string, Promise<void>>();
+
+/** Saves where the reader stands: an anchor (`comic-page:N`, `pdf-page:N`, a CFI) and the whole-book percent. */
+export function saveReadingPosition(
+  uuid: BookUuid,
+  position: { anchor: string; percent: number },
+): Promise<void> {
+  // The server keeps the later of two equal-timestamp writes, so a book's writes must not overtake each other.
+  return inOrder(positionWrites, uuid, async () => {
+    ok(
+      await postProgress({
+        book_uuid: uuid,
+        format: "epub",
+        epub_cfi: position.anchor,
+        progress_percent: position.percent,
+        client_updated_at: nowSecs(),
+      }),
+    );
+  });
+}
+
+export type SessionReport = SessionReportWire;
+
+/** Reports reading sittings, best-effort: `keepalive` lets an unload flush finish, and a lost batch costs one heartbeat of stats. */
+export async function postSessions(reports: SessionReport[]): Promise<void> {
+  if (reports.length === 0) return;
+  await sendSessions(reports, { keepalive: true }).catch(() => {});
 }
 
 /** The screen's shape of `GET /api/books/{uuid}/alignment`. */
@@ -273,14 +318,101 @@ function toHighlight(wire: HighlightWire) {
 }
 
 export type Highlight = ReturnType<typeof toHighlight>;
+export type HighlightColor = HighlightWire["color"];
 
 /** The reader's saved passages in a book. */
 export async function fetchHighlights(uuid: BookUuid): Promise<Highlight[]> {
   return ok(await getHighlights(encodeURIComponent(uuid))).map(toHighlight);
 }
 
+/** Saves a passage the reader marked; `anchor` is an EPUB range CFI or a PDF `pdf:` anchor. */
+export async function createHighlight(
+  uuid: BookUuid,
+  passage: { anchor: string; color: HighlightColor; text: string },
+): Promise<Highlight> {
+  return toHighlight(
+    ok(
+      await postHighlight({
+        book_uuid: uuid,
+        epub_cfi_range: passage.anchor,
+        color: passage.color,
+        text: passage.text === "" ? null : passage.text,
+      }),
+    ),
+  );
+}
+
+export async function recolorHighlight(
+  id: number,
+  color: HighlightColor,
+): Promise<void> {
+  await send(getPatchHighlightColorUrl(String(id)), "PATCH", { color });
+}
+
+/** Puts `note` on a passage; `null` removes the note. */
+export async function saveHighlightNote(
+  id: number,
+  note: string | null,
+): Promise<void> {
+  await send(getPatchHighlightNoteUrl(String(id)), "PATCH", { note });
+}
+
 export async function deleteHighlight(id: number): Promise<void> {
   await send(getDeleteHighlightUrl(String(id)), "DELETE");
+}
+
+function toBookmark(wire: BookmarkWire) {
+  return {
+    id: wire.id,
+    position: wire.position,
+    title: wire.title ?? null,
+    createdAt: wire.created_at,
+  };
+}
+
+export type Bookmark = ReturnType<typeof toBookmark>;
+
+/** The reader's saved places in a book. */
+export async function fetchBookmarks(uuid: BookUuid): Promise<Bookmark[]> {
+  return ok(await getBookmarks(encodeURIComponent(uuid))).map(toBookmark);
+}
+
+/** Saves a place; `position` is an EPUB CFI or a PDF `pdf-page:N` anchor. */
+export async function createBookmark(
+  uuid: BookUuid,
+  bookmark: { position: string; title: string | null },
+): Promise<Bookmark> {
+  return toBookmark(ok(await postBookmark({ book_uuid: uuid, ...bookmark })));
+}
+
+export async function deleteBookmark(id: number): Promise<void> {
+  await send(getDeleteBookmarkUrl(String(id)), "DELETE");
+}
+
+export type { CrossFormatResume };
+
+/** Where the other format has the reader, mapped onto the ebook; `null` when the route has no answer. */
+export async function fetchCrossFormatResume(
+  uuid: BookUuid,
+): Promise<CrossFormatResume | null> {
+  const res = await getCrossFormatResume(encodeURIComponent(uuid), {
+    target: "epub",
+    derive: "cfi",
+  }).catch(() => null);
+  return res?.status === 200 ? res.data : null;
+}
+
+/** Declares the spot the reader is at as matching their place in the other format. A 409 means the formats aren't linked. */
+export async function declareSyncPoint(
+  uuid: BookUuid,
+  at: { fraction: number; cfi: string | null },
+): Promise<void> {
+  await send(getPostSyncPointUrl(encodeURIComponent(uuid)), "POST", {
+    book_uuid: uuid,
+    format: "epub",
+    ebook_fraction: Math.min(Math.max(at.fraction, 0), 1),
+    epub_cfi: at.cfi,
+  });
 }
 
 function toInsights(wire: BookInsightsWire) {

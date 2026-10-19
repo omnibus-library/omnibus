@@ -1,4 +1,4 @@
-import { loadScript } from "../components/BarcodeScanner/loadScanner";
+import { loadScript } from "../loadScript";
 import hlsUrl from "../vendor/hls/hls.min.js?url";
 
 export type HlsInstance = {

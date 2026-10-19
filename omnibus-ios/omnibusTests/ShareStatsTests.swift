@@ -1,7 +1,7 @@
 //  ShareStatsTests.swift
 //  The `share_stats` wire decode (missing means on, per the household
-//  contract), the exact shape of the toggle's POST body, and the switch's
-//  save rules.
+//  contract), the exact shape of the toggle's POST body, the save rules
+//  every account switch shares, and the confirmed value a save publishes.
 
 import Foundation
 import Testing
@@ -36,10 +36,10 @@ struct ShareStatsCodecTests {
     }
 }
 
-@Suite("Share stats switch")
-struct ShareStatsToggleTests {
-    private func seeded(_ value: Bool) -> ShareStatsToggle {
-        var toggle = ShareStatsToggle()
+@Suite("Account setting switch")
+struct AccountSettingToggleTests {
+    private func seeded(_ value: Bool) -> AccountSettingToggle {
+        var toggle = AccountSettingToggle()
         toggle.seed(value)
         return toggle
     }
@@ -108,7 +108,7 @@ struct ShareStatsToggleTests {
     }
 
     @Test func theServerValueIsIgnoredBeforeTheFirstSeed() {
-        var toggle = ShareStatsToggle()
+        var toggle = AccountSettingToggle()
         toggle.serverChanged(to: false)
         #expect(toggle.value && toggle.saved)
     }
@@ -117,5 +117,18 @@ struct ShareStatsToggleTests {
         let toggle = seeded(true)
         #expect(toggle.isDisabled(online: false))
         #expect(!toggle.isDisabled(online: true))
+    }
+}
+
+struct ConfirmedSettingTests {
+    @Test func applyingSetsTheConfirmedValueOnTheSignedInUser() throws {
+        let me = try JSONDecoder().decode(UserSummary.self, from: Data("{\(minimalUserFields)}".utf8))
+        let patched = AppState.applying({ $0.stackSeries = true }, to: me)
+        #expect(patched?.stackSeries == true)
+        #expect(patched?.username == "a", "the rest of the identity is kept")
+    }
+
+    @Test func applyingWithNoOneSignedInPatchesNothing() {
+        #expect(AppState.applying({ $0.stackSeries = true }, to: nil) == nil)
     }
 }

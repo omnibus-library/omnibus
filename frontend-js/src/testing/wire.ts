@@ -190,6 +190,18 @@ export function aWireHighlight(overrides: Partial<Highlight> = {}): Highlight {
   };
 }
 
+/** A saved place as `GET /api/bookmarks/book/{uuid}` sends it. */
+export function aWireBookmark(overrides: Partial<Bookmark> = {}): Bookmark {
+  return {
+    id: 1,
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    position: "epubcfi(/6/6!/4/2/1:0)",
+    title: "Landfall",
+    created_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
 /** A journal entry as `GET /api/journals/book/{uuid}` sends it: Ada's published note. */
 export function aWireJournalEntry(
   overrides: Partial<JournalEntry> = {},

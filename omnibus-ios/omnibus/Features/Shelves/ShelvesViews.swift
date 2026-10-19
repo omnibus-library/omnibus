@@ -176,9 +176,9 @@ struct ShelfDetailView: View {
                         case .empty:
                             emptyState
                         case .members:
-                            CoverGrid(members.books) { book in
+                            StackedBookGrid(members.books) { book, cell in
                                 NavigationLink(value: Destination.book(uuid: book.uuid)) {
-                                    BookGridCell(book: book)
+                                    cell
                                 }
                                 .buttonStyle(BookPressStyle())
                                 .bookContextMenu(book, onEdited: { Task { await load() } }) {

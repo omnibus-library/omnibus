@@ -20,6 +20,8 @@ The screens it has ported are listed under [Routes](#routes).
 | `src/api/generated/` | zod schemas, fetchers, TanStack Query hooks and MSW handlers that orval generates from `../openapi/openapi.json`; gitignored, rebuilt by `pnpm run generate` (`pnpm install` runs it too) |
 | `src/vendor/hls/` | hls.js, a byte copy of `frontend/assets/vendor/hls.min.js`, loaded by `<script>` from a Vite `?url` import when a transcoded book plays, so it stays out of the main bundle |
 | `src/vendor/barcode/` | the camera scanner's zxing decoder, its wasm and the glue: byte copies of `frontend/assets/vendor/`, loaded by `<script>` from Vite `?url` imports (the zxing IIFE declares a global that bundling would scope away) |
+| `src/vendor/reader/` | the EPUB and PDF reader runtimes (epub.js, PDF.js and the two glue files): byte copies of `frontend/assets/vendor/`, loaded from Vite `?url` imports; `parity.test.ts` fails when a copy drifts |
+| `public/` | `vendor/pdfjs-wasm/` and `reader-fonts/`, copied verbatim and kept by name because PDF.js and `reader-fonts.css` build URLs onto their directories |
 | `src/testing/` | `AppHarness`, parsed and wire-format fixtures, the MSW handlers orval can't generate (`handlers.ts`), the Vitest setup |
 | `.storybook/` | Storybook's config, the preview every story renders inside, and MSW's worker |
 | `tools/extract-atrium.cjs` | copies Atrium rules into component CSS when a screen is ported |
@@ -35,11 +37,12 @@ under the top bar, and a guest goes to `/login?next=…` and comes back. Login,
 Register, the library, book detail, the metadata editor (`/books/:uuid/edit`),
 add books (`/add-books`), check-in (`/check-in`), search results
 (`/search/:query`), the authors, series and shelves indexes with their detail
-pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), the audiobook player
-(`/listen/:uuid`, `?file_id` picks one of a book's files) and Not Found are
-ported, and the top bar carries the user menu and the ⌘K search palette. The phone
-layouts (the bottom tab bar and the native shell's shelves screens) are left
-out. As on Dioxus web, a bare `/search` and the native shell's `/connect`
+pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), the three readers
+(`/read`, `/comic`, `/pdf`), the audiobook player (`/listen/:uuid`, `?file_id`
+picks one of a book's files) and Not Found are ported, and the top bar carries
+the user menu and the ⌘K search palette. The phone layouts (the bottom tab bar
+and the native shell's shelves screens) are left out. As on Dioxus web, a bare
+`/search` and the native shell's `/connect`
 redirect to the library. Every other route renders `Unported`, which shows its
 parsed parameters and names its Dioxus source.
 Book detail carries all six stops (home, stats, highlights, journals, files,
@@ -60,6 +63,11 @@ server accepts": the cap is the server's `OMNIBUS_MAX_UPLOAD_BYTES`, which no
 route reports, so the page cannot refuse a big file before sending it. Check-in
 takes an ISBN typed, scanned or found by title, and files a copy or a wishlist
 entry; the camera never opens until "Scan a barcode" is pressed.
+The readers are lazy chunks that mount the vendored epub.js and PDF.js glue from a
+React effect; each saves its position as pages turn and records reading
+sessions and read status. The EPUB and PDF readers carry highlights, notes,
+quotes and bookmarks, and the EPUB reader adds contents, search, the Aa panel and
+cross-format follow. The audiobook mini dock on `/read` waits for the player.
 A page that throws renders `RouteError` inside the top bar; anything else that
 throws (the session gate, the shell, a reader) renders it full-screen.
 
@@ -81,6 +89,18 @@ already exists goes in by hand, as does one whose modifier class (`ok`, `error`)
 is on the script's stop list; `--write --force` regenerates every file
 unformatted and drops their hand edits. `.add-books-progress` in `AddBooks.css` is
 hand-written and React-only: the Dioxus page has no such element.
+
+A screen driven by a vendored glue (the readers) is ported differently. The
+glue is a byte copy in `src/vendor/reader/`, loaded by `loadScript` from a
+`?url` import; it talks back through `window.__omnibusOn*` hooks declared in
+`src/env.d.ts`, listed in the page's `HOOKS` array and installed and removed in
+its mount effect. Stories swap in a stand-in from `src/testing/readerGlue.ts`.
+A new vendored file goes in `src/vendor/reader/parity.test.ts`; editing
+`frontend/assets/vendor/` or `reader-fonts/` runs this project's CI and fails
+parity until the copy here changes in the same PR. The audiobook dock mounts in
+the EPUB footer's `pill` slot (`Footer` in `ReaderChrome.tsx`). Readers are lazy
+chunks, so a tab left open across a redeploy asks for an old chunk hash, which
+404s into `RouteError` until a reload.
 
 A CSS file that is pure script output (`Library.css`) can be regenerated after
 its markup changes by emptying it (`: > src/pages/Library/Library.css`) and
@@ -161,7 +181,10 @@ shell provides it.
   `scanStatus` and `loadScanner`, the discovery pages' `authorsOrder`,
   `authorPane`, `seriesIndex`, `shelvesIndex`, the shelf rules' `rules`, the
   picker's `picker`, the shelf page's `shelfAccess` and `narrow`, and the
-  player's `PlaybackProvider`, `engine`, `boot`, `sleep`, `listening`, `loadHls` and `listen`), plus the
+  readers' `pager`, `pdfAnchors`, `start`, `relocate`, `typography`,
+  `epubGlue`, `pdfGlue`, `readingSession` and `autoReadStatus`, the player's
+  `PlaybackProvider`, `engine`, `boot`, `sleep`, `listening`, `loadHls` and
+  `listen`, plus the vendored files' parity test), plus the
   real route table in `src/router.test.tsx`: every unported page, the layout
   split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI

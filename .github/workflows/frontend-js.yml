@@ -36,8 +36,9 @@ jobs:
               - "frontend-js/**"
               # The client is generated from the spec, so a spec change can break it.
               - "openapi/openapi.json"
-              # The glue's parity test in frontend-js compares this copy.
-              - "frontend/assets/vendor/barcode-scanner-glue.js"
+              # The parity tests in frontend-js compare these copies.
+              - "frontend/assets/vendor/**"
+              - "frontend/assets/reader-fonts/**"
               - ".github/workflows/frontend-js.yml"
               - "flake.nix"
               - "flake.lock"
