@@ -3,20 +3,21 @@
 //! by an optional snake_case `?range=`), the same data un-aggregated as a
 //! keyset-paginated session log (`GET /api/stats/sessions`), the annual goal
 //! (`PUT /api/stats/goal`) and the daily ones (`PUT /api/stats/goal/daily`),
-//! and the collection's own scale and mix (`GET /api/library-size`,
-//! `GET /api/library-composition` — the same for every reader).
+//! one book's insights (`GET /api/books/{uuid}/insights`), and the collection's
+//! own scale and mix (`GET /api/library-size`, `GET /api/library-composition` —
+//! the same for every reader).
 
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
 use omnibus_db::{self as db, stats::GoalError};
 use omnibus_shared::{
-    DailyGoalUpdate, DailyGoals, GoalQuery, HouseholdReader, LibraryComposition, LibrarySize,
-    ReadingGoal, ReadingGoalUpdate, SessionCursor, SessionLogPage, SessionLogQuery, StatsQuery,
-    StatsSummary,
+    BookInsights, BookInsightsQuery, DailyGoalUpdate, DailyGoals, GoalQuery, HouseholdReader,
+    LibraryComposition, LibrarySize, ReadingGoal, ReadingGoalUpdate, SessionCursor, SessionLogPage,
+    SessionLogQuery, StatsQuery, StatsSummary,
 };
 
 use super::{internal, AppState};
@@ -250,5 +251,40 @@ pub(super) async fn get_session_log(
     {
         Ok(page) => Json(page).into_response(),
         Err(e) => viewer_error("get_session_log", e),
+    }
+}
+
+/// Get your insights into a book
+///
+/// How you have read and listened to one book: when you started, the time you have spent
+/// in it, how often you picked it up, your longest sitting and a per-day strip. `null`
+/// when you have no sitting of a minute or more in it. Days are cut on your
+/// `utc_offset_minutes`.
+#[utoipa::path(
+    get,
+    path = "/api/books/{uuid}/insights",
+    tag = "Stats",
+    params(("uuid" = String, Path, description = "The book's uuid."), BookInsightsQuery),
+    responses(
+        (status = 200, description = "Your insights, or `null` without a sitting in the book.", body = Option<BookInsights>),
+        (status = 404, description = "No book has that uuid."),
+    ),
+)]
+pub(super) async fn get_book_insights(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Path(uuid): Path<String>,
+    Query(query): Query<BookInsightsQuery>,
+) -> Response {
+    // `book_insights` answers `None` both for an unknown book and for one with no sitting,
+    // so the unknown book is told apart first.
+    match db::resolve_canonical_book_uuid(&state.pool, &uuid).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return (StatusCode::NOT_FOUND, "book not found").into_response(),
+        Err(e) => return internal("get_book_insights", e),
+    }
+    match db::stats::book_insights(&state.pool, user.id, &uuid, query.utc_offset_minutes).await {
+        Ok(insights) => Json(insights).into_response(),
+        Err(e) => internal("get_book_insights", e),
     }
 }

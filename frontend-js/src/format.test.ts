@@ -1,27 +1,35 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { BookDetail } from "./api";
+import { type BookDetail, toBookDetail } from "./api";
 import {
+  ago,
   bookCount,
   descriptionOverflows,
+  durationLabel,
   facetQuery,
+  fileSize,
   formatDateShort,
+  formatHm,
   formatInstantShort,
+  formatLongDate,
   formatYear,
   homeKicker,
   initialOf,
   initialsFor,
   plateAuthor,
+  recency,
   singleFacetValue,
+  summaryIsSparse,
 } from "./format";
-import { aBook } from "./testing/books";
+import { aWireBook } from "./testing/wire";
 
-const book: BookDetail = {
-  ...aBook({ title: "Alpha", authors: ["Ada Lovelace"], series: null }),
-  description: null,
-  published: "1843-10-01",
-  genres: [],
-  subjects: [],
-};
+const book: BookDetail = toBookDetail(
+  aWireBook({
+    title: "Alpha",
+    creators: [{ name: "Ada Lovelace" }],
+    series: null,
+    published: "1843-10-01",
+  }),
+);
 
 describe("plateAuthor", () => {
   it.each([
@@ -34,20 +42,73 @@ describe("plateAuthor", () => {
 });
 
 describe("homeKicker", () => {
-  it("leads a series book with its position and year", () => {
-    const inSeries = { ...book, series: { name: "Aurora", index: "2" } };
+  const inSeries = { ...book, series: { name: "Aurora", index: "2" } };
 
-    expect(homeKicker(inSeries)).toBe("Aurora · Book 2 · 1843");
+  it("leads a series book with its name, position and year", () => {
+    expect(homeKicker(inSeries, null)).toEqual({
+      series: "Aurora",
+      tail: " · Book 2 · 1843",
+    });
+  });
+
+  it("adds how many of the series the library holds once it is known", () => {
+    expect(homeKicker(inSeries, 3).tail).toBe(
+      " · Book 2 · 3 in your library · 1843",
+    );
+  });
+
+  it("leaves a series book with no index at its name and year", () => {
+    const unindexed = { ...book, series: { name: "Aurora", index: null } };
+
+    expect(homeKicker(unindexed, 3).tail).toBe(" · 1843");
   });
 
   it("leads a standalone with its first genre, then subject, then Book", () => {
     expect(
-      homeKicker({ ...book, genres: ["Sci-fi"], subjects: ["Space"] }),
-    ).toBe("Sci-fi · standalone · 1843");
-    expect(homeKicker({ ...book, subjects: ["Space"] })).toBe(
+      homeKicker({ ...book, genres: ["Sci-fi"], subjects: ["Space"] }, null),
+    ).toEqual({
+      series: null,
+      tail: "Sci-fi · standalone · 1843",
+    });
+    expect(homeKicker({ ...book, subjects: ["Space"] }, null).tail).toBe(
       "Space · standalone · 1843",
     );
-    expect(homeKicker({ ...book, published: null })).toBe("Book · standalone");
+    expect(homeKicker({ ...book, published: null }, null).tail).toBe(
+      "Book · standalone",
+    );
+  });
+
+  it("leaves out the year of calibre's placeholder date", () => {
+    expect(homeKicker({ ...book, published: "0101-01-01" }, null).tail).toBe(
+      "Book · standalone",
+    );
+  });
+
+  it.each([
+    ["scan", "a scan"],
+    ["detail", "this page"],
+    ["manual", "an ISBN you entered"],
+    ["search", "a title search"],
+  ] as const)("names a wishlist entry added from a %s", (source, phrase) => {
+    expect(homeKicker(inSeries, 3, { addedAt: 1_760_000_000, source })).toEqual(
+      {
+        series: null,
+        tail: `On your wishlist · added from ${phrase}`,
+      },
+    );
+  });
+});
+
+describe("fileSize", () => {
+  it.each([
+    [0, null],
+    [-5, null],
+    [512, "512 B"],
+    [1_500, "1.5 KB"],
+    [3_100_000, "3.1 MB"],
+    [2_400_000_000, "2.4 GB"],
+  ])("sizes %i bytes as %s", (bytes, label) => {
+    expect(fileSize(bytes)).toBe(label);
   });
 });
 
@@ -149,28 +210,33 @@ describe("formatYear", () => {
 
 describe("formatDateShort", () => {
   it.each([
-    ["2016-05-02T21:00:00+00:00", "May 2nd, 2016"],
-    ["2024-01-02 03:04:05", "Jan 2nd, 2024"],
-    ["2026-08-01", "Aug 1st, 2026"],
-    ["2026-08-03", "Aug 3rd, 2026"],
-    ["2026-08-11", "Aug 11th, 2026"],
-    ["2026-08-12", "Aug 12th, 2026"],
-    ["2026-08-13", "Aug 13th, 2026"],
-    ["2026-08-22", "Aug 22nd, 2026"],
-    ["2016-05", "May 2016"],
-    ["2016-05-32", "May 2016"],
-    ["2016", "2016"],
-    ["0102-01-01", "Jan 1st, 102"],
-  ])("reads %s as %s", (raw, shown) => {
+    ["a full date", "2021-03-01", "Mar 1st, 2021"],
+    ["an ISO timestamp", "2026-07-31T00:01:35Z", "Jul 31st, 2026"],
+    ["the 11th to 13th", "2026-08-12", "Aug 12th, 2026"],
+    ["a 2nd and a 23rd", "2026-08-22", "Aug 22nd, 2026"],
+    ["a month alone", "2026-08", "Aug 2026"],
+    ["a year alone", "2026", "2026"],
+    ["a month out of range", "2026-13-05", "2026"],
+    ["a day out of range", "2026-08-40", "Aug 2026"],
+    ["a 1st, a 3rd and an 11th", "2026-08-11", "Aug 11th, 2026"],
+    ["a 3rd", "2026-08-03", "Aug 3rd, 2026"],
+    ["a 13th", "2026-08-13", "Aug 13th, 2026"],
+    ["a day past the month's end", "2016-05-32", "May 2016"],
+    ["an offset timestamp", "2016-05-02T21:00:00+00:00", "May 2nd, 2016"],
+    ["a SQLite datetime", "2024-01-02 03:04:05", "Jan 2nd, 2024"],
+    ["the earliest real year", "0102-01-01", "Jan 1st, 102"],
+  ])("reads %s", (_condition, raw, shown) => {
     expect(formatDateShort(raw)).toBe(shown);
   });
 
-  it.each(["", "circa 1850", "0101-01-01T00:00:00+00:00", "0001-01-01"])(
-    "reads %j as no date",
-    (raw) => {
-      expect(formatDateShort(raw)).toBe("—");
-    },
-  );
+  it.each([
+    ["calibre's placeholder", "0101-01-01T00:00:00+00:00"],
+    ["text", "unknown"],
+    ["nothing", ""],
+    ["year one", "0001-01-01"],
+  ])("returns null for %s", (_condition, raw) => {
+    expect(formatDateShort(raw)).toBeNull();
+  });
 });
 
 describe("formatInstantShort", () => {
@@ -178,16 +244,99 @@ describe("formatInstantShort", () => {
     vi.unstubAllEnvs();
   });
 
-  it("cuts an instant on the browser's local day", () => {
+  it("cuts an instant on the browser's local day by default", () => {
     vi.stubEnv("TZ", "America/Detroit");
 
     expect(formatInstantShort("2026-09-08T03:36:00Z")).toBe("Sep 7th, 2026");
     expect(formatInstantShort("2026-09-08 03:36:00")).toBe("Sep 7th, 2026");
   });
 
-  it("leaves a bare date and the missing-date sentinel to formatDateShort", () => {
-    expect(formatInstantShort("2016-05-02")).toBe("May 2nd, 2016");
-    expect(formatInstantShort("0101-01-01T05:00:00Z")).toBe("—");
-    expect(formatInstantShort("")).toBe("—");
+  it("puts an instant on the calendar of the zone asked for", () => {
+    expect(formatInstantShort("2026-09-08T03:36:00Z", "UTC")).toBe(
+      "Sep 8th, 2026",
+    );
+    expect(formatInstantShort("2026-09-08T03:36:00Z", "America/Detroit")).toBe(
+      "Sep 7th, 2026",
+    );
+  });
+
+  it("reads the SQLite datetime shape as UTC", () => {
+    expect(formatInstantShort("2024-01-02 03:04:05", "UTC")).toBe(
+      "Jan 2nd, 2024",
+    );
+  });
+
+  it("leaves a bare calendar date unshifted", () => {
+    expect(formatInstantShort("2021-03-01", "Pacific/Kiritimati")).toBe(
+      "Mar 1st, 2021",
+    );
+  });
+});
+
+describe("ago", () => {
+  it.each([
+    [30, "just now"],
+    [60, "1 minute ago"],
+    [59 * 60, "59 minutes ago"],
+    [3 * 3600, "3 hours ago"],
+    [86_400, "1 day ago"],
+    [-5, "just now"],
+  ])("reads %i seconds as %s", (secs, phrase) => {
+    expect(ago(1_000_000 + secs, 1_000_000)).toBe(phrase);
+  });
+});
+
+describe("recency", () => {
+  it.each([
+    [89, "just now"],
+    [90, "1m ago"],
+    [7200, "2h ago"],
+    [86_400, "yesterday"],
+    [172_800, "2d ago"],
+  ])("reads %i seconds as %s", (secs, phrase) => {
+    expect(recency(1_000_000 + secs, 1_000_000)).toBe(phrase);
+  });
+});
+
+describe("formatHm", () => {
+  it.each([
+    [0, "0m"],
+    [2459, "40m"],
+    [3600, "1h 00m"],
+    [23_460, "6h 31m"],
+    [-5, "0m"],
+  ])("reads %i seconds as %s", (secs, label) => {
+    expect(formatHm(secs)).toBe(label);
+  });
+});
+
+describe("durationLabel", () => {
+  it.each([
+    [0, "0m"],
+    [2460, "41m"],
+    [7200, "2h"],
+    [7500, "2h 5m"],
+    [-1, "0m"],
+  ])("reads %i seconds as %s", (secs, label) => {
+    expect(durationLabel(secs)).toBe(label);
+  });
+});
+
+describe("formatLongDate", () => {
+  it("puts a unix time on the calendar day of the zone asked for", () => {
+    expect(formatLongDate(1_786_586_400, "UTC")).toBe("August 13, 2026");
+    expect(formatLongDate(1_786_586_400, "America/Detroit")).toBe(
+      "August 12, 2026",
+    );
+  });
+});
+
+describe("summaryIsSparse", () => {
+  it("counts the words outside the tags against the 10-word minimum", () => {
+    const words = (n: number) => `<p>${"word ".repeat(n)}</p>`;
+
+    expect(summaryIsSparse(words(9))).toBe(true);
+    expect(summaryIsSparse(words(10))).toBe(false);
+    expect(summaryIsSparse("")).toBe(true);
   });
 });

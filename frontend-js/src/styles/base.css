@@ -101,6 +101,7 @@ html {
 button[aria-busy="true"] {
   cursor: progress;
 }
+
 .card {
   background: var(--bg-1);
   border: 1px solid var(--line-2);
@@ -112,6 +113,11 @@ button[aria-busy="true"] {
 }
 @media (hover: hover) {
   .card:hover {
+    border-color: var(--line);
+  }
+}
+@media (hover: none) {
+  .card:active {
     border-color: var(--line);
   }
 }

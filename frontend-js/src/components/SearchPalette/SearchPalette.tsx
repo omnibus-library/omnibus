@@ -14,6 +14,7 @@ import { plural } from "../../format";
 import { paletteQuery, searchHref } from "../../search";
 import { useCurrentUser } from "../../session";
 import { matchingSettings } from "../../settingsIndex";
+import { useDebounced } from "../../useDebounced";
 import { SearchGlyph } from "../Glyphs/Glyphs";
 import { Loading, Ring } from "../Loading/Loading";
 import { ResultsList } from "./PaletteRows";
@@ -90,17 +91,6 @@ export function SearchPaletteTrigger() {
 export function SearchPaletteOverlay() {
   const { open, setOpen } = usePalette();
   return open ? <PaletteOverlay onClose={() => setOpen(false)} /> : null;
-}
-
-const DEBOUNCE_MS = 150;
-
-function useDebounced(value: string): string {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setSettled(value), DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [value]);
-  return settled;
 }
 
 // Debounced, and a newer query supersedes the one in flight; the last answer

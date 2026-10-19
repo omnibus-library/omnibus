@@ -2,7 +2,8 @@
 
 A throwaway slice of the web client rebuilt as a React SPA, to weigh against the
 Dioxus frontend. It talks only to the existing Axum `/api/*` REST surface — the
-one iOS and MCP already use — and changes nothing in Rust.
+one iOS and MCP already use — and adds a REST route only where a ported screen
+has none.
 
 Covers three screens: sign-in (cookie session), the library grid (keyset pages
 from `GET /api/ebooks`, thumbnails from `/api/thumbs`), and book detail.
@@ -15,7 +16,7 @@ from `GET /api/ebooks`, thumbnails from `/api/thumbs`), and book detail.
 | `src/components/<Name>/` | shared building blocks: `<Name>.tsx` beside its `.css` and `.stories.tsx` |
 | `src/layouts/` | `RequireAuth` (the session gate) and `AppShell` (top bar + page) |
 | `src/pages/<Name>/` | one folder per route, its CSS beside it |
-| `src/api.ts` | every REST call the screens make, mapping wire shapes to the ones they render, and the form schemas |
+| `src/api.ts` | a barrel over `src/api/*.ts`, one file per resource: every REST call the screens make, mapping wire shapes to the ones they render, and the form schemas |
 | `src/api/generated/` | zod schemas, fetchers, TanStack Query hooks and MSW handlers that orval generates from `../openapi/openapi.json`; gitignored, rebuilt by `pnpm run generate` (`pnpm install` runs it too) |
 | `src/testing/` | `AppHarness`, parsed and wire-format fixtures, the MSW handlers orval can't generate (`handlers.ts`), the Vitest setup |
 | `.storybook/` | Storybook's config, the preview every story renders inside, and MSW's worker |
@@ -34,6 +35,11 @@ Found are ported, and the top bar carries the user menu and the ⌘K search
 palette. As on Dioxus web, a bare `/search` and the native shell's `/connect`
 redirect to the library. Every other route renders `Unported`, which shows its
 parsed parameters and names its Dioxus source.
+Book detail carries all six stops (home, stats, highlights, journals, files,
+more) with the rating, quote cards, journal editor, copies and wishlist, shelf
+picker, Send to Kindle, merge and delete. It leaves the alignment modal, the
+snapped scroll mode, the genre and tag chip editor, the playback dock and the
+check-in overlay to the screens that own them.
 A page that throws renders `RouteError` inside the top bar; anything else that
 throws (the session gate, the shell, a reader) renders it full-screen.
 
@@ -113,8 +119,9 @@ shell provides it.
   Atrium's muted inks fail colour contrast in six stories (as in the Dioxus app).
 - **The API is faked with MSW.** orval generates a handler per documented
   status (`src/api/generated/omnibus.msw.ts`), and `src/testing/handlers.ts`
-  adds the ones that need behaviour: paging headers, a password check. Stories
-  for the library, book detail and sign-in run against them, so their `play`
+  adds the ones that need behaviour: paging headers, a password check, a journal
+  that keeps what is posted, a Kindle send that answers `pending` and then
+  `sent`. Stories for the library, book detail and sign-in run against them, so their `play`
   tests cover loading, empty, failing and success states, and the fixtures are
   typed by the spec.
 - **Docs:** every component gets a Docs page in Storybook, built from its
@@ -124,9 +131,10 @@ shell provides it.
 - **Unit tests** (`pnpm run test:unit`, jsdom) cover the API parsers,
   formatting, `safeNext`, the theme root, the session, and the pure helpers
   behind the screens (`resume`, `password`, `settingsIndex`, `viewPrefs`,
-  `focusTrap`, the palette's `selection`, the results page's `results`,
-  Register's `refusal`, the library's `filters`, `libraryView`, `seriesStacks`,
-  `shelfGallery`, `sorting` and `bulkEdit`), plus the
+  `focusTrap`, book detail's `readout`, `identifiers`, `shelves`,
+  `journalEditor` and delete copy, the palette's `selection`, the results
+  page's `results`, Register's `refusal`, the library's `filters`,
+  `libraryView`, `seriesStacks`, `shelfGallery`, `sorting` and `bulkEdit`), plus the
   real route table in `src/router.test.tsx`: every unported page, the layout
   split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI

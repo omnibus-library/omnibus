@@ -23,7 +23,7 @@ import { sortLockReason } from "./sorting";
  */
 export function railShelves(all: Shelf[], viewerId: UserId): Shelf[] {
   return all.filter((s) => {
-    const own = s.ownerId === viewerId;
+    const own = s.owner.id === viewerId;
     // A wishlist is provisioned per account rather than chosen, so another reader's is noise.
     const sharedByAnother = s.visibility === "public" && s.kind !== "wishlist";
     const unusedWishlist = s.kind === "wishlist" && s.bookCount === 0;
@@ -61,7 +61,7 @@ export function addTargets(
   viewer: { id: UserId; isAdmin: boolean },
 ): Shelf[] {
   return shelves.filter(
-    (s) => s.kind === "manual" && (viewer.isAdmin || s.ownerId === viewer.id),
+    (s) => s.kind === "manual" && (viewer.isAdmin || s.owner.id === viewer.id),
   );
 }
 

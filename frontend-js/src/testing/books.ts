@@ -61,10 +61,10 @@ export function aShelf(overrides: Partial<Shelf> = {}): Shelf {
     kind: "manual",
     visibility: "private",
     name: "Winter reads",
-    ownerId: userId(1),
-    ownerName: "ada",
+    accent: null,
+    owner: { id: userId(1), name: "ada", hasAvatar: false },
     bookCount: 12,
-    coverUuids: [],
+    covers: [],
     ...overrides,
   };
 }
