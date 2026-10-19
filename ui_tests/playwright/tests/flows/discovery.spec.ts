@@ -69,7 +69,9 @@ test.describe("author page", () => {
     });
 
     await test.step("check it lists All Books, narrowed", async () => {
-      await expect(libraryPage.sectionTitle).toContainText("All Books");
+      await expect(libraryPage.shelfGallery.selectedTab).toContainText(
+        "All Books",
+      );
       await expect(libraryPage.filterBar.chip(0)).toContainText(name);
     });
   });

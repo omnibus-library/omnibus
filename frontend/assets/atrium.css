@@ -242,17 +242,13 @@ html, body { overscroll-behavior: none; }
    which falls out as `.6015em - leading / 2`. `max()` floors a leading past
    1.203 (h4 is already there) at zero rather than dropping the declaration on a
    negative length.
-   The list is display *typography*, not the `h1`–`h5` elements: `.lib-header-title`
-   is a `<p>` set at clamp(42px, 6vw, 70px)/1.0 — same face, same negative
-   half-leading, same escaping ink — so it takes the guard alongside them, the
-   way it already takes the upright-`em` arm below. A serif block that retunes
-   its own leading and is *not* on this list keeps escaping.
+   A serif block that retunes its own leading and is *not* on this list keeps
+   escaping.
    Each entry declares its leading as `--lh` and feeds `line-height` from that,
    so the guard is derived from the same number and the two cannot drift apart;
    anything that sets `line-height` another way gets the 1.203 fallback, which is
    no guard at all. */
-.atrium h1, .atrium h2, .atrium h3, .atrium h4, .atrium h5,
-.lib-header-title {
+.atrium h1, .atrium h2, .atrium h3, .atrium h4, .atrium h5 {
   --descender-guard: max(0px, calc((0.6015 - var(--lh, 1.203) / 2) * 1em));
   padding-bottom: var(--descender-guard);
 }
@@ -263,11 +259,9 @@ html, body { overscroll-behavior: none; }
 /* `<em>` is italic by UA default, and headings use it to set one word of the
    name apart ("Every <em>author</em>", "<em>Frankenstein</em>"). That is
    naming a thing, not quoting a human, so it stays upright — genuine inline
-   emphasis (`.bd-desc em`, `.cm-em`, `.m-em`) re-declares italic for itself.
-   `.lib-header-title` is a `<p>`, hence the extra arm. */
+   emphasis (`.bd-desc em`, `.cm-em`, `.m-em`) re-declares italic for itself. */
 .atrium h1 em, .atrium h2 em, .atrium h3 em,
-.atrium h4 em, .atrium h5 em,
-.lib-header-title em { font-style: normal; }
+.atrium h4 em, .atrium h5 em { font-style: normal; }
 .atrium p  { margin: 0; }
 .atrium a  { color: inherit; text-decoration: none; }
 
@@ -6117,39 +6111,18 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   gap: 12px;
   padding: 24px 0 18px;
 }
-.lib-header-kicker {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  color: var(--ink-2);
-}
-.lib-header-path { color: var(--ink-3); }
-.lib-header-kicker-title.lib-header-kicker-title {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-2);
-  font-weight: 500;
-  --lh: 1.45; line-height: var(--lh);
-  margin: 0;
-}
 .lib-header-row {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 18px;
   flex-wrap: wrap;
 }
-.lib-header-title {
-  font-family: var(--serif); font-weight: 600;
-  font-size: clamp(42px, 6vw, 70px);
-  --lh: 1.0; line-height: var(--lh);
-  letter-spacing: -0.005em;
-  margin: 0;
-  color: var(--ink-0);
-}
-.lib-header-title-wrap { display: flex; align-items: center; gap: 12px; min-width: 0; }
+/* What the header says beside the filters: the filtered count, the hidden
+   receipt and the shelf's edit pencil. */
+.lib-header-receipt { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.lib-header-receipt-text { margin: 0; font-size: 13px; line-height: 1.4; color: var(--ink-2); }
+.lib-header-count + .lib-header-hidden::before { content: " \00b7 "; }
 .lib-header-hidden { color: var(--ink-3); }
 .m-lib-hidden { color: var(--ink-3); margin-left: 8px; }
 
@@ -6236,6 +6209,11 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
      Sized for that label so the widest option always fits. */
   min-width: 192px;
 }
+/* Where the engine can size a select to its value, it is as wide as the sort
+   it shows and needs no floor. */
+@supports (field-sizing: content) {
+  .lib-sort-select { field-sizing: content; min-width: 0; padding-right: 26px; }
+}
 .lib-sort-select:focus { outline: none; border-color: var(--accent); }
 .lib-sort-dir {
   background: var(--bg-2);
@@ -6245,6 +6223,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   font: inherit;
   padding: 0 10px;
   height: 28px;
+  display: inline-grid; place-items: center;
   cursor: pointer;
 }
 @media (hover: hover) { .lib-sort-dir:hover { border-color: var(--accent); } }
@@ -12301,11 +12280,6 @@ html {
   gap: 24px;
 }
 .lmq-stack-side { max-width: 720px; }
-.lmq-kicker {
-  display: flex; align-items: center; justify-content: center; gap: 9px;
-  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.26em;
-  text-transform: uppercase; color: var(--accent);
-}
 .lmq .lmq-title {
   font-family: var(--serif); font-size: 38px; font-weight: 600;
   --lh: 0.94; line-height: var(--lh); letter-spacing: -0.012em; color: var(--ink-0);
@@ -12313,10 +12287,10 @@ html {
 }
 .lmq-title-link { color: inherit; text-decoration: none; }
 .lmq-title-link:hover .lmq-title { color: var(--accent); }
-.lmq-by { margin-top: 6px; font-size: 15px; color: var(--ink-1); }
-.lmq-where {
-  margin-top: 3px; font-family: var(--mono); font-size: 11.5px;
-  color: var(--ink-3); letter-spacing: 0.01em;
+.lmq-by { margin: 8px 0 0; font-size: 15px; color: var(--ink-2); }
+.lmq-synced {
+  display: inline-flex; align-items: center; gap: 5px; margin-left: 0.8em;
+  color: var(--accent);
 }
 /* The lead book's cross-format affordances live beside the type, never on
    the cover — the cover belongs to the resume verb alone. */
@@ -12415,22 +12389,28 @@ html {
 .lmq-veil-bar i { display: block; height: 100%; background: var(--accent); }
 
 /* ── Shelves, text first ─────────────────────────────────────────── */
-.lmq-shelves { padding: 6px 0 30px; }
-.lmq-slab {
-  display: flex; align-items: baseline; justify-content: space-between;
-  gap: 12px; margin-bottom: 14px;
+/* A heading with the section's actions on its line, then the tabs, whose own
+   top padding is the room their covers peek into. */
+.lmq-shelves {
+  padding: 6px 0 30px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 24px;
 }
-.lmq-slab .k {
-  font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em;
-  text-transform: uppercase; color: var(--ink-3);
+.lmq .lmq-shelves-title {
+  grid-column: 1; grid-row: 1;
+  margin: 0; font-family: var(--sans); font-size: 15px; font-weight: 600; --lh: 1.3; line-height: var(--lh);
+  letter-spacing: 0; color: var(--ink-0);
 }
+.lmq-shelves > .lmq-slab-acts { grid-column: 2; grid-row: 1; }
+.lmq-shelves > .lmq-shwrap { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
 .lmq-slink {
   font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em;
   text-transform: uppercase; color: var(--ink-2);
   background: transparent; border: 0; cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
 }
+.lmq-slink svg { flex: none; width: 12px; height: 12px; }
 .lmq-slink:hover { color: var(--accent); }
-.lmq-slab-acts { display: inline-flex; align-items: baseline; gap: 20px; }
+.lmq-slab-acts { display: inline-flex; align-items: center; gap: 20px; }
 
 .lmq-shwrap { position: relative; display: flex; align-items: stretch; }
 /* The peek needs room INSIDE the scroller: `overflow-x: auto` clips the block
@@ -12459,14 +12439,14 @@ html {
    `--ink-0` needs both to carry it. Stated explicitly so the next type sweep
    reads a choice rather than a missing declaration. */
 .lmq-shent-name {
-  display: block;
   font-family: var(--serif); font-weight: 400; font-size: 23px; line-height: 1.1;
   color: var(--ink-1); white-space: nowrap; transition: color .18s;
 }
+/* The count sits on the name's line, not under it as a second label. */
 .lmq-shent-meta {
-  margin-top: 5px; display: flex; align-items: center; gap: 6px;
-  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;
-  text-transform: uppercase; color: var(--ink-3);
+  display: inline-flex; align-items: center; gap: 5px; margin-left: 8px;
+  font-family: var(--sans); font-size: 13px; font-variant-numeric: tabular-nums;
+  color: var(--ink-3); white-space: nowrap;
 }
 .lmq-shent-peek {
   position: absolute; left: 26px; top: -42px;
@@ -12501,29 +12481,28 @@ html {
 /* Paging the row: each arrow fades in only at an end that still has more,
    with a matching gradient masking the overflow on that side. */
 .lmq-shnav {
-  align-self: center; flex: 0 0 28px; margin-top: 40px; z-index: 4;
+  position: absolute; top: calc(50% + 20px); margin-top: -14px; z-index: 4;
   width: 28px; height: 28px; display: grid; place-items: center;
-  padding: 0 0 2px; border-radius: 999px; border: 1px solid var(--line-2);
+  padding: 0; border-radius: 999px; border: 1px solid var(--line-2);
   background: color-mix(in oklch, var(--bg-1) 82%, transparent);
-  backdrop-filter: blur(7px); color: var(--ink-1);
-  font-size: 17px; line-height: 1; cursor: pointer;
+  backdrop-filter: blur(7px); color: var(--ink-1); cursor: pointer;
   opacity: 0; pointer-events: none; transform: scale(.9);
   transition: opacity .18s, transform .18s, color .18s, border-color .18s;
 }
 .lmq-shnav.on { opacity: 1; pointer-events: auto; transform: scale(1); }
 .lmq-shnav:hover { color: var(--ink-0); border-color: color-mix(in oklch, var(--accent) 60%, transparent); }
-.lmq-shnav--l { margin-right: 8px; }
-.lmq-shnav--r { margin-left: 8px; order: 3; }
+.lmq-shnav--l { left: 0; }
+.lmq-shnav--r { right: 0; }
 .lmq-shwrap::before, .lmq-shwrap::after {
   content: ''; position: absolute; top: 40px; bottom: 0; width: 40px;
   pointer-events: none; z-index: 3; opacity: 0; transition: opacity .2s;
 }
 .lmq-shwrap::after {
-  right: 36px;
+  right: 0;
   background: linear-gradient(270deg, color-mix(in oklch, var(--bg-0) 92%, transparent), transparent);
 }
 .lmq-shwrap::before {
-  left: 36px;
+  left: 0;
   background: linear-gradient(90deg, color-mix(in oklch, var(--bg-0) 92%, transparent), transparent);
 }
 .lmq-shwrap:has(.lmq-shnav--r.on)::after { opacity: 1; }
@@ -12531,17 +12510,9 @@ html {
 
 /* ── The section header and its tools ────────────────────────────── */
 .lmq .lib-header { padding: 0 0 20px; gap: 10px; }
-.lmq .lib-header-kicker-title.lib-header-kicker-title,
-.lmq .lib-header-path {
-  font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em;
-  text-transform: uppercase; color: var(--ink-3);
-}
-.lmq .lib-header-title {
-  font-family: var(--serif); font-size: 44px; font-weight: 600;
-  --lh: 1; line-height: var(--lh); letter-spacing: -0.015em;
-}
-.lmq .lib-header-count { color: var(--ink-2); }
-.lmq .lib-header-hidden { color: var(--ink-3); }
+/* Filters share the row with the view controls instead of taking their own line. */
+.lmq .lib-header-row > .fb { flex: 0 1 auto; }
+.lmq .lib-toolbar { margin-left: auto; }
 .lmq .lib-toolbar { gap: 10px; }
 .lmq .lib-view-toggle {
   display: inline-flex; padding: 2px; gap: 2px;
@@ -12766,25 +12737,16 @@ html {
   cursor: pointer;
 }
 
-.lmq-scrollhint {
-  position: fixed; right: clamp(1.25rem, 4vw, 3.5rem); bottom: 22px; z-index: 6;
-  display: flex; align-items: center; gap: 10px;
-  font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em;
-  text-transform: uppercase; color: var(--ink-3);
-  pointer-events: none; transition: opacity .25s;
-}
-.lmq--past .lmq-scrollhint { opacity: 0; }
-.lmq-scrollhint .arr { animation: lmqbob 1.6s ease-in-out infinite; }
-@keyframes lmqbob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(4px); } }
-
 @media (max-width: 720px) {
   .lmq .lmq-title { font-size: 30px; }
-  .lmq .lib-header-title { font-size: 32px; }
+  .lmq-shelves > .lmq-slab-acts { gap: 14px; }
+  /* Sort wraps onto its own line here, where a leading divider separates nothing. */
+  .lmq .lib-sort-controls { border-left: 0; padding-left: 0; margin-left: 0; }
   .lmq-fcard { flex-basis: 104px; width: 104px; margin-left: -58px; }
-  .lmq-edge, .lmq-scrollhint { display: none; }
+  .lmq-edge { display: none; }
 }
 
-/* No fan spread, no tilt, no bob, no widening ribbon — the states still
+/* No fan spread, no tilt, no widening ribbon — the states still
    reach every control, they just arrive without the motion. */
 @media (prefers-reduced-motion: reduce) {
   .lmq-fcard, .lmq-veil, .lmq-shent-peek, .lmq-edge, .lmq-edge-card,
@@ -12792,7 +12754,6 @@ html {
   .lmq-fan:hover .lmq-fcard,
   .lmq-fan:hover .lmq-fcard:hover { transform: rotate(var(--rot)) translateY(var(--dy)); }
   .lmq .lib-tile:hover .lib-tile-art { transform: none; }
-  .lmq-scrollhint .arr { animation: none; }
 }
 
 /* ── Session log ──────────────────────────────────────────────────────

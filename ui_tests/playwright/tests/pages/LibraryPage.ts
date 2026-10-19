@@ -42,7 +42,6 @@ export class LibraryPage extends BasePage {
   readonly filterBar: FilterBarComponent;
   readonly scroll: PageScrollComponent;
 
-  readonly sectionTitle: Locator;
   readonly libraryHeading: Locator;
   readonly grid: Locator;
   readonly toolbar: Locator;
@@ -65,7 +64,9 @@ export class LibraryPage extends BasePage {
   readonly emptyMessage: Locator;
   readonly pageError: Locator;
   readonly sortLockedNote: Locator;
-  /** The landing's "· N hidden" receipt, shown when the reader hides a format. */
+  /** The header's book count, shown only while a filter narrows the list. */
+  readonly filteredCount: Locator;
+  /** The landing's "N hidden" receipt, shown when the reader hides a format. */
   readonly hiddenReceipt: Locator;
   /** The note naming the hidden formats, which links to the preference that hides them. */
   readonly hiddenNote: Locator;
@@ -91,7 +92,6 @@ export class LibraryPage extends BasePage {
     this.addBooksModal = new AddBooksModalComponent(page);
     this.filterBar = new FilterBarComponent(page);
     this.scroll = new PageScrollComponent(page);
-    this.sectionTitle = page.getByTestId("lib-section-title");
     this.libraryHeading = page.getByRole("heading", {
       level: 1,
       name: "Your Library",
@@ -119,6 +119,7 @@ export class LibraryPage extends BasePage {
     this.emptyMessage = page.getByTestId("lib-empty");
     this.pageError = page.getByTestId("lib-page-error");
     this.sortLockedNote = page.getByTestId("lib-sort-locked");
+    this.filteredCount = page.getByTestId("lib-filtered-count");
     this.hiddenReceipt = page.getByTestId("lib-hidden-count");
     this.hiddenNote = page.getByTestId("lib-hidden-formats");
     this.loading = page.getByTestId("lib-loading");
@@ -129,7 +130,7 @@ export class LibraryPage extends BasePage {
   }
 
   protected get readyLocator(): Locator {
-    return this.sectionTitle;
+    return this.toolbar;
   }
 
   /** The shelf's tile in the gallery row above the book list. */
@@ -178,7 +179,9 @@ export class LibraryPage extends BasePage {
   /** Filters the book list to `shelf` in place; the page does not navigate. */
   async selectShelf(shelf: ShelfRef): Promise<void> {
     await this.galleryShelfTile(shelf.id).click();
-    await this.sectionTitle.filter({ hasText: shelf.name }).waitFor();
+    await this.shelfGallery.selectedTab
+      .filter({ hasText: shelf.name })
+      .waitFor();
   }
 
   /** Returns once the server-rendered HTML arrives, before the client runs. */
@@ -210,9 +213,9 @@ export class LibraryPage extends BasePage {
     await this.seriesStack(label).click();
   }
 
-  /** Clicks the page heading, a neutral spot well outside the table. */
+  /** Clicks the top corner of the shelves section, a neutral spot well outside the table. */
   async clickAway(): Promise<void> {
-    await this.libraryHeading.click();
+    await this.shelfGallery.root.click({ position: { x: 4, y: 4 } });
   }
 
   /** Marks every grid cell, so a cell the diff re-creates loses its mark. */
@@ -295,12 +298,6 @@ export class LibraryPage extends BasePage {
     );
   }
 
-  /** The header's book count, or NaN while it shows none. */
-  async shownCount(): Promise<number> {
-    const text = await this.sectionTitle.textContent();
-    return Number(/·\s*(\d+)\s+books?/.exec(text ?? "")?.[1]);
-  }
-
   /** Counts every "No ebooks found." node the page inserts from now on. */
   async recordEmptyLibraryInsertions(): Promise<void> {
     await this.page.evaluate(() => {
@@ -379,14 +376,24 @@ export class LibraryPage extends BasePage {
       .toBeGreaterThan(0);
   }
 
-  /** Checks the grid shows exactly these books and the header counts them. */
-  async assertShowsBooks(slugs: string[]): Promise<void> {
+  /**
+   * Checks the grid shows exactly these books, and that the header counts
+   * them while a filter narrows the list and shows no count otherwise.
+   */
+  async assertShowsBooks(
+    slugs: string[],
+    { filtered = true } = {},
+  ): Promise<void> {
     await expect
       .poll(() => this.tileSlugs(), { message: "tiles on the grid" })
       .toEqual([...slugs].sort());
+    if (!filtered) {
+      await expect(this.filteredCount).toHaveCount(0);
+      return;
+    }
     const count = slugs.length;
-    await expect(this.sectionTitle).toContainText(
-      `· ${count} ${count === 1 ? "book" : "books"}`,
+    await expect(this.filteredCount).toHaveText(
+      `${count} ${count === 1 ? "book" : "books"}`,
     );
   }
 

@@ -47,7 +47,7 @@ test.describe("hidden formats", () => {
     await test.step("check the comics leave the library and the note names them", async () => {
       await readerLibraryPage.goto();
       await expect(readerLibraryPage.hiddenReceipt).toBeVisible();
-      await expect(readerLibraryPage.hiddenReceipt).toHaveText(/· \d+ hidden/);
+      await expect(readerLibraryPage.hiddenReceipt).toHaveText(/^\d+ hidden$/);
       await expect(readerLibraryPage.hiddenNote).toContainText("Hidden: CBZ");
       for (const comic of COMICS) {
         await expect(readerLibraryPage.bookTile(comic.title)).toHaveCount(0);

@@ -184,7 +184,9 @@ test.describe("series stacks", () => {
 
     await test.step("open the library with the stack dealt out", async () => {
       await readerLibraryPage.goto();
-      await expect(readerLibraryPage.sortDirectionButton).toHaveText("↑");
+      await expect(readerLibraryPage.sortDirectionButton).toHaveAccessibleName(
+        "Sort direction: ascending",
+      );
       await expect
         .poll(() => readerLibraryPage.stackLeadKey(PIONEERS_STACK))
         .toBe(asc);

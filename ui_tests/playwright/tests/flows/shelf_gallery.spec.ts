@@ -47,9 +47,13 @@ test.describe("shelf gallery", () => {
           "aria-pressed",
           "false",
         );
-        await expect(libraryPage.sectionTitle).toContainText(shelf.name);
-        // The count comes from the member list the grid renders, never a stale aggregate (#2255).
-        await expect(libraryPage.sectionTitle).toContainText(/\b1 book\b/);
+        await expect(libraryPage.shelfGallery.selectedTab).toContainText(
+          shelf.name,
+        );
+        // The tab counts the shelf's one member.
+        await expect(libraryPage.shelfGallery.selectedTab).toHaveAccessibleName(
+          /\b1 book\b/,
+        );
         await expect(libraryPage.table.rows).toHaveCount(1);
         await expect(libraryPage.table.root).toContainText("Alpha");
         await libraryPage.assertDisplayed();
@@ -84,7 +88,9 @@ test.describe("shelf gallery", () => {
 
       await test.step("check the shelf is still selected", async () => {
         await expect(tile).toHaveAttribute("aria-pressed", "true");
-        await expect(libraryPage.sectionTitle).toContainText(shelf.name);
+        await expect(libraryPage.shelfGallery.selectedTab).toContainText(
+          shelf.name,
+        );
         await expect(libraryPage.table.rows).toHaveCount(1);
       });
     });
@@ -118,7 +124,9 @@ test.describe("shelf gallery", () => {
           "aria-pressed",
           "true",
         );
-        await expect(libraryPage.sectionTitle).toContainText("All Books");
+        await expect(libraryPage.shelfGallery.selectedTab).toContainText(
+          "All Books",
+        );
         await expect
           .poll(() => libraryPage.table.rows.count())
           .toBeGreaterThanOrEqual(FIXTURE_BOOKS.length);
@@ -141,8 +149,12 @@ test.describe("shelf gallery", () => {
       });
 
       await test.step("check the library says the shelf is empty", async () => {
-        await expect(libraryPage.sectionTitle).toContainText(shelf.name);
-        await expect(libraryPage.sectionTitle).toContainText(/\b0 books\b/);
+        await expect(libraryPage.shelfGallery.selectedTab).toContainText(
+          shelf.name,
+        );
+        await expect(libraryPage.shelfGallery.selectedTab).toHaveAccessibleName(
+          /\b0 books\b/,
+        );
         await expect(libraryPage.emptyMessage).toHaveText(
           "No books in this shelf.",
         );
@@ -187,7 +199,9 @@ test.describe("shelf gallery", () => {
       await test.step("check the shelf lists it", async () => {
         await expect(picker.root).toHaveCount(0);
         await expect(libraryPage.bookTile("Alpha")).toBeVisible();
-        await expect(libraryPage.sectionTitle).toContainText(/\b1 book\b/);
+        await expect(libraryPage.shelfGallery.selectedTab).toHaveAccessibleName(
+          /\b1 book\b/,
+        );
       });
     });
 
@@ -232,7 +246,9 @@ test.describe("shelf gallery", () => {
       await test.step("check the shelf is still empty", async () => {
         await expect(picker.root).toHaveCount(0);
         await expect(libraryPage.emptyMessage).toBeVisible();
-        await expect(libraryPage.sectionTitle).toContainText(/\b0 books\b/);
+        await expect(libraryPage.shelfGallery.selectedTab).toHaveAccessibleName(
+          /\b0 books\b/,
+        );
       });
     });
 
@@ -362,9 +378,11 @@ test.describe("shelf gallery", () => {
         );
       });
 
-      await test.step("check the header shows the edit", async () => {
+      await test.step("check the shelf tab shows the edit", async () => {
         await expect(editor.root).not.toBeVisible();
-        await expect(libraryPage.sectionTitle).toContainText(renamed);
+        await expect(libraryPage.shelfGallery.selectedTab).toContainText(
+          renamed,
+        );
         await expect(libraryPage.shelfFacets).toContainText("Public");
         // A smart shelf's members come from its rules, so nothing offers to add.
         await expect(libraryPage.shelfAddBooksButton).toHaveCount(0);
@@ -464,10 +482,10 @@ test.describe("shelf gallery", () => {
         await expect(finished).toBeOK();
       });
 
-      // The stack hides itself when empty, so the page is anchored on the section title.
+      // The stack hides itself when empty, so the page is anchored on the toolbar.
       await test.step("check the reopened library no longer stacks it", async () => {
         await libraryPage.goto();
-        await expect(libraryPage.sectionTitle).toBeVisible();
+        await expect(libraryPage.toolbar).toBeVisible();
         await expect(stack.card(uuid)).toBeHidden();
       });
     });

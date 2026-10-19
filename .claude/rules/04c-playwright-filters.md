@@ -22,7 +22,8 @@ Books; `/api/rpc/shelves/page` — `{ id, filters, … }` — on a selected shel
 on `/shelves/:id`, which share the filter the landing saved (per browser
 context, in localStorage). The three states a filtered shelf can be in:
 
-- **Landing lens:** `lib-section-title` carries the narrowed count,
+- **Landing lens:** `lib-filtered-count` carries the narrowed count (and is
+  absent while no filter is on),
   `LibraryPage.noMatchesMessage` (with `clearFiltersButton`) is "nothing
   matches", `lib-page-error` a failed narrowed fetch, and `lib-loading` the
   wait. A failed *full* list under a filter is no page error: the rows answer

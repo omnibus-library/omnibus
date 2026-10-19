@@ -28,20 +28,6 @@ pub(super) fn visible_source(selection: ShelfSelection) -> VisibleSource {
     }
 }
 
-/// Section-header title for the current gallery pick. Falls back to a neutral
-/// "Shelf" while the shelves list is still loading after a reload directly
-/// into a persisted selection.
-pub(super) fn section_title(selection: ShelfSelection, shelves: &[ShelfSummary]) -> String {
-    match selection {
-        ShelfSelection::All => "All Books".to_string(),
-        ShelfSelection::Shelf(id) => shelves
-            .iter()
-            .find(|s| s.id == id)
-            .map(|s| s.name.clone())
-            .unwrap_or_else(|| "Shelf".to_string()),
-    }
-}
-
 /// The header count for a gallery pick. The loaded member list wins: it refetches
 /// with the pick, while the gallery summary's aggregate goes stale when membership
 /// changes elsewhere, so the summary only stands in while that fetch is out. Under
@@ -185,15 +171,14 @@ pub(super) struct LandingViewState {
     pub(super) is_loading: bool,
     pub(super) page_error: Option<String>,
     pub(super) lib_err: Option<String>,
-    pub(super) path_subtitle: String,
     pub(super) path_missing: bool,
     /// `None` until the list feeding the header has answered.
     pub(super) book_count: Option<usize>,
     /// The count is still coming (draw its placeholder); `false` with no
     /// count means the fetch failed and the header shows none at all.
     pub(super) count_pending: bool,
-    /// The "N hidden" receipt beside the browse header count; `None` off the
-    /// browse lens or when the viewer hides nothing.
+    /// The "N hidden" receipt in the header; `None` off the browse lens or
+    /// when the viewer hides nothing.
     pub(super) hidden_count: Option<i64>,
     pub(super) visible_books: Vec<EbookMetadata>,
     /// Stacks riding with `visible_books`; empty unless Stack series applies.
@@ -202,7 +187,6 @@ pub(super) struct LandingViewState {
     pub(super) books_empty: bool,
     pub(super) has_more: bool,
     pub(super) is_loading_more: bool,
-    pub(super) section_title: String,
     /// Remount key for the book area: changing it replays the sweep-in
     /// cascade (a fresh subtree restarts its CSS animations).
     pub(super) sweep_key: String,
@@ -308,10 +292,6 @@ pub(super) fn derive_view_state(sigs: &LandingSignals) -> LandingViewState {
         shelf.members_empty,
         &sigs.fetched_filters.read(),
     );
-    let path_subtitle = path_value
-        .as_ref()
-        .map(|p| super::short_path(p))
-        .unwrap_or_default();
     let is_loading = match source {
         // A same-shelf refetch keeps its members on screen.
         VisibleSource::Shelf => shelf.pending,
@@ -337,7 +317,6 @@ pub(super) fn derive_view_state(sigs: &LandingSignals) -> LandingViewState {
         is_loading,
         page_error,
         lib_err: (sigs.lib_error)(),
-        path_subtitle,
         // A shelf pick isn't the surface for the library-path hint, and only
         // an answered fetch can say the path is unset — not one in flight or
         // one that failed.
@@ -360,7 +339,6 @@ pub(super) fn derive_view_state(sigs: &LandingSignals) -> LandingViewState {
         // shelf pick, so the source guard keeps load-more off the shelf lens.
         has_more: source == VisibleSource::Browse && (sigs.next_cursor)().is_some(),
         is_loading_more: (sigs.loading_more)(),
-        section_title: section_title(selection, &shelves),
         sweep_key: format!("{selection:?}"),
         is_shelf: source == VisibleSource::Shelf,
         shelf_members: shelf_members_state(

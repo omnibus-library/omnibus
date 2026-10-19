@@ -21,7 +21,7 @@ test.describe("library page", () => {
     await test.step("check the page chrome shows", async () => {
       await libraryPage.assertDisplayed();
       await libraryPage.topNav.assertDisplayed();
-      await expect(libraryPage.libraryHeading).toBeVisible();
+      await expect(libraryPage.libraryHeading).toBeAttached();
       // Grid is the default view; the table is opt-in via the toolbar.
       await expect(libraryPage.grid).toBeVisible();
       await expect(libraryPage.toolbar).toBeVisible();
@@ -245,7 +245,9 @@ test.describe("library page", () => {
       await libraryPage.sortBy("recently_interacted");
       await expect(libraryPage.sortSelect).toHaveValue("recently_interacted");
       // A recency axis defaults to descending.
-      await expect(libraryPage.sortDirectionButton).toHaveText("↓");
+      await expect(libraryPage.sortDirectionButton).toHaveAccessibleName(
+        "Sort direction: descending",
+      );
     });
 
     await test.step("check the table still lists the whole library", async () => {

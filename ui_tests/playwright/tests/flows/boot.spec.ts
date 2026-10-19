@@ -20,7 +20,7 @@ test.describe("pre-hydration page", () => {
       await expect(preHydration.hydratedMarker).toHaveCount(0);
       await libraryPage.topNav.assertDisplayed();
       await expect(libraryPage.loading).toBeVisible();
-      await expect(preHydration.libraryCountPending).toBeVisible();
+      await expect(libraryPage.shelfGallery.allBooksCount).toHaveCount(0);
       await expect(preHydration.pageLoaderMark).toHaveCount(0);
       await expect(preHydration.zeroBooksText).toHaveCount(0);
     });
