@@ -31,8 +31,8 @@ fn validate_body(body_md: &str, progress: Option<u8>) -> Result<(), String> {
     Ok(())
 }
 
-/// Publication state of a journal entry: owner-private `Draft` vs shared-feed
-/// `Published` (the default, so pre-drafts clients/rows keep their behaviour).
+/// Who can see a journal entry. A draft is visible only to its author. A published entry,
+/// the default, is visible to every user.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -62,40 +62,43 @@ impl JournalStatus {
     }
 }
 
-/// A persisted journal entry as rendered for display. `body_html` is the
-/// server-rendered, sanitized markdown; `body_md` is the raw source (the owner
-/// edits it). `created_at` / `updated_at` are unix seconds.
+/// A Markdown note a user wrote about a book.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct JournalEntry {
     pub id: i64,
     pub book_uuid: String,
+    /// The id of the user who wrote the entry.
     pub author_id: i64,
-    /// The author's display name, falling back to their username.
+    /// The author's display name, or their username when they have none.
     pub author_name: String,
-    /// Whether the author has an avatar to render in place of their monogram.
+    /// Whether the author has an avatar. `GET /api/users/{user_id}/avatar` serves it.
     #[serde(default)]
     pub author_has_avatar: bool,
+    /// The entry's Markdown source, for editing.
     pub body_md: String,
+    /// The entry rendered to HTML, with unsafe markup removed.
     pub body_html: String,
+    /// How far through the book the author was, from 0 to 100. Null when they didn't say.
+    /// An entry at 100 counts the book as finished in the author's reading stats.
     pub progress: Option<u8>,
     #[serde(default)]
     pub status: JournalStatus,
-    /// The device-minted identity this entry was created under, when the
-    /// creating client supplied one. `None` for rows predating migration 0051.
+    /// The id the creating device gave the entry. Null when the device sent none, and for
+    /// entries written with old versions of Omnibus.
     #[serde(default)]
     pub client_id: Option<String>,
+    /// When the entry was written, in Unix seconds.
     pub created_at: i64,
+    /// When the entry was last edited, in Unix seconds.
     pub updated_at: i64,
-    /// [`Self::created_at`] rendered as ISO 8601 UTC. When the entry was written.
-    ///
-    /// `None` on a payload a client built itself.
+    // Absent only on a value a client built itself.
+    /// The same moment as `created_at`, as an ISO 8601 string in UTC.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at_iso: Option<String>,
-    /// [`Self::updated_at`] rendered as ISO 8601 UTC. When it was last edited.
-    ///
-    /// `None` on a payload a client built itself.
+    // Absent only on a value a client built itself.
+    /// The same moment as `updated_at`, as an ISO 8601 string in UTC.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at_iso: Option<String>,
 }
@@ -110,19 +113,22 @@ impl JournalEntry {
     }
 }
 
-/// Write payload: create a new journal entry on a book. `status` defaults to
-/// `published` so pre-drafts mobile clients keep their old behaviour.
+/// A new journal entry, as `POST /api/journals` takes it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateJournalEntry {
     pub book_uuid: String,
+    /// The entry's Markdown source. It must not be blank, and can be up to 65,536 bytes.
     pub body_md: String,
+    /// How far through the book you are, from 0 to 100. May be null.
     pub progress: Option<u8>,
+    /// May be left out, which publishes the entry.
     #[serde(default)]
     pub status: JournalStatus,
-    /// Identity minted on the device at composition time, so an offline client
-    /// can edit or delete this entry before the server has assigned it an id.
-    /// Creates are idempotent on it.
+    /// An id the device makes up for the entry, such as a UUID, up to 64 characters. The
+    /// `/api/journals/{id}` routes accept it in place of `id`, so an offline client can
+    /// edit or delete the entry before the server has numbered it. Sending the same
+    /// `client_id` again returns the entry already stored instead of making a second one.
     #[serde(default)]
     pub client_id: Option<String>,
 }
@@ -162,22 +168,24 @@ pub struct JournalImageForm {
     pub image: Vec<u8>,
 }
 
-/// Response for a journal image upload: the serving URL to embed in the
-/// entry's markdown (`![caption](url)`).
+/// An uploaded journal image.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct JournalImageUpload {
+    /// The image's URL. Put it in an entry's Markdown as `![caption](url)`.
     pub url: String,
 }
 
-/// Write payload: edit an existing journal entry's body and/or progress.
-/// `status: Some(_)` transitions the entry (publish a draft); `None` — the
-/// default, so pre-drafts clients are unaffected — keeps the stored status.
+/// The new content `PATCH /api/journals/{id}` gives one of your journal entries.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateJournalEntry {
+    /// The entry's new Markdown source. It must not be blank, and can be up to 65,536 bytes.
     pub body_md: String,
+    /// How far through the book you are, from 0 to 100. Null clears it.
     pub progress: Option<u8>,
+    /// The entry's new status, such as `published` to publish a draft. Null or absent keeps
+    /// the current status.
     #[serde(default)]
     pub status: Option<JournalStatus>,
 }

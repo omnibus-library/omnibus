@@ -7,52 +7,58 @@ use serde::{Deserialize, Serialize};
 
 use crate::highlight::CreateHighlight;
 
-/// A persisted bookmark.
-///
-/// `PartialEq` but not `Eq`: `percent_through_book` is a float.
+// `PartialEq` but not `Eq`: `percent_through_book` is a float.
+/// A saved place in a book, in an ebook or an audiobook.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Bookmark {
     pub id: i64,
     pub book_uuid: String,
+    /// Where the bookmark is: an EPUB CFI in an ebook, or a number of seconds as a decimal
+    /// string in an audiobook. The server stores it as the client sent it.
     pub position: String,
+    /// The bookmark's name or note. Null when it has none.
     pub title: Option<String>,
-    /// The device-minted identity this bookmark was created under, when the
-    /// creating client supplied one. `None` for rows predating migration 0051.
+    /// The id the creating device gave the bookmark. Null when the device sent none, and
+    /// for bookmarks made by old versions of Omnibus.
     #[serde(default)]
     pub client_id: Option<String>,
+    /// When the bookmark was made, in Unix seconds.
     pub created_at: i64,
-    /// [`Self::created_at`] rendered as ISO 8601 UTC. When it was made.
-    ///
-    /// `None` on a payload a client built itself.
+    // Null only on a value a client built itself.
+    /// The same moment as `created_at`, as an ISO 8601 string in UTC.
     #[serde(default)]
     pub created_at_iso: Option<String>,
-    /// Spine document this anchor sits in, resolved from its CFI. `None`
-    /// for a Kobo-origin anchor and anything else unparseable.
+    /// The 0-based index of the spine document the bookmark is in, as
+    /// `GET /api/ebooks/{uuid}/chapters` numbers them. Null for an audiobook bookmark, one
+    /// made on a Kobo, and any position the server can't read.
     #[serde(default)]
     pub spine_index: Option<i64>,
-    /// TOC title of the chapter it sits in, when the book's structure has
-    /// been extracted.
+    /// The title of the chapter the bookmark is in, from the book's table of contents.
+    /// Null when the server doesn't know the book's chapters.
     #[serde(default)]
     pub chapter_title: Option<String>,
-    /// How far through the book it sits, 0..=100. Spine-granular — it
-    /// measures to the start of the containing spine document, which is what
-    /// the stored structure records.
+    /// How far through the book the bookmark is, from 0 to 100. It measures to the start of
+    /// the spine document the bookmark is in, not to the bookmark itself.
     #[serde(default)]
     pub percent_through_book: Option<f64>,
 }
 
-/// Payload for creating a new bookmark.
+/// A new bookmark, as `POST /api/bookmarks` takes it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateBookmark {
     pub book_uuid: String,
+    /// Where the bookmark is: an EPUB CFI in an ebook, or a number of seconds as a decimal
+    /// string in an audiobook. Up to 4,096 characters.
     pub position: String,
+    /// The bookmark's name or note, up to 512 characters.
     pub title: Option<String>,
-    /// Identity minted on the device at the moment of the gesture, so an
-    /// offline client can address this bookmark before the server has assigned
-    /// it a numeric id. Creates are idempotent on it.
+    /// An id the device makes up for the bookmark, such as a UUID, up to 64 characters. The
+    /// `/api/bookmarks/{id}` routes accept it in place of `id`, so an offline client can
+    /// use the bookmark before the server has numbered it. Sending the same `client_id`
+    /// again returns the bookmark already stored instead of making a second one.
     #[serde(default)]
     pub client_id: Option<String>,
 }
@@ -105,10 +111,11 @@ impl CreateBookmark {
     }
 }
 
-/// Payload for updating a bookmark's title/note. `None` clears the title.
+/// The new name or note `PUT /api/bookmarks/{id}` gives a bookmark.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateBookmark {
+    /// The bookmark's name or note, up to 512 characters. Null or absent clears it.
     pub title: Option<String>,
 }
 

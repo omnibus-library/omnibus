@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Valid highlight palette colors.
+/// A highlight's color, one of five.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -50,69 +50,66 @@ impl std::fmt::Display for HighlightColor {
     }
 }
 
-/// A persisted highlight annotation.
-///
-/// `PartialEq` but not `Eq`: `percent_through_book` is a float.
+// `PartialEq` but not `Eq`: `percent_through_book` is a float.
+/// A highlighted passage in an ebook, with an optional note.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Highlight {
     pub id: i64,
     pub book_uuid: String,
-    /// The range CFI the readers paint. A Kobo-origin annotation gets one
-    /// derived server-side from its `KoboSpan` location (at ingest, else at
-    /// the boot backfill); `None` only while that mapping fails, and such a
-    /// row lists in the UI but cannot be placed or jumped to in the web reader.
+    // A Kobo highlight's CFI is derived at ingest, else at the boot backfill.
+    /// The highlighted range, as an EPUB range CFI. For a highlight made on a Kobo, the
+    /// server works it out from the Kobo's own location. Null while that fails. A client
+    /// can list such a highlight but can't place it in the text.
     #[serde(default)]
     pub epub_cfi_range: Option<String>,
     pub color: HighlightColor,
+    /// The note on the highlight. Null when it has none.
     pub note: Option<String>,
-    /// The highlighted prose. `None` for highlights created before the text
-    /// column shipped (migration 0030).
+    /// The highlighted text. Null for a few highlights made by old versions of Omnibus.
     #[serde(default)]
     pub text: Option<String>,
-    /// The device-minted identity this highlight was created under, when the
-    /// creating client supplied one. `None` for rows predating migration 0051
-    /// and for clients that don't mint one.
+    /// The id the creating device gave the highlight. Null when the device sent none, and
+    /// for highlights made by old versions of Omnibus.
     #[serde(default)]
     pub client_id: Option<String>,
+    /// When the highlight was made, in Unix seconds.
     pub created_at: i64,
-    /// [`Self::created_at`] rendered as ISO 8601 UTC. When it was made.
-    ///
-    /// `None` on a payload a client built itself.
+    // Null only on a value a client built itself.
+    /// The same moment as `created_at`, as an ISO 8601 string in UTC.
     #[serde(default)]
     pub created_at_iso: Option<String>,
-    /// Spine document this anchor sits in, resolved from its CFI. `None`
-    /// when no CFI could be derived (an unmapped Kobo-origin anchor) or the
-    /// CFI is unparseable.
+    /// The 0-based index of the spine document the highlight is in, as
+    /// `GET /api/ebooks/{uuid}/chapters` numbers them. Null when the highlight has no
+    /// `epub_cfi_range` or the server can't read it.
     #[serde(default)]
     pub spine_index: Option<i64>,
-    /// TOC title of the chapter it sits in, when the book's structure has
-    /// been extracted.
+    /// The title of the chapter the highlight is in, from the book's table of contents.
+    /// Null when the server doesn't know the book's chapters.
     #[serde(default)]
     pub chapter_title: Option<String>,
-    /// How far through the book it sits, 0..=100. Spine-granular — it
-    /// measures to the start of the containing spine document, which is what
-    /// the stored structure records.
+    /// How far through the book the highlight is, from 0 to 100. It measures to the start of
+    /// the spine document the highlight is in, not to the highlight itself.
     #[serde(default)]
     pub percent_through_book: Option<f64>,
 }
 
-/// Payload for creating a new highlight.
+/// A new highlight, as `POST /api/highlights` takes it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateHighlight {
     pub book_uuid: String,
+    /// The highlighted range, as an EPUB range CFI, up to 4,096 characters.
     pub epub_cfi_range: String,
     pub color: HighlightColor,
-    /// The selected prose at creation time. Optional so older clients (and
-    /// the mobile REST body) can omit it.
+    /// The highlighted text, up to 8,192 characters. May be left out.
     #[serde(default)]
     pub text: Option<String>,
-    /// Identity minted on the device at the moment of the gesture, so an
-    /// offline client can address this highlight before the server has
-    /// assigned it a numeric id. Creates are idempotent on it, which also
-    /// makes a replayed create safe to retry.
+    /// An id the device makes up for the highlight, such as a UUID, up to 64 characters. The
+    /// `/api/highlights/{id}` routes accept it in place of `id`, so an offline client can
+    /// use the highlight before the server has numbered it. Sending the same `client_id`
+    /// again returns the highlight already stored instead of making a second one.
     #[serde(default)]
     pub client_id: Option<String>,
 }
@@ -168,10 +165,11 @@ impl CreateHighlight {
     }
 }
 
-/// Payload for updating a highlight's note text.
+/// The note `PATCH /api/highlights/{id}/note` puts on a highlight.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateHighlightNote {
+    /// The note, up to 4,096 characters. Null or absent removes the note.
     pub note: Option<String>,
 }
 
@@ -193,7 +191,7 @@ impl UpdateHighlightNote {
     }
 }
 
-/// The body of `PATCH /api/highlights/{id}/color`.
+/// The color `PATCH /api/highlights/{id}/color` gives a highlight.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateHighlightColor {

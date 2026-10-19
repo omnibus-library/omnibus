@@ -18,12 +18,13 @@ pub fn stars_from_half_stars(half_stars: i64) -> f32 {
     f32::from(u16::try_from(half_stars.clamp(0, 10)).unwrap_or(0)) / 2.0
 }
 
-/// Write payload: set (or change) the current user's rating for a book.
+/// The rating `POST /api/ratings` sets for you on a book. It replaces any rating you gave
+/// the book before.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RatingUpdate {
     pub book_uuid: String,
-    /// Star rating in `0.5..=5.0`, in half-star steps.
+    /// The star rating, from 0.5 to 5 in half-star steps.
     pub stars: f32,
 }
 
@@ -54,29 +55,30 @@ impl RatingUpdate {
     }
 }
 
-/// Server-authoritative rating returned by the set/get endpoints. `updated_at`
-/// is unix seconds (SQLite `strftime('%s')`).
+/// Your rating of a book, as the server stores it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RatingRecord {
     pub book_uuid: String,
-    /// Star rating in `0.5..=5.0`, in half-star steps.
+    /// The star rating, from 0.5 to 5 in half-star steps.
     pub stars: f32,
+    /// When the rating was last set, in Unix seconds.
     pub updated_at: i64,
 }
 
-/// A rating with the user identity needed for an attributed book-detail row.
+/// Another user's rating of a book, with who gave it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AttributedRating {
     pub user_id: i64,
-    /// The rater's display name, falling back to their username.
+    /// The rater's display name, or their username when they have none.
     pub username: String,
-    /// Whether the rater has an avatar to render in place of their monogram.
+    /// Whether the rater has an avatar. `GET /api/users/{user_id}/avatar` serves it.
     #[serde(default)]
     pub has_avatar: bool,
-    /// Star rating in `0.5..=5.0`, in half-star steps.
+    /// The star rating, from 0.5 to 5 in half-star steps.
     pub stars: f32,
+    /// When the rating was last set, in Unix seconds.
     pub updated_at: i64,
 }
 
