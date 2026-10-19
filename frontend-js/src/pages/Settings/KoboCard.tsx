@@ -198,12 +198,16 @@ export function KoboCard() {
     defaultValues: { name: "" },
   });
 
-  // Only a list that has answered is patched; the reread after a create fills the rest.
-  const setList = (change: (list: KoboDeviceView[]) => KoboDeviceView[]) =>
+  // A read still in flight would land over the patch, so it is dropped first; only a list that has answered is patched.
+  const setList = async (
+    change: (list: KoboDeviceView[]) => KoboDeviceView[],
+  ) => {
+    await queryClient.cancelQueries({ queryKey: koboDevicesQuery.queryKey });
     queryClient.setQueryData(
       koboDevicesQuery.queryKey,
       (list) => list && change(list),
     );
+  };
   const report = (message: string, error = false) =>
     setStatus({ message, error });
   // After a refusal the list is re-read, so it shows what the server holds (a 404 means the device is gone).
@@ -213,14 +217,10 @@ export function KoboCard() {
   };
   const add = useMutation({
     mutationFn: createKoboDevice,
-    onMutate: async () => {
-      setStatus(null);
-      // A list read still in flight would land over the new row.
-      await queryClient.cancelQueries({ queryKey: koboDevicesQuery.queryKey });
-    },
-    onSuccess: (device) => {
+    onMutate: () => setStatus(null),
+    onSuccess: async (device) => {
       form.reset();
-      setList((list) => [...list, device]);
+      await setList((list) => [...list, device]);
       report("Kobo added. Copy its endpoint URL below.");
     },
     onError: (error) => report(error.message, true),
@@ -234,8 +234,10 @@ export function KoboCard() {
   const regenerate = useMutation({
     mutationFn: regenerateKoboDevice,
     onMutate: () => setStatus(null),
-    onSuccess: (device) => {
-      setList((list) => list.map((d) => (d.id === device.id ? device : d)));
+    onSuccess: async (device) => {
+      await setList((list) =>
+        list.map((d) => (d.id === device.id ? device : d)),
+      );
       report("Token regenerated. Update the URL on your Kobo.");
     },
     onError: refused,
@@ -244,8 +246,8 @@ export function KoboCard() {
   const remove = useMutation({
     mutationFn: deleteKoboDevice,
     onMutate: () => setStatus(null),
-    onSuccess: (_, id) => {
-      setList((list) => list.filter((d) => d.id !== id));
+    onSuccess: async (_, id) => {
+      await setList((list) => list.filter((d) => d.id !== id));
       report("Kobo removed.");
     },
     onError: refused,

@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor } from "storybook/test";
-import { failing, hanging } from "../../testing/handlers";
+import { storyClient } from "../../testing/AppHarness";
+import { deferred, failing, hanging } from "../../testing/handlers";
 import { SettingsRoutes, said } from "../../testing/SettingsRoutes";
 import {
   aSettingsServer,
@@ -438,5 +439,47 @@ export const KeepsEarlierKobosWhenTheListFailedBeforeAnAdd: Story = {
     await waitFor(() =>
       expect(canvas.getAllByTestId("kobo-device-row")).toHaveLength(3),
     );
+  },
+};
+
+let release = () => {};
+
+export const KeepsARemovalWhenTheAddsRereadLandsLate: Story = {
+  beforeEach({ msw }) {
+    withKobos();
+    const gate = deferred();
+    release = gate.release;
+    let reads = 0;
+    msw.use(
+      http.get("/api/account/kobo-devices", async () => {
+        // What the server held when the read arrived, answered once the gate opens.
+        const held = server.kobo;
+        reads += 1;
+        if (reads > 1) await gate.promise;
+        return HttpResponse.json(held);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.type(await canvas.findByLabelText("Device name"), "Aurora");
+    await userEvent.click(canvas.getByTestId("kobo-device-add"));
+    await expect(await canvas.findAllByTestId("kobo-device-row")).toHaveLength(
+      3,
+    );
+
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Remove Clara" }),
+    );
+    await userEvent.click(
+      await canvas.findByTestId("kobo-remove-dialog-confirm"),
+    );
+    await said(canvas, "kobo-devices-status", "Kobo removed.");
+
+    release();
+    await waitFor(() =>
+      expect(storyClient().isFetching({ queryKey: ["kobo-devices"] })).toBe(0),
+    );
+    await expect(canvas.getAllByTestId("kobo-device-row")).toHaveLength(2);
+    await expect(canvas.queryByText("Clara")).toBeNull();
   },
 };
