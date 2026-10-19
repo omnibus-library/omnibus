@@ -352,6 +352,37 @@ export const TheNewestRatingWinsWhenAnOlderOneLandsLate: Story = {
   },
 };
 
+export const TheLastWriteToSettleRefetchesWhenTheNewestFailed: Story = {
+  beforeEach({ msw }) {
+    let stored: RatingRecord | null = null;
+    let calls = 0;
+    msw.use(
+      http.get("/api/ratings/:uuid", () => HttpResponse.json(stored)),
+      http.post("/api/ratings", async ({ request }) => {
+        const body = PostRatingBody.parse(await request.json());
+        // The slow first write is stored only when it lands, after the second has failed.
+        if (calls++ > 0)
+          return new HttpResponse("failed with 500", { status: 500 });
+        await delay(400);
+        stored = { ...body, updated_at: nowSecs() };
+        return HttpResponse.json(stored);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Rate 3 stars" }),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Rate 5 stars" }));
+
+    await new Promise((resolve) => setTimeout(resolve, 800));
+
+    await expect(
+      canvas.getByRole("button", { name: "Clear your 3-star rating" }),
+    ).toBeInTheDocument();
+  },
+};
+
 export const RatingSaveFails: Story = {
   beforeEach({ msw }) {
     msw.use(

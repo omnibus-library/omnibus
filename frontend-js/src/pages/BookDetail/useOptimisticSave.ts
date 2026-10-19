@@ -20,6 +20,7 @@ export function useOptimisticSave<TData, TVars>(
   const client = useQueryClient();
   const newest = useRef(0);
   return useMutation({
+    mutationKey: queryKey,
     mutationFn,
     onMutate: async (vars: TVars) => {
       const id = ++newest.current;
@@ -39,6 +40,12 @@ export function useOptimisticSave<TData, TVars>(
       client.setQueryData(queryKey, saved);
       for (const key of alsoInvalidate) {
         void client.invalidateQueries({ queryKey: key });
+      }
+    },
+    // The last write to settle refetches, so a failed newest one never leaves an older guess.
+    onSettled: () => {
+      if (client.isMutating({ mutationKey: queryKey }) <= 1) {
+        void client.invalidateQueries({ queryKey });
       }
     },
   });
