@@ -9,9 +9,10 @@ import {
   fetchSeriesOptions,
   fetchTagOptions,
   type NamedCount,
-  type UserId,
+  shelvesQuery,
 } from "../../api";
 import { trapTab } from "../../focusTrap";
+import { useCurrentUser } from "../../session";
 import { Button } from "../Button/Button";
 import { Loading } from "../Loading/Loading";
 import {
@@ -26,7 +27,6 @@ import {
   namedOptions,
   noMatchLine,
   type OptionList,
-  type ShelfList,
   shelfOptions,
   statusLine,
   togglePick,
@@ -56,12 +56,10 @@ type Loaded =
   | { state: "failed"; message: string; retry?: () => void }
   | { state: "ready"; list: OptionList };
 
-/** Where the field's values stand: the bar's own list for shelves, a fetch for names, a constant for formats. */
-function useOptions(
-  field: FilterField,
-  shelves: ShelfList,
-  viewerId: UserId,
-): Loaded {
+/** Where the field's values stand: a fetch for shelves and names, a constant for formats. */
+function useOptions(field: FilterField): Loaded {
+  const viewerId = useCurrentUser().id;
+  const shelves = useQuery(shelvesQuery);
   const named = field === "format" || field === "shelf" ? null : field;
   // The raw rows are keyed as the bulk editor's suggestions are, so one fetch serves both.
   const shape = useCallback(
@@ -77,13 +75,16 @@ function useOptions(
     return { state: "ready", list: { options: formatOptions(), cap: null } };
   }
   if (field === "shelf") {
-    if (shelves.state === "loaded") {
-      const options = shelfOptions(shelves.shelves, viewerId);
+    if (shelves.data) {
+      const options = shelfOptions(shelves.data, viewerId);
       return { state: "ready", list: { options, cap: null } };
     }
-    // shortcut: a failed shelf list has no retry here; the page owns that fetch, wire one when it exposes it.
-    return shelves.state === "failed"
-      ? { state: "failed", message: "The shelves did not load." }
+    return shelves.isError
+      ? {
+          state: "failed",
+          message: shelves.error.message,
+          retry: () => shelves.refetch(),
+        }
       : { state: "loading" };
   }
   // A refetch that fails leaves the list it already has on screen.
@@ -100,8 +101,6 @@ function useOptions(
 }
 
 type PickerProps = {
-  shelves: ShelfList;
-  viewerId: UserId;
   /** The clause the menu opens on: its field, mode and values. */
   initial: FilterClause;
   onApply: (clause: FilterClause) => void;
@@ -169,13 +168,7 @@ function Rows({
 }
 
 /** A facet's menu: include or exclude, then a searchable multi-select of the field's values. */
-export function FilterPicker({
-  shelves,
-  viewerId,
-  initial,
-  onApply,
-  onClose,
-}: PickerProps) {
+export function FilterPicker({ initial, onApply, onClose }: PickerProps) {
   const field = initial.field;
   const [mode, setMode] = useState<FilterMode>(initial.mode);
   const [query, setQuery] = useState("");
@@ -183,7 +176,7 @@ export function FilterPicker({
   const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => dialog.current?.focus(), []);
 
-  const loaded = useOptions(field, shelves, viewerId);
+  const loaded = useOptions(field);
   const plural = fieldPlural(field);
   const by = fieldLabel(field).toLowerCase();
   // Apply stays live with nothing picked only when it would clear the field.

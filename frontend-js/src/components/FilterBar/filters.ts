@@ -38,11 +38,8 @@ const PLURALS: Record<FilterField, string> = {
 export const fieldLabel = (field: FilterField) => LABELS[field];
 export const fieldPlural = (field: FilterField) => PLURALS[field];
 
-/** What the bar knows of the viewer's shelves: a shelf facet must say when it can't name one. */
-export type ShelfList =
-  | { state: "pending" }
-  | { state: "failed" }
-  | { state: "loaded"; shelves: Shelf[] };
+/** The shelves query as a label sees it: no data and no error is still pending. */
+type ShelfLookup = { data?: Shelf[]; isError: boolean };
 
 /** One selectable value: what the filter stores, what the reader sees, and the book count when known. */
 export type FilterOption = {
@@ -102,14 +99,13 @@ const UNAVAILABLE_SHELF = "unavailable shelf";
 function valueLabel(
   field: FilterField,
   value: string,
-  shelves: ShelfList,
+  shelves: ShelfLookup,
   viewerId: UserId,
 ): string | null {
   if (field === "format") return value.toUpperCase();
   if (field !== "shelf") return value;
-  if (shelves.state === "pending") return null;
-  if (shelves.state === "failed") return UNAVAILABLE_SHELF;
-  const shelf = shelves.shelves.find((s) => String(s.id) === value.trim());
+  if (!shelves.data) return shelves.isError ? UNAVAILABLE_SHELF : null;
+  const shelf = shelves.data.find((s) => String(s.id) === value.trim());
   return shelf ? shelfLabel(shelf, viewerId) : UNAVAILABLE_SHELF;
 }
 
@@ -119,7 +115,7 @@ function valueLabel(
  */
 export function facetValue(
   clause: FilterClause,
-  shelves: ShelfList,
+  shelves: ShelfLookup,
   viewerId: UserId,
 ): (string | null)[] {
   const [first, ...rest] = clause.values;

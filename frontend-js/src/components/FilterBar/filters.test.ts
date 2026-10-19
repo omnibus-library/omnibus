@@ -8,7 +8,6 @@ import {
   matching,
   namedOptions,
   noMatchLine,
-  type ShelfList,
   shelfLabel,
   shelfOptions,
   statusLine,
@@ -59,9 +58,9 @@ describe("togglePick", () => {
 });
 
 describe("facetValue", () => {
-  const loaded: ShelfList = {
-    state: "loaded",
-    shelves: [
+  const loaded = {
+    isError: false,
+    data: [
       aShelf({
         id: 4,
         name: "Book club",
@@ -88,8 +87,8 @@ describe("facetValue", () => {
       values: ["4"],
     };
 
-    expect(facetValue(shelf, { state: "pending" }, viewer)).toEqual([null]);
-    expect(facetValue(shelf, { state: "failed" }, viewer)).toEqual([
+    expect(facetValue(shelf, { isError: false }, viewer)).toEqual([null]);
+    expect(facetValue(shelf, { isError: true }, viewer)).toEqual([
       "unavailable shelf",
     ]);
   });

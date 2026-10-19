@@ -1,5 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import type { FilterClause, FilterField, UserId } from "../../api";
+import { type FilterClause, type FilterField, shelvesQuery } from "../../api";
+import { useCurrentUser } from "../../session";
 import { ChevronDownGlyph, XGlyph } from "../Glyphs/Glyphs";
 import { FilterPicker } from "./FilterPicker";
 import {
@@ -7,7 +9,6 @@ import {
   facetValue,
   fieldLabel,
   MAX_FILTER_CLAUSES,
-  type ShelfList,
   withFieldClause,
   withoutField,
 } from "./filters";
@@ -15,8 +16,6 @@ import "./FilterBar.css";
 
 type FilterBarProps = {
   clauses: FilterClause[];
-  shelves: ShelfList;
-  viewerId: UserId;
   /** Called with the whole next clause list. */
   onChange: (clauses: FilterClause[]) => void;
 };
@@ -24,10 +23,10 @@ type FilterBarProps = {
 function Facet({
   field,
   clauses,
-  shelves,
-  viewerId,
   onChange,
 }: FilterBarProps & { field: FilterField }) {
+  const shelves = useQuery(shelvesQuery);
+  const viewerId = useCurrentUser().id;
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const clause = clauses.find((c) => c.field === field);
@@ -79,8 +78,6 @@ function Facet({
       )}
       {open && (
         <FilterPicker
-          shelves={shelves}
-          viewerId={viewerId}
           initial={clause ?? { field, mode: "include", values: [] }}
           onApply={(next) => {
             onChange(withFieldClause(clauses, next));

@@ -4,12 +4,11 @@ import {
   fetchBookPage,
   fetchRecentProgress,
   fetchShelfPage,
-  fetchShelves,
   type LibraryQuery,
+  shelvesQuery,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { FilterBar } from "../../components/FilterBar/FilterBar";
-import type { ShelfList } from "../../components/FilterBar/filters";
 import {
   BusyLabel,
   CoverSkeletons,
@@ -126,15 +125,7 @@ export function Library() {
 
   const [selection, setSelection] = useState(loadShelfSelection);
   const shelfId = selection.kind === "shelf" ? selection.id : null;
-  const shelvesQuery = useQuery({
-    queryKey: ["shelves"],
-    queryFn: fetchShelves,
-  });
-  const shelves: ShelfList = shelvesQuery.data
-    ? { state: "loaded", shelves: shelvesQuery.data }
-    : shelvesQuery.isError
-      ? { state: "failed" }
-      : { state: "pending" };
+  const shelves = useQuery(shelvesQuery);
   const shelfQuery = {
     sort: prefs.sort,
     dir: prefs.dir,
@@ -151,7 +142,7 @@ export function Library() {
   // shortcut: shelf lens stays unstacked; port shared::stack_books when parity is wanted
   const stacks = pages.data?.pages.flatMap((page) => page.stacks) ?? [];
   const sortLock = sortLockReason(
-    shelvesQuery.data?.find((s) => s.id === shelfId)?.kind ?? null,
+    shelves.data?.find((s) => s.id === shelfId)?.kind ?? null,
   );
 
   // Bulk edit is the admin's, on the table; the checks belong to the list they were made on.
@@ -179,7 +170,7 @@ export function Library() {
     });
 
   // A stored shelf the list no longer holds snaps back to All, judged only against a list that loaded.
-  const loadedShelves = shelvesQuery.data;
+  const loadedShelves = shelves.data;
   useEffect(() => {
     if (shelfId === null || !loadedShelves) return;
     if (loadedShelves.some((s) => s.id === shelfId)) return;
@@ -249,8 +240,6 @@ export function Library() {
         recent.isPending && <ResumeStackPending />
       )}
       <ShelfGallery
-        shelves={shelves}
-        viewerId={user.id}
         selection={selection}
         pickedCount={
           shelfId !== null && !filtered && shelfPage.data
@@ -269,8 +258,6 @@ export function Library() {
         <div className="lib-header-row">
           <FilterBar
             clauses={prefs.clauses}
-            shelves={shelves}
-            viewerId={user.id}
             onChange={(clauses) => change({ ...prefs, clauses })}
           />
           <Receipt

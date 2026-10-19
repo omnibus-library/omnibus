@@ -7,9 +7,9 @@ import {
   bulkSaveOverrides,
   fetchAuthorOptions,
   fetchGenreOptions,
-  fetchShelves,
   fetchTagOptions,
   type NamedCount,
+  shelvesQuery,
   thumbUrl,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
@@ -310,7 +310,7 @@ type PickerProps = {
 export function BulkShelfPicker({ books, onClose, onAdded }: PickerProps) {
   const queryClient = useQueryClient();
   const user = useCurrentUser();
-  const shelves = useQuery({ queryKey: ["shelves"], queryFn: fetchShelves });
+  const shelves = useQuery(shelvesQuery);
   const add = useMutation({
     mutationFn: async (shelf: { id: number; name: string }) => {
       try {

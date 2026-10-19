@@ -1,13 +1,17 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { useState } from "react";
-import { expect, within } from "storybook/test";
+import { expect, waitFor, within } from "storybook/test";
 import type { FilterClause } from "../../api";
-import { ADA, storyClient } from "../../testing/AppHarness";
-import { aShelf, userId } from "../../testing/books";
-import { filterOptionHandlers, hanging } from "../../testing/handlers";
+import { storyClient } from "../../testing/AppHarness";
+import {
+  failing,
+  filterOptionHandlers,
+  hanging,
+  shelvesHandler,
+} from "../../testing/handlers";
+import { aWireShelf } from "../../testing/wire";
 import { FilterBar } from "./FilterBar";
-import type { ShelfList } from "./filters";
 
 const TAGS = [
   { name: "space opera", count: 12 },
@@ -15,32 +19,23 @@ const TAGS = [
   { name: "Cozy", count: 2 },
 ];
 
-const LOADED: ShelfList = {
-  state: "loaded",
-  shelves: [
-    aShelf(),
-    aShelf({ id: 4, name: "Book club", ownerId: userId(2), ownerName: "bo" }),
-    aShelf({ id: 5, name: "Rules", kind: "smart" }),
-  ],
-};
+const SHELVES = [
+  aWireShelf(),
+  aWireShelf({
+    id: 4,
+    name: "Book club",
+    owner_user_id: 2,
+    owner_username: "bo",
+  }),
+  aWireShelf({ id: 5, name: "Rules", kind: "smart" }),
+];
 
 // FilterBar keeps no clauses of its own; this holds them and prints the latest.
-function Bar({
-  initial = [],
-  shelves = LOADED,
-}: {
-  initial?: FilterClause[];
-  shelves?: ShelfList;
-}) {
+function Bar({ initial = [] }: { initial?: FilterClause[] }) {
   const [clauses, setClauses] = useState(initial);
   return (
     <>
-      <FilterBar
-        clauses={clauses}
-        shelves={shelves}
-        viewerId={ADA.id}
-        onChange={setClauses}
-      />
+      <FilterBar clauses={clauses} onChange={setClauses} />
       <code data-testid="clauses">{JSON.stringify(clauses)}</code>
     </>
   );
@@ -51,6 +46,7 @@ const meta = {
   component: Bar,
   beforeEach({ msw }) {
     msw.use(
+      shelvesHandler(SHELVES),
       ...filterOptionHandlers({
         tags: TAGS,
         genres: [{ name: "Science Fiction", count: 40 }],
@@ -365,7 +361,10 @@ export const SearchNoMatch: Story = {
 };
 
 export const ShelfFacetPending: Story = {
-  args: { initial: [include("shelf", "3")], shelves: { state: "pending" } },
+  args: { initial: [include("shelf", "3")] },
+  beforeEach({ msw }) {
+    msw.use(hanging("/api/shelves"));
+  },
   play: async ({ canvas, userEvent }) => {
     const shelf = canvas.getByRole("button", { name: /^Shelf/ });
     await expect(shelf.querySelector(".ld-sheen")).toHaveTextContent("…");
@@ -382,7 +381,9 @@ export const ShelfFacetLoaded: Story = {
   args: { initial: [include("shelf", "4", "9")] },
   play: async ({ canvas, userEvent }) => {
     const shelf = canvas.getByRole("button", { name: /^Shelf/ });
-    await expect(shelf).toHaveTextContent("ShelfBook club · bo +1");
+    await waitFor(() =>
+      expect(shelf).toHaveTextContent("ShelfBook club · bo +1"),
+    );
 
     await userEvent.click(shelf);
 
@@ -400,10 +401,18 @@ export const ShelfFacetLoaded: Story = {
 };
 
 export const ShelfFacetFailed: Story = {
-  args: { initial: [include("shelf", "3")], shelves: { state: "failed" } },
-  play: async ({ canvas }) => {
+  args: { initial: [include("shelf", "3")] },
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/shelves", 500));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const shelf = canvas.getByRole("button", { name: /^Shelf/ });
+    await waitFor(() => expect(shelf).toHaveTextContent("unavailable shelf"));
+
+    await userEvent.click(shelf);
+
     await expect(
-      canvas.getByRole("button", { name: /^Shelf/ }),
-    ).toHaveTextContent("unavailable shelf");
+      await canvas.findByRole("button", { name: "Try again" }),
+    ).toBeInTheDocument();
   },
 };

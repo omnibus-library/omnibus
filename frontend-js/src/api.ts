@@ -1,3 +1,4 @@
+import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
 import {
   getAddShelfBooksUrl,
@@ -412,6 +413,11 @@ export async function fetchShelves(): Promise<Shelf[]> {
   if (res.status !== 200) throw failure(res);
   return res.data.map(toShelf);
 }
+
+export const shelvesQuery = queryOptions({
+  queryKey: ["shelves"],
+  queryFn: fetchShelves,
+});
 
 /** One shelf's books, whole, in `query`'s order and narrowed by its clauses. */
 export async function fetchShelfPage(

@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import {
   type ReactNode,
   type RefObject,
@@ -6,8 +7,13 @@ import {
   useState,
 } from "react";
 import { Link } from "react-router";
-import { type BookUuid, type Shelf, thumbUrl, type UserId } from "../../api";
-import type { ShelfList } from "../../components/FilterBar/filters";
+import {
+  type BookUuid,
+  type Shelf,
+  shelvesQuery,
+  thumbUrl,
+  type UserId,
+} from "../../api";
 import { attributedOwner } from "../../components/FilterBar/filters";
 import {
   CaretLeftGlyph,
@@ -19,6 +25,7 @@ import {
 import { Skeleton } from "../../components/Loading/Loading";
 import { bookCount } from "../../format";
 import { prefersReducedMotion } from "../../motion";
+import { useCurrentUser } from "../../session";
 import type { ShelfSelection } from "../../viewPrefs";
 import {
   pageTarget,
@@ -125,8 +132,6 @@ function useRowReach(row: RefObject<HTMLDivElement | null>) {
 }
 
 type ShelfGalleryProps = {
-  shelves: ShelfList;
-  viewerId: UserId;
   selection: ShelfSelection;
   /** How many books the picked shelf holds, once its whole member list has loaded. */
   pickedCount: number | null;
@@ -139,8 +144,6 @@ type ShelfGalleryProps = {
 
 /** The shelves row: All Books and each shelf as toggles that pick which list the page shows. */
 export function ShelfGallery({
-  shelves,
-  viewerId,
   selection,
   pickedCount,
   allCount,
@@ -149,8 +152,9 @@ export function ShelfGallery({
 }: ShelfGalleryProps) {
   const allMeta =
     allCount === null ? "Your whole library" : bookCount(allCount);
-  const rail =
-    shelves.state === "loaded" ? railShelves(shelves.shelves, viewerId) : [];
+  const viewerId = useCurrentUser().id;
+  const shelves = useQuery(shelvesQuery);
+  const rail = shelves.data ? railShelves(shelves.data, viewerId) : [];
   const row = useRef<HTMLDivElement>(null);
   const reach = useRowReach(row);
   const page = (dir: 1 | -1) => {
@@ -237,7 +241,7 @@ export function ShelfGallery({
               />
             );
           })}
-          {shelves.state === "pending" &&
+          {shelves.isPending &&
             [0, 1, 2].map((i) => (
               <span
                 key={i}
