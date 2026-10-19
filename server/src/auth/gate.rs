@@ -21,7 +21,7 @@ use crate::backend::AppState;
 /// fetch can carry. Kept in lockstep with the handlers gated on [`MediaAuthUser`].
 ///
 /// [`MediaAuthUser`]: super::MediaAuthUser
-fn is_media_read_path(path: &str) -> bool {
+pub(crate) fn is_media_read_path(path: &str) -> bool {
     path.starts_with("/api/covers/")
         || path.starts_with("/api/thumbs/")
         || (path.starts_with("/api/authors/") && path.ends_with("/photo"))

@@ -4,6 +4,8 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
+use crate::auth::gate::is_media_read_path;
+
 use super::*;
 
 const METHODS: [&str; 5] = ["get", "post", "put", "patch", "delete"];
@@ -96,28 +98,27 @@ fn spec_marks_public_routes_as_needing_no_session() {
 }
 
 #[test]
-fn spec_lists_media_token_on_every_media_route() {
+fn spec_lists_media_token_on_exactly_the_routes_the_gate_opens_to_it() {
     let doc = spec_value();
-    let media = [
-        "/api/audiobooks/{uuid}/parts/{ordinal}",
-        "/api/authors/{id}/photo",
-        "/api/covers/{uuid}",
-        "/api/ebooks/{uuid}/file",
-        "/api/ebooks/{uuid}/images",
-        "/api/ebooks/{uuid}/images/file",
-        "/api/ebooks/{uuid}/pages/{page}",
-        "/api/journals/images/{name}",
-        "/api/suggestions/{uuid}/{rank}/cover",
-        "/api/thumbs/{uuid}/{size}",
-        "/api/users/{user_id}/avatar",
-    ];
-    for path in media {
-        assert_eq!(
-            doc["paths"][path]["get"]["security"],
-            serde_json::json!([{"bearer": []}, {"session_cookie": []}, {"media_token": []}]),
-            "get {path} should accept a bearer, a session cookie or a media token"
-        );
-    }
+    let triple = serde_json::json!([{"bearer": []}, {"session_cookie": []}, {"media_token": []}]);
+    let token = serde_json::json!({"media_token": []});
+    let wrong: Vec<String> = operations(&doc)
+        .into_iter()
+        .filter(|(path, method, op)| {
+            if *method == "get" && is_media_read_path(path) {
+                op["security"] != triple
+            } else {
+                op["security"]
+                    .as_array()
+                    .is_some_and(|s| s.contains(&token))
+            }
+        })
+        .map(|(path, method, _)| format!("{method} {path}"))
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "media_token disagrees with the auth gate on: {wrong:?}"
+    );
 }
 
 #[test]
