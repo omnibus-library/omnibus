@@ -1,10 +1,10 @@
 //  LibraryGridItem.swift
-//  What each library grid cell shows once Stack series is on, and the text
+//  What each book grid cell shows once Stack series is on, and the text
 //  and progress the stack cells derive from a stack.
 
 import Foundation
 
-/// One cell of the library grid.
+/// One cell of a book grid.
 enum LibraryGridItem: Hashable, Identifiable, Sendable {
     case book(Book)
     case stack(SeriesStack, lead: Book)
@@ -26,6 +26,13 @@ enum LibraryGridItem: Hashable, Identifiable, Sendable {
         case .book(let book): book
         case .stack(_, let lead), .cap(_, let lead), .volume(_, _, _, let lead): lead
         }
+    }
+
+    /// The cells for a whole client-side list, each series stacked when `stacking`.
+    static func items(_ books: [Book], stacking: Bool, open: String?) -> [LibraryGridItem] {
+        guard stacking else { return books.map(LibraryGridItem.book) }
+        let (rows, stacks) = LibraryIndex.stackBooks(books)
+        return LibraryModel.gridItems(books: rows, stacks: LibraryModel.stackIndex(stacks), open: open)
     }
 }
 

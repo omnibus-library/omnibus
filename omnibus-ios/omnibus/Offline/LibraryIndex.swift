@@ -494,6 +494,17 @@ actor LibraryIndex {
         }
     }
 
+    /// Swift twin of `stack_books`: stacks a whole client-side list, each series with 2+ books in its first book's slot.
+    static func stackBooks(_ books: [Book]) -> (books: [Book], stacks: [SeriesStack]) {
+        let sizes = Dictionary(books.compactMap { stackKey($0.series) }.map { ($0, 1) }, uniquingKeysWith: +)
+        var placed = Set<String>()
+        let rows = books.filter { book in
+            guard let key = stackKey(book.series), sizes[key, default: 0] >= 2 else { return true }
+            return placed.insert(key).inserted
+        }
+        return (rows, stacks(reps: rows, members: books))
+    }
+
     /// Swift twin of `groupKey`; Unicode `lowercased()` vs the server's ASCII `lower()` is an accepted offline-only edge.
     static func stackKey(_ series: String?) -> String? {
         let key = (series ?? "").lowercased().trimmingCharacters(in: CharacterSet(charactersIn: " "))

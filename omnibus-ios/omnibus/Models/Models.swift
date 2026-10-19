@@ -488,7 +488,7 @@ struct UserSummary: Codable, Hashable, Sendable {
     /// `false`, so a pre-0092 `/me` payload (or a cached blob from one) still
     /// decodes, with the off default this setting ships as.
     var bookDetailScrollStops: Bool = false
-    /// Whether the library grid folds each series into one tile; a missing key decodes as off.
+    /// Whether book grids fold each series into one tile; a missing key decodes as off.
     var stackSeries: Bool = false
     /// Raw wire value; read `shareStats`. `Bool?` rather than the file's
     /// lenient `Bool`, which defaults a missing key to `false` — the
