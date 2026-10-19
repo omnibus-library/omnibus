@@ -45,8 +45,8 @@ export function readerFixture() {
     setup(msw: { use(...handlers: HttpHandler[]): void }) {
       writes.length = 0;
       statusWrites.length = 0;
-      // The reader keeps this device's last position here, which would otherwise carry between stories.
-      localStorage.removeItem(`omn.reading::${UUID}`);
+      // The reader keeps its position and typography here, which would otherwise carry between stories.
+      localStorage.clear();
       msw.use(
         bookHandler(BOOK),
         ...progressHandlers([SAVED], writes),

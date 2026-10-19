@@ -1,6 +1,14 @@
 import type { ReactNode } from "react";
 import { classes } from "../../classes";
 
+/** The dim backdrop behind a drawer or panel; a click on it closes whatever is over it. */
+export function Scrim({ onClick }: { onClick: () => void }) {
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: Escape closes the panel from the keyboard; the scrim is the pointer's way out
+    <div className="rd-scrim" onClick={onClick} />
+  );
+}
+
 type DrawerShellProps = {
   testId: string;
   /** Appended to the drawer's classes; the search panel goes full-screen on phones. */
@@ -24,8 +32,7 @@ export function DrawerShell({
 }: DrawerShellProps) {
   return (
     <>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: Escape closes the drawer from the keyboard; the scrim is the pointer's way out */}
-      <div className="rd-scrim" onClick={onClose} />
+      <Scrim onClick={onClose} />
       <div className={classes("rd-drawer", extraClass)} data-testid={testId}>
         <div className="rd-grabber" />
         <div className="rd-drawer-head">

@@ -57,8 +57,11 @@ export const FailsThenRetries: Story = {
 
     await userEvent.click(canvas.getByRole("button", { name: "Retry" }));
 
-    await waitFor(() => expect(canvas.queryByRole("alert")).toBeNull());
-    await expect(inits()).toHaveLength(2);
+    await waitFor(() => expect(inits()).toHaveLength(2));
+    await waitFor(() =>
+      expect(canvas.queryByTestId("reader-loading")).toBeNull(),
+    );
+    await expect(canvas.queryByRole("alert")).toBeNull();
   },
 };
 

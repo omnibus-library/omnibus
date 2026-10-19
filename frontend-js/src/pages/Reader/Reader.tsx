@@ -8,6 +8,7 @@ import { PageNotFound } from "../../components/PageState/PageState";
 import { useTheme } from "../../components/Theme/AtriumRoot";
 import { useReadingSession } from "../../readingSession";
 import { bookQuery, progressQuery } from "../BookDetail/queries";
+import { AaPanel } from "./AaPanel";
 import {
   loadEpubRuntime,
   parseRelocate,
@@ -45,20 +46,18 @@ import {
   saveLocalPosition,
 } from "./start";
 import { TocDrawer } from "./TocDrawer";
+import {
+  initOptions,
+  loadReaderPrefs,
+  type PrefName,
+  pushReaderPref,
+  type ReaderPrefs,
+  saveReaderPref,
+} from "./typography";
 import "./Reader.css";
 
 const VIEWER_ID = "omnibus-viewer";
 const FONTS_HREF = `${import.meta.env.BASE_URL}reader-fonts/reader-fonts.css`;
-
-// shortcut: the Aa panel's choices arrive with the typography prefs; until then every book opens on these.
-const DEFAULT_TYPOGRAPHY = {
-  fontSize: 18,
-  fontFamily: null,
-  lineHeight: "1.7",
-  maxWidth: "min(80%, calc(100% - 172px))",
-  justify: false,
-  spread: "auto",
-};
 
 // The glue calls these with a JSON string; each one this page bridges is listed here.
 const HOOKS = [
@@ -87,6 +86,8 @@ function EpubPage({
   const [loc, setLoc] = useState(NO_LOCATION);
   const [chromeHidden, setChromeHidden] = useState(false);
   const [panel, setPanel] = useState<Panel | null>(null);
+  // Read at mount, so the first `init` already carries them.
+  const [prefs, setPrefs] = useState(loadReaderPrefs);
   const [toc, setToc] = useState<TocEntry[]>([]);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -98,7 +99,7 @@ function EpubPage({
 
   useEffect(() => surface.current?.focus(), []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry bumps `attempt` to run the open again, and a theme change reaches the glue through `setTheme`
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry bumps `attempt` to run the open again, and a theme or typography change reaches the glue through its setters
   useEffect(() => {
     let cancelled = false;
     // Per mount: the last position posted (not the last seen), whether the first landing is held, and the TOC.
@@ -179,7 +180,7 @@ function EpubPage({
         VIEWER_ID,
         fileId === null ? url : `${url}?file_id=${fileId}`,
         {
-          ...DEFAULT_TYPOGRAPHY,
+          ...initOptions(prefs),
           cfi: start.cfi,
           theme,
           fontsHref: FONTS_HREF,
@@ -207,6 +208,12 @@ function EpubPage({
     withReader((glue) => glue[direction]());
   const toggle = (target: Panel) =>
     setPanel((open) => (open === target ? null : target));
+  function changePref<K extends PrefName>(name: K, value: ReaderPrefs[K]) {
+    const next = { ...prefs, [name]: value };
+    setPrefs(next);
+    withReader((glue) => pushReaderPref(glue, name, next));
+    saveReaderPref(name, next);
+  }
   const jumpTo = (target: string) => {
     withReader((glue) => glue.display(target));
     setPanel(null);
@@ -266,6 +273,13 @@ function EpubPage({
         ambient={formatAmbientPage(loc)}
         pct={loc.pct}
       />
+      {panel === "aa" && (
+        <AaPanel
+          prefs={prefs}
+          onChange={changePref}
+          onClose={() => setPanel(null)}
+        />
+      )}
       {panel === "toc" && (
         <TocDrawer
           entries={toc}
