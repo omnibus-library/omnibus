@@ -1,23 +1,26 @@
-//! The library filter chip bar: one chip per clause, an add-filter picker and
-//! a single Clear all. Stateless about the filter itself: every edit emits the
-//! whole next [`ViewFilters`] through `on_change`.
+//! The library filter bar: one facet per field, each opening a menu on its
+//! own values, and a single Clear all. Stateless about the filter itself:
+//! every edit emits the whole next [`ViewFilters`] through `on_change`.
 
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use omnibus_shared::{
-    FilterClause, FilterField, FilterMode, ShelfSummary, ViewFilters, MAX_FILTER_CLAUSES,
-};
+use omnibus_shared::{FilterClause, FilterField, FilterMode, ShelfSummary, ViewFilters};
+
+use crate::components::glyphs::chevron_down_glyph;
+use crate::components::shelf_glyphs::x_icon;
 
 mod picker;
 pub mod values;
 
-pub use picker::{fetch_options, needs_fetch, state_for, LoadState, Loaded, PickerBody};
+pub use picker::{
+    fetch_options, list_with_picks, needs_fetch, state_for, LoadState, Loaded, PickerBody,
+};
 
 #[cfg(all(test, feature = "server"))]
 mod tests;
 
-/// The fields a clause can match, in picker order.
+/// The fields a clause can match, in the bar's order.
 pub const FILTER_FIELDS: [FilterField; 6] = [
     FilterField::Shelf,
     FilterField::Tag,
@@ -63,15 +66,7 @@ pub fn field_token(field: FilterField) -> &'static str {
     }
 }
 
-/// The mode as it reads in a chip: "includes any of" or "excludes any of".
-pub fn mode_phrase(mode: FilterMode) -> &'static str {
-    match mode {
-        FilterMode::Include => "includes any of",
-        FilterMode::Exclude => "excludes any of",
-    }
-}
-
-/// What the filter bar knows of the viewer's shelves: a shelf chip names its
+/// What the filter bar knows of the viewer's shelves: a shelf facet names its
 /// shelf from the list, so it must say when it cannot.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ShelfList {
@@ -97,52 +92,34 @@ impl ShelfList {
     }
 }
 
-/// One run of a chip's text: plain text, or a name still being worked out.
+/// One run of a facet's value: plain text, or a shelf name still being worked out.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ChipPart {
+enum ValuePart {
     Text(String),
     Pending,
 }
 
-/// The chip's text split so each pending name can be drawn as a sheen.
-pub fn chip_parts(
+/// What an active facet shows after its field name: "not" ahead of an
+/// exclusion, the first value, and "+N" for the rest.
+fn facet_value(
     clause: &FilterClause,
     shelves: &ShelfList,
     viewer_id: Option<i64>,
-) -> Vec<ChipPart> {
+) -> Vec<ValuePart> {
     let mut parts = Vec::new();
-    let mut text = format!(
-        "{} {} ",
-        field_label(clause.field),
-        mode_phrase(clause.mode)
-    );
-    for (i, value) in clause.values.iter().enumerate() {
-        if i > 0 {
-            text.push_str(", ");
-        }
-        match value_label(clause.field, value, shelves, viewer_id) {
-            Some(name) => text.push_str(&name),
-            None => {
-                parts.push(ChipPart::Text(std::mem::take(&mut text)));
-                parts.push(ChipPart::Pending);
-            }
-        }
+    if clause.mode == FilterMode::Exclude {
+        parts.push(ValuePart::Text("not ".to_string()));
     }
-    if !text.is_empty() {
-        parts.push(ChipPart::Text(text));
+    if let Some(first) = clause.values.first() {
+        parts.push(
+            value_label(clause.field, first, shelves, viewer_id)
+                .map_or(ValuePart::Pending, ValuePart::Text),
+        );
+    }
+    if clause.values.len() > 1 {
+        parts.push(ValuePart::Text(format!(" +{}", clause.values.len() - 1)));
     }
     parts
-}
-
-/// The chip text for `clause` as plain text; a pending name reads as an ellipsis.
-pub fn chip_label(clause: &FilterClause, shelves: &ShelfList, viewer_id: Option<i64>) -> String {
-    chip_parts(clause, shelves, viewer_id)
-        .into_iter()
-        .map(|part| match part {
-            ChipPart::Text(text) => text,
-            ChipPart::Pending => "\u{2026}".to_string(),
-        })
-        .collect()
 }
 
 /// A value's name, or `None` while it is still being worked out.
@@ -175,33 +152,141 @@ fn shelf_name(value: &str, shelves: &ShelfList, viewer_id: Option<i64>) -> Optio
     }
 }
 
-/// `filters` with `clause` appended.
-pub fn with_clause(filters: &ViewFilters, clause: FilterClause) -> ViewFilters {
-    let mut clauses = filters.clauses.clone();
-    clauses.push(clause);
-    ViewFilters { clauses }
-}
-
-/// `filters` without the clause at `index`; unchanged when out of range.
-pub fn without_clause(filters: &ViewFilters, index: usize) -> ViewFilters {
-    let mut clauses = filters.clauses.clone();
-    if index < clauses.len() {
-        clauses.remove(index);
-    }
-    ViewFilters { clauses }
-}
-
 /// A pending name draws as a sheen, per the loading vocabulary; text as itself.
-fn chip_part(part: ChipPart) -> Element {
+fn value_part(part: ValuePart) -> Element {
     match part {
-        ChipPart::Text(text) => rsx! { "{text}" },
-        ChipPart::Pending => rsx! {
+        ValuePart::Text(text) => rsx! { "{text}" },
+        ValuePart::Pending => rsx! {
             span { class: "ld-sheen", "\u{2026}" }
         },
     }
 }
 
-/// The chip row for the library toolbar.
+/// One field's facet: the button naming the field and, while active, what it
+/// keeps; its clear button; and its menu while open. A saved view with two
+/// clauses on the field shows the first, and an edit replaces both.
+#[component]
+fn Facet(
+    field: FilterField,
+    filters: ViewFilters,
+    shelves: ShelfList,
+    viewer_id: Option<i64>,
+    on_change: EventHandler<ViewFilters>,
+) -> Element {
+    let mut open = use_signal(|| false);
+    let mut button = use_signal(|| None::<Rc<MountedData>>);
+    // The menu and the clear button unmount with focus inside them; hand it
+    // back to the facet, whichever way they went.
+    let refocus = move || {
+        if let Some(button) = button.peek().clone() {
+            spawn(async move {
+                let _ = button.set_focus(true).await;
+            });
+        }
+    };
+    let clause = filters.clauses.iter().find(|c| c.field == field).cloned();
+    let value = clause.as_ref().map(|c| facet_value(c, &shelves, viewer_id));
+    let active = value.is_some();
+    let label = field_label(field);
+    let token = field_token(field);
+    let initial = clause.unwrap_or_else(|| FilterClause::new(field, FilterMode::Include, &[]));
+    let applied = filters.clone();
+    rsx! {
+        div { class: if active { "fb-facet-wrap on" } else { "fb-facet-wrap" },
+            button {
+                r#type: "button",
+                class: "fb-facet",
+                "aria-haspopup": "dialog",
+                "aria-expanded": "{open()}",
+                "data-testid": "filter-facet-{token}",
+                onmounted: move |evt: MountedEvent| button.set(Some(evt.data())),
+                onclick: move |_| {
+                    if !open() {
+                        reveal_below(field);
+                    }
+                    open.set(!open());
+                },
+                span { "{label}" }
+                if let Some(parts) = value {
+                    span { class: "fb-facet-v",
+                        for part in parts {
+                            {value_part(part)}
+                        }
+                    }
+                }
+                {chevron_down_glyph(12)}
+            }
+            if active {
+                button {
+                    r#type: "button",
+                    class: "fb-facet-x",
+                    "aria-label": "Clear the {label} filter",
+                    "data-testid": "filter-facet-clear-{token}",
+                    onclick: move |_| {
+                        on_change.call(without_field(&filters, field));
+                        refocus();
+                    },
+                    {x_icon()}
+                }
+            }
+            if open() {
+                picker::FilterPicker {
+                    shelves,
+                    viewer_id,
+                    initial,
+                    on_apply: move |clause| {
+                        on_change.call(with_field_clause(&applied, clause));
+                        open.set(false);
+                        refocus();
+                    },
+                    on_close: move |_| {
+                        open.set(false);
+                        refocus();
+                    },
+                }
+            }
+        }
+    }
+}
+
+/// `filters` with every clause on `field` swapped for `clause`; a clause
+/// without values just clears the field.
+pub fn with_field_clause(filters: &ViewFilters, clause: FilterClause) -> ViewFilters {
+    let mut next = without_field(filters, clause.field);
+    if clause.usable_values().next().is_some() {
+        next.clauses.push(clause);
+    }
+    next
+}
+
+/// `filters` without any clause on `field`.
+pub fn without_field(filters: &ViewFilters, field: FilterField) -> ViewFilters {
+    ViewFilters {
+        clauses: filters
+            .clauses
+            .iter()
+            .filter(|c| c.field != field)
+            .cloned()
+            .collect(),
+    }
+}
+
+/// Menus open below their facet. When the window has too little room under
+/// the facet for a menu, scroll the facet up under the top bar first; phones
+/// use a bottom sheet and need no room.
+fn reveal_below(field: FilterField) {
+    let _ = dioxus::document::eval(&format!(
+        r#"const el = document.querySelector('[data-testid="filter-facet-{}"]');
+if (el && !matchMedia('(max-width: 720px)').matches) {{
+  const room = innerHeight - el.getBoundingClientRect().bottom;
+  if (room < Math.min(480, innerHeight * 0.6)) el.scrollIntoView({{ block: 'start', behavior: 'instant' }});
+}}"#,
+        field_token(field)
+    ));
+}
+
+/// The library's filters as one facet per field: each opens its own value
+/// menu, and an active one names what it keeps.
 #[component]
 pub fn FilterBar(
     filters: ViewFilters,
@@ -209,81 +294,20 @@ pub fn FilterBar(
     viewer_id: Option<i64>,
     on_change: EventHandler<ViewFilters>,
 ) -> Element {
-    let mut open = use_signal(|| false);
-    let mut add_button = use_signal(|| None::<Rc<MountedData>>);
-    // The popover unmounts with focus inside it; hand focus back to the button
-    // that opened it, whichever way it closed.
-    let mut close = move || {
-        if let Some(button) = add_button.peek().clone() {
-            spawn(async move {
-                let _ = button.set_focus(true).await;
-            });
-        }
-        open.set(false);
-    };
-    let at_cap = filters.clauses.len() >= MAX_FILTER_CLAUSES;
-    let chips: Vec<(usize, Vec<ChipPart>, String, ViewFilters)> = filters
-        .clauses
-        .iter()
-        .enumerate()
-        .map(|(i, clause)| {
-            let parts = chip_parts(clause, &shelves, viewer_id);
-            (
-                i,
-                parts,
-                chip_label(clause, &shelves, viewer_id),
-                without_clause(&filters, i),
-            )
-        })
-        .collect();
-    let with_applied = filters.clone();
-
     rsx! {
         div {
             class: "fb",
             role: "group",
             "aria-label": "Library filters",
             "data-testid": "lib-filter-bar",
-            for (i , parts , label , without) in chips {
-                span { key: "{i}", class: "fb-chip", "data-testid": "filter-chip-{i}",
-                    span { class: "fb-chip-text",
-                        for part in parts {
-                            {chip_part(part)}
-                        }
-                    }
-                    button {
-                        r#type: "button",
-                        class: "fb-chip-x",
-                        "aria-label": "Remove filter: {label}",
-                        "data-testid": "filter-chip-remove-{i}",
-                        onclick: move |_| on_change.call(without.clone()),
-                        "\u{d7}"
-                    }
-                }
-            }
-            div { class: "fb-add-wrap",
-                button {
-                    r#type: "button",
-                    class: "fb-add",
-                    "aria-haspopup": "dialog",
-                    "aria-expanded": "{open()}",
-                    "data-testid": "filter-add",
-                    onmounted: move |evt: MountedEvent| add_button.set(Some(evt.data())),
-                    disabled: at_cap,
-                    title: at_cap.then(|| format!("At most {MAX_FILTER_CLAUSES} filters")),
-                    onclick: move |_| open.set(!open()),
-                    "+ Add filter"
-                }
-                if open() {
-                    picker::FilterPicker {
-                        shelves,
-                        viewer_id,
-                        on_apply: move |clause| {
-                            on_change.call(with_clause(&with_applied, clause));
-                            close();
-                        },
-                        on_close: move |_| close(),
-                    }
+            for field in FILTER_FIELDS {
+                Facet {
+                    key: "{field_token(field)}",
+                    field,
+                    filters: filters.clone(),
+                    shelves: shelves.clone(),
+                    viewer_id,
+                    on_change,
                 }
             }
             if !filters.is_empty() {

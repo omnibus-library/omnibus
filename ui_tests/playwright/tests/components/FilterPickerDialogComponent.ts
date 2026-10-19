@@ -7,7 +7,7 @@ import type {
 } from "../data/libraryFilters";
 import { BaseComponent } from "./BaseComponent";
 
-/** The label of each field's button in the dialog and on its chips. */
+/** The label of each field's facet and of the menu it opens. */
 export const FILTER_FIELD_NAMES: Record<FilterField, string> = {
   shelf: "Shelf",
   tag: "Tag",
@@ -22,28 +22,35 @@ const MODE_NAMES: Record<FilterMode, string> = {
   exclude: "Excludes any",
 };
 
-/** The modal "Add filter" dialog that builds one clause of the filter. */
+/** How far a box sits inside each edge of the window, in CSS px; negative where it spills past. */
+export type WindowInsets = {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+};
+
+/** A facet's modal menu, named for its field, that builds that field's clause. */
 export class FilterPickerDialogComponent extends BaseComponent {
   readonly root: Locator;
   readonly scrim: Locator;
   readonly searchField: Locator;
   readonly applyButton: Locator;
   readonly cancelButton: Locator;
+  readonly loadingIndicator: Locator;
+  readonly errorAlert: Locator;
+  readonly retryButton: Locator;
 
   constructor(page: Page) {
     super(page);
-    this.root = page.getByRole("dialog", { name: "Add filter" });
+    this.root = page.getByRole("dialog", { name: /^Filter by / });
     this.scrim = page.getByTestId("filter-picker-scrim");
     this.searchField = this.root.getByRole("searchbox");
     this.applyButton = this.root.getByRole("button", { name: /^Apply/ });
     this.cancelButton = this.root.getByRole("button", { name: "Cancel" });
-  }
-
-  fieldButton(field: FilterField): Locator {
-    return this.root.getByRole("button", {
-      name: FILTER_FIELD_NAMES[field],
-      exact: true,
-    });
+    this.loadingIndicator = this.root.getByTestId("filter-picker-loading");
+    this.errorAlert = this.root.getByRole("alert");
+    this.retryButton = this.root.getByRole("button", { name: "Try again" });
   }
 
   modeButton(mode: FilterMode, pressed?: boolean): Locator {
@@ -53,10 +60,6 @@ export class FilterPickerDialogComponent extends BaseComponent {
   /** The checkbox for a value, labelled by its display label. */
   option(label: string): Locator {
     return this.root.getByLabel(label, { exact: true });
-  }
-
-  async chooseField(field: FilterField): Promise<void> {
-    await this.fieldButton(field).click();
   }
 
   async chooseMode(mode: FilterMode): Promise<void> {
@@ -69,9 +72,8 @@ export class FilterPickerDialogComponent extends BaseComponent {
     await this.option(label).check();
   }
 
-  /** Builds `clause` in the open dialog without applying it. */
-  async build({ field, mode, picks }: FilterClause): Promise<void> {
-    await this.chooseField(field);
+  /** Sets `clause`'s mode and ticks its picks, on top of what the menu opened with. */
+  async build({ mode, picks }: FilterClause): Promise<void> {
     await this.chooseMode(mode);
     for (const pick of picks) await this.pick(pick);
   }
@@ -82,6 +84,10 @@ export class FilterPickerDialogComponent extends BaseComponent {
 
   async cancel(): Promise<void> {
     await this.cancelButton.click();
+  }
+
+  async retry(): Promise<void> {
+    await this.retryButton.click();
   }
 
   async dismissByScrim(): Promise<void> {
@@ -99,5 +105,19 @@ export class FilterPickerDialogComponent extends BaseComponent {
         ?.closest('[role="dialog"]')
         ?.getAttribute("aria-label"),
     );
+  }
+
+  /** Where the open menu sits against the window's edges, scrollbars excluded. */
+  async insets(): Promise<WindowInsets> {
+    return this.root.evaluate((menu) => {
+      const box = menu.getBoundingClientRect();
+      const { clientWidth, clientHeight } = document.documentElement;
+      return {
+        top: box.top,
+        right: clientWidth - box.right,
+        bottom: clientHeight - box.bottom,
+        left: box.left,
+      };
+    });
   }
 }

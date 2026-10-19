@@ -39,12 +39,16 @@ test.describe("author page", () => {
 
     await test.step("check the library is narrowed to them", async () => {
       await libraryPage.assertDisplayed();
-      await expect(libraryPage.filterBar.chip(0)).toContainText(name);
+      await expect(libraryPage.filterBar.facet("author")).toHaveAccessibleName(
+        `Author ${name}`,
+      );
     });
 
     await test.step("check the filter outlives a reload", async () => {
       await libraryPage.goto();
-      await expect(libraryPage.filterBar.chip(0)).toContainText(name);
+      await expect(libraryPage.filterBar.facet("author")).toHaveAccessibleName(
+        `Author ${name}`,
+      );
     });
   });
 
@@ -72,7 +76,9 @@ test.describe("author page", () => {
       await expect(libraryPage.shelfGallery.selectedTab).toContainText(
         "All Books",
       );
-      await expect(libraryPage.filterBar.chip(0)).toContainText(name);
+      await expect(libraryPage.filterBar.facet("author")).toHaveAccessibleName(
+        `Author ${name}`,
+      );
     });
   });
 

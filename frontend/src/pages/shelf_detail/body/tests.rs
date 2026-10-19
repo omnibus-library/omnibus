@@ -63,11 +63,14 @@ fn shelf_books_say_the_shelf_is_empty_once_members_answer_with_none() {
 fn shelf_books_render_the_filter_bar_beside_the_member_count() {
     let html = render_in_vdom(|| books(false));
     assert!(html.contains("data-testid=\"lib-filter-bar\""), "{html}");
-    assert!(html.contains("data-testid=\"filter-add\""), "{html}");
+    assert!(
+        html.contains("data-testid=\"filter-facet-format\""),
+        "{html}"
+    );
 }
 
 #[test]
-fn shelf_books_draw_a_chip_for_a_filter_the_landing_page_saved() {
+fn shelf_books_name_the_facet_value_for_a_filter_the_landing_page_saved() {
     let html = render_in_vdom(|| {
         let mut filtered = view(false, false);
         filtered.filters = ViewFilters {
@@ -79,7 +82,7 @@ fn shelf_books_draw_a_chip_for_a_filter_the_landing_page_saved() {
         };
         rsx! { BooksHarness { view: filtered } }
     });
-    assert!(html.contains("Format excludes any of PDF"), "{html}");
+    assert!(html.contains(">not PDF<"), "{html}");
     assert!(html.contains("data-testid=\"filter-clear-all\""), "{html}");
 }
 

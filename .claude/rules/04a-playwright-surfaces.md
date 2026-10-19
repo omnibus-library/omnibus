@@ -195,6 +195,6 @@ list (`authors-list`, rows `author-card`) beside an author pane, so the page's h
 is the list's "Authors" and the author's name is `author-name`, an h2; `/authors`
 previews the reader's latest author there. Delete author is behind `author-more`.
 
-**The filter bar and what reads its saved filter** (chips, the Add filter
-dialog, the shelf lens and `/shelves/:id` states) have their own file:
+**The filter bar and what reads its saved filter** (the facets, their menus,
+the shelf lens and `/shelves/:id` states) have their own file:
 [04c-playwright-filters.md](04c-playwright-filters.md).
