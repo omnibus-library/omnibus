@@ -50,7 +50,7 @@ export const aSettingsServer = (
   init: Partial<SettingsServer> = {},
 ): SettingsServer => ({
   user: WIRE_ADA,
-  goals: [null, null, null],
+  goals: { books: null, pages: null, minutes: null },
   goalWrites: [],
   goalOffsets: [],
   refuseGoals: [],
@@ -109,7 +109,7 @@ export function settingsHandlers(server: SettingsServer) {
       }),
     ),
     http.get("/api/stats", () =>
-      HttpResponse.json(aWireStatsGoals(...server.goals)),
+      HttpResponse.json(aWireStatsGoals(server.goals)),
     ),
     http.put("/api/stats/goal", async ({ request }) => {
       server.goalOffsets.push(
@@ -118,7 +118,7 @@ export function settingsHandlers(server: SettingsServer) {
       const { target } = ReadingGoalUpdate.parse(await request.json());
       if (server.refuseGoals.includes("books")) return refused();
       server.goalWrites.push(`books=${target}`);
-      server.goals = [target ?? null, server.goals[1], server.goals[2]];
+      server.goals = { ...server.goals, books: target ?? null };
       return HttpResponse.json(null);
     }),
     http.put("/api/stats/goal/daily", async ({ request }) => {
@@ -128,9 +128,7 @@ export function settingsHandlers(server: SettingsServer) {
       const { kind, target } = DailyGoalUpdate.parse(await request.json());
       if (server.refuseGoals.includes(kind)) return refused();
       server.goalWrites.push(`${kind}=${target}`);
-      const goals: GoalTargets = [...server.goals];
-      goals[kind === "pages" ? 1 : 2] = target ?? null;
-      server.goals = goals;
+      server.goals = { ...server.goals, [kind]: target ?? null };
       return HttpResponse.json({});
     }),
     http.get("/api/kindle/delivery", () =>

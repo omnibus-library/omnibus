@@ -6,10 +6,12 @@ import {
   getStats,
 } from "./generated/omnibus";
 
-/** The three reading targets, books this year then pages and minutes a day; `null` is none. */
-export type GoalTargets = [number | null, number | null, number | null];
+export type GoalKind = "books" | "pages" | "minutes";
 
-export type DailyGoalKind = "pages" | "minutes";
+export type DailyGoalKind = Exclude<GoalKind, "books">;
+
+/** The reading targets, books this year and pages and minutes a day; `null` is none. */
+export type GoalTargets = Record<GoalKind, number | null>;
 
 // Days are cut on the reader's clock (rule 10).
 const readerClock = () => ({
@@ -19,11 +21,11 @@ const readerClock = () => ({
 /** The saved targets, read off the all-time summary, which carries both goals whatever the range. */
 export async function fetchGoals(): Promise<GoalTargets> {
   const summary = ok(await getStats({ range: "all_time", ...readerClock() }));
-  return [
-    summary.goal?.target ?? null,
-    summary.daily_goals?.pages?.target ?? null,
-    summary.daily_goals?.minutes?.target ?? null,
-  ];
+  return {
+    books: summary.goal?.target ?? null,
+    pages: summary.daily_goals?.pages?.target ?? null,
+    minutes: summary.daily_goals?.minutes?.target ?? null,
+  };
 }
 
 /** A fresh read per visit: the form seeds from it once, so a cached copy would seed it stale. */

@@ -1,3 +1,4 @@
+import type { GoalTargets } from "../api";
 import { getGetStatsResponseMock } from "../api/generated/omnibus.msw";
 import type {
   AlignmentView,
@@ -542,12 +543,12 @@ export function aWireRulePreview(
   };
 }
 
-/** `GET /api/stats` carrying the given targets (books, pages, minutes; `null` is none); the rest is generated filler. */
-export function aWireStatsGoals(
-  books: number | null,
-  pages: number | null,
-  minutes: number | null,
-): StatsSummary {
+/** `GET /api/stats` carrying the given targets (`null` is none); the rest is generated filler. */
+export function aWireStatsGoals({
+  books,
+  pages,
+  minutes,
+}: GoalTargets): StatsSummary {
   const progress = { current: 0, day: "2026-10-19" };
   return getGetStatsResponseMock({
     // The generated mock draws this from the enum's keys, which the schema refuses.

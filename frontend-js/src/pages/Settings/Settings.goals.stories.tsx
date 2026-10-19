@@ -10,7 +10,7 @@ import {
 
 let server: SettingsServer;
 
-const TARGETS: SettingsServer["goals"] = [24, 30, 45];
+const TARGETS: SettingsServer["goals"] = { books: 24, pages: 30, minutes: 45 };
 
 const meta = {
   title: "Pages/Settings/Goals",

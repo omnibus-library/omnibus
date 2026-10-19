@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import {
+  type GoalKind,
   type GoalTargets,
   goalsQuery,
   saveAnnualGoal,
@@ -16,32 +17,20 @@ import {
   StatusLine,
   useUnsavedGuard,
 } from "../../components/SettingsShell/SettingsShell";
-import {
-  changedUpdates,
-  GOAL_FIELDS,
-  GOAL_INDEXES,
-  type GoalIndex,
-  GoalsSchema,
-  saveSummary,
-} from "./goals";
+import { changedUpdates, GOAL_FIELDS, GoalsSchema, saveSummary } from "./goals";
 
 const FormSchema = z.object({ drafts: GoalsSchema });
-type Drafts = z.input<typeof FormSchema>;
 
-const NAMES = ["drafts.0", "drafts.1", "drafts.2"] as const;
+const text = (target: number | null) => target?.toString() ?? "";
 
-const toDrafts = (targets: GoalTargets): Drafts["drafts"] => [
-  targets[0]?.toString() ?? "",
-  targets[1]?.toString() ?? "",
-  targets[2]?.toString() ?? "",
-];
+const toDrafts = ({ books, pages, minutes }: GoalTargets) => ({
+  books: text(books),
+  pages: text(pages),
+  minutes: text(minutes),
+});
 
-const write = (index: GoalIndex, target: number | null) => {
-  const { kind } = GOAL_FIELDS[index];
-  return kind === "books"
-    ? saveAnnualGoal(target)
-    : saveDailyGoal(kind, target);
-};
+const write = (kind: GoalKind, target: number | null) =>
+  kind === "books" ? saveAnnualGoal(target) : saveDailyGoal(kind, target);
 
 /** The three reading targets, saved together by one Save all. */
 export function GoalsSection() {
@@ -51,28 +40,33 @@ export function GoalsSection() {
   const [outcome, setOutcome] = useState<Status | null>(null);
   const form = useForm({
     resolver: zodResolver(FormSchema),
-    defaultValues: { drafts: toDrafts([null, null, null]) },
+    defaultValues: {
+      drafts: toDrafts({ books: null, pages: null, minutes: null }),
+    },
     values: saved ? { drafts: toDrafts(saved) } : undefined,
     // A failed goal keeps what was typed, and its error survives the re-sync after a save.
     resetOptions: { keepDirtyValues: true, keepErrors: true },
   });
-  const parsed = GoalsSchema.safeParse(form.watch("drafts"));
-  const dirty =
-    saved !== null &&
-    (!parsed.success || changedUpdates(parsed.data, saved).length > 0);
+  const dirty = form.formState.isDirty;
   useUnsavedGuard("goals", dirty);
 
   const save = useMutation({
-    mutationFn: async (updates: ReturnType<typeof changedUpdates>) => {
-      const landed: GoalTargets = [...(saved ?? [null, null, null])];
-      const failed: GoalIndex[] = [];
+    mutationFn: async ({
+      base,
+      updates,
+    }: {
+      base: GoalTargets;
+      updates: ReturnType<typeof changedUpdates>;
+    }) => {
+      const landed = { ...base };
+      const failed: GoalKind[] = [];
       // One after another, so a failure part-way leaves the card describing what landed.
-      for (const { index, target } of updates) {
+      for (const { kind, target } of updates) {
         try {
-          await write(index, target);
-          landed[index] = target;
+          await write(kind, target);
+          landed[kind] = target;
         } catch {
-          failed.push(index);
+          failed.push(kind);
         }
       }
       return { landed, failed };
@@ -80,16 +74,21 @@ export function GoalsSection() {
     onMutate: () => setOutcome(null),
     onSuccess: ({ landed, failed }) => {
       queryClient.setQueryData(goalsQuery.queryKey, landed);
-      for (const index of failed) {
-        form.setError(NAMES[index], {
+      for (const kind of failed) {
+        form.setError(`drafts.${kind}`, {
           message: "This one didn’t save. Try again.",
         });
       }
-      setOutcome(saveSummary(failed.map((index) => GOAL_FIELDS[index].label)));
+      setOutcome(
+        saveSummary(
+          GOAL_FIELDS.filter((f) => failed.includes(f.kind)).map(
+            (f) => f.label,
+          ),
+        ),
+      );
     },
   });
 
-  const known = saved !== null;
   let shown = outcome;
   if (goals.isPending) {
     shown = { message: "Reading your goals", error: false };
@@ -112,7 +111,11 @@ export function GoalsSection() {
         className="settings-form"
         onSubmit={form.handleSubmit(
           ({ drafts }) => {
-            if (saved) save.mutate(changedUpdates(drafts, saved));
+            if (saved)
+              save.mutate({
+                base: saved,
+                updates: changedUpdates(drafts, saved),
+              });
           },
           () =>
             setOutcome({
@@ -121,9 +124,8 @@ export function GoalsSection() {
             }),
         )}
       >
-        {GOAL_INDEXES.map((index) => {
-          const field = GOAL_FIELDS[index];
-          const error = form.formState.errors.drafts?.[index]?.message;
+        {GOAL_FIELDS.map((field) => {
+          const error = form.formState.errors.drafts?.[field.kind]?.message;
           return (
             <div className="settings-field" key={field.testId}>
               <label htmlFor={field.testId}>{field.label}</label>
@@ -131,20 +133,20 @@ export function GoalsSection() {
                 // Text, not number: a browser reads "24e" as "", which would clear the goal.
                 type="text"
                 id={field.testId}
-                className={known ? undefined : "ld-unknown"}
+                className={saved ? undefined : "ld-unknown"}
                 data-testid={`${field.testId}-input`}
                 inputMode="numeric"
-                placeholder={known ? "No target" : undefined}
-                disabled={!known || save.isPending}
+                placeholder={saved ? "No target" : undefined}
+                disabled={!saved || save.isPending}
                 aria-invalid={error !== undefined}
                 aria-describedby={
                   error
                     ? `${field.testId}-hint ${field.testId}-error`
                     : `${field.testId}-hint`
                 }
-                {...form.register(NAMES[index], {
+                {...form.register(`drafts.${field.kind}`, {
                   onChange: () => {
-                    form.clearErrors(NAMES[index]);
+                    form.clearErrors(`drafts.${field.kind}`);
                     setOutcome(null);
                   },
                 })}

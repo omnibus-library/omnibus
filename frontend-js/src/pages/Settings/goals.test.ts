@@ -3,7 +3,13 @@ import { changedUpdates, GoalsSchema, saveSummary } from "./goals";
 
 describe("GoalsSchema", () => {
   it("reads whole numbers and an empty draft as targets and none", () => {
-    expect(GoalsSchema.parse(["24", "", " 30 "])).toEqual([24, null, 30]);
+    expect(
+      GoalsSchema.parse({ books: "24", pages: "", minutes: " 30 " }),
+    ).toEqual({
+      books: 24,
+      pages: null,
+      minutes: 30,
+    });
   });
 
   it.each([
@@ -12,19 +18,27 @@ describe("GoalsSchema", () => {
     ["zero", "0", "Pick a target between 1 and 10000."],
     ["one past the maximum", "10001", "Pick a target between 1 and 10000."],
   ])("refuses %s", (_condition, draft, message) => {
-    const result = GoalsSchema.safeParse([draft, "", ""]);
+    const result = GoalsSchema.safeParse({
+      books: draft,
+      pages: "",
+      minutes: "",
+    });
 
-    expect(result.error?.issues).toMatchObject([{ path: [0], message }]);
+    expect(result.error?.issues).toMatchObject([{ path: ["books"], message }]);
   });
 
   it("accepts the maximum", () => {
-    expect(GoalsSchema.parse(["10000", "2000", "1440"])).toEqual([
-      10000, 2000, 1440,
-    ]);
+    expect(
+      GoalsSchema.parse({ books: "10000", pages: "2000", minutes: "1440" }),
+    ).toEqual({ books: 10000, pages: 2000, minutes: 1440 });
   });
 
   it("bounds each goal by its own maximum", () => {
-    const result = GoalsSchema.safeParse(["", "2001", "1441"]);
+    const result = GoalsSchema.safeParse({
+      books: "",
+      pages: "2001",
+      minutes: "1441",
+    });
 
     expect(result.error?.issues.map((i) => i.message)).toEqual([
       "Pick a target between 1 and 2000.",
@@ -35,14 +49,21 @@ describe("GoalsSchema", () => {
 
 describe("changedUpdates", () => {
   it("lists only the goals that moved, clears included", () => {
-    expect(changedUpdates([24, null, 45], [24, 30, null])).toEqual([
-      { index: 1, target: null },
-      { index: 2, target: 45 },
+    expect(
+      changedUpdates(
+        { books: 24, pages: null, minutes: 45 },
+        { books: 24, pages: 30, minutes: null },
+      ),
+    ).toEqual([
+      { kind: "pages", target: null },
+      { kind: "minutes", target: 45 },
     ]);
   });
 
   it("lists nothing when no goal moved", () => {
-    expect(changedUpdates([24, null, null], [24, null, null])).toEqual([]);
+    const same = { books: 24, pages: null, minutes: null };
+
+    expect(changedUpdates(same, same)).toEqual([]);
   });
 });
 

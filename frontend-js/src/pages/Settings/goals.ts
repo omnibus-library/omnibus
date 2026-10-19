@@ -1,12 +1,8 @@
 import { z } from "zod";
-import type { DailyGoalKind, GoalTargets } from "../../api";
-
-/** Where a goal sits in the targets and the form: books, pages, minutes. */
-export type GoalIndex = 0 | 1 | 2;
-export const GOAL_INDEXES = [0, 1, 2] as const satisfies readonly GoalIndex[];
+import type { GoalKind, GoalTargets } from "../../api";
 
 type GoalField = {
-  kind: "books" | DailyGoalKind;
+  kind: GoalKind;
   label: string;
   unit: string;
   hint: string;
@@ -14,33 +10,33 @@ type GoalField = {
   testId: string;
 };
 
-/** The three goals, in the order a reader sets them: the year first, then the two dailies that feed it. */
-export const GOAL_FIELDS: readonly [GoalField, GoalField, GoalField] = [
-  {
-    kind: "books",
-    label: "Books this year",
-    unit: "book",
-    hint: "Counts a book once, the day you finish it.",
-    max: 10000,
-    testId: "goal-books",
-  },
-  {
-    kind: "pages",
-    label: "Pages a day",
-    unit: "page",
-    hint: "Estimated from how far you move through each book.",
-    max: 2000,
-    testId: "goal-pages",
-  },
-  {
-    kind: "minutes",
-    label: "Minutes a day",
-    unit: "minute",
-    hint: "Reading and listening together, on your own clock.",
-    max: 1440,
-    testId: "goal-minutes",
-  },
-];
+const BOOKS: GoalField = {
+  kind: "books",
+  label: "Books this year",
+  unit: "book",
+  hint: "Counts a book once, the day you finish it.",
+  max: 10000,
+  testId: "goal-books",
+};
+const PAGES: GoalField = {
+  kind: "pages",
+  label: "Pages a day",
+  unit: "page",
+  hint: "Estimated from how far you move through each book.",
+  max: 2000,
+  testId: "goal-pages",
+};
+const MINUTES: GoalField = {
+  kind: "minutes",
+  label: "Minutes a day",
+  unit: "minute",
+  hint: "Reading and listening together, on your own clock.",
+  max: 1440,
+  testId: "goal-minutes",
+};
+
+/** The goals in the order a reader sets them: the year first, then the two dailies that feed it. */
+export const GOAL_FIELDS: readonly GoalField[] = [BOOKS, PAGES, MINUTES];
 
 // An empty draft is a deliberate clear, which is how the form says "no target".
 const target = ({ unit, max }: GoalField) =>
@@ -65,20 +61,20 @@ const target = ({ unit, max }: GoalField) =>
     return n;
   });
 
-/** The three drafts (books, pages, minutes) as targets, or why each refused one was refused. */
-export const GoalsSchema = z.tuple([
-  target(GOAL_FIELDS[0]),
-  target(GOAL_FIELDS[1]),
-  target(GOAL_FIELDS[2]),
-]);
+/** The drafts, by kind, as targets, or why each refused one was refused. */
+export const GoalsSchema = z.object({
+  books: target(BOOKS),
+  pages: target(PAGES),
+  minutes: target(MINUTES),
+});
 
-/** The goals a save should write: index and new target for every one that moved, so an untouched target is never restated. */
+/** The goals a save should write: kind and new target for every one that moved, so an untouched target is never restated. */
 export function changedUpdates(
   next: GoalTargets,
   saved: GoalTargets,
-): { index: GoalIndex; target: number | null }[] {
-  return GOAL_INDEXES.flatMap((index) =>
-    next[index] === saved[index] ? [] : [{ index, target: next[index] }],
+): { kind: GoalKind; target: number | null }[] {
+  return GOAL_FIELDS.flatMap(({ kind }) =>
+    next[kind] === saved[kind] ? [] : [{ kind, target: next[kind] }],
   );
 }
 
