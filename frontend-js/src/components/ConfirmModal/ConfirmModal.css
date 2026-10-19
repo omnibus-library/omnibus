@@ -1,3 +1,6 @@
+.mg-modal.bd-quote-modal {
+  width: min(432px, 100%);
+}
 .author-photo-modal-backdrop {
   position: fixed;
   inset: 0;

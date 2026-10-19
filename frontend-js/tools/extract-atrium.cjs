@@ -32,6 +32,7 @@ const OWNERS = [
   ["components/DiscPage/DiscPage.css", (c) => c.startsWith("disc-")],
   ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || ["landing-col", "library-empty", "cover-link"].includes(c)],
   ["components/ConfirmModal/ConfirmModal.css", (c) => c.startsWith("mg-") || c.startsWith("del-") || c.startsWith("confirm-") || c.startsWith("author-photo-modal")],
+  ["components/QuoteCard/QuoteCard.css", (c) => c.startsWith("rd-quote") || c.startsWith("quote-") || ["rd-chip", "rd-x", "rd-drawer-body", "rd-drawer-head", "rd-drawer-title", "rd-desktop-only", "rd-phone-only"].includes(c)],
   ["components/StarRating/StarRating.css", (c) => c.startsWith("star-")],
   ["components/SessionLog/SessionLog.css", (c) => c.startsWith("st-log") || c.startsWith("session-log")],
   ["components/FetchSummary/FetchSummary.css", (c) => c.startsWith("fs-")],

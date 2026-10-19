@@ -2,8 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
 import { type BookDetail, deleteHighlight, type Highlight } from "../../api";
-import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
+import {
+  ConfirmDialog,
+  ConfirmModal,
+} from "../../components/ConfirmModal/ConfirmModal";
 import { Loading } from "../../components/Loading/Loading";
+import { QuoteCard } from "../../components/QuoteCard/QuoteCard";
 import { formatLongDate } from "../../format";
 import { highlightLocator, passagesKicker, readerDeepLink } from "./highlights";
 import { alignmentQuery, highlightsQuery } from "./queries";
@@ -48,10 +52,11 @@ function CopyAction({ text }: { text: string | null }) {
 type CardProps = {
   highlight: Highlight;
   chapters: readonly Chapter[];
+  onQuote: (h: Highlight) => void;
   onDelete: (h: Highlight) => void;
 };
 
-function HighlightCard({ highlight, chapters, onDelete }: CardProps) {
+function HighlightCard({ highlight, chapters, onQuote, onDelete }: CardProps) {
   const { anchor, color, note, text } = highlight;
   const locator = anchor && highlightLocator(anchor, chapters);
   const saved = `saved ${formatLongDate(highlight.createdAt)}`;
@@ -84,6 +89,16 @@ function HighlightCard({ highlight, chapters, onDelete }: CardProps) {
               open in book →
             </Link>
           )}
+          <button
+            type="button"
+            className="bd-hl-act"
+            data-testid="highlight-quote"
+            // A passage saved before the text column has none to put on a card.
+            disabled={text === null}
+            onClick={() => onQuote(highlight)}
+          >
+            quote card →
+          </button>
           <CopyAction text={text} />
           <button
             type="button"
@@ -110,6 +125,7 @@ export function HighlightsStop({ book }: { book: BookDetail }) {
     enabled: hasText,
   });
   const [deleting, setDeleting] = useState<Highlight | null>(null);
+  const [quoting, setQuoting] = useState<Highlight | null>(null);
   const remove = useMutation({
     mutationFn: (highlight: Highlight) => deleteHighlight(highlight.id),
     // The row leaves only once the server has confirmed it.
@@ -153,6 +169,7 @@ export function HighlightsStop({ book }: { book: BookDetail }) {
               key={highlight.id}
               highlight={highlight}
               chapters={alignment.data?.chapters ?? []}
+              onQuote={setQuoting}
               onDelete={(h) => {
                 remove.reset();
                 setDeleting(h);
@@ -160,6 +177,25 @@ export function HighlightsStop({ book }: { book: BookDetail }) {
             />
           ))}
         </div>
+      )}
+      {quoting && (
+        <ConfirmModal
+          testId="quote-card-modal"
+          ariaLabel="Make a quote card"
+          dialogClass="mg-modal bd-quote-modal"
+          busy={false}
+          onDismiss={() => setQuoting(null)}
+          focusOnOpen
+        >
+          <QuoteCard
+            text={quoting.text ?? ""}
+            author={book.authors[0] ?? ""}
+            subtitle={book.title}
+            // The reader's fallback for a book with no accent.
+            accent={book.accent ?? "#3a3027"}
+            onClose={() => setQuoting(null)}
+          />
+        </ConfirmModal>
       )}
       {deleting && (
         <ConfirmDialog

@@ -159,3 +159,44 @@ export function SparkleGlyph({ size = 16 }: GlyphProps) {
     </svg>
   );
 }
+
+/** A tray with a down arrow, for a download. */
+export function DownloadGlyph({ size = 15 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 3v12" />
+      <path d="m7 12 5 5 5-5" />
+      <path d="M4 21h16" />
+    </svg>
+  );
+}
+
+/** Two stacked sheets, for a copy. */
+export function CopyGlyph({ size = 15 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}

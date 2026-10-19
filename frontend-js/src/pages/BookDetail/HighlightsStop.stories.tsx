@@ -196,6 +196,56 @@ export const CopiesThePassage: Story = {
   },
 };
 
+export const OpensTheQuoteCardEditor: Story = {
+  args: {
+    book: toBookDetail(
+      aWireBook({
+        formats: ["EPUB"],
+        book_files: [aWireFile()],
+        title: "Piranesi",
+        creators: [{ name: "Susanna Clarke" }],
+      }),
+    ),
+  },
+  beforeEach({ msw }) {
+    msw.use(...highlightsHandlers(PASSAGES));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      (
+        await canvas.findAllByRole("button", { name: "quote card →" })
+      )[0] as HTMLElement,
+    );
+
+    const dialog = canvas.getByRole("dialog", { name: "Make a quote card" });
+    await expect(
+      within(dialog).getByTestId("quote-preview-body"),
+    ).toHaveTextContent(
+      "“A station at the edge of the map hears something answer.”",
+    );
+    await expect(
+      within(dialog).getByText("Susanna Clarke"),
+    ).toBeInTheDocument();
+    await expect(within(dialog).getByText("Piranesi")).toBeInTheDocument();
+    await waitFor(() => expect(dialog).toHaveFocus());
+
+    await userEvent.keyboard("{Escape}");
+
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
+  },
+};
+
+export const QuoteCardNeedsText: Story = {
+  beforeEach({ msw }) {
+    msw.use(...highlightsHandlers([aWireHighlight({ text: null })]));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("button", { name: "quote card →" }),
+    ).toBeDisabled();
+  },
+};
+
 const deleted: number[] = [];
 
 export const DeleteWaitsForTheServer: Story = {
