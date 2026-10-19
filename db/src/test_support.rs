@@ -68,12 +68,15 @@ fn crc32(bytes: &[u8]) -> u32 {
 
 /// Assemble an uncompressed (stored) ZIP from `(name, bytes)` entries.
 /// Stored entries keep the writer trivial — no deflate, just headers,
-/// CRCs, and a central directory — and `EpubDoc` reads them fine.
-pub fn build_stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+/// CRCs, and a central directory — and `EpubDoc` reads them fine. Names are
+/// written as given with the UTF-8 flag unset, so a non-UTF-8 name reads back
+/// as CP437.
+pub fn build_stored_zip<N: AsRef<[u8]>>(entries: &[(N, &[u8])]) -> Vec<u8> {
     let mut out: Vec<u8> = Vec::new();
     let mut central: Vec<u8> = Vec::new();
 
     for (name, data) in entries {
+        let name = name.as_ref();
         let offset = out.len() as u32;
         let crc = crc32(data);
         let name_len = name.len() as u16;
@@ -91,7 +94,7 @@ pub fn build_stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
         out.extend_from_slice(&size.to_le_bytes()); // uncompressed size
         out.extend_from_slice(&name_len.to_le_bytes());
         out.extend_from_slice(&0u16.to_le_bytes()); // extra len
-        out.extend_from_slice(name.as_bytes());
+        out.extend_from_slice(name);
         out.extend_from_slice(data);
 
         // Matching central-directory record, accumulated for the tail.
@@ -112,7 +115,7 @@ pub fn build_stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
         central.extend_from_slice(&0u16.to_le_bytes()); // internal attrs
         central.extend_from_slice(&0u32.to_le_bytes()); // external attrs
         central.extend_from_slice(&offset.to_le_bytes());
-        central.extend_from_slice(name.as_bytes());
+        central.extend_from_slice(name);
     }
 
     let cd_offset = out.len() as u32;

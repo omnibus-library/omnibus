@@ -24,10 +24,20 @@ fn tiny_png() -> Vec<u8> {
 }
 
 /// Write a CBZ built from `entries` into `dir` and return its path.
-fn write_cbz(dir: &std::path::Path, name: &str, entries: &[(&str, &[u8])]) -> std::path::PathBuf {
+fn write_cbz<N: AsRef<[u8]>>(
+    dir: &std::path::Path,
+    name: &str,
+    entries: &[(N, &[u8])],
+) -> std::path::PathBuf {
     let path = dir.join(name);
     std::fs::write(&path, build_stored_zip(entries)).expect("write cbz");
     path
+}
+
+/// `file` under a `café/` directory, encoded as CP437 rather than UTF-8 —
+/// how older Windows archivers name entries.
+fn cp437_name(file: &str) -> Vec<u8> {
+    [b"caf\x82/".as_slice(), file.as_bytes()].concat()
 }
 
 const COMIC_INFO: &[u8] = br#"<?xml version="1.0"?>
@@ -136,6 +146,39 @@ fn extract_comic_returns_error_row_when_archive_has_no_image_pages() {
 
     let err = book.metadata.error.expect("zero pages surfaces error");
     assert!(err.contains("no image pages"), "got: {err}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn extract_comic_takes_the_cover_from_a_cp437_named_first_page() {
+    let dir = make_test_dir("comic-cp437-cover");
+    let png = tiny_png();
+    let path = write_cbz(&dir, "book.cbz", &[(cp437_name("p001.png"), &png)]);
+
+    let book = extract_comic(&path, "book.cbz".into(), &ScanOptions::default());
+
+    let (_, bytes) = book.cover.expect("first page becomes the cover");
+    assert_eq!(bytes, png);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn extract_comic_reads_comic_info_under_a_cp437_directory() {
+    let dir = make_test_dir("comic-cp437-info");
+    let path = write_cbz(
+        &dir,
+        "book.cbz",
+        &[
+            (cp437_name("ComicInfo.xml"), COMIC_INFO),
+            (cp437_name("p001.png"), b"page"),
+        ],
+    );
+
+    let book = extract_comic(&path, "book.cbz".into(), &ScanOptions::default());
+
+    assert_eq!(book.metadata.title.as_deref(), Some("The Longing"));
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -281,6 +324,18 @@ fn read_page_returns_none_when_index_is_out_of_range() {
     let path = write_cbz(&dir, "book.cbz", &[("p1.jpg", b"only page")]);
 
     assert!(read_page(&path, 1).unwrap().is_none());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn read_page_returns_bytes_of_a_page_with_a_cp437_name() {
+    let dir = make_test_dir("comic-read-page-cp437");
+    let path = write_cbz(&dir, "book.cbz", &[(cp437_name("p1.jpg"), b"first")]);
+
+    let (_, bytes) = read_page(&path, 0).unwrap().expect("page 0 exists");
+
+    assert_eq!(bytes, b"first");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

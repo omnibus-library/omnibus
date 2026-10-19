@@ -1,6 +1,6 @@
 # Dependency Audit — Cargo.lock Duplicate Families
 
-Last updated: 2026-10-17 (issue #2756, accepts the three `zip` `extract()` advisories pinned by `epub`; previously issue #2724 — the mock-kobo TUI adds the `lru` family; issue #522 — Dioxus now resolves from crates.io, not a git tag — and issues #2054, #1767, #1710, #1621, #1529, #1530, #1100, #1268, #1147, #643).
+Last updated: 2026-10-18 (PR #2793, our `zip` deps move to 9 and leave `epub`'s 3.0.0 as the `zip` family; previously issue #2756, accepts the three `zip` `extract()` advisories pinned by `epub`; previously issue #2724 — the mock-kobo TUI adds the `lru` family; issue #522 — Dioxus now resolves from crates.io, not a git tag — and issues #2054, #1767, #1710, #1621, #1529, #1530, #1100, #1268, #1147, #643).
 
 Run `cargo tree -d` and inspect the output any time Dioxus or Axum are bumped.
 The `deny.toml` `[bans]` section has matching `skip` entries for all accepted
@@ -25,6 +25,7 @@ this list.
 | `rand` | 0.7.3, 0.8.6, 0.9.4 | 0.7 and 0.8 both from `phf_generator` build-dep chains rooted in `kuchikiki` (wry's bundled HTML/CSS engine, on an old html5ever/cssparser lineage) → `wry` — **not** `ammonia`, which is a direct `omnibus-db` dependency but sits on a separate, newer `markup5ever` lineage using `phf_generator 0.13` (fastrand-backed, no `rand` at all); 0.9 from `rand_core@0.9` (via tungstenite) | **blocked by upstream** | Verified with `cargo tree -i rand@0.7.3` / `@0.8.6` and `cargo tree -p omnibus-db` (issue #2054): both build-dep copies terminate at `wry`, confined to the native shell. The 0.7 and 0.8 copies are build-only (`phf_codegen` / `string_cache_codegen`) and never link into the runtime binary. |
 | `libloading` | 0.7.4, 0.8.9 | 0.7.4 via `libappindicator-sys` → `libappindicator` → `tray-icon` (native shell only); 0.8.9 via `subsecond` → `dioxus-core` → `dioxus` directly (default build) | **blocked by upstream** | Not confined to the `wry`/`tao` native-shell subtree — the 0.8.9 copy reaches `omnibus`/`omnibus-frontend` through `dioxus-core` regardless of platform, same shape as the `rustc-hash` row below. Collapses when `tray-icon`'s `libappindicator` pin catches up to `libloading 0.8`. |
 | `png` | 0.17.16, 0.18.1 | 0.17.16 via `muda`/`tray-icon` (native shell only, tray icon rendering); 0.18.1 via `image` → `omnibus-db` directly (default build, cover/thumbnail decoding) | **blocked by upstream** | Same "not confined to wry/tao" shape as `libloading` above. Collapses when `tray-icon`'s `muda` pin catches up to `png 0.18`. |
+| `zip` | 3.0.0, 9.0.5 | 3.0.0 via `epub 2.1.5` (the latest `epub`, which asks for `zip = "3.0.0"`); 9.0.5 via `omnibus-db` and `omnibus-frontend` directly | **blocked by upstream** | Ours moved to 9 for the `extract()` advisories below; `epub` has not. Collapses when `epub` moves to zip >= 9. |
 | `webpki-roots` | 0.26.11, 1.0.7 | 0.26 from `sqlx-core`; 1.0.7 from `hyper-rustls` (reqwest) | **blocked by upstream** | sqlx-core pins 0.26; reqwest/hyper-rustls have moved to 1.x. Collapses when sqlx bumps its rustls deps. |
 | `axum-extra` | 0.10.3, 0.12.6 | 0.10.3 via `dioxus-fullstack` 0.7.9; 0.12.6 via our own `omnibus` server crate directly | **blocked by upstream** | Mirrors the `tower-http` split below: Dioxus hasn't caught up to the `axum-extra` version our server crate uses (0.7.10 still asks for `^0.10.1`). Collapses on a Dioxus release that moves to 0.12. |
 | `tower-http` | 0.6.11, 0.7.0 | 0.6.11 via `dioxus-fullstack`/`dioxus-server` 0.7.9 and transitively via **both** `reqwest` 0.12.28 and 0.13.4 (each vendors its own `tower-http` dependency); 0.7.0 via our own `omnibus` server crate directly | **blocked by upstream** | Not purely a Dioxus-version-lag issue like `axum-extra` above — `reqwest` 0.13.4 (our own workspace-pinned version, not just the older `dioxus-fullstack` copy) also depends directly on `tower-http 0.6.11` (see `Cargo.lock`'s `reqwest 0.13.4` dependency block). So a Dioxus bump alone won't collapse this: it persists until `reqwest` itself upgrades to `tower-http 0.7`, or our own server crate's direct `tower-http` dep is downgraded to 0.6.11 to match. |
@@ -97,8 +98,8 @@ this list.
   destination) and RUSTSEC-2026-0369 (`ZipStreamReader::extract()` applies
   permissions through symlinks). Fixed only in zip >= 9.0.0. `zip 3.0.0`
   reaches the production graph via `epub 2.1.5` (the latest `epub`, which pins
-  `zip = "3.0.0"`) and our own `zip = "3"` pins in `db/` and `frontend/`, so
-  bumping ours alone would not drop it. Accepted. All three hit only
+  `zip = "3.0.0"`); our own `db/` and `frontend/` deps are on zip 9, but that
+  alone does not drop it. Accepted. All three hit only
   `ZipArchive::extract()` / `ZipStreamReader::extract()`, and neither this repo
   nor `epub` calls them (archives are read entry by entry, never extracted to
   disk). `deny.toml` ignores all three with a matching comment, and the
