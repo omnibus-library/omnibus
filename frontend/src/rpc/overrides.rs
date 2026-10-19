@@ -4,7 +4,9 @@ use dioxus::fullstack::post;
 use dioxus::prelude::*;
 #[cfg(feature = "server")]
 use omnibus_db as db;
-use omnibus_shared::{BulkMetadataEdit, BulkOverridesRequest, EbookMetadata, MetadataOverrides};
+#[cfg(feature = "server")]
+use omnibus_shared::BulkOverridesRequest;
+use omnibus_shared::{BulkMetadataEdit, EbookMetadata, MetadataOverrides};
 
 #[cfg(feature = "server")]
 use super::{internal_rpc_error, AdminUser, AuthUser, PoolExt, WorkerExt};
