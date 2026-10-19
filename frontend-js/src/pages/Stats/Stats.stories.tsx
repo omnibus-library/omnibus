@@ -556,6 +556,9 @@ export const ChoosingAReaderSwitchesWhoseFiguresAreShown: Story = {
           .sort(),
       ).toEqual(["all_time", "year"]),
     );
+    // The shelf is the same for every reader, so a switch doesn't ask about it again.
+    await expect(calls.size).toHaveLength(1);
+    await expect(calls.composition).toHaveLength(1);
     // The books they have open are theirs too, not the caller's.
     await waitFor(() =>
       expect(calls.recent.map((p) => p.get("user_id"))).toEqual([null, "2"]),
