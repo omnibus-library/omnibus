@@ -1,6 +1,7 @@
 import { HttpResponse, http } from "msw";
 import type { GoalTargets } from "../api";
 import {
+  ChangePasswordRequest,
   CreateKoboDevice,
   DailyGoalUpdate,
   type KoboDeviceView,
@@ -26,6 +27,8 @@ export type SettingsServer = {
   sender: string | null;
   /** The reader's Kobos. */
   kobo: KoboDeviceView[];
+  /** The password `POST /api/auth/password` expects as the current one. */
+  password: string;
 };
 
 export const aSettingsServer = (
@@ -37,6 +40,7 @@ export const aSettingsServer = (
   refuseGoals: [],
   sender: "library@example.com",
   kobo: [],
+  password: "old-password-123",
   ...init,
 });
 
@@ -134,6 +138,21 @@ export function settingsHandlers(server: SettingsServer) {
       if (!server.kobo.some((d) => d.id === Number(params.id)))
         return missing();
       server.kobo = server.kobo.filter((d) => d.id !== Number(params.id));
+      return empty(204);
+    }),
+    http.post("/api/auth/password", async ({ request }) => {
+      const body = ChangePasswordRequest.parse(await request.json());
+      if (body.current_password !== server.password) {
+        return new HttpResponse("current password is incorrect", {
+          status: 403,
+        });
+      }
+      if (body.new_password.length < 10) {
+        return new HttpResponse("password must be at least 10 characters", {
+          status: 400,
+        });
+      }
+      server.password = body.new_password;
       return empty(204);
     }),
     http.post("/api/account/hidden-formats", async ({ request }) => {

@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { failure, ok, send } from "./core";
 import {
+  getChangePasswordUrl,
   getDeleteAvatarUrl,
   getKindleDelivery,
   getPostAvatarUrl,
@@ -65,3 +66,14 @@ export const kindleSenderQuery = queryOptions({
   queryKey: ["kindle-delivery"],
   queryFn: fetchKindleSender,
 });
+
+/** Switches the password; every other session is signed out and this one stays. */
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  await send(getChangePasswordUrl(), "POST", {
+    current_password: currentPassword,
+    new_password: newPassword,
+  });
+}

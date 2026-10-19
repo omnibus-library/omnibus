@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { classes } from "../../classes";
-import { Button } from "../Button/Button";
+import { Button, type ButtonVariant } from "../Button/Button";
 import "./CopyButton.css";
 
 type CopyOutcome = "copied" | "failed";
@@ -46,6 +46,8 @@ type CopyButtonProps = {
   /** The button's test id; its feedback is `{testId}-feedback`. */
   testId: string;
   ariaLabel?: string;
+  /** Defaults to ghost; a copy the reader must not miss can be primary. */
+  variant?: ButtonVariant;
 };
 
 /** A button that copies `text`, then a live region saying whether it landed. */
@@ -54,13 +56,14 @@ export function CopyButton({
   label,
   testId,
   ariaLabel,
+  variant = "ghost",
 }: CopyButtonProps) {
   const [outcome, setOutcome] = useState<CopyOutcome | null>(null);
   return (
     <>
       <Button
-        variant="ghost"
-        size="sm"
+        variant={variant}
+        size={variant === "ghost" ? "sm" : "md"}
         data-testid={testId}
         aria-label={ariaLabel}
         onClick={async () =>
