@@ -90,6 +90,20 @@
   display: inline-flex;
   color: var(--accent);
 }
+.bd-export {
+  position: relative;
+  display: inline-flex;
+}
+.bd-export-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.bd-export-caret {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--ink-2);
+}
 .bd-export-scrim {
   position: fixed;
   inset: 0;
@@ -141,6 +155,32 @@
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
+}
+.bd-export-item-label {
+  flex: 1 1 auto;
+}
+.bd-export-item-muted {
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+@media (hover: hover) {
+  .bd-export-item-muted:hover {
+    background: transparent;
+    color: var(--ink-2);
+  }
+}
+.bd-export-panel .bd-export-subnote {
+  display: block;
+  padding: 0 10px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--accent);
+  text-decoration: none;
+}
+@media (hover: hover) {
+  .bd-export-panel .bd-export-subnote:hover {
+    text-decoration: underline;
+  }
 }
 .bd-file-picker {
   position: relative;

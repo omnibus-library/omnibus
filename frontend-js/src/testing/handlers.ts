@@ -25,6 +25,7 @@ import {
   type EbookPage,
   type Highlight,
   type JournalEntry,
+  KindleSendRequest,
   type LoginResponse,
   type PaletteResults,
   type PhysicalCopy,
@@ -309,6 +310,38 @@ export function shelvesHandlers(
       writes.push(`remove:${id}`);
       manual = manual.filter((m) => m !== id);
       return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+}
+
+/**
+ * Send to Kindle: `POST` queues task 7 and appends its body to `sent`; each `GET` of the
+ * status answers the next of `answers` (the last repeats), counting itself in `polls.count`.
+ * `"unknown"` answers 404, as a task the server has forgotten does.
+ */
+export function kindleHandlers(
+  answers: (
+    | "pending"
+    | "sent"
+    | "unknown"
+    | { status: "failed"; message: string }
+  )[],
+  sent: { book_uuid: string; file_id?: number | null }[] = [],
+  polls = { count: 0 },
+) {
+  return [
+    http.post("/api/kindle/send", async ({ request }) => {
+      sent.push(KindleSendRequest.parse(await request.json()));
+      return HttpResponse.json({ task_id: 7 });
+    }),
+    http.get("/api/kindle/send/status", () => {
+      const answer = answers[Math.min(polls.count++, answers.length - 1)];
+      if (answer === "unknown") {
+        return new HttpResponse("no such send", { status: 404 });
+      }
+      return HttpResponse.json(
+        typeof answer === "string" ? { status: answer } : answer,
+      );
     }),
   ];
 }

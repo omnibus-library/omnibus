@@ -13,6 +13,7 @@ import {
   getEbooks,
   getHighlights,
   getJournalEntries,
+  getKindleSendStatus,
   getLogoutUrl,
   getMe,
   getOtherRatings,
@@ -43,6 +44,7 @@ import {
   register as postRegister,
   postWishlistEntry,
   putReadStatus,
+  sendToKindle,
   shelvesContaining,
   smartShelvesContaining,
 } from "./api/generated/omnibus";
@@ -827,6 +829,28 @@ export async function fetchSuggestions(uuid: BookUuid): Promise<Suggestions> {
   return res.data.status === "ready"
     ? { status: "ready", items: res.data.items.map(toSuggestion) }
     : { status: res.data.status };
+}
+
+/** Queues the email of a book's EPUB (else PDF), or of one of its files; answers the task to poll. */
+export async function enqueueKindleSend(
+  uuid: BookUuid,
+  fileId: number | null,
+): Promise<number> {
+  const res = await sendToKindle({ book_uuid: uuid, file_id: fileId });
+  if (res.status !== 200) throw failure(res);
+  return res.data.task_id;
+}
+
+/** Where a send stands; `unknown` is a task the server has forgotten, so its delivery is unconfirmed. */
+export type KindleSend =
+  | { status: "pending" | "sent" | "unknown" }
+  | { status: "failed"; message: string };
+
+export async function fetchKindleSend(taskId: number): Promise<KindleSend> {
+  const res = await getKindleSendStatus({ task_id: taskId });
+  if (res.status === 404) return { status: "unknown" };
+  if (res.status !== 200) throw failure(res);
+  return res.data;
 }
 
 function toShelf(wire: ShelfSummaryWire) {

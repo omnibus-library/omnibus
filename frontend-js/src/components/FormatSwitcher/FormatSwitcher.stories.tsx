@@ -1,16 +1,43 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, within } from "storybook/test";
+import { useState } from "react";
+import { expect, waitFor, within } from "storybook/test";
 import { toBookDetail } from "../../api";
+import { failing, kindleHandlers } from "../../testing/handlers";
 import { aWireBook, aWireFile } from "../../testing/wire";
 import { FormatSwitcher } from "./FormatSwitcher";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 
-function props(formats: string[], files: Parameters<typeof aWireFile>[0][]) {
+function props(
+  formats: string[],
+  files: Parameters<typeof aWireFile>[0][],
+  epubSizeBytes = 3_100_000,
+) {
   const book = toBookDetail(
-    aWireBook({ formats, book_files: files.map(aWireFile) }),
+    aWireBook({
+      formats,
+      book_files: files.map(aWireFile),
+      epub_size_bytes: epubSizeBytes,
+    }),
   );
-  return { uuid: book.uuid, formats: book.formats, files: book.bookFiles };
+  return {
+    uuid: book.uuid,
+    formats: book.formats,
+    files: book.bookFiles,
+    epubSizeBytes: book.epubSizeBytes,
+  };
+}
+
+function Leavable(args: Parameters<typeof FormatSwitcher>[0]) {
+  const [here, setHere] = useState(true);
+  return (
+    <>
+      <button type="button" onClick={() => setHere(false)}>
+        Leave
+      </button>
+      {here && <FormatSwitcher {...args} />}
+    </>
+  );
 }
 
 const meta = {
@@ -91,5 +118,207 @@ export const NoFormats: Story = {
   args: props([], []),
   play: async ({ canvas }) => {
     await expect(canvas.queryByRole("group")).not.toBeInTheDocument();
+  },
+};
+
+const sent: { book_uuid: string; file_id?: number | null }[] = [];
+const polls = { count: 0 };
+
+function kindle(
+  ...answers: Parameters<typeof kindleHandlers>[0]
+): Story["beforeEach"] {
+  return ({ msw }) => {
+    sent.length = 0;
+    polls.count = 0;
+    msw.use(...kindleHandlers(answers, sent, polls));
+  };
+}
+
+export const EpubOffersReadKindleAndKobo: Story = {
+  play: async ({ canvas }) => {
+    const row = within(canvas.getByTestId("format-row-epub"));
+    await expect(row.getByRole("link", { name: "Read" })).toBeInTheDocument();
+    await expect(
+      row.getByRole("button", { name: "Send to Kindle" }),
+    ).toBeInTheDocument();
+    await expect(
+      row.getByRole("link", { name: "Send to Kobo" }),
+    ).toHaveAttribute("href", `/api/ebooks/${UUID}/kepub`);
+  },
+};
+
+export const PdfOffersKindleButNotKobo: Story = {
+  args: props(["PDF"], [{ id: 12, format: "PDF" }]),
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByRole("button", { name: "Send to Kindle" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("link", { name: "Send to Kobo" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const AudioOffersNeither: Story = {
+  args: props(["M4B"], [{ id: 21, format: "M4B" }]),
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.queryByRole("button", { name: "Send to Kindle" }),
+    ).not.toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("link", { name: "Send to Kobo" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const MultiFileEpubKeepsKoboOnTheRowAndKindleOnEachFile: Story = {
+  args: props(
+    ["EPUB"],
+    [
+      { id: 11, format: "EPUB", label: "First edition" },
+      { id: 12, format: "EPUB", ordinal: 1 },
+    ],
+  ),
+  beforeEach: kindle("sent"),
+  play: async ({ canvas, userEvent }) => {
+    const row = within(canvas.getByTestId("format-row-epub"));
+    await expect(
+      row.getByRole("link", { name: "Send to Kobo" }),
+    ).toBeInTheDocument();
+    await expect(
+      row.queryByRole("button", { name: "Send to Kindle" }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(
+      within(canvas.getByTestId("format-file-12")).getByRole("button", {
+        name: "Send to Kindle",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(sent).toEqual([{ book_uuid: UUID, file_id: 12 }]),
+    );
+  },
+};
+
+export const KindleSendsThenSaysSoAndClearsItself: Story = {
+  beforeEach: kindle("pending", "sent"),
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Send to Kindle" }),
+    );
+
+    const busy = canvas.getByRole("button", { name: "Sending…" });
+    await expect(busy).toBeDisabled();
+    await expect(busy).toHaveAttribute("aria-busy", "true");
+
+    await expect(
+      await canvas.findByTestId("kindle-send-status", {}, { timeout: 4000 }),
+    ).toHaveTextContent("Sent to your Kindle.");
+    await expect(canvas.getByRole("status")).toBeInTheDocument();
+    await expect(sent).toEqual([{ book_uuid: UUID, file_id: null }]);
+    await expect(
+      canvas.getByRole("button", { name: "Send to Kindle" }),
+    ).toBeEnabled();
+    // Four seconds on, the success clears itself.
+    await waitFor(
+      () =>
+        expect(
+          canvas.queryByTestId("kindle-send-status"),
+        ).not.toBeInTheDocument(),
+      {
+        timeout: 6000,
+      },
+    );
+  },
+};
+
+export const KindleFailureStaysUntilDismissed: Story = {
+  beforeEach: kindle({ status: "failed", message: "SMTP refused the message" }),
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Send to Kindle" }),
+    );
+
+    await expect(
+      await canvas.findByTestId("kindle-send-status"),
+    ).toHaveTextContent("Send failed: SMTP refused the message");
+    await userEvent.click(canvas.getByTestId("kindle-toast-dismiss"));
+    await expect(
+      canvas.queryByTestId("kindle-send-status"),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const KindleForgottenTaskIsUnconfirmed: Story = {
+  beforeEach: kindle("unknown"),
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Send to Kindle" }),
+    );
+
+    await expect(
+      await canvas.findByTestId("kindle-send-status"),
+    ).toHaveTextContent("Send failed: could not confirm the send completed.");
+  },
+};
+
+export const KindleQueueRefusedSaysWhy: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("post", "/api/kindle/send", 422));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Send to Kindle" }),
+    );
+
+    await expect(
+      await canvas.findByTestId("kindle-send-status"),
+    ).toHaveTextContent("Send failed: failed with 422");
+    await expect(
+      canvas.getByRole("button", { name: "Send to Kindle" }),
+    ).toBeEnabled();
+  },
+};
+
+export const EpubAtTheCapIsStillEmailed: Story = {
+  args: props(["EPUB"], [{ id: 11, format: "EPUB" }], 50_000_000),
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByRole("button", { name: "Send to Kindle" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const EpubOverTheCapLinksToAmazonsUploader: Story = {
+  args: props(["EPUB"], [{ id: 11, format: "EPUB" }], 50_000_001),
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.queryByRole("button", { name: "Send to Kindle" }),
+    ).not.toBeInTheDocument();
+    const link = canvas.getByTestId("action-kindle-oversize");
+    await expect(link).toHaveAttribute(
+      "href",
+      "https://www.amazon.com/sendtokindle",
+    );
+    await expect(link).toHaveAttribute("target", "_blank");
+  },
+};
+
+export const LeavingStopsPollingTheSend: Story = {
+  beforeEach: kindle("pending"),
+  render: (args) => <Leavable {...args} />,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Send to Kindle" }),
+    );
+    await waitFor(() => expect(polls.count).toBeGreaterThan(0));
+
+    await userEvent.click(canvas.getByRole("button", { name: "Leave" }));
+    const asked = polls.count;
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+
+    // The send was left pending, and nobody is asking about it any more.
+    await expect(polls.count).toBe(asked);
   },
 };

@@ -18,6 +18,7 @@ import {
   homeKicker,
   summaryIsSparse,
 } from "../../format";
+import { ExportMenu } from "./ExportMenu";
 import { FilePicker, isAudioFile, isReadableFile } from "./FilePicker";
 import { WishlistCtas } from "./PhysicalCopies";
 import { alignmentQuery, progressQuery, seriesQuery, useWish } from "./queries";
@@ -220,6 +221,8 @@ function CtaRow({ book, progress, readout }: CtaRowProps) {
           Immersive
         </ButtonLink>
       )}
+      {/* Every item sends or downloads a file; a comic-only or fileless record has none to offer. */}
+      {(hasEbook || hasAudio || hasPdf) && <ExportMenu book={book} />}
     </div>
   );
 }

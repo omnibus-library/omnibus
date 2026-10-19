@@ -734,3 +734,26 @@ export const FilelessBookNotOnTheWishlist: Story = {
     await expect(canvas.queryByTestId("find-a-copy")).not.toBeInTheDocument();
   },
 };
+
+export const ExportTriggerOnlyForABookWithAFileToSend: Story = {
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByRole("button", { name: /Export/ }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const ComicOnlyBookHasNothingToExport: Story = {
+  args: {
+    book: aBook({
+      formats: ["CBZ"],
+      book_files: [aWireFile({ id: 31, format: "CBZ" })],
+    }),
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("start-reading-comic");
+    await expect(
+      canvas.queryByRole("button", { name: /Export/ }),
+    ).not.toBeInTheDocument();
+  },
+};

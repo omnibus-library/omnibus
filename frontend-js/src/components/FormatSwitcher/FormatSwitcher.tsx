@@ -2,6 +2,11 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import type { BookDetail, BookUuid } from "../../api";
 import { BookGlyph, HeadphonesGlyph } from "../Glyphs/Glyphs";
+import {
+  KINDLE_WEB_UPLOAD_URL,
+  kindleOversize,
+  SendToKindle,
+} from "./SendToKindle";
 import "./FormatSwitcher.css";
 
 type BookFile = BookDetail["bookFiles"][number];
@@ -48,36 +53,94 @@ function humanSize(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-function Actions({
-  kind,
+/** The Kindle action: email it, or past the email cap a link to Amazon's own uploader. */
+function KindleAction({
   uuid,
-  fileId,
+  file,
+  bytes,
 }: {
+  uuid: BookUuid;
+  file?: BookFile;
+  bytes: number;
+}) {
+  return kindleOversize(bytes) ? (
+    <a
+      className="btn"
+      href={KINDLE_WEB_UPLOAD_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="This EPUB is larger than the 50 MB limit for emailing files to a Kindle. Amazon's Send to Kindle page (opens in a new tab) accepts files up to 200 MB."
+      data-testid="action-kindle-oversize"
+    >
+      Send to Kindle…
+    </a>
+  ) : (
+    <SendToKindle uuid={uuid} fileId={file?.id} />
+  );
+}
+
+/** The KEPUB, for copying onto a Kobo; the server falls back to the plain EPUB when it can't convert. */
+export function SendToKobo({
+  uuid,
+  className = "btn",
+  testId = "action-kobo",
+}: {
+  uuid: BookUuid;
+  className?: string;
+  testId?: string;
+}) {
+  return (
+    <a
+      className={className}
+      href={`/api/ebooks/${uuid}/kepub`}
+      download=""
+      title="Download the KEPUB to copy onto a Kobo"
+      data-testid={testId}
+    >
+      Send to Kobo
+    </a>
+  );
+}
+
+type ActionsProps = {
   kind: Kind["kind"];
   uuid: BookUuid;
-  fileId?: number;
-}) {
-  const query = fileId === undefined ? "" : `?file_id=${fileId}`;
+  /** The one file of a multi-file row; absent on a row that stands for the whole book. */
+  file?: BookFile;
+  /** The book's size for the Kindle cap: the row's file, else its first EPUB or PDF. */
+  epubSizeBytes: number | null;
+};
+
+function Actions({ kind, uuid, file, epubSizeBytes }: ActionsProps) {
+  const query = file === undefined ? "" : `?file_id=${file.id}`;
+  const bytes = file ? file.sizeBytes : (epubSizeBytes ?? 0);
   switch (kind) {
     case "epub":
       return (
-        <Link
-          className="btn"
-          to={`/read/${uuid}${query}`}
-          data-testid="action-read"
-        >
-          Read
-        </Link>
+        <>
+          <Link
+            className="btn"
+            to={`/read/${uuid}${query}`}
+            data-testid="action-read"
+          >
+            Read
+          </Link>
+          <KindleAction uuid={uuid} file={file} bytes={bytes} />
+          {file === undefined && <SendToKobo uuid={uuid} />}
+        </>
       );
     case "pdf":
       return (
-        <Link
-          className="btn"
-          to={`/pdf/${uuid}${query}`}
-          data-testid="action-read-pdf"
-        >
-          Read
-        </Link>
+        <>
+          <Link
+            className="btn"
+            to={`/pdf/${uuid}${query}`}
+            data-testid="action-read-pdf"
+          >
+            Read
+          </Link>
+          <KindleAction uuid={uuid} file={file} bytes={bytes} />
+        </>
       );
     case "audio":
       return (
@@ -110,9 +173,14 @@ function Glyph({ row }: { row: Kind }): ReactNode {
   }
 }
 
-type RowProps = { row: Kind; uuid: BookUuid; files: BookFile[] };
+type RowProps = {
+  row: Kind;
+  uuid: BookUuid;
+  files: BookFile[];
+  epubSizeBytes: number | null;
+};
 
-function FormatRow({ row, uuid, files }: RowProps) {
+function FormatRow({ row, uuid, files, epubSizeBytes }: RowProps) {
   const multi = files.length > 1;
   const first = files[0];
   const sub = multi
@@ -143,10 +211,21 @@ function FormatRow({ row, uuid, files }: RowProps) {
           <div className="nm">{row.name}</div>
           {sub && <div className="sb">{sub}</div>}
         </div>
-        {!multi && (
+        {/* Kobo's KEPUB is made from the book's primary EPUB, so a multi-file row keeps that one action. */}
+        {!multi ? (
           <div className="format-actions">
-            <Actions kind={row.kind} uuid={uuid} />
+            <Actions
+              kind={row.kind}
+              uuid={uuid}
+              epubSizeBytes={epubSizeBytes}
+            />
           </div>
+        ) : (
+          row.kind === "epub" && (
+            <div className="format-actions">
+              <SendToKobo uuid={uuid} />
+            </div>
+          )
         )}
       </div>
       {multi &&
@@ -160,7 +239,12 @@ function FormatRow({ row, uuid, files }: RowProps) {
               {file.label ?? `Part ${file.ordinal + 1}`}
             </span>
             <div className="format-actions">
-              <Actions kind={row.kind} uuid={uuid} fileId={file.id} />
+              <Actions
+                kind={row.kind}
+                uuid={uuid}
+                file={file}
+                epubSizeBytes={epubSizeBytes}
+              />
             </div>
           </div>
         ))}
@@ -172,10 +256,17 @@ type FormatSwitcherProps = {
   uuid: BookUuid;
   formats: readonly string[];
   files: BookFile[];
+  /** The size Send to Kindle is gated on. */
+  epubSizeBytes: number | null;
 };
 
 /** One row per format the book has, each with its read or listen action; a format with several files lists them beneath. */
-export function FormatSwitcher({ uuid, formats, files }: FormatSwitcherProps) {
+export function FormatSwitcher({
+  uuid,
+  formats,
+  files,
+  epubSizeBytes,
+}: FormatSwitcherProps) {
   const rows = rowKinds(formats);
   if (rows.length === 0) return null;
   return (
@@ -192,6 +283,7 @@ export function FormatSwitcher({ uuid, formats, files }: FormatSwitcherProps) {
           row={row}
           uuid={uuid}
           files={files.filter((f) => kindOf(f.format).label === row.label)}
+          epubSizeBytes={epubSizeBytes}
         />
       ))}
     </div>

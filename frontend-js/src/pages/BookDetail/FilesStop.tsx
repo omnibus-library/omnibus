@@ -34,6 +34,7 @@ export function FilesStop({ book }: { book: BookDetail }) {
           uuid={book.uuid}
           formats={book.formats}
           files={book.bookFiles}
+          epubSizeBytes={book.epubSizeBytes}
         />
         <PhysicalCopies book={book} />
         <WishlistRow book={book} />
