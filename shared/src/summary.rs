@@ -4,12 +4,21 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Which external provider a summary fetch should hit.
+/// A provider to fetch a book summary from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum SummarySource {
     Hardcover,
     GoogleBooks,
     OpenLibrary,
+}
+
+/// The provider `POST /api/ebooks/{uuid}/summary/fetch` asks for a summary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct FetchSummaryBody {
+    /// The provider to ask.
+    pub source: SummarySource,
 }
 
 /// Below this many words, the current summary counts as "sparse" and the

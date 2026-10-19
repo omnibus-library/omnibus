@@ -9,19 +9,18 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 mod tests;
 
-/// A book's read-lifecycle state for one user. Serializes as a plain lowercase
-/// string (`"unread"` / `"reading"` / `"finished"`) matching the
-/// `book_read_status.status` CHECK constraint.
+/// Where one user is with a book: not started, reading, or finished.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ReadStatus {
-    /// Never opened, or explicitly cleared. Also the meaning of a missing row.
+    /// Not started, or set back to unread. A book with no status set is unread.
     #[default]
     Unread,
-    /// In progress.
+    /// Being read.
     Reading,
-    /// Completed — feeds the reading-stats "finished" aggregations.
+    /// Read to the end. The reading stats count it as a finished book.
     Finished,
 }
 
@@ -55,8 +54,9 @@ impl ReadStatus {
     }
 }
 
-/// Write payload: set the current user's read state for a book.
+/// The read status `PUT /api/read-status` sets for you on a book.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SetReadStatus {
     pub book_uuid: String,
     pub status: ReadStatus,
@@ -80,21 +80,22 @@ impl SetReadStatus {
     }
 }
 
-/// Server-authoritative read state returned by the set/get endpoints.
-/// `updated_at` is unix seconds (SQLite `strftime('%s')`); `finished_at` is the
-/// moment the book most recently became `finished` (`None` otherwise).
+/// Your read status for a book, as the server stores it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ReadStatusRecord {
     pub book_uuid: String,
     pub status: ReadStatus,
+    /// When the status last changed, in Unix seconds.
     pub updated_at: i64,
-    /// [`Self::updated_at`] rendered as ISO 8601 UTC. When the status last changed.
-    ///
-    /// `None` on a payload a client built itself.
+    // Absent only on a value a client built itself.
+    /// The same moment as `updated_at`, as an ISO 8601 string in UTC.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at_iso: Option<String>,
 
+    /// When the book became finished, in Unix seconds. Setting `finished` on a book that is
+    /// already finished keeps the original time. Absent unless `status` is `finished`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<i64>,
 }

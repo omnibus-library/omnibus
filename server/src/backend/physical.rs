@@ -10,7 +10,9 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, PhysicalError};
-use omnibus_shared::physical::{UpdateCopyNoteRequest, WishlistSource};
+use omnibus_shared::physical::{
+    PhysicalCopy, UpdateCopyNoteRequest, WishlistEntry, WishlistRemoval, WishlistSource,
+};
 
 use super::{internal, AppState};
 use crate::auth::AuthUser;
@@ -41,8 +43,18 @@ fn require_edit(user: &AuthUser) -> Option<Response> {
         .then(|| (StatusCode::FORBIDDEN, "edit permission required").into_response())
 }
 
-/// List a book's physical copies, oldest check-in first. An unknown uuid has no
-/// copies, so it returns `200 []` rather than 404.
+/// List a book's physical copies
+///
+/// Every physical copy of the book, whoever checked it in, oldest check-in first. An
+/// unknown uuid has no copies, so the list is empty.
+#[utoipa::path(
+    get,
+    path = "/api/physical/{uuid}/copies",
+    tag = "Physical books",
+    operation_id = "list_physical_copies",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses((status = 200, description = "The book's physical copies.", body = Vec<PhysicalCopy>)),
+)]
 pub(super) async fn get_copies(
     _user: AuthUser,
     State(state): State<AppState>,
@@ -54,8 +66,23 @@ pub(super) async fn get_copies(
     }
 }
 
-/// Replace a copy's free-text note. A blank note clears it. 403 unless the
-/// caller filed the copy or is an admin.
+/// Change a copy's note
+///
+/// Replaces the copy's free-text note. A `null` or blank note clears it. Only the reader
+/// who checked the copy in, or an admin, can change it.
+#[utoipa::path(
+    patch,
+    path = "/api/physical/copies/{copy_id}",
+    tag = "Physical books",
+    params(("copy_id" = i64, Path, description = "The copy's id.")),
+    request_body = UpdateCopyNoteRequest,
+    responses(
+        (status = 200, description = "The updated copy.", body = PhysicalCopy),
+        (status = 400, description = "The note is longer than 4096 characters."),
+        (status = 403, description = "Someone else checked the copy in."),
+        (status = 404, description = "No copy has that id."),
+    ),
+)]
 pub(super) async fn patch_copy_note(
     user: AuthUser,
     State(state): State<AppState>,
@@ -72,8 +99,23 @@ pub(super) async fn patch_copy_note(
     }
 }
 
-/// Delete one physical copy ("I sold it"). 404 when the id is unknown, 403
-/// unless the caller filed the copy or is an admin.
+/// Remove a physical copy
+///
+/// Deletes one physical copy, say after you sold it. The book stays, even when this was
+/// its last copy: `DELETE /api/physical/{uuid}` removes a book with no files. Only the
+/// reader who checked the copy in, or an admin, can remove it.
+#[utoipa::path(
+    delete,
+    path = "/api/physical/copies/{copy_id}",
+    tag = "Physical books",
+    operation_id = "delete_physical_copy",
+    params(("copy_id" = i64, Path, description = "The copy's id.")),
+    responses(
+        (status = 204, description = "The copy is deleted."),
+        (status = 403, description = "Someone else checked the copy in."),
+        (status = 404, description = "No copy has that id."),
+    ),
+)]
 pub(super) async fn delete_copy(
     user: AuthUser,
     State(state): State<AppState>,
@@ -85,7 +127,16 @@ pub(super) async fn delete_copy(
     }
 }
 
-/// The caller's wishlist entry for a book, or `null` when not wishlisted.
+/// Get your wishlist entry for a book
+///
+/// Your physical wishlist entry for the book, or `null` when it isn't on your wishlist.
+#[utoipa::path(
+    get,
+    path = "/api/physical/{uuid}/wishlist",
+    tag = "Physical books",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses((status = 200, description = "Your entry, or `null`.", body = Option<WishlistEntry>)),
+)]
 pub(super) async fn get_wishlist_entry(
     user: AuthUser,
     State(state): State<AppState>,
@@ -97,10 +148,21 @@ pub(super) async fn get_wishlist_entry(
     }
 }
 
-/// Add a book already in the library to the caller's wishlist from its detail
-/// page. Idempotent — a second add returns the existing entry unchanged. (The
-/// scan flow's `/api/scan/wishlist` is the other door, for a book the library
-/// doesn't hold yet; that one carries external metadata, this one a bare uuid.)
+/// Add a book to your wishlist
+///
+/// Adds a book the library already has to your physical wishlist. Adding it again returns
+/// the existing entry. To wishlist a book the library doesn't have, use
+/// `POST /api/scan/wishlist`.
+#[utoipa::path(
+    post,
+    path = "/api/physical/{uuid}/wishlist",
+    tag = "Physical books",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses(
+        (status = 200, description = "Your wishlist entry.", body = WishlistEntry),
+        (status = 404, description = "No book has that uuid."),
+    ),
+)]
 pub(super) async fn post_wishlist_entry(
     user: AuthUser,
     State(state): State<AppState>,
@@ -112,24 +174,49 @@ pub(super) async fn post_wishlist_entry(
     }
 }
 
-/// Remove a book from the caller's wishlist. Idempotent — removing an absent
-/// entry still succeeds, since the desired end state already holds. Answers
-/// 200 with a `WishlistRemoval` rather than 204: a wishlist-only book nobody
-/// else wants goes with its last entry, and the client standing on that book's
-/// page has to be told so.
+/// Remove a book from your wishlist
+///
+/// Removing a book that isn't on your wishlist still succeeds. A book that exists only
+/// because someone wanted it (no file, no physical copy, no other reader's entry) is
+/// deleted with its last entry, and `book_deleted` tells you so.
+#[utoipa::path(
+    delete,
+    path = "/api/physical/{uuid}/wishlist",
+    tag = "Physical books",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses((status = 200, description = "The entry is gone; whether the book went with it.", body = WishlistRemoval)),
+)]
 pub(super) async fn delete_wishlist_entry(
     user: AuthUser,
     State(state): State<AppState>,
     Path(uuid): Path<String>,
 ) -> Response {
+    // 200 with a body rather than 204: the client standing on a purged book's page
+    // has to be told it is gone.
     match db::remove_wishlist_entry(&state.pool, user.id, &uuid).await {
         Ok(removal) => Json(removal).into_response(),
         Err(e) => physical_error("remove_wishlist_entry", e),
     }
 }
 
-/// Delete a fileless book outright — the "remove it entirely" branch of the
-/// last-copy prompt. 409 when the book still has digital files.
+/// Delete a book with no files
+///
+/// Deletes a book that has no digital files, with everything tied to it, such as its
+/// physical copies, wishlist entries and ratings, for every reader. Clients offer it when
+/// the last physical copy goes. Needs the edit permission.
+#[utoipa::path(
+    delete,
+    path = "/api/physical/{uuid}",
+    tag = "Physical books",
+    operation_id = "delete_fileless_book",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses(
+        (status = 204, description = "The book is deleted."),
+        (status = 403, description = "You lack the edit permission."),
+        (status = 404, description = "No book has that uuid."),
+        (status = 409, description = "The book still has digital files."),
+    ),
+)]
 pub(super) async fn delete_book(
     user: AuthUser,
     State(state): State<AppState>,

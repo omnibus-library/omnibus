@@ -6,6 +6,8 @@
   "type": "module",
   "packageManager": "pnpm@11.11.0",
   "scripts": {
+    "generate": "orval",
+    "prepare": "orval",
     "dev": "vite",
     "build": "vite build --base=/react/",
     "preview": "vite preview",
@@ -29,6 +31,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",
+    "@faker-js/faker": "10.6.0",
     "@storybook/addon-a11y": "10.6.1",
     "@storybook/addon-docs": "10.6.1",
     "@storybook/addon-vitest": "10.6.1",
@@ -47,6 +50,7 @@
     "jsdom": "30.1.1",
     "msw": "2.15.0",
     "msw-storybook-addon": "3.0.3",
+    "orval": "8.39.0",
     "playwright": "1.61.1",
     "postcss": "8.5.28",
     "storybook": "10.6.1",

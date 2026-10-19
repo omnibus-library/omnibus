@@ -107,7 +107,10 @@ See [03-unit-testing.md](03-unit-testing.md) for the underlying rule.
   scopes (`pub(super)`) prophylactically. Use `pub(crate)` only when you
   have a specific reason a type *must* not leak.
 - **Shared types**: anything used by 2+ crates lives in `shared/`. Hoist
-  when the second consumer appears, not before.
+  when the second consumer appears, not before. The exception is the
+  `/api/*` wire: every request body, query struct and response body lives in
+  `shared/` from the start, because the OpenAPI document is its second
+  consumer ([13-openapi.md](13-openapi.md)).
 - **DB row types vs wire DTOs**: when the same record needs to cross the
   HTTP/RPC boundary, it's fine to have a `db::Foo` and a `shared::Foo`
   that look similar, with `From`/`Into` at the boundary. Don't try to

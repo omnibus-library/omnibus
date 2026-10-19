@@ -15,8 +15,11 @@ use omnibus_db::{
     progress::ProgressError,
     worker::Task,
 };
-use omnibus_shared::{AudiobookManifest, AudiobookPlaybackRateUpdate, ManifestPart};
-use serde::{Deserialize, Serialize};
+use omnibus_shared::{
+    AudiobookDownloadQuery, AudiobookManifest, AudiobookPlaybackRateRecord,
+    AudiobookPlaybackRateUpdate, AudiobookStatus, AudiobookStatusState, FileBytes, ManifestPart,
+    ManifestQuery, PartsQuery,
+};
 
 use super::{internal, AppState};
 use crate::auth::{AuthUser, MediaAuthUser};
@@ -24,13 +27,19 @@ use crate::auth::{AuthUser, MediaAuthUser};
 /// Content-Type for MPEG-TS audio segments served by the HLS fallback.
 const MPEGTS_CONTENT_TYPE: &str = "video/MP2T";
 
-/// Query parameters for `GET /api/audiobooks/{uuid}/manifest`.
-#[derive(Deserialize)]
-pub(super) struct ManifestQuery {
-    file_id: Option<i64>,
-}
-
-/// Return the authenticated user's saved playback rate for an audiobook.
+/// Get your playback speed for a book
+///
+/// The speed you last saved for this audiobook, or `null` when you haven't saved one.
+#[utoipa::path(
+    get,
+    path = "/api/audiobooks/{uuid}/playback-rate",
+    tag = "Audiobooks",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses(
+        (status = 200, description = "Your saved speed, or `null`.", body = Option<AudiobookPlaybackRateRecord>),
+        (status = 404, description = "No book has that uuid."),
+    ),
+)]
 pub(super) async fn get_playback_rate(
     user: AuthUser,
     State(state): State<AppState>,
@@ -45,7 +54,21 @@ pub(super) async fn get_playback_rate(
     }
 }
 
-/// Persist the authenticated user's playback rate for an audiobook.
+/// Save your playback speed for a book
+///
+/// Saves the speed you play this audiobook at, from 0.5 to 3.0.
+#[utoipa::path(
+    put,
+    path = "/api/audiobooks/{uuid}/playback-rate",
+    tag = "Audiobooks",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    request_body = AudiobookPlaybackRateUpdate,
+    responses(
+        (status = 200, description = "The speed as saved.", body = AudiobookPlaybackRateRecord),
+        (status = 400, description = "`playback_rate` isn't between 0.5 and 3.0."),
+        (status = 404, description = "No book has that uuid."),
+    ),
+)]
 pub(super) async fn put_playback_rate(
     user: AuthUser,
     State(state): State<AppState>,
@@ -64,10 +87,21 @@ pub(super) async fn put_playback_rate(
     }
 }
 
-/// Returns the HLS VOD manifest for `uuid` (always built from DB — no
-/// filesystem read). The manifest is derived from stored
-/// `book_file_parts.duration_seconds` values so it stays accurate before
-/// and after transcoding.
+/// Get an audiobook's HLS playlist
+///
+/// The HLS playlist for an audiobook in a format a browser can't play directly: the
+/// manifest's `playlist_url` points here. It lists every segment the transcode makes, so
+/// you can start playing before the transcode finishes.
+#[utoipa::path(
+    get,
+    path = "/api/audiobooks/{uuid}/playlist.m3u8",
+    tag = "Audiobooks",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses(
+        (status = 200, description = "The playlist.", body = String, content_type = "application/vnd.apple.mpegurl"),
+        (status = 404, description = "No book with that uuid has an audio file."),
+    ),
+)]
 pub(super) async fn get_audiobook_playlist(
     _user: AuthUser,
     State(state): State<AppState>,
@@ -79,7 +113,8 @@ pub(super) async fn get_audiobook_playlist(
         Err(e) => return internal("resolve_audiobook", e),
     };
 
-    // Once the transcode is complete, ffmpeg's own `index.m3u8` is the
+    // Before the transcode completes, the playlist is built from the stored
+    // `book_file_parts.duration_seconds`, with no filesystem read. Once it is complete, ffmpeg's own `index.m3u8` is the
     // source of truth — its segment count matches what's actually on
     // disk, which the DB-built manifest (rounded from
     // `book_file_parts.duration_seconds`) can miss by ±1 because
@@ -115,17 +150,30 @@ pub(super) async fn get_audiobook_playlist(
         .into_response()
 }
 
-/// Returns the playback manifest for `uuid`; optional `?file_id=N` targets a specific
-/// `book_files` row (multi-file books after merge). Direct-playable books (m4b / m4a /
-/// mp3) get per-part HTTP Range URLs, everything else the legacy HLS playlist (gate:
-/// [`omnibus_db::audiobook::codec`]; [`omnibus_db::hls::resolve_audiobook`] admits only
-/// `M4B` / `M4A` / `MP3`, so pure-AAC or FLAC sources never go direct).
+/// Get an audiobook's playback manifest
+///
+/// How to play the audiobook. When every part file is a format a browser plays natively
+/// (M4B, M4A, MP3 or AAC), `mode` is `direct`: a URL per part, each streamed with `Range`,
+/// plus the chapters. Otherwise `mode` is `hls`, with the URL of a playlist that plays
+/// through a server-side transcode. `file_id` picks one of a book's several audio files.
+#[utoipa::path(
+    get,
+    path = "/api/audiobooks/{uuid}/manifest",
+    tag = "Audiobooks",
+    params(("uuid" = String, Path, description = "The book's uuid."), ManifestQuery),
+    responses(
+        (status = 200, description = "The manifest.", body = AudiobookManifest),
+        (status = 404, description = "No book with that uuid has an audio file, `file_id` isn't one of its audio files, or the file has no parts indexed."),
+    ),
+)]
 pub(super) async fn get_audiobook_manifest(
     user: AuthUser,
     State(state): State<AppState>,
     Path(uuid): Path<String>,
     Query(query): Query<ManifestQuery>,
 ) -> Response {
+    // `resolve_audiobook_file` admits only M4B / M4A / MP3 rows; the direct-vs-HLS
+    // split below goes by the part filenames (`audiobook::classify_filenames`).
     let resolved = match hls::resolve_audiobook_file(&state.pool, &uuid, query.file_id).await {
         Ok(Some(r)) => r,
         Ok(None) => return axum::http::StatusCode::NOT_FOUND.into_response(),
@@ -240,17 +288,30 @@ async fn next_sequence_file_id(
     .map(|row: Option<i64>| row)?)
 }
 
-/// Query parameters for `GET /api/audiobooks/{uuid}/parts/{ordinal}`.
-#[derive(Deserialize)]
-pub(super) struct PartsQuery {
-    file_id: Option<i64>,
-}
-
-/// Range-served raw file for one part of a direct-play audiobook.
-/// Accepts optional `?file_id=N` to target a specific `book_files` row.
-/// Authenticated via [`MediaAuthUser`] (not [`AuthUser`]): the mobile WebView's
-/// `<audio src>` can carry only the `?token=` query param. Kept in lockstep with
-/// `is_media_read_path` in `auth::gate`.
+/// Stream an audiobook part
+///
+/// One part file of an audiobook the manifest plays as `direct`, served inline for an
+/// `<audio>` element. Use the part URLs from the manifest, which carry `file_id` when it
+/// is needed. Answers `Range` requests, so a player can seek.
+#[utoipa::path(
+    get,
+    path = "/api/audiobooks/{uuid}/parts/{ordinal}",
+    tag = "Audiobooks",
+    security(("bearer" = []), ("session_cookie" = []), ("media_token" = [])),
+    params(
+        ("uuid" = String, Path, description = "The book's uuid."),
+        ("ordinal" = i64, Path, description = "The part's `ordinal` in the manifest."),
+        PartsQuery,
+    ),
+    responses(
+        (status = 200, description = "The whole part.", body = FileBytes, content_type = "audio/*"),
+        (status = 206, description = "The byte range asked for in `Range`.", body = FileBytes, content_type = "audio/*"),
+        (status = 304, description = "The part is unchanged since the `ETag` sent in `If-None-Match`, or the date in `If-Modified-Since`."),
+        (status = 404, description = "No book with that uuid has an audio file, `file_id` isn't one of its audio files, the book plays through HLS, it has no part with that ordinal, or the part is missing from disk."),
+        (status = 412, description = "`If-Match` or `If-Unmodified-Since` doesn't match the part."),
+        (status = 416, description = "The `Range` lies outside the part. `Content-Range` gives its length."),
+    ),
+)]
 pub(super) async fn get_audiobook_part(
     _user: MediaAuthUser,
     State(state): State<AppState>,
@@ -258,6 +319,8 @@ pub(super) async fn get_audiobook_part(
     Query(query): Query<PartsQuery>,
     req: Request,
 ) -> Response {
+    // `MediaAuthUser`, not `AuthUser`: the mobile WebView's `<audio src>` can carry only
+    // the `?token=` query param. Kept in lockstep with `is_media_read_path` in `auth::gate`.
     let resolved = match hls::resolve_audiobook_file(&state.pool, &uuid, query.file_id).await {
         Ok(Some(r)) => r,
         Ok(None) => return axum::http::StatusCode::NOT_FOUND.into_response(),
@@ -289,23 +352,32 @@ pub(super) async fn get_audiobook_part(
     super::serve_file(req, &abs_path, mime, None).await
 }
 
-/// Query parameters for `GET /api/audiobooks/{uuid}/download`.
-#[derive(Deserialize)]
-pub(super) struct DownloadQuery {
-    file_id: Option<i64>,
-    part: Option<i64>,
-}
-
-/// Serves one source file of the audiobook as a browser download
-/// (`Content-Disposition: attachment`), streaming via [`super::serve_download`].
-/// `?file_id=N` picks a `book_files` row (default: first audio file by ordinal);
-/// `?part=N` picks one part of that row by ordinal, defaulting to the lowest. A
-/// multi-part book is fetched one part at a time, each behind [`super::deny_without_download`].
+/// Download an audiobook file
+///
+/// One file of the audiobook as an attachment, named as it is on disk. A book made of
+/// several parts downloads one part at a time: `part` picks which. Answers `Range`
+/// requests, so an interrupted download can resume. Needs the download permission.
+#[utoipa::path(
+    get,
+    path = "/api/audiobooks/{uuid}/download",
+    tag = "Audiobooks",
+    params(("uuid" = String, Path, description = "The book's uuid."), AudiobookDownloadQuery),
+    responses(
+        (status = 200, description = "The whole file.", body = FileBytes, content_type = "audio/*",
+            headers(("Content-Disposition" = String, description = "`attachment`, with the file name."))),
+        (status = 206, description = "The byte range asked for in `Range`.", body = FileBytes, content_type = "audio/*"),
+        (status = 304, description = "The file is unchanged since the `ETag` sent in `If-None-Match`, or the date in `If-Modified-Since`."),
+        (status = 403, description = "Your account lacks the download permission."),
+        (status = 404, description = "No book with that uuid has an audio file, `file_id` isn't one of its audio files, it has no part with that ordinal, or the file is missing from disk."),
+        (status = 412, description = "`If-Match` or `If-Unmodified-Since` doesn't match the file."),
+        (status = 416, description = "The `Range` lies outside the file. `Content-Range` gives its length."),
+    ),
+)]
 pub(super) async fn get_audiobook_download(
     user: AuthUser,
     State(state): State<AppState>,
     Path(uuid): Path<String>,
-    Query(query): Query<DownloadQuery>,
+    Query(query): Query<AudiobookDownloadQuery>,
     req: Request,
 ) -> Response {
     // Parts are served here, not via `/parts/{ordinal}`: that route is open to a
@@ -334,9 +406,21 @@ pub(super) async fn get_audiobook_download(
     super::serve_download(req, &abs_path, mime).await
 }
 
-/// Returns `{"ready": bool, "progress": f32}` for the AUDIO64 profile.
-/// If the transcode has not started yet, fires a `Task::HlsTranscode`
-/// fire-and-forget to the worker.
+/// Get an audiobook's transcode status
+///
+/// How far the HLS transcode of an audiobook has got. Asking starts the transcode when it
+/// hasn't started, so poll this while `state` is `preparing`. A failed transcode isn't
+/// retried on its own.
+#[utoipa::path(
+    get,
+    path = "/api/audiobooks/{uuid}/status",
+    tag = "Audiobooks",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses(
+        (status = 200, description = "The transcode's status.", body = AudiobookStatus),
+        (status = 404, description = "No book with that uuid has an audio file."),
+    ),
+)]
 pub(super) async fn get_audiobook_status(
     _user: AuthUser,
     State(state): State<AppState>,
@@ -368,19 +452,17 @@ pub(super) async fn get_audiobook_status(
         });
     }
 
-    // Discriminator the frontend uses to render preparing / ready / failed
-    // states without ambiguity. Fixes Bug 4 from #338 — the old shape
-    // (`ready: false, progress: 0`) was indistinguishable from
-    // "permanently failed" so the UI stuck on "Preparing" forever.
+    // `state` is what tells "preparing" from "permanently failed": the older
+    // `ready: false, progress: 0` shape couldn't, so the UI stuck on "Preparing".
     let status_state = if ready {
-        StatusState::Ready
+        AudiobookStatusState::Ready
     } else if failed {
-        StatusState::Failed
+        AudiobookStatusState::Failed
     } else {
-        StatusState::Preparing
+        AudiobookStatusState::Preparing
     };
 
-    Json(StatusResponse {
+    Json(AudiobookStatus {
         ready,
         progress,
         state: status_state,
@@ -388,10 +470,29 @@ pub(super) async fn get_audiobook_status(
     .into_response()
 }
 
-/// Serves one `.ts` segment file from the HLS cache.
-/// If the segment is absent (transcode not yet complete) the handler posts a
-/// `Task::HlsTranscode` and blocks until it finishes, then re-checks and serves the
-/// file, or 404s if ffmpeg failed to produce it.
+/// Get an HLS segment
+///
+/// One MPEG-TS segment of a transcoded audiobook, named as the playlist lists it. When the
+/// transcode hasn't made that segment yet, the request waits for the transcode to finish.
+#[utoipa::path(
+    get,
+    path = "/api/audiobooks/{uuid}/segments/{segment}",
+    tag = "Audiobooks",
+    params(
+        ("uuid" = String, Path, description = "The book's uuid."),
+        ("segment" = String, Path, description = "The segment's file name, such as `seg-0001.ts`."),
+    ),
+    responses(
+        (status = 200, description = "The whole segment.", body = FileBytes, content_type = "video/MP2T"),
+        (status = 206, description = "The byte range asked for in `Range`.", body = FileBytes, content_type = "video/MP2T"),
+        (status = 304, description = "The segment is unchanged since the `ETag` sent in `If-None-Match`, or the date in `If-Modified-Since`."),
+        (status = 400, description = "`segment` isn't `seg-` and four digits and `.ts`."),
+        (status = 404, description = "No book with that uuid has an audio file, or the transcode finished without that segment."),
+        (status = 412, description = "`If-Match` or `If-Unmodified-Since` doesn't match the segment."),
+        (status = 416, description = "The `Range` lies outside the segment. `Content-Range` gives its length."),
+        (status = 503, description = "The book's transcode failed."),
+    ),
+)]
 pub(super) async fn get_audiobook_segment(
     _user: AuthUser,
     State(state): State<AppState>,
@@ -437,34 +538,6 @@ pub(super) async fn get_audiobook_segment(
     }
 
     super::serve_file(req, &seg_path, MPEGTS_CONTENT_TYPE, None).await
-}
-
-/// Terminal-vs-in-flight discriminator for the status JSON. Lets the
-/// frontend distinguish "transcode is preparing" from "transcode
-/// permanently failed" — the legacy `{ready: false, progress: 0}` shape
-/// collapsed both into the same ambiguous response.
-#[derive(Serialize)]
-#[serde(rename_all = "lowercase")]
-enum StatusState {
-    /// Transcode is queued or running.
-    Preparing,
-    /// Transcode finished — segments + manifest are on disk.
-    Ready,
-    /// Transcode terminally failed (`.failed` marker present). The UI
-    /// renders an error with a retry affordance.
-    Failed,
-}
-
-/// JSON response body for `GET /api/audiobooks/{uuid}/status`.
-///
-/// `ready` and `progress` are kept for compatibility with any client
-/// that pre-dates the `state` field; new clients should branch on
-/// `state` only.
-#[derive(Serialize)]
-struct StatusResponse {
-    ready: bool,
-    progress: f32,
-    state: StatusState,
 }
 
 /// `true` if `name` matches `seg-NNNN.ts` exactly (4 decimal digits).

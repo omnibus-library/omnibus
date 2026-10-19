@@ -9,12 +9,30 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, annotations::HighlightError};
-use omnibus_shared::{CreateHighlight, HighlightColor, UpdateHighlightNote};
+use omnibus_shared::{
+    AnnotationOrderQuery, ClientStamped, CreateHighlight, Highlight, UpdateHighlightColor,
+    UpdateHighlightNote,
+};
 
-use super::{internal, AnnotationOrderQuery, AppState, ClientStamped};
+use super::{internal, AppState};
 use crate::auth::AuthUser;
 
-/// Create a highlight annotation on a book.
+/// Create a highlight
+///
+/// Highlights a passage of a book. Mint a `client_id` on the device and the create is safe
+/// to repeat: sending the same `client_id` again returns the highlight the first create
+/// made, unchanged.
+#[utoipa::path(
+    post,
+    path = "/api/highlights",
+    tag = "Annotations",
+    request_body = ClientStamped<CreateHighlight>,
+    responses(
+        (status = 200, description = "The highlight.", body = Highlight),
+        (status = 400, description = "`book_uuid` or `epub_cfi_range` is blank, a field is too long, `client_id` is blank, or `client_created_at` is negative."),
+        (status = 404, description = "No book has that `book_uuid`."),
+    ),
+)]
 pub(super) async fn post_highlight(
     user: AuthUser,
     State(state): State<AppState>,
@@ -54,9 +72,17 @@ pub(super) async fn post_highlight(
     }
 }
 
-/// List a user's highlights in a book, each placed in the book (spine
-/// index, chapter title, percent through the book) and ordered by that
-/// position. `?order=chronological` restores creation order.
+/// List your highlights in a book
+///
+/// Each highlight comes placed in the book: its spine index, chapter title and how far
+/// through the book it sits. Returns up to 1,000, and an empty list for a uuid no book has.
+#[utoipa::path(
+    get,
+    path = "/api/highlights/book/{book_uuid}",
+    tag = "Annotations",
+    params(("book_uuid" = String, Path, description = "The book's uuid."), AnnotationOrderQuery),
+    responses((status = 200, description = "Your highlights in the book.", body = Vec<Highlight>)),
+)]
 pub(super) async fn get_highlights(
     user: AuthUser,
     State(state): State<AppState>,
@@ -84,17 +110,23 @@ async fn resolve_id(state: &AppState, user_id: i64, raw: &str) -> Result<i64, Hi
         .ok_or(HighlightError::NotFound)
 }
 
-#[derive(serde::Deserialize)]
-pub(super) struct PatchColor {
-    color: HighlightColor,
-}
-
-/// Update the color of an existing highlight.
+/// Change a highlight's color
+#[utoipa::path(
+    patch,
+    path = "/api/highlights/{id}/color",
+    tag = "Annotations",
+    params(("id" = String, Path, description = "The highlight's id, or the `client_id` it was created with.")),
+    request_body = UpdateHighlightColor,
+    responses(
+        (status = 204, description = "The color is changed."),
+        (status = 404, description = "You have no highlight with that id."),
+    ),
+)]
 pub(super) async fn patch_highlight_color(
     user: AuthUser,
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Json(body): Json<PatchColor>,
+    Json(body): Json<UpdateHighlightColor>,
 ) -> Response {
     let id = match resolve_id(&state, user.id, &id).await {
         Ok(id) => id,
@@ -113,7 +145,21 @@ pub(super) async fn patch_highlight_color(
     }
 }
 
-/// Update the note on an existing highlight.
+/// Set a highlight's note
+///
+/// Replaces the note. A null or absent `note` removes it.
+#[utoipa::path(
+    patch,
+    path = "/api/highlights/{id}/note",
+    tag = "Annotations",
+    params(("id" = String, Path, description = "The highlight's id, or the `client_id` it was created with.")),
+    request_body = UpdateHighlightNote,
+    responses(
+        (status = 204, description = "The note is saved."),
+        (status = 400, description = "The note is over 4,096 characters."),
+        (status = 404, description = "You have no highlight with that id."),
+    ),
+)]
 pub(super) async fn patch_highlight_note(
     user: AuthUser,
     State(state): State<AppState>,
@@ -142,7 +188,17 @@ pub(super) async fn patch_highlight_note(
     }
 }
 
-/// Delete a highlight by id, scoped to the owning user.
+/// Delete a highlight
+#[utoipa::path(
+    delete,
+    path = "/api/highlights/{id}",
+    tag = "Annotations",
+    params(("id" = String, Path, description = "The highlight's id, or the `client_id` it was created with.")),
+    responses(
+        (status = 204, description = "The highlight is deleted."),
+        (status = 404, description = "You have no highlight with that id."),
+    ),
+)]
 pub(super) async fn delete_highlight(
     user: AuthUser,
     State(state): State<AppState>,

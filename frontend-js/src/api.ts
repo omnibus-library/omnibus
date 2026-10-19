@@ -1,7 +1,20 @@
 import { z } from "zod";
+import {
+  getEbookByUuid,
+  getEbooks,
+  getMe,
+  login as postLogin,
+  logout as postLogout,
+} from "./api/generated/omnibus";
+import type {
+  EbookMetadata,
+  EbookPage,
+  UserSummary,
+} from "./api/generated/schemas";
 
-// shortcut: these schemas hand-mirror shared/'s serde types and can drift;
-// generate them from shared's schemars JSON Schema before this ships.
+// The wire types and their zod schemas are generated from openapi/openapi.json
+// (`pnpm run generate`), and the generated fetchers validate every response.
+// This file turns the wire shapes into the ones the screens render.
 
 export type BookUuid = string & { readonly __brand: "BookUuid" };
 
@@ -11,87 +24,64 @@ const bookUuid = z
   .transform((id) => id as BookUuid);
 
 /** Brands a route parameter as a book uuid, or `null` when it is empty. */
-export function parseBookUuid(raw: string | undefined): BookUuid | null {
+export function parseBookUuid(raw: string | null | undefined): BookUuid | null {
   const parsed = bookUuid.safeParse(raw);
   return parsed.success ? parsed.data : null;
 }
 
-const UserSchema = z
-  .object({
-    username: z.string(),
-    display_name: z.string().nullish(),
-    can_upload: z.boolean(),
-  })
-  .transform((u) => ({
-    name: u.display_name ?? u.username,
-    canUpload: u.can_upload,
-  }));
+function toUser(user: UserSummary) {
+  return {
+    name: user.display_name ?? user.username,
+    canUpload: user.can_upload,
+  };
+}
 
-export type User = z.infer<typeof UserSchema>;
+export type User = ReturnType<typeof toUser>;
 
-const BookWire = z.object({
-  unique_identifier: bookUuid,
-  filename: z.string(),
-  title: z.string().nullable(),
-  creators: z.array(z.object({ name: z.string() })),
-  series: z.string().nullable(),
-  series_index: z.string().nullable(),
-  cover_url: z.string().nullable(),
-  accent: z.string().optional(),
-});
-
-function toBook(wire: z.output<typeof BookWire>) {
+function toBook(wire: EbookMetadata) {
+  const uuid = parseBookUuid(wire.unique_identifier);
+  if (!uuid) throw new Error(`book ${wire.id} has no uuid`);
   // An empty name is a cleared series, not a series called "".
   const series = wire.series?.trim()
-    ? { name: wire.series, index: wire.series_index }
+    ? { name: wire.series, index: wire.series_index ?? null }
     : null;
   return {
-    uuid: wire.unique_identifier,
+    uuid,
     title: wire.title ?? wire.filename,
     authors: wire.creators.map((c) => c.name),
     series,
     accent: wire.accent ?? null,
-    hasCover: wire.cover_url !== null,
+    hasCover: wire.cover_url != null,
   };
 }
 
-const BookSchema = BookWire.transform(toBook);
+export type Book = ReturnType<typeof toBook>;
 
-export type Book = z.infer<typeof BookSchema>;
+/** The screen's shape of `GET /api/ebooks/{uuid}`. */
+export function toBookDetail(wire: EbookMetadata) {
+  return {
+    ...toBook(wire),
+    description: wire.description ?? null,
+    published: wire.published ?? null,
+    genres: wire.genres ?? [],
+    subjects: wire.subjects,
+  };
+}
 
-const BookDetailSchema = BookWire.extend({
-  description: z.string().nullable(),
-  published: z.string().nullable(),
-  genres: z.array(z.string()).default([]),
-  subjects: z.array(z.string()),
-}).transform((wire) => ({
-  ...toBook(wire),
-  description: wire.description,
-  published: wire.published,
-  genres: wire.genres,
-  subjects: wire.subjects,
-}));
-
-export type BookDetail = z.infer<typeof BookDetailSchema>;
+export type BookDetail = ReturnType<typeof toBookDetail>;
 
 export type BookPage = { books: Book[]; total: number; next: string | null };
 
-const BookPageSchema = z.object({ books: z.array(BookSchema) });
 const countHeader = z.coerce.number().int().nonnegative();
 
-/** Parses one keyset page of `GET /api/ebooks`, whose paging is in headers. */
-export function parseBookPage(body: unknown, headers: Headers): BookPage {
-  const { books } = BookPageSchema.parse(body);
+/** The screen's shape of one page of `GET /api/ebooks`, whose paging is in headers. */
+export function toBookPage(page: EbookPage, headers: Headers): BookPage {
+  const books = page.books.map(toBook);
   return {
     books,
     total: countHeader.parse(headers.get("X-Total-Count") ?? books.length),
     next: headers.get("X-Next-Cursor"),
   };
-}
-
-/** Parses `GET /api/ebooks/{uuid}`. */
-export function parseBookDetail(body: unknown): BookDetail {
-  return BookDetailSchema.parse(body);
 }
 
 /** A non-2xx answer, carrying the status and the server's plain-text body. */
@@ -104,22 +94,20 @@ export class ApiError extends Error {
   }
 }
 
-async function ensureOk(res: Response): Promise<void> {
-  if (!res.ok) {
-    throw new ApiError(res.status, (await res.text()) || res.statusText);
-  }
-}
-
-async function readJson(res: Response): Promise<unknown> {
-  await ensureOk(res);
-  return res.json();
+function failure(res: { status: number; data: unknown }): ApiError {
+  const message =
+    typeof res.data === "string" && res.data
+      ? res.data
+      : `Request failed with status ${res.status}.`;
+  return new ApiError(res.status, message);
 }
 
 /** The signed-in user, or `null` when the session cookie is missing or dead. */
 export async function fetchMe(): Promise<User | null> {
-  const res = await fetch("/api/auth/me");
+  const res = await getMe();
   if (res.status === 401) return null;
-  return UserSchema.parse(await readJson(res));
+  if (res.status !== 200) throw failure(res);
+  return toUser(res.data);
 }
 
 /** What the sign-in form must hold before it may submit. */
@@ -132,37 +120,36 @@ export type Credentials = z.infer<typeof CredentialsSchema>;
 
 /** Opens a cookie session; the server sets the cookie on the response. */
 export async function login(credentials: Credentials): Promise<User> {
-  const res = await fetch("/api/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(credentials),
-  });
-  return z.object({ user: UserSchema }).parse(await readJson(res)).user;
+  const res = await postLogin(credentials);
+  if (res.status !== 200) throw failure(res);
+  return toUser(res.data.user);
 }
 
 export async function logout(): Promise<void> {
-  await ensureOk(await fetch("/api/auth/logout", { method: "POST" }));
+  const res = await postLogout();
+  if (res.status !== 204) throw failure(res);
 }
 
 /** One title-sorted page of the library; pass `""` for the first page. */
 export async function fetchBookPage(cursor: string): Promise<BookPage> {
   // The API refuses a cursor unless sort and dir are both explicit.
-  const params = new URLSearchParams({
+  const res = await getEbooks({
     sort: "title",
     dir: "asc",
-    limit: "60",
-    omit_description: "true",
+    limit: 60,
+    omit_description: true,
+    ...(cursor ? { cursor } : {}),
   });
-  if (cursor) params.set("cursor", cursor);
-  const res = await fetch(`/api/ebooks?${params}`);
-  return parseBookPage(await readJson(res), res.headers);
+  if (res.status !== 200) throw failure(res);
+  return toBookPage(res.data, res.headers);
 }
 
 /** The full record for one book, or `null` when no book has that uuid. */
 export async function fetchBook(uuid: BookUuid): Promise<BookDetail | null> {
-  const res = await fetch(`/api/ebooks/${encodeURIComponent(uuid)}`);
+  const res = await getEbookByUuid(encodeURIComponent(uuid));
   if (res.status === 404) return null;
-  return parseBookDetail(await readJson(res));
+  if (res.status !== 200) throw failure(res);
+  return toBookDetail(res.data);
 }
 
 export const thumbUrl = (uuid: BookUuid) => `/api/thumbs/${uuid}/md`;

@@ -17,6 +17,7 @@ pub const LOG_PER_PAGE_MAX: u32 = 200;
 
 /// One parsed structured-log record surfaced to the admin log viewer.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LogRecord {
     /// ISO-8601 UTC timestamp exactly as the subscriber wrote it. Fixed-width
     /// and lexicographically ordered, so string comparison is chronological.
@@ -38,6 +39,7 @@ pub struct LogRecord {
 /// Filter + pagination parameters for a log-viewer query. Every filter is
 /// optional; an absent or empty filter does not narrow the results.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LogQuery {
     /// Exact level match (case-insensitive), e.g. `ERROR`. `None`/empty keeps
     /// every level.
@@ -67,6 +69,7 @@ pub struct LogQuery {
 
 /// One page of matching log records, newest first.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LogPage {
     /// Matching records for this page, newest first.
     pub records: Vec<LogRecord>,

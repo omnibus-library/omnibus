@@ -1,0 +1,30 @@
+<!doctype html>
+<!-- The API reference `just openapi` serves: Scalar renders openapi.json beside it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Omnibus API</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.72.4/dist/browser/standalone.js"
+      integrity="sha384-omTRdD9MbjA1vm12DqRUVvqJlr3VzSixvAdF1Jruu9AJOiJKyTKraIB6DyX+m10M"
+      crossorigin="anonymous"
+    ></script>
+    <script>
+      // A read-only reference: no telemetry, web fonts, request client, AI agent or MCP promo.
+      Scalar.createApiReference("#app", {
+        url: "./openapi.json",
+        telemetry: false,
+        withDefaultFonts: false,
+        hideClientButton: true,
+        hideTestRequestButton: true,
+        showDeveloperTools: "never",
+        agent: { disabled: true },
+        mcp: { disabled: true },
+      });
+    </script>
+  </body>
+</html>

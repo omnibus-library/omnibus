@@ -8,14 +8,14 @@ use axum::{
     extract::{Path, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{delete, get, post},
     Extension, Json, Router,
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use omnibus_db::auth::{self as auth_db, AuthError, NewSession, SessionKind};
 use omnibus_shared::{
-    LoginRequest, LoginResponse, RegisterRequest, RegistrationStatus, UserSummary,
+    LoginRequest, LoginResponse, RegisterRequest, RegistrationStatus, SessionView, UserSummary,
 };
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use super::extractor::{extract_token, AuthUser};
 use super::session_view::session_views;
@@ -23,27 +23,32 @@ use super::{session_cookie_name, BEARER_TTL_SECS, COOKIE_TTL_SECS};
 use crate::backend::AppState;
 use crate::http_errors::internal;
 
-/// Build the `/api/auth/{register,registration,login,logout,me}` router.
+/// The `/api/auth/*` routes with their documentation, before state: [`auth_router`]
+/// serves them and `backend::openapi::spec` documents them.
+pub fn auth_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(register_handler))
+        .routes(routes!(registration_handler))
+        .routes(routes!(login_handler))
+        .routes(routes!(logout_handler))
+        .routes(routes!(me_handler))
+        .routes(routes!(get_sessions_handler))
+        .routes(routes!(delete_session_handler))
+        .routes(routes!(
+            super::api_tokens::get_api_tokens_handler,
+            super::api_tokens::post_api_token_handler
+        ))
+        .routes(routes!(
+            super::api_tokens::delete_api_token_handler,
+            super::api_tokens::patch_api_token_handler
+        ))
+}
+
+/// Build the `/api/auth/*` router.
 pub fn auth_router(state: AppState) -> Router {
     let pool = state.pool().clone();
-    Router::new()
-        .route("/api/auth/register", post(register_handler))
-        .route("/api/auth/registration", get(registration_handler))
-        .route("/api/auth/login", post(login_handler))
-        .route("/api/auth/logout", post(logout_handler))
-        .route("/api/auth/me", get(me_handler))
-        .route("/api/auth/sessions", get(get_sessions_handler))
-        .route("/api/auth/sessions/{id}", delete(delete_session_handler))
-        .route(
-            "/api/auth/api-tokens",
-            get(super::api_tokens::get_api_tokens_handler)
-                .post(super::api_tokens::post_api_token_handler),
-        )
-        .route(
-            "/api/auth/api-tokens/{id}",
-            delete(super::api_tokens::delete_api_token_handler)
-                .patch(super::api_tokens::patch_api_token_handler),
-        )
+    let (router, _doc) = auth_routes().split_for_parts();
+    router
         .with_state(state)
         // `AuthUser` reads the pool from `Extension<SqlitePool>` so it stays
         // state-agnostic. Keep this layer here so the router is usable
@@ -176,6 +181,26 @@ fn cleared_cookie() -> Cookie<'static> {
     c
 }
 
+/// Create an account
+///
+/// Creates a user and signs them in, exactly as `POST /api/auth/login` does. The first
+/// account on a new server becomes its admin. After that, registration works only while an
+/// admin keeps it open; `GET /api/auth/registration` says whether it is.
+#[utoipa::path(
+    post,
+    path = "/api/auth/register",
+    tag = "Auth",
+    operation_id = "register",
+    security(()),
+    request_body = RegisterRequest,
+    responses(
+        (status = 200, description = "The account exists and is signed in.", body = LoginResponse,
+            headers(("Set-Cookie" = String, description = "The session cookie, unless `client_kind` asked for a token."))),
+        (status = 400, description = "The username or password breaks a rule; the body says which."),
+        (status = 403, description = "Registration is closed."),
+        (status = 409, description = "That username is taken."),
+    ),
+)]
 async fn register_handler(
     State(state): State<AppState>,
     jar: CookieJar,
@@ -205,17 +230,49 @@ fn request_user_agent(headers: &HeaderMap) -> Option<&str> {
     headers.get(header::USER_AGENT)?.to_str().ok()
 }
 
-/// `GET /api/auth/registration` — whether self-registration is open.
-/// Unauthenticated by design: the login and register pages read it before any
-/// session exists, and it reveals nothing `POST /api/auth/register` wouldn't. The
-/// admin *write* is `POST /api/settings/registration`, on the gated side.
+/// Check whether registration is open
+///
+/// Whether `POST /api/auth/register` will accept a new account. An admin opens and closes
+/// registration with `POST /api/settings/registration`.
+#[utoipa::path(
+    get,
+    path = "/api/auth/registration",
+    tag = "Auth",
+    operation_id = "get_registration",
+    security(()),
+    responses((status = 200, description = "Whether registration is open.", body = RegistrationStatus)),
+)]
 async fn registration_handler(State(state): State<AppState>) -> Response {
+    // Public by design: the sign-in and sign-up pages read it before any session
+    // exists, and it reveals nothing `POST /api/auth/register` wouldn't.
     match auth_db::registration_enabled(state.pool()).await {
         Ok(enabled) => Json(RegistrationStatus { enabled }).into_response(),
         Err(e) => auth_error_to_response(e),
     }
 }
 
+/// Sign in
+///
+/// Checks the username and password and opens a session. Set `client_kind` to `ios`,
+/// `android` or `bearer` to get the token in the body, for an `Authorization: Bearer`
+/// header; without it the session arrives as a cookie. Send `device_name` as well and the
+/// session is listed under that name.
+#[utoipa::path(
+    post,
+    path = "/api/auth/login",
+    tag = "Auth",
+    operation_id = "login",
+    security(()),
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Signed in.", body = LoginResponse,
+            headers(("Set-Cookie" = String, description = "The session cookie, unless `client_kind` asked for a token."))),
+        (status = 400, description = "`device_name` or `client_version` is too long or holds control characters."),
+        (status = 401, description = "Wrong username or password."),
+        (status = 429, description = "Too many wrong passwords: the account is locked for the number of seconds in `Retry-After`.",
+            headers(("Retry-After" = i64, description = "Seconds until the account unlocks."))),
+    ),
+)]
 async fn login_handler(
     State(state): State<AppState>,
     jar: CookieJar,
@@ -320,6 +377,18 @@ async fn persist_session(
     Ok(issued)
 }
 
+/// Sign out
+///
+/// Ends the session the request carries and clears the session cookie. Signing out of a
+/// session that has already ended still succeeds.
+#[utoipa::path(
+    post,
+    path = "/api/auth/logout",
+    tag = "Auth",
+    operation_id = "logout",
+    security((), ("bearer" = []), ("session_cookie" = [])),
+    responses((status = 204, description = "Signed out.")),
+)]
 async fn logout_handler(
     State(state): State<AppState>,
     jar: CookieJar,
@@ -342,12 +411,35 @@ async fn logout_handler(
     (StatusCode::NO_CONTENT, jar).into_response()
 }
 
+/// Get the signed-in user
+///
+/// The account the request's session belongs to: its permissions and preferences.
+#[utoipa::path(
+    get,
+    path = "/api/auth/me",
+    tag = "Auth",
+    operation_id = "get_me",
+    responses(
+        (status = 200, description = "The signed-in user.", body = UserSummary),
+        // Listed although any route can answer it: clients read it here as "signed out".
+        (status = 401, description = "The request has no live session."),
+    ),
+)]
 async fn me_handler(user: AuthUser) -> Response {
     Json(user.summary()).into_response()
 }
 
-/// `GET /api/auth/sessions` — list the caller's own live sessions (AC2).
-/// Flags the caller's own row so the client can hide its revoke control.
+/// List your sessions
+///
+/// Every live session on your account. The one making this request has `is_current` set,
+/// since it can't be ended from here.
+#[utoipa::path(
+    get,
+    path = "/api/auth/sessions",
+    tag = "Auth",
+    operation_id = "list_sessions",
+    responses((status = 200, description = "Your live sessions.", body = Vec<SessionView>)),
+)]
 async fn get_sessions_handler(user: AuthUser, State(state): State<AppState>) -> Response {
     let rows = match auth_db::list_sessions_for_user(state.pool(), user.id).await {
         Ok(rows) => rows,
@@ -359,10 +451,23 @@ async fn get_sessions_handler(user: AuthUser, State(state): State<AppState>) -> 
     }
 }
 
-/// `DELETE /api/auth/sessions/{id}` — revoke one of the caller's own
-/// sessions. Refuses to revoke the session the request itself authenticated
-/// with (AC2) with `400`; `404` when the id is unknown, already revoked, or
-/// owned by a different user (the two are indistinguishable on the wire).
+/// End one of your sessions
+///
+/// Signs that session out wherever it is. To end the session making this request, use
+/// `POST /api/auth/logout`.
+#[utoipa::path(
+    delete,
+    path = "/api/auth/sessions/{id}",
+    tag = "Auth",
+    operation_id = "delete_session",
+    params(("id" = i64, Path, description = "The session's id, from `GET /api/auth/sessions`.")),
+    responses(
+        (status = 204, description = "The session has ended."),
+        (status = 400, description = "That is the session making this request."),
+        // Unknown, already ended and someone else's all answer 404, so ids can't be probed.
+        (status = 404, description = "You have no live session with that id."),
+    ),
+)]
 async fn delete_session_handler(
     user: AuthUser,
     State(state): State<AppState>,

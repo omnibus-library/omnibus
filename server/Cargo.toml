@@ -72,6 +72,11 @@ tempfile = { workspace = true, optional = true }
 urlencoding = { version = "2", optional = true }
 
 omnibus-shared = { path = "../shared" }
+# The OpenAPI document for `/api/*` (`backend::openapi`). `utoipa-axum` builds
+# the router from the handlers' `#[utoipa::path]` annotations, so a route and
+# its documentation are declared once, together.
+utoipa = { version = "6", optional = true }
+utoipa-axum = { version = "0.3", optional = true }
 # `features` here are forwarded via our own feature flags below. Leaving it
 # bare means frontend compiles with no platform feature (components only).
 omnibus-frontend = { path = "../frontend" }
@@ -86,6 +91,11 @@ omnibus-mcp = { path = "../mcp", features = ["http"], optional = true }
 # The rmcp SDK itself, for the transport types `mcp_http` wires into axum.
 # Version + features unified with `omnibus-mcp`'s own dependency.
 rmcp = { version = "3.1", features = ["transport-streamable-http-server"], optional = true }
+
+# Prints the OpenAPI document; `just openapi-gen` writes it to `openapi/openapi.json`.
+[[example]]
+name = "openapi"
+required-features = ["server"]
 
 [dev-dependencies]
 tower = "0.5"
@@ -140,6 +150,9 @@ server = [
     "dep:omnibus-db",
     "dep:omnibus-mcp",
     "dep:rmcp",
+    "dep:utoipa",
+    "dep:utoipa-axum",
+    "omnibus-shared/openapi",
     "dioxus/server",
     "omnibus-frontend/server",
 ]

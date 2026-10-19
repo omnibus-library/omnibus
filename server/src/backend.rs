@@ -42,6 +42,7 @@ mod kobo;
 mod merge;
 mod metadata;
 mod opds;
+pub mod openapi;
 mod overrides;
 mod physical;
 mod process_meta;
@@ -202,44 +203,6 @@ fn content_disposition_attachment(filename: &str) -> String {
     format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{encoded}")
 }
 
-/// `?order=` on the annotation list routes. Shared by highlights and
-/// bookmarks so the two cannot drift apart on the accepted vocabulary.
-#[derive(Debug, Default, serde::Deserialize)]
-pub(super) struct AnnotationOrderQuery {
-    order: Option<String>,
-}
-
-impl From<AnnotationOrderQuery> for omnibus_db::AnnotationOrder {
-    fn from(q: AnnotationOrderQuery) -> Self {
-        q.order
-            .as_deref()
-            .map(omnibus_db::AnnotationOrder::parse)
-            .unwrap_or_default()
-    }
-}
-
-/// A create body plus `client_created_at`, the time the device made the row.
-/// The mobile outbox sends it so a create it replays after a drain keeps the
-/// time of the gesture rather than the drain; the db layer clamps it to
-/// server-now. Flattened, so the wire body is the plain create plus one field.
-#[derive(Debug, serde::Deserialize)]
-pub(super) struct ClientStamped<T> {
-    #[serde(flatten)]
-    body: T,
-    #[serde(default)]
-    client_created_at: Option<i64>,
-}
-
-impl<T> ClientStamped<T> {
-    /// A negative stamp is a 400, as `ProgressUpdate::validate` answers one.
-    fn validate_stamp(&self) -> Result<(), String> {
-        if self.client_created_at.is_some_and(|ts| ts < 0) {
-            return Err("client_created_at must be non-negative".into());
-        }
-        Ok(())
-    }
-}
-
 /// Shared axum router state — SQLite pool, worker handle, SSRF guard config.
 #[derive(Clone)]
 pub struct AppState {
@@ -380,14 +343,14 @@ fn rest_router_with_timeouts(
     upload_body_idle_timeout: std::time::Duration,
 ) -> Router {
     let pool = state.pool().clone();
-    let limits = state.rate_limits();
-    routes::content_routes()
-        .merge(routes::data_routes(search_limiter, limits))
-        // Route-level, so it covers only the routes merged above. A book
-        // upload's body alone can outlast it, so those routes are merged
-        // after it and bound a stalled client with an idle timeout instead.
-        .layer(timeout_layer(request_timeout))
-        .merge(routes::book_upload_router(upload_body_idle_timeout, limits))
+    let (router, _doc) = rest_routes(
+        search_limiter,
+        state.rate_limits(),
+        request_timeout,
+        upload_body_idle_timeout,
+    )
+    .split_for_parts();
+    router
         .with_state(state)
         // `AuthUser`/`AdminUser` read the pool from `Extension<SqlitePool>`.
         // Layer it here so the router is self-contained for integration
@@ -399,6 +362,35 @@ fn rest_router_with_timeouts(
         // means integration tests (which use `rest_router` directly) also
         // exercise it.
         .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))
+}
+
+/// Every REST route with its documentation, before state: [`rest_router`] serves this tree
+/// and [`openapi::spec`] documents it, so the two cannot list different routes.
+fn rest_routes(
+    search_limiter: std::sync::Arc<RateLimiter>,
+    limits: RateLimits,
+    request_timeout: std::time::Duration,
+    upload_body_idle_timeout: std::time::Duration,
+) -> utoipa_axum::router::OpenApiRouter<AppState> {
+    routes::content_routes()
+        .merge(routes::data_routes(search_limiter, limits))
+        // Route-level, so it covers only the routes merged above. A book
+        // upload's body alone can outlast it, so those routes are merged
+        // after it and bound a stalled client with an idle timeout instead.
+        .layer(timeout_layer(request_timeout))
+        .merge(routes::book_upload_router(upload_body_idle_timeout, limits))
+}
+
+/// The documentation half of [`rest_routes`], for [`openapi::spec`].
+fn rest_openapi() -> utoipa::openapi::OpenApi {
+    let search_limiter = RateLimiter::with_policy(SEARCH_RATE_LIMIT_WINDOW, SEARCH_RATE_LIMIT_MAX);
+    rest_routes(
+        std::sync::Arc::new(search_limiter),
+        RateLimits::default(),
+        REQUEST_TIMEOUT,
+        uploads::UPLOAD_BODY_IDLE_TIMEOUT,
+    )
+    .into_openapi()
 }
 
 /// Attach the pagination hint headers to a list/search response: `X-Total-Count` is

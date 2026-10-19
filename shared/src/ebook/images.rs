@@ -6,65 +6,93 @@ use serde::{Deserialize, Serialize};
 
 /// One spine document that shows an image.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookImageReference {
-    /// Index into the spine, as in the chapter listing.
+    /// The document's spine index, as in `GET /api/ebooks/{uuid}/chapters`.
     pub spine_index: i64,
-    /// The `<img alt>` text at the document's first use; `None` when absent or
-    /// blank, and always for an SVG `<image>`.
+    /// The image's alt text where the document first shows it. Null when there is none,
+    /// and always for an SVG image.
     pub alt: Option<String>,
 }
 
 /// One image in an EPUB's manifest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookImage {
-    /// The image's path inside the EPUB archive: the handle the fetch takes.
+    /// The image's path inside the EPUB. `GET /api/ebooks/{uuid}/images/file` and
+    /// `GET /api/ebooks/{uuid}/images/link` take it as `href`.
     pub href: String,
-    /// The manifest's declared media type, e.g. `image/png`.
+    /// The media type the manifest declares, such as `image/png`.
     pub media_type: String,
-    /// Uncompressed size in bytes, from the archive's directory.
+    /// The image's uncompressed size in bytes.
     pub byte_size: i64,
-    /// Pixel size; `None` when the header won't decode (SVG included).
+    /// The width in pixels. Null when the image header can't be read, which includes
+    /// every SVG.
     pub width: Option<i64>,
     pub height: Option<i64>,
-    /// One per spine document that shows it, in spine order; empty when
-    /// nothing in the spine does.
+    /// Each spine document that shows the image, in spine order. Empty when none does.
     pub references: Vec<BookImageReference>,
 }
 
-/// `GET /api/ebooks/{uuid}/images` response: every manifest image of the
-/// book's EPUB.
+/// Every image the manifest of a book's EPUB lists, from `GET /api/ebooks/{uuid}/images`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookImageList {
     pub book_uuid: String,
     pub images: Vec<BookImage>,
 }
 
-/// `GET /api/ebooks/{uuid}/images/link` response: a server-relative
-/// `/api/ebooks/{uuid}/images/signed` path that fetches one image's original bytes
-/// without a session until `expires_at` (unix seconds). The link opens that one
-/// image and nothing else.
+/// A link that fetches one image's original bytes without signing in. `path` is a
+/// server-relative `GET /api/ebooks/{uuid}/images/signed` path that opens that one image
+/// only. It works until `expires_at`, in Unix seconds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookImageLink {
     pub path: String,
     pub expires_at: i64,
 }
 
-/// What `read_book_image` answers: the image's facts plus a `download_url` that
-/// fetches the original bytes without a session until `expires_at`.
+/// One image's details and a `download_url` that fetches its original bytes without
+/// signing in, until `expires_at`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookImageRead {
     pub book_uuid: String,
     pub href: String,
     pub media_type: String,
     pub byte_size: i64,
-    /// Absolute URL on the instance's public origin.
+    /// An absolute URL on the server's public address.
     pub download_url: String,
-    /// Unix seconds the URL stops working.
+    /// When the URL stops working, in Unix seconds.
     pub expires_at: i64,
     pub expires_at_iso: String,
+}
+
+/// Query parameter of `GET /api/ebooks/{uuid}/images/link` and
+/// `GET /api/ebooks/{uuid}/images/file`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct ImageHrefQuery {
+    /// The image's path inside the EPUB, as `href` in `GET /api/ebooks/{uuid}/images`.
+    pub href: String,
+}
+
+/// Query parameters of `GET /api/ebooks/{uuid}/images/signed`. They come in the `path` that
+/// `GET /api/ebooks/{uuid}/images/link` returns. Use that path as it is.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct SignedImageQuery {
+    /// The image's path inside the EPUB.
+    pub href: String,
+    /// When the link stops working, in Unix seconds.
+    pub expires: Option<String>,
+    /// The link's signature.
+    pub sig: Option<String>,
 }

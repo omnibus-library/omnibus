@@ -11,7 +11,7 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, auth::AuthError};
-use omnibus_shared::DeviceView;
+use omnibus_shared::{DeviceView, SessionView};
 
 use super::{internal, AppState};
 use crate::auth::session_view::session_views;
@@ -28,8 +28,21 @@ fn to_device_view(d: db::auth::Device) -> DeviceView {
     }
 }
 
-/// `GET /api/admin/users/{id}/sessions` — list a target user's live sessions.
-/// `is_current` is always `false` here; see [`omnibus_shared::SessionView`].
+/// List a user's sessions
+///
+/// The user's live sign-ins, on browsers and apps. `is_current` is always `false` here,
+/// even for your own session. An unknown user id lists nothing. Needs an admin account.
+#[utoipa::path(
+    get,
+    path = "/api/admin/users/{id}/sessions",
+    tag = "Admin",
+    operation_id = "admin_list_user_sessions",
+    params(("id" = i64, Path, description = "The user's id.")),
+    responses(
+        (status = 200, description = "The user's live sessions.", body = Vec<SessionView>),
+        (status = 403, description = "You aren't an admin."),
+    ),
+)]
 pub(super) async fn get_user_sessions(
     _admin: AdminUser,
     State(state): State<AppState>,
@@ -45,7 +58,21 @@ pub(super) async fn get_user_sessions(
     }
 }
 
-/// `GET /api/admin/users/{id}/devices` — list a target user's registered devices.
+/// List a user's devices
+///
+/// The apps the user has signed in from, each registered as a device. An unknown user id
+/// lists nothing. Needs an admin account.
+#[utoipa::path(
+    get,
+    path = "/api/admin/users/{id}/devices",
+    tag = "Admin",
+    operation_id = "admin_list_user_devices",
+    params(("id" = i64, Path, description = "The user's id.")),
+    responses(
+        (status = 200, description = "The user's devices, most recently seen first.", body = Vec<DeviceView>),
+        (status = 403, description = "You aren't an admin."),
+    ),
+)]
 pub(super) async fn get_user_devices(
     _admin: AdminUser,
     State(state): State<AppState>,
@@ -57,16 +84,30 @@ pub(super) async fn get_user_devices(
     }
 }
 
-/// `DELETE /api/admin/sessions/{id}` — revoke any user's session. Refuses to
-/// revoke the session the request itself authenticated with, mirroring the
-/// self-service guard in `auth::handlers::delete_session_handler` (an admin
-/// panel is not exempt from locking its own tab out mid-request). `404` when
-/// the id is unknown or already revoked.
+/// Revoke a user's session
+///
+/// Signs one session out, whoever it belongs to. You can't revoke the session you sent
+/// this request with; sign out instead. Needs an admin account.
+#[utoipa::path(
+    delete,
+    path = "/api/admin/sessions/{id}",
+    tag = "Admin",
+    operation_id = "admin_delete_session",
+    params(("id" = i64, Path, description = "The session's id, from the sessions listing.")),
+    responses(
+        (status = 204, description = "The session is revoked."),
+        (status = 400, description = "That is the session this request came with."),
+        (status = 403, description = "You aren't an admin."),
+        (status = 404, description = "No live session has that id."),
+    ),
+)]
 pub(super) async fn delete_session(
     admin: AdminUser,
     State(state): State<AppState>,
     Path(session_id): Path<i64>,
 ) -> Response {
+    // Same guard as the self-service `delete_session_handler`: an admin panel isn't exempt
+    // from locking its own tab out mid-request.
     if session_id == admin.0.session_id {
         return (
             StatusCode::BAD_REQUEST,
@@ -81,8 +122,22 @@ pub(super) async fn delete_session(
     }
 }
 
-/// `DELETE /api/admin/devices/{id}` — revoke any user's device registration
-/// (and any session still tied to it). `404` when the id is unknown.
+/// Remove a user's device
+///
+/// Deletes a device registration, whoever it belongs to, and signs out every session on
+/// it. Needs an admin account.
+#[utoipa::path(
+    delete,
+    path = "/api/admin/devices/{id}",
+    tag = "Admin",
+    operation_id = "admin_delete_device",
+    params(("id" = i64, Path, description = "The device's id, from the devices listing.")),
+    responses(
+        (status = 204, description = "The device and its sessions are gone."),
+        (status = 403, description = "You aren't an admin."),
+        (status = 404, description = "No device has that id."),
+    ),
+)]
 pub(super) async fn delete_device(
     _admin: AdminUser,
     State(state): State<AppState>,

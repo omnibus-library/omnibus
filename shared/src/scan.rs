@@ -7,64 +7,65 @@ use serde::{Deserialize, Serialize};
 use crate::metadata_lookup::ExternalBookMeta;
 use crate::physical::WishlistSource;
 
-/// A library book matched during scan resolution — just enough to display and
-/// act on it (the confirm/decision screens).
+/// A library book that an ISBN lookup matched, with enough detail to show it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ScanBook {
     pub uuid: String,
     pub title: String,
     pub authors: Vec<String>,
     pub cover_url: Option<String>,
-    /// Whether the book already has ≥1 physical copy checked in.
+    /// Whether someone has checked in at least one physical copy of the book.
     pub has_physical: bool,
-    /// Whether the book has a digital file. `false` for a paper-only or
-    /// wishlist-only book, whose confirm screen must not claim the reader
-    /// "already has this one digitally". Defaulted so a payload from before
-    /// the field decodes; nothing before it emitted the flag.
+    // Defaulted so a payload from before the field decodes; nothing before it
+    // emitted the flag.
+    /// Whether the book has a digital file. False for a book that exists only as a
+    /// physical copy or a wishlist entry.
     #[serde(default)]
     pub has_files: bool,
-    /// The book's own ISBN identifier, separator-stripped. Lets the close-match
-    /// confirm show the library edition's ISBN beside the scanned one.
+    /// The book's own ISBN, without separators. In a `close_match` it can differ from
+    /// the scanned ISBN. Absent when the book has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isbn: Option<String>,
 }
 
-/// Outcome of resolving a scanned/typed ISBN down the matching ladder. A fuzzy
-/// (title, author) hit is a [`ScanOutcome::CloseMatch`] — never auto-resolved;
-/// the client must confirm before any write, so a hit on several rows is a
-/// picker rather than a reason to decline the match.
+/// What an ISBN, or a picked title-search result, matched, and so what a client can
+/// offer next. `kind` says which case it is. A `close_match` is never acted on by
+/// itself. The reader confirms it before anything is written.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum ScanOutcome {
-    /// Exact identifier hit; the book already has a physical copy.
+    /// The ISBN matches a library book that already has a physical copy.
     AlreadyOwned { book: ScanBook },
-    /// Exact identifier hit; on the caller's physical wishlist (no physical
-    /// copy yet). The book they wanted and now hold, so clients offer to check
-    /// the copy in, which clears the entry.
+    /// The ISBN matches a book on the caller's physical wishlist that has no physical
+    /// copy yet. Checking the copy in clears the wishlist entry.
     OnWishlist { book: ScanBook },
-    /// Exact identifier hit; in the library digitally, no physical copy yet.
+    /// The ISBN matches a book the library has digitally, with no physical copy yet.
     InLibraryUnowned { book: ScanBook },
-    /// Online-resolved and (title, author)-matched at least one library book:
-    /// needs a human "is this the book?" confirmation before any write. Carried as
-    /// head + tail so the single-candidate wire shape stays byte-identical for older
-    /// clients; clients that know both render `book` followed by `others` as one
-    /// picker.
+    // Carried as head + tail so the single-candidate wire shape stays
+    // byte-identical for older clients.
+    /// The providers know the ISBN, and at least one library book has the same title
+    /// and author. The reader confirms which one, if any, before anything is written.
+    /// Show `book` first, then `others`, as one list to pick from.
     CloseMatch {
         book: ScanBook,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         others: Vec<ScanBook>,
         scanned: ExternalBookMeta,
     },
-    /// Online-resolved but not in the library.
+    /// The providers know the ISBN, but the library has no such book.
     NotInLibrary { online: ExternalBookMeta },
-    /// Neither the library nor any provider knew the ISBN.
+    /// Neither the library nor any provider knows the ISBN.
     Unresolved,
 }
 
-/// Resolve a scanned/typed ISBN.
+/// An ISBN to look up, scanned or typed. It may be an ISBN-10 or ISBN-13, with or
+/// without hyphens, up to 32 characters.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ResolveRequest {
     pub isbn: String,
 }
@@ -91,9 +92,10 @@ pub const NOTE_MAX_LEN: usize = 4096;
 /// real book title while still bounding the provider request.
 pub const SEARCH_QUERY_MAX_LEN: usize = 200;
 
-/// Search the external providers by title text — the fallback offered when an
-/// ISBN scan resolves to [`ScanOutcome::Unresolved`].
+/// Free text to search the metadata providers for, up to 200 characters. It is the
+/// fallback when an ISBN lookup comes back `unresolved`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ScanSearchRequest {
     pub query: String,
 }
@@ -111,18 +113,20 @@ impl ScanSearchRequest {
     }
 }
 
-/// Title-search results: provider-resolved candidates for the reader to pick
-/// from, each complete enough to feed [`ResolveMetaRequest`].
+/// The provider results for a title search. Pass the one the reader picks to
+/// `POST /api/scan/resolve-meta`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ScanSearchResponse {
     pub results: Vec<ExternalBookMeta>,
 }
 
-/// Resolve a picked title-search candidate against the library — the ladder's
-/// library rungs applied to metadata already in hand, so no provider round
-/// trip (which could miss on an ISBN the search itself just surfaced).
+// No provider round trip: one could miss on an ISBN the search itself just surfaced.
+/// A title-search result to match against the library. The server matches it as it
+/// would an ISBN, without asking the providers again.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ResolveMetaRequest {
     pub meta: ExternalBookMeta,
 }
@@ -151,8 +155,10 @@ fn validate_note(note: &Option<String>) -> Result<(), String> {
     Ok(())
 }
 
-/// Check in a physical copy of a book already in the library.
+/// A physical copy to check in, of a book the library already has. `isbn` may be up to
+/// 32 characters and `note` up to 4096.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CheckInRequest {
     pub book_uuid: String,
     #[serde(default)]
@@ -183,9 +189,10 @@ impl CheckInRequest {
     }
 }
 
-/// Add a physical-only book (not in the library) from resolved external meta —
-/// creates a fileless book plus its first physical copy.
+/// A book the library doesn't have, to add as a physical copy only. The server creates a
+/// book with no files and checks in its first copy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AddPhysicalOnlyRequest {
     pub meta: ExternalBookMeta,
     #[serde(default)]
@@ -201,10 +208,11 @@ impl AddPhysicalOnlyRequest {
     }
 }
 
-/// Add a book to the caller's physical wishlist — either an existing library
-/// book (`book_uuid`) or a new fileless book from external meta. Set one; if
-/// both are present `book_uuid` wins and `meta` is ignored.
+/// A book to add to the caller's physical wishlist. Set `book_uuid` for a library book,
+/// or `meta` to create a new book with no files. When both are set, the server uses
+/// `book_uuid` and ignores `meta`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct WishlistAddRequest {
     #[serde(default)]
     pub book_uuid: Option<String>,
@@ -237,8 +245,9 @@ impl WishlistAddRequest {
     }
 }
 
-/// The uuid of the book a check-in / add / wishlist write landed on.
+/// The uuid of the book a check-in, physical-only add or wishlist add wrote to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookRef {
     pub book_uuid: String,

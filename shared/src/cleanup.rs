@@ -12,6 +12,7 @@ mod tests;
 /// lowercase/snake_case token stored in `dedup_suggestions.kind` /
 /// `entity_aliases.kind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CleanupKind {
     /// Two or more author records that name the same person.
@@ -52,6 +53,7 @@ impl CleanupKind {
 /// What a dedup suggestion proposes doing. Serializes as the same
 /// lowercase/snake_case token stored in `dedup_suggestions.action`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CleanupAction {
     /// Combine two or more entities into one (author/series/tag merges).
@@ -91,6 +93,7 @@ impl CleanupAction {
 /// A suggestion's review state, matching the `dedup_suggestions.decision`
 /// CHECK constraint.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Decision {
     /// Not yet reviewed — the initial state every detected suggestion starts in.
@@ -129,6 +132,7 @@ impl Decision {
 /// Summary counts for the Library Cleanup dashboard badge — how many
 /// suggestions are in each review state.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CleanupCounts {
     pub pending: i64,
     pub accepted: i64,
@@ -140,6 +144,7 @@ pub struct CleanupCounts {
 /// universally apply — a tag split has no single "other" name, and only
 /// author/series merges have a photo to show.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SuggestionCard {
     pub id: i64,
     pub kind: CleanupKind,

@@ -12,10 +12,10 @@ use axum::{
 };
 use omnibus_db::{self as db, MetadataLookupError, PhysicalError, ScanError};
 use omnibus_shared::{
-    AddPhysicalOnlyRequest, BookRef, CheckInRequest, ResolveMetaRequest, ResolveRequest,
-    ScanSearchRequest, ScanSearchResponse, WishlistAddRequest,
+    AddPhysicalOnlyRequest, BookRef, CheckInRequest, GoogleBooksKeyStatus, ResolveMetaRequest,
+    ResolveRequest, ScanOutcome, ScanSearchRequest, ScanSearchResponse, SetGoogleBooksKey,
+    WishlistAddRequest,
 };
-use serde::Deserialize;
 
 use super::{internal, AppState};
 use crate::auth::{AdminUser, AuthUser};
@@ -51,8 +51,25 @@ fn scan_error(context: &'static str, e: ScanError) -> Response {
     }
 }
 
-/// Resolve an ISBN. Always 200 with a `ScanOutcome` (including `Unresolved`);
-/// 400 only for an invalid ISBN.
+/// Resolve an ISBN
+///
+/// Looks a scanned or typed ISBN up in the library, then at the metadata providers, and
+/// says what to offer next: `already_owned`, `on_wishlist` (yours), `in_library_unowned`,
+/// `close_match` (a library book with the same title and author, to confirm before
+/// writing anything), `not_in_library` or `unresolved`. Takes an ISBN-10 or ISBN-13, with
+/// or without hyphens.
+#[utoipa::path(
+    post,
+    path = "/api/scan/resolve",
+    tag = "Physical books",
+    operation_id = "resolve_isbn",
+    request_body = ResolveRequest,
+    responses(
+        (status = 200, description = "What the ISBN matched.", body = ScanOutcome),
+        (status = 400, description = "The ISBN is empty, longer than 32 characters, or not a valid ISBN."),
+        (status = 503, description = "No metadata provider could be reached."),
+    ),
+)]
 pub(super) async fn post_resolve(
     user: AuthUser,
     State(state): State<AppState>,
@@ -71,9 +88,23 @@ pub(super) async fn post_resolve(
     }
 }
 
-/// Search the providers by title text — the fallback when an ISBN resolves to
-/// `Unresolved`. Always 200 with a (possibly empty) candidate list; 400 for a
-/// blank/oversized query, 503 when both providers are down.
+/// Search the providers by title
+///
+/// Searches the metadata providers by free text, for when an ISBN resolves to
+/// `unresolved`. Pass the result the reader picks to `POST /api/scan/resolve-meta`. An
+/// empty list means the providers answered and none matched.
+#[utoipa::path(
+    post,
+    path = "/api/scan/search",
+    tag = "Physical books",
+    operation_id = "search_providers_by_title",
+    request_body = ScanSearchRequest,
+    responses(
+        (status = 200, description = "The candidates the providers returned.", body = ScanSearchResponse),
+        (status = 400, description = "The query is blank or longer than 200 characters."),
+        (status = 503, description = "No metadata provider could be reached."),
+    ),
+)]
 pub(super) async fn post_search(
     _user: AuthUser,
     State(state): State<AppState>,
@@ -92,8 +123,22 @@ pub(super) async fn post_search(
     }
 }
 
-/// Resolve a picked title-search candidate against the library — the ladder's
-/// library rungs applied to metadata already in hand, no provider ISBN lookup.
+/// Resolve a title-search result
+///
+/// Matches a result from `POST /api/scan/search` against the library, as
+/// `POST /api/scan/resolve` does for an ISBN, without asking the providers again. The
+/// outcome is never `unresolved`.
+#[utoipa::path(
+    post,
+    path = "/api/scan/resolve-meta",
+    tag = "Physical books",
+    operation_id = "resolve_search_result",
+    request_body = ResolveMetaRequest,
+    responses(
+        (status = 200, description = "What the result matched.", body = ScanOutcome),
+        (status = 400, description = "A field of `meta` is too long; the body says which."),
+    ),
+)]
 pub(super) async fn post_resolve_meta(
     user: AuthUser,
     State(state): State<AppState>,
@@ -112,45 +157,71 @@ pub(super) async fn post_resolve_meta(
     }
 }
 
-/// Whether a server-wide Google Books key is configured. Any authenticated
-/// user may read this non-sensitive flag; it drives the check-in scan
-/// screen's provider note (mirrors `backend::summary::get_hardcover_configured`).
-/// Distinct from the admin-only [`get_google_books_key`], which also carries
-/// a masked key preview.
+/// Check whether a Google Books key is set
+///
+/// `true` when the server has a Google Books API key, saved in settings or set in its
+/// environment. Without one, Google Books lookups share an anonymous quota that runs out
+/// quickly, so a client can warn that ISBN lookups may fail.
+#[utoipa::path(
+    get,
+    path = "/api/scan/google-books-configured",
+    tag = "Physical books",
+    responses((status = 200, description = "Whether a key is set.", body = bool)),
+)]
 pub(super) async fn get_google_books_configured(
     _user: AuthUser,
     State(state): State<AppState>,
 ) -> Response {
+    // Any user may read this flag; `GET /api/google-books-key` adds the masked key
+    // and is admin-only.
     match db::google_books_key_status(&state.pool).await {
         Ok(status) => Json(status.configured).into_response(),
         Err(e) => internal("google books key status", e),
     }
 }
 
-// This key's REST handlers mirror the Hardcover handlers in
-// `backend/suggestions.rs`; kept per feature module rather than unified — the
-// shared logic already lives once in db's `SecretKeySpec`.
-/// Admin-only: masked status of the server-wide Google Books key.
+/// Get the Google Books key's status
+///
+/// Whether a Google Books API key is set, where it comes from, and a masked preview. The
+/// key itself is never returned. Needs an admin account.
+#[utoipa::path(
+    get,
+    path = "/api/google-books-key",
+    tag = "Admin",
+    responses(
+        (status = 200, description = "The key's status.", body = GoogleBooksKeyStatus),
+        (status = 403, description = "You aren't an admin."),
+    ),
+)]
 pub(super) async fn get_google_books_key(
     _admin: AdminUser,
     State(state): State<AppState>,
 ) -> Response {
+    // Mirrors the Hardcover key handlers in `suggestions.rs`; the shared logic lives
+    // once in db's `SecretKeySpec`.
     match db::google_books_key_status(&state.pool).await {
         Ok(s) => Json(s).into_response(),
         Err(e) => internal("read google books key", e),
     }
 }
 
-/// Body for `POST /api/google-books-key`. A `null`/absent/blank key clears it.
-#[derive(Debug, Deserialize)]
-pub(super) struct SetGoogleBooksKey {
-    #[serde(default)]
-    key: Option<String>,
-}
-
-/// Admin-only: save or clear the Google Books key; returns the new masked
-/// status. A value over `GOOGLE_BOOKS_API_KEY_MAX_LEN` returns 422 with the
-/// typed validation message so an admin sees a per-case error rather than a 500.
+/// Set the Google Books key
+///
+/// Saves the server-wide Google Books API key, or clears it when `key` is `null`, absent
+/// or blank. With a key, ISBN lookups ask Google Books first; without one, Open Library.
+/// Clearing the saved key falls back to the server's `GOOGLE_BOOKS_API_KEY` environment
+/// variable, when that is set. Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/google-books-key",
+    tag = "Admin",
+    request_body = SetGoogleBooksKey,
+    responses(
+        (status = 200, description = "The key's new status.", body = GoogleBooksKeyStatus),
+        (status = 403, description = "You aren't an admin."),
+        (status = 422, description = "The key is longer than 512 bytes."),
+    ),
+)]
 pub(super) async fn post_google_books_key(
     _admin: AdminUser,
     State(state): State<AppState>,
@@ -169,7 +240,24 @@ pub(super) async fn post_google_books_key(
     }
 }
 
-/// Check in a physical copy of a library book (fulfills every user's wishlist).
+/// Check in a physical copy
+///
+/// Records a physical copy of a book the library already has, filed under you, and takes
+/// the book off every reader's wishlist. `isbn` is stored as an ISBN-13, or dropped when
+/// it isn't a valid ISBN. The answer carries the book's current uuid, which differs from
+/// `book_uuid` when that book has been merged into another.
+#[utoipa::path(
+    post,
+    path = "/api/scan/check-in",
+    tag = "Physical books",
+    operation_id = "check_in_copy",
+    request_body = CheckInRequest,
+    responses(
+        (status = 200, description = "The copy is checked in.", body = BookRef),
+        (status = 400, description = "`book_uuid` is empty or longer than 64 bytes, `isbn` is longer than 32 characters, or `note` is longer than 4096 characters."),
+        (status = 404, description = "No book has that uuid."),
+    ),
+)]
 pub(super) async fn post_check_in(
     user: AuthUser,
     State(state): State<AppState>,
@@ -195,7 +283,23 @@ pub(super) async fn post_check_in(
     }
 }
 
-/// Add a physical-only book from resolved external metadata.
+/// Add a book you have only on paper
+///
+/// Creates a book with no files from provider metadata, such as the `online` of a
+/// `not_in_library` outcome, and checks in its first copy under you. The cover at
+/// `cover_url` is downloaded now, from the known provider hosts only; when that fails,
+/// the book has no cover.
+#[utoipa::path(
+    post,
+    path = "/api/scan/physical-only",
+    tag = "Physical books",
+    operation_id = "add_physical_only_book",
+    request_body = AddPhysicalOnlyRequest,
+    responses(
+        (status = 200, description = "The new book.", body = BookRef),
+        (status = 400, description = "A field of `meta` is too long, or `note` is longer than 4096 characters; the body says which."),
+    ),
+)]
 pub(super) async fn post_add_physical_only(
     user: AuthUser,
     State(state): State<AppState>,
@@ -210,7 +314,24 @@ pub(super) async fn post_add_physical_only(
     }
 }
 
-/// Add a book to the caller's physical wishlist.
+/// Add a scanned book to your wishlist
+///
+/// Adds a book to your physical wishlist: a library book by `book_uuid`, or one the
+/// library doesn't have from `meta`, which creates a book with no files to hold the
+/// entry. When both are sent, `book_uuid` wins. A book already on your wishlist stays as
+/// it was.
+#[utoipa::path(
+    post,
+    path = "/api/scan/wishlist",
+    tag = "Physical books",
+    operation_id = "add_scanned_book_to_wishlist",
+    request_body = WishlistAddRequest,
+    responses(
+        (status = 200, description = "The book is on your wishlist.", body = BookRef),
+        (status = 400, description = "Neither `book_uuid` nor `meta` was sent, `book_uuid` is blank or longer than 64 bytes, or a field of `meta` is too long."),
+        (status = 404, description = "No book has that `book_uuid`."),
+    ),
+)]
 pub(super) async fn post_wishlist_add(
     user: AuthUser,
     State(state): State<AppState>,

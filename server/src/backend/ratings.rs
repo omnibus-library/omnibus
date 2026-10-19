@@ -10,14 +10,26 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, ratings::RatingError};
-use omnibus_shared::RatingUpdate;
+use omnibus_shared::{AttributedRating, RatingRecord, RatingUpdate};
 
 use super::{internal, AppState};
 use crate::auth::AuthUser;
 
-/// Persist a new rating. Last-write-wins on `(user, book)`; returns the
-/// server-authoritative record so the caller can sync forward. 400 on an
-/// out-of-range star count, 404 for a book the server has never indexed.
+/// Rate a book
+///
+/// Sets your star rating for a book, from 0.5 to 5 in half-star steps, replacing any rating
+/// you gave it before.
+#[utoipa::path(
+    post,
+    path = "/api/ratings",
+    tag = "Ratings",
+    request_body = RatingUpdate,
+    responses(
+        (status = 200, description = "Your rating as stored.", body = RatingRecord),
+        (status = 400, description = "`book_uuid` is blank, or `stars` is outside 0.5 to 5 or not a whole number of half stars."),
+        (status = 404, description = "No book has that `book_uuid`."),
+    ),
+)]
 pub(super) async fn post_rating(
     user: AuthUser,
     State(state): State<AppState>,
@@ -35,8 +47,16 @@ pub(super) async fn post_rating(
     }
 }
 
-/// Fetch the current rating for `(user, uuid)`. Returns `200 { … }` with an
-/// `Option<RatingRecord>` body (`null` when the user has not rated the book).
+/// Get your rating for a book
+///
+/// The body is `null` when you haven't rated the book, or no book has the uuid.
+#[utoipa::path(
+    get,
+    path = "/api/ratings/{uuid}",
+    tag = "Ratings",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses((status = 200, description = "Your rating, or `null`.", body = Option<RatingRecord>)),
+)]
 pub(super) async fn get_rating(
     user: AuthUser,
     State(state): State<AppState>,
@@ -48,7 +68,17 @@ pub(super) async fn get_rating(
     }
 }
 
-/// Fetch every other user's attributed rating for a book, newest first.
+/// List other users' ratings of a book
+///
+/// Every other user's rating of the book, with their name, newest first. Returns up to
+/// 1,000, and an empty list for a uuid no book has.
+#[utoipa::path(
+    get,
+    path = "/api/ratings/others/{uuid}",
+    tag = "Ratings",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses((status = 200, description = "Other users' ratings, newest first.", body = Vec<AttributedRating>)),
+)]
 pub(super) async fn get_other_ratings(
     user: AuthUser,
     State(state): State<AppState>,
@@ -60,8 +90,16 @@ pub(super) async fn get_other_ratings(
     }
 }
 
-/// Clear (un-rate) the current user's rating for a book. Idempotent — clearing
-/// an absent rating still returns 204.
+/// Remove your rating of a book
+///
+/// Succeeds whether or not you had rated the book.
+#[utoipa::path(
+    delete,
+    path = "/api/ratings/{uuid}",
+    tag = "Ratings",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses((status = 204, description = "You have no rating for the book.")),
+)]
 pub(super) async fn delete_rating(
     user: AuthUser,
     State(state): State<AppState>,

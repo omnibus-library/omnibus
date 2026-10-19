@@ -10,12 +10,22 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db};
+use omnibus_shared::{SeriesDetail, SeriesSummary};
 
 use super::{internal, AppState};
 use crate::auth::AuthUser;
 
-/// `/series` index. Returns every series across both ebook and audiobook
-/// libraries with a book count, primary author, and optional accent.
+/// List series
+///
+/// Every series with a book in the library, by name, each with a book count, the first
+/// book's first author and an accent color. Stops at 10,000 series.
+#[utoipa::path(
+    get,
+    path = "/api/series",
+    tag = "Discovery",
+    operation_id = "list_series",
+    responses((status = 200, description = "The series.", body = Vec<SeriesSummary>)),
+)]
 pub(super) async fn get_series(_user: AuthUser, State(state): State<AppState>) -> Response {
     let settings = match db::get_settings(&state.pool).await {
         Ok(s) => s,
@@ -31,6 +41,19 @@ pub(super) async fn get_series(_user: AuthUser, State(state): State<AppState>) -
     }
 }
 
+/// Get a series
+///
+/// One series and its books, in series order.
+#[utoipa::path(
+    get,
+    path = "/api/series/{id}",
+    tag = "Discovery",
+    params(("id" = i64, Path, description = "The series' id.")),
+    responses(
+        (status = 200, description = "The series.", body = SeriesDetail),
+        (status = 404, description = "No series has that id."),
+    ),
+)]
 pub(super) async fn get_series_by_id(
     _user: AuthUser,
     State(state): State<AppState>,

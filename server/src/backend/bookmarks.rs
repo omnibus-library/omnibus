@@ -10,12 +10,29 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, bookmarks::BookmarkError};
-use omnibus_shared::{CreateBookmark, UpdateBookmark};
+use omnibus_shared::{
+    AnnotationOrderQuery, Bookmark, ClientStamped, CreateBookmark, UpdateBookmark,
+};
 
-use super::{internal, AnnotationOrderQuery, AppState, ClientStamped};
+use super::{internal, AppState};
 use crate::auth::AuthUser;
 
-/// Create a bookmark on a book.
+/// Create a bookmark
+///
+/// Marks a place in a book: an EPUB CFI from the reader, or seconds from the audiobook
+/// player. Mint a `client_id` on the device and the create is safe to repeat: sending the
+/// same `client_id` again returns the bookmark the first create made, unchanged.
+#[utoipa::path(
+    post,
+    path = "/api/bookmarks",
+    tag = "Annotations",
+    request_body = ClientStamped<CreateBookmark>,
+    responses(
+        (status = 200, description = "The bookmark.", body = Bookmark),
+        (status = 400, description = "`book_uuid` or `position` is blank, a field is too long, `client_id` is blank, or `client_created_at` is negative."),
+        (status = 404, description = "No book has that `book_uuid`."),
+    ),
+)]
 pub(super) async fn post_bookmark(
     user: AuthUser,
     State(state): State<AppState>,
@@ -43,9 +60,17 @@ pub(super) async fn post_bookmark(
     }
 }
 
-/// List a user's bookmarks in a book, each placed in the book (spine index,
-/// chapter title, percent through the book) and ordered by that position.
-/// `?order=chronological` restores creation order.
+/// List your bookmarks in a book
+///
+/// Each bookmark comes placed in the book: its spine index, chapter title and how far
+/// through the book it sits. Returns up to 1,000, and an empty list for a uuid no book has.
+#[utoipa::path(
+    get,
+    path = "/api/bookmarks/book/{book_uuid}",
+    tag = "Annotations",
+    params(("book_uuid" = String, Path, description = "The book's uuid."), AnnotationOrderQuery),
+    responses((status = 200, description = "Your bookmarks in the book.", body = Vec<Bookmark>)),
+)]
 pub(super) async fn get_bookmarks(
     user: AuthUser,
     State(state): State<AppState>,
@@ -73,7 +98,21 @@ async fn resolve_id(state: &AppState, user_id: i64, raw: &str) -> Result<i64, Bo
         .ok_or(BookmarkError::NotFound)
 }
 
-/// Update the title/note on an existing bookmark.
+/// Rename a bookmark
+///
+/// Replaces the bookmark's title. A null or absent `title` removes it.
+#[utoipa::path(
+    put,
+    path = "/api/bookmarks/{id}",
+    tag = "Annotations",
+    params(("id" = String, Path, description = "The bookmark's id, or the `client_id` it was created with.")),
+    request_body = UpdateBookmark,
+    responses(
+        (status = 204, description = "The title is saved."),
+        (status = 400, description = "The title is over 512 characters."),
+        (status = 404, description = "You have no bookmark with that id."),
+    ),
+)]
 pub(super) async fn put_bookmark(
     user: AuthUser,
     State(state): State<AppState>,
@@ -100,7 +139,17 @@ pub(super) async fn put_bookmark(
     }
 }
 
-/// Delete a bookmark by id, scoped to the owning user.
+/// Delete a bookmark
+#[utoipa::path(
+    delete,
+    path = "/api/bookmarks/{id}",
+    tag = "Annotations",
+    params(("id" = String, Path, description = "The bookmark's id, or the `client_id` it was created with.")),
+    responses(
+        (status = 204, description = "The bookmark is deleted."),
+        (status = 404, description = "You have no bookmark with that id."),
+    ),
+)]
 pub(super) async fn delete_bookmark(
     user: AuthUser,
     State(state): State<AppState>,

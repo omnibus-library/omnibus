@@ -30,7 +30,17 @@ fn to_view(t: ApiToken) -> ApiTokenView {
     }
 }
 
-/// `GET /api/auth/api-tokens` — list the caller's live API tokens.
+/// List your API tokens
+///
+/// Names, dates and the last four characters of each live token. A token's secret is shown
+/// only once, when it is created.
+#[utoipa::path(
+    get,
+    path = "/api/auth/api-tokens",
+    tag = "Auth",
+    operation_id = "list_api_tokens",
+    responses((status = 200, description = "Your live API tokens.", body = Vec<ApiTokenView>)),
+)]
 pub async fn get_api_tokens_handler(user: AuthUser, State(state): State<AppState>) -> Response {
     match auth_db::list_api_tokens_for_user(state.pool(), user.id).await {
         Ok(rows) => Json(rows.into_iter().map(to_view).collect::<Vec<_>>()).into_response(),
@@ -38,8 +48,21 @@ pub async fn get_api_tokens_handler(user: AuthUser, State(state): State<AppState
     }
 }
 
-/// `POST /api/auth/api-tokens` — mint a new token for the caller. The
-/// response's `secret` is shown exactly once; only its hash is stored.
+/// Create an API token
+///
+/// Makes a long-lived token that authenticates as you, for scripts and integrations. Copy
+/// `secret` from the response: the server keeps only a hash of it and can't show it again.
+#[utoipa::path(
+    post,
+    path = "/api/auth/api-tokens",
+    tag = "Auth",
+    operation_id = "create_api_token",
+    request_body = CreateApiTokenRequest,
+    responses(
+        (status = 200, description = "The new token, with its secret.", body = CreateApiTokenResponse),
+        (status = 400, description = "The name is empty or too long."),
+    ),
+)]
 pub async fn post_api_token_handler(
     user: AuthUser,
     State(state): State<AppState>,
@@ -56,8 +79,20 @@ pub async fn post_api_token_handler(
     }
 }
 
-/// `PATCH /api/auth/api-tokens/{id}` — rename one of the caller's tokens.
-/// `404` follows the same indistinguishability rule as revoke.
+/// Rename an API token
+#[utoipa::path(
+    patch,
+    path = "/api/auth/api-tokens/{id}",
+    tag = "Auth",
+    operation_id = "rename_api_token",
+    params(("id" = i64, Path, description = "The token's id.")),
+    request_body = RenameApiTokenRequest,
+    responses(
+        (status = 204, description = "Renamed."),
+        (status = 400, description = "The name is empty or too long."),
+        (status = 404, description = "You have no live token with that id."),
+    ),
+)]
 pub async fn patch_api_token_handler(
     user: AuthUser,
     State(state): State<AppState>,
@@ -72,9 +107,21 @@ pub async fn patch_api_token_handler(
     }
 }
 
-/// `DELETE /api/auth/api-tokens/{id}` — revoke one of the caller's tokens.
-/// `404` when the id is unknown, already revoked, or another user's (the
-/// three are indistinguishable on the wire).
+/// Revoke an API token
+///
+/// The token stops working at once.
+#[utoipa::path(
+    delete,
+    path = "/api/auth/api-tokens/{id}",
+    tag = "Auth",
+    operation_id = "revoke_api_token",
+    params(("id" = i64, Path, description = "The token's id.")),
+    responses(
+        (status = 204, description = "Revoked."),
+        // Unknown, already revoked and someone else's all answer 404, so ids can't be probed.
+        (status = 404, description = "You have no live token with that id."),
+    ),
+)]
 pub async fn delete_api_token_handler(
     user: AuthUser,
     State(state): State<AppState>,
