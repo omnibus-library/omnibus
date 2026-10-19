@@ -364,8 +364,9 @@ export function BulkShelfPicker({
           type="button"
           className="pick-close"
           aria-label="Close"
-          disabled={add.isPending}
-          onClick={onClose}
+          // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
+          aria-disabled={add.isPending}
+          onClick={add.isPending ? undefined : onClose}
         >
           ✕
         </button>
@@ -401,10 +402,9 @@ export function BulkShelfPicker({
                   key={shelf.id}
                   type="button"
                   className="pick-card"
-                  disabled={add.isPending}
                   aria-busy={writing === shelf.id}
                   aria-disabled={add.isPending && writing !== shelf.id}
-                  onClick={() => add.mutate(shelf)}
+                  onClick={add.isPending ? undefined : () => add.mutate(shelf)}
                 >
                   {cover ? (
                     <img

@@ -61,4 +61,19 @@ describe("trapTab", () => {
     expect(other.preventDefault).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(last);
   });
+
+  it("holds focus on the dialog when nothing inside it can be tabbed to", () => {
+    document.body.innerHTML =
+      '<div id="d" tabindex="-1"><button id="a" disabled>A</button></div>';
+    const empty = element("d");
+    for (const shiftKey of [false, true]) {
+      empty.blur();
+      const event = press("Tab", shiftKey);
+
+      trapTab(event, empty);
+
+      expect(document.activeElement).toBe(empty);
+      expect(event.preventDefault).toHaveBeenCalled();
+    }
+  });
 });

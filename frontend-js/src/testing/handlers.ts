@@ -254,11 +254,15 @@ export function bulkOverridesHandler(
 export function addShelfBooksHandler({
   added = [],
   refuse,
+  gate,
 }: {
   added?: { id: number; uuids: string[] }[];
   refuse?: string;
+  /** Held until it settles, so a story can act while the save is in flight. */
+  gate?: Promise<void>;
 } = {}) {
   return http.post("/api/shelves/:id/books", async ({ params, request }) => {
+    await gate;
     if (refuse) return new HttpResponse(refuse, { status: 403 });
     const body = AddShelfBooksBody.parse(await request.json());
     added.push({ id: Number(params.id), uuids: body.book_uuids });

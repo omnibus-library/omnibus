@@ -1613,6 +1613,44 @@ export const BulkAddToShelf: Story = {
   },
 };
 
+export const BulkAddToShelfSaving: Story = {
+  beforeEach({ msw }) {
+    seedTable();
+    added.length = 0;
+    msw.use(
+      libraryHandler(bulkBooks(), 10),
+      SHELVES,
+      addShelfBooksHandler({ added, gate: holdRequests() }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const form = await openShelfPicker({ canvas, userEvent });
+    const dialog = canvas.getByRole("dialog");
+    const winter = form.getByRole("button", { name: /^Winter reads/ });
+
+    await userEvent.click(winter);
+    await waitFor(() => expect(winter).toHaveAttribute("aria-busy", "true"));
+
+    // Every control waits, yet the save leaves focus in the dialog, and so do Tab and a click on Close.
+    await expect(dialog).toContainElement(
+      document.activeElement as HTMLElement,
+    );
+    await userEvent.tab();
+    await userEvent.tab({ shift: true });
+    await userEvent.click(form.getByRole("button", { name: "Close" }));
+    await expect(dialog).toContainElement(
+      document.activeElement as HTMLElement,
+    );
+    await expect(canvas.getByRole("dialog")).toBeInTheDocument();
+
+    release();
+    await waitFor(() =>
+      expect(canvas.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await expect(added).toEqual([{ id: 3, uuids: [AURORA_1, AURORA_2] }]);
+  },
+};
+
 export const BulkAddToShelfFails: Story = {
   beforeEach({ msw }) {
     seedTable();

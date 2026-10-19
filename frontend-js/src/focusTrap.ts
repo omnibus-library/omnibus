@@ -10,7 +10,12 @@ export function trapTab(
   const tabbable = container.querySelectorAll<HTMLElement>(TABBABLE);
   const first = tabbable[0];
   const last = tabbable[tabbable.length - 1];
-  if (!first || !last) return;
+  if (!first || !last) {
+    // Nothing to tab to (a save has disabled it all): keep focus here rather than let it escape.
+    event.preventDefault();
+    container.focus();
+    return;
+  }
   const active = document.activeElement;
   const leaving = event.shiftKey
     ? active === first || active === container
