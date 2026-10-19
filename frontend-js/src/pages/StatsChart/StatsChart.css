@@ -200,6 +200,13 @@
   fill: transparent;
   cursor: col-resize;
 }
+.cb-brush {
+  fill: var(--accent);
+  opacity: 0.14;
+  stroke: var(--accent);
+  stroke-width: 1;
+  pointer-events: none;
+}
 .cb-band {
   fill: var(--ink-1);
   opacity: 0.055;
@@ -321,6 +328,29 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.cb-zoombar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.cb-zoom-reset {
+  font: inherit;
+  color: var(--ink-1);
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.cb-zoom-reset:hover {
+  background: var(--bg-2);
+}
+.cb-zoom-reset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .cb-legend {
   list-style: none;
   margin: 0;
@@ -413,6 +443,61 @@
   text-align: center;
   color: var(--ink-3);
   font-size: 14px;
+}
+.cb-notes {
+  font-size: 12.5px;
+  border-top: 1px solid var(--line-2);
+  padding-top: 12px;
+}
+.cb-notes-toggle {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.cb-notes-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.cb-notes-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  /* Prose wants a measure; the chart above it does not. */
+  max-width: 68ch;
+  line-height: 1.55;
+}
+.cb-notes-measures {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.cb-notes-term {
+  color: var(--ink-0);
+  font-weight: 600;
+}
+.cb-notes-def {
+  margin: 1px 0 0;
+  color: var(--ink-2);
+}
+.cb-notes-line {
+  margin: 0;
+  color: var(--ink-2);
+}
+.cb-notes-head {
+  margin: 4px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.cb-notes-caveats {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink-3);
+}
+.cb-notes-caveats li {
+  margin-top: 4px;
 }
 @media (prefers-reduced-motion: reduce) {
   .cb-bar,

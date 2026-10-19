@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ChartBucket,
   ChartMeasure,
@@ -10,6 +10,7 @@ import { Loading } from "../../components/Loading/Loading";
 import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { RANGE_LABELS, RANGES } from "../Stats/summary";
+import { ChartNotes } from "./ChartNotes";
 import { ChartLegend, ChartPlot, ChartTable } from "./ChartPlot";
 import {
   BUCKET_LABELS,
@@ -23,6 +24,13 @@ import {
   supportsBreakdown,
   toggle,
 } from "./chart";
+import { useTweened } from "./tween";
+import {
+  apply as applyZoom,
+  brushRange,
+  resolve as resolveZoom,
+  type ZoomRange,
+} from "./zoom";
 import "./StatsChart.css";
 
 /** The option of `options` whose value is `raw`; a select's change event hands back a bare string. */
@@ -146,10 +154,18 @@ function ChartControls({ spec, onChange }: ControlsProps) {
 
 /** The chart for one spec. The last chart stays, dimmed, while the next loads; only the first load blanks the surface. */
 function ChartCanvas({ spec }: { spec: ChartSpec }) {
+  // Held as bucket keys, so a regroup that replaces the axis drops the zoom instead of framing another stretch of history.
+  const [zoomed, setZoomed] = useState<ZoomRange | null>(null);
   const chart = useQuery({
     ...chartQuery(spec),
     placeholderData: keepPreviousData,
   });
+  // Zoomed before tweened: narrowing the window is itself worth animating, and each surviving bucket keeps its key.
+  const view = useMemo(
+    () => (chart.data ? applyZoom(chart.data, zoomed) : null),
+    [chart.data, zoomed],
+  );
+  const frame = useTweened(view);
   if (chart.isError) {
     return (
       <PageError
@@ -159,10 +175,13 @@ function ChartCanvas({ spec }: { spec: ChartSpec }) {
       />
     );
   }
-  if (chart.data === undefined) {
+  if (chart.data === undefined || frame === null) {
     return <Loading kind="page" label="Drawing the chart" />;
   }
   const busy = chart.isFetching;
+  // Measured against the unzoomed result, so a zoom the axis can no longer resolve reports itself inactive.
+  const zoomActive =
+    zoomed !== null && resolveZoom(chart.data.buckets, zoomed) !== null;
   return (
     <section
       className={
@@ -171,18 +190,41 @@ function ChartCanvas({ spec }: { spec: ChartSpec }) {
       aria-busy={busy}
       data-testid="chart-canvas"
     >
-      {resultIsEmpty(chart.data) ? (
+      {resultIsEmpty(frame) ? (
         <p className="cb-empty" data-testid="chart-empty">
           Nothing recorded in this period yet. Try a wider period, or a measure
           you've got data for.
         </p>
       ) : (
         <>
-          <ChartPlot result={chart.data} />
-          <ChartLegend result={chart.data} />
-          <ChartTable result={chart.data} />
+          {zoomActive && (
+            <div className="cb-zoombar" data-testid="chart-zoom">
+              <span className="cb-zoom-label">
+                Zoomed to {frame.buckets.length} of {chart.data.buckets.length}{" "}
+                periods
+              </span>
+              <button
+                className="cb-zoom-reset"
+                type="button"
+                onClick={() => setZoomed(null)}
+              >
+                Show all
+              </button>
+            </div>
+          )}
+          <ChartPlot
+            result={frame}
+            // Against the displayed buckets, so a brush inside a zoom composes into a narrower one.
+            onBrush={(first, last) => {
+              const range = brushRange(frame.buckets, first, last);
+              if (range) setZoomed(range);
+            }}
+          />
+          <ChartLegend result={frame} />
+          <ChartTable result={frame} />
         </>
       )}
+      <ChartNotes result={frame} />
     </section>
   );
 }

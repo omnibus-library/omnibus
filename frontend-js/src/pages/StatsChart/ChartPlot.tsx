@@ -150,9 +150,21 @@ function ChartHoverCard({
   );
 }
 
-/** One SVG drawing whatever result it is handed: no chart library, so the marks take the page's own tokens. */
-export function ChartPlot({ result }: { result: ChartResult }) {
+/**
+ * One SVG drawing whatever result it is handed: no chart library, so the marks take the page's own
+ * tokens. `onBrush` gets the first and last bucket index a completed drag covered; the page decides
+ * whether that is a zoom or a click.
+ */
+export function ChartPlot({
+  result,
+  onBrush,
+}: {
+  result: ChartResult;
+  onBrush: (first: number, last: number) => void;
+}) {
   const [hovered, setHovered] = useState<number | null>(null);
+  // Where a drag started, while one is in progress.
+  const [anchor, setAnchor] = useState<number | null>(null);
   const plot = plotGeometry(result);
   // A series' position is its identity: a split repeats the measure, and a genre may be called "Other".
   const placed = result.series.map((series, idx) => ({ series, idx }));
@@ -188,7 +200,12 @@ export function ChartPlot({ result }: { result: ChartResult }) {
         role="img"
         aria-label={`Chart of ${summary} over ${result.buckets.length} periods`}
         preserveAspectRatio="none"
-        onMouseLeave={() => setHovered(null)}
+        onMouseLeave={() => {
+          setHovered(null);
+          // A drag that leaves the plot is abandoned, not committed to wherever the pointer exited.
+          setAnchor(null);
+        }}
+        onMouseUp={() => setAnchor(null)}
       >
         {[...Array(divisions + 1).keys()].map((step) => {
           const frac = step / divisions;
@@ -230,6 +247,19 @@ export function ChartPlot({ result }: { result: ChartResult }) {
             x={fixed(plot.bandCentre(hovered) - plot.bandW / 2, 1)}
             y={PAD_T}
             width={fixed(plot.bandW, 1)}
+            height={fixed(plot.plotH, 1)}
+          />
+        )}
+
+        {anchor !== null && hovered !== null && (
+          <rect
+            className="cb-brush"
+            x={fixed(
+              plot.bandCentre(Math.min(anchor, hovered)) - plot.bandW / 2,
+              1,
+            )}
+            y={PAD_T}
+            width={fixed(plot.bandW * (Math.abs(hovered - anchor) + 1), 1)}
             height={fixed(plot.plotH, 1)}
           />
         )}
@@ -331,6 +361,11 @@ export function ChartPlot({ result }: { result: ChartResult }) {
             width={fixed(plot.bandW, 1)}
             height={fixed(plot.plotH, 1)}
             onMouseEnter={() => setHovered(i)}
+            onMouseDown={() => setAnchor(i)}
+            onMouseUp={() => {
+              if (anchor !== null) onBrush(anchor, i);
+              setAnchor(null);
+            }}
           />
         ))}
       </svg>
