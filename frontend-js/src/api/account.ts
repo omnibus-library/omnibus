@@ -2,7 +2,11 @@ import { failure, send } from "./core";
 import {
   getDeleteAvatarUrl,
   getPostAvatarUrl,
+  getPostBookDetailScrollStopsUrl,
+  getPostHiddenFormatsUrl,
   getPostProfileUrl,
+  getPostShareStatsUrl,
+  getPostStackSeriesUrl,
 } from "./generated/omnibus";
 
 /** Saves the name other readers see; `null` clears it, so the username shows. */
@@ -22,4 +26,24 @@ export async function uploadAvatar(file: File): Promise<void> {
 /** Removes the picture, so initials show instead. */
 export async function deleteAvatar(): Promise<void> {
   await send(getDeleteAvatarUrl(), "DELETE");
+}
+
+const saveSwitch = (url: string) => async (enabled: boolean) => {
+  await send(url, "POST", { enabled });
+};
+
+/** Saves the reader's Stack series preference. */
+export const setStackSeries = saveSwitch(getPostStackSeriesUrl());
+
+/** Saves whether a book's page stops at each section as it scrolls. */
+export const setBookDetailScrollStops = saveSwitch(
+  getPostBookDetailScrollStopsUrl(),
+);
+
+/** Saves whether other readers on this server may see the reader's stats. */
+export const setShareStats = saveSwitch(getPostShareStatsUrl());
+
+/** Replaces the formats the reader's library view leaves out. */
+export async function setHiddenFormats(formats: string[]): Promise<void> {
+  await send(getPostHiddenFormatsUrl(), "POST", { formats });
 }

@@ -6,7 +6,6 @@ import {
   getRegistration,
   login as postLogin,
   register as postRegister,
-  postStackSeries,
 } from "./generated/omnibus";
 import type { UserSummary } from "./generated/schemas";
 
@@ -61,9 +60,4 @@ export async function logout(): Promise<void> {
   if (res.status !== 204) {
     throw failure({ status: res.status, data: await res.text() });
   }
-}
-
-/** Saves the reader's Stack series preference. */
-export async function setStackSeries(enabled: boolean): Promise<void> {
-  ok(await postStackSeries({ enabled }));
 }

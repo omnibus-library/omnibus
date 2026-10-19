@@ -1,3 +1,43 @@
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.9rem 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.setting-row:last-child {
+  border-bottom: 0;
+}
+.setting-row-text {
+  min-width: 0;
+}
+.setting-row-label {
+  color: var(--ink-0);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.setting-row-desc {
+  margin-top: 2px;
+  color: var(--ink-2);
+  font-size: 0.85rem;
+  max-width: 56ch;
+}
+.setting-row-control {
+  flex: none;
+}
+.hidden-formats-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+.hidden-format-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
 .profile-initials-photo {
   width: 100%;
   height: 100%;
@@ -73,4 +113,44 @@
 .profile-avatar-pick:has(input:disabled) {
   opacity: 0.5;
   cursor: default;
+}
+.pref-control {
+  display: flex;
+  align-items: center;
+}
+.pref-status {
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+.pref-status:not(:empty) {
+  margin-right: 0.75rem;
+}
+.pref-status.error {
+  color: var(--bad);
+}
+.pref-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0.9rem 0;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.pref-fieldset:last-child {
+  border-bottom: 0;
+}
+.pref-fieldset > legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  cursor: default;
+}
+.pref-fieldset > legend + * {
+  clear: both;
+}
+.pref-fieldset .hidden-formats-list {
+  margin-top: 0.75rem;
+}
+.pref-fieldset .pref-status {
+  display: block;
+  margin: 0.5rem 0 0;
 }

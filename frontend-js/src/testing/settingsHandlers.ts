@@ -1,5 +1,10 @@
 import { HttpResponse, http } from "msw";
-import { SetProfile, type UserSummary } from "../api/generated/schemas";
+import {
+  SetHiddenFormats,
+  SetProfile,
+  SetStackSeries,
+  type UserSummary,
+} from "../api/generated/schemas";
 import { svg } from "./handlers";
 import { WIRE_ADA } from "./wire";
 
@@ -11,6 +16,13 @@ export const aSettingsServer = (
 ): SettingsServer => ({ user: { ...user } });
 
 const empty = (status = 200) => new HttpResponse(null, { status });
+
+// The three switches share one body, `{enabled}`.
+const SWITCH_ROUTES = [
+  ["stack-series", "stack_series"],
+  ["book-detail-scroll-stops", "book_detail_scroll_stops"],
+  ["share-stats", "share_stats"],
+] as const;
 
 /** The settings routes over `server`; a story that needs a refusal passes its own handler first. */
 export function settingsHandlers(server: SettingsServer) {
@@ -36,5 +48,16 @@ export function settingsHandlers(server: SettingsServer) {
       return empty(204);
     }),
     http.get("/api/users/:id/avatar", svg),
+    ...SWITCH_ROUTES.map(([route, field]) =>
+      http.post(`/api/account/${route}`, async ({ request }) => {
+        patch({ [field]: SetStackSeries.parse(await request.json()).enabled });
+        return empty();
+      }),
+    ),
+    http.post("/api/account/hidden-formats", async ({ request }) => {
+      const { formats } = SetHiddenFormats.parse(await request.json());
+      patch({ hidden_formats: formats ?? [] });
+      return empty();
+    }),
   ];
 }

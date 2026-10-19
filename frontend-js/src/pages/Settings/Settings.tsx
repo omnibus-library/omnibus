@@ -12,6 +12,7 @@ import {
   parseSettingsSection,
   sectionHref,
 } from "../../settingsIndex";
+import { PreferencesSection } from "./PreferencesSection";
 import { ProfileSection } from "./ProfileSection";
 
 const sectionOf = (location: Location) =>
@@ -66,6 +67,7 @@ export function Settings() {
       <PageTitle page={`${active.label} · Settings`} />
       <SectionHeader title={active.label} />
       {active.slug === "profile" && <ProfileSection />}
+      {active.slug === "preferences" && <PreferencesSection />}
     </SettingsShell>
   );
 }

@@ -9,7 +9,11 @@ import { useNavigate } from "react-router";
 import {
   fetchMe,
   fetchRegistrationOpen,
+  inOrder,
   logout,
+  setBookDetailScrollStops,
+  setHiddenFormats,
+  setShareStats,
   setStackSeries,
   type User,
 } from "./api";
@@ -51,24 +55,68 @@ export function useSignOut() {
   });
 }
 
-/** Saves the Stack series preference straight away; a refusal puts the switch back. */
-export function useStackSeries() {
+/** Saves a preference straight away, showing it on the session first; a refusal puts the session back. */
+function useSavedPreference<V>(
+  key: string,
+  save: (value: V) => Promise<void>,
+  apply: (user: User, value: V) => User,
+) {
   const queryClient = useQueryClient();
+  const mutationKey = ["preference", key];
   return useMutation({
-    mutationFn: setStackSeries,
-    onMutate: async (enabled) => {
+    mutationKey,
+    mutationFn: save,
+    onMutate: async (value) => {
       // A refetch already in flight would land over the optimistic value.
       await queryClient.cancelQueries({ queryKey: meQuery.queryKey });
       const previous = queryClient.getQueryData(meQuery.queryKey);
       queryClient.setQueryData(
         meQuery.queryKey,
-        (user) => user && { ...user, stackSeries: enabled },
+        (user) => user && apply(user, value),
       );
       return { previous };
     },
-    onError: (_error, _enabled, context) =>
+    onError: (_error, _value, context) =>
       queryClient.setQueryData(meQuery.queryKey, context?.previous),
+    // Only after the last save lands: an earlier read would drop the ones still queued.
     onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: meQuery.queryKey }),
+      queryClient.isMutating({ mutationKey }) <= 1
+        ? queryClient.invalidateQueries({ queryKey: meQuery.queryKey })
+        : undefined,
   });
+}
+
+/** The preference switches `POST /api/account/*` saves, each as the session names it. */
+export type UserSwitch = "stackSeries" | "bookDetailScrollStops" | "shareStats";
+
+const SWITCH_SAVES = {
+  stackSeries: setStackSeries,
+  bookDetailScrollStops: setBookDetailScrollStops,
+  shareStats: setShareStats,
+} satisfies Record<UserSwitch, (enabled: boolean) => Promise<void>>;
+
+/** Saves one switch straight away; a refusal puts it back. */
+export function useUserSwitch(setting: UserSwitch) {
+  return useSavedPreference(
+    setting,
+    SWITCH_SAVES[setting],
+    (user, enabled) => ({
+      ...user,
+      [setting]: enabled,
+    }),
+  );
+}
+
+const hiddenFormatSaves = new Map<string, Promise<void>>();
+
+/** Saves the whole hidden-formats set, one save at a time so a run of clicks lands in order. */
+export function useHiddenFormats() {
+  return useSavedPreference<string[]>(
+    "hiddenFormats",
+    (formats) =>
+      inOrder(hiddenFormatSaves, "hiddenFormats", () =>
+        setHiddenFormats(formats),
+      ),
+    (user, formats) => ({ ...user, hiddenFormats: formats }),
+  );
 }
