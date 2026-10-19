@@ -17,6 +17,8 @@ export type Stage =
   | { kind: "confirm"; book: ScanBook; isbn: string; wishlisted: boolean }
   | { kind: "closeMatch"; books: ScanBook[]; scanned: ExternalBookMeta }
   | { kind: "choose"; online: ExternalBookMeta }
+  /** Picking the library book a copy belongs to; `origin` is the screen Back returns to. */
+  | { kind: "link"; isbn: string; origin: Stage }
   | { kind: "unresolved"; isbn: string }
   | { kind: "checkedIn"; uuid: string; title: string; offWishlist: boolean }
   | { kind: "wishlisted"; title: string };
@@ -145,3 +147,9 @@ export function metaDetails(meta: ExternalBookMeta): string | null {
 
 /** `s` trimmed, or `undefined` when nothing is left: the wire shape of the optional edition note. */
 export const someIfFilled = (s: string) => s.trim() || undefined;
+
+/** The line under a truncated result list: a broad query hides matches, and saying so keeps the reader from concluding the book isn't there. */
+export const truncationNote = (shown: number, total: number) =>
+  total > shown
+    ? `Showing ${shown} of ${total} matches — add the author or more of the title.`
+    : null;

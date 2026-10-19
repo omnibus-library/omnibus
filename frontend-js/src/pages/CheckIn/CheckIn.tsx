@@ -5,6 +5,7 @@ import {
   addPhysicalOnly,
   checkInBook,
   resolveBook,
+  resolveMeta,
   wishlistScanned,
 } from "../../api";
 import type {
@@ -21,6 +22,7 @@ import {
   someIfFilled,
   stageFor,
 } from "./checkIn";
+import { LinkExistingScreen } from "./LinkExisting";
 import { LookupScreen } from "./Lookup";
 import {
   ChooseScreen,
@@ -63,6 +65,15 @@ export function CheckIn() {
       navigate(`/books/${outcome.book.uuid}`);
     }
   };
+  // Search and linking open from the screen the reader is on, which Back returns to.
+  const toSearch = () => {
+    setError(null);
+    setStage(LOOKUP);
+  };
+  const toLink = (isbn: string) => {
+    setError(null);
+    setStage({ kind: "link", isbn, origin: stage });
+  };
   const restart = () => {
     setError(null);
     setNote("");
@@ -78,6 +89,16 @@ export function CheckIn() {
       setError(`Could not look that up: ${e.message}`);
       setStage(LOOKUP);
     },
+  });
+  const pick = useMutation({
+    mutationFn: resolveMeta,
+    onMutate: () => {
+      setVia("search");
+      setError(null);
+    },
+    onSuccess: (outcome, meta) => arrive(outcome, meta.isbn13),
+    // Stays on the search screen with its results to retry from.
+    onError: (e) => setError(`Could not match that book: ${e.message}`),
   });
   const checkIn = useMutation({
     mutationFn: (confirm: Extract<Stage, { kind: "confirm" }>) =>
@@ -128,6 +149,7 @@ export function CheckIn() {
   });
   const busy =
     resolve.isPending ||
+    pick.isPending ||
     checkIn.isPending ||
     ownIt.isPending ||
     wishlist.isPending;
@@ -157,6 +179,8 @@ export function CheckIn() {
             busy={busy}
             onIsbn={setIsbn}
             onResolve={onResolve}
+            onPick={(meta) => pick.mutate(meta)}
+            onError={setError}
           />
         );
       case "resolving":
@@ -199,12 +223,36 @@ export function CheckIn() {
             via={via}
             busy={busy}
             onOwnIt={(meta) => ownIt.mutate(meta)}
+            onLink={() => toLink(stage.online.isbn13)}
             onWishlist={(req) => wishlist.mutate(req)}
             onRestart={restart}
           />
         );
+      case "link":
+        return (
+          <LinkExistingScreen
+            busy={busy}
+            onPick={(book) =>
+              setStage({
+                kind: "confirm",
+                book,
+                isbn: stage.isbn,
+                wishlisted: false,
+              })
+            }
+            onBack={() => setStage(stage.origin)}
+            onError={setError}
+          />
+        );
       case "unresolved":
-        return <UnresolvedScreen isbn={stage.isbn} onRestart={restart} />;
+        return (
+          <UnresolvedScreen
+            isbn={stage.isbn}
+            onSearch={toSearch}
+            onLink={() => toLink(stage.isbn)}
+            onRestart={restart}
+          />
+        );
       case "checkedIn":
         return (
           <SuccessScreen

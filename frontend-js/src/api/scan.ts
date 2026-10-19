@@ -5,6 +5,7 @@ import {
   addPhysicalOnlyBook,
   addScannedBookToWishlist,
   checkInCopy,
+  getSearchPalette,
   resolveIsbn,
   resolveSearchResult,
   searchProvidersByTitle,
@@ -13,6 +14,8 @@ import type {
   AddPhysicalOnlyRequest,
   CheckInRequest,
   ExternalBookMeta,
+  PaletteBookHit,
+  ScanBook,
   ScanOutcome,
   WishlistAddRequest,
 } from "./generated/schemas";
@@ -68,3 +71,33 @@ export const googleBooksConfiguredQuery = queryOptions({
     ),
   staleTime: Number.POSITIVE_INFINITY,
 });
+
+/**
+ * A library-search hit as the confirm screen renders a book. `author_display` stays one
+ * entry, not split on ", ", because a sort-form name ("Weir, Andy") carries that separator.
+ */
+export function scanBookFromHit(
+  hit: PaletteBookHit & { uuid: string },
+): ScanBook {
+  const display = hit.author_display.trim();
+  return {
+    uuid: hit.uuid,
+    title: hit.title,
+    authors: display ? [display] : [],
+    cover_url: hit.cover_url,
+    has_physical: hit.has_physical ?? false,
+    has_files: hit.formats.length > 0,
+    isbn: null,
+  };
+}
+
+/** The library's books matching `query`, and how many matched before the list was cut. */
+export async function searchLibraryBooks(
+  query: string,
+): Promise<{ books: ScanBook[]; total: number }> {
+  const found = ok(await getSearchPalette({ q: query }));
+  const books = found.books.flatMap((hit) =>
+    hit.uuid ? [scanBookFromHit({ ...hit, uuid: hit.uuid })] : [],
+  );
+  return { books, total: found.book_total ?? books.length };
+}

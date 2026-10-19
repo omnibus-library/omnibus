@@ -3,9 +3,11 @@ import {
   AddPhysicalOnlyRequest,
   CheckInRequest,
   type ExternalBookMeta,
+  ResolveMetaRequest,
   ResolveRequest,
   type ScanBook,
   type ScanOutcome,
+  ScanSearchRequest,
   WishlistAddRequest,
 } from "../api/generated/schemas";
 
@@ -48,12 +50,21 @@ export function anExternalBook(
 export const NEW_BOOK_UUID = "a7d94e6e-3f0b-4b57-9f4c-6f2d51c0b8aa";
 
 type Refusals = Partial<
-  Record<"resolve" | "checkIn" | "physicalOnly" | "wishlist", string>
+  Record<
+    | "resolve"
+    | "resolveMeta"
+    | "search"
+    | "checkIn"
+    | "physicalOnly"
+    | "wishlist",
+    string
+  >
 >;
 
 /**
- * The check-in flow's routes: `POST /api/scan/resolve` answers `outcome`, and the
- * three writes answer with a book's uuid. Each request body lands in its list; a
+ * The check-in flow's routes: `POST /api/scan/resolve` and `.../resolve-meta` answer
+ * `outcome`, `.../search` answers `found`, and the three writes answer with a book's
+ * uuid. Each request body lands in its list (`searched` holds the queries); a
  * route named in `refuse` answers 400 with that plain text; `gate` holds the
  * resolve answer until it resolves.
  */
@@ -61,6 +72,9 @@ export function scanHandlers(
   outcome: ScanOutcome,
   {
     resolved = [],
+    resolvedMeta = [],
+    searched = [],
+    found = [],
     checkedIn = [],
     physicalOnly = [],
     wishlisted = [],
@@ -68,6 +82,9 @@ export function scanHandlers(
     gate,
   }: {
     resolved?: string[];
+    resolvedMeta?: ExternalBookMeta[];
+    searched?: string[];
+    found?: ExternalBookMeta[];
     checkedIn?: CheckInRequest[];
     physicalOnly?: AddPhysicalOnlyRequest[];
     wishlisted?: WishlistAddRequest[];
@@ -84,6 +101,14 @@ export function scanHandlers(
       resolved.push(ResolveRequest.parse(await request.json()).isbn);
       await gate;
       return refused("resolve") ?? HttpResponse.json(outcome);
+    }),
+    http.post("/api/scan/resolve-meta", async ({ request }) => {
+      resolvedMeta.push(ResolveMetaRequest.parse(await request.json()).meta);
+      return refused("resolveMeta") ?? HttpResponse.json(outcome);
+    }),
+    http.post("/api/scan/search", async ({ request }) => {
+      searched.push(ScanSearchRequest.parse(await request.json()).query);
+      return refused("search") ?? HttpResponse.json({ results: found });
     }),
     http.post("/api/scan/check-in", async ({ request }) => {
       const body = CheckInRequest.parse(await request.json());

@@ -165,7 +165,7 @@ export function ConfirmScreen({
 }
 
 /** One row of a library-book picker: the card, that edition's ISBN, and the button that files the copy against it. */
-function LibraryPickOption({
+export function LibraryPickOption({
   book,
   label,
   testId,
@@ -251,16 +251,18 @@ type ChooseProps = {
   via: FoundVia;
   busy: boolean;
   onOwnIt: (meta: ExternalBookMeta) => void;
+  onLink: () => void;
   onWishlist: (req: WishlistAddRequest) => void;
   onRestart: () => void;
 };
 
-/** Found online but not in the library: own it, wishlist it, or start over. */
+/** Found online but not in the library: own it, link it to a book on the shelf, wishlist it, or start over. */
 export function ChooseScreen({
   online,
   via,
   busy,
   onOwnIt,
+  onLink,
   onWishlist,
   onRestart,
 }: ChooseProps) {
@@ -278,6 +280,15 @@ export function ChooseScreen({
           onClick={() => onOwnIt(online)}
         >
           I own it — add to my collection
+        </Button>
+        {/* A provider's record can carry a placeholder title that shares nothing with the library book, which no matching rung can bridge. */}
+        <Button
+          variant="ghost"
+          disabled={busy}
+          data-testid="check-in-link-existing"
+          onClick={onLink}
+        >
+          I already have this book
         </Button>
         <Button
           variant="ghost"
@@ -305,9 +316,13 @@ export function ChooseScreen({
 /** Neither the library nor any provider knew the ISBN. */
 export function UnresolvedScreen({
   isbn,
+  onSearch,
+  onLink,
   onRestart,
 }: {
   isbn: string;
+  onSearch: () => void;
+  onLink: () => void;
   onRestart: () => void;
 }) {
   return (
@@ -317,6 +332,21 @@ export function UnresolvedScreen({
         Nothing in your library or our metadata providers matches {isbn}.
       </p>
       <div className="settings-actions">
+        <Button
+          variant="primary"
+          data-testid="check-in-search-instead"
+          onClick={onSearch}
+        >
+          Search by title instead
+        </Button>
+        {/* No provider knows the barcode, but the reader may own the book already, and filing a copy needs no provider. */}
+        <Button
+          variant="ghost"
+          data-testid="check-in-link-existing"
+          onClick={onLink}
+        >
+          I already have this book
+        </Button>
         <Button
           variant="ghost"
           data-testid="check-in-restart"

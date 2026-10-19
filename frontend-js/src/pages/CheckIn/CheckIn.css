@@ -62,7 +62,30 @@
   width: 100%;
   justify-content: center;
 }
-.check-in-lookup .settings-form {
+.check-in-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.check-in-or::before,
+.check-in-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.check-in-search {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.check-in-lookup .settings-form,
+.check-in-search .settings-form {
   margin-top: 0;
   gap: 0.85rem;
 }
@@ -126,6 +149,33 @@
 .check-in-match-option .btn {
   width: 100%;
   justify-content: center;
+}
+.check-in-search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.check-in-search-result {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.check-in-search-result:hover .check-in-book,
+.check-in-search-result:focus-visible .check-in-book {
+  border-color: var(--accent);
+}
+.check-in-search-result:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 .check-in-success {
   align-items: center;

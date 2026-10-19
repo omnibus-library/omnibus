@@ -10,6 +10,7 @@ import {
   metaDetails,
   someIfFilled,
   stageFor,
+  truncationNote,
 } from "./checkIn";
 
 describe("cleanIsbn", () => {
@@ -185,5 +186,17 @@ describe("someIfFilled", () => {
   it("trims a note and drops a blank one", () => {
     expect(someIfFilled("  Paperback ")).toBe("Paperback");
     expect(someIfFilled("   ")).toBeUndefined();
+  });
+});
+
+describe("truncationNote", () => {
+  it("says how many of the matches are shown when some are hidden", () => {
+    expect(truncationNote(5, 12)).toBe(
+      "Showing 5 of 12 matches — add the author or more of the title.",
+    );
+  });
+
+  it("says nothing when every match is shown", () => {
+    expect(truncationNote(5, 5)).toBeNull();
   });
 });
