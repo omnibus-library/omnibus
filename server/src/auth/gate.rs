@@ -32,7 +32,7 @@ fn is_media_read_path(path: &str) -> bool {
         || (path.starts_with("/api/audiobooks/") && path.contains("/parts/"))
         // The EPUB file stream is fetched by epub.js from the mobile WebView,
         // a cross-origin XHR that carries neither cookie nor bearer header.
-        // Only `/file` opts in; `/download` and `/kepub` stay header/cookie-only.
+        // Only `/file` opts in, `/images/file` included; `/download` and `/kepub` stay header/cookie-only.
         || (path.starts_with("/api/ebooks/") && path.ends_with("/file"))
         // The EPUB image listing is read by clients that cannot set headers, so it takes `?token=`.
         || (path.starts_with("/api/ebooks/") && path.ends_with("/images"))

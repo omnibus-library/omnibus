@@ -96,6 +96,31 @@ fn spec_marks_public_routes_as_needing_no_session() {
 }
 
 #[test]
+fn spec_lists_media_token_on_every_media_route() {
+    let doc = spec_value();
+    let media = [
+        "/api/audiobooks/{uuid}/parts/{ordinal}",
+        "/api/authors/{id}/photo",
+        "/api/covers/{uuid}",
+        "/api/ebooks/{uuid}/file",
+        "/api/ebooks/{uuid}/images",
+        "/api/ebooks/{uuid}/images/file",
+        "/api/ebooks/{uuid}/pages/{page}",
+        "/api/journals/images/{name}",
+        "/api/suggestions/{uuid}/{rank}/cover",
+        "/api/thumbs/{uuid}/{size}",
+        "/api/users/{user_id}/avatar",
+    ];
+    for path in media {
+        assert_eq!(
+            doc["paths"][path]["get"]["security"],
+            serde_json::json!([{"bearer": []}, {"session_cookie": []}, {"media_token": []}]),
+            "get {path} should accept a bearer, a session cookie or a media token"
+        );
+    }
+}
+
+#[test]
 fn spec_documents_paging_headers_on_get_ebooks() {
     let doc = spec_value();
     let headers: BTreeSet<&str> = doc["paths"]["/api/ebooks"]["get"]["responses"]["200"]["headers"]
