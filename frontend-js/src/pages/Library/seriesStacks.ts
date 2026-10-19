@@ -9,6 +9,10 @@ export type Volume = {
   last: boolean;
   /** The stack's front accent, for the band behind the run. */
   band: string;
+  /** The lead of the stack it was dealt from: where its motion starts. */
+  lead: string;
+  /** Its place in series order, which staggers the deal. */
+  deck: number;
 };
 
 /** One cell of the grid. */
@@ -74,6 +78,8 @@ function volumes(stack: SeriesStack): Volume[] {
     caption: volumeCaption(stack, book, i),
     last: i + 1 === stack.members.length,
     band,
+    lead: stack.leadUuid,
+    deck: i,
   }));
 }
 

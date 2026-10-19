@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { type Book, type SeriesStack, thumbSrcSet, thumbUrl } from "../../api";
 import { Cover } from "../../components/Cover/Cover";
 import { StackGlyph } from "../../components/Glyphs/Glyphs";
+import { play, type Rects, snapshot } from "./seriesFlip";
 import {
   bandStyle,
   type GridItem,
@@ -45,7 +46,12 @@ function Tile({
   const run = volume ? (volume.last ? " ss-vol ss-vol--last" : " ss-vol") : "";
   return (
     // biome-ignore lint/a11y/useSemanticElements: the Atrium grid styles divs; list elements would bring the browser's list margins and padding
-    <div role="listitem">
+    <div
+      role="listitem"
+      data-flip-key={book.uuid}
+      data-flip-from={volume && `stack-${volume.lead}`}
+      data-flip-deck={volume?.deck}
+    >
       <Link
         to={`/books/${book.uuid}`}
         className={`cover-link lib-tile${run}`}
@@ -100,7 +106,11 @@ function StackTile({
   const segments = stackSegments(stack);
   return (
     // biome-ignore lint/a11y/useSemanticElements: the Atrium grid styles divs; list elements would bring the browser's list margins and padding
-    <div className="ss-cell" role="listitem">
+    <div
+      className="ss-cell"
+      role="listitem"
+      data-flip-key={`stack-${stack.leadUuid}`}
+    >
       {/* biome-ignore lint/a11y/useSemanticElements: the tile is a styled block that holds a cover fan, not button content */}
       <div
         ref={tile}
@@ -174,6 +184,7 @@ function StackCap({
     <div
       className="ss-cap"
       role="listitem"
+      data-flip-key={`cap-${stack.leadUuid}`}
       style={{ "--sa": bandStyle(stack) }}
     >
       <span className="ss-cap-k">Series</span>
@@ -227,9 +238,21 @@ export function BookGrid({ books, stacks }: BookGridProps) {
     setRefocus((key) => (isStale(key, current) ? null : key));
   }, [leads]);
 
+  // A deal-out or fold replays from the cells' boxes as they were before the click.
+  const grid = useRef<HTMLDivElement>(null);
+  const first = useRef<Rects | null>(null);
+  useLayoutEffect(() => {
+    if (grid.current && first.current) play(grid.current, first.current);
+    first.current = null;
+  });
+  const deal = (lead: string | null) => {
+    first.current = grid.current && snapshot(grid.current);
+    setOpen(lead);
+  };
+
   const fold = () => {
     setRefocus(open);
-    setOpen(null);
+    deal(null);
   };
   const spent = () => setRefocus(null);
   const render = (item: GridItem, index: number) => {
@@ -251,7 +274,7 @@ export function BookGrid({ books, stacks }: BookGridProps) {
             onFocused={spent}
             onOpen={() => {
               setRefocus(null);
-              setOpen(item.stack.leadUuid);
+              deal(item.stack.leadUuid);
             }}
           />
         );
@@ -264,6 +287,7 @@ export function BookGrid({ books, stacks }: BookGridProps) {
   return (
     // biome-ignore lint/a11y/useSemanticElements: the Atrium grid styles divs; list elements would bring the browser's list margins and padding
     <div
+      ref={grid}
       className="lib-grid"
       role="list"
       onKeyDown={(e) => {

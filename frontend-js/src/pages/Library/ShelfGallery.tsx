@@ -1,4 +1,10 @@
-import type { ReactNode } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Link } from "react-router";
 import { type BookUuid, type Shelf, thumbUrl, type UserId } from "../../api";
 import type { ShelfList } from "../../components/FilterBar/filters";
@@ -10,9 +16,11 @@ import {
   HeartGlyph,
 } from "../../components/Glyphs/Glyphs";
 import { Skeleton } from "../../components/Loading/Loading";
+import { prefersReducedMotion } from "../../motion";
 import type { ShelfSelection } from "../../viewPrefs";
 import {
   attributedOwner,
+  pageTarget,
   railShelves,
   shelfAriaLabel,
   shelfTabMeta,
@@ -81,6 +89,42 @@ function ShelfEntry({
   );
 }
 
+// Which way the row can still scroll, kept current as it scrolls, resizes and gains entries.
+function useRowReach(row: RefObject<HTMLDivElement | null>) {
+  const [before, setBefore] = useState(false);
+  const [after, setAfter] = useState(false);
+  useEffect(() => {
+    const el = row.current;
+    if (!el) return;
+    // The 4px slack absorbs sub-pixel scroll widths, which would leave the right arrow lit on a row with no overflow.
+    const measure = () => {
+      setBefore(el.scrollLeft > 4);
+      setAfter(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+    };
+    const resize = new ResizeObserver(measure);
+    const watch = () => {
+      resize.observe(el);
+      for (const entry of el.children) resize.observe(entry);
+    };
+    const mutation = new MutationObserver(() => {
+      measure();
+      watch();
+    });
+    watch();
+    mutation.observe(el, { childList: true });
+    el.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    measure();
+    return () => {
+      resize.disconnect();
+      mutation.disconnect();
+      el.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+    };
+  }, [row]);
+  return { before, after };
+}
+
 type ShelfGalleryProps = {
   shelves: ShelfList;
   viewerId: UserId;
@@ -110,6 +154,26 @@ export function ShelfGallery({
       : `${allCount} book${allCount === 1 ? "" : "s"}`;
   const rail =
     shelves.state === "loaded" ? railShelves(shelves.shelves, viewerId) : [];
+  const row = useRef<HTMLDivElement>(null);
+  const reach = useRowReach(row);
+  const page = (dir: 1 | -1) => {
+    const el = row.current;
+    if (!el) return;
+    const origin = el.getBoundingClientRect().left - el.scrollLeft;
+    const starts = [...el.children].map(
+      (entry) => entry.getBoundingClientRect().left - origin,
+    );
+    el.scrollTo({
+      left: pageTarget(
+        dir,
+        el.scrollLeft,
+        el.clientWidth,
+        el.scrollWidth,
+        starts,
+      ),
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+    });
+  };
   return (
     <section className="lmq-shelves" aria-labelledby="lmq-shelves-title">
       <h2 className="lmq-shelves-title" id="lmq-shelves-title">
@@ -124,21 +188,29 @@ export function ShelfGallery({
       <div className="lmq-shwrap">
         <button
           type="button"
-          className="lmq-shnav lmq-shnav--l"
+          className={
+            reach.before
+              ? "lmq-shnav lmq-shnav--l on"
+              : "lmq-shnav lmq-shnav--l"
+          }
           aria-label="Earlier shelves"
-          tabIndex={-1}
+          tabIndex={reach.before ? 0 : -1}
+          onClick={() => page(-1)}
         >
           <CaretLeftGlyph />
         </button>
         <button
           type="button"
-          className="lmq-shnav lmq-shnav--r"
+          className={
+            reach.after ? "lmq-shnav lmq-shnav--r on" : "lmq-shnav lmq-shnav--r"
+          }
           aria-label="More shelves"
-          tabIndex={-1}
+          tabIndex={reach.after ? 0 : -1}
+          onClick={() => page(1)}
         >
           <CaretRightGlyph />
         </button>
-        <div className="lmq-shtx" id="lmq-shelf-row">
+        <div ref={row} className="lmq-shtx" id="lmq-shelf-row">
           <button
             type="button"
             className="lmq-shent"

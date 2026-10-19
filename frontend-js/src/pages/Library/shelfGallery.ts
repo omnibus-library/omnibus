@@ -57,3 +57,25 @@ export function addTargets(
     (s) => s.kind === "manual" && (viewer.isAdmin || s.ownerId === viewer.id),
   );
 }
+
+/**
+ * Where a press of a paging arrow scrolls the row to: a step of 60% of its
+ * width (240px at least), landing on the entry start in reach nearest the step
+ * and never past it, so a page back undoes a page forward.
+ */
+export function pageTarget(
+  dir: 1 | -1,
+  from: number,
+  width: number,
+  scrollWidth: number,
+  starts: number[],
+): number {
+  const want = from + dir * Math.max(240, width * 0.6);
+  if (want <= 0) return 0;
+  if (want >= scrollWidth - width) return scrollWidth - width;
+  const inReach = starts.filter((at) =>
+    dir > 0 ? at > from && at <= want : at < from && at >= want,
+  );
+  // An entry wider than the step leaves no start in reach.
+  return (dir > 0 ? inReach.at(-1) : inReach[0]) ?? want;
+}

@@ -1584,3 +1584,35 @@ export const BulkAddShelvesLoading: Story = {
     );
   },
 };
+
+// Wider than any row the story can be drawn in.
+const MANY_SHELVES = Array.from({ length: 24 }, (_, i) =>
+  aWireShelf({ id: 10 + i, name: `Shelf number ${i + 1}`, book_count: i + 1 }),
+);
+
+export const ShelfRowArrows: Story = {
+  beforeEach({ msw }) {
+    msw.use(libraryHandler(aWireLibrary(3), 10), shelvesHandler(MANY_SHELVES));
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const row = canvasElement.querySelector("#lmq-shelf-row");
+    if (!row) throw new Error("the shelves row is missing");
+    const more = await canvas.findByRole("button", { name: "More shelves" });
+    const earlier = canvas.getByRole("button", { name: "Earlier shelves" });
+
+    // At the start only forward is lit, and only the lit arrow takes Tab.
+    await waitFor(() => expect(more).toHaveClass("on"));
+    await expect(more).toHaveAttribute("tabindex", "0");
+    await expect(earlier).not.toHaveClass("on");
+    await expect(earlier).toHaveAttribute("tabindex", "-1");
+
+    await userEvent.click(more);
+    await waitFor(() => expect(earlier).toHaveClass("on"));
+    await expect(earlier).toHaveAttribute("tabindex", "0");
+    const paged = row.scrollLeft;
+    await expect(paged).toBeGreaterThan(0);
+
+    await userEvent.click(earlier);
+    await waitFor(() => expect(row.scrollLeft).toBeLessThan(paged));
+  },
+};

@@ -4,6 +4,7 @@ import { aShelf } from "../../testing/books";
 import {
   addTargets,
   attributedOwner,
+  pageTarget,
   railShelves,
   shelfAriaLabel,
   shelfTabMeta,
@@ -123,5 +124,27 @@ describe("addTargets", () => {
     expect(addTargets(all, { id: ME, isAdmin: true }).map((s) => s.id)).toEqual(
       [1, 2],
     );
+  });
+});
+
+describe("pageTarget", () => {
+  // Entries 200 wide, 8px apart, in a row 500 wide that scrolls 1400 in all.
+  const starts = Array.from({ length: 7 }, (_, i) => i * 208);
+
+  it("lands a page forward on the last entry start within the step", () => {
+    expect(pageTarget(1, 0, 500, 1900, starts)).toBe(208);
+  });
+
+  it("lands a page back on the first entry start within the step", () => {
+    expect(pageTarget(-1, 624, 500, 1900, starts)).toBe(416);
+  });
+
+  it("stops at either end of the row", () => {
+    expect(pageTarget(-1, 100, 500, 1900, starts)).toBe(0);
+    expect(pageTarget(1, 1300, 500, 1900, starts)).toBe(1400);
+  });
+
+  it("steps the full distance past an entry wider than the step", () => {
+    expect(pageTarget(1, 10, 500, 1900, [0, 1000])).toBe(310);
   });
 });
