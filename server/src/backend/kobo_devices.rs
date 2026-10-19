@@ -13,18 +13,9 @@ use axum::{
 use omnibus_db::{self as db, kobo_devices::KoboDeviceError};
 use omnibus_shared::{kobo_device_name_invalid, CreateKoboDevice, KoboDeviceView};
 
-use super::{internal, AppState};
 use crate::auth::AuthUser;
 
-fn to_view(d: db::kobo_devices::KoboDevice) -> KoboDeviceView {
-    KoboDeviceView {
-        id: d.id,
-        name: d.name,
-        token: d.token,
-        created_at: d.created_at,
-        last_seen_at: d.last_seen_at,
-    }
-}
+use super::{internal, AppState};
 
 /// A missing device is the caller's 404; anything else is a server fault.
 fn failed(context: &'static str, e: KoboDeviceError) -> Response {
@@ -49,7 +40,12 @@ fn failed(context: &'static str, e: KoboDeviceError) -> Response {
 )]
 pub(super) async fn list_kobo_devices(user: AuthUser, State(state): State<AppState>) -> Response {
     match db::kobo_devices::list_devices(&state.pool, user.id).await {
-        Ok(list) => Json(list.into_iter().map(to_view).collect::<Vec<_>>()).into_response(),
+        Ok(list) => Json(
+            list.into_iter()
+                .map(KoboDeviceView::from)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
         Err(e) => failed("list kobo devices", e),
     }
 }
@@ -81,7 +77,7 @@ pub(super) async fn create_kobo_device(
             .into_response();
     }
     match db::kobo_devices::create_device(&state.pool, user.id, body.name.trim()).await {
-        Ok(device) => Json(to_view(device)).into_response(),
+        Ok(device) => Json(KoboDeviceView::from(device)).into_response(),
         Err(e) => failed("create kobo device", e),
     }
 }
@@ -106,7 +102,7 @@ pub(super) async fn regenerate_kobo_device(
     Path(id): Path<i64>,
 ) -> Response {
     match db::kobo_devices::regenerate_token(&state.pool, user.id, id).await {
-        Ok(device) => Json(to_view(device)).into_response(),
+        Ok(device) => Json(KoboDeviceView::from(device)).into_response(),
         Err(e) => failed("regenerate kobo device", e),
     }
 }

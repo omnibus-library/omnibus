@@ -12,9 +12,10 @@ use omnibus_shared::ChangePasswordRequest;
 use serde_json::json;
 use tower::ServiceExt;
 
+use crate::auth::test_support::{bearer_token, create_user_with_password, fake_auth_user};
+
 use super::super::*;
-use super::{app, json_req};
-use crate::auth::test_support::{bearer_token, create_user_with_password};
+use super::{app, bearer_req, json_req};
 
 const OLD: &str = "correct horse battery 1";
 const NEW: &str = "a brand new passphrase 2";
@@ -32,14 +33,6 @@ fn change_req(token: Option<&str>, current: &str, new: &str) -> Request<Body> {
         .body(Body::from(
             json!({ "current_password": current, "new_password": new }).to_string(),
         ))
-        .unwrap()
-}
-
-fn me_req(token: &str) -> Request<Body> {
-    Request::builder()
-        .uri("/api/auth/me")
-        .header(header::AUTHORIZATION, format!("Bearer {token}"))
-        .body(Body::empty())
         .unwrap()
 }
 
@@ -84,8 +77,15 @@ async fn change_password_handler_signs_out_other_sessions_and_keeps_the_callers(
         .await
         .unwrap();
 
-    let kept = app.clone().oneshot(me_req(&caller)).await.unwrap();
-    let dropped = app.oneshot(me_req(&other)).await.unwrap();
+    let kept = app
+        .clone()
+        .oneshot(bearer_req("GET", "/api/auth/me", &caller))
+        .await
+        .unwrap();
+    let dropped = app
+        .oneshot(bearer_req("GET", "/api/auth/me", &other))
+        .await
+        .unwrap();
     assert_eq!(kept.status(), StatusCode::OK);
     assert_eq!(dropped.status(), StatusCode::UNAUTHORIZED);
 }
@@ -166,23 +166,7 @@ async fn change_password_handler_returns_401_when_anonymous() {
 async fn change_password_handler_returns_500_when_pool_closed() {
     let (_app, pool) = app().await;
     pool.close().await;
-    let user = AuthUser {
-        id: 1,
-        username: "alice".to_string(),
-        is_admin: false,
-        can_upload: false,
-        can_edit: false,
-        can_download: true,
-        kindle_email: None,
-        display_name: None,
-        has_avatar: false,
-        hidden_formats: Vec::new(),
-        book_detail_scroll_stops: false,
-        stack_series: false,
-        share_stats: true,
-        session_id: 1,
-        session_kind: SessionKind::Bearer,
-    };
+    let user = fake_auth_user(1, 1);
     let body = ChangePasswordRequest {
         current_password: OLD.to_string(),
         new_password: NEW.to_string(),

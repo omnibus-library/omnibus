@@ -418,3 +418,14 @@ async fn delivery_returns_401_when_anonymous() {
     let response = app.oneshot(get_anon("/api/kindle/delivery")).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
+
+// Called directly: closing the pool first would fail the `AuthUser` extractor itself.
+#[tokio::test]
+async fn delivery_returns_500_when_pool_closed() {
+    let (_app, state, pool) = fixture().await;
+    pool.close().await;
+
+    let res = get_delivery(auth_test_support::fake_auth_user(1, 1), State(state)).await;
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}

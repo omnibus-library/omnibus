@@ -6,33 +6,13 @@ use axum::{
     body::{to_bytes, Body},
     http::{header::AUTHORIZATION, Request, StatusCode},
 };
-use omnibus_db::auth::SessionKind;
 use tower::ServiceExt;
 
-use super::*;
 use crate::auth::test_support as auth_test_support;
 use crate::backend::kobo::kobo_router;
 use crate::backend::test_support::*;
 
-fn fake_reader(id: i64) -> AuthUser {
-    AuthUser {
-        id,
-        username: "reader".to_string(),
-        is_admin: false,
-        can_upload: false,
-        can_edit: false,
-        can_download: true,
-        kindle_email: None,
-        display_name: None,
-        has_avatar: false,
-        hidden_formats: Vec::new(),
-        book_detail_scroll_stops: false,
-        stack_series: false,
-        share_stats: true,
-        session_id: 1,
-        session_kind: SessionKind::Bearer,
-    }
-}
+use super::*;
 
 fn request(method: &str, uri: &str, token: &str, body: Option<serde_json::Value>) -> Request<Body> {
     let builder = Request::builder()
@@ -73,7 +53,7 @@ async fn list_kobo_devices_returns_only_the_callers_devices() {
     reader_with_device(&pool, "grace").await;
 
     let res = app
-        .oneshot(request("GET", "/api/account/kobo-devices", &token, None))
+        .oneshot(get_with_bearer("/api/account/kobo-devices", &token))
         .await
         .unwrap();
 
@@ -103,7 +83,7 @@ async fn list_kobo_devices_returns_500_when_pool_closed() {
     let (_app, state, pool) = fixture().await;
     pool.close().await;
 
-    let res = list_kobo_devices(fake_reader(1), State(state)).await;
+    let res = list_kobo_devices(auth_test_support::fake_auth_user(1, 1), State(state)).await;
 
     assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
@@ -245,7 +225,7 @@ async fn delete_kobo_device_removes_it_from_the_list() {
 
     assert_eq!(res.status(), StatusCode::NO_CONTENT);
     let list = app
-        .oneshot(request("GET", "/api/account/kobo-devices", &token, None))
+        .oneshot(get_with_bearer("/api/account/kobo-devices", &token))
         .await
         .unwrap();
     assert!(json_of::<Vec<KoboDeviceView>>(list).await.is_empty());

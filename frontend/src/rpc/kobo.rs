@@ -17,18 +17,6 @@ use omnibus_shared::kobo_device_name_invalid;
 #[cfg(feature = "server")]
 use super::{internal_rpc_error, AuthUser, PoolExt};
 
-/// Project a db row to its re-displayable wire view.
-#[cfg(feature = "server")]
-fn to_view(d: db::kobo_devices::KoboDevice) -> KoboDeviceView {
-    KoboDeviceView {
-        id: d.id,
-        name: d.name,
-        token: d.token,
-        created_at: d.created_at,
-        last_seen_at: d.last_seen_at,
-    }
-}
-
 /// Map the db error: `NotFound` (unknown id / not owned by the caller) is a
 /// client-facing 4xx; everything else folds to a generic 500.
 #[cfg(feature = "server")]
@@ -43,7 +31,7 @@ fn map_err(context: &'static str, e: KoboDeviceError) -> ServerFnError {
 #[post("/api/rpc/kobo/devices", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_list_kobo_devices() -> Result<Vec<KoboDeviceView>> {
     match db::kobo_devices::list_devices(&pool.0, user.id).await {
-        Ok(list) => Ok(list.into_iter().map(to_view).collect()),
+        Ok(list) => Ok(list.into_iter().map(KoboDeviceView::from).collect()),
         Err(e) => Err(map_err("list kobo devices", e).into()),
     }
 }
@@ -55,7 +43,7 @@ pub async fn rpc_create_kobo_device(name: String) -> Result<KoboDeviceView> {
         return Err(ServerFnError::new("enter a device name (1–100 characters)").into());
     }
     match db::kobo_devices::create_device(&pool.0, user.id, name.trim()).await {
-        Ok(dev) => Ok(to_view(dev)),
+        Ok(dev) => Ok(dev.into()),
         Err(e) => Err(map_err("create kobo device", e).into()),
     }
 }
@@ -65,7 +53,7 @@ pub async fn rpc_create_kobo_device(name: String) -> Result<KoboDeviceView> {
 #[post("/api/rpc/kobo/devices/regenerate", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_regenerate_kobo_device(id: i64) -> Result<KoboDeviceView> {
     match db::kobo_devices::regenerate_token(&pool.0, user.id, id).await {
-        Ok(dev) => Ok(to_view(dev)),
+        Ok(dev) => Ok(dev.into()),
         Err(e) => Err(map_err("regenerate kobo device", e).into()),
     }
 }

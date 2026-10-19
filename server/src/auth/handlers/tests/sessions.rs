@@ -3,53 +3,15 @@
 //! the current one, 404 for another user's or an unknown id, the client
 //! name from the device or User-Agent, and the pool-closed 500s.
 
-use axum::{
-    body::Body,
-    http::{header, Request},
-};
+use axum::{body::Body, http::Request};
 use omnibus_db as db;
 use serde_json::json;
 use tower::ServiceExt;
 
+use crate::auth::test_support::fake_auth_user;
+
 use super::super::*;
-use super::{app, json_req};
-
-fn bearer_req(method: &str, uri: &str, token: &str) -> Request<Body> {
-    Request::builder()
-        .uri(uri)
-        .method(method)
-        .header(header::AUTHORIZATION, format!("Bearer {token}"))
-        .body(Body::empty())
-        .unwrap()
-}
-
-/// A minimal `AuthUser` for driving `get_sessions_handler` /
-/// `delete_session_handler` directly (bypassing the `AuthUser` extractor).
-/// Needed because both handlers' own DB-failure branch shares the
-/// `sessions` table with the extractor's own session lookup: closing the
-/// pool (or dropping the table) before the request would fail extraction
-/// itself rather than the handler body under test, so the handler is
-/// invoked directly with a hand-built caller and a pool closed only after
-/// extraction would have happened.
-fn fake_auth_user(id: i64, session_id: i64) -> AuthUser {
-    AuthUser {
-        id,
-        username: "alice".to_string(),
-        is_admin: false,
-        can_upload: false,
-        can_edit: false,
-        can_download: true,
-        kindle_email: None,
-        display_name: None,
-        has_avatar: false,
-        hidden_formats: Vec::new(),
-        book_detail_scroll_stops: false,
-        stack_series: false,
-        share_stats: true,
-        session_id,
-        session_kind: SessionKind::Bearer,
-    }
-}
+use super::{app, bearer_req, json_req};
 
 #[tokio::test]
 async fn get_sessions_handler_returns_500_when_pool_closed() {
