@@ -21,6 +21,10 @@ const PHONE = aWireAuthSession({
   last_used_at: 1_750_100_000,
 });
 
+const withSessions = () => {
+  server.sessions = [HERE, PHONE];
+};
+
 const meta = {
   title: "Pages/Settings/Security",
   component: SettingsRoutes,
@@ -55,9 +59,7 @@ export const ChangesThePassword: Story = {
 };
 
 export const RereadsSessionsAfterThePasswordChanges: Story = {
-  beforeEach: () => {
-    server.sessions = [HERE, PHONE];
-  },
+  beforeEach: withSessions,
   play: async ({ canvas, userEvent }) => {
     await expect(
       await canvas.findAllByTestId("account-session-row"),
@@ -139,10 +141,6 @@ export const RefusesAWeakNewPassword: Story = {
 };
 
 // ── Sessions ─────────────────────────────────────────────────────
-
-const withSessions = () => {
-  server.sessions = [HERE, PHONE];
-};
 
 export const FindsYourSessionsBeforeSayingThereAreNone: Story = {
   beforeEach({ msw }) {

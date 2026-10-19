@@ -205,6 +205,10 @@ export const ReportsWhichGoalDidNotSave: Story = {
     );
     await expect(pages).toHaveValue("40");
     await expect(server.goalWrites).toEqual(["books=30", "minutes=50"]);
+    // The annual write carries the reader's clock like the daily ones, refused or not.
+    await expect(server.goalOffsets).toEqual(
+      Array(3).fill(String(-new Date().getTimezoneOffset())),
+    );
     await expect(canvas.getByTestId("goals-save")).toBeEnabled();
   },
 };

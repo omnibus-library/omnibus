@@ -107,11 +107,9 @@ export function GoalsSection() {
         Leave a field empty for no goal. Clearing one keeps the progress you
         have already made toward it.
       </p>
-      {/* noValidate: the browser would silently refuse an over-max value, and the field's error names its bound. */}
       <form
         id="goals-form"
         className="settings-form"
-        noValidate
         onSubmit={form.handleSubmit(
           ({ drafts }) => {
             if (saved) save.mutate(changedUpdates(drafts, saved));

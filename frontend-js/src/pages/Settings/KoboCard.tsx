@@ -198,9 +198,11 @@ export function KoboCard() {
     defaultValues: { name: "" },
   });
 
+  // Only a list that has answered is patched; the reread after a create fills the rest.
   const setList = (change: (list: KoboDeviceView[]) => KoboDeviceView[]) =>
-    queryClient.setQueryData(koboDevicesQuery.queryKey, (list) =>
-      change(list ?? []),
+    queryClient.setQueryData(
+      koboDevicesQuery.queryKey,
+      (list) => list && change(list),
     );
   const report = (message: string, error = false) =>
     setStatus({ message, error });
@@ -221,10 +223,13 @@ export function KoboCard() {
       setList((list) => [...list, device]);
       report("Kobo added. Copy its endpoint URL below.");
     },
-    onError: refused,
-    // A list that had not answered is read again, not replaced by the new device alone.
-    onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: koboDevicesQuery.queryKey }),
+    onError: (error) => report(error.message, true),
+    // Not awaited: the form is free again while the list is read.
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: koboDevicesQuery.queryKey,
+      });
+    },
   });
   const regenerate = useMutation({
     mutationFn: regenerateKoboDevice,

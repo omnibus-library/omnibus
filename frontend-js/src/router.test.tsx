@@ -320,6 +320,7 @@ describe("routes", () => {
     await waitFor(() =>
       expect(router.state.location.pathname).toBe("/settings"),
     );
+    expect(router.state.historyAction).toBe("REPLACE");
     expect(
       await screen.findByRole("heading", { level: 1, name: "Settings" }),
     ).toBeInTheDocument();

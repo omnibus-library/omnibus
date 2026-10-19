@@ -28,7 +28,7 @@ export function ProfileSection() {
   const user = useCurrentUser();
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<Status | null>(null);
-  const [avatarStatus, setAvatarStatus] = useState<Status | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const form = useForm({
     resolver: zodResolver(NameSchema),
@@ -39,7 +39,7 @@ export function ProfileSection() {
 
   const clear = () => {
     setStatus(null);
-    setAvatarStatus(null);
+    setAvatarError(null);
   };
   const saveName = useMutation({
     mutationFn: async (name: string) => {
@@ -59,11 +59,7 @@ export function ProfileSection() {
     onMutate: clear,
     onSuccess: () =>
       setStatus({ message: "Profile picture saved.", error: false }),
-    onError: (error) =>
-      setAvatarStatus({
-        message: `Upload failed: ${error.message}`,
-        error: true,
-      }),
+    onError: (error) => setAvatarError(`Upload failed: ${error.message}`),
   });
   const remove = useMutation({
     mutationFn: async () => {
@@ -75,11 +71,7 @@ export function ProfileSection() {
     onMutate: clear,
     onSuccess: () =>
       setStatus({ message: "Profile picture removed.", error: false }),
-    onError: (error) =>
-      setAvatarStatus({
-        message: `Remove failed: ${error.message}`,
-        error: true,
-      }),
+    onError: (error) => setAvatarError(`Remove failed: ${error.message}`),
     onSettled: () => setConfirmRemove(false),
   });
   const uploading = upload.isPending || remove.isPending;
@@ -132,7 +124,10 @@ export function ProfileSection() {
           <p className="subtitle">JPEG, PNG, WebP or GIF, up to 10 MB.</p>
         </div>
       </div>
-      <StatusLine testId="avatar-status" status={avatarStatus} />
+      <StatusLine
+        testId="avatar-status"
+        status={avatarError ? { message: avatarError, error: true } : null}
+      />
 
       <form
         id="profile-form"

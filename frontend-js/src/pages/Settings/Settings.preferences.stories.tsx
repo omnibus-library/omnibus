@@ -1,7 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor } from "storybook/test";
-import { SetHiddenFormats } from "../../api/generated/schemas";
 import { deferred } from "../../testing/handlers";
 import { SettingsRoutes } from "../../testing/SettingsRoutes";
 import {
@@ -184,11 +183,9 @@ export const KeepsQueuedFormatsWhileAnotherPreferenceSaves: Story = {
     const gate = deferred();
     release = gate.release;
     msw.use(
-      http.post("/api/account/hidden-formats", async ({ request }) => {
+      // Answers nothing, so the fake route behind it saves once the gate opens.
+      http.post("/api/account/hidden-formats", async () => {
         await gate.promise;
-        const { formats } = SetHiddenFormats.parse(await request.json());
-        server.user = { ...server.user, hidden_formats: formats ?? [] };
-        return new HttpResponse(null);
       }),
     );
   },

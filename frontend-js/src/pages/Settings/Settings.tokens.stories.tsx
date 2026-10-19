@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { HttpResponse, http } from "msw";
+import { delay, HttpResponse, http } from "msw";
 import { expect, waitFor } from "storybook/test";
 import { nowSecs } from "../../format";
 import { hanging } from "../../testing/handlers";
@@ -12,6 +12,7 @@ import {
 import { aWireApiToken, WIRE_ADA } from "../../testing/wire";
 
 let server: SettingsServer;
+let reads = 0;
 
 const meta = {
   title: "Pages/Settings/Tokens",
@@ -218,7 +219,7 @@ export const ShowsWhyARevokeWasRefused: Story = {
       http.delete(
         "/api/auth/api-tokens/:id",
         () =>
-          new HttpResponse("you have no live token with that id", {
+          new HttpResponse("api token not found", {
             status: 404,
           }),
       ),
@@ -234,11 +235,7 @@ export const ShowsWhyARevokeWasRefused: Story = {
       await canvas.findByTestId("api-token-revoke-confirm-3"),
     );
 
-    await said(
-      canvas,
-      "api-tokens-status",
-      "you have no live token with that id",
-    );
+    await said(canvas, "api-tokens-status", "api token not found");
     // The list is read again, so the row that is gone is gone.
     await waitFor(() =>
       expect(canvas.queryByTestId("api-token-revoke-confirm")).toBeNull(),
@@ -254,7 +251,7 @@ export const ShowsWhyARenameWasRefused: Story = {
       http.patch(
         "/api/auth/api-tokens/:id",
         () =>
-          new HttpResponse("you have no live token with that id", {
+          new HttpResponse("api token not found", {
             status: 404,
           }),
       ),
@@ -267,11 +264,7 @@ export const ShowsWhyARenameWasRefused: Story = {
     server.tokens = server.tokens.filter((t) => t.id !== 3);
     await userEvent.click(await canvas.findByTestId("api-token-rename-save"));
 
-    await said(
-      canvas,
-      "api-tokens-status",
-      "you have no live token with that id",
-    );
+    await said(canvas, "api-tokens-status", "api token not found");
     await waitFor(() =>
       expect(canvas.queryByTestId("api-token-rename-row")).toBeNull(),
     );
@@ -301,5 +294,55 @@ export const KeepsEarlierTokensWhenTheListFailedBeforeACreate: Story = {
     await waitFor(() =>
       expect(canvas.getAllByTestId("api-token-row")).toHaveLength(4),
     );
+  },
+};
+
+export const MakesUpNoListWhenEveryReadFails: Story = {
+  beforeEach({ msw }) {
+    reads = 0;
+    msw.use(
+      http.get("/api/auth/api-tokens", () => {
+        reads += 1;
+        return new HttpResponse("list is down", { status: 500 });
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.type(await canvas.findByLabelText("Token name"), "Laptop");
+    await userEvent.click(canvas.getByTestId("api-token-create"));
+
+    await expect(await canvas.findByTestId("api-token-secret")).toBeVisible();
+    // The reread after the create fails too.
+    await waitFor(() => expect(reads).toBe(2));
+    await expect(canvas.getByTestId("api-tokens-count-pending")).toBeVisible();
+    await expect(canvas.queryByTestId("api-token-row")).toBeNull();
+    await expect(canvas.queryByText(/1 live token/)).toBeNull();
+  },
+};
+
+export const FreesTheFormWithoutWaitingForTheReread: Story = {
+  beforeEach({ msw }) {
+    reads = 0;
+    msw.use(
+      http.get("/api/auth/api-tokens", async () => {
+        reads += 1;
+        if (reads === 1) return HttpResponse.json([]);
+        await delay("infinite");
+        return HttpResponse.json([]);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const name = await canvas.findByLabelText("Token name");
+    await userEvent.type(name, "Laptop");
+    await userEvent.click(await canvas.findByTestId("api-token-create"));
+
+    await expect(await canvas.findByTestId("api-token-secret")).toBeVisible();
+    await waitFor(() => expect(name).toHaveValue(""));
+    await expect(canvas.getByTestId("api-token-create")).not.toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    await expect(reads).toBe(2);
   },
 };

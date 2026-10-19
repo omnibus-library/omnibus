@@ -331,9 +331,11 @@ export function ApiTokensCard() {
   const [revoking, setRevoking] = useState<number | null>(null);
   const [renaming, setRenaming] = useState<number | null>(null);
 
+  // Only a list that has answered is patched; the reread after a create fills the rest.
   const setList = (change: (list: ApiTokenView[]) => ApiTokenView[]) =>
-    queryClient.setQueryData(apiTokensQuery.queryKey, (list) =>
-      change(list ?? []),
+    queryClient.setQueryData(
+      apiTokensQuery.queryKey,
+      (list) => list && change(list),
     );
   const fail = (error: Error) =>
     setStatus({ message: error.message, error: true });
@@ -361,9 +363,10 @@ export function ApiTokensCard() {
       });
     },
     onError: fail,
-    // A list that had not answered is read again, not replaced by the new token alone.
-    onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: apiTokensQuery.queryKey }),
+    // Not awaited: the form is free again while the list is read.
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: apiTokensQuery.queryKey });
+    },
   });
   const revoke = useMutation({
     mutationFn: revokeApiToken,
