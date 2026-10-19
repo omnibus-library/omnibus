@@ -46,6 +46,7 @@ const OWNERS = [
   ["pages/AddBooks/AddBooks.css", (c) => c.startsWith("file-drop-") || c.startsWith("add-books-")],
   ["components/BarcodeScanner/BarcodeScanner.css", (c) => c.startsWith("scanner")],
   ["pages/CheckIn/CheckIn.css", (c) => c.startsWith("check-in") || c.startsWith("isbn-")],
+  ["pages/ComicReader/ComicReader.css", (c) => c.startsWith("cr-")],
   ["styles/settings.css", (c) => c.startsWith("settings-")],
   ["styles/base.css", (c) => ["card", "divider", "label", "mono", "sr-only", "subtitle"].includes(c)],
 ];

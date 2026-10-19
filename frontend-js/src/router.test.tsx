@@ -79,7 +79,6 @@ describe("routes", () => {
   describe("unported pages", () => {
     it.each([
       [`/read/${UUID}`, "Reader", UUID],
-      [`/comic/${UUID}`, "Comic reader", UUID],
       [`/pdf/${UUID}?file_id=3&page=7`, "PDF reader", "7"],
       [`/listen/${UUID}?file_id=2`, "Listen", "2"],
       ["/authors", "Authors", null],
@@ -129,6 +128,15 @@ describe("routes", () => {
     expect(
       await screen.findByRole("heading", { level: 1, name: "Check in a book" }),
     ).toBeInTheDocument();
+  });
+
+  it("renders the comic reader at /comic/:uuid with no top bar", async () => {
+    renderRoute(`/comic/${UUID}`);
+
+    expect(await screen.findByRole("button", { name: "Back" })).toBeVisible();
+    expect(
+      screen.queryByRole("navigation", { name: "Primary" }),
+    ).not.toBeInTheDocument();
   });
 
   describe("layout", () => {

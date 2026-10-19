@@ -1,3 +1,4 @@
+import { nowSecs } from "../format";
 import { toBook } from "./books";
 import type { BookUuid, UserId } from "./core";
 import { fetchJson, ok, send } from "./core";
@@ -14,6 +15,7 @@ import {
   getPostCrossFormatFollowUrl,
   getRecentProgress,
   getSessionLog,
+  postProgress,
   postRating,
   putReadStatus,
 } from "./generated/omnibus";
@@ -104,6 +106,22 @@ export async function fetchProgress(uuid: BookUuid): Promise<Progress> {
     BookProgressSchema.nullable(),
   );
   return toProgress(data);
+}
+
+/** Saves where the reader stands: an anchor (`comic-page:N`, `pdf-page:N`, a CFI) and the whole-book percent. */
+export async function saveReadingPosition(
+  uuid: BookUuid,
+  position: { anchor: string; percent: number },
+): Promise<void> {
+  ok(
+    await postProgress({
+      book_uuid: uuid,
+      format: "epub",
+      epub_cfi: position.anchor,
+      progress_percent: position.percent,
+      client_updated_at: nowSecs(),
+    }),
+  );
 }
 
 /** The screen's shape of `GET /api/books/{uuid}/alignment`. */

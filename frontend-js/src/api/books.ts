@@ -77,6 +77,7 @@ export function toBookDetail(wire: EbookMetadata) {
     })),
     isbn10: wire.isbn10 ?? null,
     isbn13: wire.isbn13 ?? null,
+    pageCount: wire.page_count ?? null,
   };
 }
 
