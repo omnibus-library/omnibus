@@ -37,3 +37,13 @@ pub struct UndoMergeRequest {
 pub struct UndoMergeResult {
     pub restored_uuid: String,
 }
+
+/// The search for a book to merge with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct MergeCandidatesQuery {
+    /// Free text, optionally with `author:`, `series:`, `tag:` and `genre:` terms. At most
+    /// 1024 bytes.
+    pub q: String,
+}

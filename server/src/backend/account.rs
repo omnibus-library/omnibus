@@ -10,21 +10,25 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db};
-use serde::Deserialize;
+use omnibus_shared::{SetBookDetailScrollStops, SetHiddenFormats, SetShareStats, SetStackSeries};
 
 use super::{internal, AppState};
 use crate::auth::AuthUser;
 
-/// Body for `POST /api/account/hidden-formats`. An empty/absent list clears
-/// the preference.
-#[derive(Debug, Deserialize)]
-pub(super) struct SetHiddenFormats {
-    #[serde(default)]
-    formats: Vec<String>,
-}
-
-/// Replace the authenticated user's hidden-formats list. 422 on a token that
-/// isn't a plausible format name or an oversized list.
+/// Set your hidden formats
+///
+/// Replaces the list of formats your library view leaves out. Clients pass the saved list,
+/// read back as `hidden_formats` on `GET /api/auth/me`, as the listing's `exclude_formats`.
+#[utoipa::path(
+    post,
+    path = "/api/account/hidden-formats",
+    tag = "Account",
+    request_body = SetHiddenFormats,
+    responses(
+        (status = 200, description = "The list is saved."),
+        (status = 422, description = "A format name isn't 1 to 16 letters or digits, or the list has more than 32; the body says which."),
+    ),
+)]
 pub(super) async fn post_hidden_formats(
     user: AuthUser,
     State(state): State<AppState>,
@@ -39,13 +43,17 @@ pub(super) async fn post_hidden_formats(
     }
 }
 
-/// Body for `POST /api/account/book-detail-scroll-stops`.
-#[derive(Debug, Deserialize)]
-pub(super) struct SetBookDetailScrollStops {
-    enabled: bool,
-}
-
-/// Set the authenticated user's book-detail scroll-stops preference.
+/// Set book-detail scroll stops
+///
+/// Chooses whether a book's detail page stops at each section as you scroll. Read back as
+/// `book_detail_scroll_stops` on `GET /api/auth/me`.
+#[utoipa::path(
+    post,
+    path = "/api/account/book-detail-scroll-stops",
+    tag = "Account",
+    request_body = SetBookDetailScrollStops,
+    responses((status = 200, description = "The preference is saved.")),
+)]
 pub(super) async fn post_book_detail_scroll_stops(
     user: AuthUser,
     State(state): State<AppState>,
@@ -57,13 +65,17 @@ pub(super) async fn post_book_detail_scroll_stops(
     }
 }
 
-/// Body for `POST /api/account/stack-series`.
-#[derive(Debug, Deserialize)]
-pub(super) struct SetStackSeries {
-    enabled: bool,
-}
-
-/// Set whether the authenticated user's library grid folds each series into one tile.
+/// Set series stacking
+///
+/// Chooses whether your library grid folds each series into one tile. Read back as
+/// `stack_series` on `GET /api/auth/me`.
+#[utoipa::path(
+    post,
+    path = "/api/account/stack-series",
+    tag = "Account",
+    request_body = SetStackSeries,
+    responses((status = 200, description = "The preference is saved.")),
+)]
 pub(super) async fn post_stack_series(
     user: AuthUser,
     State(state): State<AppState>,
@@ -75,19 +87,23 @@ pub(super) async fn post_stack_series(
     }
 }
 
-/// Body for `POST /api/account/share-stats`. No serde default: a missing
-/// `enabled` is a 422, never a write.
-#[derive(Debug, Deserialize)]
-pub(super) struct SetShareStats {
-    enabled: bool,
-}
-
-/// Set whether other readers on this server may see the authenticated user's stats page.
+/// Set stats sharing
+///
+/// Chooses whether other readers on this server can see your reading stats. Read back as
+/// `share_stats` on `GET /api/auth/me`.
+#[utoipa::path(
+    post,
+    path = "/api/account/share-stats",
+    tag = "Account",
+    request_body = SetShareStats,
+    responses((status = 200, description = "The preference is saved.")),
+)]
 pub(super) async fn post_share_stats(
     user: AuthUser,
     State(state): State<AppState>,
     Json(body): Json<SetShareStats>,
 ) -> Response {
+    // `enabled` has no serde default, so a body without it is rejected, never written.
     match db::auth::set_share_stats(&state.pool, user.id, body.enabled).await {
         Ok(()) => StatusCode::OK.into_response(),
         Err(e) => internal("set share stats", e),

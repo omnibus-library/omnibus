@@ -11,23 +11,27 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, auth::AvatarVariant};
-use serde::Deserialize;
+use omnibus_shared::{AvatarQuery, AvatarUpload, SetProfile};
 
 use super::conditional::{content_etag, MEDIA_CACHE_CONTROL, MEDIA_VARY};
 use super::image_upload::extract_validated_image;
 use super::{internal, AppState};
 use crate::auth::{AuthUser, MediaAuthUser};
 
-/// Body for `POST /api/account/profile`. A `null`/absent/blank name clears the
-/// display name, falling attribution back to the username.
-#[derive(Debug, Deserialize)]
-pub(super) struct SetProfile {
-    #[serde(default)]
-    display_name: Option<String>,
-}
-
-/// Set or clear the authenticated user's display name. 422 on a name that is
-/// too long or carries control characters.
+/// Set your display name
+///
+/// Sets or clears the name other readers see on your journal entries, ratings and shared
+/// stats. With no display name, your username shows instead.
+#[utoipa::path(
+    post,
+    path = "/api/account/profile",
+    tag = "Account",
+    request_body = SetProfile,
+    responses(
+        (status = 200, description = "The name is saved."),
+        (status = 422, description = "The name is longer than 64 characters or has a control character."),
+    ),
+)]
 pub(super) async fn post_profile(
     user: AuthUser,
     State(state): State<AppState>,
@@ -42,9 +46,21 @@ pub(super) async fn post_profile(
     }
 }
 
-/// Upload the caller's avatar, replacing any existing one. Multipart with one
-/// `avatar` field, through the shared image validation (10 MiB cap, magic-byte
-/// sniff, SVG rejected).
+/// Upload your avatar
+///
+/// Replaces your profile picture. The server checks the bytes are a JPEG, PNG, GIF or WebP
+/// image and stores the type it finds, not the one sent.
+#[utoipa::path(
+    post,
+    path = "/api/account/avatar",
+    tag = "Account",
+    request_body(content = inline(AvatarUpload), content_type = "multipart/form-data"),
+    responses(
+        (status = 204, description = "The avatar is saved."),
+        (status = 400, description = "The form has no `avatar` part, or the part isn't an `image/*` type, is SVG, or is larger than 10 MiB."),
+        (status = 415, description = "The bytes aren't a JPEG, PNG, GIF or WebP image."),
+    ),
+)]
 pub(super) async fn post_avatar(
     user: AuthUser,
     State(state): State<AppState>,
@@ -60,7 +76,16 @@ pub(super) async fn post_avatar(
     }
 }
 
-/// Remove the caller's avatar, reverting them to a monogram everywhere.
+/// Remove your avatar
+///
+/// Deletes your profile picture, so clients show your initials instead. Succeeds when you
+/// have no avatar too.
+#[utoipa::path(
+    delete,
+    path = "/api/account/avatar",
+    tag = "Account",
+    responses((status = 204, description = "You have no avatar now.")),
+)]
 pub(super) async fn delete_avatar(user: AuthUser, State(state): State<AppState>) -> Response {
     match db::auth::delete_user_avatar(&state.pool, user.id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
@@ -68,18 +93,23 @@ pub(super) async fn delete_avatar(user: AuthUser, State(state): State<AppState>)
     }
 }
 
-/// Query for [`get_user_avatar`]: `?size=full` asks for the original upload.
-#[derive(Debug, Default, Deserialize)]
-pub(super) struct AvatarQuery {
-    #[serde(default)]
-    size: Option<String>,
-}
-
-/// Serve a user's avatar bytes. Byte-derived `ETag` with `If-None-Match` revalidation:
-/// the URL is stable per user and the bytes are replaced in place. `MEDIA_VARY` rides the
-/// 200 and the 304 (rule 09a). Serves the stored thumbnail by default (every avatar is
-/// drawn at 80px or smaller); `?size=full` serves the original upload. The validator
-/// comes from the bytes actually served.
+/// Get a user's avatar
+///
+/// Any user's profile picture, for drawing beside their name. By default a WebP thumbnail
+/// at most 160 pixels on its longest edge; `size=full` gets the image as uploaded. The URL
+/// stays the same when the user replaces their avatar, so revalidate with `If-None-Match`.
+#[utoipa::path(
+    get,
+    path = "/api/users/{user_id}/avatar",
+    tag = "Account",
+    security(("bearer" = []), ("session_cookie" = []), ("media_token" = [])),
+    params(("user_id" = i64, Path, description = "The user's id."), AvatarQuery),
+    responses(
+        (status = 200, description = "The avatar image.", body = [u8], content_type = "image/*"),
+        (status = 304, description = "The avatar is unchanged since the `ETag` sent in `If-None-Match`."),
+        (status = 404, description = "No user has that id, or the user has no avatar."),
+    ),
+)]
 pub(super) async fn get_user_avatar(
     _user: MediaAuthUser,
     State(state): State<AppState>,
@@ -87,6 +117,8 @@ pub(super) async fn get_user_avatar(
     Query(query): Query<AvatarQuery>,
     headers: HeaderMap,
 ) -> Response {
+    // The URL is stable per user and the bytes are replaced in place, so the validator
+    // comes from the bytes actually served. `MEDIA_VARY` rides the 200 and the 304 (rule 09a).
     let variant = match query.size.as_deref() {
         Some("full") => AvatarVariant::Full,
         _ => AvatarVariant::Thumb,

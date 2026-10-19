@@ -22,53 +22,23 @@ use super::{
 pub(super) fn content_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(super::health::get_health))
-        .route("/api/settings", get(settings::get_settings))
-        .route("/api/settings", post(settings::post_settings))
-        // Admin write only; the public read is GET /api/auth/registration.
-        .route(
-            "/api/settings/registration",
-            post(settings::post_registration),
-        )
-        .route(
-            "/api/settings/mcp",
-            get(settings::get_mcp).post(settings::post_mcp),
-        )
-        .route("/api/reindex", post(settings::post_reindex))
-        .route("/api/scan-library", post(settings::post_scan_library))
-        .route("/api/fts/rebuild", post(settings::post_rebuild_fts))
-        // Admin user management (F5.4) — all AdminUser-gated.
-        .route(
-            "/api/admin/users",
-            get(users::get_users).post(users::post_user),
-        )
-        .route("/api/admin/users/{id}", delete(users::delete_user))
-        .route(
-            "/api/admin/users/{id}/permissions",
-            patch(users::patch_permissions),
-        )
-        .route("/api/admin/users/{id}/password", post(users::post_password))
-        .route("/api/admin/users/{id}/unlock", post(users::post_unlock))
-        // Admin device & session management (F5.4, #910) — all AdminUser-gated.
-        .route(
-            "/api/admin/users/{id}/sessions",
-            get(admin_sessions::get_user_sessions),
-        )
-        .route(
-            "/api/admin/users/{id}/devices",
-            get(admin_sessions::get_user_devices),
-        )
-        .route(
-            "/api/admin/sessions/{id}",
-            delete(admin_sessions::delete_session),
-        )
-        .route(
-            "/api/admin/devices/{id}",
-            delete(admin_sessions::delete_device),
-        )
-        // Admin server-health report (F5, #952) — index status, worker
-        // queue, FTS health, storage, and last errors in one request. Web
-        // instead hits the analogous `rpc_get_admin_health` server fn.
-        .route("/api/admin/health", get(admin_health::get_admin_health))
+        .routes(routes!(settings::get_settings, settings::post_settings))
+        .routes(routes!(settings::post_registration))
+        .routes(routes!(settings::get_mcp, settings::post_mcp))
+        .routes(routes!(settings::post_reindex))
+        .routes(routes!(settings::post_scan_library))
+        .routes(routes!(settings::post_rebuild_fts))
+        // Admin user, session and device management, all `AdminUser`-gated.
+        .routes(routes!(users::get_users, users::post_user))
+        .routes(routes!(users::delete_user))
+        .routes(routes!(users::patch_permissions))
+        .routes(routes!(users::post_password))
+        .routes(routes!(users::post_unlock))
+        .routes(routes!(admin_sessions::get_user_sessions))
+        .routes(routes!(admin_sessions::get_user_devices))
+        .routes(routes!(admin_sessions::delete_session))
+        .routes(routes!(admin_sessions::delete_device))
+        .routes(routes!(admin_health::get_admin_health))
         .route("/api/library", get(ebooks::get_library))
         .route(
             "/api/downloads/validators",
@@ -229,12 +199,9 @@ fn progress_routes() -> OpenApiRouter<AppState> {
 /// side's gate or response shape and the other needs the same edit.
 fn merge_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route("/api/books/merge", post(merge::post_merge_books))
-        .route("/api/books/merge/undo", post(merge::post_undo_merge))
-        .route(
-            "/api/books/merge/candidates",
-            get(merge::get_merge_candidates),
-        )
+        .routes(routes!(merge::post_merge_books))
+        .routes(routes!(merge::post_undo_merge))
+        .routes(routes!(merge::get_merge_candidates))
 }
 
 /// Admin book deletion — mobile-facing REST. Web hits the analogous
@@ -243,14 +210,8 @@ fn merge_routes() -> OpenApiRouter<AppState> {
 /// [`merge_routes`].
 fn deletion_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route(
-            "/api/books/{uuid}/deletion-manifest",
-            get(deletion::get_deletion_manifest),
-        )
-        .route(
-            "/api/books/{uuid}/delete-files",
-            post(deletion::post_delete_book_files),
-        )
+        .routes(routes!(deletion::get_deletion_manifest))
+        .routes(routes!(deletion::post_delete_book_files))
 }
 
 /// Highlight annotations — mobile-facing REST. Web hits the analogous
@@ -505,28 +466,20 @@ fn metadata_routes() -> OpenApiRouter<AppState> {
 /// `/api/rpc/account/*`, and `/api/rpc/smtp*` server fns.
 fn kindle_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route("/api/kindle/send", post(kindle::post_send))
-        .route("/api/kindle/send/status", get(kindle::get_send_status))
-        .route("/api/account/kindle-email", post(kindle::post_kindle_email))
-        .route(
-            "/api/account/hidden-formats",
-            post(account::post_hidden_formats),
-        )
-        .route(
-            "/api/account/book-detail-scroll-stops",
-            post(account::post_book_detail_scroll_stops),
-        )
-        .route(
-            "/api/account/stack-series",
-            post(account::post_stack_series),
-        )
-        .route("/api/account/share-stats", post(account::post_share_stats))
-        .route("/api/account/profile", post(profile::post_profile))
-        .route("/api/account/avatar", delete(profile::delete_avatar))
-        .route("/api/users/{user_id}/avatar", get(profile::get_user_avatar))
-        .route("/api/smtp", get(kindle::get_smtp).post(kindle::post_smtp))
-        .route("/api/smtp/clear", post(kindle::post_smtp_clear))
-        .route("/api/smtp/test", post(kindle::post_smtp_test))
+        .routes(routes!(kindle::post_send))
+        .routes(routes!(kindle::get_send_status))
+        .routes(routes!(kindle::post_kindle_email))
+        .routes(routes!(account::post_hidden_formats))
+        .routes(routes!(account::post_book_detail_scroll_stops))
+        .routes(routes!(account::post_stack_series))
+        .routes(routes!(account::post_share_stats))
+        .routes(routes!(profile::post_profile))
+        // The avatar POST is in `upload_router`, under the upload rate limit.
+        .routes(routes!(profile::delete_avatar))
+        .routes(routes!(profile::get_user_avatar))
+        .routes(routes!(kindle::get_smtp, kindle::post_smtp))
+        .routes(routes!(kindle::post_smtp_clear))
+        .routes(routes!(kindle::post_smtp_test))
 }
 
 /// Sub-router for `/api/search/*` carrying its own per-IP rate-limit layer, capping each
@@ -569,7 +522,7 @@ fn upload_router(limits: RateLimits) -> OpenApiRouter<AppState> {
             post(overrides::post_ebook_cover_from_url),
         )
         .route("/api/journals/images", post(journals::post_journal_image))
-        .route("/api/account/avatar", post(profile::post_avatar))
+        .routes(routes!(profile::post_avatar))
         .route(
             "/api/authors/{id}/photo",
             put(author_photos::put_author_photo),
