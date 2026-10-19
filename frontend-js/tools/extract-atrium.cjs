@@ -12,19 +12,20 @@ const write = process.argv.includes("--write");
 const force = process.argv.includes("--force");
 const src = path.join(root, "frontend-js/src");
 
+// Third element true: a catch-all prefix that may also match classes an earlier, narrower owner claimed.
 const OWNERS = [
   ["styles/theme.css", (c) => ["atrium", "theme-snap"].includes(c)],
   ["components/Button/Button.css", (c) => c === "btn"],
   ["components/FilterBar/FilterBar.css", (c) => c === "fb" || c.startsWith("fb-")],
   ["components/ChipInput/ChipInput.css", (c) => c.startsWith("chip-editor") || c.startsWith("me-chip") || c === "me-tag-input"],
-  ["components/Chip/Chip.css", (c) => c === "chip" || c.startsWith("chip-")],
+  ["components/Chip/Chip.css", (c) => c === "chip" || c.startsWith("chip-"), true],
   ["components/Cover/Cover.css", (c) => ["cover-wrap", "cover", "tpl-plate", "ca", "ct"].includes(c)],
   ["components/Loading/Loading.css", (c) => c === "ld" || c.startsWith("ld-")],
   ["components/Banner/Banner.css", (c) => c.startsWith("auth-banner")],
   ["components/Field/Field.css", (c) => c.startsWith("auth-field")],
   ["components/StrengthMeter/StrengthMeter.css", (c) => c.startsWith("auth-strength") || c.startsWith("auth-req")],
   ["pages/Register/Register.css", (c) => c.startsWith("auth-checkbox") || ["auth-closed-note", "auth-form-pending"].includes(c)],
-  ["components/AuthShell/AuthShell.css", (c) => c.startsWith("auth-")],
+  ["components/AuthShell/AuthShell.css", (c) => c.startsWith("auth-"), true],
   ["components/TopNav/TopNav.css", (c) => c.startsWith("atrium-")],
   ["components/UserMenu/UserMenu.css", (c) => c.startsWith("um-")],
   ["components/ThemePicker/ThemePicker.css", (c) => c.startsWith("theme-seg")],
@@ -45,10 +46,10 @@ const OWNERS = [
   ["pages/ShelfDetail/ShelfDetail.css", (c) => c.startsWith("shd-") || c === "shelf-grid" || c === "shelf-actions-menu" || c.startsWith("shelf-menu-")],
   ["pages/Shelves/Shelves.css", (c) => ["shv-page", "shv-header", "shv-head-row", "shv-admin-note", "shv-new", "shv-new-plus", "shv-toolbar", "shv-owners", "shv-owner-chip", "shv-owner-chip--all", "shv-chip-av", "shv-empty", "shv-empty-msg", "shv-body", "shv-group", "shv-group-head", "shv-group-av", "shv-group-title", "shv-group-count", "shv-grid", "shv-cell"].includes(c)],
   ["components/LibraryPicker/LibraryPicker.css", (c) => ["pick", "pick-body", "pick-search", "pick-search-row", "pick-search-clear", "pick-status", "pick-status-text", "pick-review", "pick-more", "pick-more-row", "pick-on-shelf", "pick-tag", "pick-tags", "pick-card-skel"].includes(c)],
-  ["components/ShelfForm/ShelfForm.css", (c) => c.startsWith("shelf-") && !c.startsWith("shelf-picker") && !c.startsWith("shelf-add-tile") && !c.startsWith("shelf-btn-") && !["shelf-modal-overlay", "shelf-modal-card", "shelf-modal-error", "shelf-modal-foot"].includes(c)],
-  ["components/ShelfTile/ShelfTile.css", (c) => c.startsWith("shv-") || c.startsWith("shelf-add-tile")],
-  ["components/ShelfPicker/ShelfPicker.css", (c) => c.startsWith("shelf-picker") || c.startsWith("shelf-modal") || c.startsWith("shelf-btn-") || c.startsWith("pick-")],
-  ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || c.startsWith("ebook-") || c.startsWith("sort-th") || c.startsWith("ss-") || c.startsWith("format-badge") || c.startsWith("bulk-edit") || c.startsWith("shelf-modal-") || c.startsWith("shelf-picker") || c.startsWith("pick-") || c === "author-photo-modal-backdrop" || ["landing-col", "library-empty", "cover-link"].includes(c)],
+  ["components/ShelfForm/ShelfForm.css", (c) => c.startsWith("shelf-") && !c.startsWith("shelf-picker") && !c.startsWith("shelf-add-tile") && !c.startsWith("shelf-btn-") && !["shelf-modal-overlay", "shelf-modal-card", "shelf-modal-error", "shelf-modal-foot"].includes(c), true],
+  ["components/ShelfTile/ShelfTile.css", (c) => c.startsWith("shv-") || c.startsWith("shelf-add-tile"), true],
+  ["components/ShelfPicker/ShelfPicker.css", (c) => c.startsWith("shelf-picker") || c.startsWith("shelf-modal") || c.startsWith("shelf-btn-") || c.startsWith("pick-"), true],
+  ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || c.startsWith("ebook-") || c.startsWith("sort-th") || c.startsWith("ss-") || c.startsWith("bulk-edit") || ["landing-col", "library-empty", "cover-link"].includes(c)],
   ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || c.startsWith("bd-") || c.startsWith("rx-") || c.startsWith("spoiler") || c.startsWith("cm-") || c === "me-textarea" || c.startsWith("suggest-") || c.startsWith("sug-") || c.startsWith("author-lead") || c.startsWith("author-portrait") || ["sh-title", "sh-sub", "fan-match"].includes(c)],
   ["styles/base.css", (c) => ["card", "divider", "label", "mono", "sr-only", "subtitle"].includes(c)],
 ];
@@ -63,17 +64,29 @@ function tsxFiles(dir) {
   });
 }
 
-// Status words the code compares against, and test ids that only share a name with a dead rule: never a className.
-const STOP = new Set(["back", "error", "off", "ok", "pending", "success", "tag", "author-delete-btn", "author-delete-confirm"]);
+// Status words the code compares against: never a className.
+const STOP = new Set(["back", "error", "off", "ok", "pending", "success", "tag"]);
 const vocab = new Set();
 for (const file of tsxFiles(src)) {
   const text = fs.readFileSync(file, "utf8");
   for (const m of text.matchAll(/"([^"\n]*)"|`([^`]*)`/g)) {
+    if (/test-?id\s*[=:]\s*\{?$/i.test(text.slice(0, m.index))) continue; // test ids are not classNames
     const literal = (m[1] ?? m[2]).replace(/\$\{[^}]*\}/g, " ");
     for (const token of literal.split(/\s+/)) {
       if (/^[a-z][a-z0-9_-]*$/.test(token) && !STOP.has(token)) vocab.add(token);
     }
   }
+}
+
+// First match wins, so a second narrower owner matching the same class is a dead or misfiled predicate.
+const overlaps = [];
+for (const token of vocab) {
+  const [first, ...later] = OWNERS.filter(([, test]) => test(token));
+  for (const [file, , catchAll] of later) if (!catchAll) overlaps.push(`  OVERLAP:${token} ${first[0]} + ${file}`);
+}
+if (overlaps.length) {
+  console.log(overlaps.join("\n"));
+  process.exit(1);
 }
 
 function requiredClasses(selector) {
