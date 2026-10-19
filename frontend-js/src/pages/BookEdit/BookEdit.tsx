@@ -18,6 +18,7 @@ import { Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { UnsavedDialog, useLeaveGuard } from "../../components/Unsaved/Unsaved";
+import type { CoverProps } from "./CoverEditor";
 import { dirtyLabels } from "./dirty";
 import { Breadcrumb, PageHeader } from "./EditHeader";
 import { MetaFormGrid } from "./MetaFormGrid";
@@ -62,6 +63,12 @@ function EditForm({ book }: { book: EditableBook }) {
       queryClient.invalidateQueries({ queryKey });
     }
   };
+  const cover = {
+    book: live,
+    target: { kind: "live", uuid: book.uuid },
+    bust: coverBust,
+    onApplied: onCoverApplied,
+  } satisfies CoverProps;
   const save = useMutation({
     mutationFn: (values: MetaForm) =>
       saveOverrides(book.uuid, overridesFrom(book.form, values)),
@@ -90,15 +97,15 @@ function EditForm({ book }: { book: EditableBook }) {
       <div className="me-layout">
         <MetaFormGrid
           form={form}
+          baseline={book.form}
+          cover={cover}
           dirty={dirty}
           sortBy={book.sortBy}
           filename={book.filename}
         />
         <Sidebar
           book={live}
-          target={{ kind: "live", uuid: book.uuid }}
-          coverBust={coverBust}
-          onCoverApplied={onCoverApplied}
+          cover={cover}
           saving={save.isPending || revert.isPending}
           onRevert={() => revert.mutate()}
         />

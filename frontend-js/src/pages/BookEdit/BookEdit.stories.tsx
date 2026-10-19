@@ -12,7 +12,10 @@ import {
 } from "../../testing/handlers";
 import {
   anEditableWireBook,
+  aProviderEdition,
   coverWriteHandlers,
+  editionSearchHandler,
+  hydrateHandler,
   overridesHandlers,
   providersHandler,
 } from "../../testing/metadataHandlers";
@@ -296,5 +299,45 @@ export const ReplacingTheCoverEnablesSave: Story = {
     await expect(await canvas.findByText("Book page")).toBeInTheDocument();
     await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
     await expect(saved).toEqual([]);
+  },
+};
+
+export const SavesTheTitleCopiedFromAnEdition: Story = {
+  beforeEach({ msw }) {
+    const edition = aProviderEdition({ title: "Aurora Station: Volume One" });
+    msw.use(
+      providersHandler(true),
+      editionSearchHandler({
+        editions: [edition],
+        sources: [
+          {
+            provider: "open_library",
+            display_name: "Open Library",
+            status: { kind: "answered", count: 1 },
+          },
+        ],
+      }),
+      hydrateHandler({ [edition.provider_ref]: edition }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("metadata-search-btn"));
+    await userEvent.click(canvas.getByTestId("mes-search"));
+    await userEvent.click(await canvas.findByTestId("mes-candidate-0"));
+    await userEvent.click(
+      await canvas.findByRole("button", {
+        name: "Copy Title from Open Library",
+      }),
+    );
+    await userEvent.click(canvas.getByTestId("mes-done"));
+
+    await expect(await canvas.findByText("1 field edited")).toBeInTheDocument();
+    await expect(canvas.getByLabelText(/^Title/)).toHaveValue(
+      "Aurora Station: Volume One",
+    );
+    await userEvent.click(canvas.getByTestId("me-save"));
+
+    await expect(await canvas.findByText("Book page")).toBeInTheDocument();
+    await expect(saved).toEqual([{ title: "Aurora Station: Volume One" }]);
   },
 };

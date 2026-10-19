@@ -3,7 +3,9 @@ import { useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import {
   editionRequest,
+  fillMissing,
   hasProviderQuery,
+  hydrateEdition,
   inStableOrder,
   type MetaForm,
   PROVIDERS,
@@ -18,6 +20,8 @@ import { Button } from "../../components/Button/Button";
 import { SparkleGlyph } from "../../components/Glyphs/Glyphs";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { trapTab } from "../../focusTrap";
+import type { CoverProps } from "./CoverEditor";
+import { EditionCompare } from "./EditionCompare";
 import { sourceStatusText } from "./editionFields";
 
 /** Shown where a candidate has no value to show. */
@@ -151,14 +155,8 @@ type Found = Pick<EditionSearchResponse, "sources"> & {
   editions: ProviderEdition[];
 };
 
-/** Screen one: the query, already filled in, and what the providers found. */
-function ResultsScreen({
-  form,
-  onSelect,
-}: {
-  form: UseFormReturn<MetaForm>;
-  onSelect: (edition: ProviderEdition) => void;
-}) {
+/** The query fields and the search they run, held above the screens so a trip to a candidate and back keeps them. */
+function useEditionSearch(form: UseFormReturn<MetaForm>) {
   // Seeded from the book, ISBN included, but never searched on open: the reader sees what is about to be asked first.
   const [seed] = useState(() => form.getValues());
   const [title, setTitle] = useState(seed.title.trim());
@@ -173,7 +171,26 @@ function ResultsScreen({
       } satisfies Found;
     },
   });
-  const request = editionRequest(title, author, isbn);
+  return {
+    title,
+    setTitle,
+    author,
+    setAuthor,
+    isbn,
+    setIsbn,
+    search,
+    request: editionRequest(title, author, isbn),
+  };
+}
+
+/** Screen one: the query, already filled in, and what the providers found. */
+function ResultsScreen({
+  state: { title, setTitle, author, setAuthor, isbn, setIsbn, search, request },
+  onSelect,
+}: {
+  state: ReturnType<typeof useEditionSearch>;
+  onSelect: (edition: ProviderEdition) => void;
+}) {
   return (
     <div className="mes-screen mes-screen-results" data-testid="mes-results">
       <h2 className="mes-title">Find this edition</h2>
@@ -251,13 +268,45 @@ function ResultsScreen({
   );
 }
 
+const sameEdition = (a: ProviderEdition, b: ProviderEdition) =>
+  a.source === b.source && a.provider_ref === b.provider_ref;
+
+type PickerProps = {
+  form: UseFormReturn<MetaForm>;
+  /** The form as the book loaded: what the compare screen counts changes against. */
+  baseline: MetaForm;
+  cover: CoverProps;
+};
+
 function SearchOverlay({
   form,
+  baseline,
+  cover,
   onClose,
-}: {
-  form: UseFormReturn<MetaForm>;
-  onClose: () => void;
-}) {
+}: PickerProps & { onClose: () => void }) {
+  const state = useEditionSearch(form);
+  // The candidate being compared; `hydrating` while its full record is still on the way.
+  const [compare, setCompare] = useState<{
+    edition: ProviderEdition;
+    hydrating: boolean;
+  } | null>(null);
+
+  // The full record fills in what the list row lacked and never takes a field away from it.
+  const select = (edition: ProviderEdition) => {
+    setCompare({ edition, hydrating: true });
+    const land = (settled: ProviderEdition) =>
+      // A slow answer must not overwrite a candidate the reader has since replaced, or reappear after they went back.
+      setCompare((now) =>
+        now && sameEdition(now.edition, edition)
+          ? { edition: settled, hydrating: false }
+          : now,
+      );
+    hydrateEdition(edition).then(
+      (full) => land(full ? fillMissing(full, edition) : edition),
+      () => land(edition),
+    );
+  };
+
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the scrim only dismisses; the dialog inside carries the semantics, and the keyboard has Escape and ×
     <div
@@ -284,14 +333,26 @@ function SearchOverlay({
         >
           ×
         </button>
-        <ResultsScreen form={form} onSelect={() => {}} />
+        {compare ? (
+          <EditionCompare
+            edition={compare.edition}
+            hydrating={compare.hydrating}
+            form={form}
+            baseline={baseline}
+            cover={cover}
+            onBack={() => setCompare(null)}
+            onDone={onClose}
+          />
+        ) : (
+          <ResultsScreen state={state} onSelect={select} />
+        )}
       </div>
     </div>
   );
 }
 
 /** The "Fetch metadata" button and, while open, the overlay it opens. Absent until a provider is set up. */
-export function EditionPicker({ form }: { form: UseFormReturn<MetaForm> }) {
+export function EditionPicker(props: PickerProps) {
   const available = useQuery(hasProviderQuery);
   const [open, setOpen] = useState(false);
   if (!available.data) return null;
@@ -308,7 +369,7 @@ export function EditionPicker({ form }: { form: UseFormReturn<MetaForm> }) {
         Fetch metadata
       </Button>
       {/* Mounted only while open, so every open starts a fresh search. */}
-      {open && <SearchOverlay form={form} onClose={() => setOpen(false)} />}
+      {open && <SearchOverlay {...props} onClose={() => setOpen(false)} />}
     </>
   );
 }

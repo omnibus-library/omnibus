@@ -2,6 +2,7 @@ import { HttpResponse, http } from "msw";
 import {
   CoverFromUrlBody,
   type EbookMetadata,
+  EditionHydrateRequest,
   EditionSearchRequest,
   type EditionSearchResponse,
   MetadataOverrides,
@@ -169,5 +170,29 @@ export function editionSearchHandler(
     searched.push(EditionSearchRequest.parse(await request.json()));
     await gate;
     return HttpResponse.json(found);
+  });
+}
+
+/**
+ * `POST /api/metadata/editions/hydrate`, answering by `provider_ref`: the full
+ * edition, `null` for a provider that no longer knows it, or "fails" for a 502
+ * with a plain-text body. Each ref asked for lands in `hydrated`; a ref's gate
+ * holds its answer until it resolves.
+ */
+export function hydrateHandler(
+  answers: Record<string, ProviderEdition | null | "fails">,
+  {
+    hydrated = [],
+    gates = {},
+  }: { hydrated?: string[]; gates?: Record<string, Promise<void>> } = {},
+) {
+  return http.post("/api/metadata/editions/hydrate", async ({ request }) => {
+    const { provider_ref } = EditionHydrateRequest.parse(await request.json());
+    hydrated.push(provider_ref);
+    await gates[provider_ref];
+    const answer = answers[provider_ref] ?? null;
+    return answer === "fails"
+      ? new HttpResponse("provider unavailable", { status: 502 })
+      : HttpResponse.json(answer);
   });
 }

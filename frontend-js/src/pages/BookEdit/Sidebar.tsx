@@ -1,34 +1,20 @@
 import type { EditableBook } from "../../api";
 import { Button } from "../../components/Button/Button";
-import { CoverEditor, type CoverTarget } from "./CoverEditor";
+import { CoverEditor, type CoverProps } from "./CoverEditor";
 
 type Props = {
   /** The book as the server last reported it, which a cover write moves. */
   book: EditableBook;
-  target: CoverTarget;
-  coverBust: number;
-  onCoverApplied: (updated: EditableBook) => void;
+  cover: CoverProps;
   saving: boolean;
   onRevert: () => void;
 };
 
 /** The cover, the identifiers and, when the book has edits, the card that reverts them. */
-export function Sidebar({
-  book,
-  target,
-  coverBust,
-  onCoverApplied,
-  saving,
-  onRevert,
-}: Props) {
+export function Sidebar({ book, cover, saving, onRevert }: Props) {
   return (
     <aside className="me-sidebar">
-      <CoverEditor
-        book={book}
-        target={target}
-        bust={coverBust}
-        onApplied={onCoverApplied}
-      />
+      <CoverEditor {...cover} />
       {book.identifiers.length > 0 && (
         <div className="card me-sidebar-card">
           <div className="label" style={{ marginBottom: 12 }}>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   editionRequest,
+  fillMissing,
   formFromBook,
   inStableOrder,
   type MetaForm,
@@ -220,5 +221,62 @@ describe("inStableOrder", () => {
     );
 
     expect(sorted[0]?.title).toBe("Alpha");
+  });
+});
+
+describe("fillMissing", () => {
+  const thin = aProviderEdition({
+    isbn10: "0134685997",
+    description: "From the list.",
+    cover_url: "https://images.example.com/a.jpg",
+    series: "Aurora Station",
+    series_index: "1",
+    pages: 320,
+    genres: ["Drama"],
+  });
+
+  it("fills only what the full record lacks", () => {
+    const full = aProviderEdition({
+      publisher: "Other Press",
+      description: "From the record.",
+      isbn10: " ",
+      cover_url: null,
+      series: null,
+      pages: null,
+      genres: [],
+    });
+
+    expect(fillMissing(full, thin)).toMatchObject({
+      publisher: "Other Press",
+      description: "From the record.",
+      isbn10: "0134685997",
+      cover_url: "https://images.example.com/a.jpg",
+      series: "Aurora Station",
+      pages: 320,
+      genres: ["Drama"],
+    });
+  });
+
+  it("brings a book number across only inside the same series", () => {
+    const same = fillMissing(
+      aProviderEdition({ series: "Aurora Station" }),
+      thin,
+    );
+    const other = fillMissing(
+      aProviderEdition({ series: "Another Saga" }),
+      thin,
+    );
+
+    expect(same.series_index).toBe("1");
+    expect(other.series_index).toBeUndefined();
+  });
+
+  it("falls back to the list row's title and authors when the record has none", () => {
+    expect(
+      fillMissing(aProviderEdition({ title: " ", authors: [] }), thin),
+    ).toMatchObject({
+      title: thin.title,
+      authors: thin.authors,
+    });
   });
 });

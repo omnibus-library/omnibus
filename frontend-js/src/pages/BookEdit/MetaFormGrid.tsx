@@ -4,11 +4,15 @@ import { Controller, type UseFormReturn } from "react-hook-form";
 import { type MetaForm, nameCountsQuery } from "../../api";
 import { ChipInput } from "../../components/ChipInput/ChipInput";
 import { bookCount } from "../../format";
+import type { CoverProps } from "./CoverEditor";
 import { EditionPicker } from "./EditionPicker";
 import { MeArea, MeField, MeLabel } from "./MetaFields";
 
 type Props = {
   form: UseFormReturn<MetaForm>;
+  /** The form as the book loaded, which the edition picker counts changes against. */
+  baseline: MetaForm;
+  cover: CoverProps;
   /** Labels of the edited fields, from `dirtyLabels`. */
   dirty: string[];
   sortBy: string;
@@ -16,7 +20,14 @@ type Props = {
 };
 
 /** The edit form's fields, bound to `form`: the grid, then tags, genres and series. */
-export function MetaFormGrid({ form, dirty, sortBy, filename }: Props) {
+export function MetaFormGrid({
+  form,
+  baseline,
+  cover,
+  dirty,
+  sortBy,
+  filename,
+}: Props) {
   const { register, control } = form;
   const edited = (label: string) => dirty.includes(label);
   // A suggestion pool is a convenience: while it loads, or if it fails, the field takes free text.
@@ -120,7 +131,7 @@ export function MetaFormGrid({ form, dirty, sortBy, filename }: Props) {
           input={register("description")}
         />
         <div className="me-field-full">
-          <EditionPicker form={form} />
+          <EditionPicker form={form} baseline={baseline} cover={cover} />
         </div>
       </div>
       <div className="divider" />

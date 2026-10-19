@@ -5,18 +5,19 @@ import {
   deleteEbookCover,
   deleteEbookOverrides,
   getEbookByUuid,
+  getPostEditionHydrateUrl,
   listMetadataProviders,
   postEbookCover,
   postEbookCoverFromUrl,
   postEbookOverrides,
   postEditionSearch,
 } from "./generated/omnibus";
-import type {
-  EbookMetadata,
-  EditionSearchRequest,
-  EditionSearchResponse,
-  MetadataOverrides,
-  MetadataProvider,
+import {
+  type EbookMetadata,
+  type EditionSearchRequest,
+  type EditionSearchResponse,
+  type MetadataOverrides,
+  type MetadataProvider,
   ProviderEdition,
 } from "./generated/schemas";
 
@@ -278,4 +279,56 @@ export function inStableOrder(
         text(a.e.provider_ref, b.e.provider_ref),
     )
     .map((k) => k.e);
+}
+
+/** The candidate in full from its provider, or `null` when the provider no longer knows it. */
+export async function hydrateEdition(
+  edition: ProviderEdition,
+): Promise<ProviderEdition | null> {
+  // The generated fetcher JSON-parses every body, and a 502's is plain text.
+  const res = await fetch(getPostEditionHydrateUrl(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      source: edition.source,
+      provider_ref: edition.provider_ref,
+      isbn13: edition.isbn13,
+    }),
+  });
+  if (res.status !== 200) {
+    throw failure({ status: res.status, data: await res.text() });
+  }
+  return ProviderEdition.nullable().parse(await res.json());
+}
+
+const blank = (v: string | null | undefined) => !v?.trim();
+
+/** `full` with its empty fields filled from `thinner`, the search hit that named it; nothing `full` holds is replaced. */
+export function fillMissing(
+  full: ProviderEdition,
+  thinner: ProviderEdition,
+): ProviderEdition {
+  const fill = (a: string | null | undefined, b: string | null | undefined) =>
+    blank(a) && !blank(b) ? b : a;
+  // A book number is a position in a series, so it only crosses over inside the same one.
+  const sameSeries =
+    (full.series?.trim() ?? "") === (thinner.series?.trim() ?? "");
+  return {
+    ...full,
+    isbn13: fill(full.isbn13, thinner.isbn13),
+    isbn10: fill(full.isbn10, thinner.isbn10),
+    year: fill(full.year, thinner.year),
+    publisher: fill(full.publisher, thinner.publisher),
+    description: fill(full.description, thinner.description),
+    cover_url: fill(full.cover_url, thinner.cover_url),
+    series: fill(full.series, thinner.series),
+    series_index: sameSeries
+      ? fill(full.series_index, thinner.series_index)
+      : full.series_index,
+    title: blank(full.title) ? thinner.title : full.title,
+    authors: full.authors.length ? full.authors : thinner.authors,
+    pages: full.pages ?? thinner.pages,
+    first_publish_year: full.first_publish_year ?? thinner.first_publish_year,
+    genres: full.genres?.length ? full.genres : thinner.genres,
+  };
 }

@@ -481,6 +481,11 @@
   font-size: 13px;
   color: var(--bad);
 }
+.mes-foot {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-3);
+}
 .mes-empty {
   color: var(--ink-3);
 }
@@ -620,8 +625,219 @@
 .mes-source-problem {
   color: var(--bad);
 }
+.mes-back {
+  align-self: flex-start;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--ink-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.mes-back:hover {
+  color: var(--ink-0);
+}
+.mes-compare-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mes-compare-head .mes-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.mes-cover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line-2);
+}
+.mes-cover-pair {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+.mes-cover-cell {
+  display: flex;
+}
+.mes-cover-thumb {
+  width: 62px;
+}
+.mes-cover-img {
+  width: 62px;
+  height: 93px;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+  background: var(--bg-2);
+}
+.mes-cover-note {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.mes-cover-ring,
 .me-cover-ring {
   margin-right: 0.5em;
+}
+
+.mes-fields {
+  display: flex;
+  flex-direction: column;
+}
+.mes-field {
+  display: grid;
+  grid-template-columns: minmax(72px, 96px) 1fr 30px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 9px 0;
+  border-bottom: 1px solid color-mix(in oklch, var(--line-2) 55%, transparent);
+}
+.mes-field:last-child {
+  border-bottom: none;
+}
+.mes-field-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-top: 3px;
+}
+.mes-field-mine,
+.mes-field-theirs {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  max-height: 5.5em;
+  /* Explicitly `hidden` across, not just `auto` down: setting one axis to
+     `auto` computes the other from `visible` to `auto` as well, and the
+     browser then reserves a horizontal scrollbar track under every cell —
+     15px of grey bar under a value that has nothing to scroll. Wrapping is
+     `anywhere`, so there is never anything to scroll sideways to. */
+  overflow: hidden auto;
+  scrollbar-width: thin;
+}
+.mes-field.mes-field-long {
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    "label"
+    "mine"
+    "act"
+    "theirs";
+  gap: 8px;
+  padding: 12px 0;
+}
+.mes-field-long .mes-field-label {
+  grid-area: label;
+  padding-top: 0;
+}
+.mes-field-long .mes-field-mine {
+  grid-area: mine;
+}
+.mes-field-long .mes-apply {
+  grid-area: act;
+  justify-self: center;
+}
+.mes-field-long .mes-field-theirs {
+  grid-area: theirs;
+}
+.mes-field.mes-field-long :is(.mes-field-mine, .mes-field-theirs) {
+  max-height: 12em;
+  padding: 9px 11px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-2);
+  line-height: 1.5;
+}
+.mes-field-mine {
+  color: var(--ink-2);
+}
+.mes-field-theirs {
+  color: var(--ink-0);
+}
+.mes-apply {
+  justify-self: center;
+  width: 26px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  color: var(--ink-1);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.mes-apply:hover:not([disabled]),
+.mes-apply:focus-visible:not([disabled]) {
+  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+  background: color-mix(in oklch, var(--accent) 20%, var(--bg-2));
+  color: var(--ink-0);
+}
+.mes-apply[disabled] {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.mes-undo {
+  border-color: color-mix(in oklch, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+.mes-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.mes-skel-cover {
+  width: 62px;
+  height: 93px;
+  align-self: center;
+  border-radius: 4px;
+}
+.mes-skel-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 96px) 1fr 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid color-mix(in oklch, var(--line-2) 55%, transparent);
+}
+.mes-skel-bar {
+  height: 11px;
+  border-radius: 3px;
+}
+.mes-skel-label {
+  opacity: 0.6;
+}
+
+.mes-footbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding: 12px 0 22px;
+  background: var(--bg-1);
+  border-top: 1px solid var(--line-2);
+}
+.mes-done {
+  margin-left: auto;
+}
+.mes-footbar .btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.mes-footbar .mes-foot {
+  flex: 1 0 100%;
+  margin: 0;
 }
 @media (max-width: 640px) {
   .mes-scrim {
@@ -642,9 +858,19 @@
        the buttons. The bar carries the inset instead. */
     padding: 22px 18px 0;
   }
+  .mes-footbar {
+    padding-bottom: calc(22px + env(safe-area-inset-bottom));
+  }
   .mes-list {
     max-height: none;
     overflow-y: visible;
+  }
+  .mes-field {
+    grid-template-columns: 1fr 30px 1fr;
+  }
+  .mes-field-label {
+    grid-column: 1 / -1;
+    padding-top: 0;
   }
 }
 @media (max-width: 560px) {

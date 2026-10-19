@@ -46,7 +46,8 @@ export function restage(
   return { ...staged, source, preview };
 }
 
-type Props = {
+/** What the cover surfaces share: the sidebar's editor and the compare screen's cover row. */
+export type CoverProps = {
   book: Pick<
     EditableBook,
     | "displayTitle"
@@ -73,7 +74,7 @@ function stagedHint({ source, preview }: StagedCover) {
 }
 
 /** The sidebar's cover card: preview, hint and the controls that replace or revert the cover. */
-export function CoverEditor({ book, target, bust, onApplied }: Props) {
+export function CoverEditor({ book, target, bust, onApplied }: CoverProps) {
   const [busy, setBusy] = useState<"file" | "url" | "revert" | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [pastedUrl, setPastedUrl] = useState("");
