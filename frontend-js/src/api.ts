@@ -352,13 +352,23 @@ export async function fetchRegistrationOpen(): Promise<boolean> {
   return res.data.enabled;
 }
 
-export async function logout(): Promise<void> {
-  // The generated fetcher JSON-parses any body, and an error's is plain text.
-  const res = await fetch(getLogoutUrl(), { method: "POST" });
+// The generated fetcher JSON-parses any body, and an error's is plain text.
+async function postNoContent(url: string, body?: unknown): Promise<void> {
+  const res = await fetch(url, {
+    method: "POST",
+    ...(body === undefined
+      ? {}
+      : {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+  });
   if (res.status !== 204) {
     throw failure({ status: res.status, data: await res.text() });
   }
 }
+
+export const logout = () => postNoContent(getLogoutUrl());
 
 /**
  * The `filter` query value: the clauses as JSON, in the key order the server's
@@ -445,15 +455,7 @@ export async function bulkSaveOverrides(
   uuids: BookUuid[],
   edit: BulkMetadataEdit,
 ): Promise<void> {
-  // The generated fetcher JSON-parses any body, and an error's is plain text.
-  const res = await fetch(getPostBulkOverridesUrl(), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ uuids, edit }),
-  });
-  if (res.status !== 204) {
-    throw failure({ status: res.status, data: await res.text() });
-  }
+  return postNoContent(getPostBulkOverridesUrl(), { uuids, edit });
 }
 
 /** Appends the books to a hand-picked shelf. */
@@ -461,15 +463,7 @@ export async function addShelfBooks(
   shelfId: number,
   uuids: BookUuid[],
 ): Promise<void> {
-  // The generated fetcher JSON-parses any body, and an error's is plain text.
-  const res = await fetch(getAddShelfBooksUrl(shelfId), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ book_uuids: uuids }),
-  });
-  if (res.status !== 204) {
-    throw failure({ status: res.status, data: await res.text() });
-  }
+  return postNoContent(getAddShelfBooksUrl(shelfId), { book_uuids: uuids });
 }
 
 /** The full record for one book, or `null` when no book has that uuid. */
