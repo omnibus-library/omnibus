@@ -29,9 +29,8 @@ import {
   usePlayback,
 } from "./PlaybackProvider";
 
-vi.mock("./loadHls", () => ({
-  loadHls: () => Promise.reject(new Error("hls.js is blocked")),
-}));
+const { loadHls } = vi.hoisted(() => ({ loadHls: vi.fn() }));
+vi.mock("./loadHls", () => ({ loadHls }));
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0" as BookUuid;
 const BOOK = aWireBook({ formats: ["M4B"] });
@@ -43,6 +42,7 @@ afterAll(() => server.close());
 const writes: ListenWrite[] = [];
 beforeEach(() => {
   writes.length = 0;
+  loadHls.mockRejectedValue(new Error("hls.js is blocked"));
   server.use(...listenHandlers(BOOK, { writes, row: TEN_MINUTES_IN }));
 });
 
@@ -128,6 +128,41 @@ describe("PlaybackProvider", () => {
       await waitFor(() => expect(player.ready).toBe(true));
       expect(player.failed).toBe(false);
       expect(audio().getAttribute("src")).toContain("playlist.m3u8");
+    });
+
+    it("fails and stops, saving no position, when the hls stream dies mid-play", async () => {
+      const errors: ((event: string, data: { fatal?: boolean }) => void)[] = [];
+      loadHls.mockResolvedValue(
+        class {
+          static isSupported = () => true;
+          static Events = { ERROR: "hlsError" };
+          loadSource() {}
+          attachMedia() {}
+          destroy() {}
+          on(_event: string, handler: (typeof errors)[number]) {
+            errors.push(handler);
+          }
+        },
+      );
+      server.use(
+        ...listenHandlers(BOOK, {
+          writes,
+          manifest: aWireHlsManifest(),
+          state: "ready",
+        }),
+      );
+      mount();
+      act(() => player.open(UUID, null));
+      await waitFor(() => expect(player.ready).toBe(true));
+      act(() => {
+        audio().dispatchEvent(new Event("play"));
+      });
+
+      act(() => errors[0]?.("hlsError", { fatal: true }));
+
+      expect(player.failed).toBe(true);
+      expect(player.playing).toBe(false);
+      expect(wrote(writes, "POST /api/progress")).toEqual([]);
     });
 
     it("keeps the speed the listener picks while the server's is still on its way", async () => {

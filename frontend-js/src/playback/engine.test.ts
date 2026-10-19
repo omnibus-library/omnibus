@@ -57,7 +57,7 @@ function setup() {
     ended: vi.fn(),
     booted: vi.fn(),
     buffering: vi.fn(),
-    stalled: vi.fn(),
+    failed: vi.fn(),
   };
   const engine = createEngine(media as unknown as Media, on);
   return { media, on, engine };
@@ -360,7 +360,7 @@ describe("stall watchdog", () => {
     expect(on.buffering).toHaveBeenLastCalledWith(true);
     vi.advanceTimersByTime(16_000);
 
-    expect(on.stalled).toHaveBeenCalledOnce();
+    expect(on.failed).toHaveBeenCalledOnce();
     expect(media.paused).toBe(true);
   });
 
@@ -375,7 +375,7 @@ describe("stall watchdog", () => {
       media.fire("progress");
     }
 
-    expect(on.stalled).not.toHaveBeenCalled();
+    expect(on.failed).not.toHaveBeenCalled();
   });
 
   it("does not carry the poll over a stop into the next boot", () => {
@@ -387,7 +387,7 @@ describe("stall watchdog", () => {
 
     vi.advanceTimersByTime(16_000);
 
-    expect(on.stalled).not.toHaveBeenCalled();
+    expect(on.failed).not.toHaveBeenCalled();
   });
 
   it("keeps one poll across boots", () => {
@@ -420,17 +420,38 @@ function fakeHls(supported: boolean) {
 }
 
 describe("initHls", () => {
-  it("attaches hls.js and reports a fatal error as an unattributed pause", () => {
-    const { media, on, engine } = setup();
-    const { Hls, instance, handlers } = fakeHls(true);
-    media.currentTime = 12;
+  it("attaches hls.js to the element", () => {
+    const { media, engine } = setup();
+    const { Hls, instance } = fakeHls(true);
 
     expect(engine.initHls("/m3u8", null, Hls)).toBe(true);
 
     expect(instance.loadSource).toHaveBeenCalledWith("/m3u8");
     expect(instance.attachMedia).toHaveBeenCalledWith(media);
+  });
+
+  it("stops and reports a failure, saving no position, on a fatal error before playback starts", () => {
+    const { media, on, engine } = setup();
+    const { Hls, instance, handlers } = fakeHls(true);
+    engine.initHls("/m3u8", 600, Hls);
+
     handlers[0]?.("hlsError", { fatal: true });
-    expect(on.pause).toHaveBeenCalledWith(12, false);
+
+    expect(on.failed).toHaveBeenCalledOnce();
+    expect(on.pause).not.toHaveBeenCalled();
+    expect(instance.destroy).toHaveBeenCalled();
+    media.fire("loadedmetadata");
+    expect(media.currentTime).toBe(0);
+  });
+
+  it("ignores an error hls.js recovers from", () => {
+    const { on, engine } = setup();
+    const { Hls, handlers } = fakeHls(true);
+    engine.initHls("/m3u8", 600, Hls);
+
+    handlers[0]?.("hlsError", { fatal: false });
+
+    expect(on.failed).not.toHaveBeenCalled();
   });
 
   it("falls back to native HLS, and fails with neither", () => {

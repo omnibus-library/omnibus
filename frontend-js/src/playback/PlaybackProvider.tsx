@@ -363,7 +363,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         },
         booted: () => patch({ ready: true }),
         buffering: (buffering) => patch({ buffering }),
-        stalled: () => patch({ failed: true }),
+        // A stopped stream fires no pause, so playing is cleared here.
+        failed: () => patch({ failed: true, playing: false }),
       };
       const engine = createEngine(audio, events);
       engine.setVolume(volumeRef.current);

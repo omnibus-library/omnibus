@@ -35,8 +35,8 @@ export type EngineEvents = {
   booted(): void;
   /** Playing, with too little data to go on. */
   buffering(on: boolean): void;
-  /** Buffering with no progress for 15 s: the element is paused, reported once. */
-  stalled(): void;
+  /** The audio can't go on: buffering with no progress for 15 s (paused, reported once) or a fatal stream error (stopped). */
+  failed(): void;
 };
 
 const HAVE_FUTURE_DATA = 3;
@@ -178,7 +178,7 @@ export function createEngine(media: Media, on: EngineEvents) {
       if (!stallReported && Date.now() - lastProgressAt > STALL_MS) {
         stallReported = true;
         media.pause();
-        on.stalled();
+        on.failed();
       }
     }, POLL_MS);
   };
@@ -272,8 +272,10 @@ export function createEngine(media: Media, on: EngineEvents) {
         hls.loadSource(url);
         hls.attachMedia(media);
         hls.on(Hls.Events.ERROR, (_event, data) => {
-          // A fatal transport error is not a listening position.
-          if (data.fatal) on.pause(media.currentTime || 0, false);
+          if (!data.fatal) return;
+          // Stopped first, so the clock the error left is never reported as a position.
+          stop();
+          on.failed();
         });
       } else if (media.canPlayType(NATIVE_HLS)) {
         media.src = url;
