@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   type BookUuid,
   type ReadStatusRecord,
@@ -6,7 +6,8 @@ import {
   saveReadStatus,
 } from "../../api";
 import { ago, nowSecs } from "../../format";
-import { readStatusQuery } from "./queries";
+import { readStatusQuery, shelvesQuery } from "./queries";
+import { useOptimisticSave } from "./useOptimisticSave";
 
 const SEGMENTS = [
   ["unread", "Unread"],
@@ -38,35 +39,20 @@ function statusMeta(
 
 /** The Unread / Reading / Finished control and the line under it. */
 export function ReadStatus({ uuid }: { uuid: BookUuid }) {
-  const client = useQueryClient();
   const { queryKey } = readStatusQuery(uuid);
   const record = useQuery(readStatusQuery(uuid));
-  const mutationKey = [...queryKey, "save"];
-  // A write that finishes while a newer click is in flight must not clobber it.
-  const isLatest = () => client.isMutating({ mutationKey }) <= 1;
-  const save = useMutation({
-    mutationKey,
-    mutationFn: (status: ReadStatusValue) => saveReadStatus(uuid, status),
-    onMutate: async (status) => {
-      await client.cancelQueries({ queryKey });
-      const previous = client.getQueryData(queryKey) ?? null;
-      const optimistic = {
+  const save = useOptimisticSave(
+    queryKey,
+    (status: ReadStatusValue) => saveReadStatus(uuid, status),
+    {
+      optimistic: (status) => ({
         status,
         finishedAt: status === "finished" ? nowSecs() : null,
-      };
-      client.setQueryData(queryKey, optimistic);
-      return { previous };
-    },
-    onError: (_error, _status, context) => {
-      if (isLatest()) client.setQueryData(queryKey, context?.previous ?? null);
-    },
-    onSuccess: (saved) => {
-      if (!isLatest()) return;
-      client.setQueryData(queryKey, saved);
+      }),
       // A smart shelf may now hold the book.
-      void client.invalidateQueries({ queryKey: ["book", uuid, "shelves"] });
+      alsoInvalidate: [shelvesQuery(uuid).queryKey],
     },
-  });
+  );
   const shown = record.data?.status ?? "unread";
   return (
     <div className="bd-readstatus" data-testid="read-status-control">

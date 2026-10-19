@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   type BookUuid,
@@ -6,14 +6,15 @@ import {
   fetchOtherRatings,
   fetchRating,
   type OtherRating,
-  type RatingRecord,
   saveRating,
 } from "../../api";
 import { StarRating } from "../../components/StarRating/StarRating";
 import { fillPercent } from "../../components/StarRating/stars";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
 import { ago, nowSecs } from "../../format";
+import { shelvesQuery } from "./queries";
 import { halfStarLabel, ratingAfterClick, ratingMeta } from "./rating";
+import { useOptimisticSave } from "./useOptimisticSave";
 
 const SLOTS = [1, 2, 3, 4, 5] as const;
 const HALVES = [
@@ -61,7 +62,6 @@ function OtherRatings({ ratings }: { ratings: OtherRating[] }) {
 
 /** Your half-star rating, the line under it, and what other readers gave the book. */
 export function RatingWidget({ uuid }: { uuid: BookUuid }) {
-  const client = useQueryClient();
   const queryKey = ["book", uuid, "rating"];
   const otherKey = ["book", uuid, "otherRatings"];
   const rating = useQuery({ queryKey, queryFn: () => fetchRating(uuid) });
@@ -70,36 +70,19 @@ export function RatingWidget({ uuid }: { uuid: BookUuid }) {
     queryFn: () => fetchOtherRatings(uuid),
   });
   const [hover, setHover] = useState<number | null>(null);
-  const mutationKey = [...queryKey, "save"];
-  // A write that finishes while a newer click is in flight must not clobber it.
-  const isLatest = () => client.isMutating({ mutationKey }) <= 1;
-  const save = useMutation({
-    mutationKey,
-    mutationFn: (stars: number | null) =>
+  const save = useOptimisticSave(
+    queryKey,
+    (stars: number | null) =>
       stars === null
         ? clearRating(uuid).then(() => null)
         : saveRating(uuid, stars),
-    onMutate: async (stars) => {
-      await client.cancelQueries({ queryKey });
-      const previous =
-        client.getQueryData<RatingRecord | null>(queryKey) ?? null;
-      client.setQueryData(
-        queryKey,
+    {
+      optimistic: (stars) =>
         stars === null ? null : { stars, updatedAt: nowSecs() },
-      );
-      return { previous };
-    },
-    onError: (_error, _stars, context) => {
-      if (isLatest()) client.setQueryData(queryKey, context?.previous ?? null);
-    },
-    onSuccess: (saved) => {
-      if (!isLatest()) return;
-      client.setQueryData(queryKey, saved);
-      void client.invalidateQueries({ queryKey: otherKey });
       // A smart shelf may now hold the book.
-      void client.invalidateQueries({ queryKey: ["book", uuid, "shelves"] });
+      alsoInvalidate: [otherKey, shelvesQuery(uuid).queryKey],
     },
-  });
+  );
   const current = rating.data?.stars;
   const shown = hover ?? current ?? 0;
   return (

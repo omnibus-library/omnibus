@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { HttpResponse, http } from "msw";
+import { delay, HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 import { toBookDetail } from "../../api";
 import {
@@ -7,6 +7,7 @@ import {
   getGetOtherRatingsMockHandler200,
   getGetProgressMockHandler200,
 } from "../../api/generated/omnibus.msw";
+import { PostRatingBody, type RatingRecord } from "../../api/generated/schemas";
 import {
   bookDetailHandlers,
   failing,
@@ -297,6 +298,34 @@ export const RatingSavesAndClears: Story = {
         "Not rated yet",
       ),
     );
+  },
+};
+
+export const TheNewestRatingWinsWhenAnOlderOneLandsLate: Story = {
+  beforeEach({ msw }) {
+    let stored: RatingRecord | null = null;
+    let calls = 0;
+    msw.use(
+      http.get("/api/ratings/:uuid", () => HttpResponse.json(stored)),
+      http.post("/api/ratings", async ({ request }) => {
+        const body = PostRatingBody.parse(await request.json());
+        const saved = { ...body, updated_at: nowSecs() };
+        stored = saved;
+        // Only the first answer is slow, so it lands after the second.
+        if (calls++ === 0) await delay(400);
+        return HttpResponse.json(saved);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Rate 3 stars" }),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Rate 5 stars" }));
+
+    await new Promise((resolve) => setTimeout(resolve, 800));
+
+    await expect(canvas.getByTestId("rating-meta")).toHaveTextContent("5 of 5");
   },
 };
 
