@@ -355,7 +355,15 @@ export const DeleteFailsKeepsTheEntry: Story = {
     );
     await userEvent.keyboard("{Escape}");
     await expect(confirm).not.toBeInTheDocument();
-    await expect(canvas.getByTestId("journal-overlay")).toBeInTheDocument();
+    const overlay = canvas.getByTestId("journal-overlay");
+    await expect(overlay).toBeInTheDocument();
+
+    // Focus comes back to the overlay, so a second Escape closes it.
+    await waitFor(() =>
+      expect(overlay).toContainElement(document.activeElement as HTMLElement),
+    );
+    await userEvent.keyboard("{Escape}");
+    await expect(overlay).not.toBeInTheDocument();
   },
 };
 

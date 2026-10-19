@@ -62,6 +62,23 @@ export const EscapeClosesOnceTheManifestLoads: Story = {
   },
 };
 
+export const EscapeStillClosesAfterContinue: Story = {
+  play: async ({ args, canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("delete-file-11"));
+    await userEvent.click(canvas.getByTestId("delete-continue"));
+    await canvas.findByText("Delete 1 file?");
+
+    // The button that had focus is gone, so focus returns to the dialog.
+    await waitFor(() =>
+      expect(canvas.getByRole("dialog")).toContainElement(
+        document.activeElement as HTMLElement,
+      ),
+    );
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(args.onClose).toHaveBeenCalled());
+  },
+};
+
 export const ManifestFailureSaysSo: Story = {
   beforeEach({ msw }) {
     msw.use(failing("get", "/api/books/:uuid/deletion-manifest", 500));

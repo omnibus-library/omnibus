@@ -52,8 +52,7 @@ export function ConfirmModal({
   const dismiss = () => {
     if (!busy) onDismiss();
   };
-  // Again when `busy` flips: the button that was working is disabled, which drops focus to the page.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `busy` is the trigger, not an input
+  // After every render: a button that unmounts or disables drops focus to the page.
   useEffect(() => {
     if (!focusOnOpen) return;
     // After paint, or the focus ring never shows; and not over a field that already has it.
@@ -62,7 +61,7 @@ export function ConfirmModal({
       if (!dialog?.contains(document.activeElement)) dialog?.focus();
     });
     return () => cancelAnimationFrame(frame);
-  }, [focusOnOpen, busy]);
+  });
   return (
     <div
       ref={backdrop}

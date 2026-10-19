@@ -132,8 +132,7 @@ export function MergeDialog({ target, onMerged, onClose }: MergeDialogProps) {
       dialogClass="mg-modal"
       busy={merge.isPending}
       onDismiss={onClose}
-      // The search step autofocuses its input; the confirm step has none.
-      focusOnOpen={source !== null}
+      focusOnOpen
     >
       <div className="mg-head">
         <div className="label mg-kicker">Merge duplicate</div>
