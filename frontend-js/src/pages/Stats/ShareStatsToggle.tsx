@@ -1,4 +1,5 @@
 import { useCurrentUser, useShareStats } from "../../session";
+import "../../styles/settings.css";
 
 /** "Visible to your household": the sharing preference, offered where its effect is felt and saved straight away. */
 export function ShareStatsToggle() {

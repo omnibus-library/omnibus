@@ -5,6 +5,7 @@ import {
   thumbUrl,
 } from "../../api";
 import { Cover } from "../../components/Cover/Cover";
+import "../../components/ShelfForm/ShelfForm.css";
 
 export type FinishedBook = StatsSummary["finished_books"][number];
 

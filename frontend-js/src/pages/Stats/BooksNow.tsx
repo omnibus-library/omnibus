@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import type { ResumePoint, StatsSummary } from "../../api";
 import { CoverImage } from "../../components/Cover/CoverImage";
+import "../../components/ShelfForm/ShelfForm.css";
 import { StarRating } from "../../components/StarRating/StarRating";
 import { type FinishedBook, FinishedCover } from "./FinishedCover";
 import {
