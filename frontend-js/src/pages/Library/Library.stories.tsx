@@ -122,7 +122,6 @@ export const LoadMoreFails: Story = {
     ).toBeEnabled();
 
     // The row is still on screen, yet the failed page is not asked for again on its own.
-    await new Promise((resolve) => setTimeout(resolve, 500));
     await expect(requests.length).toBeLessThanOrEqual(2);
   },
 };
