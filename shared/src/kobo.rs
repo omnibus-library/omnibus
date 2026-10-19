@@ -35,6 +35,11 @@ pub struct CreateKoboDevice {
     pub name: String,
 }
 
+/// What a refused device name is told, naming the limit.
+pub fn kobo_device_name_message() -> String {
+    format!("enter a device name (1–{KOBO_DEVICE_NAME_MAX_LEN} characters)")
+}
+
 /// `true` once a trimmed device name is empty or exceeds
 /// [`KOBO_DEVICE_NAME_MAX_LEN`]. Shared by the RPC boundary and any client
 /// pre-check so both reject the same inputs.
@@ -46,6 +51,14 @@ pub fn kobo_device_name_invalid(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kobo_device_name_message_names_the_limit() {
+        assert_eq!(
+            kobo_device_name_message(),
+            "enter a device name (1–100 characters)"
+        );
+    }
 
     #[test]
     fn kobo_device_name_invalid_accepts_a_reasonable_label() {

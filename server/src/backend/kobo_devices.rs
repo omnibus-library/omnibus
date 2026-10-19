@@ -11,7 +11,9 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, kobo_devices::KoboDeviceError};
-use omnibus_shared::{kobo_device_name_invalid, CreateKoboDevice, KoboDeviceView};
+use omnibus_shared::{
+    kobo_device_name_invalid, kobo_device_name_message, CreateKoboDevice, KoboDeviceView,
+};
 
 use crate::auth::AuthUser;
 
@@ -70,11 +72,7 @@ pub(super) async fn create_kobo_device(
     Json(body): Json<CreateKoboDevice>,
 ) -> Response {
     if kobo_device_name_invalid(&body.name) {
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "enter a device name (1–100 characters)",
-        )
-            .into_response();
+        return (StatusCode::UNPROCESSABLE_ENTITY, kobo_device_name_message()).into_response();
     }
     match db::kobo_devices::create_device(&state.pool, user.id, body.name.trim()).await {
         Ok(device) => Json(KoboDeviceView::from(device)).into_response(),

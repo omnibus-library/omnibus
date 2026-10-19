@@ -12,7 +12,7 @@ use omnibus_shared::KoboDeviceView;
 #[cfg(feature = "server")]
 use omnibus_db::{self as db, kobo_devices::KoboDeviceError};
 #[cfg(feature = "server")]
-use omnibus_shared::kobo_device_name_invalid;
+use omnibus_shared::{kobo_device_name_invalid, kobo_device_name_message};
 
 #[cfg(feature = "server")]
 use super::{internal_rpc_error, AuthUser, PoolExt};
@@ -40,7 +40,7 @@ pub async fn rpc_list_kobo_devices() -> Result<Vec<KoboDeviceView>> {
 #[post("/api/rpc/kobo/devices/create", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_create_kobo_device(name: String) -> Result<KoboDeviceView> {
     if kobo_device_name_invalid(&name) {
-        return Err(ServerFnError::new("enter a device name (1–100 characters)").into());
+        return Err(ServerFnError::new(kobo_device_name_message()).into());
     }
     match db::kobo_devices::create_device(&pool.0, user.id, name.trim()).await {
         Ok(dev) => Ok(dev.into()),
