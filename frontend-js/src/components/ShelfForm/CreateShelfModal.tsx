@@ -100,7 +100,11 @@ export function CreateShelfModal({
         </p>
       )}
       <div className="shelf-modal-foot">
-        <Button className="shelf-btn-ghost" onClick={onClose}>
+        <Button
+          className="shelf-btn-ghost"
+          disabled={create.isPending}
+          onClick={onClose}
+        >
           Cancel
         </Button>
         <Button

@@ -45,7 +45,7 @@ export function AddBooksModal({
   return (
     <ConfirmModal
       testId="add-books-modal"
-      ariaLabel={`Add books to ${shelfName}`}
+      labelledBy="add-books-title"
       backdropClass="shelf-modal-overlay"
       dialogClass="shelf-modal-card"
       busy={add.isPending}
@@ -63,6 +63,7 @@ export function AddBooksModal({
           className="pick-close"
           aria-label="Close"
           data-testid="add-books-close"
+          disabled={add.isPending}
           onClick={onClose}
         >
           ✕
@@ -88,6 +89,7 @@ export function AddBooksModal({
         <Button
           className="shelf-btn-ghost"
           data-testid="add-books-cancel"
+          disabled={add.isPending}
           onClick={onClose}
         >
           Cancel

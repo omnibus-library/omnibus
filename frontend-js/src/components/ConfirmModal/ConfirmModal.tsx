@@ -23,9 +23,13 @@ function trapTab(event: KeyboardEvent<HTMLElement>) {
   (event.shiftKey ? last : first).focus();
 }
 
-type ConfirmModalProps = {
+/** The dialog's name: a label on the backdrop, or the id of a title inside, which moves the dialog role onto the panel. */
+type Name =
+  | { ariaLabel: string; labelledBy?: undefined }
+  | { labelledBy: string; ariaLabel?: undefined };
+
+type ConfirmModalProps = Name & {
   testId: string;
-  ariaLabel: string;
   /** The panel's class, such as `mg-modal confirm-modal`. */
   dialogClass: string;
   /** While true, Escape and a click on the backdrop do nothing. */
@@ -41,6 +45,7 @@ type ConfirmModalProps = {
 export function ConfirmModal({
   testId,
   ariaLabel,
+  labelledBy,
   dialogClass,
   busy,
   onDismiss,
@@ -71,12 +76,15 @@ export function ConfirmModal({
     return () => cancelAnimationFrame(frame);
   });
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: it is the dialog itself unless a title inside names the panel instead
     <div
       ref={backdrop}
       className={backdropClass}
-      role="dialog"
-      aria-modal="true"
-      aria-label={ariaLabel}
+      {...(!labelledBy && {
+        role: "dialog",
+        "aria-modal": "true",
+        "aria-label": ariaLabel,
+      })}
       data-testid={testId}
       // Focusable so Escape reaches onKeyDown at all.
       tabIndex={-1}
@@ -95,7 +103,15 @@ export function ConfirmModal({
       }}
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: only keeps a click inside the panel from reaching the backdrop */}
-      <div className={dialogClass} onClick={(event) => event.stopPropagation()}>
+      <div
+        className={dialogClass}
+        {...(labelledBy && {
+          role: "dialog",
+          "aria-modal": "true",
+          "aria-labelledby": labelledBy,
+        })}
+        onClick={(event) => event.stopPropagation()}
+      >
         {children}
       </div>
     </div>

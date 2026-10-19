@@ -2018,7 +2018,7 @@ export const LensAddBooks: Story = {
 
     await userEvent.click(add);
     const dialog = await canvas.findByRole("dialog", {
-      name: "Add books to Winter reads",
+      name: "Winter reads",
     });
     // The shelf's own books read as already on it.
     await expect(
@@ -2046,7 +2046,7 @@ export const LensAddTile: Story = {
     await userEvent.click(await canvas.findByTestId("shelf-add-tile"));
 
     await expect(
-      await canvas.findByRole("dialog", { name: "Add books to Winter reads" }),
+      await canvas.findByRole("dialog", { name: "Winter reads" }),
     ).toBeInTheDocument();
   },
 };

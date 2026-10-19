@@ -31,7 +31,7 @@ type Story = StoryObj<typeof meta>;
 export const NothingPicked: Story = {
   play: async ({ canvas }) => {
     const dialog = canvas.getByRole("dialog", {
-      name: "Add books to Winter reads",
+      name: "Winter reads",
     });
     await expect(dialog).toHaveAttribute("aria-modal", "true");
     await expect(canvas.getByText("Adding to")).toBeInTheDocument();
