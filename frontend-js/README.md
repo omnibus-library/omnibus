@@ -33,10 +33,10 @@ under the top bar, and a guest goes to `/login?next=…` and comes back. Login,
 Register, the library, book detail, the metadata editor (`/books/:uuid/edit`),
 add books (`/add-books`), check-in (`/check-in`), search results
 (`/search/:query`), the authors, series and shelves indexes with their detail
-pages (`/authors/:id`, `/series/:id`, `/shelves/:id`) and Not Found are ported,
-and the top bar carries the user menu and the ⌘K search palette. The phone
-layouts (the bottom tab bar and the native shell's shelves screens) are left
-out. As on Dioxus web, a bare `/search` and the native shell's `/connect`
+pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), stats (`/stats`), the
+chart builder (`/stats/chart`) and Not Found are ported, and the top bar
+carries the user menu and the ⌘K search palette. The phone layouts (the bottom
+tab bar and the native shell's shelves screens) are left out. As on Dioxus web, a bare `/search` and the native shell's `/connect`
 redirect to the library. Every other route renders `Unported`, which shows its
 parsed parameters and names its Dioxus source.
 Book detail carries all six stops (home, stats, highlights, journals, files,
@@ -53,6 +53,17 @@ server accepts": the cap is the server's `OMNIBUS_MAX_UPLOAD_BYTES`, which no
 route reports, so the page cannot refuse a big file before sending it. Check-in
 takes an ISBN typed, scanned or found by title, and files a copy or a wishlist
 entry; the camera never opens until "Scan a barcode" is pressed.
+Stats carries the streak hero with its goals, the period pills over the window
+band (tiles and their drill-in, reading clock, genre donut, standouts), the
+standing band (heatmap, books open and finished, monthly chart), the User /
+Library scope, the household reader picker (`?user=`) and the sharing switch.
+Its figures format as Rust does (`fixed`, ties to even), so a half rounds as it
+does on Dioxus, and its charts are CSS and SVG, with no chart library. It leaves
+goal editing to Settings. The chart builder composes a spec from the closed
+measure list and draws it in SVG, with a hover card, a drag-to-zoom brush and a
+value tween; nothing links to it, as on Dioxus. Dioxus reads the chart through
+a server function, so it calls `POST /api/stats/chart`, a REST route added for
+it.
 A page that throws renders `RouteError` inside the top bar; anything else that
 throws (the session gate, the shell, a reader) renders it full-screen.
 
@@ -143,8 +154,8 @@ shell provides it.
 - **Forms** use react-hook-form with a zod resolver (`CredentialsSchema` on the
   sign-in page), so a form's rules live in the same schema style as the API's.
 - **Unit tests** (`pnpm run test:unit`, jsdom) cover the API parsers,
-  formatting, `safeNext`, the theme root, the session, and the pure helpers
-  behind the screens (`resume`, `password`, `settingsIndex`, `viewPrefs`,
+  formatting (`fixed` included), `safeNext`, the theme root, the session, and
+  the pure helpers behind the screens (`resume`, `password`, `settingsIndex`, `viewPrefs`,
   `focusTrap`, book detail's `readout`, `identifiers`, `shelves`,
   `journalEditor` and delete copy, the palette's `selection`, the results
   page's `results`, Register's `refusal`, the library's `filters`,
@@ -153,9 +164,12 @@ shell provides it.
   `editionFields`, `uploads`, check-in's `checkIn` and `scan`, the scanner's
   `scanStatus` and `loadScanner`, the discovery pages' `authorsOrder`,
   `authorPane`, `seriesIndex`, `shelvesIndex`, the shelf rules' `rules`, the
-  picker's `picker`, and the shelf page's `shelfAccess` and `narrow`), plus the
-  real route table in `src/router.test.tsx`: every unported page, the layout
-  split, the guest redirect and the redirects.
+  picker's `picker`, the shelf page's `shelfAccess` and `narrow`, stats'
+  `calendar`, `summary`, `picker`, `hero`, `goal`, `clock`, `donut`,
+  `superlatives`, `tiles`, `drillIn`, `heatmap`, `readingNow`, `monthly`,
+  `library` and `composition`, and the chart builder's `chart`, `plot`, `notes`,
+  `zoom` and `tween`), plus the real route table in `src/router.test.tsx`:
+  every unported page, the layout split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI
   uploads each one's lcov to Codecov under the `frontend-js` flag.
 
