@@ -105,3 +105,28 @@ export const NoDuplicates: Story = {
     await expect(args.onChange).not.toHaveBeenCalled();
   },
 };
+
+const MANY = Array.from({ length: 200 }, (_, i) => ({
+  name: `Tag ${i + 1}`,
+  count: 1,
+}));
+
+const offered = () =>
+  [...document.querySelectorAll("datalist option")].map((o) =>
+    o.getAttribute("value"),
+  );
+
+export const CapsSuggestions: Story = {
+  args: { values: [], suggestions: MANY },
+  play: async ({ canvas, userEvent }) => {
+    await expect(offered()).toHaveLength(50);
+
+    await userEvent.type(
+      canvas.getByRole("combobox", { name: "Add tags" }),
+      "tag 19",
+    );
+
+    // Only the names containing the draft remain: Tag 19 and Tag 190 to 199.
+    await expect(offered()).toHaveLength(11);
+  },
+};

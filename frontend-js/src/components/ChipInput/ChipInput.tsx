@@ -1,8 +1,12 @@
 import { useId, useState } from "react";
 import { plural } from "../../format";
-import { isPicked } from "../FilterBar/filters";
 import "../Chip/Chip.css";
 import "./ChipInput.css";
+
+/** The most suggestions drawn at once; a library's tag cloud can run to thousands. */
+const MAX_SUGGESTIONS = 50;
+
+const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 type ChipInputProps = {
   label: string;
@@ -28,11 +32,16 @@ export function ChipInput({
 }: ChipInputProps) {
   const [draft, setDraft] = useState("");
   const listId = useId();
+  const picked = (name: string) => values.some((v) => sameName(v, name));
   const add = (text: string) => {
     const name = text.trim();
     setDraft("");
-    if (name && !isPicked(values, name)) onChange([...values, name]);
+    if (name && !picked(name)) onChange([...values, name]);
   };
+  const needle = draft.trim().toLowerCase();
+  const offered = suggestions
+    .filter((s) => !picked(s.name) && s.name.toLowerCase().includes(needle))
+    .slice(0, MAX_SUGGESTIONS);
   return (
     <div className="chip-editor-root">
       {values.map((value) => (
@@ -73,15 +82,13 @@ export function ChipInput({
           }}
         />
         <datalist id={listId}>
-          {suggestions
-            .filter((s) => !isPicked(values, s.name))
-            .map((s) => (
-              <option
-                key={s.name}
-                value={s.name}
-                label={`${s.count} book${plural(s.count)}`}
-              />
-            ))}
+          {offered.map((s) => (
+            <option
+              key={s.name}
+              value={s.name}
+              label={`${s.count} book${plural(s.count)}`}
+            />
+          ))}
         </datalist>
       </div>
     </div>
