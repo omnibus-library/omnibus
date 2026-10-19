@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { expect, waitFor } from "storybook/test";
+import { adminHandlers } from "../../testing/adminHandlers";
 import { WIRE_ADA } from "../../testing/wire";
 import { Admin } from "./Admin";
 
@@ -26,6 +27,9 @@ const meta = {
   component: AdminRoutes,
   args: { path: "/admin" },
   parameters: { ownRouter: true },
+  beforeEach({ msw }) {
+    msw.use(...adminHandlers());
+  },
 } satisfies Meta<typeof AdminRoutes>;
 
 export default meta;
@@ -94,6 +98,61 @@ export const OpensSources: Story = {
     await waitFor(() =>
       expect(document.title).toBe("Omnibus | Sources · Administration"),
     );
+  },
+};
+
+export const ShowsTheSourcesCard: Story = {
+  args: { path: "/admin?section=sources" },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("heading", { level: 3, name: "Library folders" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(canvas.getByLabelText("Ebook library path")).toHaveValue(
+        "/library/ebooks",
+      ),
+    );
+  },
+};
+
+export const AsksBeforeLeavingEditedSources: Story = {
+  args: { path: "/admin?section=sources" },
+  play: async ({ canvas, userEvent }) => {
+    const ebook = canvas.getByLabelText("Ebook library path");
+    await waitFor(() => expect(ebook).toHaveValue("/library/ebooks"));
+    await userEvent.type(ebook, "2");
+    await expect(window.onbeforeunload).not.toBeNull();
+    await userEvent.click(canvas.getByTestId("admin-nav-people"));
+
+    const dialog = await canvas.findByRole("dialog", {
+      name: "Discard unsaved changes",
+    });
+    await expect(dialog).toHaveTextContent(
+      "You've edited a setting in this section without saving it.",
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Keep editing" }));
+    await expect(ebook).toHaveValue("/library/ebooks2");
+    await expect(canvas.getByTestId("admin-nav-sources")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  },
+};
+
+export const LeavesFreelyOnceTheEditIsUndone: Story = {
+  args: { path: "/admin?section=sources" },
+  play: async ({ canvas, userEvent }) => {
+    const ebook = canvas.getByLabelText("Ebook library path");
+    await waitFor(() => expect(ebook).toHaveValue("/library/ebooks"));
+    await userEvent.type(ebook, "2");
+    await userEvent.type(ebook, "{Backspace}");
+    await userEvent.click(canvas.getByTestId("admin-nav-people"));
+
+    await expect(
+      await canvas.findByRole("heading", { level: 2, name: "People" }),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
+    await expect(window.onbeforeunload).toBeNull();
   },
 };
 

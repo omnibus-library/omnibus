@@ -8,6 +8,7 @@ import {
   SettingsShell,
 } from "../../components/SettingsShell/SettingsShell";
 import { useCurrentUser } from "../../session";
+import { SourcesCard } from "./SourcesCard";
 import {
   ADMIN_SECTIONS,
   type AdminSection,
@@ -23,6 +24,7 @@ const sectionOf = (search: string) =>
 function sectionContent(slug: AdminSection["slug"]): ReactNode {
   switch (slug) {
     case "sources":
+      return <SourcesCard />;
     case "maintenance":
     case "metadata":
     case "cleanup":
