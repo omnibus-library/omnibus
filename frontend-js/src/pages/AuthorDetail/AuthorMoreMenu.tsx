@@ -11,10 +11,10 @@ import {
   ConfirmBody,
   ConfirmModal,
 } from "../../components/ConfirmModal/ConfirmModal";
+import { MoreMenu } from "../../components/MoreMenu/MoreMenu";
 import { bookCount } from "../../format";
 import { useCurrentUser } from "../../session";
 import "../../components/AuthorPhotoEdit/AuthorPhotoEdit.css";
-import "../ShelfDetail/ShelfDetail.css";
 
 function DeleteAuthorModal({
   author,
@@ -102,28 +102,18 @@ export function AuthorMoreMenu({ author }: { author: AuthorPage }) {
           ⋯
         </button>
         {open && (
-          <>
-            {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a click-away scrim; the menu closes from the keyboard by choosing its item */}
-            <div className="shd-menu-scrim" onClick={() => setOpen(false)} />
-            <div
-              className="shelf-actions-menu shd-menu"
-              role="menu"
-              aria-label={`More actions for ${author.name}`}
-            >
-              <button
-                type="button"
-                className="shelf-menu-item shelf-menu-item--danger shd-menu-item"
-                role="menuitem"
-                data-testid="author-delete-btn"
-                onClick={() => {
-                  setOpen(false);
-                  setConfirming(true);
-                }}
-              >
-                Delete author…
-              </button>
-            </div>
-          </>
+          <MoreMenu
+            label={`More actions for ${author.name}`}
+            onClose={() => setOpen(false)}
+            items={[
+              {
+                label: "Delete author…",
+                testId: "author-delete-btn",
+                danger: true,
+                onSelect: () => setConfirming(true),
+              },
+            ]}
+          />
         )}
       </div>
       {confirming && (

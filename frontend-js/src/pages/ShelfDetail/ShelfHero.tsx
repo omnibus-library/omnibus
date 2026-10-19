@@ -17,6 +17,7 @@ import {
   PeopleGlyph,
   PlusGlyph,
 } from "../../components/Glyphs/Glyphs";
+import { MoreMenu } from "../../components/MoreMenu/MoreMenu";
 import {
   kindLabel,
   ruleText,
@@ -175,61 +176,6 @@ function DeleteShelfModal({
   );
 }
 
-/** The ⋯ menu's Kobo toggle and Delete, over a scrim that closes it. */
-function MoreMenu({
-  shelf,
-  toggling,
-  onClose,
-  onToggle,
-  onDelete,
-}: {
-  shelf: ShelfDetail;
-  toggling: boolean;
-  onClose: () => void;
-  onToggle: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a click-away scrim; the menu closes from the keyboard by choosing an item */}
-      <div className="shd-menu-scrim" onClick={onClose} />
-      <div
-        className="shelf-actions-menu shd-menu"
-        role="menu"
-        aria-label="More shelf actions"
-      >
-        <button
-          type="button"
-          className="shelf-menu-item shd-menu-item"
-          role="menuitemcheckbox"
-          aria-checked={shelf.syncToKobo}
-          data-testid="shelf-toggle-kobo"
-          disabled={toggling}
-          onClick={() => {
-            onClose();
-            onToggle();
-          }}
-        >
-          <span className="shd-menu-check" aria-hidden="true">
-            {shelf.syncToKobo && "✓"}
-          </span>
-          Sync to Kobo
-        </button>
-        <button
-          type="button"
-          className="shelf-menu-item shelf-menu-item--danger shd-menu-item"
-          role="menuitem"
-          data-testid="shelf-delete"
-          onClick={onDelete}
-        >
-          <span className="shd-menu-check" aria-hidden="true" />
-          Delete shelf
-        </button>
-      </div>
-    </>
-  );
-}
-
 type ActionsProps = {
   shelf: ShelfDetail;
   access: ShelfAccess;
@@ -306,14 +252,23 @@ function ShelfActions({ shelf, access, members, onAdd, onEdit }: ActionsProps) {
           </button>
           {editable && menuOpen && (
             <MoreMenu
-              shelf={shelf}
-              toggling={toggle.isPending}
+              label="More shelf actions"
               onClose={() => setMenuOpen(false)}
-              onToggle={() => toggle.mutate()}
-              onDelete={() => {
-                setMenuOpen(false);
-                setDeleting(true);
-              }}
+              items={[
+                {
+                  label: "Sync to Kobo",
+                  testId: "shelf-toggle-kobo",
+                  checked: shelf.syncToKobo,
+                  disabled: toggle.isPending,
+                  onSelect: () => toggle.mutate(),
+                },
+                {
+                  label: "Delete shelf",
+                  testId: "shelf-delete",
+                  danger: true,
+                  onSelect: () => setDeleting(true),
+                },
+              ]}
             />
           )}
         </div>

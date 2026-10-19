@@ -1,43 +1,3 @@
-.shelf-actions-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 30;
-  min-width: 180px;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-1);
-  border: 1px solid var(--line-2);
-  border-radius: 10px;
-  padding: 4px;
-  box-shadow: 0 14px 34px color-mix(in oklch, black 50%, transparent);
-}
-.shelf-menu-item {
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  color: var(--ink-1);
-  background: transparent;
-  border: none;
-  border-radius: 7px;
-  padding: 7px 10px;
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .shelf-menu-item:hover {
-    background: var(--bg-2);
-    color: var(--ink-0);
-  }
-}
-.shelf-menu-item--danger {
-  color: var(--bad);
-}
-@media (hover: hover) {
-  .shelf-menu-item--danger:hover {
-    background: color-mix(in oklch, var(--bad) 14%, transparent);
-  }
-}
-
 .shelf-grid {
   margin-top: 4px;
 }
@@ -193,32 +153,11 @@
 .shd-action[aria-disabled="true"]:active {
   transform: none;
 }
-.shd-more {
-  position: relative;
-}
 .shd-more-btn {
   width: 36px;
   padding: 0;
   justify-content: center;
   font-size: 17px;
-}
-.shd-menu-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 29;
-}
-.shd-menu {
-  min-width: 200px;
-}
-.shd-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.shd-menu-check {
-  width: 12px;
-  flex: none;
-  color: var(--accent);
 }
 
 .shd-note {
