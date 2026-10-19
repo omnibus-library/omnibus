@@ -87,7 +87,7 @@ export function needsReload(
  * Decides which positions are saved: a heartbeat at most every 5 s and only once the user
  * acted, every seek at once, a pause only after the user acted. `save` is fire-and-forget.
  */
-export function createPositionSaver(save: (seconds: number) => void) {
+export function createPositionSaver(save: (seconds: number) => Promise<void>) {
   let lastSaved = 0;
   return {
     time(seconds: number, userActed: boolean) {
@@ -99,8 +99,9 @@ export function createPositionSaver(save: (seconds: number) => void) {
       lastSaved = seconds;
       save(seconds);
     },
+    /** Resolves once the server has the position; `undefined` when nothing was due. */
     pause(seconds: number, userActed: boolean) {
-      if (userActed) save(seconds);
+      if (userActed) return save(seconds);
     },
   };
 }

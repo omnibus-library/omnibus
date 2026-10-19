@@ -113,7 +113,7 @@ describe("applyAutoReadStatus", () => {
   it("marks a book with no status reading on its first play", async () => {
     const puts = serve("unread");
 
-    await expect(applyAutoReadStatus(A, false)).resolves.toBe(true);
+    await applyAutoReadStatus(A, false);
 
     expect(puts).toEqual([{ book_uuid: A, status: "reading" }]);
   });
@@ -121,7 +121,7 @@ describe("applyAutoReadStatus", () => {
   it("writes nothing when the status could not be read, so finished is never downgraded", async () => {
     const puts = serve("failed");
 
-    await expect(applyAutoReadStatus(A, false)).resolves.toBe(false);
+    await applyAutoReadStatus(A, false);
 
     expect(puts).toEqual([]);
   });
@@ -137,7 +137,7 @@ describe("applyAutoReadStatus", () => {
   it("leaves a finished book finished at its end", async () => {
     const puts = serve("finished");
 
-    await expect(applyAutoReadStatus(A, true)).resolves.toBe(false);
+    await applyAutoReadStatus(A, true);
 
     expect(puts).toEqual([]);
   });

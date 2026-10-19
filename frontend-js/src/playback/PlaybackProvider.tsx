@@ -28,7 +28,11 @@ import {
   savePlaybackRate,
 } from "../api";
 import { nowSecs } from "../format";
-import { bookQuery } from "../pages/BookDetail/queries";
+import {
+  bookQuery,
+  readStatusQuery,
+  shelvesQuery,
+} from "../pages/BookDetail/queries";
 import { meQuery } from "../session";
 import {
   bootResumePosition,
@@ -298,11 +302,16 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
-  // The book's read status moved, and the pages showing it are stale.
+  // The read status may have moved; only it and the smart shelves read it (not the edit form's query).
   const markRead = useCallback(
     (uuid: BookUuid, atEnd: boolean) =>
-      void applyAutoReadStatus(uuid, atEnd).then((wrote) => {
-        if (wrote) void client.invalidateQueries({ queryKey: ["book", uuid] });
+      void applyAutoReadStatus(uuid, atEnd).then(() => {
+        for (const { queryKey } of [
+          readStatusQuery(uuid),
+          shelvesQuery(uuid),
+        ]) {
+          void client.invalidateQueries({ queryKey });
+        }
       }),
     [client],
   );
@@ -330,7 +339,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         },
         pause(t, userActed) {
           patch({ playing: false });
-          saverRef.current?.pause(t, userActed);
+          void saverRef.current?.pause(t, userActed);
         },
         ended() {
           const uuid = live.current.uuid;
@@ -342,7 +351,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
             markRead(uuid, true);
           }
         },
-        booted: () => patch({ ready: true, failed: false }),
+        booted: () => patch({ ready: true }),
         buffering: (buffering) => patch({ buffering }),
         stalled: () => patch({ failed: true }),
       };
@@ -378,7 +387,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       const isCurrent = () => bootRef.current === token;
       engine.stop();
       // The timer outlives a page, and a file of the same book, but not another book.
-      if (!sameBook) timerRef.current?.off();
+      if (sameBook) timerRef.current?.fileChanged();
+      else timerRef.current?.off();
       saverRef.current = null;
       nextFileRef.current = null;
       markedReading.current = false;
@@ -402,7 +412,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
           loadedRef.current = { uuid, fileId: saveFileId ?? fileId };
           saverRef.current = createPositionSaver((seconds) => {
             saveLocalPosition(uuid, seconds);
-            void saveListeningPosition(uuid, saveFileId, seconds);
+            return saveListeningPosition(uuid, saveFileId, seconds);
           });
         },
       });
@@ -475,14 +485,12 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [uuid, playing, tracker]);
 
   const flush = useCallback(async () => {
-    const { uuid, loadedFileId } = live.current;
     const at = engineRef.current?.where();
-    const session = tracker.stop(nowSecs());
+    // Rolled over, not stopped: a refused logout leaves the player playing.
+    const session = tracker.rollover(nowSecs());
     await Promise.all([
-      uuid && at?.userActed
-        ? saveListeningPosition(uuid, loadedFileId, at.seconds)
-        : null,
-      session ? postListeningSessions([session]) : null,
+      at && saverRef.current?.pause(at.seconds, at.userActed),
+      session && postListeningSessions([session]),
     ]);
   }, [tracker]);
 

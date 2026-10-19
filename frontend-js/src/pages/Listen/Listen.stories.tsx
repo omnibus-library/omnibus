@@ -492,6 +492,32 @@ export const SigningOutReportsTheListeningBeforeTheLogout: Story = {
   },
 };
 
+export const SigningOutDoesNotWaitOnAHungSave: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      hanging("/api/progress", "post"),
+      ...listenHandlers(BOOK, { writes, row: TEN_MINUTES_IN }),
+      http.post("/api/auth/logout", () => {
+        writes.push({ request: "POST /api/auth/logout", body: null });
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByText("Now playing · Chapter 1 of 3");
+    act(() => {
+      fireEvent.play(audioOf(canvas));
+    });
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Open user menu" }),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Sign out" }));
+
+    await waitFor(() => expect(wrote("POST /api/auth/logout")).toHaveLength(1));
+  },
+};
+
 export const ADeadSavedFileFallsBackToTheDefaultFile: Story = {
   beforeEach({ msw }) {
     msw.use(

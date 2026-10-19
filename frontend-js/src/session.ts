@@ -35,14 +35,20 @@ export function useCurrentUser(): User {
   return data;
 }
 
-/** Runs `beforeLogout`, then ends the session, drops every cached answer, and returns to /login. */
+/** How long a sign-out waits on `beforeLogout` before it goes ahead without it. */
+const BEFORE_LOGOUT_MS = 2000;
+
+/** Runs `beforeLogout` (for up to 2 s), then ends the session, drops every cached answer, and returns to /login. */
 export function useSignOut(beforeLogout: () => Promise<void>) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   return useMutation({
-    // What `beforeLogout` posts needs the cookie that `logout` revokes.
+    // What `beforeLogout` posts needs the cookie that `logout` revokes; a hung server must not hold the sign-out.
     mutationFn: async () => {
-      await beforeLogout();
+      await Promise.race([
+        beforeLogout(),
+        new Promise((resolve) => setTimeout(resolve, BEFORE_LOGOUT_MS)),
+      ]);
       await logout();
     },
     onSuccess: () => {

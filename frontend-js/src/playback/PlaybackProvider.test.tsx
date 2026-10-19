@@ -190,6 +190,20 @@ describe("PlaybackProvider", () => {
       expect(player.sleep.remaining).not.toBeNull();
     });
 
+    it("turns an end-of-chapter timer off on another file of the same book, as its anchor is the old file's", async () => {
+      server.use(twoFiles([]));
+      mount();
+      act(() => player.open(UUID, null));
+      await waitFor(() => expect(player.ready).toBe(true));
+      act(() => player.sleepAtChapterEnd());
+      expect(player.sleep.choice.kind).toBe("endOfChapter");
+
+      act(() => player.open(UUID, 918));
+
+      await waitFor(() => expect(player.loadedFileId).toBe(918));
+      expect(player.sleep.choice.kind).toBe("off");
+    });
+
     it("is cancelled when another book opens", async () => {
       mount();
       act(() => player.open(UUID, null));
@@ -222,10 +236,14 @@ describe("PlaybackProvider", () => {
       );
     });
 
-    it("marks the book's cached pages stale once the first play writes its read status", async () => {
+    it("marks the read status and shelves stale, and not the edit form, once the first play writes its read status", async () => {
       const client = mount();
       const key = ["book", UUID, "readStatus"];
+      const shelves = ["book", UUID, "shelves"];
+      const edit = ["book", UUID, "edit"];
       client.setQueryData(key, null);
+      client.setQueryData(shelves, null);
+      client.setQueryData(edit, null);
       act(() => player.open(UUID, null));
       await waitFor(() => expect(player.ready).toBe(true));
 
@@ -236,6 +254,8 @@ describe("PlaybackProvider", () => {
       await waitFor(() =>
         expect(client.getQueryState(key)?.isInvalidated).toBe(true),
       );
+      expect(client.getQueryState(shelves)?.isInvalidated).toBe(true);
+      expect(client.getQueryState(edit)?.isInvalidated).toBe(false);
       expect(wrote("PUT /api/read-status")).toEqual([
         { book_uuid: UUID, status: "reading" },
       ]);
@@ -243,8 +263,16 @@ describe("PlaybackProvider", () => {
   });
 
   describe("flush", () => {
-    it("reports the open stretch and the position", async () => {
-      const now = vi.spyOn(Date, "now").mockReturnValue(1_760_000_000_000);
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(1_760_000_000_000);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function playing() {
       mount();
       act(() => player.open(UUID, null));
       await waitFor(() => expect(player.ready).toBe(true));
@@ -252,7 +280,11 @@ describe("PlaybackProvider", () => {
         audio().dispatchEvent(new Event("play"));
       });
       await waitFor(() => expect(player.playing).toBe(true));
-      now.mockReturnValue(1_760_000_006_000);
+    }
+
+    it("reports the open stretch and the position, here and on the server", async () => {
+      await playing();
+      vi.setSystemTime(1_760_000_006_000);
 
       await act(() => player.flush());
 
@@ -267,6 +299,22 @@ describe("PlaybackProvider", () => {
           book_file_id: 917,
         },
       ]);
+      expect(localStorage.getItem(`omn.listening::${UUID}`)).toBe("600");
+    });
+
+    it("keeps reporting the listening that goes on after it, as a failed logout leaves the player playing", async () => {
+      await playing();
+      vi.setSystemTime(1_760_000_006_000);
+      await act(() => player.flush());
+
+      vi.setSystemTime(1_760_000_126_000);
+      act(() => {
+        audio().dispatchEvent(new Event("pause"));
+      });
+
+      await waitFor(() =>
+        expect(wrote("POST /api/progress/sessions")).toHaveLength(2),
+      );
     });
   });
 });

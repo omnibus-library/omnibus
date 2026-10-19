@@ -141,6 +141,10 @@ export function createSleepTimer(
       set({ remaining: seconds, choice: { kind: "preset", seconds } });
     },
     off,
+    /** A new file of the same book: a duration keeps counting, an end-of-chapter anchor was the old file's. */
+    fileChanged() {
+      if (state.choice.kind === "endOfChapter") off();
+    },
     /** Arms for the end of the chapter at `elapsed`; nothing happens when the chapters can't place it. */
     endOfChapter(chapters: readonly Chapter[], elapsed: number, rate: number) {
       const at = endOfChapterAnchor(chapters, elapsed);
