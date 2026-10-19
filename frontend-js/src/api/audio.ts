@@ -215,8 +215,11 @@ function toAudioBookmark(wire: BookmarkWire): AudioBookmark {
 export async function fetchAudioBookmarks(
   uuid: BookUuid,
 ): Promise<AudioBookmark[]> {
+  // `Number("")` is 0, so a blank position would read as a bookmark at the start.
   return ok(await getBookmarks(encodeURIComponent(uuid)))
-    .filter((b) => Number.isFinite(Number(b.position)))
+    .filter(
+      (b) => b.position.trim() !== "" && Number.isFinite(Number(b.position)),
+    )
     .map(toAudioBookmark);
 }
 
