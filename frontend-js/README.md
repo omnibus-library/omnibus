@@ -161,7 +161,7 @@ shell provides it.
   `scanStatus` and `loadScanner`, the discovery pages' `authorsOrder`,
   `authorPane`, `seriesIndex`, `shelvesIndex`, the shelf rules' `rules`, the
   picker's `picker`, the shelf page's `shelfAccess` and `narrow`, and the
-  player's `engine`, `boot`, `sleep`, `listening`, `loadHls` and `listen`), plus the
+  player's `PlaybackProvider`, `engine`, `boot`, `sleep`, `listening`, `loadHls` and `listen`), plus the
   real route table in `src/router.test.tsx`: every unported page, the layout
   split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI
