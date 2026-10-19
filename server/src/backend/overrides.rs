@@ -1,8 +1,9 @@
-//! Per-book metadata override handlers (REST, mobile-facing).
+//! Per-book metadata override handlers (REST, mobile-facing), plus the bulk route.
 //!
-//! Edit-permitted users `POST` / `DELETE` overrides against a book's uuid;
-//! reads happen via the standard ebook endpoints, which merge overrides
-//! into the wire DTO. Mounted on the REST router in [`super::rest_router`].
+//! Edit-permitted users `POST` / `DELETE` overrides against a book's uuid, or
+//! `POST` one edit to many books at once; reads happen via the standard ebook
+//! endpoints, which merge overrides into the wire DTO. Mounted on the REST
+//! router in [`super::rest_router`].
 
 use axum::{
     body::Bytes,
