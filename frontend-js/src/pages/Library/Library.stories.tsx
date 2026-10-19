@@ -886,10 +886,7 @@ export const StackedSeries: Story = {
   parameters: { user: STACKED_USER },
   beforeEach({ msw }) {
     requests.length = 0;
-    msw.use(
-      libraryHandler(STACK_BOOKS, 10, { requests, stacks: STACKS }),
-      ...stackSeriesHandler(),
-    );
+    msw.use(libraryHandler(STACK_BOOKS, 10, { requests, stacks: STACKS }));
   },
   play: async ({ canvas, userEvent }) => {
     const saga = await canvas.findByRole("button", { name: "Saga, 3 books" });

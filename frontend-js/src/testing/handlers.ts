@@ -22,6 +22,7 @@ import {
   type ResumePoint,
   type SeriesStack,
   type SeriesSummary,
+  SetStackSeries,
   type ShelfSummary,
   type TagWeight,
 } from "../api/generated/schemas";
@@ -159,24 +160,18 @@ export function libraryHandler(
 export function stackSeriesHandler({
   bodies = [],
   gate = Promise.resolve(),
-  user = WIRE_ADA,
 }: {
   bodies?: unknown[];
   gate?: Promise<void>;
-  user?: typeof WIRE_ADA;
 } = {}) {
-  let enabled = user.stack_series ?? false;
+  let enabled = WIRE_ADA.stack_series ?? false;
   return [
-    http.get("/api/auth/me", () =>
-      HttpResponse.json({ ...user, stack_series: enabled }),
-    ),
+    getGetMeMockHandler200(() => ({ ...WIRE_ADA, stack_series: enabled })),
     http.post("/api/account/stack-series", async ({ request }) => {
-      const body = await request.json();
+      const body = SetStackSeries.parse(await request.json());
       bodies.push(body);
       await gate;
-      if (body && typeof body === "object" && "enabled" in body) {
-        enabled = body.enabled === true;
-      }
+      enabled = body.enabled;
       return new HttpResponse(null);
     }),
   ];
