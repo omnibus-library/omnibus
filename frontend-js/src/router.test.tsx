@@ -47,6 +47,14 @@ function withRoute(
 }
 
 describe("routes", () => {
+  it("renders the library at /", async () => {
+    renderRoute("/");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Your Library" }),
+    ).toBeInTheDocument();
+  });
+
   describe("unported pages", () => {
     it.each([
       [`/books/${UUID}/edit`, "Edit metadata", UUID],

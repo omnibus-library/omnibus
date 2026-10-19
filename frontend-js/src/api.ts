@@ -10,13 +10,17 @@ import {
   login as postLogin,
   register as postRegister,
 } from "./api/generated/omnibus";
-import type {
-  EbookMetadata,
-  EbookPage,
-  PaletteResults as PaletteWire,
-  ResumePoint as ResumePointWire,
-  UserSummary,
+import {
+  type EbookMetadata,
+  type EbookPage,
+  type PaletteResults as PaletteWire,
+  type ResumePoint as ResumePointWire,
+  SortDir,
+  SortKey,
+  type UserSummary,
 } from "./api/generated/schemas";
+
+export { SortDir, SortKey };
 
 // The wire types and their zod schemas are generated from openapi/openapi.json
 // (`pnpm run generate`), and the generated fetchers validate every response.
@@ -41,6 +45,20 @@ function requireUuid(raw: string | null | undefined, id: number): BookUuid {
   return uuid;
 }
 
+export type FilterField =
+  | "tag"
+  | "genre"
+  | "author"
+  | "series"
+  | "format"
+  | "shelf";
+export type FilterMode = "include" | "exclude";
+export type FilterClause = {
+  field: FilterField;
+  mode: FilterMode;
+  values: string[];
+};
+
 export type UserId = number & { readonly __brand: "UserId" };
 
 /** The screen's shape of the user `GET /api/auth/me` and sign-in answer with. */
@@ -52,6 +70,9 @@ export function toUser(user: UserSummary) {
     isAdmin: user.is_admin,
     canUpload: user.can_upload,
     hasAvatar: user.has_avatar ?? false,
+    hiddenFormats: user.hidden_formats ?? [],
+    stackSeries: user.stack_series ?? false,
+    canEdit: user.can_edit,
   };
 }
 
@@ -154,17 +175,26 @@ export type PaletteResults = ReturnType<typeof toPalette>;
 /** One book hit in the palette or on the results page. */
 export type PaletteBook = PaletteResults["books"][number];
 
-export type BookPage = { books: Book[]; total: number; next: string | null };
+export type BookPage = {
+  books: Book[];
+  total: number;
+  next: string | null;
+  hidden: number | null;
+  path: string | null;
+};
 
 const countHeader = z.coerce.number().int().nonnegative();
 
 /** The screen's shape of one page of `GET /api/ebooks`, whose paging is in headers. */
 export function toBookPage(page: EbookPage, headers: Headers): BookPage {
   const books = page.books.map(toBook);
+  const hidden = headers.get("X-Hidden-Count");
   return {
     books,
     total: countHeader.parse(headers.get("X-Total-Count") ?? books.length),
     next: headers.get("X-Next-Cursor"),
+    hidden: hidden === null ? null : countHeader.parse(hidden),
+    path: page.path ?? null,
   };
 }
 
@@ -231,13 +261,21 @@ export async function logout(): Promise<void> {
   }
 }
 
-/** One title-sorted page of the library; pass `""` for the first page. */
-export async function fetchBookPage(cursor: string): Promise<BookPage> {
+/** What a library page is fetched under; a change to any of it restarts at page 1. */
+export type LibraryQuery = { sort: SortKey; dir: SortDir };
+
+export const PAGE_SIZE = 100;
+
+/** One page of the library in `query`'s order; pass `""` for the first page. */
+export async function fetchBookPage(
+  query: LibraryQuery,
+  cursor: string,
+): Promise<BookPage> {
   // The API refuses a cursor unless sort and dir are both explicit.
   const res = await getEbooks({
-    sort: "title",
-    dir: "asc",
-    limit: 60,
+    sort: query.sort,
+    dir: query.dir,
+    limit: PAGE_SIZE,
     omit_description: true,
     ...(cursor ? { cursor } : {}),
   });

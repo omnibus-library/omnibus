@@ -1,10 +1,3 @@
-.lib-header-title {
-  --descender-guard: max(0px, calc((0.6015 - var(--lh, 1.203) / 2) * 1em));
-  padding-bottom: var(--descender-guard);
-}
-.lib-header-title em {
-  font-style: normal;
-}
 .cover-link {
   display: block;
   position: relative;
@@ -28,45 +21,122 @@
   gap: 12px;
   padding: 24px 0 18px;
 }
-.lib-header-kicker {
+.lib-header-row {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  color: var(--ink-2);
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
 }
-.lib-header-kicker-title.lib-header-kicker-title {
+.lib-header-hint {
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.lib-toolbar {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.lib-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.lib-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--ink-1);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 500;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+@media (hover: hover) {
+  .lib-toggle-btn:hover {
+    color: var(--ink-0);
+    background: var(--bg-1);
+    border-color: var(--line);
+  }
+}
+.lib-toggle-btn[aria-pressed="true"] {
+  background: var(--bg-2);
+  color: var(--ink-0);
+  border-color: var(--line);
+}
+
+.lib-sort-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line-2);
+}
+.lib-sort-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--mono);
   font-size: 10.5px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-2);
   font-weight: 500;
-  --lh: 1.45;
-  line-height: var(--lh);
-  margin: 0;
 }
-.lib-header-row {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 18px;
-  flex-wrap: wrap;
-}
-.lib-header-title {
-  font-family: var(--serif);
-  font-weight: 600;
-  font-size: clamp(42px, 6vw, 70px);
-  --lh: 1;
-  line-height: var(--lh);
-  letter-spacing: -0.005em;
-  margin: 0;
+.lib-sort-select {
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
   color: var(--ink-0);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  height: 28px;
+  /* A floor, not a preference: the intrinsic width a `<select>` derives from
+     its options leaves the longest label ("Recently Interacted", uppercased
+     and letter-spaced by the `.lmq` skin below) with zero slack, and engines
+     that measure the dropdown indicator or the tracking differently clip it.
+     Sized for that label so the widest option always fits. */
+  min-width: 192px;
 }
-.lib-header-title-wrap {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
+@supports (field-sizing: content) {
+  .lib-sort-select {
+    field-sizing: content;
+    min-width: 0;
+    padding-right: 26px;
+  }
+}
+.lib-sort-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.lib-sort-dir {
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  color: var(--ink-0);
+  font: inherit;
+  padding: 0 10px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .lib-sort-dir:hover {
+    border-color: var(--accent);
+  }
 }
 
 .lib-layout {
@@ -180,23 +250,48 @@
   padding: 0 0 20px;
   gap: 10px;
 }
-.lmq .lib-header-kicker-title.lib-header-kicker-title {
+.lmq .lib-toolbar {
+  margin-left: auto;
+}
+.lmq .lib-toolbar {
+  gap: 10px;
+}
+.lmq .lib-view-toggle {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+}
+.lmq .lib-toggle-btn {
   font-family: var(--mono);
   font-size: 10px;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--ink-3);
-}
-.lmq .lib-header-title {
-  font-family: var(--serif);
-  font-size: 44px;
-  font-weight: 600;
-  --lh: 1;
-  line-height: var(--lh);
-  letter-spacing: -0.015em;
-}
-.lmq .lib-header-count {
   color: var(--ink-2);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  height: auto;
+  padding: 6px 12px;
+}
+.lmq .lib-toggle-btn[aria-pressed="true"] {
+  background: var(--bg-3);
+  color: var(--ink-0);
+  border-color: transparent;
+}
+.lmq .lib-sort-label,
+.lmq .lib-sort-select,
+.lmq .lib-sort-dir {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.lmq .lib-sort-select,
+.lmq .lib-sort-dir {
+  border-radius: 999px;
 }
 .lmq .lib-grid {
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
@@ -275,8 +370,10 @@
   color: color-mix(in oklch, white 62%, transparent);
 }
 @media (max-width: 720px) {
-  .lmq .lib-header-title {
-    font-size: 32px;
+  .lmq .lib-sort-controls {
+    border-left: 0;
+    padding-left: 0;
+    margin-left: 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {

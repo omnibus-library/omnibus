@@ -33,14 +33,28 @@ export function sessionHandler(user: typeof WIRE_ADA | null = WIRE_ADA) {
   return user ? getGetMeMockHandler200(user) : getGetMeMockHandler401();
 }
 
-/** Title-ordered library pages of `pageSize`, with the API's paging headers. */
-export function libraryHandler(books: EbookMetadata[], pageSize = 3) {
+/** The library path the fixture server reports on page 1. */
+export const LIBRARY_PATH = "/library";
+
+/**
+ * Library pages of `pageSize` in fixture order, with the API's paging headers.
+ * Each request's search params land in `requests`, for assertions.
+ */
+export function libraryHandler(
+  books: EbookMetadata[],
+  pageSize = 3,
+  {
+    path = LIBRARY_PATH,
+    requests = [],
+  }: { path?: string | null; requests?: URLSearchParams[] } = {},
+) {
   return http.get("/api/ebooks", ({ request }) => {
     const url = new URL(request.url);
+    requests.push(url.searchParams);
     // The API refuses a cursor unless sort and dir are both explicit.
     if (
-      url.searchParams.get("sort") !== "title" ||
-      url.searchParams.get("dir") !== "asc"
+      url.searchParams.has("cursor") &&
+      !(url.searchParams.has("sort") && url.searchParams.has("dir"))
     ) {
       return new HttpResponse("cursor without sort and dir", { status: 400 });
     }
@@ -50,7 +64,7 @@ export function libraryHandler(books: EbookMetadata[], pageSize = 3) {
       "X-Total-Count": String(books.length),
     };
     if (end < books.length) headers["X-Next-Cursor"] = String(end);
-    const page = { books: books.slice(start, end) } satisfies EbookPage;
+    const page = { books: books.slice(start, end), path } satisfies EbookPage;
     return HttpResponse.json(page, { headers });
   });
 }

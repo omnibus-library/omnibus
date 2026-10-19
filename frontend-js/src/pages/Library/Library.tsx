@@ -1,11 +1,28 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { type Book, fetchBookPage, thumbSrcSet, thumbUrl } from "../../api";
+import {
+  type Book,
+  fetchBookPage,
+  type LibraryQuery,
+  thumbSrcSet,
+  thumbUrl,
+} from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
 import { BusyLabel, CoverSkeletons } from "../../components/Loading/Loading";
 import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
+import {
+  DEFAULT_PREFS,
+  lastLibrary,
+  loadPrefs,
+  type Prefs,
+  reconcile,
+  savePlan,
+  savePrefs,
+} from "../../viewPrefs";
+import { Toolbar } from "./Toolbar";
 import "./Library.css";
 
 const TILE_SIZES = "(max-width: 640px) 160px, (max-width: 1280px) 200px, 240px";
@@ -39,47 +56,58 @@ function Tile({ book, index }: { book: Book; index: number }) {
   );
 }
 
-function Count({ total }: { total: number | null }) {
-  if (total === null) {
-    return (
-      <span className="lib-header-count">
-        {" · "}
-        <span className="ld-sheen">counting</span>
-      </span>
-    );
-  }
-  return (
-    <span className="lib-header-count">
-      {` · ${total} ${total === 1 ? "book" : "books"}`}
-    </span>
-  );
-}
-
 export function Library() {
+  const [prefs, setPrefs] = useState(() => {
+    const last = lastLibrary();
+    return last ? loadPrefs(last) : DEFAULT_PREFS;
+  });
+  const query: LibraryQuery = { sort: prefs.sort, dir: prefs.dir };
   const pages = useInfiniteQuery({
-    queryKey: ["books"],
-    queryFn: ({ pageParam }) => fetchBookPage(pageParam),
+    queryKey: ["books", query],
+    queryFn: ({ pageParam }) => fetchBookPage(query, pageParam),
     initialPageParam: "",
     getNextPageParam: (last) => last.next ?? undefined,
   });
   const books = pages.data?.pages.flatMap((page) => page.books) ?? [];
-  const total = pages.data?.pages[0]?.total ?? null;
+
+  // Page 1 names the library; until it does, `lastLibrary()` is only a guess.
+  const answeredPath = pages.data?.pages[0]?.path;
+  const libraryPath = useRef<string | null>(null);
+  const reconciled = useRef<string | null>(null);
+  const unsaved = useRef(false);
+  useEffect(() => {
+    if (answeredPath === undefined) return;
+    libraryPath.current = answeredPath;
+    if (answeredPath === null) return;
+    const action = reconcile(reconciled.current, answeredPath, unsaved.current);
+    if (action === "adopt") setPrefs(loadPrefs(answeredPath));
+    if (action === "save") {
+      savePrefs(answeredPath, prefs);
+      unsaved.current = false;
+    }
+    reconciled.current = answeredPath;
+  }, [answeredPath, prefs]);
+
+  const change = (next: Prefs) => {
+    const plan = savePlan(libraryPath.current, pages.isError, lastLibrary());
+    if (plan.writeTo) savePrefs(plan.writeTo, next);
+    if (plan.unsaved) unsaved.current = true;
+    setPrefs(next);
+  };
 
   return (
     <div className="landing-col lmq" id="lmq-root">
       <PageTitle />
       <header className="lib-header">
-        <div className="lib-header-kicker">
-          <h1 className="label lib-header-kicker-title">Your Library</h1>
-        </div>
+        <h1 className="sr-only">Your Library</h1>
         <div className="lib-header-row">
-          <div className="lib-header-title-wrap">
-            <p className="lib-header-title">
-              <em>All Books</em>
-              <Count total={total} />
-            </p>
-          </div>
+          <Toolbar prefs={prefs} onChange={change} />
         </div>
+        {answeredPath === null && (
+          <p className="lib-header-hint">
+            Configure your ebook library path in Administration › Sources.
+          </p>
+        )}
       </header>
       <div className="lib-layout lib-layout--collapsed">
         <div className="lib-main lib-books">
@@ -95,9 +123,7 @@ export function Library() {
             />
           )}
           {pages.status === "success" && books.length === 0 && (
-            <p className="library-empty">
-              No books yet. Point Settings at a library.
-            </p>
+            <p className="library-empty">No ebooks found.</p>
           )}
           {books.length > 0 && (
             <div className="lib-grid">

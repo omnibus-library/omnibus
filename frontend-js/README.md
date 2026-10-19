@@ -55,6 +55,10 @@ already exists goes in by hand, as does one whose modifier class (`ok`, `error`)
 is on the script's stop list; `--write --force` regenerates every file
 unformatted and drops their hand edits.
 
+A CSS file that is pure script output (`Library.css`) can be regenerated after
+its markup changes by emptying it (`: > src/pages/Library/Library.css`) and
+rerunning `--write`, which recreates only that file.
+
 `index.html` draws a themed "Opening your library" loader inside `#root`, so the
 first paint isn't blank while the bundle loads; React replaces it on its first
 render. The user menu's version line is `OMNIBUS_VERSION` at build time, or

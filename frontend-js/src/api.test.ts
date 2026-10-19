@@ -20,6 +20,7 @@ describe("toBookPage", () => {
     const headers = new Headers({
       "X-Total-Count": "46",
       "X-Next-Cursor": "eyJzIjoiQXVyb3JhIn0",
+      "X-Hidden-Count": "3",
     });
 
     const page = toBookPage({ path: "/lib", books: [auroraWire] }, headers);
@@ -37,13 +38,21 @@ describe("toBookPage", () => {
       ],
       total: 46,
       next: "eyJzIjoiQXVyb3JhIn0",
+      hidden: 3,
+      path: "/lib",
     });
   });
 
   it("reports no next page when the cursor header is absent", () => {
     const page = toBookPage({ books: [] }, new Headers());
 
-    expect(page).toEqual({ books: [], total: 0, next: null });
+    expect(page).toEqual({
+      books: [],
+      total: 0,
+      next: null,
+      hidden: null,
+      path: null,
+    });
   });
 
   it("falls back to the filename for a book with no title or cover", () => {
@@ -121,6 +130,18 @@ describe("toUser", () => {
       isAdmin: true,
       canUpload: true,
       hasAvatar: true,
+      hiddenFormats: [],
+      stackSeries: false,
+      canEdit: true,
+    });
+  });
+
+  it("carries the library preferences the server sends", () => {
+    const wire = { ...WIRE_ADA, hidden_formats: ["m4b"], stack_series: true };
+
+    expect(toUser(wire)).toMatchObject({
+      hiddenFormats: ["m4b"],
+      stackSeries: true,
     });
   });
 

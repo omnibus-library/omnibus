@@ -96,3 +96,33 @@ export function SearchGlyph({
     </svg>
   );
 }
+
+/** An up arrow, for an ascending sort. */
+export function ArrowUpGlyph({ size = 13 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...stroked}
+      aria-hidden="true"
+    >
+      <path d="M12 19V5M5 12l7-7 7 7" />
+    </svg>
+  );
+}
+
+/** A down arrow, for a descending sort. */
+export function ArrowDownGlyph({ size = 13 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...stroked}
+      aria-hidden="true"
+    >
+      <path d="M12 5v14M19 12l-7 7-7-7" />
+    </svg>
+  );
+}
