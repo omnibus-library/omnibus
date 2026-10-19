@@ -426,29 +426,31 @@ export function PhysicalCopies({ book }: { book: BookDetail }) {
     navigate("/", { replace: true });
   };
   const mayRemoveBook = viewer.isAdmin || viewer.canEdit;
-  // Offered when the copy went (the list is empty) but the book did not, which `remove` cannot redo.
-  const retryRemoval = useMutation({
-    mutationFn: () => deleteFilelessBook(book.uuid),
-    onSuccess: leave,
-  });
-  const remove = useMutation({
-    mutationFn: async ({ copyId, next }: { copyId: number; next: Next }) => {
-      await deleteCopy(copyId);
-      // The copy is gone whatever follows, so a failed follow-up leaves a retryable page.
-      setRemoving(null);
-      if (next === "wishlist") await addToWishlist(book.uuid);
-      if (next === "library") await deleteFilelessBook(book.uuid);
+  // The copy is gone whatever follows, so a failed follow-up leaves a retryable page.
+  const followUp = useMutation({
+    mutationFn: async (next: "wishlist" | "library") => {
+      await (next === "wishlist"
+        ? addToWishlist(book.uuid)
+        : deleteFilelessBook(book.uuid));
     },
+    onSuccess: (_done, next) => (next === "library" ? leave() : refresh()),
+    onError: refresh,
+  });
+  const removeCopy = useMutation({
+    mutationFn: ({ copyId }: { copyId: number; next: Next }) =>
+      deleteCopy(copyId),
     onSuccess: (_done, { next }) => {
-      if (next !== "library") return refresh();
-      leave();
+      setRemoving(null);
+      if (next === "nothing") refresh();
+      else followUp.mutate(next);
     },
     // The copy may be gone even so: let the page say what is left.
     onError: refresh,
   });
-  if (!copies.isSuccess && !copies.isError) return null;
+  const failure = followUp.error ?? removeCopy.error;
+  if (copies.isPending) return null;
   const list = copies.data ?? [];
-  if (list.length === 0 && !copies.isError && !remove.isError) return null;
+  if (list.length === 0 && !copies.isError && !failure) return null;
   const lastFileless = book.formats.length === 0 && list.length === 1;
   return (
     <section
@@ -466,7 +468,8 @@ export function PhysicalCopies({ book }: { book: BookDetail }) {
           onEdit={() => setEditing(copy.id)}
           onEdited={() => setEditing(null)}
           onRemove={() => {
-            remove.reset();
+            removeCopy.reset();
+            followUp.reset();
             setRemoving(copy.id);
           }}
         />
@@ -476,21 +479,15 @@ export function PhysicalCopies({ book }: { book: BookDetail }) {
           {copies.error.message}
         </p>
       )}
-      {remove.isError && removing === null && (
+      {failure && removing === null && (
         <p role="alert" className="bd-phys-error" data-testid="physical-error">
-          {(retryRemoval.error ?? remove.error).message}
+          {failure.message}
         </p>
       )}
-      {remove.isError &&
-        removing === null &&
-        mayRemoveBook &&
-        list.length === 0 &&
-        remove.variables?.next === "library" && (
-          <Button
-            variant="ghost"
-            disabled={retryRemoval.isPending}
-            onClick={() => retryRemoval.mutate()}
-          >
+      {followUp.isError &&
+        followUp.variables === "library" &&
+        mayRemoveBook && (
+          <Button variant="ghost" onClick={() => followUp.mutate("library")}>
             Retry removing from library
           </Button>
         )}
@@ -498,10 +495,10 @@ export function PhysicalCopies({ book }: { book: BookDetail }) {
         <RemovalDialog
           lastFileless={lastFileless}
           mayRemoveBook={mayRemoveBook}
-          busy={remove.isPending}
-          error={remove.isError ? remove.error.message : null}
+          busy={removeCopy.isPending || followUp.isPending}
+          error={removeCopy.error?.message ?? null}
           onCancel={() => setRemoving(null)}
-          onRemove={(next) => remove.mutate({ copyId: removing, next })}
+          onRemove={(next) => removeCopy.mutate({ copyId: removing, next })}
         />
       )}
     </section>
