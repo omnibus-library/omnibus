@@ -291,6 +291,15 @@ pub struct BulkMetadataEdit {
     pub remove_genres: Vec<String>,
 }
 
+/// The body of the bulk metadata edit: the books to change and the edit to apply to each.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BulkOverridesRequest {
+    /// The uuids of the books to edit.
+    pub uuids: Vec<String>,
+    pub edit: BulkMetadataEdit,
+}
+
 impl BulkMetadataEdit {
     /// True when no field would change any book — callers reject such an
     /// edit rather than writing no-op override rows.

@@ -12,8 +12,8 @@ use axum::{
 };
 use omnibus_db::{self as db, worker::Task};
 use omnibus_shared::{
-    detect_image_format, CoverFromUrlBody, CoverUploadForm, EbookMetadata, ExternalBookMeta,
-    MetadataOverrides,
+    detect_image_format, validate_book_uuids, BulkOverridesRequest, CoverFromUrlBody,
+    CoverUploadForm, EbookMetadata, ExternalBookMeta, MetadataOverrides,
 };
 
 use super::image_upload::extract_validated_image;
@@ -74,6 +74,56 @@ pub(super) async fn post_ebook_overrides(
         Ok(Some(book)) => Json(book).into_response(),
         Ok(None) => (axum::http::StatusCode::NOT_FOUND, "book not found").into_response(),
         Err(e) => internal("get_book", e),
+    }
+}
+
+/// Edit several books' metadata
+///
+/// Applies one edit to every book in `uuids`. Tags and genres are added to or removed from
+/// each book's current list on the server, so two clients editing at once don't overwrite
+/// each other. All-or-nothing: if any book fails, none change. Needs the edit permission.
+#[utoipa::path(
+    post,
+    path = "/api/ebooks/overrides/bulk",
+    tag = "Metadata",
+    request_body = BulkOverridesRequest,
+    responses(
+        (status = 204, description = "Every book was edited."),
+        (status = 400, description = "No uuids, an empty edit, or a field that is too long or has too many values. The body says which."),
+        (status = 403, description = "Your account lacks the edit permission."),
+        (status = 404, description = "A uuid matches no book, so none were edited."),
+    ),
+)]
+pub(super) async fn post_bulk_overrides(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Json(req): Json<BulkOverridesRequest>,
+) -> Response {
+    if !user.is_admin && !user.can_edit {
+        return (
+            axum::http::StatusCode::FORBIDDEN,
+            "edit permission required",
+        )
+            .into_response();
+    }
+    if req.uuids.is_empty() {
+        return (axum::http::StatusCode::BAD_REQUEST, "no books selected").into_response();
+    }
+    if req.edit.is_empty() {
+        return (axum::http::StatusCode::BAD_REQUEST, "no fields to apply").into_response();
+    }
+    if let Err(msg) = validate_book_uuids(&req.uuids).and_then(|()| req.edit.validate()) {
+        return (axum::http::StatusCode::BAD_REQUEST, msg).into_response();
+    }
+    match db::bulk_merge_metadata_overrides(&state.pool, &req.uuids, &req.edit, user.id).await {
+        Ok(()) => axum::http::StatusCode::NO_CONTENT.into_response(),
+        Err(e @ db::MetadataOverridesError::BookNotFound(_)) => {
+            (axum::http::StatusCode::NOT_FOUND, e.to_string()).into_response()
+        }
+        Err(e @ db::MetadataOverridesError::TooManyValues { .. }) => {
+            (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response()
+        }
+        Err(e) => internal("bulk_merge_metadata_overrides", e),
     }
 }
 

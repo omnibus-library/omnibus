@@ -2673,6 +2673,40 @@
         }
       }
     },
+    "/api/ebooks/overrides/bulk": {
+      "post": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Edit several books' metadata",
+        "description": "Applies one edit to every book in `uuids`. Tags and genres are added to or removed from\neach book's current list on the server, so two clients editing at once don't overwrite\neach other. All-or-nothing: if any book fails, none change. Needs the edit permission.",
+        "operationId": "post_bulk_overrides",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkOverridesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Every book was edited."
+          },
+          "400": {
+            "description": "No uuids, an empty edit, or a field that is too long or has too many values. The body says which."
+          },
+          "403": {
+            "description": "Your account lacks the edit permission."
+          },
+          "404": {
+            "description": "A uuid matches no book, so none were edited."
+          }
+        }
+      }
+    },
     "/api/ebooks/{uuid}": {
       "get": {
         "tags": [
@@ -8595,6 +8629,83 @@
               "null"
             ],
             "description": "The bookmark's name or note. Null when it has none."
+          }
+        }
+      },
+      "BulkMetadataEdit": {
+        "type": "object",
+        "description": "One edit applied to many books at once. A text field that is absent leaves every\nbook's value as it is, and a value sets it on every book. An empty string is\nreserved. `authors` replaces each book's whole list of creators. The tag and genre\nfields add to or remove from each book's own list.",
+        "properties": {
+          "add_genres": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "add_tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "authors": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publisher": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remove_genres": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "remove_tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "series": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BulkOverridesRequest": {
+        "type": "object",
+        "description": "The body of the bulk metadata edit: the books to change and the edit to apply to each.",
+        "required": [
+          "uuids",
+          "edit"
+        ],
+        "properties": {
+          "edit": {
+            "$ref": "#/components/schemas/BulkMetadataEdit"
+          },
+          "uuids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The uuids of the books to edit."
           }
         }
       },

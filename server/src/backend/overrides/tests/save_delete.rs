@@ -315,3 +315,111 @@ async fn api_delete_overrides_reverts() {
         "delete must drop the metadata_overrides row"
     );
 }
+
+/// POST the bulk route with `token`, returning the response.
+async fn post_bulk(
+    app: axum::Router,
+    token: &str,
+    body: serde_json::Value,
+) -> axum::response::Response {
+    app.oneshot(
+        Request::builder()
+            .uri("/api/ebooks/overrides/bulk")
+            .method("POST")
+            .header("content-type", "application/json")
+            .header(AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::from(body.to_string()))
+            .unwrap(),
+    )
+    .await
+    .expect("request should succeed")
+}
+
+#[tokio::test]
+async fn api_post_bulk_overrides_adds_tags_to_the_current_list_and_answers_204() {
+    let (app, _state, pool) = fixture().await;
+    let (_id, uuid) = seed_book_with_uuid(&pool, "/lib", "Original").await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+    db::merge_metadata_overrides(
+        &pool,
+        &uuid,
+        &omnibus_shared::MetadataOverrides {
+            subjects: Some(vec!["first".into()]),
+            ..Default::default()
+        },
+        admin.id,
+    )
+    .await
+    .unwrap();
+
+    let res = post_bulk(
+        app,
+        &token,
+        serde_json::json!({ "uuids": [uuid], "edit": { "add_tags": ["second"] } }),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::NO_CONTENT);
+
+    let (saved, _) = db::get_metadata_overrides(&pool, &uuid)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved.subjects, Some(vec!["first".into(), "second".into()]));
+}
+
+#[tokio::test]
+async fn api_post_bulk_overrides_rejects_an_empty_edit_with_400() {
+    let (app, _state, pool) = fixture().await;
+    let (_id, uuid) = seed_book_with_uuid(&pool, "/lib", "Original").await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    let res = post_bulk(
+        app,
+        &token,
+        serde_json::json!({ "uuids": [uuid], "edit": {} }),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn api_post_bulk_overrides_requires_edit_permission() {
+    let (app, _state, pool) = fixture().await;
+    let (_id, uuid) = seed_book_with_uuid(&pool, "/lib", "Original").await;
+    let user = auth_test_support::create_user(&pool, "reader").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let res = post_bulk(
+        app,
+        &token,
+        serde_json::json!({ "uuids": [uuid], "edit": { "add_tags": ["x"] } }),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    assert!(db::get_metadata_overrides(&pool, &uuid)
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn api_post_bulk_overrides_answers_404_and_edits_nothing_when_a_uuid_is_unknown() {
+    let (app, _state, pool) = fixture().await;
+    let (_id, uuid) = seed_book_with_uuid(&pool, "/lib", "Original").await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    let res = post_bulk(
+        app,
+        &token,
+        serde_json::json!({ "uuids": [uuid, "no-such-book"], "edit": { "add_tags": ["x"] } }),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert!(db::get_metadata_overrides(&pool, &uuid)
+        .await
+        .unwrap()
+        .is_none());
+}
