@@ -26,12 +26,12 @@ import {
 import { KindGlyph } from "../../components/ShelfTile/ShelfTile";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
 import { bookCount } from "../../format";
+import type { FullList } from "./narrow";
 import {
   addBooksState,
   canEdit,
   lockDetail,
   lockHeadline,
-  type MembersStatus,
   type ShelfAccess,
 } from "./shelfAccess";
 import "../../components/ShelfForm/ShelfForm.css";
@@ -180,13 +180,13 @@ type ActionsProps = {
   shelf: ShelfDetail;
   access: ShelfAccess;
   /** Add books waits on the member list, which marks what the shelf already holds. */
-  members: MembersStatus;
+  full: FullList;
   onAdd: () => void;
   onEdit: () => void;
 };
 
 /** Add books, Edit shelf and ⋯: each stays put but greyed and inert, described by the lock note, when the viewer can't edit. */
-function ShelfActions({ shelf, access, members, onAdd, onEdit }: ActionsProps) {
+function ShelfActions({ shelf, access, full, onAdd, onEdit }: ActionsProps) {
   const client = useQueryClient();
   // Lives here, not in the menu, which unmounts on choosing an item.
   const toggle = useMutation({
@@ -201,10 +201,10 @@ function ShelfActions({ shelf, access, members, onAdd, onEdit }: ActionsProps) {
   const tip = lock ? lockHeadline(lock) : undefined;
   const describedBy = lock ? LOCK_NOTE_ID : undefined;
   const manual = shelf.kind === "manual";
-  const add = addBooksState(editable, members);
-  const canAdd = add.state === "ready";
+  const add = addBooksState(editable, full);
+  const canAdd = add?.ready ?? false;
   // A lock outranks "still loading".
-  const addTip = add.title ?? tip;
+  const addTip = add?.title ?? tip;
   return (
     <>
       {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings a border and min-width the hero never resets */}

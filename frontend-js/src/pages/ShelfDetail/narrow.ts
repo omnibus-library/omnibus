@@ -8,6 +8,17 @@ export type FullList = {
   errored: boolean;
 };
 
+/** A whole-member query read as a `FullList`. */
+export const fullList = (query: {
+  data?: Book[];
+  isSuccess: boolean;
+  isError: boolean;
+}): FullList => ({
+  books: query.data ?? [],
+  ready: query.isSuccess,
+  errored: query.isError,
+});
+
 /** The server's answer to the library filter, for the filter now set. */
 export type NarrowedList = {
   /** `undefined` until it answers. */

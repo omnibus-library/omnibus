@@ -15,6 +15,7 @@ import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { EditShelfModal } from "../../components/ShelfForm/EditShelfModal";
 import { useCurrentUser } from "../../session";
 import { defaultDirFor } from "../Library/sorting";
+import { fullList } from "./narrow";
 import { ShelfBooks } from "./ShelfBooks";
 import { ShelfHero } from "./ShelfHero";
 import { canEdit, resolveAccess } from "./shelfAccess";
@@ -81,6 +82,7 @@ export function ShelfDetail() {
 
   const current = shelf.data;
   const access = resolveAccess(viewer, current);
+  const full = fullList(members);
   return (
     <div
       className="shd-page"
@@ -92,7 +94,7 @@ export function ShelfDetail() {
       <ShelfHero
         shelf={current}
         access={access}
-        members={members}
+        full={full}
         onAdd={() => setAdding(true)}
         onEdit={() => setEditing(true)}
       />
@@ -102,11 +104,7 @@ export function ShelfDetail() {
         canEdit={canEdit(access)}
         sort={sort}
         onSort={setSort}
-        full={{
-          books: members.data ?? [],
-          ready: members.isSuccess,
-          errored: members.isError,
-        }}
+        full={full}
         onAdd={() => setAdding(true)}
         onEdit={() => setEditing(true)}
       />
@@ -114,7 +112,7 @@ export function ShelfDetail() {
         <AddBooksModal
           shelfId={current.id}
           shelfName={current.name}
-          members={(members.data ?? []).map((b) => b.uuid)}
+          members={full.books.map((b) => b.uuid)}
           onClose={() => setAdding(false)}
           onAdded={() => {
             setAdding(false);

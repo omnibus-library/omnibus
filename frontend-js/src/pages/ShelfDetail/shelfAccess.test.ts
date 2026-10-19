@@ -73,36 +73,27 @@ describe("resolveAccess", () => {
 });
 
 describe("addBooksState", () => {
+  const full = (ready: boolean, errored: boolean) => ({
+    books: [],
+    ready,
+    errored,
+  });
   it.each([
-    [
-      "not editable",
-      false,
-      { isSuccess: true, isError: false },
-      "hidden",
-      undefined,
-    ],
-    [
-      "the members landed",
-      true,
-      { isSuccess: true, isError: false },
-      "ready",
-      undefined,
-    ],
+    ["not editable", false, full(true, false), null],
+    ["the members landed", true, full(true, false), { ready: true }],
     [
       "the members are still loading",
       true,
-      { isSuccess: false, isError: false },
-      "waiting",
-      "Still loading this shelf’s books…",
+      full(false, false),
+      { ready: false, title: "Still loading this shelf’s books…" },
     ],
     [
       "the members failed",
       true,
-      { isSuccess: false, isError: true },
-      "unavailable",
-      "This shelf’s books couldn’t be loaded.",
+      full(false, true),
+      { ready: false, title: "This shelf’s books couldn’t be loaded." },
     ],
-  ])("is %s", (_condition, editable, members, state, title) => {
-    expect(addBooksState(editable, members)).toEqual({ state, title });
+  ])("is %s", (_condition, editable, list, expected) => {
+    expect(addBooksState(editable, list)).toEqual(expected);
   });
 });

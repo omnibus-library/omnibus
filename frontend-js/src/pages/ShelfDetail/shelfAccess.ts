@@ -1,4 +1,5 @@
 import type { ShelfKind, UserId } from "../../api";
+import type { FullList } from "./narrow";
 
 /** Why a shelf is read-only for this viewer. */
 export type LockReason =
@@ -31,22 +32,19 @@ export function resolveAccess(
 /** Whether the edit controls act. */
 export const canEdit = (access: ShelfAccess) => access.kind !== "locked";
 
-/** How far the member list's fetch has got. */
-export type MembersStatus = { isSuccess: boolean; isError: boolean };
-
-/** Whether Add books acts, and why not: it waits on the whole member list, which marks what the shelf already holds. */
+/** Whether Add books acts, and why not: it waits on the whole member list, which marks what the shelf already holds. `null` when it isn't offered. */
 export function addBooksState(
   editable: boolean,
-  members: MembersStatus,
-): {
-  state: "ready" | "waiting" | "unavailable" | "hidden";
-  title?: string;
-} {
-  if (!editable) return { state: "hidden" };
-  if (members.isSuccess) return { state: "ready" };
-  return members.isError
-    ? { state: "unavailable", title: "This shelf’s books couldn’t be loaded." }
-    : { state: "waiting", title: "Still loading this shelf’s books…" };
+  full: FullList,
+): { ready: boolean; title?: string } | null {
+  if (!editable) return null;
+  if (full.ready) return { ready: true };
+  return {
+    ready: false,
+    title: full.errored
+      ? "This shelf’s books couldn’t be loaded."
+      : "Still loading this shelf’s books…",
+  };
 }
 
 /** The one-line refusal. */

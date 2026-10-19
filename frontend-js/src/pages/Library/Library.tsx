@@ -19,6 +19,7 @@ import { bookCount } from "../../format";
 import { useCurrentUser } from "../../session";
 import { useLoadMore } from "../../useLoadMore";
 import { handoffClauses, useLibraryPrefs } from "../../viewPrefs";
+import { fullList } from "../ShelfDetail/narrow";
 import {
   addBooksState,
   canEdit,
@@ -132,7 +133,8 @@ export function Library() {
   const [adding, setAdding] = useState(false);
   const shelf = detail.data ?? null;
   const mayEdit = shelf !== null && canEdit(resolveAccess(user, shelf));
-  const addBooks = addBooksState(mayEdit && shelf?.kind === "manual", members);
+  const full = fullList(members);
+  const addBooks = addBooksState(mayEdit && shelf?.kind === "manual", full);
   // The lens is the shelf's page or, on All Books, the browse list.
   const lens = shelfId === null ? pages : shelfPage;
   const books = shelfId === null ? browseBooks : (shelfPage.data ?? []);
@@ -209,14 +211,14 @@ export function Library() {
           />
         </div>
         {shelf && <ShelfFacets shelf={shelf} />}
-        {addBooks.state !== "hidden" && (
+        {addBooks && (
           <button
             type="button"
             className="btn primary shd-action lib-shelf-add"
             data-testid="shelf-add-books"
-            aria-disabled={addBooks.state !== "ready"}
+            aria-disabled={!addBooks.ready}
             title={addBooks.title}
-            onClick={() => addBooks.state === "ready" && setAdding(true)}
+            onClick={() => addBooks.ready && setAdding(true)}
           >
             <PlusGlyph />
             Add books
@@ -285,9 +287,7 @@ export function Library() {
               <BookGrid
                 books={books}
                 stacks={shelfId === null ? stacks : []}
-                onAddTile={
-                  addBooks.state === "ready" ? () => setAdding(true) : undefined
-                }
+                onAddTile={addBooks?.ready ? () => setAdding(true) : undefined}
               />
             ))}
           {hasNextPage && (
@@ -358,7 +358,7 @@ export function Library() {
         <AddBooksModal
           shelfId={shelf.id}
           shelfName={shelf.name}
-          members={(members.data ?? []).map((b) => b.uuid)}
+          members={full.books.map((b) => b.uuid)}
           onClose={() => setAdding(false)}
           onAdded={() => {
             setAdding(false);
