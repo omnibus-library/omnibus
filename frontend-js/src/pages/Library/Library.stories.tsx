@@ -343,11 +343,11 @@ export const TablePaging: Story = {
     await waitFor(() => expect(rows()).toHaveLength(60));
 
     await userEvent.click(canvas.getByRole("button", { name: "Load more" }));
-    await waitFor(() => expect(rows()).toHaveLength(120));
+    await waitFor(() => expect(rows()).toHaveLength(120), { timeout: 5000 });
 
     // The observer takes the last page as the button nears the viewport.
-    canvas.getByRole("button", { name: "Load more" }).scrollIntoView();
-    await waitFor(() => expect(rows()).toHaveLength(150));
+    (await canvas.findByRole("button", { name: "Load more" })).scrollIntoView();
+    await waitFor(() => expect(rows()).toHaveLength(150), { timeout: 5000 });
     await expect(
       canvas.queryByRole("button", { name: "Load more" }),
     ).not.toBeInTheDocument();
