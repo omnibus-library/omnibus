@@ -2,10 +2,12 @@ import { z } from "zod";
 import {
   getAlignment,
   getDeleteHighlightUrl,
+  getDeleteJournalUrl,
   getDeleteRatingUrl,
   getEbookByUuid,
   getEbooks,
   getHighlights,
+  getJournalEntries,
   getLogoutUrl,
   getMe,
   getOtherRatings,
@@ -20,6 +22,7 @@ import {
   getSeriesById,
   getSessionLog,
   getSummarySources,
+  patchJournal,
   postEbookOverrides,
   login as postLogin,
   postRating,
@@ -32,6 +35,7 @@ import type {
   EbookMetadata,
   EbookPage,
   Highlight as HighlightWire,
+  JournalEntryOutput as JournalEntryWire,
   AttributedRating as OtherRatingWire,
   PaletteResults as PaletteWire,
   ProgressRecord as PositionWire,
@@ -600,6 +604,53 @@ export async function fetchHighlights(uuid: BookUuid): Promise<Highlight[]> {
 
 export async function deleteHighlight(id: number): Promise<void> {
   await send(getDeleteHighlightUrl(String(id)), "DELETE");
+}
+
+/** The screen's shape of one journal entry. */
+export function toJournalEntry(wire: JournalEntryWire) {
+  return {
+    id: wire.id,
+    author: {
+      id: wire.author_id as UserId,
+      name: wire.author_name,
+      hasAvatar: wire.author_has_avatar ?? false,
+    },
+    bodyMd: wire.body_md,
+    bodyHtml: wire.body_html,
+    progress: wire.progress ?? null,
+    status: wire.status ?? "published",
+    createdAt: wire.created_at,
+  };
+}
+
+export type JournalEntry = ReturnType<typeof toJournalEntry>;
+
+/** Every reader's published entries for a book, and the signed-in reader's own drafts. */
+export async function fetchJournalEntries(
+  uuid: BookUuid,
+): Promise<JournalEntry[]> {
+  const res = await getJournalEntries(encodeURIComponent(uuid));
+  if (res.status !== 200) throw failure(res);
+  return res.data.map(toJournalEntry);
+}
+
+/** Publishes a draft, keeping its body and progress. */
+export async function publishJournalEntry({
+  id,
+  bodyMd,
+  progress,
+}: JournalEntry) {
+  const res = await patchJournal(String(id), {
+    body_md: bodyMd,
+    progress,
+    status: "published",
+  });
+  if (res.status !== 200) throw failure(res);
+  return toJournalEntry(res.data);
+}
+
+export async function deleteJournalEntry(id: number): Promise<void> {
+  await send(getDeleteJournalUrl(String(id)), "DELETE");
 }
 
 export const thumbUrl = (uuid: BookUuid, size: "sm" | "md" = "md") =>

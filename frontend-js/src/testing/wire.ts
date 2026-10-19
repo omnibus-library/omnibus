@@ -5,6 +5,7 @@ import type {
   BookProgress,
   EbookMetadata,
   Highlight,
+  JournalEntry,
   PaletteBookHit,
   PaletteResults,
   ProgressRecord,
@@ -166,6 +167,25 @@ export function aWireHighlight(overrides: Partial<Highlight> = {}): Highlight {
     note: null,
     epub_cfi_range: "epubcfi(/6/6!/4/2,/1:0,/1:20)",
     created_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** A journal entry as `GET /api/journals/book/{uuid}` sends it: Ada's published note. */
+export function aWireJournalEntry(
+  overrides: Partial<JournalEntry> = {},
+): JournalEntry {
+  return {
+    id: 1,
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    author_id: 1,
+    author_name: "Ada Lovelace",
+    body_md: "The footnotes have footnotes.",
+    body_html: "<p>The footnotes have footnotes.</p>",
+    progress: 42,
+    status: "published",
+    created_at: 1_760_000_000,
+    updated_at: 1_760_000_000,
     ...overrides,
   };
 }

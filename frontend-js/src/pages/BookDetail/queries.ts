@@ -3,6 +3,7 @@ import {
   type BookUuid,
   fetchAlignment,
   fetchHighlights,
+  fetchJournalEntries,
   fetchProgress,
   fetchReadStatus,
   fetchSeries,
@@ -39,4 +40,10 @@ export const highlightsQuery = (uuid: BookUuid) =>
   queryOptions({
     queryKey: ["book", uuid, "highlights"],
     queryFn: () => fetchHighlights(uuid),
+  });
+
+export const journalQuery = (uuid: BookUuid) =>
+  queryOptions({
+    queryKey: ["book", uuid, "journal"],
+    queryFn: () => fetchJournalEntries(uuid),
   });

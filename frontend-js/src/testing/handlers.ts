@@ -2,6 +2,7 @@ import { delay, HttpResponse, http } from "msw";
 import {
   getGetAlignmentMockHandler200,
   getGetHighlightsMockHandler200,
+  getGetJournalEntriesMockHandler200,
   getGetMeMockHandler200,
   getGetMeMockHandler401,
   getGetOtherRatingsMockHandler200,
@@ -16,6 +17,7 @@ import {
   type EbookMetadata,
   type EbookPage,
   type Highlight,
+  type JournalEntry,
   type LoginResponse,
   type PaletteResults,
   PostCrossFormatFollowBody,
@@ -25,6 +27,7 @@ import {
   type ReadStatusRecord,
   type ResumePoint,
   type SessionLogEntry,
+  UpdateJournalEntry,
 } from "../api/generated/schemas";
 import { COVER_SVG } from "./books";
 import {
@@ -97,6 +100,7 @@ export function bookDetailHandlers(book: EbookMetadata) {
     getGetOtherRatingsMockHandler200([]),
     getGetSessionLogMockHandler200({ entries: [] }),
     getGetHighlightsMockHandler200([]),
+    getGetJournalEntriesMockHandler200([]),
   ];
 }
 
@@ -137,6 +141,43 @@ export function highlightsHandlers(
       const id = Number(params.id);
       deleted.push(id);
       current = current.filter((h) => h.id !== id);
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+}
+
+/**
+ * The journal feed as the server serves it to `viewerId`: everyone's published entries and
+ * the viewer's own drafts, never another reader's. `PATCH` publishes (its status written to
+ * `published`) and `DELETE` removes; both record the entry id in `writes`.
+ */
+export function journalHandlers(
+  all: JournalEntry[],
+  viewerId: number,
+  writes: { id: number; status?: string }[] = [],
+) {
+  let current = all;
+  return [
+    http.get("/api/journals/book/:uuid", () =>
+      HttpResponse.json(
+        current.filter((e) => e.status !== "draft" || e.author_id === viewerId),
+      ),
+    ),
+    http.patch("/api/journals/:id", async ({ params, request }) => {
+      const id = Number(params.id);
+      const body = UpdateJournalEntry.parse(await request.json());
+      writes.push({ id, status: body.status ?? undefined });
+      current = current.map((e) =>
+        e.id === id
+          ? { ...e, body_md: body.body_md, status: body.status ?? e.status }
+          : e,
+      );
+      return HttpResponse.json(current.find((e) => e.id === id));
+    }),
+    http.delete("/api/journals/:id", ({ params }) => {
+      const id = Number(params.id);
+      writes.push({ id });
+      current = current.filter((e) => e.id !== id);
       return new HttpResponse(null, { status: 204 });
     }),
   ];
