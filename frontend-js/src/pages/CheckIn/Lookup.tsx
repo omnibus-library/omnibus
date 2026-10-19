@@ -1,0 +1,152 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import {
+  type ExternalBookMeta,
+  googleBooksConfiguredQuery,
+  searchProviders,
+} from "../../api";
+import { Button } from "../../components/Button/Button";
+import { cleanIsbn, isbnRejection } from "./checkIn";
+import { ExternalBookCard, IsbnField, LibrarySearchForm } from "./Screens";
+
+/** The Open Library fallback disclaimer, shown once the server reports it has no Google Books key. */
+export function ProviderNote() {
+  const configured = useQuery(googleBooksConfiguredQuery).data;
+  if (configured !== false) return null;
+  return (
+    <p
+      className="check-in-provider-note"
+      data-testid="check-in-google-books-note"
+    >
+      Without a Google Books API key, this search will use Open Library, which
+      may not have the latest books or all ISBNs. Set up your Google Books API
+      key in Administration › Integrations.
+    </p>
+  );
+}
+
+type SearchProps = {
+  busy: boolean;
+  onPick: (meta: ExternalBookMeta) => void;
+  onError: (message: string | null) => void;
+};
+
+/** Title search over the providers, for a copy whose ISBN is unknown, unreadable or in no provider's index. */
+function TitleSearch({ busy, onPick, onError }: SearchProps) {
+  // Null until a search lands, so the empty line can't show before anyone has searched.
+  const [results, setResults] = useState<ExternalBookMeta[] | null>(null);
+  const search = useMutation({
+    mutationFn: searchProviders,
+    onMutate: () => onError(null),
+    onSuccess: setResults,
+    // The results stay on screen to retry from.
+    onError: (e) => onError(`Could not search: ${e.message}`),
+  });
+  return (
+    <div className="check-in-search" data-testid="check-in-search">
+      <LibrarySearchForm
+        prefix="check-in-search"
+        label="Title"
+        submitLabel="Search"
+        busy={busy}
+        pending={search.isPending}
+        onSearch={search.mutate}
+      />
+      {results?.length === 0 && (
+        <p className="check-in-why" data-testid="check-in-search-empty">
+          No books match that title. Check the spelling, or try just the main
+          title.
+        </p>
+      )}
+      {results && results.length > 0 && (
+        <ul
+          className="check-in-search-results"
+          data-testid="check-in-search-results"
+        >
+          {results.map((meta, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: providers can return one ISBN twice, and the list is only ever replaced whole
+            <li key={`${meta.isbn13}-${i}`}>
+              <button
+                type="button"
+                className="check-in-search-result"
+                data-testid="check-in-search-result"
+                disabled={busy}
+                onClick={() => onPick(meta)}
+              >
+                <ExternalBookCard meta={meta} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+type Props = {
+  isbn: string;
+  busy: boolean;
+  onIsbn: (isbn: string) => void;
+  onResolve: (raw: string) => void;
+  onScan: () => void;
+} & SearchProps;
+
+/** The front door: the ISBN off the back cover and a title search, together. */
+export function LookupScreen({
+  isbn,
+  busy,
+  onIsbn,
+  onResolve,
+  onScan,
+  onPick,
+  onError,
+}: Props) {
+  // Gated on the validator rather than on length, so a transposed digit is caught here, not a round trip later.
+  const ready = isbnRejection(cleanIsbn(isbn)) === null;
+  return (
+    <div
+      className="check-in-screen check-in-lookup"
+      data-testid="check-in-lookup"
+    >
+      <h1>Check in a book</h1>
+      <p className="subtitle">
+        Enter the ISBN from the back cover, or search by title.
+      </p>
+      <form
+        className="settings-form"
+        data-testid="check-in-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onResolve(isbn);
+        }}
+      >
+        <IsbnField isbn={isbn} busy={busy} onIsbn={onIsbn} />
+        <div className="settings-actions">
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={busy || !ready}
+            data-testid="check-in-submit"
+          >
+            Find book
+          </Button>
+        </div>
+      </form>
+      <p className="check-in-or" data-testid="check-in-or">
+        or
+      </p>
+      <TitleSearch busy={busy} onPick={onPick} onError={onError} />
+      <div className="settings-actions">
+        <Button
+          variant="ghost"
+          disabled={busy}
+          data-testid="check-in-scan-instead"
+          onClick={onScan}
+        >
+          Scan a barcode
+        </Button>
+      </div>
+      <ProviderNote />
+    </div>
+  );
+}

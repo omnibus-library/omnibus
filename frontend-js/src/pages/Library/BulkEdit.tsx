@@ -1,11 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  type ReactNode,
-  type RefObject,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type RefObject, useState } from "react";
 import { Link } from "react-router";
 import {
   addShelfBooks,
@@ -19,7 +13,7 @@ import { Button } from "../../components/Button/Button";
 import { ChipInput } from "../../components/ChipInput/ChipInput";
 import { attributedOwner } from "../../components/FilterBar/filters";
 import { BusyLabel, Loading, Ring } from "../../components/Loading/Loading";
-import { trapTab } from "../../focusTrap";
+import { Modal } from "../../components/Modal/Modal";
 import { bookCount } from "../../format";
 import { useCurrentUser } from "../../session";
 import {
@@ -33,72 +27,6 @@ import { addTargets } from "./shelfGallery";
 
 /** Where focus lands when the opener is gone: the select-all checkbox, as a saved edit drops the selection. */
 type FallbackFocus = RefObject<HTMLElement | null>;
-
-type ModalProps = {
-  label: string;
-  busy: boolean;
-  backdropClass: string;
-  dialogClass: string;
-  fallbackFocus: FallbackFocus;
-  onClose: () => void;
-  children: ReactNode;
-};
-
-/** A dialog over a backdrop: Escape and a backdrop click close it unless busy, Tab stays inside, focus returns on close. */
-function Modal({
-  label,
-  busy,
-  backdropClass,
-  dialogClass,
-  fallbackFocus,
-  onClose,
-  children,
-}: ModalProps) {
-  const dialog = useRef<HTMLDivElement>(null);
-  const pressedBackdrop = useRef(false);
-  useEffect(() => {
-    const opener = document.activeElement;
-    dialog.current?.focus();
-    return () => {
-      // A saved edit drops the selection and its bar, the opener with them; the table is the next stop.
-      const target =
-        opener instanceof HTMLElement && opener.isConnected
-          ? opener
-          : fallbackFocus.current;
-      target?.focus();
-    };
-  }, [fallbackFocus]);
-  const dismiss = () => {
-    if (!busy) onClose();
-  };
-  return (
-    <div
-      ref={dialog}
-      className={backdropClass}
-      role="dialog"
-      aria-modal="true"
-      aria-label={label}
-      tabIndex={-1}
-      onPointerDown={(e) => {
-        pressedBackdrop.current = e.target === e.currentTarget;
-      }}
-      onClick={(e) => {
-        // A drag that began in the card and ended on the backdrop is not a dismissal.
-        if (pressedBackdrop.current && e.target === e.currentTarget) dismiss();
-        pressedBackdrop.current = false;
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          dismiss();
-        }
-        trapTab(e, e.currentTarget);
-      }}
-    >
-      <div className={dialogClass}>{children}</div>
-    </div>
-  );
-}
 
 type BarProps = {
   count: number;

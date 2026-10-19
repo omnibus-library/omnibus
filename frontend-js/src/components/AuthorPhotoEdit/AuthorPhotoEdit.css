@@ -1,25 +1,3 @@
-.me-input {
-  width: 100%;
-  padding: 10px 14px;
-  background: var(--bg-1);
-  border: 1px solid var(--line-2);
-  border-radius: 10px;
-  color: var(--ink-0);
-  font-family: var(--sans);
-  font-size: 13.5px;
-  outline: none;
-  transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
-}
-.me-input:focus {
-  border-color: var(--accent);
-}
-.me-input:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
 .author-photo-edit {
   position: relative;
   display: inline-block;

@@ -441,6 +441,14 @@
   padding: 18px 12px;
   gap: 12px;
 }
+.ld-section.inline {
+  flex-direction: row;
+  min-height: 0;
+  padding: 6px 0;
+  gap: 12px;
+  justify-content: flex-start;
+  text-align: left;
+}
 .ld-row {
   flex-direction: row;
   gap: 10px;

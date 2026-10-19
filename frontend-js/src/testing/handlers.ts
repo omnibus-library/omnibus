@@ -94,6 +94,13 @@ import {
 export const svg = () =>
   new HttpResponse(COVER_SVG, { headers: { "Content-Type": "image/svg+xml" } });
 
+/** A held request: pass `promise` to a handler's gate, call `release` from the story when the answer may land. */
+export function deferred() {
+  let release = () => {};
+  const promise = new Promise<void>((r) => (release = r));
+  return { promise, release };
+}
+
 /** Every cover and thumbnail answers with the sample cover. */
 export const coverHandlers = [
   http.get("/api/thumbs/:uuid/:size", svg),

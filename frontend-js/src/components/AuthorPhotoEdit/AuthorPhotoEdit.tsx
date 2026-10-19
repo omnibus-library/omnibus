@@ -9,6 +9,8 @@ import {
 import { Button } from "../Button/Button";
 import { ConfirmModal } from "../ConfirmModal/ConfirmModal";
 import { Ring } from "../Loading/Loading";
+// The URL field wears the metadata editor's input class, whose rules live there.
+import "../../pages/BookEdit/BookEdit.css";
 import "./AuthorPhotoEdit.css";
 
 /** One way of changing the photo: what the status says while it runs and if it fails, and a run that resolves a status to keep showing, or `null` once the photo changed. */

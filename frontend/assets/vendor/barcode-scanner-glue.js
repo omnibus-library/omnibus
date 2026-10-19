@@ -63,6 +63,8 @@
     ctx: null,
     timer: null,
     running: false,
+    // Bumped by every start() and stop(), so a start still awaiting the module or the camera can tell it was superseded.
+    gen: 0,
     lastText: null,
     lastCount: 0,
     errors: 0,
@@ -221,16 +223,13 @@
   /* ── Public surface ────────────────────────────────────────────── */
 
   function stop() {
+    state.gen++;
     state.running = false;
     if (state.timer) {
       clearTimeout(state.timer);
       state.timer = null;
     }
-    if (state.stream) {
-      state.stream.getTracks().forEach(function (t) {
-        t.stop();
-      });
-    }
+    if (state.stream) release(state.stream);
     if (state.video) state.video.srcObject = null;
     state.stream = null;
     state.track = null;
@@ -240,8 +239,15 @@
     state.errors = 0;
   }
 
+  function release(stream) {
+    stream.getTracks().forEach(function (t) {
+      t.stop();
+    });
+  }
+
   async function start(videoElementId, opts) {
     stop();
+    var gen = state.gen;
     var video = document.getElementById(videoElementId);
     if (!video) return status("error");
     if (!window.ZXingWASM) return status("error");
@@ -262,36 +268,41 @@
         },
       });
     } catch (e) {
-      status(classifyError(e));
+      if (gen === state.gen) status(classifyError(e));
       return;
     }
+    if (gen !== state.gen) return;
 
     state.video = video;
     state.canvas = state.canvas || document.createElement("canvas");
     state.ctx =
       state.ctx || state.canvas.getContext("2d", { willReadFrequently: true });
 
-    return openCamera()
-      .then(function (stream) {
-        state.stream = stream;
-        state.track = stream.getVideoTracks()[0] || null;
-        video.srcObject = stream;
-        // iOS only honours inline autoplay when both attributes are set on the
-        // element itself, and `play()` still has to be called from here.
-        video.setAttribute("playsinline", "");
-        video.muted = true;
-        return video.play();
-      })
-      .then(function () {
-        reportTorch(state.track);
-        state.running = true;
-        status("ready");
-        schedule();
-      })
-      .catch(function (err) {
-        stop();
-        status(classifyError(err));
-      });
+    try {
+      var stream = await openCamera();
+      // A stop() or newer start() arrived while the camera opened: this stream is nobody's.
+      if (gen !== state.gen) return release(stream);
+      state.stream = stream;
+      state.track = stream.getVideoTracks()[0] || null;
+      video.srcObject = stream;
+      // iOS only honours inline autoplay when both attributes are set on the
+      // element itself, and `play()` still has to be called from here.
+      video.setAttribute("playsinline", "");
+      video.muted = true;
+      await video.play();
+      // stop() or the newer start() already released the stream it found in state.
+      if (gen !== state.gen) return;
+      reportTorch(state.track);
+    } catch (err) {
+      // stop() here would tear down the stream of the start that replaced this one.
+      if (gen !== state.gen) return;
+      stop();
+      status(classifyError(err));
+      return;
+    }
+    state.running = true;
+    status("ready");
+    schedule();
   }
 
   function setTorch(on) {

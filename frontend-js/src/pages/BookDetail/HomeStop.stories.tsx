@@ -817,6 +817,28 @@ export const WishlistOnlyBook: Story = {
   },
 };
 
+export const WishlistCheckInCarriesTheBooksIsbn: Story = {
+  args: {
+    book: aBook({
+      formats: [],
+      book_files: [],
+      isbn13: "9780134685991",
+    }),
+  },
+  beforeEach({ msw }) {
+    msw.use(
+      ...physicalHandlers({
+        wishlist: aWireWishlist({ added_at: 1_760_000_000, source: "scan" }),
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("link", { name: "Check in when acquired" }),
+    ).toHaveAttribute("href", "/check-in?isbn=9780134685991");
+  },
+};
+
 export const FilelessBookNotOnTheWishlist: Story = {
   args: { book: aBook({ formats: [], book_files: [] }) },
   beforeEach({ msw }) {

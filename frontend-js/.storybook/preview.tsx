@@ -1,6 +1,7 @@
 import type { Preview } from "@storybook/react-vite";
 import { mswLoader } from "msw-storybook-addon/csf3";
-import { toUser, type User } from "../src/api";
+import { configure } from "storybook/test";
+import { resetCoverBusts, toUser, type User } from "../src/api";
 import { UserSummary } from "../src/api/generated/schemas";
 import {
   AtriumRoot,
@@ -20,6 +21,9 @@ import "../src/styles/base.css";
 
 watchImageLoads();
 
+// Slow CI runners exceed testing-library's 1 s default wait on `waitFor`/`findBy*`.
+configure({ asyncUtilTimeout: 4000 });
+
 // `parameters.user` is the session as the server sends it; `null` is a guest.
 function storyUser(value: unknown): User | null {
   if (value === null) return null;
@@ -31,6 +35,7 @@ const preview = {
   loaders: [mswLoader()],
   // Every story starts on the fake API; a story's own `beforeEach` overrides it.
   beforeEach({ msw }) {
+    resetCoverBusts();
     msw.use(sessionHandler(), registrationHandler(true), ...coverHandlers);
   },
   globalTypes: {

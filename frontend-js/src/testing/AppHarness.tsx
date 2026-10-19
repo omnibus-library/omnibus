@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { MemoryRouter } from "react-router";
+import { expect } from "storybook/test";
 import { toUser, type User } from "../api";
 import { SearchPaletteProvider } from "../components/SearchPalette/SearchPalette";
 import { meQuery } from "../session";
@@ -26,6 +27,18 @@ let current: QueryClient | undefined;
 export function storyClient(): QueryClient {
   if (!current) throw new Error("No story is rendered inside an AppHarness");
   return current;
+}
+
+/** Puts data under each key, so a later invalidation has something to mark stale. */
+export function seedQueries(keys: unknown[][]) {
+  for (const key of keys) storyClient().setQueryData(key, []);
+}
+
+/** Waits for every key's query to be marked stale. */
+export async function expectInvalidated(keys: unknown[][]) {
+  for (const key of keys) {
+    await expect(storyClient().getQueryState(key)?.isInvalidated).toBe(true);
+  }
 }
 
 type AppHarnessProps = {

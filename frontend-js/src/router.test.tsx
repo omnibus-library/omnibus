@@ -78,7 +78,6 @@ describe("routes", () => {
 
   describe("unported pages", () => {
     it.each([
-      [`/books/${UUID}/edit`, "Edit metadata", UUID],
       [`/read/${UUID}`, "Reader", UUID],
       [`/comic/${UUID}`, "Comic reader", UUID],
       [`/pdf/${UUID}?file_id=3&page=7`, "PDF reader", "7"],
@@ -91,8 +90,6 @@ describe("routes", () => {
       ["/admin/cleanup/duplicates", "Cleanup review", "duplicates"],
       ["/admin/health", "Server health", null],
       ["/account", "Account", null],
-      ["/add-books", "Add books", null],
-      ["/check-in", "Check in", null],
     ])("renders %s as %s with its parameters", async (path, title, param) => {
       renderRoute(path);
 
@@ -127,6 +124,34 @@ describe("routes", () => {
         expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
       },
     );
+
+    it("renders the metadata editor at /books/:uuid/edit", async () => {
+      renderRoute(`/books/${UUID}/edit`);
+
+      // jsdom has no server to fetch from, so the editor settles on its error page.
+      expect(
+        await screen.findByRole("link", { name: "Back to book" }),
+      ).toHaveAttribute("href", `/books/${UUID}`);
+    });
+
+    it("renders the upload page at /add-books", async () => {
+      renderRoute("/add-books");
+
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "Upload a book" }),
+      ).toBeInTheDocument();
+    });
+
+    it("renders the check-in flow at /check-in", async () => {
+      renderRoute("/check-in");
+
+      expect(
+        await screen.findByRole("heading", {
+          level: 1,
+          name: "Check in a book",
+        }),
+      ).toBeInTheDocument();
+    });
   });
 
   describe("layout", () => {
