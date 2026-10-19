@@ -225,7 +225,7 @@ const ATRIUM_CSS: Asset = asset!("/assets/atrium.css");
 /// apart from Atrium so every loading visual lives in one reviewable file.
 const LOADING_CSS: Asset = asset!("/assets/loading.css");
 
-/// The library filter bar's stylesheet (chips and the add-filter popover).
+/// The library filter bar's stylesheet (the facets and their menus).
 const FILTER_BAR_CSS: Asset = asset!("/assets/filter_bar.css");
 
 /// The authors browser's stylesheet (the list, its rail, and the author pane).

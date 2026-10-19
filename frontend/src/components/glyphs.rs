@@ -126,6 +126,11 @@ pub fn chevron_right_glyph(size: u32) -> Element {
     stroke_glyph(size, "M9 18l6-6-6-6")
 }
 
+/// Small down chevron for a control that opens a menu (a filter facet).
+pub fn chevron_down_glyph(size: u32) -> Element {
+    stroke_glyph(size, "M6 9l6 6 6-6")
+}
+
 /// Tall left caret for paging a row back, the reader's page-turn shape.
 pub fn caret_left_glyph(size: u32) -> Element {
     stroke_glyph(size, "M15 5l-7 7 7 7")

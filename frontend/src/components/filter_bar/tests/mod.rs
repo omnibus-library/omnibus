@@ -1,11 +1,11 @@
-//! Coverage for the filter bar: option mappers, chip text, clause edits, and
+//! Coverage for the filter bar: option mappers, facet values, clause edits, and
 //! the markup the bar and its picker render.
 
 use std::rc::Rc;
 
 use omnibus_shared::{
     AuthorSummary, FilterClause, FilterField, FilterMode, GenreWeight, SeriesSummary, ShelfKind,
-    ShelfSummary, TagWeight, ViewFilters, Visibility, MAX_FILTER_CLAUSES, MAX_FILTER_VALUES,
+    ShelfSummary, TagWeight, ViewFilters, Visibility, MAX_FILTER_VALUES,
 };
 
 use crate::test_support::render;
@@ -87,6 +87,6 @@ fn clause(field: FilterField, mode: FilterMode, values: &[&str]) -> FilterClause
     FilterClause::new(field, mode, values)
 }
 
-mod chips;
+mod facets;
 mod mappers;
 mod popover;

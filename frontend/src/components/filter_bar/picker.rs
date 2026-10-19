@@ -1,5 +1,5 @@
-//! The add-filter popover: field, then mode, then a searchable multi-select of
-//! values drawn from the existing reads.
+//! A facet's menu: include or exclude, then a searchable multi-select of the
+//! facet's values drawn from the existing reads.
 
 use std::rc::Rc;
 
@@ -11,12 +11,12 @@ use crate::focus_after_paint::focus_after_paint;
 use crate::focus_trap::trap_tab;
 
 use super::values::{self, FilterOption, Matches, OptionList};
-use super::{field_label, field_plural, field_token, ShelfList, FILTER_FIELDS};
+use super::{field_label, field_plural, ShelfList};
 
 /// Most value rows drawn at once; a longer match list is narrowed by search.
 pub const MAX_SHOWN_OPTIONS: usize = 200;
 
-/// Where the chosen field's values stand.
+/// Where a field's values stand.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LoadState {
     Loading,
@@ -27,30 +27,28 @@ pub enum LoadState {
 /// The field a fetch answered for, and what it answered with.
 pub type Loaded = Option<(FilterField, Result<Rc<OptionList>, String>)>;
 
-/// The popover. Emits the finished clause through `on_apply`.
+/// The menu, opened on `initial`'s field, mode and values. Emits the finished
+/// clause through `on_apply`.
 #[component]
 pub fn FilterPicker(
     shelves: ShelfList,
     viewer_id: Option<i64>,
+    initial: FilterClause,
     on_apply: EventHandler<FilterClause>,
     on_close: EventHandler<()>,
 ) -> Element {
-    let mut field = use_signal(|| None::<FilterField>);
-    let mut mode = use_signal(|| FilterMode::Include);
+    let current = initial.field;
+    let mut mode = use_signal(|| initial.mode);
     let mut query = use_signal(String::new);
-    let mut picked = use_signal(Vec::<String>::new);
+    let mut picked = use_signal(|| initial.values.clone());
     let mut retry = use_signal(|| 0u32);
-    let skip_shelf_fetch = !needs_fetch(FilterField::Shelf, &shelves);
-    let mut loaded = use_loaded_options(field, retry, viewer_id, skip_shelf_fetch);
-
-    let mut choose = move |next: FilterField| {
-        if *field.peek() == Some(next) {
-            return;
-        }
-        picked.write().clear();
-        query.set(String::new());
-        field.set(Some(next));
+    let skip_fetch = !needs_fetch(current, &shelves);
+    let mut loaded = use_loaded_options(current, retry, viewer_id, skip_fetch);
+    let state = match state_for(current, loaded(), &shelves, viewer_id) {
+        LoadState::Ready(list) => LoadState::Ready(list_with_picks(current, list, &picked.read())),
+        other => other,
     };
+    let by = field_label(current).to_lowercase();
 
     rsx! {
         div {
@@ -62,7 +60,7 @@ pub fn FilterPicker(
             class: "fb-pop",
             role: "dialog",
             "aria-modal": "true",
-            "aria-label": "Add filter",
+            "aria-label": "Filter by {by}",
             "data-testid": "filter-picker",
             tabindex: "-1",
             onkeydown: move |evt: Event<KeyboardData>| {
@@ -73,75 +71,53 @@ pub fn FilterPicker(
                 trap_tab(&evt);
             },
             onmounted: move |evt: MountedEvent| focus_after_paint(&evt),
-            div { class: "fb-fields", role: "group", "aria-label": "Filter by",
-                for option in FILTER_FIELDS {
-                    button {
-                        key: "{field_token(option)}",
-                        r#type: "button",
-                        class: "fb-field",
-                        "aria-pressed": "{field() == Some(option)}",
-                        "data-testid": "filter-field-{field_token(option)}",
-                        onclick: move |_| choose(option),
-                        "{field_label(option)}"
-                    }
-                }
-            }
-            if let Some(current) = field() {
-                PickerBody {
-                    field: current,
-                    mode: mode(),
-                    query: query(),
-                    picked: picked(),
-                    state: state_for(current, loaded(), &shelves, viewer_id),
-                    on_mode: move |next| mode.set(next),
-                    on_query: move |next| query.set(next),
-                    on_toggle: move |value: String| picked.with_mut(|p| toggle_pick(p, &value)),
-                    on_retry: move |_| {
-                        loaded.set(None);
-                        retry.with_mut(|n| *n += 1);
-                    },
-                    on_apply: move |_| {
-                        on_apply
-                            .call(FilterClause {
-                                field: current,
-                                mode: mode(),
-                                values: picked(),
-                            })
-                    },
-                    on_cancel: move |_| on_close.call(()),
-                }
+            PickerBody {
+                field: current,
+                mode: mode(),
+                query: query(),
+                picked: picked(),
+                state,
+                on_mode: move |next| mode.set(next),
+                on_query: move |next| query.set(next),
+                on_toggle: move |value: String| picked.with_mut(|p| toggle_pick(p, &value)),
+                on_retry: move |_| {
+                    loaded.set(None);
+                    retry.with_mut(|n| *n += 1);
+                },
+                on_apply: move |_| {
+                    on_apply
+                        .call(FilterClause {
+                            field: current,
+                            mode: mode(),
+                            values: picked(),
+                        })
+                },
+                on_cancel: move |_| on_close.call(()),
+                can_clear: !initial.values.is_empty(),
             }
         }
     }
 }
 
-/// Fetch the chosen field's values whenever the field changes or a retry is
-/// asked for; a superseded fetch drops its answer.
+/// Fetch `field`'s values, and again on each retry; a superseded fetch drops
+/// its answer. `skip_fetch` leaves the shelf field to the bar's own list.
 fn use_loaded_options(
-    field: Signal<Option<FilterField>>,
+    field: FilterField,
     retry: Signal<u32>,
     viewer_id: Option<i64>,
-    skip_shelf_fetch: bool,
+    skip_fetch: bool,
 ) -> Signal<Loaded> {
     let server_url = crate::use_server_url();
     let mut loaded: Signal<Loaded> = use_signal(|| None);
     let epoch = use_signal(|| 0u32);
     use_effect(move || {
-        let wanted = field();
         let _ = retry();
-        let Some(wanted) = wanted else { return };
-        if wanted == FilterField::Shelf && skip_shelf_fetch {
+        if skip_fetch {
             return;
         }
-        fetch_options(
-            server_url.clone(),
-            wanted,
-            viewer_id,
-            epoch,
-            move |result| {
-                loaded.set(Some((wanted, result)));
-            },
-        );
+        fetch_options(server_url.clone(), field, viewer_id, epoch, move |result| {
+            loaded.set(Some((field, result)));
+        });
     });
     loaded
 }
@@ -183,7 +159,7 @@ pub fn commit_if_current<T>(
     true
 }
 
-/// Whether choosing `field` must fetch its values: the shelf field reads the
+/// Whether opening `field` must fetch its values: the shelf field reads the
 /// bar's own list once that has loaded, so it asks for nothing.
 pub fn needs_fetch(field: FilterField, shelves: &ShelfList) -> bool {
     !(field == FilterField::Shelf && matches!(shelves, ShelfList::Loaded(_)))
@@ -207,18 +183,42 @@ pub fn state_for(
     }
 }
 
-/// Flip `value` in the pick list; a new pick past the value cap is refused.
+/// How a pick the source no longer offers is named while it waits to be unticked.
+pub(super) fn stranded_label(field: FilterField, value: &str) -> String {
+    match field {
+        FilterField::Shelf => "unavailable shelf".to_string(),
+        FilterField::Format => value.to_ascii_uppercase(),
+        _ => value.to_string(),
+    }
+}
+
+/// `list` with any of `picked` it no longer offers added in, so the reader can
+/// still see and untick them.
+pub fn list_with_picks(
+    field: FilterField,
+    list: Rc<OptionList>,
+    picked: &[String],
+) -> Rc<OptionList> {
+    match list.with_stranded(picked, |value| stranded_label(field, value)) {
+        Some(extended) => Rc::new(extended),
+        None => list,
+    }
+}
+
+/// Flip `value` in the pick list, ignoring ASCII case as the server does; a
+/// new pick past the value cap is refused.
 pub fn toggle_pick(picked: &mut Vec<String>, value: &str) {
-    if let Some(at) = picked.iter().position(|p| p == value) {
+    if let Some(at) = picked.iter().position(|p| p.eq_ignore_ascii_case(value)) {
         picked.remove(at);
     } else if picked.len() < MAX_FILTER_VALUES {
         picked.push(value.to_string());
     }
 }
 
-/// Everything under the field row once a field is chosen. With `footer` off the
+/// A field's mode, search and values, then Cancel / Apply. With `footer` off the
 /// Cancel / Apply row is left out, for a caller that applies each tick as it
-/// happens (the mobile sheet) and so has nothing to confirm.
+/// happens (the mobile sheet) and so has nothing to confirm. With `can_clear`
+/// Apply stays live with nothing picked, so unticking every value clears.
 #[component]
 pub fn PickerBody(
     field: FilterField,
@@ -233,6 +233,7 @@ pub fn PickerBody(
     #[props(default)] on_apply: EventHandler<()>,
     #[props(default)] on_cancel: EventHandler<()>,
     #[props(default = true)] footer: bool,
+    #[props(default)] can_clear: bool,
 ) -> Element {
     let plural = field_plural(field);
     let apply_label = match picked.len() {
@@ -275,7 +276,7 @@ pub fn PickerBody(
                         r#type: "button",
                         class: "btn primary sm",
                         "data-testid": "filter-picker-apply",
-                        disabled: picked.is_empty(),
+                        disabled: picked.is_empty() && !can_clear,
                         onclick: move |_| on_apply.call(()),
                         "{apply_label}"
                     }

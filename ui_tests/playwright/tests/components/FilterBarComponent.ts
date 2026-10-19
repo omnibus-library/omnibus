@@ -13,9 +13,11 @@ export class FilterBarComponent extends BaseComponent {
   readonly picker: FilterPickerDialogComponent;
 
   readonly root: Locator;
-  readonly addFilterButton: Locator;
+  /** Every facet, one per field, in the bar's order. */
+  readonly facets: Locator;
+  /** The clear buttons, one on each active facet. */
+  readonly facetClearButtons: Locator;
   readonly clearAllButton: Locator;
-  readonly chips: Locator;
 
   private heldReads = 0;
 
@@ -23,35 +25,37 @@ export class FilterBarComponent extends BaseComponent {
     super(page);
     this.picker = new FilterPickerDialogComponent(page);
     this.root = page.getByRole("group", { name: "Library filters" });
-    this.addFilterButton = page.getByRole("button", { name: "+ Add filter" });
+    this.facets = this.root.getByTestId(/^filter-facet-[a-z]+$/);
+    this.facetClearButtons = this.root.getByRole("button", {
+      name: /^Clear the .+ filter$/,
+    });
     this.clearAllButton = page.getByRole("button", { name: "Clear all" });
-    this.chips = page.getByTestId(/^filter-chip-\d+$/);
   }
 
-  chip(index: number): Locator {
-    return this.page.getByTestId(`filter-chip-${index}`);
+  /** The facet for `field`, named for the field and, while active, what it keeps. */
+  facet(field: FilterField): Locator {
+    return this.root.getByTestId(`filter-facet-${field}`);
   }
 
-  /** The button on the chip of the clause filtering by `field`. */
-  removeChipButton(field: FilterField): Locator {
-    return this.page.getByRole("button", {
-      name: new RegExp(`^Remove filter: ${FILTER_FIELD_NAMES[field]}`),
+  facetClearButton(field: FilterField): Locator {
+    return this.root.getByRole("button", {
+      name: `Clear the ${FILTER_FIELD_NAMES[field]} filter`,
     });
   }
 
-  async openPicker(): Promise<void> {
-    await this.addFilterButton.click();
+  async openFacet(field: FilterField): Promise<void> {
+    await this.facet(field).click();
   }
 
-  /** Builds `clause` in the picker and applies it, which refetches the list. */
+  /** Opens `clause`'s facet, builds it there and applies it, which refetches the list. */
   async addClause(clause: FilterClause): Promise<void> {
-    await this.openPicker();
+    await this.openFacet(clause.field);
     await this.picker.build(clause);
     await this.picker.apply();
   }
 
   async removeClause(field: FilterField): Promise<void> {
-    await this.removeChipButton(field).click();
+    await this.facetClearButton(field).click();
   }
 
   async clearAll(): Promise<void> {
