@@ -10,32 +10,38 @@ import { Button } from "../../components/Button/Button";
 import { Loading } from "../../components/Loading/Loading";
 import type { AnnotationBridge } from "./annotations";
 import { DrawerShell } from "./DrawerShell";
+import { Icon } from "./ReaderChrome";
 
 /** A book's bookmarks, loaded when the drawer or sheet that shows them opens; `null` until they arrive. */
 export function useBookmarks(uuid: BookUuid) {
   const [bookmarks, setBookmarks] = useState<Bookmark[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     fetchBookmarks(uuid).then(
       (saved) => !cancelled && setBookmarks(saved),
-      // A list that won't load reads as empty, as in the Dioxus reader.
-      () => !cancelled && setBookmarks([]),
+      () => !cancelled && setFailed(true),
     );
     return () => {
       cancelled = true;
     };
   }, [uuid]);
 
-  /** Saves the place; a refused save adds nothing. Callers wait for the list, which would otherwise replace the new row. */
+  /** Saves the place; a refused save adds nothing. Callers wait for the list, which would otherwise replace the new row, and for `adding` to clear. */
   async function add(position: string, label: string) {
+    setAdding(true);
     try {
       const saved = await createBookmark(uuid, {
         position,
         title: label || null,
       });
       setBookmarks((list) => [...(list ?? []), saved]);
-    } catch {}
+    } catch {
+    } finally {
+      setAdding(false);
+    }
   }
 
   async function remove(bookmark: Bookmark) {
@@ -47,11 +53,12 @@ export function useBookmarks(uuid: BookUuid) {
     setBookmarks((list) => list?.filter((b) => b.id !== bookmark.id) ?? null);
   }
 
-  return { bookmarks, add, remove };
+  return { bookmarks, failed, adding, add, remove };
 }
 
 type RowProps = {
   bookmark: Bookmark;
+  bridge: AnnotationBridge;
   /** The phone sheet's row, which draws its flag as an icon. */
   sheet?: boolean;
   onNavigate: (position: string) => void;
@@ -61,6 +68,7 @@ type RowProps = {
 /** One saved place: its chapter label, which jumps there, and delete. */
 export function BookmarkRow({
   bookmark,
+  bridge,
   sheet,
   onNavigate,
   onDelete,
@@ -73,23 +81,15 @@ export function BookmarkRow({
       <button
         type="button"
         className="rd-bm-main"
+        // A place saved in another format of a mixed book can't be shown here.
+        disabled={!bridge.canNavigate(bookmark.position)}
         onClick={() => onNavigate(bookmark.position)}
       >
         <span className="rd-bm-flag">
           {sheet ? (
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.7}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
+            <Icon size={16}>
               <path d="M7 4h10v16l-5-3.6L7 20V4z" />
-            </svg>
+            </Icon>
           ) : (
             "⚑"
           )}
@@ -126,7 +126,7 @@ export function BookmarksDrawer({
   bridge,
   onClose,
 }: BookmarksDrawerProps) {
-  const { bookmarks, add, remove } = useBookmarks(uuid);
+  const { bookmarks, failed, adding, add, remove } = useBookmarks(uuid);
   return (
     <DrawerShell
       testId="reader-bookmarks-drawer"
@@ -141,7 +141,7 @@ export function BookmarksDrawer({
         <Button
           size="sm"
           data-testid="reader-bookmark-add"
-          disabled={position === null || bookmarks === null}
+          disabled={position === null || bookmarks === null || adding}
           onClick={() => position !== null && add(position, label)}
         >
           + Bookmark
@@ -149,7 +149,11 @@ export function BookmarksDrawer({
       }
     >
       <div className="rd-drawer-body">
-        {bookmarks === null ? (
+        {failed ? (
+          <div className="rd-drawer-empty" role="alert">
+            Your bookmarks couldn’t be loaded.
+          </div>
+        ) : bookmarks === null ? (
           <Loading label="Loading bookmarks" />
         ) : bookmarks.length === 0 ? (
           <div className="rd-drawer-empty">
@@ -160,6 +164,7 @@ export function BookmarksDrawer({
             <BookmarkRow
               key={bookmark.id}
               bookmark={bookmark}
+              bridge={bridge}
               onNavigate={(to) => {
                 bridge.navigate(to);
                 onClose();

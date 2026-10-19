@@ -73,14 +73,13 @@ function Pager({ uuid }: { uuid: BookUuid }) {
     let cancelled = false;
     Promise.all([
       client.fetchQuery({ ...bookQuery(uuid), staleTime: 0 }),
-      client
-        .fetchQuery({ ...progressQuery(uuid), staleTime: 0 })
-        .catch(() => null),
+      // A failed fetch fails the open, as the book's does: it must not read as "nothing saved".
+      client.fetchQuery({ ...progressQuery(uuid), staleTime: 0 }),
     ]).then(
       ([found, progress]) => {
         if (cancelled) return;
         if (!found) return setBook("failed");
-        const saved = progress?.reading;
+        const saved = progress.reading;
         setPage(
           comicStartPage(
             saved?.cfi ?? null,

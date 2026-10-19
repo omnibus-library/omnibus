@@ -13,7 +13,13 @@ export type Panel =
   | "bookmarks"
   | "annotations";
 
-function Icon({ size = 19, children }: { size?: number; children: ReactNode }) {
+export function Icon({
+  size = 19,
+  children,
+}: {
+  size?: number;
+  children: ReactNode;
+}) {
   return (
     <svg
       width={size}

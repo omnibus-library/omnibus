@@ -4,6 +4,12 @@ import type { BookUuid, Position } from "../../api";
 export const isEpubCfi = (anchor: string) =>
   anchor.trimStart().startsWith("epubcfi(");
 
+/** The `?file_id=` a reader opens, for a book with several files of one format; `null` when absent or not a number. */
+export const fileIdParam = (search: URLSearchParams) => {
+  const raw = search.get("file_id");
+  return raw !== null && /^\d+$/.test(raw) ? Number(raw) : null;
+};
+
 // Dioxus's key, so both clients share one local position per origin.
 const localKey = (uuid: BookUuid) => `omn.reading::${uuid}`;
 

@@ -23,6 +23,8 @@ export const HIGHLIGHT_COLORS = [
 export type AnnotationBridge = {
   /** Show the passage at `anchor`. */
   navigate(anchor: string): void;
+  /** Whether this viewer can show `anchor`; a mixed book's other format's anchors can't be jumped to. */
+  canNavigate(anchor: string): boolean;
   paint(anchor: string, color: HighlightColor): void;
   unpaint(anchor: string): void;
   copy(text: string): void;
@@ -31,6 +33,7 @@ export type AnnotationBridge = {
 // A Kobo highlight has no CFI and a PDF highlight a `pdf:` anchor: nothing epub.js can paint.
 export const epubBridge: AnnotationBridge = {
   navigate: (anchor) => withReader((glue) => glue.display(anchor)),
+  canNavigate: isEpubCfi,
   paint(anchor, color) {
     if (isEpubCfi(anchor))
       withReader((glue) => glue.addAnnotation(anchor, color));
@@ -44,19 +47,25 @@ export const epubBridge: AnnotationBridge = {
 /** A passage to write a note on, or to make a quote card of. */
 export type AnnotationTarget = { kind: "note" | "quote"; highlight: Highlight };
 
+/** Whether the book's highlights have arrived, so the drawers never read an unknown list as an empty one. */
+export type ListState = "loading" | "ready" | "failed";
+
 /**
  * A book's highlights and the note or quote panel open on one. A new highlight is painted at once
  * and unpainted again if saving it fails; `after` opens the panel the action asked for on the saved row.
  */
 export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
   const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [listState, setListState] = useState<ListState>("loading");
   const [target, setTarget] = useState<AnnotationTarget | null>(null);
 
+  /** Takes the fetched list; `null` is a fetch that failed. */
   const load = useCallback(
-    (saved: Highlight[]) => {
-      for (const h of saved)
+    (saved: Highlight[] | null) => {
+      for (const h of saved ?? [])
         if (h.anchor !== null) bridge.paint(h.anchor, h.color);
-      setHighlights(saved);
+      setHighlights(saved ?? []);
+      setListState(saved ? "ready" : "failed");
     },
     [bridge],
   );
@@ -119,14 +128,34 @@ export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
     setHighlights((list) => list.filter((h) => h.id !== highlight.id));
   }
 
+  /** What the drawers' rows need; the reader supplies how a tool closes and where focus returns. */
+  const rowActions = (onClose: () => void, refocus: () => void) => ({
+    bridge,
+    onRecolor: recolor,
+    onDelete: async (highlight: Highlight) => {
+      await remove(highlight);
+      // The delete button was the focus; the reader's root is where Escape is heard.
+      refocus();
+    },
+    onQuote(highlight: Highlight) {
+      setTarget({ kind: "quote", highlight });
+      onClose();
+    },
+    onEditNote(highlight: Highlight) {
+      setTarget({ kind: "note", highlight });
+      onClose();
+    },
+    onClose,
+  });
+
   return {
     highlights,
+    listState,
     target,
     setTarget,
     load,
     create,
     saveNote,
-    recolor,
-    remove,
+    rowActions,
   };
 }

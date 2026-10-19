@@ -3,15 +3,13 @@ import type { BookUuid, Highlight, HighlightColor } from "../../api";
 import { classes } from "../../classes";
 import { Button } from "../../components/Button/Button";
 import { Loading } from "../../components/Loading/Loading";
-import type { AnnotationBridge } from "./annotations";
+import { plural } from "../../format";
+import type { AnnotationBridge, ListState } from "./annotations";
 import { BookmarkRow, useBookmarks } from "./BookmarksDrawer";
 import { DrawerShell } from "./DrawerShell";
 import { ColorChips, HighlightRow } from "./HighlightsDrawer";
 
 type Filter = "all" | "bookmarks" | HighlightColor;
-
-const plural = (count: number, noun: string) =>
-  `${count} ${noun}${count === 1 ? "" : "s"}`;
 
 type AnnotationsSheetProps = {
   uuid: BookUuid;
@@ -19,6 +17,7 @@ type AnnotationsSheetProps = {
   position: string | null;
   label: string;
   highlights: Highlight[];
+  listState: ListState;
   bridge: AnnotationBridge;
   onRecolor: (highlight: Highlight, color: HighlightColor) => void;
   onDelete: (highlight: Highlight) => void;
@@ -33,12 +32,14 @@ export function AnnotationsSheet({
   position,
   label,
   highlights,
+  listState,
   bridge,
   onClose,
   ...row
 }: AnnotationsSheetProps) {
-  const { bookmarks, add, remove } = useBookmarks(uuid);
+  const { bookmarks, failed, adding, add, remove } = useBookmarks(uuid);
   const [filter, setFilter] = useState<Filter>("all");
+  const marked = bookmarks?.length ?? 0;
   const marks = filter === "all" || filter === "bookmarks" ? bookmarks : [];
   const passages =
     filter === "all"
@@ -57,8 +58,8 @@ export function AnnotationsSheet({
         <h4 className="rd-drawer-title">
           Annotations{" "}
           <span className="rd-drawer-count">
-            {plural(highlights.length, "highlight")} ·{" "}
-            {plural(bookmarks?.length ?? 0, "bookmark")}
+            {`${highlights.length} highlight${plural(highlights.length)}`} ·{" "}
+            {`${marked} bookmark${plural(marked)}`}
           </span>
         </h4>
       }
@@ -66,7 +67,7 @@ export function AnnotationsSheet({
         <Button
           size="sm"
           data-testid="reader-annotations-add"
-          disabled={position === null || bookmarks === null}
+          disabled={position === null || bookmarks === null || adding}
           onClick={() => position !== null && add(position, label)}
         >
           + Bookmark
@@ -98,7 +99,11 @@ export function AnnotationsSheet({
         />
       </div>
       <div className="rd-drawer-body">
-        {marks === null ? (
+        {failed || listState === "failed" ? (
+          <div className="rd-drawer-empty" role="alert">
+            Your annotations couldn’t be loaded.
+          </div>
+        ) : marks === null || listState === "loading" ? (
           <Loading label="Loading annotations" />
         ) : marks.length === 0 && passages.length === 0 ? (
           <div className="rd-drawer-empty">
@@ -112,6 +117,7 @@ export function AnnotationsSheet({
                 key={`bm-${bookmark.id}`}
                 sheet
                 bookmark={bookmark}
+                bridge={bridge}
                 onNavigate={jump}
                 onDelete={remove}
               />

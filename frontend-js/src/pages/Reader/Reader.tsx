@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
   type BookUuid,
-  type Highlight,
+  type HighlightColor,
   parseBookUuid,
   saveReadingPosition,
 } from "../../api";
@@ -19,6 +19,7 @@ import {
 } from "../BookDetail/queries";
 import { AaPanel } from "./AaPanel";
 import { AnnotationsSheet } from "./AnnotationsSheet";
+import { AnnotationTargets } from "./AnnotationTargets";
 import { epubBridge, useHighlights } from "./annotations";
 import { BookmarksDrawer } from "./BookmarksDrawer";
 import {
@@ -33,8 +34,6 @@ import {
   withReader,
 } from "./epubGlue";
 import { HighlightsDrawer } from "./HighlightsDrawer";
-import { NoteComposer } from "./NoteComposer";
-import { QuotePanel } from "./QuotePanel";
 import {
   Footer,
   PageTurnGutters,
@@ -58,6 +57,7 @@ import { SearchPanel } from "./SearchPanel";
 import { SelectionPopover } from "./SelectionPopover";
 import { SyncHerePill, SyncJumpBanner } from "./SyncBanner";
 import {
+  fileIdParam,
   furtherInPercent,
   isEpubCfi,
   loadLocalPosition,
@@ -115,19 +115,23 @@ function EpubPage({
   const [selection, setSelection] = useState<PassageSelection | null>(null);
   const {
     highlights,
+    listState,
     target,
     setTarget,
     load,
     create,
     saveNote,
-    recolor,
-    remove,
+    rowActions,
   } = useHighlights(uuid, epubBridge);
   // Retry re-runs the whole open: the fetch, the runtime load and the init.
   const [attempt, setAttempt] = useState(0);
 
   useReadingSession(uuid);
   useAutoReadStatus(uuid, loc.atEnd);
+
+  // The glue is opened after async fetches, so it reads what the reader holds then, not at mount.
+  const latest = useRef({ prefs, theme });
+  latest.current = { prefs, theme };
 
   useEffect(() => surface.current?.focus(), []);
 
@@ -146,7 +150,7 @@ function EpubPage({
         const data = parseRelocate(json);
         if (!data) return;
         const [here, totalChapters] = resolveChapterPosition(
-          toc,
+          tocNow,
           data,
           chapter,
         );
@@ -191,15 +195,12 @@ function EpubPage({
         () => true,
         () => false,
       );
+      // A failed fetch fails the open: it must not read as "nothing saved" and write over the real position.
       const record =
         deepLink !== null
           ? null
-          : await client
-              .fetchQuery({ ...progressQuery(uuid), staleTime: 0 })
-              .then(
-                (progress) => progress.reading,
-                () => null,
-              );
+          : (await client.fetchQuery({ ...progressQuery(uuid), staleTime: 0 }))
+              .reading;
       if (cancelled) return;
       // Until the first relocate the footer shows the stored percent, marked approximate.
       const pct = furtherInPercent(record);
@@ -218,9 +219,9 @@ function EpubPage({
         VIEWER_ID,
         fileId === null ? url : `${url}?file_id=${fileId}`,
         {
-          ...initOptions(prefs),
+          ...initOptions(latest.current.prefs),
           cfi: start.cfi,
-          theme,
+          theme: latest.current.theme,
           fontsHref: FONTS_HREF,
           locationsKey: uuid,
         },
@@ -228,7 +229,7 @@ function EpubPage({
       const saved = await client
         .fetchQuery({ ...highlightsQuery(uuid), staleTime: 0 })
         .catch(() => null);
-      if (saved && !cancelled) load(saved);
+      if (!cancelled) load(saved);
     };
     open().catch(() => {
       if (!cancelled) setStatus("failed");
@@ -266,24 +267,18 @@ function EpubPage({
     setPanel(null);
   };
 
-  const rowActions = {
-    bridge: epubBridge,
-    onRecolor: recolor,
-    onDelete: async (highlight: Highlight) => {
-      await remove(highlight);
-      // The delete button was the focus; the surface is where Escape is heard.
-      surface.current?.focus();
-    },
-    onQuote: (highlight: Highlight) => {
-      setTarget({ kind: "quote", highlight });
-      setPanel(null);
-    },
-    onEditNote: (highlight: Highlight) => {
-      setTarget({ kind: "note", highlight });
-      setPanel(null);
-    },
-    onClose: () => setPanel(null),
+  const highlightSelection = (
+    picked: PassageSelection,
+    color: HighlightColor,
+    after: "note" | "quote" | null,
+  ) => {
+    setSelection(null);
+    create({ anchor: picked.cfiRange, color, text: picked.text }, after);
   };
+  const rows = rowActions(
+    () => setPanel(null),
+    () => surface.current?.focus(),
+  );
 
   const labels = formatProgressLabels(loc);
   // While a jump is in flight the outgoing chapter is blanked rather than shown stale.
@@ -330,7 +325,7 @@ function EpubPage({
         onBack={back}
         onToggle={toggle}
       />
-      <SyncJumpBanner uuid={uuid} />
+      {deepLink === null && <SyncJumpBanner uuid={uuid} />}
       <ViewerStage status={status} onRetry={() => setAttempt((n) => n + 1)} />
       <PageTurnGutters
         onPrev={() => turn("prev")}
@@ -347,35 +342,9 @@ function EpubPage({
         <SelectionPopover
           rect={selection.rect}
           onDismiss={() => setSelection(null)}
-          onHighlight={(color) => {
-            setSelection(null);
-            create(
-              { anchor: selection.cfiRange, color, text: selection.text },
-              null,
-            );
-          }}
-          onNote={() => {
-            setSelection(null);
-            create(
-              {
-                anchor: selection.cfiRange,
-                color: "amber",
-                text: selection.text,
-              },
-              "note",
-            );
-          }}
-          onQuote={() => {
-            setSelection(null);
-            create(
-              {
-                anchor: selection.cfiRange,
-                color: "amber",
-                text: selection.text,
-              },
-              "quote",
-            );
-          }}
+          onHighlight={(color) => highlightSelection(selection, color, null)}
+          onNote={() => highlightSelection(selection, "amber", "note")}
+          onQuote={() => highlightSelection(selection, "amber", "quote")}
           onCopy={() => {
             epubBridge.copy(selection.text);
             setSelection(null);
@@ -407,7 +376,11 @@ function EpubPage({
         />
       )}
       {panel === "highlights" && (
-        <HighlightsDrawer highlights={highlights} {...rowActions} />
+        <HighlightsDrawer
+          highlights={highlights}
+          listState={listState}
+          {...rows}
+        />
       )}
       {panel === "bookmarks" && (
         <BookmarksDrawer
@@ -424,7 +397,8 @@ function EpubPage({
           position={loc.cfi}
           label={chapterTitle}
           highlights={highlights}
-          {...rowActions}
+          listState={listState}
+          {...rows}
         />
       )}
       {panel === "search" && (
@@ -439,22 +413,12 @@ function EpubPage({
           onClose={() => setPanel(null)}
         />
       )}
-      {target?.kind === "quote" && (
-        <QuotePanel
-          text={target.highlight.text ?? ""}
-          author={book?.authors[0] ?? ""}
-          subtitle={book?.title ?? ""}
-          accent={book?.accent ?? "#3a3027"}
-          onClose={() => setTarget(null)}
-        />
-      )}
-      {target?.kind === "note" && (
-        <NoteComposer
-          highlight={target.highlight}
-          onSave={(draft) => saveNote(target.highlight, draft)}
-          onClose={() => setTarget(null)}
-        />
-      )}
+      <AnnotationTargets
+        target={target}
+        book={book}
+        onSave={saveNote}
+        onClose={() => setTarget(null)}
+      />
     </div>
   );
 }
@@ -462,9 +426,7 @@ function EpubPage({
 export function Reader() {
   const uuid = parseBookUuid(useParams().uuid);
   const [search] = useSearchParams();
-  const fileParam = search.get("file_id");
-  const fileId =
-    fileParam !== null && /^\d+$/.test(fileParam) ? Number(fileParam) : null;
+  const fileId = fileIdParam(search);
   // `?cfi=` is a CFI only when it says so: a PDF highlight's link carries a `pdf:` anchor.
   const cfi = search.get("cfi");
   const deepLink = cfi !== null && isEpubCfi(cfi) ? cfi : null;

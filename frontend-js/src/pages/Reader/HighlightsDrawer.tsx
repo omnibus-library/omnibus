@@ -1,11 +1,17 @@
 import { useState } from "react";
 import type { Highlight, HighlightColor } from "../../api";
 import { classes } from "../../classes";
-import { type AnnotationBridge, HIGHLIGHT_COLORS } from "./annotations";
+import { Loading } from "../../components/Loading/Loading";
+import {
+  type AnnotationBridge,
+  HIGHLIGHT_COLORS,
+  type ListState,
+} from "./annotations";
 import { DrawerShell } from "./DrawerShell";
 
 type HighlightsDrawerProps = {
   highlights: Highlight[];
+  listState: ListState;
   /** The viewer the rows jump into; epub.js or PDF.js. */
   bridge: AnnotationBridge;
   onRecolor: (highlight: Highlight, color: HighlightColor) => void;
@@ -15,7 +21,10 @@ type HighlightsDrawerProps = {
   onClose: () => void;
 };
 
-type RowProps = Omit<HighlightsDrawerProps, "highlights" | "onClose"> & {
+type RowProps = Omit<
+  HighlightsDrawerProps,
+  "highlights" | "listState" | "onClose"
+> & {
   highlight: Highlight;
   onJump: (anchor: string) => void;
 };
@@ -40,8 +49,8 @@ export function HighlightRow({
       <button
         type="button"
         className="rd-hl-quote"
-        // A row with no anchor, such as a Kobo's, has nowhere to jump; the quote still shows.
-        disabled={anchor === null}
+        // A row with no anchor, such as a Kobo's, or one this viewer can't show has nowhere to jump; the quote still shows.
+        disabled={anchor === null || !bridge.canNavigate(anchor)}
         onClick={() => anchor !== null && onJump(anchor)}
       >
         {`“${text ?? "(highlighted passage)"}”`}
@@ -125,6 +134,7 @@ export function ColorChips({
 /** The highlights and notes drawer: every passage in the book, filterable by color, with its row actions. */
 export function HighlightsDrawer({
   highlights,
+  listState,
   onClose,
   ...row
 }: HighlightsDrawerProps) {
@@ -153,7 +163,13 @@ export function HighlightsDrawer({
         <ColorChips active={filter} onPick={setFilter} />
       </div>
       <div className="rd-drawer-body">
-        {shown.length === 0 ? (
+        {listState === "loading" ? (
+          <Loading label="Loading highlights" />
+        ) : listState === "failed" ? (
+          <div className="rd-drawer-empty" role="alert">
+            Your highlights couldn’t be loaded.
+          </div>
+        ) : shown.length === 0 ? (
           <div className="rd-drawer-empty">No highlights yet.</div>
         ) : (
           shown.map((highlight) => (

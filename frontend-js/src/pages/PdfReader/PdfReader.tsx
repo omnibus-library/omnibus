@@ -4,7 +4,6 @@ import { useParams, useSearchParams } from "react-router";
 import {
   type BookDetail,
   type BookUuid,
-  type Highlight,
   type HighlightColor,
   parseBookUuid,
   saveReadingPosition,
@@ -28,13 +27,14 @@ import {
   useBackToBook,
 } from "../ComicReader/ComicReader";
 import { pagePercent } from "../ComicReader/pager";
+import { AnnotationTargets } from "../Reader/AnnotationTargets";
 import type { AnnotationBridge } from "../Reader/annotations";
 import { useHighlights } from "../Reader/annotations";
 import { BookmarksDrawer } from "../Reader/BookmarksDrawer";
 import { HighlightsDrawer } from "../Reader/HighlightsDrawer";
-import { NoteComposer } from "../Reader/NoteComposer";
-import { QuotePanel } from "../Reader/QuotePanel";
+import { Icon } from "../Reader/ReaderChrome";
 import { SelectionPopover } from "../Reader/SelectionPopover";
+import { fileIdParam } from "../Reader/start";
 import {
   deepLinkPage,
   paintList,
@@ -75,21 +75,11 @@ const pdfBridge: AnnotationBridge = {
     const page = pdfAnchorPage(anchor);
     if (page !== null) window.OmnibusPdfReader?.goTo(page);
   },
+  canNavigate: (anchor) => pdfAnchorPage(anchor) !== null,
   paint() {},
   unpaint() {},
   copy: (text) => window.OmnibusPdfReader?.copyText(text),
 };
-
-const ICON = {
-  width: 17,
-  height: 17,
-  viewBox: "0 0 24 24",
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 1.7,
-  strokeLinecap: "round",
-  strokeLinejoin: "round",
-} as const;
 
 function PdfPage({
   uuid,
@@ -114,13 +104,13 @@ function PdfPage({
   const [selection, setSelection] = useState<PdfSelection | null>(null);
   const {
     highlights,
+    listState,
     target,
     setTarget,
     load,
     create,
     saveNote,
-    recolor,
-    remove,
+    rowActions,
   } = useHighlights(uuid, pdfBridge);
   // Retry re-runs the whole open: the fetch, the glue load and the mount.
   const [attempt, setAttempt] = useState(0);
@@ -206,13 +196,12 @@ function PdfPage({
     const open = async () => {
       const [found, progress] = await Promise.all([
         client.fetchQuery({ ...bookQuery(uuid), staleTime: 0 }),
-        client
-          .fetchQuery({ ...progressQuery(uuid), staleTime: 0 })
-          .catch(() => null),
+        // A failed fetch fails the open, as the book's does: it must not read as "nothing saved".
+        client.fetchQuery({ ...progressQuery(uuid), staleTime: 0 }),
       ]);
       if (cancelled) return;
       if (!found) return setStatus("failed");
-      const saved = progress?.reading;
+      const saved = progress.reading;
       const start = pdfStartPage(
         deepLink,
         saved?.cfi ?? null,
@@ -237,7 +226,7 @@ function PdfPage({
       const passages = await client
         .fetchQuery({ ...highlightsQuery(uuid), staleTime: 0 })
         .catch(() => null);
-      if (passages && !cancelled) load(passages);
+      if (!cancelled) load(passages);
     };
     open().catch(() => {
       if (!cancelled) setStatus("failed");
@@ -277,24 +266,10 @@ function PdfPage({
     dismissSelection();
     create({ anchor: picked.anchor, color, text: picked.text }, after);
   }
-  const rowActions = {
-    bridge: pdfBridge,
-    onRecolor: recolor,
-    onDelete: async (highlight: Highlight) => {
-      await remove(highlight);
-      // The delete button was the focus; the root is where Escape is heard.
-      root.current?.focus();
-    },
-    onQuote: (highlight: Highlight) => {
-      setTarget({ kind: "quote", highlight });
-      setPanel(null);
-    },
-    onEditNote: (highlight: Highlight) => {
-      setTarget({ kind: "note", highlight });
-      setPanel(null);
-    },
-    onClose: () => setPanel(null),
-  };
+  const rows = rowActions(
+    () => setPanel(null),
+    () => root.current?.focus(),
+  );
 
   // Every control funnels through here, so a page is never shown without being saved.
   function goto(to: number) {
@@ -359,10 +334,10 @@ function PdfPage({
             aria-pressed={panel === "highlights"}
             onClick={() => toggle("highlights")}
           >
-            <svg {...ICON} aria-hidden="true">
+            <Icon size={17}>
               <path d="M4 19.5l1.6-4 8.2-8.2 3 3-8.2 8.2-4.6 0z" />
               <path d="M13.2 6.1l2.7-2.7a1.3 1.3 0 0 1 1.9 0l1.8 1.8a1.3 1.3 0 0 1 0 1.9l-2.7 2.7" />
-            </svg>
+            </Icon>
             {highlights.length > 0 && (
               <span className="rd-badge">{highlights.length}</span>
             )}
@@ -378,9 +353,9 @@ function PdfPage({
             aria-pressed={panel === "bookmarks"}
             onClick={() => toggle("bookmarks")}
           >
-            <svg {...ICON} aria-hidden="true">
+            <Icon size={17}>
               <path d="M7 4h10v16l-5-3.6L7 20V4z" />
-            </svg>
+            </Icon>
           </button>
         </div>
         {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings a default border and min-width the cr rules never reset */}
@@ -491,7 +466,11 @@ function PdfPage({
         />
       )}
       {panel === "highlights" && (
-        <HighlightsDrawer highlights={highlights} {...rowActions} />
+        <HighlightsDrawer
+          highlights={highlights}
+          listState={listState}
+          {...rows}
+        />
       )}
       {panel === "bookmarks" && (
         <BookmarksDrawer
@@ -502,22 +481,12 @@ function PdfPage({
           onClose={() => setPanel(null)}
         />
       )}
-      {target?.kind === "quote" && (
-        <QuotePanel
-          text={target.highlight.text ?? ""}
-          author={book?.authors[0] ?? ""}
-          subtitle={book?.title ?? ""}
-          accent={book?.accent ?? "#3a3027"}
-          onClose={() => setTarget(null)}
-        />
-      )}
-      {target?.kind === "note" && (
-        <NoteComposer
-          highlight={target.highlight}
-          onSave={(draft) => saveNote(target.highlight, draft)}
-          onClose={() => setTarget(null)}
-        />
-      )}
+      <AnnotationTargets
+        target={target}
+        book={book}
+        onSave={saveNote}
+        onClose={() => setTarget(null)}
+      />
     </div>
   );
 }
@@ -525,9 +494,7 @@ function PdfPage({
 export function PdfReader() {
   const uuid = parseBookUuid(useParams().uuid);
   const [search] = useSearchParams();
-  const fileParam = search.get("file_id");
-  const fileId =
-    fileParam !== null && /^\d+$/.test(fileParam) ? Number(fileParam) : null;
+  const fileId = fileIdParam(search);
   const deepLink = deepLinkPage(search.get("page"));
   if (!uuid) return <PageNotFound subject="Book" />;
   return (
