@@ -6,7 +6,7 @@ import type {
   ExternalBookMeta,
   ScanOutcome,
   WishlistAddRequest,
-} from "../../api/generated/schemas";
+} from "../../api";
 import {
   anExternalBook,
   aScanBook,

@@ -16,7 +16,7 @@ from `GET /api/ebooks`, thumbnails from `/api/thumbs`), and book detail.
 | `src/components/<Name>/` | shared building blocks: `<Name>.tsx` beside its `.css` and `.stories.tsx` |
 | `src/layouts/` | `RequireAuth` (the session gate) and `AppShell` (top bar + page) |
 | `src/pages/<Name>/` | one folder per route, its CSS beside it |
-| `src/api.ts` | a barrel over `src/api/*.ts`, one file per resource: every REST call the screens make, mapping wire shapes to the ones they render, and the form schemas |
+| `src/api.ts` | a barrel over `src/api/*.ts`, one file per resource: every REST call the screens make, mapping wire shapes to the ones they render, and the form schemas; an api module re-exports a wire type verbatim when the screen uses it unchanged, so pages never import `api/generated/schemas` |
 | `src/api/generated/` | zod schemas, fetchers, TanStack Query hooks and MSW handlers that orval generates from `../openapi/openapi.json`; gitignored, rebuilt by `pnpm run generate` (`pnpm install` runs it too) |
 | `src/vendor/barcode/` | the camera scanner's zxing decoder, its wasm and the glue: byte copies of `frontend/assets/vendor/`, loaded by `<script>` from Vite `?url` imports (the zxing IIFE declares a global that bundling would scope away) |
 | `src/testing/` | `AppHarness`, parsed and wire-format fixtures, the MSW handlers orval can't generate (`handlers.ts`), the Vitest setup |

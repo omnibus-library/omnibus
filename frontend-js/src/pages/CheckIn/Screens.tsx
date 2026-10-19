@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { bustCover, parseBookUuid } from "../../api";
-import type {
-  ExternalBookMeta,
-  ScanBook,
-  WishlistAddRequest,
-} from "../../api/generated/schemas";
+import {
+  bustCover,
+  type ExternalBookMeta,
+  parseBookUuid,
+  type ScanBook,
+  type WishlistAddRequest,
+} from "../../api";
 import { Button, ButtonLink } from "../../components/Button/Button";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import {

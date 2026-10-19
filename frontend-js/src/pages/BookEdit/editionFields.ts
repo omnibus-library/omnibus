@@ -1,8 +1,8 @@
-import type { MetaForm } from "../../api";
 import type {
+  MetaForm,
   ProviderEdition,
   ProviderSearchSource,
-} from "../../api/generated/schemas";
+} from "../../api";
 import { labelToId } from "./MetaFields";
 
 /** A cooldown as a reader would say it: rounded up, and never "0s". */

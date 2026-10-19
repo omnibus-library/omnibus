@@ -3,9 +3,8 @@ import { HttpResponse, http } from "msw";
 import { useState } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { expect, waitFor } from "storybook/test";
-import { coverUrl, toEditableBook } from "../../api";
+import { coverUrl, type MetadataOverrides, toEditableBook } from "../../api";
 import { getGetEbookByUuidMockHandler404 } from "../../api/generated/omnibus.msw";
-import type { MetadataOverrides } from "../../api/generated/schemas";
 import {
   expectInvalidated,
   seedQueries,

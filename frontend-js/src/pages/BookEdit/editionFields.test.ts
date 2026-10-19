@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formFromBook } from "../../api";
-import type { ProviderSearchStatus } from "../../api/generated/schemas";
+import { formFromBook, type ProviderSearchStatus } from "../../api";
 import {
   anEditableWireBook,
   aProviderEdition,

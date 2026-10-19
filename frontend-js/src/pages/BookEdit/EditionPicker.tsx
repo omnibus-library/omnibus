@@ -2,6 +2,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import {
+  type EditionSearchRequest,
+  type EditionSearchResponse,
   editionRequest,
   fillMissing,
   hasProviderQuery,
@@ -9,13 +11,9 @@ import {
   inStableOrder,
   type MetaForm,
   PROVIDERS,
+  type ProviderEdition,
   searchEditions,
 } from "../../api";
-import type {
-  EditionSearchRequest,
-  EditionSearchResponse,
-  ProviderEdition,
-} from "../../api/generated/schemas";
 import { Button } from "../../components/Button/Button";
 import { SparkleGlyph } from "../../components/Glyphs/Glyphs";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";

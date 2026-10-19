@@ -1,7 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
-import { searchLibraryBooks } from "../../api";
-import type { ScanBook } from "../../api/generated/schemas";
+import { type ScanBook, searchLibraryBooks } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { truncationNote } from "./checkIn";
 import { LibraryPickOption, LibrarySearchForm } from "./Screens";

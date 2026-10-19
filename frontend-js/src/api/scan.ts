@@ -20,6 +20,15 @@ import type {
   WishlistAddRequest,
 } from "./generated/schemas";
 
+export type {
+  AddPhysicalOnlyRequest,
+  CheckInRequest,
+  ExternalBookMeta,
+  ScanBook,
+  ScanOutcome,
+  WishlistAddRequest,
+} from "./generated/schemas";
+
 // The check-in flow's reads and writes. Every answer stays wire-shaped: a book or
 // provider record goes back out in the next request exactly as it came in.
 

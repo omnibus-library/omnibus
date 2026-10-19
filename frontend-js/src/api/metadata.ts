@@ -28,6 +28,15 @@ import {
   ProviderEdition,
 } from "./generated/schemas";
 
+export type {
+  EditionSearchRequest,
+  EditionSearchResponse,
+  MetadataOverrides,
+  ProviderEdition,
+  ProviderSearchSource,
+  ProviderSearchStatus,
+} from "./generated/schemas";
+
 // The metadata edit page's reads and writes.
 
 /** What the edit form holds: every field as the text or list the reader edits. */

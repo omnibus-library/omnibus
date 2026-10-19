@@ -3,11 +3,13 @@ import { HttpResponse, http } from "msw";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { expect, waitFor } from "storybook/test";
-import { formFromBook, hasProviderQuery, toEditableBook } from "../../api";
-import type {
-  EditionSearchRequest,
-  EditionSearchResponse,
-} from "../../api/generated/schemas";
+import {
+  type EditionSearchRequest,
+  type EditionSearchResponse,
+  formFromBook,
+  hasProviderQuery,
+  toEditableBook,
+} from "../../api";
 import { storyClient } from "../../testing/AppHarness";
 import { failing } from "../../testing/handlers";
 import {

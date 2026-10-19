@@ -1,7 +1,10 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { googleBooksConfiguredQuery, searchProviders } from "../../api";
-import type { ExternalBookMeta } from "../../api/generated/schemas";
+import {
+  type ExternalBookMeta,
+  googleBooksConfiguredQuery,
+  searchProviders,
+} from "../../api";
 import { Button } from "../../components/Button/Button";
 import { cleanIsbn, isbnRejection } from "./checkIn";
 import { ExternalBookCard, IsbnField, LibrarySearchForm } from "./Screens";

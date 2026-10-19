@@ -3,7 +3,7 @@ import type {
   ScanBook,
   ScanOutcome,
   WishlistAddRequest,
-} from "../../api/generated/schemas";
+} from "../../api";
 
 // The check-in flow's pure logic: where it is, what each outcome opens, and the copy that words it.
 

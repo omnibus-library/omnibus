@@ -4,14 +4,12 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   addPhysicalOnly,
   checkInBook,
+  type ExternalBookMeta,
   resolveBook,
   resolveMeta,
+  type ScanOutcome,
   wishlistScanned,
 } from "../../api";
-import type {
-  ExternalBookMeta,
-  ScanOutcome,
-} from "../../api/generated/schemas";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import {
   cleanIsbn,

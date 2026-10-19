@@ -1,7 +1,11 @@
 import { useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
-import { coverFromUrl, type MetaForm, PROVIDERS } from "../../api";
-import type { ProviderEdition } from "../../api/generated/schemas";
+import {
+  coverFromUrl,
+  type MetaForm,
+  PROVIDERS,
+  type ProviderEdition,
+} from "../../api";
 import { classes } from "../../classes";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
