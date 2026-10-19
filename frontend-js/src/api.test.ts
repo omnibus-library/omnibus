@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { toBookDetail, toBookPage } from "./api";
-import { aWireBook } from "./testing/wire";
+import {
+  toBookDetail,
+  toBookPage,
+  toPalette,
+  toResumePoint,
+  toUser,
+} from "./api";
+import {
+  aWireBook,
+  aWirePalette,
+  aWireResumePoint,
+  WIRE_ADA,
+} from "./testing/wire";
 
 const auroraWire = aWireBook({ published: null });
 
@@ -46,6 +57,14 @@ describe("toBookPage", () => {
     });
   });
 
+  it("falls back to the filename for a blank title", () => {
+    const wire = { ...auroraWire, title: "  " };
+
+    const [book] = toBookPage({ books: [wire] }, new Headers()).books;
+
+    expect(book?.title).toBe("aurora-station-01.cbz");
+  });
+
   it("rejects a row with no uuid", () => {
     const wire = { ...auroraWire, unique_identifier: null };
 
@@ -67,5 +86,55 @@ describe("toBookDetail", () => {
     const wire = { ...auroraWire, series: "  " };
 
     expect(toBookDetail(wire).series).toBeNull();
+  });
+});
+
+describe("toResumePoint", () => {
+  it("maps each resume point to its book, format and file id", () => {
+    const wire = aWireResumePoint(
+      { format: "audio", book_file_id: 7 },
+      { title: "The Martian", formats: ["M4B", "EPUB"] },
+    );
+
+    const point = toResumePoint(wire);
+
+    expect(point).toMatchObject({
+      book: {
+        uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+        title: "The Martian",
+      },
+      format: "audio",
+      fileId: 7,
+      formats: ["M4B", "EPUB"],
+    });
+  });
+});
+
+describe("toUser", () => {
+  it("maps the session user to its identity, role and avatar", () => {
+    const wire = { ...WIRE_ADA, has_avatar: true };
+
+    expect(toUser(wire)).toEqual({
+      id: 1,
+      username: "ada",
+      name: "Ada Lovelace",
+      isAdmin: true,
+      canUpload: true,
+      hasAvatar: true,
+    });
+  });
+
+  it("falls back to the username when there is no display name", () => {
+    const wire = { ...WIRE_ADA, display_name: null };
+
+    expect(toUser(wire).name).toBe("ada");
+  });
+});
+
+describe("toPalette", () => {
+  it("defaults the totals the server omits", () => {
+    const { book_total: _omitted, ...wire } = aWirePalette();
+
+    expect(toPalette(wire).totals.books).toBe(0);
   });
 });

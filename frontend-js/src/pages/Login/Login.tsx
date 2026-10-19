@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Controller, useForm } from "react-hook-form";
-import { useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   ApiError,
   type Credentials,
@@ -15,7 +15,7 @@ import { Field } from "../../components/Field/Field";
 import { BusyLabel } from "../../components/Loading/Loading";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { safeNext } from "../../safeNext";
-import { meQuery } from "../../session";
+import { registrationQuery, startSession } from "../../session";
 
 function loginErrorMessage(error: Error): string {
   if (!(error instanceof ApiError)) return error.message;
@@ -33,6 +33,7 @@ export function Login() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [search] = useSearchParams();
+  const registration = useQuery(registrationQuery);
   const form = useForm<Credentials>({
     resolver: zodResolver(CredentialsSchema),
     mode: "onChange",
@@ -41,7 +42,7 @@ export function Login() {
   const signIn = useMutation({
     mutationFn: login,
     onSuccess: (user) => {
-      queryClient.setQueryData(meQuery.queryKey, user);
+      startSession(queryClient, user);
       navigate(safeNext(search.get("next")) ?? "/", { replace: true });
     },
   });
@@ -107,6 +108,12 @@ export function Login() {
             busyLabel="Logging in…"
           />
         </Button>
+        {/* Only once the check says open, so a closed server never withdraws it. */}
+        {registration.data === true && (
+          <p className="auth-footer">
+            New here? <Link to="/register">Create an account</Link>
+          </p>
+        )}
         <div className="auth-footer-note">omnibus · react proof of concept</div>
       </form>
     </AuthShell>

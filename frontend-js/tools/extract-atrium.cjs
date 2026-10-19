@@ -20,13 +20,19 @@ const OWNERS = [
   ["components/Loading/Loading.css", (c) => c === "ld" || c.startsWith("ld-")],
   ["components/Banner/Banner.css", (c) => c.startsWith("auth-banner")],
   ["components/Field/Field.css", (c) => c.startsWith("auth-field")],
+  ["components/StrengthMeter/StrengthMeter.css", (c) => c.startsWith("auth-strength") || c.startsWith("auth-req")],
+  ["pages/Register/Register.css", (c) => c.startsWith("auth-checkbox") || ["auth-closed-note", "auth-form-pending"].includes(c)],
   ["components/AuthShell/AuthShell.css", (c) => c.startsWith("auth-")],
   ["components/TopNav/TopNav.css", (c) => c.startsWith("atrium-")],
+  ["components/UserMenu/UserMenu.css", (c) => c.startsWith("um-")],
+  ["components/ThemePicker/ThemePicker.css", (c) => c.startsWith("theme-seg")],
+  ["components/SearchPalette/SearchPalette.css", (c) => c.startsWith("sp-")],
+  ["pages/Search/Search.css", (c) => c.startsWith("search-")],
   ["layouts/AppShell.css", (c) => c === "app-shell"],
   ["components/DiscPage/DiscPage.css", (c) => c.startsWith("disc-")],
   ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || ["landing-col", "library-empty", "cover-link"].includes(c)],
   ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || c.startsWith("bd-")],
-  ["styles/base.css", (c) => ["label", "mono", "subtitle"].includes(c)],
+  ["styles/base.css", (c) => ["divider", "label", "mono", "sr-only", "subtitle"].includes(c)],
 ];
 const CONTEXT = new Set(["atrium", "theme-snap"]);
 
@@ -34,12 +40,13 @@ function tsxFiles(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) return tsxFiles(p);
-    return p.endsWith(".tsx") ? [p] : [];
+    // Test names are prose, not markup: "the whole screen" would pull in .screen.
+    return p.endsWith(".tsx") && !p.endsWith(".test.tsx") ? [p] : [];
   });
 }
 
 // Status words the code compares against, never a className.
-const STOP = new Set(["back", "error", "off", "ok", "pending", "success"]);
+const STOP = new Set(["back", "error", "off", "ok", "pending", "success", "tag"]);
 const vocab = new Set();
 for (const file of tsxFiles(src)) {
   const text = fs.readFileSync(file, "utf8");

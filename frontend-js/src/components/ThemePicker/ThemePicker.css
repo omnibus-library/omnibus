@@ -1,0 +1,34 @@
+.theme-seg {
+  display: inline-flex;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  padding: 2px;
+}
+.theme-seg-btn {
+  background: transparent;
+  border: none;
+  color: var(--ink-2);
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+@media (hover: hover) {
+  .theme-seg-btn:hover:not([disabled]) {
+    color: var(--ink-0);
+  }
+}
+.theme-seg-btn.on {
+  background: var(--bg-0);
+  color: var(--ink-0);
+}
+.theme-seg-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.theme-seg-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

@@ -2,11 +2,14 @@ import { delay, HttpResponse, http } from "msw";
 import {
   getGetMeMockHandler200,
   getGetMeMockHandler401,
+  getGetRegistrationMockHandler200,
 } from "../api/generated/omnibus.msw";
 import type {
   EbookMetadata,
   EbookPage,
   LoginResponse,
+  PaletteResults,
+  ResumePoint,
 } from "../api/generated/schemas";
 import { COVER_SVG } from "./books";
 import { WIRE_ADA } from "./wire";
@@ -61,6 +64,70 @@ export function bookHandler(book: EbookMetadata) {
   );
 }
 
+/** `GET /api/progress/recent`, answering the first `limit` of `points`. */
+export function recentProgressHandler(points: ResumePoint[]) {
+  return http.get("/api/progress/recent", ({ request }) => {
+    const limit = Number(new URL(request.url).searchParams.get("limit"));
+    if (!Number.isInteger(limit) || limit < 1) {
+      return new HttpResponse("limit must be a positive integer", {
+        status: 400,
+      });
+    }
+    return HttpResponse.json(points.slice(0, limit));
+  });
+}
+
+/**
+ * `GET /api/search/palette` answering `preview` for any non-blank query, and
+ * `full` when the client raises the per-group cap with `limit`.
+ */
+export function paletteHandler(
+  preview: PaletteResults,
+  full: PaletteResults | "fails" = preview,
+) {
+  return http.get("/api/search/palette", ({ request }) => {
+    const params = new URL(request.url).searchParams;
+    if (!params.get("q")?.trim()) {
+      return new HttpResponse("q is required", { status: 400 });
+    }
+    const limit = params.get("limit");
+    if (limit === null) return HttpResponse.json(preview);
+    if (!/^[1-9]\d*$/.test(limit)) {
+      return new HttpResponse("limit must be a positive integer", {
+        status: 400,
+      });
+    }
+    return full === "fails"
+      ? new HttpResponse("failed with 500", { status: 500 })
+      : HttpResponse.json(full);
+  });
+}
+
+/** `GET /api/auth/registration`: whether self-registration is open. */
+export function registrationHandler(enabled: boolean) {
+  return getGetRegistrationMockHandler200({ enabled });
+}
+
+/** `POST /api/auth/register`, refusing `taken` as the server refuses a duplicate. */
+export function registerHandler(taken = "taken") {
+  return http.post("/api/auth/register", async ({ request }) => {
+    const body: unknown = await request.json();
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      !("username" in body) ||
+      !("password" in body)
+    ) {
+      return new HttpResponse("missing credentials", { status: 422 });
+    }
+    return body.username === taken
+      ? new HttpResponse("username already taken", { status: 409 })
+      : HttpResponse.json({
+          user: { ...WIRE_ADA, username: String(body.username) },
+        } satisfies LoginResponse);
+  });
+}
+
 /** `POST /api/auth/login` accepting `password` for any username. */
 export function loginHandler(password: string) {
   return http.post("/api/auth/login", async ({ request }) => {
@@ -83,8 +150,8 @@ export function failing(method: "get" | "post", path: string, status: number) {
 }
 
 /** Never answers `path`, to hold a screen in its loading state. */
-export function hanging(path: string) {
-  return http.get(path, async () => {
+export function hanging(path: string, method: "get" | "post" = "get") {
+  return http[method](path, async () => {
     await delay("infinite");
     return new HttpResponse(null);
   });

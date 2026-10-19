@@ -4,6 +4,7 @@ import { AppShell } from "./layouts/AppShell";
 import { RequireAuth } from "./layouts/RequireAuth";
 import { Account } from "./pages/Account/Account";
 import { AddBooks } from "./pages/AddBooks/AddBooks";
+import { Admin } from "./pages/Admin/Admin";
 import { AdminHealth } from "./pages/AdminHealth/AdminHealth";
 import { AuthorDetail } from "./pages/AuthorDetail/AuthorDetail";
 import { Authors } from "./pages/Authors/Authors";
@@ -12,7 +13,6 @@ import { BookEdit } from "./pages/BookEdit/BookEdit";
 import { CheckIn } from "./pages/CheckIn/CheckIn";
 import { CleanupReview } from "./pages/CleanupReview/CleanupReview";
 import { ComicReader } from "./pages/ComicReader/ComicReader";
-import { Connect } from "./pages/Connect/Connect";
 import { Library } from "./pages/Library/Library";
 import { Listen } from "./pages/Listen/Listen";
 import { Login } from "./pages/Login/Login";
@@ -39,7 +39,8 @@ export const routes: RouteObject[] = [
     children: [
       { path: "/login", element: <Login /> },
       { path: "/register", element: <Register /> },
-      { path: "/connect", element: <Connect /> },
+      // The native shell's server picker; a browser is already on its server.
+      { path: "/connect", element: <Navigate to="/" replace /> },
       {
         element: <RequireAuth />,
         children: [
@@ -68,11 +69,17 @@ export const routes: RouteObject[] = [
                   { path: "/stats/chart", element: <StatsChart /> },
                   { path: "/shelves", element: <Shelves /> },
                   { path: "/shelves/:id", element: <ShelfDetail /> },
-                  { path: "/search", element: <Search /> },
+                  // Web search is the palette; only /search/:query is a page.
+                  { path: "/search", element: <Navigate to="/" replace /> },
                   { path: "/search/:query", element: <Search /> },
                   { path: "/settings", element: <Settings /> },
                   {
                     path: "/settings/cleanup/:kind",
+                    element: <CleanupReview />,
+                  },
+                  { path: "/admin", element: <Admin /> },
+                  {
+                    path: "/admin/cleanup/:kind",
                     element: <CleanupReview />,
                   },
                   { path: "/admin/health", element: <AdminHealth /> },

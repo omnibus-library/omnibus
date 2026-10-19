@@ -1,5 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   createMemoryRouter,
   type RouteObject,
@@ -61,10 +62,10 @@ describe("routes", () => {
       ["/stats/chart", "Chart builder", null],
       ["/shelves", "Shelves", null],
       ["/shelves/9", "Shelf", "9"],
-      ["/search", "Search", null],
-      ["/search/dune", "Search", "dune"],
       ["/settings?section=smtp", "Settings", "smtp"],
       ["/settings/cleanup/duplicates", "Cleanup review", "duplicates"],
+      ["/admin?section=logs", "Administration", "logs"],
+      ["/admin/cleanup/duplicates", "Cleanup review", "duplicates"],
       ["/admin/health", "Server health", null],
       ["/account", "Account", null],
       ["/add-books", "Add books", null],
@@ -98,11 +99,21 @@ describe("routes", () => {
     });
   });
 
+  describe("search palette", () => {
+    it("makes the page behind the open palette inert", async () => {
+      renderRoute("/authors");
+      const nav = await screen.findByRole("navigation", { name: "Primary" });
+
+      await userEvent.keyboard("{Control>}k{/Control}");
+
+      expect(nav.closest(".app-shell")).toHaveAttribute("inert");
+    });
+  });
+
   describe("signed-out pages", () => {
     it.each([
       ["/login", "Welcome back"],
-      ["/register", "Join the library"],
-      ["/connect", "Find your server"],
+      ["/register", "Make yourself at home"],
     ])("renders %s without a session", async (path, title) => {
       renderRoute(path, null);
 
@@ -166,6 +177,18 @@ describe("routes", () => {
       expect(router.state.location.search).toBe("?section=logs"),
     );
     expect(router.state.location.pathname).toBe("/settings");
+  });
+
+  it("redirects /connect to the library", async () => {
+    const router = renderRoute("/connect");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  });
+
+  it("redirects a bare /search to the library", async () => {
+    const router = renderRoute("/search");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });
 
   it("renders not found for a path nothing lives at", async () => {

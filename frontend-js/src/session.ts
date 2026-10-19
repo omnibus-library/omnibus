@@ -1,13 +1,26 @@
 import {
+  type QueryClient,
   queryOptions,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { fetchMe, logout, type User } from "./api";
+import { fetchMe, fetchRegistrationOpen, logout, type User } from "./api";
 
 export const meQuery = queryOptions({ queryKey: ["me"], queryFn: fetchMe });
+
+/** Whether sign-up is open; a failed check reads as open, as the server's 403 is the real gate. */
+export const registrationQuery = queryOptions({
+  queryKey: ["registration"],
+  queryFn: () => fetchRegistrationOpen().catch(() => true),
+});
+
+/** Makes `user` the session, dropping every answer cached for whoever came before. */
+export function startSession(client: QueryClient, user: User) {
+  client.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
+  client.setQueryData(meQuery.queryKey, user);
+}
 
 /** The signed-in user; only valid under `RequireAuth`, which resolves it first. */
 export function useCurrentUser(): User {

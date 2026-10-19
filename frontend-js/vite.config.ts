@@ -8,6 +8,12 @@ const apiPort = process.env.OMNIBUS_PORT ?? "3000";
 
 export default defineConfig({
   plugins: [react()],
+  // The release tag the image build sets, as the Rust build reads it.
+  define: {
+    __APP_VERSION__: JSON.stringify(
+      process.env.OMNIBUS_VERSION?.trim() || "dev",
+    ),
+  },
   build: {
     rolldownOptions: {
       // The generated client declares a zod schema per wire type at module

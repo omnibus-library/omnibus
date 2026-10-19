@@ -1,0 +1,30 @@
+.auth-form-pending {
+  min-height: 22rem;
+}
+.auth-closed-note {
+  font-size: 0.9rem;
+  color: var(--ink-2);
+  line-height: 1.5;
+  margin-top: 1rem;
+}
+
+.auth-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.4rem 0 0.8rem;
+  font-size: 0.85rem;
+  color: var(--auth-ink-1);
+  cursor: pointer;
+}
+.auth-checkbox-block {
+  align-items: flex-start;
+  line-height: 1.5;
+}
+.auth-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  accent-color: var(--auth-accent);
+  margin-top: 1px;
+}

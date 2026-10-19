@@ -2,13 +2,19 @@ import { z } from "zod";
 import {
   getEbookByUuid,
   getEbooks,
+  getLogoutUrl,
   getMe,
+  getRecentProgress,
+  getRegistration,
+  getSearchPalette,
   login as postLogin,
-  logout as postLogout,
+  register as postRegister,
 } from "./api/generated/omnibus";
 import type {
   EbookMetadata,
   EbookPage,
+  PaletteResults as PaletteWire,
+  ResumePoint as ResumePointWire,
   UserSummary,
 } from "./api/generated/schemas";
 
@@ -29,25 +35,36 @@ export function parseBookUuid(raw: string | null | undefined): BookUuid | null {
   return parsed.success ? parsed.data : null;
 }
 
-function toUser(user: UserSummary) {
+function requireUuid(raw: string | null | undefined, id: number): BookUuid {
+  const uuid = parseBookUuid(raw);
+  if (!uuid) throw new Error(`book ${id} has no uuid`);
+  return uuid;
+}
+
+export type UserId = number & { readonly __brand: "UserId" };
+
+/** The screen's shape of the user `GET /api/auth/me` and sign-in answer with. */
+export function toUser(user: UserSummary) {
   return {
+    id: user.id as UserId,
+    username: user.username,
     name: user.display_name ?? user.username,
+    isAdmin: user.is_admin,
     canUpload: user.can_upload,
+    hasAvatar: user.has_avatar ?? false,
   };
 }
 
 export type User = ReturnType<typeof toUser>;
 
 function toBook(wire: EbookMetadata) {
-  const uuid = parseBookUuid(wire.unique_identifier);
-  if (!uuid) throw new Error(`book ${wire.id} has no uuid`);
   // An empty name is a cleared series, not a series called "".
   const series = wire.series?.trim()
     ? { name: wire.series, index: wire.series_index ?? null }
     : null;
   return {
-    uuid,
-    title: wire.title ?? wire.filename,
+    uuid: requireUuid(wire.unique_identifier, wire.id),
+    title: wire.title?.trim() ? wire.title : wire.filename,
     authors: wire.creators.map((c) => c.name),
     series,
     accent: wire.accent ?? null,
@@ -69,6 +86,73 @@ export function toBookDetail(wire: EbookMetadata) {
 }
 
 export type BookDetail = ReturnType<typeof toBookDetail>;
+
+/** The screen's shape of one `GET /api/progress/recent` entry. */
+export function toResumePoint({ record, book }: ResumePointWire) {
+  return {
+    book: toBook(book),
+    format: record.format,
+    fileId: record.book_file_id ?? null,
+    formats: book.formats ?? [],
+  };
+}
+
+export type ResumePoint = ReturnType<typeof toResumePoint>;
+
+export type AuthorId = number & { readonly __brand: "AuthorId" };
+export type SeriesId = number & { readonly __brand: "SeriesId" };
+
+/** The screen's shape of `GET /api/search/palette`: capped hits, true totals. */
+export function toPalette(wire: PaletteWire) {
+  const totals = {
+    books: wire.book_total ?? 0,
+    authors: wire.author_total ?? 0,
+    series: wire.series_total ?? 0,
+    tags: wire.tag_total ?? 0,
+    genres: wire.genre_total ?? 0,
+  };
+  return {
+    books: wire.books.map((b) => ({
+      uuid: requireUuid(b.uuid, b.id),
+      title: b.title,
+      authorDisplay: b.author_display,
+      year: b.year ?? null,
+      formats: b.formats,
+      hasCover: b.cover_url != null,
+      accent: b.accent ?? null,
+    })),
+    authors: wire.authors.map((a) => ({
+      id: a.id as AuthorId,
+      name: a.name,
+      bookCount: a.book_count,
+      leadBookTitle: a.lead_book_title ?? null,
+    })),
+    series: wire.series.map((s) => ({
+      id: s.id as SeriesId,
+      name: s.name,
+      bookCount: s.book_count,
+      authorDisplay: s.author_display ?? null,
+      leadBookTitle: s.lead_book_title ?? null,
+    })),
+    tags: wire.tags.map((t) => ({
+      id: t.id,
+      name: t.name,
+      bookCount: t.book_count,
+    })),
+    genres: (wire.genres ?? []).map((g) => ({
+      name: g.name,
+      bookCount: g.book_count,
+    })),
+    durationMs: wire.duration_ms,
+    total: Object.values(totals).reduce((sum, n) => sum + n, 0),
+    totals,
+  };
+}
+
+export type PaletteResults = ReturnType<typeof toPalette>;
+
+/** One book hit in the palette or on the results page. */
+export type PaletteBook = PaletteResults["books"][number];
 
 export type BookPage = { books: Book[]; total: number; next: string | null };
 
@@ -125,9 +209,26 @@ export async function login(credentials: Credentials): Promise<User> {
   return toUser(res.data.user);
 }
 
+/** Opens a cookie session for a new account; the server sets the cookie. */
+export async function register(credentials: Credentials): Promise<User> {
+  const res = await postRegister(credentials);
+  if (res.status !== 200) throw failure(res);
+  return toUser(res.data.user);
+}
+
+/** Whether self-registration is open; an admin can close it. */
+export async function fetchRegistrationOpen(): Promise<boolean> {
+  const res = await getRegistration();
+  if (res.status !== 200) throw failure(res);
+  return res.data.enabled;
+}
+
 export async function logout(): Promise<void> {
-  const res = await postLogout();
-  if (res.status !== 204) throw failure(res);
+  // The generated fetcher JSON-parses any body, and an error's is plain text.
+  const res = await fetch(getLogoutUrl(), { method: "POST" });
+  if (res.status !== 204) {
+    throw failure({ status: res.status, data: await res.text() });
+  }
 }
 
 /** One title-sorted page of the library; pass `""` for the first page. */
@@ -152,9 +253,31 @@ export async function fetchBook(uuid: BookUuid): Promise<BookDetail | null> {
   return toBookDetail(res.data);
 }
 
-export const thumbUrl = (uuid: BookUuid) => `/api/thumbs/${uuid}/md`;
+/** The reader's most recent reading and listening positions, newest first. */
+export async function fetchRecentProgress(
+  limit: number,
+): Promise<ResumePoint[]> {
+  const res = await getRecentProgress({ limit });
+  if (res.status !== 200) throw failure(res);
+  return res.data.map(toResumePoint);
+}
+
+/** Grouped search hits for `query`; `limit` raises the per-group cap. */
+export async function fetchPalette(
+  query: string,
+  { limit, signal }: { limit?: number; signal?: AbortSignal } = {},
+): Promise<PaletteResults> {
+  const res = await getSearchPalette({ q: query, limit }, { signal });
+  if (res.status !== 200) throw failure(res);
+  return toPalette(res.data);
+}
+
+export const thumbUrl = (uuid: BookUuid, size: "sm" | "md" = "md") =>
+  `/api/thumbs/${uuid}/${size}`;
 
 export const thumbSrcSet = (uuid: BookUuid) =>
   `/api/thumbs/${uuid}/sm 160w, /api/thumbs/${uuid}/md 320w, /api/thumbs/${uuid}/lg 640w`;
 
 export const coverUrl = (uuid: BookUuid) => `/api/covers/${uuid}`;
+
+export const avatarUrl = (id: UserId) => `/api/users/${id}/avatar`;

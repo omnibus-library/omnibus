@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { MemoryRouter } from "react-router";
-import type { User } from "../api";
+import { toUser, type User } from "../api";
+import { SearchPaletteProvider } from "../components/SearchPalette/SearchPalette";
 import { meQuery } from "../session";
+import { WIRE_ADA } from "./wire";
 
 /** The signed-in reader stories and tests render as. */
-export const ADA: User = { name: "Ada Lovelace", canUpload: true };
+export const ADA: User = toUser(WIRE_ADA);
 
 /** A query client already holding `user` as the session, that never refetches. */
 export function harnessClient(user: User | null = ADA): QueryClient {
@@ -26,7 +28,7 @@ type AppHarnessProps = {
   router?: boolean;
 };
 
-/** What a screen expects around it in the app: a session and a router. */
+/** What a screen expects around it in the app: a session, a router and the palette. */
 export function AppHarness({
   children,
   user = ADA,
@@ -36,11 +38,13 @@ export function AppHarness({
   const [client] = useState(() => harnessClient(user));
   return (
     <QueryClientProvider client={client}>
-      {router ? (
-        <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>
-      ) : (
-        children
-      )}
+      <SearchPaletteProvider>
+        {router ? (
+          <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>
+        ) : (
+          children
+        )}
+      </SearchPaletteProvider>
     </QueryClientProvider>
   );
 }
