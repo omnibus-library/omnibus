@@ -1,5 +1,6 @@
 import type { Preview } from "@storybook/react-vite";
 import { mswLoader } from "msw-storybook-addon/csf3";
+import { configure } from "storybook/test";
 import { resetCoverBusts, toUser, type User } from "../src/api";
 import { UserSummary } from "../src/api/generated/schemas";
 import {
@@ -19,6 +20,9 @@ import "../src/styles/theme.css";
 import "../src/styles/base.css";
 
 watchImageLoads();
+
+// Slow CI runners exceed testing-library's 1 s default wait on `waitFor`/`findBy*`.
+configure({ asyncUtilTimeout: 4000 });
 
 // `parameters.user` is the session as the server sends it; `null` is a guest.
 function storyUser(value: unknown): User | null {
