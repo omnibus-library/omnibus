@@ -47,7 +47,10 @@ export function GoalsSection() {
     // A failed goal keeps what was typed, and its error survives the re-sync after a save.
     resetOptions: { keepDirtyValues: true, keepErrors: true },
   });
-  const dirty = form.formState.isDirty;
+  const drafts = form.watch("drafts");
+  const dirty =
+    saved !== null &&
+    GOAL_FIELDS.some(({ kind }) => drafts[kind].trim() !== text(saved[kind]));
   useUnsavedGuard("goals", dirty);
 
   const save = useMutation({
