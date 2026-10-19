@@ -109,8 +109,12 @@ export function Library() {
     queryFn: () => fetchRecentProgress(RESUME_POINTS),
   });
   const points = recent.data ?? [];
-  const [leadIndex, setLeadIndex] = useState(0);
-  const lead = Math.min(leadIndex, points.length - 1);
+  // Keyed, so a refetch that reorders the feed keeps the book the reader brought forward.
+  const [leadKey, setLeadKey] = useState<string | null>(null);
+  const lead = Math.max(
+    points.findIndex((point) => point.key === leadKey),
+    0,
+  );
   const leadPoint = points[lead];
 
   // Past this much scroll the stack is off-screen, so the edge ribbon takes over.
@@ -209,11 +213,14 @@ export function Library() {
 
   // Fetch the next page as the button nears the viewport.
   const loadMore = useRef<HTMLDivElement>(null);
-  const { isFetchingNextPage, fetchNextPage } = pages;
+  const { isFetchingNextPage, isFetchNextPageError, fetchNextPage } = pages;
   const hasNextPage = shelfId === null && pages.hasNextPage;
   useEffect(() => {
     const row = loadMore.current;
-    if (!row || !hasNextPage || isFetchingNextPage) return;
+    // After a failed page the button is the retry; re-arming here would refetch it in a loop.
+    if (!row || !hasNextPage || isFetchingNextPage || isFetchNextPageError) {
+      return;
+    }
     const observer = new IntersectionObserver(
       // Entries queue while the page is busy, so a stale "not yet" can precede the current one.
       (entries) =>
@@ -222,7 +229,7 @@ export function Library() {
     );
     observer.observe(row);
     return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
 
   const change = (next: Prefs) => {
     const plan = savePlan(libraryPath.current, pages.isError, lastLibrary());
@@ -239,7 +246,7 @@ export function Library() {
     >
       <PageTitle />
       {leadPoint ? (
-        <ResumeStack points={points} lead={lead} onLead={setLeadIndex} />
+        <ResumeStack points={points} lead={lead} onLead={setLeadKey} />
       ) : (
         recent.isPending && <ResumeStackPending />
       )}
@@ -309,7 +316,7 @@ export function Library() {
               )}
             </div>
           )}
-          {lens.status === "error" && (
+          {lens.status === "error" && !lens.data && (
             <PageError
               message={`Couldn't load the library: ${lens.error.message}`}
             />
@@ -347,6 +354,11 @@ export function Library() {
             ))}
           {hasNextPage && (
             <div className="lib-load-more-row" ref={loadMore}>
+              {isFetchNextPageError && pages.error && (
+                <p className="subtitle" role="alert">
+                  Couldn't load more: {pages.error.message}
+                </p>
+              )}
               <Button
                 className="lib-load-more"
                 onClick={() => pages.fetchNextPage()}

@@ -115,7 +115,7 @@ type ResumeStackProps = {
   points: ResumePoint[];
   /** Index of the book in front. */
   lead: number;
-  onLead: (index: number) => void;
+  onLead: (key: string) => void;
 };
 
 /** Your open books fanned under the lead's name; the front cover resumes, the others come forward. */
@@ -146,7 +146,7 @@ export function ResumeStack({ points, lead, onLead }: ResumeStackProps) {
             point={point}
             index={index}
             isLead={index === lead}
-            onLead={() => onLead(index)}
+            onLead={() => onLead(point.key)}
           />
         ))}
       </div>

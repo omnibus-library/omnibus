@@ -85,6 +85,38 @@ export const Loaded: Story = {
   },
 };
 
+export const LoadMoreFails: Story = {
+  beforeEach({ msw }) {
+    requests.length = 0;
+    msw.use(
+      // Page 2 and after fail; page 1 falls through to the fixture handler.
+      http.get("/api/ebooks", ({ request }) => {
+        const { searchParams } = new URL(request.url);
+        if (!searchParams.has("cursor")) return;
+        requests.push(searchParams);
+        return new HttpResponse("failed with 500", { status: 500 });
+      }),
+      libraryHandler(aWireLibrary(6), 3),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "Couldn't load more",
+    );
+    await expect(tiles(canvas)).toHaveLength(3);
+    await expect(
+      canvas.queryByText(/Couldn't load the library/),
+    ).not.toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", { name: "Load more" }),
+    ).toBeEnabled();
+
+    // The row is still on screen, yet the failed page is not asked for again on its own.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await expect(requests.length).toBeLessThanOrEqual(2);
+  },
+};
+
 export const Empty: Story = {
   beforeEach({ msw }) {
     msw.use(libraryHandler([]));
