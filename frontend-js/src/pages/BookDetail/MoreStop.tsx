@@ -180,7 +180,9 @@ function ShelfMembership({ book }: { book: BookDetail }) {
             ),
           },
       ),
-    onSettled: () => client.invalidateQueries({ queryKey }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey });
+    },
   });
   const facts = shelves.data;
   const held = facts && heldShelves(facts, viewer);
