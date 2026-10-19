@@ -7,6 +7,35 @@
   --rd-dock-h: 78px;
   --rd-foot-h: 40px;
 }
+.rd-immersive .rd-stage {
+  bottom: calc(
+    var(--rd-bottom-h, 54px) +
+    env(safe-area-inset-bottom) +
+    var(--rd-dock-h) +
+    2 *
+    var(--rd-dock-gap)
+  );
+}
+.rd-dock-full.rd-immersive .rd-bottom {
+  bottom: calc(var(--rd-dock-h) + env(safe-area-inset-bottom));
+  height: var(--rd-foot-h);
+  padding-bottom: 0;
+  background: color-mix(in oklch, var(--bg-0) 62%, transparent);
+}
+.rd-dock-full.rd-immersive .rd-ribbon {
+  display: none;
+}
+.rd-dock-full.rd-immersive .rd-stage {
+  bottom: calc(
+    var(--rd-dock-h) +
+    var(--rd-foot-h) +
+    env(safe-area-inset-bottom) +
+    var(--rd-dock-gap)
+  );
+}
+.rd-dock-full.rd-immersive .rd-chrome-hidden .rd-bottom {
+  transform: none;
+}
 @media (max-width: 480px) {
   .rd-host {
     --rd-bottom-h: 30px;

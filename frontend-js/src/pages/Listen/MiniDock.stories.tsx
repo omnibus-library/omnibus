@@ -3,6 +3,7 @@ import { type ReactNode, useEffect } from "react";
 import { Link, Route, Routes } from "react-router";
 import { expect, fireEvent, spyOn, waitFor, within } from "storybook/test";
 import type { BookUuid } from "../../api";
+import { ReaderDock } from "../../layouts/ReaderDock";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import type { ListenWrite } from "../../testing/audioHandlers";
 import {
@@ -13,6 +14,7 @@ import {
 import { aWireBook } from "../../testing/wire";
 import { Listen } from "./Listen";
 import { MiniDock } from "./MiniDock";
+import "../Reader/Reader.css";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 const BOOK = aWireBook({ formats: ["M4B"] });
@@ -251,5 +253,37 @@ export const KeepsPlayingWhenTheListenerLeavesThePlayer: Story = {
       dock.getByRole("button", { name: "Pause" }),
     ).toBeInTheDocument();
     await expect(pause).not.toHaveBeenCalled();
+  },
+};
+
+export const ReaderChromeClearsTheDock: Story = {
+  render: () => (
+    <Opened>
+      <Routes>
+        <Route element={<ReaderDock />}>
+          <Route
+            path="/"
+            element={
+              <div className="rd-surface" data-testid="reader-surface">
+                <div className="rd-stage" data-testid="reader-stage" />
+                <div className="rd-bottom" data-testid="reader-bottom" />
+              </div>
+            }
+          />
+        </Route>
+      </Routes>
+    </Opened>
+  ),
+  play: async ({ canvas }) => {
+    const dock = await canvas.findByRole("region", { name: "Now playing" });
+    const rect = (id: string) => canvas.getByTestId(id).getBoundingClientRect();
+    const surface = rect("reader-surface");
+    const bottom = rect("reader-bottom");
+
+    // The dock is fixed to the viewport and the story pads the surface, so measure from the surface's own bottom.
+    await expect(surface.bottom - bottom.bottom).toBeGreaterThanOrEqual(
+      dock.getBoundingClientRect().height,
+    );
+    await expect(rect("reader-stage").bottom).toBeLessThanOrEqual(bottom.top);
   },
 };
