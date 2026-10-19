@@ -252,6 +252,18 @@ describe("PlaybackProvider", () => {
       );
     });
 
+    it("stops playing a book that is deleted or merged away, as the dock can no longer show it", async () => {
+      const client = mount();
+      act(() => player.open(UUID, null));
+      await waitFor(() => expect(player.ready).toBe(true));
+      const pause = vi.spyOn(audio(), "pause");
+
+      act(() => client.setQueryData(bookQuery(UUID).queryKey, null));
+
+      await waitFor(() => expect(pause).toHaveBeenCalled());
+      expect(audio().getAttribute("src")).toBeNull();
+    });
+
     it("marks the read status and shelves stale, and not the edit form, once the first play writes its read status", async () => {
       const client = mount();
       const key = ["book", UUID, "readStatus"];

@@ -426,12 +426,22 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     openRef.current = open;
   }, [open]);
 
-  const close = useCallback(() => {
+  const stop = useCallback(() => {
     sessionRef.current = null;
     engineRef.current?.stop();
     timerRef.current?.off();
-    setState(IDLE);
   }, []);
+
+  const close = useCallback(() => {
+    stop();
+    setState(IDLE);
+  }, [stop]);
+
+  // A book deleted or merged away leaves no dock to stop it from; the uuid stays, so `/listen` can say it's gone.
+  const missing = book.status === "missing";
+  useEffect(() => {
+    if (missing) stop();
+  }, [missing, stop]);
 
   const setVolume = useCallback((next: number) => {
     const v = Number.isFinite(next) ? Math.max(0, Math.min(1, next)) : 1;
