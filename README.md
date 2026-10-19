@@ -50,14 +50,14 @@ and admin recovery are all in the [Docker guide](docs/docker.md).
 
 ## REST API
 
-The web app, the iOS app and the MCP server all talk to Omnibus through one
-REST API under `/api/`. Its contract is
+The iOS app, the MCP server and the React web client talk to Omnibus through
+one REST API under `/api/`. Its contract is
 [`openapi/openapi.json`](openapi/openapi.json), an OpenAPI 3.1 document the
 server's code generates, so it can't drift from what the server does. To
 write a client, generate one from that file; the copy at a release tag
 describes that release.
 
-To read it as an API reference, run `just openapi` in a checkout: it
+To read it as an API reference, run `just openapi` in a checkout. It
 regenerates the file and opens the reference in your browser.
 
 ## License

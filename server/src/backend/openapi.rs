@@ -20,6 +20,14 @@ use utoipa::{
 #[derive(OpenApi)]
 #[openapi(
     info(title = "Omnibus API", description = include_str!("openapi/overview.md")),
+    servers((
+        url = "{origin}",
+        description = "Your Omnibus server.",
+        variables(("origin" = (
+            default = "http://localhost:3000",
+            description = "The address you open Omnibus at, with no trailing slash.",
+        ))),
+    )),
     modifiers(&SecuritySchemes),
     // Types that only query parameters reference, which utoipa doesn't collect itself.
     components(schemas(SortDir, SortKey, SpoilerFilter)),

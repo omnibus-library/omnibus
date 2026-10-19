@@ -1,4 +1,4 @@
-The REST API behind every Omnibus client. The web app, the iOS app and the MCP server all use it, and a new client can too.
+The REST API that Omnibus clients build on. The iOS app, the React web client and the MCP server use it, and so can a client you write.
 
 ## Signing in
 
@@ -6,7 +6,7 @@ The REST API behind every Omnibus client. The web app, the iOS app and the MCP s
 
 An API token (`omni_…`, from `POST /api/auth/api-tokens`) works anywhere a session token does, and suits scripts.
 
-Some media, such as covers, audio parts and book files, gets loaded straight into an `<img>` or `<audio>` element, which can't send a header. Those routes also take the token as a `token` query parameter, and list `media_token` among their security schemes.
+Clients load some media, such as covers, audio parts and book files, straight into an `<img>` or `<audio>` element, which can't send a header. Those routes also take the token as a `token` query parameter, and list `media_token` among their security schemes.
 
 Every route needs a session unless it says otherwise.
 

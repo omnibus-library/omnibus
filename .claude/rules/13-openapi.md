@@ -3,9 +3,9 @@ paths: "server/src/backend.rs, server/src/backend/**, server/src/auth/**, shared
 ---
 # 13 — The REST contract (OpenAPI)
 
-[`openapi/openapi.json`](../../openapi/openapi.json) is the contract for `/api/*`: the
-document the iOS app, the React client, the MCP server and any future client build
-against. It is generated from the Rust code and never edited by hand.
+[`openapi/openapi.json`](../../openapi/openapi.json) is the contract for `/api/*`. The
+iOS app, the React client, the MCP server and any future client build against it. The
+Rust code generates it; nobody edits it by hand.
 
 ## Where the contract lives
 
@@ -13,7 +13,7 @@ against. It is generated from the Rust code and never edited by hand.
   an `/api/*` route, even one only the server touches. Each derives
   `#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]` (a query struct derives
   `utoipa::IntoParams` with `into_params(parameter_in = Query)`). This overrides rule 05's
-  "hoist on the second consumer": the spec is the second consumer.
+  "hoist on the second consumer", because the spec is the second consumer.
 - **Routes live on their handlers.** A `#[utoipa::path]` attribute declares the method,
   path, tag, parameters, body and responses. `routes.rs` registers the handler with
   `.routes(routes!(handler))`, which reads the path from that attribute, so a route can't
@@ -63,8 +63,8 @@ pub(super) async fn get_ebook_by_uuid(/* … */) -> Response {
 - **`operation_id`** defaults to the function name, which clients turn into method names.
   Override it only when the name is unclear (`login_handler`) or collides; a test fails
   on duplicates.
-- **A type only a query parameter references** isn't collected by utoipa: add it to
-  `components(schemas(...))` in `openapi.rs`. A test fails on a dangling `$ref`.
+- **A type only a query parameter references** isn't collected by utoipa. Add it to
+  `components(schemas(...))` in `openapi.rs`; a test fails on a dangling `$ref`.
 
 ## Writing the docs
 

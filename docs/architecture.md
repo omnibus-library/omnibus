@@ -99,9 +99,9 @@ gate and error mapping. A change to one usually needs the other.
 ## The REST contract
 
 [`openapi/openapi.json`](../openapi/openapi.json) is the OpenAPI 3.1 contract
-for the `/api/*` REST surface, and the one place a client reads it from: the
-iOS app, the React client, the MCP server and any client in another repo. It
-is generated from the Rust code, never written by hand.
+for the `/api/*` REST API, and the one place a client reads it from: the iOS
+app, the React client, the MCP server and any client in another repo. The Rust
+code generates it; nobody writes it by hand.
 
 - **Wire types** live in `shared/` and derive `utoipa::ToSchema` behind its
   `openapi` feature, which only the server turns on.
