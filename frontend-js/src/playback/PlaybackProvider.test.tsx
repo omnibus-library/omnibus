@@ -167,6 +167,20 @@ describe("PlaybackProvider", () => {
     });
   });
 
+  describe("volume", () => {
+    it.each([
+      [1.5, 1],
+      [-0.2, 0],
+    ])("keeps %s in range as %s, on the element too", (asked, kept) => {
+      mount();
+
+      act(() => player.setVolume(asked));
+
+      expect(player.volume).toBe(kept);
+      expect(audio().volume).toBe(kept);
+    });
+  });
+
   describe("while a transcode is preparing", () => {
     it("ignores play and skip, so nothing is saved over the resume position", async () => {
       const play = vi.spyOn(HTMLMediaElement.prototype, "play");

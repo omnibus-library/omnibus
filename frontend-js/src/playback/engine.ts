@@ -307,7 +307,7 @@ export function createEngine(media: Media, on: EngineEvents) {
       media.playbackRate = next;
     },
     setVolume(volume: number) {
-      media.volume = Math.max(0, Math.min(1, volume));
+      media.volume = volume;
     },
     stop,
     /** Stops, and lets go of every listener and the stall poll. */
