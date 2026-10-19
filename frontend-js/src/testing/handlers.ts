@@ -138,8 +138,8 @@ export function failing(method: "get" | "post", path: string, status: number) {
 }
 
 /** Never answers `path`, to hold a screen in its loading state. */
-export function hanging(path: string) {
-  return http.get(path, async () => {
+export function hanging(path: string, method: "get" | "post" = "get") {
+  return http[method](path, async () => {
     await delay("infinite");
     return new HttpResponse(null);
   });

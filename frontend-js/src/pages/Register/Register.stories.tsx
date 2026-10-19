@@ -106,3 +106,18 @@ export const RatesPassword: Story = {
     await expect(canvas.getByText("strong")).toBeInTheDocument();
   },
 };
+
+export const EditingWhileCreating: Story = {
+  beforeEach({ msw }) {
+    msw.use(hanging("/api/auth/register", "post"));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.type(await canvas.findByLabelText("Username"), "grace");
+    await userEvent.type(canvas.getByLabelText("Password"), PASSWORD);
+    await userEvent.click(canvas.getByRole("button", { name: "Create account" }));
+
+    await userEvent.type(canvas.getByLabelText("Username"), "x");
+
+    await expect(canvas.getByRole("button", { name: "Creating…" })).toBeDisabled();
+  },
+};

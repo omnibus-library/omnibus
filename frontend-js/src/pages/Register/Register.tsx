@@ -81,9 +81,9 @@ function RegisterForm() {
   const errorFor = (field: "username" | "password" | "banner") =>
     refusal?.field === field ? refusal.message : undefined;
   const banner = errorFor("banner");
-  // Editing a field clears the refusal, so the reader can try again.
+  // Editing clears a refusal so the reader can try again; never a pending sign-up.
   const editing = (onChange: (value: string) => void) => (value: string) => {
-    signUp.reset();
+    if (signUp.isError) signUp.reset();
     onChange(value);
   };
   return (
