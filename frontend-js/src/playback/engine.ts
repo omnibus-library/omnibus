@@ -27,10 +27,10 @@ export type EngineEvents = {
   seeked(seconds: number): void;
   /** Direct: the file total across its parts. */
   duration(seconds: number): void;
-  play(seconds: number): void;
+  play(): void;
   pause(seconds: number, userActed: boolean): void;
   /** The last part (direct) or the HLS stream played out. */
-  ended(seconds: number): void;
+  ended(): void;
   /** A source is committed to the element: the "ready" signal. */
   booted(): void;
   /** Playing, with too little data to go on. */
@@ -136,7 +136,7 @@ export function createEngine(media: Media, on: EngineEvents) {
   listen(media, "play", () => {
     seeded = true;
     userActed = true;
-    on.play(abs());
+    on.play();
   });
   listen(media, "pause", () => {
     if (!seeded) return;
@@ -152,7 +152,7 @@ export function createEngine(media: Media, on: EngineEvents) {
       playQuietly();
       return;
     }
-    on.ended(abs());
+    on.ended();
   });
   // A page leaving destroys the element; its dying events must not save a position.
   listen(window, "pagehide", () => {

@@ -255,9 +255,8 @@ describe("ended", () => {
     expect(on.ended).not.toHaveBeenCalled();
 
     media.fire("ended");
-    media.currentTime = 100;
     media.fire("ended");
-    expect(on.ended).toHaveBeenCalledWith(300);
+    expect(on.ended).toHaveBeenCalledTimes(1);
   });
 });
 
