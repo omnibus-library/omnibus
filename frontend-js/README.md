@@ -19,6 +19,8 @@ from `GET /api/ebooks`, thumbnails from `/api/thumbs`), and book detail.
 | `src/api.ts` | a barrel over `src/api/*.ts`, one file per resource: every REST call the screens make, mapping wire shapes to the ones they render, and the form schemas; an api module re-exports a wire type verbatim when the screen uses it unchanged, so pages never import `api/generated/schemas` |
 | `src/api/generated/` | zod schemas, fetchers, TanStack Query hooks and MSW handlers that orval generates from `../openapi/openapi.json`; gitignored, rebuilt by `pnpm run generate` (`pnpm install` runs it too) |
 | `src/vendor/barcode/` | the camera scanner's zxing decoder, its wasm and the glue: byte copies of `frontend/assets/vendor/`, loaded by `<script>` from Vite `?url` imports (the zxing IIFE declares a global that bundling would scope away) |
+| `src/vendor/reader/` | the EPUB and PDF reader runtimes (epub.js, PDF.js and the two glue files): byte copies of `frontend/assets/vendor/`, loaded from Vite `?url` imports; `parity.test.ts` fails when a copy drifts |
+| `public/` | `vendor/pdfjs-wasm/` and `reader-fonts/`, copied verbatim and kept by name because PDF.js and `reader-fonts.css` build URLs onto their directories |
 | `src/testing/` | `AppHarness`, parsed and wire-format fixtures, the MSW handlers orval can't generate (`handlers.ts`), the Vitest setup |
 | `.storybook/` | Storybook's config, the preview every story renders inside, and MSW's worker |
 | `tools/extract-atrium.cjs` | copies Atrium rules into component CSS when a screen is ported |
@@ -33,7 +35,7 @@ same split: the readers and the player fill the screen, everything else sits
 under the top bar, and a guest goes to `/login?next=…` and comes back. Login,
 Register, the library, book detail, the metadata editor (`/books/:uuid/edit`),
 add books (`/add-books`), check-in (`/check-in`), search results
-(`/search/:query`) and Not Found are ported, and the top bar carries the user menu and the ⌘K search
+(`/search/:query`), Not Found and the three readers (`/read`, `/comic`, `/pdf`) are ported, and the top bar carries the user menu and the ⌘K search
 palette. As on Dioxus web, a bare `/search` and the native shell's `/connect`
 redirect to the library. Every other route renders `Unported`, which shows its
 parsed parameters and names its Dioxus source.
@@ -51,6 +53,11 @@ server accepts": the cap is the server's `OMNIBUS_MAX_UPLOAD_BYTES`, which no
 route reports, so the page cannot refuse a big file before sending it. Check-in
 takes an ISBN typed, scanned or found by title, and files a copy or a wishlist
 entry; the camera never opens until "Scan a barcode" is pressed.
+The readers are lazy chunks that mount the vendored epub.js and PDF.js glue from a
+React effect; each saves its position as pages turn and records reading
+sessions and read status. The EPUB and PDF readers carry highlights, notes,
+quotes and bookmarks, and the EPUB reader adds contents, search, the Aa panel and
+cross-format follow. The audiobook mini dock on `/read` waits for the player.
 A page that throws renders `RouteError` inside the top bar; anything else that
 throws (the session gate, the shell, a reader) renders it full-screen.
 
@@ -149,7 +156,9 @@ shell provides it.
   `libraryView`, `seriesStacks`, `shelfGallery`, `sorting` and `bulkEdit`, the
   editor's `metadata` (form schema and override diff), `dirty` and
   `editionFields`, `uploads`, check-in's `checkIn` and `scan`, and the scanner's
-  `scanStatus` and `loadScanner`), plus the
+  `scanStatus` and `loadScanner`, and the readers' `pager`, `pdfAnchors`, `start`,
+  `relocate`, `typography`, `epubGlue`, `pdfGlue`, `readingSession` and
+  `autoReadStatus`, plus the vendored files' parity test), plus the
   real route table in `src/router.test.tsx`: every unported page, the layout
   split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI
