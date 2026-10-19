@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { bustCover, parseBookUuid } from "../../api";
 import type {
   ExternalBookMeta,
   ScanBook,
@@ -164,9 +165,14 @@ function BookCard({ cover, title, byline, series, detail }: CardProps) {
 
 /** A book the library holds. */
 function LibraryBookCard({ book }: { book: ScanBook }) {
+  const uuid = parseBookUuid(book.uuid);
   return (
     <BookCard
-      cover={book.cover_url}
+      cover={
+        uuid && book.cover_url
+          ? bustCover(book.cover_url, uuid)
+          : book.cover_url
+      }
       title={book.title}
       byline={byline(book.authors)}
     />

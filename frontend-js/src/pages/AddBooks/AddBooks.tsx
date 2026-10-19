@@ -18,6 +18,7 @@ import { useCurrentUser } from "../../session";
 import type { StagedCover } from "../BookEdit/CoverEditor";
 import { ReviewForm } from "./ReviewForm";
 import "../../styles/settings.css";
+import "../BookDetail/BookDetail.css";
 import "../BookEdit/BookEdit.css";
 import "./AddBooks.css";
 

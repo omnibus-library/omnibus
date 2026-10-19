@@ -25,6 +25,7 @@ import { Breadcrumb, PageHeader } from "./EditHeader";
 import { MetaFormGrid } from "./MetaFormGrid";
 import { SaveBar } from "./SaveBar";
 import { Sidebar } from "./Sidebar";
+import "../BookDetail/BookDetail.css";
 import "./BookEdit.css";
 
 function EditForm({ book }: { book: EditableBook }) {
@@ -81,7 +82,11 @@ function EditForm({ book }: { book: EditableBook }) {
   });
   const revert = useMutation({
     mutationFn: () => revertOverrides(book.uuid),
-    onSuccess: written,
+    onSuccess: () => {
+      // The server drops the override cover and its thumbnails.
+      bumpCoverBust(book.uuid);
+      written();
+    },
   });
 
   return (
