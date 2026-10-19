@@ -225,7 +225,7 @@ function PdfPage({
         startPage: start,
         fit: fitNow.current,
       });
-      if (!cancelled) await load();
+      if (!cancelled) await load(() => cancelled);
     };
     open().catch(() => {
       if (!cancelled) fail(null);

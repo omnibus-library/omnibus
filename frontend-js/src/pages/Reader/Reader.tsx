@@ -228,7 +228,7 @@ function EpubPage({
           locationsKey: uuid,
         },
       );
-      if (!cancelled) await load();
+      if (!cancelled) await load(() => cancelled);
     };
     open().catch(() => {
       if (!cancelled) fail();

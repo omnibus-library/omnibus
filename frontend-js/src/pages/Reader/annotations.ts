@@ -69,21 +69,26 @@ export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
     [],
   );
 
-  /** Fetches the list and paints it; a failed fetch is `markFailed`. */
-  const load = useCallback(async () => {
-    let saved: Highlight[];
-    try {
-      saved = await client.fetchQuery({
-        ...highlightsQuery(uuid),
-        staleTime: 0,
-      });
-    } catch {
-      return markFailed();
-    }
-    for (const h of saved)
-      if (h.anchor !== null) bridge.paint(h.anchor, h.color);
-    setHighlights(saved);
-  }, [client, uuid, bridge, markFailed]);
+  /** Fetches the list and paints it; a failed fetch is `markFailed`. An answer for a reader since left (`isCancelled`) is dropped, so it can't paint another book. */
+  const load = useCallback(
+    async (isCancelled: () => boolean) => {
+      let saved: Highlight[];
+      try {
+        saved = await client.fetchQuery({
+          ...highlightsQuery(uuid),
+          staleTime: 0,
+        });
+      } catch {
+        if (!isCancelled()) markFailed();
+        return;
+      }
+      if (isCancelled()) return;
+      for (const h of saved)
+        if (h.anchor !== null) bridge.paint(h.anchor, h.color);
+      setHighlights(saved);
+    },
+    [client, uuid, bridge, markFailed],
+  );
 
   /** Applies `f` to the held rows; an unknown list has none to change. */
   const mapHeld = (f: (rows: Highlight[]) => Highlight[]) =>
