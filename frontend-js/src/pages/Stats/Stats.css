@@ -492,6 +492,291 @@
   border-color: var(--line);
   color: var(--ink-0);
 }
+.st-clock,
+.st-spend {
+  padding: 22px 24px;
+}
+.st-duo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.st-card-empty {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.st-card-note {
+  margin: 12px 0 0;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.st-clock-body {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  margin-top: 16px;
+}
+.st-clock-dial {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  flex: none;
+}
+.st-clock-tick {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin-left: -4px;
+  width: 8px;
+  transform-origin: 4px 0;
+  border-radius: 4px;
+  background: var(--st-idle);
+  transition: height 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.st-clock-tick.hot {
+  background: var(--accent);
+}
+.st-clock-tick.warm {
+  background: var(--st-donut-c1);
+}
+.st-clock-tick.cool {
+  background: var(--st-donut-c2);
+}
+.st-clock-hub {
+  position: absolute;
+  inset: 48px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  display: grid;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+  padding: 10px;
+  box-sizing: border-box;
+}
+.st-clock-peak {
+  font-family: var(--serif);
+  font-size: 27px;
+  line-height: 1;
+  color: var(--accent);
+}
+.st-clock-peak-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-top: 5px;
+}
+.st-clock-side {
+  flex: 1;
+  min-width: 0;
+}
+.st-clock-line {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 22px;
+  line-height: 1.3;
+  color: var(--ink-0);
+}
+.st-days {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+}
+.st-day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.st-day-label {
+  width: 28px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+.st-day-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  overflow: hidden;
+}
+.st-day-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--st-donut-c1);
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.st-day-bar.hot {
+  background: var(--accent);
+}
+.st-day-bar.idle {
+  background: var(--bg-3);
+}
+.st-day-readout {
+  width: 52px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+}
+.st-spend-body {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-top: 18px;
+}
+.st-donut {
+  width: 140px;
+  height: 140px;
+  flex: 0 0 140px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+}
+.st-donut-hole {
+  width: 62%;
+  height: 62%;
+  border-radius: 999px;
+  background: var(--bg-1);
+  display: grid;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+}
+.st-donut-count {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 26px;
+  line-height: 1;
+}
+.st-donut-count-label {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+.st-donut-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  flex: 1;
+}
+.st-donut-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.st-donut-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+.st-donut-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--ink-1);
+}
+.st-donut-pct {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.st-split {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-2);
+  display: flex;
+  gap: 24px;
+}
+.st-split-half {
+  flex: 1;
+}
+.st-split-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+.st-split-name {
+  font-size: 13px;
+  color: var(--ink-1);
+}
+.st-split-pct {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.st-split-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  overflow: hidden;
+}
+.st-split-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.st-standouts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.st-standout {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  padding: 20px;
+}
+.st-standout.lead {
+  background: linear-gradient(
+    150deg,
+    color-mix(in oklch, var(--accent) 18%, var(--bg-1)),
+    var(--bg-1)
+  );
+  border-color: color-mix(in oklch, var(--accent) 40%, transparent);
+}
+.st-standout-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.st-standout.lead .st-standout-label {
+  color: var(--accent);
+}
+.st-standout-headline {
+  font-family: var(--serif);
+  font-size: 30px;
+  line-height: 1.15;
+  margin-top: 10px;
+  color: var(--ink-0);
+}
+.st-standout-detail {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-top: 8px;
+}
+.st-standouts-note {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
 .st-card-placeholder {
   min-height: 84px;
   background: var(--bg-1);
@@ -515,18 +800,39 @@
   color: var(--ink-3);
   text-align: center;
 }
+
+.st-duo > *,
+.st-standouts > * {
+  animation: st-settle 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.st-duo > *:nth-child(2) {
+  animation-delay: 0.06s;
+}
+.st-standouts > *:nth-child(2) {
+  animation-delay: 0.04s;
+}
+.st-standouts > *:nth-child(3) {
+  animation-delay: 0.08s;
+}
 @media (prefers-reduced-motion: reduce) {
   .st-hero-run,
   .st-hero-goals,
   .st-scope,
+  .st-duo > *,
+  .st-standouts > *,
   .st-goal-fill,
+  .st-split-fill,
+  .st-day-bar,
+  .st-clock-tick,
   .st-year-ring,
   .st-range-pill {
     transition: none;
   }
   .st-hero-run,
   .st-hero-goals,
-  .st-scope {
+  .st-scope,
+  .st-duo > *,
+  .st-standouts > * {
     animation: none;
   }
 }
@@ -541,6 +847,9 @@
   .atrium .st-hero-figure,
   .st-hero-unit {
     font-size: 64px;
+  }
+  .st-standouts {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 @media (max-width: 720px) {
@@ -575,6 +884,32 @@
     flex: 1;
     padding: 8px 6px;
     text-align: center;
+  }
+  .st-duo {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .st-standouts {
+    grid-template-columns: 1fr;
+  }
+  .st-clock-body {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 18px;
+  }
+  .st-clock-dial {
+    align-self: center;
+  }
+  .st-clock-line {
+    font-size: 19px;
+  }
+  .st-spend-body {
+    flex-direction: column;
+    gap: 16px;
+  }
+  .st-split {
+    flex-direction: column;
+    gap: 14px;
   }
 }
 .st-reader-avatar-photo {

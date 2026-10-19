@@ -30,6 +30,14 @@ export const hasTimePatterns = (s: Pick<StatsSummary, "hour_of_day">) =>
 /** A count with its digits grouped in threes: "1,234,567". */
 export const groupThousands = (n: number) => n.toLocaleString("en-US");
 
+/** A duration for tooltips and the standouts: "42 m", "3 h", "3 h 20 m". */
+export function formatActiveTime(secs: number): string {
+  const hours = Math.trunc(secs / 3600);
+  const minutes = Math.trunc((secs % 3600) / 60);
+  if (hours === 0) return `${minutes} m`;
+  return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} m`;
+}
+
 // The server's per-user stats cache lifetime.
 const STATS_TTL_SECS = 60;
 

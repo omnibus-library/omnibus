@@ -66,7 +66,7 @@ const MONTH_NAMES = [
 export const monthName = (m: number) => MONTH_NAMES[m - 1] ?? "December";
 
 /** The three-letter name of a 1-based month. */
-const monthAbbr = (m: number) => monthName(m).slice(0, 3);
+export const monthAbbr = (m: number) => monthName(m).slice(0, 3);
 
 /**
  * What the switcher's window covers, off the server's `as_of_day` rather than the device

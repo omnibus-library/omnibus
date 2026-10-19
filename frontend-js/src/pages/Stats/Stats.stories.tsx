@@ -235,7 +235,11 @@ export const HeroWithoutAServerDayDrawsNoSpark: Story = {
   },
   play: async ({ canvas }) => {
     await canvas.findByTestId("stats-hero");
-    await expect(canvas.queryByRole("img")).toBeNull();
+    await expect(
+      canvas.queryByRole("img", {
+        name: "Daily activity over the last six weeks",
+      }),
+    ).toBeNull();
     await expect(canvas.queryByText("6 weeks ago")).toBeNull();
   },
 };

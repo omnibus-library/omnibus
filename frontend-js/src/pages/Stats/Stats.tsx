@@ -14,9 +14,12 @@ import { Loading } from "../../components/Loading/Loading";
 import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { windowLabel } from "./calendar";
+import { GenreDonut } from "./GenreDonut";
 import { heading, viewing } from "./picker";
 import { ReaderPicker } from "./ReaderPicker";
+import { ReadingClock } from "./ReadingClock";
 import { ShareStatsToggle } from "./ShareStatsToggle";
+import { StandoutsGrid } from "./Standouts";
 import { StatsHero } from "./StatsHero";
 import {
   type Failure,
@@ -101,7 +104,13 @@ function WindowBand({
         </div>
       </div>
       {period ? (
-        <div className="st-band-body" />
+        <div className="st-band-body">
+          <div className="st-duo">
+            <ReadingClock summary={period} />
+            <GenreDonut summary={period} />
+          </div>
+          <StandoutsGrid summary={period} />
+        </div>
       ) : (
         <div className="card st-card-placeholder">
           <Loading

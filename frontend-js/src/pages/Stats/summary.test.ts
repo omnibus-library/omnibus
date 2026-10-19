@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "../../api";
 import {
   failureOf,
+  formatActiveTime,
   freshnessNote,
   groupThousands,
   hasTimePatterns,
@@ -68,6 +69,16 @@ describe("groupThousands", () => {
     [-42, "-42"],
   ])("writes %i as %s", (n, written) => {
     expect(groupThousands(n)).toBe(written);
+  });
+});
+
+describe("formatActiveTime", () => {
+  it.each([
+    [42 * 60, "42 m"],
+    [3 * 3600, "3 h"],
+    [3 * 3600 + 20 * 60, "3 h 20 m"],
+  ])("writes %i seconds as %s", (secs, written) => {
+    expect(formatActiveTime(secs)).toBe(written);
   });
 });
 
