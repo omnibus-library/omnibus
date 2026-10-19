@@ -1,12 +1,16 @@
 import { z } from "zod";
 import {
+  getAuthors,
   getEbookByUuid,
   getEbooks,
+  getGenres,
   getLogoutUrl,
   getMe,
   getRecentProgress,
   getRegistration,
   getSearchPalette,
+  getTags,
+  listSeries,
   login as postLogin,
   register as postRegister,
 } from "./api/generated/omnibus";
@@ -15,6 +19,7 @@ import {
   type EbookPage,
   type PaletteResults as PaletteWire,
   type ResumePoint as ResumePointWire,
+  type ShelfSummary,
   SortDir,
   SortKey,
   type UserSummary,
@@ -60,6 +65,18 @@ export type FilterClause = {
 };
 
 export type UserId = number & { readonly __brand: "UserId" };
+
+export type ShelfKind = ShelfSummary["kind"];
+
+/** A shelf as the filter bar names it. */
+export type Shelf = {
+  id: number;
+  kind: ShelfKind;
+  name: string;
+  ownerId: UserId;
+  ownerName: string;
+  bookCount: number;
+};
 
 /** The screen's shape of the user `GET /api/auth/me` and sign-in answer with. */
 export function toUser(user: UserSummary) {
@@ -324,3 +341,34 @@ export const thumbSrcSet = (uuid: BookUuid) =>
 export const coverUrl = (uuid: BookUuid) => `/api/covers/${uuid}`;
 
 export const avatarUrl = (id: UserId) => `/api/users/${id}/avatar`;
+
+/** A name and the number of books that carry it. */
+export type NamedCount = { name: string; count: number };
+
+/** Every tag with its book count, the most-used 500 at most. */
+export async function fetchTagOptions(): Promise<NamedCount[]> {
+  const res = await getTags();
+  if (res.status !== 200) throw failure(res);
+  return res.data;
+}
+
+/** Every genre with its book count, the most-used 500 at most. */
+export async function fetchGenreOptions(): Promise<NamedCount[]> {
+  const res = await getGenres();
+  if (res.status !== 200) throw failure(res);
+  return res.data;
+}
+
+/** Every author with a book in the library, with its book count. */
+export async function fetchAuthorOptions(): Promise<NamedCount[]> {
+  const res = await getAuthors();
+  if (res.status !== 200) throw failure(res);
+  return res.data.map((a) => ({ name: a.name, count: a.book_count }));
+}
+
+/** Every series with a book in the library, with its book count. */
+export async function fetchSeriesOptions(): Promise<NamedCount[]> {
+  const res = await listSeries();
+  if (res.status !== 200) throw failure(res);
+  return res.data.map((s) => ({ name: s.name, count: s.book_count }));
+}

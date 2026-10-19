@@ -126,3 +126,34 @@ export function ArrowDownGlyph({ size = 13 }: GlyphProps) {
     </svg>
   );
 }
+
+/** A small down chevron, for a control that opens a menu. */
+export function ChevronDownGlyph({ size = 12 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...stroked}
+      aria-hidden="true"
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
+/** A cross, for clearing or removing. */
+export function XGlyph({ size = 14 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...stroked}
+      strokeWidth={2.2}
+      aria-hidden="true"
+    >
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}

@@ -1,4 +1,10 @@
-import { type Book, type BookUuid, parseBookUuid } from "../api";
+import {
+  type Book,
+  type BookUuid,
+  parseBookUuid,
+  type Shelf,
+  type UserId,
+} from "../api";
 
 function bookUuid(raw: string): BookUuid {
   const uuid = parseBookUuid(raw);
@@ -30,6 +36,19 @@ export function aBook(overrides: Partial<Book> = {}): Book {
     addedAt: null,
     modified: null,
     hasPhysical: false,
+    ...overrides,
+  };
+}
+
+/** A hand-picked shelf the signed-in reader (user 1) owns; override what a case needs. */
+export function aShelf(overrides: Partial<Shelf> = {}): Shelf {
+  return {
+    id: 3,
+    kind: "manual",
+    name: "Winter reads",
+    ownerId: 1 as UserId,
+    ownerName: "ada",
+    bookCount: 12,
     ...overrides,
   };
 }

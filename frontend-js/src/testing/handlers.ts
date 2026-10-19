@@ -1,15 +1,23 @@
 import { delay, HttpResponse, http } from "msw";
 import {
+  getGetAuthorsMockHandler200,
+  getGetGenresMockHandler200,
   getGetMeMockHandler200,
   getGetMeMockHandler401,
   getGetRegistrationMockHandler200,
+  getGetTagsMockHandler200,
+  getListSeriesMockHandler200,
 } from "../api/generated/omnibus.msw";
 import type {
+  AuthorSummary,
   EbookMetadata,
   EbookPage,
+  GenreWeight,
   LoginResponse,
   PaletteResults,
   ResumePoint,
+  SeriesSummary,
+  TagWeight,
 } from "../api/generated/schemas";
 import { COVER_SVG } from "./books";
 import { WIRE_ADA } from "./wire";
@@ -67,6 +75,26 @@ export function libraryHandler(
     const page = { books: books.slice(start, end), path } satisfies EbookPage;
     return HttpResponse.json(page, { headers });
   });
+}
+
+/** The four lists the filter menus draw their values from. */
+export function filterOptionHandlers({
+  tags = [],
+  genres = [],
+  authors = [],
+  series = [],
+}: {
+  tags?: TagWeight[];
+  genres?: GenreWeight[];
+  authors?: AuthorSummary[];
+  series?: SeriesSummary[];
+} = {}) {
+  return [
+    getGetTagsMockHandler200(tags),
+    getGetGenresMockHandler200(genres),
+    getGetAuthorsMockHandler200(authors),
+    getListSeriesMockHandler200(series),
+  ];
 }
 
 /** One book by uuid; any other uuid is a 404, as on the server. */
