@@ -2,6 +2,7 @@ import { delay, HttpResponse, http } from "msw";
 import {
   getGetAlignmentMockHandler200,
   getGetAuthorByIdMockHandler200,
+  getGetBookInsightsMockHandler200,
   getGetHighlightsMockHandler200,
   getGetJournalEntriesMockHandler200,
   getGetMeMockHandler200,
@@ -129,6 +130,7 @@ export function bookDetailHandlers(book: EbookMetadata) {
     getSmartShelvesContainingMockHandler200([]),
     getGetAuthorByIdMockHandler200(aWireAuthor()),
     getGetSuggestionsMockHandler200({ status: "ready", items: [] }),
+    getGetBookInsightsMockHandler200(null),
   ];
 }
 

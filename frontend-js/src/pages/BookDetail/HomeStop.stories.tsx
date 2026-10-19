@@ -4,6 +4,7 @@ import { expect, waitFor, within } from "storybook/test";
 import { toBookDetail } from "../../api";
 import {
   getGetAlignmentMockHandler200,
+  getGetBookInsightsMockHandler200,
   getGetProgressMockHandler200,
 } from "../../api/generated/omnibus.msw";
 import {
@@ -18,6 +19,7 @@ import {
   aWireAlignment,
   aWireBook,
   aWireFile,
+  aWireInsights,
   aWirePosition,
   aWireProgress,
   aWireReadStatus,
@@ -754,6 +756,45 @@ export const ComicOnlyBookHasNothingToExport: Story = {
     await canvas.findByTestId("start-reading-comic");
     await expect(
       canvas.queryByRole("button", { name: /Export/ }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const RulerEstimatesTimeLeftAtTheReadersPace: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      getGetBookInsightsMockHandler200(aWireInsights({ seconds_total: 3600 })),
+      getGetProgressMockHandler200(
+        aWireProgress(aWirePosition({ progress_percent: 40 })),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    const ruler = await canvas.findByTestId("bdmq-ruler");
+    await expect(
+      await within(ruler).findByText("≈ 1h 30m left at your pace"),
+    ).toBeInTheDocument();
+  },
+};
+
+export const RulerPrefersTheAudioTimelineToThePace: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      getGetBookInsightsMockHandler200(aWireInsights()),
+      getGetProgressMockHandler200(
+        aWireProgress(aWirePosition({ progress_percent: 40 })),
+      ),
+      getGetAlignmentMockHandler200(ALIGNED),
+    );
+  },
+  args: { book: DUAL },
+  play: async ({ canvas }) => {
+    const ruler = await canvas.findByTestId("bdmq-ruler");
+    await expect(
+      await within(ruler).findByText(/left at 1.0×/),
+    ).toBeInTheDocument();
+    await expect(
+      within(ruler).queryByText(/at your pace/),
     ).not.toBeInTheDocument();
   },
 };

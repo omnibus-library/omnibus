@@ -3,6 +3,7 @@ import { Fragment, useState } from "react";
 import { Link } from "react-router";
 import {
   type BookDetail as Detail,
+  type Insights,
   type Progress,
   saveDescription,
   type WishlistEntry,
@@ -21,10 +22,17 @@ import {
 import { ExportMenu } from "./ExportMenu";
 import { FilePicker, isAudioFile, isReadableFile } from "./FilePicker";
 import { WishlistCtas } from "./PhysicalCopies";
-import { alignmentQuery, progressQuery, seriesQuery, useWish } from "./queries";
+import {
+  alignmentQuery,
+  insightsQuery,
+  progressQuery,
+  seriesQuery,
+  useWish,
+} from "./queries";
 import { ReadStatus } from "./ReadStatus";
 import { type HomeReadout, homeReadout, newestPercent } from "./readout";
 import { SyncLine } from "./SyncLine";
+import { pacedSecondsLeft } from "./stats";
 
 type ChipRowProps = {
   label: string;
@@ -230,14 +238,22 @@ function CtaRow({ book, progress, readout }: CtaRowProps) {
 type RulerProps = {
   pct: number;
   readout: HomeReadout;
+  insights: Insights | null;
   lastOpened: string | null;
 };
 
 // Chapter ticks when the chapter table is known, a caret flag naming the chapter
 // (or the bare percent), and the time left on the audio timeline at 1.0×.
-function Ruler({ pct, readout, lastOpened }: RulerProps) {
+function Ruler({ pct, readout, insights, lastOpened }: RulerProps) {
   const { chTotal, chNow, audioAt, audioTotal, audioLeftSecs } = readout;
   const done = pct >= 100;
+  // The audio timeline at 1.0× when there is one, else the pace the reader has kept.
+  const left =
+    audioLeftSecs !== null && audioLeftSecs > 0
+      ? `≈ ${durationLabel(audioLeftSecs)} left at 1.0×`
+      : insights && pct > 0
+        ? `≈ ${durationLabel(pacedSecondsLeft(insights, pct))} left at your pace`
+        : null;
   const axis =
     chNow && chTotal
       ? `Ch. ${chNow.n} of ${chTotal} · ${pct}%`
@@ -262,9 +278,7 @@ function Ruler({ pct, readout, lastOpened }: RulerProps) {
       </div>
       <div className="rx-ruler-axis">
         <span>{axis}</span>
-        {!done && audioLeftSecs !== null && audioLeftSecs > 0 && (
-          <span>≈ {durationLabel(audioLeftSecs)} left at 1.0×</span>
-        )}
+        {!done && left && <span>{left}</span>}
       </div>
       {lastOpened && <div className="mono bdmq-lastopened">{lastOpened}</div>}
     </div>
@@ -282,6 +296,7 @@ export function HomeStop({ book }: { book: Detail }) {
     ...alignmentQuery(book.uuid),
     enabled: hasFiles,
   });
+  const insights = useQuery({ ...insightsQuery(book.uuid), enabled: hasFiles });
   const positions = progress.data ?? { reading: null, listening: null };
   const readout = homeReadout(alignment.data, positions.reading);
   const percent = newestPercent(positions);
@@ -351,6 +366,7 @@ export function HomeStop({ book }: { book: Detail }) {
         <Ruler
           pct={Math.min(Math.max(percent, 0), 100)}
           readout={readout}
+          insights={insights.data ?? null}
           // A dual-format book has the sync line instead of a second recency line.
           lastOpened={
             dual || !updatedAt

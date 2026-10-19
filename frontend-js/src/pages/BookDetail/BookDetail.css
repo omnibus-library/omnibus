@@ -1721,6 +1721,64 @@ button.spoiler.revealed {
   margin-top: 14px;
   max-width: 560px;
 }
+.bdmq-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 26px 34px;
+  max-width: 560px;
+}
+.rx-stat .k {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.rx-stat .v {
+  font-family: var(--serif);
+  font-size: 44px;
+  line-height: 1.05;
+  margin-top: 5px;
+  color: var(--ink-0);
+}
+.rx-stat .s {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  margin-top: 4px;
+  letter-spacing: 0.02em;
+}
+.bdmq-statsnote {
+  font-size: 11px;
+  color: var(--ink-2);
+  margin: 26px 0 20px;
+}
+.rx-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 34px;
+  max-width: 560px;
+}
+.rx-spark i {
+  flex: 1;
+  border-radius: 1px;
+  background: var(--bg-3);
+  min-height: 2px;
+}
+.rx-spark i.on {
+  background: color-mix(in oklch, var(--accent) 80%, var(--bg-3));
+}
+.rx-spark-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  max-width: 560px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
 .bdmq-ratingrow {
   margin-top: 30px;
 }

@@ -4,6 +4,7 @@ import type {
   AuthorDetail,
   BookDeletionManifest,
   BookFileInfo,
+  BookInsights,
   BookProgress,
   BookSuggestion,
   EbookMetadata,
@@ -220,6 +221,26 @@ export function aWireWishlist(
     user_id: 1,
     source: "detail",
     added_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** The reader's record in a book as `GET /api/books/{uuid}/insights` sends it: three sittings over two days. */
+export function aWireInsights(
+  overrides: Partial<BookInsights> = {},
+): BookInsights {
+  return {
+    started_at: 1_760_011_200,
+    seconds_total: 3600,
+    sessions: 3,
+    sitting_seconds: 3000,
+    longest_seconds: 1800,
+    longest_started_at: 1_760_011_200,
+    daily: [
+      { day: "2026-08-24", seconds: 1800 },
+      { day: "2026-08-20", seconds: 1800 },
+    ],
+    as_of_day: "2026-08-24",
     ...overrides,
   };
 }

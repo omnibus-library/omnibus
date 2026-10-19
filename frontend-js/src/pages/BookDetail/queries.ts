@@ -7,6 +7,7 @@ import {
   fetchAuthorBooks,
   fetchCopies,
   fetchHighlights,
+  fetchInsights,
   fetchJournalEntries,
   fetchProgress,
   fetchReadStatus,
@@ -122,4 +123,10 @@ export const suggestionsQuery = (uuid: BookUuid) =>
     structuralSharing: false,
     refetchInterval: (query) =>
       suggestionPollMs(query.state.data, query.state.dataUpdateCount),
+  });
+
+export const insightsQuery = (uuid: BookUuid) =>
+  queryOptions({
+    queryKey: ["book", uuid, "insights"],
+    queryFn: () => fetchInsights(uuid),
   });

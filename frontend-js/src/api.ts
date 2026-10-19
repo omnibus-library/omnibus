@@ -4,6 +4,7 @@ import {
   getAddShelfBooksUrl,
   getAlignment,
   getAuthorById,
+  getBookInsights,
   getDeleteFilelessBookUrl,
   getDeleteHighlightUrl,
   getDeleteJournalUrl,
@@ -56,6 +57,7 @@ import {
 import type {
   AlignmentViewOutput,
   BookDeletionManifest as BookDeletionManifestWire,
+  BookInsights as BookInsightsWire,
   BookProgress as BookProgressWire,
   BookSuggestion as BookSuggestionWire,
   EbookMetadata,
@@ -919,6 +921,31 @@ export async function deleteBookFiles(
   });
   if (res.status !== 200) throw failure(res);
   return { bookDeleted: res.data.book_deleted };
+}
+
+function toInsights(wire: BookInsightsWire) {
+  return {
+    startedAt: wire.started_at,
+    secondsTotal: wire.seconds_total,
+    sessions: wire.sessions,
+    sittingSeconds: wire.sitting_seconds ?? 0,
+    longestSeconds: wire.longest_seconds,
+    longestStartedAt: wire.longest_started_at,
+    daily: wire.daily,
+    asOfDay: wire.as_of_day,
+  };
+}
+
+export type Insights = ReturnType<typeof toInsights>;
+
+/** The reader's time in a book: when they started, how long, how often; `null` before a sitting of a minute. */
+export async function fetchInsights(uuid: BookUuid): Promise<Insights | null> {
+  // East-positive minutes, which is where the server cuts each day.
+  const res = await getBookInsights(encodeURIComponent(uuid), {
+    utc_offset_minutes: -new Date().getTimezoneOffset(),
+  });
+  if (res.status !== 200) throw failure(res);
+  return res.data && toInsights(res.data);
 }
 
 function toShelf(wire: ShelfSummaryWire) {
