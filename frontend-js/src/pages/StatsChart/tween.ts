@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChartResult, ChartSeries } from "../../api";
 
-// A selection change moves the marks rather than swapping them. Values are what is interpolated,
-// never geometry, so bars, dots and the line all travel from one mechanism where a CSS transition
-// would animate the bars while the line's path jumped underneath them. Axes snap, as a lerped
-// maximum drags its tick labels through 3.7 and 7.4. Marks are matched by identity (a series by
+// Values are interpolated, never geometry, so bars, dots and the line move from one mechanism. Axes snap,
+// as a lerped maximum drags its tick labels through 3.7 and 7.4. Marks match by identity (a series by
 // measure and slice, a value by bucket key), as a positional blend would interpolate March into April.
 
 // At FRAME_MS apiece, STEPS frames are the whole duration.

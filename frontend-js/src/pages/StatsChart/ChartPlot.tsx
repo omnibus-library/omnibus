@@ -150,11 +150,7 @@ function ChartHoverCard({
   );
 }
 
-/**
- * One SVG drawing whatever result it is handed: no chart library, so the marks take the page's own
- * tokens. `onBrush` gets the first and last bucket index a completed drag covered; the page decides
- * whether that is a zoom or a click.
- */
+/** One SVG drawing whatever result it is handed, with no chart library so the marks take the page's own tokens. `onBrush` gets the first and last bucket a drag covered; the page decides whether that is a zoom. */
 export function ChartPlot({
   result,
   onBrush,

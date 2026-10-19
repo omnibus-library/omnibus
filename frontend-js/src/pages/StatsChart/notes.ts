@@ -1,8 +1,7 @@
 import type { ChartResult, ChartUnit } from "../../api";
 import { MAX_AXES, MEASURES } from "./chart";
 
-// The notes are written from the live result, so each names the units, measures and genres actually
-// on screen; a reader stopped by a greyed-out checkbox wants to know why that one is.
+// Written from the live result, so each note names the units, measures and genres actually on screen.
 
 // The server folds the tail past this many genres into "Other", and clips past this many periods.
 const BREAKDOWN_LIMIT = 5;
