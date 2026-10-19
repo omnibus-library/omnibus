@@ -13,6 +13,10 @@ import {
 
 const books = (n: number) => `${n} book${plural(n)}`;
 
+// The arrow keys leave focus in the input, so the highlight must scroll itself.
+const keepInView = (row: HTMLElement | null) =>
+  row?.scrollIntoView({ block: "nearest" });
+
 const TEST_IDS: Record<PaletteItem["kind"], string> = {
   book: "sp-book-row",
   author: "sp-author-row",
@@ -44,6 +48,7 @@ export function ResultsList({ groups, highlighted, onPick }: ResultsListProps) {
                 key={key}
                 to={itemHref(item)}
                 className={key === highlighted ? "sp-row selected" : "sp-row"}
+                ref={key === highlighted ? keepInView : undefined}
                 data-testid={TEST_IDS[item.kind]}
                 onClick={onPick}
               >

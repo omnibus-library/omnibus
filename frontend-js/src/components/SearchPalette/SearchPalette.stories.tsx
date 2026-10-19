@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useLocation } from "react-router";
 import { expect } from "storybook/test";
 import { failing, hanging, paletteHandler } from "../../testing/handlers";
-import { aWirePalette } from "../../testing/wire";
+import { aWirePalette, aWirePaletteBook } from "../../testing/wire";
 import {
   SearchPaletteOverlay,
   SearchPaletteProvider,
@@ -215,5 +215,46 @@ export const EscapeReturnsFocus: Story = {
     await userEvent.keyboard("{Escape}");
 
     await expect(trigger).toHaveFocus();
+  },
+};
+
+const manyBooks = Array.from({ length: 12 }, (_, i) =>
+  aWirePaletteBook({
+    uuid: `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+    title: `Aurora Station, Vol. ${i + 1}`,
+  }),
+);
+
+export const ArrowScrollsIntoView: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      paletteHandler(
+        aWirePalette({
+          books: manyBooks,
+          authors: [],
+          series: [],
+          tags: [],
+          genres: [],
+        }),
+      ),
+    );
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: /Search/ }));
+    await userEvent.type(
+      canvas.getByRole("textbox", { name: "Search" }),
+      "aurora",
+    );
+    await canvas.findByText("12 results · 18ms");
+
+    await userEvent.keyboard("{ArrowUp}");
+
+    const list = canvasElement.querySelector(".sp-results");
+    const last = canvas.getByRole("link", { name: /Vol\. 12/ });
+    if (!list) throw new Error("no results list");
+    // Rounded: fractional layout can leave the row a sub-pixel past the edge.
+    await expect(
+      Math.round(last.getBoundingClientRect().bottom),
+    ).toBeLessThanOrEqual(Math.round(list.getBoundingClientRect().bottom));
   },
 };
