@@ -221,6 +221,9 @@
 .settings-content .settings-hint {
   color: var(--ink-2);
 }
+.settings-content .users-table .mono {
+  font-size: 11px;
+}
 
 .settings-form {
   display: flex;

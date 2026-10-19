@@ -6,6 +6,7 @@ import {
   DailyGoalUpdate,
   type KoboDeviceView,
   ReadingGoalUpdate,
+  type SessionView,
   SetHiddenFormats,
   SetKindleEmail,
   SetProfile,
@@ -27,6 +28,8 @@ export type SettingsServer = {
   sender: string | null;
   /** The reader's Kobos. */
   kobo: KoboDeviceView[];
+  /** The reader's sessions; the one flagged `is_current` is the page's own. */
+  sessions: SessionView[];
   /** The password `POST /api/auth/password` expects as the current one. */
   password: string;
 };
@@ -41,6 +44,7 @@ export const aSettingsServer = (
   sender: "library@example.com",
   kobo: [],
   password: "old-password-123",
+  sessions: [],
   ...init,
 });
 
@@ -138,6 +142,14 @@ export function settingsHandlers(server: SettingsServer) {
       if (!server.kobo.some((d) => d.id === Number(params.id)))
         return missing();
       server.kobo = server.kobo.filter((d) => d.id !== Number(params.id));
+      return empty(204);
+    }),
+    http.get("/api/auth/sessions", () => HttpResponse.json(server.sessions)),
+    http.delete("/api/auth/sessions/:id", ({ params }) => {
+      const id = Number(params.id);
+      if (!server.sessions.some((s) => s.id === id && !s.is_current))
+        return missing();
+      server.sessions = server.sessions.filter((s) => s.id !== id);
       return empty(204);
     }),
     http.post("/api/auth/password", async ({ request }) => {

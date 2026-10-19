@@ -1,13 +1,19 @@
+import { queryOptions } from "@tanstack/react-query";
+import { z } from "zod";
 import type { Credentials, UserId } from "./core";
-import { failure, ok } from "./core";
+import { failure, fetchJson, ok, send } from "./core";
 import {
+  getDeleteSessionUrl,
+  getListSessionsUrl,
   getLogoutUrl,
   getMe,
   getRegistration,
   login as postLogin,
   register as postRegister,
 } from "./generated/omnibus";
-import type { UserSummary } from "./generated/schemas";
+import { SessionView, type UserSummary } from "./generated/schemas";
+
+export type { SessionView } from "./generated/schemas";
 
 /** The screen's shape of the user `GET /api/auth/me` and sign-in answer with. */
 export function toUser(user: UserSummary) {
@@ -60,4 +66,15 @@ export async function logout(): Promise<void> {
   if (res.status !== 204) {
     throw failure({ status: res.status, data: await res.text() });
   }
+}
+
+/** The reader's live sessions, the one making the request flagged `is_current`. */
+export const sessionsQuery = queryOptions({
+  queryKey: ["sessions"],
+  queryFn: () => fetchJson(getListSessionsUrl(), z.array(SessionView)),
+});
+
+/** Signs one of the reader's other sessions out. */
+export async function revokeSession(id: number): Promise<void> {
+  await send(getDeleteSessionUrl(id), "DELETE");
 }

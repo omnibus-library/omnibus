@@ -28,6 +28,7 @@ import type {
   SeriesStack,
   SeriesSummary,
   SessionLogEntry,
+  SessionView,
   Shelf,
   ShelfSummary,
   StatsSummary,
@@ -575,6 +576,22 @@ export function aWireKoboDevice(
     token: "tok-clara",
     created_at: 1_760_000_000,
     last_seen_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** A sign-in as `GET /api/auth/sessions` sends it; override what a case needs. */
+export function aWireAuthSession(
+  overrides: Partial<SessionView> = {},
+): SessionView {
+  return {
+    id: 1,
+    kind: "cookie",
+    client: "Firefox on Linux",
+    created_at: 1_760_000_000,
+    last_used_at: 1_760_086_400,
+    expires_at: 1_762_000_000,
+    is_current: false,
     ...overrides,
   };
 }

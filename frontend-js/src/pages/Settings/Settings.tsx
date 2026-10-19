@@ -18,6 +18,7 @@ import { KoboCard } from "./KoboCard";
 import { PasswordCard } from "./PasswordCard";
 import { PreferencesSection } from "./PreferencesSection";
 import { ProfileSection } from "./ProfileSection";
+import { SessionsCard } from "./SessionsCard";
 
 const sectionOf = (location: Location) =>
   parseSettingsSection(new URLSearchParams(location.search).get("section"));
@@ -73,7 +74,12 @@ export function Settings() {
       {active.slug === "profile" && <ProfileSection />}
       {active.slug === "preferences" && <PreferencesSection />}
       {active.slug === "goals" && <GoalsSection />}
-      {active.slug === "security" && <PasswordCard />}
+      {active.slug === "security" && (
+        <>
+          <PasswordCard />
+          <SessionsCard />
+        </>
+      )}
       {active.slug === "devices" && (
         <>
           <KindleCard />
