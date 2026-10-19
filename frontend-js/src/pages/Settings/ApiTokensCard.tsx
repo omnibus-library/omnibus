@@ -38,7 +38,8 @@ type CreateFormProps = {
   label: string;
   hint: boolean;
   pending: boolean;
-  onCreate: (name: string) => void;
+  /** `onCreated` empties the field once the token exists, so a refusal keeps the name. */
+  onCreate: (name: string, onCreated: () => void) => void;
   onInvalid: (message: string) => void;
 };
 
@@ -57,10 +58,7 @@ function CreateForm({
     <form
       className="settings-form tkx-create"
       onSubmit={form.handleSubmit(
-        ({ name }) => {
-          onCreate(name);
-          form.reset();
-        },
+        ({ name }) => onCreate(name, () => form.reset()),
         (errors) => onInvalid(errors.name?.message ?? NAME_REQUIRED),
       )}
     >
@@ -337,10 +335,19 @@ export function ApiTokensCard() {
     );
   const fail = (error: Error) =>
     setStatus({ message: error.message, error: true });
+  // After a refusal the list is read again, so it shows what the server holds.
+  const refused = (error: Error) => {
+    fail(error);
+    void queryClient.invalidateQueries({ queryKey: apiTokensQuery.queryKey });
+  };
   const invalid = (message: string) => setStatus({ message, error: true });
   const create = useMutation({
     mutationFn: createApiToken,
-    onMutate: () => setStatus(null),
+    onMutate: async () => {
+      setStatus(null);
+      // A list read still in flight would land over the new row.
+      await queryClient.cancelQueries({ queryKey: apiTokensQuery.queryKey });
+    },
     onSuccess: ({ token, secret: raw }) => {
       setList((list) => [token, ...list]);
       setSecret({ name: token.name, secret: raw });
@@ -352,6 +359,9 @@ export function ApiTokensCard() {
       });
     },
     onError: fail,
+    // A list that had not answered is read again, not replaced by the new token alone.
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: apiTokensQuery.queryKey }),
   });
   const revoke = useMutation({
     mutationFn: revokeApiToken,
@@ -361,7 +371,7 @@ export function ApiTokensCard() {
       setRevoking(null);
       setStatus({ message: "Token revoked.", error: false });
     },
-    onError: fail,
+    onError: refused,
   });
   const rename = useMutation({
     mutationFn: ({ id, name }: { id: number; name: string }) =>
@@ -371,7 +381,7 @@ export function ApiTokensCard() {
       setList((list) => list.map((t) => (t.id === id ? { ...t, name } : t)));
       setRenaming(null);
     },
-    onError: fail,
+    onError: refused,
   });
   const busy = create.isPending || revoke.isPending || rename.isPending;
 
@@ -465,7 +475,7 @@ export function ApiTokensCard() {
           label={empty ? "Create first token" : "Create token"}
           hint={!empty}
           pending={create.isPending}
-          onCreate={(name) => create.mutate(name)}
+          onCreate={(name, onSuccess) => create.mutate(name, { onSuccess })}
           onInvalid={invalid}
         />
       </section>

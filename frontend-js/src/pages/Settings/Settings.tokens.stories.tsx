@@ -159,6 +159,7 @@ export const RefusesToCreateAToken: Story = {
     await said(canvas, "too many tokens");
     await expect(canvas.getByTestId("api-tokens-status")).toHaveClass("error");
     await expect(canvas.queryByTestId("api-token-secret")).toBeNull();
+    await expect(canvas.getByLabelText("Token name")).toHaveValue("Laptop");
   },
 };
 
@@ -232,13 +233,70 @@ export const ShowsWhyARevokeWasRefused: Story = {
     await userEvent.click(
       await canvas.findByRole("button", { name: "Revoke Old script" }),
     );
+    // Another tab revoked it first.
+    server.tokens = server.tokens.filter((t) => t.id !== 3);
     await userEvent.click(
       await canvas.findByTestId("api-token-revoke-confirm-3"),
     );
 
     await said(canvas, "you have no live token with that id");
-    // The row stays open to ask again.
-    await expect(canvas.getByTestId("api-token-revoke-confirm")).toBeVisible();
+    // The list is read again, so the row that is gone is gone.
+    await waitFor(() =>
+      expect(canvas.queryByTestId("api-token-revoke-confirm")).toBeNull(),
+    );
     await expect(canvas.getAllByTestId("api-token-row")).toHaveLength(2);
+  },
+};
+
+export const ShowsWhyARenameWasRefused: Story = {
+  beforeEach({ msw }) {
+    withTokens();
+    msw.use(
+      http.patch(
+        "/api/auth/api-tokens/:id",
+        () =>
+          new HttpResponse("you have no live token with that id", {
+            status: 404,
+          }),
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Rename Old script" }),
+    );
+    server.tokens = server.tokens.filter((t) => t.id !== 3);
+    await userEvent.click(await canvas.findByTestId("api-token-rename-save"));
+
+    await said(canvas, "you have no live token with that id");
+    await waitFor(() =>
+      expect(canvas.queryByTestId("api-token-rename-row")).toBeNull(),
+    );
+    await expect(canvas.getAllByTestId("api-token-row")).toHaveLength(2);
+  },
+};
+
+export const KeepsEarlierTokensWhenTheListFailedBeforeACreate: Story = {
+  beforeEach({ msw }) {
+    withTokens();
+    let reads = 0;
+    msw.use(
+      http.get("/api/auth/api-tokens", () => {
+        reads += 1;
+        return reads === 1
+          ? new HttpResponse("list is down", { status: 500 })
+          : HttpResponse.json(server.tokens);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await said(canvas, "list is down");
+    await userEvent.type(await canvas.findByLabelText("Token name"), "Laptop");
+    await userEvent.click(canvas.getByTestId("api-token-create"));
+
+    // The earlier three come back with the new one: the list was read again.
+    await waitFor(() =>
+      expect(canvas.getAllByTestId("api-token-row")).toHaveLength(4),
+    );
   },
 };

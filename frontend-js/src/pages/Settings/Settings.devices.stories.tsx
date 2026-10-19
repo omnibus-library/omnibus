@@ -422,3 +422,28 @@ export const ShowsWhatServerHoldsWhenARemoveFindsNothing: Story = {
     );
   },
 };
+
+export const KeepsEarlierKobosWhenTheListFailedBeforeAnAdd: Story = {
+  beforeEach({ msw }) {
+    withKobos();
+    let reads = 0;
+    msw.use(
+      http.get("/api/account/kobo-devices", () => {
+        reads += 1;
+        return reads === 1
+          ? new HttpResponse("list is down", { status: 500 })
+          : HttpResponse.json(server.kobo);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await said(canvas, "kobo-devices-status", "list is down");
+    await userEvent.type(await canvas.findByLabelText("Device name"), "Aurora");
+    await userEvent.click(canvas.getByTestId("kobo-device-add"));
+
+    // The two it already had come back with the new one: the list was read again.
+    await waitFor(() =>
+      expect(canvas.getAllByTestId("kobo-device-row")).toHaveLength(3),
+    );
+  },
+};

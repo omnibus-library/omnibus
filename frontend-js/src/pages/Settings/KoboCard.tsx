@@ -217,13 +217,20 @@ export function KoboCard() {
   };
   const add = useMutation({
     mutationFn: createKoboDevice,
-    onMutate: () => setStatus(null),
+    onMutate: async () => {
+      setStatus(null);
+      // A list read still in flight would land over the new row.
+      await queryClient.cancelQueries({ queryKey: koboDevicesQuery.queryKey });
+    },
     onSuccess: (device) => {
       form.reset();
       setList((list) => [...list, device]);
       report("Kobo added. Copy its endpoint URL below.");
     },
     onError: refused,
+    // A list that had not answered is read again, not replaced by the new device alone.
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: koboDevicesQuery.queryKey }),
   });
   const regenerate = useMutation({
     mutationFn: regenerateKoboDevice,
