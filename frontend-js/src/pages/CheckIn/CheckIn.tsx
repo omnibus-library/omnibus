@@ -11,7 +11,6 @@ import {
 import type {
   ExternalBookMeta,
   ScanOutcome,
-  WishlistAddRequest,
 } from "../../api/generated/schemas";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import {

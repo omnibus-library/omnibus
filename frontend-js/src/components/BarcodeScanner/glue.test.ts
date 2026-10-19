@@ -37,7 +37,7 @@ beforeEach(() => {
   (document.getElementById("v") as HTMLVideoElement).play = async () => {};
   // The glue is a classic script that binds window.OmnibusScanner (jsdom doesn't run inline scripts), so it is evaluated.
   // biome-ignore lint/security/noGlobalEval: the vendored file under test is the only input
-  (0, eval)(glue);
+  window.eval(glue);
 });
 
 afterEach(() => {
