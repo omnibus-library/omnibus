@@ -1,7 +1,7 @@
 import { nowSecs } from "../format";
 import { toBook } from "./books";
 import type { BookUuid, UserId } from "./core";
-import { fetchJson, ok, send } from "./core";
+import { fetchJson, inOrder, ok, send } from "./core";
 import {
   getAlignment,
   getBookmarks,
@@ -122,20 +122,25 @@ export async function fetchProgress(uuid: BookUuid): Promise<Progress> {
   return toProgress(data);
 }
 
+const positionWrites = new Map<string, Promise<void>>();
+
 /** Saves where the reader stands: an anchor (`comic-page:N`, `pdf-page:N`, a CFI) and the whole-book percent. */
-export async function saveReadingPosition(
+export function saveReadingPosition(
   uuid: BookUuid,
   position: { anchor: string; percent: number },
 ): Promise<void> {
-  ok(
-    await postProgress({
-      book_uuid: uuid,
-      format: "epub",
-      epub_cfi: position.anchor,
-      progress_percent: position.percent,
-      client_updated_at: nowSecs(),
-    }),
-  );
+  // The server keeps the later of two equal-timestamp writes, so a book's writes must not overtake each other.
+  return inOrder(positionWrites, uuid, async () => {
+    ok(
+      await postProgress({
+        book_uuid: uuid,
+        format: "epub",
+        epub_cfi: position.anchor,
+        progress_percent: position.percent,
+        client_updated_at: nowSecs(),
+      }),
+    );
+  });
 }
 
 export type SessionReport = SessionReportWire;
