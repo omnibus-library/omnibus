@@ -1,10 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { addShelfBooks, type Book } from "../../api";
-import { Button } from "../Button/Button";
 import { ConfirmModal } from "../ConfirmModal/ConfirmModal";
 import { LibraryPicker } from "../LibraryPicker/LibraryPicker";
-import { BusyLabel } from "../Loading/Loading";
+import { ModalFoot } from "../ShelfForm/ModalFoot";
 import "../ShelfPicker/ShelfPicker.css";
 
 type AddBooksModalProps = {
@@ -85,25 +84,19 @@ export function AddBooksModal({
           {`Couldn’t add these books: ${add.error.message}`}
         </p>
       )}
-      <div className="pick-foot">
-        <Button
-          className="shelf-btn-ghost"
-          data-testid="add-books-cancel"
-          disabled={add.isPending}
-          onClick={onClose}
-        >
-          Cancel
-        </Button>
-        <Button
-          className="shelf-btn-primary"
-          data-testid="add-books-submit"
-          disabled={add.isPending || count === 0}
-          aria-busy={add.isPending}
-          onClick={() => add.mutate()}
-        >
-          <BusyLabel busy={add.isPending} label={label} busyLabel="Adding…" />
-        </Button>
-      </div>
+      <ModalFoot
+        className="pick-foot"
+        busy={add.isPending}
+        onCancel={onClose}
+        cancelTestId="add-books-cancel"
+        submit={{
+          label,
+          busyLabel: "Adding…",
+          testId: "add-books-submit",
+          disabled: count === 0,
+          onClick: () => add.mutate(),
+        }}
+      />
     </ConfirmModal>
   );
 }

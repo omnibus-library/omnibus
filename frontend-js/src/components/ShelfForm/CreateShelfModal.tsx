@@ -2,10 +2,9 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { type Book, createShelf, type ShelfDetail } from "../../api";
 import type { MatchMode } from "../../api/generated/schemas";
-import { Button } from "../Button/Button";
 import { ConfirmModal } from "../ConfirmModal/ConfirmModal";
 import { LibraryPicker } from "../LibraryPicker/LibraryPicker";
-import { BusyLabel } from "../Loading/Loading";
+import { ModalFoot } from "./ModalFoot";
 import { RuleBuilder } from "./RuleBuilder";
 import { BLANK_DRAFT, createRequest, type RuleDraft } from "./rules";
 import { VisibilityToggle } from "./VisibilityToggle";
@@ -99,36 +98,24 @@ export function CreateShelfModal({
           {create.error.message}
         </p>
       )}
-      <div className="shelf-modal-foot">
-        <Button
-          className="shelf-btn-ghost"
-          disabled={create.isPending}
-          onClick={onClose}
-        >
-          Cancel
-        </Button>
-        <Button
-          className="shelf-btn-primary"
-          data-testid="shelf-create-submit"
-          disabled={create.isPending}
-          aria-busy={create.isPending}
-          onClick={() =>
+      <ModalFoot
+        className="shelf-modal-foot"
+        busy={create.isPending}
+        onCancel={onClose}
+        submit={{
+          label: kind === "smart" ? "Create" : `Create · ${picked.length}`,
+          busyLabel: "Creating…",
+          testId: "shelf-create-submit",
+          onClick: () =>
             create.mutate(
               createRequest(
                 kind === "smart"
                   ? { kind, name, visibility, matchMode, drafts }
                   : { kind, name, visibility, picked },
               ),
-            )
-          }
-        >
-          <BusyLabel
-            busy={create.isPending}
-            label={kind === "smart" ? "Create" : `Create · ${picked.length}`}
-            busyLabel="Creating…"
-          />
-        </Button>
-      </div>
+            ),
+        }}
+      />
     </ConfirmModal>
   );
 }

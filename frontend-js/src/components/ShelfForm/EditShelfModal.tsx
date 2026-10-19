@@ -5,9 +5,8 @@ import type {
   MatchMode,
   UpdateShelfRequest,
 } from "../../api/generated/schemas";
-import { Button } from "../Button/Button";
 import { ConfirmModal } from "../ConfirmModal/ConfirmModal";
-import { BusyLabel } from "../Loading/Loading";
+import { ModalFoot } from "./ModalFoot";
 import { RuleBuilder } from "./RuleBuilder";
 import {
   BLANK_DRAFT,
@@ -129,24 +128,17 @@ export function EditShelfModal({
           {error}
         </p>
       )}
-      <div className="shelf-modal-foot">
-        <Button
-          className="shelf-btn-ghost"
-          disabled={save.isPending}
-          onClick={onClose}
-        >
-          Cancel
-        </Button>
-        <Button
-          className="shelf-btn-primary"
-          data-testid="edit-shelf-save"
-          disabled={save.isPending}
-          aria-busy={save.isPending}
-          onClick={submit}
-        >
-          <BusyLabel busy={save.isPending} label="Save" busyLabel="Saving…" />
-        </Button>
-      </div>
+      <ModalFoot
+        className="shelf-modal-foot"
+        busy={save.isPending}
+        onCancel={onClose}
+        submit={{
+          label: "Save",
+          busyLabel: "Saving…",
+          testId: "edit-shelf-save",
+          onClick: submit,
+        }}
+      />
     </ConfirmModal>
   );
 }
