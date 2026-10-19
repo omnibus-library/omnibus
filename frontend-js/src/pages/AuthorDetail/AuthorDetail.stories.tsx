@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { HttpResponse, http } from "msw";
 import { Route, Routes, useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import {
@@ -6,13 +7,22 @@ import {
   getGetAuthorByIdMockHandler404,
 } from "../../api/generated/omnibus.msw";
 import { nowSecs } from "../../format";
-import { authorPhotoHandlers, failing, hanging } from "../../testing/handlers";
+import {
+  authorPhotoHandlers,
+  authorsHandlers,
+  failing,
+  hanging,
+} from "../../testing/handlers";
 import {
   aWireAuthor,
+  aWireAuthorReading,
+  aWireAuthorSummary,
   aWireBook,
   aWireBookReading,
   uuidOf,
+  WIRE_ADA,
 } from "../../testing/wire";
+import { Authors, AuthorsIndexPane } from "../Authors/Authors";
 import { AuthorDetail } from "./AuthorDetail";
 
 const DAY = 86_400;
@@ -230,5 +240,220 @@ export const ShowInLibrary: Story = {
     await expect(
       JSON.parse(localStorage.getItem("omnibus.landing_shelf") ?? "null"),
     ).toEqual({ kind: "all" });
+  },
+};
+
+const deleted: string[] = [];
+const reads: string[] = [];
+
+// The admin stories run inside the authors list, which is what a delete has to update.
+const OTHER = aWireAuthor({ id: 3, name: "Octavia E. Butler", book_count: 0 });
+
+const inTheList = {
+  parameters: { path: "/authors/2" },
+  render: () => (
+    <Routes>
+      <Route path="/authors" element={<Authors />}>
+        <Route index element={<AuthorsIndexPane />} />
+        <Route path=":id" element={<AuthorDetail />} />
+      </Route>
+    </Routes>
+  ),
+} satisfies Story;
+
+function listHandlers() {
+  deleted.length = 0;
+  reads.length = 0;
+  return [
+    ...authorsHandlers({
+      authors: [
+        aWireAuthorSummary({
+          id: 2,
+          name: "Ursula K. Le Guin",
+          sort: "Le Guin, Ursula K.",
+        }),
+        aWireAuthorSummary({
+          id: 3,
+          name: "Octavia E. Butler",
+          sort: "Butler, Octavia E.",
+        }),
+      ],
+      reading: [aWireAuthorReading({ author_id: 3, last_read_at: 500 })],
+    }),
+    getGetAuthorByIdMockHandler200(({ params }) => {
+      reads.push(String(params.id));
+      return params.id === "2" ? AUTHOR : OTHER;
+    }),
+    http.delete("/api/authors/:id", ({ params }) => {
+      deleted.push(String(params.id));
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+}
+
+export const NonAdmin: Story = {
+  parameters: { user: { ...WIRE_ADA, is_admin: false } },
+  play: async ({ canvas }) => {
+    await canvas.findByRole("heading", { level: 2, name: "Ursula K. Le Guin" });
+
+    await expect(
+      canvas.queryByRole("button", {
+        name: "More actions for Ursula K. Le Guin",
+      }),
+    ).toBeNull();
+    // Dioxus shows the photo overlay to every viewer; the server refuses a non-admin's edit.
+    await expect(
+      canvas.getByRole("button", { name: "Edit photo for Ursula K. Le Guin" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const OpensTheDeleteDialog: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const more = await canvas.findByRole("button", {
+      name: "More actions for Ursula K. Le Guin",
+    });
+    await expect(more).toHaveAttribute("aria-haspopup", "menu");
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+
+    await userEvent.click(more);
+
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    await userEvent.click(
+      canvas.getByRole("menuitem", { name: "Delete author…" }),
+    );
+    const dialog = await canvas.findByRole("dialog", {
+      name: "Delete Ursula K. Le Guin",
+    });
+    await expect(within(dialog).getByRole("heading")).toHaveTextContent(
+      'Delete "Ursula K. Le Guin"?',
+    );
+    await expect(dialog).toHaveTextContent(
+      "This will un-link the author from 5 books and prevent the name from being re-added on future library scans. The books themselves are not deleted.",
+    );
+    await expect(canvas.queryByRole("menu")).toBeNull();
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Cancel" }),
+    );
+
+    await expect(canvas.queryByRole("dialog")).toBeNull();
+  },
+};
+
+export const DeleteSuccess: Story = {
+  ...inTheList,
+  beforeEach({ msw }) {
+    msw.use(...listHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", {
+        name: "More actions for Ursula K. Le Guin",
+      }),
+    );
+    await userEvent.click(
+      canvas.getByRole("menuitem", { name: "Delete author…" }),
+    );
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Delete" }),
+    );
+
+    await waitFor(() => expect(deleted).toEqual(["2"]));
+    await expect(
+      await canvas.findByRole("heading", {
+        level: 2,
+        name: "Octavia E. Butler",
+      }),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByRole("dialog")).toBeNull();
+    await expect(
+      canvas.queryByRole("link", { name: /^Ursula K. Le Guin/ }),
+    ).toBeNull();
+    await expect(
+      canvas.getByRole("link", { name: /^Octavia E. Butler/ }),
+    ).toBeInTheDocument();
+    // The deleted author is dropped from the cache, not fetched again as a 404.
+    await expect(reads).toEqual(["2", "3"]);
+  },
+};
+
+export const DeleteFailing: Story = {
+  ...inTheList,
+  beforeEach({ msw }) {
+    msw.use(failing("delete", "/api/authors/:id", 403), ...listHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", {
+        name: "More actions for Ursula K. Le Guin",
+      }),
+    );
+    await userEvent.click(
+      canvas.getByRole("menuitem", { name: "Delete author…" }),
+    );
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Delete" }),
+    );
+
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "⚠ failed with 403",
+    );
+    await expect(canvas.getByRole("dialog")).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("link", { name: /^Ursula K. Le Guin/ }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const DeleteWorkingIgnoresDismissal: Story = {
+  ...inTheList,
+  beforeEach({ msw }) {
+    msw.use(hanging("/api/authors/:id", "delete"), ...listHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", {
+        name: "More actions for Ursula K. Le Guin",
+      }),
+    );
+    await userEvent.click(
+      canvas.getByRole("menuitem", { name: "Delete author…" }),
+    );
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Delete" }),
+    );
+
+    await expect(
+      await canvas.findByRole("button", { name: "Deleting…" }),
+    ).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(canvas.getByRole("dialog"));
+    await expect(canvas.getByRole("dialog")).toBeInTheDocument();
+  },
+};
+
+export const NewPhotoRefetchesTheAuthor: Story = {
+  beforeEach({ msw }) {
+    reads.length = 0;
+    msw.use(
+      getGetAuthorByIdMockHandler200(() => {
+        reads.push("author");
+        return AUTHOR;
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", {
+        name: "Edit photo for Ursula K. Le Guin",
+      }),
+    );
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Scan for picture" }),
+    );
+
+    await waitFor(() => expect(reads).toHaveLength(2));
+    await waitFor(() => expect(canvas.queryByRole("dialog")).toBeNull());
   },
 };

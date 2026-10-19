@@ -399,6 +399,11 @@
     border-color: var(--line);
   }
 }
+.au-more-btn {
+  width: 40px;
+  padding: 0;
+  font-size: 17px;
+}
 .au-reading {
   display: flex;
   align-items: center;

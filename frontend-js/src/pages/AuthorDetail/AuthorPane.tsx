@@ -1,4 +1,8 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import {
@@ -10,6 +14,7 @@ import {
   type BookState,
   type FilterClause,
 } from "../../api";
+import { AuthorPhotoEdit } from "../../components/AuthorPhotoEdit/AuthorPhotoEdit";
 import { CoverImage } from "../../components/Cover/CoverImage";
 import { Loading, Stale } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
@@ -17,6 +22,7 @@ import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { initialOf, nowSecs } from "../../format";
 import { readerHref } from "../../resume";
 import { saveShelfSelection } from "../../viewPrefs";
+import { AuthorMoreMenu } from "./AuthorMoreMenu";
 import {
   type BookStates,
   currentBook,
@@ -29,7 +35,7 @@ import {
   tileBar,
 } from "./authorPane";
 
-/** The portrait: the cached photo, else the name's initial; a photo that fails to load falls back to the initial for that URL. */
+/** The portrait under its Edit button: the cached photo, else the name's initial; a photo that fails to load falls back to the initial for that URL. */
 function AuthorAvatar({
   id,
   name,
@@ -39,21 +45,32 @@ function AuthorAvatar({
   name: string;
   hasPhoto: boolean;
 }) {
+  const client = useQueryClient();
   const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
   const url = hasPhoto ? authorPhotoUrl(id) : null;
   return (
-    <div className="disc-avatar au-avatar">
-      {url !== null && brokenSrc !== url ? (
-        <img
-          className="disc-avatar--photo"
-          src={url}
-          alt={name}
-          onError={() => setBrokenSrc(url)}
-        />
-      ) : (
-        initialOf(name)
-      )}
-    </div>
+    <AuthorPhotoEdit
+      authorId={id}
+      authorName={name}
+      onChange={() => {
+        // A re-upload keeps the same URL, so clear the failure too.
+        setBrokenSrc(null);
+        client.invalidateQueries({ queryKey: authorQuery(id).queryKey });
+      }}
+    >
+      <div className="disc-avatar au-avatar">
+        {url !== null && brokenSrc !== url ? (
+          <img
+            className="disc-avatar--photo"
+            src={url}
+            alt={name}
+            onError={() => setBrokenSrc(url)}
+          />
+        ) : (
+          initialOf(name)
+        )}
+      </div>
+    </AuthorPhotoEdit>
   );
 }
 
@@ -91,6 +108,7 @@ function AuthorHero({ author }: { author: AuthorPage }) {
         >
           Show in library
         </button>
+        <AuthorMoreMenu author={author} />
       </div>
     </header>
   );

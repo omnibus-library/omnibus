@@ -39,6 +39,8 @@ const OWNERS = [
   ["components/FetchSummary/FetchSummary.css", (c) => c.startsWith("fs-")],
   ["components/FormatSwitcher/FormatSwitcher.css", (c) => c.startsWith("format-") || c.startsWith("kindle-") || c.startsWith("kobo-")],
   ["pages/Authors/Authors.css", (c) => c.startsWith("au-")],
+  ["components/AuthorPhotoEdit/AuthorPhotoEdit.css", (c) => c.startsWith("author-photo-edit") || c.startsWith("author-delete-modal") || c === "me-input"],
+  ["pages/ShelfDetail/ShelfDetail.css", (c) => c.startsWith("shd-") || c === "shelf-grid" || c === "shelf-actions-menu" || c.startsWith("shelf-menu-")],
   ["components/ShelfTile/ShelfTile.css", (c) => c.startsWith("shv-") || c.startsWith("shelf-add-tile")],
   ["components/ShelfPicker/ShelfPicker.css", (c) => c.startsWith("shelf-picker") || c.startsWith("shelf-modal") || c.startsWith("pick-")],
   ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || c.startsWith("ebook-") || c.startsWith("sort-th") || c.startsWith("ss-") || c.startsWith("format-badge") || c.startsWith("bulk-edit") || c.startsWith("shelf-btn-") || c.startsWith("shelf-modal-") || c.startsWith("shelf-picker") || c.startsWith("pick-") || c === "author-photo-modal-backdrop" || ["landing-col", "library-empty", "cover-link"].includes(c)],
@@ -56,15 +58,15 @@ function tsxFiles(dir) {
   });
 }
 
-// Status words the code compares against, never a className.
-const STOP = new Set(["back", "error", "off", "ok", "pending", "success", "tag"]);
+// Status words the code compares against, and test ids that only share a name with a dead rule: never a className.
+const STOP = new Set(["back", "error", "off", "ok", "pending", "success", "tag", "author-delete-btn", "author-delete-confirm"]);
 const vocab = new Set();
 for (const file of tsxFiles(src)) {
   const text = fs.readFileSync(file, "utf8");
   for (const m of text.matchAll(/"([^"\n]*)"|`([^`]*)`/g)) {
     const literal = (m[1] ?? m[2]).replace(/\$\{[^}]*\}/g, " ");
     for (const token of literal.split(/\s+/)) {
-      if (/^[a-z][a-z0-9-]*$/.test(token) && !STOP.has(token)) vocab.add(token);
+      if (/^[a-z][a-z0-9_-]*$/.test(token) && !STOP.has(token)) vocab.add(token);
     }
   }
 }
