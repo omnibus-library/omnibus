@@ -164,3 +164,11 @@
   -webkit-line-clamp: unset;
   overflow: visible;
 }
+.pick-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid var(--line-2);
+  padding-top: 12px;
+}

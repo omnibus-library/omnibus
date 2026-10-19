@@ -44,6 +44,7 @@ const OWNERS = [
   ["pages/SeriesDetail/SeriesDetail.css", (c) => c === "series-cards" || c.startsWith("series-card")],
   ["pages/ShelfDetail/ShelfDetail.css", (c) => c.startsWith("shd-") || c === "shelf-grid" || c === "shelf-actions-menu" || c.startsWith("shelf-menu-")],
   ["pages/Shelves/Shelves.css", (c) => ["shv-page", "shv-header", "shv-head-row", "shv-admin-note", "shv-new", "shv-new-plus", "shv-toolbar", "shv-owners", "shv-owner-chip", "shv-owner-chip--all", "shv-chip-av", "shv-empty", "shv-empty-msg", "shv-body", "shv-group", "shv-group-head", "shv-group-av", "shv-group-title", "shv-group-count", "shv-grid", "shv-cell"].includes(c)],
+  ["components/LibraryPicker/LibraryPicker.css", (c) => ["pick", "pick-body", "pick-search", "pick-search-row", "pick-search-clear", "pick-status", "pick-status-text", "pick-review", "pick-more", "pick-more-row", "pick-on-shelf", "pick-tag", "pick-tags", "pick-card-skel"].includes(c)],
   ["components/ShelfForm/ShelfForm.css", (c) => c.startsWith("shelf-") && !c.startsWith("shelf-picker") && !c.startsWith("shelf-add-tile") && !c.startsWith("shelf-btn-") && !["shelf-modal-overlay", "shelf-modal-card", "shelf-modal-error", "shelf-modal-foot"].includes(c)],
   ["components/ShelfTile/ShelfTile.css", (c) => c.startsWith("shv-") || c.startsWith("shelf-add-tile")],
   ["components/ShelfPicker/ShelfPicker.css", (c) => c.startsWith("shelf-picker") || c.startsWith("shelf-modal") || c.startsWith("pick-")],
