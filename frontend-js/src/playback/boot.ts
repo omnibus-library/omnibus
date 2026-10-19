@@ -1,4 +1,4 @@
-import type { ListeningResume } from "../api";
+import type { ListeningResume, ListeningRow } from "../api";
 import { read, write } from "../viewPrefs";
 
 // The localStorage keys the Dioxus client uses; both clients share the origin, so the values.
@@ -9,16 +9,6 @@ const VOLUME_KEY = "omnibus.listen.volume";
 
 export const MIN_RATE = 0.5;
 export const MAX_RATE = 3;
-
-/** The file to ask the manifest for: the explicit pick, else the one the saved position was taken in. */
-export function resolveBootFile(
-  requested: number | null,
-  rowFile: number | null,
-): number | null {
-  return requested ?? rowFile;
-}
-
-export type ListeningRow = { fileId: number | null; seconds: number | null };
 
 /**
  * Where to seed playback, given the file the manifest loaded. A single-file book (or a server

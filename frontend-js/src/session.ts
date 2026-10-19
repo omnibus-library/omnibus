@@ -35,12 +35,16 @@ export function useCurrentUser(): User {
   return data;
 }
 
-/** Ends the session, drops every cached answer, and returns to /login. */
-export function useSignOut() {
+/** Runs `beforeLogout`, then ends the session, drops every cached answer, and returns to /login. */
+export function useSignOut(beforeLogout: () => Promise<void>) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   return useMutation({
-    mutationFn: logout,
+    // What `beforeLogout` posts needs the cookie that `logout` revokes.
+    mutationFn: async () => {
+      await beforeLogout();
+      await logout();
+    },
     onSuccess: () => {
       navigate("/login", { replace: true });
       // Null, not cleared: the gate unmounts the signed-in screens before

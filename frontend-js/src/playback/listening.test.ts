@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { BookUuid } from "../api";
 import { aWireReadStatus } from "../testing/wire";
 import {
@@ -84,22 +86,25 @@ describe("autoTransition", () => {
 });
 
 describe("applyAutoReadStatus", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  const server = setupServer();
+  beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+  afterEach(() => server.resetHandlers());
+  afterAll(() => server.close());
 
   /** A server holding `stored` (or failing the read); returns the PUT bodies it was sent. */
   function serve(stored: "unread" | "finished" | "failed") {
     const puts: unknown[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_url: string, init?: RequestInit) => {
-        if (init?.method === "PUT") {
-          puts.push(JSON.parse(String(init.body)));
-          return Response.json(aWireReadStatus({ status: "reading" }));
-        }
-        if (stored === "failed") return new Response("no", { status: 500 });
-        return Response.json(
-          stored === "unread" ? null : aWireReadStatus({ status: stored }),
-        );
+    server.use(
+      http.get("/api/read-status/:uuid", () =>
+        stored === "failed"
+          ? new HttpResponse("no", { status: 500 })
+          : HttpResponse.json(
+              stored === "unread" ? null : aWireReadStatus({ status: stored }),
+            ),
+      ),
+      http.put("/api/read-status", async ({ request }) => {
+        puts.push(await request.json());
+        return HttpResponse.json(aWireReadStatus({ status: "reading" }));
       }),
     );
     return puts;
@@ -108,7 +113,7 @@ describe("applyAutoReadStatus", () => {
   it("marks a book with no status reading on its first play", async () => {
     const puts = serve("unread");
 
-    await applyAutoReadStatus(A, false);
+    await expect(applyAutoReadStatus(A, false)).resolves.toBe(true);
 
     expect(puts).toEqual([{ book_uuid: A, status: "reading" }]);
   });
@@ -116,7 +121,7 @@ describe("applyAutoReadStatus", () => {
   it("writes nothing when the status could not be read, so finished is never downgraded", async () => {
     const puts = serve("failed");
 
-    await applyAutoReadStatus(A, false);
+    await expect(applyAutoReadStatus(A, false)).resolves.toBe(false);
 
     expect(puts).toEqual([]);
   });
@@ -132,7 +137,7 @@ describe("applyAutoReadStatus", () => {
   it("leaves a finished book finished at its end", async () => {
     const puts = serve("finished");
 
-    await applyAutoReadStatus(A, true);
+    await expect(applyAutoReadStatus(A, true)).resolves.toBe(false);
 
     expect(puts).toEqual([]);
   });

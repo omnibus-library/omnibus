@@ -1,16 +1,19 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { setupServer } from "msw/node";
 import {
   createMemoryRouter,
   type RouteObject,
   RouterProvider,
 } from "react-router";
-import { describe, expect, it, vi } from "vitest";
-import type { User } from "./api";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { toUser, type User } from "./api";
 import { routes } from "./router";
 import { meQuery } from "./session";
 import { ADA, harnessClient } from "./testing/AppHarness";
+import { listenHandlers } from "./testing/audioHandlers";
+import { aWireBook, WIRE_ADA } from "./testing/wire";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 
@@ -201,6 +204,28 @@ describe("routes", () => {
       ).toBeEmptyDOMElement();
     });
 
+    describe("with an audiobook loaded", () => {
+      const server = setupServer(
+        ...listenHandlers(aWireBook({ formats: ["M4B"] })),
+      );
+      beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
+      afterAll(() => server.close());
+
+      it("gives a reader's stage room above the dock", async () => {
+        const router = renderRoute(`/listen/${UUID}`);
+        await screen.findByText("Now playing · Chapter 1 of 3");
+
+        act(() => {
+          void router.navigate(`/read/${UUID}`);
+        });
+
+        await screen.findByRole("region", { name: "Now playing" });
+        expect(document.querySelector(".rd-host.rd-dock-full")).toHaveClass(
+          "rd-immersive",
+        );
+      });
+    });
+
     it("keeps the dock off the player", async () => {
       renderRoute(`/listen/${UUID}`);
       await screen.findByRole("link", { name: "Back to library" });
@@ -223,6 +248,29 @@ describe("routes", () => {
       pause.mockClear();
 
       act(() => client.setQueryData(meQuery.queryKey, null));
+
+      await waitFor(() => expect(pause).toHaveBeenCalled());
+      vi.restoreAllMocks();
+    });
+
+    it("starts a fresh player when another user takes the session", async () => {
+      const pause = vi.spyOn(HTMLMediaElement.prototype, "pause");
+      const client = harnessClient();
+      const router = createMemoryRouter(routes, { initialEntries: ["/"] });
+      render(
+        <QueryClientProvider client={client}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>,
+      );
+      await screen.findByRole("heading", { level: 1, name: "Your Library" });
+      pause.mockClear();
+
+      act(() =>
+        client.setQueryData(
+          meQuery.queryKey,
+          toUser({ ...WIRE_ADA, id: WIRE_ADA.id + 1 }),
+        ),
+      );
 
       await waitFor(() => expect(pause).toHaveBeenCalled());
       vi.restoreAllMocks();

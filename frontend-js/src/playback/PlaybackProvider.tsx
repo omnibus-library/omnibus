@@ -1,4 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import {
+  skipToken,
+  type UseQueryResult,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -13,7 +18,6 @@ import {
   type BookUuid,
   type Chapter,
   fetchAudioManifest,
-  fetchBook,
   fetchListeningResume,
   fetchListeningRow,
   fetchPlaybackRate,
@@ -24,6 +28,7 @@ import {
   savePlaybackRate,
 } from "../api";
 import { nowSecs } from "../format";
+import { bookQuery } from "../pages/BookDetail/queries";
 import { meQuery } from "../session";
 import {
   bootResumePosition,
@@ -32,7 +37,6 @@ import {
   loadLocalRate,
   loadVolume,
   needsReload,
-  resolveBootFile,
   resolveFollowBoot,
   resolveRate,
   saveLocalPosition,
@@ -58,7 +62,6 @@ export type BookState =
 
 type State = {
   uuid: BookUuid | null;
-  book: BookState;
   /** The audio file the manifest resolved; what a saved position must name. */
   loadedFileId: number | null;
   /** A source is committed to the element. */
@@ -75,7 +78,6 @@ type State = {
 
 const IDLE: State = {
   uuid: null,
-  book: { status: "idle" },
   loadedFileId: null,
   ready: false,
   failed: false,
@@ -89,6 +91,7 @@ const IDLE: State = {
 };
 
 export type Playback = State & {
+  book: BookState;
   volume: number;
   /** Lives here, not in a page, so a countdown keeps going when the listener leaves `/listen`. */
   sleep: SleepState;
@@ -96,6 +99,8 @@ export type Playback = State & {
   open(uuid: BookUuid, fileId: number | null): void;
   /** Stops the element, cancels an armed sleep timer and forgets the book, so the dock goes. */
   close(): void;
+  /** Reports the open listening stretch and the position, for a caller about to end the session. */
+  flush(): Promise<void>;
   toggle(): void;
   skip(delta: number): void;
   seek(seconds: number): void;
@@ -129,6 +134,8 @@ type Boot = {
   isCurrent(): boolean;
   /** Where the book plays on when this file ends; set once the manifest says. */
   nextFile: { current: number | null };
+  /** True once the listener picked a speed during this boot. */
+  rateSet: { current: boolean };
   patch(change: Partial<State>): void;
   startSaver(saveFileId: number | null): void;
 };
@@ -136,10 +143,33 @@ type Boot = {
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
+/** The book query's answer in the shape the screens read. */
+function bookStateOf(
+  uuid: BookUuid | null,
+  result: UseQueryResult<BookDetail | null>,
+): BookState {
+  if (!uuid) return { status: "idle" };
+  if (result.data) return { status: "ready", book: result.data };
+  if (result.data === null) return { status: "missing" };
+  if (result.isError) {
+    return { status: "error", message: messageOf(result.error) };
+  }
+  return { status: "pending" };
+}
+
 /** Takes the server's speed (seeding it from this device's when it has none) and applies it. */
-async function reconcileRate({ uuid, userId, engine, isCurrent, patch }: Boot) {
+async function reconcileRate({
+  uuid,
+  userId,
+  engine,
+  isCurrent,
+  rateSet,
+  patch,
+}: Boot) {
   const server = await fetchPlaybackRate(uuid).catch(() => "failed" as const);
   if (!isCurrent()) return false;
+  // The listener's pick during the wait beats the late answer.
+  if (rateSet.current) return true;
   if (userId !== null && typeof server === "number") {
     saveLocalRate(userId, uuid, server);
   }
@@ -172,8 +202,9 @@ async function bootHls(
     if (!isCurrent()) return;
     if (state === "failed") return patch({ failed: true });
     if (state === "ready") {
+      // Without hls.js the engine can still hand the stream to a native player.
       const Hls = await loadHls().catch(() => undefined);
-      if (isCurrent() && !(Hls && engine.initHls(url, resumeAt, Hls))) {
+      if (isCurrent() && !engine.initHls(url, resumeAt, Hls)) {
         patch({ failed: true });
       }
       return;
@@ -185,13 +216,15 @@ async function bootHls(
 /** Resolves where to start from the server and this device, then loads the book's audio. */
 async function runBoot(boot: Boot) {
   const { uuid, fileId, isCurrent, patch, engine } = boot;
-  const row = await fetchListeningRow(uuid);
-  if (!isCurrent() || !(await reconcileRate(boot))) return;
+  // A failed read is not "no position": booting from 0 would overwrite the saved one on first play.
+  const row = await fetchListeningRow(uuid).catch(() => "failed" as const);
+  if (!isCurrent()) return;
+  if (row === "failed") return patch({ failed: true });
+  if (!(await reconcileRate(boot))) return;
   const resume = await fetchListeningResume(uuid);
   if (!isCurrent()) return;
   const follow = resolveFollowBoot(fileId, resume);
-  const bootFile =
-    follow?.fileId ?? resolveBootFile(fileId, row?.fileId ?? null);
+  const bootFile = follow?.fileId ?? fileId ?? row?.fileId ?? null;
   let manifest = await fetchAudioManifest(uuid, bootFile);
   // A saved file is a soft reference (a reindex may have replaced it); an explicit pick isn't.
   if (!manifest && fileId === null && bootFile !== null) {
@@ -225,7 +258,9 @@ async function runBoot(boot: Boot) {
 /** Owns the page's one `<audio>`, so playback survives a route change; sign-out unmounts it and stops the sound. */
 export function PlaybackProvider({ children }: { children: ReactNode }) {
   const userId = useQuery(meQuery).data?.id ?? null;
+  const client = useQueryClient();
   const [state, setState] = useState(IDLE);
+  const [tracker] = useState(() => new ListeningTracker());
   const [volume, setVolumeState] = useState(loadVolume);
   const [sleep, setSleep] = useState(SLEEP_OFF);
   const engineRef = useRef<Engine | null>(null);
@@ -243,8 +278,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const nextFileRef = useRef<number | null>(null);
   // The first `play` of a boot marks the book reading; `play` also fires on every resume.
   const markedReading = useRef(false);
+  const rateSetRef = useRef(false);
   const openRef = useRef<Playback["open"] | null>(null);
   const volumeRef = useRef(volume);
+
+  const { uuid, playing } = state;
+  const bookResult = useQuery(
+    uuid ? bookQuery(uuid) : { queryKey: ["book"], queryFn: skipToken },
+  );
+  const book = bookStateOf(uuid, bookResult);
 
   const patch = useCallback((change: Partial<State>) => {
     setState((prev) =>
@@ -255,6 +297,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         : { ...prev, ...change },
     );
   }, []);
+
+  // The book's read status moved, and the pages showing it are stale.
+  const markRead = useCallback(
+    (uuid: BookUuid, atEnd: boolean) =>
+      void applyAutoReadStatus(uuid, atEnd).then((wrote) => {
+        if (wrote) void client.invalidateQueries({ queryKey: ["book", uuid] });
+      }),
+    [client],
+  );
 
   // The engine lives and dies with the element.
   const attach = useCallback(
@@ -275,7 +326,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
           const uuid = live.current.uuid;
           if (!uuid || markedReading.current) return;
           markedReading.current = true;
-          void applyAutoReadStatus(uuid, false);
+          markRead(uuid, false);
         },
         pause(t, userActed) {
           patch({ playing: false });
@@ -288,10 +339,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
           if (nextFileRef.current !== null) {
             openRef.current?.(uuid, nextFileRef.current);
           } else {
-            void applyAutoReadStatus(uuid, true);
+            markRead(uuid, true);
           }
         },
-        booted: () => patch({ ready: true }),
+        booted: () => patch({ ready: true, failed: false }),
         buffering: (buffering) => patch({ buffering }),
         stalled: () => patch({ failed: true }),
       };
@@ -314,39 +365,29 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         loadedRef.current = null;
       };
     },
-    [patch],
+    [patch, markRead],
   );
 
   const open = useCallback(
     (uuid: BookUuid, fileId: number | null) => {
       const engine = engineRef.current;
       if (!engine || !needsReload(loadedRef.current, uuid, fileId)) return;
+      const sameBook = loadedRef.current?.uuid === uuid;
       loadedRef.current = { uuid, fileId };
       const token = ++bootRef.current;
       const isCurrent = () => bootRef.current === token;
       engine.stop();
-      // The timer outlives a page but not its book.
-      timerRef.current?.off();
+      // The timer outlives a page, and a file of the same book, but not another book.
+      if (!sameBook) timerRef.current?.off();
       saverRef.current = null;
       nextFileRef.current = null;
       markedReading.current = false;
+      rateSetRef.current = false;
       setState({
         ...IDLE,
         uuid,
-        book: { status: "pending" },
         rate: userId === null ? 1 : (loadLocalRate(userId, uuid) ?? 1),
       });
-      fetchBook(uuid)
-        .then((book) =>
-          book
-            ? { status: "ready" as const, book }
-            : { status: "missing" as const },
-        )
-        .catch((error) => ({
-          status: "error" as const,
-          message: messageOf(error),
-        }))
-        .then((book) => isCurrent() && patch({ book }));
       void runBoot({
         uuid,
         fileId,
@@ -354,8 +395,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         engine,
         isCurrent,
         nextFile: nextFileRef,
+        rateSet: rateSetRef,
         patch,
         startSaver: (saveFileId) => {
+          // The file the manifest resolved is the one loaded, so a link naming it needs no reboot.
+          loadedRef.current = { uuid, fileId: saveFileId ?? fileId };
           saverRef.current = createPositionSaver((seconds) => {
             saveLocalPosition(uuid, seconds);
             void saveListeningPosition(uuid, saveFileId, seconds);
@@ -392,6 +436,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       const uuid = loadedRef.current?.uuid;
       if (!uuid) return;
       const token = bootRef.current;
+      rateSetRef.current = true;
       patch({ rate });
       engineRef.current?.setRate(rate);
       if (userId !== null) saveLocalRate(userId, uuid, rate);
@@ -413,10 +458,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     timerRef.current?.position(state.elapsed, state.rate);
   }, [state.elapsed, state.rate]);
   // One session per stretch of a book playing: reported on pause, a book swap, every minute and at pagehide.
-  const { uuid, playing } = state;
   useEffect(() => {
     if (!uuid || !playing) return;
-    const tracker = new ListeningTracker();
     const send = (session: ListeningReport | null) => {
       if (session) void postListeningSessions([session]);
     };
@@ -429,7 +472,19 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("pagehide", flush);
       flush();
     };
-  }, [uuid, playing]);
+  }, [uuid, playing, tracker]);
+
+  const flush = useCallback(async () => {
+    const { uuid, loadedFileId } = live.current;
+    const at = engineRef.current?.where();
+    const session = tracker.stop(nowSecs());
+    await Promise.all([
+      uuid && at?.userActed
+        ? saveListeningPosition(uuid, loadedFileId, at.seconds)
+        : null,
+      session ? postListeningSessions([session]) : null,
+    ]);
+  }, [tracker]);
 
   const armed = sleep.remaining !== null;
   useEffect(() => {
@@ -442,8 +497,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     ...state,
     volume,
     sleep,
+    book,
     open,
     close,
+    flush,
     toggle: () => engineRef.current?.toggle(),
     skip: (delta) => engineRef.current?.skip(delta),
     seek: (seconds) => engineRef.current?.seek(seconds),

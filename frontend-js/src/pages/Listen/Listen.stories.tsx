@@ -1,10 +1,14 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { act } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
-import { Route, Routes } from "react-router";
+import { Link, Route, Routes } from "react-router";
 import { expect, fireEvent, waitFor, within } from "storybook/test";
 import type { ListenWrite } from "../../testing/audioHandlers";
-import { listenHandlers } from "../../testing/audioHandlers";
+import {
+  listenHandlers,
+  TEN_MINUTES_IN,
+  twoFiles,
+} from "../../testing/audioHandlers";
 import { failing, hanging } from "../../testing/handlers";
 import {
   aWireAudioManifest,
@@ -150,10 +154,11 @@ export const ResumesSavedPosition: Story = {
   },
 };
 
-// The element has no media to seek here, so the restored spot is set on it directly.
+// The element has no media to load here: metadata is signalled by hand, then the spot set on it directly.
 async function skipForwardFrom600(canvas: ReturnType<typeof within>) {
   await canvas.findByText("Now playing · Chapter 1 of 3");
   const audio = canvas.getByTestId("listen-audio") as HTMLAudioElement;
+  fireEvent.loadedMetadata(audio);
   audio.currentTime = 600;
   fireEvent.click(canvas.getByRole("button", { name: "Forward 30 seconds" }));
 }
@@ -384,34 +389,26 @@ export const PagehideReportsAListeningSession: Story = {
   },
 };
 
-/** Two files: the first names the second as next; the second is the last. */
-const twoFiles = [
-  http.get("/api/audiobooks/:uuid/manifest", ({ request }) => {
-    const file = new URL(request.url).searchParams.get("file_id");
-    requestedFiles.push(file);
-    return HttpResponse.json(
-      aWireAudioManifest({
-        book_file_id: file === "918" ? 918 : 917,
-        audio_file_count: 2,
-        next_file_id: file === "918" ? null : 918,
-      }),
-    );
-  }),
-];
 const requestedFiles: (string | null)[] = [];
 
 export const EndOfAFileOpensTheNextOneUnseeded: Story = {
   beforeEach({ msw }) {
     requestedFiles.length = 0;
-    msw.use(...twoFiles);
+    msw.use(
+      twoFiles(requestedFiles),
+      ...listenHandlers(BOOK, { writes, row: TEN_MINUTES_IN }),
+    );
   },
   play: async ({ canvas }) => {
-    await canvas.findByText("Now playing · Chapter 1 of 3");
+    const times = async () =>
+      within(await canvas.findByTestId("listen-scrub-times"));
+    await expect(await (await times()).findByText("10:00")).toBeInTheDocument();
 
     fireEvent.ended(audioOf(canvas));
 
-    await waitFor(() => expect(requestedFiles).toEqual([null, "918"]));
-    await canvas.findByText("Now playing · Chapter 1 of 3");
+    await waitFor(() => expect(requestedFiles).toEqual(["917", "918"]));
+    // The saved 10:00 belongs to file 917, so the next file starts from its top.
+    await expect(await (await times()).findByText("0:00")).toBeInTheDocument();
     await expect(audioOf(canvas).paused).toBe(true);
     await expect(positions()).toEqual([]);
     await expect(wrote("PUT /api/read-status")).toEqual([]);
@@ -437,5 +434,150 @@ export const EndOfTheLastFileFinishesTheBook: Story = {
         { book_uuid: UUID, status: "finished" },
       ]),
     );
+  },
+};
+
+export const AFileIdInTheLinkPicksTheFileTheManifestIsAskedFor: Story = {
+  parameters: { path: `/listen/${UUID}?file_id=918` },
+  beforeEach({ msw }) {
+    requestedFiles.length = 0;
+    msw.use(twoFiles(requestedFiles));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByText("Now playing · Chapter 1 of 3");
+
+    await expect(requestedFiles).toEqual(["918"]);
+  },
+};
+
+export const SigningOutReportsTheListeningBeforeTheLogout: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...listenHandlers(BOOK, { writes, row: TEN_MINUTES_IN }),
+      http.post("/api/auth/logout", () => {
+        writes.push({ request: "POST /api/auth/logout", body: null });
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByText("Now playing · Chapter 1 of 3");
+    const audio = audioOf(canvas);
+    const realNow = Date.now;
+    Date.now = () => 1_760_000_000_000;
+    try {
+      act(() => {
+        fireEvent.play(audio);
+      });
+      Date.now = () => 1_760_000_006_000;
+
+      await userEvent.click(
+        canvas.getByRole("button", { name: "Open user menu" }),
+      );
+      await userEvent.click(canvas.getByRole("button", { name: "Sign out" }));
+
+      const requests = () =>
+        writes
+          .map((w) => w.request)
+          .filter((r) => r !== "PUT /api/read-status");
+      await waitFor(() =>
+        expect(requests().at(-1)).toBe("POST /api/auth/logout"),
+      );
+      await expect(requests().slice(0, -1).sort()).toEqual([
+        "POST /api/progress",
+        "POST /api/progress/sessions",
+      ]);
+    } finally {
+      Date.now = realNow;
+    }
+  },
+};
+
+export const ADeadSavedFileFallsBackToTheDefaultFile: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      http.get("/api/audiobooks/:uuid/manifest", ({ request }) =>
+        new URL(request.url).searchParams.has("file_id")
+          ? new HttpResponse("gone", { status: 404 })
+          : HttpResponse.json(aWireAudioManifest()),
+      ),
+      ...listenHandlers(BOOK, {
+        writes,
+        row: aWirePosition({ ...TEN_MINUTES_IN, book_file_id: 999 }),
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const times = await canvas.findByTestId("listen-scrub-times");
+
+    await expect(await within(times).findByText("10:00")).toBeInTheDocument();
+    await expect(canvas.queryByRole("alert")).toBeNull();
+  },
+};
+
+export const ATranscodeThatFailedFailsThePlayer: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...listenHandlers(BOOK, {
+        writes,
+        manifest: aWireHlsManifest(),
+        state: "failed",
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "Playback failed.",
+    );
+  },
+};
+
+const SECOND_UUID = "0b9e5e0e-5f0a-4c36-9a3e-2f5d6c1d7a11";
+let releaseManifests = () => {};
+
+export const ASlowManifestNeverLandsOnTheBookThatReplacedIt: Story = {
+  render: () => (
+    <>
+      <Link to={`/listen/${SECOND_UUID}`}>Open the second book</Link>
+      <Routes>
+        <Route path="/listen/:uuid" element={<Listen />} />
+      </Routes>
+    </>
+  ),
+  beforeEach({ msw }) {
+    const held = new Promise<void>((resolve) => {
+      releaseManifests = resolve;
+    });
+    msw.use(
+      http.get("/api/audiobooks/:uuid/manifest", async ({ params }) => {
+        await held;
+        return HttpResponse.json(
+          aWireAudioManifest(params.uuid === UUID ? {} : { chapters: [] }),
+        );
+      }),
+      http.get("/api/ebooks/:uuid", ({ params }) =>
+        HttpResponse.json(
+          params.uuid === UUID
+            ? BOOK
+            : aWireBook({
+                unique_identifier: SECOND_UUID,
+                title: "Second Book",
+              }),
+        ),
+      ),
+      ...listenHandlers(BOOK, { writes }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByRole("link", {
+      name: "Open details for Aurora Station, Vol. 1",
+    });
+
+    fireEvent.click(canvas.getByRole("link", { name: "Open the second book" }));
+    await canvas.findByRole("link", { name: "Open details for Second Book" });
+    releaseManifests();
+
+    await expect(await canvas.findByText("Now playing")).toBeInTheDocument();
+    await expect(canvas.queryByText(/Chapter 1 of 3/)).toBeNull();
   },
 };

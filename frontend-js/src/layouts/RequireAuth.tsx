@@ -13,7 +13,7 @@ export function RequireAuth() {
   // A failed refresh of a known session isn't a reason to drop the app.
   if (me.data) {
     return (
-      <PlaybackProvider>
+      <PlaybackProvider key={me.data.id}>
         <Outlet />
       </PlaybackProvider>
     );

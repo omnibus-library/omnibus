@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { type ReactNode, useEffect } from "react";
 import { Link, Route, Routes } from "react-router";
-import { expect, fireEvent, waitFor, within } from "storybook/test";
+import { expect, fireEvent, spyOn, waitFor, within } from "storybook/test";
 import type { BookUuid } from "../../api";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import type { ListenWrite } from "../../testing/audioHandlers";
@@ -239,6 +239,11 @@ export const KeepsPlayingWhenTheListenerLeavesThePlayer: Story = {
     const audio = canvas.getByTestId("listen-audio") as HTMLAudioElement;
     await waitFor(() => expect(audio.getAttribute("src")).not.toBeNull());
     const src = audio.getAttribute("src");
+    // No media loads here, so the element is made to look like it is playing.
+    Object.defineProperty(audio, "paused", { value: false });
+    const pause = spyOn(audio, "pause");
+    fireEvent.play(audio);
+    await canvas.findByRole("button", { name: "Pause" });
 
     fireEvent.click(canvas.getByRole("link", { name: "Leave the player" }));
 
@@ -247,5 +252,9 @@ export const KeepsPlayingWhenTheListenerLeavesThePlayer: Story = {
       "Aurora Station, Vol. 1",
     );
     await expect(audio.getAttribute("src")).toBe(src);
+    await expect(
+      dock.getByRole("button", { name: "Pause" }),
+    ).toBeInTheDocument();
+    await expect(pause).not.toHaveBeenCalled();
   },
 };

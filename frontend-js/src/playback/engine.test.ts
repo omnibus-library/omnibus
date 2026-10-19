@@ -299,7 +299,9 @@ describe("teardown gates", () => {
     media.pause();
     expect(on.pause).not.toHaveBeenCalled();
 
-    window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+    window.dispatchEvent(
+      Object.assign(new Event("pageshow"), { persisted: true }),
+    );
 
     expect(on.pause).toHaveBeenCalledWith(10, true);
   });

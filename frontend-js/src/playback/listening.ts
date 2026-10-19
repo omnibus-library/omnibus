@@ -7,7 +7,7 @@ import {
 } from "../api";
 
 /** Sittings shorter than this are a bounce into and out of a book, not listening. */
-export const MIN_SESSION_SECS = 5;
+const MIN_SESSION_SECS = 5;
 
 function report(
   uuid: BookUuid,
@@ -63,16 +63,20 @@ export function autoTransition(
   return current === "unread" ? "reading" : null;
 }
 
-/** Moves the book's read status once: `reading` on first play, `finished` at the end. Best-effort; a failed fetch decides nothing. */
+/** Moves the book's read status once: `reading` on first play, `finished` at the end. Best-effort; a failed fetch decides nothing. Resolves whether it wrote. */
 export async function applyAutoReadStatus(
   uuid: BookUuid,
   atEnd: boolean,
-): Promise<void> {
+): Promise<boolean> {
   const stored = await fetchReadStatus(uuid).then(
     (record) => record?.status ?? "unread",
     () => null,
   );
-  if (stored === null) return;
+  if (stored === null) return false;
   const next = autoTransition(stored, atEnd);
-  if (next) await saveReadStatus(uuid, next).catch(() => {});
+  if (next === null) return false;
+  return saveReadStatus(uuid, next).then(
+    () => true,
+    () => false,
+  );
 }

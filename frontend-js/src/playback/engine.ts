@@ -297,6 +297,8 @@ export function createEngine(media: Media, on: EngineEvents) {
       return true;
     },
 
+    /** Where the playhead stands, and whether the listener has acted since the boot. */
+    where: () => ({ seconds: abs(), userActed }),
     pause: () => media.pause(),
     toggle() {
       if (mode === null) return;

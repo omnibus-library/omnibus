@@ -7,7 +7,6 @@ import {
   loadLocalRate,
   loadVolume,
   needsReload,
-  resolveBootFile,
   resolveBootPosition,
   resolveFollowBoot,
   resolveRate,
@@ -23,14 +22,6 @@ const candidate = (
   follow: true,
   candidate: { fileId: 917, seconds: 21_822 },
   ...overrides,
-});
-
-describe("resolveBootFile", () => {
-  it("prefers the explicit pick, then the saved row's file, else none", () => {
-    expect(resolveBootFile(917, 919)).toBe(917);
-    expect(resolveBootFile(null, 919)).toBe(919);
-    expect(resolveBootFile(null, null)).toBeNull();
-  });
 });
 
 describe("resolveBootPosition", () => {

@@ -50,8 +50,8 @@ export type AudioManifest =
 /** The screen's shape of `GET /api/audiobooks/{uuid}/manifest`. */
 export function toAudioManifest(wire: AudiobookManifestOutput): AudioManifest {
   // 0 means a server that predates the identity fields.
-  const fileId =
-    (wire.book_file_id ?? 0) > 0 ? (wire.book_file_id ?? null) : null;
+  const id = wire.book_file_id ?? 0;
+  const fileId = id > 0 ? id : null;
   const fileCount = wire.audio_file_count ?? 0;
   if (wire.mode === "hls") {
     return { mode: "hls", fileId, fileCount, playlistUrl: wire.playlist_url };
@@ -118,25 +118,24 @@ export async function savePlaybackRate(
   });
 }
 
-/** The reader's saved listening position: the file it was taken in and the seconds into it. */
+/** A listening position: the file it was taken in and the seconds into it. */
+export type ListeningRow = { fileId: number | null; seconds: number | null };
+
+/** The reader's saved listening position, or `null` when none; throws, so a failure isn't read as none. */
 export async function fetchListeningRow(
   uuid: BookUuid,
-): Promise<{ fileId: number | null; seconds: number | null } | null> {
-  try {
-    const progress = await fetchJson(
-      getGetProgressUrl(encodeURIComponent(uuid), { format: "audio" }),
-      BookProgressSchema.nullable(),
-    );
-    const row = progress?.records.find((r) => r.format === "audio");
-    return row
-      ? {
-          fileId: row.book_file_id ?? null,
-          seconds: row.audio_position_seconds ?? null,
-        }
-      : null;
-  } catch {
-    return null;
-  }
+): Promise<ListeningRow | null> {
+  const progress = await fetchJson(
+    getGetProgressUrl(encodeURIComponent(uuid), { format: "audio" }),
+    BookProgressSchema.nullable(),
+  );
+  const row = progress?.records.find((r) => r.format === "audio");
+  return row
+    ? {
+        fileId: row.book_file_id ?? null,
+        seconds: row.audio_position_seconds ?? null,
+      }
+    : null;
 }
 
 /** Saves the listening position; a failed save is dropped, the next heartbeat writes it again. */
@@ -159,7 +158,7 @@ export async function saveListeningPosition(
 export type ListeningResume = {
   state: CrossFormatResumeState;
   follow: boolean;
-  candidate: { fileId: number | null; seconds: number | null } | null;
+  candidate: ListeningRow | null;
 };
 
 /** The cross-format resume for the audio side, or `null` on any failure. */

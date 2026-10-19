@@ -643,6 +643,8 @@ export const SyncHereIsOffWhenOffline: Story = {
     } finally {
       // Drops the stub so the prototype's getter shows again.
       delete (navigator as { onLine?: boolean }).onLine;
+      // Query's online manager would hold every later story's fetches otherwise.
+      fireEvent(window, new Event("online"));
     }
   },
 };

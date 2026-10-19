@@ -12,11 +12,35 @@ import { bookHandler, coverHandlers } from "./handlers";
 import {
   aWireAudioBookmark,
   aWireAudioManifest,
+  aWirePosition,
   aWireProgress,
   aWireReadStatus,
 } from "./wire";
 
 // MSW fakes for the audiobook player: a book the listen routes all answer for.
+
+/** Ten minutes into the first of three hour-long chapters. */
+export const TEN_MINUTES_IN = aWirePosition({
+  format: "audio",
+  progress_percent: null,
+  audio_position_seconds: 600,
+  book_file_id: 917,
+});
+
+/** A two-file book: the first names the second as next, the second is the last. Records each manifest's `file_id`. */
+export function twoFiles(requested: (string | null)[]) {
+  return http.get("/api/audiobooks/:uuid/manifest", ({ request }) => {
+    const file = new URL(request.url).searchParams.get("file_id");
+    requested.push(file);
+    return HttpResponse.json(
+      aWireAudioManifest({
+        book_file_id: file === "918" ? 918 : 917,
+        audio_file_count: 2,
+        next_file_id: file === "918" ? null : 918,
+      }),
+    );
+  });
+}
 
 /** One write the player sent: `"POST /api/progress"` and the JSON body it carried. */
 export type ListenWrite = { request: string; body: unknown };
