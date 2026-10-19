@@ -24,3 +24,7 @@ export function viewing(
 /** The hero's heading: none on the caller's own page, so its first-person copy stands. */
 export const heading = (who: Viewing) =>
   who.kind === "you" ? null : `${who.name}'s stats`;
+
+/** Whether the picker has anything to offer: at least one reader besides the caller shares. */
+export const showsPicker = (readers: readonly HouseholdReader[]) =>
+  readers.some((r) => !r.is_you);

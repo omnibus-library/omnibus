@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { userId } from "../../testing/books";
 import { aWireReader } from "../../testing/statsHandlers";
-import { heading, viewing } from "./picker";
+import { heading, showsPicker, viewing } from "./picker";
 
 const YOU = aWireReader({ id: 1, name: "You", is_you: true });
 const ALICE = aWireReader({ id: 2, name: "Alice", is_you: false });
@@ -32,5 +32,13 @@ describe("heading", () => {
   it("is none for you and the possessive for another reader", () => {
     expect(heading({ kind: "you" })).toBeNull();
     expect(heading({ kind: "reader", name: "Alice" })).toBe("Alice's stats");
+  });
+});
+
+describe("showsPicker", () => {
+  it("is false for only the caller or an empty list, true once another reader shares", () => {
+    expect(showsPicker([])).toBe(false);
+    expect(showsPicker([YOU])).toBe(false);
+    expect(showsPicker([YOU, ALICE])).toBe(true);
   });
 });

@@ -2,8 +2,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
 import { storyClient } from "../../testing/AppHarness";
 import { deferred, hanging } from "../../testing/handlers";
-import { aWireStatsSummary } from "../../testing/statsHandlers";
-import { api, calls, Page } from "./Stats.stories.shared";
+import { aWireReader, aWireStatsSummary } from "../../testing/statsHandlers";
+import { WIRE_ADA } from "../../testing/wire";
+import { api, calls, Page, READERS } from "./Stats.stories.shared";
 
 const QUIET = aWireStatsSummary({
   reading_seconds: 0,
@@ -400,5 +401,241 @@ export const StandingBandAndFootnote: Story = {
     await expect(canvas.getByTestId("stats-freshness-note")).toHaveTextContent(
       "Stats are accurate to the last ~60 seconds.",
     );
+  },
+};
+
+const BOB = aWireReader({ id: 3, name: "Bob", is_you: false });
+
+export const PickerIsAbsentWhenNoOneElseShares: Story = {
+  beforeEach({ msw }) {
+    msw.use(...api({ readers: [aWireReader()] }));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("stats-hero");
+    await expect(canvas.queryByTestId("stats-reader-picker")).toBeNull();
+  },
+};
+
+export const PickerIsAbsentWhenTheListFails: Story = {
+  beforeEach({ msw }) {
+    msw.use(...api({ readers: 500 }));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("stats-hero");
+    await expect(canvas.queryByTestId("stats-reader-picker")).toBeNull();
+  },
+};
+
+export const PickerListsYouFirstThenEachSharingReader: Story = {
+  beforeEach({ msw }) {
+    msw.use(...api({ readers: [...READERS, BOB] }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const trigger = await canvas.findByRole("button", {
+      name: "Stats for You",
+    });
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(trigger).toHaveTextContent("▾");
+    // The options are in the DOM while the menu is closed, only `hidden`.
+    const menu = canvas.getByTestId("stats-reader-menu");
+    await expect(menu).toHaveAttribute("hidden");
+    await expect(
+      [...menu.querySelectorAll(".st-reader-option-name")].map(
+        (name) => name.textContent,
+      ),
+    ).toEqual(["You", "Grace", "Bob"]);
+    await expect(canvas.getByTestId("stats-reader-option-you")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(canvas.getByTestId("stats-reader-option-2")).toHaveAttribute(
+      "aria-current",
+      "false",
+    );
+
+    await userEvent.click(trigger);
+
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await expect(menu).not.toHaveAttribute("hidden");
+  },
+};
+
+export const PickerClosesOnEscape: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const trigger = await canvas.findByRole("button", {
+      name: "Stats for You",
+    });
+    await userEvent.click(trigger);
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    await userEvent.keyboard("{Escape}");
+
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  },
+};
+
+export const PickerClosesOnTheScrim: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const trigger = await canvas.findByRole("button", {
+      name: "Stats for You",
+    });
+    await userEvent.click(trigger);
+
+    await userEvent.click(canvas.getByTestId("stats-reader-scrim"));
+
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(canvas.queryByTestId("stats-reader-scrim")).toBeNull();
+  },
+};
+
+export const PickerTriggerNamesTheShownReader: Story = {
+  parameters: { path: "/stats?user=2" },
+  beforeEach({ msw }) {
+    msw.use(
+      ...api({
+        readers: [
+          aWireReader(),
+          aWireReader({
+            id: 2,
+            name: "Grace",
+            is_you: false,
+            has_avatar: true,
+          }),
+        ],
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const trigger = await canvas.findByRole("button", {
+      name: "Stats for Grace",
+    });
+    await expect(trigger.querySelector("img")).toHaveAttribute(
+      "src",
+      "/api/users/2/avatar",
+    );
+    await expect(canvas.getByTestId("stats-reader-option-2")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  },
+};
+
+export const PickerNamesNoOneForAnUnlistedReader: Story = {
+  parameters: { path: "/stats?user=99" },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText("Another reader's stats"),
+    ).toBeInTheDocument();
+    const trigger = canvas.getByRole("button", {
+      name: "Stats for Another reader",
+    });
+    await expect(trigger.querySelector(".st-reader-avatar")).toBeNull();
+  },
+};
+
+export const ChoosingAReaderSwitchesWhoseFiguresAreShown: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByTestId("stats-hero");
+    await userEvent.click(canvas.getByRole("button", { name: "Year" }));
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Stats for You" }),
+    );
+    await userEvent.click(canvas.getByTestId("stats-reader-option-2"));
+
+    await expect(await canvas.findByText("Grace's stats")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        calls.stats
+          .filter((p) => p.get("user_id") === "2")
+          .map((p) => p.get("range"))
+          .sort(),
+      ).toEqual(["all_time", "year"]),
+    );
+    // The period belongs to the page, so a reader switch keeps it.
+    await expect(canvas.getByRole("button", { name: "Year" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Stats for Grace" }),
+    );
+    await userEvent.click(canvas.getByTestId("stats-reader-option-you"));
+
+    await waitFor(() =>
+      expect(canvas.queryByTestId("stats-hero-who")).toBeNull(),
+    );
+    await expect(
+      await canvas.findByRole("heading", { level: 1, name: "12 days." }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const ReaderWhoStoppedSharingIsAbsentFromTheMenu: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByRole("button", { name: "Stats for You" });
+    await expect(canvas.queryAllByTestId("stats-reader-option-3")).toHaveLength(
+      0,
+    );
+  },
+};
+
+export const SharingSwitchStartsFromTheSession: Story = {
+  parameters: { user: { ...WIRE_ADA, share_stats: true } },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("switch", { name: "Visible to your household" }),
+    ).toBeChecked();
+  },
+};
+
+export const SharingSwitchSavesStraightAway: Story = {
+  beforeEach({ msw }) {
+    held = deferred();
+    msw.use(...api({ holdShare: held.promise }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const toggle = await canvas.findByRole("switch", {
+      name: "Visible to your household",
+    });
+    await expect(toggle).not.toBeChecked();
+
+    await userEvent.click(toggle);
+
+    await waitFor(() => expect(calls.shares).toEqual([{ enabled: true }]));
+    await expect(toggle).toBeDisabled();
+    await expect(toggle).toBeChecked();
+    held.release();
+    await waitFor(() => expect(toggle).toBeEnabled());
+    await expect(toggle).toBeChecked();
+    await expect(canvas.queryByRole("alert")).toBeNull();
+  },
+};
+
+export const SharingSwitchGoesBackWhenTheSaveIsRefused: Story = {
+  beforeEach({ msw }) {
+    msw.use(...api({ refuseShare: true }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const toggle = await canvas.findByRole("switch", {
+      name: "Visible to your household",
+    });
+
+    await userEvent.click(toggle);
+
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "Couldn't change who can see your stats. Try again.",
+    );
+    await waitFor(() => expect(toggle).not.toBeChecked());
+    await expect(calls.shares).toEqual([{ enabled: true }]);
+  },
+};
+
+export const NoSharingSwitchOnAnotherReadersPage: Story = {
+  parameters: { path: "/stats?user=2" },
+  play: async ({ canvas }) => {
+    await canvas.findByText("Grace's stats");
+    await expect(canvas.queryByRole("switch")).toBeNull();
   },
 };

@@ -1,4 +1,5 @@
 import { HttpResponse, http } from "msw";
+import { getGetMeMockHandler200 } from "../api/generated/omnibus.msw";
 import {
   type ChartResult,
   ChartSpec,
@@ -10,6 +11,7 @@ import {
   StatsRange,
   type StatsSummary,
 } from "../api/generated/schemas";
+import { WIRE_ADA } from "./wire";
 
 // MSW fakes and fixtures for the stats page and the chart builder, in the shape
 // the server sends them: snake_case JSON, typed by the generated schemas.
@@ -256,8 +258,9 @@ const answer = (value: object | number) =>
 /**
  * Every route the stats page and the chart builder read. `stats` and `chart` choose the
  * answer per request (`stats` may hold one back); any answer may be a status number instead,
- * to fail that route.
- * Each request lands in `calls`; `refuseShare` makes the sharing switch's save answer 400.
+ * to fail that route. Each request lands in `calls`.
+ * The session reports what the sharing switch saved (off to start), `refuseShare` makes
+ * the save answer 400, and `holdShare` holds it until it resolves.
  */
 export function statsHandlers({
   stats = ({ range }) => aWireStatsSummary({ range }),
@@ -267,6 +270,7 @@ export function statsHandlers({
   composition = aWireLibraryComposition(),
   chart = () => aWireChartResult(),
   refuseShare = false,
+  holdShare = Promise.resolve(),
   calls = noStatsCalls(),
 }: {
   stats?: (query: {
@@ -279,8 +283,10 @@ export function statsHandlers({
   composition?: LibraryComposition | number;
   chart?: (spec: ChartSpec) => ChartResult | number;
   refuseShare?: boolean;
+  holdShare?: Promise<void>;
   calls?: StatsCalls;
 } = {}) {
+  let shared = false;
   const seen = (route: StatsRoute, request: Request) => {
     const params = new URL(request.url).searchParams;
     calls[route].push(params);
@@ -313,12 +319,16 @@ export function statsHandlers({
       seen("composition", request);
       return answer(composition);
     }),
+    getGetMeMockHandler200(() => ({ ...WIRE_ADA, share_stats: shared })),
     http.post("/api/account/share-stats", async ({ request }) => {
       seen("share", request);
-      calls.shares.push(SetShareStats.parse(await request.json()));
-      return refuseShare
-        ? new HttpResponse("failed with 400", { status: 400 })
-        : new HttpResponse(null);
+      const body = SetShareStats.parse(await request.json());
+      calls.shares.push(body);
+      await holdShare;
+      if (refuseShare)
+        return new HttpResponse("failed with 400", { status: 400 });
+      shared = body.enabled;
+      return new HttpResponse(null);
     }),
     http.post("/api/stats/chart", async ({ request }) => {
       seen("chart", request);

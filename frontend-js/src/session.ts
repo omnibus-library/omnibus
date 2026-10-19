@@ -10,6 +10,7 @@ import {
   fetchMe,
   fetchRegistrationOpen,
   logout,
+  setShareStats,
   setStackSeries,
   type User,
 } from "./api";
@@ -51,18 +52,21 @@ export function useSignOut() {
   });
 }
 
-/** Saves the Stack series preference straight away; a refusal puts the switch back. */
-export function useStackSeries() {
+/** Saves an account switch straight away, patching the session optimistically; a refusal puts it back. */
+function useAccountSwitch(
+  save: (enabled: boolean) => Promise<void>,
+  patch: (user: User, enabled: boolean) => User,
+) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: setStackSeries,
+    mutationFn: save,
     onMutate: async (enabled) => {
       // A refetch already in flight would land over the optimistic value.
       await queryClient.cancelQueries({ queryKey: meQuery.queryKey });
       const previous = queryClient.getQueryData(meQuery.queryKey);
       queryClient.setQueryData(
         meQuery.queryKey,
-        (user) => user && { ...user, stackSeries: enabled },
+        (user) => user && patch(user, enabled),
       );
       return { previous };
     },
@@ -72,3 +76,17 @@ export function useStackSeries() {
       queryClient.invalidateQueries({ queryKey: meQuery.queryKey }),
   });
 }
+
+/** Saves the Stack series preference. */
+export const useStackSeries = () =>
+  useAccountSwitch(setStackSeries, (user, stackSeries) => ({
+    ...user,
+    stackSeries,
+  }));
+
+/** Saves whether other readers can see the reader's stats. */
+export const useShareStats = () =>
+  useAccountSwitch(setShareStats, (user, shareStats) => ({
+    ...user,
+    shareStats,
+  }));

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { StatsSummary } from "../../api";
 import { plural } from "../../format";
 import { dayNumber } from "./calendar";
@@ -15,13 +16,15 @@ function kicker(current: number, yours: boolean) {
   return yours ? "You are on a run" : "On a run";
 }
 
-/** The standing hero: the run the reader is on over a six-week spark; `who` names another reader's page. */
+/** The standing hero: the run the reader is on over a six-week spark; `who` names another reader's page. `children` is its first row. */
 export function Hero({
   summary,
   who,
+  children,
 }: {
   summary: StatsSummary;
   who: string | null;
+  children: ReactNode;
 }) {
   const yours = who === null;
   const current = summary.current_streak_days;
@@ -33,6 +36,7 @@ export function Hero({
     goal !== null || daily.pages !== null || daily.minutes !== null;
   return (
     <header className="st-hero" data-testid="stats-hero">
+      {children}
       <div className="st-hero-inner">
         <div className="st-hero-run">
           {who !== null && (

@@ -285,7 +285,13 @@ describe("toUser", () => {
       hasAvatar: true,
       hiddenFormats: [],
       stackSeries: false,
+      shareStats: false,
     });
+  });
+
+  it("carries the sharing preference the server sends", () => {
+    expect(toUser({ ...WIRE_ADA, share_stats: true }).shareStats).toBe(true);
+    expect(toUser({ ...WIRE_ADA, share_stats: false }).shareStats).toBe(false);
   });
 
   it("carries the library preferences the server sends", () => {

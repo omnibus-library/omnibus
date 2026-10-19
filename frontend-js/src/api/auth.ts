@@ -6,6 +6,7 @@ import {
   getRegistration,
   login as postLogin,
   register as postRegister,
+  postShareStats,
   postStackSeries,
 } from "./generated/omnibus";
 import type { UserSummary } from "./generated/schemas";
@@ -22,6 +23,7 @@ export function toUser(user: UserSummary) {
     hasAvatar: user.has_avatar ?? false,
     hiddenFormats: user.hidden_formats ?? [],
     stackSeries: user.stack_series ?? false,
+    shareStats: user.share_stats ?? false,
   };
 }
 
@@ -61,4 +63,9 @@ export async function logout(): Promise<void> {
 /** Saves the reader's Stack series preference. */
 export async function setStackSeries(enabled: boolean): Promise<void> {
   ok(await postStackSeries({ enabled }));
+}
+
+/** Saves whether other readers on this server can see the reader's stats. */
+export async function setShareStats(enabled: boolean): Promise<void> {
+  ok(await postShareStats({ enabled }));
 }
