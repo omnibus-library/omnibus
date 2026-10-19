@@ -66,7 +66,11 @@ export function withFieldClause(
 export const withoutField = (clauses: FilterClause[], field: FilterField) =>
   clauses.filter((c) => c.field !== field);
 
-const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+/** `s` with A-Z lowercased and nothing else: the fold the filter engine compares names by. */
+const asciiLower = (s: string) => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
+
+export const sameName = (a: string, b: string) =>
+  asciiLower(a) === asciiLower(b);
 
 /** `value` ticked or unticked in `picked`, ignoring ASCII case; a new pick past the cap is refused. */
 export function togglePick(picked: string[], value: string): string[] {
@@ -137,13 +141,13 @@ export function namedOptions(
   for (const row of rows) {
     const name = row.name.trim();
     if (!name || [...name].length > MAX_VALUE_LENGTH) continue;
-    const seen = at.get(name.toLowerCase());
+    const seen = at.get(asciiLower(name));
     if (seen) {
       seen.count = (seen.count ?? 0) + row.count;
       continue;
     }
     const option = { value: name, label: name, count: row.count };
-    at.set(name.toLowerCase(), option);
+    at.set(asciiLower(name), option);
     options.push(option);
   }
   return options;

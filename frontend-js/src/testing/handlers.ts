@@ -25,6 +25,7 @@ import {
   type ShelfSummary,
   type TagWeight,
 } from "../api/generated/schemas";
+import { sameName } from "../components/FilterBar/filters";
 import { COVER_SVG } from "./books";
 import { WIRE_ADA } from "./wire";
 
@@ -49,8 +50,6 @@ export function sessionHandler(user: typeof WIRE_ADA | null = WIRE_ADA) {
 
 /** The library path the fixture server reports on page 1. */
 export const LIBRARY_PATH = "/library";
-
-const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 // What a book carries under a filter field; shelf membership isn't on the book.
 function carried(book: EbookMetadata, field: FilterField): string[] {
