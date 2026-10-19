@@ -1607,6 +1607,34 @@
             "description": "No author has that id."
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "Delete an author",
+        "description": "Removes the author and un-links them from their books; the books stay. Later library\nscans ignore the name, so the author isn't added back. Succeeds for an unknown id.\nNeeds an admin account.",
+        "operationId": "delete_author",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The author's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The author is gone."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
       }
     },
     "/api/authors/{id}/photo": {
