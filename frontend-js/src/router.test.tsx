@@ -1,18 +1,29 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { setupServer } from "msw/node";
 import {
   createBrowserRouter,
   createMemoryRouter,
   type RouteObject,
   RouterProvider,
 } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type { User } from "./api";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import { toUser, type User } from "./api";
 import { AtriumRoot } from "./components/Theme/AtriumRoot";
 import { routes } from "./router";
 import { meQuery } from "./session";
 import { ADA, harnessClient } from "./testing/AppHarness";
+import { listenHandlers } from "./testing/audioHandlers";
+import { aWireBook, WIRE_ADA } from "./testing/wire";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 
@@ -20,14 +31,15 @@ function renderRouter(
   router: ReturnType<typeof createBrowserRouter>,
   user: User | null,
 ) {
+  const client = harnessClient(user);
   render(
-    <QueryClientProvider client={harnessClient(user)}>
+    <QueryClientProvider client={client}>
       <AtriumRoot>
         <RouterProvider router={router} />
       </AtriumRoot>
     </QueryClientProvider>,
   );
-  return router;
+  return { router, client };
 }
 
 function renderRoute(
@@ -91,7 +103,6 @@ describe("routes", () => {
 
   describe("unported pages", () => {
     it.each([
-      [`/listen/${UUID}?file_id=2`, "Listen", "2"],
       ["/stats?user=2", "Stats", "2"],
       ["/stats/chart", "Chart builder", null],
       ["/settings/cleanup/duplicates", "Cleanup review", "duplicates"],
@@ -151,6 +162,16 @@ describe("routes", () => {
       ).toHaveAttribute("href", `/books/${UUID}`);
     });
 
+    it("renders the player page at /listen/:uuid", async () => {
+      renderRoute(`/listen/${UUID}?file_id=2`);
+
+      // jsdom has no server to fetch from, so the player settles on its error page.
+      expect(
+        await screen.findByRole("link", { name: "Back to library" }),
+      ).toHaveAttribute("href", "/");
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+
     it("renders the upload page at /add-books", async () => {
       renderRoute("/add-books");
 
@@ -189,7 +210,7 @@ describe("routes", () => {
     let router: ReturnType<typeof createBrowserRouter> | undefined;
     const openBrowserRouter = (path: string) => {
       window.history.replaceState(null, "", path);
-      router = renderRouter(createBrowserRouter(routes), ADA);
+      router = renderRouter(createBrowserRouter(routes), ADA).router;
       return router;
     };
     afterEach(() => {
@@ -232,6 +253,95 @@ describe("routes", () => {
         await screen.findByRole("navigation", { name: "Primary" }),
       ).toBeInTheDocument();
     });
+
+    it("gives a reader the whole screen", async () => {
+      renderRoute(`/read/${UUID}`);
+
+      await screen.findByTestId("reader-top");
+      expect(
+        screen.queryByRole("navigation", { name: "Primary" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("leaves an empty dock host after a page", async () => {
+      renderRoute("/");
+      await screen.findByRole("heading", { level: 1, name: "Your Library" });
+
+      expect(
+        document.querySelector(".app-shell > main + .mini-dock-host"),
+      ).toBeEmptyDOMElement();
+    });
+
+    it("docks the audiobook beneath a reader, giving the stage room only while it shows", async () => {
+      renderRoute(`/read/${UUID}`);
+      await screen.findByTestId("reader-top");
+
+      const host = document.querySelector(".rd-host.rd-dock-full");
+      expect(host).not.toHaveClass("rd-immersive");
+      expect(
+        host?.querySelector(":scope > .mini-dock-host"),
+      ).toBeEmptyDOMElement();
+    });
+
+    describe("with an audiobook loaded", () => {
+      const server = setupServer(
+        ...listenHandlers(aWireBook({ formats: ["M4B"] })),
+      );
+      beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
+      afterAll(() => server.close());
+
+      it("gives a reader's stage room above the dock", async () => {
+        const { router } = renderRoute(`/listen/${UUID}`);
+        await screen.findByText("Now playing · Chapter 1 of 3");
+
+        act(() => {
+          void router.navigate(`/read/${UUID}`);
+        });
+
+        await screen.findByRole("region", { name: "Now playing" });
+        expect(document.querySelector(".rd-host.rd-dock-full")).toHaveClass(
+          "rd-immersive",
+        );
+      });
+    });
+
+    it("keeps the dock off the player", async () => {
+      renderRoute(`/listen/${UUID}`);
+      await screen.findByRole("link", { name: "Back to library" });
+
+      expect(document.querySelector(".mini-dock-host")).toBeNull();
+    });
+  });
+
+  describe("audio", () => {
+    it("stops the element when the session ends", async () => {
+      const pause = vi.spyOn(HTMLMediaElement.prototype, "pause");
+      const { client } = renderRoute("/");
+      await screen.findByRole("heading", { level: 1, name: "Your Library" });
+      pause.mockClear();
+
+      act(() => client.setQueryData(meQuery.queryKey, null));
+
+      await waitFor(() => expect(pause).toHaveBeenCalled());
+      vi.restoreAllMocks();
+    });
+
+    it("starts a fresh player when another user takes the session", async () => {
+      const pause = vi.spyOn(HTMLMediaElement.prototype, "pause");
+      const { client } = renderRoute("/");
+      await screen.findByRole("heading", { level: 1, name: "Your Library" });
+      pause.mockClear();
+
+      act(() =>
+        client.setQueryData(
+          meQuery.queryKey,
+          toUser({ ...WIRE_ADA, id: WIRE_ADA.id + 1 }),
+        ),
+      );
+
+      await waitFor(() => expect(pause).toHaveBeenCalled());
+      vi.restoreAllMocks();
+    });
   });
 
   describe("search palette", () => {
@@ -258,7 +368,7 @@ describe("routes", () => {
     });
 
     it("sends a guest to sign in with the page they asked for", async () => {
-      const router = renderRoute("/shelves/9", null);
+      const { router } = renderRoute("/shelves/9", null);
 
       await waitFor(() =>
         expect(router.state.location.pathname).toBe("/login"),
@@ -306,7 +416,7 @@ describe("routes", () => {
   });
 
   it("redirects /logs to the administration logs section", async () => {
-    const router = renderRoute("/logs");
+    const { router } = renderRoute("/logs");
 
     await waitFor(() =>
       expect(router.state.location.search).toBe("?section=logs"),
@@ -315,7 +425,7 @@ describe("routes", () => {
   });
 
   it("redirects /account to settings", async () => {
-    const router = renderRoute("/account");
+    const { router } = renderRoute("/account");
 
     await waitFor(() =>
       expect(router.state.location.pathname).toBe("/settings"),
@@ -327,7 +437,7 @@ describe("routes", () => {
   });
 
   it("sends an old settings section to its new one", async () => {
-    const router = renderRoute("/settings?section=kobo");
+    const { router } = renderRoute("/settings?section=kobo");
 
     await waitFor(() =>
       expect(router.state.location.search).toBe("?section=devices"),
@@ -336,13 +446,13 @@ describe("routes", () => {
   });
 
   it("redirects /connect to the library", async () => {
-    const router = renderRoute("/connect");
+    const { router } = renderRoute("/connect");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });
 
   it("redirects a bare /search to the library", async () => {
-    const router = renderRoute("/search");
+    const { router } = renderRoute("/search");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });

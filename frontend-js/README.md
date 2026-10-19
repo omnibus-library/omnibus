@@ -13,10 +13,12 @@ The screens it has ported are listed under [Routes](#routes).
 |---|---|
 | `src/styles/` | `theme.css` (tokens, the four themes, the `.atrium` root) and `base.css` |
 | `src/components/<Name>/` | shared building blocks: `<Name>.tsx` beside its `.css` and `.stories.tsx` |
-| `src/layouts/` | `RequireAuth` (the session gate) and `AppShell` (top bar + page) |
+| `src/layouts/` | `RequireAuth` (the session gate), `AppShell` (top bar + page + dock) and `ReaderDock` (the readers' frame, with the dock beneath) |
+| `src/playback/` | the audiobook player behind `/listen` and the dock: `PlaybackProvider` (the one `<audio>`, mounted in `RequireAuth` so playback survives navigation), `engine` (a port of the Dioxus `OmnibusAudio`), `boot` (resume rules and the position saver), `sleep` and `loadHls`; sessions and read status go through the readers' `readingSession` and `autoReadStatus` |
 | `src/pages/<Name>/` | one folder per route, its CSS beside it |
 | `src/api.ts` | a barrel over `src/api/*.ts`, one file per resource: every REST call the screens make, mapping wire shapes to the ones they render, and the form schemas; an api module re-exports a wire type verbatim when the screen uses it unchanged, so pages never import `api/generated/schemas` |
 | `src/api/generated/` | zod schemas, fetchers, TanStack Query hooks and MSW handlers that orval generates from `../openapi/openapi.json`; gitignored, rebuilt by `pnpm run generate` (`pnpm install` runs it too) |
+| `src/vendor/hls/` | hls.js, a byte copy of `frontend/assets/vendor/hls.min.js`, loaded by `<script>` from a Vite `?url` import when a transcoded book plays, so it stays out of the main bundle |
 | `src/vendor/barcode/` | the camera scanner's zxing decoder, its wasm and the glue: byte copies of `frontend/assets/vendor/`, loaded by `<script>` from Vite `?url` imports (the zxing IIFE declares a global that bundling would scope away) |
 | `src/vendor/reader/` | the EPUB and PDF reader runtimes (epub.js, PDF.js and the two glue files): byte copies of `frontend/assets/vendor/`, loaded from Vite `?url` imports; `parity.test.ts` fails when a copy drifts |
 | `public/` | `vendor/pdfjs-wasm/` and `reader-fonts/`, copied verbatim and kept by name because PDF.js and `reader-fonts.css` build URLs onto their directories |
@@ -36,7 +38,9 @@ Register, the library, book detail, the metadata editor (`/books/:uuid/edit`),
 add books (`/add-books`), check-in (`/check-in`), search results
 (`/search/:query`), the authors, series and shelves indexes with their detail
 pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), the three readers
-(`/read`, `/comic`, `/pdf`), personal settings (`/settings`) and Not Found are ported, and the top bar carries
+(`/read`, `/comic`, `/pdf`), the audiobook player (`/listen/:uuid`, `?file_id`
+picks one of a book's files), personal settings (`/settings`) and Not Found are
+ported, and the top bar carries
 the user menu and the ⌘K search palette. The phone layouts (the bottom tab bar
 and the native shell's shelves screens) are left out. As on Dioxus web, a bare
 `/search` and the native shell's `/connect`
@@ -49,9 +53,13 @@ parsed parameters and names its Dioxus source.
 Book detail carries all six stops (home, stats, highlights, journals, files,
 more) with the rating, quote cards, journal editor, copies and wishlist, shelf
 picker, Send to Kindle, merge and delete. It leaves the alignment modal, the
-snapped scroll mode, the genre and tag chip editor, the playback dock and the
+snapped scroll mode, the genre and tag chip editor, the Immersive Read button and the
 check-in overlay (the top bar links to the `/check-in` page instead) to the
 screens that own them.
+The mini dock sits after the page in the shell and beneath `/read`, `/comic` and
+`/pdf` (the `ReaderDock` layout route), never on `/listen`; the `<audio>` lives
+above the routes, so playback continues as the reader moves between pages. The
+mobile shell's native player is left out.
 The metadata editor saves overrides, replaces the cover, and copies a provider
 edition's fields and cover into the form; add books inspects an EPUB, PDF or
 audiobook with upload progress, reviews it on the same form, and files it. A
@@ -180,8 +188,9 @@ shell provides it.
   `authorPane`, `seriesIndex`, `shelvesIndex`, the shelf rules' `rules`, the
   picker's `picker`, the shelf page's `shelfAccess` and `narrow`, and the
   readers' `pager`, `pdfAnchors`, `start`, `relocate`, `typography`,
-  `epubGlue`, `pdfGlue`, `readingSession` and `autoReadStatus`, plus the
-  vendored files' parity test), plus the
+  `epubGlue`, `pdfGlue`, `readingSession` and `autoReadStatus`, the player's
+  `PlaybackProvider`, `engine`, `boot`, `sleep`, `loadHls` and
+  `listen`, plus the vendored files' parity test), plus the
   real route table in `src/router.test.tsx`: every unported page, the settings redirects, the layout
   split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI

@@ -471,14 +471,15 @@ export const OwnerEditsAnEntry: Story = {
     await userEvent.click(within(card).getByTestId("journal-edit-save"));
 
     await waitFor(() => expect(writes).toEqual([{ id: 1 }]));
+    // The open editor holds "Rewritten" too, so the card is read once it has closed.
     await waitFor(() =>
-      expect(canvas.getByTestId("journal-entry")).toHaveTextContent(
-        "Rewritten",
-      ),
+      expect(
+        canvas.queryByRole("textbox", { name: "Edit journal entry" }),
+      ).not.toBeInTheDocument(),
     );
-    await expect(
-      canvas.queryByRole("textbox", { name: "Edit journal entry" }),
-    ).not.toBeInTheDocument();
+    await expect(canvas.getByTestId("journal-entry")).toHaveTextContent(
+      "Rewritten",
+    );
   },
 };
 

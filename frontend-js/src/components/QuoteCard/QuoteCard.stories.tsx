@@ -13,6 +13,11 @@ const meta = {
     accent: "#3a3027",
     onClose: fn(),
   },
+  beforeEach() {
+    // The canvas waits on a Google Fonts fetch, and a cold one outlasts the stories' waits.
+    const load = spyOn(document.fonts, "load").mockResolvedValue([]);
+    return () => load.mockRestore();
+  },
 } satisfies Meta<typeof QuoteCard>;
 
 export default meta;

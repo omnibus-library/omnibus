@@ -182,10 +182,11 @@ export const SendOutcomeSurvivesClosingTheMenu: Story = {
 export const EscapeClosesTheMenuWhileASendIsInFlight: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /Export/ }));
+    await waitFor(() => expect(canvas.getByRole("dialog")).toHaveFocus());
+    // The send button disables itself, which drops focus out of the menu.
     await userEvent.click(
       canvas.getByRole("button", { name: "Send to Kindle" }),
     );
-    await waitFor(() => expect(canvas.getByRole("dialog")).toHaveFocus());
 
     await userEvent.keyboard("{Escape}");
     await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();

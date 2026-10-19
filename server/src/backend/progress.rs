@@ -29,7 +29,8 @@ const RECENT_LIMIT_CAP: i64 = 20;
 /// position wins, judged by `client_updated_at` (the server's clock when absent), so a
 /// write older than the stored position changes nothing. An `audio` position without
 /// `book_file_id` also loses to a stored one that names a file of a multi-file audiobook.
-/// The response is the position the server kept, yours or the stored one.
+/// The response is the position the server kept, yours or the stored one. A book you
+/// haven't given a read status becomes `reading`; one you have keeps its status.
 #[utoipa::path(
     post,
     path = "/api/progress",

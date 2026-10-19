@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Navigate, Outlet, useLocation } from "react-router";
 import { Loading } from "../components/Loading/Loading";
 import { PageError } from "../components/PageState/PageState";
+import { PlaybackProvider } from "../playback/PlaybackProvider";
 import { loginHref } from "../safeNext";
 import { meQuery } from "../session";
 
@@ -10,7 +11,13 @@ export function RequireAuth() {
   const me = useQuery(meQuery);
   const { pathname, search } = useLocation();
   // A failed refresh of a known session isn't a reason to drop the app.
-  if (me.data) return <Outlet />;
+  if (me.data) {
+    return (
+      <PlaybackProvider key={me.data.id}>
+        <Outlet />
+      </PlaybackProvider>
+    );
+  }
   switch (me.status) {
     case "pending":
       return <Loading kind="page" label="Opening your library" />;

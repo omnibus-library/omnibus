@@ -13,6 +13,7 @@ mod state;
 mod upsert;
 mod upsert_audio;
 mod upsert_logging;
+mod upsert_status;
 
 use omnibus_shared::{EbookMetadata, ProgressUpdate};
 use sqlx::SqlitePool;

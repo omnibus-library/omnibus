@@ -106,6 +106,13 @@ describe("SessionTracker", () => {
       expect(report?.utc_offset_minutes).toBe(-480);
       expect(report?.time_zone).toBe("America/Los_Angeles");
     });
+
+    it("names the format the tracker was built for", () => {
+      const tracker = new SessionTracker("audio");
+      tracker.start(A, 1000);
+
+      expect(tracker.stop(1010)?.format).toBe("audio");
+    });
   });
 });
 

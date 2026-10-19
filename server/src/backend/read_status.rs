@@ -47,7 +47,8 @@ pub(super) async fn put_read_status(
 
 /// Get a book's read status
 ///
-/// Your read status for the book. The body is `null` when you have never set one, or no
+/// Your read status for the book. Saving a position sets `reading` when you have no
+/// status. The body is `null` when you have neither set one nor saved a position, or no
 /// book has the uuid; treat that as `unread`.
 #[utoipa::path(
     get,

@@ -49,6 +49,19 @@ import Testing
     #expect(paths[.you] == [.settings])
 }
 
+@Test func tabPathsSubscriptWritesEachTabsOwnStack() {
+    var paths = TabPaths()
+    paths[.library] = [.book(uuid: "library")]
+    paths[.search] = [.author(id: 1)]
+    paths[.stats] = [.readingGoals]
+    paths[.you] = [.settings]
+
+    #expect(paths.library == [.book(uuid: "library")])
+    #expect(paths.search == [.author(id: 1)])
+    #expect(paths.stats == [.readingGoals])
+    #expect(paths.you == [.settings])
+}
+
 @Test func onlyTheSelectedTabsStackDecidesTheBar() {
     var paths = TabPaths()
     paths.library = [.book(uuid: "a")]
