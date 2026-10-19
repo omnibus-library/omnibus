@@ -1,9 +1,11 @@
-import type { Shelf } from "../../api";
+import type { Book, Shelf } from "../../api";
 import type {
+  CreateShelfRequest,
   MatchMode,
   RuleField,
   RuleOp,
   ShelfRule,
+  UpdateShelfRequest,
 } from "../../api/generated/schemas";
 
 // Mirrors shared/src/shelves.rs and the Dioxus rule builder, labels and order included.
@@ -164,4 +166,65 @@ export function previewRequest(matchMode: MatchMode, drafts: RuleDraft[]) {
     match_mode: matchMode,
     rules: drafts.flatMap((d) => toRule(d) ?? []),
   };
+}
+
+type CreateForm = {
+  name: string;
+  visibility: Shelf["visibility"];
+} & (
+  | { kind: "smart"; matchMode: MatchMode; drafts: RuleDraft[] }
+  | { kind: "manual"; picked: readonly Book[] }
+);
+
+/** The body of `POST /api/shelves`: a smart shelf carries its complete rules and no books, a hand-picked one its books and no rules. */
+export function createRequest(form: CreateForm): CreateShelfRequest {
+  const { name, visibility } = form;
+  if (form.kind === "smart") {
+    return {
+      kind: "smart",
+      name,
+      visibility,
+      match_mode: form.matchMode,
+      rules: previewRequest(form.matchMode, form.drafts).rules,
+      book_uuids: [],
+    };
+  }
+  return {
+    kind: "manual",
+    name,
+    visibility,
+    match_mode: null,
+    rules: [],
+    book_uuids: form.picked.map((b) => b.uuid),
+  };
+}
+
+type UpdateForm = {
+  name: string;
+  visibility: Shelf["visibility"];
+  /** `null` when the shelf has no Kobo row (a Wishlist), so the field is left out. */
+  syncToKobo: boolean | null;
+  /** The rule editor's state; `null` for a shelf that isn't smart. */
+  smart: { matchMode: MatchMode; drafts: RuleDraft[] } | null;
+};
+
+/** The body of `PATCH /api/shelves/{id}`, or the message to show instead of sending a request that can't succeed. */
+export function updateRequest(
+  form: UpdateForm,
+): { request: UpdateShelfRequest } | { error: string } {
+  const name = form.name.trim();
+  if (!name) return { error: "Name is required." };
+  const request: UpdateShelfRequest = {
+    name,
+    visibility: form.visibility,
+    ...(form.syncToKobo !== null && { sync_to_kobo: form.syncToKobo }),
+  };
+  if (form.smart) {
+    const { rules } = previewRequest(form.smart.matchMode, form.smart.drafts);
+    if (rules.length === 0) return { error: "Add at least one condition." };
+    return {
+      request: { ...request, match_mode: form.smart.matchMode, rules },
+    };
+  }
+  return { request };
 }

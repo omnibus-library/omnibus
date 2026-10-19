@@ -13,6 +13,7 @@ import { CoverImage } from "../Cover/CoverImage";
 import { CheckGlyph, SearchGlyph, XGlyph } from "../Glyphs/Glyphs";
 import { BusyLabel, Skeleton } from "../Loading/Loading";
 import { emptyMessage, statusLine, toggled } from "./picker";
+import "../ShelfPicker/ShelfPicker.css";
 import "./LibraryPicker.css";
 
 // The picker is a find-this-book surface, not the reader's configured library view.

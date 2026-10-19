@@ -34,6 +34,7 @@ import {
   type AuthorSummary,
   type BookDeletionManifest,
   BulkOverridesRequest,
+  CreateShelfRequest,
   DeleteBookFilesRequest,
   type EbookMetadata,
   type EbookPage,
@@ -80,6 +81,7 @@ import {
   aWireProgress,
   aWireReadStatus,
   aWireSeries,
+  aWireShelfDetail,
   aWireWishlist,
   WIRE_ADA,
 } from "./wire";
@@ -445,6 +447,25 @@ export function previewHandler(
     return HttpResponse.json(
       typeof answer === "function" ? await answer(body) : answer,
     );
+  });
+}
+
+/**
+ * `POST /api/shelves`: each body lands in `bodies`; the answer is `created` as a 201, or with
+ * `refuse` set a 409 whose plain text is that reason.
+ */
+export function createShelfHandler(
+  bodies: CreateShelfRequest[],
+  {
+    created = aWireShelfDetail({ id: 9, name: "Cosy reads" }),
+    refuse,
+  }: { created?: Shelf; refuse?: string } = {},
+) {
+  return http.post("/api/shelves", async ({ request }) => {
+    bodies.push(CreateShelfRequest.parse(await request.json()));
+    return refuse
+      ? new HttpResponse(refuse, { status: 409 })
+      : HttpResponse.json(created, { status: 201 });
   });
 }
 

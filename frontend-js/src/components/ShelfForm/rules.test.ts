@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { toBook } from "../../api";
 import type { ShelfRule } from "../../api/generated/schemas";
+import { aWireBook, uuidOf } from "../../testing/wire";
 import {
   accepts,
   BLANK_DRAFT,
+  createRequest,
   fromRule,
   kindLabel,
   previewRequest,
@@ -10,9 +13,13 @@ import {
   type RuleDraft,
   ruleText,
   toRule,
+  updateRequest,
   visibilityLabel,
   withField,
 } from "./rules";
+
+const aBook = (n: number) =>
+  toBook(aWireBook({ id: n, unique_identifier: uuidOf(n) }));
 
 const draft = (overrides: Partial<RuleDraft>): RuleDraft => ({
   ...BLANK_DRAFT,
@@ -171,5 +178,92 @@ describe("labels", () => {
     expect(kindLabel("wishlist")).toBe("Wishlist");
     expect(visibilityLabel("private")).toBe("Private");
     expect(visibilityLabel("public")).toBe("Public");
+  });
+});
+
+describe("createRequest", () => {
+  it("sends a smart shelf's complete rules and no books", () => {
+    expect(
+      createRequest({
+        kind: "smart",
+        name: "Cosy",
+        visibility: "private",
+        matchMode: "all",
+        drafts: [draft({ value: "Fantasy" }), draft({})],
+      }),
+    ).toEqual({
+      kind: "smart",
+      name: "Cosy",
+      visibility: "private",
+      match_mode: "all",
+      rules: [{ field: "tag", op: "is", value: "Fantasy" }],
+      book_uuids: [],
+    });
+  });
+
+  it("sends a hand-picked shelf's books and no rules", () => {
+    const [a, b] = [aBook(1), aBook(2)];
+
+    expect(
+      createRequest({
+        kind: "manual",
+        name: "Mine",
+        visibility: "public",
+        picked: [a, b],
+      }),
+    ).toEqual({
+      kind: "manual",
+      name: "Mine",
+      visibility: "public",
+      match_mode: null,
+      rules: [],
+      book_uuids: [a.uuid, b.uuid],
+    });
+  });
+});
+
+describe("updateRequest", () => {
+  const form = {
+    name: " Cosy ",
+    visibility: "public" as const,
+    syncToKobo: true,
+    smart: { matchMode: "any" as const, drafts: [draft({ value: "Fantasy" })] },
+  };
+
+  it("trims the name and sends the Kobo flag, match mode and rules", () => {
+    expect(updateRequest(form)).toEqual({
+      request: {
+        name: "Cosy",
+        visibility: "public",
+        sync_to_kobo: true,
+        match_mode: "any",
+        rules: [{ field: "tag", op: "is", value: "Fantasy" }],
+      },
+    });
+  });
+
+  it("leaves out the Kobo flag and rules for a shelf with neither", () => {
+    expect(updateRequest({ ...form, syncToKobo: null, smart: null })).toEqual({
+      request: { name: "Cosy", visibility: "public" },
+    });
+  });
+
+  it("rejects a blank name before looking at the rules", () => {
+    expect(
+      updateRequest({
+        ...form,
+        name: "   ",
+        smart: { ...form.smart, drafts: [] },
+      }),
+    ).toEqual({ error: "Name is required." });
+  });
+
+  it("rejects a smart shelf with no complete rule", () => {
+    expect(
+      updateRequest({
+        ...form,
+        smart: { matchMode: "any", drafts: [draft({})] },
+      }),
+    ).toEqual({ error: "Add at least one condition." });
   });
 });

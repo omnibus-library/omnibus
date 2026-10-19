@@ -1,9 +1,17 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Route, Routes } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
-import { failing, hanging, shelvesHandler } from "../../testing/handlers";
-import { aWireShelf, WIRE_ADA } from "../../testing/wire";
+import type { CreateShelfRequest } from "../../api/generated/schemas";
+import {
+  createShelfHandler,
+  failing,
+  hanging,
+  shelvesHandler,
+} from "../../testing/handlers";
+import { aWireShelf, aWireShelfDetail, WIRE_ADA } from "../../testing/wire";
 import { Shelves } from "./Shelves";
+
+const created: CreateShelfRequest[] = [];
 
 const BOB = { owner_user_id: 2, owner_username: "bob" };
 
@@ -33,6 +41,7 @@ const meta = {
   parameters: { path: "/shelves" },
   beforeEach({ msw }) {
     localStorage.removeItem("omnibus.discovery_prefs");
+    created.length = 0;
     msw.use(shelvesHandler(SHELVES));
   },
   render: () => (
@@ -240,5 +249,46 @@ export const SortByCount: Story = {
     await expect(
       JSON.parse(localStorage.getItem("omnibus.discovery_prefs") ?? "{}"),
     ).toMatchObject({ shelves_sort: "book_count" });
+  },
+};
+
+export const NewShelf: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      createShelfHandler(created, {
+        created: aWireShelfDetail({ id: 9, name: "Cosy reads" }),
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("new-shelf"));
+    await userEvent.type(
+      await canvas.findByRole("textbox", { name: "Shelf name" }),
+      "Cosy reads",
+    );
+
+    await userEvent.click(canvas.getByRole("button", { name: "Create" }));
+
+    await expect(await canvas.findByText("The shelf")).toBeInTheDocument();
+    await expect(created).toHaveLength(1);
+  },
+};
+
+export const NewShelfFromEmpty: Story = {
+  beforeEach({ msw }) {
+    msw.use(shelvesHandler([]));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("shelves-empty-new"));
+
+    await expect(
+      await canvas.findByRole("dialog", { name: "New shelf" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(canvas.queryByRole("dialog", { name: "New shelf" })).toBeNull(),
+    );
   },
 };

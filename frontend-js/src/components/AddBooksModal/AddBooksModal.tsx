@@ -5,6 +5,7 @@ import { Button } from "../Button/Button";
 import { ConfirmModal } from "../ConfirmModal/ConfirmModal";
 import { LibraryPicker } from "../LibraryPicker/LibraryPicker";
 import { BusyLabel } from "../Loading/Loading";
+import "../ShelfPicker/ShelfPicker.css";
 
 type AddBooksModalProps = {
   shelfId: number;
