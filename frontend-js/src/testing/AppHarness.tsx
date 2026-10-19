@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { MemoryRouter } from "react-router";
 import { parseUser, type User } from "../api";
+import { SearchPaletteProvider } from "../components/SearchPalette/SearchPalette";
 import { meQuery } from "../session";
 import { WIRE_ADA } from "./wire";
 
@@ -27,7 +28,7 @@ type AppHarnessProps = {
   router?: boolean;
 };
 
-/** What a screen expects around it in the app: a session and a router. */
+/** What a screen expects around it in the app: a session, a router and the palette. */
 export function AppHarness({
   children,
   user = ADA,
@@ -37,11 +38,13 @@ export function AppHarness({
   const [client] = useState(() => harnessClient(user));
   return (
     <QueryClientProvider client={client}>
-      {router ? (
-        <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>
-      ) : (
-        children
-      )}
+      <SearchPaletteProvider>
+        {router ? (
+          <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>
+        ) : (
+          children
+        )}
+      </SearchPaletteProvider>
     </QueryClientProvider>
   );
 }

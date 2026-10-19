@@ -2,10 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   parseBookDetail,
   parseBookPage,
+  parsePalette,
   parseResumePoints,
   parseUser,
 } from "./api";
-import { aWireBook, aWireResumePoint, WIRE_ADA } from "./testing/wire";
+import {
+  aWireBook,
+  aWirePalette,
+  aWireResumePoint,
+  WIRE_ADA,
+} from "./testing/wire";
 
 const auroraWire = aWireBook({ published: null });
 
@@ -114,5 +120,13 @@ describe("parseUser", () => {
     const wire = { ...WIRE_ADA, display_name: null };
 
     expect(parseUser(wire).name).toBe("ada");
+  });
+});
+
+describe("parsePalette", () => {
+  it("defaults the totals the server omits", () => {
+    const { book_total: _omitted, ...wire } = aWirePalette();
+
+    expect(parsePalette(wire).totals.books).toBe(0);
   });
 });

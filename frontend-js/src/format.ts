@@ -38,3 +38,40 @@ export function descriptionOverflows(html: string): boolean {
     .filter(Boolean);
   return words.length > DESCRIPTION_CLAMP_WORDS;
 }
+
+/** The query that narrows search to one tag or genre: `tag:"Dark academia"`. */
+export function facetQuery(prefix: "tag" | "genre", value: string): string {
+  const trimmed = value.trim();
+  // Quoted, a multi-word name stays one facet and a quote inside it is escaped.
+  if (/[\s"]/.test(trimmed)) {
+    return `${prefix}:"${trimmed.replaceAll('"', '""')}"`;
+  }
+  return `${prefix}:${trimmed}`;
+}
+
+const FACET_PREFIXES = ["author", "series", "tag", "genre"];
+
+/** The name behind a query that is exactly one facet, else `null`. */
+export function singleFacetValue(query: string): string | null {
+  const q = query.trim();
+  const colon = q.indexOf(":");
+  const prefix = q.slice(0, colon).toLowerCase();
+  if (colon < 0 || !FACET_PREFIXES.includes(prefix)) return null;
+  const rest = q.slice(colon + 1);
+  if (rest.startsWith('"')) {
+    // Quoted: it must close on the last character, or more follows the facet.
+    if (rest.length < 2 || !rest.endsWith('"')) return null;
+    return rest.slice(1, -1).replaceAll('""', '"') || null;
+  }
+  return rest.split(/\s+/).filter(Boolean).length === 1 ? rest : null;
+}
+
+// Calibre's "no publish date" is 0101-01-01; no real book is that old.
+const SENTINEL_YEAR_MAX = 101;
+
+/** The year a stored date names, or `null` when it names none. */
+export function formatYear(raw: string): string | null {
+  const lead = raw.trim().split(/[T -]/)[0] ?? "";
+  const year = /^\d+$/.test(lead) ? Number(lead) : 0;
+  return year > SENTINEL_YEAR_MAX ? String(year) : null;
+}

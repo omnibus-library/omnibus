@@ -24,11 +24,13 @@ const OWNERS = [
   ["components/TopNav/TopNav.css", (c) => c.startsWith("atrium-")],
   ["components/UserMenu/UserMenu.css", (c) => c.startsWith("um-")],
   ["components/ThemePicker/ThemePicker.css", (c) => c.startsWith("theme-seg")],
+  ["components/SearchPalette/SearchPalette.css", (c) => c.startsWith("sp-")],
+  ["pages/Search/Search.css", (c) => c.startsWith("search-")],
   ["layouts/AppShell.css", (c) => c === "app-shell"],
   ["components/DiscPage/DiscPage.css", (c) => c.startsWith("disc-")],
   ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || ["landing-col", "library-empty", "cover-link"].includes(c)],
   ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || c.startsWith("bd-")],
-  ["styles/base.css", (c) => ["label", "mono", "subtitle"].includes(c)],
+  ["styles/base.css", (c) => ["divider", "label", "mono", "subtitle"].includes(c)],
 ];
 const CONTEXT = new Set(["atrium", "theme-snap"]);
 
@@ -42,7 +44,7 @@ function tsxFiles(dir) {
 }
 
 // Status words the code compares against, never a className.
-const STOP = new Set(["back", "error", "off", "ok", "pending", "success"]);
+const STOP = new Set(["back", "error", "off", "ok", "pending", "success", "tag"]);
 const vocab = new Set();
 for (const file of tsxFiles(src)) {
   const text = fs.readFileSync(file, "utf8");

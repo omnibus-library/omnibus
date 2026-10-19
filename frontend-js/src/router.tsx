@@ -68,7 +68,8 @@ export const routes: RouteObject[] = [
                   { path: "/stats/chart", element: <StatsChart /> },
                   { path: "/shelves", element: <Shelves /> },
                   { path: "/shelves/:id", element: <ShelfDetail /> },
-                  { path: "/search", element: <Search /> },
+                  // Web search is the palette; only /search/:query is a page.
+                  { path: "/search", element: <Navigate to="/" replace /> },
                   { path: "/search/:query", element: <Search /> },
                   { path: "/settings", element: <Settings /> },
                   {

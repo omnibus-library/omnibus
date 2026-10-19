@@ -65,6 +65,32 @@ export function recentProgressHandler(points: unknown[]) {
   });
 }
 
+/**
+ * `GET /api/search/palette` answering `preview` for any non-blank query, and
+ * `full` when the client raises the per-group cap with `limit`.
+ */
+export function paletteHandler(
+  preview: Record<string, unknown>,
+  full: Record<string, unknown> | "fails" = preview,
+) {
+  return http.get("/api/search/palette", ({ request }) => {
+    const params = new URL(request.url).searchParams;
+    if (!params.get("q")?.trim()) {
+      return new HttpResponse("q is required", { status: 400 });
+    }
+    const limit = params.get("limit");
+    if (limit === null) return HttpResponse.json(preview);
+    if (!/^[1-9]\d*$/.test(limit)) {
+      return new HttpResponse("limit must be a positive integer", {
+        status: 400,
+      });
+    }
+    return full === "fails"
+      ? new HttpResponse("failed with 500", { status: 500 })
+      : HttpResponse.json(full);
+  });
+}
+
 /** `POST /api/auth/login` accepting `password` for any username. */
 export function loginHandler(password: string) {
   return http.post("/api/auth/login", async ({ request }) => {

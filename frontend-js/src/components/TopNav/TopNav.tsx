@@ -2,6 +2,7 @@ import { Link, NavLink } from "react-router";
 import brandMark from "../../assets/omnibus-stoat.png";
 import { useCurrentUser } from "../../session";
 import { ButtonLink } from "../Button/Button";
+import { SearchPaletteTrigger } from "../SearchPalette/SearchPalette";
 import { UserMenu } from "../UserMenu/UserMenu";
 import "./TopNav.css";
 
@@ -36,10 +37,8 @@ export function TopNav() {
           </NavLink>
         ))}
       </div>
+      <SearchPaletteTrigger />
       <div className="atrium-actions">
-        <ButtonLink to="/search" variant="ghost" size="sm">
-          Search
-        </ButtonLink>
         <ButtonLink to="/check-in" size="sm">
           Check in
         </ButtonLink>

@@ -61,8 +61,6 @@ describe("routes", () => {
       ["/stats/chart", "Chart builder", null],
       ["/shelves", "Shelves", null],
       ["/shelves/9", "Shelf", "9"],
-      ["/search", "Search", null],
-      ["/search/dune", "Search", "dune"],
       ["/settings?section=smtp", "Settings", "smtp"],
       ["/settings/cleanup/duplicates", "Cleanup review", "duplicates"],
       ["/admin/health", "Server health", null],
@@ -166,6 +164,12 @@ describe("routes", () => {
       expect(router.state.location.search).toBe("?section=logs"),
     );
     expect(router.state.location.pathname).toBe("/settings");
+  });
+
+  it("redirects a bare /search to the library", async () => {
+    const router = renderRoute("/search");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });
 
   it("renders not found for a path nothing lives at", async () => {

@@ -113,6 +113,112 @@ export function parseResumePoints(body: unknown): ResumePoint[] {
   return z.array(ResumePointSchema).parse(body);
 }
 
+export type AuthorId = number & { readonly __brand: "AuthorId" };
+export type SeriesId = number & { readonly __brand: "SeriesId" };
+
+const authorId = z
+  .number()
+  .int()
+  .transform((id) => id as AuthorId);
+const seriesId = z
+  .number()
+  .int()
+  .transform((id) => id as SeriesId);
+const total = z.number().int().nonnegative().default(0);
+
+const PaletteSchema = z
+  .object({
+    books: z.array(
+      z.object({
+        uuid: bookUuid,
+        title: z.string(),
+        author_display: z.string(),
+        year: z.string().nullish(),
+        formats: z.array(z.string()),
+        cover_url: z.string().nullish(),
+        accent: z.string().nullish(),
+      }),
+    ),
+    authors: z.array(
+      z.object({
+        id: authorId,
+        name: z.string(),
+        book_count: z.number().int(),
+        lead_book_title: z.string().nullish(),
+      }),
+    ),
+    series: z.array(
+      z.object({
+        id: seriesId,
+        name: z.string(),
+        book_count: z.number().int(),
+        author_display: z.string().nullish(),
+        lead_book_title: z.string().nullish(),
+      }),
+    ),
+    tags: z.array(
+      z.object({
+        id: z.number().int(),
+        name: z.string(),
+        book_count: z.number().int(),
+      }),
+    ),
+    genres: z
+      .array(z.object({ name: z.string(), book_count: z.number().int() }))
+      .default([]),
+    duration_ms: z.number().nonnegative(),
+    book_total: total,
+    author_total: total,
+    series_total: total,
+    tag_total: total,
+    genre_total: total,
+  })
+  .transform((wire) => ({
+    books: wire.books.map((b) => ({
+      uuid: b.uuid,
+      title: b.title,
+      authorDisplay: b.author_display,
+      year: b.year ?? null,
+      formats: b.formats,
+      hasCover: b.cover_url != null,
+      accent: b.accent ?? null,
+    })),
+    authors: wire.authors.map((a) => ({
+      id: a.id,
+      name: a.name,
+      bookCount: a.book_count,
+      leadBookTitle: a.lead_book_title ?? null,
+    })),
+    series: wire.series.map((s) => ({
+      id: s.id,
+      name: s.name,
+      bookCount: s.book_count,
+      authorDisplay: s.author_display ?? null,
+      leadBookTitle: s.lead_book_title ?? null,
+    })),
+    tags: wire.tags.map((t) => ({
+      id: t.id,
+      name: t.name,
+      bookCount: t.book_count,
+    })),
+    genres: wire.genres.map((g) => ({ name: g.name, bookCount: g.book_count })),
+    durationMs: wire.duration_ms,
+    totals: {
+      books: wire.book_total,
+      authors: wire.author_total,
+      series: wire.series_total,
+      tags: wire.tag_total,
+      genres: wire.genre_total,
+    },
+  }));
+
+export type PaletteResults = z.infer<typeof PaletteSchema>;
+
+/** Parses `GET /api/search/palette`: capped hits per group, true totals. */
+export function parsePalette(body: unknown): PaletteResults {
+  return PaletteSchema.parse(body);
+}
+
 export type BookPage = { books: Book[]; total: number; next: string | null };
 
 const BookPageSchema = z.object({ books: z.array(BookSchema) });
@@ -212,7 +318,19 @@ export async function fetchRecentProgress(
   return parseResumePoints(await readJson(res));
 }
 
-export const thumbUrl = (uuid: BookUuid) => `/api/thumbs/${uuid}/md`;
+/** Grouped search hits for `query`; `limit` raises the per-group cap. */
+export async function fetchPalette(
+  query: string,
+  { limit, signal }: { limit?: number; signal?: AbortSignal } = {},
+): Promise<PaletteResults> {
+  const params = new URLSearchParams({ q: query });
+  if (limit !== undefined) params.set("limit", String(limit));
+  const res = await fetch(`/api/search/palette?${params}`, { signal });
+  return parsePalette(await readJson(res));
+}
+
+export const thumbUrl = (uuid: BookUuid, size: "sm" | "md" = "md") =>
+  `/api/thumbs/${uuid}/${size}`;
 
 export const thumbSrcSet = (uuid: BookUuid) =>
   `/api/thumbs/${uuid}/sm 160w, /api/thumbs/${uuid}/md 320w, /api/thumbs/${uuid}/lg 640w`;

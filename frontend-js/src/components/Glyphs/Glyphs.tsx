@@ -76,3 +76,23 @@ export function ServerGlyph({ size = 16 }: GlyphProps) {
     </svg>
   );
 }
+
+/** A magnifying glass, for search. */
+export function SearchGlyph({
+  size = 15,
+  className,
+}: GlyphProps & { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...stroked}
+      aria-hidden="true"
+    >
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  );
+}

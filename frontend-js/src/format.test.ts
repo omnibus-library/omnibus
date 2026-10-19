@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { BookDetail } from "./api";
 import {
   descriptionOverflows,
+  facetQuery,
+  formatYear,
   homeKicker,
   initialsFor,
   plateAuthor,
+  singleFacetValue,
 } from "./format";
 import { aBook } from "./testing/books";
 
@@ -72,5 +75,42 @@ describe("descriptionOverflows", () => {
 
     expect(descriptionOverflows(words(50))).toBe(false);
     expect(descriptionOverflows(words(51))).toBe(true);
+  });
+});
+
+describe("facetQuery", () => {
+  it("leaves a single word bare", () => {
+    expect(facetQuery("tag", " fantasy ")).toBe("tag:fantasy");
+  });
+
+  it("quotes a multi-word name", () => {
+    expect(facetQuery("genre", "Dark academia")).toBe('genre:"Dark academia"');
+  });
+
+  it("doubles an embedded quote", () => {
+    expect(facetQuery("tag", 'say"what')).toBe('tag:"say""what"');
+  });
+});
+
+describe("singleFacetValue", () => {
+  it("reads the name back from a quoted facet", () => {
+    expect(singleFacetValue('tag:"Say ""hi"""')).toBe('Say "hi"');
+  });
+
+  it.each([
+    ["free text", "dune messiah"],
+    ["a facet followed by more text", 'tag:"Sci-fi" dune'],
+  ])("returns null for %s", (_case, query) => {
+    expect(singleFacetValue(query)).toBeNull();
+  });
+});
+
+describe("formatYear", () => {
+  it("returns the year of a full date", () => {
+    expect(formatYear("2021-03-01T00:00:00+00:00")).toBe("2021");
+  });
+
+  it("returns null for calibre's 0101 placeholder", () => {
+    expect(formatYear("0101")).toBeNull();
   });
 });
