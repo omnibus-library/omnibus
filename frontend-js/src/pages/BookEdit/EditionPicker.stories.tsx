@@ -11,7 +11,7 @@ import {
   toEditableBook,
 } from "../../api";
 import { storyClient } from "../../testing/AppHarness";
-import { failing } from "../../testing/handlers";
+import { deferred, failing } from "../../testing/handlers";
 import {
   anEditableWireBook,
   aProviderEdition,
@@ -420,14 +420,15 @@ async function openCompare({
 const formValues = (canvas: Ctx["canvas"]) =>
   JSON.parse(canvas.getByLabelText("Form values").textContent ?? "{}");
 
+let gate = deferred();
+
 export const OpensTheCompareScreenAtOnceAndHydratesBehindIt: Story = {
   beforeEach({ msw }) {
-    let release = () => {};
-    gate.release = () => release();
+    gate = deferred();
     msw.use(
       hydrateHandler(
         { OL1M: FULL },
-        { hydrated, gates: { OL1M: new Promise<void>((r) => (release = r)) } },
+        { hydrated, gates: { OL1M: gate.promise } },
       ),
     );
   },
@@ -460,8 +461,6 @@ export const OpensTheCompareScreenAtOnceAndHydratesBehindIt: Story = {
     await expect(canvas.getByTestId("mes-take-all")).toBeEnabled();
   },
 };
-const gate = { release: () => {} };
-
 export const KeepsTheListRowWhenTheProviderForgotTheEdition: Story = {
   beforeEach({ msw }) {
     msw.use(hydrateHandler({ OL1M: null }));
@@ -497,18 +496,14 @@ export const KeepsTheListRowWhenHydratingFails: Story = {
 
 export const DropsAHydrateForACandidateNoLongerShown: Story = {
   beforeEach({ msw }) {
-    let release = () => {};
-    gate.release = () => release();
+    gate = deferred();
     msw.use(
       hydrateHandler(
         {
           OL1M: FULL,
           "gb-study": { ...STUDY_GUIDE, title: "A Late Title" },
         },
-        {
-          hydrated,
-          gates: { "gb-study": new Promise<void>((r) => (release = r)) },
-        },
+        { hydrated, gates: { "gb-study": gate.promise } },
       ),
     );
   },
@@ -545,16 +540,14 @@ const lateAnswers: string[] = [];
 
 export const IgnoresASlowAnswerForAnEarlierOpeningOfTheSameCandidate: Story = {
   beforeEach({ msw }) {
-    let release = () => {};
-    gate.release = () => release();
-    const held = new Promise<void>((r) => (release = r));
+    gate = deferred();
     let calls = 0;
     lateAnswers.length = 0;
     msw.use(
       http.post("/api/metadata/editions/hydrate", async () => {
         calls += 1;
         if (calls > 1) return HttpResponse.json(FULL);
-        await held;
+        await gate.promise;
         lateAnswers.push("502");
         return new HttpResponse("provider unavailable", { status: 502 });
       }),

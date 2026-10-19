@@ -5,6 +5,7 @@ import {
   seedQueries,
   storyClient,
 } from "../../testing/AppHarness";
+import { deferred } from "../../testing/handlers";
 import {
   aScanBook,
   googleBooksHandler,
@@ -32,7 +33,7 @@ const CHECK_IN_KEYS = [
   ["shelf-page"],
   ["book", BOOK.uuid],
 ];
-const gate = { release: () => {} };
+let gate = deferred();
 
 const meta = {
   title: "Pages/CheckIn",
@@ -88,12 +89,11 @@ export const WithoutAGoogleBooksKey: Story = {
 
 export const ShowsMatchingWhileResolving: Story = {
   beforeEach({ msw }) {
-    let release = () => {};
-    gate.release = () => release();
+    gate = deferred();
     msw.use(
       ...handlers(
         { kind: "in_library_unowned", book: BOOK },
-        { gate: new Promise<void>((r) => (release = r)) },
+        { gate: gate.promise },
       ),
     );
   },
@@ -144,12 +144,11 @@ export const OpensABookAlreadyOwned: Story = {
 
 export const StaysPutWhenLeftBeforeTheBookIsFound: Story = {
   beforeEach({ msw }) {
-    let release = () => {};
-    gate.release = () => release();
+    gate = deferred();
     msw.use(
       ...handlers(
         { kind: "already_owned", book: BOOK },
-        { gate: new Promise<void>((r) => (release = r)) },
+        { gate: gate.promise },
       ),
     );
   },
