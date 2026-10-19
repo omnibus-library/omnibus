@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
   type AudioBookmark,
   type BookUuid,
@@ -10,6 +10,7 @@ import {
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Loading } from "../../components/Loading/Loading";
+import { Modal } from "../../components/Modal/Modal";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import { formatHmsShort } from "../../resume";
 import {
@@ -17,8 +18,49 @@ import {
   chapterLabelAt,
   remainingAtRate,
 } from "./listen";
-import { DrawerShell } from "./Panels";
 import "./Listen.css";
+
+type DrawerShellProps = {
+  label: string;
+  testId: string;
+  onClose: () => void;
+  /** The kicker and title block. */
+  head: ReactNode;
+  /** Sits beside the close button. */
+  actions?: ReactNode;
+  children: ReactNode;
+};
+
+/** A scrim and the right-hand drawer: head, actions, close button, then the body. Escape or a click away closes. */
+function DrawerShell({
+  label,
+  testId,
+  onClose,
+  head,
+  actions,
+  children,
+}: DrawerShellProps) {
+  return (
+    <Modal
+      label={label}
+      backdropClass="lp-scrim"
+      dialogClass="lp-drawer"
+      dialogTestId={testId}
+      onClose={onClose}
+    >
+      <div className="lp-drawer-head">
+        {head}
+        <div className="lp-drawer-head-actions">
+          {actions}
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Close ↓
+          </Button>
+        </div>
+      </div>
+      <div className="lp-drawer-body">{children}</div>
+    </Modal>
+  );
+}
 
 type Toast = { time: string; chapter: string };
 

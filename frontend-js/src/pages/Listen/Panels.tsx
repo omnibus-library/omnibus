@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { Button } from "../../components/Button/Button";
 import { Modal } from "../../components/Modal/Modal";
 import { MAX_RATE, MIN_RATE } from "../../playback/boot";
@@ -7,48 +6,6 @@ import { SLEEP_PRESETS } from "../../playback/sleep";
 import { formatHmsShort } from "../../resume";
 import { clampRate, RATE_STEP, thumbPct } from "./listen";
 import "./Listen.css";
-
-type DrawerShellProps = {
-  label: string;
-  testId: string;
-  onClose: () => void;
-  /** The kicker and title block. */
-  head: ReactNode;
-  /** Sits beside the close button. */
-  actions?: ReactNode;
-  children: ReactNode;
-};
-
-/** A scrim and the right-hand drawer: head, actions, close button, then the body. Escape or a click away closes. */
-export function DrawerShell({
-  label,
-  testId,
-  onClose,
-  head,
-  actions,
-  children,
-}: DrawerShellProps) {
-  return (
-    <Modal
-      label={label}
-      backdropClass="lp-scrim"
-      dialogClass="lp-drawer"
-      dialogTestId={testId}
-      onClose={onClose}
-    >
-      <div className="lp-drawer-head">
-        {head}
-        <div className="lp-drawer-head-actions">
-          {actions}
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Close ↓
-          </Button>
-        </div>
-      </div>
-      <div className="lp-drawer-body">{children}</div>
-    </Modal>
-  );
-}
 
 const PRESETS = [0.5, 0.8, 1, 1.1, 1.2, 1.5, 1.8, 2];
 
