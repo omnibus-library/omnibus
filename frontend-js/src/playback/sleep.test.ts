@@ -145,6 +145,16 @@ describe("a duration timer", () => {
     expect(sink.setVolume).not.toHaveBeenCalled();
   });
 
+  it("restores the listener's volume when a new preset is picked mid-fade", () => {
+    const { timer, sink } = aTimer(0.8);
+    timer.sleepFor(10);
+    timer.tick();
+
+    timer.sleepFor(1800);
+
+    expect(sink.setVolume).toHaveBeenLastCalledWith(0.8);
+  });
+
   it("treats a preset of 0 as off", () => {
     const { timer, state } = aTimer();
     timer.sleepFor(900);
@@ -167,6 +177,16 @@ describe("an end-of-chapter timer", () => {
     timer.tick();
 
     expect(state()?.remaining).toBe(240);
+  });
+
+  it("restores the listener's volume when armed mid-fade", () => {
+    const { timer, sink } = aTimer(0.8);
+    timer.sleepFor(10);
+    timer.tick();
+
+    timer.endOfChapter(chapters, 120, 1);
+
+    expect(sink.setVolume).toHaveBeenLastCalledWith(0.8);
   });
 
   it("arms nothing when the chapters can't place the playhead", () => {

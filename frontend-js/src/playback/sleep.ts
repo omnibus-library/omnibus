@@ -98,6 +98,8 @@ export function createSleepTimer(
     publish(state);
   };
   const restoreVolume = () => sink.setVolume(sink.targetVolume());
+  // A re-arm ends the fade the old timer was ramping; from off there is none to end.
+  const endFade = () => state.remaining !== null && restoreVolume();
   const disarm = () => {
     anchor = null;
     set({ remaining: null, choice: SLEEP_OFF.choice });
@@ -112,6 +114,7 @@ export function createSleepTimer(
     restoreVolume();
   };
   const arm = (at: number, elapsed: number, rate: number) => {
+    endFade();
     anchor = at;
     set({
       remaining: Math.max(secondsUntilAnchor(at, elapsed, rate), 1),
@@ -133,6 +136,7 @@ export function createSleepTimer(
     /** A preset in seconds; 0 turns the timer off. */
     sleepFor(seconds: number) {
       if (seconds <= 0) return off();
+      endFade();
       anchor = null;
       set({ remaining: seconds, choice: { kind: "preset", seconds } });
     },
@@ -169,8 +173,6 @@ export function createSleepTimer(
       const at = endOfChapterAnchor(chapters, elapsed);
       if (at === null) return expire();
       arm(at, elapsed, rate);
-      // The stop the fade was ramping toward is no longer next.
-      restoreVolume();
     },
   };
 }
