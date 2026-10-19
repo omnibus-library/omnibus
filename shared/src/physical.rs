@@ -4,31 +4,30 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A physical copy of a book, seen library-wide (shared by all users like a
-/// digital file) but changed only by the reader who filed it — see
-/// [`Self::can_change`]. A book can have many; each is individually deletable.
+// The change rule lives in `Self::can_change`.
+/// A physical copy of a book. Every user can see it, but only the reader who checked it
+/// in, or an admin, can change its note or remove it. A book can have many copies.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PhysicalCopy {
     pub id: i64,
     pub book_uuid: String,
-    /// Scanned ISBN for this copy; `None` for a manual (non-scan) add.
+    /// The ISBN scanned for this copy. Null when the copy was added without one.
     pub isbn: Option<String>,
-    /// User who checked the copy in; `None` if that account was later deleted.
+    /// The id of the user who checked the copy in. Null once that account is deleted.
     pub added_by_user_id: Option<i64>,
-    /// That user's display name (username when unset), for "checked in by".
-    /// `None` when the account is gone or on a payload a client built itself.
+    /// That user's display name, or their username when they have none. Absent once the
+    /// account is deleted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub added_by_name: Option<String>,
     pub checked_in_at: i64,
-    /// [`Self::checked_in_at`] rendered as ISO 8601 UTC. When the copy was checked in.
-    ///
-    /// `None` on a payload a client built itself.
+    /// When the copy was checked in, as an ISO 8601 UTC timestamp. It is the same moment
+    /// as `checked_in_at`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checked_in_at_iso: Option<String>,
 
-    /// Free-text edition/publisher note until an edition-metadata provider exists.
+    /// A free-text note about the copy, such as its edition or publisher.
     pub note: Option<String>,
 }
 
@@ -49,11 +48,8 @@ impl PhysicalCopy {
     }
 }
 
-/// Where a wishlist entry was added from. Persisted as the `source` column.
-///
-/// The check-in flow has three front doors a reader tells apart: a barcode read
-/// off the cover, an ISBN typed at the keypad, and a title search whose ISBN
-/// came from the *provider* rather than the reader.
+// Persisted as the `source` column.
+/// Where a wishlist entry was added from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
@@ -65,7 +61,7 @@ pub enum WishlistSource {
     Detail,
     /// Added after an ISBN was typed by hand rather than scanned.
     Manual,
-    /// Added after a title search — the reader supplied no ISBN at all.
+    /// Added after a title search. The ISBN came from a provider, not the reader.
     Search,
 }
 
@@ -92,8 +88,8 @@ impl WishlistSource {
     }
 }
 
-/// Body of the copy-note edit (`PATCH /api/physical/copies/{id}`). `None` — and
-/// any blank string — clears the note.
+/// A new note for a physical copy, up to 4096 characters. Null, left out or blank clears
+/// the note.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateCopyNoteRequest {
@@ -119,7 +115,8 @@ impl UpdateCopyNoteRequest {
     }
 }
 
-/// A book on one user's physical wishlist. Unique per `(user_id, book_uuid)`.
+/// A book on one user's physical wishlist. Each book is on a user's wishlist at most
+/// once.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct WishlistEntry {
@@ -130,10 +127,9 @@ pub struct WishlistEntry {
     pub source: WishlistSource,
 }
 
-/// What removing a wishlist entry did beyond dropping the row. A book that
-/// existed only to be wanted — no file, no copy, nobody else's wish — goes
-/// with its last entry, and `book_deleted` is how the client learns the page
-/// it is standing on is gone.
+/// What removing a wishlist entry did. A book with no file, no physical copy and no
+/// other reader's wish goes with its last wishlist entry. `book_deleted` is then true,
+/// and the book no longer exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct WishlistRemoval {

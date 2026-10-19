@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::error_ring::CapturedError;
 use crate::worker::TaskKind;
 
-/// Library index summary: configured library paths and row counts.
+/// What the library index holds: the configured library folders and how many books,
+/// authors and series it lists.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct IndexStatus {
@@ -17,26 +18,27 @@ pub struct IndexStatus {
     pub book_count: i64,
     pub author_count: i64,
     pub series_count: i64,
-    /// Books with no `book_files` rows — ghosted by a reindex whose scan no
-    /// longer found their file on disk (identity preserved, content gone;
-    /// see `.claude/rules/06-migrations.md`'s book-identity section).
+    // Ghosted books keep their identity with their content gone; see
+    // `.claude/rules/06-migrations.md`'s book-identity section.
+    /// Books that have lost every file because a scan no longer found them on disk. The
+    /// book records stay.
     pub ghosted_book_count: i64,
 }
 
-/// One [`TaskKind`]'s live queue depth and recent completion timings.
-/// Timings are milliseconds (wire-friendly; the db-side `Worker::metrics`
-/// uses `std::time::Duration`, which doesn't serialize), oldest first.
+/// One kind of background task: how many are queued or running, and how long recent ones
+/// took.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct WorkerQueueEntry {
     pub kind: TaskKind,
     pub queue_depth: usize,
+    /// How long each of the last 20 finished tasks took, in milliseconds, oldest first.
+    /// Failed tasks count too.
     pub recent_completions_ms: Vec<u64>,
 }
 
-/// `books_fts` vs `books` row-count parity. A rebuild
-/// (`POST /api/fts/rebuild`) always restores `in_sync`; drift here means a
-/// post-commit FTS update failed silently on some earlier write.
+/// Whether the search index lists every book. A mismatch means an earlier write failed
+/// to update the index. `POST /api/fts/rebuild` brings it back in sync.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FtsHealth {
@@ -45,12 +47,11 @@ pub struct FtsHealth {
     pub in_sync: bool,
 }
 
-/// Disk usage across the book library and every on-disk cache.
+/// Disk use, in bytes, of the book library and each cache Omnibus keeps.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StorageStats {
-    /// Sum of `book_files.size_bytes` — the on-disk footprint of the
-    /// indexed library itself (not a cache, so it carries no cap).
+    /// The total size of every indexed book file. It is not a cache, so it has no cap.
     pub library_bytes: i64,
     pub covers_bytes: u64,
     pub thumbs_bytes: u64,
@@ -61,10 +62,8 @@ pub struct StorageStats {
     pub export_epub_cap_bytes: u64,
 }
 
-/// Full report backing `/admin/health`'s five sections, returned in one
-/// request by `GET /api/admin/health` (REST) / `rpc_get_admin_health`
-/// (web). The web page re-fetches this on a 5-second live-update poll
-/// in addition to its initial page-load fetch.
+/// The server health report from `GET /api/admin/health`: the library index, the task
+/// queue, the search index, disk use and recent errors, in one response.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AdminHealthReport {
