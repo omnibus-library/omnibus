@@ -2,9 +2,11 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import {
+  fetchRecentProgress,
   type HouseholdReader,
   householdReadersQuery,
   parseUserId,
+  type ResumePoint,
   type StatsRange,
   type StatsSummary,
   statsQuery,
@@ -13,13 +15,17 @@ import {
 import { Loading } from "../../components/Loading/Loading";
 import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
+import { InProgressCard, RecentlyFinishedCard } from "./BooksNow";
 import { windowLabel } from "./calendar";
 import { DrillInSheet } from "./DrillInSheet";
 import { GenreDonut } from "./GenreDonut";
 import { HeadlineTiles } from "./HeadlineTiles";
+import { HeatmapCard } from "./HeatmapCard";
+import { MonthlyChart } from "./MonthlyChart";
 import { heading, viewing } from "./picker";
 import { ReaderPicker } from "./ReaderPicker";
 import { ReadingClock } from "./ReadingClock";
+import { IN_PROGRESS_SHOWN } from "./readingNow";
 import { ShareStatsToggle } from "./ShareStatsToggle";
 import { StandoutsGrid } from "./Standouts";
 import { StatsHero } from "./StatsHero";
@@ -137,7 +143,13 @@ function WindowBand({
 }
 
 /** What the pills don't govern: nothing under this label moves when they do. */
-function StandingBand() {
+function StandingBand({
+  summary,
+  openBooks,
+}: {
+  summary: StatsSummary;
+  openBooks: ResumePoint[];
+}) {
   return (
     <section className="st-band" data-testid="stats-alltime-section">
       <div className="st-band-head st-band-head-plain">
@@ -148,7 +160,14 @@ function StandingBand() {
         </div>
         <div className="st-band-rule" />
       </div>
-      <div className="st-band-body" />
+      <div className="st-band-body">
+        <HeatmapCard summary={summary} />
+        <div className="st-duo">
+          <InProgressCard books={openBooks} summary={summary} />
+          <RecentlyFinishedCard books={summary.finished_books} />
+        </div>
+        <MonthlyChart summary={summary} />
+      </div>
     </section>
   );
 }
@@ -167,14 +186,20 @@ function ReaderStats({
 }) {
   const [open, setOpen] = useState<OpenMetric | null>(null);
   const standing = useQuery(statsQuery("all_time", userId));
+  // One past what the card lists, so it can tell a cut list from a whole one; a failed read is no open books.
+  const openBooks = useQuery({
+    queryKey: ["stats-open-books", userId],
+    queryFn: () =>
+      fetchRecentProgress(IN_PROGRESS_SHOWN + 1, userId).catch(() => []),
+  });
   // The previous window stays on screen while the next one loads.
   const period = useQuery({
     ...statsQuery(range, userId),
     placeholderData: keepPreviousData,
   });
 
-  // A picker that pops in after the page has settled reads as content shifting, so wait for the list too.
-  if (standing.isPending || readers === undefined) {
+  // Waits for the picker's list too, or it pops in after the page has settled and reads as content shifting; and for the open books, or "Nothing open right now." shows before the answer.
+  if (standing.isPending || openBooks.isPending || readers === undefined) {
     return <Loading kind="page" label="Tallying your reading" />;
   }
   const who = viewing(userId, readers);
@@ -207,7 +232,10 @@ function ReaderStats({
               period={period.data}
               onOpen={setOpen}
             />
-            <StandingBand />
+            <StandingBand
+              summary={standing.data}
+              openBooks={openBooks.data ?? []}
+            />
           </div>
         )}
         <p className="st-footnote" data-testid="stats-freshness-note">

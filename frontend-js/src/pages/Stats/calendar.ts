@@ -5,7 +5,7 @@ import { RANGE_LABELS } from "./summary";
 // library, as the Rust page does, so every figure lands on the same day.
 
 const div = (a: number, b: number) => Math.trunc(a / b);
-const remEuclid = (a: number, b: number) => ((a % b) + b) % b;
+export const remEuclid = (a: number, b: number) => ((a % b) + b) % b;
 
 /** Days since 1970-01-01 for a civil date (Howard Hinnant's `days_from_civil`). */
 function daysFromCivil(y: number, m: number, d: number): number {

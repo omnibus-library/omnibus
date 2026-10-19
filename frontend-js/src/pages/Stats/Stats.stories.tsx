@@ -556,6 +556,10 @@ export const ChoosingAReaderSwitchesWhoseFiguresAreShown: Story = {
           .sort(),
       ).toEqual(["all_time", "year"]),
     );
+    // The books they have open are theirs too, not the caller's.
+    await waitFor(() =>
+      expect(calls.recent.map((p) => p.get("user_id"))).toEqual([null, "2"]),
+    );
     // The period belongs to the page, so a reader switch keeps it.
     await expect(canvas.getByRole("button", { name: "Year" })).toHaveAttribute(
       "aria-pressed",
