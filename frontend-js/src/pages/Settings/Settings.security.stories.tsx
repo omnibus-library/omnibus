@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor } from "storybook/test";
-import { hanging } from "../../testing/handlers";
+import { failing, hanging } from "../../testing/handlers";
 import { SettingsRoutes } from "../../testing/SettingsRoutes";
 import {
   aSettingsServer,
@@ -11,6 +11,15 @@ import {
 import { aWireAuthSession } from "../../testing/wire";
 
 let server: SettingsServer;
+
+const HERE = aWireAuthSession({ id: 1, is_current: true });
+const PHONE = aWireAuthSession({
+  id: 2,
+  client: "Omnibus on iPhone",
+  kind: "bearer",
+  created_at: 1_750_000_000,
+  last_used_at: 1_750_100_000,
+});
 
 const meta = {
   title: "Pages/Settings/Security",
@@ -49,6 +58,31 @@ export const ChangesThePassword: Story = {
     await expect(canvas.getByLabelText("Current password")).toHaveValue("");
     await expect(canvas.getByLabelText("New password")).toHaveValue("");
     await expect(server.password).toBe("a brand new passphrase");
+  },
+};
+
+export const RereadsSessionsAfterThePasswordChanges: Story = {
+  beforeEach: () => {
+    server.sessions = [HERE, PHONE];
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(
+      await canvas.findAllByTestId("account-session-row"),
+    ).toHaveLength(2);
+    await userEvent.type(
+      canvas.getByLabelText("Current password"),
+      "old-password-123",
+    );
+    await userEvent.type(
+      canvas.getByLabelText("New password"),
+      "a brand new passphrase",
+    );
+    await userEvent.click(canvas.getByTestId("change-password-submit"));
+
+    await waitFor(() =>
+      expect(canvas.getAllByTestId("account-session-row")).toHaveLength(1),
+    );
+    await expect(canvas.queryByText("Omnibus on iPhone")).toBeNull();
   },
 };
 
@@ -117,15 +151,6 @@ export const RefusesAWeakNewPassword: Story = {
 
 // ── Sessions ─────────────────────────────────────────────────────
 
-const HERE = aWireAuthSession({ id: 1, is_current: true });
-const PHONE = aWireAuthSession({
-  id: 2,
-  client: "Omnibus on iPhone",
-  kind: "bearer",
-  created_at: 1_750_000_000,
-  last_used_at: 1_750_100_000,
-});
-
 const withSessions = () => {
   server.sessions = [HERE, PHONE];
 };
@@ -138,6 +163,19 @@ export const FindsYourSessionsBeforeSayingThereAreNone: Story = {
     await expect(
       await canvas.findByTestId("account-sessions-loading"),
     ).toHaveTextContent("Finding your sessions");
+    await expect(canvas.queryByTestId("account-sessions-empty")).toBeNull();
+  },
+};
+
+export const SaysWhyTheSessionsDidNotLoad: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/auth/sessions", 500));
+  },
+  play: async ({ canvas }) => {
+    await said(canvas, "account-sessions-status", "failed with 500");
+    await expect(canvas.getByTestId("account-sessions-status")).toHaveClass(
+      "error",
+    );
     await expect(canvas.queryByTestId("account-sessions-empty")).toBeNull();
   },
 };

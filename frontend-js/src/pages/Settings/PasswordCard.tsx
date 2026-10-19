@@ -1,9 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { changePassword } from "../../api";
+import { changePassword, sessionsQuery } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel } from "../../components/Loading/Loading";
 import { StatusLine } from "../../components/SettingsShell/SettingsShell";
@@ -29,6 +29,7 @@ const PASSWORD_ATTRS = {
 
 /** Change the password you sign in with: the current one authorizes, the server judges the new one. */
 export function PasswordCard() {
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<Status>(null);
   const form = useForm({
     resolver: zodResolver(PasswordSchema),
@@ -39,6 +40,8 @@ export function PasswordCard() {
       changePassword(current, next),
     onMutate: () => setStatus(null),
     onSuccess: () => {
+      // The server signed every other session out.
+      void queryClient.invalidateQueries({ queryKey: sessionsQuery.queryKey });
       form.reset();
       setStatus({ message: "Password changed.", error: false });
     },

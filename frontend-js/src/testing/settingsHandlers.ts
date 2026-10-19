@@ -208,6 +208,8 @@ export function settingsHandlers(server: SettingsServer) {
         });
       }
       server.password = body.new_password;
+      // Every other session is signed out; this one stays.
+      server.sessions = server.sessions.filter((s) => s.is_current);
       return empty(204);
     }),
     http.post("/api/account/hidden-formats", async ({ request }) => {
