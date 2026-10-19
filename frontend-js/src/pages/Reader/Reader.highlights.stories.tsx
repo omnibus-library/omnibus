@@ -335,7 +335,12 @@ async function openDrawer({
   await userEvent.click(
     canvas.getByRole("button", { name: "Highlights and notes" }),
   );
-  return canvas.findByTestId("reader-highlights-drawer");
+  const drawer = await canvas.findByTestId("reader-highlights-drawer");
+  // The passages arrive after the book opens; a row read before they do is not there yet.
+  if (r.annotations.highlights.length > 0) {
+    await within(drawer).findAllByTestId("reader-highlight-row");
+  }
+  return drawer;
 }
 
 const rowOf = (canvas: Canvas, text: string) => {
