@@ -9,6 +9,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import type { User } from "./api";
 import { routes } from "./router";
+import { meQuery } from "./session";
 import { ADA, harnessClient } from "./testing/AppHarness";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
@@ -49,6 +50,26 @@ function withRoute(
 describe("routes", () => {
   it("renders the library at /", async () => {
     renderRoute("/");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Your Library" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the app up when refreshing the session fails", async () => {
+    const client = harnessClient();
+    const failing = {
+      ...meQuery,
+      staleTime: 0,
+      queryFn: () => Promise.reject(new Error("offline")),
+    };
+    await client.fetchQuery(failing).catch(() => {});
+    const router = createMemoryRouter(routes, { initialEntries: ["/"] });
+    render(
+      <QueryClientProvider client={client}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
 
     expect(
       await screen.findByRole("heading", { level: 1, name: "Your Library" }),
