@@ -45,10 +45,12 @@ export function aShelf(overrides: Partial<Shelf> = {}): Shelf {
   return {
     id: 3,
     kind: "manual",
+    visibility: "private",
     name: "Winter reads",
     ownerId: 1 as UserId,
     ownerName: "ada",
     bookCount: 12,
+    coverUuids: [],
     ...overrides,
   };
 }

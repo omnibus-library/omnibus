@@ -3,6 +3,7 @@ import type {
   PaletteBookHit,
   PaletteResults,
   ResumePoint,
+  ShelfSummary,
   UserSummary,
 } from "../api/generated/schemas";
 
@@ -86,6 +87,23 @@ export const WIRE_ADA: UserSummary = {
   can_download: true,
   kindle_email: null,
 };
+
+/** A hand-picked shelf the signed-in admin (user 1) owns, as `GET /api/shelves` sends it. */
+export function aWireShelf(
+  overrides: Partial<ShelfSummary> = {},
+): ShelfSummary {
+  return {
+    id: 3,
+    kind: "manual",
+    name: "Winter reads",
+    visibility: "private",
+    owner_user_id: 1,
+    owner_username: "ada",
+    book_count: 2,
+    cover_uuids: [],
+    ...overrides,
+  };
+}
 
 /** A book hit as `GET /api/search/palette` sends it. */
 export function aWirePaletteBook(

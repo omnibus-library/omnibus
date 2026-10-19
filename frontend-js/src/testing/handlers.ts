@@ -8,6 +8,7 @@ import {
   getGetRegistrationMockHandler200,
   getGetTagsMockHandler200,
   getListSeriesMockHandler200,
+  getListShelvesMockHandler200,
 } from "../api/generated/omnibus.msw";
 import type {
   AuthorSummary,
@@ -18,6 +19,7 @@ import type {
   PaletteResults,
   ResumePoint,
   SeriesSummary,
+  ShelfSummary,
   TagWeight,
 } from "../api/generated/schemas";
 import { COVER_SVG } from "./books";
@@ -121,6 +123,32 @@ export function libraryHandler(
     }
     const page = { books: shown.slice(start, end), path } satisfies EbookPage;
     return HttpResponse.json(page, { headers });
+  });
+}
+
+/** `GET /api/shelves`. */
+export function shelvesHandler(shelves: ShelfSummary[]) {
+  return getListShelvesMockHandler200(shelves);
+}
+
+/**
+ * `GET /api/shelves/{id}/page`: the shelf's `books` in fixture order, narrowed
+ * by `filter` as the server does; an id with no shelf is a 404. Each request's
+ * search params land in `requests`.
+ */
+export function shelfPageHandler(
+  shelves: Record<number, EbookMetadata[]>,
+  { requests = [] }: { requests?: URLSearchParams[] } = {},
+) {
+  return http.get("/api/shelves/:id/page", ({ params, request }) => {
+    const members = shelves[Number(params.id)];
+    if (!members) return new HttpResponse("shelf not found", { status: 404 });
+    const search = new URL(request.url).searchParams;
+    requests.push(search);
+    const clauses: FilterClause[] = JSON.parse(search.get("filter") ?? "[]");
+    return HttpResponse.json({
+      books: members.filter((b) => passes(b, clauses)),
+    });
   });
 }
 

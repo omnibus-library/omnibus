@@ -4,6 +4,7 @@ import {
   headerSort,
   SORT_KEYS,
   sortLabel,
+  sortLockReason,
   toggleDir,
 } from "./sorting";
 
@@ -53,5 +54,16 @@ describe("headerSort", () => {
       sort: "newest_added",
       dir: "desc",
     });
+  });
+});
+
+describe("sortLockReason", () => {
+  it.each([
+    ["a hand-picked shelf", "manual", "shelf order"],
+    ["a wishlist", "wishlist", "shelf order"],
+    ["a smart shelf", "smart", null],
+    ["the whole library", null, null],
+  ] as const)("reads %s as %s", (_name, kind, reason) => {
+    expect(sortLockReason(kind)).toBe(reason);
   });
 });

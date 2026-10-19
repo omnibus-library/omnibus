@@ -1,4 +1,4 @@
-import type { SortDir, SortKey } from "../../api";
+import type { ShelfKind, SortDir, SortKey } from "../../api";
 
 /** The sort axes the toolbar offers, in display order. */
 export const SORT_KEYS: SortKey[] = [
@@ -42,4 +42,13 @@ export function headerSort(
     sort: key,
     dir: key === current.sort ? toggleDir(current.dir) : defaultDirFor(key),
   };
+}
+
+/**
+ * Why the sort controls are inert on a shelf, or `null` when they act. A
+ * hand-picked shelf keeps the order its reader gave it and a wishlist the order
+ * its books were wished for; neither consults the sort.
+ */
+export function sortLockReason(kind: ShelfKind | null): string | null {
+  return kind === "manual" || kind === "wishlist" ? "shelf order" : null;
 }

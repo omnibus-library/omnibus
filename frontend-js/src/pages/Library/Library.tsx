@@ -1,9 +1,11 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { skipToken, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   type Book,
   fetchBookPage,
+  fetchShelfPage,
+  fetchShelves,
   type LibraryQuery,
   thumbSrcSet,
   thumbUrl,
@@ -25,14 +27,18 @@ import {
   DEFAULT_PREFS,
   lastLibrary,
   loadPrefs,
+  loadShelfSelection,
   type Prefs,
   reconcile,
+  type ShelfSelection,
   savePlan,
   savePrefs,
+  saveShelfSelection,
 } from "../../viewPrefs";
 import { BookTable } from "./BookTable";
 import { emptyState, headerCount } from "./libraryView";
-import { headerSort } from "./sorting";
+import { ShelfGallery } from "./ShelfGallery";
+import { headerSort, sortLockReason } from "./sorting";
 import { Toolbar } from "./Toolbar";
 import "./Library.css";
 
@@ -66,9 +72,6 @@ function Tile({ book, index }: { book: Book; index: number }) {
     </Link>
   );
 }
-
-// The shelf list arrives with the shelves row; until then the Shelf facet waits.
-const SHELVES: ShelfList = { state: "pending" };
 
 function Receipt({
   count,
@@ -118,9 +121,50 @@ export function Library() {
     initialPageParam: "",
     getNextPageParam: (last) => last.next ?? undefined,
   });
-  const books = pages.data?.pages.flatMap((page) => page.books) ?? [];
+  const browseBooks = pages.data?.pages.flatMap((page) => page.books) ?? [];
   const firstPage = pages.data?.pages[0];
   const filtered = prefs.clauses.length > 0;
+
+  const [selection, setSelection] = useState(loadShelfSelection);
+  const shelfId = selection.kind === "shelf" ? selection.id : null;
+  const shelvesQuery = useQuery({
+    queryKey: ["shelves"],
+    queryFn: fetchShelves,
+  });
+  const shelves: ShelfList = shelvesQuery.data
+    ? { state: "loaded", shelves: shelvesQuery.data }
+    : shelvesQuery.isError
+      ? { state: "failed" }
+      : { state: "pending" };
+  const shelfQuery = {
+    sort: prefs.sort,
+    dir: prefs.dir,
+    clauses: prefs.clauses,
+  };
+  const shelfPage = useQuery({
+    queryKey: ["shelf-page", shelfId, shelfQuery],
+    queryFn:
+      shelfId === null ? skipToken : () => fetchShelfPage(shelfId, shelfQuery),
+  });
+  // The lens is the shelf's page or, on All Books, the browse list.
+  const lens = shelfId === null ? pages : shelfPage;
+  const books = shelfId === null ? browseBooks : (shelfPage.data ?? []);
+  const sortLock = sortLockReason(
+    shelvesQuery.data?.find((s) => s.id === shelfId)?.kind ?? null,
+  );
+
+  // A stored shelf the list no longer holds snaps back to All, judged only against a list that loaded.
+  const loadedShelves = shelvesQuery.data;
+  useEffect(() => {
+    if (shelfId === null || !loadedShelves) return;
+    if (loadedShelves.some((s) => s.id === shelfId)) return;
+    setSelection({ kind: "all" });
+    saveShelfSelection({ kind: "all" });
+  }, [shelfId, loadedShelves]);
+  const pick = (next: ShelfSelection) => {
+    setSelection(next);
+    saveShelfSelection(next);
+  };
 
   // Page 1 names the library; until it does, `lastLibrary()` is only a guess.
   const answeredPath = firstPage?.path;
@@ -142,7 +186,8 @@ export function Library() {
 
   // Fetch the next page as the button nears the viewport.
   const loadMore = useRef<HTMLDivElement>(null);
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = pages;
+  const { isFetchingNextPage, fetchNextPage } = pages;
+  const hasNextPage = shelfId === null && pages.hasNextPage;
   useEffect(() => {
     const row = loadMore.current;
     if (!row || !hasNextPage || isFetchingNextPage) return;
@@ -164,26 +209,46 @@ export function Library() {
   return (
     <div className="landing-col lmq" id="lmq-root">
       <PageTitle />
+      <ShelfGallery
+        shelves={shelves}
+        viewerId={user.id}
+        selection={selection}
+        pickedCount={
+          shelfId !== null && !filtered && shelfPage.data
+            ? shelfPage.data.length
+            : null
+        }
+        allCount={firstPage?.total ?? null}
+        allCovers={browseBooks
+          .filter((b) => b.hasCover)
+          .slice(0, 4)
+          .map((b) => b.uuid)}
+        onSelect={pick}
+      />
       <header className="lib-header">
         <h1 className="sr-only">Your Library</h1>
         <div className="lib-header-row">
           <FilterBar
             clauses={prefs.clauses}
-            shelves={SHELVES}
+            shelves={shelves}
             viewerId={user.id}
             onChange={(clauses) => change({ ...prefs, clauses })}
           />
           <Receipt
             count={headerCount(
               filtered,
-              firstPage?.total ?? null,
-              pages.isError,
+              shelfId === null
+                ? (firstPage?.total ?? null)
+                : (shelfPage.data?.length ?? null),
+              lens.isError,
             )}
-            hidden={firstPage?.hidden ?? null}
+            hidden={shelfId === null ? (firstPage?.hidden ?? null) : null}
           />
           <Toolbar
             prefs={prefs}
-            hiddenFormats={query.excludeFormats}
+            // Hidden formats narrow All Books only.
+            hiddenFormats={shelfId === null ? query.excludeFormats : []}
+            sortLock={sortLock}
             onChange={change}
           />
         </div>
@@ -195,7 +260,7 @@ export function Library() {
       </header>
       <div className="lib-layout lib-layout--collapsed">
         <div className="lib-main lib-books">
-          {pages.status === "pending" && (
+          {lens.status === "pending" && (
             <div className="lib-loading" role="status" aria-live="polite">
               <span className="ld-sr">Taking the books off the shelf</span>
               {prefs.view === "table" ? (
@@ -205,16 +270,20 @@ export function Library() {
               )}
             </div>
           )}
-          {pages.status === "error" && (
+          {lens.status === "error" && (
             <PageError
-              message={`Couldn't load the library: ${pages.error.message}`}
+              message={`Couldn't load the library: ${lens.error.message}`}
             />
           )}
-          {pages.status === "success" &&
+          {lens.status === "success" &&
             emptyState(books.length, filtered) === "empty" && (
-              <p className="library-empty">No ebooks found.</p>
+              <p className="library-empty">
+                {shelfId === null
+                  ? "No ebooks found."
+                  : "No books in this shelf."}
+              </p>
             )}
-          {pages.status === "success" &&
+          {lens.status === "success" &&
             emptyState(books.length, filtered) === "filtered" && (
               <div className="library-empty">
                 <p>No books match these filters.</p>
@@ -228,6 +297,7 @@ export function Library() {
               <BookTable
                 books={books}
                 prefs={prefs}
+                sortLock={sortLock}
                 onSort={(key) =>
                   change({ ...prefs, ...headerSort(prefs, key) })
                 }
@@ -239,7 +309,7 @@ export function Library() {
                 ))}
               </div>
             ))}
-          {pages.hasNextPage && (
+          {hasNextPage && (
             <div className="lib-load-more-row" ref={loadMore}>
               <Button
                 className="lib-load-more"

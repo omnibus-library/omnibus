@@ -22,13 +22,16 @@ const SORTABLE = {
 function SortableHeader({
   column,
   prefs,
+  locked,
   onSort,
 }: {
   column: SortableColumn;
   prefs: Prefs;
+  locked: boolean;
   onSort: (key: SortKey) => void;
 }) {
-  const active = prefs.sort === column.sort;
+  // A locked list is ordered by the server, so the stored axis describes none of its rows.
+  const active = !locked && prefs.sort === column.sort;
   const ariaSort = active
     ? prefs.dir === "asc"
       ? "ascending"
@@ -40,6 +43,7 @@ function SortableHeader({
       <button
         type="button"
         className="sort-th-btn"
+        disabled={locked}
         onClick={() => onSort(column.sort)}
       >
         {column.label}
@@ -147,13 +151,20 @@ function Row({ book }: { book: Book }) {
 type BookTableProps = {
   books: Book[];
   prefs: Prefs;
+  /** Why sorting is inert on this list, or `null` when it acts. */
+  sortLock: string | null;
   onSort: (key: SortKey) => void;
 };
 
 /** The dense table view: one read-only row per book, sortable by column header. */
-export function BookTable({ books, prefs, onSort }: BookTableProps) {
+export function BookTable({ books, prefs, sortLock, onSort }: BookTableProps) {
   const header = (column: SortableColumn) => (
-    <SortableHeader column={column} prefs={prefs} onSort={onSort} />
+    <SortableHeader
+      column={column}
+      prefs={prefs}
+      locked={sortLock !== null}
+      onSort={onSort}
+    />
   );
   return (
     <div className="ebook-table-wrap">

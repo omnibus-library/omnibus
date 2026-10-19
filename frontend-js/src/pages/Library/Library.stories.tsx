@@ -7,8 +7,10 @@ import {
   hanging,
   LIBRARY_PATH,
   libraryHandler,
+  shelfPageHandler,
+  shelvesHandler,
 } from "../../testing/handlers";
-import { aWireLibrary, WIRE_ADA } from "../../testing/wire";
+import { aWireLibrary, aWireShelf, WIRE_ADA } from "../../testing/wire";
 import { Library } from "./Library";
 
 const PREFS_KEY = `omnibus.view_prefs::${LIBRARY_PATH}`;
@@ -17,7 +19,8 @@ const meta = {
   title: "Pages/Library",
   component: Library,
   // The three keys the page reads, so no story inherits another's prefs.
-  beforeEach() {
+  beforeEach({ msw }) {
+    msw.use(shelvesHandler([]));
     for (const key of [
       PREFS_KEY,
       "omnibus.view_prefs.last_library",
@@ -442,5 +445,303 @@ export const HiddenFormats: Story = {
     await expect(link).toHaveTextContent(
       "Hidden: M4B, MP3. Change in Settings",
     );
+  },
+};
+
+const SHELF_KEY = "omnibus.landing_shelf";
+const WINTER = '{"kind":"shelf","id":3}';
+
+const FIRST_COVER = "00000000-0000-4000-8000-000000000001";
+
+// Winter reads is hand-picked and summarises five books though it holds two.
+const SHELVES = shelvesHandler([
+  aWireShelf({ id: 3, book_count: 5, cover_uuids: [FIRST_COVER] }),
+  aWireShelf({
+    id: 5,
+    kind: "smart",
+    name: "Space Operas",
+    visibility: "public",
+    book_count: 12,
+  }),
+  aWireShelf({ id: 6, kind: "wishlist", name: "Wishlist", book_count: 1 }),
+  aWireShelf({
+    id: 7,
+    name: "Book club",
+    visibility: "public",
+    owner_user_id: 2,
+    owner_username: "bo",
+    book_count: 3,
+  }),
+  aWireShelf({
+    id: 8,
+    name: "Bo's secrets",
+    owner_user_id: 2,
+    owner_username: "bo",
+  }),
+  aWireShelf({
+    id: 9,
+    kind: "wishlist",
+    name: "Empty wishlist",
+    book_count: 0,
+  }),
+]);
+
+const SHELF_MEMBERS = BY_TWO_AUTHORS.slice(0, 4);
+
+const shelfRequests: URLSearchParams[] = [];
+
+export const Shelves: Story = {
+  beforeEach({ msw }) {
+    msw.use(libraryHandler(aWireLibrary(6), 10), SHELVES);
+  },
+  play: async ({ canvas }) => {
+    const all = await canvas.findByRole("button", {
+      name: "All Books, 6 books",
+    });
+    await expect(all).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      await canvas.findByRole("button", { name: "Winter reads, 5 books" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await expect(
+      canvas.getByRole("button", {
+        name: "Smart shelf Space Operas, 12 books · Public",
+      }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", { name: "Wishlist Wishlist, 1 book" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", {
+        name: "Book club, 3 books · Public · by bo",
+      }),
+    ).toHaveTextContent("3 · bo");
+    // Another reader's private shelf and an empty wishlist stay off the row.
+    await expect(canvas.queryByText("Bo's secrets")).not.toBeInTheDocument();
+    await expect(canvas.queryByText("Empty wishlist")).not.toBeInTheDocument();
+
+    const region = canvas.getByRole("region", { name: "Shelves" });
+    await expect(
+      within(region).getByRole("link", { name: "All shelves" }),
+    ).toHaveAttribute("href", "/shelves");
+    await expect(
+      within(region).getByRole("button", { name: "Earlier shelves" }),
+    ).toHaveAttribute("tabindex", "-1");
+    await expect(
+      within(region).getByRole("button", { name: "More shelves" }),
+    ).toHaveAttribute("tabindex", "-1");
+  },
+};
+
+export const ShelfLens: Story = {
+  parameters: { user: { ...WIRE_ADA, hidden_formats: ["mp3"] } },
+  beforeEach({ msw }) {
+    shelfRequests.length = 0;
+    msw.use(
+      libraryHandler(aWireLibrary(6), 10),
+      SHELVES,
+      shelfPageHandler({ 3: SHELF_MEMBERS }, { requests: shelfRequests }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(6));
+    await expect(
+      canvas.getByRole("link", { name: /^Hidden: MP3/ }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Winter reads, 5 books" }),
+    );
+
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(4));
+    await expect(shelfRequests.at(-1)?.get("sort")).toBe("title");
+    await expect(shelfRequests.at(-1)?.get("dir")).toBe("asc");
+    await expect(shelfRequests.at(-1)?.has("exclude_formats")).toBe(false);
+    // The loaded member list outranks the summary's count.
+    await expect(
+      canvas.getByRole("button", { name: "Winter reads, 4 books" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      canvas.queryByRole("button", { name: "Load more" }),
+    ).not.toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("link", { name: /^Hidden:/ }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const ShelfLensFiltered: Story = {
+  beforeEach({ msw }) {
+    seedAdaFilter();
+    localStorage.setItem(SHELF_KEY, WINTER);
+    shelfRequests.length = 0;
+    msw.use(
+      libraryHandler(BY_TWO_AUTHORS, 10),
+      SHELVES,
+      shelfPageHandler({ 3: SHELF_MEMBERS }, { requests: shelfRequests }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(2));
+    await expect(shelfRequests[0]?.get("filter")).toBe(ADA_FILTER);
+    await expect(await canvas.findByText("2 books")).toBeInTheDocument();
+    // The summary counts the whole shelf, so under a filter it stays put.
+    await expect(
+      canvas.getByRole("button", { name: "Winter reads, 5 books" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const ShelfEmpty: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      libraryHandler(aWireLibrary(6), 10),
+      SHELVES,
+      shelfPageHandler({ 3: [] }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Winter reads, 5 books" }),
+    );
+
+    await expect(
+      await canvas.findByText("No books in this shelf."),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByText("No ebooks found."),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const ShelfFailing: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      libraryHandler(aWireLibrary(6), 10),
+      SHELVES,
+      failing("get", "/api/shelves/3/page", 500),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Winter reads, 5 books" }),
+    );
+
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "Couldn't load the library",
+    );
+  },
+};
+
+export const ShelvesLoading: Story = {
+  beforeEach({ msw }) {
+    msw.use(hanging("/api/ebooks"), hanging("/api/shelves"));
+  },
+  play: async ({ canvas, canvasElement }) => {
+    await expect(
+      canvas.getByRole("button", { name: "All Books, Your whole library" }),
+    ).toBeInTheDocument();
+    const pending = canvasElement.querySelectorAll(".lmq-shent-pending");
+    await expect(pending).toHaveLength(3);
+    await expect(pending[0]).toHaveAttribute("aria-hidden", "true");
+  },
+};
+
+export const ShelvesFailing: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      libraryHandler(aWireLibrary(6), 10),
+      failing("get", "/api/shelves", 500),
+    );
+  },
+  play: async ({ canvas, canvasElement }) => {
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll(".lmq-shent-pending")).toHaveLength(
+        0,
+      ),
+    );
+    await expect(
+      await canvas.findByRole("button", { name: "All Books, 6 books" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("button", { name: /^Winter reads/ }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const ShelfPickPersists: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      libraryHandler(aWireLibrary(6), 10),
+      SHELVES,
+      shelfPageHandler({ 3: SHELF_MEMBERS }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Winter reads, 5 books" }),
+    );
+    await expect(localStorage.getItem(SHELF_KEY)).toBe(WINTER);
+
+    await userEvent.click(canvas.getByRole("button", { name: /^All Books/ }));
+    await expect(localStorage.getItem(SHELF_KEY)).toBe('{"kind":"all"}');
+  },
+};
+
+export const StaleShelfSnapsBack: Story = {
+  beforeEach({ msw }) {
+    localStorage.setItem(SHELF_KEY, '{"kind":"shelf","id":99}');
+    msw.use(libraryHandler(aWireLibrary(6), 10), SHELVES);
+  },
+  play: async ({ canvas }) => {
+    await waitFor(() =>
+      expect(localStorage.getItem(SHELF_KEY)).toBe('{"kind":"all"}'),
+    );
+    await expect(
+      await canvas.findByRole("button", { name: /^All Books/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+  },
+};
+
+export const ManualShelfSortLocked: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      libraryHandler(aWireLibrary(6), 10),
+      SHELVES,
+      shelfPageHandler({ 3: SHELF_MEMBERS, 5: SHELF_MEMBERS }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Winter reads, 5 books" }),
+    );
+
+    await expect(await canvas.findByText("shelf order")).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("combobox", { name: "Sort by" }),
+    ).toBeDisabled();
+    await expect(
+      canvas.getByRole("button", { name: /^Sort direction/ }),
+    ).toBeDisabled();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Table" }));
+
+    await expect(canvas.getByText("shelf order")).toBeInTheDocument();
+    for (const header of await canvas.findAllByRole("columnheader", {
+      name: /^(Title|Author|Series|Last Updated|Added)/,
+    })) {
+      await expect(header).toHaveAttribute("aria-sort", "none");
+      await expect(within(header).getByRole("button")).toBeDisabled();
+    }
+
+    // A smart shelf orders itself by the sort the reader picks.
+    await userEvent.click(
+      canvas.getByRole("button", { name: /^Smart shelf Space Operas/ }),
+    );
+    await waitFor(() =>
+      expect(canvas.queryByText("shelf order")).not.toBeInTheDocument(),
+    );
+    await expect(
+      canvas.getByRole("columnheader", { name: /^Title/ }),
+    ).toHaveAttribute("aria-sort", "ascending");
   },
 };

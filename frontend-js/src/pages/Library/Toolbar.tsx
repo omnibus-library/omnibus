@@ -9,11 +9,18 @@ type ToolbarProps = {
   prefs: Prefs;
   /** The formats the reader's preference keeps off this list. */
   hiddenFormats: string[];
+  /** Why sorting is inert on this list, or `null` when it acts. */
+  sortLock: string | null;
   onChange: (next: Prefs) => void;
 };
 
 /** The view toggle, in grid view the sort controls, and the hidden-formats note. */
-export function Toolbar({ prefs, hiddenFormats, onChange }: ToolbarProps) {
+export function Toolbar({
+  prefs,
+  hiddenFormats,
+  sortLock,
+  onChange,
+}: ToolbarProps) {
   const hidden = hiddenFormatsLabel(hiddenFormats);
   return (
     <div className="lib-toolbar" role="toolbar">
@@ -37,6 +44,7 @@ export function Toolbar({ prefs, hiddenFormats, onChange }: ToolbarProps) {
             Sort by
             <select
               className="lib-sort-select"
+              disabled={sortLock !== null}
               value={prefs.sort}
               onChange={(e) =>
                 onChange({
@@ -55,12 +63,17 @@ export function Toolbar({ prefs, hiddenFormats, onChange }: ToolbarProps) {
           <button
             type="button"
             className="lib-sort-dir"
+            disabled={sortLock !== null}
             aria-label={`Sort direction: ${prefs.dir === "asc" ? "ascending" : "descending"}`}
             onClick={() => onChange({ ...prefs, dir: toggleDir(prefs.dir) })}
           >
             {prefs.dir === "asc" ? <ArrowUpGlyph /> : <ArrowDownGlyph />}
           </button>
         </div>
+      )}
+      {sortLock && (
+        // Outside the grid block: in table view the headers are the inert control.
+        <span className="label lib-sort-locked">{sortLock}</span>
       )}
       {hidden && (
         // The note links to the preference, so a missing book never reads as a missing file.

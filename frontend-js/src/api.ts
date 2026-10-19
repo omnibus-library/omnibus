@@ -9,8 +9,10 @@ import {
   getRecentProgress,
   getRegistration,
   getSearchPalette,
+  getShelfPage,
   getTags,
   listSeries,
+  listShelves,
   login as postLogin,
   register as postRegister,
 } from "./api/generated/omnibus";
@@ -68,15 +70,34 @@ export type UserId = number & { readonly __brand: "UserId" };
 
 export type ShelfKind = ShelfSummary["kind"];
 
-/** A shelf as the filter bar names it. */
+/** A shelf as the filter bar and the shelves row show it. */
 export type Shelf = {
   id: number;
   kind: ShelfKind;
+  visibility: ShelfSummary["visibility"];
   name: string;
   ownerId: UserId;
   ownerName: string;
   bookCount: number;
+  /** Up to four members that have covers, in shelf order. */
+  coverUuids: BookUuid[];
 };
+
+/** The screen's shape of one `GET /api/shelves` entry. */
+export function toShelf(wire: ShelfSummary): Shelf {
+  return {
+    id: wire.id,
+    kind: wire.kind,
+    visibility: wire.visibility,
+    name: wire.name,
+    ownerId: wire.owner_user_id as UserId,
+    ownerName: wire.owner_username,
+    bookCount: wire.book_count,
+    coverUuids: (wire.cover_uuids ?? []).flatMap(
+      (uuid) => parseBookUuid(uuid) ?? [],
+    ),
+  };
+}
 
 /** The screen's shape of the user `GET /api/auth/me` and sign-in answer with. */
 export function toUser(user: UserSummary) {
@@ -325,6 +346,28 @@ export async function fetchBookPage(
   });
   if (res.status !== 200) throw failure(res);
   return toBookPage(res.data, res.headers);
+}
+
+/** Every shelf the reader can see, in the server's order. */
+export async function fetchShelves(): Promise<Shelf[]> {
+  const res = await listShelves();
+  if (res.status !== 200) throw failure(res);
+  return res.data.map(toShelf);
+}
+
+/** One shelf's books, whole, in `query`'s order and narrowed by its clauses. */
+export async function fetchShelfPage(
+  id: number,
+  query: Pick<LibraryQuery, "sort" | "dir" | "clauses">,
+): Promise<Book[]> {
+  const filter = filterParam(query.clauses);
+  const res = await getShelfPage(id, {
+    sort: query.sort,
+    dir: query.dir,
+    ...(filter ? { filter } : {}),
+  });
+  if (res.status !== 200) throw failure(res);
+  return res.data.books.map(toBook);
 }
 
 /** The full record for one book, or `null` when no book has that uuid. */

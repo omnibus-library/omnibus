@@ -6,12 +6,14 @@ import {
   toBookPage,
   toPalette,
   toResumePoint,
+  toShelf,
   toUser,
 } from "./api";
 import {
   aWireBook,
   aWirePalette,
   aWireResumePoint,
+  aWireShelf,
   WIRE_ADA,
 } from "./testing/wire";
 
@@ -126,6 +128,34 @@ describe("toResumePoint", () => {
       fileId: 7,
       formats: ["M4B", "EPUB"],
     });
+  });
+});
+
+describe("toShelf", () => {
+  it("maps a shelf summary to its owner, kind, count and cover uuids", () => {
+    const wire = aWireShelf({
+      kind: "smart",
+      visibility: "public",
+      book_count: 12,
+      cover_uuids: ["ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0"],
+    });
+
+    expect(toShelf(wire)).toEqual({
+      id: 3,
+      kind: "smart",
+      visibility: "public",
+      name: "Winter reads",
+      ownerId: 1,
+      ownerName: "ada",
+      bookCount: 12,
+      coverUuids: ["ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0"],
+    });
+  });
+
+  it("defaults the cover uuids the server omits", () => {
+    const { cover_uuids: _omitted, ...wire } = aWireShelf();
+
+    expect(toShelf(wire).coverUuids).toEqual([]);
   });
 });
 
