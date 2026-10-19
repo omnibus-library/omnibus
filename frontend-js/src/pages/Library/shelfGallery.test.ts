@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { aShelf, userId } from "../../testing/books";
 import {
   addTargets,
-  attributedOwner,
   pageTarget,
   railShelves,
   shelfAriaLabel,
@@ -54,21 +53,6 @@ describe("railShelves", () => {
     const all = Array.from({ length: 12 }, (_, i) => aShelf({ id: i + 1 }));
 
     expect(railShelves(all, ME).map((s) => s.id)).toEqual(all.map((s) => s.id));
-  });
-});
-
-describe("attributedOwner", () => {
-  it("names the owner of a shelf the reader does not own", () => {
-    expect(
-      attributedOwner(aShelf({ ownerId: THEM, ownerName: "bo" }), ME),
-    ).toBe("bo");
-  });
-
-  it("names nobody on the readers own shelf or on a wishlist", () => {
-    expect(attributedOwner(aShelf(), ME)).toBeNull();
-    expect(
-      attributedOwner(aShelf({ ownerId: THEM, kind: "wishlist" }), ME),
-    ).toBeNull();
   });
 });
 

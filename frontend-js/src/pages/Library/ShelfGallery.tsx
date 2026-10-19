@@ -8,6 +8,7 @@ import {
 import { Link } from "react-router";
 import { type BookUuid, type Shelf, thumbUrl, type UserId } from "../../api";
 import type { ShelfList } from "../../components/FilterBar/filters";
+import { attributedOwner } from "../../components/FilterBar/filters";
 import {
   CaretLeftGlyph,
   CaretRightGlyph,
@@ -20,7 +21,6 @@ import { bookCount } from "../../format";
 import { prefersReducedMotion } from "../../motion";
 import type { ShelfSelection } from "../../viewPrefs";
 import {
-  attributedOwner,
   pageTarget,
   railShelves,
   shelfAriaLabel,

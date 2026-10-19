@@ -1,8 +1,6 @@
 import type { Shelf, ShelfKind, UserId } from "../../api";
 import { bookCount } from "../../format";
 
-export { attributedOwner } from "../../components/FilterBar/filters";
-
 /**
  * The shelves the row carries: the reader's own, plus other readers' public
  * shelves, minus any wishlist nobody has put a book in. The server's order is
