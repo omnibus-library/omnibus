@@ -182,6 +182,22 @@ describe("seek", () => {
     expect(media.calls).toEqual(["load", "play"]);
   });
 
+  it("keeps the resume-play when a second seek replaces a part swap still waiting on metadata", () => {
+    const { media, engine } = setup();
+    engine.initDirect(PARTS, 10);
+    media.fire("loadedmetadata");
+    media.paused = false;
+
+    engine.seek(150);
+    media.paused = true; // what a real load() does, with no pause event
+    engine.seek(160);
+    media.calls = [];
+    media.fire("loadedmetadata");
+
+    expect(media.currentTime).toBe(60);
+    expect(media.calls).toEqual(["play"]);
+  });
+
   it("lands skip(-30) from 10 s into part 2 at 80 s of part 1", () => {
     const { media, on, engine } = setup();
     engine.initDirect(PARTS, 110);
@@ -304,6 +320,23 @@ describe("teardown gates", () => {
     );
 
     expect(on.pause).toHaveBeenCalledWith(10, true);
+  });
+
+  it("drops a restored page's pause when the clock reads 0 far past where the session was", () => {
+    const { media, on, engine } = setup();
+    engine.initDirect(PARTS, 10);
+    media.fire("loadedmetadata");
+    media.fire("play");
+    media.currentTime = 90;
+    media.fire("timeupdate");
+    window.dispatchEvent(new Event("pagehide"));
+    media.currentTime = 0;
+
+    window.dispatchEvent(
+      Object.assign(new Event("pageshow"), { persisted: true }),
+    );
+
+    expect(on.pause).not.toHaveBeenCalled();
   });
 
   it("passes userActed false to a pause on an untouched boot with a seed", () => {

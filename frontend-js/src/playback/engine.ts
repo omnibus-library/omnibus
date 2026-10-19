@@ -64,6 +64,7 @@ export function createEngine(media: Media, on: EngineEvents) {
   let rate: number | null = null;
   let hls: HlsInstance | null = null;
   let pendingMeta: (() => void) | null = null;
+  let playOnLand = false;
   let watchdog: ReturnType<typeof setInterval> | undefined;
   let lastProgressAt = Date.now();
   let stallReported = false;
@@ -94,26 +95,23 @@ export function createEngine(media: Media, on: EngineEvents) {
 
   const playQuietly = () => void media.play().catch(() => {});
 
-  // Runs once at the next `loadedmetadata`; a newer boot or seek replaces it.
-  const afterMetadata = (fn: () => void) => {
+  // Lands `local` on the next `loadedmetadata`; until then positions read as `at`. A newer
+  // boot or seek replaces it, keeping any play already owed.
+  const landAt = (at: number, local: number, play: boolean) => {
     if (pendingMeta) media.removeEventListener("loadedmetadata", pendingMeta);
+    seed = at;
+    seeded = true;
+    playOnLand ||= play;
     const once = () => {
       media.removeEventListener("loadedmetadata", once);
       pendingMeta = null;
-      fn();
+      media.currentTime = local;
+      seed = null;
+      if (playOnLand) playQuietly();
+      playOnLand = false;
     };
     pendingMeta = once;
     media.addEventListener("loadedmetadata", once);
-  };
-
-  // Lands `local` on the next `loadedmetadata`; until then positions read as `at`.
-  const landAt = (at: number, local: number, then?: () => void) => {
-    seed = at;
-    afterMetadata(() => {
-      media.currentTime = local;
-      seed = null;
-      then?.();
-    });
   };
 
   const markProgress = () => {
@@ -164,7 +162,8 @@ export function createEngine(media: Media, on: EngineEvents) {
   listen(window, "pageshow", (e) => {
     if (!("persisted" in e && e.persisted)) return;
     seeded = true;
-    if (media.paused) on.pause(abs(), userActed);
+    const t = abs();
+    if (media.paused && !isTeardownArtifact(t)) on.pause(t, userActed);
   });
 
   const startWatchdog = () => {
@@ -200,6 +199,7 @@ export function createEngine(media: Media, on: EngineEvents) {
     watchdog = undefined;
     if (pendingMeta) media.removeEventListener("loadedmetadata", pendingMeta);
     pendingMeta = null;
+    playOnLand = false;
   };
 
   const seek = (seconds: number) => {
@@ -211,13 +211,12 @@ export function createEngine(media: Media, on: EngineEvents) {
     on.seeked(s);
     const i = mode === "direct" ? partAt(s) : 0;
     const local = s - (offsets[i] ?? 0);
-    if (i === index && !pendingMeta) {
+    if (i === index && seed === null) {
       media.currentTime = local;
       return;
     }
     // A boot seek or part swap still waiting on metadata gives way to this one.
-    const wasPlaying = !media.paused;
-    landAt(s, local, () => wasPlaying && playQuietly());
+    landAt(s, local, !media.paused);
     if (i === index) return;
     index = i;
     media.src = parts[i]?.url ?? "";
@@ -252,9 +251,7 @@ export function createEngine(media: Media, on: EngineEvents) {
       if (!first) return;
       if (resumeAt !== null) {
         const local = start - (offsets[index] ?? 0);
-        landAt(start, local, () => {
-          seeded = true;
-        });
+        landAt(start, local, false);
       }
       media.src = first.url;
       media.load();
@@ -288,9 +285,7 @@ export function createEngine(media: Media, on: EngineEvents) {
       // Zero is a real position (a fresh book); null, a resume in another file, stays unseeded.
       if (resumeAt === 0) seeded = true;
       else if (resumeAt !== null) {
-        landAt(resumeAt, resumeAt, () => {
-          seeded = true;
-        });
+        landAt(resumeAt, resumeAt, false);
       }
       startWatchdog();
       on.booted();
