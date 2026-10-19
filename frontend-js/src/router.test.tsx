@@ -96,7 +96,6 @@ describe("routes", () => {
       ["/admin/cleanup/duplicates", "Cleanup review", "duplicates"],
       ["/admin/health", "Server health", null],
       ["/account", "Account", null],
-      ["/check-in", "Check in", null],
     ])("renders %s as %s with its parameters", async (path, title, param) => {
       renderRoute(path);
 
@@ -121,6 +120,14 @@ describe("routes", () => {
 
     expect(
       await screen.findByRole("heading", { level: 1, name: "Upload a book" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the check-in flow at /check-in", async () => {
+    renderRoute("/check-in");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Check in a book" }),
     ).toBeInTheDocument();
   });
 

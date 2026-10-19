@@ -1,3 +1,9 @@
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 1.25rem;
+}
 .settings-field {
   display: flex;
   flex-direction: column;

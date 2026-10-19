@@ -44,6 +44,7 @@ const OWNERS = [
   ["pages/BookEdit/BookEdit.css", (c) => c.startsWith("me-") || c.startsWith("mes-") || c.startsWith("bd-crumb")],
   ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || c.startsWith("bd-") || c.startsWith("rx-") || c.startsWith("spoiler") || c.startsWith("cm-") || c === "me-textarea" || c.startsWith("suggest-") || c.startsWith("sug-") || c.startsWith("author-lead") || c.startsWith("author-portrait") || ["sh-title", "sh-sub", "fan-match"].includes(c)],
   ["pages/AddBooks/AddBooks.css", (c) => c.startsWith("file-drop-") || c.startsWith("add-books-")],
+  ["pages/CheckIn/CheckIn.css", (c) => c.startsWith("check-in") || c.startsWith("isbn-")],
   ["styles/settings.css", (c) => c.startsWith("settings-")],
   ["styles/base.css", (c) => ["card", "divider", "label", "mono", "sr-only", "subtitle"].includes(c)],
 ];
