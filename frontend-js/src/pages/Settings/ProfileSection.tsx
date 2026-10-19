@@ -15,7 +15,7 @@ import {
   useUnsavedGuard,
 } from "../../components/SettingsShell/SettingsShell";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
-import { meQuery, useCurrentUser } from "../../session";
+import { refreshMe, useCurrentUser } from "../../session";
 
 type Status = { message: string; error: boolean } | null;
 
@@ -32,9 +32,6 @@ export function ProfileSection() {
   const changed = form.watch("name").trim() !== (user.displayName ?? "");
   useUnsavedGuard("display-name", changed);
 
-  // The menu and journal bylines read the same session, so they repaint with it.
-  const refreshMe = () =>
-    queryClient.invalidateQueries({ queryKey: meQuery.queryKey });
   const clear = () => {
     setStatus(null);
     setAvatarError(null);
@@ -42,7 +39,7 @@ export function ProfileSection() {
   const saveName = useMutation({
     mutationFn: async (name: string) => {
       await setDisplayName(name || null);
-      await refreshMe();
+      await refreshMe(queryClient);
     },
     onMutate: clear,
     onSuccess: () => setStatus({ message: "Profile saved.", error: false }),
@@ -52,7 +49,7 @@ export function ProfileSection() {
     mutationFn: async (file: File) => {
       await uploadAvatar(file);
       bumpAvatarBust(user.id);
-      await refreshMe();
+      await refreshMe(queryClient);
     },
     onMutate: clear,
     onSuccess: () =>
@@ -63,7 +60,7 @@ export function ProfileSection() {
     mutationFn: async () => {
       await deleteAvatar();
       bumpAvatarBust(user.id);
-      await refreshMe();
+      await refreshMe(queryClient);
     },
     onMutate: clear,
     onSuccess: () =>

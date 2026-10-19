@@ -1,9 +1,12 @@
-import { failure, send } from "./core";
+import { queryOptions } from "@tanstack/react-query";
+import { failure, ok, send } from "./core";
 import {
   getDeleteAvatarUrl,
+  getKindleDelivery,
   getPostAvatarUrl,
   getPostBookDetailScrollStopsUrl,
   getPostHiddenFormatsUrl,
+  getPostKindleEmailUrl,
   getPostProfileUrl,
   getPostShareStatsUrl,
   getPostStackSeriesUrl,
@@ -47,3 +50,18 @@ export const setShareStats = saveSwitch(getPostShareStatsUrl());
 export async function setHiddenFormats(formats: string[]): Promise<void> {
   await send(getPostHiddenFormatsUrl(), "POST", { formats });
 }
+
+/** Saves the address Send to Kindle delivers to; `null` clears it. */
+export async function setKindleEmail(email: string | null): Promise<void> {
+  await send(getPostKindleEmailUrl(), "POST", { email });
+}
+
+/** The address books are sent from, or `null` when the server has no email delivery set up. */
+export async function fetchKindleSender(): Promise<string | null> {
+  return ok(await getKindleDelivery()).sender_address ?? null;
+}
+
+export const kindleSenderQuery = queryOptions({
+  queryKey: ["kindle-delivery"],
+  queryFn: fetchKindleSender,
+});

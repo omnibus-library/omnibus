@@ -154,3 +154,17 @@
   display: block;
   margin: 0.5rem 0 0;
 }
+.kindle-delivery {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+}
+.kindle-delivery .subtitle {
+  margin-bottom: 0;
+}
+.kindle-delivery code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}

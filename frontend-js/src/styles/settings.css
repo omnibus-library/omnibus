@@ -311,6 +311,7 @@
 .settings-layout .settings-actions .settings-status {
   margin: 0;
 }
+.settings-layout .settings-actions .settings-action-start,
 .settings-layout .settings-actions .settings-action-status {
   margin-right: auto;
 }

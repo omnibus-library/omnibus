@@ -26,6 +26,10 @@ export const registrationQuery = queryOptions({
   queryFn: () => fetchRegistrationOpen().catch(() => true),
 });
 
+/** Re-reads the session user, so the menu, bylines and settings repaint with a write. */
+export const refreshMe = (client: QueryClient) =>
+  client.invalidateQueries({ queryKey: meQuery.queryKey });
+
 /** Makes `user` the session, dropping every answer cached for whoever came before. */
 export function startSession(client: QueryClient, user: User) {
   client.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });

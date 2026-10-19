@@ -4,6 +4,7 @@ import {
   DailyGoalUpdate,
   ReadingGoalUpdate,
   SetHiddenFormats,
+  SetKindleEmail,
   SetProfile,
   SetStackSeries,
   type UserSummary,
@@ -19,6 +20,8 @@ export type SettingsServer = {
   goalWrites: string[];
   /** Goal kinds whose write the server refuses. */
   refuseGoals: string[];
+  /** The address `GET /api/kindle/delivery` sends from; `null` is no email delivery. */
+  sender: string | null;
 };
 
 export const aSettingsServer = (
@@ -28,6 +31,7 @@ export const aSettingsServer = (
   goals: [null, null, null],
   goalWrites: [],
   refuseGoals: [],
+  sender: "library@example.com",
   ...init,
 });
 
@@ -90,6 +94,14 @@ export function settingsHandlers(server: SettingsServer) {
       goals[kind === "pages" ? 1 : 2] = target ?? null;
       server.goals = goals;
       return HttpResponse.json({});
+    }),
+    http.get("/api/kindle/delivery", () =>
+      HttpResponse.json({ sender_address: server.sender }),
+    ),
+    http.post("/api/account/kindle-email", async ({ request }) => {
+      const { email } = SetKindleEmail.parse(await request.json());
+      patch({ kindle_email: email?.trim() || null });
+      return empty();
     }),
     http.post("/api/account/hidden-formats", async ({ request }) => {
       const { formats } = SetHiddenFormats.parse(await request.json());
