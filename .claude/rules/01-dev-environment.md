@@ -100,8 +100,8 @@ Anything secret or per-developer lives in a gitignored `.env` at the repo root, 
 
 The three a dev or test loop touches:
 
-- `OMNIBUS_DEV_SEED_USER=user:password` — the admin created at boot, and the login `ui-validate`, `mock-kobo` and Playwright's `globalSetup` sign in with, so Playwright needs it in its own env too.
+- `OMNIBUS_DEV_SEED_USER=user:password` — the admin a debug build creates at boot (a release build ignores it), and the login `ui-validate`, `mock-kobo` and Playwright's `globalSetup` sign in with, so Playwright needs it in its own env too.
 - `OMNIBUS_DEV_DISABLE_RATE_LIMITS=1` — turns the per-IP limiters off in debug builds (the per-account lockout stays); read once at boot.
-- `EBOOK_LIBRARY_PATH` / `AUDIOBOOK_LIBRARY_PATH` — rewrite the settings row's library paths on **every** boot, so set both or neither; a server seeded this way and then by a spec's `seedLibrary` indexes the fixtures under two roots.
+- `EBOOK_LIBRARY_PATH` / `AUDIOBOOK_LIBRARY_PATH` — rewrite the settings row's library paths on **every** boot, so set both or neither; a restart undoes any path a spec's `seedLibrary` or the Settings page saved.
 
 Before setting, adding or changing any other variable, read [docs/environment.md](../../docs/environment.md): what each one does that its name doesn't say — whether Settings or the env wins, the security-sensitive ones, the storage paths a deployment must make absolute.
