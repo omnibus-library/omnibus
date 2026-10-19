@@ -14,6 +14,7 @@ import {
 } from "../../settingsIndex";
 import { GoalsSection } from "./GoalsSection";
 import { KindleCard } from "./KindleCard";
+import { KoboCard } from "./KoboCard";
 import { PreferencesSection } from "./PreferencesSection";
 import { ProfileSection } from "./ProfileSection";
 
@@ -71,7 +72,12 @@ export function Settings() {
       {active.slug === "profile" && <ProfileSection />}
       {active.slug === "preferences" && <PreferencesSection />}
       {active.slug === "goals" && <GoalsSection />}
-      {active.slug === "devices" && <KindleCard />}
+      {active.slug === "devices" && (
+        <>
+          <KindleCard />
+          <KoboCard />
+        </>
+      )}
     </SettingsShell>
   );
 }

@@ -12,6 +12,7 @@ export * from "./api/core";
 export * from "./api/discovery";
 export * from "./api/goals";
 export * from "./api/journal";
+export * from "./api/kobo";
 export * from "./api/library";
 export * from "./api/metadata";
 export * from "./api/physical";

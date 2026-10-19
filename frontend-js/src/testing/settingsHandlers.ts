@@ -1,7 +1,9 @@
 import { HttpResponse, http } from "msw";
 import type { GoalTargets } from "../api";
 import {
+  CreateKoboDevice,
   DailyGoalUpdate,
+  type KoboDeviceView,
   ReadingGoalUpdate,
   SetHiddenFormats,
   SetKindleEmail,
@@ -10,7 +12,7 @@ import {
   type UserSummary,
 } from "../api/generated/schemas";
 import { svg } from "./handlers";
-import { aWireStatsGoals, WIRE_ADA } from "./wire";
+import { aWireKoboDevice, aWireStatsGoals, WIRE_ADA } from "./wire";
 
 /** What the fake settings routes read and write, so a write shows on the next read. */
 export type SettingsServer = {
@@ -22,6 +24,8 @@ export type SettingsServer = {
   refuseGoals: string[];
   /** The address `GET /api/kindle/delivery` sends from; `null` is no email delivery. */
   sender: string | null;
+  /** The reader's Kobos. */
+  kobo: KoboDeviceView[];
 };
 
 export const aSettingsServer = (
@@ -32,8 +36,12 @@ export const aSettingsServer = (
   goalWrites: [],
   refuseGoals: [],
   sender: "library@example.com",
+  kobo: [],
   ...init,
 });
+
+const missing = () =>
+  new HttpResponse("kobo device not found", { status: 404 });
 
 const refused = () => new HttpResponse("target refused", { status: 400 });
 
@@ -102,6 +110,31 @@ export function settingsHandlers(server: SettingsServer) {
       const { email } = SetKindleEmail.parse(await request.json());
       patch({ kindle_email: email?.trim() || null });
       return empty();
+    }),
+    http.get("/api/account/kobo-devices", () => HttpResponse.json(server.kobo)),
+    http.post("/api/account/kobo-devices", async ({ request }) => {
+      const { name } = CreateKoboDevice.parse(await request.json());
+      const id = Math.max(0, ...server.kobo.map((d) => d.id)) + 1;
+      const device = aWireKoboDevice({
+        id,
+        name: name.trim(),
+        token: `tok-${id}`,
+      });
+      server.kobo = [...server.kobo, device];
+      return HttpResponse.json(device);
+    }),
+    http.post("/api/account/kobo-devices/:id/regenerate", ({ params }) => {
+      const found = server.kobo.find((d) => d.id === Number(params.id));
+      if (!found) return missing();
+      const device = { ...found, token: `${found.token}-new` };
+      server.kobo = server.kobo.map((d) => (d.id === device.id ? device : d));
+      return HttpResponse.json(device);
+    }),
+    http.delete("/api/account/kobo-devices/:id", ({ params }) => {
+      if (!server.kobo.some((d) => d.id === Number(params.id)))
+        return missing();
+      server.kobo = server.kobo.filter((d) => d.id !== Number(params.id));
+      return empty(204);
     }),
     http.post("/api/account/hidden-formats", async ({ request }) => {
       const { formats } = SetHiddenFormats.parse(await request.json());

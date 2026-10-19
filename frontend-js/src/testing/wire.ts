@@ -15,6 +15,7 @@ import type {
   EbookMetadata,
   Highlight,
   JournalEntry,
+  KoboDeviceView,
   PaletteBookHit,
   PaletteResults,
   PhysicalCopy,
@@ -562,4 +563,18 @@ export function aWireStatsGoals(
           : { ...progress, kind: "minutes", target: minutes },
     },
   });
+}
+
+/** A Kobo as `GET /api/account/kobo-devices` sends it; override what a case needs. */
+export function aWireKoboDevice(
+  overrides: Partial<KoboDeviceView> = {},
+): KoboDeviceView {
+  return {
+    id: 1,
+    name: "Clara",
+    token: "tok-clara",
+    created_at: 1_760_000_000,
+    last_seen_at: 1_760_000_000,
+    ...overrides,
+  };
 }
