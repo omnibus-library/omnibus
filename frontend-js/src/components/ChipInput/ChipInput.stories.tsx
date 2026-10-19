@@ -3,6 +3,16 @@ import { type ComponentProps, useState } from "react";
 import { expect, fireEvent, fn } from "storybook/test";
 import { ChipInput } from "./ChipInput";
 
+const MANY = Array.from({ length: 200 }, (_, i) => ({
+  name: `Tag ${i + 1}`,
+  count: 1,
+}));
+
+const offered = () =>
+  [...document.querySelectorAll("datalist option")].map((o) =>
+    o.getAttribute("value"),
+  );
+
 // Holds the chips the way a form would, and still reports each change.
 function LiveChipInput(props: ComponentProps<typeof ChipInput>) {
   const [values, setValues] = useState(props.values);
@@ -60,10 +70,7 @@ export const AddFromSuggestion: Story = {
   play: async ({ canvas, args }) => {
     const input = canvas.getByRole("combobox", { name: "Add tags" });
     // The suggestions already on the page leave the list: "Cozy" is a chip.
-    const offered = [...document.querySelectorAll("datalist option")].map((o) =>
-      o.getAttribute("value"),
-    );
-    await expect(offered).toEqual(["Space opera"]);
+    await expect(offered()).toEqual(["Space opera"]);
 
     await fireEvent.input(input, {
       target: { value: "Space opera" },
@@ -105,16 +112,6 @@ export const NoDuplicates: Story = {
     await expect(args.onChange).not.toHaveBeenCalled();
   },
 };
-
-const MANY = Array.from({ length: 200 }, (_, i) => ({
-  name: `Tag ${i + 1}`,
-  count: 1,
-}));
-
-const offered = () =>
-  [...document.querySelectorAll("datalist option")].map((o) =>
-    o.getAttribute("value"),
-  );
 
 export const CapsSuggestions: Story = {
   args: { values: [], suggestions: MANY },
