@@ -197,14 +197,20 @@ export function BulkEditModal({ books, onClose, onSaved }: ModalBodyProps) {
         throw new Error(`Save failed: ${reason}`);
       }
     },
+    // Only a save that landed changes anything: a refused one is all-or-nothing, and
+    // refetching on failure would hold the dialog on "Applying…" until every page answers.
     // A tag edit can move books between smart shelves and change the resume row too.
-    onSettled: () =>
-      Promise.all(
-        [["books"], ["shelf-page"], ["shelves"], ["progress", "recent"]].map(
-          (queryKey) => queryClient.invalidateQueries({ queryKey }),
-        ),
-      ),
-    onSuccess: onSaved,
+    onSuccess: () => {
+      for (const queryKey of [
+        ["books"],
+        ["shelf-page"],
+        ["shelves"],
+        ["progress", "recent"],
+      ]) {
+        queryClient.invalidateQueries({ queryKey });
+      }
+      onSaved();
+    },
   });
 
   const count = bookCount(books.length);

@@ -420,6 +420,7 @@ export const FilteredToNothing: Story = {
 };
 
 let release: () => void = () => {};
+let holding = false;
 
 // A promise a handler awaits, so a story holds a request until it calls `release`.
 function holdRequests() {
@@ -1390,7 +1391,13 @@ export const BulkEditFails: Story = {
   beforeEach({ msw }) {
     seedTable();
     saved.length = 0;
+    const gate = holdRequests();
+    holding = false;
     msw.use(
+      // Once `holding`, a refetch of the library waits on the gate.
+      http.get("/api/ebooks", async () => {
+        if (holding) await gate;
+      }),
       libraryHandler(bulkBooks(), 10),
       bulkOverridesHandler([], { saved, refuse: "series too long" }),
       ...BULK_OPTIONS,
@@ -1398,15 +1405,18 @@ export const BulkEditFails: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     const form = await openBulkEdit({ canvas, userEvent });
+    holding = true;
 
     await userEvent.type(form.getByLabelText("Series"), "Saga");
     await userEvent.click(
       form.getByRole("button", { name: "Apply to 2 books" }),
     );
 
+    // A refused save changes nothing, so the alert must not wait on a refetch.
     await expect(await form.findByRole("alert")).toHaveTextContent(
       /^Save failed: series too long$/,
     );
+    release();
     // The dialog and the selection stay, and nothing changed in the table.
     await expect(
       form.getByRole("button", { name: "Apply to 2 books" }),
