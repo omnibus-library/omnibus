@@ -10,12 +10,25 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, auth::AuthError};
-use omnibus_shared::{CreateUserRequest, SetPasswordRequest, UserPermissions};
+use omnibus_shared::{AdminUserRow, CreateUserRequest, SetPasswordRequest, UserPermissions};
 
 use super::{internal, AppState};
 use crate::auth::AdminUser;
 
-/// `GET /api/admin/users` — list every user for the admin table.
+/// List users
+///
+/// Every account on the server, up to 1000, with its permissions and whether it is locked
+/// out. Needs an admin account.
+#[utoipa::path(
+    get,
+    path = "/api/admin/users",
+    tag = "Admin",
+    operation_id = "admin_list_users",
+    responses(
+        (status = 200, description = "The users, oldest first.", body = Vec<AdminUserRow>),
+        (status = 403, description = "You aren't an admin."),
+    ),
+)]
 pub(super) async fn get_users(_admin: AdminUser, State(state): State<AppState>) -> Response {
     match db::auth::list_users(&state.pool).await {
         Ok(rows) => Json(rows).into_response(),
@@ -23,8 +36,23 @@ pub(super) async fn get_users(_admin: AdminUser, State(state): State<AppState>) 
     }
 }
 
-/// `POST /api/admin/users` — create a user with explicit permissions. `201` with the
-/// new row; `409` on a duplicate username; `422` on username/password policy.
+/// Create a user
+///
+/// Makes an account with the permissions you give it, whether or not registration is open.
+/// Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/admin/users",
+    tag = "Admin",
+    operation_id = "admin_create_user",
+    request_body = CreateUserRequest,
+    responses(
+        (status = 201, description = "The new user.", body = AdminUserRow),
+        (status = 403, description = "You aren't an admin."),
+        (status = 409, description = "That username is taken, ignoring case."),
+        (status = 422, description = "The username or password breaks a rule; the body says which."),
+    ),
+)]
 pub(super) async fn post_user(
     _admin: AdminUser,
     State(state): State<AppState>,
@@ -42,8 +70,23 @@ pub(super) async fn post_user(
     }
 }
 
-/// `PATCH /api/admin/users/{id}/permissions` — replace the four permission flags.
-/// `404` for an unknown id; `409` when it would demote the last admin.
+/// Set a user's permissions
+///
+/// Replaces all four permission flags. Needs an admin account.
+#[utoipa::path(
+    patch,
+    path = "/api/admin/users/{id}/permissions",
+    tag = "Admin",
+    operation_id = "admin_set_user_permissions",
+    params(("id" = i64, Path, description = "The user's id.")),
+    request_body = UserPermissions,
+    responses(
+        (status = 204, description = "The permissions are saved."),
+        (status = 403, description = "You aren't an admin."),
+        (status = 404, description = "No user has that id."),
+        (status = 409, description = "The user is the last admin, and the change would take admin away."),
+    ),
+)]
 pub(super) async fn patch_permissions(
     _admin: AdminUser,
     State(state): State<AppState>,
@@ -60,8 +103,24 @@ pub(super) async fn patch_permissions(
     }
 }
 
-/// `POST /api/admin/users/{id}/password` — admin password reset. `404` for an unknown
-/// id; `422` when the new password fails policy.
+/// Reset a user's password
+///
+/// Sets a new password without asking for the old one, and signs the user out everywhere.
+/// Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/admin/users/{id}/password",
+    tag = "Admin",
+    operation_id = "admin_set_user_password",
+    params(("id" = i64, Path, description = "The user's id.")),
+    request_body = SetPasswordRequest,
+    responses(
+        (status = 204, description = "The password is changed and the user's sessions are revoked."),
+        (status = 403, description = "You aren't an admin."),
+        (status = 404, description = "No user has that id."),
+        (status = 422, description = "The password breaks a rule; the body says which."),
+    ),
+)]
 pub(super) async fn post_password(
     _admin: AdminUser,
     State(state): State<AppState>,
@@ -76,8 +135,22 @@ pub(super) async fn post_password(
     }
 }
 
-/// `POST /api/admin/users/{id}/unlock` — clear a repeated-failed-login lockout. `404`
-/// for an unknown id.
+/// Unlock a user
+///
+/// Ends a lockout from too many wrong passwords, so the user can sign in again now.
+/// Succeeds when the user isn't locked too. Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/admin/users/{id}/unlock",
+    tag = "Admin",
+    operation_id = "admin_unlock_user",
+    params(("id" = i64, Path, description = "The user's id.")),
+    responses(
+        (status = 204, description = "The user isn't locked out."),
+        (status = 403, description = "You aren't an admin."),
+        (status = 404, description = "No user has that id."),
+    ),
+)]
 pub(super) async fn post_unlock(
     _admin: AdminUser,
     State(state): State<AppState>,
@@ -90,8 +163,24 @@ pub(super) async fn post_unlock(
     }
 }
 
-/// `DELETE /api/admin/users/{id}` — delete a user (their owned rows cascade). `404`
-/// for an unknown id; `409` when it would delete the last admin.
+/// Delete a user
+///
+/// Deletes the account and everything that is only theirs: progress, highlights, journal
+/// entries, shelves and sessions. Books they added stay in the library. This can't be
+/// undone. Needs an admin account.
+#[utoipa::path(
+    delete,
+    path = "/api/admin/users/{id}",
+    tag = "Admin",
+    operation_id = "admin_delete_user",
+    params(("id" = i64, Path, description = "The user's id.")),
+    responses(
+        (status = 204, description = "The user is deleted."),
+        (status = 403, description = "You aren't an admin."),
+        (status = 404, description = "No user has that id."),
+        (status = 409, description = "The user is the last admin."),
+    ),
+)]
 pub(super) async fn delete_user(
     _admin: AdminUser,
     State(state): State<AppState>,

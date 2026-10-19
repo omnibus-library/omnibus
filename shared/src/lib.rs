@@ -5,6 +5,7 @@
 //! depend on it. Types are organized by domain into submodules and re-exported flat
 //! from the crate root as `omnibus_shared::Foo`.
 
+pub mod account;
 pub mod admin_health;
 pub mod audiobook;
 pub mod auth;
@@ -104,6 +105,7 @@ pub fn sanitize_exclude_formats(mut formats: Vec<String>) -> Vec<String> {
     formats
 }
 
+pub use account::*;
 pub use admin_health::*;
 pub use audiobook::*;
 pub use auth::*;
