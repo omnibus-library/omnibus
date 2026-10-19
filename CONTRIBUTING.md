@@ -81,6 +81,37 @@ Propose any new dependency in the linked issue before adding it. Every
 workspace crate is MIT licensed and `cargo deny` enforces license compatibility
 in CI, so a dependency with an incompatible license will fail the build.
 
+### Dependency updates
+
+[Renovate](https://docs.renovatebot.com/) opens update PRs on Monday mornings,
+only for versions at least 14 days old; a security advisory opens its PR at
+once. Flake inputs arrive as one PR a month. Its PRs carry the `no release`
+label, except a security fix to a runtime crate. Dev-only patch and minor
+updates and GitHub Actions merge themselves once CI passes. The config is
+[`renovate.json`](renovate.json); the Dependency Dashboard issue lists what is
+pending.
+
+Three pins move with a Nix input, so Renovate lists them under **Pending
+Approval** and never bumps them. Bump each by hand, all parts in one PR:
+
+- **Playwright:** `@playwright/test` in `ui_tests/playwright/package.json`,
+  `playwright` in `frontend-js/package.json`, the `overrides` in
+  `scripts/explore/driver/package.json`, and the `nixpkgs-playwright` rev in
+  `flake.nix`. Pick a nixpkgs rev whose
+  `nix eval --raw github:NixOS/nixpkgs/<rev>#playwright-driver.version` is the
+  same version.
+- **Dioxus:** the `=` pins on `dioxus`, `dioxus-html` and `dioxus-router` in
+  `Cargo.toml`, `dioxus-cli@` in the `Dockerfile`, and the `nixpkgs-unstable`
+  rev in `flake.nix`, picked the same way with `#dioxus-cli.version`. That
+  input also carries node, pnpm and the cargo tools, so set `packageManager`
+  in both pnpm projects to its pnpm.
+- **wasm-bindgen:** `cargo update -p wasm-bindgen --precise <version>`, then
+  the `version` and the four `hash`es of `wasm-bindgen-cli` in `flake.nix`
+  (`nix store prefetch-file <release tarball url>` prints each one).
+
+A major Swift package update waits there too: raise its requirement in Xcode's
+package settings along with the pin in `Package.resolved`.
+
 ## Branches, commits, and pull requests
 
 - **Branch names** follow `OMNI-<issue>/<short-slug>`, for example
