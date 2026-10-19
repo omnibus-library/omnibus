@@ -14,6 +14,7 @@ import {
   firstLetter,
   foldForMatch,
   letterFrag,
+  listPhase,
   nameParts,
   sortAuthors,
 } from "./authorsOrder";
@@ -291,5 +292,37 @@ describe("defaultAuthor", () => {
 
   it("is null for an empty library", () => {
     expect(defaultAuthor([], null)).toBeNull();
+  });
+});
+
+describe("listPhase", () => {
+  it.each([
+    [
+      "still loading",
+      { isPending: true, isError: false, hasRows: false },
+      "loading",
+    ],
+    [
+      "failed with nothing to show",
+      { isPending: false, isError: true, hasRows: false },
+      "failed",
+    ],
+    [
+      "a failed refresh that kept its rows",
+      { isPending: false, isError: true, hasRows: true },
+      "ready",
+    ],
+    [
+      "answered with no authors",
+      { isPending: false, isError: false, hasRows: false },
+      "empty",
+    ],
+    [
+      "answered with authors",
+      { isPending: false, isError: false, hasRows: true },
+      "ready",
+    ],
+  ] as const)("is %s", (_case, list, phase) => {
+    expect(listPhase(list)).toBe(phase);
   });
 });

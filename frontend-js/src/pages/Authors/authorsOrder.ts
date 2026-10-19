@@ -9,6 +9,19 @@ export type ReadingMap = Map<number, AuthorReading>;
 export const byAuthor = (rows: AuthorReading[]): ReadingMap =>
   new Map(rows.map((r) => [r.authorId, r]));
 
+/** Where the authors list stands; a failed refresh keeps its rows, so only a first load that fails is "failed". */
+export type ListPhase = "loading" | "failed" | "empty" | "ready";
+
+export function listPhase(list: {
+  isPending: boolean;
+  isError: boolean;
+  hasRows: boolean;
+}): ListPhase {
+  if (list.isPending) return "loading";
+  if (list.hasRows) return "ready";
+  return list.isError ? "failed" : "empty";
+}
+
 /** Case and accents folded away, for matching typed text; mirrors `fold_for_match` in `shared/`. */
 export function foldForMatch(text: string): string {
   return text.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();

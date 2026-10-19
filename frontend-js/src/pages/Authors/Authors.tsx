@@ -20,7 +20,9 @@ import {
   computeAuthorGroups,
   defaultAuthor,
   firstLetter,
+  type ListPhase,
   letterFrag,
+  listPhase,
   nameParts,
   type ReadingMap,
 } from "./authorsOrder";
@@ -45,15 +47,16 @@ const SORTS = [
 
 const NO_AUTHORS: AuthorSummary[] = [];
 
-// A failed refresh keeps its rows, so only a first load that fails leaves nothing to preview.
 function previewOf(
   rows: AuthorSummary[],
-  list: { isError: boolean; isPending: boolean },
+  phase: ListPhase,
   readingState: ReadingState,
   progress: ReadingMap | null,
 ): Preview {
-  if (list.isError && rows.length === 0) return { kind: "unavailable" };
-  if (list.isPending || readingState === "pending") return { kind: "pending" };
+  if (phase === "failed") return { kind: "unavailable" };
+  if (phase === "loading" || readingState === "pending") {
+    return { kind: "pending" };
+  }
   const id = defaultAuthor(rows, progress);
   return id === null ? { kind: "empty" } : { kind: "author", id };
 }
@@ -258,22 +261,23 @@ export function Authors() {
     [rows, filter, sort, progress, onlyReading],
   );
 
-  const { isError, isPending } = authors;
+  const phase = listPhase({
+    isPending: authors.isPending,
+    isError: authors.isError,
+    hasRows: rows.length > 0,
+  });
   const preview = useMemo(
-    () => previewOf(rows, { isError, isPending }, readingState, progress),
-    [rows, isError, isPending, readingState, progress],
+    () => previewOf(rows, phase, readingState, progress),
+    [rows, phase, readingState, progress],
   );
   const shown = routed ?? (preview.kind === "author" ? preview.id : null);
   const readingCount = progress
     ? [...progress.values()].filter((r) => r.reading > 0).length
     : null;
-  const total =
-    !authors.isPending && (rows.length > 0 || !authors.isError)
-      ? rows.length
-      : null;
+  const total = phase === "loading" || phase === "failed" ? null : rows.length;
   // Recent orders by progress, so it has no order to show until that lands.
   const waiting =
-    authors.isPending || (sort === "recent" && readingState === "pending");
+    phase === "loading" || (sort === "recent" && readingState === "pending");
   useRevealShown(list, shown !== null && rows.length > 0 && !waiting);
 
   const row = (a: AuthorSummary) => (
@@ -309,9 +313,9 @@ export function Authors() {
           <div className="au-scroll" data-testid="authors-list" ref={list}>
             {waiting ? (
               <RowSkeletons count={12} avatar={false} />
-            ) : authors.isError && rows.length === 0 ? (
+            ) : phase === "failed" ? (
               <p className="au-list-note error" role="alert">
-                {`Couldn’t load authors: ${authors.error.message}`}
+                {`Couldn’t load authors: ${authors.error?.message}`}
               </p>
             ) : groups.filtered.length === 0 ? (
               <p className="au-list-note subtitle">
