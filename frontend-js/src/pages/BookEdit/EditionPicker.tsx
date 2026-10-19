@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import {
   editionRequest,
@@ -19,7 +19,7 @@ import type {
 import { Button } from "../../components/Button/Button";
 import { SparkleGlyph } from "../../components/Glyphs/Glyphs";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
-import { trapTab } from "../../focusTrap";
+import { Modal } from "../../components/Modal/Modal";
 import type { CoverProps } from "./CoverEditor";
 import { coverSrc, EditionCompare, EMPTY } from "./EditionCompare";
 import { sourceStatusText } from "./editionFields";
@@ -282,11 +282,6 @@ function SearchOverlay({
   } | null>(null);
 
   const latest = useRef(0);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   // The full record fills in what the list row lacked and never takes a field away from it.
   const select = (edition: ProviderEdition) => {
@@ -306,46 +301,37 @@ function SearchOverlay({
   };
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: the scrim only dismisses; the dialog inside carries the semantics, and the keyboard has Escape and ×
-    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape is handled on the document
-    <div
-      className="mes-scrim"
-      data-testid="metadata-search-scrim"
-      onClick={onClose}
+    <Modal
+      label="Find this edition"
+      backdropClass="mes-scrim"
+      dialogClass="mes-panel"
+      backdropTestId="metadata-search-scrim"
+      dialogTestId="metadata-search"
+      onClose={onClose}
     >
-      <div
-        className="mes-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Find this edition"
-        data-testid="metadata-search"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => trapTab(e, e.currentTarget)}
+      <button
+        type="button"
+        className="mes-close"
+        data-testid="mes-close"
+        aria-label="Close"
+        onClick={onClose}
       >
-        <button
-          type="button"
-          className="mes-close"
-          data-testid="mes-close"
-          aria-label="Close"
-          onClick={onClose}
-        >
-          ×
-        </button>
-        {compare ? (
-          <EditionCompare
-            edition={compare.edition}
-            hydrating={compare.hydrating}
-            form={form}
-            baseline={baseline}
-            cover={cover}
-            onBack={() => setCompare(null)}
-            onDone={onClose}
-          />
-        ) : (
-          <ResultsScreen state={state} onSelect={select} />
-        )}
-      </div>
-    </div>
+        ×
+      </button>
+      {compare ? (
+        <EditionCompare
+          edition={compare.edition}
+          hydrating={compare.hydrating}
+          form={form}
+          baseline={baseline}
+          cover={cover}
+          onBack={() => setCompare(null)}
+          onDone={onClose}
+        />
+      ) : (
+        <ResultsScreen state={state} onSelect={select} />
+      )}
+    </Modal>
   );
 }
 
