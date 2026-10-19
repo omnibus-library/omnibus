@@ -3,6 +3,7 @@ import { loadScript } from "../../loadScript";
 import pdfjsUrl from "../../vendor/reader/pdf.min.mjs?url";
 import workerUrl from "../../vendor/reader/pdf.worker.min.mjs?url";
 import glueUrl from "../../vendor/reader/pdf-reader-glue.js?url";
+import { encodePdfAnchor } from "./pdfAnchors";
 
 /**
  * What the glue's `init` is given: PDF.js and its worker are modules the glue `import()`s itself,
@@ -35,11 +36,34 @@ const PositionSchema = z.object({
 /** The glue's position report: the 0-based page showing and PDF.js's own page count. */
 export type PdfPosition = z.infer<typeof PositionSchema>;
 
-/** Reads a glue payload, which is untrusted vendor output; `null` for one that doesn't match, so it is dropped. */
-export function parsePdfPosition(json: string): PdfPosition | null {
+const SelectionSchema = z
+  .object({
+    page: z.int().nonnegative(),
+    // One quad per selected line fragment, in PDF points on the unrotated page.
+    quads: z.array(z.array(z.number()).length(8)).default([]),
+    text: z.string().default(""),
+    // In reader coordinates, which is what the popover is placed by.
+    rect: z.object({ x: z.number(), y: z.number(), width: z.number() }),
+  })
+  .transform(({ page, quads, text, rect }) => ({
+    anchor: encodePdfAnchor(page, quads),
+    text,
+    rect,
+  }));
+
+/** The passage selected on the text layer: the `pdf:` anchor it is saved under, its text and where it sits. */
+export type PdfSelection = z.infer<typeof SelectionSchema>;
+
+// Glue payloads are untrusted vendor output: one that doesn't match is dropped.
+function parseWith<T>(schema: z.ZodType<T>, json: string): T | null {
   try {
-    return PositionSchema.parse(JSON.parse(json));
+    return schema.parse(JSON.parse(json));
   } catch {
     return null;
   }
 }
+
+export const parsePdfPosition = (json: string) =>
+  parseWith(PositionSchema, json);
+export const parsePdfSelection = (json: string) =>
+  parseWith(SelectionSchema, json);

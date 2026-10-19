@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { Highlight, HighlightColor } from "../../api";
 import { pagePercent } from "../ComicReader/pager";
 import {
   deepLinkPage,
+  encodePdfAnchor,
+  paintList,
+  parsePdfAnchor,
   parsePdfPageAnchor,
   pdfPageAnchor,
   pdfStartPage,
@@ -73,5 +77,74 @@ describe("pdfStartPage", () => {
     ["a highlight anchor", "pdf:7"],
   ])("ignores %s", (_condition, anchor) => {
     expect(pdfStartPage(null, anchor, null, 20)).toBe(0);
+  });
+});
+
+const QUAD = [72, 710.5, 172, 710.5, 72, 700, 172, 700];
+
+describe("encodePdfAnchor", () => {
+  it("writes the page and every quad at one decimal", () => {
+    expect(encodePdfAnchor(3, [QUAD, [1, 2, 3, 4, 5, 6, 7, 8]])).toBe(
+      "pdf:3:72.0,710.5,172.0,710.5,72.0,700.0,172.0,700.0;1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0",
+    );
+  });
+
+  it("names the page alone when there are no quads", () => {
+    expect(encodePdfAnchor(5, [])).toBe("pdf:5");
+  });
+
+  it("keeps the quads at the cap of 60", () => {
+    expect(encodePdfAnchor(2, Array(60).fill(QUAD))).toMatch(/^pdf:2:72\.0,/);
+  });
+
+  it("names the page alone one quad past the cap", () => {
+    expect(encodePdfAnchor(2, Array(61).fill(QUAD))).toBe("pdf:2");
+  });
+
+  it("round trips through parsePdfAnchor", () => {
+    expect(parsePdfAnchor(encodePdfAnchor(9, [QUAD]))).toBe(9);
+  });
+});
+
+describe("parsePdfAnchor", () => {
+  it.each([
+    ["a page-only anchor", "pdf:7", 7],
+    ["a quad anchor", "pdf:2:0,0,1,0,0,1,1,1", 2],
+    ["a position anchor", "pdf-page:7", null],
+    ["a CFI", "epubcfi(/6/4!/4/2,/1:0,/1:4)", null],
+    ["a quad with seven numbers", "pdf:2:0,0,1,0,0,1,1", null],
+    ["a quad that is not numeric", "pdf:2:a,b,c,d,e,f,g,h", null],
+  ])("reads %s", (_condition, anchor, page) => {
+    expect(parsePdfAnchor(anchor)).toBe(page);
+  });
+});
+
+const highlight = (
+  anchor: string | null,
+  color: HighlightColor = "amber",
+): Highlight => ({
+  id: 1,
+  bookUuid: "book",
+  color,
+  text: null,
+  note: null,
+  anchor,
+  createdAt: 0,
+});
+
+describe("paintList", () => {
+  it("keeps only the highlights with a placeable pdf anchor", () => {
+    const list = paintList([
+      highlight("pdf:2:0,0,1,0,0,1,1,1", "green"),
+      highlight("epubcfi(/6/4!/4/2,/1:0,/1:4)"),
+      highlight(null),
+      highlight("pdf:7", "rose"),
+      highlight("pdf:2:1,2,3"),
+    ]);
+
+    expect(list).toEqual([
+      { anchor: "pdf:2:0,0,1,0,0,1,1,1", color: "green" },
+      { anchor: "pdf:7", color: "rose" },
+    ]);
   });
 });

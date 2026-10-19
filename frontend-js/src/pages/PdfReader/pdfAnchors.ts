@@ -1,3 +1,5 @@
+import type { Highlight, HighlightColor } from "../../api";
+import { MAX_QUADS, pdfAnchorPage } from "../BookDetail/highlights";
 import { pageFromPercent } from "../ComicReader/pager";
 
 /** The anchor a PDF page is saved under, the same string iOS's PDFKit reader reads. */
@@ -32,4 +34,32 @@ export function pdfStartPage(
   const saved = anchor === null ? null : parsePdfPageAnchor(anchor);
   if (saved !== null) return clamp(saved);
   return percent !== null && count > 0 ? pageFromPercent(percent, count) : 0;
+}
+
+/**
+ * The anchor a highlight is stored under: `pdf:{page}:{x1,y1,…,x4,y4};…` at one decimal, the
+ * string iOS's PDFKit reader parses. No quads, or more than the cap, names the page alone.
+ */
+export function encodePdfAnchor(
+  page: number,
+  quads: readonly (readonly number[])[],
+): string {
+  if (quads.length === 0 || quads.length > MAX_QUADS) return `pdf:${page}`;
+  const encoded = quads.map((quad) => quad.map((n) => n.toFixed(1)).join(","));
+  return `pdf:${page}:${encoded.join(";")}`;
+}
+
+/** The 0-based page a highlight's `pdf:` anchor names; `null` for any other anchor or a malformed quad list. */
+export const parsePdfAnchor = (anchor: string) =>
+  anchor.startsWith("pdf:") ? pdfAnchorPage(anchor) : null;
+
+/** The highlights the glue can place: EPUB CFIs and anchorless Kobo rows are left out, not handed to a painter that can't read them. */
+export function paintList(
+  highlights: readonly Highlight[],
+): { anchor: string; color: HighlightColor }[] {
+  return highlights.flatMap(({ anchor, color }) =>
+    anchor !== null && parsePdfAnchor(anchor) !== null
+      ? [{ anchor, color }]
+      : [],
+  );
 }

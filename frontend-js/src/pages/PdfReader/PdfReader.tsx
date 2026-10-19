@@ -4,15 +4,23 @@ import { useParams, useSearchParams } from "react-router";
 import {
   type BookDetail,
   type BookUuid,
+  type Highlight,
+  type HighlightColor,
   parseBookUuid,
   saveReadingPosition,
 } from "../../api";
 import { useAutoReadStatus } from "../../autoReadStatus";
+import { classes } from "../../classes";
 import { Button } from "../../components/Button/Button";
 import { Loading } from "../../components/Loading/Loading";
 import { PageNotFound } from "../../components/PageState/PageState";
 import { useReadingSession } from "../../readingSession";
-import { bookQuery, progressQuery } from "../BookDetail/queries";
+import { pdfAnchorPage } from "../BookDetail/highlights";
+import {
+  bookQuery,
+  highlightsQuery,
+  progressQuery,
+} from "../BookDetail/queries";
 import {
   type Fit,
   FitButton,
@@ -20,14 +28,57 @@ import {
   useBackToBook,
 } from "../ComicReader/ComicReader";
 import { pagePercent } from "../ComicReader/pager";
-import { deepLinkPage, pdfPageAnchor, pdfStartPage } from "./pdfAnchors";
-import { loadPdfGlue, PDF_RUNTIME, parsePdfPosition } from "./pdfGlue";
+import type { AnnotationBridge } from "../Reader/annotations";
+import { useHighlights } from "../Reader/annotations";
+import { BookmarksDrawer } from "../Reader/BookmarksDrawer";
+import { HighlightsDrawer } from "../Reader/HighlightsDrawer";
+import { NoteComposer } from "../Reader/NoteComposer";
+import { QuotePanel } from "../Reader/QuotePanel";
+import { SelectionPopover } from "../Reader/SelectionPopover";
+import {
+  deepLinkPage,
+  paintList,
+  pdfPageAnchor,
+  pdfStartPage,
+} from "./pdfAnchors";
+import {
+  loadPdfGlue,
+  PDF_RUNTIME,
+  type PdfSelection,
+  parsePdfPosition,
+  parsePdfSelection,
+} from "./pdfGlue";
 import "../ComicReader/ComicReader.css";
+import "../Reader/Reader.css";
 import "./PdfReader.css";
 
 const HOST_ID = "omnibus-pdf-page";
 
 type Status = "loading" | "ready" | "failed";
+
+// The glue calls these with a string; each one this page bridges is listed here.
+const HOOKS = [
+  "__omnibusOnPdfReady",
+  "__omnibusOnPdfPage",
+  "__omnibusOnPdfError",
+  "__omnibusOnPdfSelection",
+  "__omnibusOnPdfSelectionCleared",
+  "__omnibusOnPdfHighlightTap",
+] as const;
+
+/** The highlights drawer and the bookmarks drawer share the toolbar; opening one closes the other. */
+type Panel = "highlights" | "bookmarks";
+
+// Painting is list-driven (the page pushes the whole set), so only a jump and a copy reach the glue.
+const pdfBridge: AnnotationBridge = {
+  navigate(anchor) {
+    const page = pdfAnchorPage(anchor);
+    if (page !== null) window.OmnibusPdfReader?.goTo(page);
+  },
+  paint() {},
+  unpaint() {},
+  copy: (text) => window.OmnibusPdfReader?.copyText(text),
+};
 
 const ICON = {
   width: 17,
@@ -59,12 +110,27 @@ function PdfPage({
   // PDF.js's own page count, authoritative over the indexed one; 0 until the document opens.
   const [count, setCount] = useState(0);
   const [fit, setFit] = useState<Fit>("height");
+  const [panel, setPanel] = useState<Panel | null>(null);
+  const [selection, setSelection] = useState<PdfSelection | null>(null);
+  const {
+    highlights,
+    target,
+    setTarget,
+    load,
+    create,
+    saveNote,
+    recolor,
+    remove,
+  } = useHighlights(uuid, pdfBridge);
   // Retry re-runs the whole open: the fetch, the glue load and the mount.
   const [attempt, setAttempt] = useState(0);
   // The page whose position was last posted, so an echo never re-stamps an unmoved position.
   const lastSaved = useRef<number | null>(null);
   const fitNow = useRef(fit);
   fitNow.current = fit;
+  // The glue's hooks outlive a render, so they read the list through this.
+  const highlightsNow = useRef(highlights);
+  highlightsNow.current = highlights;
 
   // Best-effort: a failed write must not interrupt reading, and the next turn retries.
   const save = useCallback(
@@ -90,6 +156,7 @@ function PdfPage({
     setStatus("loading");
     setError(null);
     setCount(0);
+    setSelection(null);
     lastSaved.current = null;
 
     const onReady = (json: string) => {
@@ -101,6 +168,10 @@ function PdfPage({
         lastSaved.current = position.page;
       }
       setStatus("ready");
+      // The paint effect may have run before the glue could draw.
+      window.OmnibusPdfReader?.paintHighlights(
+        paintList(highlightsNow.current),
+      );
     };
     const onPage = (json: string) => {
       const position = parsePdfPosition(json);
@@ -113,9 +184,24 @@ function PdfPage({
       setError(message);
       setStatus("failed");
     };
-    window.__omnibusOnPdfReady = onReady;
-    window.__omnibusOnPdfPage = onPage;
-    window.__omnibusOnPdfError = onError;
+    const hooks = {
+      __omnibusOnPdfReady: onReady,
+      __omnibusOnPdfPage: onPage,
+      __omnibusOnPdfError: onError,
+      __omnibusOnPdfSelection(json: string) {
+        const picked = parsePdfSelection(json);
+        if (picked) setSelection(picked);
+      },
+      // The only dismiss on phones, where the popover has no scrim to tap.
+      __omnibusOnPdfSelectionCleared: () => setSelection(null),
+      // Only for an anchor the list holds, so a stale paint can't open an empty drawer.
+      __omnibusOnPdfHighlightTap(anchor: string) {
+        if (highlightsNow.current.some((h) => h.anchor === anchor)) {
+          setPanel("highlights");
+        }
+      },
+    } satisfies Record<(typeof HOOKS)[number], (json: string) => void>;
+    for (const name of HOOKS) window[name] = hooks[name];
 
     const open = async () => {
       const [found, progress] = await Promise.all([
@@ -148,6 +234,10 @@ function PdfPage({
         startPage: start,
         fit: fitNow.current,
       });
+      const passages = await client
+        .fetchQuery({ ...highlightsQuery(uuid), staleTime: 0 })
+        .catch(() => null);
+      if (passages && !cancelled) load(passages);
     };
     open().catch(() => {
       if (!cancelled) setStatus("failed");
@@ -155,28 +245,63 @@ function PdfPage({
 
     return () => {
       cancelled = true;
-      if (window.__omnibusOnPdfReady === onReady) {
-        delete window.__omnibusOnPdfReady;
-      }
-      if (window.__omnibusOnPdfPage === onPage) {
-        delete window.__omnibusOnPdfPage;
-      }
-      if (window.__omnibusOnPdfError === onError) {
-        delete window.__omnibusOnPdfError;
+      for (const name of HOOKS) {
+        if (window[name] === hooks[name]) delete window[name];
       }
       window.OmnibusPdfReader?.destroy();
     };
-  }, [client, uuid, fileId, deepLink, attempt, save]);
+  }, [client, uuid, fileId, deepLink, attempt, save, load]);
 
   useEffect(() => {
     window.OmnibusPdfReader?.setFit(fit);
   }, [fit]);
 
+  useEffect(() => {
+    window.OmnibusPdfReader?.paintHighlights(paintList(highlights));
+  }, [highlights]);
+
+  const dismissSelection = () => {
+    setSelection(null);
+    window.OmnibusPdfReader?.clearSelection();
+  };
+  // Opening one tool closes the other.
+  const toggle = (tool: Panel) => {
+    setTarget(null);
+    setPanel((open) => (open === tool ? null : tool));
+  };
+  function highlightSelection(
+    picked: PdfSelection,
+    color: HighlightColor,
+    after: "note" | "quote" | null,
+  ) {
+    dismissSelection();
+    create({ anchor: picked.anchor, color, text: picked.text }, after);
+  }
+  const rowActions = {
+    bridge: pdfBridge,
+    onRecolor: recolor,
+    onDelete: async (highlight: Highlight) => {
+      await remove(highlight);
+      // The delete button was the focus; the root is where Escape is heard.
+      root.current?.focus();
+    },
+    onQuote: (highlight: Highlight) => {
+      setTarget({ kind: "quote", highlight });
+      setPanel(null);
+    },
+    onEditNote: (highlight: Highlight) => {
+      setTarget({ kind: "note", highlight });
+      setPanel(null);
+    },
+    onClose: () => setPanel(null),
+  };
+
   // Every control funnels through here, so a page is never shown without being saved.
-  function goto(target: number) {
+  function goto(to: number) {
     if (count === 0) return;
-    const next = Math.min(Math.max(target, 0), count - 1);
+    const next = Math.min(Math.max(to, 0), count - 1);
     if (next === page) return;
+    setSelection(null);
     setPage(next);
     save(next, count);
     window.OmnibusPdfReader?.goTo(next);
@@ -190,9 +315,19 @@ function PdfPage({
       // biome-ignore lint/a11y/noNoninteractiveTabindex: focus lands here so the arrow keys work at once
       tabIndex={0}
       onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          if (selection) dismissSelection();
+          else if (target) setTarget(null);
+          else if (panel) setPanel(null);
+          else window.OmnibusPdfReader?.clearSelection();
+          return;
+        }
+        // The note composer keeps its arrow keys.
+        if (e.target instanceof HTMLElement && e.target.closest("textarea")) {
+          return;
+        }
         if (e.key === "ArrowRight") goto(page + 1);
         if (e.key === "ArrowLeft") goto(page - 1);
-        if (e.key === "Escape") window.OmnibusPdfReader?.clearSelection();
       }}
     >
       <header className="cr-top">
@@ -215,22 +350,33 @@ function PdfPage({
         <div className="cr-fit-controls" role="group" aria-label="Annotations">
           <button
             type="button"
-            className="cr-btn cr-fit pr-tool"
+            className={classes(
+              "cr-btn cr-fit pr-tool",
+              panel === "highlights" && "active",
+            )}
             data-testid="pdf-highlights"
             aria-label="Highlights and notes"
-            aria-pressed={false}
+            aria-pressed={panel === "highlights"}
+            onClick={() => toggle("highlights")}
           >
             <svg {...ICON} aria-hidden="true">
               <path d="M4 19.5l1.6-4 8.2-8.2 3 3-8.2 8.2-4.6 0z" />
               <path d="M13.2 6.1l2.7-2.7a1.3 1.3 0 0 1 1.9 0l1.8 1.8a1.3 1.3 0 0 1 0 1.9l-2.7 2.7" />
             </svg>
+            {highlights.length > 0 && (
+              <span className="rd-badge">{highlights.length}</span>
+            )}
           </button>
           <button
             type="button"
-            className="cr-btn cr-fit pr-tool"
+            className={classes(
+              "cr-btn cr-fit pr-tool",
+              panel === "bookmarks" && "active",
+            )}
             data-testid="pdf-bookmarks"
             aria-label="Bookmarks"
-            aria-pressed={false}
+            aria-pressed={panel === "bookmarks"}
+            onClick={() => toggle("bookmarks")}
           >
             <svg {...ICON} aria-hidden="true">
               <path d="M7 4h10v16l-5-3.6L7 20V4z" />
@@ -327,6 +473,51 @@ function PdfPage({
           <i style={{ width: `${pagePercent(page, count)}%` }} />
         </div>
       </footer>
+      {selection && (
+        <SelectionPopover
+          rect={selection.rect}
+          onDismiss={dismissSelection}
+          onHighlight={(color) => highlightSelection(selection, color, null)}
+          onNote={() => highlightSelection(selection, "amber", "note")}
+          onQuote={() => highlightSelection(selection, "amber", "quote")}
+          onCopy={() => {
+            pdfBridge.copy(selection.text);
+            dismissSelection();
+          }}
+          onShare={() => {
+            window.OmnibusPdfReader?.shareText(selection.text);
+            dismissSelection();
+          }}
+        />
+      )}
+      {panel === "highlights" && (
+        <HighlightsDrawer highlights={highlights} {...rowActions} />
+      )}
+      {panel === "bookmarks" && (
+        <BookmarksDrawer
+          uuid={uuid}
+          position={count > 0 ? pdfPageAnchor(page) : null}
+          label={`Page ${page + 1}`}
+          bridge={pdfBridge}
+          onClose={() => setPanel(null)}
+        />
+      )}
+      {target?.kind === "quote" && (
+        <QuotePanel
+          text={target.highlight.text ?? ""}
+          author={book?.authors[0] ?? ""}
+          subtitle={book?.title ?? ""}
+          accent={book?.accent ?? "#3a3027"}
+          onClose={() => setTarget(null)}
+        />
+      )}
+      {target?.kind === "note" && (
+        <NoteComposer
+          highlight={target.highlight}
+          onSave={(draft) => saveNote(target.highlight, draft)}
+          onClose={() => setTarget(null)}
+        />
+      )}
     </div>
   );
 }

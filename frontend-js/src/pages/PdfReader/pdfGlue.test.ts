@@ -65,3 +65,39 @@ describe("PDF_RUNTIME", () => {
     expect(PDF_RUNTIME.wasmUrl.endsWith("/")).toBe(true);
   });
 });
+
+describe("parsePdfSelection", () => {
+  const rect = { x: 10, y: 20, width: 30 };
+
+  it("turns the glue's payload into the anchor it is saved under", async () => {
+    const { parsePdfSelection } = await fresh();
+
+    expect(
+      parsePdfSelection(
+        JSON.stringify({
+          page: 1,
+          quads: [[1, 2, 3, 4, 5, 6, 7, 8]],
+          text: "t",
+          rect,
+        }),
+      ),
+    ).toEqual({
+      anchor: "pdf:1:1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0",
+      text: "t",
+      rect,
+    });
+  });
+
+  it.each([
+    ["text that is not json", "not json"],
+    ["a payload with no rect", JSON.stringify({ page: 1 })],
+    [
+      "a quad of seven numbers",
+      JSON.stringify({ page: 1, quads: [[1, 2, 3, 4, 5, 6, 7]], rect }),
+    ],
+  ])("drops %s", async (_condition, json) => {
+    const { parsePdfSelection } = await fresh();
+
+    expect(parsePdfSelection(json)).toBeNull();
+  });
+});

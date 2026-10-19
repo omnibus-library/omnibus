@@ -8,7 +8,10 @@ import {
   readStatusHandlers,
 } from "../../testing/handlers";
 import { fakePdfGlue } from "../../testing/readerGlue";
-import { progressHandlers } from "../../testing/readerHandlers";
+import {
+  annotationHandlers,
+  progressHandlers,
+} from "../../testing/readerHandlers";
 import { aWireBook, aWirePosition, aWireReadStatus } from "../../testing/wire";
 import { PdfReader } from "./PdfReader";
 
@@ -40,6 +43,7 @@ const meta = {
       bookHandler(BOOK),
       ...progressHandlers([SAVED], writes),
       ...readStatusHandlers(aWireReadStatus(), statusWrites),
+      ...annotationHandlers({ highlights: [], bookmarks: [] }, []),
     );
     return install();
   },
