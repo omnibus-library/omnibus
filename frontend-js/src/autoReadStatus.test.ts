@@ -10,7 +10,7 @@ import {
   it,
   vi,
 } from "vitest";
-import type { BookUuid } from "./api";
+import type { BookUuid, ReadStatusValue } from "./api";
 import {
   applyAutoReadStatus,
   autoTransition,
@@ -112,6 +112,31 @@ describe("applyAutoReadStatus", () => {
     await applyAutoReadStatus(BOOK, true);
 
     expect(puts).toEqual([{ book_uuid: BOOK, status: "finished" }]);
+  });
+
+  it("ends at finished when the end comes while the first play's reading write is still in flight", async () => {
+    const held = deferred();
+    let stored: ReadStatusValue | null = null;
+    server.use(
+      http.get("/api/read-status/:uuid", () =>
+        HttpResponse.json(stored ? aWireReadStatus({ status: stored }) : null),
+      ),
+      http.put("/api/read-status", async ({ request }) => {
+        const { status } = (await request.json()) as {
+          status: ReadStatusValue;
+        };
+        if (status === "reading") await held.promise;
+        stored = status;
+        return HttpResponse.json(aWireReadStatus({ status: "reading" }));
+      }),
+    );
+
+    const start = applyAutoReadStatus(BOOK, false);
+    const end = applyAutoReadStatus(BOOK, true);
+    setTimeout(held.release, 50);
+    await Promise.all([start, end]);
+
+    expect(stored).toBe("finished");
   });
 
   it("leaves a finished book finished at its end", async () => {

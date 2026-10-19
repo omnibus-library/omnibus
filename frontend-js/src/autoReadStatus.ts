@@ -23,14 +23,17 @@ export async function applyAutoReadStatus(
   uuid: BookUuid,
   atEnd: boolean,
 ): Promise<void> {
-  const stored = await fetchReadStatus(uuid).then(
-    (record) => record?.status ?? "unread",
-    () => null,
-  );
-  if (stored === null) return;
-  const next = autoTransition(stored, atEnd);
-  if (next === null) return;
-  await saveReadStatus(uuid, next).catch(() => {});
+  // Read, decide and write as one step in the book's queue, so a slow `reading` can't land after `finished`.
+  await inOrder(statusWrites, uuid, async () => {
+    const stored = await fetchReadStatus(uuid).then(
+      (record) => record?.status ?? "unread",
+      () => null,
+    );
+    if (stored === null) return;
+    const next = autoTransition(stored, atEnd);
+    if (next === null) return;
+    await saveReadStatus(uuid, next).catch(() => {});
+  });
 }
 
 /**
