@@ -94,6 +94,8 @@ export function useReadingSession(uuid: BookUuid): void {
     };
     tracker.start(uuid, nowSecs());
     const suspend = () => send(tracker.suspend(nowSecs()));
+    // Mounted in a background tab: no visibilitychange will fire to pause the segment just started.
+    if (document.visibilityState === "hidden") suspend();
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
         suspend();

@@ -192,6 +192,17 @@ describe("useReadingSession", () => {
       expect(posted().map((p) => p.body[0].progress_units)).toEqual([20, 10]);
     });
 
+    it("counts only visible time when the reader mounts in a hidden tab", () => {
+      show("hidden");
+      renderHook(() => useReadingSession(A));
+      vi.advanceTimersByTime(60_000);
+
+      show("visible");
+      vi.advanceTimersByTime(60_000);
+
+      expect(posted().map((p) => p.body[0].progress_units)).toEqual([60]);
+    });
+
     it("keeps recording after a page restored from the back-forward cache", () => {
       renderHook(() => useReadingSession(A));
       window.dispatchEvent(new Event("pagehide"));
