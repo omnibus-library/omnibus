@@ -165,7 +165,6 @@ struct ShelfDetailView: View {
                         header
 
                         LibraryFilterBar(store: filters, viewerId: app.user?.id)
-                            .screenPadding()
 
                         switch members.phase(knownCount: identity?.bookCount) {
                         case .loading:
