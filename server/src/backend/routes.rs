@@ -184,6 +184,7 @@ fn engagement_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(stats::put_stats_daily_goal))
         .routes(routes!(stats::get_library_size))
         .routes(routes!(stats::get_library_composition))
+        .routes(routes!(stats::post_stats_chart))
         .routes(routes!(ratings::post_rating))
         .routes(routes!(ratings::get_other_ratings))
         .routes(routes!(ratings::get_rating, ratings::delete_rating))

@@ -1,5 +1,5 @@
 //! Query parameters of the stats routes: the stats summary, the session log, the goal
-//! writes and one book's insights.
+//! writes, the chart builder and one book's insights.
 
 use serde::{Deserialize, Deserializer};
 
@@ -40,6 +40,18 @@ pub struct GoalQuery {
     /// Your device's offset from UTC in minutes, east positive, which decides where today
     /// starts for the progress in the response. Absent, unreadable, or outside -720 to
     /// 840, the server uses the offset of your most recent reading session, then UTC.
+    #[serde(default, deserialize_with = "lenient_offset")]
+    pub utc_offset_minutes: Option<i64>,
+}
+
+/// Query parameters of `POST /api/stats/chart`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct ChartQuery {
+    /// Your device's offset from UTC in minutes, east positive, which decides which bucket
+    /// each day falls in and where the period starts. Absent, unreadable, or outside -720
+    /// to 840, the server uses the offset of your most recent reading session, then UTC.
     #[serde(default, deserialize_with = "lenient_offset")]
     pub utc_offset_minutes: Option<i64>,
 }

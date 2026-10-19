@@ -28,9 +28,10 @@ pub const BREAKDOWN_LIMIT: usize = 5;
 /// Label of the synthetic tail series, matching the composition donut's.
 pub const OTHER_LABEL: &str = "Other";
 
-/// The x-axis granularity. Always time — see the module docs on
-/// `db::stats::builder` for why the x-axis is a shared bucket key rather than
-/// a free choice.
+// The x-axis is a shared bucket key, not a free choice: see the module docs on
+// `db::stats::builder`.
+/// How wide each bucket on the x-axis is: a day, a week (starting Monday), a month or a
+/// year. The x-axis is always time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -173,11 +174,11 @@ impl ChartUnit {
     }
 }
 
-/// The closed measure vocabulary.
-///
-/// Each variant maps to a hand-written SQL fragment in `db::stats::builder` that
-/// **reuses** its curated `/stats` equivalent's fragment, so the two surfaces
-/// cannot report different numbers for the same window.
+// Each variant maps to a hand-written SQL fragment in `db::stats::builder` that
+// **reuses** its curated `/stats` equivalent's fragment, so the two surfaces
+// cannot report different numbers for the same window.
+/// What a chart can plot: one number per bucket, in a unit of its own. Measures sharing a
+/// unit share a scale, and a chart holds at most two scales.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -664,10 +665,11 @@ pub fn fit_axes(series: &[ChartSeries], stacked: bool, buckets: usize) -> (Vec<C
     (axes, divisions)
 }
 
+// `ChartAggregate::empty_bucket` decides which buckets are `None`.
 /// One plotted series: a measure (optionally narrowed to a breakdown slice) and
 /// its value in every bucket of the shared axis. `values` is positionally
-/// aligned with [`ChartResult::buckets`]; `None` means *no data*, which for an
-/// average is a real state and not a zero (see [`ChartAggregate::empty_bucket`]).
+/// aligned with `buckets`; null means *no data*, which for an average is a real
+/// state and not a zero.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -714,7 +716,7 @@ pub struct ChartAxis {
     pub max: f64,
 }
 
-/// The answer to a [`ChartSpec`].
+/// The series a chart spec asks for, aligned on one shared set of buckets.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -739,7 +741,8 @@ pub struct ChartResult {
     /// parts of a whole. Different measures never stack, nor does a split average,
     /// since means do not add.
     pub stacked: bool,
-    /// Set when the axis was clipped to the most recent [`MAX_BUCKETS`].
+    // 366 is `MAX_BUCKETS`.
+    /// Set when `buckets` was clipped to the most recent 366.
     pub truncated: bool,
     /// Caveats carried by the selected measures.
     pub caveats: Vec<String>,
