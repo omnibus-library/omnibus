@@ -81,6 +81,28 @@ export const Loaded: Story = {
   },
 };
 
+export const NoBookAccent: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...seriesHandlers({
+        detail: aWireSeries({
+          id: 4,
+          name: "Lost Saga",
+          book_count: 1,
+          books: [book(1, { accent: null })],
+        }),
+      }),
+    );
+  },
+  play: async ({ canvas, canvasElement }) => {
+    await canvas.findByRole("heading", { level: 1 });
+
+    // A self-referencing var(--accent) would invalidate the property instead of inheriting it.
+    const page = canvasElement.querySelector<HTMLElement>(".disc-page");
+    await expect(page?.style.getPropertyValue("--accent")).toBe("");
+  },
+};
+
 export const Loading: Story = {
   beforeEach({ msw }) {
     msw.use(hanging("/api/series/:id"));

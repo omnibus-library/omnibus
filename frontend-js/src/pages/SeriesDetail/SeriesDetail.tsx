@@ -27,13 +27,15 @@ export function SeriesDetail() {
   }
   if (series === null) return <PageNotFound subject="Series" />;
 
-  const accent =
-    series.books.find((b) => b.accent !== null)?.accent ?? "var(--accent)";
+  const accent = series.books.find((b) => b.accent !== null)?.accent ?? null;
   const space = series.name.indexOf(" ");
   const first = space < 0 ? series.name : series.name.slice(0, space);
   const rest = space < 0 ? "" : series.name.slice(space + 1);
   return (
-    <div className="disc-page" style={{ "--accent": accent }}>
+    <div
+      className="disc-page"
+      style={accent ? { "--accent": accent } : undefined}
+    >
       <PageTitle page={series.name} />
       <div className="disc-series-header">
         <div className="disc-series-head-row">

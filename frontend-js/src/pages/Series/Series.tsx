@@ -25,7 +25,7 @@ function SeriesCard({ series }: { series: SeriesSummary }) {
     <Link
       to={`/series/${series.id}`}
       className="idx-card idx-card-series"
-      style={{ "--accent": series.accent ?? "var(--accent)" }}
+      style={series.accent ? { "--accent": series.accent } : undefined}
       data-testid="series-card"
     >
       <div className="idx-series-spine" aria-hidden="true" />
