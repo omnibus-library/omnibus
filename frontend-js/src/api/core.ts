@@ -150,7 +150,7 @@ export const bumpAvatarBust = (id: UserId) => {
 };
 
 /** Forgets every bump, covers and avatars; a story starts from the image the server first sent. */
-export const resetCoverBusts = () => {
+export const resetImageBusts = () => {
   coverBusts.clear();
   avatarBusts.clear();
 };

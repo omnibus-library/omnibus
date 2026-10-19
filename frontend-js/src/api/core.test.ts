@@ -5,7 +5,7 @@ import {
   bumpAvatarBust,
   bumpCoverBust,
   coverUrl,
-  resetCoverBusts,
+  resetImageBusts,
   thumbSrcSet,
   thumbUrl,
   type UserId,
@@ -15,7 +15,7 @@ const uuid = (id: string) => id as BookUuid;
 
 describe("cover cache-busting", () => {
   // The bust store is module state, so each test starts from the cover first sent.
-  beforeEach(resetCoverBusts);
+  beforeEach(resetImageBusts);
 
   it("keeps the plain URLs until a write bumps the book", () => {
     const book = uuid("plain");
@@ -53,7 +53,7 @@ describe("cover cache-busting", () => {
 });
 
 describe("avatar cache-busting", () => {
-  beforeEach(resetCoverBusts);
+  beforeEach(resetImageBusts);
 
   it("keeps the plain URL until a write bumps the reader", () => {
     expect(avatarUrl(7 as UserId)).toBe("/api/users/7/avatar");
