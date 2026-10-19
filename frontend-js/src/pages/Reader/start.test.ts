@@ -53,14 +53,11 @@ describe("readerStart", () => {
     [100, true],
     [0, false],
     [101, false],
-  ])(
-    "sets the first-write hold for a stored %i%% as %s",
-    (percent, held) => {
-      expect(readerStart(null, row(null, percent), null).holdFirstWrite).toBe(
-        held,
-      );
-    },
-  );
+  ])("sets the first-write hold for a stored %i%% as %s", (percent, held) => {
+    expect(readerStart(null, row(null, percent), null).holdFirstWrite).toBe(
+      held,
+    );
+  });
 
   it.each([
     ["a book never opened", null],

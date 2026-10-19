@@ -2,52 +2,20 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { StrictMode } from "react";
 import { Route, Routes } from "react-router";
 import { expect, waitFor } from "storybook/test";
-import type { ProgressUpdate } from "../../api/generated/schemas";
-import { bookHandler, readStatusHandlers } from "../../testing/handlers";
-import { epubRelocate, fakeEpubGlue } from "../../testing/readerGlue";
+import { epubRelocate } from "../../testing/readerGlue";
 import { progressHandlers } from "../../testing/readerHandlers";
-import { aWireBook, aWirePosition, aWireReadStatus } from "../../testing/wire";
+import { readerFixture, SAVED_CFI, UUID } from "../../testing/readerStory";
+import { aWirePosition } from "../../testing/wire";
 import { Reader } from "./Reader";
 
-const BOOK = aWireBook({ formats: ["EPUB"] });
-const UUID = BOOK.unique_identifier;
-const SAVED_CFI = "epubcfi(/6/14!/4/2/1:0)";
-const SAVED = aWirePosition({ epub_cfi: SAVED_CFI, progress_percent: 30 });
-const TOC = [
-  { label: "Prologue", href: "prologue.xhtml", level: 0 },
-  { label: "Landfall", href: "landfall.xhtml", level: 0 },
-  { label: "The Long Dark", href: "dark.xhtml", level: 1 },
-];
-
-const writes: ProgressUpdate[] = [];
-const statusWrites: { status: string }[] = [];
-let glue: ReturnType<typeof fakeEpubGlue>;
-
-/** Installs the stand-in glue, so no real epub.js runs; the story's cleanup removes it. */
-function install(options?: Parameters<typeof fakeEpubGlue>[0]) {
-  glue = fakeEpubGlue({ toc: TOC, ...options });
-  return glue.restore;
-}
-
-const inits = () => glue.calls.filter((c) => c.method === "init");
-const opens = () => inits().map((c) => c.args[2]);
+const r = readerFixture();
+const { writes, statusWrites, install, inits, opens } = r;
 
 const meta = {
   title: "Pages/Reader",
   component: Reader,
   parameters: { path: `/read/${UUID}` },
-  beforeEach({ msw }) {
-    writes.length = 0;
-    statusWrites.length = 0;
-    // The reader keeps this device's last position here, which would otherwise carry between stories.
-    localStorage.removeItem(`omn.reading::${UUID}`);
-    msw.use(
-      bookHandler(BOOK),
-      ...progressHandlers([SAVED], writes),
-      ...readStatusHandlers(aWireReadStatus(), statusWrites),
-    );
-    return install();
-  },
+  beforeEach: ({ msw }) => r.setup(msw),
   render: () => (
     <Routes>
       <Route path="/read/:uuid" element={<Reader />} />
@@ -244,7 +212,7 @@ export const SavesEveryTurn: Story = {
       ["epubcfi(/6/4!/4/2/1:0)", 10],
     ]);
     await expect(writes[0]).toMatchObject({ format: "epub" });
-    await expect(glue.calls.map((c) => c.method)).toEqual(
+    await expect(r.glue.calls.map((c) => c.method)).toEqual(
       expect.arrayContaining(["next", "next", "prev"]),
     );
   },
@@ -259,7 +227,7 @@ export const GuttersTurnThePage: Story = {
     );
 
     await waitFor(() =>
-      expect(glue.calls.map((c) => c.method)).toContain("prev"),
+      expect(r.glue.calls.map((c) => c.method)).toContain("prev"),
     );
     await waitFor(() => expect(writes).toHaveLength(1));
   },
@@ -316,7 +284,7 @@ export const LeavesTheGlueClean: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Back to book" }));
 
     await expect(await canvas.findByText("Book page")).toBeInTheDocument();
-    await expect(glue.calls.map((c) => c.method)).toContain("destroy");
+    await expect(r.glue.calls.map((c) => c.method)).toContain("destroy");
     for (const hook of [
       window.__omnibusOnRelocate,
       window.__omnibusOnStatus,
@@ -350,7 +318,7 @@ export const GivesTheGlueTheAppTheme: Story = {
 
     await expect(opens()[0]).toMatchObject({ theme: "sepia" });
     await waitFor(() =>
-      expect(glue.calls).toContainEqual({
+      expect(r.glue.calls).toContainEqual({
         method: "setTheme",
         args: ["sepia"],
       }),

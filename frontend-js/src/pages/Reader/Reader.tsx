@@ -11,7 +11,9 @@ import { bookQuery, progressQuery } from "../BookDetail/queries";
 import {
   loadEpubRuntime,
   parseRelocate,
+  parseSearchResults,
   parseToc,
+  type SearchResult,
   type TocEntry,
   withReader,
 } from "./epubGlue";
@@ -26,6 +28,7 @@ import {
   applyGlueStatus,
   clearedByRelocate,
   formatAmbientPage,
+  formatContentsProgress,
   formatProgressLabels,
   formatTitleSub,
   NO_LOCATION,
@@ -33,6 +36,7 @@ import {
   relocateWrite,
   resolveChapterPosition,
 } from "./relocate";
+import { SearchPanel } from "./SearchPanel";
 import {
   furtherInPercent,
   isEpubCfi,
@@ -40,6 +44,7 @@ import {
   readerStart,
   saveLocalPosition,
 } from "./start";
+import { TocDrawer } from "./TocDrawer";
 import "./Reader.css";
 
 const VIEWER_ID = "omnibus-viewer";
@@ -60,6 +65,7 @@ const HOOKS = [
   "__omnibusOnRelocate",
   "__omnibusOnStatus",
   "__omnibusOnToc",
+  "__omnibusOnSearchResults",
   "__omnibusOnToggleChrome",
 ] as const;
 
@@ -81,6 +87,9 @@ function EpubPage({
   const [loc, setLoc] = useState(NO_LOCATION);
   const [chromeHidden, setChromeHidden] = useState(false);
   const [panel, setPanel] = useState<Panel | null>(null);
+  const [toc, setToc] = useState<TocEntry[]>([]);
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
   // Retry re-runs the whole open: the fetch, the runtime load and the init.
   const [attempt, setAttempt] = useState(0);
 
@@ -95,7 +104,7 @@ function EpubPage({
     // Per mount: the last position posted (not the last seen), whether the first landing is held, and the TOC.
     let lastPosted: string | null = null;
     let hold = false;
-    let toc: TocEntry[] = [];
+    let tocNow: TocEntry[] = [];
     let chapter = 0;
     setStatus("loading");
 
@@ -125,7 +134,13 @@ function EpubPage({
       __omnibusOnStatus: (state: string) =>
         setStatus((s) => applyGlueStatus(s, state)),
       __omnibusOnToc(json: string) {
-        toc = parseToc(json) ?? toc;
+        tocNow = parseToc(json) ?? tocNow;
+        setToc(tocNow);
+      },
+      __omnibusOnSearchResults(json: string) {
+        const found = parseSearchResults(json);
+        if (found) setResults(found);
+        setSearching(false);
       },
       __omnibusOnToggleChrome: () => setChromeHidden((hidden) => !hidden),
     } satisfies Record<(typeof HOOKS)[number], (json: string) => void>;
@@ -192,10 +207,15 @@ function EpubPage({
     withReader((glue) => glue[direction]());
   const toggle = (target: Panel) =>
     setPanel((open) => (open === target ? null : target));
+  const jumpTo = (target: string) => {
+    withReader((glue) => glue.display(target));
+    setPanel(null);
+  };
 
   const labels = formatProgressLabels(loc);
   // While a jump is in flight the outgoing chapter is blanked rather than shown stale.
   const jumping = status === "loading";
+  const chapterTitle = jumping ? "" : loc.chapterTitle;
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the reader takes arrow keys while it holds focus
@@ -205,12 +225,17 @@ function EpubPage({
       // biome-ignore lint/a11y/noNoninteractiveTabindex: focus lands here so the arrow keys work at once
       tabIndex={0}
       onKeyDown={(e) => {
-        if (e.key === "ArrowLeft") turn("prev");
-        else if (e.key === "ArrowRight") turn("next");
-        else if (e.key === "Escape") {
+        // An input inside the surface keeps its arrow keys.
+        const typing =
+          e.target instanceof HTMLElement &&
+          e.target.closest("input, textarea");
+        if (e.key === "Escape") {
           if (panel) setPanel(null);
           else back();
-        } else return;
+        } else if (typing) return;
+        else if (e.key === "ArrowLeft") turn("prev");
+        else if (e.key === "ArrowRight") turn("next");
+        else return;
         e.preventDefault();
       }}
     >
@@ -223,7 +248,7 @@ function EpubPage({
       </div>
       <TopBar
         bookTitle={book?.title ?? ""}
-        chapterTitle={jumping ? "" : loc.chapterTitle}
+        chapterTitle={chapterTitle}
         titleSub={jumping ? "" : formatTitleSub(loc)}
         panel={panel}
         highlightCount={0}
@@ -241,6 +266,31 @@ function EpubPage({
         ambient={formatAmbientPage(loc)}
         pct={loc.pct}
       />
+      {panel === "toc" && (
+        <TocDrawer
+          entries={toc}
+          currentTitle={chapterTitle}
+          progressLabel={formatContentsProgress(loc)}
+          onNavigate={(href) => {
+            // Blank the outgoing chapter until the relocate that confirms the jump.
+            setStatus("loading");
+            jumpTo(href);
+          }}
+          onClose={() => setPanel(null)}
+        />
+      )}
+      {panel === "search" && (
+        <SearchPanel
+          results={results}
+          searching={searching}
+          onQuery={(query) => {
+            setSearching(true);
+            withReader((glue) => glue.search(query));
+          }}
+          onNavigate={jumpTo}
+          onClose={() => setPanel(null)}
+        />
+      )}
     </div>
   );
 }

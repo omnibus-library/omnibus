@@ -67,6 +67,17 @@ const TocSchema = z.array(
 /** One flattened table-of-contents entry; `level` is the nesting depth, 0 at the top. */
 export type TocEntry = z.infer<typeof TocSchema>[number];
 
+const SearchResultsSchema = z.array(
+  z.object({
+    cfi: z.string(),
+    excerpt: z.string().default(""),
+    chapter: z.string().default(""),
+  }),
+);
+
+/** One in-book search match: where it is, the text around it and the chapter it sits in. */
+export type SearchResult = z.infer<typeof SearchResultsSchema>[number];
+
 // Glue payloads are untrusted vendor output: one that doesn't match is dropped.
 function parseWith<T>(schema: z.ZodType<T>, json: string): T | null {
   try {
@@ -78,3 +89,5 @@ function parseWith<T>(schema: z.ZodType<T>, json: string): T | null {
 
 export const parseRelocate = (json: string) => parseWith(RelocateSchema, json);
 export const parseToc = (json: string) => parseWith(TocSchema, json);
+export const parseSearchResults = (json: string) =>
+  parseWith(SearchResultsSchema, json);

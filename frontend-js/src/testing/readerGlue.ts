@@ -76,13 +76,16 @@ export function epubRelocate(overrides: Record<string, unknown> = {}) {
  * Installs a stand-in `window.OmnibusReader` that records every call. Its presence makes the
  * loader skip the scripts, so no epub.js runs. `init` plays `onInit`, by default the TOC, a
  * relocate at the CFI it was given (an echo, as a restore is) and `ready`; `next` and `prev`
- * answer with the relocate a real turn sends.
+ * answer with the relocate a real turn sends. Jumps (`display`) only record.
  */
 export function fakeEpubGlue({
   toc = [],
+  searchResults,
   onInit,
 }: {
   toc?: { label: string; href: string; level: number }[];
+  /** What `search` answers with; unset, it never answers. */
+  searchResults?: { cfi: string; excerpt: string; chapter: string }[];
   onInit?: (opts: EpubInit) => void;
 } = {}) {
   const calls: GlueCall[] = [];
@@ -141,7 +144,12 @@ export function fakeEpubGlue({
     displayPercentage: record("displayPercentage"),
     copyText: record("copyText"),
     shareText: record("shareText"),
-    search: record("search"),
+    search(query) {
+      calls.push({ method: "search", args: [query] });
+      if (searchResults) {
+        window.__omnibusOnSearchResults?.(JSON.stringify(searchResults));
+      }
+    },
   };
   return {
     calls,
