@@ -52,6 +52,19 @@ export function bookHandler(book: { unique_identifier: string }) {
   );
 }
 
+/** `GET /api/progress/recent`, answering the first `limit` of `points`. */
+export function recentProgressHandler(points: unknown[]) {
+  return http.get("/api/progress/recent", ({ request }) => {
+    const limit = Number(new URL(request.url).searchParams.get("limit"));
+    if (!Number.isInteger(limit) || limit < 1) {
+      return new HttpResponse("limit must be a positive integer", {
+        status: 400,
+      });
+    }
+    return HttpResponse.json(points.slice(0, limit));
+  });
+}
+
 /** `POST /api/auth/login` accepting `password` for any username. */
 export function loginHandler(password: string) {
   return http.post("/api/auth/login", async ({ request }) => {

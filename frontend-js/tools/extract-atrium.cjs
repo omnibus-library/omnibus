@@ -22,6 +22,8 @@ const OWNERS = [
   ["components/Field/Field.css", (c) => c.startsWith("auth-field")],
   ["components/AuthShell/AuthShell.css", (c) => c.startsWith("auth-")],
   ["components/TopNav/TopNav.css", (c) => c.startsWith("atrium-")],
+  ["components/UserMenu/UserMenu.css", (c) => c.startsWith("um-")],
+  ["components/ThemePicker/ThemePicker.css", (c) => c.startsWith("theme-seg")],
   ["layouts/AppShell.css", (c) => c === "app-shell"],
   ["components/DiscPage/DiscPage.css", (c) => c.startsWith("disc-")],
   ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || ["landing-col", "library-empty", "cover-link"].includes(c)],
@@ -34,7 +36,8 @@ function tsxFiles(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) return tsxFiles(p);
-    return p.endsWith(".tsx") ? [p] : [];
+    // Test names are prose, not markup: "the whole screen" would pull in .screen.
+    return p.endsWith(".tsx") && !p.endsWith(".test.tsx") ? [p] : [];
   });
 }
 

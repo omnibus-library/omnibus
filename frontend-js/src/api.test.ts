@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseBookDetail, parseBookPage } from "./api";
-import { aWireBook } from "./testing/wire";
+import {
+  parseBookDetail,
+  parseBookPage,
+  parseResumePoints,
+  parseUser,
+} from "./api";
+import { aWireBook, aWireResumePoint, WIRE_ADA } from "./testing/wire";
 
 const auroraWire = aWireBook({ published: null });
 
@@ -67,5 +72,47 @@ describe("parseBookDetail", () => {
     const wire = { ...auroraWire, series: "  " };
 
     expect(parseBookDetail(wire).series).toBeNull();
+  });
+});
+
+describe("parseResumePoints", () => {
+  it("maps each resume point to its book, format and file id", () => {
+    const wire = aWireResumePoint(
+      { format: "audio", book_file_id: 7 },
+      { title: "The Martian", formats: ["M4B", "EPUB"] },
+    );
+
+    const [point] = parseResumePoints([wire]);
+
+    expect(point).toMatchObject({
+      book: {
+        uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+        title: "The Martian",
+      },
+      format: "audio",
+      fileId: 7,
+      formats: ["M4B", "EPUB"],
+    });
+  });
+});
+
+describe("parseUser", () => {
+  it("maps the session user to its identity, role and avatar", () => {
+    const wire = { ...WIRE_ADA, has_avatar: true };
+
+    expect(parseUser(wire)).toEqual({
+      id: 1,
+      username: "ada",
+      name: "Ada Lovelace",
+      isAdmin: true,
+      canUpload: true,
+      hasAvatar: true,
+    });
+  });
+
+  it("falls back to the username when there is no display name", () => {
+    const wire = { ...WIRE_ADA, display_name: null };
+
+    expect(parseUser(wire).name).toBe("ada");
   });
 });

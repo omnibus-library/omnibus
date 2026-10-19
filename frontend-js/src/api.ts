@@ -16,18 +16,35 @@ export function parseBookUuid(raw: string | undefined): BookUuid | null {
   return parsed.success ? parsed.data : null;
 }
 
+export type UserId = number & { readonly __brand: "UserId" };
+
 const UserSchema = z
   .object({
+    id: z
+      .number()
+      .int()
+      .transform((id) => id as UserId),
     username: z.string(),
     display_name: z.string().nullish(),
+    is_admin: z.boolean(),
     can_upload: z.boolean(),
+    has_avatar: z.boolean().default(false),
   })
   .transform((u) => ({
+    id: u.id,
+    username: u.username,
     name: u.display_name ?? u.username,
+    isAdmin: u.is_admin,
     canUpload: u.can_upload,
+    hasAvatar: u.has_avatar,
   }));
 
 export type User = z.infer<typeof UserSchema>;
+
+/** Parses the user `GET /api/auth/me` and the login response carry. */
+export function parseUser(body: unknown): User {
+  return UserSchema.parse(body);
+}
 
 const BookWire = z.object({
   unique_identifier: bookUuid,
@@ -73,6 +90,28 @@ const BookDetailSchema = BookWire.extend({
 }));
 
 export type BookDetail = z.infer<typeof BookDetailSchema>;
+
+const ResumePointSchema = z
+  .object({
+    record: z.object({
+      format: z.enum(["epub", "audio"]),
+      book_file_id: z.number().int().nullish(),
+    }),
+    book: BookWire.extend({ formats: z.array(z.string()).default([]) }),
+  })
+  .transform(({ record, book }) => ({
+    book: toBook(book),
+    format: record.format,
+    fileId: record.book_file_id ?? null,
+    formats: book.formats,
+  }));
+
+export type ResumePoint = z.infer<typeof ResumePointSchema>;
+
+/** Parses `GET /api/progress/recent`, newest position first. */
+export function parseResumePoints(body: unknown): ResumePoint[] {
+  return z.array(ResumePointSchema).parse(body);
+}
 
 export type BookPage = { books: Book[]; total: number; next: string | null };
 
@@ -165,9 +204,19 @@ export async function fetchBook(uuid: BookUuid): Promise<BookDetail | null> {
   return parseBookDetail(await readJson(res));
 }
 
+/** The reader's most recent reading and listening positions, newest first. */
+export async function fetchRecentProgress(
+  limit: number,
+): Promise<ResumePoint[]> {
+  const res = await fetch(`/api/progress/recent?limit=${limit}`);
+  return parseResumePoints(await readJson(res));
+}
+
 export const thumbUrl = (uuid: BookUuid) => `/api/thumbs/${uuid}/md`;
 
 export const thumbSrcSet = (uuid: BookUuid) =>
   `/api/thumbs/${uuid}/sm 160w, /api/thumbs/${uuid}/md 320w, /api/thumbs/${uuid}/lg 640w`;
 
 export const coverUrl = (uuid: BookUuid) => `/api/covers/${uuid}`;
+
+export const avatarUrl = (id: UserId) => `/api/users/${id}/avatar`;

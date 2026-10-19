@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { MemoryRouter } from "react-router";
-import type { User } from "../api";
+import { parseUser, type User } from "../api";
 import { meQuery } from "../session";
+import { WIRE_ADA } from "./wire";
 
 /** The signed-in reader stories and tests render as. */
-export const ADA: User = { name: "Ada Lovelace", canUpload: true };
+export const ADA: User = parseUser(WIRE_ADA);
 
 /** A query client already holding `user` as the session, that never refetches. */
 export function harnessClient(user: User | null = ADA): QueryClient {

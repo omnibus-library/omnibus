@@ -39,6 +39,29 @@ export function aWireLibrary(count: number) {
   );
 }
 
+/** A reading position as `GET /api/progress/recent` sends it. */
+export function aWireResumePoint(
+  record: Record<string, unknown> = {},
+  book: Record<string, unknown> = {},
+) {
+  return {
+    record: {
+      book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+      format: "epub",
+      epub_cfi: "epubcfi(/6/4!/4/2/1:0)",
+      audio_position_seconds: null,
+      progress_percent: 42,
+      kobo_location: null,
+      book_file_id: null,
+      updated_at: 1_760_000_000,
+      client_updated_at: 1_760_000_000,
+      ...record,
+    },
+    book: aWireBook({ formats: ["EPUB"], ...book }),
+    linked: false,
+  };
+}
+
 /** The signed-in admin as `GET /api/auth/me` and the login response send it. */
 export const WIRE_ADA = {
   id: 1,

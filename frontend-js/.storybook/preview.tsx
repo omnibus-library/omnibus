@@ -1,7 +1,11 @@
 import type { Preview } from "@storybook/react-vite";
 import { mswLoader } from "msw-storybook-addon/csf3";
-import type { User } from "../src/api";
-import { isTheme, THEMES } from "../src/components/Theme/AtriumRoot";
+import { parseUser, type User } from "../src/api";
+import {
+  AtriumRoot,
+  isTheme,
+  THEMES,
+} from "../src/components/Theme/AtriumRoot";
 import { watchImageLoads } from "../src/imageWatch";
 import { ADA, AppHarness } from "../src/testing/AppHarness";
 import { coverHandlers, sessionHandler } from "../src/testing/handlers";
@@ -10,21 +14,10 @@ import "../src/styles/base.css";
 
 watchImageLoads();
 
-function isUser(value: unknown): value is User {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "name" in value &&
-    typeof value.name === "string" &&
-    "canUpload" in value &&
-    typeof value.canUpload === "boolean"
-  );
-}
-
-// `parameters.user: null` renders the story signed out.
+// `parameters.user` is the session as the server sends it; `null` is a guest.
 function storyUser(value: unknown): User | null {
   if (value === null) return null;
-  return isUser(value) ? value : ADA;
+  return value === undefined ? ADA : parseUser(value);
 }
 
 const preview = {
@@ -52,22 +45,25 @@ const preview = {
   // A story sets `parameters.user` or `parameters.path` to change either, or
   // `parameters.ownRouter` when it renders a data router of its own.
   decorators: [
-    (Story, { id, globals, parameters }) => (
-      <AppHarness
-        key={id}
-        user={storyUser(parameters.user)}
-        path={typeof parameters.path === "string" ? parameters.path : "/"}
-        router={parameters.ownRouter !== true}
-      >
-        <div
-          className="atrium"
-          data-theme={isTheme(globals.theme) ? globals.theme : "dark"}
-          style={{ minHeight: "100vh", padding: 24 }}
+    (Story, { id, globals, parameters }) => {
+      const theme = isTheme(globals.theme) ? globals.theme : "dark";
+      // AtriumRoot starts on the saved theme, so the toolbar's pick goes there first.
+      localStorage.setItem("omn.theme", theme);
+      return (
+        <AppHarness
+          key={`${id}:${theme}`}
+          user={storyUser(parameters.user)}
+          path={typeof parameters.path === "string" ? parameters.path : "/"}
+          router={parameters.ownRouter !== true}
         >
-          <Story />
-        </div>
-      </AppHarness>
-    ),
+          <AtriumRoot>
+            <div style={{ minHeight: "100vh", padding: 24 }}>
+              <Story />
+            </div>
+          </AtriumRoot>
+        </AppHarness>
+      );
+    },
   ],
 } satisfies Preview;
 

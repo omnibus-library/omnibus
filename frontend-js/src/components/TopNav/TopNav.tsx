@@ -1,8 +1,8 @@
 import { Link, NavLink } from "react-router";
 import brandMark from "../../assets/omnibus-stoat.png";
-import { useCurrentUser, useSignOut } from "../../session";
-import { Button, ButtonLink } from "../Button/Button";
-import { BusyLabel } from "../Loading/Loading";
+import { useCurrentUser } from "../../session";
+import { ButtonLink } from "../Button/Button";
+import { UserMenu } from "../UserMenu/UserMenu";
 import "./TopNav.css";
 
 const SECTIONS = [
@@ -18,7 +18,6 @@ const onWhenActive = ({ isActive }: { isActive: boolean }) =>
 /** The desktop top bar: brand, the primary sections, and the account actions. */
 export function TopNav() {
   const user = useCurrentUser();
-  const signOut = useSignOut();
   return (
     <nav className="atrium-topbar" aria-label="Primary">
       <Link to="/" className="atrium-brand">
@@ -49,27 +48,7 @@ export function TopNav() {
             Add books
           </ButtonLink>
         )}
-        <Link to="/account" className="label">
-          {user.name}
-        </Link>
-        <ButtonLink to="/settings" variant="ghost" size="sm">
-          Settings
-        </ButtonLink>
-        <Button
-          size="sm"
-          onClick={() => signOut.mutate()}
-          disabled={signOut.isPending}
-          aria-busy={signOut.isPending}
-        >
-          <BusyLabel
-            busy={signOut.isPending}
-            label="Sign out"
-            busyLabel="Signing out…"
-          />
-        </Button>
-        {signOut.isError && (
-          <span role="alert">Sign out failed: {signOut.error.message}</span>
-        )}
+        <UserMenu />
       </div>
     </nav>
   );

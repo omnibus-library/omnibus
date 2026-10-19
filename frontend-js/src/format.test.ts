@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { BookDetail } from "./api";
-import { descriptionOverflows, homeKicker, plateAuthor } from "./format";
+import {
+  descriptionOverflows,
+  homeKicker,
+  initialsFor,
+  plateAuthor,
+} from "./format";
 import { aBook } from "./testing/books";
 
 const book: BookDetail = {
@@ -36,6 +41,28 @@ describe("homeKicker", () => {
       "Space · standalone · 1843",
     );
     expect(homeKicker({ ...book, published: null })).toBe("Book · standalone");
+  });
+});
+
+describe("initialsFor", () => {
+  it("returns the first two letters of a single name", () => {
+    expect(initialsFor("ada")).toBe("AD");
+  });
+
+  it("returns the first letter of each of the first two names", () => {
+    expect(initialsFor("Ada King Lovelace")).toBe("AK");
+  });
+
+  it.each([
+    ["dots", "ada.lovelace"],
+    ["underscores", "ada_lovelace"],
+    ["hyphens", "ada-lovelace"],
+  ])("splits names on %s", (_separator, name) => {
+    expect(initialsFor(name)).toBe("AL");
+  });
+
+  it("returns a question mark for an empty name", () => {
+    expect(initialsFor("  ")).toBe("?");
   });
 });
 

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
-import { ADA } from "../../testing/AppHarness";
+import { WIRE_ADA } from "../../testing/wire";
 import { TopNav } from "./TopNav";
 
 const meta = {
@@ -14,8 +14,8 @@ type Story = StoryObj<typeof meta>;
 export const SignedIn: Story = {
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByRole("link", { name: "Ada Lovelace" }),
-    ).toHaveAttribute("href", "/account");
+      canvas.getByRole("button", { name: "Open user menu" }),
+    ).toHaveTextContent("AL");
     await expect(
       canvas.getByRole("link", { name: "Add books" }),
     ).toBeInTheDocument();
@@ -23,7 +23,7 @@ export const SignedIn: Story = {
 };
 
 export const WithoutUploadAccess: Story = {
-  parameters: { user: { ...ADA, canUpload: false } },
+  parameters: { user: { ...WIRE_ADA, can_upload: false } },
   play: async ({ canvas }) => {
     await expect(
       canvas.queryByRole("link", { name: "Add books" }),
