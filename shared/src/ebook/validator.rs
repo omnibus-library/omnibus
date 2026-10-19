@@ -20,8 +20,9 @@ pub fn file_etag(size_bytes: i64, mtime_epoch: i64) -> Option<String> {
     Some(format!("\"{mtime_epoch:x}-{size_bytes:x}\""))
 }
 
-/// Which of a book's two downloadable formats a validator query is about.
-/// The wire form is the same token the client's download registry uses.
+// The wire form is the same token the client's download registry uses.
+/// Which of a book's two downloads a validator question is about: `epub` for its EPUB,
+/// CBZ or PDF file, and `audio` for its M4B, M4A or MP3 file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
@@ -42,23 +43,22 @@ impl DownloadFormat {
     }
 }
 
-/// One "what is this file's validator now?" question.
+/// One downloaded file to look up the current validator of.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DownloadValidatorQuery {
     pub book_uuid: String,
     pub format: DownloadFormat,
-    /// The explicitly chosen `book_files` row, when the download was started
-    /// against one. `None` means whichever row the server resolves by
-    /// default, so a book with two editions is answered about the same file
-    /// the download actually came from.
+    /// The file the download came from, by its `id` in the book's `book_files`, when the
+    /// download named one. Leave it out otherwise, and the server answers about the file
+    /// it picks by default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_id: Option<i64>,
 }
 
-/// The answer to one query. `etag` is `None` when the book, the format, or
-/// the chosen file is gone, or when the scanner has not stat'd it — all of
-/// which a client reads as "can't tell", never as "unchanged".
+/// The current validator of one file in the request. `etag` is absent when the book, the
+/// format or the file is gone, or when the server has not read the file yet. Read absent
+/// as "can't tell", never as "unchanged".
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DownloadValidator {
@@ -70,14 +70,15 @@ pub struct DownloadValidator {
     pub etag: Option<String>,
 }
 
-/// `POST /api/downloads/validators` request body.
+/// The files `POST /api/downloads/validators` looks up, up to 500.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DownloadValidatorRequest {
     pub files: Vec<DownloadValidatorQuery>,
 }
 
-/// `POST /api/downloads/validators` response body.
+/// The current validators `POST /api/downloads/validators` found, one per file asked
+/// about.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DownloadValidatorResponse {
