@@ -4,6 +4,7 @@ import hlsUrl from "../vendor/hls/hls.min.js?url";
 export type HlsInstance = {
   loadSource(url: string): void;
   attachMedia(media: object): void;
+  destroy(): void;
   on(
     event: string,
     handler: (event: string, data: { fatal?: boolean }) => void,
