@@ -18,6 +18,21 @@ export function autoTransition(
   return current === "unread" ? "reading" : null;
 }
 
+/** Moves the book's read status once: `reading` on first play, `finished` at the end. Best-effort; a failed fetch decides nothing. */
+export async function applyAutoReadStatus(
+  uuid: BookUuid,
+  atEnd: boolean,
+): Promise<void> {
+  const stored = await fetchReadStatus(uuid).then(
+    (record) => record?.status ?? "unread",
+    () => null,
+  );
+  if (stored === null) return;
+  const next = autoTransition(stored, atEnd);
+  if (next === null) return;
+  await saveReadStatus(uuid, next).catch(() => {});
+}
+
 /**
  * Moves the read status as the reader goes: opening an unread book marks it reading, and
  * reaching `atEnd` marks it finished. Writes are best-effort; the next open retries.

@@ -4,7 +4,7 @@ import {
   type AudioBookmark,
   type BookUuid,
   createAudioBookmark,
-  deleteAudioBookmark,
+  deleteBookmark,
   fetchAudioBookmarks,
   renameBookmark,
 } from "../../api";
@@ -71,7 +71,7 @@ export function useBookmarks(uuid: BookUuid) {
       );
     },
     async remove(id: number) {
-      await deleteAudioBookmark(id).then(
+      await deleteBookmark(id).then(
         () => edit((rows) => rows.filter((b) => b.id !== id)),
         () => {},
       );

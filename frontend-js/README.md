@@ -14,7 +14,7 @@ The screens it has ported are listed under [Routes](#routes).
 | `src/styles/` | `theme.css` (tokens, the four themes, the `.atrium` root) and `base.css` |
 | `src/components/<Name>/` | shared building blocks: `<Name>.tsx` beside its `.css` and `.stories.tsx` |
 | `src/layouts/` | `RequireAuth` (the session gate), `AppShell` (top bar + page + dock) and `ReaderDock` (the readers' frame, with the dock beneath) |
-| `src/playback/` | the audiobook player behind `/listen` and the dock: `PlaybackProvider` (the one `<audio>`, mounted in `RequireAuth` so playback survives navigation), `engine` (a port of the Dioxus `OmnibusAudio`), `boot` (resume rules and the position saver), `sleep`, `listening` (sessions and read status) and `loadHls` |
+| `src/playback/` | the audiobook player behind `/listen` and the dock: `PlaybackProvider` (the one `<audio>`, mounted in `RequireAuth` so playback survives navigation), `engine` (a port of the Dioxus `OmnibusAudio`), `boot` (resume rules and the position saver), `sleep` and `loadHls`; sessions and read status go through the readers' `readingSession` and `autoReadStatus` |
 | `src/pages/<Name>/` | one folder per route, its CSS beside it |
 | `src/api.ts` | a barrel over `src/api/*.ts`, one file per resource: every REST call the screens make, mapping wire shapes to the ones they render, and the form schemas; an api module re-exports a wire type verbatim when the screen uses it unchanged, so pages never import `api/generated/schemas` |
 | `src/api/generated/` | zod schemas, fetchers, TanStack Query hooks and MSW handlers that orval generates from `../openapi/openapi.json`; gitignored, rebuilt by `pnpm run generate` (`pnpm install` runs it too) |
@@ -183,7 +183,7 @@ shell provides it.
   picker's `picker`, the shelf page's `shelfAccess` and `narrow`, and the
   readers' `pager`, `pdfAnchors`, `start`, `relocate`, `typography`,
   `epubGlue`, `pdfGlue`, `readingSession` and `autoReadStatus`, the player's
-  `PlaybackProvider`, `engine`, `boot`, `sleep`, `listening`, `loadHls` and
+  `PlaybackProvider`, `engine`, `boot`, `sleep`, `loadHls` and
   `listen`, plus the vendored files' parity test), plus the
   real route table in `src/router.test.tsx`: every unported page, the layout
   split, the guest redirect and the redirects.

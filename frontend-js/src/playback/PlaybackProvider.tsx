@@ -22,17 +22,19 @@ import {
   fetchListeningRow,
   fetchPlaybackRate,
   fetchTranscodeState,
-  type ListeningReport,
-  postListeningSessions,
+  postSessions,
+  type SessionReport,
   saveListeningPosition,
   savePlaybackRate,
 } from "../api";
+import { applyAutoReadStatus } from "../autoReadStatus";
 import { nowSecs } from "../format";
 import {
   bookQuery,
   readStatusQuery,
   shelvesQuery,
 } from "../pages/BookDetail/queries";
+import { SessionTracker } from "../readingSession";
 import { meQuery } from "../session";
 import {
   bootResumePosition,
@@ -48,7 +50,6 @@ import {
   saveVolume,
 } from "./boot";
 import { createEngine, type EngineEvents } from "./engine";
-import { applyAutoReadStatus, ListeningTracker } from "./listening";
 import { loadHls } from "./loadHls";
 import {
   createSleepTimer,
@@ -264,7 +265,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const userId = useQuery(meQuery).data?.id ?? null;
   const client = useQueryClient();
   const [state, setState] = useState(IDLE);
-  const [tracker] = useState(() => new ListeningTracker());
+  const [tracker] = useState(() => new SessionTracker("audio"));
   const [volume, setVolumeState] = useState(loadVolume);
   const [sleep, setSleep] = useState(SLEEP_OFF);
   const engineRef = useRef<Engine | null>(null);
@@ -470,8 +471,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   // One session per stretch of a book playing: reported on pause, a book swap, every minute and at pagehide.
   useEffect(() => {
     if (!uuid || !playing) return;
-    const send = (session: ListeningReport | null) => {
-      if (session) void postListeningSessions([session]);
+    const send = (session: SessionReport | null) => {
+      if (session) void postSessions([session]);
     };
     tracker.start(uuid, nowSecs());
     const flush = () => send(tracker.stop(nowSecs()));
@@ -490,7 +491,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     const session = tracker.rollover(nowSecs());
     await Promise.all([
       at && saverRef.current?.pause(at.seconds, at.userActed),
-      session && postListeningSessions([session]),
+      session && postSessions([session]),
     ]);
   }, [tracker]);
 
