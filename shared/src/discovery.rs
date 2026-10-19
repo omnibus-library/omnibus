@@ -12,7 +12,8 @@ use crate::read_status::ReadStatus;
 use crate::series_stacks::SeriesStack;
 use crate::view_prefs::{SortDir, SortKey};
 
-/// Response payload for `GET /api/ebooks` and `rpc_get_ebooks`.
+/// A list of books, either the whole library from `GET /api/ebooks` or the matches from
+/// `GET /api/search`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -20,17 +21,16 @@ pub struct EbookLibrary {
     pub path: Option<String>,
     pub books: Vec<EbookMetadata>,
     pub error: Option<String>,
-    /// Total FTS5 hit count *before* the server-side `MAX_BOOKS_RETURNED` cap,
-    /// set by the search paths so the web client can show "N of M results"
-    /// even when `books` is truncated. `None` for the full-library
-    /// (`/api/ebooks`, `rpc_get_ebooks`) responses, which surface truncation
-    /// via the `X-Total-Count` header instead.
+    // Only the web search server function sets this; the REST routes carry the
+    // count in headers.
+    /// How many books matched before the list was cut to 50,000. Always null from the
+    /// `/api/*` routes, which send that count in the `X-Total-Count` header.
     #[serde(default)]
     pub total: Option<i64>,
 }
 
-/// One response of `GET /api/ebooks`: a page of books, plus the series it folded into
-/// stacks when the request set `stack_series`.
+/// One response of `GET /api/ebooks`, holding a page of books and the series it folded
+/// into stacks when the request set `stack_series`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EbookPage {
@@ -53,7 +53,7 @@ pub struct EbooksQuery {
     pub sort: Option<SortKey>,
     /// Ascending or descending.
     pub dir: Option<SortDir>,
-    /// Where the page starts: the previous page's `X-Next-Cursor`. Needs `sort` and `dir`,
+    /// Where the page starts, as the previous page's `X-Next-Cursor`. Needs `sort` and `dir`,
     /// set as they were for that page.
     pub cursor: Option<String>,
     /// Books per page. Defaults to 100.
@@ -66,8 +66,8 @@ pub struct EbooksQuery {
     /// when any of its values does, and a book must match every clause. Up to 16 clauses
     /// of up to 64 values each.
     pub filter: Option<String>,
-    /// Comma-separated formats to leave out, such as `cbz`: the formats the user hides
-    /// from their library view.
+    /// Comma-separated formats to leave out, such as `cbz`. These are the formats the user
+    /// hides from their library view.
     pub exclude_formats: Option<String>,
     /// Fold each series of two or more books into one row and list the series in `stacks`.
     /// `X-Total-Count` still counts books. Applies to a paged request only.
@@ -76,10 +76,9 @@ pub struct EbooksQuery {
     pub omit_description: Option<bool>,
 }
 
-/// One facet value paired with the number of books carrying it. `value` is the
-/// canonical key the filter chips toggle (author/series/tag name, or a
-/// lowercased format key like `"epub"`); `count` is the book tally across the
-/// whole (unfiltered) library.
+/// A facet value and how many books in the whole library carry it, with no filter
+/// applied. `value` is an author, series or tag name, or a lowercase format such as
+/// `epub`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FacetCount {
@@ -87,10 +86,9 @@ pub struct FacetCount {
     pub count: i64,
 }
 
-/// Per-facet book counts, the type of `LibraryPage.facets`; no server path
-/// populates it. Each list is ordered by count descending, then value
-/// ascending. Formats are keyed by their lowercased extension (`"epub"`,
-/// `"m4b"`).
+/// Book counts for each facet value. The server never sends one. Each list runs from
+/// the highest count down, then by value. Formats are lowercase extensions, such as
+/// `epub` or `m4b`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FacetCounts {
@@ -102,36 +100,34 @@ pub struct FacetCounts {
     pub genres: Vec<FacetCount>,
 }
 
-/// Response payload for the keyset-paginated **web** landing read
-/// (`rpc_get_ebooks_page`): one page of books plus the opaque `next_cursor`
-/// (`None` at end of stream) the client hands back verbatim. `total` is populated
-/// only on the first, cursor-less page. The mobile REST `GET /api/ebooks` keeps
-/// the `EbookLibrary` body and an `X-Next-Cursor` header instead.
+// The web landing page's server function returns this.
+/// One page of the library and the cursor to the next. `GET /api/ebooks` sends a page as
+/// an `EbookPage` instead, with the cursor and counts in headers.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LibraryPage {
     pub path: Option<String>,
     pub books: Vec<EbookMetadata>,
+    /// The cursor for the next page, to send back as it is. Null on the last page.
     #[serde(default)]
     pub next_cursor: Option<String>,
+    /// How many books pass the request's filter and format exclusion. Set on the first
+    /// page only.
     #[serde(default)]
     pub total: Option<i64>,
-    /// Always `None`; kept so the wire shape stays compatible.
+    /// Always null.
     #[serde(default)]
     pub facets: Option<FacetCounts>,
-    /// How many books the caller's `exclude_formats` hid — the landing
-    /// receipt. `Some` only on the first page of a request that sent a
-    /// non-empty exclusion; both counts behind it share the same filters and
-    /// differ only in the exclusion.
+    /// How many books the request's `exclude_formats` hid. Set only on the first page of
+    /// a request that excludes a format.
     #[serde(default)]
     pub hidden_count: Option<i64>,
-    /// The series folded into a row of `books`; present only when stacked.
+    /// The series folded into one row of `books` each. Absent unless the page is stacked.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stacks: Vec<SeriesStack>,
 }
 
-/// Author detail payload for `GET /api/authors/:id` and `rpc_get_author`.
-/// Contains the author row plus every book by that author.
+/// An author and every book by them, from `GET /api/authors/{id}`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -141,45 +137,46 @@ pub struct AuthorDetail {
     pub sort: Option<String>,
     pub book_count: usize,
     pub books: Vec<EbookMetadata>,
-    /// `true` when a usable profile photo is cached for this author
-    /// (a `manual` or `openlibrary` row in `author_photos`). The frontend
-    /// hero swaps the letter avatar for `<img src="/api/authors/:id/photo">`
-    /// when set. `'letter'` negative-cache rows do not set this flag.
+    /// Whether the server holds a photo of the author, uploaded or found on Open
+    /// Library. When true, `GET /api/authors/{id}/photo` serves it.
     #[serde(default)]
     pub has_photo: bool,
-    /// The caller's state on each of `books` they have opened or marked;
-    /// a book absent here is unread with no position.
+    /// Your state on each of `books` that you have opened or marked. A book missing
+    /// here is unread, with no position.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reading: Vec<BookReading>,
 }
 
-/// One reader's state on one book: its status, how far in, and when.
-/// `status` is the stored one; a book with a position but no stored status
-/// reads as `Reading`, as it does on the Continue rail.
+/// Your state on one book: its status, how far in you are, and when you last read it.
+/// A book with a position but no status set reads as `reading`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookReading {
     pub book_uuid: String,
     pub status: ReadStatus,
-    /// Whole-book percent of the latest position, floored; `None` without one.
+    /// Your latest position as a whole-book percent, rounded down. Absent without a
+    /// position.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub percent: Option<i64>,
-    /// The latest position's format and audio file, so a Resume opens the
-    /// reader or player (and file) it was left in. `None` without a position.
+    /// The format of your latest position, so a client resumes in the same reader or
+    /// player. Absent without a position.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<ProgressFormat>,
+    /// The audio file of your latest position, by its `id` in the book's `book_files`.
+    /// Absent without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub book_file_id: Option<i64>,
-    /// Unix seconds of the latest position (client time), else of the status
-    /// change; `None` for a book marked `Unread`.
+    /// When you last read the book, in Unix seconds. It is the time your device gave the
+    /// latest position, or else the time the status changed. Absent for a book marked
+    /// `unread`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_read_at: Option<i64>,
 }
 
-/// One reader's progress through one author's books, for the `/authors`
-/// list. Per-reader, so it rides its own request beside [`AuthorSummary`],
-/// which every reader shares. An author the reader never opened is absent.
+// Per-reader, so it rides its own request beside `AuthorSummary`, which every
+// reader shares.
+/// Your progress through one author's books, from `GET /api/authors/reading`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -187,16 +184,14 @@ pub struct AuthorReading {
     pub author_id: i64,
     pub finished: usize,
     pub reading: usize,
-    /// The newest [`BookReading::last_read_at`] across the author's books.
+    /// The latest `last_read_at` of your `BookReading` across the author's books, in
+    /// Unix seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_read_at: Option<i64>,
 }
 
-/// Result of an admin-triggered "Scan for picture" run. The endpoint
-/// clears any cached row and runs the Open Library cascade inline; a
-/// `false` here means Open Library had nothing to offer for this author
-/// and a sticky `letter` marker has been written to skip future
-/// autoresolution.
+/// The result of `POST /api/authors/{id}/photo/scan`. `resolved` is false when Open
+/// Library has no photo of the author. Omnibus then stops searching for one by itself.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AuthorPhotoScanResult {
@@ -215,14 +210,13 @@ pub struct AuthorPhotoUrlBody {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AuthorPhotoUpload {
-    /// The photo: a JPEG, PNG, GIF or WebP image of 10 MiB or less, sent with an
+    /// The photo, as a JPEG, PNG, GIF or WebP image of 10 MiB or less, sent with an
     /// `image/*` content type. SVG is refused.
     #[cfg_attr(feature = "openapi", schema(value_type = String, format = Binary))]
     pub photo: Vec<u8>,
 }
 
-/// Series detail payload for `GET /api/series/:id` and `rpc_get_series`.
-/// Books are ordered by `series_index`.
+/// A series and its books, ordered by `series_index`, from `GET /api/series/{id}`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -240,7 +234,7 @@ pub const TAG_CLOUD_LIMIT: usize = 500;
 /// Most rows the genre cloud returns, cut to the most-used the same way.
 pub const GENRE_CLOUD_LIMIT: usize = 500;
 
-/// Single tag with its book count, for the tag cloud.
+/// A tag and the number of books that carry it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -249,9 +243,9 @@ pub struct TagWeight {
     pub count: usize,
 }
 
-/// One genre with the number of books carrying it. Structurally a
-/// [`TagWeight`], kept a distinct type so `/api/genres` and `/api/tags`
-/// don't share a wire name for two different vocabularies.
+// Structurally a `TagWeight`, kept a distinct type so `/api/genres` and
+// `/api/tags` don't share a wire name for two different vocabularies.
+/// A genre and the number of books that carry it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -260,9 +254,8 @@ pub struct GenreWeight {
     pub count: usize,
 }
 
-/// Lightweight author row for the `/authors` index. Carries only what the
-/// card needs — no joined book list. The detail page (`AuthorDetail`) is
-/// fetched on click.
+/// One author in `GET /api/authors`, without their books. `GET /api/authors/{id}`
+/// has the books.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -271,23 +264,16 @@ pub struct AuthorSummary {
     pub name: String,
     pub sort: Option<String>,
     pub book_count: usize,
-    /// Cover-derived accent color borrowed from the author's first book
-    /// with a non-null `accent_color`. `None` when no owned book has one
-    /// — the UI falls back to the theme accent.
+    /// The `accent` of the author's first book that has one. Absent when none does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accent: Option<String>,
-    /// `true` when a usable profile photo is cached for this author (a
-    /// `manual` or `openlibrary` row in `author_photos`). Same semantics
-    /// as `AuthorDetail::has_photo` — `'letter'` negative-cache rows do
-    /// not set this flag. Lets the `/authors` index render a real `<img>`
-    /// in one round trip instead of fetching the detail payload per card.
+    /// Whether the server holds a photo of the author, as `has_photo` in
+    /// `AuthorDetail`.
     #[serde(default)]
     pub has_photo: bool,
 }
 
-/// Lightweight series row for the `/series` index. Carries the primary
-/// author of the series (first book's first creator) so the card can
-/// render the by-line without a second fetch.
+/// One series in `GET /api/series`, with its main author.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -296,20 +282,17 @@ pub struct SeriesSummary {
     pub name: String,
     pub sort: Option<String>,
     pub book_count: usize,
-    /// Primary author display string (first book's first creator). `None`
-    /// when the series has no books with a linked author.
+    /// The first creator of the series' first book. Absent when no book in the series
+    /// has a linked author.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary_author: Option<String>,
-    /// Accent color borrowed from the first book in the series with one.
+    /// The `accent` of the series' first book that has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accent: Option<String>,
 }
 
-/// Search-palette response — grouped results with server-side timing.
-///
-/// Each category is capped at 5 hits server-side. The slim per-hit types
-/// (`PaletteBookHit` etc.) carry only display data — no N+1 joins for
-/// description / identifiers / subjects.
+/// The matches `GET /api/search/palette` found, grouped by kind. Each list holds up to
+/// 5 hits, or up to the request's `limit`. A hit carries only what a result row shows.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PaletteResults {
@@ -318,23 +301,28 @@ pub struct PaletteResults {
     pub authors: Vec<PaletteAuthorHit>,
     pub series: Vec<PaletteSeriesHit>,
     pub tags: Vec<PaletteTagHit>,
-    /// `#[serde(default)]` for the same reason as the totals below, and one
-    /// that bites harder: the native iOS client decodes this payload and
-    /// predates the field.
+    // `#[serde(default)]` for the same reason as the totals below, and one
+    // that bites harder: the native iOS client decodes this payload and
+    // predates the field.
     #[serde(default)]
     pub genres: Vec<PaletteGenreHit>,
+    /// How long the search took on the server, in milliseconds.
     pub duration_ms: u64,
-    /// True match counts per category, before the 5-hit display cap.
     // `#[serde(default)]` keeps older/partial payloads (and the command
     // palette, which ignores these) deserializing.
+    /// How many books match in all, before the list was cut.
     #[serde(default)]
     pub book_total: u32,
+    /// How many authors match in all.
     #[serde(default)]
     pub author_total: u32,
+    /// How many series match in all.
     #[serde(default)]
     pub series_total: u32,
+    /// How many tags match in all.
     #[serde(default)]
     pub tag_total: u32,
+    /// How many genres match in all.
     #[serde(default)]
     pub genre_total: u32,
 }
@@ -373,27 +361,25 @@ impl PaletteResults {
     }
 }
 
-/// Slim book hit for the search palette. No description, no identifiers,
-/// no subjects — just what the result row needs to render.
+/// A book that matches a palette search, with only what a result row shows.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PaletteBookHit {
     pub id: i64,
-    /// Stable UUID — what the frontend should use to construct
-    /// `/books/:uuid` and `/api/covers/:uuid` URLs.
+    /// The book's uuid, for routes such as `GET /api/ebooks/{uuid}`.
     #[serde(default)]
     pub uuid: String,
     pub title: String,
-    /// Pre-joined author names (e.g. "Grace Hopper, Margaret Hamilton").
+    /// The authors' names joined into one string, such as
+    /// `Grace Hopper, Margaret Hamilton`.
     pub author_display: String,
-    /// Four-digit year extracted from `pubdate`, if present.
+    /// The four-digit year the book was published. Null when unknown.
     pub year: Option<String>,
     pub formats: Vec<String>,
     pub cover_url: Option<String>,
     pub accent: Option<String>,
-    /// Whether a physical copy is checked in. `formats` says only whether a
-    /// file exists, and a paper-only book has none — the check-in picker
-    /// needs both to word its confirm. Defaulted so an older payload decodes.
+    /// Whether a physical copy is checked in. A book with only a paper copy has an
+    /// empty `formats`.
     #[serde(default)]
     pub has_physical: bool,
 }
@@ -404,11 +390,10 @@ pub struct PaletteBookHit {
 pub struct PaletteAuthorHit {
     pub id: i64,
     pub name: String,
-    /// Number of books by this author in the active library.
+    /// How many books by the author the library holds.
     pub book_count: u32,
-    /// Title of this author's first book in the library (by sort order),
-    /// used for the "incl. <title>" line on the results page. `None` when
-    /// the author has no resolvable book title.
+    /// The title of the author's first book in sort order. Absent when none of the
+    /// author's books has a title.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lead_book_title: Option<String>,
 }
@@ -420,11 +405,10 @@ pub struct PaletteSeriesHit {
     pub id: i64,
     pub name: String,
     pub book_count: u32,
-    /// Primary author of the first book in the series, if any.
+    /// The first author of the series' first book. Null when it has none.
     pub author_display: Option<String>,
-    /// Title of the first book in the series (by sort order), used for the
-    /// "incl. <title>" line on the results page. `None` when the series has
-    /// no resolvable book title.
+    /// The title of the series' first book in sort order. Absent when none of the
+    /// series' books has a title.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lead_book_title: Option<String>,
 }
@@ -435,22 +419,18 @@ pub struct PaletteSeriesHit {
 pub struct PaletteTagHit {
     pub id: i64,
     pub name: String,
-    /// Number of books with this tag in the active library.
+    /// How many books carry the tag.
     pub book_count: u32,
 }
 
-/// Genre hit for the search palette. Carries no `id` — unlike a tag, a genre
-/// has no navigable row to link to: migration `0066` gives the vocabulary a
-/// `genres` table but no memberships, so the only thing to do with one is
-/// refine the query to `genre:<name>`.
+/// A genre that matches a palette search. A genre has no page of its own, so it carries
+/// no `id`. Search for `genre:<name>` to find its books.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PaletteGenreHit {
-    /// The canonical spelling `materialize_genre_rows` coined, so a library
-    /// holding both "sci-fi" and "Sci-Fi" reports one row (matching
-    /// `get_genre_cloud`).
+    /// The genre's name in one spelling, so `sci-fi` and `Sci-Fi` come back as one hit.
     pub name: String,
-    /// Number of books carrying this genre in the active library.
+    /// How many books carry the genre.
     pub book_count: u32,
 }
 

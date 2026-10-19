@@ -11,7 +11,7 @@ pub const MIN_AUDIOBOOK_PLAYBACK_RATE: f64 = 0.5;
 /// Fastest playback rate accepted by every audiobook client and transport.
 pub const MAX_AUDIOBOOK_PLAYBACK_RATE: f64 = 3.0;
 
-/// Request payload for changing one audiobook's playback rate.
+/// A new playback speed for one audiobook. `playback_rate` runs from 0.5 to 3.0.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AudiobookPlaybackRateUpdate {
@@ -33,16 +33,17 @@ impl AudiobookPlaybackRateUpdate {
     }
 }
 
-/// Server-authoritative playback-rate preference for one audiobook.
+/// The playback speed you saved for one audiobook.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AudiobookPlaybackRateRecord {
     pub book_uuid: String,
     pub playback_rate: f64,
+    /// When the speed was saved, in Unix seconds.
     pub updated_at: i64,
 }
 
-/// One part of an audiobook in the direct-play manifest.
+/// One part of an audiobook file in a `direct` manifest.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ManifestPart {
@@ -52,7 +53,7 @@ pub struct ManifestPart {
     pub mime: String,
 }
 
-/// Chapter marker within an audiobook's timeline.
+/// A chapter on an audiobook file's timeline.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ChapterInfo {
@@ -62,11 +63,12 @@ pub struct ChapterInfo {
     pub duration_seconds: f64,
 }
 
-/// Response payload for `GET /api/audiobooks/{uuid}/manifest`: `direct` lists
-/// per-part URLs for HTTP Range streaming, `hls` is the transcode fallback for
-/// codecs that need conversion. Both carry `book_file_id` (what a progress write
-/// must name) and `audio_file_count` (`> 1`: a position is only meaningful with
-/// its file id); both default to 0, meaning "identity unknown".
+/// How to play one audiobook file, from `GET /api/audiobooks/{uuid}/manifest`. In
+/// `direct` mode each part has a URL to stream with `Range` requests. In `hls` mode one
+/// playlist plays a server-side transcode, for formats a player can't decode. Both modes
+/// carry `book_file_id`, the file a progress write must name, and `audio_file_count`.
+/// When the count is above 1, a position means something only with its file id. A 0 in
+/// either field means the server didn't say.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "mode", rename_all = "lowercase")]
@@ -76,10 +78,9 @@ pub enum AudiobookManifest {
         book_file_id: i64,
         #[serde(default)]
         audio_file_count: i64,
-        /// The next `book_files` row in ordinal order, absent on the last
-        /// file (and for narrations-linked books, where each file is the
-        /// whole book): the player advances here when this file ends
-        /// instead of marking the book finished.
+        /// The book's next audio file, by `id`. A player moves on to it when this file
+        /// ends, rather than marking the book finished. Null on the last file, and when
+        /// the book's files are separate narrations of the whole book.
         #[serde(default)]
         next_file_id: Option<i64>,
         parts: Vec<ManifestPart>,
@@ -92,10 +93,9 @@ pub enum AudiobookManifest {
         book_file_id: i64,
         #[serde(default)]
         audio_file_count: i64,
-        /// The next `book_files` row in ordinal order, absent on the last
-        /// file (and for narrations-linked books, where each file is the
-        /// whole book): the player advances here when this file ends
-        /// instead of marking the book finished.
+        /// The book's next audio file, by `id`. A player moves on to it when this file
+        /// ends, rather than marking the book finished. Null on the last file, and when
+        /// the book's files are separate narrations of the whole book.
         #[serde(default)]
         next_file_id: Option<i64>,
         playlist_url: String,
@@ -173,11 +173,11 @@ pub enum AudiobookStatusState {
     Failed,
 }
 
-/// `GET /api/audiobooks/{uuid}/status` response: progress of the HLS transcode.
+/// How far an audiobook's HLS transcode has got, from `GET /api/audiobooks/{uuid}/status`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AudiobookStatus {
-    /// Whether the transcode has finished. Older field: read `state` instead.
+    /// Whether the transcode has finished. It is an older field, so read `state` instead.
     pub ready: bool,
     /// How far the transcode has got, from 0.0 to 1.0.
     pub progress: f32,

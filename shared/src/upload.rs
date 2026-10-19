@@ -24,28 +24,26 @@ pub mod commit_fields {
     pub const COVER_URL: &str = "cover_url";
 }
 
-/// Auto-extracted metadata returned by the inspect step, mirroring what the
-/// indexer would read from the file's embedded metadata. The reader can correct
-/// any field before committing; the corrected `title`/`author` drive the
-/// on-disk folder. The original four fields stay top-level and the rest are
-/// `#[serde(default)]`, so an older server's reply still decodes.
+// The original four fields stay top-level and the rest are `#[serde(default)]`,
+// so an older server's reply still decodes.
+/// The metadata `POST /api/uploads/ebooks/inspect` reads from an uploaded file, as the
+/// library would index it. Correct it and send it with `POST /api/uploads/ebooks`, where
+/// `title` and `author` name the folder the file is saved in.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UploadInspection {
     pub title: Option<String>,
-    /// The first creator the file declares — what the Author field holds.
+    /// The first creator the file declares.
     pub author: Option<String>,
-    /// Every creator the file declares, in file order, `author` first. The
-    /// review form shows the rest so it never under-reports what the commit
-    /// will save. Defaulted so an older server's reply still decodes.
+    /// Every creator the file declares, in file order, starting with `author`.
     #[serde(default)]
     pub creators: Vec<String>,
     pub series: Option<String>,
     pub series_index: Option<String>,
     pub language: Option<String>,
-    /// Whether the file carried an embedded (or sidecar) cover.
+    /// Whether the file carries a cover.
     pub has_cover: bool,
-    /// Lowercased file extension the server settled on (e.g. `"epub"`).
+    /// The file's format as a lowercase extension, such as `epub`.
     pub ext: String,
     #[serde(default)]
     pub description: Option<String>,
@@ -53,18 +51,17 @@ pub struct UploadInspection {
     pub publisher: Option<String>,
     #[serde(default)]
     pub published: Option<String>,
-    /// The file's `<dc:subject>` entries — the review form's Tags.
+    /// The file's subjects, which become the book's tags.
     #[serde(default)]
     pub subjects: Vec<String>,
-    /// The ISBN-13 the indexer would derive from the file's identifiers.
+    /// The ISBN-13 found among the file's identifiers, as `isbn13` on `EbookMetadata`.
     #[serde(default)]
     pub isbn13: Option<String>,
-    /// Every typed identifier the file declares, for the sidebar.
+    /// Every identifier the file declares.
     #[serde(default)]
     pub identifiers: Vec<Identifier>,
-    /// A small `data:` URL of the file's cover, so the review form can show it
-    /// before the book exists and there is a cover route to point at. `None`
-    /// when the file has no cover or it could not be decoded.
+    /// A small `data:` URL of the file's cover, to show before the book exists. Null
+    /// when the file has no cover or it can't be decoded.
     #[serde(default)]
     pub cover_preview: Option<String>,
 }
@@ -98,29 +95,30 @@ impl UploadInspection {
     }
 }
 
-/// Tag-derived metadata returned by the audiobook inspect step — the audiobook sibling of [`UploadInspection`].
+/// The metadata `POST /api/uploads/audiobooks/inspect` reads from an uploaded
+/// audiobook's tags.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AudiobookInspection {
     pub title: Option<String>,
     pub author: Option<String>,
-    /// Every creator the indexer would record from the tags, `author` first —
-    /// the sibling of [`UploadInspection::creators`]. Audio containers carry
-    /// one artist tag, so this holds at most that one name today; it is a
-    /// list so the form reads both inspections the same way.
+    // A list so the form reads both inspections the same way.
+    /// Every creator the tags name, starting with `author`. Audio files carry one artist
+    /// tag, so the list holds one name at most.
     #[serde(default)]
     pub creators: Vec<String>,
-    /// Whether any uploaded part carried embedded cover art.
+    /// Whether any uploaded part carries embedded cover art.
     pub has_cover: bool,
-    /// Lowercased format the server settled on (`"m4b"`, `"m4a"`, `"mp3"`).
+    /// The format as a lowercase extension: `m4b`, `m4a` or `mp3`.
     pub format: String,
-    /// Number of files in the upload (1 for a single `.m4b`/`.m4a`; N for a
-    /// multi-part `.mp3` audiobook filed into one folder).
+    /// How many files the upload holds. It is 1 for an `.m4b` or `.m4a`, and one per part
+    /// for an `.mp3` audiobook.
     pub part_count: usize,
-    /// Combined runtime across every part, when tags supplied durations.
+    /// The combined running time of every part, in seconds. Null when the tags give no
+    /// duration.
     pub duration_seconds: Option<f64>,
-    /// A small `data:` URL of the first part's embedded art — see
-    /// [`UploadInspection::cover_preview`].
+    /// A small `data:` URL of the first part's cover art, to show before the book exists.
+    /// Null when there is none.
     #[serde(default)]
     pub cover_preview: Option<String>,
 }
@@ -157,8 +155,7 @@ fn names_to_contributors(names: &[String]) -> Vec<Contributor> {
         .collect()
 }
 
-/// Result of a successful commit: the durable uuid of the newly-filed book,
-/// so the client can navigate straight to its detail page.
+/// The uuid of the book an upload created. `GET /api/ebooks/{uuid}` reads it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UploadCommitResult {
@@ -188,8 +185,8 @@ pub struct EbookUploadForm {
     pub series: Option<String>,
     /// The book's place in its series, such as `2` or `2.5`.
     pub series_index: Option<String>,
-    /// A JSON metadata override object: the fields you changed from what inspect returned.
-    /// Up to 256 KiB.
+    /// A JSON `MetadataOverrides` object holding the fields you changed from what inspect
+    /// returned. Up to 256 KiB.
     pub overrides: Option<String>,
     /// An image to use as the cover, under 10 MB, with an `image/*` content type. SVG is
     /// refused. Wins over `cover_url`.
@@ -227,8 +224,8 @@ pub struct AudiobookUploadForm {
     pub series: Option<String>,
     /// The book's place in its series, such as `2` or `2.5`.
     pub series_index: Option<String>,
-    /// A JSON metadata override object: the fields you changed from what inspect returned.
-    /// Up to 256 KiB.
+    /// A JSON `MetadataOverrides` object holding the fields you changed from what inspect
+    /// returned. Up to 256 KiB.
     pub overrides: Option<String>,
     /// An image to use as the cover, under 10 MB, with an `image/*` content type. SVG is
     /// refused. Wins over `cover_url`.
