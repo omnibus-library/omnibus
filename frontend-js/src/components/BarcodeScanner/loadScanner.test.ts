@@ -16,17 +16,17 @@ function settle(
   script?.dispatchEvent(new Event(event));
 }
 
-beforeEach(() => {
-  document.head.innerHTML = "";
-});
-
-afterEach(() => {
-  delete window.OmnibusScanner;
-  delete window.ZXingWASM;
-});
-
 describe("loadScanner", () => {
-  it("appends zxing, then the glue, and resolves to the wasm URL", async () => {
+  beforeEach(() => {
+    document.head.innerHTML = "";
+  });
+
+  afterEach(() => {
+    delete window.OmnibusScanner;
+    delete window.ZXingWASM;
+  });
+
+  it("loads zxing then the glue then resolves to the wasm URL", async () => {
     const loadScanner = await fresh();
 
     const loaded = loadScanner();
@@ -60,14 +60,23 @@ describe("loadScanner", () => {
     expect(scripts()).toHaveLength(0);
   });
 
-  it("rejects when a script fails, and tries again on the next call", async () => {
+  it("rejects when a script fails", async () => {
     const loadScanner = await fresh();
 
+    const failed = loadScanner();
+    settle(scripts()[0], "error");
+
+    await expect(failed).rejects.toThrow("failed to load");
+  });
+
+  it("tries again on the next call after a failure", async () => {
+    const loadScanner = await fresh();
     const failed = loadScanner();
     settle(scripts()[0], "error");
     await expect(failed).rejects.toThrow("failed to load");
 
     loadScanner();
+
     expect(scripts()).toHaveLength(2);
   });
 });
