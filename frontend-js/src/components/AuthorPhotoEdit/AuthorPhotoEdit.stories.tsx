@@ -82,8 +82,10 @@ export const UrlFailureKeepsTheDialog: Story = {
     );
     await userEvent.click(canvas.getByRole("button", { name: "Use URL" }));
 
-    await expect(await canvas.findByRole("status")).toHaveTextContent(
-      "URL failed: failed with 403",
+    await waitFor(() =>
+      expect(canvas.getByRole("status")).toHaveTextContent(
+        "URL failed: failed with 403",
+      ),
     );
     await expect(args.onChange).not.toHaveBeenCalled();
     await expect(canvas.getByRole("dialog")).toBeInTheDocument();
@@ -147,8 +149,10 @@ export const UploadFailureShowsTheServersWords: Story = {
       new File(["png"], "susanna.png", { type: "image/png" }),
     );
 
-    await expect(await canvas.findByRole("status")).toHaveTextContent(
-      "Upload failed: failed with 415",
+    await waitFor(() =>
+      expect(canvas.getByRole("status")).toHaveTextContent(
+        "Upload failed: failed with 415",
+      ),
     );
     await expect(args.onChange).not.toHaveBeenCalled();
   },
@@ -179,8 +183,10 @@ export const ScanFindsNothing: Story = {
       canvas.getByRole("button", { name: "Scan for picture" }),
     );
 
-    await expect(await canvas.findByRole("status")).toHaveTextContent(
-      "No photo on Open Library for this author.",
+    await waitFor(() =>
+      expect(canvas.getByRole("status")).toHaveTextContent(
+        "No photo on Open Library for this author.",
+      ),
     );
     await expect(args.onChange).not.toHaveBeenCalled();
   },
@@ -198,8 +204,10 @@ export const ScanFailing: Story = {
       canvas.getByRole("button", { name: "Scan for picture" }),
     );
 
-    await expect(await canvas.findByRole("status")).toHaveTextContent(
-      "Scan failed: failed with 404",
+    await waitFor(() =>
+      expect(canvas.getByRole("status")).toHaveTextContent(
+        "Scan failed: failed with 404",
+      ),
     );
   },
 };
