@@ -105,9 +105,26 @@ function Formats({ book }: { book: Book }) {
   );
 }
 
-function Row({ book }: { book: Book }) {
+type Selection = {
+  selected: ReadonlySet<string>;
+  /** Checks or unchecks every one of `uuids`. */
+  onChange: (uuids: string[], checked: boolean) => void;
+};
+
+function Row({ book, select }: { book: Book; select?: Selection }) {
+  const checked = select?.selected.has(book.uuid) ?? false;
   return (
     <tr className="ebook-row">
+      {select && (
+        <td className="ebook-col-select">
+          <input
+            type="checkbox"
+            aria-label={`Select ${book.title}`}
+            checked={checked}
+            onChange={() => select.onChange([book.uuid], !checked)}
+          />
+        </td>
+      )}
       <RowCover book={book} />
       <td className="ebook-col-title">
         <div className="ebook-title-cell">{book.title}</div>
@@ -154,10 +171,20 @@ type BookTableProps = {
   /** Why sorting is inert on this list, or `null` when it acts. */
   sortLock: string | null;
   onSort: (key: SortKey) => void;
+  /** Bulk selection; the select column is drawn only when given. */
+  select?: Selection;
 };
 
 /** The dense table view: one read-only row per book, sortable by column header. */
-export function BookTable({ books, prefs, sortLock, onSort }: BookTableProps) {
+export function BookTable({
+  books,
+  prefs,
+  sortLock,
+  onSort,
+  select,
+}: BookTableProps) {
+  const all =
+    books.length > 0 && books.every((book) => select?.selected.has(book.uuid));
   const header = (column: SortableColumn) => (
     <SortableHeader
       column={column}
@@ -171,6 +198,21 @@ export function BookTable({ books, prefs, sortLock, onSort }: BookTableProps) {
       <table className="ebook-table">
         <thead>
           <tr>
+            {select && (
+              <th className="ebook-col-select">
+                <input
+                  type="checkbox"
+                  aria-label="Select all books"
+                  checked={all}
+                  onChange={() =>
+                    select.onChange(
+                      books.map((book) => book.uuid),
+                      !all,
+                    )
+                  }
+                />
+              </th>
+            )}
             <th className="ebook-col-cover">Cover</th>
             {header(SORTABLE.title)}
             {header(SORTABLE.author)}
@@ -186,7 +228,7 @@ export function BookTable({ books, prefs, sortLock, onSort }: BookTableProps) {
         </thead>
         <tbody>
           {books.map((book) => (
-            <Row key={book.uuid} book={book} />
+            <Row key={book.uuid} book={book} select={select} />
           ))}
         </tbody>
       </table>

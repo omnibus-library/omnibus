@@ -1,12 +1,14 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
+import type { MetadataOverrides } from "../../api/generated/schemas";
 import {
   failing,
   filterOptionHandlers,
   hanging,
   LIBRARY_PATH,
   libraryHandler,
+  overridesHandler,
   recentProgressHandler,
   shelfPageHandler,
   shelvesHandler,
@@ -1132,5 +1134,313 @@ export const ScrolledPastStack: Story = {
 
     window.scrollTo(0, 0);
     await waitFor(() => expect(root).not.toHaveClass("lmq--past"));
+  },
+};
+
+const AURORA_1 = "00000000-0000-4000-8000-000000000001";
+const AURORA_2 = "00000000-0000-4000-8000-000000000002";
+
+// Fresh per story: the overrides handler edits these in place.
+const bulkBooks = () =>
+  aWireLibrary(3).map((book, i) => ({
+    ...book,
+    subjects: [["space opera", "cozy"], ["cozy", "found family"], []][i] ?? [],
+  }));
+
+const BULK_OPTIONS = filterOptionHandlers({
+  tags: [
+    { name: "space opera", count: 2 },
+    { name: "cozy", count: 2 },
+  ],
+});
+
+const saved: { uuid: string; body: MetadataOverrides }[] = [];
+
+// Table view with the first two rows checked and the edit dialog open.
+async function openBulkEdit({
+  canvas,
+  userEvent,
+}: Pick<Parameters<NonNullable<Story["play"]>>[0], "canvas" | "userEvent">) {
+  await userEvent.click(
+    await canvas.findByRole("checkbox", {
+      name: "Select Aurora Station, Vol. 1",
+    }),
+  );
+  await userEvent.click(
+    canvas.getByRole("checkbox", { name: "Select Aurora Station, Vol. 2" }),
+  );
+  await userEvent.click(canvas.getByRole("button", { name: "Edit" }));
+  return within(canvas.getByRole("dialog", { name: "Bulk edit 2 books" }));
+}
+
+// What a chip input offers: the values of its datalist.
+function suggestions(field: HTMLElement) {
+  return field instanceof HTMLInputElement
+    ? [...(field.list?.options ?? [])].map((option) => option.value)
+    : [];
+}
+
+export const BulkSelect: Story = {
+  beforeEach({ msw }) {
+    seedTable();
+    msw.use(libraryHandler(pageable(150), 60));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const all = await canvas.findByRole("checkbox", {
+      name: "Select all books",
+    });
+    await expect(canvas.queryByText(/selected$/)).not.toBeInTheDocument();
+
+    await userEvent.click(
+      canvas.getByRole("checkbox", { name: "Select Aurora Station, Vol. 1" }),
+    );
+    await expect(canvas.getByText("1 book selected")).toBeInTheDocument();
+
+    // Select all takes the 60 rows page 1 shows, not the 90 behind them.
+    await userEvent.click(all);
+    await expect(canvas.getByText("60 books selected")).toBeInTheDocument();
+    await expect(all).toBeChecked();
+    await userEvent.click(all);
+    await expect(canvas.queryByText(/selected$/)).not.toBeInTheDocument();
+
+    await userEvent.click(all);
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Clear selection" }),
+    );
+    await expect(canvas.queryByText(/selected$/)).not.toBeInTheDocument();
+    await expect(
+      canvas.getByRole("checkbox", { name: "Select Aurora Station, Vol. 1" }),
+    ).not.toBeChecked();
+  },
+};
+
+export const BulkSelectAdminOnly: Story = {
+  parameters: { user: { ...WIRE_ADA, is_admin: false } },
+  beforeEach({ msw }) {
+    seedTable();
+    msw.use(libraryHandler(bulkBooks(), 2));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByRole("table");
+    await expect(canvas.queryByRole("checkbox")).not.toBeInTheDocument();
+  },
+};
+
+export const BulkEditApplies: Story = {
+  beforeEach({ msw }) {
+    seedTable();
+    saved.length = 0;
+    const books = bulkBooks();
+    msw.use(
+      libraryHandler(books, 10),
+      overridesHandler(books, { saved }),
+      ...BULK_OPTIONS,
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const form = await openBulkEdit({ canvas, userEvent });
+    const apply = form.getByRole("button", { name: "Apply to 2 books" });
+    await expect(
+      form.getByText("Blank fields are left unchanged on every book."),
+    ).toBeInTheDocument();
+    await expect(apply).toBeDisabled();
+
+    // The books' own tags are all there is to remove, the most shared first.
+    const remove = form.getByRole("combobox", { name: "Remove tags" });
+    await expect(suggestions(remove)).toEqual([
+      "cozy",
+      "found family",
+      "space opera",
+    ]);
+    await waitFor(() =>
+      expect(
+        suggestions(form.getByRole("combobox", { name: "Add tags" })),
+      ).toEqual(["space opera", "cozy"]),
+    );
+
+    await userEvent.type(remove, "cozy{Enter}");
+    await userEvent.type(
+      form.getByRole("combobox", { name: "Add tags" }),
+      "slow burn{Enter}",
+    );
+    await userEvent.type(form.getByLabelText("Publisher"), " Tor ");
+    await userEvent.click(apply);
+
+    await waitFor(() =>
+      expect(canvas.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await expect(saved).toEqual([
+      {
+        uuid: AURORA_1,
+        body: { publisher: "Tor", subjects: ["space opera", "slow burn"] },
+      },
+      {
+        uuid: AURORA_2,
+        body: { publisher: "Tor", subjects: ["found family", "slow burn"] },
+      },
+    ]);
+    // The lists refetched in place, and the selection went with the dialog.
+    await waitFor(() =>
+      expect(canvas.getAllByRole("row")[1]).toHaveTextContent(
+        "space opera, slow burn",
+      ),
+    );
+    await expect(canvas.getAllByRole("row")[2]).toHaveTextContent(
+      "found family, slow burn",
+    );
+    await expect(canvas.queryByText(/selected$/)).not.toBeInTheDocument();
+  },
+};
+
+export const BulkEditFails: Story = {
+  beforeEach({ msw }) {
+    seedTable();
+    saved.length = 0;
+    const books = bulkBooks();
+    msw.use(
+      libraryHandler(books, 10),
+      overridesHandler(books, {
+        saved,
+        refuse: { [AURORA_2]: "series too long" },
+      }),
+      ...BULK_OPTIONS,
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const form = await openBulkEdit({ canvas, userEvent });
+
+    await userEvent.type(form.getByLabelText("Series"), "Saga");
+    await userEvent.click(
+      form.getByRole("button", { name: "Apply to 2 books" }),
+    );
+
+    await expect(await form.findByRole("alert")).toHaveTextContent(
+      "Save failed: series too long (1 of 2 books saved)",
+    );
+    // The loop stopped at the refusal; the dialog and the selection stay.
+    await expect(saved.map((s) => s.uuid)).toEqual([AURORA_1]);
+    await expect(
+      form.getByRole("button", { name: "Apply to 2 books" }),
+    ).toBeEnabled();
+    await expect(canvas.getByText("2 books selected")).toBeInTheDocument();
+    // The table shows what was saved.
+    await waitFor(() =>
+      expect(canvas.getAllByRole("row")[1]).toHaveTextContent("Saga #1"),
+    );
+    await expect(canvas.getAllByRole("row")[2]).toHaveTextContent(
+      "Aurora Station #2",
+    );
+  },
+};
+
+export const BulkEditFailsAtOnce: Story = {
+  beforeEach({ msw }) {
+    seedTable();
+    const books = bulkBooks();
+    msw.use(
+      libraryHandler(books, 10),
+      overridesHandler(books, { refuse: { [AURORA_1]: "series too long" } }),
+      ...BULK_OPTIONS,
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const form = await openBulkEdit({ canvas, userEvent });
+
+    await userEvent.type(form.getByLabelText("Series"), "Saga");
+    await userEvent.click(
+      form.getByRole("button", { name: "Apply to 2 books" }),
+    );
+
+    await expect(await form.findByRole("alert")).toHaveTextContent(
+      /^Save failed: series too long$/,
+    );
+  },
+};
+
+export const BulkEditApplying: Story = {
+  beforeEach({ msw }) {
+    seedTable();
+    msw.use(
+      libraryHandler(bulkBooks(), 10),
+      hanging("/api/ebooks/:uuid/overrides", "post"),
+      ...BULK_OPTIONS,
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const form = await openBulkEdit({ canvas, userEvent });
+
+    await userEvent.type(form.getByLabelText("Publisher"), "Tor");
+    await userEvent.click(
+      form.getByRole("button", { name: "Apply to 2 books" }),
+    );
+
+    const busy = await form.findByRole("button", { name: "Applying…" });
+    await expect(busy).toHaveAttribute("aria-busy", "true");
+    await expect(busy).toBeDisabled();
+    await expect(form.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    // Nothing closes it mid-save.
+    await userEvent.keyboard("{Escape}");
+    await expect(canvas.getByRole("dialog")).toBeInTheDocument();
+  },
+};
+
+export const BulkEditNothingToApply: Story = {
+  beforeEach({ msw }) {
+    seedTable();
+    msw.use(libraryHandler(bulkBooks(), 10), ...BULK_OPTIONS);
+  },
+  play: async ({ canvas, userEvent }) => {
+    const form = await openBulkEdit({ canvas, userEvent });
+    const apply = form.getByRole("button", { name: "Apply to 2 books" });
+    const publisher = form.getByLabelText("Publisher");
+
+    // Blank space changes nothing.
+    await userEvent.type(publisher, "  ");
+    await expect(apply).toBeDisabled();
+    await userEvent.type(publisher, "Tor");
+    await expect(apply).toBeEnabled();
+    await userEvent.clear(publisher);
+    await expect(apply).toBeDisabled();
+
+    // Escape closes it and hands focus back to the button that opened it.
+    await userEvent.keyboard("{Escape}");
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Edit" })).toHaveFocus();
+    await expect(canvas.getByText("2 books selected")).toBeInTheDocument();
+
+    // So does a click on the backdrop.
+    await userEvent.click(canvas.getByRole("button", { name: "Edit" }));
+    await userEvent.click(canvas.getByRole("dialog"));
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
+  },
+};
+
+export const SelectionClearsOnSort: Story = {
+  beforeEach({ msw }) {
+    seedTable();
+    msw.use(libraryHandler(bulkBooks(), 10));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("checkbox", {
+        name: "Select Aurora Station, Vol. 1",
+      }),
+    );
+    await expect(canvas.getByText("1 book selected")).toBeInTheDocument();
+
+    await userEvent.click(
+      within(canvas.getByRole("columnheader", { name: /^Author/ })).getByRole(
+        "button",
+      ),
+    );
+
+    await waitFor(() =>
+      expect(canvas.queryByText(/selected$/)).not.toBeInTheDocument(),
+    );
+    await expect(
+      await canvas.findByRole("checkbox", {
+        name: "Select Aurora Station, Vol. 1",
+      }),
+    ).not.toBeChecked();
   },
 };

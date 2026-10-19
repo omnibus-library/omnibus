@@ -13,6 +13,7 @@ import {
   getTags,
   listSeries,
   listShelves,
+  postEbookOverrides,
   login as postLogin,
   register as postRegister,
   postStackSeries,
@@ -20,6 +21,7 @@ import {
 import {
   type EbookMetadata,
   type EbookPage,
+  type MetadataOverrides,
   type PaletteResults as PaletteWire,
   type ResumePoint as ResumePointWire,
   type SeriesStack as SeriesStackWire,
@@ -433,6 +435,15 @@ export async function fetchShelfPage(
 /** Saves the reader's Stack series preference. */
 export async function setStackSeries(enabled: boolean): Promise<void> {
   const res = await postStackSeries({ enabled });
+  if (res.status !== 200) throw failure(res);
+}
+
+/** Lays `overrides` over one book's metadata; fields left out keep any earlier edit. */
+export async function saveOverrides(
+  uuid: BookUuid,
+  overrides: MetadataOverrides,
+): Promise<void> {
+  const res = await postEbookOverrides(encodeURIComponent(uuid), overrides);
   if (res.status !== 200) throw failure(res);
 }
 

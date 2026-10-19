@@ -33,6 +33,7 @@ import {
 } from "../../viewPrefs";
 import { BookGrid } from "./BookGrid";
 import { BookTable } from "./BookTable";
+import { BulkEditBar, BulkEditModal } from "./BulkEdit";
 import { emptyState, headerCount } from "./libraryView";
 import {
   EdgeResume,
@@ -150,6 +151,28 @@ export function Library() {
   const sortLock = sortLockReason(
     shelvesQuery.data?.find((s) => s.id === shelfId)?.kind ?? null,
   );
+
+  // Bulk edit is the admin's, on the table; the checks belong to the list they were made on.
+  const bulk = user.isAdmin && prefs.view === "table";
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [editing, setEditing] = useState(false);
+  const listing = JSON.stringify([query, shelfId, prefs.view]);
+  const [selectedIn, setSelectedIn] = useState(listing);
+  if (selectedIn !== listing) {
+    setSelectedIn(listing);
+    setSelected(new Set());
+    setEditing(false);
+  }
+  const chosen = books.filter((book) => selected.has(book.uuid));
+  const select = (uuids: string[], checked: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const uuid of uuids) {
+        if (checked) next.add(uuid);
+        else next.delete(uuid);
+      }
+      return next;
+    });
 
   // A stored shelf the list no longer holds snaps back to All, judged only against a list that loaded.
   const loadedShelves = shelvesQuery.data;
@@ -315,6 +338,7 @@ export function Library() {
                 onSort={(key) =>
                   change({ ...prefs, ...headerSort(prefs, key) })
                 }
+                select={bulk ? { selected, onChange: select } : undefined}
               />
             ) : (
               <BookGrid books={books} stacks={shelfId === null ? stacks : []} />
@@ -337,6 +361,23 @@ export function Library() {
           )}
         </div>
       </div>
+      {bulk && chosen.length > 0 && (
+        <BulkEditBar
+          count={chosen.length}
+          onEdit={() => setEditing(true)}
+          onClear={() => setSelected(new Set())}
+        />
+      )}
+      {editing && chosen.length > 0 && (
+        <BulkEditModal
+          books={chosen}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            setSelected(new Set());
+          }}
+        />
+      )}
       {leadPoint && <EdgeResume point={leadPoint} />}
     </div>
   );

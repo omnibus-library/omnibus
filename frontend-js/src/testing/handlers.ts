@@ -23,6 +23,7 @@ import type {
   ShelfSummary,
   TagWeight,
 } from "../api/generated/schemas";
+import { MetadataOverrides } from "../api/generated/schemas";
 import { COVER_SVG } from "./books";
 import { WIRE_ADA } from "./wire";
 
@@ -182,6 +183,42 @@ export function shelfPageHandler(
       books: members.filter((b) => passes(b, clauses)),
     });
   });
+}
+
+/**
+ * `POST /api/ebooks/{uuid}/overrides`: lays the body over the matching book of
+ * `books` in place, so a refetch sees it, and answers with the book. Each save
+ * lands in `saved`; a uuid in `refuse` is a 400 whose plain text is its reason.
+ */
+export function overridesHandler(
+  books: EbookMetadata[],
+  {
+    saved = [],
+    refuse = {},
+  }: {
+    saved?: { uuid: string; body: MetadataOverrides }[];
+    refuse?: Record<string, string>;
+  } = {},
+) {
+  return http.post(
+    "/api/ebooks/:uuid/overrides",
+    async ({ params, request }) => {
+      const uuid = String(params.uuid);
+      const book = books.find((b) => b.unique_identifier === uuid);
+      if (!book) return new HttpResponse("book not found", { status: 404 });
+      const reason = refuse[uuid];
+      if (reason) return new HttpResponse(reason, { status: 400 });
+      const body = MetadataOverrides.parse(await request.json());
+      saved.push({ uuid, body });
+      if (body.creators) book.creators = body.creators;
+      if (body.subjects) book.subjects = body.subjects;
+      if (body.genres) book.genres = body.genres;
+      if (body.series != null) book.series = body.series;
+      if (body.publisher != null) book.publisher = body.publisher;
+      if (body.language != null) book.language = body.language;
+      return HttpResponse.json(book);
+    },
+  );
 }
 
 /** The four lists the filter menus draw their values from. */
