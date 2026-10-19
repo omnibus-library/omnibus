@@ -1,0 +1,75 @@
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.settings-field label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.settings-hint {
+  font-size: 0.8rem;
+  color: var(--ink-3);
+  margin: 0;
+}
+.settings-field input[type="text"],
+.settings-field input[type="password"],
+.settings-field input[type="email"],
+.settings-field input[type="number"],
+.settings-field input[type="search"],
+.settings-field select {
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  color: var(--ink-0);
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.55rem 0.75rem;
+  width: 100%;
+}
+.settings-field input[type="text"]:focus,
+.settings-field input[type="password"]:focus,
+.settings-field input[type="email"]:focus,
+.settings-field input[type="number"]:focus,
+.settings-field input[type="search"]:focus,
+.settings-field select:focus {
+  outline: 2px solid color-mix(in oklch, var(--accent) 55%, transparent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+.settings-field input::placeholder {
+  color: var(--ink-2);
+  opacity: 1;
+}
+.settings-field input[type="search"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.settings-field input[type="search"]::-webkit-search-decoration,
+.settings-field input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.settings-status {
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  min-height: 1.2em;
+}
+.settings-status.success {
+  color: var(--ok);
+}
+.settings-status.error {
+  color: var(--bad);
+  font-size: 0.85rem;
+}
+.settings-status.is-working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-2);
+}
+.settings-field input[aria-invalid="true"] {
+  border-color: var(--bad);
+}

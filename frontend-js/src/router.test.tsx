@@ -96,7 +96,6 @@ describe("routes", () => {
       ["/admin/cleanup/duplicates", "Cleanup review", "duplicates"],
       ["/admin/health", "Server health", null],
       ["/account", "Account", null],
-      ["/add-books", "Add books", null],
       ["/check-in", "Check in", null],
     ])("renders %s as %s with its parameters", async (path, title, param) => {
       renderRoute(path);
@@ -115,6 +114,14 @@ describe("routes", () => {
     expect(
       await screen.findByRole("link", { name: "Back to book" }),
     ).toHaveAttribute("href", `/books/${UUID}`);
+  });
+
+  it("renders the upload page at /add-books", async () => {
+    renderRoute("/add-books");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Upload a book" }),
+    ).toBeInTheDocument();
   });
 
   describe("layout", () => {

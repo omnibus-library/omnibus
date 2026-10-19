@@ -47,4 +47,11 @@ describe("saveLabel", () => {
   ])("reads for saving=%s with %d dirty", (saving, count, label) => {
     expect(saveLabel(saving, count)).toBe(label);
   });
+
+  it.each([
+    [false, "Add to library"],
+    [true, "Adding…"],
+  ])("reads for a book being added with saving=%s", (saving, label) => {
+    expect(saveLabel(saving, 3, true)).toBe(label);
+  });
 });

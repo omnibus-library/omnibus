@@ -4,7 +4,7 @@ import { CoverEditor, type CoverProps } from "./CoverEditor";
 
 type Props = {
   /** The book as the server last reported it, which a cover write moves. */
-  book: EditableBook;
+  book: Pick<EditableBook, "identifiers" | "hasOverride">;
   cover: CoverProps;
   saving: boolean;
   onRevert: () => void;

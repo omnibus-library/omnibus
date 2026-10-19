@@ -26,7 +26,12 @@ const fields = (count: number) => `${count} field${count === 1 ? "" : "s"}`;
 export const editedSummary = (count: number) => `${fields(count)} edited`;
 
 /** The primary button's text: what pressing it does right now. */
-export function saveLabel(saving: boolean, count: number): string {
+export function saveLabel(
+  saving: boolean,
+  count: number,
+  creating = false,
+): string {
+  if (creating) return saving ? "Adding…" : "Add to library";
   if (saving) return "Saving…";
   return count > 0 ? `Save · ${fields(count)}` : "Done";
 }

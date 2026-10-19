@@ -111,7 +111,7 @@ function EditForm({ book }: { book: EditableBook }) {
         />
       </div>
       <SaveBar
-        uuid={book.uuid}
+        mode={{ kind: "edit", uuid: book.uuid }}
         dirty={dirty}
         coverReplaced={coverReplaced}
         saving={save.isPending}
