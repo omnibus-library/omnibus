@@ -68,7 +68,7 @@ function RowCover({ book }: { book: Book }) {
             className="ebook-thumb"
             src={thumbUrl(book.uuid)}
             srcSet={thumbSrcSet(book.uuid)}
-            sizes="(max-width: 640px) 160px, (max-width: 1280px) 320px, 640px"
+            sizes="(max-width: 560px) 22px, 26px"
             alt={`Cover of ${book.title}`}
             loading="lazy"
             width={320}
