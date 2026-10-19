@@ -82,8 +82,8 @@ export const isPicked = (picked: string[], value: string) =>
 
 /** The owner a shelf is credited to, or `null` for the viewer's own and for a wishlist, whose name opens with its owner. */
 export function attributedOwner(shelf: Shelf, viewerId: UserId): string | null {
-  return shelf.ownerId !== viewerId && shelf.kind !== "wishlist"
-    ? shelf.ownerName
+  return shelf.owner.id !== viewerId && shelf.kind !== "wishlist"
+    ? shelf.owner.name
     : null;
 }
 

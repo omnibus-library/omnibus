@@ -1,0 +1,38 @@
+.fs-fetch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+}
+.fs-fetch-btn {
+  gap: 9px;
+  background: color-mix(in oklch, var(--accent) 16%, var(--bg-1));
+  border-color: color-mix(in oklch, var(--accent) 55%, transparent);
+  color: var(--ink-0);
+}
+@media (hover: hover) {
+  .fs-fetch-btn:hover {
+    background: color-mix(in oklch, var(--accent) 24%, var(--bg-1));
+    border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+  }
+}
+.fs-fetch-btn[disabled] {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.fs-fetch-mark {
+  display: inline-flex;
+  color: var(--accent);
+}
+.fs-fetch-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.fs-fetch-error {
+  font-size: 13px;
+  color: var(--bad);
+}

@@ -23,8 +23,16 @@ describe("railShelves", () => {
 
   it("keeps another readers public shelf but not their private one", () => {
     const all = [
-      aShelf({ id: 1, ownerId: THEM, visibility: "public" }),
-      aShelf({ id: 2, ownerId: THEM, visibility: "private" }),
+      aShelf({
+        id: 1,
+        owner: { id: THEM, name: "x", hasAvatar: false },
+        visibility: "public",
+      }),
+      aShelf({
+        id: 2,
+        owner: { id: THEM, name: "x", hasAvatar: false },
+        visibility: "private",
+      }),
     ];
 
     expect(railShelves(all, ME).map((s) => s.id)).toEqual([1]);
@@ -32,7 +40,11 @@ describe("railShelves", () => {
 
   it("drops another readers wishlist even when stocked", () => {
     const all = [
-      aShelf({ ownerId: THEM, kind: "wishlist", visibility: "public" }),
+      aShelf({
+        owner: { id: THEM, name: "x", hasAvatar: false },
+        kind: "wishlist",
+        visibility: "public",
+      }),
     ];
 
     expect(railShelves(all, ME)).toEqual([]);
@@ -92,7 +104,7 @@ describe("shelfAriaLabel", () => {
 describe("addTargets", () => {
   const all = [
     aShelf({ id: 1 }),
-    aShelf({ id: 2, ownerId: THEM }),
+    aShelf({ id: 2, owner: { id: THEM, name: "x", hasAvatar: false } }),
     aShelf({ id: 3, kind: "smart" }),
     aShelf({ id: 4, kind: "wishlist" }),
   ];

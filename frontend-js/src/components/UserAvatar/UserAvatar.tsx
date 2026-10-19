@@ -3,7 +3,7 @@ import { avatarUrl, type User } from "../../api";
 import { initialsFor } from "../../format";
 
 type UserAvatarProps = {
-  user: User;
+  user: Pick<User, "id" | "name" | "hasAvatar">;
   className: string;
   /** Spelled out at each site so the Atrium extractor finds the photo rule. */
   photoClassName: string;

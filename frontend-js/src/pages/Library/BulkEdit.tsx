@@ -395,7 +395,7 @@ export function BulkShelfPicker({
         <div className="shelf-picker-list">
           <div className="pick-grid">
             {targets.map((shelf) => {
-              const cover = shelf.coverUuids[0];
+              const cover = shelf.covers[0];
               const owner = attributedOwner(shelf, user.id);
               return (
                 <button

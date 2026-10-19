@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  ApiError,
+  type BookUuid,
   type FilterClause,
+  fetchRating,
   filterParam,
   toBookDetail,
   toBookPage,
@@ -135,6 +138,17 @@ describe("toBookDetail", () => {
 
     expect(toBookDetail(wire).series).toBeNull();
   });
+
+  it("reads each format flag from the formats, M4A counting as audio", () => {
+    const wire = { ...auroraWire, formats: ["EPUB", "m4a"] };
+
+    expect(toBookDetail(wire)).toMatchObject({
+      hasEbook: true,
+      hasAudio: true,
+      hasComic: false,
+      hasPdf: false,
+    });
+  });
 });
 
 describe("toResumePoint", () => {
@@ -206,17 +220,17 @@ describe("toShelf", () => {
       kind: "smart",
       visibility: "public",
       name: "Winter reads",
-      ownerId: 1,
-      ownerName: "ada",
+      accent: null,
+      owner: { id: 1, name: "ada", hasAvatar: false },
       bookCount: 12,
-      coverUuids: ["ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0"],
+      covers: ["ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0"],
     });
   });
 
   it("defaults the cover uuids the server omits", () => {
     const { cover_uuids: _omitted, ...wire } = aWireShelf();
 
-    expect(toShelf(wire).coverUuids).toEqual([]);
+    expect(toShelf(wire).covers).toEqual([]);
   });
 });
 
@@ -230,10 +244,10 @@ describe("toUser", () => {
       name: "Ada Lovelace",
       isAdmin: true,
       canUpload: true,
+      canEdit: true,
       hasAvatar: true,
       hiddenFormats: [],
       stackSeries: false,
-      canEdit: true,
     });
   });
 
@@ -258,6 +272,33 @@ describe("toPalette", () => {
     const { book_total: _omitted, ...wire } = aWirePalette();
 
     expect(toPalette(wire).totals.books).toBe(0);
+  });
+});
+
+describe("the nullable read fetchers", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const answer = (res: Response) => {
+    vi.stubGlobal("fetch", async () => res);
+  };
+
+  it("fetchRating rejects with the server's text on a plain-text failure", async () => {
+    answer(
+      new Response("internal server error", {
+        status: 500,
+        headers: { "content-type": "text/plain" },
+      }),
+    );
+    const err = await fetchRating("u" as BookUuid).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({
+      status: 500,
+      message: "internal server error",
+    });
+  });
+
+  it("fetchRating rejects a 200 body that is not a rating", async () => {
+    answer(Response.json({ stars: "five" }));
+    await expect(fetchRating("u" as BookUuid)).rejects.toThrow();
   });
 });
 

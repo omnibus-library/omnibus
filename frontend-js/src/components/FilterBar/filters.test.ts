@@ -64,8 +64,7 @@ describe("facetValue", () => {
       aShelf({
         id: 4,
         name: "Book club",
-        ownerId: userId(2),
-        ownerName: "bo",
+        owner: { id: userId(2), name: "bo", hasAvatar: false },
       }),
     ],
   };
@@ -98,10 +97,19 @@ describe("shelfLabel", () => {
   it("names another reader's shelf with its owner but not a wishlist or your own", () => {
     expect(shelfLabel(aShelf(), viewer)).toBe("Winter reads");
     expect(
-      shelfLabel(aShelf({ ownerId: userId(2), ownerName: "bo" }), viewer),
+      shelfLabel(
+        aShelf({ owner: { id: userId(2), name: "bo", hasAvatar: false } }),
+        viewer,
+      ),
     ).toBe("Winter reads · bo");
     expect(
-      shelfLabel(aShelf({ kind: "wishlist", ownerId: userId(2) }), viewer),
+      shelfLabel(
+        aShelf({
+          kind: "wishlist",
+          owner: { id: userId(2), name: "bo", hasAvatar: false },
+        }),
+        viewer,
+      ),
     ).toBe("Winter reads");
   });
 });

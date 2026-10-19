@@ -147,17 +147,17 @@ function Row({ book, select }: { book: Book; select?: Selection }) {
       </td>
       <td className="ebook-col-published">
         <div className="ebook-title-cell">
-          {formatDateShort(book.published ?? "")}
+          {formatDateShort(book.published ?? "") ?? "—"}
         </div>
       </td>
       <td className="ebook-col-formats">
         <Formats book={book} />
       </td>
       <td className="ebook-col-updated">
-        {formatInstantShort(book.modified ?? "")}
+        {formatInstantShort(book.modified ?? "") ?? "—"}
       </td>
       <td className="ebook-col-added">
-        {formatInstantShort(book.addedAt ?? "")}
+        {formatInstantShort(book.addedAt ?? "") ?? "—"}
       </td>
       <td className="ebook-col-language">
         <div className="ebook-title-cell">{book.language ?? ""}</div>

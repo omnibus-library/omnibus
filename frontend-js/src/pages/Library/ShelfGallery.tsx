@@ -87,7 +87,7 @@ function ShelfEntry({
       aria-label={shelfAriaLabel(shelf, count, owner)}
       onClick={onSelect}
     >
-      <Peek covers={shelf.coverUuids} glyph={badge} />
+      <Peek covers={shelf.covers} glyph={badge} />
       <span className="lmq-shent-name">{shelf.name}</span>
       <span className="lmq-shent-meta">
         {badge}

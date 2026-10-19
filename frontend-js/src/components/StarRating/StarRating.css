@@ -1,0 +1,26 @@
+.star-rating {
+  display: inline-flex;
+  gap: 2px;
+  line-height: 1;
+}
+.star-slot {
+  position: relative;
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+}
+.star-bg,
+.star-fg {
+  position: absolute;
+  inset: 0;
+  line-height: 1;
+  pointer-events: none;
+}
+.star-bg {
+  color: var(--bg-3);
+}
+.star-fg {
+  color: var(--accent);
+  overflow: hidden;
+  white-space: nowrap;
+}
