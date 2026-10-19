@@ -2,7 +2,8 @@
 
 A throwaway slice of the web client rebuilt as a React SPA, to weigh against the
 Dioxus frontend. It talks only to the existing Axum `/api/*` REST surface — the
-one iOS and MCP already use — and adds a REST route only where a ported screen has none.
+one iOS and MCP already use — and adds a REST route only where a ported screen
+has none.
 
 Covers three screens: sign-in (cookie session), the library grid (keyset pages
 from `GET /api/ebooks`, thumbnails from `/api/thumbs`), and book detail.
