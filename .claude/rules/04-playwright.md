@@ -1,11 +1,13 @@
 ---
-paths: "ui_tests/**, test_data/**, db/tests/fixture_epubs.rs, .github/workflows/e2e.yml, omnibus-ios/omnibusUITests/**, scripts/explore/driver/package.json, flake.nix"
+paths: "ui_tests/**, test_data/**, db/tests/fixture_epubs.rs, .github/workflows/e2e.yml, scripts/e2e-ci.sh, omnibus-ios/omnibusUITests/**, scripts/explore/driver/package.json, flake.nix"
 ---
 # 04 — Playwright E2E conventions
 
 These rules exist so every flow is tested the same way. Don't diverge without updating this file first.
 
-For live preview validation during development (not E2E specs), see the [ui-validate](../skills/ui-validate/SKILL.md) skill — it covers port-walking server bring-up, login state, and rebuild detection.
+## Running specs — `just e2e-ci`
+
+`just e2e-ci [spec…]` ([`scripts/e2e-ci.sh`](../../scripts/e2e-ci.sh)) runs the suite the way [`e2e.yml`](../../.github/workflows/e2e.yml) does: it `dx bundle`s the app, starts the bundle's standalone `server` on a scratch DB and data dirs at a free port in the worktree's window, runs `playwright test` with `CI=1` and artifacts outside the tree, then tears the server down. Args pass through, so spec paths are relative to `ui_tests/playwright`. Judge a red there, not against the dev server: its DB keeps state between runs (the fixture library ends up under two scan roots), and `dx serve`'s hot-reload client reloads pages mid-test. The bundle is a debug build sharing `dx serve`'s artifacts; `OMNIBUS_E2E_RELEASE=1` builds `--release`, as CI does. For live preview validation (not specs), see the [ui-validate](../skills/ui-validate/SKILL.md) skill.
 
 ## Toolchain — pnpm, TypeScript 7, Biome
 

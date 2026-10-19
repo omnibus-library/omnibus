@@ -12,7 +12,7 @@ use sqlx::{Row, SqlitePool};
 use crate::metadata_overrides::sql::{effective_authors_sql, overrides_win_sql};
 use crate::progress::{resolve_listening, ProgressError};
 
-use super::{placeholders, visible, BrowseError};
+use super::{numbered_placeholders, visible, BrowseError};
 
 /// The latest position per book for the reader bound as `?1`, by client
 /// event time. SQLite takes the bare columns from the row holding the MAX.
@@ -55,16 +55,7 @@ pub async fn author_reading(
 
 /// Query text for [`author_reading`]: `?1` is the reader, `?2..` the paths.
 fn author_reading_sql(n: usize) -> String {
-    // Numbered throughout: sqlx counts bare `?`s apart from `?NNN`, so a bare
-    // path slot would take the reader's `?1`. `placeholders` covers `n == 0`.
-    let ph = if n == 0 {
-        placeholders(0)
-    } else {
-        (2..2 + n)
-            .map(|i| format!("(?{i})"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
+    let ph = numbered_placeholders(2, n);
     let vis = visible("b", "l");
     format!(
         r"

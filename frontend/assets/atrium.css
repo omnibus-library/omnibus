@@ -61,6 +61,14 @@
   --r-sm: 6px;  --r-md: 10px;  --r-lg: 14px;  --r-xl: 22px;
   --pad: 28px;  --gap: 18px;
 
+  /* Highlight palette, theme-independent. On `:root`, not `.rd-surface`: the
+     reader's drawer rows and filter chips were the first consumers, but the
+     book-detail saved-passages cards read them too and sit outside the reader
+     surface. */
+  --hl-amber: rgb(245,158,11); --hl-green: rgb(34,197,94);
+  --hl-blue: rgb(59,130,246); --hl-rose: rgb(244,63,94);
+  --hl-violet: rgb(139,92,246);
+
   color-scheme: dark;
 }
 
@@ -230,25 +238,23 @@ html, body { overscroll-behavior: none; }
 .atrium h1, .atrium h2, .atrium h3, .atrium h4, .atrium h5 {
   font-family: var(--serif); font-weight: 600;
   letter-spacing: -0.005em; margin: 0; color: var(--ink-0);
-}
-/* Cormorant's content area is 1.211em tall (ascent .924 + descent .287) and its
-   deepest glyph — `j`, matched by `g`/`y` — reaches .283em below the baseline.
-   Any leading under 1.203 therefore gives the line box NEGATIVE half-leading and
-   the descenders paint outside the element: the box ends, the ink doesn't, and
-   whatever follows gets struck through. That is what the display title did to
-   its byline and the not-found hero to its subtitle.
-   Loosening to 1.203 would fix it and throw away the display calibration above,
-   so the box reserves the overflow instead — ink bottom minus the line box,
-   which falls out as `.6015em - leading / 2`. `max()` floors a leading past
-   1.203 (h4 is already there) at zero rather than dropping the declaration on a
-   negative length.
-   A serif block that retunes its own leading and is *not* on this list keeps
-   escaping.
-   Each entry declares its leading as `--lh` and feeds `line-height` from that,
-   so the guard is derived from the same number and the two cannot drift apart;
-   anything that sets `line-height` another way gets the 1.203 fallback, which is
-   no guard at all. */
-.atrium h1, .atrium h2, .atrium h3, .atrium h4, .atrium h5 {
+  /* Cormorant's content area is 1.211em tall (ascent .924 + descent .287) and
+     its deepest glyph — `j`, matched by `g`/`y` — reaches .283em below the
+     baseline. Any leading under 1.203 therefore gives the line box NEGATIVE
+     half-leading and the descenders paint outside the element: the box ends,
+     the ink doesn't, and whatever follows gets struck through. That is what the
+     display title did to its byline and the not-found hero to its subtitle.
+     Loosening to 1.203 would fix it and throw away the display calibration
+     above, so the box reserves the overflow instead — ink bottom minus the line
+     box, which falls out as `.6015em - leading / 2`. `max()` floors a leading
+     past 1.203 (h4 is already there) at zero rather than dropping the
+     declaration on a negative length.
+     A serif block that retunes its own leading and is *not* on this list keeps
+     escaping.
+     Each entry declares its leading as `--lh` and feeds `line-height` from
+     that, so the guard is derived from the same number and the two cannot drift
+     apart; anything that sets `line-height` another way gets the 1.203
+     fallback, which is no guard at all. */
   --descender-guard: max(0px, calc((0.6015 - var(--lh, 1.203) / 2) * 1em));
   padding-bottom: var(--descender-guard);
 }
@@ -4173,8 +4179,6 @@ a.idx-letter-on:focus-visible {
 }
 
 /* ── Legacy globals (layout primitives, sr-only) ───────────────────── */
-:root { color-scheme: dark; }
-
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
@@ -6453,7 +6457,9 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .rd-top, .rd-bottom { position: absolute; left: 0; right: 0; z-index: 6;
   display: flex; align-items: center; gap: 16px; padding: 0 26px;
   background: color-mix(in oklch, var(--bg-0) 80%, transparent);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  /* The slide for the tap-centre hide below. */
+  transition: transform .22s ease; }
 /* The bars grow by the OS safe-area insets and pad their content in past
    them so the top row clears the notch / Dynamic Island and the bottom row
    clears the home indicator. `env(safe-area-inset-*)` is 0 on the desktop
@@ -6540,7 +6546,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
    gutters above. On a mouse-only viewport the bars stay pinned regardless of
    the signal, so resizing a phone-width window (chrome hidden) up to desktop
    can never strand the reader with no way to summon the menus. */
-.rd-top, .rd-bottom { transition: transform .22s ease; }
 @media (max-width: 480px), (hover: none) and (pointer: coarse) {
   .rd-chrome-hidden .rd-top { transform: translateY(-100%); }
   .rd-chrome-hidden .rd-bottom { transform: translateY(100%); }
@@ -6683,15 +6688,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .rd-swatch[data-color="blue"]   { background: rgba(59,130,246,.7); }
 .rd-swatch[data-color="rose"]   { background: rgba(244,63,94,.7); }
 .rd-swatch[data-color="violet"] { background: rgba(139,92,246,.7); }
-
-/* Highlight palette tokens. On `:root`, not `.rd-surface`: the reader's
-   drawer rows and filter chips were the first consumers, but the book-detail
-   saved-passages cards read them too and sit outside the reader surface. */
-:root {
-  --hl-amber: rgb(245,158,11); --hl-green: rgb(34,197,94);
-  --hl-blue: rgb(59,130,246); --hl-rose: rgb(244,63,94);
-  --hl-violet: rgb(139,92,246);
-}
 
 /* Popover action buttons (Note / Copy / Share) + divider (F2.4b). */
 .rd-pop-div { width: 1px; align-self: stretch; margin: 0 4px;
@@ -10951,7 +10947,7 @@ html {
 
 /* ── Cross-format alignment (modal + book-detail entry row) ─────────── */
 .al-modal {
-  width: min(720px, 92vw);
+  width: min(880px, calc(100vw - 48px));
   max-height: 84vh;
   overflow-y: auto;
   padding: 26px 32px 22px;
@@ -11005,7 +11001,7 @@ html {
   overflow: visible;
   background: rgba(127, 127, 127, 0.08);
 }
-.al-lane-audio { display: flex; gap: 3px; background: none; border: 0; height: 46px; }
+.al-lane-audio { display: flex; gap: 3px; background: none; border: 0; height: 46px; position: relative; }
 .al-seg {
   position: relative;
   min-width: 0;
@@ -11189,7 +11185,6 @@ html {
 }
 
 /* ── Cross-format sync: design-fidelity additions (Format Sync design) ── */
-.al-modal { width: min(880px, calc(100vw - 48px)); }
 .al-kicker-glyph { display: inline-flex; margin-right: 6px; vertical-align: -2px; color: var(--accent, #6a8bd7); }
 .al-identity {
   display: flex;
@@ -11272,7 +11267,6 @@ html {
   vector-effect: non-scaling-stroke;
 }
 .al-lane-overlay { position: absolute; inset: 0; pointer-events: none; }
-.al-lane-audio { position: relative; }
 .al-foot-note { font-size: 10.5px; opacity: 0.6; }
 .al-file-row-dim { opacity: 0.55; }
 .al-primary-pill {
@@ -11755,10 +11749,10 @@ html {
 .bd-chip-row-label { flex: 0 0 auto; min-width: 52px; color: var(--ink-3); }
 /* The row supplies the vertical rhythm, so the list inside it doesn't. */
 .bd-chip-row .bd-tag-list { margin-top: 0; }
-.bdmq-desc { margin-top: 18px; font-size: 15px; color: var(--ink-1); line-height: 1.6; max-width: 560px; }
-/* Long blurbs must not push the CTA row off the stop; the toggle beneath
-   lifts the clamp on demand (#2290). */
 .bdmq-desc {
+  margin-top: 18px; font-size: 15px; color: var(--ink-1); line-height: 1.6; max-width: 560px;
+  /* Long blurbs must not push the CTA row off the stop; the toggle beneath
+     lifts the clamp on demand (#2290). */
   display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -11808,7 +11802,7 @@ html {
   font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); letter-spacing: .04em;
 }
 .bdmq-lastopened { font-size: 10.5px; color: var(--ink-3); margin-top: 12px; }
-.bdmq .bd-sync-panel { margin-top: 14px; max-width: 560px; }
+.bdmq .bd-sync-panel { margin-top: 0; max-width: 560px; }
 
 /* ── Stats stop (rx-stat grid + spark) ── */
 .bdmq-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 26px 34px; max-width: 560px; }
@@ -11868,9 +11862,9 @@ html {
 }
 /* The design's `.pg` line: meta + inline text-link actions on one row. */
 .bdmq .bd-hl-foot {
-  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-top: 6px;
+  display: flex; align-items: baseline; gap: 6px 10px; flex-wrap: wrap; margin-top: 6px;
 }
-.bdmq .bd-hl-actions { display: inline-flex; gap: 10px; align-items: baseline; }
+.bdmq .bd-hl-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; }
 .bd-hl-act {
   border: 0; background: transparent; padding: 0; cursor: pointer;
   font-family: var(--mono); font-size: 9.5px; letter-spacing: .16em;
@@ -11883,10 +11877,6 @@ html {
 /* ── Journal stop: excerpt ladder + overlay ── */
 .bdmq-journalhead { display: flex; align-items: center; gap: 12px; }
 .bdmq-journalhead .bdmq-k { margin-bottom: 0; }
-.bdmq-headspacer { flex: 1; }
-.bdmq-overlay-static { cursor: auto; }
-.bdmq-ocard-composer { max-width: 720px; padding: 0; }
-.bdmq-ocard-composer .bd-journal-composer { border: 0; margin: 0; }
 .bdmq-avatarstack { display: inline-flex; align-items: center; }
 .bdmq-stack-avatar {
   width: 22px; height: 22px; border-radius: 50%;
@@ -12186,14 +12176,8 @@ html {
    line rather than being it, so the compound `.bdmq-syncline-warn` selector
    above never matches it and the message would render in body ink. */
 .bdmq-syncerr { color: var(--warn); }
-/* One neutral pill in every state, including the paused-sync warning: --warn
-   and --accent are all but the same amber here, so a warn-tinted button would
-   read as the hover state rather than as a second colour. */
-.bdmq .bd-sync-panel { margin-top: 0; }
 
 /* Highlights stop: the design's inline text actions under each kept line. */
-.bdmq .bd-hl-foot { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin-top: 6px; }
-.bdmq .bd-hl-actions { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
 .bdmq .bd-hl-act {
   border: 0; background: transparent; padding: 0; cursor: pointer;
   font-family: var(--mono); font-size: 9.5px; letter-spacing: .16em;
@@ -12207,7 +12191,7 @@ html {
 .bdmq-headspacer { flex: 1; }
 .bdmq-overlay-static { cursor: default; }
 .bdmq-ocard-composer { max-width: 720px; padding: 0; background: transparent; border: 0; box-shadow: none; }
-.bdmq-ocard-composer .bd-journal-composer { margin: 0; }
+.bdmq-ocard-composer .bd-journal-composer { border: 0; margin: 0; }
 
 /* Immersive reads as a quiet third option in the marquee CTA row (design: a
    plain ghost button beside the two solid ones), not a second accent. */
@@ -12512,8 +12496,7 @@ html {
 .lmq .lib-header { padding: 0 0 20px; gap: 10px; }
 /* Filters share the row with the view controls instead of taking their own line. */
 .lmq .lib-header-row > .fb { flex: 0 1 auto; }
-.lmq .lib-toolbar { margin-left: auto; }
-.lmq .lib-toolbar { gap: 10px; }
+.lmq .lib-toolbar { margin-left: auto; gap: 10px; }
 .lmq .lib-view-toggle {
   display: inline-flex; padding: 2px; gap: 2px;
   background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 999px;

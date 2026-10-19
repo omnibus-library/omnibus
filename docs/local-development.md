@@ -91,7 +91,7 @@ tests fail with a pointer to it when they're missing.
 ## Tests & lint
 
 ```bash
-just test    # full matrix: db + server + frontend(--features server) + shared
+just test    # full matrix: db + server + frontend(--features server) + shared, then the script suites
 just lint    # cargo fmt --check + clippy across the crate/feature matrix + stylelint
 just check   # lint then test
 
@@ -126,8 +126,18 @@ cargo test -p omnibus-mock-kobo                    # fake Kobo firmware tests (o
 
 ### Web E2E (Playwright)
 
-The server must be running; Chromium comes from Nix. The project uses **pnpm**
-(not npm) and TypeScript 7, with Biome as linter/formatter:
+`just e2e-ci` runs the suite the way CI does: it bundles the app, starts its
+standalone server on a scratch database, runs the specs and stops the server.
+Pass spec paths (relative to `ui_tests/playwright`) to run a subset:
+
+```bash
+just e2e-ci                                   # whole suite
+just e2e-ci tests/flows/browse_indices.spec.ts
+```
+
+To run against a dev server you already have up instead, Chromium comes from
+Nix. The project uses **pnpm** (not npm) and TypeScript 7, with Biome as
+linter/formatter:
 
 ```bash
 cd ui_tests/playwright
