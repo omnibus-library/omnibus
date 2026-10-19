@@ -5,8 +5,7 @@ Dioxus frontend. It talks only to the existing Axum `/api/*` REST surface — th
 one iOS and MCP already use — and adds a REST route only where a ported screen
 has none.
 
-Covers three screens: sign-in (cookie session), the library grid (keyset pages
-from `GET /api/ebooks`, thumbnails from `/api/thumbs`), and book detail.
+The screens it has ported are listed under [Routes](#routes).
 
 ## Layout
 
@@ -47,8 +46,8 @@ throws (the session gate, the shell, a reader) renders it full-screen.
 
 ## Styling, copied out of Atrium
 
-Each CSS file holds only the `atrium.css`, `loading.css` and `filter_bar.css` rules
-its markup can match, copied by `tools/extract-atrium.cjs`.
+Each CSS file holds only the `atrium.css`, `loading.css`, `filter_bar.css` and
+`authors.css` rules its markup can match, copied by `tools/extract-atrium.cjs`.
 The components keep the Dioxus class names, which is what lets the copy apply
 unchanged: when sign-in, the library grid and book detail were first ported,
 their computed styles and screenshots matched the `atrium.css` build exactly.
@@ -123,7 +122,7 @@ shell provides it.
   status (`src/api/generated/omnibus.msw.ts`), and `src/testing/handlers.ts`
   adds the ones that need behaviour: paging headers, a password check, a journal
   that keeps what is posted, a Kindle send that answers `pending` and then
-  `sent`. Stories for the library, book detail and sign-in run against them, so their `play`
+  `sent`. Stories for the ported screens run against them, so their `play`
   tests cover loading, empty, failing and success states, and the fixtures are
   typed by the spec.
 - **Docs:** every component gets a Docs page in Storybook, built from its
