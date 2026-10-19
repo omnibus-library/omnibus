@@ -3,25 +3,22 @@ import { HttpResponse, http } from "msw";
 import { Link, Route, Routes } from "react-router";
 import { expect, fireEvent, spyOn, waitFor, within } from "storybook/test";
 import { ADA, storyClient } from "../../testing/AppHarness";
-import type { ListenWrite } from "../../testing/audioHandlers";
 import {
+  BOOK,
   listenHandlers,
   TEN_MINUTES_IN,
+  UUID,
+  writes,
   wrote,
 } from "../../testing/audioHandlers";
 import { failing, hanging } from "../../testing/handlers";
 import {
   aWireAudioBookmark,
   aWireAudioManifest,
-  aWireBook,
   aWireChapter,
 } from "../../testing/wire";
 import { Listen } from "./Listen";
 
-const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
-const BOOK = aWireBook({ formats: ["M4B"] });
-
-const writes: ListenWrite[] = [];
 const meta = {
   title: "Pages/Listen/Panels",
   component: Listen,

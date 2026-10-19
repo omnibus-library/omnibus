@@ -5,21 +5,18 @@ import { expect, fireEvent, spyOn, waitFor, within } from "storybook/test";
 import type { BookUuid } from "../../api";
 import { ReaderDock } from "../../layouts/ReaderDock";
 import { usePlayback } from "../../playback/PlaybackProvider";
-import type { ListenWrite } from "../../testing/audioHandlers";
 import {
+  BOOK,
   listenHandlers,
   TEN_MINUTES_IN,
+  UUID,
+  writes,
   wrote,
 } from "../../testing/audioHandlers";
-import { aWireBook } from "../../testing/wire";
 import { Listen } from "./Listen";
 import { MiniDock } from "./MiniDock";
 import "../Reader/Reader.css";
 
-const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
-const BOOK = aWireBook({ formats: ["M4B"] });
-
-const writes: ListenWrite[] = [];
 /** Starts the book the way a player page does, so the dock has something to show. */
 function Opened({ children }: { children: ReactNode }) {
   const { open } = usePlayback();

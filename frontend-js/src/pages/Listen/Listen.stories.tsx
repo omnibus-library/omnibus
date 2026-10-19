@@ -3,11 +3,13 @@ import { act } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { Link, Route, Routes } from "react-router";
 import { expect, fireEvent, waitFor, within } from "storybook/test";
-import type { ListenWrite } from "../../testing/audioHandlers";
 import {
+  BOOK,
   listenHandlers,
   TEN_MINUTES_IN,
   twoFiles,
+  UUID,
+  writes,
   wrote,
 } from "../../testing/audioHandlers";
 import { failing, hanging } from "../../testing/handlers";
@@ -21,10 +23,6 @@ import {
 } from "../../testing/wire";
 import { Listen } from "./Listen";
 
-const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
-const BOOK = aWireBook({ formats: ["M4B"] });
-
-const writes: ListenWrite[] = [];
 const meta = {
   title: "Pages/Listen",
   component: Listen,

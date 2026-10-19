@@ -12,6 +12,7 @@ import { bookHandler, coverHandlers } from "./handlers";
 import {
   aWireAudioBookmark,
   aWireAudioManifest,
+  aWireBook,
   aWirePosition,
   aWireProgress,
   aWireReadStatus,
@@ -44,6 +45,12 @@ export function twoFiles(requested: (string | null)[]) {
 
 /** One write the player sent: `"POST /api/progress"` and the JSON body it carried. */
 export type ListenWrite = { request: string; body: unknown };
+
+/** The audiobook the player's stories open. */
+export const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
+export const BOOK = aWireBook({ formats: ["M4B"] });
+/** The stories' write log; each story file empties it before every story. */
+export const writes: ListenWrite[] = [];
 
 /** The bodies of the writes to `request`, oldest first. */
 export const wrote = (writes: ListenWrite[], request: string) =>
