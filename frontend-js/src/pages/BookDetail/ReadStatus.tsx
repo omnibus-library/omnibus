@@ -53,7 +53,9 @@ export function ReadStatus({ uuid }: { uuid: BookUuid }) {
       alsoInvalidate: [shelvesQuery(uuid).queryKey],
     },
   );
-  const shown = record.data?.status ?? "unread";
+  // `null` is a read that succeeded with no status; `undefined` is still loading or unreadable.
+  const known = record.data !== undefined;
+  const shown = known ? (record.data?.status ?? "unread") : null;
   return (
     <div className="bd-readstatus" data-testid="read-status-control">
       {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings a border and min-width Atrium never resets */}
@@ -73,6 +75,7 @@ export function ReadStatus({ uuid }: { uuid: BookUuid }) {
             }
             data-testid={`read-status-${status}`}
             aria-pressed={status === shown}
+            disabled={!known}
             onClick={() => status !== shown && save.mutate(status)}
           >
             {label}
@@ -84,7 +87,20 @@ export function ReadStatus({ uuid }: { uuid: BookUuid }) {
         role="status"
         data-testid="read-status-meta"
       >
-        {statusMeta(save.isError, record.data)}
+        {known ? (
+          statusMeta(save.isError, record.data)
+        ) : record.isError ? (
+          <>
+            Couldn't load your reading status
+            <button
+              type="button"
+              className="bdmq-synclink"
+              onClick={() => record.refetch()}
+            >
+              Retry
+            </button>
+          </>
+        ) : null}
       </div>
     </div>
   );

@@ -377,9 +377,11 @@ const ALIGNED = aWireAlignment({
 
 export const ReadStatusNotStarted: Story = {
   play: async ({ canvas }) => {
-    await expect(
-      await canvas.findByTestId("read-status-meta"),
-    ).toHaveTextContent("Not started");
+    await waitFor(() =>
+      expect(canvas.getByTestId("read-status-meta")).toHaveTextContent(
+        "Not started",
+      ),
+    );
     await expect(
       canvas.getByRole("button", { name: "Unread" }),
     ).toHaveAttribute("aria-pressed", "true");
@@ -431,9 +433,11 @@ export const ReadStatusSaved: Story = {
     msw.use(...readStatusHandlers(null, statusWrites));
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      await canvas.findByRole("button", { name: "Finished" }),
+    // The control is disabled until the status has been read.
+    await waitFor(() =>
+      expect(canvas.getByRole("button", { name: "Finished" })).toBeEnabled(),
     );
+    await userEvent.click(canvas.getByRole("button", { name: "Finished" }));
 
     await expect(
       canvas.getByRole("button", { name: "Finished" }),
@@ -472,6 +476,50 @@ export const ReadStatusSaveFails: Story = {
     await expect(
       canvas.getByRole("button", { name: "Reading" }),
     ).toHaveAttribute("aria-pressed", "true");
+  },
+};
+
+export const ReadStatusClaimsNothingWhileItLoads: Story = {
+  beforeEach({ msw }) {
+    msw.use(hanging("/api/read-status/:uuid"));
+  },
+  play: async ({ canvas }) => {
+    const unread = await canvas.findByRole("button", { name: "Unread" });
+    await expect(unread).toBeDisabled();
+    await expect(unread).toHaveAttribute("aria-pressed", "false");
+    await expect(canvas.getByTestId("read-status-meta")).not.toHaveTextContent(
+      "Not started",
+    );
+  },
+};
+
+export const ReadStatusOffersRetryWhenItCannotBeRead: Story = {
+  beforeEach({ msw }) {
+    let reads = 0;
+    msw.use(
+      http.get("/api/read-status/:uuid", () =>
+        reads++ === 0
+          ? new HttpResponse("failed with 500", { status: 500 })
+          : HttpResponse.json(aWireReadStatus({ status: "reading" })),
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(
+      await canvas.findByText("Couldn't load your reading status"),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", { name: "Unread" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await expect(canvas.getByRole("button", { name: "Unread" })).toBeDisabled();
+    await userEvent.click(canvas.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() =>
+      expect(canvas.getByRole("button", { name: "Reading" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
   },
 };
 
