@@ -70,8 +70,7 @@ function EditForm({ book }: { book: EditableBook }) {
   };
   const cover = {
     book: live,
-    target: { kind: "live", uuid: book.uuid },
-    onApplied: onCoverApplied,
+    target: { kind: "live", uuid: book.uuid, onApplied: onCoverApplied },
   } satisfies CoverProps;
   const save = useMutation({
     mutationFn: (values: MetaForm) =>

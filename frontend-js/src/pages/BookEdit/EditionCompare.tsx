@@ -13,20 +13,15 @@ import { Loading, Ring } from "../../components/Loading/Loading";
 import { type CoverProps, coverPreview, restage } from "./CoverEditor";
 import {
   applyField,
+  coverSrc,
   currentValue,
   differs,
+  EMPTY,
   FIELDS,
   isStaged,
   type MetadataField,
   sourceValue,
 } from "./editionFields";
-
-/** Shown where a side of a row, or a candidate, has no value. */
-export const EMPTY = "—";
-
-/** A candidate's cover address, or `null` when blank: a blank `src` would pull the page down as an image. */
-export const coverSrc = (edition: ProviderEdition) =>
-  edition.cover_url?.trim() || null;
 
 /** Past this many characters on either side, a row is laid out down the panel's full width instead. */
 const LONG_VALUE_CHARS = 90;
@@ -113,7 +108,7 @@ function CoverRow({
   cover: CoverProps;
   edition: ProviderEdition;
 }) {
-  const { target, onApplied } = cover;
+  const { target } = cover;
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const sourceName = PROVIDERS[edition.source].name;
@@ -130,7 +125,7 @@ function CoverRow({
     setBusy(true);
     setStatus("Applying cover…");
     try {
-      onApplied(await coverFromUrl(target.uuid, url));
+      target.onApplied(await coverFromUrl(target.uuid, url));
       setStatus("Cover updated.");
     } catch (e) {
       setStatus(
@@ -269,7 +264,7 @@ export function EditionCompare({
       {hydrating ? (
         <>
           <Loading
-            className="inline"
+            kind="inline"
             testId="mes-hydrating"
             label="Loading the full record…"
           />

@@ -3,7 +3,13 @@ import { classes } from "../../classes";
 import "./Loading.css";
 
 /** The shape a wait fills: pick by where it sits, not by how long it takes. */
-export type LoadingKind = "page" | "stage" | "sheet" | "section" | "row";
+export type LoadingKind =
+  | "page"
+  | "stage"
+  | "sheet"
+  | "section"
+  | "inline"
+  | "row";
 export type LoadingMark = "auto" | "riffle" | "line" | "ring";
 export type MarkSize = "xs" | "sm" | "md" | "lg" | "xl";
 
@@ -12,6 +18,7 @@ const KIND_CLASS = {
   stage: "ld-stage",
   sheet: "ld-sheet",
   section: "ld-section",
+  inline: "ld-section inline",
   row: "ld-row",
 } satisfies Record<LoadingKind, string>;
 
@@ -28,6 +35,7 @@ const LINE_FOR_KIND = {
   stage: { ticks: 32, size: "xl" },
   sheet: { ticks: 20, size: "lg" },
   section: { ticks: 14, size: "md" },
+  inline: { ticks: 14, size: "md" },
   row: { ticks: 10, size: "sm" },
 } satisfies Record<LoadingKind, { ticks: number; size: MarkSize }>;
 

@@ -22,7 +22,12 @@ export type StagedCover = {
 };
 
 export type CoverTarget =
-  | { kind: "live"; uuid: BookUuid }
+  | {
+      kind: "live";
+      uuid: BookUuid;
+      /** A write landed: the book as the server now reports it. */
+      onApplied: (updated: EditableBook) => void;
+    }
   | {
       kind: "staged";
       staged: StagedCover;
@@ -53,8 +58,6 @@ export type CoverProps = {
     | "hasCoverOverride"
   >;
   target: CoverTarget;
-  /** A write landed: the book as the server now reports it. */
-  onApplied: (updated: EditableBook) => void;
 };
 
 /** The placeholder plate and the image the cover surfaces show now, for a live or a staged target. */
@@ -83,7 +86,7 @@ function stagedHint({ source, preview }: StagedCover) {
 
 /** The sidebar's cover card: preview, hint and the controls that replace or revert the cover. */
 export function CoverEditor(props: CoverProps) {
-  const { book, target, onApplied } = props;
+  const { book, target } = props;
   const [busy, setBusy] = useState<"file" | "url" | "revert" | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [pastedUrl, setPastedUrl] = useState("");
@@ -100,7 +103,8 @@ export function CoverEditor(props: CoverProps) {
     setBusy(kind);
     setStatus(working);
     try {
-      onApplied(await call());
+      const updated = await call();
+      if (target.kind === "live") target.onApplied(updated);
       setStatus(done);
       return true;
     } catch (e) {

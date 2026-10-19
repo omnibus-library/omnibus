@@ -27,8 +27,7 @@ function Live({ book }: { book: EditableBook }) {
   return (
     <CoverEditor
       book={live}
-      target={{ kind: "live", uuid: live.uuid }}
-      onApplied={setLive}
+      target={{ kind: "live", uuid: live.uuid, onApplied: setLive }}
     />
   );
 }
@@ -43,7 +42,6 @@ function Staged({ preview }: { preview: string | null }) {
     <CoverEditor
       book={SCANNED}
       target={{ kind: "staged", staged, onStage: setStaged }}
-      onApplied={() => {}}
     />
   );
 }

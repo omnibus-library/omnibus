@@ -112,8 +112,8 @@ describe("barcode scanner glue", () => {
   it("is the same file in both asset directories", () => {
     const dioxus = readFileSync(
       resolve(
-        process.cwd(),
-        "../frontend/assets/vendor/barcode-scanner-glue.js",
+        import.meta.dirname,
+        "../../../../frontend/assets/vendor/barcode-scanner-glue.js",
       ),
       "utf8",
     );

@@ -99,12 +99,10 @@ function Picker({ stagedCover = false }: { stagedCover?: boolean }) {
     ? {
         book: live,
         target: { kind: "staged", staged, onStage: setStaged },
-        onApplied: () => {},
       }
     : {
         book: live,
-        target: { kind: "live", uuid: live.uuid },
-        onApplied: setLive,
+        target: { kind: "live", uuid: live.uuid, onApplied: setLive },
       };
   return (
     <>

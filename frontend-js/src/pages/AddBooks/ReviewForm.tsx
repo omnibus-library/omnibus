@@ -58,8 +58,6 @@ export function ReviewForm({ pick, saving, error, onAdd, onStartOver }: Props) {
       hasCoverOverride: false,
     },
     target: { kind: "staged", staged, onStage: setStaged },
-    // A staged cover is not written until the add.
-    onApplied: () => {},
   } satisfies CoverProps;
 
   return (

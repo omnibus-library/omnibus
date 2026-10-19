@@ -1,9 +1,6 @@
 import type { InputHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { classes } from "../../classes";
-
-/** An input `id` from a label: lowercase, every non-alphanumeric character a hyphen. */
-export const labelToId = (label: string) =>
-  `me-${label.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "-")}`;
+import { labelToId } from "./editionFields";
 
 type LabelProps = {
   text: string;

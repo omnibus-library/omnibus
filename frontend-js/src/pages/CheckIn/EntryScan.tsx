@@ -4,9 +4,9 @@ import { applyKey, cleanIsbn, ISBN_SLOTS, isbnRejection } from "./checkIn";
 import { ProviderNote } from "./Lookup";
 import { IsbnField } from "./Screens";
 
-/** The keypad's face, row-major; `X` is the ISBN-10 check digit, the one non-digit a valid ISBN can end with. */
 const SLOTS = Array.from({ length: ISBN_SLOTS }, (_, i) => i);
 
+/** The keypad's face, row-major; `X` is the ISBN-10 check digit, the one non-digit a valid ISBN can end with. */
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "X", "0", "⌫"];
 
 type ScanProps = {

@@ -3,7 +3,17 @@ import type {
   ProviderEdition,
   ProviderSearchSource,
 } from "../../api";
-import { labelToId } from "./MetaFields";
+
+/** An input `id` from a label: lowercase, every non-alphanumeric character a hyphen. */
+export const labelToId = (label: string) =>
+  `me-${label.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "-")}`;
+
+/** Shown where a side of a row, or a candidate, has no value. */
+export const EMPTY = "—";
+
+/** A candidate's cover address, or `null` when blank: a blank `src` would pull the page down as an image. */
+export const coverSrc = (edition: ProviderEdition) =>
+  edition.cover_url?.trim() || null;
 
 /** A cooldown as a reader would say it: rounded up, and never "0s". */
 export const humanWait = (secs: number) =>

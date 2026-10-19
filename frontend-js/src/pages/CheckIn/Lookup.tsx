@@ -63,8 +63,9 @@ function TitleSearch({ busy, onPick, onError }: SearchProps) {
           className="check-in-search-results"
           data-testid="check-in-search-results"
         >
-          {results.map((meta) => (
-            <li key={meta.isbn13}>
+          {results.map((meta, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: providers can return one ISBN twice, and the list is only ever replaced whole
+            <li key={`${meta.isbn13}-${i}`}>
               <button
                 type="button"
                 className="check-in-search-result"

@@ -19,8 +19,8 @@ import { SparkleGlyph } from "../../components/Glyphs/Glyphs";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { Modal } from "../../components/Modal/Modal";
 import type { CoverProps } from "./CoverEditor";
-import { coverSrc, EditionCompare, EMPTY } from "./EditionCompare";
-import { sourceStatusText } from "./editionFields";
+import { EditionCompare } from "./EditionCompare";
+import { coverSrc, EMPTY, sourceStatusText } from "./editionFields";
 
 type FieldProps = {
   slug: "title" | "author" | "isbn";
