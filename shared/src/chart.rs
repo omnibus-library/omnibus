@@ -32,6 +32,7 @@ pub const OTHER_LABEL: &str = "Other";
 /// `db::stats::builder` for why the x-axis is a shared bucket key rather than
 /// a free choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ChartBucket {
@@ -78,6 +79,7 @@ impl ChartBucket {
 /// double-counting, so each declares its grain and the fan-out runs them
 /// separately, aligning only on the shared bucket key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ChartGrain {
@@ -107,6 +109,7 @@ impl ChartGrain {
 /// How a measure aggregates, which decides both its mark and what an empty
 /// bucket means.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ChartAggregate {
@@ -135,6 +138,7 @@ impl ChartAggregate {
 /// reader — a pie chart of minutes-over-time is a question the builder should
 /// not be able to ask.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ChartMark {
@@ -145,6 +149,7 @@ pub enum ChartMark {
 /// The unit a measure is expressed in. Two measures sharing a unit share an
 /// axis; a second distinct unit opens the right-hand axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ChartUnit {
@@ -174,6 +179,7 @@ impl ChartUnit {
 /// **reuses** its curated `/stats` equivalent's fragment, so the two surfaces
 /// cannot report different numbers for the same window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ChartMeasure {
@@ -344,6 +350,7 @@ impl ChartMeasure {
 
 /// An optional split of a single measure into several series.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ChartBreakdown {
@@ -368,6 +375,7 @@ impl ChartBreakdown {
 
 /// What a reader composed in the builder.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ChartSpec {
     /// One or two measures. A second opens the right-hand axis when its unit
@@ -661,6 +669,7 @@ pub fn fit_axes(series: &[ChartSeries], stacked: bool, buckets: usize) -> (Vec<C
 /// aligned with [`ChartResult::buckets`]; `None` means *no data*, which for an
 /// average is a real state and not a zero (see [`ChartAggregate::empty_bucket`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ChartSeries {
     pub measure: ChartMeasure,
@@ -696,6 +705,7 @@ impl ChartSeries {
 
 /// One axis of the rendered chart.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ChartAxis {
     pub unit: ChartUnit,
@@ -706,6 +716,7 @@ pub struct ChartAxis {
 
 /// The answer to a [`ChartSpec`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ChartResult {
     /// The granularity `buckets` are keyed at. Carried on the answer so a

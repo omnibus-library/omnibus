@@ -27,21 +27,48 @@ fn shelf_meta_line_pluralizes_and_marks_public_shelves() {
     assert_eq!(shelf_meta_line(1, Visibility::Private, None), "1 book");
     assert_eq!(shelf_meta_line(0, Visibility::Private, None), "0 books");
     assert_eq!(
-        shelf_meta_line(12, Visibility::Public, None),
-        "12 books \u{00b7} Public"
+        shelf_meta_line(12, Visibility::Public, Some("elena")),
+        "12 books \u{00b7} Public \u{00b7} by elena"
     );
 }
 
 #[test]
-fn shelf_meta_line_attributes_a_shelf_the_viewer_does_not_own() {
-    assert_eq!(
-        shelf_meta_line(0, Visibility::Private, Some("elena")),
-        "0 books \u{00b7} by elena"
-    );
-    assert_eq!(
-        shelf_meta_line(12, Visibility::Public, Some("elena")),
-        "12 books \u{00b7} Public \u{00b7} by elena"
-    );
+fn shelf_tab_meta_is_the_count_alone_on_the_viewers_own_shelf() {
+    assert_eq!(shelf_tab_meta(1, None), "1");
+    assert_eq!(shelf_tab_meta(0, None), "0");
+}
+
+#[test]
+fn shelf_tab_meta_names_the_owner_of_a_shelf_the_viewer_does_not_own() {
+    assert_eq!(shelf_tab_meta(12, Some("elena")), "12 \u{00b7} elena");
+}
+
+#[test]
+fn tab_count_reads_the_picked_shelfs_loaded_members_over_its_summary() {
+    let shelf = ShelfSummary {
+        book_count: 2,
+        ..summary(1, ShelfKind::Manual)
+    };
+    assert_eq!(tab_count(&shelf, ShelfSelection::Shelf(7), Some(3)), 3);
+}
+
+#[test]
+fn tab_count_keeps_the_summary_while_the_members_load() {
+    let shelf = ShelfSummary {
+        book_count: 2,
+        ..summary(1, ShelfKind::Manual)
+    };
+    assert_eq!(tab_count(&shelf, ShelfSelection::Shelf(7), None), 2);
+}
+
+#[test]
+fn tab_count_keeps_the_summary_on_a_shelf_that_is_not_picked() {
+    let shelf = ShelfSummary {
+        book_count: 2,
+        ..summary(1, ShelfKind::Manual)
+    };
+    assert_eq!(tab_count(&shelf, ShelfSelection::Shelf(9), Some(3)), 2);
+    assert_eq!(tab_count(&shelf, ShelfSelection::All, Some(3)), 2);
 }
 
 #[test]
@@ -99,30 +126,6 @@ fn shelf_aria_label_speaks_the_owner_of_someone_elses_shelf() {
             Some("elena")
         ),
         "Lunch Break Picks, 0 books \u{00b7} by elena"
-    );
-}
-
-#[test]
-fn slab_line_reports_showing_everything_with_no_pick_and_no_filter() {
-    assert_eq!(
-        slab_line(false, false),
-        "Shelves \u{2014} showing everything"
-    );
-}
-
-#[test]
-fn slab_line_reports_filtering_when_a_shelf_is_picked() {
-    assert_eq!(
-        slab_line(true, false),
-        "Shelves \u{2014} filtering the list below"
-    );
-}
-
-#[test]
-fn slab_line_reports_filtering_when_a_filter_is_set_on_all_books() {
-    assert_eq!(
-        slab_line(false, true),
-        "Shelves \u{2014} filtering the list below"
     );
 }
 
@@ -229,8 +232,8 @@ mod render {
             ShelfGallery {
                 shelves: Vec::new(),
                 loaded: false,
-                filtered: false,
                 selection: ShelfSelection::All,
+                picked_members: None,
                 all_count: None,
                 all_cover_uuids: Vec::new(),
                 server_url: String::new(),
@@ -238,36 +241,6 @@ mod render {
                 on_created: EventHandler::new(|_| {}),
             }
         }
-    }
-
-    #[derive(Clone, Debug, PartialEq, Routable)]
-    enum FilteredRoute {
-        #[route("/")]
-        FilteredGallery {},
-    }
-
-    #[component]
-    fn FilteredGallery() -> Element {
-        rsx! {
-            ShelfGallery {
-                shelves: Vec::new(),
-                loaded: true,
-                filtered: true,
-                selection: ShelfSelection::All,
-                all_count: Some(2),
-                all_cover_uuids: Vec::new(),
-                server_url: String::new(),
-                on_select: EventHandler::new(|_| {}),
-                on_created: EventHandler::new(|_| {}),
-            }
-        }
-    }
-
-    #[test]
-    fn shelf_gallery_says_it_is_filtering_while_a_filter_is_set_on_all_books() {
-        let html = render_in_vdom(|| rsx! { Router::<FilteredRoute> {} });
-        assert!(html.contains("filtering the list below"), "{html}");
-        assert!(!html.contains("showing everything"), "{html}");
     }
 
     #[test]

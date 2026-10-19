@@ -1,6 +1,7 @@
 import type { Preview } from "@storybook/react-vite";
 import { mswLoader } from "msw-storybook-addon/csf3";
-import { parseUser, type User } from "../src/api";
+import { toUser, type User } from "../src/api";
+import { UserSummary } from "../src/api/generated/schemas";
 import {
   AtriumRoot,
   isTheme,
@@ -22,7 +23,7 @@ watchImageLoads();
 // `parameters.user` is the session as the server sends it; `null` is a guest.
 function storyUser(value: unknown): User | null {
   if (value === null) return null;
-  return value === undefined ? ADA : parseUser(value);
+  return value === undefined ? ADA : toUser(UserSummary.parse(value));
 }
 
 const preview = {

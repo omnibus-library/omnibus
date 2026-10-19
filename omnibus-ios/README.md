@@ -214,8 +214,8 @@ contents rather than as a name on a coloured square:
   concurrently and the whole set is cached as a unit.
 - **They live on the landing screen.** Behind a browse pill they were
   effectively invisible; as a rail under Continue they read as part of the
-  library, with a dashed "New shelf" tile at the end so creating one doesn't
-  require finding the index first.
+  library, with New shelf beside All in the rail's heading so creating one
+  doesn't require finding the index first.
 - **Adding a book is a toggle, not a one-shot.** The picker lists every manual
   shelf with its mosaic and a live checkmark, so you can see what a book is
   already on and take it off again. Smart shelves appear read-only under

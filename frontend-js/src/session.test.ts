@@ -1,10 +1,10 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
-import { parseUser } from "./api";
+import { toUser } from "./api";
 import { meQuery, startSession } from "./session";
 import { WIRE_ADA } from "./testing/wire";
 
-const grace = parseUser({ ...WIRE_ADA, id: 2, username: "grace" });
+const grace = toUser({ ...WIRE_ADA, id: 2, username: "grace" });
 
 describe("startSession", () => {
   it("drops the answers cached for whoever was signed in before", () => {

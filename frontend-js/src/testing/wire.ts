@@ -1,8 +1,19 @@
-// Fixtures in the shape the server sends them: snake_case JSON, before
-// api.ts parses it. Kept beside the parsed fixtures in books.ts.
+import type {
+  EbookMetadata,
+  PaletteBookHit,
+  PaletteResults,
+  ResumePoint,
+  UserSummary,
+} from "../api/generated/schemas";
+
+// Fixtures in the shape the server sends them: snake_case JSON, typed by the
+// generated schemas so a fixture that drifts from the spec fails to compile.
+// Kept beside the parsed fixtures in books.ts.
 
 /** A book as `GET /api/ebooks` and `GET /api/ebooks/{uuid}` send it. */
-export function aWireBook(overrides: Record<string, unknown> = {}) {
+export function aWireBook(
+  overrides: Partial<EbookMetadata> = {},
+): EbookMetadata {
   return {
     id: 2,
     filename: "aurora-station-01.cbz",
@@ -28,7 +39,7 @@ export function aWireBook(overrides: Record<string, unknown> = {}) {
 }
 
 /** `count` distinct books, uuids and titles numbered, for paging. */
-export function aWireLibrary(count: number) {
+export function aWireLibrary(count: number): EbookMetadata[] {
   return Array.from({ length: count }, (_, i) =>
     aWireBook({
       id: i + 1,
@@ -41,9 +52,9 @@ export function aWireLibrary(count: number) {
 
 /** A reading position as `GET /api/progress/recent` sends it. */
 export function aWireResumePoint(
-  record: Record<string, unknown> = {},
-  book: Record<string, unknown> = {},
-) {
+  record: Partial<ResumePoint["record"]> = {},
+  book: Partial<EbookMetadata> = {},
+): ResumePoint {
   return {
     record: {
       book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
@@ -63,7 +74,7 @@ export function aWireResumePoint(
 }
 
 /** The signed-in admin as `GET /api/auth/me` and the login response send it. */
-export const WIRE_ADA = {
+export const WIRE_ADA: UserSummary = {
   id: 1,
   username: "ada",
   display_name: "Ada Lovelace",
@@ -75,7 +86,9 @@ export const WIRE_ADA = {
 };
 
 /** A book hit as `GET /api/search/palette` sends it. */
-export function aWirePaletteBook(overrides: Record<string, unknown> = {}) {
+export function aWirePaletteBook(
+  overrides: Partial<PaletteBookHit> = {},
+): PaletteBookHit {
   return {
     id: 2,
     uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
@@ -90,8 +103,12 @@ export function aWirePaletteBook(overrides: Record<string, unknown> = {}) {
 }
 
 /** `GET /api/search/palette`'s answer; the totals default to the hit counts. */
-export function aWirePalette(overrides: Record<string, unknown> = {}) {
-  const groups = {
+export function aWirePalette(
+  overrides: Partial<PaletteResults> = {},
+): PaletteResults {
+  const groups: Required<
+    Pick<PaletteResults, "books" | "authors" | "series" | "tags" | "genres">
+  > = {
     books: [aWirePaletteBook()],
     authors: [{ id: 2, name: "Sora Inkwell", book_count: 3 }],
     series: [
@@ -106,18 +123,14 @@ export function aWirePalette(overrides: Record<string, unknown> = {}) {
     genres: [{ name: "Science Fiction", book_count: 40 }],
     ...overrides,
   };
-  const count = (key: keyof typeof groups) => {
-    const hits = groups[key];
-    return Array.isArray(hits) ? hits.length : 0;
-  };
   return {
     query: "aurora",
     duration_ms: 18,
-    book_total: count("books"),
-    author_total: count("authors"),
-    series_total: count("series"),
-    tag_total: count("tags"),
-    genre_total: count("genres"),
+    book_total: groups.books.length,
+    author_total: groups.authors.length,
+    series_total: groups.series.length,
+    tag_total: groups.tags.length,
+    genre_total: groups.genres.length,
     ...groups,
   };
 }

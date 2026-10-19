@@ -25,16 +25,14 @@ pub enum SettingsError {
     ScanIntervalTooSmall,
 }
 
-/// User-configurable paths for the ebook and audiobook libraries, plus the
-/// optional periodic-rescan cadence.
+/// The server's library folders, and how often it rescans them.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Settings {
     pub ebook_library_path: Option<String>,
     pub audiobook_library_path: Option<String>,
-    /// Hours between automatic rescans of both libraries. `None` disables periodic
-    /// scanning: the library then only reindexes on server boot or a manual "Scan
-    /// Library" click. Omitted from the wire payload when unset, so existing callers
-    /// see no change to the `Settings` JSON shape.
+    /// Hours between automatic rescans of both libraries, at least 1. When absent, the
+    /// server rescans only at startup or when `POST /api/scan-library` asks it to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scan_interval_hours: Option<u32>,
 }
@@ -67,12 +65,13 @@ impl Settings {
     }
 }
 
-/// A named metadata source a scan root's per-library precedence list can order.
-/// Only [`MetadataSource::EmbeddedTags`] (scanned OPF/tag metadata) and
-/// [`MetadataSource::OmnibusOverrides`] (the manual-override layer) have a data
-/// provider; the other variants are stored but are no-ops in the merge path (see
-/// `db::metadata_overrides::upsert::apply_overrides`).
+// The no-op variants are skipped in the merge path; see
+// `db::metadata_overrides::upsert::apply_overrides`.
+/// A source of book metadata, as a library's precedence list orders them. Only
+/// `embedded_tags`, the metadata inside the book file, and `omnibus_overrides`, the
+/// edits made in Omnibus, supply data today. The others are stored but change nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MetadataSource {
     FolderStructure,
@@ -129,14 +128,15 @@ pub fn is_plausible_email(s: &str) -> bool {
     }
 }
 
-/// Transport security for the outbound SMTP connection.
+/// How the server secures its connection to the SMTP relay.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SmtpSecurity {
-    /// Upgrade a plaintext connection with STARTTLS (typical on port 587).
+    /// Upgrade a plain connection with STARTTLS, usually on port 587.
     #[default]
     Starttls,
-    /// Implicit TLS from the first byte (typical on port 465).
+    /// Use TLS from the first byte, usually on port 465.
     Tls,
 }
 
@@ -159,12 +159,12 @@ impl SmtpSecurity {
     }
 }
 
-/// Admin request to save (or partially update) the server-wide SMTP config.
-///
-/// Deliberately does not derive `Debug`: it carries a plaintext SMTP password
-/// that a stray `tracing::debug!(?req)` would log. `password` is `None` to leave
-/// the stored password unchanged; a `Some("")` clears it.
+// Deliberately not `Debug`: it carries a plaintext SMTP password that a stray
+// `tracing::debug!(?req)` would log.
+/// The server-wide SMTP relay that Send to Kindle emails through. Every field but
+/// `password` replaces the saved value.
 #[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SmtpConfigUpdate {
     pub host: String,
     pub port: u16,
@@ -172,13 +172,16 @@ pub struct SmtpConfigUpdate {
     pub from_email: String,
     #[serde(default)]
     pub security: SmtpSecurity,
+    /// The relay password, up to 1024 bytes. Null or left out keeps the saved password.
+    /// An empty string clears it.
     #[serde(default)]
     pub password: Option<String>,
 }
 
-/// Masked status of the server-wide SMTP config for the Settings UI. **Never
-/// carries the raw password** — only a short masked preview.
+/// The server-wide SMTP relay settings, with the password masked. It never carries the
+/// password itself.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SmtpConfigStatus {
     pub configured: bool,
     pub host: Option<String>,
@@ -186,17 +189,21 @@ pub struct SmtpConfigStatus {
     pub username: Option<String>,
     pub from_email: Option<String>,
     pub security: SmtpSecurity,
-    /// Short masked preview of the password (e.g. `pa…rd`), or `None` when unset.
+    /// A masked preview of the password, such as `hunt…ter2`, or `••••` for a password
+    /// of 8 characters or fewer. Null when no password is set.
     pub password_masked: Option<String>,
-    /// Where the effective config comes from: `"settings"`, `"env"`, or `"none"`.
+    /// Where the settings in effect come from: `settings` when saved through the API,
+    /// `env` when read from the server's environment variables, or `none`.
     pub source: String,
 }
 
-/// Whether Send-to-Kindle can deliver, for any signed-in reader. Carries the
-/// sender address a reader must approve at Amazon, or `None` when no relay is
-/// set up, and never the relay's host or credentials.
+/// Whether Send to Kindle can deliver. It never carries the relay's host or
+/// credentials.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct KindleDelivery {
+    /// The address books are sent from, which readers must add to their approved
+    /// senders at Amazon. Null when no SMTP relay is set up, so nothing can be sent.
     pub sender_address: Option<String>,
 }
 
@@ -204,17 +211,17 @@ pub struct KindleDelivery {
 /// `OMNIBUS_EBOOK_CONVERT_PATH` is set — resolved on `$PATH` at spawn time.
 pub const DEFAULT_EBOOK_CONVERT_BIN: &str = "ebook-convert";
 
-/// Resolved state of Calibre's `ebook-convert` binary for the Settings UI.
-/// Calibre is optional: `available == false` means format conversion is
-/// disabled, not that the server is misconfigured.
+/// Whether the server can run Calibre's `ebook-convert` to convert book formats.
+/// Calibre is optional. Without it, format conversion is off and nothing else is wrong.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EbookConvertStatus {
-    /// `true` when [`EbookConvertStatus::path`] is present and runnable.
+    /// True when `path` exists and runs.
     pub available: bool,
-    /// The command that will be invoked — a settings override, the env var, or
-    /// the bare [`DEFAULT_EBOOK_CONVERT_BIN`] name.
+    /// The command the server runs: a saved path, the `OMNIBUS_EBOOK_CONVERT_PATH`
+    /// environment variable, or plain `ebook-convert` found on the server's `PATH`.
     pub path: String,
-    /// Where the path came from: `"settings"`, `"env"`, or `"path"`.
+    /// Where `path` came from: `settings`, `env` or `path`.
     pub source: String,
 }
 
@@ -252,12 +259,11 @@ pub fn kindle_email_oversize(size_bytes: u64) -> bool {
     size_bytes > KINDLE_EMAIL_MAX_BYTES
 }
 
-/// Terminal-or-pending status of a Send-to-Kindle job, returned by the
-/// `kindle/send/status` poll endpoint keyed on the `task_id` that the enqueue
-/// call handed back. The send runs on the background worker; the client posts
-/// once, then polls this until it flips off `Pending`. `Failed.message` is the
-/// per-case reason surfaced to the button toast.
+/// Where a Send to Kindle stands. `GET /api/kindle/send/status` returns it for the
+/// `task_id` that `POST /api/kindle/send` gave back. Poll until `status` is no longer
+/// `pending`. A `failed` status carries a `message` that says why.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum KindleSendStatus {
     Pending,
@@ -265,21 +271,24 @@ pub enum KindleSendStatus {
     Failed { message: String },
 }
 
-/// One half of the library listing (either ebooks or audiobooks).
-///
-/// `counts_by_ext` is an ordered list of `(extension, count)` pairs for the
-/// extensions the caller asked the scanner to track, in the caller's order.
+/// The files in one library folder, ebook or audiobook, counted by extension.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct LibrarySection {
+    /// The configured folder. Null when none is set.
     pub path: Option<String>,
     pub total_files: usize,
+    /// One `[extension, count]` pair per file extension Omnibus reads, in a fixed order,
+    /// zeros included. Empty when no folder is set.
     pub counts_by_ext: Vec<(String, usize)>,
+    /// Why the folder couldn't be read. Null when it was read.
     pub error: Option<String>,
 }
 
-/// Response payload for `GET /api/library`.
+/// How many ebook and audiobook files the library folders hold, from `GET /api/library`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct LibraryContents {
     pub ebooks: LibrarySection,
@@ -289,10 +298,10 @@ pub struct LibraryContents {
 #[cfg(test)]
 mod tests;
 
-/// Whether the hosted `/mcp` endpoint is enabled; the body of
-/// `GET`/`POST /api/settings/mcp` and the matching rpc pair. Mirrors
-/// `RegistrationStatus`'s shape for the other instance-level switch.
+/// Whether the server's hosted MCP endpoint at `/mcp` is on. `GET /api/settings/mcp`
+/// returns it and `POST /api/settings/mcp` takes it.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct McpStatus {
     pub enabled: bool,
 }

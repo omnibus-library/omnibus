@@ -16,7 +16,8 @@ use axum::{
 };
 use omnibus_db::{self as db, library_layout, worker::Task};
 use omnibus_shared::{
-    detect_audiobook_format, AudiobookInspection, UploadCommitResult, AUDIOBOOK_MAGIC_LEN,
+    detect_audiobook_format, AudiobookInspectForm, AudiobookInspection, AudiobookUploadForm,
+    UploadCommitResult, AUDIOBOOK_MAGIC_LEN,
 };
 use tokio::io::AsyncWriteExt as _;
 
@@ -283,14 +284,29 @@ fn audio_format(kind: AudioKind, files: &[AudioUpload]) -> String {
 
 // --- Inspect ---------------------------------------------------------------
 
-/// Parse the uploaded audiobook file(s) and return book-level metadata for the
-/// editable confirm step. Stateless: files are streamed to tempfiles, parsed,
-/// then discarded.
+/// Inspect an audiobook before uploading it
+///
+/// Reads the tags of an audiobook, one M4B, M4A or audio-only MP4 file or the MP3 parts of
+/// one book, so you can review them before sending the files to
+/// `POST /api/uploads/audiobooks`. Nothing is saved. Needs the upload permission.
+#[utoipa::path(
+    post,
+    path = "/api/uploads/audiobooks/inspect",
+    tag = "Uploads",
+    request_body(content = inline(AudiobookInspectForm), content_type = "multipart/form-data"),
+    responses(
+        (status = 200, description = "The audiobook's tags.", body = AudiobookInspection),
+        (status = 400, description = "The form has no `file` part, mixes formats, or holds more than one M4B, M4A or MP4 file."),
+        (status = 403, description = "Your account lacks the upload permission."),
+        (status = 415, description = "A file isn't an M4B, M4A, MP4 or MP3 audiobook, an MP4 holds video or no audio, or a file can't be read."),
+    ),
+)]
 pub(in crate::backend) async fn post_inspect_audiobook(
     user: AuthUser,
     State(_state): State<AppState>,
     multipart: Multipart,
 ) -> Result<Response, UploadError> {
+    // Stateless: files are streamed to tempfiles, parsed, then discarded.
     require_upload(&user)?;
     let form = parse_audiobook_multipart(multipart, max_upload_bytes()).await?;
     let kind = classify_audio_set(&form.files)?;
@@ -346,10 +362,27 @@ struct PlacedAudiobook {
     scan_key: String,
 }
 
-/// File the uploaded audiobook into the canonical audiobook library, reindex so
-/// the indexer inserts the book, then layer the review edits and any staged
-/// cover onto it. Returns 201 with the new book's uuid. As with the ebook
-/// commit, everything refusable is settled before the files are placed.
+/// Upload an audiobook
+///
+/// Saves an audiobook, one M4B, M4A or audio-only MP4 file or the MP3 parts of one book,
+/// into the audiobook library, in a folder named for `author` and `title`. An MP4 is saved
+/// as M4B. Then adds it to the library and applies the form's metadata edits and cover.
+/// Everything the server can refuse is checked before the files are saved. When the files
+/// are saved but can't be added as a book, the answer is a 500 whose body says whether they
+/// were kept. Needs the upload permission.
+#[utoipa::path(
+    post,
+    path = "/api/uploads/audiobooks",
+    tag = "Uploads",
+    request_body(content = inline(AudiobookUploadForm), content_type = "multipart/form-data"),
+    responses(
+        (status = 201, description = "The audiobook is in the library.", body = UploadCommitResult),
+        (status = 400, description = "A part is missing or invalid, such as no `file`, `title` or `author`, mixed formats, a field too long, `overrides` that isn't valid JSON or a refused cover; or no audiobook library folder is set up, or it is read-only. The body says which."),
+        (status = 403, description = "Your account lacks the upload permission."),
+        (status = 415, description = "A file isn't an M4B, M4A, MP4 or MP3 audiobook, an MP4 holds video or no audio, or a file can't be read."),
+        (status = 502, description = "The server couldn't reach the host of `cover_url`."),
+    ),
+)]
 pub(in crate::backend) async fn post_upload_audiobook(
     user: AuthUser,
     State(state): State<AppState>,

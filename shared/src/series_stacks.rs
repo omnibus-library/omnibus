@@ -12,33 +12,37 @@ use crate::ebook::EbookMetadata;
 #[cfg(test)]
 mod tests;
 
-/// The viewer's reading state for one member of a stack.
+/// Your reading state on one book of a series stack.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StackMemberState {
     pub uuid: String,
-    /// Whole-book percent (0-100) from the ebook position, if any.
+    /// Your ebook position as a whole-book percent, from 0 to 100. Null without one.
     #[serde(default)]
     pub percent: Option<u8>,
-    /// Opened in any format: a status, a percent, or a listening position.
+    /// Whether you have opened the book in any format, meaning it has a status, a percent
+    /// or a listening position.
     #[serde(default)]
     pub started: bool,
     #[serde(default)]
     pub finished: bool,
 }
 
-/// A series folded into one grid tile.
+/// A series folded into one row of a book list.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SeriesStack {
-    /// The member standing in the result list; the stack renders in its slot.
+    /// The uuid of the member that stands in the list. The stack takes that book's place.
     pub lead_uuid: String,
-    /// The series name as displayed.
+    /// The series name.
     pub name: String,
-    /// The series page to link, when one resolves.
+    /// The series' id, as in `GET /api/series/{id}`. Null when no series record matches.
     #[serde(default)]
     pub series_id: Option<i64>,
-    /// Every member in the result set, in series order.
+    /// Every book of the series that passes the request's filters, in series order.
     pub members: Vec<EbookMetadata>,
-    /// One state per member on server pages; empty on client-grouped stacks.
+    // Empty on stacks a client groups itself with `stack_books`.
+    /// Your reading state on each member.
     #[serde(default)]
     pub states: Vec<StackMemberState>,
 }

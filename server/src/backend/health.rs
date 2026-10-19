@@ -8,23 +8,32 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use omnibus_shared::Health;
 
 use super::{app_version, build_id, repo_root};
 
-/// Unauthenticated liveness + fingerprint endpoint, whitelisted in `auth::gate::require_auth`.
-/// `app` lets `scripts/dev-server-up.sh` tell an omnibus instance from another process on
-/// the port, `repo_root` this workspace's server from a sibling worktree's. `version`
-/// (`OMNIBUS_VERSION`, `"dev"` when unset) feeds the mobile "You" screen; `time` (unix
-/// seconds) lets a client measure its clock offset to stamp progress writes.
+/// Check the server is up
+///
+/// Answers without a session, so a client can probe a server address before signing in.
+/// `time` lets a client measure its clock's offset before it stamps progress writes.
+#[utoipa::path(
+    get,
+    path = "/api/_health",
+    tag = "System",
+    security(()),
+    responses((status = 200, description = "The server is up.", body = Health)),
+)]
 pub(super) async fn get_health() -> Response {
-    Json(serde_json::json!({
-        "app": "omnibus",
-        "status": "ok",
-        "build_id": build_id().to_string(),
-        "repo_root": repo_root(),
-        "version": app_version(),
-        "time": now_unix_secs(),
-    }))
+    // `app` lets `scripts/dev-server-up.sh` tell an omnibus instance from another process
+    // on the port, and `repo_root` this workspace's server from a sibling worktree's.
+    Json(Health {
+        app: "omnibus".to_string(),
+        status: "ok".to_string(),
+        build_id: build_id().to_string(),
+        repo_root: repo_root().to_string(),
+        version: app_version().to_string(),
+        time: now_unix_secs(),
+    })
     .into_response()
 }
 

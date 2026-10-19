@@ -465,7 +465,7 @@ struct LibraryView: View {
                     )
                 }
 
-                // Unconditional: the rail carries its own New-shelf tile, and
+                // Unconditional: the rail's heading carries New shelf, and
                 // hiding the section when it is empty takes that away from the
                 // one reader who has never made a shelf.
                 ShelvesRail(
@@ -481,11 +481,7 @@ struct LibraryView: View {
 
                 VStack(alignment: .leading, spacing: Spacing.md) {
                     sectionHeading
-                    LibraryFilterBar(
-                        store: model.filterStore, viewerId: app.user?.id,
-                        reservesFormatClause: !model.category.serverFormats.isEmpty
-                    )
-                    .screenPadding()
+                    LibraryFilterBar(store: model.filterStore, viewerId: app.user?.id)
                     if let error = model.stackSeriesError {
                         Text(error)
                             .font(.ui(12))

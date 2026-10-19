@@ -3,7 +3,7 @@ use axum::{
     body::{to_bytes, Body},
     http::{header::AUTHORIZATION, Request, StatusCode},
 };
-use omnibus_shared::BookProgress;
+use omnibus_shared::{BookProgress, ProgressFormat};
 use tower::ServiceExt;
 
 use super::*;

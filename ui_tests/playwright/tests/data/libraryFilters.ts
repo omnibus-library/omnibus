@@ -16,7 +16,7 @@ export type FilterMode = "include" | "exclude";
 /** One value to tick in the picker; `search` narrows its list until it shows. */
 export type FilterPick = { label: string; search?: string };
 
-/** One clause of the library filter, as the Add filter dialog builds it. */
+/** One clause of the library filter, as its field's facet builds it. */
 export type FilterClause = {
   field: FilterField;
   mode: FilterMode;
@@ -51,15 +51,20 @@ export const clauses = {
     mode: "include",
     picks: [{ label: "PDF" }],
   },
+  includeEpub: {
+    field: "format",
+    mode: "include",
+    picks: [{ label: "EPUB" }],
+  },
+  includeCompendium: {
+    field: "series",
+    mode: "include",
+    picks: [{ label: "Compiler Compendium", search: "Compendium" }],
+  },
   includeAho: {
     field: "author",
     mode: "include",
     picks: [{ label: "Alfred Aho", search: "Aho" }],
-  },
-  includeUllman: {
-    field: "author",
-    mode: "include",
-    picks: [{ label: "Jeffrey Ullman", search: "Ullman" }],
   },
   includeLam: {
     field: "author",

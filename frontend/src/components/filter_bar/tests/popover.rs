@@ -1,15 +1,22 @@
 use super::*;
 
 #[component]
-fn PickerHarness() -> Element {
+fn PickerHarness(initial: FilterClause) -> Element {
     rsx! {
         picker::FilterPicker {
             shelves: ShelfList::Pending,
             viewer_id: None,
+            initial,
             on_apply: move |_| {},
             on_close: move |_| {},
         }
     }
+}
+
+fn render_picker(initial: FilterClause) -> String {
+    render(rsx! {
+        PickerHarness { initial }
+    })
 }
 
 #[component]
@@ -19,6 +26,7 @@ fn BodyHarness(
     query: String,
     picked: Vec<String>,
     state: picker::LoadState,
+    #[props(default)] can_clear: bool,
 ) -> Element {
     rsx! {
         picker::PickerBody {
@@ -27,6 +35,7 @@ fn BodyHarness(
             query,
             picked,
             state,
+            can_clear,
             on_mode: move |_| {},
             on_query: move |_| {},
             on_toggle: move |_| {},
@@ -69,26 +78,20 @@ fn ready_capped(labels: &[&str], cap: usize) -> picker::LoadState {
 }
 
 #[test]
-fn filter_picker_offers_the_six_fields_in_order_before_any_is_chosen() {
-    let html = render(rsx! { PickerHarness {} });
+fn filter_picker_opens_on_its_facets_field_and_mode() {
+    let html = render_picker(clause(FilterField::Format, FilterMode::Exclude, &["epub"]));
 
-    assert!(html.contains("data-testid=\"filter-picker\""), "{html}");
-    let at: Vec<usize> = ["shelf", "tag", "genre", "author", "series", "format"]
-        .iter()
-        .map(|token| {
-            html.find(&format!("data-testid=\"filter-field-{token}\""))
-                .unwrap_or_else(|| panic!("no filter-field-{token} in {html}"))
-        })
-        .collect();
-    assert!(at.windows(2).all(|pair| pair[0] < pair[1]), "{html}");
-    assert!(!html.contains("filter-mode-include"));
-    assert!(!html.contains("filter-picker-search"));
-    assert!(!html.contains("filter-picker-apply"));
+    assert!(html.contains("aria-label=\"Filter by format\""), "{html}");
+    assert!(
+        button_tag(&html, "filter-mode-exclude").contains("aria-pressed=\"true\""),
+        "{html}"
+    );
+    assert!(!html.contains("filter-field-"), "{html}");
 }
 
 #[test]
 fn filter_picker_declares_itself_a_modal_dialog() {
-    let html = render(rsx! { PickerHarness {} });
+    let html = render_picker(clause(FilterField::Tag, FilterMode::Include, &[]));
 
     assert!(html.contains("role=\"dialog\""), "{html}");
     assert!(html.contains("aria-modal=\"true\""), "{html}");
@@ -222,6 +225,25 @@ fn picker_body_caps_the_rows_it_draws_and_says_how_many_matched() {
     );
     assert!(html.contains("data-testid=\"filter-picker-status\""));
     assert!(html.contains(&format!("of {}", picker::MAX_SHOWN_OPTIONS + 5)));
+}
+
+#[test]
+fn picker_body_keeps_apply_live_with_nothing_picked_when_it_can_clear() {
+    let html = render(rsx! {
+        BodyHarness {
+            field: FilterField::Tag,
+            mode: FilterMode::Include,
+            query: String::new(),
+            picked: Vec::new(),
+            state: ready(&["a"]),
+            can_clear: true,
+        }
+    });
+
+    assert!(
+        !button_tag(&html, "filter-picker-apply").contains("disabled"),
+        "{html}"
+    );
 }
 
 #[test]
@@ -483,6 +505,15 @@ fn picker_body_names_the_source_cap_when_a_search_finds_nothing() {
 }
 
 #[test]
+fn toggle_pick_unticks_a_saved_pick_that_differs_only_by_ascii_case() {
+    let mut picked = vec!["Fantasy".to_string()];
+
+    picker::toggle_pick(&mut picked, "fantasy");
+
+    assert!(picked.is_empty(), "{picked:?}");
+}
+
+#[test]
 fn toggle_pick_adds_a_value_then_removes_it_on_the_next_toggle() {
     let mut picked = Vec::new();
 
@@ -534,4 +565,47 @@ fn picker_body_leaves_out_cancel_and_apply_when_its_footer_is_off() {
         "{html}"
     );
     assert!(html.contains("aria-label=\"a\""), "{html}");
+}
+
+fn offered_list(values: &[&str]) -> Rc<OptionList> {
+    list(values.iter().map(|v| option(v, v, Some(1))).collect())
+}
+
+fn owned(values: &[&str]) -> Vec<String> {
+    values.iter().map(|v| (*v).to_string()).collect()
+}
+
+#[test]
+fn stranded_label_calls_a_shelf_the_list_lacks_unavailable() {
+    assert_eq!(
+        picker::stranded_label(FilterField::Shelf, "9"),
+        "unavailable shelf"
+    );
+}
+
+#[test]
+fn stranded_label_uppercases_a_format_and_leaves_other_names_as_they_are() {
+    assert_eq!(picker::stranded_label(FilterField::Format, "pdf"), "PDF");
+    assert_eq!(picker::stranded_label(FilterField::Tag, "Sci-Fi"), "Sci-Fi");
+}
+
+#[test]
+fn list_with_picks_keeps_the_same_list_when_every_pick_is_offered() {
+    let list = offered_list(&["a", "b"]);
+
+    let shown = list_with_picks(FilterField::Tag, list.clone(), &owned(&["a"]));
+
+    assert!(Rc::ptr_eq(&list, &shown));
+}
+
+#[test]
+fn list_with_picks_adds_a_pick_the_source_stopped_offering_first() {
+    let list = offered_list(&["a"]);
+
+    let shown = list_with_picks(FilterField::Shelf, list, &owned(&["9"]));
+
+    let found = shown.matching("", 10);
+    assert_eq!(found.shown[0].value, "9");
+    assert_eq!(found.shown[0].label, "unavailable shelf");
+    assert_eq!(found.total, 2);
 }

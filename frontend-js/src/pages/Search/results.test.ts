@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePalette } from "../../api";
+import { toPalette } from "../../api";
 import { aWirePalette } from "../../testing/wire";
 import { cutNote, highlightParts, sectionOrder, summaryLine } from "./results";
 
@@ -23,7 +23,7 @@ describe("highlightParts", () => {
 
 describe("summaryLine", () => {
   it("lists present categories with engine and time", () => {
-    const results = parsePalette(
+    const results = toPalette(
       aWirePalette({
         book_total: 2,
         author_total: 2,
@@ -40,7 +40,7 @@ describe("summaryLine", () => {
   });
 
   it("singularises a lone category", () => {
-    const results = parsePalette(
+    const results = toPalette(
       aWirePalette({
         books: [],
         authors: [],
@@ -56,7 +56,7 @@ describe("summaryLine", () => {
 
 describe("sectionOrder", () => {
   it("puts tags first when the query matches a tag name", () => {
-    const results = parsePalette(aWirePalette());
+    const results = toPalette(aWirePalette());
 
     expect(sectionOrder(results, "OPERA")).toEqual([
       "tags",
@@ -70,7 +70,7 @@ describe("sectionOrder", () => {
 
 describe("cutNote", () => {
   it("names how many an opened group still holds back", () => {
-    const results = parsePalette(aWirePalette({ tag_total: 812 }));
+    const results = toPalette(aWirePalette({ tag_total: 812 }));
 
     expect(cutNote("tags", results)).toBe(
       "Showing the first 1 of 812 — narrow your search to see the rest.",
@@ -78,6 +78,6 @@ describe("cutNote", () => {
   });
 
   it("says nothing when every hit is on the page", () => {
-    expect(cutNote("tags", parsePalette(aWirePalette()))).toBeNull();
+    expect(cutNote("tags", toPalette(aWirePalette()))).toBeNull();
   });
 });

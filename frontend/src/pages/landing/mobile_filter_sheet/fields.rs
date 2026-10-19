@@ -3,15 +3,12 @@
 //! tick by tick. Values load the first time the section opens, from the same
 //! reads the web bar uses.
 
-use std::rc::Rc;
-
 use dioxus::prelude::*;
 use omnibus_shared::{FilterField, FilterMode, ViewFilters, ViewPrefs};
 
-use crate::components::filter_bar::values::OptionList;
 use crate::components::filter_bar::{
-    fetch_options, field_label, field_token, needs_fetch, state_for, LoadState, Loaded, PickerBody,
-    ShelfList, FILTER_FIELDS,
+    fetch_options, field_label, field_token, list_with_picks, needs_fetch, state_for, LoadState,
+    Loaded, PickerBody, ShelfList, FILTER_FIELDS,
 };
 
 use super::{picked_values, toggle_value};
@@ -63,24 +60,6 @@ fn ticked(
     let mut next = prefs.peek().clone();
     toggle_value(&mut next.filters, field, mode, value);
     next
-}
-
-/// How a pick the source no longer offers is named while it waits to be unticked.
-fn stranded_label(field: FilterField, value: &str) -> String {
-    match field {
-        FilterField::Shelf => "unavailable shelf".to_string(),
-        FilterField::Format => value.to_ascii_uppercase(),
-        _ => value.to_string(),
-    }
-}
-
-/// `list` as the section shows it: with any of `picked` that it no longer
-/// offers added in, so the reader can still untick them.
-fn list_with_picks(field: FilterField, list: Rc<OptionList>, picked: &[String]) -> Rc<OptionList> {
-    match list.with_stranded(picked, |value| stranded_label(field, value)) {
-        Some(extended) => Rc::new(extended),
-        None => list,
-    }
 }
 
 /// `field`'s values, fetched the first time `open` turns true and again on each

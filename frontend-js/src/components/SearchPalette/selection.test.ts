@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePalette } from "../../api";
+import { toPalette } from "../../api";
 import { matchingSettings } from "../../settingsIndex";
 import { aWirePalette } from "../../testing/wire";
 import {
@@ -10,7 +10,7 @@ import {
   selectedIndex,
 } from "./selection";
 
-const results = parsePalette(aWirePalette());
+const results = toPalette(aWirePalette());
 
 const rows = (...args: Parameters<typeof paletteGroups>) =>
   paletteGroups(...args).flatMap((group) => group.items);
@@ -30,7 +30,7 @@ describe("paletteGroups", () => {
   });
 
   it("drops a group with no hits", () => {
-    const groups = paletteGroups(parsePalette(aWirePalette({ books: [] })), []);
+    const groups = paletteGroups(toPalette(aWirePalette({ books: [] })), []);
 
     expect(groups.map((group) => group.label)).not.toContain("Books");
   });

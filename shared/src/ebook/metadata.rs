@@ -6,35 +6,36 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A contributor (or creator) with the optional OPF refinements: the MARC role
-/// code (`aut`, `ill`, `edt`, `bkp`, `trl`, …) and the sort-key name.
-///
-/// `id` is the `authors.id` primary key, set when loaded from a m2m join and
-/// `None` for contributors created by the EPUB parser before indexing.
+/// A person credited on a book, such as an author, an illustrator or a translator.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Contributor {
     pub name: String,
+    /// The person's role as a MARC relator code, such as `aut` for an author or `trl`
+    /// for a translator. Null when the book doesn't say.
     pub role: Option<String>,
+    /// The name to sort by, such as `Herbert, Frank`. Null when the book doesn't say.
     pub file_as: Option<String>,
+    /// The author's id, as in `GET /api/authors/{id}`. Absent when no author in the
+    /// library has this name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<i64>,
 }
 
-/// A typed identifier from the OPF, e.g. `{ scheme: "ISBN", value: "…" }`.
+/// An identifier the book's file declares, such as an ISBN:
+/// `{"scheme": "ISBN", "value": "9780441013593"}`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Identifier {
     pub value: String,
     pub scheme: Option<String>,
 }
 
-/// Parsed metadata for a single ebook file.
-///
-/// `cover_url` is a relative URL to `/api/covers/:id` when the book has a cover;
-/// clients combine it with their configured server base. OPF
-/// `<dc:contributor>` entries are merged into `creators` (creators first).
+/// A book in the library, with any metadata edits applied.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct EbookMetadata {
     pub id: i64,
@@ -42,122 +43,112 @@ pub struct EbookMetadata {
 
     // Dublin Core core.
     pub title: Option<String>,
-    /// Sanitized HTML. `None` on browse rows — `LibraryPage.books`, their stack
-    /// members, and keyset `/api/ebooks` pages sent `omit_description=true` —
-    /// which never carry it: absent there is not empty, so read the book's
-    /// detail for it.
+    // Also null on the web landing page's rows and their stack members.
+    /// The book's description as sanitized HTML. Null in a `GET /api/ebooks` page
+    /// requested with `omit_description=true`, and in its stacks. There, null does not
+    /// mean empty. Read the book from `GET /api/ebooks/{uuid}` for it.
     pub description: Option<String>,
     pub publisher: Option<String>,
     pub published: Option<String>,
     pub modified: Option<String>,
     pub language: Option<String>,
 
+    /// The people credited on the book, with the file's creators first and its other
+    /// contributors after them.
     pub creators: Vec<Contributor>,
     pub subjects: Vec<String>,
     pub identifiers: Vec<Identifier>,
 
-    /// User-assigned genres. Unlike `subjects` (which the EPUB OPF supplies
-    /// via `<dc:subject>`), no file format Omnibus reads carries a genre, so
-    /// this list is sourced entirely from `metadata_overrides` — there is no
-    /// scanned baseline to revert to and no canonical link table behind it.
+    /// Genres users have given the book. Book files carry no genre, so this list holds
+    /// only what users set.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub genres: Vec<String>,
 
-    /// Primary ISBN-13: derived from whichever `identifiers` entry (in
-    /// DB-projection order, not original OPF scan order) has a scheme
-    /// mentioning "isbn" and a value that normalizes to 13 ASCII digits, or
-    /// a user override from `metadata_overrides` layered on top at read
-    /// time. `None` when neither source has one.
+    /// The book's ISBN-13. It is an edit's value, or else the first of `identifiers`
+    /// whose scheme names ISBN and whose value reads as 13 digits. Absent when there is
+    /// none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isbn13: Option<String>,
 
-    /// Secondary ISBN-10, sourced entirely from `metadata_overrides` — no
-    /// file format Omnibus reads carries a distinct ISBN-10 alongside its
-    /// ISBN-13, so unlike `isbn13` there is no scanned baseline underneath
-    /// this one.
+    /// The book's ISBN-10. Only an edit sets it, since book files don't carry a separate
+    /// ISBN-10.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isbn10: Option<String>,
 
     // Series / collection (Calibre + EPUB3 belongs-to-collection).
     pub series: Option<String>,
     pub series_index: Option<String>,
-    /// Stable `series.id` primary key from the normalized DB. Set when the
-    /// book was loaded from a join; `None` for books not in any series.
+    /// The series' id, as in `GET /api/series/{id}`. Absent when the book is in no
+    /// series.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub series_id: Option<i64>,
 
-    /// OPF unique identifier (`<dc:identifier id="…">`). Used by the
-    /// frontend to construct `/books/:uuid` and `/api/covers/:uuid` URLs.
+    /// The book's uuid, which the `{uuid}` routes take, such as
+    /// `GET /api/ebooks/{uuid}`.
     pub unique_identifier: Option<String>,
 
+    /// The cover's path on this server, `/api/covers/{uuid}`, to join with the server's
+    /// base URL. Null when the book has no cover.
     pub cover_url: Option<String>,
 
-    /// Cover-derived accent color. Opaque CSS color value extracted
-    /// during indexing. `None` means "no cover or extraction failed" —
-    /// the frontend falls back to the theme default accent.
+    /// A color picked from the cover, as a CSS color in the form `oklch(L C H)`. Absent
+    /// when the book has no cover or no color could be picked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accent: Option<String>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub formats: Vec<String>,
 
-    /// Whether the book has ≥1 physical copy checked in (drives the physical badge).
+    /// Whether at least one physical copy of the book is checked in. Absent when false.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub has_physical: bool,
 
-    /// Row insertion timestamp from `books.timestamp` — SQLite
-    /// `datetime('now')` format (`YYYY-MM-DD HH:MM:SS`, UTC, space separator).
-    /// Drives the "Newest Added" sort — distinct from `modified` (DC
-    /// last-write).
+    /// When the book was added to the library, as an ISO 8601 UTC timestamp such as
+    /// `2024-05-01T12:00:00Z`. The `newest_added` sort orders by it.
     #[serde(default)]
     pub added_at: Option<String>,
 
-    /// Most recent moment *anyone* interacted with the book — rated it,
-    /// published a journal entry, changed its read status, added it to the
-    /// library, edited its metadata or cover, or checked in a physical copy.
-    /// Fixed-width ISO, so it sorts lexicographically. Drives the "Recently
-    /// Interacted" sort; `None` only for a book carrying no signal at all.
+    /// The last time anyone rated the book, published a journal entry on it, changed its
+    /// read status, added it, edited its metadata or cover, or checked in a physical
+    /// copy. It is an ISO 8601 UTC timestamp such as `2024-05-01T12:00:00Z`, so it sorts
+    /// as text. The `recently_interacted` sort orders by it. Absent only for a book with
+    /// none of these events.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_interacted_at: Option<String>,
 
     pub error: Option<String>,
 
-    /// True when user-supplied metadata overrides are active for this book.
-    /// The detail page uses this to show a "has overrides" indicator and
-    /// offer a revert action.
+    /// Whether the book has metadata edits. `DELETE /api/ebooks/{uuid}/overrides`
+    /// removes them.
     #[serde(default)]
     pub has_override: bool,
 
-    /// True when `cover_url` is a user-uploaded override cover, not the scanned original.
+    /// Whether `cover_url` serves an uploaded cover rather than the one from the book's
+    /// file.
     #[serde(default)]
     pub has_cover_override: bool,
 
-    /// Every `book_files` row on this book, one per file on disk, including ordinary
-    /// single-file books. Each row carries that file's content validator
-    /// (`BookFileInfo::etag`) for offline staleness checks; count rows per format
-    /// rather than reading emptiness as a proxy. Empty only on the list projection,
-    /// which does not join this table.
+    /// Every file of the book on disk, including the only file of a single-file book.
+    /// Count files per format from this list. Each file's `etag` tells whether a
+    /// downloaded copy is stale. Absent in list responses such as `GET /api/ebooks`, and
+    /// for a book with no file.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub book_files: Vec<BookFileInfo>,
 
-    /// On-disk size of the file the hero "Send to Kindle" would deliver (the
-    /// lowest-ordinal EPUB, else the PDF). `None` when the book has neither.
-    /// Drives the oversized-file gate on the email button — see
-    /// `kindle_email_oversize`.
+    /// The size in bytes of the file Send to Kindle emails, which is the book's first
+    /// EPUB or else its PDF. Omnibus won't email a file over 50,000,000 bytes. Absent when the
+    /// book has neither, and in list responses such as `GET /api/ebooks`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub epub_size_bytes: Option<i64>,
 
-    /// Page count of the CBZ archive `/api/ebooks/{uuid}/pages/{n}` would
-    /// serve, so the comic pager can render a slider and map progress onto
-    /// page indices. `None` for an EPUB-only book, a malformed archive, or
-    /// a row not yet backfilled since being indexed.
+    /// The number of pages in the book's CBZ comic, as
+    /// `GET /api/ebooks/{uuid}/pages/{page}` serves them. Absent for a book with no CBZ,
+    /// an archive that can't be read, or a file Omnibus hasn't counted yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page_count: Option<i64>,
 
-    /// User-supplied print edition page count, sourced entirely from
-    /// `metadata_overrides`. Distinct from `page_count`, the CBZ archive's *image*
-    /// count that drives a comic's page slider: this is bibliographic metadata about
-    /// a print edition and can coexist with it.
+    /// The page count of a print edition, as a user entered it. It is not `page_count`,
+    /// which counts the images in a CBZ comic, and both can be set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub print_pages: Option<i64>,
 }
@@ -169,9 +160,9 @@ impl EbookMetadata {
     }
 }
 
-/// One `book_files` row — a single physical file on disk. Exposed to the
-/// frontend so the format switcher can offer a file picker when N > 1.
+/// One of a book's files on disk. A book can have several, such as two EPUB editions.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookFileInfo {
     pub id: i64,
@@ -180,27 +171,34 @@ pub struct BookFileInfo {
     pub ordinal: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    /// On-disk size of this file. Lets the per-file Send-to-Kindle rows gate
-    /// oversized EPUBs the same way the hero export menu does.
+    /// The file's size in bytes.
     #[serde(default)]
     pub size_bytes: i64,
-    /// Library-relative path (`book_files.scan_key`, e.g.
-    /// `clarke/piranesi.epub`) — what the delete dialog shows so an admin can
-    /// see exactly which file on disk a row stands for. `None` for rows
-    /// predating the `scan_key` backfill.
+    /// The file's path inside the library folder, such as `clarke/piranesi.epub`. Absent
+    /// for a few files indexed by old versions of Omnibus.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
-    /// Content validator for this file (see [`crate::file_etag`]). An offline client
-    /// snapshots it at download time and compares it with a later metadata refresh to
-    /// learn its copy is stale. `None` for rows the scanner has not stat'd yet, so the
-    /// one-time backfill never reads as a content change.
+    // Derived by `crate::file_etag`.
+    /// The file's content validator. Save it with a download and compare it with a later
+    /// value. A different value means the downloaded copy is stale. Absent until the
+    /// server has read the file's size and modification time. A missing value on either
+    /// side means you can't tell, not that the copy is current.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub etag: Option<String>,
-    /// Playing time of this file, summed over its parts. Present for audio rows only,
-    /// so never guess an audiobook's runtime from elsewhere.
-    ///
-    /// Whole seconds, unlike the fractional `ProgressRecord::total_duration_seconds`:
-    /// a catalog row is read for "how long is it", not for position arithmetic.
+    // Whole seconds, unlike the fractional `ProgressRecord::total_duration_seconds`:
+    // a catalog row is read for "how long is it", not for position arithmetic.
+    /// The file's playing time in whole seconds, summed over its parts. Present for audio
+    /// files only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_seconds: Option<i64>,
+}
+
+/// Query parameters of `GET /api/ebooks/{uuid}/file` and `GET /api/ebooks/{uuid}/download`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct EbookFileQuery {
+    /// One of the book's EPUB or PDF files, by its `id` in the book's `book_files`. Leave it
+    /// out for the file the route picks by default.
+    pub file_id: Option<i64>,
 }

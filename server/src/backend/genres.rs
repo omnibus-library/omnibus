@@ -10,10 +10,21 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db};
+use omnibus_shared::GenreWeight;
 
 use super::{internal, AppState};
 use crate::auth::AuthUser;
 
+/// List genres
+///
+/// Every genre assigned to a book, with the number of books carrying it, most-used
+/// first. Stops at the 500 most-used genres.
+#[utoipa::path(
+    get,
+    path = "/api/genres",
+    tag = "Discovery",
+    responses((status = 200, description = "The genres.", body = Vec<GenreWeight>)),
+)]
 pub(super) async fn get_genres(_user: AuthUser, State(state): State<AppState>) -> Response {
     match db::get_genre_cloud(&state.pool).await {
         Ok(genres) => Json(genres).into_response(),

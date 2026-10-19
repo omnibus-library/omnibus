@@ -5,21 +5,21 @@ use serde::{Deserialize, Serialize};
 /// Base URL for outbound Hardcover book links (new tab).
 const HARDCOVER_BOOK_BASE: &str = "https://hardcover.app/books/";
 
-/// One suggested read-alike from Hardcover. External to the library — clicking
-/// opens `hardcover_url` in a new tab.
+/// A book Hardcover suggests for readers of a library book. It is not in the library;
+/// `hardcover_url` links to it on Hardcover.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BookSuggestion {
     pub hardcover_id: i64,
-    /// Outbound Hardcover book page.
+    /// The book's page on Hardcover.
     pub hardcover_url: String,
     pub title: String,
     pub author: String,
-    /// Co-listing count — how many curated Hardcover lists co-shelve this book
-    /// with the source book. The relevance signal shown as "on N lists".
+    /// How many curated Hardcover lists hold both this book and the one it was
+    /// suggested for. A higher count means a stronger match.
     pub list_count: i64,
-    /// Relative URL to the cached cover (`/api/suggestions/:uuid/:rank/cover`),
-    /// or `None` when no cover was cached (the UI falls back to a typographic
-    /// plate). Clients combine it with their configured server base.
+    /// The path of the cached cover, `/api/suggestions/{uuid}/{rank}/cover`, relative to
+    /// the server. Null when no cover is cached.
     pub cover_url: Option<String>,
 }
 
@@ -61,28 +61,42 @@ impl BookSuggestion {
     }
 }
 
-/// Response for a book's suggestions strip.
+/// A book's Hardcover suggestions, or why there are none yet. `status` says which case
+/// it is.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum SuggestionsResponse {
-    /// No Hardcover key is configured — the UI shows a connect message.
+    /// The server has no Hardcover API key, so it can't fetch suggestions.
     NotConfigured,
-    /// A resolution is enqueued and nothing is cached yet — the UI polls.
+    /// The server is fetching suggestions and has none cached yet. Ask again later.
     Pending,
-    /// Cached results. `items` may be empty (sticky negative — Hardcover
-    /// matched nothing usable).
+    /// The cached suggestions. An empty `items` means Hardcover had nothing usable, and
+    /// that answer is cached too.
     Ready { items: Vec<BookSuggestion> },
 }
 
-/// Masked status of the server-wide Hardcover key for the Settings UI. **Never
-/// carries the raw key** — only a short masked preview.
+/// Whether the server has a Hardcover API key, with the key masked. It never carries the
+/// key itself.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct HardcoverKeyStatus {
     pub configured: bool,
-    /// Short masked preview (e.g. `hc_l…3f9a`), or `None` when unset.
+    /// A masked preview of the key, such as `hc_l…3f9a`. Null when no key is set.
     pub masked: Option<String>,
-    /// Where the effective key comes from: `"settings"`, `"env"`, or `"none"`.
+    /// Where the key in effect comes from: `settings` when saved through the API, `env`
+    /// when read from the server's environment variables, or `none`.
     pub source: String,
+}
+
+/// A Hardcover API key to save, or none to clear the saved one.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SetHardcoverKey {
+    /// The Hardcover API token, up to 2048 bytes. Null, left out or blank clears the
+    /// saved key.
+    #[serde(default)]
+    pub key: Option<String>,
 }
 
 #[cfg(test)]

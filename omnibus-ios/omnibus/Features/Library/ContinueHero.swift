@@ -96,10 +96,8 @@ private struct HeroCard: View {
     private var book: Book { point.book }
     private var tone: OKLCH { CoverIdentity(book).tone }
 
-    /// The one place the card decides which medium it's about: the eyebrow, the
-    /// bar, the position line, the button, and where the tap goes all read this.
-    /// Shared with the widget snapshot and the widget's deep link — see
-    /// `Book.resumeFormat(for:)` for why the record alone doesn't settle it.
+    /// The one place the card decides which medium it's about; shared with the
+    /// widget, and `Book.resumeFormat(for:)` says why the record can't settle it.
     private var format: ProgressFormat {
         book.resumeFormat(for: point.record.format)
     }
@@ -144,12 +142,6 @@ private struct HeroCard: View {
             .accessibilityHint("Opens book details")
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(isAudio ? "Continue listening" : "Continue reading")
-                    .font(.ui(10.5, weight: .semibold))
-                    .tracking(0.6)
-                    .textCase(.uppercase)
-                    .foregroundStyle(rule)
-
                 Button {
                     Haptics.tap()
                     onOpenDetail(book)
@@ -167,12 +159,15 @@ private struct HeroCard: View {
                 // one truncated line the moment anything below asked for space.
                 .layoutPriority(1)
 
-                Text(book.authorDisplay)
-                    .font(.ui(12.5))
-                    .foregroundStyle(palette.ink2Color)
-                    .lineLimit(1)
+                // One line: the author gives way before where you are does.
+                HStack(spacing: 0) {
+                    Text(book.authorDisplay).lineLimit(1)
+                    Text(" · \(positionLabel)").fixedSize()
+                }
+                .font(.ui(12.5))
+                .foregroundStyle(palette.ink2Color)
 
-                // The stack's own 5pt already separates the author from the
+                // The stack's own 5pt already separates the byline from the
                 // bar; this only pushes the bottom block down when there's
                 // room, so it must be free to yield all of it when there isn't.
                 Spacer(minLength: 0)
@@ -188,37 +183,27 @@ private struct HeroCard: View {
                     ProgressBar(fraction: fraction, tint: rule)
                         .padding(.bottom, 5)
                 } else {
-                    // Sentence case, quietly: the eyebrow above is already
-                    // set in caps, and two shouting lines in one card read
-                    // as a warning rather than as a detail.
                     Text(lastOpenedLabel)
                         .font(.ui(11.5))
                         .foregroundStyle(palette.ink3Color)
                 }
 
-                HStack(spacing: 8) {
-                    Text(positionLabel)
-                        .font(.ui(11.5, weight: .medium))
-                        .foregroundStyle(palette.ink2Color)
-
-                    Spacer(minLength: 0)
-
-                    Button {
-                        resume()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: isAudio ? "play.fill" : "book.fill")
-                                .font(.system(size: 10, weight: .bold))
-                            Text(isAudio ? "Play" : "Read")
-                                .font(.ui(12, weight: .semibold))
-                        }
-                        .foregroundStyle(palette.accentInk.color)
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 7)
-                        .background(Capsule().fill(palette.accentColor))
+                Button {
+                    resume()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: isAudio ? "play.fill" : "book.fill")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(isAudio ? "Play" : "Read")
+                            .font(.ui(12, weight: .semibold))
                     }
-                    .buttonStyle(PressableStyle())
+                    .foregroundStyle(palette.accentInk.color)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 7)
+                    .background(Capsule().fill(palette.accentColor))
                 }
+                .buttonStyle(PressableStyle())
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
         .padding(16)
@@ -317,11 +302,9 @@ private struct HeroCard: View {
             }
             return "In progress"
         }
-        // Not a read status, though it sat exactly where one reads like one:
-        // this slot is the audio branch's counterpart and answers "where am
-        // I", while the eyebrow above already says the book is being read. A
-        // bare "Reading" here beside a progress bar made the card look like it
-        // was contradicting the detail screen's Status row (#2289).
+        // Not a read status: this answers "where am I". A bare "Reading" here
+        // beside a progress bar made the card look like it was contradicting
+        // the detail screen's Status row (#2289).
         if let fraction {
             return "\(Int((fraction * 100).rounded()))% read"
         }

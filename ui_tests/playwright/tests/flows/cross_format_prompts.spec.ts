@@ -127,7 +127,7 @@ test.describe("cross-format resume prompts", () => {
     });
 
     // The stack has no per-card eyebrow, so the synced state is reported once,
-    // in the kicker above the front book.
+    // on the front book's byline.
     await test.step("check the front card is synced and offers the counterpart", async () => {
       await expect(continueStack.root).toContainText("synced");
       await expect(continueStack.crossFormatChip(uuid)).toBeVisible();

@@ -85,15 +85,16 @@ pub(super) struct StackEntry {
     key: String,
     book: omnibus_shared::EbookMetadata,
     title: String,
-    author: String,
     is_audio: bool,
     /// Whether the user has confirmed a cross-format link for this book —
-    /// the kicker says so, since the stack has no per-card eyebrow to carry it.
+    /// the byline says so, since the stack has no per-card eyebrow to carry it.
     linked: bool,
     /// "Continue listening" / "Continue reading" / "Continue · synced".
     eyebrow: &'static str,
     /// Format-prefixed position line: "Audiobook · Ch. 14 · 68% · 2h 03m left".
     where_line: String,
+    /// "Brandon Sanderson · 18%": the hero's single line under the title.
+    byline: String,
     /// Lowercase verb + percent for the veil: "play · 68%".
     veil_label: String,
     pct: Option<i64>,
@@ -126,6 +127,18 @@ impl StackEntry {
         let (meta, pct) = resume_meta(point);
         let format_word = if is_audio { "Audiobook" } else { "Ebook" };
         let where_line = format!("{format_word} \u{00b7} {meta}");
+        // The hero's one line under the title: who wrote it and how far in.
+        // Audio keeps its chapter and time left; an ebook keeps only its percent.
+        let progress = if is_audio {
+            Some(meta.clone())
+        } else {
+            pct.map(|p| format!("{p}%"))
+        };
+        let byline = [Some(author).filter(|a| !a.is_empty()), progress]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" \u{00b7} ");
         let verb = if is_audio { "play" } else { "resume" };
         let veil_label = match pct {
             Some(p) => format!("{verb} \u{00b7} {p}%"),
@@ -145,11 +158,11 @@ impl StackEntry {
             uuid,
             key,
             title,
-            author,
             is_audio,
             linked: point.linked,
             eyebrow,
             where_line,
+            byline,
             veil_label,
             pct,
             accent_style,
@@ -197,36 +210,11 @@ pub(super) fn lead_accent_style(entries: &[StackEntry], lead: usize) -> String {
         .unwrap_or_default()
 }
 
-/// How many distinct books the fan holds, not its card count: a book open in
-/// both formats contributes a card each.
-///
-/// Counts the **resolved** book, not `uuid` ([`resume_key`]'s filing uuid):
-/// rows that resolve through `merged_uuids` to one surviving book must fold.
-pub(super) fn open_book_count(entries: &[StackEntry]) -> usize {
-    entries
-        .iter()
-        .map(|e| e.book.id)
-        .collect::<std::collections::BTreeSet<_>>()
-        .len()
-}
-
-/// The kicker above the front book, over [`open_book_count`] books. One book
-/// names what the reader is looking at instead of counting — it may still hold
-/// two cards, so this says nothing about what is fanned behind the lead.
-pub(super) fn stack_kicker(count: usize) -> String {
-    if count <= 1 {
-        "your in-progress book".to_string()
-    } else {
-        format!("{count} books open")
-    }
-}
-
 /// The stack: the lead book named in type on the left of nothing — centred —
 /// with every open book fanned beneath it. Clicking the lead cover resumes;
 /// clicking any other brings it forward.
 #[component]
 pub(super) fn ResumeStack(entries: Vec<StackEntry>, lead: Signal<usize>) -> Element {
-    let books = open_book_count(&entries);
     let at = lead().min(entries.len().saturating_sub(1));
     let Some(front) = entries.get(at).cloned() else {
         return rsx! {};
@@ -237,22 +225,20 @@ pub(super) fn ResumeStack(entries: Vec<StackEntry>, lead: Signal<usize>) -> Elem
             "data-testid": "continue-stack",
             aria_label: "Continue reading",
             div { class: "lmq-stack-side",
-                div { class: "lmq-kicker",
-                    "{stack_kicker(books)}"
-                    if front.linked {
-                        crate::components::sync_glyph::SyncGlyph { size: 13 }
-                        "synced"
-                    }
-                }
                 Link {
                     to: Route::BookDetail { uuid: front.uuid.clone() },
                     class: "lmq-title-link",
                     h2 { class: "lmq-title", "{front.title}" }
                 }
-                if !front.author.is_empty() {
-                    div { class: "lmq-by", "{front.author}" }
+                p { class: "lmq-by",
+                    "{front.byline}"
+                    if front.linked {
+                        span { class: "lmq-synced",
+                            crate::components::sync_glyph::SyncGlyph { size: 12 }
+                            "synced"
+                        }
+                    }
                 }
-                div { class: "lmq-where", "{front.where_line}" }
                 StackAlts { front: front.clone() }
             }
             div {
@@ -281,8 +267,7 @@ pub(super) fn ResumeStackPending() -> Element {
             "data-testid": "continue-stack-pending",
             "aria-hidden": "true",
             div { class: "lmq-stack-side",
-                Skeleton { style: "--w:150px;height:.7em;margin:0 auto" }
-                Skeleton { style: "--w:min(340px,70vw);height:30px;margin:14px auto 0" }
+                Skeleton { style: "--w:min(340px,70vw);height:30px;margin:0 auto" }
                 Skeleton { style: "--w:140px;margin:12px auto 0" }
             }
             div { class: "lmq-fan",
@@ -336,7 +321,7 @@ fn StackAlts(front: StackEntry) -> Element {
                         class: "lmq-alt lmq-alt--invite",
                         "data-testid": "hero-link-invite-{uuid}",
                         crate::components::sync_glyph::SyncGlyph { size: 12 }
-                        span { "Same book, two spots — link the formats." }
+                        span { "Link formats to share one position" }
                     }
                 }
             }

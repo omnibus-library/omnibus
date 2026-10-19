@@ -6,9 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use omnibus_db as db;
-use omnibus_shared::{FilterClause, FilterField, FilterMode, ViewFilters};
-
-use super::EbooksQuery;
+use omnibus_shared::{EbooksQuery, FilterClause, FilterField, FilterMode, ViewFilters};
 
 /// Split the `?formats=` wire value into filter entries, dropping empties.
 pub(super) fn parse_formats(raw: &str) -> Vec<String> {

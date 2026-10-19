@@ -15,8 +15,9 @@ from `GET /api/ebooks`, thumbnails from `/api/thumbs`), and book detail.
 | `src/components/<Name>/` | shared building blocks: `<Name>.tsx` beside its `.css` and `.stories.tsx` |
 | `src/layouts/` | `RequireAuth` (the session gate) and `AppShell` (top bar + page) |
 | `src/pages/<Name>/` | one folder per route, its CSS beside it |
-| `src/api.ts` | every REST call, parsed at the boundary with zod, and the form schemas |
-| `src/testing/` | `AppHarness`, parsed and wire-format fixtures, the MSW fake API (`handlers.ts`), the Vitest setup |
+| `src/api.ts` | every REST call the screens make, mapping wire shapes to the ones they render, and the form schemas |
+| `src/api/generated/` | zod schemas, fetchers, TanStack Query hooks and MSW handlers that orval generates from `../openapi/openapi.json`; gitignored, rebuilt by `pnpm run generate` (`pnpm install` runs it too) |
+| `src/testing/` | `AppHarness`, parsed and wire-format fixtures, the MSW handlers orval can't generate (`handlers.ts`), the Vitest setup |
 | `.storybook/` | Storybook's config, the preview every story renders inside, and MSW's worker |
 | `tools/extract-atrium.cjs` | copies Atrium rules into component CSS when a screen is ported |
 
@@ -85,10 +86,11 @@ start the server with `OMNIBUS_REACT_DIR=$PWD/frontend-js/dist` and the React
 client is at `http://localhost:3460/react/`, beside the Dioxus UI at `/`, on
 the same origin and session. Off unless that variable is set.
 
-`pnpm exec biome check .`, `pnpm exec tsc --noEmit`, `pnpm exec vitest run`,
-`pnpm exec storybook build` and `pnpm exec vite build` are the gates; the
-`Frontend JS` workflow runs all of them when `frontend-js/` changes. The story
-tests need Chromium: the `.#e2e` shell provides it.
+After `pnpm run generate`, `pnpm exec biome check .`, `pnpm exec tsc --noEmit`,
+`pnpm exec vitest run`, `pnpm exec storybook build` and `pnpm exec vite build`
+are the gates; the `Frontend JS` workflow runs all of them when `frontend-js/`
+or `openapi/openapi.json` changes. The story tests need Chromium: the `.#e2e`
+shell provides it.
 
 ## Stories and tests
 
@@ -105,10 +107,12 @@ tests need Chromium: the `.#e2e` shell provides it.
   renders each one in Chromium, so a story that stops rendering fails. The
   a11y addon checks each story too; it reports without failing, because
   Atrium's muted inks fail colour contrast in six stories (as in the Dioxus app).
-- **The API is faked with MSW** (`src/testing/handlers.ts`). Stories for the
-  library, book detail and sign-in run against it, so their `play` tests cover
-  loading, empty, failing and success states. Each handler also checks the
-  request it receives, so those stories test `api.ts`'s half of the contract.
+- **The API is faked with MSW.** orval generates a handler per documented
+  status (`src/api/generated/omnibus.msw.ts`), and `src/testing/handlers.ts`
+  adds the ones that need behaviour: paging headers, a password check. Stories
+  for the library, book detail and sign-in run against them, so their `play`
+  tests cover loading, empty, failing and success states, and the fixtures are
+  typed by the spec.
 - **Docs:** every component gets a Docs page in Storybook, built from its
   stories, its TypeScript props and its doc comment.
 - **Forms** use react-hook-form with a zod resolver (`CredentialsSchema` on the
@@ -136,8 +140,11 @@ Measured on one 16-core Linux box, dev profile, no sccache.
 
 - **Auth needs no server change.** The proxy keeps `Host` as the dev server's,
   so the CSRF origin check passes and the default `__Host-` cookie works.
-- **Types are hand-mirrored.** `src/api.ts` copies `shared/`'s serde shapes;
-  generating them from `shared`'s `schemars` feature is the fix before shipping.
+- **Types are generated.** orval builds the client from
+  `../openapi/openapi.json`, the contract the server generates from its handlers,
+  and every response is validated against the generated zod schema. A wire
+  change in `shared/` becomes a TypeScript error here once the spec and the
+  client are regenerated (`just openapi-gen`, then `pnpm run generate`).
 - **No SSR.** The first paint is blank until the bundle loads, which undoes the
   server-drawn loaders rule 12 is built on.
 - **Not done:** Axum serving `dist/` with an SPA fallback, and REST parity for

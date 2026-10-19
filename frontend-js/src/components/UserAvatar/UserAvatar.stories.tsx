@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect } from "storybook/test";
-import { parseUser } from "../../api";
+import { toUser } from "../../api";
 import { ADA } from "../../testing/AppHarness";
 import { COVER_SVG } from "../../testing/books";
 import { WIRE_ADA } from "../../testing/wire";
@@ -48,7 +48,7 @@ export const Photo: Story = {
 
 // Another user, so the browser can't answer from the Photo story's cached image.
 export const BrokenPhoto: Story = {
-  args: { user: parseUser({ ...WIRE_ADA, id: 2, has_avatar: true }) },
+  args: { user: toUser({ ...WIRE_ADA, id: 2, has_avatar: true }) },
   beforeEach({ msw }) {
     msw.use(
       http.get(

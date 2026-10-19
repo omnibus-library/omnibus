@@ -13,50 +13,25 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, stats::GoalError};
-use omnibus_shared::{DailyGoalUpdate, ReadingGoalUpdate, SessionCursor, StatsRange};
-use serde::{Deserialize, Deserializer};
+use omnibus_shared::{
+    DailyGoalUpdate, DailyGoals, GoalQuery, HouseholdReader, LibraryComposition, LibrarySize,
+    ReadingGoal, ReadingGoalUpdate, SessionCursor, SessionLogPage, SessionLogQuery, StatsQuery,
+    StatsSummary,
+};
 
 use super::{internal, AppState};
 use crate::auth::AuthUser;
 
-/// Read `utc_offset_minutes` leniently: anything that isn't a number becomes `None`, the
-/// same answer an absent field gives. A plain `Option<i64>` would make axum's `Query`
-/// reject the whole *request* on `?utc_offset_minutes=` or `=abc`, costing the reader
-/// their stats page over an optional hint. Trimmed because `+` decodes to a space.
-fn lenient_offset<'de, D: Deserializer<'de>>(de: D) -> Result<Option<i64>, D::Error> {
-    Ok(Option::<String>::deserialize(de)?.and_then(|raw| raw.trim().parse().ok()))
-}
-
-/// Query shape for `GET /api/stats`. `range` is optional so a bare GET serves
-/// the default window; an unknown value is a 400 from the extractor.
-#[derive(Debug, Deserialize)]
-pub(super) struct StatsQuery {
-    #[serde(default)]
-    range: StatsRange,
-    /// Minutes east of UTC on the calling device, which every day boundary in the
-    /// response is cut on: heatmap columns, the streak, both daily goals, and where the
-    /// window opens. Optional: the server falls back to the offset of the caller's most
-    /// recent session, then UTC. Unreadable ([`lenient_offset`]) or out-of-range values
-    /// take that fallback too rather than 400-ing.
-    #[serde(default, deserialize_with = "lenient_offset")]
-    utc_offset_minutes: Option<i64>,
-    /// Whose stats to read; absent or the caller's own id reads their own.
-    /// Strict, unlike the offset above: an unparseable value is a 400 rather
-    /// than a silent fall-back to the caller's own stats under another
-    /// reader's name.
-    user_id: Option<i64>,
-}
-
-/// Query shape for the goal writes: the same offset [`StatsQuery`] carries, on
-/// the same lenient terms and for the same reason — the response reports today's
-/// progress, so it has to know whose today. No `range`; a goal is not windowed.
-#[derive(Debug, Deserialize)]
-pub(super) struct GoalQuery {
-    #[serde(default, deserialize_with = "lenient_offset")]
-    utc_offset_minutes: Option<i64>,
-}
-
-/// `GET /api/users` — the readers whose stats the caller may view, the caller first.
+/// List the readers whose stats you can see
+///
+/// You first, then every other reader who shares their stats, by name. Pass a reader's
+/// `id` as `user_id` to the stats routes to read theirs.
+#[utoipa::path(
+    get,
+    path = "/api/users",
+    tag = "Stats",
+    responses((status = 200, description = "You, then the readers who share their stats.", body = Vec<HouseholdReader>)),
+)]
 pub(super) async fn get_household_readers(
     user: AuthUser,
     State(state): State<AppState>,
@@ -67,13 +42,29 @@ pub(super) async fn get_household_readers(
     }
 }
 
-/// Fetch the caller's stats summary over the requested range, or a sharing
-/// reader's with `user_id`.
+/// Get your reading stats
+///
+/// Your reading over one period: totals, the daily heatmap, your streak, top authors and
+/// tags, finished books and goals. Send `user_id` for another reader's stats; days are
+/// still cut on your `utc_offset_minutes`.
+#[utoipa::path(
+    get,
+    path = "/api/stats",
+    tag = "Stats",
+    params(StatsQuery),
+    responses(
+        (status = 200, description = "The stats.", body = StatsSummary),
+        (status = 400, description = "`range` isn't `week`, `month`, `year` or `all_time`, or `user_id` isn't a whole number."),
+        (status = 404, description = "`user_id` names no reader, or one who doesn't share their stats."),
+    ),
+)]
 pub(super) async fn get_stats(
     user: AuthUser,
     State(state): State<AppState>,
     Query(query): Query<StatsQuery>,
 ) -> Response {
+    // An unreadable `user_id` is a 400 rather than a silent fall-back to the caller's own
+    // stats under another reader's name; the offset, by contrast, degrades quietly.
     match db::stats::stats_for_viewer(
         &state.pool,
         user.id,
@@ -96,27 +87,48 @@ pub(super) fn viewer_error(context: &'static str, e: db::stats::ViewerStatsError
     internal(context, e)
 }
 
-/// How big the library is in words, pages, and hours of audio. Not folded into
-/// [`get_stats`]'s payload: the answer is library-wide and only moves on a reindex, so
-/// carrying it there would recompute it on every period switch. The auth extractor still
-/// applies, as the library isn't public.
+/// Get the library's size
+///
+/// How big the whole library is in words, pages and seconds of audio, with how many books
+/// each figure could measure. The same for every user.
+#[utoipa::path(
+    get,
+    path = "/api/library-size",
+    tag = "Stats",
+    responses((status = 200, description = "The library's size.", body = LibrarySize)),
+)]
 pub(super) async fn get_library_size(_user: AuthUser, State(state): State<AppState>) -> Response {
+    // Not folded into `get_stats`: library-wide and only moves on a reindex, so carrying it
+    // there would recompute it on every period switch.
     match db::stats::library_size(&state.pool).await {
         Ok(size) => Json(size).into_response(),
         Err(e) => internal("get_library_size", e),
     }
 }
 
-/// Set, change, or clear the caller's annual reading goal. `year` defaults to the server's
-/// current calendar year and `kind` to `books`, so the usual body is `{"target": 24}`; a
-/// `null` / absent `target` clears the goal. Returns the resulting goal (`null` once cleared)
-/// with progress recomputed. Never queued offline (rule 08: account configuration).
+/// Set your yearly goal
+///
+/// Sets, changes or clears how many books you aim to finish in a year. `year` defaults to
+/// this year and `kind` to `books`, the only kind, so the usual body is `{"target": 24}`.
+/// A null or absent `target` clears the goal.
+#[utoipa::path(
+    put,
+    path = "/api/stats/goal",
+    tag = "Stats",
+    params(GoalQuery),
+    request_body = ReadingGoalUpdate,
+    responses(
+        (status = 200, description = "The goal with your progress toward it, or `null` once cleared.", body = Option<ReadingGoal>),
+        (status = 400, description = "`kind` isn't `books`, `target` is outside 1 to 10,000, or `year` is outside 1900 to 2999."),
+    ),
+)]
 pub(super) async fn put_stats_goal(
     user: AuthUser,
     State(state): State<AppState>,
     Query(query): Query<GoalQuery>,
     Json(update): Json<ReadingGoalUpdate>,
 ) -> Response {
+    // Never queued offline (rule 08: account configuration).
     match db::stats::set_goal(&state.pool, user.id, &update, query.utc_offset_minutes).await {
         Ok(goal) => Json(goal).into_response(),
         Err(GoalError::Sqlx(e)) => internal("set_reading_goal", e),
@@ -134,16 +146,29 @@ pub(super) async fn put_stats_goal(
     }
 }
 
-/// Set, change, or clear one of the caller's daily reading goals. The body names its `kind`
-/// (`pages` or `minutes`); an absent `target` clears that kind, leaving the other and the
-/// annual goal alone. Returns **both** daily goals with today's progress recomputed.
-/// Never queued offline (rule 08: account configuration).
+/// Set a daily goal
+///
+/// Sets, changes or clears one of your two daily goals: `pages` or `minutes`. A null or
+/// absent `target` clears that one; the other daily goal and the yearly goal stay as they
+/// are. The response holds both daily goals.
+#[utoipa::path(
+    put,
+    path = "/api/stats/goal/daily",
+    tag = "Stats",
+    params(GoalQuery),
+    request_body = DailyGoalUpdate,
+    responses(
+        (status = 200, description = "Both daily goals, with today's progress.", body = DailyGoals),
+        (status = 400, description = "`kind` isn't `pages` or `minutes`, or `target` is outside 1 to 2,000 pages or 1 to 1,440 minutes."),
+    ),
+)]
 pub(super) async fn put_stats_daily_goal(
     user: AuthUser,
     State(state): State<AppState>,
     Query(query): Query<GoalQuery>,
     Json(update): Json<DailyGoalUpdate>,
 ) -> Response {
+    // Never queued offline (rule 08: account configuration).
     match db::stats::set_daily_goal(&state.pool, user.id, &update, query.utc_offset_minutes).await {
         Ok(goals) => Json(goals).into_response(),
         Err(GoalError::Sqlx(e)) => internal("set_daily_reading_goal", e),
@@ -157,9 +182,16 @@ pub(super) async fn put_stats_daily_goal(
     }
 }
 
-/// What the library is made of — format, language, publisher, publication decade, and
-/// genre. Its own route for the same reason as [`get_library_size`]; the auth
-/// extractor still applies.
+/// Get the library's composition
+///
+/// What the whole library is made of: its mix of formats, languages, publishers,
+/// publication decades and genres. The same for every user.
+#[utoipa::path(
+    get,
+    path = "/api/library-composition",
+    tag = "Stats",
+    responses((status = 200, description = "The library's composition.", body = LibraryComposition)),
+)]
 pub(super) async fn get_library_composition(
     _user: AuthUser,
     State(state): State<AppState>,
@@ -173,30 +205,28 @@ pub(super) async fn get_library_composition(
 #[cfg(test)]
 mod tests;
 
-/// Query shape for `GET /api/stats/sessions`. Every field is optional: a bare
-/// GET serves the newest page of the caller's whole log.
-#[derive(Debug, Deserialize)]
-pub(super) struct SessionLogQuery {
-    /// Scope to one book. Resolved through the merge ledger, so a link into a
-    /// book that was later merged away still finds its sittings.
-    book: Option<String>,
-    /// Page size, clamped by `db::stats` into
-    /// `1..=SESSION_LOG_MAX_LIMIT`.
-    limit: Option<i64>,
-    /// The previous page's `next_before`, echoed back verbatim.
-    before: Option<String>,
-    /// Whose log to read; absent or the caller's own id reads their own.
-    user_id: Option<i64>,
-}
-
-/// Fetch a page of the caller's session log, newest sitting first, or a sharing reader's
-/// with `user_id`. A `before` that isn't a cursor this endpoint issued is a 400 checked
-/// before the share gate, since a silent rewind to page one would loop a paging client.
+/// List your reading sessions
+///
+/// Your reading and listening sessions one page at a time, newest first. Follow
+/// `next_before` to the next page. Send `user_id` for another reader's log.
+#[utoipa::path(
+    get,
+    path = "/api/stats/sessions",
+    tag = "Stats",
+    params(SessionLogQuery),
+    responses(
+        (status = 200, description = "A page of sessions, newest first.", body = SessionLogPage),
+        (status = 400, description = "`before` isn't a `next_before` this route returned, or `limit` or `user_id` isn't a whole number."),
+        (status = 404, description = "`user_id` names no reader, or one who doesn't share their stats."),
+    ),
+)]
 pub(super) async fn get_session_log(
     user: AuthUser,
     State(state): State<AppState>,
     Query(query): Query<SessionLogQuery>,
 ) -> Response {
+    // A bad cursor is a 400 checked before the share gate: a silent rewind to page one
+    // would loop a paging client.
     let before = match query.before.as_deref() {
         Some(raw) => match SessionCursor::parse(raw) {
             Some(cursor) => Some(cursor),

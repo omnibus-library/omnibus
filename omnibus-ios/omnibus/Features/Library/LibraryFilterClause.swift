@@ -9,9 +9,11 @@ import Foundation
 import Observation
 
 /// The book attribute a clause matches. Raw values are the shared wire tokens;
-/// declaration order is the picker's. A `shelf` value is a shelf id.
-enum FilterField: String, CaseIterable, Codable, Hashable, Sendable {
+/// declaration order is the facet row's. A `shelf` value is a shelf id.
+enum FilterField: String, CaseIterable, Codable, Hashable, Sendable, Identifiable {
     case shelf, tag, genre, author, series, format
+
+    var id: Self { self }
 
     var label: String {
         switch self {
@@ -21,18 +23,6 @@ enum FilterField: String, CaseIterable, Codable, Hashable, Sendable {
         case .author: "Author"
         case .series: "Series"
         case .format: "Format"
-        }
-    }
-
-    /// Named so a test can prove it resolves — a misspelt SF Symbol draws nothing.
-    var glyph: String {
-        switch self {
-        case .shelf: "square.stack"
-        case .tag: "tag"
-        case .genre: "theatermasks"
-        case .author: "person"
-        case .series: "books.vertical"
-        case .format: "doc"
         }
     }
 }
@@ -48,17 +38,9 @@ enum FilterMode: String, CaseIterable, Codable, Hashable, Sendable {
         case .exclude: "Excludes any"
         }
     }
-
-    /// The mode as a chip reads it, the web's wording.
-    var phrase: String {
-        switch self {
-        case .include: "includes any of"
-        case .exclude: "excludes any of"
-        }
-    }
 }
 
-/// The shelves a shelf chip is named from, as far as their read has got.
+/// The shelves a shelf facet is named from, as far as their read has got.
 enum ShelfList {
     case loading
     /// The read failed, which says nothing about whether a shelf still exists.
@@ -72,23 +54,30 @@ struct FilterClause: Codable, Hashable, Sendable {
     var mode: FilterMode
     var values: [String]
 
-    /// The server's caps (`MAX_FILTER_CLAUSES`, `MAX_FILTER_VALUES`); past
-    /// either it answers 400.
-    static let maxClauses = 16
+    /// The server's cap on a clause's values (`MAX_FILTER_VALUES`); past it
+    /// the server answers 400.
     static let maxValues = 64
 
-    /// "Genre includes any of Fantasy, Sci-Fi". A shelf reads as its name: "…"
-    /// while the shelves load, its id if they couldn't be read, and
+    /// What the clause's facet shows after its field name: "not" ahead of an
+    /// exclusion, the first value, and "+N" for the rest. A shelf reads as its
+    /// name: "…" while the shelves load, its id if they couldn't be read, and
     /// "unavailable shelf" for an id a loaded list doesn't hold.
-    func chipLabel(shelves: ShelfList, viewerId: Int64?) -> String {
-        let names = values.map { value -> String in
-            switch field {
-            case .format: return value.uppercased()
-            case .shelf: return shelfName(value, in: shelves, viewerId: viewerId)
-            default: return value
-            }
+    func facetValue(shelves: ShelfList, viewerId: Int64?) -> String {
+        guard let first = values.first else { return "" }
+        let name = switch field {
+        case .format: first.uppercased()
+        case .shelf: shelfName(first, in: shelves, viewerId: viewerId)
+        default: first
         }
-        return "\(field.label) \(mode.phrase) \(names.joined(separator: ", "))"
+        let exclusion = mode == .exclude ? "not " : ""
+        let more = values.count > 1 ? " +\(values.count - 1)" : ""
+        return exclusion + name + more
+    }
+
+    /// The clause a facet opens on: the first on `field`, or an empty include
+    /// clause when the field has none.
+    static func opening(_ field: FilterField, in clauses: [FilterClause]) -> FilterClause {
+        clauses.first { $0.field == field } ?? FilterClause(field: field, mode: .include, values: [])
     }
 
     private func shelfName(_ value: String, in shelves: ShelfList, viewerId: Int64?) -> String {
@@ -197,25 +186,25 @@ final class LibraryFilterStore {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        clauses = LibraryFilterPreference.load(from: defaults).clauses
+        // A filter saved before one clause per field can hold more on a field.
+        clauses = Self.onePerField(LibraryFilterPreference.load(from: defaults).clauses)
     }
 
-    /// Whether another clause fits under the server's cap. A category's
-    /// `?formats=` reaches the server as one more clause, so it needs room too.
-    func canAdd(reservingFormatClause: Bool) -> Bool {
-        clauses.count < FilterClause.maxClauses - (reservingFormatClause ? 1 : 0)
+    /// The first clause on each field, in field order, so the list's order
+    /// never changes what it means.
+    private static func onePerField(_ clauses: [FilterClause]) -> [FilterClause] {
+        FilterField.allCases.compactMap { field in clauses.first { $0.field == field } }
     }
 
-    /// Appends `clause`; the picker and `canAdd` keep it within the server's caps.
-    func add(_ clause: FilterClause) {
-        replace(with: clauses + [clause])
+    /// Makes `clause` its field's only clause; one with no values clears the field.
+    func apply(_ clause: FilterClause) {
+        let rest = clauses.filter { $0.field != clause.field }
+        replace(with: Self.onePerField(clause.values.isEmpty ? rest : [clause] + rest))
     }
 
-    func remove(at index: Int) {
-        guard clauses.indices.contains(index) else { return }
-        var next = clauses
-        next.remove(at: index)
-        replace(with: next)
+    /// Drops the clause on `field`.
+    func clear(_ field: FilterField) {
+        replace(with: clauses.filter { $0.field != field })
     }
 
     func clear() {

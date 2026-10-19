@@ -1,10 +1,23 @@
 import { delay, HttpResponse, http } from "msw";
+import {
+  getGetMeMockHandler200,
+  getGetMeMockHandler401,
+  getGetRegistrationMockHandler200,
+} from "../api/generated/omnibus.msw";
+import type {
+  EbookMetadata,
+  EbookPage,
+  LoginResponse,
+  PaletteResults,
+  ResumePoint,
+} from "../api/generated/schemas";
 import { COVER_SVG } from "./books";
 import { WIRE_ADA } from "./wire";
 
-// A fake of the Axum `/api/*` routes the client calls, for MSW. Each handler
-// also checks the request the client sends, so a story that renders through
-// one exercises api.ts's half of the contract.
+// The MSW fake of the `/api/*` routes the client calls. orval generates a
+// handler per documented status (`../api/generated/omnibus.msw`); the ones here
+// need behaviour a generated handler can't express, such as paging headers or
+// checking the request, and their bodies are typed by the generated schemas.
 
 const svg = () =>
   new HttpResponse(COVER_SVG, { headers: { "Content-Type": "image/svg+xml" } });
@@ -17,13 +30,11 @@ export const coverHandlers = [
 
 /** The session `GET /api/auth/me` reports; `null` answers as a guest. */
 export function sessionHandler(user: typeof WIRE_ADA | null = WIRE_ADA) {
-  return http.get("/api/auth/me", () =>
-    user ? HttpResponse.json(user) : new HttpResponse(null, { status: 401 }),
-  );
+  return user ? getGetMeMockHandler200(user) : getGetMeMockHandler401();
 }
 
 /** Title-ordered library pages of `pageSize`, with the API's paging headers. */
-export function libraryHandler(books: unknown[], pageSize = 3) {
+export function libraryHandler(books: EbookMetadata[], pageSize = 3) {
   return http.get("/api/ebooks", ({ request }) => {
     const url = new URL(request.url);
     // The API refuses a cursor unless sort and dir are both explicit.
@@ -39,12 +50,13 @@ export function libraryHandler(books: unknown[], pageSize = 3) {
       "X-Total-Count": String(books.length),
     };
     if (end < books.length) headers["X-Next-Cursor"] = String(end);
-    return HttpResponse.json({ books: books.slice(start, end) }, { headers });
+    const page = { books: books.slice(start, end) } satisfies EbookPage;
+    return HttpResponse.json(page, { headers });
   });
 }
 
 /** One book by uuid; any other uuid is a 404, as on the server. */
-export function bookHandler(book: { unique_identifier: string }) {
+export function bookHandler(book: EbookMetadata) {
   return http.get("/api/ebooks/:uuid", ({ params }) =>
     params.uuid === book.unique_identifier
       ? HttpResponse.json(book)
@@ -53,7 +65,7 @@ export function bookHandler(book: { unique_identifier: string }) {
 }
 
 /** `GET /api/progress/recent`, answering the first `limit` of `points`. */
-export function recentProgressHandler(points: unknown[]) {
+export function recentProgressHandler(points: ResumePoint[]) {
   return http.get("/api/progress/recent", ({ request }) => {
     const limit = Number(new URL(request.url).searchParams.get("limit"));
     if (!Number.isInteger(limit) || limit < 1) {
@@ -70,8 +82,8 @@ export function recentProgressHandler(points: unknown[]) {
  * `full` when the client raises the per-group cap with `limit`.
  */
 export function paletteHandler(
-  preview: Record<string, unknown>,
-  full: Record<string, unknown> | "fails" = preview,
+  preview: PaletteResults,
+  full: PaletteResults | "fails" = preview,
 ) {
   return http.get("/api/search/palette", ({ request }) => {
     const params = new URL(request.url).searchParams;
@@ -93,9 +105,7 @@ export function paletteHandler(
 
 /** `GET /api/auth/registration`: whether self-registration is open. */
 export function registrationHandler(enabled: boolean) {
-  return http.get("/api/auth/registration", () =>
-    HttpResponse.json({ enabled }),
-  );
+  return getGetRegistrationMockHandler200({ enabled });
 }
 
 /** `POST /api/auth/register`, refusing `taken` as the server refuses a duplicate. */
@@ -112,7 +122,9 @@ export function registerHandler(taken = "taken") {
     }
     return body.username === taken
       ? new HttpResponse("username already taken", { status: 409 })
-      : HttpResponse.json({ user: { ...WIRE_ADA, username: body.username } });
+      : HttpResponse.json({
+          user: { ...WIRE_ADA, username: String(body.username) },
+        } satisfies LoginResponse);
   });
 }
 
@@ -124,7 +136,7 @@ export function loginHandler(password: string) {
       return new HttpResponse("missing credentials", { status: 422 });
     }
     return body.password === password
-      ? HttpResponse.json({ user: WIRE_ADA })
+      ? HttpResponse.json({ user: WIRE_ADA } satisfies LoginResponse)
       : new HttpResponse("invalid credentials", { status: 401 });
   });
 }

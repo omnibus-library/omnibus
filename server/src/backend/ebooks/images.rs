@@ -22,8 +22,7 @@ use omnibus_db::{
     self as db,
     ebook::images::{list_images, read_image},
 };
-use omnibus_shared::{BookImageLink, BookImageList};
-use serde::Deserialize;
+use omnibus_shared::{BookImageLink, BookImageList, FileBytes, ImageHrefQuery, SignedImageQuery};
 use sha2::Sha256;
 
 use crate::auth::{AuthUser, MediaAuthUser};
@@ -88,21 +87,31 @@ pub(crate) fn verify_image_link(
     image_link_mac(key, uuid, href, expires).is_ok_and(|mac| mac.verify_slice(&tag).is_ok())
 }
 
-/// Query param of the link mint and the session fetch: the image's archive path.
-#[derive(Deserialize)]
-pub(crate) struct ImageHrefQuery {
-    href: String,
-}
-
-/// Mint a link that fetches one image's original bytes without a session for
-/// [`IMAGE_LINK_TTL_SECS`]. A GET because it writes nothing: the link is a stateless
-/// MAC. It does not open the EPUB; the fetch validates `href` when the link is used.
+/// Get a signed link to an image
+///
+/// A path that fetches one image's original file without a session for 15 minutes, for
+/// handing to something that can't send your token. It opens that one image and nothing
+/// else. `href` isn't checked against the book's images until the link is used. Needs the
+/// download permission.
+#[utoipa::path(
+    get,
+    path = "/api/ebooks/{uuid}/images/link",
+    tag = "Library",
+    params(("uuid" = String, Path, description = "The book's uuid."), ImageHrefQuery),
+    responses(
+        (status = 200, description = "The link.", body = BookImageLink),
+        (status = 403, description = "Your account lacks the download permission."),
+        (status = 404, description = "No book has that uuid."),
+    ),
+)]
 pub(crate) async fn get_ebook_image_link(
     user: AuthUser,
     State(state): State<AppState>,
     Path(uuid): Path<String>,
     Query(q): Query<ImageHrefQuery>,
 ) -> Response {
+    // A GET because it writes nothing: the link is a stateless MAC, and the fetch
+    // validates `href` when the link is used.
     if let Some(denied) = deny_without_download(&user) {
         return denied;
     }
@@ -133,7 +142,22 @@ pub(crate) async fn get_ebook_image_link(
 
 const NOT_AN_IMAGE: &str = "href is not an image in this book's EPUB manifest";
 
-/// Every manifest image of the book's EPUB with the spine documents that show it.
+/// List a book's images
+///
+/// Every image in the book's EPUB, such as maps and illustrations, with the spine documents
+/// that show each one.
+#[utoipa::path(
+    get,
+    path = "/api/ebooks/{uuid}/images",
+    tag = "Library",
+    security(("bearer" = []), ("session_cookie" = []), ("media_token" = [])),
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses(
+        (status = 200, description = "The images.", body = BookImageList),
+        (status = 404, description = "No book has that uuid."),
+        (status = 422, description = "The book has no EPUB."),
+    ),
+)]
 pub(crate) async fn get_ebook_images(
     _user: MediaAuthUser,
     State(state): State<AppState>,
@@ -172,9 +196,26 @@ async fn epub_path(state: &AppState, uuid: &str) -> Result<PathBuf, Response> {
     }
 }
 
-/// One image's original bytes, by the archive path `list_book_images` reports.
-/// Every 200 is an `attachment`, because an `image/svg+xml` body opened
-/// top-level would run inline script under the app's CSP.
+/// Download one of a book's images
+///
+/// The image's original file from the book's EPUB, as an attachment. `href` is the image's
+/// path from `GET /api/ebooks/{uuid}/images`. Needs the download permission.
+#[utoipa::path(
+    get,
+    path = "/api/ebooks/{uuid}/images/file",
+    tag = "Library",
+    params(("uuid" = String, Path, description = "The book's uuid."), ImageHrefQuery),
+    responses(
+        (status = 200, description = "The image.", body = FileBytes, content_type = "image/*",
+            headers(("Content-Disposition" = String, description = "`attachment`, with the image's file name."))),
+        (status = 304, description = "The image is unchanged since the `ETag` sent in `If-None-Match`, or the date in `If-Modified-Since`."),
+        (status = 400, description = "`href` isn't an image in the book's EPUB."),
+        (status = 403, description = "Your account lacks the download permission."),
+        (status = 404, description = "No book has that uuid."),
+        (status = 412, description = "`If-Match` or `If-Unmodified-Since` doesn't match the image."),
+        (status = 422, description = "The book has no EPUB."),
+    ),
+)]
 pub(crate) async fn get_ebook_image_file(
     user: MediaAuthUser,
     State(state): State<AppState>,
@@ -185,27 +226,41 @@ pub(crate) async fn get_ebook_image_file(
     if let Some(denied) = deny_without_download(&user.0) {
         return denied;
     }
+    // Every 200 is an `attachment`: an `image/svg+xml` body opened top-level would run
+    // inline script under the app's CSP.
     serve_image(&state, &uuid, &q.href, &headers).await
 }
 
-/// Query params for `GET /api/ebooks/{uuid}/images/signed`. `expires` and `sig`
-/// are kept as text so a malformed or missing value is a 401, not a 400.
-#[derive(Deserialize)]
-pub(crate) struct SignedImageQuery {
-    href: String,
-    expires: Option<String>,
-    sig: Option<String>,
-}
-
-/// [`get_ebook_image_file`] through a link [`get_ebook_image_link`] minted,
-/// authenticated by its signature alone, never by a session. The download
-/// permission was enforced when the link was minted.
+/// Open an image through a signed link
+///
+/// The image a link from `GET /api/ebooks/{uuid}/images/link` points at, as an attachment.
+/// The link's signature is its only credential: no session is needed or read. Use the
+/// link's path as it is.
+#[utoipa::path(
+    get,
+    path = "/api/ebooks/{uuid}/images/signed",
+    tag = "Library",
+    security(()),
+    params(("uuid" = String, Path, description = "The book's uuid."), SignedImageQuery),
+    responses(
+        (status = 200, description = "The image.", body = FileBytes, content_type = "image/*",
+            headers(("Content-Disposition" = String, description = "`attachment`, with the image's file name."))),
+        (status = 304, description = "The image is unchanged since the `ETag` sent in `If-None-Match`, or the date in `If-Modified-Since`."),
+        (status = 400, description = "`href` isn't an image in the book's EPUB."),
+        (status = 401, description = "The link has expired, or its signature doesn't match."),
+        (status = 404, description = "No book has that uuid."),
+        (status = 412, description = "`If-Match` or `If-Unmodified-Since` doesn't match the image."),
+        (status = 422, description = "The book has no EPUB."),
+    ),
+)]
 pub(crate) async fn get_ebook_signed_image(
     State(state): State<AppState>,
     Path(uuid): Path<String>,
     Query(q): Query<SignedImageQuery>,
     headers: HeaderMap,
 ) -> Response {
+    // The download permission was enforced when the link was minted. `expires` and
+    // `sig` are text so a malformed or missing value is a 401, not a 400.
     if let Some(rejected) = reject_bad_link(&state, &uuid, &q).await {
         return rejected;
     }

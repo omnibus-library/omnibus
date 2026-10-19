@@ -129,7 +129,7 @@ the `.lmq-veil` verb. Three consequences for a spec:
   so a spec that asserts them must bring its book forward first — clicking a
   card that is *already* lead navigates, so guard on the `lead` class.
 - **`continue-stack` carries the synced marker**, not the card: with no
-  per-card eyebrow, `Continue · synced` is one kicker line above the front book.
+  per-card eyebrow, "synced" sits on the front book's byline.
 
 `standalone-island` / `standalone-garden` are reserved for the bring-forward
 spec: it needs two books on the stack at once, and `recent_progress` drops
@@ -195,6 +195,6 @@ list (`authors-list`, rows `author-card`) beside an author pane, so the page's h
 is the list's "Authors" and the author's name is `author-name`, an h2; `/authors`
 previews the reader's latest author there. Delete author is behind `author-more`.
 
-**The filter bar and what reads its saved filter** (chips, the Add filter
-dialog, the shelf lens and `/shelves/:id` states) have their own file:
+**The filter bar and what reads its saved filter** (the facets, their menus,
+the shelf lens and `/shelves/:id` states) have their own file:
 [04c-playwright-filters.md](04c-playwright-filters.md).

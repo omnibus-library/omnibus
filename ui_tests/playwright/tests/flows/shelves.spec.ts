@@ -131,7 +131,9 @@ test.describe("shelves on the library page", () => {
       });
 
       await test.step("check the library says it failed", async () => {
-        await expect(libraryPage.sectionTitle).toContainText(shelf.name);
+        await expect(libraryPage.shelfGallery.selectedTab).toContainText(
+          shelf.name,
+        );
         await expect(libraryPage.pageError).toBeVisible();
       });
     });
@@ -327,9 +329,11 @@ test.describe("shelves on the library page", () => {
         );
       });
 
-      await test.step("check the header shows the edit", async () => {
+      await test.step("check the shelf tab shows the edit", async () => {
         await expect(editor.root).not.toBeVisible();
-        await expect(libraryPage.sectionTitle).toContainText(renamed);
+        await expect(libraryPage.shelfGallery.selectedTab).toContainText(
+          renamed,
+        );
         await expect(libraryPage.shelfFacets).toContainText("Public");
       });
     });
@@ -354,11 +358,15 @@ test.describe("shelves on the library page", () => {
         await expectMutation(failing(shelves.update()), () => editor.save());
       });
 
-      // The header keeps the saved name: the failed edit must not leak in.
+      // The tab keeps the saved name: the failed edit must not leak in.
       await test.step("check the editor says it failed", async () => {
         await expect(editor.errorMessage).toBeVisible();
-        await expect(libraryPage.sectionTitle).toContainText(shelf.name);
-        await expect(libraryPage.sectionTitle).not.toContainText("v2");
+        await expect(libraryPage.shelfGallery.selectedTab).toContainText(
+          shelf.name,
+        );
+        await expect(libraryPage.shelfGallery.selectedTab).not.toContainText(
+          "v2",
+        );
       });
     });
   });

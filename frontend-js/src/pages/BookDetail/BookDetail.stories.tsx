@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Route, Routes } from "react-router";
 import { expect } from "storybook/test";
+import { getGetEbookByUuidMockHandler404 } from "../../api/generated/omnibus.msw";
 import { bookHandler, failing } from "../../testing/handlers";
 import { aWireBook } from "../../testing/wire";
 import { BookDetail } from "./BookDetail";
@@ -48,7 +49,7 @@ export const Loaded: Story = {
 
 export const NotFound: Story = {
   beforeEach({ msw }) {
-    msw.use(bookHandler(aWireBook({ unique_identifier: "some-other-book" })));
+    msw.use(getGetEbookByUuidMockHandler404());
   },
   play: async ({ canvas }) => {
     await expect(

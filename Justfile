@@ -167,6 +167,20 @@ lint-ts:
         pnpm exec biome check . && \
         pnpm exec tsc --noEmit'
 
+# Regenerate openapi/openapi.json, the REST API contract, from the handlers'
+# `#[utoipa::path]` annotations. A test fails while the committed file is stale,
+# so run this after changing a route or a wire type in shared/, and commit the result.
+openapi-gen:
+    scripts/with-dev-env.sh default bash -ec '\
+        tmp=$(mktemp) && \
+        cargo run -q -p omnibus --example openapi > "$tmp" && \
+        mv "$tmp" openapi/openapi.json'
+
+# Regenerate the spec, then browse it as an API reference on a local port
+# (python3's http.server; Ctrl-C stops it). Nothing is served by Omnibus itself.
+openapi: openapi-gen
+    python3 scripts/openapi-view.py
+
 # Format check + clippy, including the crate/feature combos a bare
 # `cargo clippy` (default-members, default features) misses. `-D warnings` on
 # every invocation and the wasm32 `frontend-web` variant mirror CI's clippy

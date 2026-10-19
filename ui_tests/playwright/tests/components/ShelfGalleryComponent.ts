@@ -5,6 +5,10 @@ import { BaseComponent } from "./BaseComponent";
 export class ShelfGalleryComponent extends BaseComponent {
   readonly root: Locator;
   readonly allBooksTile: Locator;
+  /** The All Books tab's count, absent until the list has answered. */
+  readonly allBooksCount: Locator;
+  /** The tab whose books the list below shows. */
+  readonly selectedTab: Locator;
   readonly allShelvesLink: Locator;
   readonly newShelfButton: Locator;
   readonly row: Locator;
@@ -15,11 +19,13 @@ export class ShelfGalleryComponent extends BaseComponent {
     super(page);
     this.root = page.getByTestId("shelf-gallery");
     this.allBooksTile = page.getByTestId("gallery-all-books");
+    this.allBooksCount = page.getByTestId("gallery-all-books-count");
     this.allShelvesLink = page.getByTestId("gallery-all-shelves");
     this.newShelfButton = page.getByTestId("new-shelf");
     this.row = this.root.locator("#lmq-shelf-row");
     this.previousArrow = page.getByTestId("shelf-row-prev");
     this.nextArrow = page.getByTestId("shelf-row-next");
+    this.selectedTab = this.row.getByRole("button", { pressed: true });
   }
 
   async selectAllBooks(): Promise<void> {
@@ -40,6 +46,11 @@ export class ShelfGalleryComponent extends BaseComponent {
 
   async pageBack(): Promise<void> {
     await this.previousArrow.click();
+  }
+
+  /** The All Books tab's count, read once the list has answered. */
+  async allBooksTotal(): Promise<number> {
+    return Number((await this.allBooksCount.textContent()) ?? Number.NaN);
   }
 
   /** How far the row has scrolled from its left end. */
