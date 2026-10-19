@@ -9,6 +9,7 @@ use axum::{
     http::HeaderMap,
     response::Response,
 };
+use omnibus_shared::{AudiobookDownloadQuery, EbookFileQuery};
 
 use crate::auth::{MediaAuthUser, OpdsAuthUser};
 
@@ -48,7 +49,7 @@ pub(super) async fn ebook_file(
     user: OpdsAuthUser,
     state: State<AppState>,
     path: Path<String>,
-    query: Query<ebooks::EbookFileQuery>,
+    query: Query<EbookFileQuery>,
     req: Request,
 ) -> Response {
     if let Some(denied) = deny_without_download(&user.0) {
@@ -66,7 +67,7 @@ pub(super) async fn ebook_download(
     user: OpdsAuthUser,
     state: State<AppState>,
     path: Path<String>,
-    query: Query<ebooks::EbookFileQuery>,
+    query: Query<EbookFileQuery>,
     req: Request,
 ) -> Response {
     if let Some(denied) = deny_without_download(&user.0) {
@@ -83,7 +84,7 @@ pub(super) async fn audiobook_download(
     user: OpdsAuthUser,
     state: State<AppState>,
     path: Path<String>,
-    query: Query<audiobooks::DownloadQuery>,
+    query: Query<AudiobookDownloadQuery>,
     req: Request,
 ) -> Response {
     if let Some(denied) = deny_without_download(&user.0) {

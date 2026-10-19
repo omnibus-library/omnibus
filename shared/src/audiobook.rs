@@ -129,6 +129,61 @@ impl AudiobookManifest {
     }
 }
 
+/// Query parameters of `GET /api/audiobooks/{uuid}/manifest`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct ManifestQuery {
+    /// One of the book's audio files, by its `id` in the book's `book_files`. Defaults to
+    /// the first.
+    pub file_id: Option<i64>,
+}
+
+/// Query parameters of `GET /api/audiobooks/{uuid}/parts/{ordinal}`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct PartsQuery {
+    /// The audio file the part belongs to, by its `id` in the book's `book_files`. Defaults
+    /// to the first. The manifest's part URLs already carry it.
+    pub file_id: Option<i64>,
+}
+
+/// Query parameters of `GET /api/audiobooks/{uuid}/download`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct AudiobookDownloadQuery {
+    /// One of the book's audio files, by its `id` in the book's `book_files`. Defaults to
+    /// the first.
+    pub file_id: Option<i64>,
+    /// The part of that file to download, by its `ordinal`. Defaults to the first part.
+    pub part: Option<i64>,
+}
+
+/// Where an audiobook's HLS transcode stands: `preparing` while it is queued or running,
+/// `ready` once every segment is made, and `failed` when it failed, which isn't retried on
+/// its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum AudiobookStatusState {
+    Preparing,
+    Ready,
+    Failed,
+}
+
+/// `GET /api/audiobooks/{uuid}/status` response: progress of the HLS transcode.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AudiobookStatus {
+    /// Whether the transcode has finished. Older field: read `state` instead.
+    pub ready: bool,
+    /// How far the transcode has got, from 0.0 to 1.0.
+    pub progress: f32,
+    pub state: AudiobookStatusState,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

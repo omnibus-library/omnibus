@@ -13,27 +13,12 @@ use axum::{
 };
 use omnibus_db::{self as db, ebook::text::extract_chapter_text, epub_structure};
 use omnibus_shared::{
-    ChapterListEntry, ChapterListResponse, ChapterTextResponse, CHAPTER_TEXT_MAX_CHARS,
+    ChapterListEntry, ChapterListResponse, ChapterTextQuery, ChapterTextResponse,
+    CHAPTER_TEXT_MAX_CHARS,
 };
-use serde::Deserialize;
 
 use crate::auth::AuthUser;
 use crate::backend::{internal, AppState};
-
-/// Query params for the chapter text read: a char offset to resume from and
-/// an optional smaller slice size (clamped to
-/// [`CHAPTER_TEXT_MAX_CHARS`] — the cap holds regardless of what the client
-/// asks for).
-#[derive(Deserialize)]
-pub(crate) struct ChapterTextQuery {
-    offset: Option<usize>,
-    limit: Option<usize>,
-    /// Cut the slice off at the caller's own furthest recorded position in
-    /// this book, so a reader mid-book cannot be handed text they have not
-    /// reached.
-    #[serde(default)]
-    stop_at_progress: bool,
-}
 
 /// The `has_text: false` answer both endpoints share for a book with no
 /// EPUB or PDF to read.
@@ -73,10 +58,22 @@ fn chapter_text_from_path(
     }
 }
 
-/// Chapter listing: TOC titles plus the spine index each text read is
-/// addressed by, from the persisted structure tables. A book scanned but
-/// not yet backfilled falls back to extracting the structure from the file
-/// on the fly (read-only — the backfill remains the writer).
+/// List a book's chapters
+///
+/// The book's table of contents, with the spine index that
+/// `GET /api/ebooks/{uuid}/chapters/{spine_index}/text` reads each chapter by. A PDF has one
+/// spine entry per page. A book with no EPUB or PDF, such as a comic or an audiobook,
+/// answers `has_text: false` with no chapters.
+#[utoipa::path(
+    get,
+    path = "/api/ebooks/{uuid}/chapters",
+    tag = "Library",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses(
+        (status = 200, description = "The chapters.", body = ChapterListResponse),
+        (status = 404, description = "No book has that uuid."),
+    ),
+)]
 pub(crate) async fn get_ebook_chapters(
     _user: AuthUser,
     State(state): State<AppState>,
@@ -97,6 +94,8 @@ pub(crate) async fn get_ebook_chapters(
         Ok(s) => s,
         Err(e) => return internal("get_spine_stats", e),
     };
+    // A book scanned but not yet backfilled has no persisted structure: extract it from
+    // the file on the fly, read-only, since the backfill remains the writer.
     let (spine_count, chapters) = if stats.is_empty() {
         // Never extracted (the post-scan backfill hasn't reached it yet):
         // derive the same structure straight from the file.
@@ -146,11 +145,26 @@ pub(crate) async fn get_ebook_chapters(
     .into_response()
 }
 
-/// Bounded plain-text read of one spine document — an EPUB spine item or a PDF page.
-/// 404 covers an unknown uuid and an out-of-range spine index; a book with no EPUB or
-/// PDF answers `has_text: false`; an unreadable file is a 500. The slice is
-/// char-addressed (`?offset=`, `?limit=`) and capped at [`CHAPTER_TEXT_MAX_CHARS`],
-/// with `truncated` / `next_offset` reporting the boundary.
+/// Read a chapter's text
+///
+/// The plain text of one spine document: an EPUB chapter, or a PDF page. A long chapter
+/// comes in slices of up to 100,000 characters: while `truncated` is set, ask again with
+/// `offset` set to `next_offset`. An `offset` past the end answers an empty slice. A book
+/// with no EPUB or PDF answers `has_text: false`.
+#[utoipa::path(
+    get,
+    path = "/api/ebooks/{uuid}/chapters/{spine_index}/text",
+    tag = "Library",
+    params(
+        ("uuid" = String, Path, description = "The book's uuid."),
+        ("spine_index" = usize, Path, description = "The chapter's spine index, from `GET /api/ebooks/{uuid}/chapters`."),
+        ChapterTextQuery,
+    ),
+    responses(
+        (status = 200, description = "A slice of the chapter's text.", body = ChapterTextResponse),
+        (status = 404, description = "No book has that uuid, or `spine_index` is past the book's last spine document."),
+    ),
+)]
 pub(crate) async fn get_ebook_chapter_text(
     user: AuthUser,
     State(state): State<AppState>,

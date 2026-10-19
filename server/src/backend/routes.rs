@@ -39,75 +39,30 @@ pub(super) fn content_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(admin_sessions::delete_session))
         .routes(routes!(admin_sessions::delete_device))
         .routes(routes!(admin_health::get_admin_health))
-        .route("/api/library", get(ebooks::get_library))
-        .route(
-            "/api/downloads/validators",
-            post(ebooks::post_download_validators),
-        )
+        .routes(routes!(ebooks::get_library))
+        .routes(routes!(ebooks::post_download_validators))
         .routes(routes!(ebooks::get_ebooks))
         .routes(routes!(ebooks::get_ebook_by_uuid))
-        .route(
-            "/api/ebooks/{uuid}/chapters",
-            get(ebooks::chapters::get_ebook_chapters),
-        )
-        .route(
-            "/api/ebooks/{uuid}/chapters/{spine_index}/text",
-            get(ebooks::chapters::get_ebook_chapter_text),
-        )
-        .route(
-            "/api/ebooks/{uuid}/images",
-            get(ebooks::images::get_ebook_images),
-        )
-        .route(
-            "/api/ebooks/{uuid}/images/link",
-            get(ebooks::images::get_ebook_image_link),
-        )
-        .route(
-            "/api/ebooks/{uuid}/images/file",
-            get(ebooks::images::get_ebook_image_file),
-        )
-        .route(
-            "/api/ebooks/{uuid}/images/signed",
-            get(ebooks::images::get_ebook_signed_image),
-        )
-        .route("/api/ebooks/{uuid}/file", get(ebooks::get_ebook_file))
-        .route(
-            "/api/ebooks/{uuid}/pages/{page}",
-            get(ebooks::get_ebook_page),
-        )
-        .route("/api/ebooks/{uuid}/kepub", get(ebooks::get_ebook_kepub))
-        .route(
-            "/api/ebooks/{uuid}/download",
-            get(ebooks::get_ebook_download),
-        )
-        .route(
-            "/api/audiobooks/{uuid}/download",
-            get(audiobooks::get_audiobook_download),
-        )
-        .route(
-            "/api/audiobooks/{uuid}/manifest",
-            get(audiobooks::get_audiobook_manifest),
-        )
-        .route(
-            "/api/audiobooks/{uuid}/parts/{ordinal}",
-            get(audiobooks::get_audiobook_part),
-        )
-        .route(
-            "/api/audiobooks/{uuid}/playlist.m3u8",
-            get(audiobooks::get_audiobook_playlist),
-        )
-        .route(
-            "/api/audiobooks/{uuid}/segments/{segment}",
-            get(audiobooks::get_audiobook_segment),
-        )
-        .route(
-            "/api/audiobooks/{uuid}/status",
-            get(audiobooks::get_audiobook_status),
-        )
-        .route(
-            "/api/audiobooks/{uuid}/playback-rate",
-            get(audiobooks::get_playback_rate).put(audiobooks::put_playback_rate),
-        )
+        .routes(routes!(ebooks::chapters::get_ebook_chapters))
+        .routes(routes!(ebooks::chapters::get_ebook_chapter_text))
+        .routes(routes!(ebooks::images::get_ebook_images))
+        .routes(routes!(ebooks::images::get_ebook_image_link))
+        .routes(routes!(ebooks::images::get_ebook_image_file))
+        .routes(routes!(ebooks::images::get_ebook_signed_image))
+        .routes(routes!(ebooks::get_ebook_file))
+        .routes(routes!(ebooks::get_ebook_page))
+        .routes(routes!(ebooks::get_ebook_kepub))
+        .routes(routes!(ebooks::get_ebook_download))
+        .routes(routes!(audiobooks::get_audiobook_download))
+        .routes(routes!(audiobooks::get_audiobook_manifest))
+        .routes(routes!(audiobooks::get_audiobook_part))
+        .routes(routes!(audiobooks::get_audiobook_playlist))
+        .routes(routes!(audiobooks::get_audiobook_segment))
+        .routes(routes!(audiobooks::get_audiobook_status))
+        .routes(routes!(
+            audiobooks::get_playback_rate,
+            audiobooks::put_playback_rate
+        ))
 }
 
 /// Metadata overrides, progress sync, author/cover/series/tag discovery routes, the
@@ -142,23 +97,17 @@ pub(super) fn data_routes(
 /// Metadata override read/write + cover-only revert.
 fn metadata_override_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route(
-            "/api/ebooks/{uuid}/overrides",
-            post(overrides::post_ebook_overrides).delete(overrides::delete_ebook_overrides),
-        )
+        .routes(routes!(
+            overrides::post_ebook_overrides,
+            overrides::delete_ebook_overrides
+        ))
         // Cover-only revert. Carries no upload body (unlike the POST in
         // `upload_router`), so it stays outside the upload rate limiter —
         // same split as the author-photo GET/DELETE (`discovery_routes`) vs
         // its PUT (`upload_router`).
-        .route(
-            "/api/ebooks/{uuid}/cover",
-            delete(overrides::delete_ebook_cover),
-        )
+        .routes(routes!(overrides::delete_ebook_cover))
         // Mirrors the /api/reindex-style admin triggers.
-        .route(
-            "/api/admin/rewrite-all-epubs",
-            post(overrides::post_rewrite_all_epubs),
-        )
+        .routes(routes!(overrides::post_rewrite_all_epubs))
 }
 
 /// Progress sync — mobile-facing REST. Web hits the analogous
@@ -441,9 +390,9 @@ fn kindle_routes() -> OpenApiRouter<AppState> {
 /// `Arc` across both search families; `rest_router` supplies a fresh dedicated one.
 fn search_router(limiter: Arc<RateLimiter>) -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route("/api/search", get(search::get_search))
-        .route("/api/search/content", get(search::get_search_content))
-        .route("/api/search/palette", get(search::get_search_palette))
+        .routes(routes!(search::get_search))
+        .routes(routes!(search::get_search_content))
+        .routes(routes!(search::get_search_palette))
         .layer(axum::middleware::from_fn_with_state(
             limiter,
             rate_limit_by_ip,
@@ -464,16 +413,10 @@ fn upload_router(limits: RateLimits) -> OpenApiRouter<AppState> {
         .with_limits(limits),
     );
     OpenApiRouter::new()
-        .route(
-            "/api/ebooks/{uuid}/cover",
-            post(overrides::post_ebook_cover),
-        )
+        .routes(routes!(overrides::post_ebook_cover))
         // No upload body, but the only override route that spends an
         // *outbound* fetch — which is the cost this limiter is really for.
-        .route(
-            "/api/ebooks/{uuid}/cover/from-url",
-            post(overrides::post_ebook_cover_from_url),
-        )
+        .routes(routes!(overrides::post_ebook_cover_from_url))
         .route("/api/journals/images", post(journals::post_journal_image))
         .routes(routes!(profile::post_avatar))
         .routes(routes!(author_photos::put_author_photo))
@@ -508,19 +451,10 @@ pub(super) fn book_upload_router(
         .with_limits(limits),
     );
     OpenApiRouter::new()
-        .route(
-            "/api/uploads/ebooks/inspect",
-            post(uploads::post_inspect_ebook),
-        )
-        .route("/api/uploads/ebooks", post(uploads::post_upload_ebook))
-        .route(
-            "/api/uploads/audiobooks/inspect",
-            post(uploads::post_inspect_audiobook),
-        )
-        .route(
-            "/api/uploads/audiobooks",
-            post(uploads::post_upload_audiobook),
-        )
+        .routes(routes!(uploads::post_inspect_ebook))
+        .routes(routes!(uploads::post_upload_ebook))
+        .routes(routes!(uploads::audiobooks::post_inspect_audiobook))
+        .routes(routes!(uploads::audiobooks::post_upload_audiobook))
         // Book uploads need far more than the global 1 MiB cap; layered closer
         // to the handler so axum picks this larger value for these routes.
         .layer(axum::extract::DefaultBodyLimit::max(

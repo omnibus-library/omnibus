@@ -73,3 +73,27 @@ pub struct BookImageRead {
     pub expires_at: i64,
     pub expires_at_iso: String,
 }
+
+/// Query parameter of `GET /api/ebooks/{uuid}/images/link` and
+/// `GET /api/ebooks/{uuid}/images/file`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct ImageHrefQuery {
+    /// The image's path inside the EPUB, as `href` in `GET /api/ebooks/{uuid}/images`.
+    pub href: String,
+}
+
+/// Query parameters of `GET /api/ebooks/{uuid}/images/signed`. They come in the `path` that
+/// `GET /api/ebooks/{uuid}/images/link` returns: use that path as it is.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct SignedImageQuery {
+    /// The image's path inside the EPUB.
+    pub href: String,
+    /// When the link stops working, in Unix seconds.
+    pub expires: Option<String>,
+    /// The link's signature.
+    pub sig: Option<String>,
+}

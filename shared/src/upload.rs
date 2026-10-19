@@ -165,6 +165,80 @@ pub struct UploadCommitResult {
     pub uuid: String,
 }
 
+/// Describes the `multipart/form-data` form of `POST /api/uploads/ebooks/inspect`.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct EbookInspectForm {
+    /// The EPUB or PDF.
+    #[cfg_attr(feature = "openapi", schema(value_type = String, format = Binary))]
+    pub file: Vec<u8>,
+}
+
+/// Describes the `multipart/form-data` form of `POST /api/uploads/ebooks`.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct EbookUploadForm {
+    /// The EPUB or PDF.
+    #[cfg_attr(feature = "openapi", schema(value_type = String, format = Binary))]
+    pub file: Vec<u8>,
+    /// The book's title. With `author`, it names the folder the file is saved in.
+    pub title: String,
+    /// The book's first author.
+    pub author: String,
+    pub series: Option<String>,
+    /// The book's place in its series, such as `2` or `2.5`.
+    pub series_index: Option<String>,
+    /// A JSON metadata override object: the fields you changed from what inspect returned.
+    /// Up to 256 KiB.
+    pub overrides: Option<String>,
+    /// An image to use as the cover, under 10 MB, with an `image/*` content type. SVG is
+    /// refused. Wins over `cover_url`.
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<String>, format = Binary))]
+    pub cover: Option<Vec<u8>>,
+    /// A metadata provider's cover URL for the server to fetch as the cover. Only the
+    /// providers' own `https` hosts are fetched.
+    pub cover_url: Option<String>,
+}
+
+/// Describes the `multipart/form-data` form of `POST /api/uploads/audiobooks/inspect`.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AudiobookInspectForm {
+    /// One `.m4b`, `.m4a` or audio-only `.mp4` file, or one or more `.mp3` parts of a single
+    /// book, each sent as a `file` part. The server reads the format from each part's file
+    /// name.
+    #[cfg_attr(feature = "openapi", schema(value_type = Vec<String>, format = Binary))]
+    pub file: Vec<Vec<u8>>,
+}
+
+/// Describes the `multipart/form-data` form of `POST /api/uploads/audiobooks`.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AudiobookUploadForm {
+    /// One `.m4b`, `.m4a` or audio-only `.mp4` file, or one or more `.mp3` parts of a single
+    /// book, each sent as a `file` part. The server reads the format from each part's file
+    /// name.
+    #[cfg_attr(feature = "openapi", schema(value_type = Vec<String>, format = Binary))]
+    pub file: Vec<Vec<u8>>,
+    /// The book's title. With `author`, it names the folder the audiobook is saved in.
+    pub title: String,
+    /// The book's first author.
+    pub author: String,
+    pub series: Option<String>,
+    /// The book's place in its series, such as `2` or `2.5`.
+    pub series_index: Option<String>,
+    /// A JSON metadata override object: the fields you changed from what inspect returned.
+    /// Up to 256 KiB.
+    pub overrides: Option<String>,
+    /// An image to use as the cover, under 10 MB, with an `image/*` content type. SVG is
+    /// refused. Wins over `cover_url`.
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<String>, format = Binary))]
+    pub cover: Option<Vec<u8>>,
+    /// A metadata provider's cover URL for the server to fetch as the cover. Only the
+    /// providers' own `https` hosts are fetched.
+    pub cover_url: Option<String>,
+}
+
 /// Number of leading bytes [`detect_ebook_format`] needs to classify an
 /// upload: the ZIP local-file-header magic is 4 bytes, a PDF's `%PDF-`
 /// signature is 5.

@@ -399,3 +399,21 @@ pub struct BulkRewriteError {
     pub book_uuid: String,
     pub message: String,
 }
+
+/// `POST /api/ebooks/{uuid}/cover/from-url` request body.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CoverFromUrlBody {
+    /// The image to fetch, up to 2,048 bytes long. Only `https` URLs on public addresses
+    /// are fetched.
+    pub url: String,
+}
+
+/// Describes the `multipart/form-data` form of `POST /api/ebooks/{uuid}/cover`.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CoverUploadForm {
+    /// The image, under 10 MB, with an `image/*` content type. SVG is refused.
+    #[cfg_attr(feature = "openapi", schema(value_type = String, format = Binary))]
+    pub cover: Vec<u8>,
+}
