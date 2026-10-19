@@ -5,6 +5,7 @@ import type {
   BookDeletionManifest,
   BookFileInfo,
   BookInsights,
+  Bookmark,
   BookProgress,
   BookSuggestion,
   EbookMetadata,
@@ -176,6 +177,18 @@ export function aWireHighlight(overrides: Partial<Highlight> = {}): Highlight {
     text: "A station at the edge of the map hears something answer.",
     note: null,
     epub_cfi_range: "epubcfi(/6/6!/4/2,/1:0,/1:20)",
+    created_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** A saved place as `GET /api/bookmarks/book/{uuid}` sends it. */
+export function aWireBookmark(overrides: Partial<Bookmark> = {}): Bookmark {
+  return {
+    id: 1,
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    position: "epubcfi(/6/6!/4/2/1:0)",
+    title: "Landfall",
     created_at: 1_760_000_000,
     ...overrides,
   };

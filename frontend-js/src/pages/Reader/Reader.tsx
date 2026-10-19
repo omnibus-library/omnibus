@@ -1,7 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import { type BookUuid, parseBookUuid, saveReadingPosition } from "../../api";
+import {
+  type BookUuid,
+  type Highlight,
+  parseBookUuid,
+  saveReadingPosition,
+} from "../../api";
 import { useAutoReadStatus } from "../../autoReadStatus";
 import { classes } from "../../classes";
 import { PageNotFound } from "../../components/PageState/PageState";
@@ -13,7 +18,9 @@ import {
   progressQuery,
 } from "../BookDetail/queries";
 import { AaPanel } from "./AaPanel";
+import { AnnotationsSheet } from "./AnnotationsSheet";
 import { epubBridge, useHighlights } from "./annotations";
+import { BookmarksDrawer } from "./BookmarksDrawer";
 import {
   loadEpubRuntime,
   type PassageSelection,
@@ -258,6 +265,25 @@ function EpubPage({
     setPanel(null);
   };
 
+  const rowActions = {
+    bridge: epubBridge,
+    onRecolor: recolor,
+    onDelete: async (highlight: Highlight) => {
+      await remove(highlight);
+      // The delete button was the focus; the surface is where Escape is heard.
+      surface.current?.focus();
+    },
+    onQuote: (highlight: Highlight) => {
+      setTarget({ kind: "quote", highlight });
+      setPanel(null);
+    },
+    onEditNote: (highlight: Highlight) => {
+      setTarget({ kind: "note", highlight });
+      setPanel(null);
+    },
+    onClose: () => setPanel(null),
+  };
+
   const labels = formatProgressLabels(loc);
   // While a jump is in flight the outgoing chapter is blanked rather than shown stale.
   const jumping = status === "loading";
@@ -378,24 +404,24 @@ function EpubPage({
         />
       )}
       {panel === "highlights" && (
-        <HighlightsDrawer
-          highlights={highlights}
+        <HighlightsDrawer highlights={highlights} {...rowActions} />
+      )}
+      {panel === "bookmarks" && (
+        <BookmarksDrawer
+          uuid={uuid}
+          position={loc.cfi}
+          label={chapterTitle}
           bridge={epubBridge}
-          onRecolor={recolor}
-          onDelete={async (highlight) => {
-            await remove(highlight);
-            // The delete button was the focus; the surface is where Escape is heard.
-            surface.current?.focus();
-          }}
-          onQuote={(highlight) => {
-            setTarget({ kind: "quote", highlight });
-            setPanel(null);
-          }}
-          onEditNote={(highlight) => {
-            setTarget({ kind: "note", highlight });
-            setPanel(null);
-          }}
           onClose={() => setPanel(null)}
+        />
+      )}
+      {panel === "annotations" && (
+        <AnnotationsSheet
+          uuid={uuid}
+          position={loc.cfi}
+          label={chapterTitle}
+          highlights={highlights}
+          {...rowActions}
         />
       )}
       {panel === "search" && (

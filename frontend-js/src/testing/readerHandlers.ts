@@ -1,5 +1,7 @@
 import { HttpResponse, http } from "msw";
 import {
+  type Bookmark,
+  ClientStampedCreateBookmark,
   ClientStampedCreateHighlight,
   type Highlight,
   type ProgressRecord,
@@ -8,7 +10,12 @@ import {
   UpdateHighlightNote,
 } from "../api/generated/schemas";
 import { COVER_SVG } from "./books";
-import { aWireHighlight, aWirePosition, aWireProgress } from "./wire";
+import {
+  aWireBookmark,
+  aWireHighlight,
+  aWirePosition,
+  aWireProgress,
+} from "./wire";
 
 // MSW fakes for the routes the readers call beyond the book itself.
 
@@ -51,11 +58,12 @@ export const comicPageHandler = http.get(
 export type RecordedWrite = { method: string; path: string; body: unknown };
 
 /**
- * The highlights `GET` lists, `POST` creates (ids count up from 100), `PATCH` recolors or puts a
- * note on, and `DELETE` removes, all against `state`; each write lands in `writes`.
+ * The highlights and bookmarks `GET` lists, `POST` creates (ids count up from 100), `PATCH`
+ * recolors or puts a note on a highlight, and `DELETE` removes, all against `state`; each write
+ * lands in `writes`.
  */
 export function annotationHandlers(
-  state: { highlights: Highlight[] },
+  state: { highlights: Highlight[]; bookmarks: Bookmark[] },
   writes: RecordedWrite[],
 ) {
   const record = (method: string, path: string, body?: unknown) =>
@@ -99,6 +107,28 @@ export function annotationHandlers(
       record("DELETE", `/api/highlights/${params.id}`);
       state.highlights = state.highlights.filter(
         (h) => h.id !== Number(params.id),
+      );
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.get("/api/bookmarks/book/:uuid", () =>
+      HttpResponse.json(state.bookmarks),
+    ),
+    http.post("/api/bookmarks", async ({ request }) => {
+      const body = ClientStampedCreateBookmark.parse(await request.json());
+      record("POST", "/api/bookmarks", body);
+      const made = aWireBookmark({
+        id: nextId++,
+        book_uuid: body.book_uuid,
+        position: body.position,
+        title: body.title ?? null,
+      });
+      state.bookmarks = [...state.bookmarks, made];
+      return HttpResponse.json(made);
+    }),
+    http.delete("/api/bookmarks/:id", ({ params }) => {
+      record("DELETE", `/api/bookmarks/${params.id}`);
+      state.bookmarks = state.bookmarks.filter(
+        (b) => b.id !== Number(params.id),
       );
       return new HttpResponse(null, { status: 204 });
     }),

@@ -4,6 +4,8 @@ import type { BookUuid, UserId } from "./core";
 import { fetchJson, ok, send } from "./core";
 import {
   getAlignment,
+  getBookmarks,
+  getDeleteBookmarkUrl,
   getDeleteHighlightUrl,
   getDeleteRatingUrl,
   getGetBookInsightsUrl,
@@ -17,6 +19,7 @@ import {
   getPostCrossFormatFollowUrl,
   getRecentProgress,
   getSessionLog,
+  postBookmark,
   postHighlight,
   postProgress,
   postRating,
@@ -26,6 +29,7 @@ import {
 import type {
   AlignmentViewOutput,
   BookInsights as BookInsightsWire,
+  Bookmark as BookmarkWire,
   BookProgress as BookProgressWire,
   Highlight as HighlightWire,
   AttributedRating as OtherRatingWire,
@@ -347,6 +351,34 @@ export async function saveHighlightNote(
 
 export async function deleteHighlight(id: number): Promise<void> {
   await send(getDeleteHighlightUrl(String(id)), "DELETE");
+}
+
+function toBookmark(wire: BookmarkWire) {
+  return {
+    id: wire.id,
+    position: wire.position,
+    title: wire.title ?? null,
+    createdAt: wire.created_at,
+  };
+}
+
+export type Bookmark = ReturnType<typeof toBookmark>;
+
+/** The reader's saved places in a book. */
+export async function fetchBookmarks(uuid: BookUuid): Promise<Bookmark[]> {
+  return ok(await getBookmarks(encodeURIComponent(uuid))).map(toBookmark);
+}
+
+/** Saves a place; `position` is an EPUB CFI or a PDF `pdf-page:N` anchor. */
+export async function createBookmark(
+  uuid: BookUuid,
+  bookmark: { position: string; title: string | null },
+): Promise<Bookmark> {
+  return toBookmark(ok(await postBookmark({ book_uuid: uuid, ...bookmark })));
+}
+
+export async function deleteBookmark(id: number): Promise<void> {
+  await send(getDeleteBookmarkUrl(String(id)), "DELETE");
 }
 
 function toInsights(wire: BookInsightsWire) {

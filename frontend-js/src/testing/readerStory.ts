@@ -1,5 +1,9 @@
 import type { HttpHandler } from "msw";
-import type { Highlight, ProgressUpdate } from "../api/generated/schemas";
+import type {
+  Bookmark,
+  Highlight,
+  ProgressUpdate,
+} from "../api/generated/schemas";
 import { bookHandler, readStatusHandlers } from "./handlers";
 import { fakeEpubGlue } from "./readerGlue";
 import {
@@ -29,8 +33,11 @@ export const TOC = [
 export function readerFixture() {
   const writes: ProgressUpdate[] = [];
   const statusWrites: { status: string }[] = [];
-  // The highlights the server holds (a story sets them) and the writes made against them.
-  const annotations: { highlights: Highlight[] } = { highlights: [] };
+  // The highlights and bookmarks the server holds (a story sets them) and the writes made against them.
+  const annotations: { highlights: Highlight[]; bookmarks: Bookmark[] } = {
+    highlights: [],
+    bookmarks: [],
+  };
   const annotationWrites: RecordedWrite[] = [];
   let glue: ReturnType<typeof fakeEpubGlue>;
 
@@ -55,6 +62,7 @@ export function readerFixture() {
       writes.length = 0;
       statusWrites.length = 0;
       annotations.highlights = [];
+      annotations.bookmarks = [];
       annotationWrites.length = 0;
       // The reader keeps its position and typography here, which would otherwise carry between stories.
       localStorage.clear();

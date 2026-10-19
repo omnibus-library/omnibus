@@ -20,7 +20,8 @@ type RowProps = Omit<HighlightsDrawerProps, "highlights" | "onClose"> & {
   onJump: (anchor: string) => void;
 };
 
-function Row({
+/** One passage: its quote, which jumps there, the recolor swatches and the row actions. */
+export function HighlightRow({
   highlight,
   bridge,
   onRecolor,
@@ -99,6 +100,28 @@ function Row({
   );
 }
 
+/** One filter chip per highlight color. */
+export function ColorChips({
+  active,
+  onPick,
+}: {
+  active: HighlightColor | null;
+  onPick: (color: HighlightColor) => void;
+}) {
+  return HIGHLIGHT_COLORS.map((color) => (
+    <button
+      key={color}
+      type="button"
+      className={classes("rd-chip", active === color && "on")}
+      aria-label={`Filter ${color}`}
+      aria-pressed={active === color}
+      onClick={() => onPick(color)}
+    >
+      <span className="rd-chip-dot" data-color={color} />
+    </button>
+  ));
+}
+
 /** The highlights and notes drawer: every passage in the book, filterable by color, with its row actions. */
 export function HighlightsDrawer({
   highlights,
@@ -127,25 +150,14 @@ export function HighlightsDrawer({
         >
           All {highlights.length}
         </button>
-        {HIGHLIGHT_COLORS.map((color) => (
-          <button
-            key={color}
-            type="button"
-            className={classes("rd-chip", filter === color && "on")}
-            aria-label={`Filter ${color}`}
-            aria-pressed={filter === color}
-            onClick={() => setFilter(color)}
-          >
-            <span className="rd-chip-dot" data-color={color} />
-          </button>
-        ))}
+        <ColorChips active={filter} onPick={setFilter} />
       </div>
       <div className="rd-drawer-body">
         {shown.length === 0 ? (
           <div className="rd-drawer-empty">No highlights yet.</div>
         ) : (
           shown.map((highlight) => (
-            <Row
+            <HighlightRow
               key={highlight.id}
               highlight={highlight}
               onJump={(anchor) => {
