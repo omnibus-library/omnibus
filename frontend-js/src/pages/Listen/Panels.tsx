@@ -4,7 +4,8 @@ import { Modal } from "../../components/Modal/Modal";
 import { MAX_RATE, MIN_RATE } from "../../playback/boot";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import { SLEEP_PRESETS } from "../../playback/sleep";
-import { clampRate, formatHms, RATE_STEP, thumbPct } from "./listen";
+import { formatHmsShort } from "../../resume";
+import { clampRate, RATE_STEP, thumbPct } from "./listen";
 import "./Listen.css";
 
 type DrawerShellProps = {
@@ -166,7 +167,7 @@ export function SleepPanelBody() {
         </div>
         <div className="lp-sleep-status">
           <div className="lp-sleep-status-value" data-testid="sleep-status">
-            {counting ? formatHms(sleep.remaining ?? 0) : "—"}
+            {counting ? formatHmsShort(sleep.remaining ?? 0) : "—"}
           </div>
           <div className="label">{counting ? "remaining" : "inactive"}</div>
         </div>

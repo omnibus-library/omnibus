@@ -6,19 +6,7 @@ import {
 } from "../../api";
 import { MAX_RATE, MIN_RATE } from "../../playback/boot";
 import type { BookState } from "../../playback/PlaybackProvider";
-
-/** `H:MM:SS`, or `M:SS` under an hour; 0:00 for anything that isn't a time. */
-export function formatHms(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
-  const total = Math.floor(seconds);
-  const [h, m, s] = [
-    Math.floor(total / 3600),
-    Math.floor((total % 3600) / 60),
-    total % 60,
-  ];
-  const ss = String(s).padStart(2, "0");
-  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
-}
+import { formatHmsShort } from "../../resume";
 
 /** The chapter `elapsed` is in: the last one that has started, or the first. */
 export function chapterIndexForElapsed(
@@ -175,7 +163,7 @@ export const dockSubText = (
 ) =>
   [
     chapterSub,
-    `${formatHms(elapsed)} / ${formatHms(duration)}`,
+    `${formatHmsShort(elapsed)} / ${formatHmsShort(duration)}`,
     timeLeftText(elapsed, duration, rate),
   ]
     .filter(Boolean)

@@ -1,9 +1,9 @@
 import type { Chapter } from "../api";
 import {
   chapterIndexForElapsed,
-  formatHms,
   remainingAtRate,
 } from "../pages/Listen/listen";
+import { formatHmsShort } from "../resume";
 
 /** The duration presets, in seconds; 0 is off. */
 export const SLEEP_PRESETS = [
@@ -49,7 +49,7 @@ export type SleepSink = {
 /** The toolbar's label: the live countdown while armed. */
 export const sleepToolbarLabel = (remaining: number | null) =>
   remaining !== null && remaining > 0
-    ? `Sleep · ${formatHms(remaining)}`
+    ? `Sleep · ${formatHmsShort(remaining)}`
     : "Sleep · off";
 
 /** The dock chip's label; end of chapter has no honest countdown, so it gets a fixed tag. */
@@ -60,7 +60,7 @@ export function sleepChipLabel(
   if (remaining === null || remaining <= 0) return "Sleep";
   return choice.kind === "endOfChapter"
     ? "Sleep · End of ch."
-    : `Sleep · ${formatHms(remaining)}`;
+    : `Sleep · ${formatHmsShort(remaining)}`;
 }
 
 /** Where an end-of-chapter timer armed at `elapsed` pauses: the end of the chapter playing, or null with none ahead. */

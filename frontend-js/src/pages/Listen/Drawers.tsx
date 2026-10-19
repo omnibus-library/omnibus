@@ -11,10 +11,10 @@ import {
 import { Button } from "../../components/Button/Button";
 import { Loading } from "../../components/Loading/Loading";
 import { usePlayback } from "../../playback/PlaybackProvider";
+import { formatHmsShort } from "../../resume";
 import {
   chapterIndexForElapsed,
   chapterLabelAt,
-  formatHms,
   remainingAtRate,
 } from "./listen";
 import { DrawerShell } from "./Panels";
@@ -59,7 +59,7 @@ export function useBookmarks(uuid: BookUuid) {
       edit((rows) => [...rows, made]);
       setFreshId(made.id);
       setToast({
-        time: formatHms(elapsed),
+        time: formatHmsShort(elapsed),
         chapter: chapterLabelAt(elapsed, chapters),
       });
     },
@@ -145,11 +145,11 @@ export function ChaptersDrawer({ onClose }: { onClose: () => void }) {
               </span>
               {/* Book time, so the one wall-clock figure is the current row's time left. */}
               <span className="lp-drawer-dur">
-                {formatHms(chapter.seconds)}
+                {formatHmsShort(chapter.seconds)}
                 {state === "current" && (
                   <span className="lp-drawer-left">
                     {" "}
-                    · {formatHms(remainingAtRate(left, rate))} left
+                    · {formatHmsShort(remainingAtRate(left, rate))} left
                   </span>
                 )}
               </span>
@@ -191,7 +191,7 @@ function BookmarkRow({
         <span className="lp-bm-label">
           {chapterLabelAt(bookmark.seconds, chapters)}
         </span>
-        <span className="lp-bm-time">{formatHms(bookmark.seconds)}</span>
+        <span className="lp-bm-time">{formatHmsShort(bookmark.seconds)}</span>
       </button>
       <div className="lp-bm-note">
         {editing ? (

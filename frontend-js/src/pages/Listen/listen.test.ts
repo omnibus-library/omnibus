@@ -11,7 +11,6 @@ import {
   dockBook,
   dockSubText,
   effectiveScrubPosition,
-  formatHms,
   kickerText,
   rateLabel,
   remainingAtRate,
@@ -40,21 +39,6 @@ describe("rateLabel", () => {
   it("shows two decimals and a multiplication sign", () => {
     expect(rateLabel(1.5)).toBe("1.50×");
     expect(rateLabel(1)).toBe("1.00×");
-  });
-});
-
-describe("formatHms", () => {
-  it("drops the hour under an hour", () => {
-    expect(formatHms(0)).toBe("0:00");
-    expect(formatHms(75.9)).toBe("1:15");
-    expect(formatHms(3600)).toBe("1:00:00");
-    expect(formatHms(10_822)).toBe("3:00:22");
-  });
-
-  it("reads anything that isn't a time as 0:00", () => {
-    expect(formatHms(-1)).toBe("0:00");
-    expect(formatHms(Number.NaN)).toBe("0:00");
-    expect(formatHms(Number.POSITIVE_INFINITY)).toBe("0:00");
   });
 });
 

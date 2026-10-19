@@ -6,6 +6,7 @@ import { CoverImage } from "../../components/Cover/CoverImage";
 import { BusyLabel, Ring } from "../../components/Loading/Loading";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import { sleepToolbarLabel } from "../../playback/sleep";
+import { formatHmsShort } from "../../resume";
 import {
   chapterFillPct,
   chapterIndexForElapsed,
@@ -13,7 +14,6 @@ import {
   chapterPrevTarget,
   chapterSubText,
   effectiveScrubPosition,
-  formatHms,
   kickerText,
   type Pane,
   rateLabel,
@@ -89,7 +89,7 @@ function ChapterMap() {
         <div className="lp-chapter-thumb" style={{ left: thumb }} />
         {scrub !== null && (
           <div className="lp-chapter-bubble" style={{ left: thumb }}>
-            {formatHms(position)}
+            {formatHmsShort(position)}
           </div>
         )}
         <input
@@ -107,11 +107,11 @@ function ChapterMap() {
       </div>
       {/* Elapsed and total are book time; only the time left is scaled by the speed. */}
       <div className="lp-scrub-times" data-testid="listen-scrub-times">
-        <span>{formatHms(position)}</span>
+        <span>{formatHmsShort(position)}</span>
         <span className="lp-scrub-remaining">
-          · {formatHms(remainingAtRate(remaining, rate))} remaining
+          · {formatHmsShort(remainingAtRate(remaining, rate))} remaining
         </span>
-        <span>{formatHms(duration)}</span>
+        <span>{formatHmsShort(duration)}</span>
       </div>
       {playing && buffering && (
         <div
