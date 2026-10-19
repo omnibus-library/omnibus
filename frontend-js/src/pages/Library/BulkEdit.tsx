@@ -4,12 +4,12 @@ import { Link } from "react-router";
 import {
   addShelfBooks,
   type Book,
+  bulkSaveOverrides,
   fetchAuthorOptions,
   fetchGenreOptions,
   fetchShelves,
   fetchTagOptions,
   type NamedCount,
-  saveOverrides,
   thumbUrl,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
@@ -20,9 +20,9 @@ import { plural } from "../../format";
 import { useCurrentUser } from "../../session";
 import {
   type BulkEdit,
+  bulkWire,
   isEmptyEdit,
   NO_EDIT,
-  overridesFor,
   removable,
 } from "./bulkEdit";
 import { addTargets } from "./shelfGallery";
@@ -156,11 +156,11 @@ function usePool(key: string, fetcher: () => Promise<NamedCount[]>) {
 type ModalBodyProps = {
   books: Book[];
   onClose: () => void;
-  /** Every book is saved; the caller closes the modal and drops the selection. */
+  /** The edit is saved; the caller closes the modal and drops the selection. */
   onSaved: () => void;
 };
 
-/** The bulk edit dialog: one `edit` applied to each selected book in turn. */
+/** The bulk edit dialog: one `edit` applied to every selected book in a single request. */
 export function BulkEditModal({ books, onClose, onSaved }: ModalBodyProps) {
   const queryClient = useQueryClient();
   const [edit, setEdit] = useState<BulkEdit>(NO_EDIT);
@@ -176,24 +176,23 @@ export function BulkEditModal({ books, onClose, onSaved }: ModalBodyProps) {
 
   const apply = useMutation({
     mutationFn: async () => {
-      for (const [saved, book] of books.entries()) {
-        try {
-          await saveOverrides(book.uuid, overridesFor(book, edit));
-        } catch (e) {
-          const reason = e instanceof Error ? e.message : String(e);
-          const done = saved
-            ? ` (${saved} of ${books.length} books saved)`
-            : "";
-          throw new Error(`Save failed: ${reason}${done}`);
-        }
+      try {
+        await bulkSaveOverrides(
+          books.map((book) => book.uuid),
+          bulkWire(edit),
+        );
+      } catch (e) {
+        const reason = e instanceof Error ? e.message : String(e);
+        throw new Error(`Save failed: ${reason}`);
       }
     },
-    // A partial save still changed the lists, so they refetch either way.
+    // A tag edit can move books between smart shelves and change the resume row too.
     onSettled: () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["books"] }),
-        queryClient.invalidateQueries({ queryKey: ["shelf-page"] }),
-      ]),
+      Promise.all(
+        [["books"], ["shelf-page"], ["shelves"], ["progress", "recent"]].map(
+          (queryKey) => queryClient.invalidateQueries({ queryKey }),
+        ),
+      ),
     onSuccess: onSaved,
   });
 

@@ -13,11 +13,11 @@ import {
 import {
   AddShelfBooksBody,
   type AuthorSummary,
+  BulkOverridesRequest,
   type EbookMetadata,
   type EbookPage,
   type GenreWeight,
   type LoginResponse,
-  MetadataOverrides,
   type PaletteResults,
   type ResumePoint,
   type SeriesStack,
@@ -187,39 +187,47 @@ export function shelfPageHandler(
 }
 
 /**
- * `POST /api/ebooks/{uuid}/overrides`: lays the body over the matching book of
- * `books` in place, so a refetch sees it, and answers with the book. Each save
- * lands in `saved`; a uuid in `refuse` is a 400 whose plain text is its reason.
+ * `POST /api/ebooks/overrides/bulk`: applies the edit to the matching books of
+ * `books` in place, as the server does, so a refetch sees it, and answers 204.
+ * Each request lands in `saved`; with `refuse` set, a 400 whose plain text is
+ * that reason and nothing changes.
  */
-export function overridesHandler(
+export function bulkOverridesHandler(
   books: EbookMetadata[],
   {
     saved = [],
-    refuse = {},
-  }: {
-    saved?: { uuid: string; body: MetadataOverrides }[];
-    refuse?: Record<string, string>;
-  } = {},
+    refuse,
+  }: { saved?: BulkOverridesRequest[]; refuse?: string } = {},
 ) {
-  return http.post(
-    "/api/ebooks/:uuid/overrides",
-    async ({ params, request }) => {
-      const uuid = String(params.uuid);
-      const book = books.find((b) => b.unique_identifier === uuid);
-      if (!book) return new HttpResponse("book not found", { status: 404 });
-      const reason = refuse[uuid];
-      if (reason) return new HttpResponse(reason, { status: 400 });
-      const body = MetadataOverrides.parse(await request.json());
-      saved.push({ uuid, body });
-      if (body.creators) book.creators = body.creators;
-      if (body.subjects) book.subjects = body.subjects;
-      if (body.genres) book.genres = body.genres;
-      if (body.series != null) book.series = body.series;
-      if (body.publisher != null) book.publisher = body.publisher;
-      if (body.language != null) book.language = body.language;
-      return HttpResponse.json(book);
-    },
-  );
+  return http.post("/api/ebooks/overrides/bulk", async ({ request }) => {
+    if (refuse) return new HttpResponse(refuse, { status: 400 });
+    const body = BulkOverridesRequest.parse(await request.json());
+    saved.push(body);
+    const { edit } = body;
+    // Removals first, then each addition the list lacks, order kept.
+    const merge = (
+      current: string[],
+      remove: string[] = [],
+      add: string[] = [],
+    ) => {
+      const kept = current.filter((v) => !remove.includes(v));
+      return [...kept, ...add.filter((v) => !kept.includes(v))];
+    };
+    for (const book of books) {
+      if (!body.uuids.includes(book.unique_identifier ?? "")) continue;
+      if (edit.authors) book.creators = edit.authors.map((name) => ({ name }));
+      if (edit.series != null) book.series = edit.series;
+      if (edit.publisher != null) book.publisher = edit.publisher;
+      if (edit.language != null) book.language = edit.language;
+      book.subjects = merge(book.subjects, edit.remove_tags, edit.add_tags);
+      book.genres = merge(
+        book.genres ?? [],
+        edit.remove_genres,
+        edit.add_genres,
+      );
+    }
+    return new HttpResponse(null, { status: 204 });
+  });
 }
 
 /**

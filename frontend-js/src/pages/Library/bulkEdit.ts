@@ -1,5 +1,5 @@
 import type { Book, NamedCount } from "../../api";
-import type { MetadataOverrides } from "../../api/generated/schemas";
+import type { BulkMetadataEdit } from "../../api/generated/schemas";
 
 /** What the bulk modal collects: blank scalars and empty lists leave a book as it is. */
 export type BulkEdit = {
@@ -35,44 +35,20 @@ export const isEmptyEdit = (edit: BulkEdit) =>
   edit.addGenres.length === 0 &&
   edit.removeGenres.length === 0;
 
-/** `current` without the exact matches of `remove`, then each `add` it lacks, order kept. */
-export function applyDelta(
-  current: string[],
-  remove: string[],
-  add: string[],
-): string[] {
-  const kept = current.filter((value) => !remove.includes(value));
-  for (const value of add) {
-    if (!kept.includes(value)) kept.push(value);
-  }
-  return kept;
-}
-
-/** The overrides that turn `book` into what `edit` asks for, holding only what changes. */
-export function overridesFor(book: Book, edit: BulkEdit): MetadataOverrides {
-  const overrides: MetadataOverrides = {};
-  if (edit.authors.length) {
-    overrides.creators = edit.authors.map((name) => ({ name }));
-  }
+/** The wire edit for `edit`: scalars trimmed and sent only when filled, authors only when given. */
+export function bulkWire(edit: BulkEdit): BulkMetadataEdit {
+  const wire: BulkMetadataEdit = {
+    add_tags: edit.addTags,
+    remove_tags: edit.removeTags,
+    add_genres: edit.addGenres,
+    remove_genres: edit.removeGenres,
+  };
+  if (edit.authors.length) wire.authors = edit.authors;
   for (const field of ["series", "publisher", "language"] as const) {
     const value = edit[field].trim();
-    if (value) overrides[field] = value;
+    if (value) wire[field] = value;
   }
-  if (edit.addTags.length || edit.removeTags.length) {
-    overrides.subjects = applyDelta(
-      book.subjects,
-      edit.removeTags,
-      edit.addTags,
-    );
-  }
-  if (edit.addGenres.length || edit.removeGenres.length) {
-    overrides.genres = applyDelta(
-      book.genres,
-      edit.removeGenres,
-      edit.addGenres,
-    );
-  }
-  return overrides;
+  return wire;
 }
 
 /** The values some book carries, most shared first and then by name: all there is to remove. */

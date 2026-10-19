@@ -1,36 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { aBook } from "../../testing/books";
 import {
-  applyDelta,
   type BulkEdit,
+  bulkWire,
   isEmptyEdit,
   NO_EDIT,
-  overridesFor,
   removable,
 } from "./bulkEdit";
 
 const edit = (changes: Partial<BulkEdit>): BulkEdit => ({
   ...NO_EDIT,
   ...changes,
-});
-
-describe("applyDelta", () => {
-  it("drops the removed values and appends the added ones in order", () => {
-    expect(applyDelta(["a", "b", "c"], ["b"], ["d", "a", "e"])).toEqual([
-      "a",
-      "c",
-      "d",
-      "e",
-    ]);
-  });
-
-  it("keeps a value that is both removed and added", () => {
-    expect(applyDelta(["a"], ["a"], ["a"])).toEqual(["a"]);
-  });
-
-  it("matches removals exactly, not by case", () => {
-    expect(applyDelta(["Cozy"], ["cozy"], [])).toEqual(["Cozy"]);
-  });
 });
 
 describe("isEmptyEdit", () => {
@@ -49,28 +29,32 @@ describe("isEmptyEdit", () => {
   });
 });
 
-describe("overridesFor", () => {
-  it("holds only the fields the edit changes", () => {
-    expect(overridesFor(aBook(), edit({ publisher: " Tor " }))).toEqual({
+describe("bulkWire", () => {
+  it("sends the lists as they are and nothing else for a lists-only edit", () => {
+    expect(
+      bulkWire(edit({ addTags: ["new"], removeGenres: ["Drama"] })),
+    ).toEqual({
+      add_tags: ["new"],
+      remove_tags: [],
+      add_genres: [],
+      remove_genres: ["Drama"],
+    });
+  });
+
+  it("trims the scalars, and leaves out blank ones and an empty author list", () => {
+    expect(bulkWire(edit({ publisher: " Tor ", series: "  " }))).toMatchObject({
       publisher: "Tor",
     });
+    const wire = bulkWire(edit({ publisher: " Tor ", series: "  " }));
+    expect(wire).not.toHaveProperty("series");
+    expect(wire).not.toHaveProperty("authors");
   });
 
-  it("replaces the authors with the names given", () => {
-    expect(overridesFor(aBook(), edit({ authors: ["Ada", "Bo"] }))).toEqual({
-      creators: [{ name: "Ada" }, { name: "Bo" }],
-    });
-  });
-
-  it("merges tags and genres into each book's own values", () => {
-    const book = aBook({ subjects: ["old", "keep"], genres: ["Drama"] });
-
-    expect(
-      overridesFor(
-        book,
-        edit({ removeTags: ["old"], addTags: ["new"], addGenres: ["Epic"] }),
-      ),
-    ).toEqual({ subjects: ["keep", "new"], genres: ["Drama", "Epic"] });
+  it("sends the authors when given", () => {
+    expect(bulkWire(edit({ authors: ["Ada", "Bo"] })).authors).toEqual([
+      "Ada",
+      "Bo",
+    ]);
   });
 });
 

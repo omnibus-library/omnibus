@@ -1,15 +1,15 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
-import type { MetadataOverrides } from "../../api/generated/schemas";
+import type { BulkOverridesRequest } from "../../api/generated/schemas";
 import {
   addShelfBooksHandler,
+  bulkOverridesHandler,
   failing,
   filterOptionHandlers,
   hanging,
   LIBRARY_PATH,
   libraryHandler,
-  overridesHandler,
   recentProgressHandler,
   shelfPageHandler,
   shelvesHandler,
@@ -1142,7 +1142,7 @@ export const ScrolledPastStack: Story = {
 const AURORA_1 = "00000000-0000-4000-8000-000000000001";
 const AURORA_2 = "00000000-0000-4000-8000-000000000002";
 
-// Fresh per story: the overrides handler edits these in place.
+// Fresh per story: the bulk handler edits these in place.
 const bulkBooks = () =>
   aWireLibrary(3).map((book, i) => ({
     ...book,
@@ -1156,7 +1156,7 @@ const BULK_OPTIONS = filterOptionHandlers({
   ],
 });
 
-const saved: { uuid: string; body: MetadataOverrides }[] = [];
+const saved: BulkOverridesRequest[] = [];
 
 type Play = Pick<
   Parameters<NonNullable<Story["play"]>>[0],
@@ -1248,7 +1248,7 @@ export const BulkEditApplies: Story = {
     const books = bulkBooks();
     msw.use(
       libraryHandler(books, 10),
-      overridesHandler(books, { saved }),
+      bulkOverridesHandler(books, { saved }),
       ...BULK_OPTIONS,
     );
   },
@@ -1284,14 +1284,17 @@ export const BulkEditApplies: Story = {
     await waitFor(() =>
       expect(canvas.queryByRole("dialog")).not.toBeInTheDocument(),
     );
+    // One request, with the deltas rather than any book's resulting lists.
     await expect(saved).toEqual([
       {
-        uuid: AURORA_1,
-        body: { publisher: "Tor", subjects: ["space opera", "slow burn"] },
-      },
-      {
-        uuid: AURORA_2,
-        body: { publisher: "Tor", subjects: ["found family", "slow burn"] },
+        uuids: [AURORA_1, AURORA_2],
+        edit: {
+          publisher: "Tor",
+          add_tags: ["slow burn"],
+          remove_tags: ["cozy"],
+          add_genres: [],
+          remove_genres: [],
+        },
       },
     ]);
     // The lists refetched in place, and the selection went with the dialog.
@@ -1311,50 +1314,9 @@ export const BulkEditFails: Story = {
   beforeEach({ msw }) {
     seedTable();
     saved.length = 0;
-    const books = bulkBooks();
     msw.use(
-      libraryHandler(books, 10),
-      overridesHandler(books, {
-        saved,
-        refuse: { [AURORA_2]: "series too long" },
-      }),
-      ...BULK_OPTIONS,
-    );
-  },
-  play: async ({ canvas, userEvent }) => {
-    const form = await openBulkEdit({ canvas, userEvent });
-
-    await userEvent.type(form.getByLabelText("Series"), "Saga");
-    await userEvent.click(
-      form.getByRole("button", { name: "Apply to 2 books" }),
-    );
-
-    await expect(await form.findByRole("alert")).toHaveTextContent(
-      "Save failed: series too long (1 of 2 books saved)",
-    );
-    // The loop stopped at the refusal; the dialog and the selection stay.
-    await expect(saved.map((s) => s.uuid)).toEqual([AURORA_1]);
-    await expect(
-      form.getByRole("button", { name: "Apply to 2 books" }),
-    ).toBeEnabled();
-    await expect(canvas.getByText("2 books selected")).toBeInTheDocument();
-    // The table shows what was saved.
-    await waitFor(() =>
-      expect(canvas.getAllByRole("row")[1]).toHaveTextContent("Saga #1"),
-    );
-    await expect(canvas.getAllByRole("row")[2]).toHaveTextContent(
-      "Aurora Station #2",
-    );
-  },
-};
-
-export const BulkEditFailsAtOnce: Story = {
-  beforeEach({ msw }) {
-    seedTable();
-    const books = bulkBooks();
-    msw.use(
-      libraryHandler(books, 10),
-      overridesHandler(books, { refuse: { [AURORA_1]: "series too long" } }),
+      libraryHandler(bulkBooks(), 10),
+      bulkOverridesHandler([], { saved, refuse: "series too long" }),
       ...BULK_OPTIONS,
     );
   },
@@ -1369,6 +1331,14 @@ export const BulkEditFailsAtOnce: Story = {
     await expect(await form.findByRole("alert")).toHaveTextContent(
       /^Save failed: series too long$/,
     );
+    // The dialog and the selection stay, and nothing changed in the table.
+    await expect(
+      form.getByRole("button", { name: "Apply to 2 books" }),
+    ).toBeEnabled();
+    await expect(canvas.getByText("2 books selected")).toBeInTheDocument();
+    await expect(canvas.getAllByRole("row")[1]).toHaveTextContent(
+      "Aurora Station #1",
+    );
   },
 };
 
@@ -1377,7 +1347,7 @@ export const BulkEditApplying: Story = {
     seedTable();
     msw.use(
       libraryHandler(bulkBooks(), 10),
-      hanging("/api/ebooks/:uuid/overrides", "post"),
+      hanging("/api/ebooks/overrides/bulk", "post"),
       ...BULK_OPTIONS,
     );
   },

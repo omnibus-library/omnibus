@@ -7,6 +7,7 @@ import {
   getGenres,
   getLogoutUrl,
   getMe,
+  getPostBulkOverridesUrl,
   getRecentProgress,
   getRegistration,
   getSearchPalette,
@@ -14,15 +15,14 @@ import {
   getTags,
   listSeries,
   listShelves,
-  postEbookOverrides,
   login as postLogin,
   register as postRegister,
   postStackSeries,
 } from "./api/generated/omnibus";
 import {
+  type BulkMetadataEdit,
   type EbookMetadata,
   type EbookPage,
-  type MetadataOverrides,
   type PaletteResults as PaletteWire,
   type ResumePoint as ResumePointWire,
   type SeriesStack as SeriesStackWire,
@@ -439,13 +439,20 @@ export async function setStackSeries(enabled: boolean): Promise<void> {
   if (res.status !== 200) throw failure(res);
 }
 
-/** Lays `overrides` over one book's metadata; fields left out keep any earlier edit. */
-export async function saveOverrides(
-  uuid: BookUuid,
-  overrides: MetadataOverrides,
+/** Applies one edit to every book in a single request; the server merges tag and genre changes into each book's own lists. */
+export async function bulkSaveOverrides(
+  uuids: BookUuid[],
+  edit: BulkMetadataEdit,
 ): Promise<void> {
-  const res = await postEbookOverrides(encodeURIComponent(uuid), overrides);
-  if (res.status !== 200) throw failure(res);
+  // The generated fetcher JSON-parses any body, and an error's is plain text.
+  const res = await fetch(getPostBulkOverridesUrl(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ uuids, edit }),
+  });
+  if (res.status !== 204) {
+    throw failure({ status: res.status, data: await res.text() });
+  }
 }
 
 /** Appends the books to a hand-picked shelf. */
