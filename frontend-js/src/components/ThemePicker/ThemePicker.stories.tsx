@@ -11,6 +11,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const OnDark: Story = {
+  globals: { theme: "dark" },
   play: async ({ canvas }) => {
     await expect(canvas.getByRole("button", { name: "Dark" })).toHaveAttribute(
       "aria-pressed",

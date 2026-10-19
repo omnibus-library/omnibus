@@ -1,53 +1,55 @@
-import type { AuthorId, BookUuid, PaletteResults, SeriesId } from "../../api";
-import { facetQuery } from "../../format";
+import type { PaletteResults } from "../../api";
+import { facetHref, SECTION_LABELS } from "../../search";
 import { type SettingsEntry, settingsHref } from "../../settingsIndex";
 
-/** One selectable palette row; arrow keys walk a single list of them. */
+/** One selectable palette row, carrying the hit it shows. */
 export type PaletteItem =
-  | { kind: "book"; uuid: BookUuid; title: string }
-  | { kind: "author"; id: AuthorId; name: string }
-  | { kind: "series"; id: SeriesId; name: string }
-  | { kind: "tag"; id: number; name: string }
-  | { kind: "genre"; name: string }
-  | { kind: "setting"; entry: SettingsEntry };
+  | { kind: "book"; hit: PaletteResults["books"][number] }
+  | { kind: "author"; hit: PaletteResults["authors"][number] }
+  | { kind: "series"; hit: PaletteResults["series"][number] }
+  | { kind: "tag"; hit: PaletteResults["tags"][number] }
+  | { kind: "genre"; hit: PaletteResults["genres"][number] }
+  | { kind: "setting"; hit: SettingsEntry };
 
-/** Every row in render order: the server's groups, then the settings. */
-export function paletteItems(
+export type PaletteGroup = { label: string; items: PaletteItem[] };
+
+/** The groups with hits, in render order: the server's, then the settings. */
+export function paletteGroups(
   results: PaletteResults | undefined,
   settings: readonly SettingsEntry[],
-): PaletteItem[] {
-  const server: PaletteItem[] = results
+): PaletteGroup[] {
+  const server: PaletteGroup[] = results
     ? [
-        ...results.books.map((b) => ({
-          kind: "book" as const,
-          uuid: b.uuid,
-          title: b.title,
-        })),
-        ...results.authors.map((a) => ({
-          kind: "author" as const,
-          id: a.id,
-          name: a.name,
-        })),
-        ...results.series.map((s) => ({
-          kind: "series" as const,
-          id: s.id,
-          name: s.name,
-        })),
-        ...results.tags.map((t) => ({
-          kind: "tag" as const,
-          id: t.id,
-          name: t.name,
-        })),
-        ...results.genres.map((g) => ({
-          kind: "genre" as const,
-          name: g.name,
-        })),
+        {
+          label: SECTION_LABELS.books,
+          items: results.books.map((hit) => ({ kind: "book", hit })),
+        },
+        {
+          label: SECTION_LABELS.authors,
+          items: results.authors.map((hit) => ({ kind: "author", hit })),
+        },
+        {
+          label: SECTION_LABELS.series,
+          items: results.series.map((hit) => ({ kind: "series", hit })),
+        },
+        {
+          label: SECTION_LABELS.tags,
+          items: results.tags.map((hit) => ({ kind: "tag", hit })),
+        },
+        {
+          label: SECTION_LABELS.genres,
+          items: results.genres.map((hit) => ({ kind: "genre", hit })),
+        },
       ]
     : [];
-  return [
+  const all = [
     ...server,
-    ...settings.map((entry) => ({ kind: "setting" as const, entry })),
+    {
+      label: "Settings",
+      items: settings.map((hit) => ({ kind: "setting" as const, hit })),
+    },
   ];
+  return all.filter((group) => group.items.length > 0);
 }
 
 /** The highlight after an arrow key; `null` means nothing is highlighted yet. */
@@ -67,15 +69,15 @@ export function moveSelection(
 export function itemKey(item: PaletteItem): string {
   switch (item.kind) {
     case "book":
-      return `book:${item.uuid}`;
+      return `book:${item.hit.uuid}`;
     case "author":
     case "series":
     case "tag":
-      return `${item.kind}:${item.id}`;
+      return `${item.kind}:${item.hit.id}`;
     case "genre":
-      return `genre:${item.name}`;
+      return `genre:${item.hit.name}`;
     case "setting":
-      return `setting:${item.entry.label}`;
+      return `setting:${item.hit.label}`;
     default: {
       const _exhaustive: never = item;
       return _exhaustive;
@@ -98,23 +100,19 @@ export function selectedIndex(
 export function itemHref(item: PaletteItem): string {
   switch (item.kind) {
     case "book":
-      return `/books/${item.uuid}`;
+      return `/books/${item.hit.uuid}`;
     case "author":
-      return `/authors/${item.id}`;
+      return `/authors/${item.hit.id}`;
     case "series":
-      return `/series/${item.id}`;
+      return `/series/${item.hit.id}`;
     case "tag":
     case "genre":
-      return searchHref(facetQuery(item.kind, item.name));
+      return facetHref(item.kind, item.hit.name);
     case "setting":
-      return settingsHref(item.entry);
+      return settingsHref(item.hit);
     default: {
       const _exhaustive: never = item;
       return _exhaustive;
     }
   }
 }
-
-/** The full results page for `query`. */
-export const searchHref = (query: string) =>
-  `/search/${encodeURIComponent(query)}`;

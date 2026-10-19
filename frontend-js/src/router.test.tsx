@@ -63,6 +63,8 @@ describe("routes", () => {
       ["/shelves/9", "Shelf", "9"],
       ["/settings?section=smtp", "Settings", "smtp"],
       ["/settings/cleanup/duplicates", "Cleanup review", "duplicates"],
+      ["/admin?section=logs", "Administration", "logs"],
+      ["/admin/cleanup/duplicates", "Cleanup review", "duplicates"],
       ["/admin/health", "Server health", null],
       ["/account", "Account", null],
       ["/add-books", "Add books", null],

@@ -5,6 +5,7 @@ import {
   facetQuery,
   formatYear,
   homeKicker,
+  initialOf,
   initialsFor,
   plateAuthor,
   singleFacetValue,
@@ -66,6 +67,24 @@ describe("initialsFor", () => {
 
   it("returns a question mark for an empty name", () => {
     expect(initialsFor("  ")).toBe("?");
+  });
+
+  it("keeps an emoji whole", () => {
+    expect(initialsFor("😀 Bob")).toBe("😀B");
+  });
+});
+
+describe("initialOf", () => {
+  it("returns the first character uppercased", () => {
+    expect(initialOf("dune")).toBe("D");
+  });
+
+  it("keeps an emoji whole", () => {
+    expect(initialOf("😀 Bob")).toBe("😀");
+  });
+
+  it("returns a question mark for an empty name", () => {
+    expect(initialOf("")).toBe("?");
   });
 });
 

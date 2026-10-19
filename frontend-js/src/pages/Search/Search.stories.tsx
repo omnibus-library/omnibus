@@ -1,8 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { delay, HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
 import { expect } from "storybook/test";
-import { hanging, paletteHandler } from "../../testing/handlers";
-import { aWirePalette } from "../../testing/wire";
+import { failing, hanging, paletteHandler } from "../../testing/handlers";
+import { aWirePalette, aWirePaletteBook } from "../../testing/wire";
 import { Search } from "./Search";
 
 const meta = {
@@ -124,6 +125,55 @@ export const ShowAllFailing: Story = {
 
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
       "Couldn’t load the rest — try again.",
+    );
+  },
+};
+
+const books = (n: number) =>
+  Array.from({ length: n }, (_, i) =>
+    aWirePaletteBook({
+      uuid: `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+      title: `Aurora Station, Vol. ${i + 1}`,
+    }),
+  );
+
+// Tags asks for 7 and never hears back; books asks for 8, which covers tags too.
+export const OverlappingShowAll: Story = {
+  beforeEach({ msw }) {
+    const answer = (n: number) =>
+      aWirePalette({
+        tags: tags(Math.min(n, 7)),
+        tag_total: 7,
+        books: books(Math.min(n, 8)),
+        book_total: 8,
+      });
+    msw.use(
+      http.get("/api/search/palette", async ({ request }) => {
+        const limit = new URL(request.url).searchParams.get("limit");
+        if (limit === "7") await delay("infinite");
+        return HttpResponse.json(answer(limit === null ? 5 : Number(limit)));
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Show all 7" }),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Show all 8" }));
+
+    await expect(
+      await canvas.findAllByRole("button", { name: "Show fewer" }),
+    ).toHaveLength(2);
+  },
+};
+
+export const SearchFailing: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/search/palette", 500));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "Couldn't run that search: failed with 500",
     );
   },
 };

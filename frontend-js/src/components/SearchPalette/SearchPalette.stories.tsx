@@ -187,3 +187,33 @@ export const OutsideClickCloses: Story = {
     ).not.toBeInTheDocument();
   },
 };
+
+export const EnterOpensFocusedRow: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: /Search/ }));
+    await userEvent.type(
+      canvas.getByRole("textbox", { name: "Search" }),
+      "aurora",
+    );
+    await canvas.findByText("5 results · 18ms");
+
+    await userEvent.tab();
+    await userEvent.tab();
+    await userEvent.keyboard("{Enter}");
+
+    await expect(
+      canvas.getByRole("status", { name: "Location" }),
+    ).toHaveTextContent("/authors/2");
+  },
+};
+
+export const EscapeReturnsFocus: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const trigger = canvas.getByRole("button", { name: /Search/ });
+    await userEvent.click(trigger);
+
+    await userEvent.keyboard("{Escape}");
+
+    await expect(trigger).toHaveFocus();
+  },
+};

@@ -1,4 +1,5 @@
 import type { PaletteResults } from "../../api";
+import { SECTIONS, type Section } from "../../search";
 
 /** A run of a result's text, and whether it is the searched-for term. */
 export type HighlightPart = { text: string; hit: boolean };
@@ -30,16 +31,6 @@ export function highlightParts(text: string, query: string): HighlightPart[] {
   if (plain) parts.push({ text: plain, hit: false });
   return parts;
 }
-
-/** The result groups the page lays out, in their default order. */
-export const SECTIONS = [
-  "books",
-  "authors",
-  "series",
-  "tags",
-  "genres",
-] as const;
-export type Section = (typeof SECTIONS)[number];
 
 const NOUNS: Record<Section, [one: string, many: string]> = {
   books: ["title", "titles"],

@@ -3,12 +3,15 @@ import {
   createContext,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { useNavigate } from "react-router";
-import { fetchPalette, type PaletteResults } from "../../api";
+import { plural } from "../../format";
+import { paletteQuery, searchHref } from "../../search";
 import { useCurrentUser } from "../../session";
 import { matchingSettings } from "../../settingsIndex";
 import { SearchGlyph } from "../Glyphs/Glyphs";
@@ -18,8 +21,7 @@ import {
   itemHref,
   itemKey,
   moveSelection,
-  paletteItems,
-  searchHref,
+  paletteGroups,
   selectedIndex,
 } from "./selection";
 import "./SearchPalette.css";
@@ -36,17 +38,28 @@ function usePalette(): PaletteState {
 
 /** Whether the palette is open, for the trigger and overlay; ⌘K / Ctrl+K toggles it. */
 export function SearchPaletteProvider({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpenState] = useState(false);
+  // Taken before the input's autoFocus moves focus, so closing can hand it back.
+  const opener = useRef<Element | null>(null);
+  const setOpen = useCallback((next: boolean) => {
+    if (next) opener.current = document.activeElement;
+    setOpenState(next);
+  }, []);
+  useEffect(() => {
+    if (open) return;
+    if (opener.current instanceof HTMLElement) opener.current.focus();
+    opener.current = null;
+  }, [open]);
   useEffect(() => {
     const toggle = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === "k") {
         event.preventDefault();
-        setOpen((wasOpen) => !wasOpen);
+        setOpen(!open);
       }
     };
     window.addEventListener("keydown", toggle);
     return () => window.removeEventListener("keydown", toggle);
-  }, []);
+  }, [open, setOpen]);
   return <PaletteContext value={{ open, setOpen }}>{children}</PaletteContext>;
 }
 
@@ -92,8 +105,7 @@ function useDebounced(value: string): string {
 function usePaletteSearch(query: string) {
   const settled = useDebounced(query).trim();
   const search = useQuery({
-    queryKey: ["palette", settled],
-    queryFn: ({ signal }) => fetchPalette(settled, { signal }),
+    ...paletteQuery(settled),
     enabled: settled !== "",
     placeholderData: keepPreviousData,
   });
@@ -101,21 +113,15 @@ function usePaletteSearch(query: string) {
   return { results, search };
 }
 
-function totalOf(results: PaletteResults): number {
-  const t = results.totals;
-  return t.books + t.authors + t.series + t.tags + t.genres;
-}
-
-const plural = (n: number) => (n === 1 ? "" : "s");
-
 function PaletteOverlay({ onClose }: { onClose: () => void }) {
   const user = useCurrentUser();
   const [query, setQuery] = useState("");
   const { results, search } = usePaletteSearch(query);
   // Matched on the client from the live query, so they need no debounce.
   const settings = matchingSettings(query, user.isAdmin);
-  const total = results ? totalOf(results) + settings.length : 0;
-  const items = paletteItems(results, settings);
+  const total = (results?.total ?? 0) + settings.length;
+  const groups = paletteGroups(results, settings);
+  const items = groups.flatMap((group) => group.items);
   // Null until the reader arrows: Enter then searches instead of opening a row.
   const [held, setHeld] = useState<string | null>(null);
   const index = held === null ? null : selectedIndex(items, held);
@@ -144,6 +150,8 @@ function PaletteOverlay({ onClose }: { onClose: () => void }) {
         return;
       }
       case "Enter": {
+        // A row the reader tabbed to is a link; let it open itself.
+        if (event.target instanceof HTMLAnchorElement) return;
         event.preventDefault();
         if (highlighted) go(itemHref(highlighted));
         else if (query.trim()) go(searchHref(query.trim()));
@@ -198,8 +206,7 @@ function PaletteOverlay({ onClose }: { onClose: () => void }) {
           <Loading kind="row" label="Searching" className="sp-loading" />
         )}
         <ResultsList
-          results={results}
-          settings={settings}
+          groups={groups}
           highlighted={highlighted ? itemKey(highlighted) : null}
           onPick={onClose}
         />

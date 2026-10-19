@@ -4,6 +4,7 @@ import { parseUser, type User } from "../src/api";
 import {
   AtriumRoot,
   isTheme,
+  THEME_STORAGE_KEY,
   THEMES,
 } from "../src/components/Theme/AtriumRoot";
 import { watchImageLoads } from "../src/imageWatch";
@@ -52,7 +53,7 @@ const preview = {
     (Story, { id, globals, parameters }) => {
       const theme = isTheme(globals.theme) ? globals.theme : "dark";
       // AtriumRoot starts on the saved theme, so the toolbar's pick goes there first.
-      localStorage.setItem("omn.theme", theme);
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
       return (
         <AppHarness
           key={`${id}:${theme}`}

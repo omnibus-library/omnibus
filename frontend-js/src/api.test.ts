@@ -5,7 +5,6 @@ import {
   parsePalette,
   parseResumePoints,
   parseUser,
-  registerErrorField,
 } from "./api";
 import {
   aWireBook,
@@ -56,6 +55,14 @@ describe("parseBookPage", () => {
       title: "aurora-station-01.cbz",
       hasCover: false,
     });
+  });
+
+  it("falls back to the filename for a blank title", () => {
+    const wire = { ...auroraWire, title: "  " };
+
+    const [book] = parseBookPage({ books: [wire] }, new Headers()).books;
+
+    expect(book?.title).toBe("aurora-station-01.cbz");
   });
 
   it("rejects a row with no uuid", () => {
@@ -129,16 +136,5 @@ describe("parsePalette", () => {
     const { book_total: _omitted, ...wire } = aWirePalette();
 
     expect(parsePalette(wire).totals.books).toBe(0);
-  });
-});
-
-describe("registerErrorField", () => {
-  it.each([
-    ["username", "username already taken"],
-    ["username", "User already exists"],
-    ["password", "Password must be at least 10 characters"],
-    ["banner", "Registration is closed"],
-  ])("routes the refusal to the %s for %j", (field, message) => {
-    expect(registerErrorField(message)).toBe(field);
   });
 });

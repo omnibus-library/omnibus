@@ -25,7 +25,7 @@ load before the screens that override them.
 
 ## Routes
 
-`src/router.tsx` carries all 28 routes from `frontend/src/routes.rs`, with the
+`src/router.tsx` carries all 30 routes from `frontend/src/routes.rs`, with the
 same split: the readers and the player fill the screen, everything else sits
 under the top bar, and a guest goes to `/login?next=…` and comes back. Login,
 Register, the library, book detail, search results (`/search/:query`) and Not
@@ -113,9 +113,11 @@ tests need Chromium: the `.#e2e` shell provides it.
 - **Forms** use react-hook-form with a zod resolver (`CredentialsSchema` on the
   sign-in page), so a form's rules live in the same schema style as the API's.
 - **Unit tests** (`pnpm run test:unit`, jsdom) cover the API parsers,
-  formatting, `safeNext`, the theme root, and the real route table in
-  `src/router.test.tsx`: every unported page, the layout split, the guest
-  redirect and `/logs`.
+  formatting, `safeNext`, the theme root, the session, and the pure helpers
+  behind the screens (`resume`, `password`, `settingsIndex`, the palette's
+  `selection`, the results page's `results`, Register's `refusal`), plus the
+  real route table in `src/router.test.tsx`: every unported page, the layout
+  split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI
   uploads each one's lcov to Codecov under the `frontend-js` flag.
 

@@ -2,13 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Controller, useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router";
-import {
-  ApiError,
-  type Credentials,
-  CredentialsSchema,
-  register,
-  registerErrorField,
-} from "../../api";
+import { type Credentials, CredentialsSchema, register } from "../../api";
 import { AuthShell, Emphasis } from "../../components/AuthShell/AuthShell";
 import { Banner } from "../../components/Banner/Banner";
 import { Button } from "../../components/Button/Button";
@@ -17,7 +11,8 @@ import { BusyLabel } from "../../components/Loading/Loading";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { StrengthMeter } from "../../components/StrengthMeter/StrengthMeter";
 import { scorePassword } from "../../password";
-import { meQuery, registrationQuery } from "../../session";
+import { registrationQuery, startSession } from "../../session";
+import { refusalOf } from "./refusal";
 import "./Register.css";
 
 /** `/register`: create an account, unless an admin has closed sign-up. */
@@ -67,14 +62,6 @@ function RegistrationClosed() {
   );
 }
 
-// Throttled sign-ups answer with the login limiter's generic body.
-function refusalMessage(error: Error): string {
-  if (error instanceof ApiError && error.status === 429) {
-    return "Too many sign-in attempts. Wait a moment and try again.";
-  }
-  return error.message;
-}
-
 function RegisterForm() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -86,14 +73,13 @@ function RegisterForm() {
   const signUp = useMutation({
     mutationFn: register,
     onSuccess: (user) => {
-      queryClient.setQueryData(meQuery.queryKey, user);
+      startSession(queryClient, user);
       navigate("/", { replace: true });
     },
   });
-  const refusal = signUp.error ? refusalMessage(signUp.error) : null;
-  const field = refusal ? registerErrorField(refusal) : null;
-  const errorFor = (name: "username" | "password" | "banner") =>
-    field === name && refusal ? refusal : undefined;
+  const refusal = signUp.error ? refusalOf(signUp.error) : null;
+  const errorFor = (field: "username" | "password" | "banner") =>
+    refusal?.field === field ? refusal.message : undefined;
   const banner = errorFor("banner");
   // Editing a field clears the refusal, so the reader can try again.
   const editing = (onChange: (value: string) => void) => (value: string) => {

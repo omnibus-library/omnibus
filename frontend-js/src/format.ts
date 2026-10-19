@@ -6,15 +6,27 @@ export function plateAuthor(authors: readonly string[]): string {
   return (first.trim().split(/\s+/).pop() ?? "").toUpperCase();
 }
 
+// By code point, not UTF-16 unit, so an emoji is never split in half.
+const firstChars = (text: string, n: number) =>
+  Array.from(text).slice(0, n).join("");
+
 /** The monogram an avatar shows when the reader has no photo. */
 export function initialsFor(name: string): string {
   const [first, second] = name.split(/[\s._-]+/).filter(Boolean);
   if (!first) return "?";
   const picked = second
-    ? first.slice(0, 1) + second.slice(0, 1)
-    : first.slice(0, 2);
+    ? firstChars(first, 1) + firstChars(second, 1)
+    : firstChars(first, 2);
   return picked.toUpperCase();
 }
+
+/** The one-letter plate a result shows in place of a cover or photo. */
+export function initialOf(name: string): string {
+  return firstChars(name, 1).toUpperCase() || "?";
+}
+
+/** The plural suffix for `n` of something: "1 book", "2 books". */
+export const plural = (n: number) => (n === 1 ? "" : "s");
 
 /** The detail kicker: series and position, else the category, then the year. */
 export function homeKicker(book: BookDetail): string {

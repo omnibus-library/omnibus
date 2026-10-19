@@ -4,6 +4,7 @@ import { AppShell } from "./layouts/AppShell";
 import { RequireAuth } from "./layouts/RequireAuth";
 import { Account } from "./pages/Account/Account";
 import { AddBooks } from "./pages/AddBooks/AddBooks";
+import { Admin } from "./pages/Admin/Admin";
 import { AdminHealth } from "./pages/AdminHealth/AdminHealth";
 import { AuthorDetail } from "./pages/AuthorDetail/AuthorDetail";
 import { Authors } from "./pages/Authors/Authors";
@@ -74,6 +75,11 @@ export const routes: RouteObject[] = [
                   { path: "/settings", element: <Settings /> },
                   {
                     path: "/settings/cleanup/:kind",
+                    element: <CleanupReview />,
+                  },
+                  { path: "/admin", element: <Admin /> },
+                  {
+                    path: "/admin/cleanup/:kind",
                     element: <CleanupReview />,
                   },
                   { path: "/admin/health", element: <AdminHealth /> },

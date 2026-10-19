@@ -6,24 +6,33 @@ import {
   itemHref,
   itemKey,
   moveSelection,
-  paletteItems,
+  paletteGroups,
   selectedIndex,
 } from "./selection";
 
 const results = parsePalette(aWirePalette());
 
-describe("paletteItems", () => {
-  it("lists server groups before settings", () => {
-    const items = paletteItems(results, matchingSettings("theme", false));
+const rows = (...args: Parameters<typeof paletteGroups>) =>
+  paletteGroups(...args).flatMap((group) => group.items);
 
-    expect(items.map((item) => item.kind)).toEqual([
-      "book",
-      "author",
-      "series",
-      "tag",
-      "genre",
-      "setting",
+describe("paletteGroups", () => {
+  it("lists server groups before settings", () => {
+    const groups = paletteGroups(results, matchingSettings("theme", false));
+
+    expect(groups.map((group) => group.label)).toEqual([
+      "Books",
+      "Authors",
+      "Series",
+      "Tags",
+      "Genres",
+      "Settings",
     ]);
+  });
+
+  it("drops a group with no hits", () => {
+    const groups = paletteGroups(parsePalette(aWirePalette({ books: [] })), []);
+
+    expect(groups.map((group) => group.label)).not.toContain("Books");
   });
 });
 
@@ -55,22 +64,22 @@ describe("moveSelection", () => {
 describe("selectedIndex", () => {
   it("keeps the highlighted item when results change", () => {
     const settings = matchingSettings("theme", false);
-    const [theme] = paletteItems(undefined, settings);
+    const [theme] = rows(undefined, settings);
     if (!theme) throw new Error("expected a theme setting");
 
-    expect(selectedIndex(paletteItems(results, settings), itemKey(theme))).toBe(
-      5,
-    );
+    expect(selectedIndex(rows(results, settings), itemKey(theme))).toBe(5);
   });
 
   it("returns to the top when the highlighted item is gone", () => {
-    expect(selectedIndex(paletteItems(results, []), "book:gone")).toBe(0);
+    expect(selectedIndex(rows(results, []), "book:gone")).toBe(0);
   });
 });
 
 describe("itemHref", () => {
   it("links a tag to its facet search", () => {
-    expect(itemHref({ kind: "tag", id: 9, name: "space opera" })).toBe(
+    const hit = { id: 9, name: "space opera", bookCount: 12 };
+
+    expect(itemHref({ kind: "tag", hit })).toBe(
       "/search/tag%3A%22space%20opera%22",
     );
   });

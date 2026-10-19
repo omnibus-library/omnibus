@@ -15,16 +15,20 @@
     <script>
       try {
         document.documentElement.dataset.bootTheme =
+          // THEME_STORAGE_KEY in src/components/Theme/AtriumRoot.tsx.
           localStorage.getItem("omn.theme") || "dark";
       } catch {}
     </script>
+    <!-- The loader paints its own colours over the whole viewport: the bundle's
+         CSS, which arrives first in a build, styles <body> for the app. -->
     <style>
-      html { background: oklch(0.135 0.006 70); color: oklch(0.62 0.012 70); }
-      html[data-boot-theme="black"] { background: oklch(0 0 0); color: oklch(0.63 0 0); }
-      html[data-boot-theme="light"] { background: oklch(0.985 0.003 75); color: oklch(0.52 0.01 70); }
-      html[data-boot-theme="sepia"] { background: oklch(0.945 0.022 80); color: oklch(0.52 0.032 58); }
+      .boot { background: oklch(0.135 0.006 70); color: oklch(0.62 0.012 70); }
+      [data-boot-theme="black"] .boot { background: oklch(0 0 0); color: oklch(0.63 0 0); }
+      [data-boot-theme="light"] .boot { background: oklch(0.985 0.003 75); color: oklch(0.52 0.01 70); }
+      [data-boot-theme="sepia"] .boot { background: oklch(0.945 0.022 80); color: oklch(0.52 0.032 58); }
       .boot {
-        min-height: 100vh;
+        position: fixed;
+        inset: 0;
         display: grid;
         place-items: center;
         font: 500 10.5px/1 "Space Mono", ui-monospace, monospace;

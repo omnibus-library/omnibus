@@ -10,12 +10,17 @@ import { router } from "./router";
 
 watchImageLoads();
 
+// No retries, as on Dioxus: a failed fetch shows its error at once.
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
+
 const root = document.getElementById("root");
 if (!root) throw new Error("index.html has no #root element");
 
 createRoot(root).render(
   <StrictMode>
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={queryClient}>
       <AtriumRoot>
         <RouterProvider router={router} />
       </AtriumRoot>

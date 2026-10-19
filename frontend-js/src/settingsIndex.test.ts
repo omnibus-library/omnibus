@@ -13,8 +13,11 @@ describe("matchingSettings", () => {
     expect(labels("KINDLE", false)).toEqual(["Send to Kindle"]);
   });
 
-  it("offers server settings to admins only", () => {
+  it("offers server settings to admins", () => {
     expect(labels("smtp", true)).toEqual(["Email delivery (SMTP)"]);
+  });
+
+  it("hides server settings from members", () => {
     expect(labels("smtp", false)).toEqual([]);
   });
 

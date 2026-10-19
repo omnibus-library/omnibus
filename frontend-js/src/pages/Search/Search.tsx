@@ -1,16 +1,26 @@
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import {
+  keepPreviousData,
+  type UseQueryResult,
+  useQuery,
+} from "@tanstack/react-query";
+import { type ReactNode, useState } from "react";
 import { Link, useParams } from "react-router";
-import { fetchPalette, type PaletteResults, thumbUrl } from "../../api";
+import { fetchPalette, type PaletteResults } from "../../api";
+import { BookThumb } from "../../components/BookThumb/BookThumb";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
+import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
-import { searchHref } from "../../components/SearchPalette/selection";
-import { facetQuery, singleFacetValue } from "../../format";
+import { initialOf, plural, singleFacetValue } from "../../format";
+import {
+  facetHref,
+  paletteQuery,
+  SECTION_LABELS,
+  type Section,
+} from "../../search";
 import {
   cutNote,
   highlightParts,
   matchesTag,
-  type Section,
   sectionOrder,
   summaryLine,
 } from "./results";
@@ -18,64 +28,63 @@ import "./Search.css";
 
 /** `/search/:query`: every group of hits, with the searched term highlighted. */
 export function Search() {
-  const query = useParams().query ?? "";
-  const search = useQuery({
-    queryKey: ["palette", query.trim()],
-    queryFn: ({ signal }) => fetchPalette(query.trim(), { signal }),
-  });
+  const query = (useParams().query ?? "").trim();
+  const search = useQuery(paletteQuery(query));
   return (
     <section className="search-page">
       <PageTitle page={`Search: ${query}`} />
-      {search.status === "pending" && (
-        <Loading kind="page" label="Searching the shelves" />
-      )}
-      {search.status === "error" && (
-        <p role="alert" className="subtitle">
-          {search.error.message}
-        </p>
-      )}
-      {search.status === "success" && (
-        <SearchResults key={query} results={search.data} query={query} />
-      )}
+      <SearchBody search={search} query={query} />
     </section>
   );
 }
 
-const LABELS: Record<Section, string> = {
-  books: "Books",
-  authors: "Authors",
-  series: "Series",
-  tags: "Tags",
-  genres: "Genres",
-};
-
-const anchor = (section: Section) => `results-${section}`;
-const plural = (n: number) => (n === 1 ? "" : "s");
-
-function totalOf(results: PaletteResults): number {
-  const t = results.totals;
-  return t.books + t.authors + t.series + t.tags + t.genres;
+function SearchBody({
+  search,
+  query,
+}: {
+  search: UseQueryResult<PaletteResults>;
+  query: string;
+}) {
+  switch (search.status) {
+    case "pending":
+      return <Loading kind="page" label="Searching the shelves" />;
+    case "error":
+      return (
+        <PageError
+          message={`Couldn't run that search: ${search.error.message}`}
+        />
+      );
+    case "success":
+      return <SearchResults key={query} preview={search.data} query={query} />;
+    default: {
+      const _exhaustive: never = search;
+      return _exhaustive;
+    }
+  }
 }
 
-type ResultsProps = { results: PaletteResults; query: string };
+const anchor = (section: Section) => `results-${section}`;
 
-function SearchResults({ results: preview, query }: ResultsProps) {
+function SearchResults({
+  preview,
+  query,
+}: {
+  preview: PaletteResults;
+  query: string;
+}) {
   const expansion = useExpansion(preview, query);
   const results = expansion.results;
-  const total = totalOf(results);
   // A one-facet query is headed by the name the reader clicked, not tag:"…".
   const heading = singleFacetValue(query) ?? query;
-  if (total === 0) {
+  const named = (
+    <>
+      “<Highlight text={heading} query={heading} />”
+    </>
+  );
+  if (results.total === 0) {
     return (
       <>
-        <div className="search-head">
-          <div>
-            <div className="label">Search results</div>
-            <h1 className="search-title">
-              No results for “<Highlight text={heading} query={heading} />”
-            </h1>
-          </div>
-        </div>
+        <SearchHead>No results for {named}</SearchHead>
         <p className="subtitle" data-testid="search-result-count">
           0 results · fts5 · {results.durationMs}ms
         </p>
@@ -86,15 +95,10 @@ function SearchResults({ results: preview, query }: ResultsProps) {
   const order = sectionOrder(preview, query);
   return (
     <>
-      <div className="search-head">
-        <div>
-          <div className="label">Search results</div>
-          <h1 className="search-title">
-            <span className="search-title-n">{total}</span> result
-            {plural(total)} for “<Highlight text={heading} query={heading} />”
-          </h1>
-        </div>
-      </div>
+      <SearchHead>
+        <span className="search-title-n">{results.total}</span> result
+        {plural(results.total)} for {named}
+      </SearchHead>
       <p className="search-summary mono" data-testid="search-result-count">
         {summaryLine(results)}
       </p>
@@ -115,6 +119,17 @@ function SearchResults({ results: preview, query }: ResultsProps) {
         <OnThisPage order={order} results={results} />
       </div>
     </>
+  );
+}
+
+function SearchHead({ children }: { children: ReactNode }) {
+  return (
+    <div className="search-head">
+      <div>
+        <div className="label">Search results</div>
+        <h1 className="search-title">{children}</h1>
+      </div>
+    </div>
   );
 }
 
@@ -139,7 +154,7 @@ function OnThisPage({
                 : "search-rail-item"
             }
           >
-            <span>{LABELS[section]}</span>
+            <span>{SECTION_LABELS[section]}</span>
             <span className="search-rail-count mono">
               {results.totals[section]}
             </span>
@@ -156,44 +171,53 @@ const PREVIEW = 5;
 type Expansion = {
   /** The preview, or the fuller answer once a group has asked for its rest. */
   results: PaletteResults;
-  open: readonly Section[];
-  busy: Section | null;
-  failed: Section | null;
+  isOpen: (section: Section) => boolean;
+  busy: (section: Section) => boolean;
+  failed: (section: Section) => boolean;
   toggle: (section: Section) => void;
 };
 
-// A group opens at once when the preview already holds every hit; otherwise
-// it fetches the whole group first, at the size its total names.
+// One fetch, at the largest size any opened group needs; the answer carries
+// the size it was asked for, so a late, smaller answer never shrinks a group.
 function useExpansion(preview: PaletteResults, query: string): Expansion {
-  const [fuller, setFuller] = useState<PaletteResults | null>(null);
-  const [open, setOpen] = useState<readonly Section[]>([]);
-  const [busy, setBusy] = useState<Section | null>(null);
-  const [failed, setFailed] = useState<Section | null>(null);
-  const results = fuller ?? preview;
-  const toggle = (section: Section) => {
-    if (open.includes(section)) {
-      setOpen(open.filter((s) => s !== section));
-      return;
-    }
-    const want = results.totals[section];
-    if (results[section].length >= want) {
-      setOpen([...open, section]);
-      return;
-    }
-    setBusy(section);
-    setFailed(null);
-    fetchPalette(query.trim(), { limit: want })
-      .then((answer) => {
-        setFuller(answer);
-        setOpen((was) => [...was, section]);
-      })
-      .catch(() => setFailed(section))
-      .finally(() => setBusy(null));
+  const [wanted, setWanted] = useState<readonly Section[]>([]);
+  const [limit, setLimit] = useState(PREVIEW);
+  const rest = useQuery({
+    queryKey: ["palette", query, limit],
+    queryFn: async ({ signal }) => ({
+      limit,
+      results: await fetchPalette(query, { limit, signal }),
+    }),
+    enabled: limit > PREVIEW,
+    placeholderData: keepPreviousData,
+  });
+  const covered = rest.data?.limit ?? PREVIEW;
+  const total = (s: Section) => preview.totals[s];
+  const ready = (s: Section) =>
+    preview[s].length >= total(s) || covered >= total(s);
+  const waiting = (s: Section) => wanted.includes(s) && !ready(s);
+  return {
+    results: rest.data?.results ?? preview,
+    isOpen: (s) => wanted.includes(s) && ready(s),
+    busy: (s) => waiting(s) && rest.isFetching,
+    failed: (s) => waiting(s) && rest.isError,
+    toggle: (s) => {
+      if (wanted.includes(s) && ready(s)) {
+        setWanted(wanted.filter((w) => w !== s));
+        return;
+      }
+      if (!wanted.includes(s)) setWanted([...wanted, s]);
+      if (total(s) > limit) setLimit(total(s));
+      else if (rest.isError) void rest.refetch();
+    },
   };
-  return { results, open, busy, failed, toggle };
 }
 
-type SectionProps = ResultsProps & { section: Section };
+type SectionProps = {
+  section: Section;
+  results: PaletteResults;
+  query: string;
+};
 
 function ResultSection({
   section,
@@ -210,13 +234,13 @@ function ResultSection({
     series: null,
   };
   const count = results.totals[section];
-  const isOpen = expansion.open.includes(section);
-  const busy = expansion.busy === section;
+  const isOpen = expansion.isOpen(section);
+  const busy = expansion.busy(section);
   const note = isOpen ? cutNote(section, results) : null;
   return (
     <section id={anchor(section)} className="search-section">
       <div className="search-section-head">
-        <div className="label">{LABELS[section]}</div>
+        <div className="label">{SECTION_LABELS[section]}</div>
         <div className="mono search-section-count">· {count}</div>
         {sub[section] && (
           <div className="search-section-sub">{sub[section]}</div>
@@ -253,7 +277,7 @@ function ResultSection({
           {note}
         </p>
       )}
-      {expansion.failed === section && (
+      {expansion.failed(section) && (
         <p
           className="search-section-note"
           role="alert"
@@ -283,7 +307,12 @@ function SectionBody({
               className="search-cover-card"
               data-testid="search-book-row"
             >
-              <BookCover book={book} />
+              <BookThumb
+                book={book}
+                size="md"
+                className="search-cover-thumb"
+                fallbackClassName="search-cover-thumb search-cover-fallback"
+              />
               <div className="search-cover-title">
                 <Highlight text={book.title} query={query} />
               </div>
@@ -302,9 +331,7 @@ function SectionBody({
               className="search-entity"
               data-testid="search-author-row"
             >
-              <div className="search-avatar">
-                {(author.name[0] ?? "?").toUpperCase()}
-              </div>
+              <div className="search-avatar">{initialOf(author.name)}</div>
               <div className="search-entity-body">
                 <div className="search-entity-title">
                   <Highlight text={author.name} query={query} />
@@ -386,7 +413,7 @@ function FacetChips({ facet, testId, values, query }: FacetChipsProps) {
       {values.map((v) => (
         <Link
           key={v.name}
-          to={searchHref(facetQuery(facet, v.name))}
+          to={facetHref(facet, v.name)}
           className={
             v.name.toLowerCase().includes(q)
               ? "chip search-tag search-tag-matched"
@@ -416,30 +443,5 @@ function Highlight({ text, query }: { text: string; query: string }) {
       // biome-ignore lint/suspicious/noArrayIndexKey: see above
       <span key={i}>{part.text}</span>
     ),
-  );
-}
-
-type Book = PaletteResults["books"][number];
-
-function BookCover({ book }: { book: Book }) {
-  const [broken, setBroken] = useState(false);
-  if (book.hasCover && !broken) {
-    return (
-      <img
-        className="search-cover-thumb"
-        src={thumbUrl(book.uuid)}
-        alt=""
-        loading="lazy"
-        onError={() => setBroken(true)}
-      />
-    );
-  }
-  return (
-    <div
-      className="search-cover-thumb search-cover-fallback"
-      style={{ background: book.accent ?? "var(--bg-2)" }}
-    >
-      {(book.title[0] ?? "?").toUpperCase()}
-    </div>
   );
 }

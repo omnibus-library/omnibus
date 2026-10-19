@@ -15,7 +15,7 @@ import { Field } from "../../components/Field/Field";
 import { BusyLabel } from "../../components/Loading/Loading";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { safeNext } from "../../safeNext";
-import { meQuery, registrationQuery } from "../../session";
+import { registrationQuery, startSession } from "../../session";
 
 function loginErrorMessage(error: Error): string {
   if (!(error instanceof ApiError)) return error.message;
@@ -42,7 +42,7 @@ export function Login() {
   const signIn = useMutation({
     mutationFn: login,
     onSuccess: (user) => {
-      queryClient.setQueryData(meQuery.queryKey, user);
+      startSession(queryClient, user);
       navigate(safeNext(search.get("next")) ?? "/", { replace: true });
     },
   });

@@ -14,10 +14,12 @@ export function isTheme(value: unknown): value is Theme {
   return THEMES.some((theme) => theme === value);
 }
 
-// Same key the Dioxus client persists, so the two share a theme on one origin.
+/** Where the theme is saved: the Dioxus client's key, so both share one per origin. */
+export const THEME_STORAGE_KEY = "omn.theme";
+
 function savedTheme(): Theme {
   try {
-    const stored = localStorage.getItem("omn.theme");
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
     return isTheme(stored) ? stored : "dark";
   } catch {
     return "dark";
@@ -26,7 +28,7 @@ function savedTheme(): Theme {
 
 function saveTheme(theme: Theme) {
   try {
-    localStorage.setItem("omn.theme", theme);
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch {
     // Storage blocked: the pick holds for this visit only.
   }

@@ -64,7 +64,7 @@ function toBook(wire: z.output<typeof BookWire>) {
     : null;
   return {
     uuid: wire.unique_identifier,
-    title: wire.title ?? wire.filename,
+    title: wire.title?.trim() ? wire.title : wire.filename,
     authors: wire.creators.map((c) => c.name),
     series,
     accent: wire.accent ?? null,
@@ -203,6 +203,12 @@ const PaletteSchema = z
     })),
     genres: wire.genres.map((g) => ({ name: g.name, bookCount: g.book_count })),
     durationMs: wire.duration_ms,
+    total:
+      wire.book_total +
+      wire.author_total +
+      wire.series_total +
+      wire.tag_total +
+      wire.genre_total,
     totals: {
       books: wire.book_total,
       authors: wire.author_total,
@@ -213,6 +219,9 @@ const PaletteSchema = z
   }));
 
 export type PaletteResults = z.infer<typeof PaletteSchema>;
+
+/** One book hit in the palette or on the results page. */
+export type PaletteBook = PaletteResults["books"][number];
 
 /** Parses `GET /api/search/palette`: capped hits per group, true totals. */
 export function parsePalette(body: unknown): PaletteResults {
@@ -275,9 +284,12 @@ export const CredentialsSchema = z.object({
 
 export type Credentials = z.infer<typeof CredentialsSchema>;
 
-/** Opens a cookie session; the server sets the cookie on the response. */
-export async function login(credentials: Credentials): Promise<User> {
-  const res = await fetch("/api/auth/login", {
+// Sign-in and sign-up send the same body and answer with the same `{ user }`.
+async function postCredentials(
+  path: string,
+  credentials: Credentials,
+): Promise<User> {
+  const res = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(credentials),
@@ -285,32 +297,18 @@ export async function login(credentials: Credentials): Promise<User> {
   return z.object({ user: UserSchema }).parse(await readJson(res)).user;
 }
 
+/** Opens a cookie session; the server sets the cookie on the response. */
+export const login = (credentials: Credentials) =>
+  postCredentials("/api/auth/login", credentials);
+
 /** Opens a cookie session for a new account; the server sets the cookie. */
-export async function register(credentials: Credentials): Promise<User> {
-  const res = await fetch("/api/auth/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(credentials),
-  });
-  return z.object({ user: UserSchema }).parse(await readJson(res)).user;
-}
+export const register = (credentials: Credentials) =>
+  postCredentials("/api/auth/register", credentials);
 
 /** Whether self-registration is open; an admin can close it. */
 export async function fetchRegistrationOpen(): Promise<boolean> {
   const res = await fetch("/api/auth/registration");
   return z.object({ enabled: z.boolean() }).parse(await readJson(res)).enabled;
-}
-
-/** Which part of the register form a server refusal belongs under. */
-export function registerErrorField(
-  message: string,
-): "username" | "password" | "banner" {
-  // Keyed on words, as the Dioxus page is, so a reworded refusal still lands.
-  const lower = message.toLowerCase();
-  if (lower.includes("username") || lower.includes("user already")) {
-    return "username";
-  }
-  return lower.includes("password") ? "password" : "banner";
 }
 
 export async function logout(): Promise<void> {
