@@ -9,7 +9,11 @@ import type {
   ScanOutcome,
   WishlistAddRequest,
 } from "../../api/generated/schemas";
-import { storyClient } from "../../testing/AppHarness";
+import {
+  expectInvalidated,
+  seedQueries,
+  storyClient,
+} from "../../testing/AppHarness";
 import { failing, paletteHandler } from "../../testing/handlers";
 import {
   anExternalBook,
@@ -23,6 +27,13 @@ import { CheckIn } from "./CheckIn";
 
 const ISBN = "9780134685991";
 const BOOK = aScanBook();
+// What a check-in marks stale for the lists and the book page.
+const CHECK_IN_KEYS = [
+  ["books"],
+  ["shelves"],
+  ["shelf-page"],
+  ["book", BOOK.uuid],
+];
 const ONLINE = anExternalBook();
 
 const resolved: string[] = [];
@@ -249,10 +260,7 @@ export const ConfirmsACopyOfALibraryBook: Story = {
     ).toBeInTheDocument();
     await expect(confirm).toHaveTextContent(`Entered ISBN ${ISBN}`);
     await userEvent.type(canvas.getByLabelText(/Edition note/), "  Paperback ");
-    for (const key of ["books", "shelves", "shelf-page"]) {
-      storyClient().setQueryData([key], []);
-    }
-    storyClient().setQueryData(["book", BOOK.uuid], {});
+    seedQueries(CHECK_IN_KEYS);
 
     await userEvent.click(canvas.getByTestId("check-in-confirm-submit"));
 
@@ -267,14 +275,7 @@ export const ConfirmsACopyOfALibraryBook: Story = {
     await expect(checkedIn).toEqual([
       { book_uuid: BOOK.uuid, isbn: ISBN, note: "Paperback" },
     ]);
-    for (const key of [
-      ["books"],
-      ["shelves"],
-      ["shelf-page"],
-      ["book", BOOK.uuid],
-    ]) {
-      await expect(storyClient().getQueryState(key)?.isInvalidated).toBe(true);
-    }
+    await expectInvalidated(CHECK_IN_KEYS);
   },
 };
 

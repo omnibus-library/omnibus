@@ -93,7 +93,6 @@ const fetchedCovers: string[] = [];
 function Picker({ stagedCover = false }: { stagedCover?: boolean }) {
   const form = useForm({ defaultValues: formFromBook(BOOK) });
   const [live, setLive] = useState(toEditableBook(BOOK));
-  const [bust, setBust] = useState(0);
   const [staged, setStaged] = useState<StagedCover>({
     source: { kind: "keep" },
     preview: null,
@@ -111,20 +110,27 @@ function Picker({ stagedCover = false }: { stagedCover?: boolean }) {
         onApplied: (updated) => {
           setLive(updated);
           bumpCoverBust(live.uuid);
-          setBust((n) => n + 1);
         },
       };
   return (
     <>
       <output aria-label="Form values">{JSON.stringify(form.watch())}</output>
       <output aria-label="Cover">
-        {live.hasCoverOverride ? "replaced" : "scanned"} v{bust} staged:
+        {live.hasCoverOverride ? "replaced" : "scanned"} staged:
         {staged.source.kind}
       </output>
       <EditionPicker form={form} baseline={formFromBook(BOOK)} cover={cover} />
     </>
   );
 }
+
+const currentCoverSrc = (canvas: {
+  getByTestId: (id: string) => HTMLElement;
+}) =>
+  canvas
+    .getByTestId("mes-row-cover-current")
+    .querySelector("img")
+    ?.getAttribute("src") ?? "";
 
 const meta = {
   title: "Pages/BookEdit/EditionPicker",
@@ -540,17 +546,22 @@ export const DropsAHydrateForACandidateNoLongerShown: Story = {
   },
 };
 
+// The slow hydrate answers recorded as they leave the handler, so the play knows the late failure is on the wire.
+const lateAnswers: string[] = [];
+
 export const IgnoresASlowAnswerForAnEarlierOpeningOfTheSameCandidate: Story = {
   beforeEach({ msw }) {
     let release = () => {};
     gate.release = () => release();
     const held = new Promise<void>((r) => (release = r));
     let calls = 0;
+    lateAnswers.length = 0;
     msw.use(
       http.post("/api/metadata/editions/hydrate", async () => {
         calls += 1;
         if (calls > 1) return HttpResponse.json(FULL);
         await held;
+        lateAnswers.push("502");
         return new HttpResponse("provider unavailable", { status: 502 });
       }),
     );
@@ -564,6 +575,7 @@ export const IgnoresASlowAnswerForAnEarlierOpeningOfTheSameCandidate: Story = {
     ).toBeInTheDocument();
 
     gate.release();
+    await waitFor(() => expect(lateAnswers).toHaveLength(1));
     // Another round trip through the screen, so the late failure has landed by now.
     await userEvent.click(canvas.getByTestId("mes-show-all"));
 
@@ -748,9 +760,8 @@ export const AppliesTheCoverAtOnceToASavedBook: Story = {
 
     await expect(await canvas.findByText("Cover updated.")).toBeInTheDocument();
     await expect(fetchedCovers).toEqual(["https://images.example.com/a.jpg"]);
-    await expect(canvas.getByLabelText("Cover")).toHaveTextContent(
-      "replaced v1",
-    );
+    await expect(canvas.getByLabelText("Cover")).toHaveTextContent("replaced");
+    await expect(currentCoverSrc(canvas)).toMatch(/\?v=1$/);
   },
 };
 
@@ -767,9 +778,8 @@ export const SaysWhyTheCoverWasRefused: Story = {
         "Couldn't apply that cover: that host is private",
       ),
     ).toBeInTheDocument();
-    await expect(canvas.getByLabelText("Cover")).toHaveTextContent(
-      "scanned v0",
-    );
+    await expect(canvas.getByLabelText("Cover")).toHaveTextContent("scanned");
+    await expect(currentCoverSrc(canvas)).not.toContain("?v=");
     await expect(canvas.getByTestId("mes-row-cover-apply")).toBeEnabled();
   },
 };

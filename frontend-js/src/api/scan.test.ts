@@ -5,6 +5,10 @@ import { aWirePaletteBook } from "../testing/wire";
 describe("scanBookFromHit", () => {
   const HIT = { ...aWirePaletteBook(), uuid: "u-1" };
 
+  it("carries the hit's uuid", () => {
+    expect(scanBookFromHit(HIT).uuid).toBe("u-1");
+  });
+
   it("keeps a sort-form author display as one entry", () => {
     expect(
       scanBookFromHit({ ...HIT, author_display: "Weir, Andy" }).authors,

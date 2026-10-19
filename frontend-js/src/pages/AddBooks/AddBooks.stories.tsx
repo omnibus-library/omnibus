@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Route, Routes } from "react-router";
 import { userEvent as events, expect } from "storybook/test";
-import { storyClient } from "../../testing/AppHarness";
+import { expectInvalidated, seedQueries } from "../../testing/AppHarness";
 import { filterOptionHandlers } from "../../testing/handlers";
 import {
   aProviderEdition,
@@ -18,6 +18,8 @@ import {
 import { WIRE_ADA } from "../../testing/wire";
 import { AddBooks } from "./AddBooks";
 
+// What adding a book marks stale for the lists.
+const ADD_KEYS = [["books"], ["shelves"], ["shelf-page"]];
 const NEW_UUID = "0d3f1c2e-6c1a-4a53-9a43-4d7a1b3f9a10";
 const inspected: string[][] = [];
 const committed: Committed[] = [];
@@ -356,9 +358,7 @@ type Ctx = Parameters<NonNullable<Story["play"]>>[0];
 export const AddsTheBookUntouched: Story = {
   play: async ({ canvas, userEvent }) => {
     await review({ canvas, userEvent });
-    for (const key of ["books", "shelves", "shelf-page"]) {
-      storyClient().setQueryData([key], []);
-    }
+    seedQueries(ADD_KEYS);
 
     await userEvent.click(
       canvas.getByRole("button", { name: "Add to library" }),
@@ -366,11 +366,7 @@ export const AddsTheBookUntouched: Story = {
 
     await expect(await canvas.findByText("Book page")).toBeInTheDocument();
     await expect(committed).toEqual([{ route: "ebooks", fields: EPUB_FIELDS }]);
-    for (const key of ["books", "shelves", "shelf-page"]) {
-      await expect(storyClient().getQueryState([key])?.isInvalidated).toBe(
-        true,
-      );
-    }
+    await expectInvalidated(ADD_KEYS);
   },
 };
 

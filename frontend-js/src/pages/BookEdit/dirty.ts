@@ -1,27 +1,8 @@
 import { type MetaForm, sameList } from "../../api";
 
-/** The names a changed field is listed under in the save bar and the form's edited markers. */
-export type DirtyLabel =
-  | "Title"
-  | "Description"
-  | "Publisher"
-  | "Published"
-  | "Language"
-  | "Series"
-  | "Book #"
-  | "ISBN-13"
-  | "ISBN-10"
-  | "Print Pages"
-  | "Authors"
-  | "Tags"
-  | "Genres";
-
 /** The names of the fields whose value differs from `baseline`, in the form's order. */
-export function dirtyLabels(
-  baseline: MetaForm,
-  values: MetaForm,
-): DirtyLabel[] {
-  const changed: [DirtyLabel, boolean][] = [
+export function dirtyLabels(baseline: MetaForm, values: MetaForm) {
+  const changed = [
     ["Title", values.title !== baseline.title],
     ["Description", values.description !== baseline.description],
     ["Publisher", values.publisher !== baseline.publisher],
@@ -35,9 +16,12 @@ export function dirtyLabels(
     ["Authors", !sameList(values.authors, baseline.authors)],
     ["Tags", !sameList(values.tags, baseline.tags)],
     ["Genres", !sameList(values.genres, baseline.genres)],
-  ];
+  ] as const;
   return changed.filter(([, differs]) => differs).map(([label]) => label);
 }
+
+/** The names a changed field is listed under in the save bar and the form's edited markers. */
+export type DirtyLabel = ReturnType<typeof dirtyLabels>[number];
 
 const fields = (count: number) => `${count} field${count === 1 ? "" : "s"}`;
 

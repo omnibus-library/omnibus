@@ -3,9 +3,14 @@ import { HttpResponse, http } from "msw";
 import { useState } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { expect, waitFor } from "storybook/test";
+import { coverUrl, toEditableBook } from "../../api";
 import { getGetEbookByUuidMockHandler404 } from "../../api/generated/omnibus.msw";
 import type { MetadataOverrides } from "../../api/generated/schemas";
-import { storyClient } from "../../testing/AppHarness";
+import {
+  expectInvalidated,
+  seedQueries,
+  storyClient,
+} from "../../testing/AppHarness";
 import {
   bookHandler,
   failing,
@@ -35,16 +40,6 @@ const LEAVE_KEYS = [
   ["shelves"],
   ["progress", "recent"],
 ];
-
-const seed = (keys: unknown[][]) => {
-  for (const key of keys) storyClient().setQueryData(key, []);
-};
-
-const expectInvalidated = async (keys: unknown[][]) => {
-  for (const key of keys) {
-    await expect(storyClient().getQueryState(key)?.isInvalidated).toBe(true);
-  }
-};
 
 const saved: MetadataOverrides[] = [];
 const reverted = { count: 0 };
@@ -152,7 +147,7 @@ export const Loaded: Story = {
 export const SavesTitle: Story = {
   play: async ({ canvas, userEvent }) => {
     const title = await canvas.findByLabelText(/^Title/);
-    seed(LEAVE_KEYS);
+    seedQueries(LEAVE_KEYS);
     await userEvent.clear(title);
     await userEvent.type(title, "Aurora Station");
 
@@ -193,13 +188,15 @@ export const Reverts: Story = {
     await expect(
       await canvas.findByText("Override active"),
     ).toBeInTheDocument();
-    seed(LEAVE_KEYS);
+    seedQueries(LEAVE_KEYS);
     await userEvent.click(canvas.getByTestId("revert-overrides"));
 
     await expect(await canvas.findByText("Book page")).toBeInTheDocument();
     await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
     await expect(reverted.count).toBe(1);
     await expectInvalidated(LEAVE_KEYS);
+    // The book page and lists build the cover from this, so it has to have moved on.
+    await expect(coverUrl(toEditableBook(BOOK).uuid)).toMatch(/\?v=1$/);
   },
 };
 
@@ -304,7 +301,7 @@ export const ReplacingTheCoverEnablesSave: Story = {
   play: async ({ canvas, userEvent }) => {
     await expect(await canvas.findByText("No changes")).toBeInTheDocument();
     await expect(canvas.getByTestId("me-save")).toBeDisabled();
-    seed([["book", UUID], ["books"]]);
+    seedQueries([["book", UUID], ["books"]]);
     await userEvent.upload(
       canvas.getByLabelText("Replace cover"),
       new File(["png"], "new-cover.png", { type: "image/png" }),
@@ -335,16 +332,38 @@ export const ReplacingTheCoverEnablesSave: Story = {
 
 const bookReads = { count: 0 };
 
+// The first read answers; every later one fails.
+const failingAfterFirstRead = () =>
+  http.get("/api/ebooks/:uuid", () =>
+    ++bookReads.count === 1
+      ? HttpResponse.json(BOOK)
+      : new HttpResponse("down", { status: 500 }),
+  );
+
 export const KeepsTheFormWhenARefetchFails: Story = {
   beforeEach({ msw }) {
     bookReads.count = 0;
-    msw.use(
-      http.get("/api/ebooks/:uuid", () =>
-        ++bookReads.count === 1
-          ? HttpResponse.json(BOOK)
-          : new HttpResponse("down", { status: 500 }),
-      ),
+    msw.use(failingAfterFirstRead());
+  },
+  play: async ({ canvas, userEvent }) => {
+    const title = await canvas.findByLabelText(/^Title/);
+    await userEvent.type(title, "!");
+    await storyClient().invalidateQueries({
+      queryKey: ["book", UUID, "edit"],
+    });
+
+    await waitFor(() => expect(bookReads.count).toBe(2));
+    await expect(canvas.queryByRole("alert")).not.toBeInTheDocument();
+    await expect(canvas.getByLabelText(/^Title/)).toHaveValue(
+      "Aurora Station, Vol. 1!",
     );
+  },
+};
+
+export const AppliesACoverWithoutRefetchingTheForm: Story = {
+  beforeEach({ msw }) {
+    bookReads.count = 0;
+    msw.use(failingAfterFirstRead());
   },
   play: async ({ canvas, userEvent }) => {
     const title = await canvas.findByLabelText(/^Title/);
@@ -356,9 +375,7 @@ export const KeepsTheFormWhenARefetchFails: Story = {
 
     await expect(await canvas.findByText("Cover updated.")).toBeInTheDocument();
     await expect(canvas.queryByRole("alert")).not.toBeInTheDocument();
-    await expect(canvas.getByLabelText(/^Title/)).toHaveValue(
-      "Aurora Station, Vol. 1!",
-    );
+    await expect(title).toHaveValue("Aurora Station, Vol. 1!");
     // The cover write marks the book stale without refetching the record the form is built on.
     await expect(bookReads.count).toBe(1);
   },
