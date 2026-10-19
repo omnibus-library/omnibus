@@ -1,9 +1,11 @@
 import { z } from "zod";
 import {
   getAlignment,
+  getDeleteHighlightUrl,
   getDeleteRatingUrl,
   getEbookByUuid,
   getEbooks,
+  getHighlights,
   getLogoutUrl,
   getMe,
   getOtherRatings,
@@ -29,6 +31,7 @@ import type {
   BookProgress as BookProgressWire,
   EbookMetadata,
   EbookPage,
+  Highlight as HighlightWire,
   AttributedRating as OtherRatingWire,
   PaletteResults as PaletteWire,
   ProgressRecord as PositionWire,
@@ -572,6 +575,31 @@ export async function fetchSessionLog(
   });
   if (res.status !== 200) throw failure(res);
   return toSessionLogPage(res.data);
+}
+
+function toHighlight(wire: HighlightWire) {
+  return {
+    id: wire.id,
+    bookUuid: wire.book_uuid,
+    color: wire.color,
+    text: wire.text ?? null,
+    note: wire.note ?? null,
+    anchor: wire.epub_cfi_range ?? null,
+    createdAt: wire.created_at,
+  };
+}
+
+export type Highlight = ReturnType<typeof toHighlight>;
+
+/** The reader's saved passages in a book. */
+export async function fetchHighlights(uuid: BookUuid): Promise<Highlight[]> {
+  const res = await getHighlights(encodeURIComponent(uuid));
+  if (res.status !== 200) throw failure(res);
+  return res.data.map(toHighlight);
+}
+
+export async function deleteHighlight(id: number): Promise<void> {
+  await send(getDeleteHighlightUrl(String(id)), "DELETE");
 }
 
 export const thumbUrl = (uuid: BookUuid, size: "sm" | "md" = "md") =>

@@ -1,9 +1,9 @@
 import type { Alignment, Position, Progress } from "../../api";
 import { formatHm } from "../../format";
 
-type Chapter = NonNullable<Alignment["chapters"]>[number];
+export type Chapter = NonNullable<Alignment["chapters"]>[number];
 
-function lastIndexWhere<T>(
+export function lastIndexWhere<T>(
   items: readonly T[],
   test: (item: T) => boolean,
 ): number {
@@ -16,7 +16,7 @@ function lastIndexWhere<T>(
 
 // Spine children are even-numbered (odd steps address text nodes), so a
 // CFI's package step halved is the 1-based spine ordinal, e.g. 14 in `/6/14[chap3]!…` is 7.
-function cfiSpineOrdinal(cfi: string): number | null {
+export function cfiSpineOrdinal(cfi: string): number | null {
   const inner = /^epubcfi\((.*)\)$/.exec(cfi.trim())?.[1];
   const step = inner
     ?.split("!")[0]

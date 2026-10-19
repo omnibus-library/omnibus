@@ -4,6 +4,7 @@ import type {
   BookFileInfo,
   BookProgress,
   EbookMetadata,
+  Highlight,
   PaletteBookHit,
   PaletteResults,
   ProgressRecord,
@@ -151,6 +152,20 @@ export function aWireSession(
     started_at: 1_700_000_000,
     ended_at: 1_700_002_700,
     seconds: 2700,
+    ...overrides,
+  };
+}
+
+/** A saved passage as `GET /api/highlights/book/{uuid}` sends it. */
+export function aWireHighlight(overrides: Partial<Highlight> = {}): Highlight {
+  return {
+    id: 1,
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    color: "amber",
+    text: "A station at the edge of the map hears something answer.",
+    note: null,
+    epub_cfi_range: "epubcfi(/6/6!/4/2,/1:0,/1:20)",
+    created_at: 1_760_000_000,
     ...overrides,
   };
 }

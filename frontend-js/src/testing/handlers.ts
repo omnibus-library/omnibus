@@ -1,6 +1,7 @@
 import { delay, HttpResponse, http } from "msw";
 import {
   getGetAlignmentMockHandler200,
+  getGetHighlightsMockHandler200,
   getGetMeMockHandler200,
   getGetMeMockHandler401,
   getGetOtherRatingsMockHandler200,
@@ -14,6 +15,7 @@ import {
 import {
   type EbookMetadata,
   type EbookPage,
+  type Highlight,
   type LoginResponse,
   type PaletteResults,
   PostCrossFormatFollowBody,
@@ -94,6 +96,7 @@ export function bookDetailHandlers(book: EbookMetadata) {
     getGetRatingMockHandler200(null),
     getGetOtherRatingsMockHandler200([]),
     getGetSessionLogMockHandler200({ entries: [] }),
+    getGetHighlightsMockHandler200([]),
   ];
 }
 
@@ -117,6 +120,23 @@ export function ratingHandlers(
     http.delete("/api/ratings/:uuid", () => {
       writes.push(null);
       current = null;
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+}
+
+/** The passages `GET` lists and `DELETE` removes, starting at `initial`; each deleted id lands in `deleted`. */
+export function highlightsHandlers(
+  initial: Highlight[],
+  deleted: number[] = [],
+) {
+  let current = initial;
+  return [
+    http.get("/api/highlights/book/:uuid", () => HttpResponse.json(current)),
+    http.delete("/api/highlights/:id", ({ params }) => {
+      const id = Number(params.id);
+      deleted.push(id);
+      current = current.filter((h) => h.id !== id);
       return new HttpResponse(null, { status: 204 });
     }),
   ];

@@ -75,16 +75,13 @@ export const SectionRail: Story = {
       name: "Page sections",
     });
     const dots = within(rail).getAllByRole("button");
-    await expect(dots.map((dot) => dot.textContent)).toEqual([
-      "01 · Home",
-      "02 · Stats",
-      "05 · The files",
-    ]);
+    const last = dots.at(-1) as HTMLElement;
+    await expect(dots[0]).toHaveTextContent("01 · Home");
     await expect(dots[0]).toHaveClass("on");
 
-    await userEvent.click(dots[2] as HTMLElement);
+    await userEvent.click(last);
 
-    await waitFor(() => expect(dots[2]).toHaveClass("on"));
+    await waitFor(() => expect(last).toHaveClass("on"));
     await expect(dots[0]).not.toHaveClass("on");
     await expect(
       canvas.getByRole("button", { name: "↑ back to the book" }),

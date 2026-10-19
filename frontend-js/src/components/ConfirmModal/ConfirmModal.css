@@ -1,0 +1,93 @@
+.author-photo-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in oklch, #000 55%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  display: grid;
+  place-items: center;
+  z-index: 100;
+  padding: 20px;
+}
+.mg-modal {
+  width: min(720px, 100%);
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  box-shadow:
+    0 40px 90px -20px color-mix(in oklch, #000 70%, transparent),
+    0 0 0 1px var(--line-2);
+}
+.confirm-modal {
+  width: min(440px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+.del-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 26px 28px 24px;
+}
+.del-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 23px;
+  --lh: 1.2;
+  line-height: var(--lh);
+  color: var(--ink-0);
+}
+.del-copy {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+.del-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+.del-btn-ghost,
+.del-btn-danger {
+  height: 36px;
+  padding: 0 18px;
+  border-radius: 10px;
+  font-family: var(--sans);
+  font-size: 13px;
+  cursor: pointer;
+}
+.del-btn-ghost {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  color: var(--ink-0);
+  font-weight: 500;
+}
+@media (hover: hover) {
+  .del-btn-ghost:hover:not(:disabled) {
+    background: var(--bg-3);
+  }
+}
+.del-btn-danger {
+  background: var(--bad);
+  border: 1px solid var(--bad);
+  color: #fff;
+  font-weight: 600;
+}
+@media (hover: hover) {
+  .del-btn-danger:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+}
+.del-btn-ghost:disabled,
+.del-btn-danger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

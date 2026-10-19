@@ -2,6 +2,7 @@ import { queryOptions, skipToken } from "@tanstack/react-query";
 import {
   type BookUuid,
   fetchAlignment,
+  fetchHighlights,
   fetchProgress,
   fetchReadStatus,
   fetchSeries,
@@ -32,4 +33,10 @@ export const readStatusQuery = (uuid: BookUuid) =>
   queryOptions({
     queryKey: ["book", uuid, "readStatus"],
     queryFn: () => fetchReadStatus(uuid),
+  });
+
+export const highlightsQuery = (uuid: BookUuid) =>
+  queryOptions({
+    queryKey: ["book", uuid, "highlights"],
+    queryFn: () => fetchHighlights(uuid),
   });
