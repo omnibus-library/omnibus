@@ -1,0 +1,359 @@
+.rd-surface {
+  position: relative;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  background: var(--rd-page);
+  color: var(--ink-0);
+  font-family: var(--sans);
+}
+.rd-top,
+.rd-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 26px;
+  background: color-mix(in oklch, var(--bg-0) 80%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.rd-top {
+  top: 0;
+  height: calc(60px + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  border-bottom: 1px solid var(--line-2);
+}
+.rd-bottom {
+  bottom: 0;
+  height: calc(var(--rd-bottom-h, 54px) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  border-top: 1px solid var(--line-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.rd-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 34px;
+  min-width: 34px;
+  padding: 0 8px;
+  border-radius: 9px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 13px;
+  transition: 0.14s;
+}
+@media (hover: hover) {
+  .rd-tool:hover {
+    color: var(--ink-0);
+    background: var(--bg-1);
+  }
+}
+.rd-tool.on {
+  color: var(--ink-0);
+  background: var(--bg-2);
+  border-color: var(--line-2);
+}
+.rd-tool .rd-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.rd-aa {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 19px;
+  line-height: 1;
+  padding-bottom: 2px;
+}
+.rd-stage {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(60px + env(safe-area-inset-top));
+  bottom: calc(var(--rd-bottom-h, 54px) + env(safe-area-inset-bottom));
+  overflow: hidden;
+}
+.rd-viewer {
+  position: absolute;
+  inset: 0 70px;
+}
+.rd-turn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: color-mix(in oklch, var(--bg-1) 70%, transparent);
+  border: 1px solid var(--line-2);
+  color: var(--ink-2);
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: 0.16s;
+}
+@media (hover: hover) {
+  .rd-turn:hover {
+    color: var(--ink-0);
+    background: var(--bg-2);
+    border-color: var(--line);
+  }
+}
+.rd-turn-l {
+  left: 22px;
+}
+.rd-turn-r {
+  right: 22px;
+}
+@media (max-width: 480px), (hover: none) and (pointer: coarse) {
+  .rd-turn {
+    display: none;
+  }
+  .rd-viewer {
+    inset: 0;
+  }
+}
+.rd-top,
+.rd-bottom {
+  transition: transform 0.22s ease;
+}
+@media (max-width: 480px), (hover: none) and (pointer: coarse) {
+  .rd-chrome-hidden .rd-top {
+    transform: translateY(-100%);
+  }
+  .rd-chrome-hidden .rd-bottom {
+    transform: translateY(100%);
+  }
+  .rd-chrome-hidden .rd-ribbon {
+    opacity: 0;
+    transition: opacity 0.22s ease;
+  }
+  .rd-chrome-hidden .rd-wash {
+    opacity: 0;
+  }
+}
+.rd-ribbon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--bg-2);
+  z-index: 7;
+}
+.rd-ribbon > i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+.rd-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-2);
+  background: var(--rd-page);
+}
+.rd-overlay.ld-stage {
+  z-index: 8;
+}
+.rd-overlay-error {
+  flex-direction: column;
+  gap: 14px;
+  text-align: center;
+  padding: 0 24px;
+}
+.rd-nav-error {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 8;
+  pointer-events: none;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ink-2);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.rd-wash {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 200px;
+  z-index: 0;
+  background: radial-gradient(
+    70% 120% at 50% -20%,
+    color-mix(in oklch, var(--accent) 16%, transparent),
+    transparent 70%
+  );
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.rd-title-center {
+  flex: 1;
+  text-align: center;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.rd-title-book {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 16px;
+  color: var(--ink-0);
+}
+.rd-title-sep {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  margin: 0 10px;
+}
+.rd-title-ch {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.rd-title-sub {
+  display: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+}
+.rd-ambient-title {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  height: calc(60px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 32px 0;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--ink-3);
+  /* `visibility` rides the fade so the inactive label leaves the
+     accessibility tree (opacity alone keeps it exposed and screen readers
+     would announce the title twice); the markup is `aria-hidden` too since
+     the label only mirrors the toolbar title visually. */
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.22s ease,
+    visibility 0.22s;
+}
+.rd-chrome-hidden .rd-ambient-title {
+  opacity: 1;
+  visibility: visible;
+}
+.rd-ambient-page {
+  display: none;
+}
+.rd-bottom-ch {
+  display: none;
+}
+.rd-top.rd-top-over-scrim {
+  z-index: 9;
+}
+@media (max-width: 480px) {
+  .rd-chrome-hidden .rd-bottom {
+    transform: none;
+    border-top-color: transparent;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .rd-ambient-title {
+    display: flex;
+  }
+  .rd-chrome-hidden .rd-bottom-page,
+  .rd-chrome-hidden .rd-bottom-ch {
+    display: none;
+  }
+  .rd-chrome-hidden .rd-ambient-page {
+    display: block;
+    flex: 1;
+    text-align: center;
+  }
+  .rd-top {
+    padding-left: 6px;
+    padding-right: 8px;
+    gap: 2px;
+  }
+  .rd-bottom {
+    padding-left: 22px;
+    padding-right: 22px;
+    gap: 8px;
+    font-size: 10px;
+  }
+  .rd-title-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.25;
+  }
+  .rd-title-book {
+    font-family: var(--sans);
+    font-style: normal;
+    font-weight: 600;
+    font-size: 13px;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .rd-title-sep,
+  .rd-title-ch {
+    display: none;
+  }
+  .rd-title-sub {
+    display: block;
+  }
+  .rd-tool {
+    min-width: 34px;
+    padding: 0 6px;
+  }
+  .rd-aa {
+    font-size: 17px;
+  }
+  .rd-bottom > div {
+    display: none;
+  }
+  .rd-bottom-ch {
+    display: inline;
+  }
+}
+@media (pointer: coarse) {
+  .rd-viewer,
+  .rd-viewer * {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .rd-viewer img {
+    -webkit-touch-callout: default;
+    -webkit-user-drag: auto;
+  }
+}

@@ -8,6 +8,7 @@ import {
 } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 import type { User } from "./api";
+import { AtriumRoot } from "./components/Theme/AtriumRoot";
 import { routes } from "./router";
 import { meQuery } from "./session";
 import { ADA, harnessClient } from "./testing/AppHarness";
@@ -22,7 +23,9 @@ function renderRoute(
   const router = createMemoryRouter(table, { initialEntries: [path] });
   render(
     <QueryClientProvider client={harnessClient(user)}>
-      <RouterProvider router={router} />
+      <AtriumRoot>
+        <RouterProvider router={router} />
+      </AtriumRoot>
     </QueryClientProvider>,
   );
   return router;
@@ -78,7 +81,6 @@ describe("routes", () => {
 
   describe("unported pages", () => {
     it.each([
-      [`/read/${UUID}`, "Reader", UUID],
       [`/listen/${UUID}?file_id=2`, "Listen", "2"],
       ["/authors", "Authors", null],
       ["/authors/12", "Author", "12"],
@@ -130,12 +132,13 @@ describe("routes", () => {
   });
 
   it.each([
-    ["the comic reader", `/comic/${UUID}`],
-    ["the PDF reader", `/pdf/${UUID}?file_id=3&page=7`],
-  ])("gives %s the whole screen", async (_name, path) => {
+    ["the EPUB reader", `/read/${UUID}`, "Back to book"],
+    ["the comic reader", `/comic/${UUID}`, "Back"],
+    ["the PDF reader", `/pdf/${UUID}?file_id=3&page=7`, "Back"],
+  ])("gives %s the whole screen", async (_name, path, back) => {
     renderRoute(path);
 
-    expect(await screen.findByRole("button", { name: "Back" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: back })).toBeVisible();
     expect(
       screen.queryByRole("navigation", { name: "Primary" }),
     ).not.toBeInTheDocument();
@@ -148,15 +151,6 @@ describe("routes", () => {
       expect(
         await screen.findByRole("navigation", { name: "Primary" }),
       ).toBeInTheDocument();
-    });
-
-    it("gives a reader the whole screen", async () => {
-      renderRoute(`/read/${UUID}`);
-
-      await screen.findByRole("heading", { name: "Reader" });
-      expect(
-        screen.queryByRole("navigation", { name: "Primary" }),
-      ).not.toBeInTheDocument();
     });
   });
 

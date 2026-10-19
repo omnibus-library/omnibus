@@ -84,6 +84,8 @@ function toPosition(wire: PositionWire) {
   return {
     cfi: wire.epub_cfi ?? null,
     percent: wire.progress_percent ?? null,
+    // A CFI the server placed for a percent-only row, such as a Kobo's.
+    derivedCfi: wire.derived_epub_cfi ?? null,
     audioSeconds: wire.audio_position_seconds ?? null,
     updatedAt: wire.client_updated_at,
   };

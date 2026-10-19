@@ -48,6 +48,8 @@ const OWNERS = [
   ["pages/CheckIn/CheckIn.css", (c) => c.startsWith("check-in") || c.startsWith("isbn-")],
   ["pages/ComicReader/ComicReader.css", (c) => c.startsWith("cr-")],
   ["pages/PdfReader/PdfReader.css", (c) => c.startsWith("pr-")],
+  // After the QuoteCard row, so the `rd-` classes it owns stay there.
+  ["pages/Reader/Reader.css", (c) => c.startsWith("rd-")],
   ["styles/settings.css", (c) => c.startsWith("settings-")],
   ["styles/base.css", (c) => ["card", "divider", "label", "mono", "sr-only", "subtitle"].includes(c)],
 ];

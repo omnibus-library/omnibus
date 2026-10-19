@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { loadScript } from "../../loadScript";
 import epubUrl from "../../vendor/reader/epub.min.js?url";
 import glueUrl from "../../vendor/reader/epub-reader-glue.js?url";
@@ -33,3 +34,47 @@ export function withReader(
     () => {},
   );
 }
+
+const RelocateSchema = z.object({
+  cfi: z.string().nullable().default(null),
+  // Visual page within the current spine section, not the whole book.
+  page: z.int().nonnegative(),
+  totalPages: z.int().nonnegative(),
+  // Whole-book percent; `pctApprox` flags the glue's coarse stand-in before its locations map resolves.
+  pct: z.int().nonnegative(),
+  frac: z.number().default(0),
+  pctApprox: z.boolean().default(false),
+  // The displayed range reaches the book's end; `pct` tracks the range's start and never gets there.
+  atEnd: z.boolean().default(false),
+  chapter: z.int().nonnegative(),
+  totalChapters: z.int().nonnegative(),
+  chapterTitle: z.string(),
+  // The glue re-stating a position the host already holds, not movement.
+  echo: z.boolean().default(false),
+});
+
+/** One position report from the glue's `relocated` event. */
+export type Relocate = z.infer<typeof RelocateSchema>;
+
+const TocSchema = z.array(
+  z.object({
+    label: z.string(),
+    href: z.string(),
+    level: z.int().nonnegative().default(0),
+  }),
+);
+
+/** One flattened table-of-contents entry; `level` is the nesting depth, 0 at the top. */
+export type TocEntry = z.infer<typeof TocSchema>[number];
+
+// Glue payloads are untrusted vendor output: one that doesn't match is dropped.
+function parseWith<T>(schema: z.ZodType<T>, json: string): T | null {
+  try {
+    return schema.parse(JSON.parse(json));
+  } catch {
+    return null;
+  }
+}
+
+export const parseRelocate = (json: string) => parseWith(RelocateSchema, json);
+export const parseToc = (json: string) => parseWith(TocSchema, json);
