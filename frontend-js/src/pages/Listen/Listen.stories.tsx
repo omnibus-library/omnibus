@@ -7,6 +7,7 @@ import { failing, hanging } from "../../testing/handlers";
 import {
   aWireAudioManifest,
   aWireBook,
+  aWireChapter,
   aWireHlsManifest,
   aWirePosition,
 } from "../../testing/wire";
@@ -199,5 +200,127 @@ export const VolumeIsSaved: Story = {
     );
     const audio = canvas.getByTestId("listen-audio") as HTMLAudioElement;
     await expect(audio.volume).toBeCloseTo(0.4);
+  },
+};
+
+export const ChapterNav: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByText("Now playing · Chapter 1 of 3");
+
+    fireEvent.click(canvas.getByRole("button", { name: "Next chapter" }));
+
+    await expect(
+      await canvas.findByText("Now playing · Chapter 2 of 3"),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByText("Ch. 2 · The Long Water"),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(positions()).toMatchObject([{ audio_position_seconds: 3600 }]),
+    );
+  },
+};
+
+export const NoChapters: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...listenHandlers(BOOK, {
+        writes,
+        manifest: aWireAudioManifest({ chapters: [] }),
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Now playing")).toBeInTheDocument();
+    for (const name of ["Previous chapter", "Next chapter"]) {
+      await expect(canvas.getByRole("button", { name })).toBeDisabled();
+    }
+  },
+};
+
+export const ScrubberPreviewsThenSeeksOnRelease: Story = {
+  play: async ({ canvas }) => {
+    const seek = await canvas.findByRole("slider", { name: "Seek" });
+    await waitFor(() => expect(seek).toHaveAttribute("max", "10800"));
+
+    fireEvent.input(seek, { target: { value: "1800" } });
+
+    // The bubble and the elapsed time both preview the target.
+    await expect(await canvas.findAllByText("30:00")).toHaveLength(2);
+    await expect(positions()).toEqual([]);
+
+    fireEvent.change(seek);
+
+    await waitFor(() =>
+      expect(positions()).toEqual([
+        {
+          book_uuid: UUID,
+          format: "audio",
+          audio_position_seconds: 1800,
+          book_file_id: 917,
+        },
+      ]),
+    );
+  },
+};
+
+export const OnlyTimeLeftScalesWithSpeed: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...listenHandlers(BOOK, {
+        writes,
+        rate: 2,
+        row: aWirePosition({
+          format: "audio",
+          progress_percent: null,
+          audio_position_seconds: 600,
+          book_file_id: 917,
+        }),
+        manifest: aWireAudioManifest({
+          parts: [
+            {
+              ordinal: 1,
+              url: "/api/audiobooks/ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0/parts/1?file_id=917",
+              duration_seconds: 3600,
+              mime: "audio/mpeg",
+            },
+          ],
+          total_duration_seconds: 3600,
+          chapters: [
+            aWireChapter({ title: "One", duration_seconds: 1800 }),
+            aWireChapter({
+              ordinal: 2,
+              title: "Two",
+              start_seconds: 1800,
+              duration_seconds: 1800,
+            }),
+          ],
+        }),
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const times = within(await canvas.findByTestId("listen-scrub-times"));
+
+    await expect(
+      await times.findByText("· 25:00 remaining"),
+    ).toBeInTheDocument();
+    await expect(times.getByText("10:00")).toBeInTheDocument();
+    await expect(times.getByText("1:00:00")).toBeInTheDocument();
+  },
+};
+
+export const ShowsBufferingWhilePlaying: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByText("Now playing · Chapter 1 of 3");
+    const audio = canvas.getByTestId("listen-audio") as HTMLAudioElement;
+    // No media loads here, so the element is made to look like it is playing and waiting.
+    Object.defineProperty(audio, "paused", { value: false });
+
+    fireEvent.play(audio);
+
+    await expect(
+      await canvas.findByTestId("listen-buffering"),
+    ).toHaveTextContent("Buffering…");
   },
 };

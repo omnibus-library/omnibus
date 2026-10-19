@@ -30,3 +30,78 @@ export function kickerText(chapterCount: number, index: number): string {
 
 /** The speed on its button: `1.50×`. */
 export const rateLabel = (rate: number) => `${rate.toFixed(2)}×`;
+
+/** The chapter title line ("Ch. 2 · The Journey"), or null when the chapter has no title. */
+export function chapterSubText(
+  chapters: readonly Chapter[],
+  index: number,
+): string | null {
+  const title = chapters[index]?.title;
+  return title ? `Ch. ${index + 1} · ${title}` : null;
+}
+
+/** Where "previous chapter" goes: this chapter's start past 3 s in, else the one before (0 on the first). Null when `index` is stale. */
+export function chapterPrevTarget(
+  chapters: readonly Chapter[],
+  elapsed: number,
+  index: number,
+): number | null {
+  const current = chapters[index];
+  if (!current) return null;
+  if (elapsed - current.start > 3) return current.start;
+  return chapters[index - 1]?.start ?? 0;
+}
+
+/** Where "next chapter" goes: the next chapter's start, or null on the last. */
+export const chapterNextTarget = (
+  chapters: readonly Chapter[],
+  index: number,
+): number | null => chapters[index + 1]?.start ?? null;
+
+/** How full chapter segment `i` is: played ones 100, the current one by progress, the rest 0. */
+export function chapterFillPct(
+  i: number,
+  current: number,
+  elapsed: number,
+  chapter: Chapter,
+): number {
+  if (i < current) return 100;
+  if (i > current || chapter.seconds <= 0) return 0;
+  return Math.min(
+    100,
+    Math.max(0, ((elapsed - chapter.start) / chapter.seconds) * 100),
+  );
+}
+
+/** The single segment's fill when the book has no chapters. */
+export const noChapterFillPct = (elapsed: number, duration: number) =>
+  duration > 0 ? Math.min(100, (elapsed / duration) * 100) : 0;
+
+/** The playhead's offset along the bar, kept inside it; 0 when the bar has no length. */
+export const thumbPct = (position: number, max: number) =>
+  max > 0 ? Math.min(100, Math.max(0, (position / max) * 100)) : 0;
+
+/**
+ * What the scrubber's readouts show: the dragged-to position (clamped into the book) while
+ * `scrub` is set, else `elapsed`, with the chapter and time left that position implies.
+ */
+export function effectiveScrubPosition(
+  chapters: readonly Chapter[],
+  elapsed: number,
+  duration: number,
+  scrub: number | null,
+) {
+  const position =
+    scrub === null
+      ? elapsed
+      : Math.min(Math.max(scrub, 0), duration > 0 ? duration : 1);
+  return {
+    position,
+    index: chapterIndexForElapsed(chapters, position),
+    remaining: Math.max(duration - position, 0),
+  };
+}
+
+/** Wall-clock seconds a listener at `rate` spends on `seconds` of book; unscaled for a rate that can't divide. */
+export const remainingAtRate = (seconds: number, rate: number) =>
+  Number.isFinite(rate) && rate > 0 ? seconds / rate : seconds;
