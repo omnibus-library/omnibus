@@ -96,7 +96,6 @@ pub async fn upsert_progress_tx(
         .await?
         .ok_or(ProgressError::BookNotFound)?;
     let fmt = format_str(update.format);
-    mark_started(tx, user_id, &book_uuid, update.client_updated_at).await?;
 
     // Snapshot the row this write would land on, purely for the two WARNs
     // this function logs (#1861) — neither reads back into the upsert itself.
@@ -118,6 +117,7 @@ pub async fn upsert_progress_tx(
 
     execute_upsert_query(tx, user_id, &book_uuid, fmt, update).await?;
     let record = read_progress_row(tx, user_id, book_uuid, update.format, fmt).await?;
+    mark_started(tx, user_id, &record).await?;
 
     // Ledger the *surviving* position, not the offered one: a write the
     // timestamp guard rejected leaves the row — and so the mark — where it was,
@@ -145,15 +145,13 @@ pub async fn upsert_progress_tx(
 }
 
 /// Give `(user, book)` the `reading` status unless it already has one, dated by
-/// the position's own clamped clock rather than receipt: Kobo sync-out stamps its
+/// the surviving position's clock rather than receipt: Kobo sync-out stamps its
 /// state with the newer clock, and a replayed offline write must not read as today.
 async fn mark_started(
     tx: &mut Transaction<'_, Sqlite>,
     user_id: i64,
-    book_uuid: &str,
-    client_updated_at: Option<i64>,
+    surviving: &ProgressRecord,
 ) -> Result<(), ProgressError> {
-    let now = crate::auth::now_unix();
     // `DO NOTHING`: a status the reader chose, `unread` included, outranks a position.
     sqlx::query(
         "INSERT INTO book_read_status (user_id, book_uuid, status, updated_at)
@@ -161,8 +159,8 @@ async fn mark_started(
          ON CONFLICT(user_id, book_uuid) DO NOTHING",
     )
     .bind(user_id)
-    .bind(book_uuid)
-    .bind(client_updated_at.unwrap_or(now).min(now))
+    .bind(&surviving.book_uuid)
+    .bind(surviving.client_updated_at)
     .execute(&mut **tx)
     .await?;
     Ok(())

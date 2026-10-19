@@ -6,6 +6,7 @@ use sqlx::SqlitePool;
 
 use crate::init_db;
 use crate::read_status::{get_read_status, set_read_status};
+use crate::test_support::{forget_read_status, seed_epub_position};
 
 use super::super::*;
 use super::{audio_update, seed, seed_user};
@@ -37,6 +38,26 @@ async fn upsert_progress_marks_an_audiobook_with_no_status_reading() {
         status.updated_at, 1_000,
         "dated by the position, not receipt"
     );
+}
+
+#[tokio::test]
+async fn upsert_progress_dates_the_status_by_the_surviving_position_when_a_write_loses() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let (_, uuid) = seed(&pool, "/lib", "Heard").await;
+    upsert_progress(&pool, user, &audio_update(&uuid, 900.0, None, 5_000))
+        .await
+        .unwrap();
+    // A merge undo can leave a position with no status of its own.
+    forget_read_status(&pool, user, &uuid).await;
+
+    upsert_progress(&pool, user, &audio_update(&uuid, 60.0, None, 1_000))
+        .await
+        .unwrap();
+
+    let status = get_read_status(&pool, user, &uuid).await.unwrap().unwrap();
+    assert_eq!(status.status, ReadStatus::Reading);
+    assert_eq!(status.updated_at, 5_000, "the stale write's clock lost");
 }
 
 #[tokio::test]
@@ -88,7 +109,7 @@ async fn position_marks_reading_migration_backfills_reading_at_the_latest_positi
     upsert_progress(&pool, user, &audio_update(&heard, 58.0, None, 1_000))
         .await
         .unwrap();
-    crate::test_support::seed_epub_position(&pool, user, &heard).await;
+    seed_epub_position(&pool, user, &heard).await;
     upsert_progress(&pool, user, &audio_update(&done, 58.0, None, 1_000))
         .await
         .unwrap();
@@ -100,12 +121,8 @@ async fn position_marks_reading_migration_backfills_reading_at_the_latest_positi
         status: ReadStatus::Finished,
     };
     set_read_status(&pool, user, &set).await.unwrap();
-    // Positions stored before this change carry no status of their own.
-    sqlx::query("DELETE FROM book_read_status WHERE book_uuid <> ?")
-        .bind(&done)
-        .execute(&pool)
-        .await
-        .unwrap();
+    forget_read_status(&pool, user, &heard).await;
+    forget_read_status(&pool, user, &gone).await;
     sqlx::query("UPDATE reading_progress SET client_updated_at = 2000 WHERE format = 'epub'")
         .execute(&pool)
         .await
