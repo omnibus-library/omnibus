@@ -161,7 +161,9 @@ function ShelfMembership({ book }: { book: BookDetail }) {
   const toggle = useMutation({
     mutationFn: ({ shelf, adding }: { shelf: Shelf; adding: boolean }) =>
       setShelfMember(shelf.id, book.uuid, adding),
-    // The tile, the count and the ledge follow without a refetch.
+    // A read begun before the write would answer with the old membership.
+    onMutate: () => client.cancelQueries({ queryKey }),
+    // The tile, the count and the ledge follow without waiting on a refetch.
     onSuccess: (_done, { shelf, adding }) =>
       client.setQueryData(
         queryKey,
@@ -178,6 +180,7 @@ function ShelfMembership({ book }: { book: BookDetail }) {
             ),
           },
       ),
+    onSettled: () => client.invalidateQueries({ queryKey }),
   });
   const facts = shelves.data;
   const held = facts && heldShelves(facts, viewer);

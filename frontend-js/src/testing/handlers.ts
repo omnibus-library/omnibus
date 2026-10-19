@@ -295,10 +295,19 @@ export function shelvesHandlers(
   writes: string[] = [],
   failOn?: number,
 ) {
-  let manual = held.manual ?? [];
+  const initial = held.manual ?? [];
+  let manual = initial;
+  // A shelf's count follows the book in or out, as the server's would.
+  const counted = (shelf: ShelfSummary) => ({
+    ...shelf,
+    book_count:
+      shelf.book_count +
+      Number(manual.includes(shelf.id)) -
+      Number(initial.includes(shelf.id)),
+  });
   const refused = () => new HttpResponse("failed with 500", { status: 500 });
   return [
-    http.get("/api/shelves", () => HttpResponse.json(shelves)),
+    http.get("/api/shelves", () => HttpResponse.json(shelves.map(counted))),
     http.get("/api/shelves/containing/:uuid", () => HttpResponse.json(manual)),
     http.get("/api/shelves/containing/:uuid/smart", () =>
       HttpResponse.json(held.smart ?? []),

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useQueryClient } from "@tanstack/react-query";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 import { toBookDetail } from "../../api";
@@ -242,6 +243,66 @@ export const PickerAddsTheBookAndPatchesTheTile: Story = {
     // The block now shows the shelf with the book counted in.
     const held = await canvas.findByTestId("bdmq-shelf-7");
     await expect(held).toHaveTextContent("3 books");
+  },
+};
+
+let releaseStaleRead = () => {};
+
+function RefetchShelves() {
+  const client = useQueryClient();
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        void client.invalidateQueries({ queryKey: ["book", THIS, "shelves"] })
+      }
+    >
+      Refetch shelves
+    </button>
+  );
+}
+
+export const AToggleSurvivesAReadStartedBeforeIt: Story = {
+  render: (args) => (
+    <>
+      <RefetchShelves />
+      <MoreStop {...args} />
+    </>
+  ),
+  beforeEach({ msw }) {
+    const held = new Promise<void>((resolve) => {
+      releaseStaleRead = resolve;
+    });
+    let reads = 0;
+    msw.use(
+      // The second read asks before the toggle and answers after it.
+      http.get("/api/shelves/containing/:uuid", async () => {
+        if (reads++ === 1) {
+          await held;
+          return HttpResponse.json([]);
+        }
+        return HttpResponse.json(writes.includes("add:7") ? [7] : []);
+      }),
+      ...shelvesHandlers([MINE], {}, writes),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("bdmq-add-to-shelf"));
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Refetch shelves" }),
+    );
+    const dialog = canvas.getByRole("dialog", { name: "Add to shelf" });
+    await userEvent.click(
+      await within(dialog).findByRole("checkbox", { name: "Space operas" }),
+    );
+    await waitFor(() => expect(writes).toEqual(["add:7"]));
+
+    releaseStaleRead();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    await expect(
+      within(dialog).getByRole("checkbox", { name: "Space operas" }),
+    ).toBeChecked();
   },
 };
 
