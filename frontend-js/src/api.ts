@@ -4,7 +4,6 @@ import {
   getAddShelfBooksUrl,
   getAlignment,
   getAuthorById,
-  getBookInsights,
   getDeleteFilelessBookUrl,
   getDeleteHighlightUrl,
   getDeleteJournalUrl,
@@ -13,6 +12,11 @@ import {
   getDeletionManifest,
   getEbookByUuid,
   getEbooks,
+  getGetBookInsightsUrl,
+  getGetProgressUrl,
+  getGetRatingUrl,
+  getGetReadStatusUrl,
+  getGetWishlistEntryUrl,
   getHighlights,
   getJournalEntries,
   getKindleSendStatus,
@@ -23,18 +27,16 @@ import {
   getPostCrossFormatFollowUrl,
   getPostEbookSummaryFetchUrl,
   getPostJournalPreviewUrl,
-  getProgress,
-  getRating,
-  getReadStatus,
   getRecentProgress,
   getRegistration,
   getRemoveShelfBookUrl,
   getSearchPalette,
   getSeriesById,
   getSessionLog,
+  getShelvesContainingUrl,
+  getSmartShelvesContainingUrl,
   getSuggestions,
   getSummarySources,
-  getWishlistEntry,
   listPhysicalCopies,
   listShelves,
   mergeBooks,
@@ -51,8 +53,6 @@ import {
   postWishlistEntry,
   putReadStatus,
   sendToKindle,
-  shelvesContaining,
-  smartShelvesContaining,
 } from "./api/generated/omnibus";
 import type {
   AlignmentViewOutput,
@@ -77,6 +77,13 @@ import type {
   SummarySource,
   UserSummary,
   WishlistEntry as WishlistEntryWire,
+} from "./api/generated/schemas";
+import {
+  BookInsights as BookInsightsSchema,
+  BookProgress as BookProgressSchema,
+  RatingRecord as RatingRecordSchema,
+  ReadStatusRecord as ReadStatusRecordSchema,
+  WishlistEntry as WishlistEntrySchema,
 } from "./api/generated/schemas";
 
 // The wire types and their zod schemas are generated from openapi/openapi.json
@@ -402,9 +409,11 @@ export type Position = NonNullable<Progress["reading"]>;
 
 /** The reader's saved positions in a book, one per format. */
 export async function fetchProgress(uuid: BookUuid): Promise<Progress> {
-  const res = await getProgress(encodeURIComponent(uuid));
-  if (res.status !== 200) throw failure(res);
-  return toProgress(res.data);
+  const data = await fetchJson(
+    getGetProgressUrl(encodeURIComponent(uuid)),
+    BookProgressSchema.nullable(),
+  );
+  return toProgress(data);
 }
 
 /** The screen's shape of `GET /api/books/{uuid}/alignment`. */
@@ -460,9 +469,11 @@ export type ReadStatusRecord = ReturnType<typeof toReadStatus>;
 export async function fetchReadStatus(
   uuid: BookUuid,
 ): Promise<ReadStatusRecord | null> {
-  const res = await getReadStatus(encodeURIComponent(uuid));
-  if (res.status !== 200) throw failure(res);
-  return res.data && toReadStatus(res.data);
+  const data = await fetchJson(
+    getGetReadStatusUrl(encodeURIComponent(uuid)),
+    ReadStatusRecordSchema.nullable(),
+  );
+  return data && toReadStatus(data);
 }
 
 export async function saveReadStatus(
@@ -472,6 +483,14 @@ export async function saveReadStatus(
   const res = await putReadStatus({ book_uuid: uuid, status });
   if (res.status !== 200) throw failure(res);
   return toReadStatus(res.data);
+}
+
+// orval emits no validator for a nullable or inline-array 200, so these reads parse here.
+async function fetchJson<T>(url: string, schema: z.ZodType<T>): Promise<T> {
+  const res = await fetch(url);
+  if (res.status !== 200)
+    throw failure({ status: res.status, data: await res.text() });
+  return schema.parse(await res.json());
 }
 
 // The generated fetcher JSON-parses every body, and an error's is plain text.
@@ -547,9 +566,11 @@ export type RatingRecord = ReturnType<typeof toRating>;
 export async function fetchRating(
   uuid: BookUuid,
 ): Promise<RatingRecord | null> {
-  const res = await getRating(encodeURIComponent(uuid));
-  if (res.status !== 200) throw failure(res);
-  return res.data && toRating(res.data);
+  const data = await fetchJson(
+    getGetRatingUrl(encodeURIComponent(uuid)),
+    RatingRecordSchema.nullable(),
+  );
+  return data && toRating(data);
 }
 
 /** Sets the reader's rating, 0.5 to 5 in half steps. */
@@ -777,9 +798,11 @@ export type WishlistEntry = ReturnType<typeof toWishlistEntry>;
 export async function fetchWishlist(
   uuid: BookUuid,
 ): Promise<WishlistEntry | null> {
-  const res = await getWishlistEntry(encodeURIComponent(uuid));
-  if (res.status !== 200) throw failure(res);
-  return res.data && toWishlistEntry(res.data);
+  const data = await fetchJson(
+    getGetWishlistEntryUrl(encodeURIComponent(uuid)),
+    WishlistEntrySchema.nullable(),
+  );
+  return data && toWishlistEntry(data);
 }
 
 export async function addToWishlist(uuid: BookUuid): Promise<WishlistEntry> {
@@ -941,11 +964,11 @@ export type Insights = ReturnType<typeof toInsights>;
 /** The reader's time in a book: when they started, how long, how often; `null` before a sitting of a minute. */
 export async function fetchInsights(uuid: BookUuid): Promise<Insights | null> {
   // East-positive minutes, which is where the server cuts each day.
-  const res = await getBookInsights(encodeURIComponent(uuid), {
+  const url = getGetBookInsightsUrl(encodeURIComponent(uuid), {
     utc_offset_minutes: -new Date().getTimezoneOffset(),
   });
-  if (res.status !== 200) throw failure(res);
-  return res.data && toInsights(res.data);
+  const data = await fetchJson(url, BookInsightsSchema.nullable());
+  return data && toInsights(data);
 }
 
 function toShelf(wire: ShelfSummaryWire) {
@@ -975,22 +998,23 @@ export async function fetchShelves(): Promise<Shelf[]> {
   return res.data.map(toShelf);
 }
 
+const shelfIds = z.array(z.number().int());
+
 /** The ids of the hand-picked shelves holding a book. */
 export async function fetchShelvesContaining(
   uuid: BookUuid,
 ): Promise<number[]> {
-  const res = await shelvesContaining(encodeURIComponent(uuid));
-  if (res.status !== 200) throw failure(res);
-  return res.data;
+  return fetchJson(getShelvesContainingUrl(encodeURIComponent(uuid)), shelfIds);
 }
 
 /** The ids of the smart shelves whose rules match a book. */
 export async function fetchSmartShelvesContaining(
   uuid: BookUuid,
 ): Promise<number[]> {
-  const res = await smartShelvesContaining(encodeURIComponent(uuid));
-  if (res.status !== 200) throw failure(res);
-  return res.data;
+  return fetchJson(
+    getSmartShelvesContainingUrl(encodeURIComponent(uuid)),
+    shelfIds,
+  );
 }
 
 /** Puts a book on a hand-picked shelf, or takes it off. */

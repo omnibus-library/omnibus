@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  ApiError,
+  type BookUuid,
+  fetchRating,
   toBookDetail,
   toBookPage,
   toPalette,
@@ -148,5 +151,32 @@ describe("toPalette", () => {
     const { book_total: _omitted, ...wire } = aWirePalette();
 
     expect(toPalette(wire).totals.books).toBe(0);
+  });
+});
+
+describe("the nullable read fetchers", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const answer = (res: Response) => {
+    vi.stubGlobal("fetch", async () => res);
+  };
+
+  it("fetchRating rejects with the server's text on a plain-text failure", async () => {
+    answer(
+      new Response("internal server error", {
+        status: 500,
+        headers: { "content-type": "text/plain" },
+      }),
+    );
+    const err = await fetchRating("u" as BookUuid).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({
+      status: 500,
+      message: "internal server error",
+    });
+  });
+
+  it("fetchRating rejects a 200 body that is not a rating", async () => {
+    answer(Response.json({ stars: "five" }));
+    await expect(fetchRating("u" as BookUuid)).rejects.toThrow();
   });
 });
