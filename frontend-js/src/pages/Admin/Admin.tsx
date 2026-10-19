@@ -94,6 +94,7 @@ export function Admin() {
           </>
         ) : (
           <div className="admin-forbidden" data-testid="admin-forbidden">
+            <h1>Administration</h1>
             <p>Administration is only open to server administrators.</p>
             <Link to="/settings">Go to your settings</Link>
           </div>

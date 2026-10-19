@@ -185,6 +185,9 @@ describe("routes", () => {
           "Administration is only open to server administrators.",
         );
         expect(
+          screen.getByRole("heading", { level: 1, name: "Administration" }),
+        ).toBeInTheDocument();
+        expect(
           screen.queryByRole("navigation", { name: "Administration sections" }),
         ).not.toBeInTheDocument();
         expect(

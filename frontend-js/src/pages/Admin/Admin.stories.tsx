@@ -232,7 +232,12 @@ export const RefusesAReader: Story = {
     await expect(canvas.getByTestId("admin-layout")).toHaveClass("has-section");
     await expect(canvas.queryByRole("navigation")).not.toBeInTheDocument();
     await expect(canvas.queryByTestId("admin-nav-people")).toBeNull();
-    await expect(canvas.queryByRole("heading")).not.toBeInTheDocument();
+    await expect(
+      canvas.getByRole("heading", { level: 1, name: "Administration" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("heading", { level: 2 }),
+    ).not.toBeInTheDocument();
     await expect(canvas.queryByTestId("settings-back")).toBeNull();
   },
 };
@@ -243,6 +248,11 @@ export const RefusesAReaderOnASection: Story = {
   play: async ({ canvas }) => {
     await expect(await canvas.findByTestId("admin-forbidden")).toBeVisible();
     await expect(canvas.queryByRole("navigation")).not.toBeInTheDocument();
-    await expect(canvas.queryByRole("heading")).not.toBeInTheDocument();
+    await expect(
+      canvas.getByRole("heading", { level: 1, name: "Administration" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("heading", { level: 2 }),
+    ).not.toBeInTheDocument();
   },
 };
