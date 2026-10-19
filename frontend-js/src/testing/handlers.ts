@@ -91,7 +91,7 @@ import {
 // need behaviour a generated handler can't express, such as paging headers or
 // checking the request, and their bodies are typed by the generated schemas.
 
-const svg = () =>
+export const svg = () =>
   new HttpResponse(COVER_SVG, { headers: { "Content-Type": "image/svg+xml" } });
 
 /** Every cover and thumbnail answers with the sample cover. */

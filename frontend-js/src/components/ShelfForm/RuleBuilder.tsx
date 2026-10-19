@@ -8,6 +8,7 @@ import {
   accepts,
   BLANK_DRAFT,
   FIELDS,
+  inputKind,
   isDate,
   OPS,
   previewRequest,
@@ -16,6 +17,7 @@ import {
   STATUS_VALUES,
   UNITS,
   withField,
+  withOp,
 } from "./rules";
 import "./ShelfForm.css";
 
@@ -114,7 +116,7 @@ function ValueInputs({ draft, onChange }: RowProps) {
       </select>
     );
   }
-  const numeric = field === "rating" || field === "year";
+  const numeric = inputKind(field) === "number";
   return (
     <input
       type={numeric ? "number" : "text"}
@@ -160,7 +162,7 @@ function ConditionRow({
         value={draft.op}
         onChange={(e) => {
           const next = OPS.find(([o]) => o === e.target.value);
-          if (next) onChange({ ...draft, op: next[0] });
+          if (next) onChange(withOp(draft, next[0]));
         }}
       >
         {OPS.filter(([op]) => accepts(draft.field, op)).map(([op, label]) => (
@@ -204,7 +206,13 @@ function Preview({
     // The last answer stays up, dimmed, while the next one loads.
     placeholderData: keepPreviousData,
   });
-  const state = previewState(hasRules, preview.isFetching, preview.isError);
+  // Until the debounce catches up the shown answer is for older rows.
+  const waiting = asked !== JSON.stringify(body);
+  const state = previewState(
+    hasRules,
+    preview.isFetching || waiting,
+    preview.isError,
+  );
   if (state === "noRules") {
     return (
       <p className="shelf-preview-empty mono">

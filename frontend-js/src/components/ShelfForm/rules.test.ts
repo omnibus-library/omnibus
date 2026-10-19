@@ -16,6 +16,7 @@ import {
   updateRequest,
   visibilityLabel,
   withField,
+  withOp,
 } from "./rules";
 
 const aBook = (n: number) =>
@@ -282,5 +283,31 @@ describe("updateRequest", () => {
         smart: { matchMode: "any", drafts: [draft({})] },
       }),
     ).toEqual({ error: "Add at least one condition." });
+  });
+});
+
+describe("withOp", () => {
+  it("clears the window count when moving to a date op", () => {
+    const next = withOp(
+      draft({ field: "date_added", op: "in_last", value: "30" }),
+      "before",
+    );
+    expect(next).toMatchObject({ op: "before", value: "", value2: "" });
+  });
+
+  it("clears the dates when moving to in_last", () => {
+    const next = withOp(
+      draft({ field: "date_added", op: "between", value: "a", value2: "b" }),
+      "in_last",
+    );
+    expect(next).toMatchObject({ op: "in_last", value: "", value2: "" });
+  });
+
+  it("keeps the value between ops of the same input", () => {
+    const next = withOp(
+      draft({ field: "date_added", op: "before", value: "2024-01-01" }),
+      "after",
+    );
+    expect(next).toMatchObject({ op: "after", value: "2024-01-01" });
   });
 });

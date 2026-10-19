@@ -12,6 +12,7 @@ import {
   authorsHandlers,
   failing,
   hanging,
+  svg,
 } from "../../testing/handlers";
 import {
   aWireAuthor,
@@ -248,6 +249,7 @@ export const ShowInLibrary: Story = {
 
 const deleted: string[] = [];
 const reads: string[] = [];
+const reloads: string[] = [];
 
 // The admin stories run inside the authors list, which is what a delete has to update.
 const OTHER = aWireAuthor({ id: 3, name: "Octavia E. Butler", book_count: 0 });
@@ -409,6 +411,10 @@ export const DeletePreviewedAuthor: Story = {
 
     await waitFor(() => expect(canvas.queryByRole("dialog")).toBeNull());
     await expect(deleted).toEqual(["3"]);
+    // The pane must not keep showing the deleted author while the next one loads.
+    await expect(
+      canvas.queryByRole("heading", { level: 2, name: "Octavia E. Butler" }),
+    ).toBeNull();
   },
 };
 
@@ -470,7 +476,13 @@ export const DeleteWorkingIgnoresDismissal: Story = {
 export const NewPhotoRefetchesTheAuthor: Story = {
   beforeEach({ msw }) {
     reads.length = 0;
+    reloads.length = 0;
     msw.use(
+      http.get("/api/authors/:id/photo", ({ request }) => {
+        // Only the cache-replacing fetch asks for `reload`, not the <img> loads.
+        if (request.cache === "reload") reloads.push("photo");
+        return svg();
+      }),
       getGetAuthorByIdMockHandler200(() => {
         reads.push("author");
         return AUTHOR;
@@ -489,6 +501,7 @@ export const NewPhotoRefetchesTheAuthor: Story = {
 
     await waitFor(() => expect(reads).toHaveLength(2));
     await waitFor(() => expect(canvas.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(reloads).toEqual(["photo"]));
     // The same URL under a new query, so the browser's day-long cache is skipped.
     await expect(
       await canvas.findByRole("img", { name: "Ursula K. Le Guin" }),

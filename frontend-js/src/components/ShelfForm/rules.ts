@@ -117,7 +117,7 @@ export function fromRule({ field, op, value }: ShelfRule): RuleDraft {
   return { field, op, value, value2: "", unit: "d" };
 }
 
-const inputKind = (field: RuleField) =>
+export const inputKind = (field: RuleField) =>
   field === "status"
     ? "status"
     : isDate(field)
@@ -143,6 +143,12 @@ export function withField(draft: RuleDraft, field: RuleField): RuleDraft {
     value: seeded ? STATUS_VALUES[0] : value,
     value2: keep ? draft.value2 : "",
   };
+}
+
+/** The draft with `op` picked: a value typed for the other input (a window count vs dates) clears. */
+export function withOp(draft: RuleDraft, op: RuleOp): RuleDraft {
+  if ((op === "in_last") === (draft.op === "in_last")) return { ...draft, op };
+  return { ...draft, op, value: "", value2: "" };
 }
 
 /** Where the live preview stands, whatever answer it holds. */

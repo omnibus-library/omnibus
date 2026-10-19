@@ -74,11 +74,7 @@ export const Preview: Story = {
 };
 
 export const PreviewWaitsForTyping: Story = {
-  args: { initial: [FANTASY], mode: "all" },
-  beforeEach({ msw }) {
-    sent.length = 0;
-    msw.use(previewHandler(sent, aWireRulePreview()));
-  },
+  ...Preview,
   play: async ({ canvas, userEvent }) => {
     await canvas.findByTestId("rule-preview-count");
 
@@ -86,6 +82,10 @@ export const PreviewWaitsForTyping: Story = {
       canvas.getByRole("textbox", { name: "Condition value" }),
       " Club",
     );
+    // The old answer is dimmed while the debounce waits.
+    await expect(
+      canvas.getByTestId("rule-preview-count").closest("[aria-busy]"),
+    ).toHaveAttribute("aria-busy", "true");
 
     await waitFor(() => expect(sent).toHaveLength(2));
     await expect(sent.at(-1)).toEqual({
