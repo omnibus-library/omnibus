@@ -12,6 +12,8 @@ type ToolbarProps = {
   hiddenFormats: string[];
   /** Why sorting is inert on this list, or `null` when it acts. */
   sortLock: string | null;
+  /** Whether this list stacks series; a shelf never does, so the switch is hidden there. */
+  stackable: boolean;
   onChange: (next: Prefs) => void;
 };
 
@@ -20,6 +22,7 @@ export function Toolbar({
   prefs,
   hiddenFormats,
   sortLock,
+  stackable,
   onChange,
 }: ToolbarProps) {
   const user = useCurrentUser();
@@ -27,7 +30,7 @@ export function Toolbar({
   const hidden = hiddenFormatsLabel(hiddenFormats);
   return (
     <div className="lib-toolbar" role="toolbar">
-      {prefs.view === "grid" && (
+      {prefs.view === "grid" && stackable && (
         <>
           <button
             type="button"

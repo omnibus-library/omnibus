@@ -154,6 +154,7 @@ export function Library() {
             // Hidden formats narrow All Books only.
             hiddenFormats={shelfId === null ? query.excludeFormats : []}
             sortLock={sortLock}
+            stackable={shelfId === null}
             onChange={change}
           />
         </div>

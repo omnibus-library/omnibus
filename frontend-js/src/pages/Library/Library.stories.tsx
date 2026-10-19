@@ -639,6 +639,10 @@ export const ShelfLens: Story = {
       canvas.getByRole("link", { name: /^Hidden: MP3/ }),
     ).toBeInTheDocument();
 
+    await expect(
+      canvas.getByRole("button", { name: "Stack series" }),
+    ).toBeInTheDocument();
+
     await userEvent.click(
       await canvas.findByRole("button", { name: "Winter reads, 5 books" }),
     );
@@ -647,6 +651,10 @@ export const ShelfLens: Story = {
     await expect(shelfRequests.at(-1)?.get("sort")).toBe("title");
     await expect(shelfRequests.at(-1)?.get("dir")).toBe("asc");
     await expect(shelfRequests.at(-1)?.has("exclude_formats")).toBe(false);
+    // A shelf is never stacked, so the switch has nothing to do here.
+    await expect(
+      canvas.queryByRole("button", { name: "Stack series" }),
+    ).not.toBeInTheDocument();
     // The loaded member list outranks the summary's count.
     await expect(
       canvas.getByRole("button", { name: "Winter reads, 4 books" }),
@@ -1243,7 +1251,6 @@ export const ScrolledPastStack: Story = {
     await canvas.findAllByRole("link", { name: /^Open details for/ });
     const root = canvasElement.querySelector("#lmq-root");
     await expect(root).not.toHaveClass("lmq--past");
-
     window.scrollTo(0, 600);
     await waitFor(() => expect(root).toHaveClass("lmq--past"));
 
