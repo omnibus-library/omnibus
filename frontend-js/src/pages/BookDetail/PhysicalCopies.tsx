@@ -426,7 +426,7 @@ export function PhysicalCopies({ book }: { book: BookDetail }) {
     navigate("/", { replace: true });
   };
   const mayRemoveBook = viewer.isAdmin || viewer.canEdit;
-  // Offered when the copy went but the book did not, which `remove` cannot redo.
+  // Offered when the copy went (the list is empty) but the book did not, which `remove` cannot redo.
   const retryRemoval = useMutation({
     mutationFn: () => deleteFilelessBook(book.uuid),
     onSuccess: leave,
@@ -484,6 +484,7 @@ export function PhysicalCopies({ book }: { book: BookDetail }) {
       {remove.isError &&
         removing === null &&
         mayRemoveBook &&
+        list.length === 0 &&
         remove.variables?.next === "library" && (
           <Button
             variant="ghost"

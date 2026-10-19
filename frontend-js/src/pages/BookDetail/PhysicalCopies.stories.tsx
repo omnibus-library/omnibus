@@ -327,6 +327,28 @@ export const FailedFollowUpLeavesTheCopyGoneAndSaysWhy: Story = {
   },
 };
 
+export const FailedCopyDeleteOffersNoLibraryRetry: Story = {
+  ...lastCopy,
+  beforeEach({ msw }) {
+    msw.use(
+      failing("delete", "/api/physical/copies/:id", 500),
+      ...physicalHandlers({ copies: [MINE] }, writes),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("copy-delete"));
+    await userEvent.click(canvas.getByTestId("last-copy-remove"));
+    await canvas.findByText("failed with 500");
+    await userEvent.click(canvas.getByTestId("last-copy-cancel"));
+
+    await expect(await canvas.findByTestId("physical-error")).toBeVisible();
+    await expect(
+      canvas.queryByRole("button", { name: "Retry removing from library" }),
+    ).not.toBeInTheDocument();
+    await expect(canvas.getByTestId("physical-copy-card")).toBeVisible();
+  },
+};
+
 export const FailedRemovalCanBeRetriedAndLeaves: Story = {
   ...lastCopy,
   beforeEach({ msw }) {
