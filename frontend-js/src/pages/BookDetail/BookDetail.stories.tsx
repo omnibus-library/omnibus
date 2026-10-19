@@ -363,14 +363,19 @@ export const WishlistWriteRefetchesOnlyWhatItChanged: Story = {
   },
 };
 
+const aliasReads: string[] = [];
 const ALIAS = "00000000-0000-4000-8000-0000000000aa";
 
 export const MergedAwayUuidMovesToTheSurvivingBook: Story = {
   parameters: { path: `/books/${ALIAS}` },
   beforeEach({ msw }) {
+    aliasReads.length = 0;
     msw.use(
       // A merged-away uuid resolves to the book that absorbed it.
-      http.get("/api/ebooks/:uuid", () => HttpResponse.json(BOOK)),
+      http.get("/api/ebooks/:uuid", ({ params }) => {
+        aliasReads.push(String(params.uuid));
+        return HttpResponse.json(BOOK);
+      }),
       ...bookDetailHandlers(BOOK),
     );
   },
@@ -390,5 +395,8 @@ export const MergedAwayUuidMovesToTheSurvivingBook: Story = {
         `/books/${BOOK.unique_identifier}`,
       ),
     );
+    // The survivor is seeded from the alias's answer: no second fetch, no loader.
+    await expect(canvas.queryByText("Taking it off the shelf")).toBeNull();
+    await expect(aliasReads).toEqual([ALIAS]);
   },
 };

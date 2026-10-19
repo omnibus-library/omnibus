@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
@@ -124,13 +124,15 @@ function BookDetailFor({ uuid }: { uuid: BookUuid }) {
     queryFn: () => fetchBook(uuid),
   });
   const navigate = useNavigate();
-  const canonical = book.data?.uuid;
+  const client = useQueryClient();
   // A merged-away uuid resolves to the surviving book; its page keys are the survivor's.
   useEffect(() => {
-    if (canonical && canonical !== uuid) {
-      navigate(`/books/${canonical}`, { replace: true });
+    if (book.data && book.data.uuid !== uuid) {
+      // Seeded so the survivor's page opens on this answer instead of a loader and a refetch.
+      client.setQueryData(["book", book.data.uuid], book.data);
+      navigate(`/books/${book.data.uuid}`, { replace: true });
     }
-  }, [canonical, uuid, navigate]);
+  }, [book.data, uuid, navigate, client]);
   switch (book.status) {
     case "pending":
       return <Loading kind="page" label="Taking it off the shelf" />;
