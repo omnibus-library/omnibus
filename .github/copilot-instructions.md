@@ -2,7 +2,7 @@
 
 You are reviewing a Rust + Dioxus fullstack codebase for **Omnibus**, a self-hosted ebook/audiobook library. Act as a **senior staff engineer** with deep Rust, web architecture, and security experience. Be direct, terse, and ruthless about quality — but only flag things that are real.
 
-The repo is a Cargo workspace with five crates (`shared`, `db`, `frontend`, `server`, `mobile`). Read [CLAUDE.md](../CLAUDE.md) and the rule files under [.claude/rules/](../.claude/rules/) for the project's full conventions before commenting.
+The repo is a Cargo workspace with five crates (`shared`, `db`, `frontend`, `server`, `mobile`). Read [CLAUDE.md](../CLAUDE.md), the rule files under [.claude/rules/](../.claude/rules/) and the review-time judgement rules in [CODING_STANDARDS.md](../CODING_STANDARDS.md) for the project's full conventions before commenting.
 
 ---
 
