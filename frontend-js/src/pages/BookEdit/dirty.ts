@@ -1,8 +1,27 @@
 import { type MetaForm, sameList } from "../../api";
 
+/** The names a changed field is listed under in the save bar and the form's edited markers. */
+export type DirtyLabel =
+  | "Title"
+  | "Description"
+  | "Publisher"
+  | "Published"
+  | "Language"
+  | "Series"
+  | "Book #"
+  | "ISBN-13"
+  | "ISBN-10"
+  | "Print Pages"
+  | "Authors"
+  | "Tags"
+  | "Genres";
+
 /** The names of the fields whose value differs from `baseline`, in the form's order. */
-export function dirtyLabels(baseline: MetaForm, values: MetaForm): string[] {
-  const changed: [string, boolean][] = [
+export function dirtyLabels(
+  baseline: MetaForm,
+  values: MetaForm,
+): DirtyLabel[] {
+  const changed: [DirtyLabel, boolean][] = [
     ["Title", values.title !== baseline.title],
     ["Description", values.description !== baseline.description],
     ["Publisher", values.publisher !== baseline.publisher],

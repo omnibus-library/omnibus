@@ -5,6 +5,7 @@ import { type MetaForm, nameCountsQuery } from "../../api";
 import { ChipInput } from "../../components/ChipInput/ChipInput";
 import { bookCount } from "../../format";
 import type { CoverProps } from "./CoverEditor";
+import type { DirtyLabel } from "./dirty";
 import { EditionPicker } from "./EditionPicker";
 import { MeArea, MeField, MeLabel } from "./MetaFields";
 
@@ -14,7 +15,7 @@ type Props = {
   baseline: MetaForm;
   cover: CoverProps;
   /** Labels of the edited fields, from `dirtyLabels`. */
-  dirty: string[];
+  dirty: DirtyLabel[];
   sortBy: string;
   filename: string;
 };
@@ -29,7 +30,7 @@ export function MetaFormGrid({
   filename,
 }: Props) {
   const { register, control } = form;
-  const edited = (label: string) => dirty.includes(label);
+  const edited = (label: DirtyLabel) => dirty.includes(label);
   // A suggestion pool is a convenience: while it loads, or if it fails, the field takes free text.
   const pools = {
     author: useQuery(nameCountsQuery("author")).data ?? [],

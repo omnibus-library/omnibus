@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router";
 import {
   type BookUuid,
+  bumpCoverBust,
   type EditableBook,
   editableBookQuery,
   type MetaForm,
@@ -35,13 +36,12 @@ function EditForm({ book }: { book: EditableBook }) {
   });
   // The book as the server last reported it, which a cover write moves; `book.form` stays the baseline.
   const [live, setLive] = useState(book);
-  const [coverBust, setCoverBust] = useState(0);
   const [coverReplaced, setCoverReplaced] = useState(false);
   const dirty = dirtyLabels(book.form, form.watch());
   const { blocker, allowLeave } = useLeaveGuard(dirty.length > 0);
 
   // The book's detail page, the lists and the resume row all read what an edit changes.
-  const leave = () => {
+  const written = () => {
     for (const queryKey of [
       ["book", book.uuid],
       ["books"],
@@ -51,32 +51,37 @@ function EditForm({ book }: { book: EditableBook }) {
     ]) {
       queryClient.invalidateQueries({ queryKey });
     }
+  };
+  // Passed per call: TanStack drops those once the page is gone, so a late answer doesn't navigate.
+  const leave = () => {
     allowLeave();
     navigate(`/books/${book.uuid}`);
   };
   // A cover is written the moment it is picked, so Save has nothing to send for it.
   const onCoverApplied = (updated: EditableBook) => {
     setLive(updated);
-    setCoverBust((n) => n + 1);
+    bumpCoverBust(book.uuid);
     setCoverReplaced(true);
-    for (const queryKey of [["book", book.uuid], ["books"]]) {
-      queryClient.invalidateQueries({ queryKey });
-    }
+    // Exact, so the edit query holding the unsaved form isn't refetched out from under it.
+    queryClient.invalidateQueries({
+      queryKey: ["book", book.uuid],
+      exact: true,
+    });
+    queryClient.invalidateQueries({ queryKey: ["books"] });
   };
   const cover = {
     book: live,
     target: { kind: "live", uuid: book.uuid },
-    bust: coverBust,
     onApplied: onCoverApplied,
   } satisfies CoverProps;
   const save = useMutation({
     mutationFn: (values: MetaForm) =>
       saveOverrides(book.uuid, overridesFrom(book.form, values)),
-    onSuccess: leave,
+    onSuccess: written,
   });
   const revert = useMutation({
     mutationFn: () => revertOverrides(book.uuid),
-    onSuccess: leave,
+    onSuccess: written,
   });
 
   return (
@@ -107,20 +112,26 @@ function EditForm({ book }: { book: EditableBook }) {
           book={live}
           cover={cover}
           saving={save.isPending || revert.isPending}
-          onRevert={() => revert.mutate()}
+          onRevert={() => {
+            save.reset();
+            revert.mutate(undefined, { onSuccess: leave });
+          }}
         />
       </div>
       <SaveBar
         mode={{ kind: "edit", uuid: book.uuid }}
         dirty={dirty}
         coverReplaced={coverReplaced}
-        saving={save.isPending}
+        saving={save.isPending || revert.isPending}
         error={
           form.formState.errors.printPages?.message ??
           save.error?.message ??
           revert.error?.message
         }
-        onSave={form.handleSubmit((values) => save.mutate(values))}
+        onSave={form.handleSubmit((values) => {
+          revert.reset();
+          save.mutate(values, { onSuccess: leave });
+        })}
         onDiscard={allowLeave}
       />
       <UnsavedDialog blocker={blocker} />
@@ -130,6 +141,8 @@ function EditForm({ book }: { book: EditableBook }) {
 
 function BookEditFor({ uuid }: { uuid: BookUuid }) {
   const book = useQuery(editableBookQuery(uuid));
+  // A failed refetch keeps the form: the data it holds is what the user is editing.
+  if (book.data) return <EditForm book={book.data} />;
   switch (book.status) {
     case "pending":
       return <Loading kind="page" label="Opening the record" />;
@@ -142,11 +155,7 @@ function BookEditFor({ uuid }: { uuid: BookUuid }) {
         />
       );
     case "success":
-      return book.data ? (
-        <EditForm book={book.data} />
-      ) : (
-        <PageNotFound subject="Book" />
-      );
+      return <PageNotFound subject="Book" />;
     default: {
       const _exhaustive: never = book;
       return _exhaustive;

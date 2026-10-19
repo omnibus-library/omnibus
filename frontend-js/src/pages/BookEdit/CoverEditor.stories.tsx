@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, spyOn, waitFor } from "storybook/test";
-import { type EditableBook, toEditableBook } from "../../api";
+import { bumpCoverBust, type EditableBook, toEditableBook } from "../../api";
 import {
   anEditableWireBook,
   coverWriteHandlers,
@@ -21,18 +21,16 @@ const UPLOADED: string[] = [];
 const FETCHED: string[] = [];
 const PICK = () => new File(["png"], "new-cover.png", { type: "image/png" });
 
-/** The page's part: it holds the book a write returns and counts the writes. */
+/** The page's part: it holds the book a write returns and bumps its cover generation. */
 function Live({ book }: { book: EditableBook }) {
   const [live, setLive] = useState(book);
-  const [bust, setBust] = useState(0);
   return (
     <CoverEditor
       book={live}
       target={{ kind: "live", uuid: live.uuid }}
-      bust={bust}
       onApplied={(updated) => {
         setLive(updated);
-        setBust((n) => n + 1);
+        bumpCoverBust(updated.uuid);
       }}
     />
   );
@@ -48,7 +46,6 @@ function Staged({ preview }: { preview: string | null }) {
     <CoverEditor
       book={SCANNED}
       target={{ kind: "staged", staged, onStage: setStaged }}
-      bust={0}
       onApplied={() => {}}
     />
   );

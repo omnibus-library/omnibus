@@ -57,15 +57,16 @@ export function ChipInput({
     .slice(0, MAX_SUGGESTIONS);
   return (
     <div className="chip-editor-root">
-      {values.map((value) => (
-        <div key={value} className="chip me-chip-item">
+      {values.map((value, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: stored data may hold the same text twice, so the text alone is not a key
+        <div key={`${i}-${value}`} className="chip me-chip-item">
           {avatar && <span className="me-avatar">{initials(value)}</span>}
           <span className="me-chip-label">{value}</span>
           <button
             type="button"
             className="me-chip-remove"
             aria-label={`${removeLabel} ${value}`}
-            onClick={() => onChange(values.filter((v) => v !== value))}
+            onClick={() => onChange(values.filter((_, j) => j !== i))}
           >
             ✕
           </button>

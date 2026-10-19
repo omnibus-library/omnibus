@@ -41,7 +41,7 @@ const OWNERS = [
   ["components/ShelfTile/ShelfTile.css", (c) => c.startsWith("shv-") || c.startsWith("shelf-add-tile")],
   ["components/ShelfPicker/ShelfPicker.css", (c) => c.startsWith("shelf-picker") || c.startsWith("shelf-modal") || c.startsWith("pick-")],
   ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || c.startsWith("ebook-") || c.startsWith("sort-th") || c.startsWith("ss-") || c.startsWith("format-badge") || c.startsWith("bulk-edit") || c.startsWith("shelf-btn-") || c.startsWith("shelf-modal-") || c.startsWith("shelf-picker") || c.startsWith("pick-") || c === "author-photo-modal-backdrop" || ["landing-col", "library-empty", "cover-link"].includes(c)],
-  ["pages/BookEdit/BookEdit.css", (c) => c.startsWith("me-") || c.startsWith("mes-") || c.startsWith("bd-crumb")],
+  ["pages/BookEdit/BookEdit.css", (c) => (c.startsWith("me-") && c !== "me-textarea") || c.startsWith("mes-") || c.startsWith("bd-crumb")],
   ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || c.startsWith("bd-") || c.startsWith("rx-") || c.startsWith("spoiler") || c.startsWith("cm-") || c === "me-textarea" || c.startsWith("suggest-") || c.startsWith("sug-") || c.startsWith("author-lead") || c.startsWith("author-portrait") || ["sh-title", "sh-sub", "fan-match"].includes(c)],
   ["pages/AddBooks/AddBooks.css", (c) => c.startsWith("file-drop-") || c.startsWith("add-books-")],
   ["components/BarcodeScanner/BarcodeScanner.css", (c) => c.startsWith("scanner")],

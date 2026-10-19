@@ -1,8 +1,14 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { HttpResponse, http } from "msw";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { expect, waitFor } from "storybook/test";
-import { formFromBook, hasProviderQuery, toEditableBook } from "../../api";
+import {
+  bumpCoverBust,
+  formFromBook,
+  hasProviderQuery,
+  toEditableBook,
+} from "../../api";
 import type {
   EditionSearchRequest,
   EditionSearchResponse,
@@ -80,7 +86,6 @@ const FOUND: EditionSearchResponse = {
 };
 
 const searched: EditionSearchRequest[] = [];
-const providerCalls = { count: 0 };
 const hydrated: string[] = [];
 const fetchedCovers: string[] = [];
 
@@ -98,15 +103,14 @@ function Picker({ stagedCover = false }: { stagedCover?: boolean }) {
     ? {
         book: live,
         target: { kind: "staged", staged, onStage: setStaged },
-        bust: 0,
         onApplied: () => {},
       }
     : {
         book: live,
         target: { kind: "live", uuid: live.uuid },
-        bust,
         onApplied: (updated) => {
           setLive(updated);
+          bumpCoverBust(live.uuid);
           setBust((n) => n + 1);
         },
       };
@@ -129,9 +133,8 @@ const meta = {
     searched.length = 0;
     hydrated.length = 0;
     fetchedCovers.length = 0;
-    providerCalls.count = 0;
     msw.use(
-      providersHandler(true, providerCalls),
+      providersHandler(true),
       editionSearchHandler(FOUND, { searched }),
       hydrateHandler({ OL1M: FULL }, { hydrated }),
       ...coverWriteHandlers(BOOK, { fetched: fetchedCovers }),
@@ -533,6 +536,54 @@ export const DropsAHydrateForACandidateNoLongerShown: Story = {
     );
     await expect(canvas.getByTestId("mes-compare")).not.toHaveTextContent(
       "A Late Title",
+    );
+  },
+};
+
+export const IgnoresASlowAnswerForAnEarlierOpeningOfTheSameCandidate: Story = {
+  beforeEach({ msw }) {
+    let release = () => {};
+    gate.release = () => release();
+    const held = new Promise<void>((r) => (release = r));
+    let calls = 0;
+    msw.use(
+      http.post("/api/metadata/editions/hydrate", async () => {
+        calls += 1;
+        if (calls > 1) return HttpResponse.json(FULL);
+        await held;
+        return new HttpResponse("provider unavailable", { status: 502 });
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await openCompare({ canvas, userEvent });
+    await userEvent.click(canvas.getByTestId("mes-compare-back"));
+    await userEvent.click(await canvas.findByTestId("mes-candidate-0"));
+    await expect(
+      await canvas.findByTestId("mes-row-description"),
+    ).toBeInTheDocument();
+
+    gate.release();
+    // Another round trip through the screen, so the late failure has landed by now.
+    await userEvent.click(canvas.getByTestId("mes-show-all"));
+
+    await expect(
+      await canvas.findByTestId("mes-row-cover"),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByTestId("mes-row-description-source"),
+    ).toHaveTextContent("A revised edition.");
+  },
+};
+
+export const ClosesOnEscapeFromTheCompareScreen: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await openCompare({ canvas, userEvent });
+
+    await userEvent.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(canvas.queryByTestId("metadata-search")).toBeNull(),
     );
   },
 };

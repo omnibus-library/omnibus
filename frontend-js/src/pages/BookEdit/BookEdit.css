@@ -205,26 +205,6 @@
   cursor: not-allowed;
 }
 
-.me-textarea {
-  width: 100%;
-  padding: 12px 14px;
-  background: var(--bg-1);
-  border: 1px solid var(--line-2);
-  border-radius: 10px;
-  color: var(--ink-0);
-  font-family: var(--serif);
-  font-weight: 500;
-  font-size: 15px;
-  line-height: 1.55;
-  outline: none;
-  resize: vertical;
-  transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
-}
-.me-textarea:focus {
-  border-color: var(--accent);
-}
 .me-textarea.me-input-edited {
   border-color: color-mix(in oklch, var(--accent) 60%, transparent);
 }

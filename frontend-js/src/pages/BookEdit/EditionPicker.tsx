@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import {
   editionRequest,
@@ -21,11 +21,8 @@ import { SparkleGlyph } from "../../components/Glyphs/Glyphs";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { trapTab } from "../../focusTrap";
 import type { CoverProps } from "./CoverEditor";
-import { EditionCompare } from "./EditionCompare";
+import { coverSrc, EditionCompare, EMPTY } from "./EditionCompare";
 import { sourceStatusText } from "./editionFields";
-
-/** Shown where a candidate has no value to show. */
-const EMPTY = "—";
 
 type FieldProps = {
   slug: "title" | "author" | "isbn";
@@ -54,10 +51,6 @@ function QueryField({ slug, label, value, onChange }: FieldProps) {
     </label>
   );
 }
-
-/** A candidate's cover address, or `null` when blank: a blank `src` would pull the page down as an image. */
-const coverSrc = (edition: ProviderEdition) =>
-  edition.cover_url?.trim() || null;
 
 function imprint(edition: ProviderEdition) {
   const parts = [edition.year, edition.publisher, edition.isbn13].filter(
@@ -268,9 +261,6 @@ function ResultsScreen({
   );
 }
 
-const sameEdition = (a: ProviderEdition, b: ProviderEdition) =>
-  a.source === b.source && a.provider_ref === b.provider_ref;
-
 type PickerProps = {
   form: UseFormReturn<MetaForm>;
   /** The form as the book loaded: what the compare screen counts changes against. */
@@ -291,13 +281,21 @@ function SearchOverlay({
     hydrating: boolean;
   } | null>(null);
 
+  const latest = useRef(0);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   // The full record fills in what the list row lacked and never takes a field away from it.
   const select = (edition: ProviderEdition) => {
     setCompare({ edition, hydrating: true });
+    const request = ++latest.current;
     const land = (settled: ProviderEdition) =>
-      // A slow answer must not overwrite a candidate the reader has since replaced, or reappear after they went back.
+      // A slow answer must not overwrite a selection the reader has since replaced, or reappear after they went back.
       setCompare((now) =>
-        now && sameEdition(now.edition, edition)
+        now && request === latest.current
           ? { edition: settled, hydrating: false }
           : now,
       );
@@ -309,11 +307,11 @@ function SearchOverlay({
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the scrim only dismisses; the dialog inside carries the semantics, and the keyboard has Escape and ×
+    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape is handled on the document
     <div
       className="mes-scrim"
       data-testid="metadata-search-scrim"
       onClick={onClose}
-      onKeyDown={(e) => e.key === "Escape" && onClose()}
     >
       <div
         className="mes-panel"

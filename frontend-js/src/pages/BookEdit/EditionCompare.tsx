@@ -6,7 +6,7 @@ import { classes } from "../../classes";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
 import { Loading, Ring } from "../../components/Loading/Loading";
-import { type CoverProps, restage } from "./CoverEditor";
+import { type CoverProps, coverPreview, restage } from "./CoverEditor";
 import {
   applyField,
   currentValue,
@@ -17,8 +17,12 @@ import {
   sourceValue,
 } from "./editionFields";
 
-/** Shown where a side of a row has no value. */
-const EMPTY = "—";
+/** Shown where a side of a row, or a candidate, has no value. */
+export const EMPTY = "—";
+
+/** A candidate's cover address, or `null` when blank: a blank `src` would pull the page down as an image. */
+export const coverSrc = (edition: ProviderEdition) =>
+  edition.cover_url?.trim() || null;
 
 /** Past this many characters on either side, a row is laid out down the panel's full width instead. */
 const LONG_VALUE_CHARS = 90;
@@ -37,18 +41,10 @@ type RowProps = {
   form: Form;
   values: MetaForm;
   baseline: MetaForm;
-  hydrating: boolean;
 };
 
 /** One field: your value, the arrow that copies the source's into it (or undoes that), and the source's value. */
-function CompareRow({
-  field: f,
-  edition,
-  form,
-  values,
-  baseline,
-  hydrating,
-}: RowProps) {
+function CompareRow({ field: f, edition, form, values, baseline }: RowProps) {
   const sourceName = PROVIDERS[edition.source].name;
   const theirs = sourceValue(f, edition);
   const mine = currentValue(f, values);
@@ -77,7 +73,6 @@ function CompareRow({
           className="mes-apply mes-undo"
           data-testid={`mes-row-${f.slug}-undo`}
           aria-label={`Undo the change to ${f.label}`}
-          disabled={hydrating}
           onClick={() =>
             form.setValue(f.key, baseline[f.key], { shouldDirty: true })
           }
@@ -90,8 +85,7 @@ function CompareRow({
           className="mes-apply"
           data-testid={`mes-row-${f.slug}-apply`}
           aria-label={`Copy ${f.label} from ${sourceName}`}
-          // While the full record is in flight this is the thin search hit, not the answer.
-          disabled={!available || hydrating}
+          disabled={!available}
           onClick={() => copyField(form, f, edition)}
         >
           →
@@ -115,17 +109,13 @@ function CoverRow({
   cover: CoverProps;
   edition: ProviderEdition;
 }) {
-  const { book, target, bust, onApplied } = cover;
+  const { target, onApplied } = cover;
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const sourceName = PROVIDERS[edition.source].name;
-  const sourceUrl = edition.cover_url?.trim() || null;
+  const sourceUrl = coverSrc(edition);
   const live = target.kind === "live";
-  const plate = {
-    title: book.displayTitle,
-    authors: book.primaryAuthor ? [book.primaryAuthor.name] : [],
-    accent: book.accent,
-  };
+  const { plate, src: current } = coverPreview(cover);
 
   async function apply(url: string) {
     if (target.kind === "staged") {
@@ -147,18 +137,13 @@ function CoverRow({
     }
   }
 
-  const current =
-    target.kind === "staged"
-      ? target.staged.preview
-      : book.coverUrl &&
-        (bust > 0 ? `${book.coverUrl}?v=${bust}` : book.coverUrl);
   return (
     <div className="mes-cover" data-testid="mes-row-cover">
       <span className="mes-field-label">Cover</span>
       <span className="mes-cover-pair">
         <span className="mes-cover-cell" data-testid="mes-row-cover-current">
           <div className="mes-cover-thumb">
-            <Cover book={plate} src={current || null} />
+            <Cover book={plate} src={current} />
           </div>
         </span>
         <button
@@ -288,7 +273,7 @@ export function EditionCompare({
         </>
       ) : (
         <>
-          {(edition.cover_url?.trim() || showAll) && (
+          {(coverSrc(edition) || showAll) && (
             <CoverRow cover={cover} edition={edition} />
           )}
           <div className="mes-fields" data-testid="mes-compare-fields">
@@ -300,7 +285,6 @@ export function EditionCompare({
                 form={form}
                 values={values}
                 baseline={baseline}
-                hydrating={hydrating}
               />
             ))}
           </div>

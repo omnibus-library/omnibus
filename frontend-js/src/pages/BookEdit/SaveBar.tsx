@@ -68,7 +68,15 @@ export function SaveBar({
             to={`/books/${mode.uuid}`}
             variant="ghost"
             data-testid="me-discard"
-            onClick={onDiscard}
+            // A modified click opens elsewhere and leaves this page (and its guard) alone.
+            onClick={(e) => {
+              if (
+                e.button === 0 &&
+                !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
+              ) {
+                onDiscard();
+              }
+            }}
           >
             Discard edits
           </ButtonLink>

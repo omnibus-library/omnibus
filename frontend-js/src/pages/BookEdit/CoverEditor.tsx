@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import {
   type BookUuid,
+  bustCover,
   coverFromUrl,
   type EditableBook,
   revertCover,
@@ -52,11 +53,23 @@ export type CoverProps = {
     | "hasCoverOverride"
   >;
   target: CoverTarget;
-  /** Counts the cover writes so far; each one reloads the preview. */
-  bust: number;
   /** A write landed: the book as the server now reports it. */
   onApplied: (updated: EditableBook) => void;
 };
+
+/** The placeholder plate and the image the cover surfaces show now, for a live or a staged target. */
+export function coverPreview({ book, target }: CoverProps) {
+  const plate = {
+    title: book.displayTitle,
+    authors: book.primaryAuthor ? [book.primaryAuthor.name] : [],
+    accent: book.accent,
+  };
+  const src =
+    target.kind === "live"
+      ? book.coverUrl && bustCover(book.coverUrl, target.uuid)
+      : target.staged.preview;
+  return { plate, src: src || null };
+}
 
 const ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
 
@@ -69,15 +82,12 @@ function stagedHint({ source, preview }: StagedCover) {
 }
 
 /** The sidebar's cover card: preview, hint and the controls that replace or revert the cover. */
-export function CoverEditor({ book, target, bust, onApplied }: CoverProps) {
+export function CoverEditor(props: CoverProps) {
+  const { book, target, onApplied } = props;
   const [busy, setBusy] = useState<"file" | "url" | "revert" | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [pastedUrl, setPastedUrl] = useState("");
-  const plate = {
-    title: book.displayTitle,
-    authors: book.primaryAuthor ? [book.primaryAuthor.name] : [],
-    accent: book.accent,
-  };
+  const { plate, src } = coverPreview(props);
 
   // One write at a time; the status line says what is in flight and then how it ended.
   async function write(
@@ -139,11 +149,6 @@ export function CoverEditor({ book, target, bust, onApplied }: CoverProps) {
     if (applied) setPastedUrl("");
   };
 
-  const src =
-    target.kind === "live"
-      ? book.coverUrl &&
-        (bust > 0 ? `${book.coverUrl}?v=${bust}` : book.coverUrl)
-      : target.staged.preview;
   return (
     <div className="card me-sidebar-card">
       <div className="me-sidebar-head">
@@ -155,7 +160,7 @@ export function CoverEditor({ book, target, bust, onApplied }: CoverProps) {
           target.kind === "staged" ? "cover-staged-preview" : undefined
         }
       >
-        <Cover book={plate} src={src || null} />
+        <Cover book={plate} src={src} />
       </div>
       <div className="mono me-cover-hint" data-testid="cover-hint">
         {target.kind === "staged"
