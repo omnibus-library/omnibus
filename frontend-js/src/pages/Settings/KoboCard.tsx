@@ -19,6 +19,7 @@ import {
   External,
   type Status,
   StatusLine,
+  statusOrLoadError,
 } from "../../components/SettingsShell/SettingsShell";
 
 const NameSchema = z.object({
@@ -254,14 +255,11 @@ export function KoboCard() {
   const busy = add.isPending || regenerate.isPending || remove.isPending;
 
   const confirm = pending && CONFIRM[pending.action];
-  const shown =
-    status ??
-    (devices.isError
-      ? {
-          message: `Couldn’t load your Kobos: ${devices.error.message}`,
-          error: true,
-        }
-      : null);
+  const shown = statusOrLoadError(
+    status,
+    devices.error,
+    "Couldn’t load your Kobos: ",
+  );
   return (
     <section className="card" data-testid="kobo-devices-card">
       <h3>Kobo wireless sync</h3>

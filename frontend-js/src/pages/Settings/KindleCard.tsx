@@ -11,6 +11,7 @@ import { CopyButton } from "../../components/CopyButton/CopyButton";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import {
   External,
+  refusal,
   type Status,
   StatusLine,
   useUnsavedGuard,
@@ -107,7 +108,7 @@ export function KindleCard() {
         error: false,
       });
     },
-    onError: (error) => setStatus({ message: error.message, error: true }),
+    onError: (error) => setStatus(refusal(error)),
     onSettled: () => setConfirmClear(false),
   });
 

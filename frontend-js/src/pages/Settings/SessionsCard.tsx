@@ -5,8 +5,10 @@ import { Button } from "../../components/Button/Button";
 import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
 import { RowSkeletons } from "../../components/Loading/Loading";
 import {
+  refusal,
   type Status,
   StatusLine,
+  statusOrLoadError,
 } from "../../components/SettingsShell/SettingsShell";
 import { utcDay } from "../../format";
 
@@ -22,7 +24,7 @@ export function SessionsCard() {
     mutationFn: (session: SessionView) => revokeSession(session.id),
     onMutate: () => setStatus(null),
     onSuccess: () => setStatus({ message: "Session revoked.", error: false }),
-    onError: (error) => setStatus({ message: error.message, error: true }),
+    onError: (error) => setStatus(refusal(error)),
     onSettled: () => {
       setConfirming(null);
       // Either way the list shows what the server now holds.
@@ -31,11 +33,7 @@ export function SessionsCard() {
       });
     },
   });
-  const shown =
-    status ??
-    (sessions.isError
-      ? { message: sessions.error.message, error: true }
-      : null);
+  const shown = statusOrLoadError(status, sessions.error);
 
   return (
     <section className="card" data-testid="account-sessions-card">

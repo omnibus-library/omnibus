@@ -7,6 +7,7 @@ import { changePassword, sessionsQuery } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel } from "../../components/Loading/Loading";
 import {
+  refusal,
   type Status,
   StatusLine,
 } from "../../components/SettingsShell/SettingsShell";
@@ -46,7 +47,7 @@ export function PasswordCard() {
       form.reset();
       setStatus({ message: "Password changed.", error: false });
     },
-    onError: (error) => setStatus({ message: error.message, error: true }),
+    onError: (error) => setStatus(refusal(error)),
   });
   const clearStatus = { onChange: () => setStatus(null) };
 

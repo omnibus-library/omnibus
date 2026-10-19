@@ -13,6 +13,7 @@ import { Button } from "../../components/Button/Button";
 import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
 import { BusyLabel } from "../../components/Loading/Loading";
 import {
+  refusal,
   type Status,
   StatusLine,
   useUnsavedGuard,
@@ -48,7 +49,7 @@ export function ProfileSection() {
     },
     onMutate: clear,
     onSuccess: () => setStatus({ message: "Profile saved.", error: false }),
-    onError: (error) => setStatus({ message: error.message, error: true }),
+    onError: (error) => setStatus(refusal(error)),
   });
   const upload = useMutation({
     mutationFn: async (file: File) => {
@@ -126,7 +127,7 @@ export function ProfileSection() {
       </div>
       <StatusLine
         testId="avatar-status"
-        status={avatarError ? { message: avatarError, error: true } : null}
+        status={avatarError ? refusal({ message: avatarError }) : null}
       />
 
       <form

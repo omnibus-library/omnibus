@@ -14,8 +14,10 @@ import { Button } from "../../components/Button/Button";
 import { CopyButton } from "../../components/CopyButton/CopyButton";
 import { BusyLabel } from "../../components/Loading/Loading";
 import {
+  refusal,
   type Status,
   StatusLine,
+  statusOrLoadError,
 } from "../../components/SettingsShell/SettingsShell";
 import { initialsFor, nowSecs, utcDay } from "../../format";
 import { useCurrentUser } from "../../session";
@@ -337,14 +339,13 @@ export function ApiTokensCard() {
       apiTokensQuery.queryKey,
       (list) => list && change(list),
     );
-  const fail = (error: Error) =>
-    setStatus({ message: error.message, error: true });
+  const fail = (error: Error) => setStatus(refusal(error));
   // After a refusal the list is read again, so it shows what the server holds.
   const refused = (error: Error) => {
     fail(error);
     void queryClient.invalidateQueries({ queryKey: apiTokensQuery.queryKey });
   };
-  const invalid = (message: string) => setStatus({ message, error: true });
+  const invalid = (message: string) => setStatus(refusal({ message }));
   const create = useMutation({
     mutationFn: createApiToken,
     onMutate: async () => {
@@ -391,9 +392,7 @@ export function ApiTokensCard() {
   const busy = create.isPending || revoke.isPending || rename.isPending;
 
   const list = tokens.data;
-  const shown =
-    status ??
-    (tokens.isError ? { message: tokens.error.message, error: true } : null);
+  const shown = statusOrLoadError(status, tokens.error);
   const chips = scopeChips(user);
   const count = list?.length ?? 0;
   const empty = list?.length === 0;

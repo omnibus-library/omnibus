@@ -147,6 +147,20 @@ export function SectionHeader({ title }: { title: string }) {
 /** A card's last result: what it says and whether it was a refusal. */
 export type Status = { message: string; error: boolean };
 
+/** A refusal: `error`'s message, shown as an error. */
+export const refusal = ({ message }: { message: string }): Status => ({
+  message,
+  error: true,
+});
+
+/** The card's last result, or, when it has none, why its list did not load (after `lead`). */
+export const statusOrLoadError = (
+  status: Status | null,
+  loadError: Error | null,
+  lead = "",
+): Status | null =>
+  status ?? (loadError ? refusal({ message: lead + loadError.message }) : null);
+
 type StatusLineProps = {
   testId: string;
   status: Status | null;
