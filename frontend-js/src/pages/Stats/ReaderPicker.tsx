@@ -69,9 +69,8 @@ export function ReaderPicker({
         hidden={!open}
       >
         {readers.map((reader) => {
-          const here = reader.is_you
-            ? selected === null
-            : selected === reader.id;
+          const here =
+            selected === reader.id || (selected === null && reader.is_you);
           return (
             <li key={reader.id}>
               <Link
