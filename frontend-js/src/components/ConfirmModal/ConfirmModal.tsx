@@ -52,6 +52,14 @@ export function ConfirmModal({
   const dismiss = () => {
     if (!busy) onDismiss();
   };
+  // Closing hands focus back to what opened it: with a dialog nested in another, to the outer one.
+  useEffect(() => {
+    if (!focusOnOpen) return;
+    const opener = document.activeElement;
+    return () => {
+      if (opener instanceof HTMLElement) opener.focus();
+    };
+  }, [focusOnOpen]);
   // After every render: a button that unmounts or disables drops focus to the page.
   useEffect(() => {
     if (!focusOnOpen) return;
