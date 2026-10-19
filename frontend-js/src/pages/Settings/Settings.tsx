@@ -1,3 +1,4 @@
+import type { ComponentType } from "react";
 import { type Location, Navigate, useSearchParams } from "react-router";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import {
@@ -9,6 +10,7 @@ import { useCurrentUser } from "../../session";
 import {
   legacySettingsHref,
   PERSONAL_SECTIONS,
+  type PersonalSlug,
   parseSettingsSection,
   sectionHref,
 } from "../../settingsIndex";
@@ -21,6 +23,34 @@ import { PreferencesSection } from "./PreferencesSection";
 import { ProfileSection } from "./ProfileSection";
 import { SessionsCard } from "./SessionsCard";
 import "./Settings.css";
+
+function Security() {
+  return (
+    <>
+      <PasswordCard />
+      <SessionsCard />
+      <ApiTokensCard />
+    </>
+  );
+}
+
+function Devices() {
+  return (
+    <>
+      <KindleCard />
+      <KoboCard />
+    </>
+  );
+}
+
+// A Record, so a section added to the slugs cannot be left without a body.
+const BODIES: Record<PersonalSlug, ComponentType> = {
+  profile: ProfileSection,
+  preferences: PreferencesSection,
+  goals: GoalsSection,
+  devices: Devices,
+  security: Security,
+};
 
 const sectionOf = (location: Location) =>
   parseSettingsSection(new URLSearchParams(location.search).get("section"));
@@ -38,6 +68,7 @@ export function Settings() {
   if (legacy) return <Navigate to={legacy} replace />;
 
   const active = parseSettingsSection(raw);
+  const Body = BODIES[active.slug];
   const nav: NavGroup[] = [
     {
       items: PERSONAL_SECTIONS.map((section) => ({
@@ -73,22 +104,7 @@ export function Settings() {
     >
       <PageTitle page={`${active.label} · Settings`} />
       <SectionHeader title={active.label} />
-      {active.slug === "profile" && <ProfileSection />}
-      {active.slug === "preferences" && <PreferencesSection />}
-      {active.slug === "goals" && <GoalsSection />}
-      {active.slug === "security" && (
-        <>
-          <PasswordCard />
-          <SessionsCard />
-          <ApiTokensCard />
-        </>
-      )}
-      {active.slug === "devices" && (
-        <>
-          <KindleCard />
-          <KoboCard />
-        </>
-      )}
+      <Body />
     </SettingsShell>
   );
 }

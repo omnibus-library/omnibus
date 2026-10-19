@@ -5,7 +5,17 @@ type Area = "settings" | "admin";
 
 export type Section = { area: Area; slug: string; label: string };
 
-const personal = (slug: string, label: string): Section => ({
+/** The `?section=` slugs of `/settings`. */
+export type PersonalSlug =
+  | "profile"
+  | "preferences"
+  | "goals"
+  | "devices"
+  | "security";
+
+export type PersonalSection = Section & { slug: PersonalSlug };
+
+const personal = (slug: PersonalSlug, label: string): PersonalSection => ({
   area: "settings",
   slug,
   label,
@@ -22,7 +32,7 @@ const GOALS = personal("goals", "Goals");
 const DEVICES = personal("devices", "Devices");
 const SECURITY = personal("security", "Sign-in & security");
 /** The five personal sections, in sidebar order. */
-export const PERSONAL_SECTIONS: readonly Section[] = [
+export const PERSONAL_SECTIONS: readonly PersonalSection[] = [
   PROFILE,
   PREFERENCES,
   GOALS,
@@ -159,7 +169,7 @@ export const settingsPlace = ({ section }: SettingsEntry) =>
   `${section.area === "settings" ? "Settings" : "Administration"} › ${section.label}`;
 
 /** The personal section a `?section=` slug names; Profile when it is missing or unknown. */
-export function parseSettingsSection(raw: string | null): Section {
+export function parseSettingsSection(raw: string | null): PersonalSection {
   return PERSONAL_SECTIONS.find((s) => s.slug === raw) ?? PROFILE;
 }
 
