@@ -6,6 +6,7 @@ import { Loading } from "../../components/Loading/Loading";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
 import { formatLongDate } from "../../format";
 import { useCurrentUser } from "../../session";
+import { JournalComposer } from "./JournalComposer";
 import { JournalEntryCard } from "./JournalEntryCard";
 import { journalExcerpt, marqueeJournalKicker } from "./journal";
 import { journalQuery } from "./queries";
@@ -68,6 +69,7 @@ export function JournalStop({ book }: { book: BookDetail }) {
   const feed = useQuery(journalQuery(book.uuid));
   // By id, not position: a refetch keeps the same entry open, or drops it if it went away.
   const [openId, setOpenId] = useState<number | null>(null);
+  const [composing, setComposing] = useState(false);
   const entries = feed.data;
   const drafts = entries?.filter((e) => e.status === "draft").length ?? 0;
   const readers = [
@@ -93,6 +95,13 @@ export function JournalStop({ book }: { book: BookDetail }) {
           )}
         </div>
         <span className="bdmq-headspacer" />
+        <Button
+          size="sm"
+          data-testid="journal-open-composer"
+          onClick={() => setComposing(true)}
+        >
+          ✎ New entry
+        </Button>
         {readers.length > 1 && (
           <div className="bdmq-avatarstack" aria-hidden="true">
             {readers.slice(0, MAX_STACKED).map((reader) => (
@@ -106,6 +115,25 @@ export function JournalStop({ book }: { book: BookDetail }) {
           </div>
         )}
       </div>
+      {composing && (
+        // Not dismissable by a click outside: a stray one must not throw away an open draft.
+        <div
+          className="bdmq-overlay bdmq-overlay-static"
+          data-testid="journal-composer-overlay"
+        >
+          <div
+            className="bdmq-ocard bdmq-ocard-composer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="New journal entry"
+          >
+            <JournalComposer
+              uuid={book.uuid}
+              onClose={() => setComposing(false)}
+            />
+          </div>
+        </div>
+      )}
       {entries === undefined ? (
         feed.isError ? (
           <div className="bd-journal-empty card" data-testid="journal-error">

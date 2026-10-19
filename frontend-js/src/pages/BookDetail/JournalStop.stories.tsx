@@ -332,3 +332,140 @@ export const DeleteFailsKeepsTheEntry: Story = {
     await expect(canvas.getAllByTestId("journal-ladder-row")).toHaveLength(3);
   },
 };
+
+export const NewEntryPublishesIntoTheFeed: Story = {
+  beforeEach({ msw }) {
+    writes.length = 0;
+    msw.use(...journalHandlers(ENTRIES, ADA, writes));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("journal-open-composer"));
+    const overlay = canvas.getByTestId("journal-composer-overlay");
+    await userEvent.type(
+      within(overlay).getByRole("textbox", { name: "Journal entry" }),
+      "A fresh thought",
+    );
+    await userEvent.click(within(overlay).getByTestId("journal-publish"));
+
+    await waitFor(() =>
+      expect(writes).toEqual([{ id: 100, status: "published" }]),
+    );
+    await waitFor(() =>
+      expect(canvas.getAllByTestId("journal-ladder-row")).toHaveLength(4),
+    );
+    await expect(canvas.getByTestId("journal-kicker")).toHaveTextContent(
+      "3 entries from 2 readers · 1 draft",
+    );
+    await expect(
+      canvas.queryByTestId("journal-composer-overlay"),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const ComposerIgnoresAClickOutside: Story = {
+  beforeEach({ msw }) {
+    msw.use(...journalHandlers(ENTRIES, ADA));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("journal-open-composer"));
+    await userEvent.click(canvas.getByTestId("journal-composer-overlay"));
+    await expect(canvas.getByTestId("journal-composer")).toBeInTheDocument();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(
+        canvas.queryByTestId("journal-composer-overlay"),
+      ).not.toBeInTheDocument(),
+    );
+  },
+};
+
+export const OwnerEditsAnEntry: Story = {
+  beforeEach({ msw }) {
+    writes.length = 0;
+    msw.use(...journalHandlers(ENTRIES, ADA, writes));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      (await canvas.findAllByTestId("journal-ladder-row"))[0] as HTMLElement,
+    );
+    const card = canvas.getByTestId("journal-entry");
+    await userEvent.click(within(card).getByTestId("journal-edit"));
+
+    // The editor opens on the entry's markdown, and the card's own actions step aside.
+    const editor = within(card).getByRole("textbox", {
+      name: "Edit journal entry",
+    });
+    await expect(editor).toHaveTextContent("The footnotes have footnotes.");
+    await expect(
+      within(card).queryByTestId("journal-edit"),
+    ).not.toBeInTheDocument();
+
+    getSelection()?.selectAllChildren(editor);
+    await userEvent.keyboard("Rewritten");
+    await userEvent.click(within(card).getByTestId("journal-edit-save"));
+
+    await waitFor(() => expect(writes).toEqual([{ id: 1 }]));
+    await waitFor(() =>
+      expect(canvas.getByTestId("journal-entry")).toHaveTextContent(
+        "Rewritten",
+      ),
+    );
+    await expect(
+      canvas.queryByRole("textbox", { name: "Edit journal entry" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const EditCancelRestoresTheCard: Story = {
+  beforeEach({ msw }) {
+    writes.length = 0;
+    msw.use(...journalHandlers(ENTRIES, ADA, writes));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      (await canvas.findAllByTestId("journal-ladder-row"))[0] as HTMLElement,
+    );
+    await userEvent.click(canvas.getByTestId("journal-edit"));
+    await userEvent.click(canvas.getByRole("button", { name: "Cancel" }));
+
+    await expect(canvas.getByTestId("journal-edit")).toBeInTheDocument();
+    await expect(writes).toEqual([]);
+  },
+};
+
+export const EditFailsKeepsTheEditor: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      http.patch(
+        "/api/journals/:id",
+        () => new HttpResponse("failed with 500", { status: 500 }),
+      ),
+      ...journalHandlers(ENTRIES, ADA),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      (await canvas.findAllByTestId("journal-ladder-row"))[0] as HTMLElement,
+    );
+    await userEvent.click(canvas.getByTestId("journal-edit"));
+    await userEvent.click(canvas.getByTestId("journal-edit-save"));
+
+    await expect(
+      await within(canvas.getByTestId("journal-entry")).findByRole("alert"),
+    ).toHaveTextContent("failed with 500");
+    await expect(canvas.getByTestId("journal-edit-save")).toBeEnabled();
+  },
+};
+
+export const OthersEntriesOfferNoEdit: Story = {
+  beforeEach({ msw }) {
+    msw.use(...journalHandlers(ENTRIES, ADA));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      (await canvas.findAllByTestId("journal-ladder-row"))[1] as HTMLElement,
+    );
+    await expect(canvas.queryByTestId("journal-edit")).not.toBeInTheDocument();
+  },
+};

@@ -21,6 +21,8 @@ import {
   type LoginResponse,
   type PaletteResults,
   PostCrossFormatFollowBody,
+  PostJournalBody,
+  PostJournalPreviewBody,
   PostRatingBody,
   PutReadStatusBody,
   type RatingRecord,
@@ -32,6 +34,7 @@ import {
 import { COVER_SVG } from "./books";
 import {
   aWireAlignment,
+  aWireJournalEntry,
   aWireProgress,
   aWireReadStatus,
   aWireSeries,
@@ -148,8 +151,9 @@ export function highlightsHandlers(
 
 /**
  * The journal feed as the server serves it to `viewerId`: everyone's published entries and
- * the viewer's own drafts, never another reader's. `PATCH` publishes (its status written to
- * `published`) and `DELETE` removes; both record the entry id in `writes`.
+ * the viewer's own drafts, never another reader's. `POST` creates the viewer's entry (ids
+ * count up from 100), `PATCH` rewrites it and may publish it, `DELETE` removes it, and the
+ * preview answers the markdown in a `<p>`; each write records the entry id and status in `writes`.
  */
 export function journalHandlers(
   all: JournalEntry[],
@@ -157,10 +161,31 @@ export function journalHandlers(
   writes: { id: number; status?: string }[] = [],
 ) {
   let current = all;
+  let nextId = 100;
+  const html = (md: string) => `<p>${md}</p>`;
   return [
     http.get("/api/journals/book/:uuid", () =>
       HttpResponse.json(
         current.filter((e) => e.status !== "draft" || e.author_id === viewerId),
+      ),
+    ),
+    http.post("/api/journals", async ({ request }) => {
+      const body = PostJournalBody.parse(await request.json());
+      const entry = aWireJournalEntry({
+        id: nextId++,
+        author_id: viewerId,
+        body_md: body.body_md,
+        body_html: html(body.body_md),
+        progress: body.progress,
+        status: body.status ?? "published",
+      });
+      writes.push({ id: entry.id, status: body.status });
+      current = [...current, entry];
+      return HttpResponse.json(entry);
+    }),
+    http.post("/api/journals/preview", async ({ request }) =>
+      HttpResponse.json(
+        html(PostJournalPreviewBody.parse(await request.json())),
       ),
     ),
     http.patch("/api/journals/:id", async ({ params, request }) => {
@@ -169,7 +194,12 @@ export function journalHandlers(
       writes.push({ id, status: body.status ?? undefined });
       current = current.map((e) =>
         e.id === id
-          ? { ...e, body_md: body.body_md, status: body.status ?? e.status }
+          ? {
+              ...e,
+              body_md: body.body_md,
+              body_html: html(body.body_md),
+              status: body.status ?? e.status,
+            }
           : e,
       );
       return HttpResponse.json(current.find((e) => e.id === id));

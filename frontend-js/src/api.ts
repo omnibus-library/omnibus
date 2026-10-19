@@ -13,6 +13,7 @@ import {
   getOtherRatings,
   getPostCrossFormatFollowUrl,
   getPostEbookSummaryFetchUrl,
+  getPostJournalPreviewUrl,
   getProgress,
   getRating,
   getReadStatus,
@@ -24,6 +25,8 @@ import {
   getSummarySources,
   patchJournal,
   postEbookOverrides,
+  postJournal,
+  postJournalImage,
   login as postLogin,
   postRating,
   register as postRegister,
@@ -634,19 +637,57 @@ export async function fetchJournalEntries(
   return res.data.map(toJournalEntry);
 }
 
-/** Publishes a draft, keeping its body and progress. */
-export async function publishJournalEntry({
-  id,
-  bodyMd,
-  progress,
-}: JournalEntry) {
-  const res = await patchJournal(String(id), {
+type JournalDraft = {
+  bodyMd: string;
+  progress: number | null;
+  status?: "draft" | "published";
+};
+
+/** Writes a new entry about a book; a `draft` stays visible to its author only. */
+export async function createJournalEntry(
+  uuid: BookUuid,
+  { bodyMd, progress, status }: JournalDraft,
+): Promise<JournalEntry> {
+  const res = await postJournal({
+    book_uuid: uuid,
     body_md: bodyMd,
     progress,
-    status: "published",
+    status,
   });
   if (res.status !== 200) throw failure(res);
   return toJournalEntry(res.data);
+}
+
+/** Rewrites an entry's body and progress; a `status` publishes or reverts it, none keeps it. */
+export async function updateJournalEntry(
+  id: number,
+  { bodyMd, progress, status }: JournalDraft,
+): Promise<JournalEntry> {
+  const res = await patchJournal(String(id), {
+    body_md: bodyMd,
+    progress,
+    status,
+  });
+  if (res.status !== 200) throw failure(res);
+  return toJournalEntry(res.data);
+}
+
+/** Publishes a draft, keeping its body and progress. */
+export const publishJournalEntry = ({ id, bodyMd, progress }: JournalEntry) =>
+  updateJournalEntry(id, { bodyMd, progress, status: "published" });
+
+/** The server's sanitised HTML for markdown, as a saved entry would render it. */
+export async function previewJournal(bodyMd: string): Promise<string> {
+  // The generated fetcher would JSON-parse a 400's plain-text body.
+  const res = await send(getPostJournalPreviewUrl(), "POST", bodyMd);
+  return z.string().parse(await res.json());
+}
+
+/** Stores an image for a journal entry and returns the URL to embed it by. */
+export async function uploadJournalImage(image: File): Promise<string> {
+  const res = await postJournalImage({ image });
+  if (res.status !== 200) throw failure(res);
+  return res.data.url;
 }
 
 export async function deleteJournalEntry(id: number): Promise<void> {

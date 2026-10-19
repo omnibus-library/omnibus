@@ -370,9 +370,219 @@
     color: var(--bad);
   }
 }
+.bd-journal-composer {
+  padding: 14px 16px;
+  margin-top: 12px;
+}
+.bd-journal-composer-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.bd-tab-active {
+  color: var(--ink-0);
+  border-color: var(--accent);
+}
+.bd-journal-spoiler-help {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  cursor: help;
+}
+.bd-journal-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.bd-journal-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  flex: 1;
+  padding: 6px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+}
+.bd-journal-tool {
+  min-width: 32px;
+  justify-content: center;
+}
+.bd-journal-hl-wrap {
+  position: relative;
+}
+.bd-journal-hl-pop {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 50;
+  margin-top: 6px;
+  width: 320px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 12px;
+  box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.55);
+}
+.bd-journal-hl-head {
+  margin-bottom: 10px;
+}
+.bd-journal-hl-empty {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.bd-journal-hl-item {
+  width: 100%;
+  text-align: left;
+  margin-bottom: 6px;
+  padding: 8px 12px;
+  background: var(--bg-2);
+  border: none;
+  border-left: 2px solid var(--accent);
+  border-radius: 8px;
+  font-family: var(--serif);
+  font-size: 13.5px;
+  font-style: italic;
+  color: var(--ink-0);
+  cursor: pointer;
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  transition: background 0.15s;
+}
+@media (hover: hover) {
+  .bd-journal-hl-item:hover {
+    background: var(--bg-3);
+  }
+}
+.bd-journal-editor {
+  min-height: 132px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
+.bd-journal-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--ink-3);
+  pointer-events: none;
+}
+.bd-journal-preview {
+  min-height: 96px;
+  padding: 12px 14px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink-1);
+}
+.bd-journal-composer-foot,
+.bd-journal-entry-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+.bd-journal-foot-spacer {
+  flex: 1;
+}
+.bd-journal-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bd-journal-progress-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.bd-journal-progress-range {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  flex: 1;
+  min-width: 60px;
+  height: 6px;
+  border-radius: 999px;
+  cursor: pointer;
+  outline: none;
+}
+.bd-journal-progress-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent) 22%, transparent);
+  cursor: pointer;
+}
+.bd-journal-progress-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: transparent; /* let the inline fill gradient on the input show through */
+}
+.bd-journal-progress-range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-3);
+}
+.bd-journal-progress-range::-moz-range-progress {
+  background: var(--accent);
+  height: 6px;
+  border-radius: 999px;
+}
+.bd-journal-progress-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+.bd-journal-progress-val {
+  font-size: 12px;
+  color: var(--ink-1);
+  width: 36px;
+  text-align: right;
+  flex-shrink: 0;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+@media (pointer: coarse) {
+  .bd-journal-progress-range {
+    height: 8px;
+  }
+  .bd-journal-progress-range::-webkit-slider-thumb {
+    width: 30px;
+    height: 30px;
+    box-shadow: 0 0 0 6px color-mix(in oklch, var(--accent) 22%, transparent);
+  }
+  .bd-journal-progress-range::-webkit-slider-runnable-track {
+    height: 8px;
+  }
+  .bd-journal-progress-range::-moz-range-thumb {
+    width: 30px;
+    height: 30px;
+  }
+}
 .bd-journal-error {
   color: var(--bad);
   font-size: 12px;
+}
+.bd-journal-autosaved {
+  color: var(--ink-3);
+  font-size: 11px;
 }
 .bd-journal-entry {
   padding: 22px 24px;
@@ -447,34 +657,44 @@
   line-height: 1.7;
   color: var(--ink-1);
 }
+.bd-journal-preview > :first-child,
 .bd-journal-entry-body > :first-child {
   margin-top: 0;
 }
+.bd-journal-preview > :last-child,
 .bd-journal-entry-body > :last-child {
   margin-bottom: 0;
 }
+.bd-journal-preview h1,
 .bd-journal-entry-body h1,
+.bd-journal-preview h2,
 .bd-journal-entry-body h2 {
   font-family: var(--sans);
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--ink-0);
 }
+.bd-journal-preview h1,
 .bd-journal-entry-body h1 {
   font-size: 1.5em;
   --lh: 1.3;
   line-height: var(--lh);
   margin: 0 0 10px;
 }
+.bd-journal-preview h2,
 .bd-journal-entry-body h2 {
   font-size: 1.25em;
   --lh: 1.35;
   line-height: var(--lh);
   margin: 0 0 10px;
 }
+.bd-journal-preview h3,
 .bd-journal-entry-body h3,
+.bd-journal-preview h4,
 .bd-journal-entry-body h4,
+.bd-journal-preview h5,
 .bd-journal-entry-body h5,
+.bd-journal-preview h6,
 .bd-journal-entry-body h6 {
   font-family: var(--sans);
   font-weight: 700;
@@ -485,20 +705,29 @@
   line-height: var(--lh);
   margin: 0 0 10px;
 }
+.bd-journal-preview p,
 .bd-journal-entry-body p,
+.bd-journal-preview ul,
 .bd-journal-entry-body ul,
+.bd-journal-preview ol,
 .bd-journal-entry-body ol,
+.bd-journal-preview blockquote,
 .bd-journal-entry-body blockquote {
   margin: 0 0 14px;
 }
+.bd-journal-preview ul,
 .bd-journal-entry-body ul,
+.bd-journal-preview ol,
 .bd-journal-entry-body ol {
   padding-left: 1.4em;
 }
+.bd-journal-preview li > ul,
 .bd-journal-entry-body li > ul,
+.bd-journal-preview li > ol,
 .bd-journal-entry-body li > ol {
   margin-bottom: 0;
 }
+.bd-journal-preview blockquote,
 .bd-journal-entry-body blockquote {
   /* Mirrors the editor's `.cm-quote` treatment. */
   border-left: 3px solid var(--accent);
@@ -524,6 +753,12 @@
   font-family: var(--sans);
   font-size: 12px;
   padding-right: 10px;
+}
+.bd-journal-image-input {
+  display: none;
+}
+.bd-journal-image-tool {
+  cursor: pointer;
 }
 .spoiler {
   cursor: pointer;
@@ -564,6 +799,33 @@ button.spoiler.revealed {
 .bd-meta-table .bd-meta-v {
   padding: 4px 0;
   word-break: break-word;
+}
+
+.me-textarea {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  color: var(--ink-0);
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 15px;
+  line-height: 1.55;
+  outline: none;
+  resize: vertical;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.me-textarea:focus {
+  border-color: var(--accent);
+}
+.me-textarea.bd-journal-editor {
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink-1);
 }
 .bd-merge-error {
   color: var(--bad);
@@ -1185,6 +1447,17 @@ button.spoiler.revealed {
 .bdmq-headspacer {
   flex: 1;
 }
+.bdmq-overlay-static {
+  cursor: auto;
+}
+.bdmq-ocard-composer {
+  max-width: 720px;
+  padding: 0;
+}
+.bdmq-ocard-composer .bd-journal-composer {
+  border: 0;
+  margin: 0;
+}
 .bdmq-avatarstack {
   display: inline-flex;
   align-items: center;
@@ -1211,6 +1484,9 @@ button.spoiler.revealed {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+.bdmq-journal .bd-journal-composer {
+  margin-top: 14px;
 }
 .bdmq-ladder {
   overflow-y: auto;
@@ -1672,6 +1948,19 @@ button.spoiler.revealed {
 }
 .bdmq-headspacer {
   flex: 1;
+}
+.bdmq-overlay-static {
+  cursor: default;
+}
+.bdmq-ocard-composer {
+  max-width: 720px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.bdmq-ocard-composer .bd-journal-composer {
+  margin: 0;
 }
 .bdmq .bd-immersive-cta {
   background: transparent;

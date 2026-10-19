@@ -1,16 +1,23 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { type KeyboardEvent, type MouseEvent, useState } from "react";
+import { type KeyboardEvent, type MouseEvent, useRef, useState } from "react";
 import {
   type BookUuid,
   deleteJournalEntry,
   type JournalEntry,
   publishJournalEntry,
   type User,
+  updateJournalEntry,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
+import { BusyLabel } from "../../components/Loading/Loading";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
 import { formatLongDate } from "../../format";
+import {
+  type EditorHandle,
+  JournalEditor,
+  JournalToolbar,
+} from "./JournalEditor";
 import { isLongEntry } from "./journal";
 import { journalQuery } from "./queries";
 
@@ -54,6 +61,71 @@ const revealOnKey = (event: KeyboardEvent) => {
   toggleSpoiler(spoiler);
 };
 
+/** An entry's body in the live editor; Save keeps its status and progress. */
+function EditForm({
+  uuid,
+  entry,
+  onDone,
+}: {
+  uuid: BookUuid;
+  entry: JournalEntry;
+  onDone: () => void;
+}) {
+  const client = useQueryClient();
+  const editor = useRef<EditorHandle>(null);
+  const [body, setBody] = useState(entry.bodyMd);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: () =>
+      updateJournalEntry(entry.id, {
+        bodyMd: body,
+        progress: entry.progress,
+      }),
+    onSuccess: async () => {
+      await client.invalidateQueries({
+        queryKey: journalQuery(uuid).queryKey,
+      });
+      onDone();
+    },
+  });
+  const error = save.error?.message ?? uploadError;
+  return (
+    <>
+      <div className="bd-journal-toolbar-row">
+        <JournalToolbar editor={editor} onError={setUploadError} />
+      </div>
+      <JournalEditor
+        ref={editor}
+        initial={entry.bodyMd}
+        onChange={setBody}
+        label="Edit journal entry"
+        testId="journal-edit-editor"
+      />
+      <div className="bd-journal-entry-foot">
+        {error && (
+          <span className="mono bd-journal-error" role="alert">
+            {error}
+          </span>
+        )}
+        <span className="bd-journal-foot-spacer" />
+        <Button variant="ghost" size="sm" onClick={onDone}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          data-testid="journal-edit-save"
+          disabled={save.isPending || !body.trim()}
+          aria-busy={save.isPending}
+          onClick={() => save.mutate()}
+        >
+          <BusyLabel busy={save.isPending} label="Save" busyLabel="Saving…" />
+        </Button>
+      </div>
+    </>
+  );
+}
+
 type JournalEntryCardProps = {
   uuid: BookUuid;
   entry: JournalEntry;
@@ -74,6 +146,7 @@ export function JournalEntryCard({
     client.invalidateQueries({ queryKey: journalQuery(uuid).queryKey });
   const [expanded, setExpanded] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [editing, setEditing] = useState(false);
   const publish = useMutation({
     mutationFn: publishJournalEntry,
     onSuccess: refetchFeed,
@@ -114,7 +187,7 @@ export function JournalEntryCard({
             {entry.progress === null ? date : `${date} · at ${entry.progress}%`}
           </div>
         </div>
-        {isOwner && (
+        {isOwner && !editing && (
           <div className="bd-journal-entry-actions">
             {isDraft && (
               <Button
@@ -127,6 +200,14 @@ export function JournalEntryCard({
                 Publish
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="journal-edit"
+              onClick={() => setEditing(true)}
+            >
+              Edit
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -143,29 +224,35 @@ export function JournalEntryCard({
           </div>
         )}
       </div>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: delegates to the spoilers inside the server-rendered body */}
-      <div
-        onClick={revealOnClick}
-        onKeyDown={revealOnKey}
-        className={
-          clipped
-            ? "bd-journal-entry-body bd-journal-entry-body-collapsed"
-            : "bd-journal-entry-body"
-        }
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: the server renders and sanitises journal markdown, as the Dioxus page relies on
-        dangerouslySetInnerHTML={{ __html: entry.bodyHtml }}
-      />
-      {clipped && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="bd-journal-show-more"
-          data-testid="journal-show-more"
-          aria-expanded={false}
-          onClick={() => setExpanded(true)}
-        >
-          Show more ↓
-        </Button>
+      {editing ? (
+        <EditForm uuid={uuid} entry={entry} onDone={() => setEditing(false)} />
+      ) : (
+        <>
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: delegates to the spoilers inside the server-rendered body */}
+          <div
+            onClick={revealOnClick}
+            onKeyDown={revealOnKey}
+            className={
+              clipped
+                ? "bd-journal-entry-body bd-journal-entry-body-collapsed"
+                : "bd-journal-entry-body"
+            }
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: the server renders and sanitises journal markdown, as the Dioxus page relies on
+            dangerouslySetInnerHTML={{ __html: entry.bodyHtml }}
+          />
+          {clipped && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="bd-journal-show-more"
+              data-testid="journal-show-more"
+              aria-expanded={false}
+              onClick={() => setExpanded(true)}
+            >
+              Show more ↓
+            </Button>
+          )}
+        </>
       )}
       {publish.isError && (
         <span className="mono bd-journal-error" role="alert">

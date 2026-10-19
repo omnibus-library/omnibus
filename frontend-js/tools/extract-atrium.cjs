@@ -37,7 +37,7 @@ const OWNERS = [
   ["components/SessionLog/SessionLog.css", (c) => c.startsWith("st-log") || c.startsWith("session-log")],
   ["components/FetchSummary/FetchSummary.css", (c) => c.startsWith("fs-")],
   ["components/FormatSwitcher/FormatSwitcher.css", (c) => c.startsWith("format-") || c.startsWith("kindle-") || c.startsWith("kobo-")],
-  ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || c.startsWith("bd-") || c.startsWith("rx-") || c.startsWith("spoiler")],
+  ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || c.startsWith("bd-") || c.startsWith("rx-") || c.startsWith("spoiler") || c.startsWith("cm-") || c === "me-textarea"],
   ["styles/base.css", (c) => ["card", "divider", "label", "mono", "sr-only", "subtitle"].includes(c)],
 ];
 const CONTEXT = new Set(["atrium", "theme-snap"]);
