@@ -17,6 +17,7 @@ import {
   type BookDetail,
   type BookUuid,
   type Chapter,
+  dropQueuedAudioWrites,
   fetchAudioManifest,
   fetchListeningResume,
   fetchListeningRow,
@@ -426,6 +427,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     openRef.current = open;
   }, [open]);
+
+  // Unmounted on sign-out and on a switch of account, keyed by the user.
+  useEffect(() => dropQueuedAudioWrites, []);
 
   const stop = useCallback(() => {
     sessionRef.current = null;

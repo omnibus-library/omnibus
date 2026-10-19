@@ -107,10 +107,19 @@ export async function fetchPlaybackRate(
 }
 
 const rateWrites = new Map<string, Promise<void>>();
+// Bumped when a session ends, so a write still queued is never sent under the next account's cookie.
+let generation = 0;
+
+/** Drops every speed and position save still queued; the signed-in player calls it as it goes. */
+export function dropQueuedAudioWrites() {
+  generation += 1;
+}
 
 export function savePlaybackRate(uuid: BookUuid, rate: number): Promise<void> {
+  const made = generation;
   // In order, so a fine-tune slider's last step is the speed the server keeps.
   return inOrder(rateWrites, uuid, async () => {
+    if (made !== generation) return;
     await send(getPutPlaybackRateUrl(encodeURIComponent(uuid)), "PUT", {
       playback_rate: rate,
     });
@@ -152,10 +161,11 @@ export async function saveListeningPosition(
     audio_position_seconds: seconds,
     ...(fileId === null ? {} : { book_file_id: fileId }),
   };
+  const made = generation;
   // In order, so a slow save never lands after a later one and rolls the position back.
-  await inOrder(positionWrites, uuid, () =>
-    send(getPostProgressUrl(), "POST", body),
-  ).catch(() => {});
+  await inOrder(positionWrites, uuid, async () => {
+    if (made === generation) await send(getPostProgressUrl(), "POST", body);
+  }).catch(() => {});
 }
 
 /** The other format's position mapped onto this one, with whether the link follows it. */

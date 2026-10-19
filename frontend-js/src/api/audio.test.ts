@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { deferred } from "../testing/handlers";
 import { aWireAudioBookmark } from "../testing/wire";
 import {
+  dropQueuedAudioWrites,
   fetchAudioBookmarks,
   saveListeningPosition,
   savePlaybackRate,
@@ -77,5 +78,39 @@ describe("ordered audio writes", () => {
     await Promise.all([first, second]);
 
     expect(processed).toEqual([600, 610]);
+  });
+});
+
+describe("dropQueuedAudioWrites", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("drops a position save still queued when the session ends", async () => {
+    const held = deferred();
+    const processed = stubHeldServer(held.promise, 600);
+
+    const first = saveListeningPosition(A, 3, 600);
+    const queued = saveListeningPosition(A, 3, 610);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    dropQueuedAudioWrites();
+    held.release();
+    await Promise.all([first, queued]);
+
+    expect(processed).toEqual([600]);
+  });
+
+  it("drops a speed save still queued when the session ends", async () => {
+    const held = deferred();
+    const processed = stubHeldServer(held.promise, 1.25);
+
+    const first = savePlaybackRate(A, 1.25);
+    const queued = savePlaybackRate(A, 1.5);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    dropQueuedAudioWrites();
+    held.release();
+    await Promise.all([first, queued]);
+
+    expect(processed).toEqual([1.25]);
   });
 });

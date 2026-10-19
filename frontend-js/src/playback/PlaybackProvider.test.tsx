@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { act, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import {
@@ -22,6 +22,7 @@ import {
   twoFiles,
   wrote,
 } from "../testing/audioHandlers";
+import { deferred } from "../testing/handlers";
 import { aWireBook, aWireHlsManifest } from "../testing/wire";
 import {
   type Playback,
@@ -336,6 +337,38 @@ describe("PlaybackProvider", () => {
       expect(wrote(writes, "PUT /api/read-status")).toEqual([
         { book_uuid: UUID, status: "reading" },
       ]);
+    });
+  });
+
+  describe("unmount", () => {
+    it("sends none of the position saves still queued, as the next account would send them", async () => {
+      const held = deferred();
+      const arrived: number[] = [];
+      const sent: number[] = [];
+      server.use(
+        http.post("/api/progress", async ({ request }) => {
+          const body = (await request.json()) as {
+            audio_position_seconds: number;
+          };
+          arrived.push(body.audio_position_seconds);
+          if (body.audio_position_seconds === 100) await held.promise;
+          sent.push(body.audio_position_seconds);
+          return HttpResponse.json({});
+        }),
+      );
+      mount();
+      act(() => player.open(UUID, null));
+      await waitFor(() => expect(player.ready).toBe(true));
+      act(() => player.seek(100));
+      act(() => player.seek(200));
+      await waitFor(() => expect(arrived).toEqual([100]));
+
+      cleanup();
+      held.release();
+
+      await waitFor(() => expect(sent).toEqual([100]));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(sent).toEqual([100]);
     });
   });
 
