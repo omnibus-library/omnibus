@@ -470,19 +470,22 @@ export function readStatusHandlers(
 /**
  * The alignment `GET` serves `aligned`, its link's `follow` the last one `POST`ed to
  * `/api/books/:uuid/cross-format-follow` (answering `204` and appending the body to `writes`).
+ * Each alignment read counts itself in `reads.count`.
  */
 export function followHandlers(
   aligned: AlignmentView,
   writes: { enabled: boolean }[],
+  reads = { count: 0 },
 ) {
   let follow = aligned.link?.follow;
   return [
-    http.get("/api/books/:uuid/alignment", () =>
-      HttpResponse.json({
+    http.get("/api/books/:uuid/alignment", () => {
+      reads.count++;
+      return HttpResponse.json({
         ...aligned,
         link: aligned.link && { ...aligned.link, follow },
-      }),
-    ),
+      });
+    }),
     http.post("/api/books/:uuid/cross-format-follow", async ({ request }) => {
       const body = PostCrossFormatFollowBody.parse(await request.json());
       writes.push(body);

@@ -645,12 +645,14 @@ export const SyncStale: Story = {
 };
 
 const followWrites: { enabled: boolean }[] = [];
+const followReads = { count: 0 };
 
 export const SyncFollowSwitch: Story = {
   args: { book: DUAL },
   beforeEach({ msw }) {
     followWrites.length = 0;
-    msw.use(...followHandlers(ALIGNED, followWrites));
+    followReads.count = 0;
+    msw.use(...followHandlers(ALIGNED, followWrites, followReads));
   },
   play: async ({ canvas, userEvent }) => {
     const toggle = await canvas.findByRole("switch", {
@@ -668,7 +670,7 @@ export const SyncFollowSwitch: Story = {
     await expect(toggle).toHaveTextContent("not following");
 
     // And it holds once the page has asked the server again.
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await waitFor(() => expect(followReads.count).toBe(2));
     await expect(toggle).toHaveTextContent("not following");
   },
 };
