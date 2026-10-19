@@ -692,17 +692,10 @@ async fn resend_migration_marks_every_held_book_changed_exactly_once() {
     assert!(sync_delta(&pool, user, device).await.unwrap().is_empty());
 }
 
-#[tokio::test]
-async fn position_marks_reading_migration_reannounces_a_backfilled_book_to_a_device_holding_it() {
-    let pool = init_db("sqlite::memory:").await.unwrap();
-    let user = make_user(&pool, "reader").await;
-    let device = make_device(&pool, user, "Clara").await;
-    let dune = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
-    let emma = seed_synced_ebook(&pool, "emma.epub", "Emma", "Austen").await;
-    synced_shelf(&pool, user, "Kobo", &[dune.clone(), emma.clone()]).await;
-    // Read on the web long before the device last synced, with no status of its own.
-    let position = ProgressUpdate {
-        book_uuid: dune.clone(),
+/// A web-reader position on `uuid`, taken long before any test device syncs.
+fn web_position(uuid: &str) -> ProgressUpdate {
+    ProgressUpdate {
+        book_uuid: uuid.to_owned(),
         format: ProgressFormat::Epub,
         epub_cfi: Some("epubcfi(/6/4!/4/2/1:0)".into()),
         audio_position_seconds: None,
@@ -710,11 +703,29 @@ async fn position_marks_reading_migration_reannounces_a_backfilled_book_to_a_dev
         kobo_location: None,
         book_file_id: None,
         client_updated_at: Some(1_000),
-    };
-    crate::progress::upsert_progress(&pool, user, &position)
-        .await
-        .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn position_marks_reading_migration_reannounces_a_backfilled_book_to_a_device_holding_it() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = make_user(&pool, "reader").await;
+    let other = make_user(&pool, "household").await;
+    let device = make_device(&pool, user, "Clara").await;
+    let dune = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
+    let emma = seed_synced_ebook(&pool, "emma.epub", "Emma", "Austen").await;
+    let gatsby = seed_synced_ebook(&pool, "gatsby.epub", "Gatsby", "Fitzgerald").await;
+    let held = [dune.clone(), emma.clone(), gatsby.clone()];
+    synced_shelf(&pool, user, "Kobo", &held).await;
+    // Only `dune` is the reader's and statusless: `emma` kept the status its
+    // position gave it, and `gatsby` was read by someone else.
+    for (reader, uuid) in [(user, &dune), (user, &emma), (other, &gatsby)] {
+        crate::progress::upsert_progress(&pool, reader, &web_position(uuid))
+            .await
+            .unwrap();
+    }
     forget_read_status(&pool, user, &dune).await;
+    forget_read_status(&pool, other, &gatsby).await;
     sync_once(&pool, user, device).await;
     assert!(sync_delta(&pool, user, device).await.unwrap().is_empty());
 
@@ -723,6 +734,14 @@ async fn position_marks_reading_migration_reannounces_a_backfilled_book_to_a_dev
         .await
         .unwrap();
 
+    let zeroed: Vec<String> = sqlx::query_scalar(
+        "SELECT book_uuid FROM kobo_books_sync WHERE device_id = ? AND synced_at = 0",
+    )
+    .bind(device)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(zeroed, vec![dune.clone()]);
     let delta = sync_once(&pool, user, device).await;
     assert_eq!(delta.len(), 1);
     assert!(matches!(&delta.changes[0], SyncChange::StateChanged(b) if b.uuid == dune));
