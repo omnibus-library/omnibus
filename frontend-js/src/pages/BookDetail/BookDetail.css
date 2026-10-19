@@ -197,6 +197,108 @@
   padding: 0;
   margin: 22px 0 0;
 }
+.bd-rating-meta {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: 6px;
+}
+.bd-stars-interactive {
+  display: inline-flex;
+  gap: 2px;
+  font-size: 26px;
+  line-height: 1;
+}
+.bd-star-slot {
+  position: relative;
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+}
+.bd-star-bg,
+.bd-star-fg {
+  position: absolute;
+  inset: 0;
+  line-height: 1;
+  pointer-events: none;
+}
+.bd-star-bg {
+  color: var(--bg-3);
+}
+.bd-star-fg {
+  color: var(--accent);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.bd-star-half {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 50%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  z-index: 2;
+}
+.bd-star-half-left {
+  left: 0;
+}
+.bd-star-half-right {
+  right: 0;
+}
+.bd-star-half:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.bd-other-ratings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.bd-other-rating-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.bd-other-rating-avatar {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft, var(--bg-2));
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+.bd-other-rating-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+.bd-other-rating-byline {
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.bd-other-rating-name {
+  color: var(--ink);
+  font-weight: 600;
+}
+.bd-other-rating-stars {
+  gap: 1px;
+  flex: 0 0 auto;
+  font-size: 13px;
+}
 .bd-meta-table {
   width: 100%;
   border-collapse: collapse;
@@ -228,6 +330,21 @@
     -webkit-touch-callout: default;
     -webkit-user-drag: auto;
   }
+}
+.bd-other-rating-avatar-photo {
+  width: 100%;
+  height: 100%;
+  /* The monogram spans are grids with an auto implicit row, so `height:
+     100%` can collapse to auto and the photo reverts to its natural
+     aspect ratio — an ellipse once the 50% radius applies. Pinning the
+     ratio keeps the box square wherever the percentage fails. */
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+.bd-other-rating-avatar {
+  overflow: hidden;
 }
 .bd-sync-panel {
   margin: 26px 0 0;
@@ -380,6 +497,10 @@
   flex: 1;
   height: 1px;
   background: linear-gradient(90deg, var(--line-2), transparent);
+}
+.bdmq-flowbody .st-log-compact .st-log-list {
+  max-height: none;
+  overflow: visible;
 }
 .bdmq-flowtop {
   position: absolute;
@@ -678,6 +799,24 @@
   margin-top: 14px;
   max-width: 560px;
 }
+.bdmq-ratingrow {
+  margin-top: 30px;
+}
+.bdmq-bigquiet {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 24px;
+  color: var(--ink-2);
+  line-height: 1.4;
+  max-width: 480px;
+}
+.bdmq-quiet-body {
+  font-size: 15px;
+  color: var(--ink-2);
+  margin-top: 14px;
+  max-width: 440px;
+  line-height: 1.6;
+}
 .bdmq-copies {
   max-width: 620px;
 }
@@ -941,6 +1080,32 @@
 }
 .bdmq .bd-immersive-cta .bd-immersive-mark {
   color: inherit;
+}
+.bdmq .st-log-compact {
+  max-width: 560px;
+}
+.bdmq .st-log-compact .st-log-list {
+  max-height: min(280px, 34vh);
+  overflow-y: auto;
+  padding-right: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--accent) 75%, var(--bg-3))
+    var(--bg-2);
+}
+.bdmq .st-log-compact .st-log-list::-webkit-scrollbar {
+  display: block;
+  width: 6px;
+}
+.bdmq .st-log-compact .st-log-list::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--accent) 75%, var(--bg-3));
+  border-radius: 99px;
+}
+.bdmq .st-log-compact .st-log-list::-webkit-scrollbar-track {
+  background: var(--bg-2);
+  border-radius: 99px;
+}
+.bdmq-logk {
+  margin-top: 30px;
 }
 .bdmq-flowsec.lead {
   position: relative;

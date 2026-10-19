@@ -14,6 +14,7 @@ import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { FilesStop } from "./FilesStop";
 import { HomeStop } from "./HomeStop";
+import { StatsStop } from "./StatsStop";
 import { useFlowScroll } from "./useFlowScroll";
 import "./BookDetail.css";
 
@@ -32,6 +33,7 @@ function Marquee({ book }: { book: Detail }) {
   const { active, backOn, goTo } = useFlowScroll(stage);
   const stops: Partial<Record<(typeof MARQUEE_SECTIONS)[number], ReactNode>> = {
     Home: <HomeStop book={book} />,
+    Stats: <StatsStop book={book} />,
     "The files": <FilesStop book={book} />,
   };
   const sections = MARQUEE_SECTIONS.flatMap((name, i) => {

@@ -1,14 +1,17 @@
 import type {
   AlignmentView,
+  AttributedRating,
   BookFileInfo,
   BookProgress,
   EbookMetadata,
   PaletteBookHit,
   PaletteResults,
   ProgressRecord,
+  RatingRecord,
   ReadStatusRecord,
   ResumePoint,
   SeriesDetail,
+  SessionLogEntry,
   UserSummary,
 } from "../api/generated/schemas";
 
@@ -108,6 +111,46 @@ export function aWireReadStatus(
     book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
     status: "reading",
     updated_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** The reader's rating as `GET /api/ratings/{uuid}` sends it. */
+export function aWireRating(
+  overrides: Partial<RatingRecord> = {},
+): RatingRecord {
+  return {
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    stars: 4,
+    updated_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** Another reader's rating as `GET /api/ratings/others/{uuid}` sends it. */
+export function aWireOtherRating(
+  overrides: Partial<AttributedRating> = {},
+): AttributedRating {
+  return {
+    user_id: 7,
+    username: "grace",
+    stars: 3.5,
+    updated_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** One sitting as `GET /api/stats/sessions` sends it: 45 minutes of reading. */
+export function aWireSession(
+  overrides: Partial<SessionLogEntry> = {},
+): SessionLogEntry {
+  return {
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    title: "Aurora Station, Vol. 1",
+    format: "reading",
+    started_at: 1_700_000_000,
+    ended_at: 1_700_002_700,
+    seconds: 2700,
     ...overrides,
   };
 }

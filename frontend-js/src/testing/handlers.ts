@@ -3,10 +3,13 @@ import {
   getGetAlignmentMockHandler200,
   getGetMeMockHandler200,
   getGetMeMockHandler401,
+  getGetOtherRatingsMockHandler200,
   getGetProgressMockHandler200,
+  getGetRatingMockHandler200,
   getGetReadStatusMockHandler200,
   getGetRegistrationMockHandler200,
   getGetSeriesByIdMockHandler200,
+  getGetSessionLogMockHandler200,
 } from "../api/generated/omnibus.msw";
 import {
   type EbookMetadata,
@@ -14,9 +17,12 @@ import {
   type LoginResponse,
   type PaletteResults,
   PostCrossFormatFollowBody,
+  PostRatingBody,
   PutReadStatusBody,
+  type RatingRecord,
   type ReadStatusRecord,
   type ResumePoint,
+  type SessionLogEntry,
 } from "../api/generated/schemas";
 import { COVER_SVG } from "./books";
 import {
@@ -85,7 +91,49 @@ export function bookDetailHandlers(book: EbookMetadata) {
     getGetReadStatusMockHandler200(null),
     getGetProgressMockHandler200(aWireProgress()),
     getGetAlignmentMockHandler200(aWireAlignment()),
+    getGetRatingMockHandler200(null),
+    getGetOtherRatingsMockHandler200([]),
+    getGetSessionLogMockHandler200({ entries: [] }),
   ];
+}
+
+/**
+ * The reader's rating, kept between `GET`, `POST` and `DELETE`, starting at
+ * `initial`; each write appends its stars (`null` for a delete) to `writes`.
+ */
+export function ratingHandlers(
+  initial: RatingRecord | null,
+  writes: (number | null)[] = [],
+) {
+  let current = initial;
+  return [
+    http.get("/api/ratings/:uuid", () => HttpResponse.json(current)),
+    http.post("/api/ratings", async ({ request }) => {
+      const body = PostRatingBody.parse(await request.json());
+      writes.push(body.stars);
+      current = { ...body, updated_at: Math.floor(Date.now() / 1000) };
+      return HttpResponse.json(current);
+    }),
+    http.delete("/api/ratings/:uuid", () => {
+      writes.push(null);
+      current = null;
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+}
+
+/** `GET /api/stats/sessions` in pages of `pageSize`, the cursor being the offset of the next page. */
+export function sessionLogHandler(entries: SessionLogEntry[], pageSize = 2) {
+  return http.get("/api/stats/sessions", ({ request }) => {
+    const start = Number(
+      new URL(request.url).searchParams.get("before") ?? "0",
+    );
+    const end = start + pageSize;
+    return HttpResponse.json({
+      entries: entries.slice(start, end),
+      next_before: end < entries.length ? String(end) : null,
+    });
+  });
 }
 
 /**

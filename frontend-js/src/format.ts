@@ -215,3 +215,18 @@ export function formatLongDate(unixSecs: number, timeZone?: string): string {
     day: "numeric",
   });
 }
+
+/** A sitting's start, "Nov 14, 2023 · 22:13", on the calendar and clock of `timeZone` (the reader's by default). */
+export function formatStarted(unixSecs: number, timeZone?: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(unixSecs * 1000));
+  const part = (type: string) => parts.find((p) => p.type === type)?.value;
+  return `${part("month")} ${part("day")}, ${part("year")} · ${part("hour")}:${part("minute")}`;
+}

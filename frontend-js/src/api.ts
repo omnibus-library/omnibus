@@ -1,21 +1,26 @@
 import { z } from "zod";
 import {
   getAlignment,
+  getDeleteRatingUrl,
   getEbookByUuid,
   getEbooks,
   getLogoutUrl,
   getMe,
+  getOtherRatings,
   getPostCrossFormatFollowUrl,
   getPostEbookSummaryFetchUrl,
   getProgress,
+  getRating,
   getReadStatus,
   getRecentProgress,
   getRegistration,
   getSearchPalette,
   getSeriesById,
+  getSessionLog,
   getSummarySources,
   postEbookOverrides,
   login as postLogin,
+  postRating,
   register as postRegister,
   putReadStatus,
 } from "./api/generated/omnibus";
@@ -24,11 +29,14 @@ import type {
   BookProgress as BookProgressWire,
   EbookMetadata,
   EbookPage,
+  AttributedRating as OtherRatingWire,
   PaletteResults as PaletteWire,
   ProgressRecord as PositionWire,
+  RatingRecord as RatingWire,
   ReadStatus as ReadState,
   ReadStatusRecord as ReadStatusWire,
   ResumePoint as ResumePointWire,
+  SessionLogPageOutput,
   SummarySource,
   UserSummary,
 } from "./api/generated/schemas";
@@ -485,6 +493,85 @@ export async function saveDescription(
   });
   if (res.status !== 200) throw failure(res);
   return toBookDetail(res.data);
+}
+
+function toRating(wire: RatingWire) {
+  return { stars: wire.stars, updatedAt: wire.updated_at };
+}
+
+export type RatingRecord = ReturnType<typeof toRating>;
+
+/** The reader's star rating for a book, or `null` when they never gave one. */
+export async function fetchRating(
+  uuid: BookUuid,
+): Promise<RatingRecord | null> {
+  const res = await getRating(encodeURIComponent(uuid));
+  if (res.status !== 200) throw failure(res);
+  return res.data && toRating(res.data);
+}
+
+/** Sets the reader's rating, 0.5 to 5 in half steps. */
+export async function saveRating(
+  uuid: BookUuid,
+  stars: number,
+): Promise<RatingRecord> {
+  const res = await postRating({ book_uuid: uuid, stars });
+  if (res.status !== 200) throw failure(res);
+  return toRating(res.data);
+}
+
+export async function clearRating(uuid: BookUuid): Promise<void> {
+  await send(getDeleteRatingUrl(encodeURIComponent(uuid)), "DELETE");
+}
+
+function toOtherRating(wire: OtherRatingWire) {
+  return {
+    reader: {
+      id: wire.user_id as UserId,
+      name: wire.username,
+      hasAvatar: wire.has_avatar ?? false,
+    },
+    stars: wire.stars,
+    updatedAt: wire.updated_at,
+  };
+}
+
+export type OtherRating = ReturnType<typeof toOtherRating>;
+
+/** What other readers on this server rated the book. */
+export async function fetchOtherRatings(
+  uuid: BookUuid,
+): Promise<OtherRating[]> {
+  const res = await getOtherRatings(encodeURIComponent(uuid));
+  if (res.status !== 200) throw failure(res);
+  return res.data.map(toOtherRating);
+}
+
+function toSessionLogPage(wire: SessionLogPageOutput) {
+  return {
+    sittings: wire.entries.map((e) => ({
+      bookUuid: e.book_uuid,
+      startedAt: e.started_at,
+      seconds: e.seconds,
+      format: e.format,
+    })),
+    next: wire.next_before ?? null,
+  };
+}
+
+export type SessionLogPage = ReturnType<typeof toSessionLogPage>;
+
+/** One page of the reader's sittings in a book, newest first; pass `""` for the first page. */
+export async function fetchSessionLog(
+  uuid: BookUuid,
+  before: string,
+): Promise<SessionLogPage> {
+  const res = await getSessionLog({
+    book: uuid,
+    ...(before ? { before } : {}),
+  });
+  if (res.status !== 200) throw failure(res);
+  return toSessionLogPage(res.data);
 }
 
 export const thumbUrl = (uuid: BookUuid, size: "sm" | "md" = "md") =>
