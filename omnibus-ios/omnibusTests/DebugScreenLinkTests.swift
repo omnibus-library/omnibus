@@ -37,6 +37,11 @@ struct DebugScreenLinkTests {
         #expect(route("omnibus://debug/screen/you/tag/Science%20Fiction")?.path == [.tag(name: "Science Fiction")])
     }
 
+    @Test func anEncodedSlashStaysInsideItsArgument() {
+        #expect(route("omnibus://debug/screen/you/tag/Sci-Fi%2FFantasy")?.path == [.tag(name: "Sci-Fi/Fantasy")])
+        #expect(route("omnibus://debug/screen/search/results/a%2Fb")?.path == [.searchResults(query: "a/b")])
+    }
+
     @Test func anUnknownTabOrWordOrAMissingArgumentNamesNoRoute() {
         #expect(route("omnibus://debug/screen/home") == nil)
         #expect(route("omnibus://debug/screen/library/nowhere") == nil)

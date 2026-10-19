@@ -45,7 +45,10 @@ final class DebugScreenLink {
               components.scheme?.lowercased() == DeepLink.scheme,
               components.host?.lowercased() == DebugOffline.urlHost
         else { return nil }
-        let segments = components.path.split(separator: "/").map(String.init)
+        // Split the *encoded* path, as `DeepLink` does, so a `%2F` in a tag or
+        // query stays inside its segment instead of becoming another word.
+        let segments = components.percentEncodedPath.split(separator: "/")
+            .map { String($0).removingPercentEncoding ?? String($0) }
         guard segments.first?.lowercased() == screenPath else { return nil }
         return Array(segments.dropFirst())
     }

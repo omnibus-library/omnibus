@@ -33,6 +33,8 @@ ROOT="$(git -C "$HERE" rev-parse --show-toplevel)"
 STATE="$ROOT/.claude/runtime/ios-validate"
 SERVER="$STATE/server"
 PIDFILE="$SERVER/pid"
+# The binary the pid was launched from, so a reused pid is never mistaken for it.
+BINFILE="$SERVER/bin"
 ENVFILE="$STATE/env.sh"
 
 TOUR_USER="tour"
@@ -49,11 +51,23 @@ die() {
 }
 
 server_pid() {
-  [ -f "$PIDFILE" ] || return 1
-  local pid
+  [ -f "$PIDFILE" ] && [ -f "$BINFILE" ] || return 1
+  local pid command
   pid="$(cat "$PIDFILE")"
-  kill -0 "$pid" 2>/dev/null || return 1
-  echo "$pid"
+  command="$(ps -p "$pid" -o command= 2>/dev/null)" || return 1
+  case "$command" in
+    "$(cat "$BINFILE")"*) echo "$pid" ;;
+    *) return 1 ;;
+  esac
+}
+
+stop_pid() {
+  kill "$1" 2>/dev/null || return 0
+  for _ in $(seq 1 20); do
+    kill -0 "$1" 2>/dev/null || break
+    sleep 0.5
+  done
+  echo "ios-validate: stopped the scratch server ($1)" >&2
 }
 
 server_up() {
@@ -64,8 +78,15 @@ server_up() {
   # A live pid without env.sh is a start that never finished; it goes too, or
   # it keeps a port in this window that nothing will ever stop.
   server_down
+  rm -f "$ENVFILE"
   if [ "${1:-}" = "--fresh" ]; then
-    rm -rf "$SERVER" "$ENVFILE"
+    rm -rf "$SERVER"
+  fi
+  # Absolute, because the start runs from the repo root and launches from $SERVER.
+  if [ -n "${OMNIBUS_IOS_SERVER_BIN:-}" ]; then
+    [ -e "$OMNIBUS_IOS_SERVER_BIN" ] || die "no server binary at $OMNIBUS_IOS_SERVER_BIN"
+    OMNIBUS_IOS_SERVER_BIN="$(cd "$(dirname "$OMNIBUS_IOS_SERVER_BIN")" && pwd)/$(basename "$OMNIBUS_IOS_SERVER_BIN")"
+    export OMNIBUS_IOS_SERVER_BIN
   fi
   [ -d "$ROOT/test_data/epubs/public_domain" ] ||
     die "the fixture library is missing — run \`just fixtures\` first"
@@ -100,6 +121,7 @@ server_start() {
   port="${choice%%:*}"
 
   mkdir -p "$SERVER"/{data,covers,thumbs}
+  echo "$bin" >"$BINFILE"
   # A clean environment rather than the dev shell's, so nothing from a
   # developer's .env (their own library path, API keys, log dir) reaches it.
   (
@@ -119,12 +141,14 @@ server_start() {
       "$bin" >"$SERVER/server.log" 2>&1 &
     echo $! >"$PIDFILE"
   )
-  # Until env.sh is written, a failed or interrupted start stops what it started.
-  trap server_down EXIT
+  # Until env.sh is written, a failed or interrupted start stops the server it
+  # launched — by pid, since another `server up` may have rewritten the pidfile.
+  LAUNCHED="$(cat "$PIDFILE")"
+  trap 'abandon_start "$LAUNCHED"' EXIT
 
   local base="http://127.0.0.1:$port" token="" waited=0
   until curl -sf --max-time 2 "$base/api/_health" >/dev/null; do
-    server_pid >/dev/null || { tail -20 "$SERVER/server.log" >&2; die "the server exited"; }
+    kill -0 "$LAUNCHED" 2>/dev/null || { tail -20 "$SERVER/server.log" >&2; die "the server exited"; }
     [ "$waited" -lt 180 ] || die "no answer on $base after 180s — see $SERVER/server.log"
     sleep 1
     waited=$((waited + 1))
@@ -135,32 +159,38 @@ server_start() {
     token="$(curl -sf -X POST "$base/api/auth/login" -H 'content-type: application/json' \
       -d "{\"username\":\"$TOUR_USER\",\"password\":\"$TOUR_PASSWORD\",\"client_kind\":\"bearer\"}" |
       jq -r '.token // empty')" || true
+    kill -0 "$LAUNCHED" 2>/dev/null || die "the server exited — see $SERVER/server.log"
     [ "$waited" -lt 300 ] || die "the library never indexed — see $SERVER/server.log"
     sleep 2
     waited=$((waited + 2))
   done
 
-  cat >"$ENVFILE" <<EOF
-export OMNIBUS_TOUR_SERVER=127.0.0.1:$port
-export OMNIBUS_TOUR_USER=$TOUR_USER
-export OMNIBUS_TOUR_PASSWORD=$TOUR_PASSWORD
-export OMNIBUS_TOUR_TOKEN=$token
-export OMNIBUS_TOUR_SHOTS=$STATE/shots
-EOF
+  # %q, so a checkout path with spaces survives the round trip through `source`.
+  {
+    printf 'export OMNIBUS_TOUR_SERVER=%q\n' "127.0.0.1:$port"
+    printf 'export OMNIBUS_TOUR_USER=%q\n' "$TOUR_USER"
+    printf 'export OMNIBUS_TOUR_PASSWORD=%q\n' "$TOUR_PASSWORD"
+    printf 'export OMNIBUS_TOUR_TOKEN=%q\n' "$token"
+    printf 'export OMNIBUS_TOUR_SHOTS=%q\n' "$STATE/shots"
+  } >"$ENVFILE"
   trap - EXIT
   server_status
 }
 
+# A record whose pid is no longer our binary is dropped, never signalled.
 server_down() {
   local pid
-  pid="$(server_pid)" || return 0
-  kill "$pid"
-  for _ in $(seq 1 20); do
-    kill -0 "$pid" 2>/dev/null || break
-    sleep 0.5
-  done
+  if pid="$(server_pid)"; then
+    stop_pid "$pid"
+  fi
   rm -f "$PIDFILE"
-  echo "ios-validate: stopped the scratch server ($pid)" >&2
+}
+
+abandon_start() {
+  stop_pid "$1"
+  if [ "$(cat "$PIDFILE" 2>/dev/null)" = "$1" ]; then
+    rm -f "$PIDFILE"
+  fi
 }
 
 server_status() {
