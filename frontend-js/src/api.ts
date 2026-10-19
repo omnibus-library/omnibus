@@ -512,30 +512,30 @@ export const avatarUrl = (id: UserId) => `/api/users/${id}/avatar`;
 /** A name and the number of books that carry it. */
 export type NamedCount = { name: string; count: number };
 
-/** Every tag with its book count, the most-used 500 at most. */
-export async function fetchTagOptions(): Promise<NamedCount[]> {
-  const res = await getTags();
+async function nameCounts<T>(
+  call: Promise<{ status: number; data: T[] }>,
+  toCount: (row: T) => NamedCount,
+): Promise<NamedCount[]> {
+  const res = await call;
   if (res.status !== 200) throw failure(res);
-  return res.data;
+  return res.data.map(toCount);
 }
 
-/** Every genre with its book count, the most-used 500 at most. */
-export async function fetchGenreOptions(): Promise<NamedCount[]> {
-  const res = await getGenres();
-  if (res.status !== 200) throw failure(res);
-  return res.data;
-}
+const NAME_COUNTS = {
+  // Tags and genres are the most-used 500 at most.
+  tag: () => nameCounts(getTags(), (t) => t),
+  genre: () => nameCounts(getGenres(), (g) => g),
+  author: () =>
+    nameCounts(getAuthors(), (a) => ({ name: a.name, count: a.book_count })),
+  series: () =>
+    nameCounts(listSeries(), (s) => ({ name: s.name, count: s.book_count })),
+};
 
-/** Every author with a book in the library, with its book count. */
-export async function fetchAuthorOptions(): Promise<NamedCount[]> {
-  const res = await getAuthors();
-  if (res.status !== 200) throw failure(res);
-  return res.data.map((a) => ({ name: a.name, count: a.book_count }));
-}
+export type NameCountField = keyof typeof NAME_COUNTS;
 
-/** Every series with a book in the library, with its book count. */
-export async function fetchSeriesOptions(): Promise<NamedCount[]> {
-  const res = await listSeries();
-  if (res.status !== 200) throw failure(res);
-  return res.data.map((s) => ({ name: s.name, count: s.book_count }));
-}
+/** Every value of a name field with its book count; the filter menus and the bulk editor's suggestions share it. */
+export const nameCountsQuery = (field: NameCountField) =>
+  queryOptions({
+    queryKey: ["name-counts", field],
+    queryFn: NAME_COUNTS[field],
+  });

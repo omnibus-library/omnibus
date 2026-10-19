@@ -1,14 +1,12 @@
-import { skipToken, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type FilterClause,
   type FilterField,
   type FilterMode,
-  fetchAuthorOptions,
-  fetchGenreOptions,
-  fetchSeriesOptions,
-  fetchTagOptions,
+  type NameCountField,
   type NamedCount,
+  nameCountsQuery,
   shelvesQuery,
 } from "../../api";
 import { trapTab } from "../../focusTrap";
@@ -33,17 +31,8 @@ import {
   withStranded,
 } from "./filters";
 
-type NamedField = "tag" | "genre" | "author" | "series";
-
-const SOURCES = {
-  tag: fetchTagOptions,
-  genre: fetchGenreOptions,
-  author: fetchAuthorOptions,
-  series: fetchSeriesOptions,
-} satisfies Record<NamedField, unknown>;
-
 // The tag and genre clouds stop at their most-used values; the lists don't.
-function shapeNamed(field: NamedField, rows: NamedCount[]): OptionList {
+function shapeNamed(field: NameCountField, rows: NamedCount[]): OptionList {
   const cloud = field === "tag" || field === "genre";
   return {
     options: namedOptions(rows),
@@ -67,8 +56,9 @@ function useOptions(field: FilterField): Loaded {
     [named],
   );
   const query = useQuery({
-    queryKey: ["name-counts", field],
-    queryFn: named ? SOURCES[named] : skipToken,
+    ...nameCountsQuery(named ?? "tag"),
+    // Format and shelf fields read no names; the placeholder key is never fetched.
+    enabled: named !== null,
     select: shape,
   });
   if (field === "format") {

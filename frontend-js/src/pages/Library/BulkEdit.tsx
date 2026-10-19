@@ -5,10 +5,7 @@ import {
   addShelfBooks,
   type Book,
   bulkSaveOverrides,
-  fetchAuthorOptions,
-  fetchGenreOptions,
-  fetchTagOptions,
-  type NamedCount,
+  nameCountsQuery,
   shelvesQuery,
   thumbUrl,
 } from "../../api";
@@ -158,13 +155,6 @@ const CHIP_FIELDS = [
   },
 ] as const;
 
-// A suggestion pool is a convenience: while it loads, or if it fails, the field takes free text.
-function usePool(key: string, fetcher: () => Promise<NamedCount[]>) {
-  return (
-    useQuery({ queryKey: ["name-counts", key], queryFn: fetcher }).data ?? []
-  );
-}
-
 type ModalBodyProps = {
   books: Book[];
   onClose: () => void;
@@ -178,10 +168,11 @@ export function BulkEditModal({ books, onClose, onSaved }: ModalBodyProps) {
   const [edit, setEdit] = useState<BulkEdit>(NO_EDIT);
   const set = <K extends keyof BulkEdit>(key: K, value: BulkEdit[K]) =>
     setEdit((prev) => ({ ...prev, [key]: value }));
+  // A suggestion pool is a convenience: while it loads, or if it fails, the field takes free text.
   const pools = {
-    authors: usePool("author", fetchAuthorOptions),
-    addTags: usePool("tag", fetchTagOptions),
-    addGenres: usePool("genre", fetchGenreOptions),
+    authors: useQuery(nameCountsQuery("author")).data ?? [],
+    addTags: useQuery(nameCountsQuery("tag")).data ?? [],
+    addGenres: useQuery(nameCountsQuery("genre")).data ?? [],
     removeTags: removable(books, "subjects"),
     removeGenres: removable(books, "genres"),
   };
