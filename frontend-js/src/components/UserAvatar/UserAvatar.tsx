@@ -1,5 +1,5 @@
 import { useState, useSyncExternalStore } from "react";
-import { avatarBust, avatarUrl, type User, watchAvatarBusts } from "../../api";
+import { avatarUrl, type User, watchAvatarBusts } from "../../api";
 import { initialsFor } from "../../format";
 
 type UserAvatarProps = {
@@ -15,18 +15,19 @@ export function UserAvatar({
   className,
   photoClassName,
 }: UserAvatarProps) {
-  const [broken, setBroken] = useState(false);
-  // A replaced photo keeps its URL, so a bump must redraw the image.
-  useSyncExternalStore(watchAvatarBusts, () => avatarBust(user.id));
-  const photo = user.hasAvatar && !broken;
+  // A replaced photo keeps its URL bar the bump, so a bump redraws the image.
+  const src = useSyncExternalStore(watchAvatarBusts, () => avatarUrl(user.id));
+  // The address that failed, so a newer one gets its own try.
+  const [broken, setBroken] = useState<string | null>(null);
+  const photo = user.hasAvatar && broken !== src;
   return (
     <span className={className} aria-hidden={photo ? undefined : true}>
       {photo ? (
         <img
           className={photoClassName}
-          src={avatarUrl(user.id)}
+          src={src}
           alt={user.name}
-          onError={() => setBroken(true)}
+          onError={() => setBroken(src)}
         />
       ) : (
         initialsFor(user.name)

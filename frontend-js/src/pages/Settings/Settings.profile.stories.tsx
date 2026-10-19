@@ -195,3 +195,27 @@ export const RemovesThePictureOnceConfirmed: Story = {
     ).toBeNull();
   },
 };
+
+export const ShowsAPictureUploadedAfterRemovingOne: Story = {
+  parameters: { user: WITH_PHOTO },
+  beforeEach({ msw }) {
+    msw.use(...settingsHandlers(aSettingsServer({ user: WITH_PHOTO })));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("avatar-remove"));
+    await userEvent.click(
+      await canvas.findByTestId("avatar-remove-dialog-confirm"),
+    );
+    await waitFor(() =>
+      expect(canvas.queryByRole("img", { name: "Ada Lovelace" })).toBeNull(),
+    );
+    await userEvent.upload(
+      await canvas.findByTestId("avatar-file-input"),
+      png(),
+    );
+
+    await expect(
+      await canvas.findByRole("img", { name: "Ada Lovelace" }),
+    ).toBeVisible();
+  },
+};

@@ -144,8 +144,6 @@ export const watchAvatarBusts = (onChange: () => void) => {
   };
 };
 
-export const avatarBust = (id: UserId) => avatarBusts.get(id);
-
 export const bumpAvatarBust = (id: UserId) => {
   avatarBusts.set(id, (avatarBusts.get(id) ?? 0) + 1);
   for (const onChange of avatarWatchers) onChange();

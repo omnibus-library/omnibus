@@ -59,8 +59,9 @@ export function ProfileSection() {
   const remove = useMutation({
     mutationFn: async () => {
       await deleteAvatar();
-      bumpAvatarBust(user.id);
+      // After the reread, so no image is drawn for a photo that is gone.
       await refreshMe(queryClient);
+      bumpAvatarBust(user.id);
     },
     onMutate: clear,
     onSuccess: () =>

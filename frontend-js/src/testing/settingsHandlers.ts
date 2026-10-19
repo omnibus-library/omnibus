@@ -99,7 +99,9 @@ export function settingsHandlers(server: SettingsServer) {
       patch({ has_avatar: false });
       return empty(204);
     }),
-    http.get("/api/users/:id/avatar", svg),
+    http.get("/api/users/:id/avatar", () =>
+      server.user.has_avatar ? svg() : new HttpResponse(null, { status: 404 }),
+    ),
     ...SWITCH_ROUTES.map(([route, field]) =>
       http.post(`/api/account/${route}`, async ({ request }) => {
         patch({ [field]: SetStackSeries.parse(await request.json()).enabled });
