@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BookDetail } from "./api";
 import {
+  bookCount,
   descriptionOverflows,
   facetQuery,
   formatDateShort,
@@ -123,6 +124,16 @@ describe("singleFacetValue", () => {
     ["a facet followed by more text", 'tag:"Sci-fi" dune'],
   ])("returns null for %s", (_case, query) => {
     expect(singleFacetValue(query)).toBeNull();
+  });
+});
+
+describe("bookCount", () => {
+  it.each([
+    [0, "0 books"],
+    [1, "1 book"],
+    [2, "2 books"],
+  ])("counts %i as %s", (n, words) => {
+    expect(bookCount(n)).toBe(words);
   });
 });
 

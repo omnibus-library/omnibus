@@ -1,7 +1,6 @@
 import type { CSSProperties } from "react";
 import { Link, useNavigate } from "react-router";
-import { type ResumePoint, thumbSrcSet, thumbUrl } from "../../api";
-import { Cover } from "../../components/Cover/Cover";
+import type { ResumePoint } from "../../api";
 import {
   BookGlyph,
   PlayGlyph,
@@ -9,6 +8,7 @@ import {
 } from "../../components/Glyphs/Glyphs";
 import { Skeleton } from "../../components/Loading/Loading";
 import { resumeHref, resumeMeta } from "../../resume";
+import { CoverImage } from "./BookGrid";
 
 // Per-card tilt and lift, cycled so a fan of any length keeps the hand-dealt look.
 const FAN_ROT = ["-7deg", "-2.5deg", "3deg", "7.5deg", "11deg"];
@@ -65,14 +65,7 @@ function FanCard({
     // Front-to-back paint order, with the lead always on top.
     zIndex: isLead ? 12 : 9 - Math.min(index, 9),
   };
-  const cover = (
-    <Cover
-      book={book}
-      src={book.hasCover ? thumbUrl(book.uuid) : null}
-      srcSet={book.hasCover ? thumbSrcSet(book.uuid) : undefined}
-      sizes="132px"
-    />
-  );
+  const cover = <CoverImage book={book} sizes="132px" />;
   if (!isLead) {
     return (
       <button
@@ -191,12 +184,7 @@ export function EdgeResume({ point }: { point: ResumePoint }) {
       </span>
       <span className="lmq-edge-card">
         <span className="ec" aria-hidden="true">
-          <Cover
-            book={book}
-            src={book.hasCover ? thumbUrl(book.uuid) : null}
-            srcSet={book.hasCover ? thumbSrcSet(book.uuid) : undefined}
-            sizes="40px"
-          />
+          <CoverImage book={book} sizes="40px" />
         </span>
         <span className="et">
           <b>{title}</b>

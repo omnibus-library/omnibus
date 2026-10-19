@@ -16,6 +16,7 @@ import {
   HeartGlyph,
 } from "../../components/Glyphs/Glyphs";
 import { Skeleton } from "../../components/Loading/Loading";
+import { bookCount } from "../../format";
 import { prefersReducedMotion } from "../../motion";
 import type { ShelfSelection } from "../../viewPrefs";
 import {
@@ -113,13 +114,11 @@ function useRowReach(row: RefObject<HTMLDivElement | null>) {
     watch();
     mutation.observe(el, { childList: true });
     el.addEventListener("scroll", measure, { passive: true });
-    window.addEventListener("resize", measure);
     measure();
     return () => {
       resize.disconnect();
       mutation.disconnect();
       el.removeEventListener("scroll", measure);
-      window.removeEventListener("resize", measure);
     };
   }, [row]);
   return { before, after };
@@ -149,9 +148,7 @@ export function ShelfGallery({
   onSelect,
 }: ShelfGalleryProps) {
   const allMeta =
-    allCount === null
-      ? "Your whole library"
-      : `${allCount} book${allCount === 1 ? "" : "s"}`;
+    allCount === null ? "Your whole library" : bookCount(allCount);
   const rail =
     shelves.state === "loaded" ? railShelves(shelves.shelves, viewerId) : [];
   const row = useRef<HTMLDivElement>(null);

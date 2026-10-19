@@ -17,7 +17,7 @@ import { ChipInput } from "../../components/ChipInput/ChipInput";
 import { attributedOwner } from "../../components/FilterBar/filters";
 import { BusyLabel, Loading, Ring } from "../../components/Loading/Loading";
 import { trapTab } from "../../focusTrap";
-import { plural } from "../../format";
+import { bookCount } from "../../format";
 import { useCurrentUser } from "../../session";
 import {
   type BulkEdit,
@@ -110,9 +110,7 @@ export function BulkEditBar({
 }: BarProps) {
   return (
     <div className="bulk-edit-bar">
-      <span className="bulk-edit-count">
-        {count} book{plural(count)} selected
-      </span>
+      <span className="bulk-edit-count">{bookCount(count)} selected</span>
       <Button className="shelf-btn-primary" onClick={onEdit}>
         Edit
       </Button>
@@ -209,7 +207,7 @@ export function BulkEditModal({ books, onClose, onSaved }: ModalBodyProps) {
     onSuccess: onSaved,
   });
 
-  const count = `${books.length} book${plural(books.length)}`;
+  const count = bookCount(books.length);
   return (
     <Modal
       label={`Bulk edit ${count}`}
@@ -328,7 +326,7 @@ export function BulkShelfPicker({ books, onClose, onAdded }: PickerProps) {
   const writing = add.isPending ? add.variables.id : null;
 
   const targets = shelves.data && addTargets(shelves.data, user);
-  const count = `${books.length} book${plural(books.length)}`;
+  const count = bookCount(books.length);
   return (
     <Modal
       label={`Add ${count} to a shelf`}
@@ -400,7 +398,7 @@ export function BulkShelfPicker({ books, onClose, onAdded }: PickerProps) {
                   <span className="pick-meta">
                     <span className="pick-name">{shelf.name}</span>
                     <span className="pick-author">
-                      {shelf.bookCount} book{plural(shelf.bookCount)}
+                      {bookCount(shelf.bookCount)}
                       {owner && ` · ${owner}`}
                     </span>
                   </span>

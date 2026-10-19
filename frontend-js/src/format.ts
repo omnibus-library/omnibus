@@ -28,6 +28,9 @@ export function initialOf(name: string): string {
 /** The plural suffix for `n` of something: "1 book", "2 books". */
 export const plural = (n: number) => (n === 1 ? "" : "s");
 
+/** A count of books in words: "1 book", "2 books". */
+export const bookCount = (n: number) => `${n} book${plural(n)}`;
+
 /** The detail kicker: series and position, else the category, then the year. */
 export function homeKicker(book: BookDetail): string {
   const year = book.published?.match(/^\d{4}/)?.[0];

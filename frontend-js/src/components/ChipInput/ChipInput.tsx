@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { plural } from "../../format";
+import { bookCount } from "../../format";
 import "../Chip/Chip.css";
 import "./ChipInput.css";
 
@@ -83,11 +83,7 @@ export function ChipInput({
         />
         <datalist id={listId}>
           {offered.map((s) => (
-            <option
-              key={s.name}
-              value={s.name}
-              label={`${s.count} book${plural(s.count)}`}
-            />
+            <option key={s.name} value={s.name} label={bookCount(s.count)} />
           ))}
         </datalist>
       </div>

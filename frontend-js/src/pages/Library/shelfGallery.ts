@@ -1,4 +1,5 @@
 import type { Shelf, ShelfKind, UserId } from "../../api";
+import { bookCount } from "../../format";
 
 export { attributedOwner } from "../../components/FilterBar/filters";
 
@@ -22,8 +23,6 @@ export function shelfTabMeta(count: number, owner: string | null): string {
   return owner === null ? String(count) : `${count} · ${owner}`;
 }
 
-const booksOf = (count: number) => `${count} book${count === 1 ? "" : "s"}`;
-
 /** The spoken label of a shelf's tab, which carries the kind its badge glyph only draws. */
 export function shelfAriaLabel(
   shelf: Pick<Shelf, "name" | "kind" | "visibility">,
@@ -36,7 +35,7 @@ export function shelfAriaLabel(
     manual: "",
   };
   const meta = [
-    booksOf(count),
+    bookCount(count),
     ...(shelf.visibility === "public" ? ["Public"] : []),
     ...(owner === null ? [] : [`by ${owner}`]),
   ];

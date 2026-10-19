@@ -17,7 +17,7 @@ import {
 } from "../../components/Loading/Loading";
 import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
-import { plural } from "../../format";
+import { bookCount } from "../../format";
 import { useCurrentUser, useStackSeries } from "../../session";
 import {
   DEFAULT_PREFS,
@@ -67,9 +67,7 @@ function Receipt({
           </span>
         )}
         {typeof count === "number" && (
-          <span className="lib-header-count">
-            {count} book{plural(count)}
-          </span>
+          <span className="lib-header-count">{bookCount(count)}</span>
         )}
         {hiddenBooks !== null && (
           <span className="lib-header-hidden">{hiddenBooks} hidden</span>
