@@ -20,7 +20,8 @@ function aBook(overrides: Parameters<typeof aWireBook>[0] = {}) {
       publisher: "Inkwell Press",
       language: "en",
       identifiers: [{ scheme: "15", value: "9780316769488" }],
-      added_at: "2024-05-01T10:00:00Z",
+      // Local noon, so the day reads the same in every zone.
+      added_at: new Date(2024, 4, 1, 12).toISOString(),
       ...overrides,
     }),
   );

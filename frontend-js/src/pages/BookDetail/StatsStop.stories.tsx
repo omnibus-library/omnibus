@@ -108,7 +108,10 @@ export const RecordShowsTheFourFigures: Story = {
       getGetBookInsightsMockHandler200(
         aWireInsights({
           started_at: nowSecs() - 3 * 86_400 - 60,
-          longest_started_at: 1_760_004_000,
+          // Local noon, so the day reads the same in every zone.
+          longest_started_at: Math.floor(
+            new Date(2025, 9, 9, 12).getTime() / 1000,
+          ),
         }),
       ),
     );
