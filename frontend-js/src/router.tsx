@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
 import { Loading } from "./components/Loading/Loading";
 import { RouteError } from "./components/RouteError/RouteError";
 import { AppShell } from "./layouts/AppShell";
+import { ReaderDock } from "./layouts/ReaderDock";
 import { RequireAuth } from "./layouts/RequireAuth";
 import { Account } from "./pages/Account/Account";
 import { AddBooks } from "./pages/AddBooks/AddBooks";
@@ -45,7 +46,7 @@ const reader = (element: ReactNode) => (
   <Suspense fallback={<Loading kind="stage" />}>{element}</Suspense>
 );
 
-// Mirrors frontend/src/routes.rs: the readers and the player fill the screen,
+// Mirrors frontend/src/routes.rs: the readers (with the audiobook dock beneath) and the player fill the screen,
 // everything else sits under the top bar. Two error boundaries: one inside the
 // shell, so a page that throws keeps the top bar, and one at the root for
 // everything else (the session gate, the shell itself, the readers).
@@ -60,9 +61,14 @@ export const routes: RouteObject[] = [
       {
         element: <RequireAuth />,
         children: [
-          { path: "/read/:uuid", element: reader(<Reader />) },
-          { path: "/comic/:uuid", element: reader(<ComicReader />) },
-          { path: "/pdf/:uuid", element: reader(<PdfReader />) },
+          {
+            element: <ReaderDock />,
+            children: [
+              { path: "/read/:uuid", element: reader(<Reader />) },
+              { path: "/comic/:uuid", element: reader(<ComicReader />) },
+              { path: "/pdf/:uuid", element: reader(<PdfReader />) },
+            ],
+          },
           { path: "/listen/:uuid", element: <Listen /> },
           {
             path: "/logs",

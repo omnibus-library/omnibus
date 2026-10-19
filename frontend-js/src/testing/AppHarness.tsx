@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router";
 import { expect } from "storybook/test";
 import { toUser, type User } from "../api";
 import { SearchPaletteProvider } from "../components/SearchPalette/SearchPalette";
+import { PlaybackProvider } from "../playback/PlaybackProvider";
 import { meQuery } from "../session";
 import { WIRE_ADA } from "./wire";
 
@@ -59,13 +60,15 @@ export function AppHarness({
   const [client] = useState(() => (current = harnessClient(user)));
   return (
     <QueryClientProvider client={client}>
-      <SearchPaletteProvider>
-        {router ? (
-          <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>
-        ) : (
-          children
-        )}
-      </SearchPaletteProvider>
+      <PlaybackProvider>
+        <SearchPaletteProvider>
+          {router ? (
+            <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>
+          ) : (
+            children
+          )}
+        </SearchPaletteProvider>
+      </PlaybackProvider>
     </QueryClientProvider>
   );
 }

@@ -12,6 +12,7 @@ type Phase =
   | { kind: "active"; uuid: BookUuid; startedAt: number };
 
 function report(
+  format: SessionReport["format"],
   uuid: BookUuid,
   start: number,
   end: number,
@@ -19,7 +20,7 @@ function report(
   if (end - start < MIN_SESSION_SECS) return null;
   return {
     book_uuid: uuid,
-    format: "epub",
+    format,
     started_at: start,
     ended_at: end,
     progress_units: end - start,
@@ -32,6 +33,11 @@ function report(
 /** The active-segment machine behind a reader's session capture; `now` is injected, in unix seconds. */
 export class SessionTracker {
   #phase: Phase = { kind: "idle" };
+  readonly #format: SessionReport["format"];
+
+  constructor(format: SessionReport["format"] = "epub") {
+    this.#format = format;
+  }
 
   /** `uuid` is in front and counting: the same book again is a no-op, another book reports the old segment. */
   start(uuid: BookUuid, now: number): SessionReport | null {
@@ -71,13 +77,13 @@ export class SessionTracker {
       return null;
     }
     this.#phase = { ...phase, startedAt: now };
-    return report(phase.uuid, phase.startedAt, now);
+    return report(this.#format, phase.uuid, phase.startedAt, now);
   }
 
   #take(now: number): SessionReport | null {
     const phase = this.#phase;
     return phase.kind === "active"
-      ? report(phase.uuid, phase.startedAt, now)
+      ? report(this.#format, phase.uuid, phase.startedAt, now)
       : null;
   }
 }
