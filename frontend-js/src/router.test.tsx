@@ -7,7 +7,7 @@ import {
   type RouteObject,
   RouterProvider,
 } from "react-router";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { User } from "./api";
 import { AtriumRoot } from "./components/Theme/AtriumRoot";
 import { routes } from "./router";
@@ -16,12 +16,10 @@ import { ADA, harnessClient } from "./testing/AppHarness";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 
-function renderRoute(
-  path: string,
-  user: User | null = ADA,
-  table: RouteObject[] = routes,
+function renderRouter(
+  router: ReturnType<typeof createBrowserRouter>,
+  user: User | null,
 ) {
-  const router = createMemoryRouter(table, { initialEntries: [path] });
   render(
     <QueryClientProvider client={harnessClient(user)}>
       <AtriumRoot>
@@ -30,6 +28,17 @@ function renderRoute(
     </QueryClientProvider>,
   );
   return router;
+}
+
+function renderRoute(
+  path: string,
+  user: User | null = ADA,
+  table: RouteObject[] = routes,
+) {
+  return renderRouter(
+    createMemoryRouter(table, { initialEntries: [path] }),
+    user,
+  );
 }
 
 function Collapse(): never {
@@ -145,44 +154,42 @@ describe("routes", () => {
     ).not.toBeInTheDocument();
   });
 
-  describe("reader Back", () => {
-    // A browser router, for the history index Back reads; jsdom's history is shared, so each test seeds its own.
+  describe("reader back", () => {
+    // A browser router, for the history index Back reads; jsdom's history is shared, so each test seeds its own and the next starts clean.
+    let router: ReturnType<typeof createBrowserRouter> | undefined;
     const openBrowserRouter = (path: string) => {
       window.history.replaceState(null, "", path);
-      const router = createBrowserRouter(routes);
-      render(
-        <QueryClientProvider client={harnessClient(ADA)}>
-          <AtriumRoot>
-            <RouterProvider router={router} />
-          </AtriumRoot>
-        </QueryClientProvider>,
-      );
+      router = renderRouter(createBrowserRouter(routes), ADA);
       return router;
     };
+    afterEach(() => {
+      router?.dispose();
+      window.history.replaceState(null, "", "/");
+    });
 
     it("returns to the book when the reader replaced the page the app opened on", async () => {
-      const router = openBrowserRouter(`/login?next=/comic/${UUID}`);
-      await router.navigate(`/comic/${UUID}`, { replace: true });
+      const opened = openBrowserRouter(`/login?next=/comic/${UUID}`);
+      await opened.navigate(`/comic/${UUID}`, { replace: true });
 
       await userEvent.click(
         await screen.findByRole("button", { name: "Back" }),
       );
 
       await waitFor(() =>
-        expect(router.state.location.pathname).toBe(`/books/${UUID}`),
+        expect(opened.state.location.pathname).toBe(`/books/${UUID}`),
       );
     });
 
     it("goes back in history when the reader was opened from inside the app", async () => {
-      const router = openBrowserRouter("/authors");
-      await router.navigate(`/comic/${UUID}`);
+      const opened = openBrowserRouter("/authors");
+      await opened.navigate(`/comic/${UUID}`);
 
       await userEvent.click(
         await screen.findByRole("button", { name: "Back" }),
       );
 
       await waitFor(() =>
-        expect(router.state.location.pathname).toBe("/authors"),
+        expect(opened.state.location.pathname).toBe("/authors"),
       );
     });
   });

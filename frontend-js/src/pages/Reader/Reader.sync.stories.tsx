@@ -1,11 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
-import { expect, waitFor } from "storybook/test";
+import { expect, waitFor, within } from "storybook/test";
 import type { CrossFormatResume } from "../../api/generated/schemas";
 import { failing } from "../../testing/handlers";
 import { epubRelocate } from "../../testing/readerGlue";
 import { readerFixture, SAVED_CFI, UUID } from "../../testing/readerStory";
+import { aWireHighlight } from "../../testing/wire";
 import { Reader } from "./Reader";
 
 const r = readerFixture();
@@ -97,6 +98,7 @@ export const ADeepLinkIsNotOverriddenByAFollowJump: Story = {
     path: `/read/${UUID}?cfi=${encodeURIComponent("epubcfi(/6/20!/4/10/1:4)")}`,
   },
   beforeEach() {
+    r.annotations.highlights = [aWireHighlight({ id: 1 })];
     r.crossFormat.resume = resume({
       ...AUDIO_PLACE,
       epub_cfi: SERVER_CFI,
@@ -106,6 +108,10 @@ export const ADeepLinkIsNotOverriddenByAFollowJump: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await canvas.findByTestId("reader-header-chapter");
+    // The highlights load ends the open, after the banner's request would have been asked and answered.
+    await within(
+      canvas.getByRole("button", { name: "Highlights and notes" }),
+    ).findByText("1");
     await userEvent.click(canvas.getByRole("button", { name: "Next page" }));
     await waitFor(() => expect(r.glue.argsOf("next")).toHaveLength(1));
 

@@ -75,9 +75,12 @@ describe("relocateWrite", () => {
     expect(relocateWrite(null, false, "a", false).post).toBeNull();
   });
 
-  it("swallows the held landing and counts it as posted", () => {
-    expect(relocateWrite("a", false, null, true)).toEqual({
-      post: null,
+  it("swallows the held landing", () => {
+    expect(relocateWrite("a", false, null, true).post).toBeNull();
+  });
+
+  it("counts the held landing as posted and lifts the hold", () => {
+    expect(relocateWrite("a", false, null, true)).toMatchObject({
       lastPosted: "a",
       hold: false,
     });
@@ -185,6 +188,9 @@ describe("formatAmbientPage", () => {
 
   it("shows the bare page number when paginated", () => {
     expect(formatAmbientPage({ ...paged, page: 142 })).toBe("142");
+  });
+
+  it("shows the percent when not paginated", () => {
     expect(formatAmbientPage({ ...NO_LOCATION, pct: 47 })).toBe("47%");
   });
 

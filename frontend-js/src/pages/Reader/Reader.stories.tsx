@@ -1,17 +1,20 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { HttpResponse, http } from "msw";
 import { StrictMode } from "react";
 import { Route, Routes } from "react-router";
 import { expect, waitFor } from "storybook/test";
+import { failing } from "../../testing/handlers";
 import { epubRelocate } from "../../testing/readerGlue";
-import { progressHandlers } from "../../testing/readerHandlers";
+import {
+  progressFailingOnce,
+  progressHandlers,
+} from "../../testing/readerHandlers";
 import {
   readerFixture,
   SAVED,
   SAVED_CFI,
   UUID,
 } from "../../testing/readerStory";
-import { aWirePosition, aWireProgress } from "../../testing/wire";
+import { aWirePosition } from "../../testing/wire";
 import { Reader } from "./Reader";
 
 const r = readerFixture();
@@ -75,12 +78,7 @@ export const FailsWhenTheReaderRuntimeCannotLoad: Story = {
   beforeEach({ msw }) {
     // No stand-in glue, so the loader appends the real scripts and the glue's own comes back 404.
     delete window.OmnibusReader;
-    msw.use(
-      http.get(
-        "*/epub-reader-glue*",
-        () => new HttpResponse(null, { status: 404 }),
-      ),
-    );
+    msw.use(failing("get", "*/epub-reader-glue*", 404));
   },
   play: async ({ canvas }) => {
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
@@ -96,13 +94,7 @@ export const FailsToOpenWhenTheProgressFetchFails: Story = {
   beforeEach({ msw }) {
     progressReads.count = 0;
     // The first read fails, so the reader cannot tell "nothing saved" from "unreadable".
-    msw.use(
-      http.get("/api/progress/:uuid", () =>
-        ++progressReads.count === 1
-          ? new HttpResponse("failed", { status: 500 })
-          : HttpResponse.json(aWireProgress(SAVED)),
-      ),
-    );
+    msw.use(progressFailingOnce([SAVED], progressReads));
   },
   play: async ({ canvas, userEvent }) => {
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
@@ -116,6 +108,14 @@ export const FailsToOpenWhenTheProgressFetchFails: Story = {
     await expect(progressReads.count).toBe(2);
     await expect(opens()[0]).toMatchObject({ cfi: SAVED_CFI });
     await expect(writes).toEqual([]);
+
+    // Opening wrote nothing; only a real turn does.
+    await canvas.findByTestId("reader-header-chapter");
+    await userEvent.click(canvas.getByRole("button", { name: "Next page" }));
+    await waitFor(() => expect(writes).toHaveLength(1));
+    await expect(writes[0]).toMatchObject({
+      epub_cfi: "epubcfi(/6/4!/4/2/1:0)",
+    });
   },
 };
 
