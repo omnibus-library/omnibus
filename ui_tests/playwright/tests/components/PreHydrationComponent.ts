@@ -10,7 +10,6 @@ const CLIENT_WASM = /\/omnibus_bg[^/]*\.wasm(\?|$)/;
 /** What a page shows while the client's wasm download is held back. */
 export class PreHydrationComponent extends BaseComponent {
   readonly hydratedMarker: Locator;
-  readonly libraryCountPending: Locator;
   readonly pageLoaderMark: Locator;
   readonly zeroBooksText: Locator;
   readonly authorsLoader: Locator;
@@ -18,7 +17,6 @@ export class PreHydrationComponent extends BaseComponent {
   constructor(page: Page) {
     super(page);
     this.hydratedMarker = page.locator("html[data-hydrated]");
-    this.libraryCountPending = page.getByTestId("lib-count-pending");
     this.pageLoaderMark = page.locator(".ld-riffle");
     this.zeroBooksText = page.getByText(/\b0 books\b/);
     this.authorsLoader = page

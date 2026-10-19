@@ -129,7 +129,7 @@ the `.lmq-veil` verb. Three consequences for a spec:
   so a spec that asserts them must bring its book forward first — clicking a
   card that is *already* lead navigates, so guard on the `lead` class.
 - **`continue-stack` carries the synced marker**, not the card: with no
-  per-card eyebrow, `Continue · synced` is one kicker line above the front book.
+  per-card eyebrow, "synced" sits on the front book's byline.
 
 `standalone-island` / `standalone-garden` are reserved for the bring-forward
 spec: it needs two books on the stack at once, and `recent_progress` drops

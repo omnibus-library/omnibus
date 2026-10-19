@@ -190,8 +190,8 @@ test.describe("bulk edit", () => {
     await test.step("check the picker and selection are gone", async () => {
       await expect(picker.root).toHaveCount(0);
       await expect(bulkEditBar.root).toHaveCount(0);
-      await expect(libraryPage.galleryShelfTile(shelf.id)).toContainText(
-        "2 books",
+      await expect(libraryPage.galleryShelfTile(shelf.id)).toHaveAccessibleName(
+        /\b2 books\b/,
       );
       for (const slug of SELECTED) {
         await expect(table.selectBox(slug)).not.toBeChecked();

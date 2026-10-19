@@ -1,7 +1,8 @@
-//! Inline SVG marks shared across surfaces — the "continue reading /
-//! listening" affordances (user-menu resume row, landing hero CTA) and the
-//! metadata-fetch actions. Shared so two surfaces can't drift into drawing
-//! the same idea differently, sized to whatever pill they sit in.
+//! Inline SVG marks shared across surfaces: the "continue reading /
+//! listening" affordances (user-menu resume row, landing hero CTA), the
+//! metadata-fetch actions, and the landing's chevron, carets and sort arrows.
+//! Shared so two surfaces can't drift into drawing the same idea differently,
+//! sized to whatever pill they sit in.
 
 use dioxus::prelude::*;
 
@@ -107,4 +108,40 @@ pub fn server_glyph(size: u32) -> Element {
             path { d: "M7 7.5h.01M7 16.5h.01" }
         }
     }
+}
+
+fn stroke_glyph(size: u32, d: &'static str) -> Element {
+    rsx! {
+        svg {
+            width: "{size}", height: "{size}", view_box: "0 0 24 24", fill: "none",
+            stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
+            "aria-hidden": "true",
+            path { d }
+        }
+    }
+}
+
+/// Small right chevron for a "go to" link (All shelves).
+pub fn chevron_right_glyph(size: u32) -> Element {
+    stroke_glyph(size, "M9 18l6-6-6-6")
+}
+
+/// Tall left caret for paging a row back, the reader's page-turn shape.
+pub fn caret_left_glyph(size: u32) -> Element {
+    stroke_glyph(size, "M15 5l-7 7 7 7")
+}
+
+/// Tall right caret for paging a row on.
+pub fn caret_right_glyph(size: u32) -> Element {
+    stroke_glyph(size, "M9.5 5l7 7-7 7")
+}
+
+/// Up arrow for an ascending sort.
+pub fn arrow_up_glyph(size: u32) -> Element {
+    stroke_glyph(size, "M12 19V5M5 12l7-7 7 7")
+}
+
+/// Down arrow for a descending sort.
+pub fn arrow_down_glyph(size: u32) -> Element {
+    stroke_glyph(size, "M12 5v14M19 12l-7 7-7-7")
 }

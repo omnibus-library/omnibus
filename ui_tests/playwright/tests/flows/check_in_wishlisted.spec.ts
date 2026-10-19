@@ -152,9 +152,9 @@ test.describe("wishlist check-in", () => {
     await test.step("select the wishlist shelf", async () => {
       await libraryPage.goto();
       await libraryPage.selectShelf(wish.shelf);
-      await expect(libraryPage.galleryShelfTile(wish.shelf.id)).toContainText(
-        "1 book",
-      );
+      await expect(
+        libraryPage.galleryShelfTile(wish.shelf.id),
+      ).toHaveAccessibleName(/\b1 book\b/);
     });
 
     await test.step("add a book to the wishlist from check-in", async () => {
@@ -174,9 +174,9 @@ test.describe("wishlist check-in", () => {
     });
 
     await test.step("check the selected shelf follows the add", async () => {
-      await expect(libraryPage.galleryShelfTile(wish.shelf.id)).toContainText(
-        "2 books",
-      );
+      await expect(
+        libraryPage.galleryShelfTile(wish.shelf.id),
+      ).toHaveAccessibleName(/\b2 books\b/);
       await expect(libraryPage.bookTile(added.title)).toBeVisible();
     });
   });

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "description": "End-to-end UI tests for the omnibus server, using Playwright.",
-  "packageManager": "pnpm@11.1.2",
+  "packageManager": "pnpm@11.11.0",
   "scripts": {
     "test": "playwright test",
     "test:ui": "playwright test --ui",
