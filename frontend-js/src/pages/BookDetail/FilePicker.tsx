@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { BookDetail, BookUuid } from "../../api";
 import { classes } from "../../classes";
@@ -89,6 +89,13 @@ export function FilePicker({
   singleTestId,
 }: FilePickerProps) {
   const [open, setOpen] = useState(false);
+  const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    // After paint, or the focus ring never shows; once per opening, not on every render.
+    const frame = requestAnimationFrame(() => panel.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
   if (files.length < 2) {
     return (
       <Link
@@ -126,7 +133,7 @@ export function FilePicker({
             onClick={() => setOpen(false)}
           />
           <div
-            ref={(el) => el?.focus()}
+            ref={panel}
             className="bd-export-panel bd-file-picker-panel card"
             role="dialog"
             aria-label={LABEL[kind]}

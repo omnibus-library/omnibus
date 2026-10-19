@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { HttpResponse, http } from "msw";
+import { delay, HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 import { toBookDetail } from "../../api";
 import {
@@ -150,22 +150,54 @@ export const OneEpub: Story = {
   },
 };
 
-export const SeveralFiles: Story = {
-  args: {
-    book: aBook({
-      formats: ["EPUB", "PDF"],
-      book_files: [
-        EPUB,
-        aWireFile({
-          id: 12,
-          format: "PDF",
-          filename: "a.pdf",
-          label: "Print",
-          size_bytes: 9_000_000,
-        }),
-      ],
-    }),
+const SeveralFilesArgs = {
+  book: aBook({
+    formats: ["EPUB", "PDF"],
+    book_files: [
+      EPUB,
+      aWireFile({
+        id: 12,
+        format: "PDF",
+        filename: "a.pdf",
+        label: "Print",
+        size_bytes: 9_000_000,
+      }),
+    ],
+  }),
+};
+
+export const PickerKeepsFocusWhenThePageRerenders: Story = {
+  args: SeveralFilesArgs,
+  beforeEach({ msw }) {
+    // The answer lands after the picker is open and focused on its second item.
+    msw.use(
+      http.get("/api/progress/:uuid", async () => {
+        await delay(600);
+        return HttpResponse.json(aWireProgress());
+      }),
+    );
   },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Choose which file to read" }),
+    );
+    const panel = canvas.getByRole("dialog", {
+      name: "Choose which file to read",
+    });
+    await waitFor(() => expect(panel).toHaveFocus());
+    await userEvent.tab();
+    await userEvent.tab();
+    const second = within(panel).getByRole("link", { name: /PDF · Print/ });
+    await expect(second).toHaveFocus();
+
+    await new Promise((resolve) => setTimeout(resolve, 900));
+
+    await expect(second).toHaveFocus();
+  },
+};
+
+export const SeveralFiles: Story = {
+  args: SeveralFilesArgs,
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       canvas.getByRole("button", { name: "Choose which file to read" }),
@@ -174,7 +206,7 @@ export const SeveralFiles: Story = {
     const panel = canvas.getByRole("dialog", {
       name: "Choose which file to read",
     });
-    await expect(panel).toHaveFocus();
+    await waitFor(() => expect(panel).toHaveFocus());
     await expect(
       within(panel).getByText("2 files · choose one"),
     ).toBeInTheDocument();
