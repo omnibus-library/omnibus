@@ -82,7 +82,6 @@ describe("routes", () => {
       [`/comic/${UUID}`, "Comic reader", UUID],
       [`/pdf/${UUID}?file_id=3&page=7`, "PDF reader", "7"],
       [`/listen/${UUID}?file_id=2`, "Listen", "2"],
-      ["/stats?user=2", "Stats", "2"],
       ["/stats/chart", "Chart builder", null],
       ["/settings?section=smtp", "Settings", "smtp"],
       ["/settings/cleanup/duplicates", "Cleanup review", "duplicates"],
@@ -106,6 +105,7 @@ describe("routes", () => {
       ["/series/4", "Gathering the series"],
       ["/shelves", "Gathering your shelves"],
       ["/shelves/9", "Opening the shelf"],
+      ["/stats?user=2", "Tallying your reading"],
     ])("renders %s as its loading page, not a stub", async (path, label) => {
       renderRoute(path);
 

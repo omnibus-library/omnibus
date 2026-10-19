@@ -233,6 +233,19 @@ export function fileSize(bytes: number): string | null {
   return `${bytes} B`;
 }
 
+/** `value` to `digits` places, ties to even on its exact binary value, as Rust's `{:.N}` writes it. */
+export function fixed(value: number, digits: number): string {
+  const rounded = value.toFixed(digits);
+  // `toFixed` settles an exact tie upward; the exact expansion shows whether this is one.
+  const exact = Math.abs(value).toFixed(100);
+  const point = exact.indexOf(".");
+  const kept = digits === 0 ? point : point + 1 + digits;
+  const truncated = exact.slice(0, kept);
+  const rest = exact.slice(digits === 0 ? kept + 1 : kept);
+  if (!/^50*$/.test(rest) || Number(truncated.at(-1)) % 2 === 1) return rounded;
+  return (value < 0 ? "-" : "") + truncated;
+}
+
 /** "6h 31m" or "41m"; minutes are floored, as a duration must never claim more time than exists. */
 export function formatHm(seconds: number): string {
   const mins = Math.floor(Math.max(0, seconds) / 60);

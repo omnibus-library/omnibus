@@ -53,6 +53,7 @@ const OWNERS = [
   ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || c.startsWith("ebook-") || c.startsWith("sort-th") || c.startsWith("ss-") || c.startsWith("bulk-edit") || ["landing-col", "library-empty", "cover-link"].includes(c)],
   ["pages/BookEdit/BookEdit.css", (c) => (c.startsWith("me-") && c !== "me-textarea") || c.startsWith("mes-") || c.startsWith("bd-crumb"), true],
   ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || (c.startsWith("bd-") && !c.startsWith("bd-crumb")) || c.startsWith("rx-") || c.startsWith("spoiler") || c.startsWith("cm-") || c === "me-textarea" || c.startsWith("suggest-") || c.startsWith("sug-") || c.startsWith("author-lead") || c.startsWith("author-portrait") || ["sh-title", "sh-sub", "fan-match"].includes(c)],
+  ["pages/Stats/Stats.css", (c) => c.startsWith("st-") && !c.startsWith("st-log")],
   ["pages/AddBooks/AddBooks.css", (c) => c.startsWith("file-drop-") || c.startsWith("add-books-")],
   ["components/BarcodeScanner/BarcodeScanner.css", (c) => c.startsWith("scanner")],
   ["pages/CheckIn/CheckIn.css", (c) => c.startsWith("check-in") || c.startsWith("isbn-")],

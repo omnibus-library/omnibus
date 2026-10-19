@@ -255,7 +255,8 @@ const answer = (value: object | number) =>
 
 /**
  * Every route the stats page and the chart builder read. `stats` and `chart` choose the
- * answer per request; any answer may be a status number instead, to fail that route.
+ * answer per request (`stats` may hold one back); any answer may be a status number instead,
+ * to fail that route.
  * Each request lands in `calls`; `refuseShare` makes the sharing switch's save answer 400.
  */
 export function statsHandlers({
@@ -271,7 +272,7 @@ export function statsHandlers({
   stats?: (query: {
     range: StatsRange;
     userId: number | null;
-  }) => StatsSummary | number;
+  }) => StatsSummary | number | Promise<StatsSummary | number>;
   readers?: HouseholdReader[] | number;
   recent?: ResumePoint[] | number;
   size?: LibrarySize | number;
@@ -286,11 +287,11 @@ export function statsHandlers({
     return params;
   };
   return [
-    http.get("/api/stats", ({ request }) => {
+    http.get("/api/stats", async ({ request }) => {
       const params = seen("stats", request);
       const user = params.get("user_id");
       return answer(
-        stats({
+        await stats({
           range: StatsRange.parse(params.get("range")),
           userId: user === null ? null : Number(user),
         }),

@@ -1,0 +1,305 @@
+.st-page {
+  /* The page is full-bleed: the hero band and the sticky scope switch
+     both reach the viewport edge, so the page cancels its shell's own
+     horizontal padding rather than sitting inside it. The two shells pad
+     differently, hence the var. */
+  --st-bleed: clamp(1.25rem, 4vw, 3.5rem);
+  /* Height of the sticky top bar the band headers pin beneath. */
+  --st-nav-h: 65px;
+  --st-modes-h: 66px;
+  --st-gutter: 28px;
+  --st-max: 1120px;
+
+  --st-donut-c0: var(--accent);
+  --st-donut-c1: color-mix(in oklch, var(--accent) 65%, var(--bg-3));
+  --st-donut-c2: color-mix(in oklch, var(--accent) 40%, var(--bg-3));
+  --st-donut-c3: color-mix(in oklch, var(--accent) 22%, var(--bg-3));
+  --st-donut-other: var(--bg-3);
+  /* Between `--bg-0` and `--bg-1`, so the hero lifts off the page without
+     reading as a card. Mixed rather than pinned to a literal so every
+     theme keeps the same relationship. */
+  --st-hero-bg: color-mix(in oklch, var(--bg-0) 62%, var(--bg-1));
+  /* The quietest mark on a chart: present, but not claiming a value. */
+  --st-idle: color-mix(in oklch, var(--bg-2) 70%, var(--bg-3));
+
+  margin-inline: calc(-1 * var(--st-bleed));
+}
+
+.st-body {
+  max-width: var(--st-max);
+  margin: 0 auto;
+  padding: 26px var(--st-gutter) 64px;
+}
+.st-hero {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line-2);
+  background:
+    radial-gradient(
+      680px 320px at 78% -10%,
+      color-mix(in oklch, var(--accent) 16%, transparent),
+      transparent 70%
+    ),
+    var(--st-hero-bg);
+}
+
+.st-hero-inner {
+  max-width: var(--st-max);
+  margin: 0 auto;
+  padding: 40px var(--st-gutter) 34px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 48px;
+  align-items: center;
+}
+.st-hero-run {
+  animation: st-settle 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.st-hero-who {
+  margin: 0 0 6px;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--ink-0);
+}
+.st-hero-kicker {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.atrium .st-hero-figure {
+  margin: 8px 0 0;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 88px;
+  --lh: 0.95;
+  line-height: var(--lh);
+  letter-spacing: -0.01em;
+  color: var(--ink-0);
+}
+.st-hero-unit {
+  font-size: 88px;
+}
+.st-hero-stop {
+  color: var(--ink-3);
+}
+.st-hero-line {
+  margin: 12px 0 0;
+  font-size: 15px;
+  color: var(--ink-1);
+  max-width: 46ch;
+}
+
+.st-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 44px;
+  margin-top: 22px;
+  width: 504px;
+  max-width: 100%;
+}
+.st-spark-bar {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 4px;
+  border-radius: 2px;
+  background: color-mix(in oklch, var(--ink-3) 45%, var(--bg-2));
+}
+.st-spark-bar.on {
+  background: var(--accent);
+}
+.st-spark-axis {
+  display: flex;
+  justify-content: space-between;
+  width: 504px;
+  max-width: 100%;
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.st-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+  animation: st-settle 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.st-scope[data-testid="stats-scope-library"] {
+  gap: 18px;
+}
+.st-band {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.st-band-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.st-band-head {
+  position: sticky;
+  top: calc(var(--st-nav-h) + var(--st-modes-h));
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 0 12px;
+  margin-bottom: -2px;
+  background: linear-gradient(var(--bg-0) 62%, transparent);
+}
+.st-band-head-plain {
+  position: static;
+  padding-top: 6px;
+}
+.st-band-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.st-band-kicker {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.st-band-kicker-quiet {
+  color: var(--ink-2);
+}
+.st-band-window {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.st-band-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.st-band-rule-accent {
+  background: color-mix(in oklch, var(--accent) 28%, var(--line));
+}
+
+.st-ranges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.st-range-pill {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 6px 13px;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition:
+    color 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease;
+}
+@media (hover: hover) {
+  .st-range-pill:hover {
+    color: var(--ink-1);
+  }
+}
+.st-range-pill.on {
+  background: var(--bg-2);
+  border-color: var(--line);
+  color: var(--ink-0);
+}
+.st-card-placeholder {
+  min-height: 84px;
+  background: var(--bg-1);
+  border-radius: var(--r-lg);
+}
+.st-empty {
+  padding: 40px 24px;
+  text-align: center;
+}
+.st-empty-title {
+  margin: 0 0 6px;
+  font-family: var(--serif);
+}
+.st-empty-sub {
+  margin: 0;
+  color: var(--ink-2);
+}
+.st-footnote {
+  margin: 26px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  text-align: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-hero-run,
+  .st-scope,
+  .st-range-pill {
+    transition: none;
+  }
+  .st-hero-run,
+  .st-scope {
+    animation: none;
+  }
+}
+@media (max-width: 1000px) {
+  .st-hero-inner {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .atrium .st-hero-figure,
+  .st-hero-unit {
+    font-size: 64px;
+  }
+}
+@media (max-width: 720px) {
+  .st-hero-inner {
+    padding: 24px var(--st-gutter) 26px;
+  }
+  .atrium .st-hero-figure,
+  .st-hero-unit {
+    font-size: 52px;
+  }
+  .st-spark,
+  .st-spark-axis {
+    width: 100%;
+  }
+  .st-body {
+    padding: 20px var(--st-gutter) 48px;
+  }
+  .st-scope {
+    gap: 26px;
+  }
+  .st-band-head {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+  .st-band-rule {
+    display: none;
+  }
+  .st-ranges {
+    width: 100%;
+  }
+  .st-range-pill {
+    flex: 1;
+    padding: 8px 6px;
+    text-align: center;
+  }
+}
+@keyframes st-settle {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+.st-spark-bar.off {
+  background: var(--st-idle);
+}
