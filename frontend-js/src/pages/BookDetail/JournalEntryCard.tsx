@@ -129,6 +129,8 @@ type JournalEntryCardProps = {
   uuid: BookUuid;
   entry: JournalEntry;
   viewer: User;
+  /** Told when the edit form opens or closes, so a host can hold off dismissing it. */
+  onEditingChange?: (editing: boolean) => void;
 };
 
 /** One journal entry: byline, rendered body, and for its author Publish (a draft) and Delete. */
@@ -136,12 +138,17 @@ export function JournalEntryCard({
   uuid,
   entry,
   viewer,
+  onEditingChange,
 }: JournalEntryCardProps) {
   const client = useQueryClient();
   const refetchFeed = () =>
     client.invalidateQueries({ queryKey: journalQuery(uuid).queryKey });
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState(false);
+  const edit = (value: boolean) => {
+    setEditing(value);
+    onEditingChange?.(value);
+  };
   const publish = useMutation({
     mutationFn: publishJournalEntry,
     onSuccess: refetchFeed,
@@ -198,7 +205,7 @@ export function JournalEntryCard({
               variant="ghost"
               size="sm"
               data-testid="journal-edit"
-              onClick={() => setEditing(true)}
+              onClick={() => edit(true)}
             >
               Edit
             </Button>
@@ -219,7 +226,7 @@ export function JournalEntryCard({
         )}
       </div>
       {editing ? (
-        <EditForm uuid={uuid} entry={entry} onDone={() => setEditing(false)} />
+        <EditForm uuid={uuid} entry={entry} onDone={() => edit(false)} />
       ) : (
         <>
           {/* biome-ignore lint/a11y/noStaticElementInteractions: delegates to the spoilers inside the server-rendered body */}

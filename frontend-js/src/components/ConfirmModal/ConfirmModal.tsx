@@ -85,7 +85,8 @@ export function ConfirmModal({
         dismiss();
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape") {
+        // Escape ends an IME composition rather than the dialog.
+        if (event.key === "Escape" && !event.nativeEvent.isComposing) {
           event.preventDefault();
           event.stopPropagation();
           dismiss();

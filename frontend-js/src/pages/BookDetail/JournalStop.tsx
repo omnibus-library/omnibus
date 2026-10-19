@@ -94,6 +94,12 @@ function Journal({ book }: { book: BookDetail }) {
   const feed = useQuery(journalQuery(book.uuid));
   // By id, not position: a refetch keeps the same entry open, or drops it if it went away.
   const [openId, setOpenId] = useState<number | null>(null);
+  // An open edit holds the overlay, so Escape and the backdrop cannot discard it.
+  const [editing, setEditing] = useState(false);
+  const closeOverlay = () => {
+    setOpenId(null);
+    setEditing(false);
+  };
   const [composing, setComposing] = useState(false);
   const entries = feed.data;
   const drafts = entries?.filter((e) => e.status === "draft").length ?? 0;
@@ -195,17 +201,22 @@ function Journal({ book }: { book: BookDetail }) {
           ariaLabel="Journal entry"
           backdropClass="bdmq-overlay"
           dialogClass="bdmq-ocard"
-          busy={false}
-          onDismiss={() => setOpenId(null)}
+          busy={editing}
+          onDismiss={closeOverlay}
           focusOnOpen
         >
-          <JournalEntryCard uuid={book.uuid} entry={opened} viewer={viewer} />
+          <JournalEntryCard
+            uuid={book.uuid}
+            entry={opened}
+            viewer={viewer}
+            onEditingChange={setEditing}
+          />
           <Button
             variant="ghost"
             size="sm"
             className="bdmq-ocard-close"
             data-testid="journal-overlay-close"
-            onClick={() => setOpenId(null)}
+            onClick={closeOverlay}
           >
             ✕ Close
           </Button>

@@ -414,6 +414,37 @@ export const ComposerIgnoresAClickOutside: Story = {
   },
 };
 
+export const EscapeKeepsAnUnsavedEdit: Story = {
+  beforeEach({ msw }) {
+    msw.use(...journalHandlers(ENTRIES, ADA));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      (await canvas.findAllByTestId("journal-ladder-row"))[0] as HTMLElement,
+    );
+    const overlay = canvas.getByTestId("journal-overlay");
+    await userEvent.click(within(overlay).getByTestId("journal-edit"));
+    const editor = within(overlay).getByRole("textbox", {
+      name: "Edit journal entry",
+    });
+    getSelection()?.selectAllChildren(editor);
+    await userEvent.keyboard("Half typed");
+
+    await userEvent.keyboard("{Escape}");
+    await expect(overlay).toBeInTheDocument();
+    await expect(editor).toHaveTextContent("Half typed");
+
+    await userEvent.click(
+      within(overlay).getByRole("button", { name: "Cancel" }),
+    );
+    await waitFor(() =>
+      expect(overlay).toContainElement(document.activeElement as HTMLElement),
+    );
+    await userEvent.keyboard("{Escape}");
+    await expect(overlay).not.toBeInTheDocument();
+  },
+};
+
 export const OwnerEditsAnEntry: Story = {
   beforeEach({ msw }) {
     writes.length = 0;
