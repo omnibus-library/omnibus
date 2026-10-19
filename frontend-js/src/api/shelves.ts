@@ -1,4 +1,4 @@
-import { queryOptions } from "@tanstack/react-query";
+import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
 import type { Book } from "./books";
 import { toBook } from "./books";
@@ -84,6 +84,13 @@ export const shelfQuery = (id: number) =>
     queryKey: ["shelf", id],
     queryFn: () => fetchShelf(id),
   });
+
+/** Refetches everything that shows shelf `id` after a write to it. */
+export function invalidateShelf(client: QueryClient, id: number) {
+  for (const queryKey of [["shelves"], ["shelf", id], ["shelf-page", id]]) {
+    client.invalidateQueries({ queryKey });
+  }
+}
 
 /** Creates a shelf the reader owns. */
 export async function createShelf(

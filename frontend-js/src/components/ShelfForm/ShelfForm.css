@@ -221,6 +221,10 @@
   border-radius: 6px;
   padding: 2px 7px;
 }
+.shelf-badge--kobo {
+  color: #34d399;
+  border-color: #34d39955;
+}
 .shelf-facets {
   display: flex;
   align-items: center;

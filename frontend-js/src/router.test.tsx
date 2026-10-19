@@ -85,7 +85,6 @@ describe("routes", () => {
       [`/listen/${UUID}?file_id=2`, "Listen", "2"],
       ["/stats?user=2", "Stats", "2"],
       ["/stats/chart", "Chart builder", null],
-      ["/shelves/9", "Shelf", "9"],
       ["/settings?section=smtp", "Settings", "smtp"],
       ["/settings/cleanup/duplicates", "Cleanup review", "duplicates"],
       ["/admin?section=logs", "Administration", "logs"],
@@ -109,6 +108,7 @@ describe("routes", () => {
       ["/series", "Gathering every series"],
       ["/series/4", "Gathering the series"],
       ["/shelves", "Gathering your shelves"],
+      ["/shelves/9", "Opening the shelf"],
     ])("renders %s as its loading page, not a stub", async (path, label) => {
       renderRoute(path);
 

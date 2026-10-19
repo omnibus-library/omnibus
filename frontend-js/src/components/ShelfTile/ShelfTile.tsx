@@ -26,7 +26,8 @@ const EMPTY_LEDGE = {
   wishlist: "Nothing wished for",
 } satisfies Record<Shelf["kind"], string>;
 
-function KindGlyph({ kind }: { kind: Shelf["kind"] }) {
+/** The glyph marking a shelf's kind. */
+export function KindGlyph({ kind }: { kind: Shelf["kind"] }) {
   switch (kind) {
     case "smart":
       return <CogGlyph />;
