@@ -115,7 +115,7 @@ function EpubPage({
   const [selection, setSelection] = useState<PassageSelection | null>(null);
   const {
     highlights,
-    listState,
+    held,
     target,
     setTarget,
     load,
@@ -189,6 +189,11 @@ function EpubPage({
     } satisfies Record<(typeof HOOKS)[number], (json: string) => void>;
     for (const name of HOOKS) window[name] = hooks[name];
 
+    // A failed open leaves the highlights drawer saying so rather than spinning.
+    const fail = () => {
+      setStatus("failed");
+      load(null);
+    };
     const open = async () => {
       // Started now, beside the progress fetch.
       const runtime = loadEpubRuntime().then(
@@ -213,7 +218,7 @@ function EpubPage({
       hold = start.holdFirstWrite;
       const loaded = await runtime;
       if (cancelled) return;
-      if (!loaded) return setStatus("failed");
+      if (!loaded) return fail();
       const url = `/api/ebooks/${encodeURIComponent(uuid)}/file`;
       window.OmnibusReader?.init(
         VIEWER_ID,
@@ -232,7 +237,7 @@ function EpubPage({
       if (!cancelled) load(saved);
     };
     open().catch(() => {
-      if (!cancelled) setStatus("failed");
+      if (!cancelled) fail();
     });
 
     return () => {
@@ -321,7 +326,7 @@ function EpubPage({
         chapterTitle={chapterTitle}
         titleSub={jumping ? "" : formatTitleSub(loc)}
         panel={panel}
-        highlightCount={highlights.length}
+        highlightCount={held.length}
         onBack={back}
         onToggle={toggle}
       />
@@ -376,11 +381,7 @@ function EpubPage({
         />
       )}
       {panel === "highlights" && (
-        <HighlightsDrawer
-          highlights={highlights}
-          listState={listState}
-          {...rows}
-        />
+        <HighlightsDrawer highlights={highlights} {...rows} />
       )}
       {panel === "bookmarks" && (
         <BookmarksDrawer
@@ -397,7 +398,6 @@ function EpubPage({
           position={loc.cfi}
           label={chapterTitle}
           highlights={highlights}
-          listState={listState}
           {...rows}
         />
       )}

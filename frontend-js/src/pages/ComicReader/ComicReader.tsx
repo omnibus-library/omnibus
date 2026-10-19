@@ -9,6 +9,7 @@ import {
 } from "../../api";
 import { useAutoReadStatus } from "../../autoReadStatus";
 import { classes } from "../../classes";
+import { Button } from "../../components/Button/Button";
 import { Loading } from "../../components/Loading/Loading";
 import { PageNotFound } from "../../components/PageState/PageState";
 import { useReadingSession } from "../../readingSession";
@@ -65,12 +66,16 @@ function Pager({ uuid }: { uuid: BookUuid }) {
   const [book, setBook] = useState<BookDetail | "failed" | null>(null);
   const [page, setPage] = useState(0);
   const [fit, setFit] = useState<Fit>("height");
+  // Retry re-runs the open: the book and progress fetches.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => root.current?.focus(), []);
 
   // Fetched fresh on every open: a stale position would resume at the wrong page.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry bumps `attempt` to run the open again
   useEffect(() => {
     let cancelled = false;
+    setBook(null);
     Promise.all([
       client.fetchQuery({ ...bookQuery(uuid), staleTime: 0 }),
       // A failed fetch fails the open, as the book's does: it must not read as "nothing saved".
@@ -96,7 +101,7 @@ function Pager({ uuid }: { uuid: BookUuid }) {
     return () => {
       cancelled = true;
     };
-  }, [client, uuid]);
+  }, [client, uuid, attempt]);
 
   const loaded = book !== null && book !== "failed";
   const count = loaded ? (book.pageCount ?? 0) : 0;
@@ -163,7 +168,14 @@ function Pager({ uuid }: { uuid: BookUuid }) {
       </header>
       {book === "failed" || (loaded && count === 0) ? (
         <div className="cr-state" data-testid="comic-error" role="alert">
-          This comic could not be opened.
+          <p>This comic could not be opened.</p>
+          <Button
+            size="sm"
+            data-testid="comic-retry"
+            onClick={() => setAttempt((n) => n + 1)}
+          >
+            Retry
+          </Button>
         </div>
       ) : !loaded ? (
         <Loading

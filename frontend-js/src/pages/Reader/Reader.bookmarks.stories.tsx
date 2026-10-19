@@ -328,15 +328,41 @@ export const TheSheetIsEmptyBeforeAnyAnnotation: Story = {
 
 export const TheSheetSaysSoWhenTheBookmarksFailToLoad: Story = {
   beforeEach({ msw }) {
+    r.annotations.highlights = HIGHLIGHTS();
     msw.use(failing("get", "/api/bookmarks/book/:uuid", 500));
   },
   play: async ({ canvas, userEvent }) => {
     const sheet = await openSheet({ canvas, userEvent });
+    const inSheet = within(sheet);
 
-    await expect(within(sheet).getByRole("alert")).toHaveTextContent(
-      "Your annotations couldn’t be loaded.",
+    await expect(inSheet.getByRole("alert")).toHaveTextContent(
+      "Your bookmarks couldn’t be loaded.",
+    );
+    await expect(inSheet.getAllByTestId("reader-highlight-row")).toHaveLength(
+      2,
     );
     await expect(sheet).not.toHaveTextContent("Nothing here yet.");
+    await expect(inSheet.getByTestId("reader-annotations-add")).toBeDisabled();
+  },
+};
+
+export const TheSheetKeepsTheBookmarksWhenTheHighlightsFailToLoad: Story = {
+  beforeEach({ msw }) {
+    r.annotations.bookmarks = BOOKMARKS();
+    msw.use(failing("get", "/api/highlights/book/:uuid", 500));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const sheet = await openSheet({ canvas, userEvent });
+    const inSheet = within(sheet);
+
+    await expect(await inSheet.findByRole("alert")).toHaveTextContent(
+      "Your highlights couldn’t be loaded.",
+    );
+    await expect(
+      inSheet.getAllByTestId("annotations-bookmark-row"),
+    ).toHaveLength(2);
+    await expect(sheet).not.toHaveTextContent("Nothing here yet.");
+    await expect(inSheet.getByTestId("reader-annotations-add")).toBeEnabled();
   },
 };
 

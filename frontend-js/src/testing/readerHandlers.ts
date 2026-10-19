@@ -47,6 +47,18 @@ export function progressHandlers(
   ];
 }
 
+/** The progress `GET` fails on its first read and then serves `initial`; `reads` counts the reads. */
+export function progressFailingOnce(
+  initial: ProgressRecord[],
+  reads: { count: number },
+) {
+  return http.get("/api/progress/:uuid", () =>
+    ++reads.count === 1
+      ? new HttpResponse("failed", { status: 500 })
+      : HttpResponse.json(aWireProgress(...initial)),
+  );
+}
+
 /** Every comic page is the sample cover. */
 export const comicPageHandler = http.get(
   "/api/ebooks/:uuid/pages/:page",

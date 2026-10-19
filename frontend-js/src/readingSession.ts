@@ -101,6 +101,12 @@ export function useReadingSession(uuid: BookUuid): void {
         tracker.resume(nowSecs());
       }
     };
+    // A bfcache restore fires no visibilitychange on some engines.
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted && document.visibilityState === "visible") {
+        tracker.resume(nowSecs());
+      }
+    };
     const flush = () => send(tracker.stop(nowSecs()));
     const heartbeat = setInterval(
       () => send(tracker.rollover(nowSecs())),
@@ -109,10 +115,12 @@ export function useReadingSession(uuid: BookUuid): void {
     document.addEventListener("visibilitychange", onVisibility);
     // Suspend, not stop: a page restored from the back/forward cache is visible again and resumes.
     window.addEventListener("pagehide", suspend);
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       clearInterval(heartbeat);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pagehide", suspend);
+      window.removeEventListener("pageshow", onPageShow);
       flush();
     };
   }, [uuid]);

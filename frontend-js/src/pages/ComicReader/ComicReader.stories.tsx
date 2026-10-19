@@ -1,5 +1,4 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
 import { expect, fireEvent, waitFor } from "storybook/test";
 import type { ProgressUpdate } from "../../api/generated/schemas";
@@ -10,6 +9,7 @@ import {
 } from "../../testing/handlers";
 import {
   comicPageHandler,
+  progressFailingOnce,
   progressHandlers,
 } from "../../testing/readerHandlers";
 import { aWireBook, aWirePosition, aWireReadStatus } from "../../testing/wire";
@@ -93,23 +93,33 @@ export const NoPages: Story = {
   },
 };
 
+const progressReads = { count: 0 };
+
 export const FailsToOpenWhenTheProgressFetchFails: Story = {
   beforeEach({ msw }) {
+    progressReads.count = 0;
     // The reader cannot tell "nothing saved" from "unreadable", so it must not open at page 1.
-    msw.use(
-      bookHandler(BOOK),
-      http.get(
-        "/api/progress/:uuid",
-        () => new HttpResponse("failed", { status: 500 }),
-      ),
-    );
+    msw.use(bookHandler(BOOK), progressFailingOnce([SAVED], progressReads));
   },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
       "This comic could not be opened.",
     );
     await expect(canvas.queryByTestId("comic-page-image")).toBeNull();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Retry" }));
+
+    await expect(await canvas.findByTestId("comic-page-image")).toHaveAttribute(
+      "src",
+      `/api/ebooks/${UUID}/pages/2`,
+    );
+    await expect(progressReads.count).toBe(2);
     await expect(writes).toEqual([]);
+
+    await userEvent.click(canvas.getByRole("button", { name: "Next page" }));
+
+    await waitFor(() => expect(writes).toHaveLength(1));
+    await expect(writes[0]).toMatchObject({ epub_cfi: "comic-page:3" });
   },
 };
 

@@ -134,7 +134,9 @@ export function BookmarksDrawer({
       head={
         <h4 className="rd-drawer-title">
           Bookmarks{" "}
-          <span className="rd-drawer-count">{bookmarks?.length ?? 0}</span>
+          {bookmarks && (
+            <span className="rd-drawer-count">{bookmarks.length}</span>
+          )}
         </h4>
       }
       actions={

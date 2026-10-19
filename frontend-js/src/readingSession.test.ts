@@ -199,7 +199,6 @@ describe("useReadingSession", () => {
       window.dispatchEvent(
         new PageTransitionEvent("pageshow", { persisted: true }),
       );
-      show("visible");
       vi.advanceTimersByTime(60_000);
 
       expect(posted().map((p) => p.body[0].progress_units)).toEqual([60]);

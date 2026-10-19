@@ -5,13 +5,12 @@ import { Loading } from "../../components/Loading/Loading";
 import {
   type AnnotationBridge,
   HIGHLIGHT_COLORS,
-  type ListState,
+  type HighlightList,
 } from "./annotations";
 import { DrawerShell } from "./DrawerShell";
 
 type HighlightsDrawerProps = {
-  highlights: Highlight[];
-  listState: ListState;
+  highlights: HighlightList;
   /** The viewer the rows jump into; epub.js or PDF.js. */
   bridge: AnnotationBridge;
   onRecolor: (highlight: Highlight, color: HighlightColor) => void;
@@ -21,10 +20,7 @@ type HighlightsDrawerProps = {
   onClose: () => void;
 };
 
-type RowProps = Omit<
-  HighlightsDrawerProps,
-  "highlights" | "listState" | "onClose"
-> & {
+type RowProps = Omit<HighlightsDrawerProps, "highlights" | "onClose"> & {
   highlight: Highlight;
   onJump: (anchor: string) => void;
 };
@@ -134,12 +130,14 @@ export function ColorChips({
 /** The highlights and notes drawer: every passage in the book, filterable by color, with its row actions. */
 export function HighlightsDrawer({
   highlights,
-  listState,
   onClose,
   ...row
 }: HighlightsDrawerProps) {
   const [filter, setFilter] = useState<HighlightColor | null>(null);
-  const shown = highlights.filter((h) => filter === null || h.color === filter);
+  const list = Array.isArray(highlights) ? highlights : null;
+  const shown = (list ?? []).filter(
+    (h) => filter === null || h.color === filter,
+  );
   return (
     <DrawerShell
       testId="reader-highlights-drawer"
@@ -147,7 +145,7 @@ export function HighlightsDrawer({
       head={
         <h4 className="rd-drawer-title">
           Highlights &amp; notes{" "}
-          <span className="rd-drawer-count">{highlights.length}</span>
+          {list && <span className="rd-drawer-count">{list.length}</span>}
         </h4>
       }
     >
@@ -158,14 +156,14 @@ export function HighlightsDrawer({
           aria-pressed={filter === null}
           onClick={() => setFilter(null)}
         >
-          All {highlights.length}
+          {list ? `All ${list.length}` : "All"}
         </button>
         <ColorChips active={filter} onPick={setFilter} />
       </div>
       <div className="rd-drawer-body">
-        {listState === "loading" ? (
+        {highlights === "loading" ? (
           <Loading label="Loading highlights" />
-        ) : listState === "failed" ? (
+        ) : highlights === "failed" ? (
           <div className="rd-drawer-empty" role="alert">
             Your highlights couldn’t be loaded.
           </div>

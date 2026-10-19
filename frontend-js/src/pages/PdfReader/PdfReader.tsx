@@ -104,7 +104,7 @@ function PdfPage({
   const [selection, setSelection] = useState<PdfSelection | null>(null);
   const {
     highlights,
-    listState,
+    held,
     target,
     setTarget,
     load,
@@ -119,8 +119,8 @@ function PdfPage({
   const fitNow = useRef(fit);
   fitNow.current = fit;
   // The glue's hooks outlive a render, so they read the list through this.
-  const highlightsNow = useRef(highlights);
-  highlightsNow.current = highlights;
+  const highlightsNow = useRef(held);
+  highlightsNow.current = held;
 
   // Best-effort: a failed write must not interrupt reading, and the next turn retries.
   const save = useCallback(
@@ -193,15 +193,23 @@ function PdfPage({
     } satisfies Record<(typeof HOOKS)[number], (json: string) => void>;
     for (const name of HOOKS) window[name] = hooks[name];
 
+    // A failed open leaves the highlights drawer saying so rather than spinning.
+    const fail = () => {
+      setStatus("failed");
+      load(null);
+    };
     const open = async () => {
       const [found, progress] = await Promise.all([
         client.fetchQuery({ ...bookQuery(uuid), staleTime: 0 }),
         // A failed fetch fails the open, as the book's does: it must not read as "nothing saved".
-        client.fetchQuery({ ...progressQuery(uuid), staleTime: 0 }),
+        // A deep link needs no saved position.
+        deepLink !== null
+          ? null
+          : client.fetchQuery({ ...progressQuery(uuid), staleTime: 0 }),
       ]);
       if (cancelled) return;
-      if (!found) return setStatus("failed");
-      const saved = progress.reading;
+      if (!found) return fail();
+      const saved = progress?.reading;
       const start = pdfStartPage(
         deepLink,
         saved?.cfi ?? null,
@@ -215,7 +223,10 @@ function PdfPage({
         () => false,
       );
       if (cancelled) return;
-      if (!glue) return onError("glue failed to load");
+      if (!glue) {
+        onError("glue failed to load");
+        return load(null);
+      }
       const url = `/api/ebooks/${encodeURIComponent(uuid)}/file`;
       window.OmnibusPdfReader?.init(HOST_ID, {
         url: fileId === null ? url : `${url}?file_id=${fileId}`,
@@ -229,7 +240,7 @@ function PdfPage({
       if (!cancelled) load(passages);
     };
     open().catch(() => {
-      if (!cancelled) setStatus("failed");
+      if (!cancelled) fail();
     });
 
     return () => {
@@ -246,8 +257,8 @@ function PdfPage({
   }, [fit]);
 
   useEffect(() => {
-    window.OmnibusPdfReader?.paintHighlights(paintList(highlights));
-  }, [highlights]);
+    window.OmnibusPdfReader?.paintHighlights(paintList(held));
+  }, [held]);
 
   const dismissSelection = () => {
     setSelection(null);
@@ -338,9 +349,7 @@ function PdfPage({
               <path d="M4 19.5l1.6-4 8.2-8.2 3 3-8.2 8.2-4.6 0z" />
               <path d="M13.2 6.1l2.7-2.7a1.3 1.3 0 0 1 1.9 0l1.8 1.8a1.3 1.3 0 0 1 0 1.9l-2.7 2.7" />
             </Icon>
-            {highlights.length > 0 && (
-              <span className="rd-badge">{highlights.length}</span>
-            )}
+            {held.length > 0 && <span className="rd-badge">{held.length}</span>}
           </button>
           <button
             type="button"
@@ -466,11 +475,7 @@ function PdfPage({
         />
       )}
       {panel === "highlights" && (
-        <HighlightsDrawer
-          highlights={highlights}
-          listState={listState}
-          {...rows}
-        />
+        <HighlightsDrawer highlights={highlights} {...rows} />
       )}
       {panel === "bookmarks" && (
         <BookmarksDrawer

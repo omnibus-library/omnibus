@@ -72,6 +72,8 @@
 .cr-state {
   flex: 1;
   display: flex;
+  flex-direction: column;
+  gap: 12px;
   align-items: center;
   justify-content: center;
   color: var(--ink-3);

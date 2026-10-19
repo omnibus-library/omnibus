@@ -1,24 +1,20 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
-import { expect, fireEvent, waitFor } from "storybook/test";
+import { expect, fireEvent, waitFor, within } from "storybook/test";
 import type { ProgressUpdate } from "../../api/generated/schemas";
 import {
   bookHandler,
+  failing,
   hanging,
   readStatusHandlers,
 } from "../../testing/handlers";
 import { fakePdfGlue } from "../../testing/readerGlue";
 import {
   annotationHandlers,
+  progressFailingOnce,
   progressHandlers,
 } from "../../testing/readerHandlers";
-import {
-  aWireBook,
-  aWirePosition,
-  aWireProgress,
-  aWireReadStatus,
-} from "../../testing/wire";
+import { aWireBook, aWirePosition, aWireReadStatus } from "../../testing/wire";
 import { PdfReader } from "./PdfReader";
 
 const BOOK = aWireBook({ formats: ["PDF"] });
@@ -128,12 +124,7 @@ export const FailsWhenTheGlueCannotLoad: Story = {
   beforeEach({ msw }) {
     // No stand-in glue, so the loader appends the real script, which comes back 404.
     delete window.OmnibusPdfReader;
-    msw.use(
-      http.get(
-        "*/pdf-reader-glue*",
-        () => new HttpResponse(null, { status: 404 }),
-      ),
-    );
+    msw.use(failing("get", "*/pdf-reader-glue*", 404));
   },
   play: async ({ canvas }) => {
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
@@ -151,19 +142,22 @@ export const FailsToOpenWhenTheProgressFetchFails: Story = {
   beforeEach({ msw }) {
     progressReads.count = 0;
     // The first read fails, so the reader cannot tell "nothing saved" from "unreadable".
-    msw.use(
-      http.get("/api/progress/:uuid", () =>
-        ++progressReads.count === 1
-          ? new HttpResponse("failed", { status: 500 })
-          : HttpResponse.json(aWireProgress(SAVED)),
-      ),
-    );
+    msw.use(progressFailingOnce([SAVED], progressReads));
   },
   play: async ({ canvas, userEvent }) => {
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
       "This PDF could not be opened.",
     );
     await expect(inits()).toEqual([]);
+    // The failed open leaves the drawer saying so, not spinning for a list that never comes.
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Highlights and notes" }),
+    );
+    const drawer = await canvas.findByTestId("reader-highlights-drawer");
+    await expect(within(drawer).getByRole("alert")).toHaveTextContent(
+      "Your highlights couldn’t be loaded.",
+    );
+    await expect(within(drawer).queryByRole("status")).toBeNull();
 
     await userEvent.click(canvas.getByRole("button", { name: "Retry" }));
 
@@ -171,6 +165,11 @@ export const FailsToOpenWhenTheProgressFetchFails: Story = {
     await expect(progressReads.count).toBe(2);
     await expect(inits()[0]?.args[1]).toMatchObject({ startPage: 2 });
     await expect(writes).toEqual([]);
+
+    await userEvent.click(canvas.getByRole("button", { name: "Next page" }));
+
+    await waitFor(() => expect(writes).toHaveLength(1));
+    await expect(writes[0]).toMatchObject({ epub_cfi: "pdf-page:3" });
   },
 };
 
@@ -202,6 +201,22 @@ export const OpensAtTheSavedPage: Story = {
     // The Ready report restates the resumed page; it must not post an echo, so only the turn wrote.
     await waitFor(() => expect(writes).toHaveLength(1));
     await expect(writes[0]).toMatchObject({ epub_cfi: "pdf-page:3" });
+  },
+};
+
+export const ADeepLinkOpensWithoutReadingTheProgress: Story = {
+  parameters: { path: `/pdf/${UUID}?page=4` },
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/progress/:uuid", 500));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByText("Page 4 of 5");
+    await expect(inits()[0]?.args[1]).toMatchObject({ startPage: 3 });
+
+    await userEvent.click(canvas.getByRole("button", { name: "Next page" }));
+
+    await waitFor(() => expect(writes).toHaveLength(1));
+    await expect(writes[0]).toMatchObject({ epub_cfi: "pdf-page:4" });
   },
 };
 

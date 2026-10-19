@@ -385,6 +385,11 @@ export const TheDrawerShowsALoaderUntilThePassagesArrive: Story = {
       "Loading highlights",
     );
     await expect(drawer).not.toHaveTextContent("No highlights yet.");
+    // An unknown list is not a count of zero.
+    await expect(drawer.querySelector(".rd-drawer-count")).toBeNull();
+    await expect(
+      within(drawer).getByRole("button", { name: "All" }),
+    ).toBeVisible();
 
     listGate.release();
 
@@ -398,16 +403,30 @@ export const TheDrawerSaysSoWhenThePassagesFailToLoad: Story = {
     msw.use(failing("get", "/api/highlights/book/:uuid", 500));
   },
   play: async ({ canvas, userEvent }) => {
-    await canvas.findByTestId("reader-header-chapter");
-    await userEvent.click(
-      canvas.getByRole("button", { name: "Highlights and notes" }),
-    );
-    const drawer = await canvas.findByTestId("reader-highlights-drawer");
+    const drawer = await openDrawer({ canvas, userEvent });
 
-    await expect(await within(drawer).findByRole("alert")).toHaveTextContent(
+    await expect(within(drawer).getByRole("alert")).toHaveTextContent(
       "Your highlights couldn’t be loaded.",
     );
     await expect(drawer).not.toHaveTextContent("No highlights yet.");
+  },
+};
+
+export const AHighlightMadeWhileTheListFailedToLoadIsListed: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/highlights/book/:uuid", 500));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await select({ canvas }));
+    await expect(await badge(canvas).findByText("1")).toHaveClass("rd-badge");
+
+    const drawer = await openDrawer({ canvas, userEvent });
+
+    await expect(
+      within(drawer).getAllByTestId("reader-highlight-row"),
+    ).toHaveLength(1);
+    await expect(within(drawer).queryByRole("alert")).toBeNull();
+    await expect(drawer).toHaveTextContent("Highlights & notes 1");
   },
 };
 

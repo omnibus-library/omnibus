@@ -47,25 +47,25 @@ export const epubBridge: AnnotationBridge = {
 /** A passage to write a note on, or to make a quote card of. */
 export type AnnotationTarget = { kind: "note" | "quote"; highlight: Highlight };
 
-/** Whether the book's highlights have arrived, so the drawers never read an unknown list as an empty one. */
-export type ListState = "loading" | "ready" | "failed";
+/** The book's highlights, or why there are none to show yet; the drawers never read an unknown list as an empty one. */
+export type HighlightList = Highlight[] | "loading" | "failed";
+
+const NONE: Highlight[] = [];
 
 /**
  * A book's highlights and the note or quote panel open on one. A new highlight is painted at once
  * and unpainted again if saving it fails; `after` opens the panel the action asked for on the saved row.
  */
 export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
-  const [highlights, setHighlights] = useState<Highlight[]>([]);
-  const [listState, setListState] = useState<ListState>("loading");
+  const [highlights, setHighlights] = useState<HighlightList>("loading");
   const [target, setTarget] = useState<AnnotationTarget | null>(null);
 
-  /** Takes the fetched list; `null` is a fetch that failed. */
+  /** Takes the fetched list; `null` is a fetch that failed, which never wipes rows already held. */
   const load = useCallback(
     (saved: Highlight[] | null) => {
       for (const h of saved ?? [])
         if (h.anchor !== null) bridge.paint(h.anchor, h.color);
-      setHighlights(saved ?? []);
-      setListState(saved ? "ready" : "failed");
+      setHighlights((now) => saved ?? (Array.isArray(now) ? now : "failed"));
     },
     [bridge],
   );
@@ -82,7 +82,8 @@ export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
       bridge.unpaint(passage.anchor);
       return;
     }
-    setHighlights((list) => [...list, saved]);
+    // The row just made is known even when the list isn't.
+    setHighlights((list) => (Array.isArray(list) ? [...list, saved] : [saved]));
     if (after) setTarget({ kind: after, highlight: saved });
   }
 
@@ -95,7 +96,9 @@ export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
       return;
     }
     setHighlights((list) =>
-      list.map((h) => (h.id === highlight.id ? { ...h, note } : h)),
+      Array.isArray(list)
+        ? list.map((h) => (h.id === highlight.id ? { ...h, note } : h))
+        : list,
     );
     setTarget(null);
   }
@@ -113,7 +116,9 @@ export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
       bridge.paint(highlight.anchor, color);
     }
     setHighlights((list) =>
-      list.map((h) => (h.id === highlight.id ? { ...h, color } : h)),
+      Array.isArray(list)
+        ? list.map((h) => (h.id === highlight.id ? { ...h, color } : h))
+        : list,
     );
   }
 
@@ -125,7 +130,9 @@ export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
       return;
     }
     if (highlight.anchor !== null) bridge.unpaint(highlight.anchor);
-    setHighlights((list) => list.filter((h) => h.id !== highlight.id));
+    setHighlights((list) =>
+      Array.isArray(list) ? list.filter((h) => h.id !== highlight.id) : list,
+    );
   }
 
   /** What the drawers' rows need; the reader supplies how a tool closes and where focus returns. */
@@ -150,7 +157,8 @@ export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
 
   return {
     highlights,
-    listState,
+    /** The held rows, `[]` while there are none: what the badge, the painter and the tap hook read. */
+    held: Array.isArray(highlights) ? highlights : NONE,
     target,
     setTarget,
     load,
