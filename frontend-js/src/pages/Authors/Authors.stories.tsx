@@ -113,6 +113,12 @@ export const Loaded: Story = {
       "#letter-hash",
     );
     await expect(within(rail).queryByRole("link", { name: "Q" })).toBeNull();
+    // The shown author, Butler, files under B.
+    await expect(within(rail).getByRole("link", { name: "B" })).toHaveAttribute(
+      "aria-current",
+      "location",
+    );
+    await waitFor(() => expect(document.title).toBe("Omnibus | Authors"));
     await expect(
       await canvas.findByRole("heading", {
         level: 2,
@@ -148,6 +154,10 @@ export const Failing: Story = {
     await expect(
       canvas.getByText("Couldn’t load authors."),
     ).toBeInTheDocument();
+    // No count beside the title when there is nothing to count.
+    await expect(canvas.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Authors",
+    );
   },
 };
 
@@ -304,5 +314,31 @@ export const DeepLink: Story = {
         name: "Zora Neale Hurston",
       }),
     ).toBeInTheDocument();
+  },
+};
+
+// Forty rows, so the last one sits well below the first screen.
+const MANY = Array.from({ length: 40 }, (_, n) =>
+  aWireAuthorSummary({
+    id: n + 1,
+    name: `Author ${String(n).padStart(2, "0")}`,
+    sort: `Author ${String(n).padStart(2, "0")}`,
+    book_count: 1,
+  }),
+);
+
+export const DeepLinkScrollsToTheRow: Story = {
+  parameters: { path: "/authors/40" },
+  beforeEach({ msw }) {
+    msw.use(...authorsHandlers({ authors: MANY }));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("link", { name: "Author 39, 1 book" }),
+    ).toHaveAttribute("aria-current", "page");
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("authors-list").scrollTop).toBeGreaterThan(0),
+    );
   },
 };

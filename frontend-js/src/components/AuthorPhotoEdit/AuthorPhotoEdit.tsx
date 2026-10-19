@@ -11,11 +11,11 @@ import { ConfirmModal } from "../ConfirmModal/ConfirmModal";
 import { Ring } from "../Loading/Loading";
 import "./AuthorPhotoEdit.css";
 
-/** One way of changing the photo: what the status says while it runs, if it fails, and how it ended. */
+/** One way of changing the photo: what the status says while it runs and if it fails, and a run that resolves a status to keep showing, or `null` once the photo changed. */
 type Edit = {
   working: string;
   failed: string;
-  run: () => Promise<{ changed: boolean; message: string }>;
+  run: () => Promise<string | null>;
 };
 
 type PhotoModalProps = {
@@ -37,10 +37,7 @@ function PhotoModal({
   const edit = useMutation({
     mutationFn: (job: Edit) => job.run(),
     onMutate: (job) => setStatus(job.working),
-    onSuccess: ({ changed, message }) => {
-      setStatus(message);
-      if (changed) onChange();
-    },
+    onSuccess: (message) => (message ? setStatus(message) : onChange()),
     onError: (error, job) => setStatus(`${job.failed}: ${error.message}`),
   });
   const busy = edit.isPending;
@@ -49,7 +46,7 @@ function PhotoModal({
       testId="author-photo-edit-modal"
       ariaLabel={`Edit photo for ${authorName}`}
       dialogClass="author-photo-modal"
-      busy={false}
+      busy={busy}
       onDismiss={onClose}
       focusOnOpen
     >
@@ -81,7 +78,7 @@ function PhotoModal({
                 failed: "URL failed",
                 run: async () => {
                   await putAuthorPhotoUrl(authorId, url.trim());
-                  return { changed: true, message: "Photo updated." };
+                  return null;
                 },
               })
             }
@@ -112,7 +109,7 @@ function PhotoModal({
               failed: "Upload failed",
               run: async () => {
                 await uploadAuthorPhoto(authorId, file);
-                return { changed: true, message: "Photo uploaded." };
+                return null;
               },
             });
           }}
@@ -131,11 +128,8 @@ function PhotoModal({
               failed: "Scan failed",
               run: async () =>
                 (await scanAuthorPhoto(authorId))
-                  ? { changed: true, message: "Photo found." }
-                  : {
-                      changed: false,
-                      message: "No photo on Open Library for this author.",
-                    },
+                  ? null
+                  : "No photo on Open Library for this author.",
             })
           }
         >
@@ -155,7 +149,7 @@ function PhotoModal({
       )}
 
       <div className="author-photo-modal__actions">
-        <Button variant="ghost" onClick={onClose}>
+        <Button variant="ghost" disabled={busy} onClick={onClose}>
           Close
         </Button>
       </div>

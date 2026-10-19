@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { HttpResponse, http } from "msw";
+import { delay, HttpResponse, http } from "msw";
 import { Route, Routes, useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import {
@@ -103,6 +103,9 @@ export const Loaded: Story = {
     ).toBeInTheDocument();
     await expect(canvas.getByTestId("author-meta")).toHaveTextContent(
       "5 books · 2 series",
+    );
+    await waitFor(() =>
+      expect(document.title).toBe("Omnibus | Ursula K. Le Guin"),
     );
     await expect(
       await canvas.findByRole("img", { name: "Ursula K. Le Guin" }),
@@ -378,6 +381,37 @@ export const DeleteSuccess: Story = {
   },
 };
 
+export const DeletePreviewedAuthor: Story = {
+  ...inTheList,
+  parameters: { path: "/authors" },
+  beforeEach({ msw }) {
+    msw.use(
+      // The author left in Butler's place stays loading, as the pane would sit on the deleted page.
+      http.get("/api/authors/:id", async ({ params }) => {
+        if (params.id === "2") await delay("infinite");
+        return HttpResponse.json(OTHER);
+      }),
+      ...listHandlers(),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", {
+        name: "More actions for Octavia E. Butler",
+      }),
+    );
+    await userEvent.click(
+      canvas.getByRole("menuitem", { name: "Delete author…" }),
+    );
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Delete" }),
+    );
+
+    await waitFor(() => expect(canvas.queryByRole("dialog")).toBeNull());
+    await expect(deleted).toEqual(["3"]);
+  },
+};
+
 export const DeleteFailing: Story = {
   ...inTheList,
   beforeEach({ msw }) {
@@ -455,5 +489,9 @@ export const NewPhotoRefetchesTheAuthor: Story = {
 
     await waitFor(() => expect(reads).toHaveLength(2));
     await waitFor(() => expect(canvas.queryByRole("dialog")).toBeNull());
+    // The same URL under a new query, so the browser's day-long cache is skipped.
+    await expect(
+      await canvas.findByRole("img", { name: "Ursula K. Le Guin" }),
+    ).toHaveAttribute("src", "/api/authors/2/photo?v=1");
   },
 };

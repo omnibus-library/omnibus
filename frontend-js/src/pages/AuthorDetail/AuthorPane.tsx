@@ -47,14 +47,16 @@ function AuthorAvatar({
 }) {
   const client = useQueryClient();
   const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
-  const url = hasPhoto ? authorPhotoUrl(id) : null;
+  // A replaced photo keeps its URL, cached for a day, so each change asks for a fresh one.
+  const [version, setVersion] = useState(0);
+  const photo = hasPhoto ? authorPhotoUrl(id) : null;
+  const url = photo && version > 0 ? `${photo}?v=${version}` : photo;
   return (
     <AuthorPhotoEdit
       authorId={id}
       authorName={name}
       onChange={() => {
-        // A re-upload keeps the same URL, so clear the failure too.
-        setBrokenSrc(null);
+        setVersion((v) => v + 1);
         client.invalidateQueries({ queryKey: authorQuery(id).queryKey });
       }}
     >

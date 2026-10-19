@@ -28,8 +28,9 @@ function DeleteAuthorModal({
   const remove = useMutation({
     mutationFn: () => deleteAuthor(author.id),
     onSuccess: () => {
+      onClose();
       // The list stays mounted across the redirect, so it would never refetch the author away on its own.
-      navigate("/authors");
+      navigate("/authors", { replace: true });
       client.setQueryData(authorsQuery.queryKey, (rows) =>
         rows?.filter((a) => a.id !== author.id),
       );

@@ -258,7 +258,11 @@ export function Authors() {
     [rows, filter, sort, progress, onlyReading],
   );
 
-  const preview = previewOf(rows, authors, readingState, progress);
+  const { isError, isPending } = authors;
+  const preview = useMemo(
+    () => previewOf(rows, { isError, isPending }, readingState, progress),
+    [rows, isError, isPending, readingState, progress],
+  );
   const shown = routed ?? (preview.kind === "author" ? preview.id : null);
   const readingCount = progress
     ? [...progress.values()].filter((r) => r.reading > 0).length
@@ -363,7 +367,7 @@ export function AuthorsIndexPane() {
           No authors yet — the library is empty.
         </p>
       ) : (
-        <AuthorPane id={preview.id} preview />
+        <AuthorPane key={preview.id} id={preview.id} preview />
       )}
     </>
   );
