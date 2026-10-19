@@ -12,6 +12,7 @@ import {
   parseSettingsSection,
   sectionHref,
 } from "../../settingsIndex";
+import { ApiTokensCard } from "./ApiTokensCard";
 import { GoalsSection } from "./GoalsSection";
 import { KindleCard } from "./KindleCard";
 import { KoboCard } from "./KoboCard";
@@ -78,6 +79,7 @@ export function Settings() {
         <>
           <PasswordCard />
           <SessionsCard />
+          <ApiTokensCard />
         </>
       )}
       {active.slug === "devices" && (

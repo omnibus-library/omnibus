@@ -3,17 +3,26 @@ import { z } from "zod";
 import type { Credentials, UserId } from "./core";
 import { failure, fetchJson, ok, send } from "./core";
 import {
+  getCreateApiTokenUrl,
   getDeleteSessionUrl,
+  getListApiTokensUrl,
   getListSessionsUrl,
   getLogoutUrl,
   getMe,
   getRegistration,
+  getRenameApiTokenUrl,
+  getRevokeApiTokenUrl,
   login as postLogin,
   register as postRegister,
 } from "./generated/omnibus";
-import { SessionView, type UserSummary } from "./generated/schemas";
+import {
+  ApiTokenView,
+  CreateApiTokenResponse,
+  SessionView,
+  type UserSummary,
+} from "./generated/schemas";
 
-export type { SessionView } from "./generated/schemas";
+export type { ApiTokenView, SessionView } from "./generated/schemas";
 
 /** The screen's shape of the user `GET /api/auth/me` and sign-in answer with. */
 export function toUser(user: UserSummary) {
@@ -26,6 +35,7 @@ export function toUser(user: UserSummary) {
     isAdmin: user.is_admin,
     canUpload: user.can_upload,
     canEdit: user.can_edit,
+    canDownload: user.can_download,
     hasAvatar: user.has_avatar ?? false,
     hiddenFormats: user.hidden_formats ?? [],
     stackSeries: user.stack_series ?? false,
@@ -77,4 +87,25 @@ export const sessionsQuery = queryOptions({
 /** Signs one of the reader's other sessions out. */
 export async function revokeSession(id: number): Promise<void> {
   await send(getDeleteSessionUrl(id), "DELETE");
+}
+
+/** The reader's API tokens, newest first. They never carry the secret. */
+export const apiTokensQuery = queryOptions({
+  queryKey: ["api-tokens"],
+  queryFn: () => fetchJson(getListApiTokensUrl(), z.array(ApiTokenView)),
+});
+
+/** Mints a token named `name`; the answer holds its only readable copy of the secret. */
+export async function createApiToken(name: string) {
+  const res = await send(getCreateApiTokenUrl(), "POST", { name });
+  return CreateApiTokenResponse.parse(await res.json());
+}
+
+export async function renameApiToken(id: number, name: string): Promise<void> {
+  await send(getRenameApiTokenUrl(id), "PATCH", { name });
+}
+
+/** Cuts the token's client off at its next request. */
+export async function revokeApiToken(id: number): Promise<void> {
+  await send(getRevokeApiTokenUrl(id), "DELETE");
 }

@@ -1,11 +1,14 @@
 import { HttpResponse, http } from "msw";
 import type { GoalTargets } from "../api";
 import {
+  type ApiTokenView,
   ChangePasswordRequest,
+  CreateApiTokenRequest,
   CreateKoboDevice,
   DailyGoalUpdate,
   type KoboDeviceView,
   ReadingGoalUpdate,
+  RenameApiTokenRequest,
   type SessionView,
   SetHiddenFormats,
   SetKindleEmail,
@@ -14,7 +17,12 @@ import {
   type UserSummary,
 } from "../api/generated/schemas";
 import { svg } from "./handlers";
-import { aWireKoboDevice, aWireStatsGoals, WIRE_ADA } from "./wire";
+import {
+  aWireApiToken,
+  aWireKoboDevice,
+  aWireStatsGoals,
+  WIRE_ADA,
+} from "./wire";
 
 /** What the fake settings routes read and write, so a write shows on the next read. */
 export type SettingsServer = {
@@ -28,6 +36,8 @@ export type SettingsServer = {
   sender: string | null;
   /** The reader's Kobos. */
   kobo: KoboDeviceView[];
+  /** The reader's API tokens, newest first. */
+  tokens: ApiTokenView[];
   /** The reader's sessions; the one flagged `is_current` is the page's own. */
   sessions: SessionView[];
   /** The password `POST /api/auth/password` expects as the current one. */
@@ -45,6 +55,7 @@ export const aSettingsServer = (
   kobo: [],
   password: "old-password-123",
   sessions: [],
+  tokens: [],
   ...init,
 });
 
@@ -142,6 +153,29 @@ export function settingsHandlers(server: SettingsServer) {
       if (!server.kobo.some((d) => d.id === Number(params.id)))
         return missing();
       server.kobo = server.kobo.filter((d) => d.id !== Number(params.id));
+      return empty(204);
+    }),
+    http.get("/api/auth/api-tokens", () => HttpResponse.json(server.tokens)),
+    http.post("/api/auth/api-tokens", async ({ request }) => {
+      const { name } = CreateApiTokenRequest.parse(await request.json());
+      const id = Math.max(0, ...server.tokens.map((t) => t.id)) + 1;
+      const token = aWireApiToken({ id, name: name.trim(), suffix: "Zz9x" });
+      server.tokens = [token, ...server.tokens];
+      return HttpResponse.json({ token, secret: "omni_secretvalue-Zz9x" });
+    }),
+    http.patch("/api/auth/api-tokens/:id", async ({ params, request }) => {
+      const { name } = RenameApiTokenRequest.parse(await request.json());
+      if (!server.tokens.some((t) => t.id === Number(params.id)))
+        return missing();
+      server.tokens = server.tokens.map((t) =>
+        t.id === Number(params.id) ? { ...t, name: name.trim() } : t,
+      );
+      return empty(204);
+    }),
+    http.delete("/api/auth/api-tokens/:id", ({ params }) => {
+      if (!server.tokens.some((t) => t.id === Number(params.id)))
+        return missing();
+      server.tokens = server.tokens.filter((t) => t.id !== Number(params.id));
       return empty(204);
     }),
     http.get("/api/auth/sessions", () => HttpResponse.json(server.sessions)),

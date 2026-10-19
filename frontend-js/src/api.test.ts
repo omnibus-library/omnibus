@@ -247,6 +247,7 @@ describe("toUser", () => {
       isAdmin: true,
       canUpload: true,
       canEdit: true,
+      canDownload: true,
       hasAvatar: true,
       hiddenFormats: [],
       stackSeries: false,

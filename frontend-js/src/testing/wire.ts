@@ -1,6 +1,7 @@
 import { getGetStatsResponseMock } from "../api/generated/omnibus.msw";
 import type {
   AlignmentView,
+  ApiTokenView,
   AttributedRating,
   AuthorDetail,
   AuthorReading,
@@ -592,6 +593,20 @@ export function aWireAuthSession(
     last_used_at: 1_760_086_400,
     expires_at: 1_762_000_000,
     is_current: false,
+    ...overrides,
+  };
+}
+
+/** An API token as `GET /api/auth/api-tokens` lists it; override what a case needs. */
+export function aWireApiToken(
+  overrides: Partial<ApiTokenView> = {},
+): ApiTokenView {
+  return {
+    id: 1,
+    name: "MCP on my laptop",
+    suffix: "k3Zq",
+    created_at: 1_750_000_000,
+    last_used_at: null,
     ...overrides,
   };
 }
