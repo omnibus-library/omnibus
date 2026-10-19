@@ -268,7 +268,7 @@ final class AppState {
         await SyncEngine.shared.drain()
         await AuthService.logout()
         await Connectivity.shared.refreshPendingCount()
-        // Whoever signs in next must not inherit this reader's chips or shelf ids.
+        // Whoever signs in next must not inherit this reader's filters or shelf ids.
         LibraryFilterStore.shared.clear()
         user = nil
         phase = .needsLogin
