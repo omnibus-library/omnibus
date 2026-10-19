@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::scan::SEARCH_QUERY_MAX_LEN;
 
-/// Which external provider a lookup resolved against.
+/// An external metadata provider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
@@ -15,7 +15,7 @@ use crate::scan::SEARCH_QUERY_MAX_LEN;
 pub enum MetadataProvider {
     OpenLibrary,
     GoogleBooks,
-    /// Only reachable on an instance with a Hardcover API key configured.
+    /// Used only when the server has a Hardcover API key.
     Hardcover,
 }
 
@@ -41,11 +41,11 @@ impl MetadataProvider {
     }
 }
 
-/// What one provider can be asked and what it can return, independent of
-/// whether it is currently configured. A flag is a claim about the provider's
-/// API, not one book: flip one only in the same change that teaches the
-/// provider module to parse the field onto [`ProviderEdition`], because a
-/// fixture cross-check fails a flag that outruns its parser.
+// Flip a flag only in the same change that teaches the provider module to parse
+// the field onto `ProviderEdition`: a fixture cross-check fails a flag that
+// outruns its parser.
+/// What a provider can be searched by and what it can return, whether or not it is
+/// configured on this server. Each flag describes the provider's API, not any one book.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProviderCapabilities {
@@ -56,23 +56,22 @@ pub struct ProviderCapabilities {
     pub carries_genres: bool,
 }
 
-/// One entry in the provider catalog, built by `providers::catalog` in
-/// `omnibus-db` and served by `GET /api/metadata/providers`.
-///
-/// **Never carries key material** — `configured` is a bool, not a masked
-/// preview, because this endpoint is reachable by any authenticated user.
+// Built by `providers::catalog` in `omnibus-db`. `configured` is a bool, not a
+// masked preview, because any authenticated user can read this route.
+/// One metadata provider, as `GET /api/metadata/providers` lists it. It never carries an
+/// API key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProviderInfo {
     pub id: MetadataProvider,
     pub display_name: String,
-    /// Whether the ladder would actually invoke this provider right now —
-    /// always `true` for a keyless-capable provider, key-gated otherwise.
-    /// Mirrors the same check `providers::ladder` uses, so the two can never
-    /// disagree about what "configured" means.
+    // Mirrors the check `providers::ladder` uses, so the two can never disagree
+    // about what "configured" means.
+    /// Whether the server asks this provider right now. Always true for a provider that
+    /// works without a key. A provider that needs a key counts only once one is set.
     pub configured: bool,
-    /// Whether an API key is required to reach this provider at all (as
-    /// opposed to optional — present or not, the provider still answers).
+    /// Whether the provider needs an API key at all. A provider whose key is optional
+    /// answers without one.
     pub requires_key: bool,
     pub capabilities: ProviderCapabilities,
 }
@@ -81,53 +80,54 @@ pub struct ProviderInfo {
 /// (~39 chars), so this is a generous guard against an unbounded blob.
 pub const GOOGLE_BOOKS_API_KEY_MAX_LEN: usize = 512;
 
-/// Masked status of the server-wide Google Books key for the Settings UI.
-/// **Never carries the raw key** — only a short masked preview. Mirrors
-/// [`crate::suggestion::HardcoverKeyStatus`].
+// Mirrors `crate::suggestion::HardcoverKeyStatus`.
+/// Whether the server has a Google Books API key, with the key masked. It never carries
+/// the key itself.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct GoogleBooksKeyStatus {
     pub configured: bool,
-    /// Short masked preview (e.g. `AIza…9f3a`), or `None` when unset.
+    /// A masked preview of the key, such as `AIza…9f3a`. Null when no key is set.
     pub masked: Option<String>,
-    /// Where the effective key comes from: `"settings"`, `"env"`, or `"none"`.
+    /// Where the key in effect comes from: `settings` when saved through the API, `env`
+    /// when read from the server's environment variables, or `none`.
     pub source: String,
 }
 
-/// Body of `POST /api/google-books-key`.
+/// A Google Books API key to save, or none to clear the saved one.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SetGoogleBooksKey {
-    /// The Google Books API key, up to 512 bytes. `null`, absent or blank clears the
+    /// The Google Books API key, up to 512 bytes. Null, left out or blank clears the
     /// saved key.
     #[serde(default)]
     pub key: Option<String>,
 }
 
-/// Normalized book metadata resolved from an external provider. Every field but
-/// `isbn13`, `title`, and `source` is best-effort — providers disagree on which
-/// they carry. `cover_url` is a provider-hosted image the caller fetches only
-/// when a book/wishlist entry is actually created, not at lookup time.
+/// Book metadata from an external provider. Only `isbn13`, `title` and `source` are
+/// always set, and providers differ on the rest. `cover_url` points at the provider's
+/// image, which the server downloads only when it creates a book or wishlist entry from
+/// this metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ExternalBookMeta {
-    /// The normalized ISBN-13 that resolved (always 13 digits, no hyphens).
+    /// The ISBN-13 that matched, as 13 digits with no hyphens.
     pub isbn13: String,
     pub title: String,
     pub authors: Vec<String>,
-    /// Publication year or date as the provider reports it (free text).
+    /// The publication year or date, as free text in the provider's own form.
     pub year: Option<String>,
     pub pages: Option<i64>,
     pub publisher: Option<String>,
     pub description: Option<String>,
     pub cover_url: Option<String>,
-    /// Series statement as the provider reports it (free text, e.g.
-    /// "The Kingkiller Chronicle (1)"). Best-effort Open Library enrichment.
+    /// The series statement, as free text in the provider's own form, such as
+    /// "The Kingkiller Chronicle (1)".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub series: Option<String>,
-    /// Year the *work* was first published, across all editions — distinct
-    /// from `year`, which is this edition's own date.
+    /// The year the work was first published, in any edition. `year` is this edition's
+    /// own date.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_publish_year: Option<i64>,
     pub source: MetadataProvider,
@@ -195,69 +195,59 @@ impl ExternalBookMeta {
     }
 }
 
-/// One candidate from one provider in a fan-out edition search, kept
-/// **attributed and un-collapsed**: two editions sharing an ISBN across two
-/// sources stay two entries, because telling editions apart is what the picker
-/// is for. A separate type from [`ExternalBookMeta`], the frozen check-in wire
-/// payload; convert with `TryFrom` where a check-in-shaped value is wanted.
+// A separate type from `ExternalBookMeta`, the frozen check-in wire payload;
+// convert with `TryFrom` where a check-in-shaped value is wanted.
+/// One edition that one provider returned for an edition search. Results from different
+/// providers are never merged, so the same ISBN from two providers comes back as two
+/// entries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ProviderEdition {
     pub source: MetadataProvider,
-    /// Opaque, provider-scoped handle for re-fetching this candidate in full once
-    /// it is selected, since a thin search hit carries less than the provider's own
-    /// record. Omnibus never parses it: it is the provider's own id where one
-    /// exists, else `isbn:<isbn13>`, which every provider can be re-queried by.
+    // The provider's own id where one exists, else `isbn:<isbn13>`, which every
+    // provider can be re-queried by. Omnibus never parses it.
+    /// An opaque handle for fetching this edition in full with
+    /// `POST /api/metadata/editions/hydrate`, since a search result carries less than
+    /// the provider's full record. Send it back unchanged.
     pub provider_ref: String,
-    /// The normalized ISBN-13 (13 digits, no hyphens), when the provider ties one
-    /// to *this* edition. Optional on purpose: a search hit is often a *work*, not a
-    /// printing, so a candidate needs a [`Self::provider_ref`] to be re-fetched by,
-    /// not an ISBN. The check-in path still requires one (see [`ExternalBookMeta`]).
+    /// The ISBN-13 of this edition, as 13 digits with no hyphens. Absent when the
+    /// provider ties none to this edition, which is common because a search result
+    /// often names a work rather than one printing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isbn13: Option<String>,
-    /// ISBN-10 for the **same** printing as [`Self::isbn13`], when the provider
-    /// carries one. Only set when the two demonstrably name one edition, since
-    /// providers list identifiers per *work* as readily as per edition. `None` is
-    /// the normal answer for a 979-prefixed ISBN-13, which has no ISBN-10.
+    /// The ISBN-10 of the same printing as `isbn13`. Present only when the provider
+    /// shows that the two name one edition. A 979-prefixed ISBN-13 has no ISBN-10.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isbn10: Option<String>,
     pub title: String,
     pub authors: Vec<String>,
-    /// Publication year or date as the provider reports it (free text).
+    /// The publication year or date, as free text in the provider's own form.
     pub year: Option<String>,
-    /// The edition's **printed** length, which is what the `print_pages`
-    /// override stores — never `books.page_count`, which is a comic's image
-    /// count. `None` when the provider doesn't say; a provider reporting `0`
-    /// for "unknown" is normalized to `None` rather than staged over a real
-    /// page count.
+    /// The printed page count of this edition, the value the `print_pages` override
+    /// takes. It is never a comic's image count. Null when the provider doesn't say,
+    /// and a provider's 0 for unknown also becomes null.
     pub pages: Option<i64>,
     pub publisher: Option<String>,
     pub description: Option<String>,
     pub cover_url: Option<String>,
     pub series: Option<String>,
-    /// This book's position in [`Self::series`], formatted for display
-    /// (`"1"`, `"2.5"`), or `None` when the provider doesn't say.
-    ///
-    /// Only Hardcover models a series position, so the *other* providers
-    /// always leave this `None` — the same asymmetry `series` itself has.
+    /// The book's position in `series`, formatted for display, such as "1" or "2.5".
+    /// Absent when the provider doesn't say. Only Hardcover gives a position.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub series_index: Option<String>,
-    /// Year the *work* was first published, across all editions — distinct
-    /// from `year`, which is this edition's own date.
+    /// The year the work was first published, in any edition. `year` is this edition's
+    /// own date.
     pub first_publish_year: Option<i64>,
-    /// Genres as this provider labels them, already sanitized and capped at
-    /// [`Self::MAX_GENRES`].
-    ///
-    /// Empty means "this provider has none for this book"; whether a source can
-    /// answer for genres *at all* is [`ProviderCapabilities::carries_genres`].
+    /// The genres this provider gives the book, at most 10. An empty list means the
+    /// provider has none for this book. `carries_genres` in `ProviderCapabilities` says
+    /// whether a provider gives genres at all.
     #[serde(default)]
     pub genres: Vec<String>,
-    /// How strongly this candidate matches the query that found it, in
-    /// **hundredths of a point** (so `1000` is a perfect title match), or `None`
-    /// from a source that did not score. Derived from the candidate and the query
-    /// alone, never from which provider answered, so a source dropping out removes
-    /// its rows and reorders nothing.
+    /// How closely this edition matches the query, in hundredths of a point, where 1000
+    /// is a perfect title match. Absent when the result wasn't scored. The score depends
+    /// only on the edition and the query, never on the provider, so scores compare
+    /// across providers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relevance: Option<i32>,
 }
@@ -369,37 +359,32 @@ impl TryFrom<ProviderEdition> for ExternalBookMeta {
     }
 }
 
-/// What one provider contributed to a fan-out search.
-///
-/// The three cases are the point of the type: "it has nothing", "we never
-/// asked it", and "we asked and never got an answer" are different facts, and
-/// collapsing them makes an outage read as a miss.
+/// What one provider did for an edition search. `kind` tells apart a provider that had
+/// nothing, one the server didn't ask, and one that didn't answer, so an outage never
+/// looks like an empty result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum ProviderSearchStatus {
-    /// The provider answered. `count` is how many of its candidates reached
-    /// the returned list — post-cap, so it never overstates what is there.
+    /// The provider answered. `count` is how many of its results are in the returned
+    /// list, after the server's cap.
     Answered { count: usize },
-    /// Not usable on this instance (no API key). No request was sent.
+    /// The provider needs an API key this server doesn't have. The server didn't ask it.
     NotConfigured,
-    /// Asked, but no answer came back. `message` is the provider call's own
-    /// top-level context, never the error chain below it — which is where a
-    /// request URL, and so a `?key=`, would render.
+    // `message` is the provider call's own top-level context, never the error chain
+    // below it, which is where a request URL, and so a `?key=`, would render.
+    /// The server asked, but no answer came back. `message` says what failed.
     Failed { message: String },
-    /// Skipped without a request: this provider rate-limited us recently and is
-    /// still inside its cooldown.
-    ///
-    /// Distinct from [`Self::Failed`]: nothing was asked, and `retry_after_secs`
-    /// says when it is worth asking again.
+    /// The provider limited the server's request rate recently, so the server didn't ask
+    /// it this time. `retry_after_secs` says when to try again.
     Throttled {
         /// Whole seconds left on the cooldown, rounded up.
         retry_after_secs: u64,
     },
 }
 
-/// One row of the per-source status table returned alongside the candidates.
+/// What one provider, named, did for an edition search.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -409,33 +394,33 @@ pub struct ProviderSearchSource {
     pub status: ProviderSearchStatus,
 }
 
-/// Body for `POST /api/metadata/editions/search`.
+/// An edition search across the metadata providers, for
+/// `POST /api/metadata/editions/search`. At least one of `query`, `title`, `author` or
+/// `isbn` must hold text.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct EditionSearchRequest {
-    /// The query as free text — what the reader sees in the search box, and
-    /// the whole request from a client that sends nothing else.
+    /// The search as free text, up to 200 characters. A client may send only this.
     pub query: String,
-    /// The book's title on its own, when the caller can separate it. Lets each
-    /// provider be asked in *its* terms: Open Library searches the author's name
-    /// inside the title field if handed one flattened string. Absent means "the
-    /// reader typed something specific": treat [`Self::query`] as the title, with
-    /// no author.
+    // Open Library searches the author's name inside the title field if handed one
+    // flattened string, hence the separate fields.
+    /// The book's title on its own, up to 200 characters, when the client can separate
+    /// it from the author. Each provider then gets the title and author in the fields it
+    /// expects. When it is left out, the server treats `query` as the title, with no
+    /// author.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    /// The primary author, paired with [`Self::title`].
+    /// The book's main author, up to 200 characters, to go with `title`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
-    /// An ISBN the caller already holds for this book, in any format — it is
-    /// normalized (and a bad one discarded) server-side.
-    ///
-    /// The strongest signal there is, and the one the old flat query threw
-    /// away even when the edit form had it sitting in a field.
+    /// An ISBN the client already has for the book, in any format, up to 32 characters.
+    /// The server normalizes it and ignores an invalid one. It is the strongest match
+    /// signal a search can carry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isbn: Option<String>,
-    /// Which providers to ask. Absent means every configured one; this is the
-    /// hook a provider-filter UI plugs into without a wire change.
+    /// The providers to ask. When it is left out, the server asks every configured
+    /// provider. An empty list is refused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub providers: Option<Vec<MetadataProvider>>,
 }
@@ -487,22 +472,19 @@ impl EditionSearchRequest {
     }
 }
 
-/// Body for `POST /api/metadata/editions/hydrate`, the second call the picker
-/// makes once a candidate is selected, naming one edition rather than a query.
-///
-/// `provider_ref` is echoed back exactly as the search handed it over; Omnibus
-/// never parses it, so it is capped rather than validated for shape.
+// Omnibus never parses `provider_ref`, so it is capped rather than validated for
+// shape.
+/// One edition to fetch in full from its provider, for
+/// `POST /api/metadata/editions/hydrate`. Send `source` and `provider_ref` exactly as
+/// the edition search returned them. `provider_ref` may be up to 256 bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct EditionHydrateRequest {
     pub source: MetadataProvider,
     pub provider_ref: String,
-    /// The candidate's ISBN-13, when it has one.
-    ///
-    /// Optional because a candidate may have none; `provider_ref` is the re-fetch
-    /// handle. When present it is still preferred, since it names a *printing*
-    /// where a bare handle may name a work.
+    /// The edition's ISBN-13, when it has one. The server prefers it to `provider_ref`,
+    /// because an ISBN names one printing where a handle may name a whole work.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isbn13: Option<String>,
 }
@@ -543,10 +525,9 @@ impl EditionHydrateRequest {
     }
 }
 
-/// Fan-out search results: the candidates every asked provider returned, plus
-/// one status row per provider considered — including the ones that were
-/// skipped or failed, which is why a caller can render "Hardcover: couldn't
-/// reach it" instead of quietly showing a shorter list.
+/// The results of an edition search: every edition the providers returned, and one
+/// status per provider considered, including any the server skipped and any that
+/// failed.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]

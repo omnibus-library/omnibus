@@ -88,7 +88,7 @@ pub struct SetKindleEmail {
 pub struct KindleSendRequest {
     /// The book's uuid, at most 64 bytes.
     pub book_uuid: String,
-    /// The `id` of one of the book's `book_files`, for a book with several. Leave it out to
+    /// The `id` of one of the book's files, for a book with several. Leave it out to
     /// send the book's EPUB, or its PDF when it has no EPUB.
     #[serde(default)]
     pub file_id: Option<i64>,
