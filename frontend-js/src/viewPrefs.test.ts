@@ -65,6 +65,18 @@ describe("loadPrefs", () => {
     });
   });
 
+  it("leaves out the stored facet values the API would refuse", () => {
+    const tooLong = "x".repeat(513);
+    localStorage.setItem(
+      "omnibus.view_prefs::/books",
+      `{"view_mode":"grid","sort_key":"title","sort_dir":"asc","filters":{"tags":["  ","x","${tooLong}"]}}`,
+    );
+
+    expect(loadPrefs("/books").clauses).toEqual([
+      { field: "tag", mode: "include", values: ["x"] },
+    ]);
+  });
+
   it.each([
     ["not json", "{"],
     [

@@ -92,9 +92,16 @@ export function loadPrefs(path: string): Prefs {
       ["genre", filters.genres],
     ] as const
   )
-    .filter(([, values]) => values.length > 0)
+    // The caps `legacy_clause` applies in shared/src/view_filters.rs, so no clause the API refuses loads.
+    .map(([field, values]) => ({
+      field,
+      values: values
+        .filter((v) => v.trim() !== "" && [...v].length <= 512)
+        .slice(0, 64),
+    }))
+    .filter(({ values }) => values.length > 0)
     .map(
-      ([field, values]): FilterClause => ({ field, mode: "include", values }),
+      ({ field, values }): FilterClause => ({ field, mode: "include", values }),
     );
   return {
     view: stored.view_mode,
