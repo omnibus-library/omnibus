@@ -824,7 +824,8 @@ export const ManualShelfSortLocked: Story = {
 
     await userEvent.click(canvas.getByRole("button", { name: "Table" }));
 
-    await expect(canvas.getByText("shelf order")).toBeInTheDocument();
+    await canvas.findByRole("columnheader", { name: /^Title/ });
+    await expect(await canvas.findByText("shelf order")).toBeInTheDocument();
     for (const header of await canvas.findAllByRole("columnheader", {
       name: /^(Title|Author|Series|Last Updated|Added)/,
     })) {
@@ -839,9 +840,13 @@ export const ManualShelfSortLocked: Story = {
     await waitFor(() =>
       expect(canvas.queryByText("shelf order")).not.toBeInTheDocument(),
     );
-    await expect(
-      canvas.getByRole("columnheader", { name: /^Title/ }),
-    ).toHaveAttribute("aria-sort", "ascending");
+    await waitFor(
+      () =>
+        expect(
+          canvas.getByRole("columnheader", { name: /^Title/ }),
+        ).toHaveAttribute("aria-sort", "ascending"),
+      { timeout: 5000 },
+    );
   },
 };
 
