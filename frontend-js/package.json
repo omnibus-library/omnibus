@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "description": "Proof of concept: the Omnibus web client as a React SPA over the existing /api/* REST surface.",
   "type": "module",
-  "packageManager": "pnpm@11.1.2",
+  "packageManager": "pnpm@11.11.0",
   "scripts": {
     "dev": "vite",
     "build": "vite build --base=/react/",

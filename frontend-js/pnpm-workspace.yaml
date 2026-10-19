@@ -4,3 +4,6 @@ allowBuilds:
   esbuild: true
   # Only copies the worker script; `msw init .storybook/public` does that here.
   msw: false
+minimumReleaseAgeExclude:
+  # Renovate security update: pnpm@11.11.0
+  - pnpm@11.11.0
