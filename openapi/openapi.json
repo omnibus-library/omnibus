@@ -35,6 +35,622 @@
         ]
       }
     },
+    "/api/account/avatar": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Upload your avatar",
+        "description": "Replaces your profile picture. The server checks the bytes are a JPEG, PNG, GIF or WebP\nimage and stores the type it finds, not the one sent.",
+        "operationId": "post_avatar",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "description": "Describes the multipart form `POST /api/account/avatar` takes: one image part.",
+                "required": [
+                  "avatar"
+                ],
+                "properties": {
+                  "avatar": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "A JPEG, PNG, GIF or WebP image of at most 10 MiB, sent with an `image/*` content type.\nSVG is refused."
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The avatar is saved."
+          },
+          "400": {
+            "description": "The form has no `avatar` part, or the part isn't an `image/*` type, is SVG, or is larger than 10 MiB."
+          },
+          "415": {
+            "description": "The bytes aren't a JPEG, PNG, GIF or WebP image."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Remove your avatar",
+        "description": "Deletes your profile picture, so clients show your initials instead. Succeeds when you\nhave no avatar too.",
+        "operationId": "delete_avatar",
+        "responses": {
+          "204": {
+            "description": "You have no avatar now."
+          }
+        }
+      }
+    },
+    "/api/account/book-detail-scroll-stops": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Set book-detail scroll stops",
+        "description": "Chooses whether a book's detail page stops at each section as you scroll. Read back as\n`book_detail_scroll_stops` on `GET /api/auth/me`.",
+        "operationId": "post_book_detail_scroll_stops",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetBookDetailScrollStops"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The preference is saved."
+          }
+        }
+      }
+    },
+    "/api/account/hidden-formats": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Set your hidden formats",
+        "description": "Replaces the list of formats your library view leaves out. Clients pass the saved list,\nread back as `hidden_formats` on `GET /api/auth/me`, as the listing's `exclude_formats`.",
+        "operationId": "post_hidden_formats",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetHiddenFormats"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The list is saved."
+          },
+          "422": {
+            "description": "A format name isn't 1 to 16 letters or digits, or the list has more than 32; the body says which."
+          }
+        }
+      }
+    },
+    "/api/account/kindle-email": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Set your Kindle address",
+        "description": "Sets or clears the address `POST /api/kindle/send` emails books to. Read back as\n`kindle_email` on `GET /api/auth/me`.",
+        "operationId": "post_kindle_email",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetKindleEmail"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The address is saved."
+          },
+          "422": {
+            "description": "The address doesn't look like an email address, or is over 320 bytes."
+          }
+        }
+      }
+    },
+    "/api/account/profile": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Set your display name",
+        "description": "Sets or clears the name other readers see on your journal entries, ratings and shared\nstats. With no display name, your username shows instead.",
+        "operationId": "post_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetProfile"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The name is saved."
+          },
+          "422": {
+            "description": "The name is longer than 64 characters or has a control character."
+          }
+        }
+      }
+    },
+    "/api/account/share-stats": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Set stats sharing",
+        "description": "Chooses whether other readers on this server can see your reading stats. Read back as\n`share_stats` on `GET /api/auth/me`.",
+        "operationId": "post_share_stats",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetShareStats"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The preference is saved."
+          }
+        }
+      }
+    },
+    "/api/account/stack-series": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Set series stacking",
+        "description": "Chooses whether your library grid folds each series into one tile. Read back as\n`stack_series` on `GET /api/auth/me`.",
+        "operationId": "post_stack_series",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetStackSeries"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The preference is saved."
+          }
+        }
+      }
+    },
+    "/api/admin/devices/{id}": {
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Remove a user's device",
+        "description": "Deletes a device registration, whoever it belongs to, and signs out every session on\nit. Needs an admin account.",
+        "operationId": "admin_delete_device",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The device's id, from the devices listing.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The device and its sessions are gone."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No device has that id."
+          }
+        }
+      }
+    },
+    "/api/admin/health": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the server health report",
+        "description": "One snapshot of the library index, the background task queue, the search index, disk\nuse and the most recent errors. Poll it to keep a view current. Needs an admin account.",
+        "operationId": "get_admin_health",
+        "responses": {
+          "200": {
+            "description": "The health report.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminHealthReport"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/admin/sessions/{id}": {
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Revoke a user's session",
+        "description": "Signs one session out, whoever it belongs to. You can't revoke the session you sent\nthis request with; sign out instead. Needs an admin account.",
+        "operationId": "admin_delete_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session's id, from the sessions listing.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The session is revoked."
+          },
+          "400": {
+            "description": "That is the session this request came with."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No live session has that id."
+          }
+        }
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List users",
+        "description": "Every account on the server, up to 1000, with its permissions and whether it is locked\nout. Needs an admin account.",
+        "operationId": "admin_list_users",
+        "responses": {
+          "200": {
+            "description": "The users, oldest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminUserRow"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Create a user",
+        "description": "Makes an account with the permissions you give it, whether or not registration is open.\nNeeds an admin account.",
+        "operationId": "admin_create_user",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The new user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserRow"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "409": {
+            "description": "That username is taken, ignoring case."
+          },
+          "422": {
+            "description": "The username or password breaks a rule; the body says which."
+          }
+        }
+      }
+    },
+    "/api/admin/users/{id}": {
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Delete a user",
+        "description": "Deletes the account and everything that is only theirs: progress, highlights, journal\nentries, shelves and sessions. Books they added stay in the library. This can't be\nundone. Needs an admin account.",
+        "operationId": "admin_delete_user",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The user's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The user is deleted."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No user has that id."
+          },
+          "409": {
+            "description": "The user is the last admin."
+          }
+        }
+      }
+    },
+    "/api/admin/users/{id}/devices": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List a user's devices",
+        "description": "The apps the user has signed in from, each registered as a device. An unknown user id\nlists nothing. Needs an admin account.",
+        "operationId": "admin_list_user_devices",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The user's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The user's devices, most recently seen first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeviceView"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/admin/users/{id}/password": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Reset a user's password",
+        "description": "Sets a new password without asking for the old one, and signs the user out everywhere.\nNeeds an admin account.",
+        "operationId": "admin_set_user_password",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The user's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The password is changed and the user's sessions are revoked."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No user has that id."
+          },
+          "422": {
+            "description": "The password breaks a rule; the body says which."
+          }
+        }
+      }
+    },
+    "/api/admin/users/{id}/permissions": {
+      "patch": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Set a user's permissions",
+        "description": "Replaces all four permission flags. Needs an admin account.",
+        "operationId": "admin_set_user_permissions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The user's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPermissions"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The permissions are saved."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No user has that id."
+          },
+          "409": {
+            "description": "The user is the last admin, and the change would take admin away."
+          }
+        }
+      }
+    },
+    "/api/admin/users/{id}/sessions": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List a user's sessions",
+        "description": "The user's live sign-ins, on browsers and apps. `is_current` is always `false` here,\neven for your own session. An unknown user id lists nothing. Needs an admin account.",
+        "operationId": "admin_list_user_sessions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The user's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The user's live sessions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SessionView"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/admin/users/{id}/unlock": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Unlock a user",
+        "description": "Ends a lockout from too many wrong passwords, so the user can sign in again now.\nSucceeds when the user isn't locked too. Needs an admin account.",
+        "operationId": "admin_unlock_user",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The user's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The user isn't locked out."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No user has that id."
+          }
+        }
+      }
+    },
     "/api/auth/api-tokens": {
       "get": {
         "tags": [
@@ -408,6 +1024,551 @@
         }
       }
     },
+    "/api/authors": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "List authors",
+        "description": "Every author with a book in the library, surname first, each with a book count, an\naccent color and whether a photo is cached. Stops at 10,000 authors.",
+        "operationId": "get_authors",
+        "responses": {
+          "200": {
+            "description": "The authors.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuthorSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/authors/reading": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "List your progress through each author",
+        "description": "For each author whose books you have opened or marked: how many you have finished, how\nmany you are reading, and when you last read one. Authors you haven't started are left\nout.",
+        "operationId": "get_author_reading",
+        "responses": {
+          "200": {
+            "description": "Your progress, one row per author.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuthorReading"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/authors/refetch-photos": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Refetch every author's photo",
+        "description": "Drops every photo found at Open Library and searches again for every author, in the\nbackground. Uploaded photos are kept. Answers at once, before the work starts. Needs\nan admin account.",
+        "operationId": "post_refetch_author_photos",
+        "responses": {
+          "202": {
+            "description": "The refetch is queued."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/authors/{id}": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "Get an author",
+        "description": "One author and all their books. `reading` holds your own status and position on each\nof those books you have opened or marked. Opening an author with no photo yet starts a\nsearch for one in the background.",
+        "operationId": "get_author_by_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The author's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The author.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No author has that id."
+          }
+        }
+      }
+    },
+    "/api/authors/{id}/photo": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "Get an author's photo",
+        "description": "The author's profile photo. When none is cached, the server looks for one at Open\nLibrary in the background, so a later request may find it. Once Open Library has had\nnone, the author stays without a photo until an admin deletes the photo record or\nscans again.",
+        "operationId": "get_author_photo",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The author's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The photo.",
+            "content": {
+              "image/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The author has no photo, or no author has that id."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session_cookie": []
+          },
+          {
+            "media_token": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "Upload an author's photo",
+        "description": "Sets the author's photo from an uploaded image. An uploaded photo wins over one found\nat Open Library, and a scan doesn't replace it. Needs an admin account.",
+        "operationId": "put_author_photo",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The author's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "description": "Describes the multipart form `PUT /api/authors/{id}/photo` takes.",
+                "required": [
+                  "photo"
+                ],
+                "properties": {
+                  "photo": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The photo: a JPEG, PNG, GIF or WebP image of 10 MiB or less, sent with an\n`image/*` content type. SVG is refused."
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The photo is saved."
+          },
+          "400": {
+            "description": "The form has no `photo` part, or the part's content type isn't `image/*`, is SVG, or the image is larger than 10 MiB."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No author has that id."
+          },
+          "415": {
+            "description": "The bytes aren't a JPEG, PNG, GIF or WebP image."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "Delete an author's photo",
+        "description": "Drops the author's photo, uploaded or found, and any record that Open Library had\nnone. The next request for the photo starts a fresh search. Succeeds when there is no\nphoto, and for an unknown id. Needs an admin account.",
+        "operationId": "delete_author_photo",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The author's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The photo is gone."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/authors/{id}/photo/scan": {
+      "post": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "Search Open Library for an author's photo",
+        "description": "Drops a photo found earlier, or the record that Open Library had none, and asks Open\nLibrary again, answering once it has. `resolved` says whether a photo was found. An\nuploaded photo is kept as it is, and the answer is `resolved: true`. Needs an admin\naccount.",
+        "operationId": "post_author_photo_scan",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The author's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Whether the author has a photo now.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorPhotoScanResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No author has that id."
+          }
+        }
+      }
+    },
+    "/api/authors/{id}/photo/url": {
+      "put": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "Set an author's photo from a URL",
+        "description": "Downloads the image at `url` and saves it as the author's photo, the same as an\nupload: it wins over Open Library, and a scan doesn't replace it. The server fetches\nthe URL itself, refuses addresses inside its own network, and doesn't follow\nredirects. Needs an admin account.",
+        "operationId": "put_author_photo_url",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The author's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorPhotoUrlBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The photo is saved."
+          },
+          "400": {
+            "description": "`url` is empty, longer than 2048 bytes, not `http` or `https`, or points inside the server's network, or what it serves isn't a JPEG, PNG, GIF or WebP image of 10 MiB or less; the body says which."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No author has that id."
+          }
+        }
+      }
+    },
+    "/api/books/merge": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Merge two books",
+        "description": "Folds the source book into the target: the target takes the source's files, links,\nidentifiers and every reader's progress, highlights and other data, and the source\nbook disappears. `POST /api/books/merge/undo` with the returned `merge_log_id` reverses\nit. Needs an admin account.",
+        "operationId": "merge_books",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeBooksRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The books are merged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeBooksResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No book has the source or target uuid; the body says which."
+          },
+          "422": {
+            "description": "The source and target are the same book."
+          }
+        }
+      }
+    },
+    "/api/books/merge/candidates": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Find books to merge with",
+        "description": "Searches the ebook and audiobook libraries for a book to merge another into, and returns\nup to 20 matches. Needs an admin account.",
+        "operationId": "get_merge_candidates",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Free text, optionally with `author:`, `series:`, `tag:` and `genre:` terms. At most\n1024 bytes.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching books.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EbookMetadata"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`q` is missing or over 1024 bytes."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/books/merge/undo": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Undo a merge",
+        "description": "Splits a merged book back into the two it was made from, and returns the restored\nsource book's uuid. Needs an admin account.",
+        "operationId": "undo_merge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UndoMergeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The merge is undone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoMergeResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No merge has that `merge_log_id`."
+          },
+          "409": {
+            "description": "The merge is already undone, or something changed since that undo can't settle, such as a later merge into the same book; the body says what."
+          }
+        }
+      }
+    },
+    "/api/books/{uuid}/delete-files": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Delete a book's files or copies",
+        "description": "Deletes the listed files from disk and the listed physical copies from the collection.\nWhen nothing of the book is left, the book goes too, with every reader's data for it:\nthe `impact` that `GET /api/books/{uuid}/deletion-manifest` counts. This can't be undone.\nNeeds an admin account.",
+        "operationId": "post_delete_book_files",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteBookFilesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "What was deleted, and whether the book went with it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteBookFilesResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No book has that uuid."
+          },
+          "422": {
+            "description": "A file or copy id isn't one of this book's; the body says which."
+          }
+        }
+      }
+    },
+    "/api/books/{uuid}/deletion-manifest": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Preview deleting a book",
+        "description": "What `POST /api/books/{uuid}/delete-files` can delete for this book, its files and\nphysical copies, and how much reader data deleting all of them would take with the\nbook. Needs an admin account.",
+        "operationId": "get_deletion_manifest",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The book's files and copies, and the reader data at stake.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookDeletionManifest"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No book has that uuid."
+          }
+        }
+      }
+    },
     "/api/covers/{uuid}": {
       "get": {
         "tags": [
@@ -632,6 +1793,1869 @@
         }
       }
     },
+    "/api/ebooks/{uuid}/suggestions": {
+      "get": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Get a book's suggestions",
+        "description": "Books that Hardcover's curated lists pair with this one, for a \"readers also enjoyed\"\nstrip. `status` is `not_configured` when the server has no Hardcover key, `pending`\nwhile the server fetches them in the background (ask again shortly), or `ready` with\nthe items, which may be empty. Results are kept for 30 days, then refreshed.",
+        "operationId": "get_suggestions",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The suggestions, or why there are none yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestionsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ebooks/{uuid}/summary/fetch": {
+      "post": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Fetch a book's summary",
+        "description": "Asks one provider for a summary of the book and returns its text, or `null` when that\nprovider has none (try the next source from `GET /api/summary/sources`). An unknown\nuuid also answers `null`. Nothing is saved. A provider that can't be reached is a 500.\nNeeds the edit permission.",
+        "operationId": "post_ebook_summary_fetch",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FetchSummaryBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The summary text, or `null`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You lack the edit permission."
+          }
+        }
+      }
+    },
+    "/api/fts/rebuild": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Rebuild the search index",
+        "description": "Rebuilds the index book search reads from the library's current records, and answers\nwhen it is done. Use it when search results don't match the library. Needs an admin\naccount.",
+        "operationId": "rebuild_search_index",
+        "responses": {
+          "200": {
+            "description": "The index is rebuilt."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/genres": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "List genres",
+        "description": "Every genre assigned to a book, with the number of books carrying it, most-used\nfirst. Stops at the 500 most-used genres.",
+        "operationId": "get_genres",
+        "responses": {
+          "200": {
+            "description": "The genres.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GenreWeight"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/google-books-key": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the Google Books key's status",
+        "description": "Whether a Google Books API key is set, where it comes from, and a masked preview. The\nkey itself is never returned. Needs an admin account.",
+        "operationId": "get_google_books_key",
+        "responses": {
+          "200": {
+            "description": "The key's status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleBooksKeyStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Set the Google Books key",
+        "description": "Saves the server-wide Google Books API key, or clears it when `key` is `null`, absent\nor blank. With a key, ISBN lookups ask Google Books first; without one, Open Library.\nClearing the saved key falls back to the server's `GOOGLE_BOOKS_API_KEY` environment\nvariable, when that is set. Needs an admin account.",
+        "operationId": "post_google_books_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetGoogleBooksKey"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The key's new status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleBooksKeyStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "422": {
+            "description": "The key is longer than 512 bytes."
+          }
+        }
+      }
+    },
+    "/api/hardcover-key": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the Hardcover key's status",
+        "description": "Whether a Hardcover API key is set, where it comes from, and a masked preview. The key\nitself is never returned. Needs an admin account.",
+        "operationId": "get_hardcover_key",
+        "responses": {
+          "200": {
+            "description": "The key's status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardcoverKeyStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Set the Hardcover key",
+        "description": "Saves the server-wide Hardcover API token, or clears it when `key` is `null`, absent or\nblank. The key turns on book suggestions, makes Hardcover the first source for\nsummaries, and adds it as the last source for ISBN lookups. Clearing the saved key\nfalls back to the server's `HARDCOVER_API_KEY` environment variable, when that is set.\nNeeds an admin account.",
+        "operationId": "post_hardcover_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetHardcoverKey"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The key's new status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardcoverKeyStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "422": {
+            "description": "The key is longer than 2048 bytes."
+          }
+        }
+      }
+    },
+    "/api/kindle/send": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Send a book to your Kindle",
+        "description": "Queues an email of the book's EPUB, or its PDF when it has no EPUB, to your Kindle\naddress, and answers before it goes out. Poll `GET /api/kindle/send/status` with the\n`task_id` to learn whether it was sent. A file over 50 MB fails there, not here.",
+        "operationId": "send_to_kindle",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KindleSendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The send is queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KindleSendQueued"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No book has that uuid."
+          },
+          "409": {
+            "description": "The server has no email delivery set up."
+          },
+          "422": {
+            "description": "`book_uuid` is longer than 64 bytes, or you have no Kindle address set."
+          }
+        }
+      }
+    },
+    "/api/kindle/send/status": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Check on a Kindle send",
+        "description": "Whether a send from `POST /api/kindle/send` is still going, went out, or failed. Poll\nabout once a second: a finished send is forgotten 10 seconds after it ends.",
+        "operationId": "get_kindle_send_status",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "query",
+            "description": "The `task_id` from `POST /api/kindle/send`.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Where the send stands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KindleSendStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No send of yours has that `task_id`, or it ended more than 10 seconds ago."
+          }
+        }
+      }
+    },
+    "/api/metadata/editions/hydrate": {
+      "post": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Fetch an edition's full record",
+        "description": "Fetches one search candidate again from the provider that offered it, which returns\nmore than the search did. Answers `null` when the provider no longer knows the\ncandidate. Send the candidate's `isbn13` when it has one: it names the exact printing.\nNeeds the edit permission.",
+        "operationId": "post_edition_hydrate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditionHydrateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The full edition, or `null`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ProviderEdition"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`provider_ref` is blank or longer than 256 bytes, or `isbn13` is longer than 32 characters."
+          },
+          "403": {
+            "description": "You lack the edit permission."
+          },
+          "502": {
+            "description": "The provider couldn't be reached, or it rate-limited the server recently and is still cooling down."
+          }
+        }
+      }
+    },
+    "/api/metadata/editions/search": {
+      "post": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Search the providers for editions",
+        "description": "Asks the metadata providers, all of them or those in `providers`, for editions that\nmatch, and returns every candidate labelled with the provider it came from. Each\nprovider also gets a row in `sources`: a provider that fails or is skipped says so\nthere, and the search still succeeds. Send `title`, `author` and `isbn` when you have\nthem; `query` alone is searched as a title. Needs the edit permission.",
+        "operationId": "post_edition_search",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditionSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The candidates and each provider's status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditionSearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Every field is blank, a field is too long, or `providers` is an empty list; the body says which."
+          },
+          "403": {
+            "description": "You lack the edit permission."
+          }
+        }
+      }
+    },
+    "/api/metadata/providers": {
+      "get": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "List the metadata providers",
+        "description": "Every external metadata provider the server knows: its name, whether it needs an API\nkey, whether it can be asked right now, and what it can answer. No key material is\nreturned.",
+        "operationId": "list_metadata_providers",
+        "responses": {
+          "200": {
+            "description": "The providers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/physical/copies/{copy_id}": {
+      "delete": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "Remove a physical copy",
+        "description": "Deletes one physical copy, say after you sold it. The book stays, even when this was\nits last copy: `DELETE /api/physical/{uuid}` removes a book with no files. Only the\nreader who checked the copy in, or an admin, can remove it.",
+        "operationId": "delete_physical_copy",
+        "parameters": [
+          {
+            "name": "copy_id",
+            "in": "path",
+            "description": "The copy's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The copy is deleted."
+          },
+          "403": {
+            "description": "Someone else checked the copy in."
+          },
+          "404": {
+            "description": "No copy has that id."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "Change a copy's note",
+        "description": "Replaces the copy's free-text note. A `null` or blank note clears it. Only the reader\nwho checked the copy in, or an admin, can change it.",
+        "operationId": "patch_copy_note",
+        "parameters": [
+          {
+            "name": "copy_id",
+            "in": "path",
+            "description": "The copy's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCopyNoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The updated copy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhysicalCopy"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The note is longer than 4096 characters."
+          },
+          "403": {
+            "description": "Someone else checked the copy in."
+          },
+          "404": {
+            "description": "No copy has that id."
+          }
+        }
+      }
+    },
+    "/api/physical/{uuid}": {
+      "delete": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "Delete a book with no files",
+        "description": "Deletes a book that has no digital files, with everything tied to it, such as its\nphysical copies, wishlist entries and ratings, for every reader. Clients offer it when\nthe last physical copy goes. Needs the edit permission.",
+        "operationId": "delete_fileless_book",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The book is deleted."
+          },
+          "403": {
+            "description": "You lack the edit permission."
+          },
+          "404": {
+            "description": "No book has that uuid."
+          },
+          "409": {
+            "description": "The book still has digital files."
+          }
+        }
+      }
+    },
+    "/api/physical/{uuid}/copies": {
+      "get": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "List a book's physical copies",
+        "description": "Every physical copy of the book, whoever checked it in, oldest check-in first. An\nunknown uuid has no copies, so the list is empty.",
+        "operationId": "list_physical_copies",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The book's physical copies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PhysicalCopy"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/physical/{uuid}/wishlist": {
+      "get": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "Get your wishlist entry for a book",
+        "description": "Your physical wishlist entry for the book, or `null` when it isn't on your wishlist.",
+        "operationId": "get_wishlist_entry",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Your entry, or `null`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/WishlistEntry"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "Add a book to your wishlist",
+        "description": "Adds a book the library already has to your physical wishlist. Adding it again returns\nthe existing entry. To wishlist a book the library doesn't have, use\n`POST /api/scan/wishlist`.",
+        "operationId": "post_wishlist_entry",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Your wishlist entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WishlistEntry"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No book has that uuid."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "Remove a book from your wishlist",
+        "description": "Removing a book that isn't on your wishlist still succeeds. A book that exists only\nbecause someone wanted it (no file, no physical copy, no other reader's entry) is\ndeleted with its last entry, and `book_deleted` tells you so.",
+        "operationId": "delete_wishlist_entry",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry is gone; whether the book went with it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WishlistRemoval"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reindex": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Rescan the ebook library",
+        "description": "Scans the ebook library folder for added, changed and removed books, and answers when\nthe scan is done. Audiobooks aren't scanned; `POST /api/scan-library` covers both\nlibraries without waiting. Needs an admin account.",
+        "operationId": "post_reindex",
+        "responses": {
+          "200": {
+            "description": "The scan is done."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "409": {
+            "description": "No ebook library path is set."
+          }
+        }
+      }
+    },
+    "/api/scan-library": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Rescan both libraries",
+        "description": "Queues a scan of the ebook and audiobook library folders, whichever are set, and answers\nwithout waiting for them. Needs an admin account.",
+        "operationId": "post_scan_library",
+        "responses": {
+          "200": {
+            "description": "The scans are queued."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "409": {
+            "description": "Neither library path is set."
+          }
+        }
+      }
+    },
+    "/api/scan/check-in": {
+      "post": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "Check in a physical copy",
+        "description": "Records a physical copy of a book the library already has, filed under you, and takes\nthe book off every reader's wishlist. `isbn` is stored as an ISBN-13, or dropped when\nit isn't a valid ISBN. The answer carries the book's current uuid, which differs from\n`book_uuid` when that book has been merged into another.",
+        "operationId": "check_in_copy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckInRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The copy is checked in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRef"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`book_uuid` is empty or longer than 64 bytes, `isbn` is longer than 32 characters, or `note` is longer than 4096 characters."
+          },
+          "404": {
+            "description": "No book has that uuid."
+          }
+        }
+      }
+    },
+    "/api/scan/google-books-configured": {
+      "get": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "Check whether a Google Books key is set",
+        "description": "`true` when the server has a Google Books API key, saved in settings or set in its\nenvironment. Without one, Google Books lookups share an anonymous quota that runs out\nquickly, so a client can warn that ISBN lookups may fail.",
+        "operationId": "get_google_books_configured",
+        "responses": {
+          "200": {
+            "description": "Whether a key is set.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scan/physical-only": {
+      "post": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "Add a book you have only on paper",
+        "description": "Creates a book with no files from provider metadata, such as the `online` of a\n`not_in_library` outcome, and checks in its first copy under you. The cover at\n`cover_url` is downloaded now, from the known provider hosts only; when that fails,\nthe book has no cover.",
+        "operationId": "add_physical_only_book",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddPhysicalOnlyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The new book.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRef"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A field of `meta` is too long, or `note` is longer than 4096 characters; the body says which."
+          }
+        }
+      }
+    },
+    "/api/scan/resolve": {
+      "post": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "Resolve an ISBN",
+        "description": "Looks a scanned or typed ISBN up in the library, then at the metadata providers, and\nsays what to offer next: `already_owned`, `on_wishlist` (yours), `in_library_unowned`,\n`close_match` (a library book with the same title and author, to confirm before\nwriting anything), `not_in_library` or `unresolved`. Takes an ISBN-10 or ISBN-13, with\nor without hyphens.",
+        "operationId": "resolve_isbn",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "What the ISBN matched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanOutcome"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The ISBN is empty, longer than 32 characters, or not a valid ISBN."
+          },
+          "503": {
+            "description": "No metadata provider could be reached."
+          }
+        }
+      }
+    },
+    "/api/scan/resolve-meta": {
+      "post": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "Resolve a title-search result",
+        "description": "Matches a result from `POST /api/scan/search` against the library, as\n`POST /api/scan/resolve` does for an ISBN, without asking the providers again. The\noutcome is never `unresolved`.",
+        "operationId": "resolve_search_result",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveMetaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "What the result matched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanOutcome"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A field of `meta` is too long; the body says which."
+          }
+        }
+      }
+    },
+    "/api/scan/search": {
+      "post": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "Search the providers by title",
+        "description": "Searches the metadata providers by free text, for when an ISBN resolves to\n`unresolved`. Pass the result the reader picks to `POST /api/scan/resolve-meta`. An\nempty list means the providers answered and none matched.",
+        "operationId": "search_providers_by_title",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The candidates the providers returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanSearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The query is blank or longer than 200 characters."
+          },
+          "503": {
+            "description": "No metadata provider could be reached."
+          }
+        }
+      }
+    },
+    "/api/scan/wishlist": {
+      "post": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "Add a scanned book to your wishlist",
+        "description": "Adds a book to your physical wishlist: a library book by `book_uuid`, or one the\nlibrary doesn't have from `meta`, which creates a book with no files to hold the\nentry. When both are sent, `book_uuid` wins. A book already on your wishlist stays as\nit was.",
+        "operationId": "add_scanned_book_to_wishlist",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WishlistAddRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The book is on your wishlist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRef"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Neither `book_uuid` nor `meta` was sent, `book_uuid` is blank or longer than 64 bytes, or a field of `meta` is too long."
+          },
+          "404": {
+            "description": "No book has that `book_uuid`."
+          }
+        }
+      }
+    },
+    "/api/series": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "List series",
+        "description": "Every series with a book in the library, by name, each with a book count, the first\nbook's first author and an accent color. Stops at 10,000 series.",
+        "operationId": "list_series",
+        "responses": {
+          "200": {
+            "description": "The series.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SeriesSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/series/{id}": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "Get a series",
+        "description": "One series and its books, in series order.",
+        "operationId": "get_series_by_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The series' id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The series.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeriesDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No series has that id."
+          }
+        }
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the library settings",
+        "description": "Where the ebook and audiobook libraries live, and how often the server rescans them.\nNeeds an admin account.",
+        "operationId": "get_settings",
+        "responses": {
+          "200": {
+            "description": "The library settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Save the library settings",
+        "description": "Replaces the library settings and, when an ebook library is set, starts a rescan of it\nin the background. Needs an admin account.",
+        "operationId": "post_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Settings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The settings are saved; the body is what is now set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "422": {
+            "description": "A library path is over 4096 bytes, or `scan_interval_hours` is below 1."
+          }
+        }
+      }
+    },
+    "/api/settings/mcp": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Check whether the MCP endpoint is on",
+        "description": "Whether the server answers MCP clients at `/mcp`. Needs an admin account.",
+        "operationId": "get_mcp",
+        "responses": {
+          "200": {
+            "description": "Whether `/mcp` is on.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Turn the MCP endpoint on or off",
+        "description": "Chooses whether the server answers MCP clients at `/mcp`. The change applies to the\nnext `/mcp` request, with no restart. Needs an admin account.",
+        "operationId": "post_mcp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpStatus"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The setting is saved."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/settings/registration": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Open or close registration",
+        "description": "Chooses whether `POST /api/auth/register` accepts new accounts. Anyone can read the\nsetting, signed in or not, with `GET /api/auth/registration`. Needs an admin account.",
+        "operationId": "post_registration",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationStatus"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The setting is saved."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/shelves": {
+      "get": {
+        "tags": [
+          "Shelves"
+        ],
+        "summary": "List shelves",
+        "description": "Every shelf you can see: your own, every public shelf, and every shelf at all when you\nare an admin. Each comes with its book count and up to four member uuids for a cover\nmosaic.",
+        "operationId": "list_shelves",
+        "responses": {
+          "200": {
+            "description": "The shelves you can see.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ShelfSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Shelves"
+        ],
+        "summary": "Create a shelf",
+        "description": "Creates a shelf you own. A smart shelf needs `match_mode` and at least one rule, and\ntakes no `book_uuids`. A hand-picked shelf takes no rules, and can start with\n`book_uuids`. A `wishlist` shelf can't be created: every reader has one already.",
+        "operationId": "create_shelf",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShelfRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The new shelf.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shelf"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "A uuid in `book_uuids` matches no book."
+          },
+          "409": {
+            "description": "You already have a shelf with that name."
+          },
+          "422": {
+            "description": "The name, description, rules or `book_uuids` are invalid; the body says which."
+          }
+        }
+      }
+    },
+    "/api/shelves/containing/{uuid}": {
+      "get": {
+        "tags": [
+          "Shelves"
+        ],
+        "summary": "List the hand-picked shelves holding a book",
+        "description": "The ids of the hand-picked shelves you can see that hold the book, for a \"which shelves\nis this on\" checklist. An unknown uuid is on no shelf, so the list is empty.",
+        "operationId": "shelves_containing",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ids of the shelves holding the book.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shelves/containing/{uuid}/smart": {
+      "get": {
+        "tags": [
+          "Shelves"
+        ],
+        "summary": "List the smart shelves matching a book",
+        "description": "The ids of the smart shelves you can see whose rules match the book right now. Kept\napart from `GET /api/shelves/containing/{uuid}` because a smart shelf's membership\ncan't be toggled. An unknown uuid matches nothing, so the list is empty.",
+        "operationId": "smart_shelves_containing",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ids of the smart shelves matching the book.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shelves/preview": {
+      "post": {
+        "tags": [
+          "Shelves"
+        ],
+        "summary": "Preview a smart shelf's rules",
+        "description": "Counts how many books a set of rules would match, out of how many in the library, with\na sample of up to 12 of them. Nothing is saved. Rules on your own data, such as rating\nand read status, are matched against yours.",
+        "operationId": "preview_shelf_rule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RulePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The match count, the library total and a sample.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RulePreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "More than 50 rules, an operator the field doesn't take, an empty value, or a value that can't be evaluated; the body says which."
+          }
+        }
+      }
+    },
+    "/api/shelves/{id}": {
+      "get": {
+        "tags": [
+          "Shelves"
+        ],
+        "summary": "Get a shelf",
+        "description": "One shelf's details, with its rules when it is a smart shelf.",
+        "operationId": "get_shelf",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The shelf's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The shelf.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shelf"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No shelf has that id, or it is another reader's private shelf."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Shelves"
+        ],
+        "summary": "Delete a shelf",
+        "description": "Deletes the shelf, its rules and its list of books; the books stay in the library.\nOnly the shelf's owner or an admin can delete it, and the Wishlist shelf can't be\ndeleted.",
+        "operationId": "delete_shelf",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The shelf's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The shelf is deleted."
+          },
+          "403": {
+            "description": "The shelf is someone else's, or it is the Wishlist shelf."
+          },
+          "404": {
+            "description": "No shelf has that id, or it is another reader's private shelf."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Shelves"
+        ],
+        "summary": "Update a shelf",
+        "description": "Changes the fields you send and leaves the rest. `rules` replaces the whole rule set.\nOnly the shelf's owner or an admin can change it, and the Wishlist shelf can't be\nchanged at all.",
+        "operationId": "update_shelf",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The shelf's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateShelfRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The updated shelf.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shelf"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The shelf is someone else's, or it is the Wishlist shelf."
+          },
+          "404": {
+            "description": "No shelf has that id, or it is another reader's private shelf."
+          },
+          "409": {
+            "description": "You already have a shelf with that name."
+          },
+          "422": {
+            "description": "A field is invalid, or the change would give a hand-picked shelf rules or leave a smart shelf with none; the body says which."
+          }
+        }
+      }
+    },
+    "/api/shelves/{id}/books": {
+      "post": {
+        "tags": [
+          "Shelves"
+        ],
+        "summary": "Add books to a shelf",
+        "description": "Appends books to a hand-picked shelf. A book already on it stays where it is. Every\nuuid must match a book, or nothing is added. Only the shelf's owner or an admin can\nadd books, and the Wishlist shelf can't be edited this way.",
+        "operationId": "add_shelf_books",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The shelf's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddBooksRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The books are on the shelf."
+          },
+          "403": {
+            "description": "The shelf is someone else's, or it is the Wishlist shelf."
+          },
+          "404": {
+            "description": "No shelf has that id, it is another reader's private shelf, or a uuid matches no book."
+          },
+          "422": {
+            "description": "More than 2000 uuids, or a uuid longer than 64 bytes."
+          }
+        }
+      }
+    },
+    "/api/shelves/{id}/books/{uuid}": {
+      "delete": {
+        "tags": [
+          "Shelves"
+        ],
+        "summary": "Remove a book from a shelf",
+        "description": "Takes the book off a hand-picked shelf. Removing a book that isn't on the shelf, or an\nunknown uuid, still succeeds. Only the shelf's owner or an admin can remove books, and\nthe Wishlist shelf can't be edited this way.",
+        "operationId": "remove_shelf_book",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The shelf's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The book is off the shelf."
+          },
+          "403": {
+            "description": "The shelf is someone else's, or it is the Wishlist shelf."
+          },
+          "404": {
+            "description": "No shelf has that id, or it is another reader's private shelf."
+          }
+        }
+      }
+    },
+    "/api/shelves/{id}/page": {
+      "get": {
+        "tags": [
+          "Shelves"
+        ],
+        "summary": "List a shelf's books",
+        "description": "The books on a shelf, narrowed by `filter`. A smart shelf lists them in the order\n`sort` and `dir` ask for; a hand-picked shelf lists them in the order they were added.\nThere is no paging: the list stops at 50,000 books.",
+        "operationId": "get_shelf_page",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The shelf's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "The order to list a smart shelf's books in. Defaults to `recently_interacted`, as\ndoes a value the server doesn't know. A hand-picked shelf keeps its own order.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SortKey"
+            }
+          },
+          {
+            "name": "dir",
+            "in": "query",
+            "description": "`asc` or `desc`. Any other value, or none, means `desc`. A hand-picked shelf\nignores it.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SortDir"
+            }
+          },
+          {
+            "name": "filter",
+            "in": "query",
+            "description": "Filter clauses as a percent-encoded JSON array, in the same form as `filter` on\n`GET /api/ebooks`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The shelf's books.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShelfPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`filter` is malformed."
+          },
+          "404": {
+            "description": "No shelf has that id, or it is another reader's private shelf."
+          },
+          "422": {
+            "description": "A rule on the smart shelf holds a value that can't be evaluated, such as a year that isn't a number."
+          }
+        }
+      }
+    },
+    "/api/smtp": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the email settings",
+        "description": "The outgoing mail server Send to Kindle uses, with the password left out. Needs an\nadmin account.",
+        "operationId": "get_smtp_config",
+        "responses": {
+          "200": {
+            "description": "The email settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmtpConfigStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Save the email settings",
+        "description": "Sets the outgoing mail server Send to Kindle uses. Needs an admin account.",
+        "operationId": "set_smtp_config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmtpConfigUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The settings are saved; the body is what is now set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmtpConfigStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "422": {
+            "description": "`host` is empty or over 255 bytes, `port` is 0, `username` is over 255 bytes, `password` is over 1024 bytes, or `from_email` isn't an email address; the body says which."
+          }
+        }
+      }
+    },
+    "/api/smtp/clear": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Clear the email settings",
+        "description": "Removes the saved outgoing mail server. Needs an admin account.",
+        "operationId": "clear_smtp_config",
+        "responses": {
+          "200": {
+            "description": "The settings are cleared; the body is what is now set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmtpConfigStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/smtp/test": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Send a test email",
+        "description": "Emails a short message, with no book attached, to your own Kindle address through the\nsaved mail server, and waits for the server to accept it. Needs an admin account.",
+        "operationId": "test_smtp_config",
+        "responses": {
+          "200": {
+            "description": "The mail server accepted the test email."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "409": {
+            "description": "The server has no email delivery set up."
+          },
+          "422": {
+            "description": "You have no Kindle address set."
+          },
+          "502": {
+            "description": "The mail server refused the email or didn't answer within 90 seconds."
+          }
+        }
+      }
+    },
+    "/api/suggestions/{uuid}/{rank}/cover": {
+      "get": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Get a suggestion's cover",
+        "description": "The cover of one suggested book. A suggestion's `cover_url` points here when it has a\ncover.",
+        "operationId": "get_suggestion_cover",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The uuid of the book the suggestion is for.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rank",
+            "in": "path",
+            "description": "The suggestion's rank, from its `cover_url`.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The cover image.",
+            "content": {
+              "image/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No cover is stored for that book and rank."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session_cookie": []
+          },
+          {
+            "media_token": []
+          }
+        ]
+      }
+    },
+    "/api/summary/sources": {
+      "get": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "List the summary sources",
+        "description": "The providers to ask for a summary, in the order to ask them: Hardcover when the server\nhas a Hardcover key, then Google Books, then Open Library only when the server has\nneither a Hardcover nor a Google Books key.",
+        "operationId": "get_summary_sources",
+        "responses": {
+          "200": {
+            "description": "The sources, first to ask first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SummarySource"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tags": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "List tags",
+        "description": "Every tag on a book, with the number of books carrying it, most-used first. Stops at\nthe 500 most-used tags.",
+        "operationId": "get_tags",
+        "responses": {
+          "200": {
+            "description": "The tags.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TagWeight"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/thumbs/{uuid}/{size}": {
       "get": {
         "tags": [
@@ -696,10 +3720,200 @@
           }
         ]
       }
+    },
+    "/api/users/{user_id}/avatar": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Get a user's avatar",
+        "description": "Any user's profile picture, for drawing beside their name. By default a WebP thumbnail\nat most 160 pixels on its longest edge; `size=full` gets the image as uploaded. The URL\nstays the same when the user replaces their avatar, so revalidate with `If-None-Match`.",
+        "operationId": "get_user_avatar",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "The user's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "description": "`full` for the image as uploaded. Anything else, or leaving it out, gets a WebP\nthumbnail at most 160 pixels on its longest edge.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The avatar image.",
+            "content": {
+              "image/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The avatar is unchanged since the `ETag` sent in `If-None-Match`."
+          },
+          "404": {
+            "description": "No user has that id, or the user has no avatar."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session_cookie": []
+          },
+          {
+            "media_token": []
+          }
+        ]
+      }
     }
   },
   "components": {
     "schemas": {
+      "AddBooksRequest": {
+        "type": "object",
+        "description": "Body of `POST /api/shelves/{id}/books`.",
+        "required": [
+          "book_uuids"
+        ],
+        "properties": {
+          "book_uuids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The uuids of the books to add, up to 2000."
+          }
+        }
+      },
+      "AddPhysicalOnlyRequest": {
+        "type": "object",
+        "description": "Add a physical-only book (not in the library) from resolved external meta —\ncreates a fileless book plus its first physical copy.",
+        "required": [
+          "meta"
+        ],
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/ExternalBookMeta"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AdminHealthReport": {
+        "type": "object",
+        "description": "Full report backing `/admin/health`'s five sections, returned in one\nrequest by `GET /api/admin/health` (REST) / `rpc_get_admin_health`\n(web). The web page re-fetches this on a 5-second live-update poll\nin addition to its initial page-load fetch.",
+        "required": [
+          "index",
+          "worker_queue",
+          "fts",
+          "storage",
+          "last_errors"
+        ],
+        "properties": {
+          "fts": {
+            "$ref": "#/components/schemas/FtsHealth"
+          },
+          "index": {
+            "$ref": "#/components/schemas/IndexStatus"
+          },
+          "last_errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapturedError"
+            }
+          },
+          "storage": {
+            "$ref": "#/components/schemas/StorageStats"
+          },
+          "worker_queue": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkerQueueEntry"
+            }
+          }
+        }
+      },
+      "AdminUserRow": {
+        "type": "object",
+        "description": "Admin Users-table projection of a `users` row. Extends\n[`UserSummary`] with the created timestamp and locked state the admin\ntable renders, without bloating the login-path summary. No password\nfields ever cross the wire.",
+        "required": [
+          "id",
+          "username",
+          "is_admin",
+          "can_upload",
+          "can_edit",
+          "can_download",
+          "created_at",
+          "locked"
+        ],
+        "properties": {
+          "can_download": {
+            "type": "boolean"
+          },
+          "can_edit": {
+            "type": "boolean"
+          },
+          "can_upload": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Account creation time (Unix seconds)."
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Presentation name, or `None` when the user hasn't set one."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "is_admin": {
+            "type": "boolean"
+          },
+          "kindle_email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "`true` when the account is currently locked out by repeated failed\nlogins (`locked_until` is in the future)."
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
       "ApiTokenView": {
         "type": "object",
         "description": "One live API token in the management listing (`GET /api/auth/api-tokens`).\nNever carries the secret — that appears exactly once, in\n[`CreateApiTokenResponse::secret`].",
@@ -734,6 +3948,216 @@
               "null"
             ],
             "description": "Last 4 characters of the raw token, for the `omni_…xxxx` display\nidentifier. `None` on tokens minted before the suffix was recorded."
+          }
+        }
+      },
+      "AuthorDetail": {
+        "type": "object",
+        "description": "Author detail payload for `GET /api/authors/:id` and `rpc_get_author`.\nContains the author row plus every book by that author.",
+        "required": [
+          "id",
+          "name",
+          "book_count",
+          "books"
+        ],
+        "properties": {
+          "book_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "books": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EbookMetadata"
+            }
+          },
+          "has_photo": {
+            "type": "boolean",
+            "description": "`true` when a usable profile photo is cached for this author\n(a `manual` or `openlibrary` row in `author_photos`). The frontend\nhero swaps the letter avatar for `<img src=\"/api/authors/:id/photo\">`\nwhen set. `'letter'` negative-cache rows do not set this flag."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reading": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookReading"
+            },
+            "description": "The caller's state on each of `books` they have opened or marked;\na book absent here is unread with no position."
+          },
+          "sort": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AuthorPhotoScanResult": {
+        "type": "object",
+        "description": "Result of an admin-triggered \"Scan for picture\" run. The endpoint\nclears any cached row and runs the Open Library cascade inline; a\n`false` here means Open Library had nothing to offer for this author\nand a sticky `letter` marker has been written to skip future\nautoresolution.",
+        "required": [
+          "resolved"
+        ],
+        "properties": {
+          "resolved": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AuthorPhotoUrlBody": {
+        "type": "object",
+        "description": "Body of `PUT /api/authors/{id}/photo/url`.",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "An `http` or `https` URL of a JPEG, PNG, GIF or WebP image, up to 2048 bytes."
+          }
+        }
+      },
+      "AuthorReading": {
+        "type": "object",
+        "description": "One reader's progress through one author's books, for the `/authors`\nlist. Per-reader, so it rides its own request beside [`AuthorSummary`],\nwhich every reader shares. An author the reader never opened is absent.",
+        "required": [
+          "author_id",
+          "finished",
+          "reading"
+        ],
+        "properties": {
+          "author_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "finished": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "last_read_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The newest [`BookReading::last_read_at`] across the author's books."
+          },
+          "reading": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "AuthorSummary": {
+        "type": "object",
+        "description": "Lightweight author row for the `/authors` index. Carries only what the\ncard needs — no joined book list. The detail page (`AuthorDetail`) is\nfetched on click.",
+        "required": [
+          "id",
+          "name",
+          "book_count"
+        ],
+        "properties": {
+          "accent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Cover-derived accent color borrowed from the author's first book\nwith a non-null `accent_color`. `None` when no owned book has one\n— the UI falls back to the theme accent."
+          },
+          "book_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "has_photo": {
+            "type": "boolean",
+            "description": "`true` when a usable profile photo is cached for this author (a\n`manual` or `openlibrary` row in `author_photos`). Same semantics\nas `AuthorDetail::has_photo` — `'letter'` negative-cache rows do\nnot set this flag. Lets the `/authors` index render a real `<img>`\nin one round trip instead of fetching the detail payload per card."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sort": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BookDeletionImpact": {
+        "type": "object",
+        "description": "What a total delete would take with the book — the numbers the confirm\ndialog names before an admin commits.",
+        "required": [
+          "highlights",
+          "journal_entries",
+          "bookmarks",
+          "reading_sessions",
+          "listening_sessions",
+          "ratings",
+          "shelves"
+        ],
+        "properties": {
+          "bookmarks": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "highlights": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "journal_entries": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "listening_sessions": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ratings": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reading_sessions": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "shelves": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "BookDeletionManifest": {
+        "type": "object",
+        "description": "Everything the delete dialog needs for one book: the deletable items and\nthe user data a total delete would take with them.",
+        "required": [
+          "files",
+          "copies",
+          "impact"
+        ],
+        "properties": {
+          "copies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PhysicalCopy"
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookFileInfo"
+            }
+          },
+          "impact": {
+            "$ref": "#/components/schemas/BookDeletionImpact"
           }
         }
       },
@@ -796,6 +4220,169 @@
           }
         }
       },
+      "BookReading": {
+        "type": "object",
+        "description": "One reader's state on one book: its status, how far in, and when.\n`status` is the stored one; a book with a position but no stored status\nreads as `Reading`, as it does on the Continue rail.",
+        "required": [
+          "book_uuid",
+          "status"
+        ],
+        "properties": {
+          "book_file_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "book_uuid": {
+            "type": "string"
+          },
+          "format": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ProgressFormat",
+                "description": "The latest position's format and audio file, so a Resume opens the\nreader or player (and file) it was left in. `None` without a position."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_read_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix seconds of the latest position (client time), else of the status\nchange; `None` for a book marked `Unread`."
+          },
+          "percent": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Whole-book percent of the latest position, floored; `None` without one."
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReadStatus"
+          }
+        }
+      },
+      "BookRef": {
+        "type": "object",
+        "description": "The uuid of the book a check-in / add / wishlist write landed on.",
+        "required": [
+          "book_uuid"
+        ],
+        "properties": {
+          "book_uuid": {
+            "type": "string"
+          }
+        }
+      },
+      "BookSuggestion": {
+        "type": "object",
+        "description": "One suggested read-alike from Hardcover. External to the library — clicking\nopens `hardcover_url` in a new tab.",
+        "required": [
+          "hardcover_id",
+          "hardcover_url",
+          "title",
+          "author",
+          "list_count"
+        ],
+        "properties": {
+          "author": {
+            "type": "string"
+          },
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Relative URL to the cached cover (`/api/suggestions/:uuid/:rank/cover`),\nor `None` when no cover was cached (the UI falls back to a typographic\nplate). Clients combine it with their configured server base."
+          },
+          "hardcover_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "hardcover_url": {
+            "type": "string",
+            "description": "Outbound Hardcover book page."
+          },
+          "list_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Co-listing count — how many curated Hardcover lists co-shelve this book\nwith the source book. The relevance signal shown as \"on N lists\"."
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "CapturedError": {
+        "type": "object",
+        "description": "One captured ERROR-level tracing event.",
+        "required": [
+          "timestamp",
+          "target",
+          "message"
+        ],
+        "properties": {
+          "book_uuid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The book uuid the event named, if any (a `book_uuid` or `uuid`\nfield), letting the UI link straight to `/books/{uuid}`."
+          },
+          "file": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The file path the event named, if any (a `file`, `path`, or\n`file_path` field)."
+          },
+          "message": {
+            "type": "string",
+            "description": "The event's `message` field, or empty when it carried none."
+          },
+          "target": {
+            "type": "string",
+            "description": "Event target — the emitting module path."
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix-seconds timestamp when the event was captured."
+          }
+        }
+      },
+      "CheckInRequest": {
+        "type": "object",
+        "description": "Check in a physical copy of a book already in the library.",
+        "required": [
+          "book_uuid"
+        ],
+        "properties": {
+          "book_uuid": {
+            "type": "string"
+          },
+          "isbn": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "Contributor": {
         "type": "object",
         "description": "A contributor (or creator) with the optional OPF refinements: the MARC role\ncode (`aut`, `ill`, `edt`, `bkp`, `trl`, …) and the sort-key name.\n\n`id` is the `authors.id` primary key, set when loaded from a m2m join and\n`None` for contributors created by the EPUB parser before indexing.",
@@ -852,6 +4439,159 @@
           },
           "token": {
             "$ref": "#/components/schemas/ApiTokenView"
+          }
+        }
+      },
+      "CreateShelfRequest": {
+        "type": "object",
+        "description": "Create payload. For smart: `match_mode` + `rules` set, `book_uuids` empty.\nFor manual: `match_mode`/`rules` empty, `book_uuids` optional.",
+        "required": [
+          "kind",
+          "name"
+        ],
+        "properties": {
+          "book_uuids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ShelfKind"
+          },
+          "match_mode": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MatchMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShelfRule"
+            }
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          }
+        }
+      },
+      "CreateUserRequest": {
+        "type": "object",
+        "description": "Request body for `POST /api/admin/users` (admin create). See\n[`LoginRequest`] for why `Debug` is deliberately not derived.",
+        "required": [
+          "username",
+          "password",
+          "permissions"
+        ],
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/UserPermissions"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteBookFilesRequest": {
+        "type": "object",
+        "description": "Request body for `POST /api/books/{uuid}/delete-files`: the `book_files`\nids and physical-copy ids to remove. Either list may be empty; both empty\non a book with no items at all deletes the record.",
+        "properties": {
+          "copy_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "file_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        }
+      },
+      "DeleteBookFilesResult": {
+        "type": "object",
+        "description": "What a delete actually removed.",
+        "required": [
+          "deleted_file_ids",
+          "deleted_copy_ids",
+          "book_deleted"
+        ],
+        "properties": {
+          "book_deleted": {
+            "type": "boolean",
+            "description": "True when the book row itself was removed, so the caller must navigate\naway instead of refetching a page that no longer exists."
+          },
+          "deleted_copy_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "deleted_file_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        }
+      },
+      "DeviceView": {
+        "type": "object",
+        "description": "A registered device row as shown to its owner or an admin. Shared by the\nadmin `GET /api/admin/users/{id}/devices` listing (self-service devices\nare deferred — see `/api/auth/devices` note in the PR body).",
+        "required": [
+          "id",
+          "name",
+          "client_kind",
+          "created_at",
+          "last_seen_at"
+        ],
+        "properties": {
+          "client_kind": {
+            "type": "string"
+          },
+          "client_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_seen_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
           }
         }
       },
@@ -1115,10 +4855,274 @@
         ],
         "description": "One response of `GET /api/ebooks`: a page of books, plus the series it folded into\nstacks when the request set `stack_series`."
       },
+      "EditionHydrateRequest": {
+        "type": "object",
+        "description": "Body for `POST /api/metadata/editions/hydrate`, the second call the picker\nmakes once a candidate is selected, naming one edition rather than a query.\n\n`provider_ref` is echoed back exactly as the search handed it over; Omnibus\nnever parses it, so it is capped rather than validated for shape.",
+        "required": [
+          "source",
+          "provider_ref"
+        ],
+        "properties": {
+          "isbn13": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The candidate's ISBN-13, when it has one.\n\nOptional because a candidate may have none; `provider_ref` is the re-fetch\nhandle. When present it is still preferred, since it names a *printing*\nwhere a bare handle may name a work."
+          },
+          "provider_ref": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/MetadataProvider"
+          }
+        }
+      },
+      "EditionSearchRequest": {
+        "type": "object",
+        "description": "Body for `POST /api/metadata/editions/search`.",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "author": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The primary author, paired with [`Self::title`]."
+          },
+          "isbn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "An ISBN the caller already holds for this book, in any format — it is\nnormalized (and a bad one discarded) server-side.\n\nThe strongest signal there is, and the one the old flat query threw\naway even when the edit form had it sitting in a field."
+          },
+          "providers": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/MetadataProvider"
+            },
+            "description": "Which providers to ask. Absent means every configured one; this is the\nhook a provider-filter UI plugs into without a wire change."
+          },
+          "query": {
+            "type": "string",
+            "description": "The query as free text — what the reader sees in the search box, and\nthe whole request from a client that sends nothing else."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The book's title on its own, when the caller can separate it. Lets each\nprovider be asked in *its* terms: Open Library searches the author's name\ninside the title field if handed one flattened string. Absent means \"the\nreader typed something specific\": treat [`Self::query`] as the title, with\nno author."
+          }
+        }
+      },
+      "EditionSearchResponse": {
+        "type": "object",
+        "description": "Fan-out search results: the candidates every asked provider returned, plus\none status row per provider considered — including the ones that were\nskipped or failed, which is why a caller can render \"Hardcover: couldn't\nreach it\" instead of quietly showing a shorter list.",
+        "required": [
+          "editions",
+          "sources"
+        ],
+        "properties": {
+          "editions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProviderEdition"
+            }
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProviderSearchSource"
+            }
+          }
+        }
+      },
+      "ExternalBookMeta": {
+        "type": "object",
+        "description": "Normalized book metadata resolved from an external provider. Every field but\n`isbn13`, `title`, and `source` is best-effort — providers disagree on which\nthey carry. `cover_url` is a provider-hosted image the caller fetches only\nwhen a book/wishlist entry is actually created, not at lookup time.",
+        "required": [
+          "isbn13",
+          "title",
+          "authors",
+          "source"
+        ],
+        "properties": {
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_publish_year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Year the *work* was first published, across all editions — distinct\nfrom `year`, which is this edition's own date."
+          },
+          "isbn13": {
+            "type": "string",
+            "description": "The normalized ISBN-13 that resolved (always 13 digits, no hyphens)."
+          },
+          "pages": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "publisher": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "series": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Series statement as the provider reports it (free text, e.g.\n\"The Kingkiller Chronicle (1)\"). Best-effort Open Library enrichment."
+          },
+          "source": {
+            "$ref": "#/components/schemas/MetadataProvider"
+          },
+          "title": {
+            "type": "string"
+          },
+          "year": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Publication year or date as the provider reports it (free text)."
+          }
+        }
+      },
+      "FetchSummaryBody": {
+        "type": "object",
+        "description": "Body of `POST /api/ebooks/{uuid}/summary/fetch`.",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/SummarySource",
+            "description": "The provider to ask."
+          }
+        }
+      },
       "FileBytes": {
         "type": "string",
         "format": "binary",
         "description": "A file's raw bytes, such as an image, an EPUB or an audio part. Never JSON: the\noperation's content type says what the bytes are."
+      },
+      "FtsHealth": {
+        "type": "object",
+        "description": "`books_fts` vs `books` row-count parity. A rebuild\n(`POST /api/fts/rebuild`) always restores `in_sync`; drift here means a\npost-commit FTS update failed silently on some earlier write.",
+        "required": [
+          "books_rows",
+          "fts_rows",
+          "in_sync"
+        ],
+        "properties": {
+          "books_rows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fts_rows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "in_sync": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GenreWeight": {
+        "type": "object",
+        "description": "One genre with the number of books carrying it. Structurally a\n[`TagWeight`], kept a distinct type so `/api/genres` and `/api/tags`\ndon't share a wire name for two different vocabularies.",
+        "required": [
+          "name",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "GoogleBooksKeyStatus": {
+        "type": "object",
+        "description": "Masked status of the server-wide Google Books key for the Settings UI.\n**Never carries the raw key** — only a short masked preview. Mirrors\n[`crate::suggestion::HardcoverKeyStatus`].",
+        "required": [
+          "configured",
+          "source"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "masked": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Short masked preview (e.g. `AIza…9f3a`), or `None` when unset."
+          },
+          "source": {
+            "type": "string",
+            "description": "Where the effective key comes from: `\"settings\"`, `\"env\"`, or `\"none\"`."
+          }
+        }
+      },
+      "HardcoverKeyStatus": {
+        "type": "object",
+        "description": "Masked status of the server-wide Hardcover key for the Settings UI. **Never\ncarries the raw key** — only a short masked preview.",
+        "required": [
+          "configured",
+          "source"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "masked": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Short masked preview (e.g. `hc_l…3f9a`), or `None` when unset."
+          },
+          "source": {
+            "type": "string",
+            "description": "Where the effective key comes from: `\"settings\"`, `\"env\"`, or `\"none\"`."
+          }
+        }
       },
       "Health": {
         "type": "object",
@@ -1177,6 +5181,134 @@
           }
         }
       },
+      "IndexStatus": {
+        "type": "object",
+        "description": "Library index summary: configured library paths and row counts.",
+        "required": [
+          "book_count",
+          "author_count",
+          "series_count",
+          "ghosted_book_count"
+        ],
+        "properties": {
+          "audiobook_library_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "author_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "book_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ebook_library_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ghosted_book_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Books with no `book_files` rows — ghosted by a reindex whose scan no\nlonger found their file on disk (identity preserved, content gone;\nsee `.claude/rules/06-migrations.md`'s book-identity section)."
+          },
+          "series_count": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "KindleSendQueued": {
+        "type": "object",
+        "description": "A Send to Kindle that is queued to go out.",
+        "required": [
+          "task_id"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Pass this to `GET /api/kindle/send/status` to follow the send.",
+            "minimum": 0
+          }
+        }
+      },
+      "KindleSendRequest": {
+        "type": "object",
+        "description": "The book to email to your Kindle address.",
+        "required": [
+          "book_uuid"
+        ],
+        "properties": {
+          "book_uuid": {
+            "type": "string",
+            "description": "The book's uuid, at most 64 bytes."
+          },
+          "file_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The `id` of one of the book's `book_files`, for a book with several. Leave it out to\nsend the book's EPUB, or its PDF when it has no EPUB."
+          }
+        }
+      },
+      "KindleSendStatus": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "sent"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "status"
+            ],
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "failed"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Terminal-or-pending status of a Send-to-Kindle job, returned by the\n`kindle/send/status` poll endpoint keyed on the `task_id` that the enqueue\ncall handed back. The send runs on the background worker; the client posts\nonce, then polls this until it flips off `Pending`. `Failed.message` is the\nper-case reason surfaced to the button toast."
+      },
       "LoginRequest": {
         "type": "object",
         "description": "Request body for `POST /api/auth/login`.\n\nDeliberately does not derive `Debug`: the struct holds a plaintext\npassword, and a stray `tracing::debug!(?req)` would write it to logs.",
@@ -1229,6 +5361,413 @@
             "$ref": "#/components/schemas/UserSummary"
           }
         }
+      },
+      "MatchMode": {
+        "type": "string",
+        "description": "How smart conditions combine: `Any` = OR, `All` = AND.",
+        "enum": [
+          "any",
+          "all"
+        ]
+      },
+      "McpStatus": {
+        "type": "object",
+        "description": "Whether the hosted `/mcp` endpoint is enabled; the body of\n`GET`/`POST /api/settings/mcp` and the matching rpc pair. Mirrors\n`RegistrationStatus`'s shape for the other instance-level switch.",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MergeBooksRequest": {
+        "type": "object",
+        "description": "Request body for `POST /api/books/merge`: merge the source book into the target.",
+        "required": [
+          "source_uuid",
+          "target_uuid"
+        ],
+        "properties": {
+          "source_uuid": {
+            "type": "string"
+          },
+          "target_uuid": {
+            "type": "string"
+          }
+        }
+      },
+      "MergeBooksResult": {
+        "type": "object",
+        "description": "Result of a successful merge: the audit-log id (the undo handle) and\nthe surviving book's uuid.",
+        "required": [
+          "merge_log_id",
+          "target_uuid"
+        ],
+        "properties": {
+          "merge_log_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "target_uuid": {
+            "type": "string"
+          }
+        }
+      },
+      "MetadataProvider": {
+        "type": "string",
+        "description": "Which external provider a lookup resolved against.",
+        "enum": [
+          "open_library",
+          "google_books",
+          "hardcover"
+        ]
+      },
+      "PhysicalCopy": {
+        "type": "object",
+        "description": "A physical copy of a book, seen library-wide (shared by all users like a\ndigital file) but changed only by the reader who filed it — see\n[`Self::can_change`]. A book can have many; each is individually deletable.",
+        "required": [
+          "id",
+          "book_uuid",
+          "checked_in_at"
+        ],
+        "properties": {
+          "added_by_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "That user's display name (username when unset), for \"checked in by\".\n`None` when the account is gone or on a payload a client built itself."
+          },
+          "added_by_user_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "User who checked the copy in; `None` if that account was later deleted."
+          },
+          "book_uuid": {
+            "type": "string"
+          },
+          "checked_in_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "checked_in_at_iso": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "[`Self::checked_in_at`] rendered as ISO 8601 UTC. When the copy was checked in.\n\n`None` on a payload a client built itself."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "isbn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Scanned ISBN for this copy; `None` for a manual (non-scan) add."
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Free-text edition/publisher note until an edition-metadata provider exists."
+          }
+        }
+      },
+      "ProgressFormat": {
+        "type": "string",
+        "description": "Discriminator for the format-specific payload variant in [`ProgressUpdate`]\n/ [`ProgressRecord`] / [`SessionReport`]. Serializes as a plain\nlowercase string (`\"epub\"` / `\"audio\"`) so the wire shape stays compact.",
+        "enum": [
+          "epub",
+          "audio"
+        ]
+      },
+      "ProviderCapabilities": {
+        "type": "object",
+        "description": "What one provider can be asked and what it can return, independent of\nwhether it is currently configured. A flag is a claim about the provider's\nAPI, not one book: flip one only in the same change that teaches the\nprovider module to parse the field onto [`ProviderEdition`], because a\nfixture cross-check fails a flag that outruns its parser.",
+        "required": [
+          "search_by_title",
+          "search_by_isbn",
+          "carries_cover",
+          "carries_ratings",
+          "carries_genres"
+        ],
+        "properties": {
+          "carries_cover": {
+            "type": "boolean"
+          },
+          "carries_genres": {
+            "type": "boolean"
+          },
+          "carries_ratings": {
+            "type": "boolean"
+          },
+          "search_by_isbn": {
+            "type": "boolean"
+          },
+          "search_by_title": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ProviderEdition": {
+        "type": "object",
+        "description": "One candidate from one provider in a fan-out edition search, kept\n**attributed and un-collapsed**: two editions sharing an ISBN across two\nsources stay two entries, because telling editions apart is what the picker\nis for. A separate type from [`ExternalBookMeta`], the frozen check-in wire\npayload; convert with `TryFrom` where a check-in-shaped value is wanted.",
+        "required": [
+          "source",
+          "provider_ref",
+          "title",
+          "authors"
+        ],
+        "properties": {
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_publish_year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Year the *work* was first published, across all editions — distinct\nfrom `year`, which is this edition's own date."
+          },
+          "genres": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Genres as this provider labels them, already sanitized and capped at\n[`Self::MAX_GENRES`].\n\nEmpty means \"this provider has none for this book\"; whether a source can\nanswer for genres *at all* is [`ProviderCapabilities::carries_genres`]."
+          },
+          "isbn10": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ISBN-10 for the **same** printing as [`Self::isbn13`], when the provider\ncarries one. Only set when the two demonstrably name one edition, since\nproviders list identifiers per *work* as readily as per edition. `None` is\nthe normal answer for a 979-prefixed ISBN-13, which has no ISBN-10."
+          },
+          "isbn13": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The normalized ISBN-13 (13 digits, no hyphens), when the provider ties one\nto *this* edition. Optional on purpose: a search hit is often a *work*, not a\nprinting, so a candidate needs a [`Self::provider_ref`] to be re-fetched by,\nnot an ISBN. The check-in path still requires one (see [`ExternalBookMeta`])."
+          },
+          "pages": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The edition's **printed** length, which is what the `print_pages`\noverride stores — never `books.page_count`, which is a comic's image\ncount. `None` when the provider doesn't say; a provider reporting `0`\nfor \"unknown\" is normalized to `None` rather than staged over a real\npage count."
+          },
+          "provider_ref": {
+            "type": "string",
+            "description": "Opaque, provider-scoped handle for re-fetching this candidate in full once\nit is selected, since a thin search hit carries less than the provider's own\nrecord. Omnibus never parses it: it is the provider's own id where one\nexists, else `isbn:<isbn13>`, which every provider can be re-queried by."
+          },
+          "publisher": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "relevance": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "How strongly this candidate matches the query that found it, in\n**hundredths of a point** (so `1000` is a perfect title match), or `None`\nfrom a source that did not score. Derived from the candidate and the query\nalone, never from which provider answered, so a source dropping out removes\nits rows and reorders nothing."
+          },
+          "series": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "series_index": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "This book's position in [`Self::series`], formatted for display\n(`\"1\"`, `\"2.5\"`), or `None` when the provider doesn't say.\n\nOnly Hardcover models a series position, so the *other* providers\nalways leave this `None` — the same asymmetry `series` itself has."
+          },
+          "source": {
+            "$ref": "#/components/schemas/MetadataProvider"
+          },
+          "title": {
+            "type": "string"
+          },
+          "year": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Publication year or date as the provider reports it (free text)."
+          }
+        }
+      },
+      "ProviderInfo": {
+        "type": "object",
+        "description": "One entry in the provider catalog, built by `providers::catalog` in\n`omnibus-db` and served by `GET /api/metadata/providers`.\n\n**Never carries key material** — `configured` is a bool, not a masked\npreview, because this endpoint is reachable by any authenticated user.",
+        "required": [
+          "id",
+          "display_name",
+          "configured",
+          "requires_key",
+          "capabilities"
+        ],
+        "properties": {
+          "capabilities": {
+            "$ref": "#/components/schemas/ProviderCapabilities"
+          },
+          "configured": {
+            "type": "boolean",
+            "description": "Whether the ladder would actually invoke this provider right now —\nalways `true` for a keyless-capable provider, key-gated otherwise.\nMirrors the same check `providers::ladder` uses, so the two can never\ndisagree about what \"configured\" means."
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/MetadataProvider"
+          },
+          "requires_key": {
+            "type": "boolean",
+            "description": "Whether an API key is required to reach this provider at all (as\nopposed to optional — present or not, the provider still answers)."
+          }
+        }
+      },
+      "ProviderSearchSource": {
+        "type": "object",
+        "description": "One row of the per-source status table returned alongside the candidates.",
+        "required": [
+          "provider",
+          "display_name",
+          "status"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/MetadataProvider"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProviderSearchStatus"
+          }
+        }
+      },
+      "ProviderSearchStatus": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The provider answered. `count` is how many of its candidates reached\nthe returned list — post-cap, so it never overstates what is there.",
+            "required": [
+              "count",
+              "kind"
+            ],
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "answered"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Not usable on this instance (no API key). No request was sent.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "not_configured"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Asked, but no answer came back. `message` is the provider call's own\ntop-level context, never the error chain below it — which is where a\nrequest URL, and so a `?key=`, would render.",
+            "required": [
+              "message",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "failed"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Skipped without a request: this provider rate-limited us recently and is\nstill inside its cooldown.\n\nDistinct from [`Self::Failed`]: nothing was asked, and `retry_after_secs`\nsays when it is worth asking again.",
+            "required": [
+              "retry_after_secs",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "throttled"
+                ]
+              },
+              "retry_after_secs": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Whole seconds left on the cooldown, rounded up.",
+                "minimum": 0
+              }
+            }
+          }
+        ],
+        "description": "What one provider contributed to a fan-out search.\n\nThe three cases are the point of the type: \"it has nothing\", \"we never\nasked it\", and \"we asked and never got an answer\" are different facts, and\ncollapsing them makes an outage read as a miss."
+      },
+      "ReadStatus": {
+        "type": "string",
+        "description": "A book's read-lifecycle state for one user. Serializes as a plain lowercase\nstring (`\"unread\"` / `\"reading\"` / `\"finished\"`) matching the\n`book_read_status.status` CHECK constraint.",
+        "enum": [
+          "unread",
+          "reading",
+          "finished"
+        ]
       },
       "RegisterRequest": {
         "type": "object",
@@ -1288,6 +5827,338 @@
           }
         }
       },
+      "ResolveMetaRequest": {
+        "type": "object",
+        "description": "Resolve a picked title-search candidate against the library — the ladder's\nlibrary rungs applied to metadata already in hand, so no provider round\ntrip (which could miss on an ISBN the search itself just surfaced).",
+        "required": [
+          "meta"
+        ],
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/ExternalBookMeta"
+          }
+        }
+      },
+      "ResolveRequest": {
+        "type": "object",
+        "description": "Resolve a scanned/typed ISBN.",
+        "required": [
+          "isbn"
+        ],
+        "properties": {
+          "isbn": {
+            "type": "string"
+          }
+        }
+      },
+      "RuleField": {
+        "type": "string",
+        "description": "A field a smart rule can match on. Mirrors the advanced-search query vocabulary plus\nthe acquisition-date fields.",
+        "enum": [
+          "tag",
+          "genre",
+          "author",
+          "series",
+          "rating",
+          "status",
+          "format",
+          "year",
+          "date_added",
+          "date_updated"
+        ]
+      },
+      "RuleOp": {
+        "type": "string",
+        "description": "A comparison operator for a smart rule.",
+        "enum": [
+          "is",
+          "is_not",
+          "contains",
+          "starts_with",
+          "gte",
+          "includes",
+          "in_last",
+          "between",
+          "before",
+          "after"
+        ]
+      },
+      "RulePreview": {
+        "type": "object",
+        "description": "Live-preview result for the create modal: \"N of M match\" + sample covers.",
+        "required": [
+          "matched",
+          "total",
+          "sample"
+        ],
+        "properties": {
+          "matched": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sample": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EbookMetadata"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "RulePreviewRequest": {
+        "type": "object",
+        "description": "Unsaved rule sent to the preview endpoint.",
+        "required": [
+          "match_mode",
+          "rules"
+        ],
+        "properties": {
+          "match_mode": {
+            "$ref": "#/components/schemas/MatchMode"
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShelfRule"
+            }
+          }
+        }
+      },
+      "ScanBook": {
+        "type": "object",
+        "description": "A library book matched during scan resolution — just enough to display and\nact on it (the confirm/decision screens).",
+        "required": [
+          "uuid",
+          "title",
+          "authors",
+          "has_physical"
+        ],
+        "properties": {
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "has_files": {
+            "type": "boolean",
+            "description": "Whether the book has a digital file. `false` for a paper-only or\nwishlist-only book, whose confirm screen must not claim the reader\n\"already has this one digitally\". Defaulted so a payload from before\nthe field decodes; nothing before it emitted the flag."
+          },
+          "has_physical": {
+            "type": "boolean",
+            "description": "Whether the book already has ≥1 physical copy checked in."
+          },
+          "isbn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The book's own ISBN identifier, separator-stripped. Lets the close-match\nconfirm show the library edition's ISBN beside the scanned one."
+          },
+          "title": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          }
+        }
+      },
+      "ScanOutcome": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Exact identifier hit; the book already has a physical copy.",
+            "required": [
+              "book",
+              "kind"
+            ],
+            "properties": {
+              "book": {
+                "$ref": "#/components/schemas/ScanBook"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "already_owned"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Exact identifier hit; on the caller's physical wishlist (no physical\ncopy yet). The book they wanted and now hold, so clients offer to check\nthe copy in, which clears the entry.",
+            "required": [
+              "book",
+              "kind"
+            ],
+            "properties": {
+              "book": {
+                "$ref": "#/components/schemas/ScanBook"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "on_wishlist"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Exact identifier hit; in the library digitally, no physical copy yet.",
+            "required": [
+              "book",
+              "kind"
+            ],
+            "properties": {
+              "book": {
+                "$ref": "#/components/schemas/ScanBook"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "in_library_unowned"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Online-resolved and (title, author)-matched at least one library book:\nneeds a human \"is this the book?\" confirmation before any write. Carried as\nhead + tail so the single-candidate wire shape stays byte-identical for older\nclients; clients that know both render `book` followed by `others` as one\npicker.",
+            "required": [
+              "book",
+              "scanned",
+              "kind"
+            ],
+            "properties": {
+              "book": {
+                "$ref": "#/components/schemas/ScanBook"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "close_match"
+                ]
+              },
+              "others": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ScanBook"
+                }
+              },
+              "scanned": {
+                "$ref": "#/components/schemas/ExternalBookMeta"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Online-resolved but not in the library.",
+            "required": [
+              "online",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "not_in_library"
+                ]
+              },
+              "online": {
+                "$ref": "#/components/schemas/ExternalBookMeta"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Neither the library nor any provider knew the ISBN.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unresolved"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Outcome of resolving a scanned/typed ISBN down the matching ladder. A fuzzy\n(title, author) hit is a [`ScanOutcome::CloseMatch`] — never auto-resolved;\nthe client must confirm before any write, so a hit on several rows is a\npicker rather than a reason to decline the match."
+      },
+      "ScanSearchRequest": {
+        "type": "object",
+        "description": "Search the external providers by title text — the fallback offered when an\nISBN scan resolves to [`ScanOutcome::Unresolved`].",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        }
+      },
+      "ScanSearchResponse": {
+        "type": "object",
+        "description": "Title-search results: provider-resolved candidates for the reader to pick\nfrom, each complete enough to feed [`ResolveMetaRequest`].",
+        "required": [
+          "results"
+        ],
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExternalBookMeta"
+            }
+          }
+        }
+      },
+      "SeriesDetail": {
+        "type": "object",
+        "description": "Series detail payload for `GET /api/series/:id` and `rpc_get_series`.\nBooks are ordered by `series_index`.",
+        "required": [
+          "id",
+          "name",
+          "book_count",
+          "books"
+        ],
+        "properties": {
+          "book_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "books": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EbookMetadata"
+            }
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sort": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "SeriesStack": {
         "type": "object",
         "description": "A series folded into one grid tile.",
@@ -1326,6 +6197,48 @@
               "$ref": "#/components/schemas/StackMemberState"
             },
             "description": "One state per member on server pages; empty on client-grouped stacks."
+          }
+        }
+      },
+      "SeriesSummary": {
+        "type": "object",
+        "description": "Lightweight series row for the `/series` index. Carries the primary\nauthor of the series (first book's first creator) so the card can\nrender the by-line without a second fetch.",
+        "required": [
+          "id",
+          "name",
+          "book_count"
+        ],
+        "properties": {
+          "accent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Accent color borrowed from the first book in the series with one."
+          },
+          "book_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "primary_author": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Primary author display string (first book's first creator). `None`\nwhen the series has no books with a linked author."
+          },
+          "sort": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -1377,6 +6290,425 @@
           }
         }
       },
+      "SetBookDetailScrollStops": {
+        "type": "object",
+        "description": "Whether a book's detail page stops at each section as you scroll.",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "`true` stops at each section; `false` scrolls the page in one piece."
+          }
+        }
+      },
+      "SetGoogleBooksKey": {
+        "type": "object",
+        "description": "Body of `POST /api/google-books-key`.",
+        "properties": {
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Google Books API key, up to 512 bytes. `null`, absent or blank clears the\nsaved key."
+          }
+        }
+      },
+      "SetHardcoverKey": {
+        "type": "object",
+        "description": "Body of `POST /api/hardcover-key`.",
+        "properties": {
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Hardcover API token, up to 2048 bytes. `null`, absent or blank clears the\nsaved key."
+          }
+        }
+      },
+      "SetHiddenFormats": {
+        "type": "object",
+        "description": "The formats to hide from your library view.",
+        "properties": {
+          "formats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Format names such as `cbz`, each 1 to 16 letters or digits, at most 32. Case and\nduplicates don't matter. An empty or missing list hides nothing."
+          }
+        }
+      },
+      "SetKindleEmail": {
+        "type": "object",
+        "description": "Your Send to Kindle address.",
+        "properties": {
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The address books are emailed to, such as `name@kindle.com`. Null, missing or\nblank clears it."
+          }
+        }
+      },
+      "SetPasswordRequest": {
+        "type": "object",
+        "description": "Request body for `POST /api/admin/users/{id}/password` (admin password\nreset). See [`LoginRequest`] for why `Debug` is deliberately not derived.",
+        "required": [
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "SetProfile": {
+        "type": "object",
+        "description": "Your display name.",
+        "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name other readers see, up to 64 characters with no control characters.\nNull, missing or blank clears it, and your username shows instead."
+          }
+        }
+      },
+      "SetShareStats": {
+        "type": "object",
+        "description": "Whether other readers on this server can see your reading stats.",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "`true` shares your stats with the household; `false` keeps them to yourself."
+          }
+        }
+      },
+      "SetStackSeries": {
+        "type": "object",
+        "description": "Whether your library grid shows each series as one tile.",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "`true` folds a series into one tile; `false` shows every book on its own."
+          }
+        }
+      },
+      "Settings": {
+        "type": "object",
+        "description": "User-configurable paths for the ebook and audiobook libraries, plus the\noptional periodic-rescan cadence.",
+        "properties": {
+          "audiobook_library_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ebook_library_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scan_interval_hours": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Hours between automatic rescans of both libraries. `None` disables periodic\nscanning: the library then only reindexes on server boot or a manual \"Scan\nLibrary\" click. Omitted from the wire payload when unset, so existing callers\nsee no change to the `Settings` JSON shape.",
+            "minimum": 0
+          }
+        }
+      },
+      "Shelf": {
+        "type": "object",
+        "description": "Full shelf detail: the summary fields plus description, rule, and match mode.",
+        "required": [
+          "id",
+          "owner_user_id",
+          "owner_username",
+          "kind",
+          "name",
+          "visibility",
+          "rules",
+          "book_count"
+        ],
+        "properties": {
+          "accent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "book_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ShelfKind"
+          },
+          "match_mode": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MatchMode",
+                "description": "`Some` for smart shelves, `None` for manual."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_has_avatar": {
+            "type": "boolean",
+            "description": "Whether the owner has uploaded an avatar — see\n[`ShelfSummary::owner_has_avatar`]."
+          },
+          "owner_user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "owner_username": {
+            "type": "string",
+            "description": "Owner's username, for `by <name>` attribution on shelves you don't own."
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShelfRule"
+            }
+          },
+          "sync_to_kobo": {
+            "type": "boolean",
+            "description": "Whether this shelf's books are exposed to the owner's Kobo devices over\nwireless sync. Off by default — sync is never whole-library."
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          }
+        }
+      },
+      "ShelfKind": {
+        "type": "string",
+        "description": "Kind of shelf, fixed at creation.",
+        "enum": [
+          "smart",
+          "manual",
+          "wishlist"
+        ]
+      },
+      "ShelfPage": {
+        "type": "object",
+        "description": "One page of a shelf's books (v1: capped, no cursor).",
+        "required": [
+          "books"
+        ],
+        "properties": {
+          "books": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EbookMetadata"
+            }
+          }
+        }
+      },
+      "ShelfRule": {
+        "type": "object",
+        "description": "One smart-shelf condition, and the source of truth for `value` (migration\n`0034`'s comment is frozen and predates the id→name switch):\ntag/genre/author/series/format → name (case-insensitive); year/rating → int;\ndate fields → ISO date, `START..END`, or `30d`/`3m`/`1y`;\nstatus → `unread`/`reading`/`finished`.",
+        "required": [
+          "field",
+          "op",
+          "value"
+        ],
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/RuleField"
+          },
+          "op": {
+            "$ref": "#/components/schemas/RuleOp"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "ShelfSummary": {
+        "type": "object",
+        "description": "Compact shelf row for the rail: identity, kind, visibility, accent, count.",
+        "required": [
+          "id",
+          "owner_user_id",
+          "owner_username",
+          "kind",
+          "name",
+          "visibility",
+          "book_count"
+        ],
+        "properties": {
+          "accent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "book_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cover_uuids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Up to four member book uuids (cover-bearing members first, shelf\ndefault order) for gallery mosaic tiles. `default` keeps payloads from\nolder servers deserializable."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ShelfKind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_has_avatar": {
+            "type": "boolean",
+            "description": "Whether the owner has uploaded an avatar, so attribution can draw\n`GET /api/users/{owner_user_id}/avatar` instead of a monogram.\n`default` keeps payloads from older servers deserializable."
+          },
+          "owner_user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "owner_username": {
+            "type": "string",
+            "description": "Owner's username, for `by <name>` attribution on shelves you don't own."
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          }
+        }
+      },
+      "SmtpConfigStatus": {
+        "type": "object",
+        "description": "Masked status of the server-wide SMTP config for the Settings UI. **Never\ncarries the raw password** — only a short masked preview.",
+        "required": [
+          "configured",
+          "security",
+          "source"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "from_email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "host": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "password_masked": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Short masked preview of the password (e.g. `pa…rd`), or `None` when unset."
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "security": {
+            "$ref": "#/components/schemas/SmtpSecurity"
+          },
+          "source": {
+            "type": "string",
+            "description": "Where the effective config comes from: `\"settings\"`, `\"env\"`, or `\"none\"`."
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SmtpConfigUpdate": {
+        "type": "object",
+        "description": "Admin request to save (or partially update) the server-wide SMTP config.\n\nDeliberately does not derive `Debug`: it carries a plaintext SMTP password\nthat a stray `tracing::debug!(?req)` would log. `password` is `None` to leave\nthe stored password unchanged; a `Some(\"\")` clears it.",
+        "required": [
+          "host",
+          "port",
+          "username",
+          "from_email"
+        ],
+        "properties": {
+          "from_email": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "security": {
+            "$ref": "#/components/schemas/SmtpSecurity"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "SmtpSecurity": {
+        "type": "string",
+        "description": "Transport security for the outbound SMTP connection.",
+        "enum": [
+          "starttls",
+          "tls"
+        ]
+      },
       "SortDir": {
         "type": "string",
         "description": "Ascending or descending sort direction for a [`SortKey`].",
@@ -1422,6 +6754,272 @@
           },
           "uuid": {
             "type": "string"
+          }
+        }
+      },
+      "StorageStats": {
+        "type": "object",
+        "description": "Disk usage across the book library and every on-disk cache.",
+        "required": [
+          "library_bytes",
+          "covers_bytes",
+          "thumbs_bytes",
+          "thumbs_cap_bytes",
+          "hls_bytes",
+          "hls_cap_bytes",
+          "export_epub_bytes",
+          "export_epub_cap_bytes"
+        ],
+        "properties": {
+          "covers_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "export_epub_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "export_epub_cap_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "hls_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "hls_cap_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "library_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Sum of `book_files.size_bytes` — the on-disk footprint of the\nindexed library itself (not a cache, so it carries no cap)."
+          },
+          "thumbs_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "thumbs_cap_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "SuggestionsResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "No Hardcover key is configured — the UI shows a connect message.",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "not_configured"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A resolution is enqueued and nothing is cached yet — the UI polls.",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Cached results. `items` may be empty (sticky negative — Hardcover\nmatched nothing usable).",
+            "required": [
+              "items",
+              "status"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BookSuggestion"
+                }
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "ready"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Response for a book's suggestions strip."
+      },
+      "SummarySource": {
+        "type": "string",
+        "description": "Which external provider a summary fetch should hit.",
+        "enum": [
+          "Hardcover",
+          "GoogleBooks",
+          "OpenLibrary"
+        ]
+      },
+      "TagWeight": {
+        "type": "object",
+        "description": "Single tag with its book count, for the tag cloud.",
+        "required": [
+          "name",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "TaskKind": {
+        "type": "string",
+        "description": "Discriminant for [`TaskProgress`] entries. Mirrors the payload-less\nshape of the server-side `Task` enum so the wire protocol stays\ndecoupled from the runtime `Task` type's lifetimes and handler\nclosures. `#[non_exhaustive]` so future worker actions can be added\nwithout breaking client matches.",
+        "enum": [
+          "scan",
+          "generate_thumbs",
+          "resolve_author_photo",
+          "refetch_author_photos",
+          "backfill_chapters",
+          "resolve_suggestions"
+        ]
+      },
+      "UndoMergeRequest": {
+        "type": "object",
+        "description": "Request body for `POST /api/books/merge/undo`: the `merge_log` id to reverse.",
+        "required": [
+          "merge_log_id"
+        ],
+        "properties": {
+          "merge_log_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "UndoMergeResult": {
+        "type": "object",
+        "description": "Result of a successful unmerge: the restored (source) book's uuid.",
+        "required": [
+          "restored_uuid"
+        ],
+        "properties": {
+          "restored_uuid": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateCopyNoteRequest": {
+        "type": "object",
+        "description": "Body of the copy-note edit (`PATCH /api/physical/copies/{id}`). `None` — and\nany blank string — clears the note.",
+        "properties": {
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UpdateShelfRequest": {
+        "type": "object",
+        "description": "Partial update. `None` fields are left unchanged. `rules` replaces the whole\nrule set (smart shelves only).",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "match_mode": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MatchMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rules": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ShelfRule"
+            }
+          },
+          "sync_to_kobo": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Toggle the shelf's Kobo wireless-sync opt-in."
+          },
+          "visibility": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Visibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "UserPermissions": {
+        "type": "object",
+        "description": "The four permission booleans that define what a user can do. `is_admin`\nis presented in the UI as an \"Administrator\" permission that implies the\nother three; the storage layer keeps them as independent flags (there is\nno role enum). Used by the admin create/edit endpoints.",
+        "required": [
+          "is_admin",
+          "can_upload",
+          "can_edit",
+          "can_download"
+        ],
+        "properties": {
+          "can_download": {
+            "type": "boolean"
+          },
+          "can_edit": {
+            "type": "boolean"
+          },
+          "can_upload": {
+            "type": "boolean"
+          },
+          "is_admin": {
+            "type": "boolean"
           }
         }
       },
@@ -1492,6 +7090,121 @@
           },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "Visibility": {
+        "type": "string",
+        "description": "Who can see a shelf. `Private` = owner + admins; `Public` = every user.",
+        "enum": [
+          "private",
+          "public"
+        ]
+      },
+      "WishlistAddRequest": {
+        "type": "object",
+        "description": "Add a book to the caller's physical wishlist — either an existing library\nbook (`book_uuid`) or a new fileless book from external meta. Set one; if\nboth are present `book_uuid` wins and `meta` is ignored.",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "book_uuid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "meta": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ExternalBookMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/WishlistSource"
+          }
+        }
+      },
+      "WishlistEntry": {
+        "type": "object",
+        "description": "A book on one user's physical wishlist. Unique per `(user_id, book_uuid)`.",
+        "required": [
+          "id",
+          "user_id",
+          "book_uuid",
+          "added_at",
+          "source"
+        ],
+        "properties": {
+          "added_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "book_uuid": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "source": {
+            "$ref": "#/components/schemas/WishlistSource"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "WishlistRemoval": {
+        "type": "object",
+        "description": "What removing a wishlist entry did beyond dropping the row. A book that\nexisted only to be wanted — no file, no copy, nobody else's wish — goes\nwith its last entry, and `book_deleted` is how the client learns the page\nit is standing on is gone.",
+        "required": [
+          "book_deleted"
+        ],
+        "properties": {
+          "book_deleted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "WishlistSource": {
+        "type": "string",
+        "description": "Where a wishlist entry was added from. Persisted as the `source` column.\n\nThe check-in flow has three front doors a reader tells apart: a barcode read\noff the cover, an ISBN typed at the keypad, and a title search whose ISBN\ncame from the *provider* rather than the reader.",
+        "enum": [
+          "scan",
+          "detail",
+          "manual",
+          "search"
+        ]
+      },
+      "WorkerQueueEntry": {
+        "type": "object",
+        "description": "One [`TaskKind`]'s live queue depth and recent completion timings.\nTimings are milliseconds (wire-friendly; the db-side `Worker::metrics`\nuses `std::time::Duration`, which doesn't serialize), oldest first.",
+        "required": [
+          "kind",
+          "queue_depth",
+          "recent_completions_ms"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TaskKind"
+          },
+          "queue_depth": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "recent_completions_ms": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
           }
         }
       }

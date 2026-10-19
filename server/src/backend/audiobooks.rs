@@ -17,7 +17,7 @@ use omnibus_db::{
 };
 use omnibus_shared::{
     AudiobookDownloadQuery, AudiobookManifest, AudiobookPlaybackRateRecord,
-    AudiobookPlaybackRateUpdate, AudiobookStatus, AudiobookStatusState, ManifestPart,
+    AudiobookPlaybackRateUpdate, AudiobookStatus, AudiobookStatusState, FileBytes, ManifestPart,
     ManifestQuery, PartsQuery,
 };
 
@@ -304,8 +304,8 @@ async fn next_sequence_file_id(
         PartsQuery,
     ),
     responses(
-        (status = 200, description = "The whole part.", body = [u8], content_type = "audio/*"),
-        (status = 206, description = "The byte range asked for in `Range`.", body = [u8], content_type = "audio/*"),
+        (status = 200, description = "The whole part.", body = FileBytes, content_type = "audio/*"),
+        (status = 206, description = "The byte range asked for in `Range`.", body = FileBytes, content_type = "audio/*"),
         (status = 304, description = "The part is unchanged since the `ETag` sent in `If-None-Match`, or the date in `If-Modified-Since`."),
         (status = 404, description = "No book with that uuid has an audio file, `file_id` isn't one of its audio files, the book plays through HLS, it has no part with that ordinal, or the part is missing from disk."),
         (status = 412, description = "`If-Match` or `If-Unmodified-Since` doesn't match the part."),
@@ -363,9 +363,9 @@ pub(super) async fn get_audiobook_part(
     tag = "Audiobooks",
     params(("uuid" = String, Path, description = "The book's uuid."), AudiobookDownloadQuery),
     responses(
-        (status = 200, description = "The whole file.", body = [u8], content_type = "audio/*",
+        (status = 200, description = "The whole file.", body = FileBytes, content_type = "audio/*",
             headers(("Content-Disposition" = String, description = "`attachment`, with the file name."))),
-        (status = 206, description = "The byte range asked for in `Range`.", body = [u8], content_type = "audio/*"),
+        (status = 206, description = "The byte range asked for in `Range`.", body = FileBytes, content_type = "audio/*"),
         (status = 304, description = "The file is unchanged since the `ETag` sent in `If-None-Match`, or the date in `If-Modified-Since`."),
         (status = 403, description = "Your account lacks the download permission."),
         (status = 404, description = "No book with that uuid has an audio file, `file_id` isn't one of its audio files, it has no part with that ordinal, or the file is missing from disk."),
@@ -483,8 +483,8 @@ pub(super) async fn get_audiobook_status(
         ("segment" = String, Path, description = "The segment's file name, such as `seg-0001.ts`."),
     ),
     responses(
-        (status = 200, description = "The whole segment.", body = [u8], content_type = "video/MP2T"),
-        (status = 206, description = "The byte range asked for in `Range`.", body = [u8], content_type = "video/MP2T"),
+        (status = 200, description = "The whole segment.", body = FileBytes, content_type = "video/MP2T"),
+        (status = 206, description = "The byte range asked for in `Range`.", body = FileBytes, content_type = "video/MP2T"),
         (status = 304, description = "The segment is unchanged since the `ETag` sent in `If-None-Match`, or the date in `If-Modified-Since`."),
         (status = 400, description = "`segment` isn't `seg-` and four digits and `.ts`."),
         (status = 404, description = "No book with that uuid has an audio file, or the transcode finished without that segment."),

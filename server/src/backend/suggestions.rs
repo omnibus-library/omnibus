@@ -14,7 +14,8 @@ use axum::{
 };
 use omnibus_db::{self as db, worker::Task};
 use omnibus_shared::{
-    BookSuggestion, HardcoverKeyStatus, RawSuggestion, SetHardcoverKey, SuggestionsResponse,
+    BookSuggestion, FileBytes, HardcoverKeyStatus, RawSuggestion, SetHardcoverKey,
+    SuggestionsResponse,
 };
 
 use super::{internal, AppState};
@@ -108,7 +109,7 @@ pub(super) async fn get_suggestions(
         ("rank" = i64, Path, description = "The suggestion's rank, from its `cover_url`."),
     ),
     responses(
-        (status = 200, description = "The cover image.", body = [u8], content_type = "image/*"),
+        (status = 200, description = "The cover image.", body = FileBytes, content_type = "image/*"),
         (status = 404, description = "No cover is stored for that book and rank."),
     ),
 )]

@@ -22,7 +22,7 @@ use omnibus_db::{
     self as db,
     ebook::images::{list_images, read_image},
 };
-use omnibus_shared::{BookImageLink, BookImageList, ImageHrefQuery, SignedImageQuery};
+use omnibus_shared::{BookImageLink, BookImageList, FileBytes, ImageHrefQuery, SignedImageQuery};
 use sha2::Sha256;
 
 use crate::auth::{AuthUser, MediaAuthUser};
@@ -206,7 +206,7 @@ async fn epub_path(state: &AppState, uuid: &str) -> Result<PathBuf, Response> {
     tag = "Library",
     params(("uuid" = String, Path, description = "The book's uuid."), ImageHrefQuery),
     responses(
-        (status = 200, description = "The image.", body = [u8], content_type = "image/*",
+        (status = 200, description = "The image.", body = FileBytes, content_type = "image/*",
             headers(("Content-Disposition" = String, description = "`attachment`, with the image's file name."))),
         (status = 304, description = "The image is unchanged since the `ETag` sent in `If-None-Match`, or the date in `If-Modified-Since`."),
         (status = 400, description = "`href` isn't an image in the book's EPUB."),
@@ -243,7 +243,7 @@ pub(crate) async fn get_ebook_image_file(
     security(()),
     params(("uuid" = String, Path, description = "The book's uuid."), SignedImageQuery),
     responses(
-        (status = 200, description = "The image.", body = [u8], content_type = "image/*",
+        (status = 200, description = "The image.", body = FileBytes, content_type = "image/*",
             headers(("Content-Disposition" = String, description = "`attachment`, with the image's file name."))),
         (status = 304, description = "The image is unchanged since the `ETag` sent in `If-None-Match`, or the date in `If-Modified-Since`."),
         (status = 400, description = "`href` isn't an image in the book's EPUB."),

@@ -11,7 +11,7 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, auth::AvatarVariant};
-use omnibus_shared::{AvatarQuery, AvatarUpload, SetProfile};
+use omnibus_shared::{AvatarQuery, AvatarUpload, FileBytes, SetProfile};
 
 use super::conditional::{content_etag, MEDIA_CACHE_CONTROL, MEDIA_VARY};
 use super::image_upload::extract_validated_image;
@@ -105,7 +105,7 @@ pub(super) async fn delete_avatar(user: AuthUser, State(state): State<AppState>)
     security(("bearer" = []), ("session_cookie" = []), ("media_token" = [])),
     params(("user_id" = i64, Path, description = "The user's id."), AvatarQuery),
     responses(
-        (status = 200, description = "The avatar image.", body = [u8], content_type = "image/*"),
+        (status = 200, description = "The avatar image.", body = FileBytes, content_type = "image/*"),
         (status = 304, description = "The avatar is unchanged since the `ETag` sent in `If-None-Match`."),
         (status = 404, description = "No user has that id, or the user has no avatar."),
     ),

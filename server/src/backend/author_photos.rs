@@ -11,7 +11,7 @@ use axum::{
 };
 use omnibus_db::{self as db, worker::Task};
 use omnibus_shared::{
-    detect_image_format, AuthorPhotoScanResult, AuthorPhotoUpload, AuthorPhotoUrlBody,
+    detect_image_format, AuthorPhotoScanResult, AuthorPhotoUpload, AuthorPhotoUrlBody, FileBytes,
 };
 
 use super::image_upload::extract_validated_image;
@@ -31,7 +31,7 @@ use crate::auth::{AdminUser, MediaAuthUser};
     security(("bearer" = []), ("session_cookie" = []), ("media_token" = [])),
     params(("id" = i64, Path, description = "The author's id.")),
     responses(
-        (status = 200, description = "The photo.", body = [u8], content_type = "image/*"),
+        (status = 200, description = "The photo.", body = FileBytes, content_type = "image/*"),
         (status = 404, description = "The author has no photo, or no author has that id."),
     ),
 )]

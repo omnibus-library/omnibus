@@ -16,7 +16,7 @@ use omnibus_db::{
 };
 use omnibus_shared::{
     DownloadValidatorRequest, DownloadValidatorResponse, EbookFileQuery, EbookLibrary,
-    EbookMetadata, EbookPage, EbooksQuery, LibraryContents, ViewFilters,
+    EbookMetadata, EbookPage, EbooksQuery, FileBytes, LibraryContents, ViewFilters,
 };
 
 use super::conditional::{self, MEDIA_CACHE_CONTROL, MEDIA_VARY};
@@ -409,14 +409,14 @@ async fn resolve_readable_path(
     params(("uuid" = String, Path, description = "The book's uuid."), EbookFileQuery),
     responses(
         (status = 200, description = "The whole file.", content(
-            ([u8] = "application/epub+zip"),
-            ([u8] = "application/vnd.comicbook+zip"),
-            ([u8] = "application/pdf"),
+            (FileBytes = "application/epub+zip"),
+            (FileBytes = "application/vnd.comicbook+zip"),
+            (FileBytes = "application/pdf"),
         )),
         (status = 206, description = "The byte range asked for in `Range`.", content(
-            ([u8] = "application/epub+zip"),
-            ([u8] = "application/vnd.comicbook+zip"),
-            ([u8] = "application/pdf"),
+            (FileBytes = "application/epub+zip"),
+            (FileBytes = "application/vnd.comicbook+zip"),
+            (FileBytes = "application/pdf"),
         )),
         (status = 304, description = "The file is unchanged since the `ETag` sent in `If-None-Match`, or the date in `If-Modified-Since`."),
         (status = 404, description = "No book has that uuid, the book has no EPUB, CBZ or PDF, `file_id` isn't one of its EPUB or PDF files, or the file is missing from disk."),
@@ -477,7 +477,7 @@ async fn read_ebook_file(
         ("page" = usize, Path, description = "The page number, from 0."),
     ),
     responses(
-        (status = 200, description = "The page image.", body = [u8], content_type = "image/*"),
+        (status = 200, description = "The page image.", body = FileBytes, content_type = "image/*"),
         (status = 304, description = "The page is unchanged since the `ETag` sent in `If-None-Match`."),
         (status = 404, description = "No book has that uuid, the book has no CBZ, or it has no page with that number."),
     ),
@@ -566,7 +566,7 @@ const KEPUB_CONVERT_BUDGET: std::time::Duration = std::time::Duration::from_secs
     tag = "Library",
     params(("uuid" = String, Path, description = "The book's uuid.")),
     responses(
-        (status = 200, description = "The KEPUB, or the plain EPUB.", body = [u8], content_type = "application/epub+zip",
+        (status = 200, description = "The KEPUB, or the plain EPUB.", body = FileBytes, content_type = "application/epub+zip",
             headers(("Content-Disposition" = String, description = "`attachment`, with the file name."))),
         (status = 403, description = "Your account lacks the download permission."),
         (status = 404, description = "No book has that uuid, or the book has no EPUB or its EPUB is missing from disk."),
@@ -680,12 +680,12 @@ fn download_response(bytes: Vec<u8>, filename: &str) -> Response {
     params(("uuid" = String, Path, description = "The book's uuid."), EbookFileQuery),
     responses(
         (status = 200, description = "The whole file.", content(
-            ([u8] = "application/epub+zip"),
-            ([u8] = "application/pdf"),
+            (FileBytes = "application/epub+zip"),
+            (FileBytes = "application/pdf"),
         ), headers(("Content-Disposition" = String, description = "`attachment`, with the file name."))),
         (status = 206, description = "The byte range asked for in `Range`.", content(
-            ([u8] = "application/epub+zip"),
-            ([u8] = "application/pdf"),
+            (FileBytes = "application/epub+zip"),
+            (FileBytes = "application/pdf"),
         )),
         (status = 304, description = "The file is unchanged since the `ETag` sent in `If-None-Match`, or the date in `If-Modified-Since`."),
         (status = 403, description = "Your account lacks the download permission."),
