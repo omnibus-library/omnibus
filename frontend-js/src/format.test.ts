@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BookDetail } from "./api";
 import {
   descriptionOverflows,
@@ -163,13 +163,12 @@ describe("formatDateShort", () => {
 });
 
 describe("formatInstantShort", () => {
-  const originalTz = process.env.TZ;
   afterEach(() => {
-    process.env.TZ = originalTz;
+    vi.unstubAllEnvs();
   });
 
   it("cuts an instant on the browser's local day", () => {
-    process.env.TZ = "America/Detroit";
+    vi.stubEnv("TZ", "America/Detroit");
 
     expect(formatInstantShort("2026-09-08T03:36:00Z")).toBe("Sep 7th, 2026");
     expect(formatInstantShort("2026-09-08 03:36:00")).toBe("Sep 7th, 2026");
