@@ -280,3 +280,5 @@ locally:
 xcodebuild test -project omnibus-ios/omnibus.xcodeproj -scheme omnibus \
   -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:omnibusTests
 ```
+
+**Diagnosing an iOS test failure that only happens in CI.** An assertion message — XCUITest's or a Swift Testing `#expect`'s — reaches neither xcodebuild's stdout nor the JUnit report (JUnit records a bare `Parallel test failed`), so a red iOS job tells you *which* test failed and nothing else. The message lives only inside the `.xcresult`, which both jobs upload on failure (`unit-xcresult`, `ui-xcresult`); download it and read it back with `xcrun xcresulttool get test-results tests --path <suite>.xcresult`. The test host's own `print` output is in there too, under `xcrun xcresulttool get log --type action` — under simulator clones it is relayed nowhere else. The same applies locally: `scripts/ios-test.sh` leaves the bundle at `.claude/runtime/ios-tests/<suite>.xcresult`, and that — not the terminal output — is where the assertion is.
