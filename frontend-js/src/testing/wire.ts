@@ -42,6 +42,10 @@ export function aWireBook(
   };
 }
 
+/** The nth fixture uuid: valid, distinct, and readable in a failure. */
+export const uuidOf = (n: number) =>
+  `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
 /** `count` distinct books, uuids and titles numbered, for paging. */
 export function aWireLibrary(count: number): EbookMetadata[] {
   return Array.from({ length: count }, (_, i) =>
@@ -49,7 +53,7 @@ export function aWireLibrary(count: number): EbookMetadata[] {
       id: i + 1,
       title: `Aurora Station, Vol. ${i + 1}`,
       series_index: String(i + 1),
-      unique_identifier: `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+      unique_identifier: uuidOf(i + 1),
     }),
   );
 }

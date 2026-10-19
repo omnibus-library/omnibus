@@ -5,12 +5,18 @@ let dialog: HTMLElement;
 let first: HTMLElement;
 let last: HTMLElement;
 
+function element(id: string): HTMLElement {
+  const found = document.getElementById(id);
+  if (!(found instanceof HTMLElement)) throw new Error(`no element #${id}`);
+  return found;
+}
+
 beforeEach(() => {
   document.body.innerHTML =
     '<div id="d" tabindex="-1"><button id="a">A</button><input id="m"><button id="z">Z</button><button disabled>off</button></div>';
-  dialog = document.getElementById("d") as HTMLElement;
-  first = document.getElementById("a") as HTMLElement;
-  last = document.getElementById("z") as HTMLElement;
+  dialog = element("d");
+  first = element("a");
+  last = element("z");
 });
 
 const press = (key: string, shiftKey: boolean) => ({

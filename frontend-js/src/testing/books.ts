@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   type Book,
   type BookUuid,
@@ -8,11 +9,21 @@ import {
   type UserId,
 } from "../api";
 
-function bookUuid(raw: string): BookUuid {
+/** A fixture book uuid, refused if it is not a valid one. */
+export function bookUuid(raw: string): BookUuid {
   const uuid = parseBookUuid(raw);
   if (!uuid) throw new Error(`not a book uuid: ${raw}`);
   return uuid;
 }
+
+const userIdSchema = z
+  .number()
+  .int()
+  .positive()
+  .transform((id) => id as UserId);
+
+/** A fixture user id, refused if it is not a positive integer. */
+export const userId = (id: number): UserId => userIdSchema.parse(id);
 
 /** A 2:3 cover as SVG markup, for the fake API to serve. */
 export const COVER_SVG =
@@ -50,7 +61,7 @@ export function aShelf(overrides: Partial<Shelf> = {}): Shelf {
     kind: "manual",
     visibility: "private",
     name: "Winter reads",
-    ownerId: 1 as UserId,
+    ownerId: userId(1),
     ownerName: "ada",
     bookCount: 12,
     coverUuids: [],

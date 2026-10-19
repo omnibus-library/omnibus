@@ -21,6 +21,7 @@ import {
   aWireResumePoint,
   aWireShelf,
   aWireStack,
+  uuidOf,
   WIRE_ADA,
 } from "../../testing/wire";
 import { Library } from "./Library";
@@ -57,12 +58,9 @@ function seedTable() {
   localStorage.setItem(PREFS_KEY, TABLE_PREFS);
 }
 
-// Enough rows per page that "Load more" starts beyond the 400px the scroll observer watches.
-const pageable = (count: number) => aWireLibrary(count);
-
 export const Loaded: Story = {
   beforeEach({ msw }) {
-    msw.use(libraryHandler(pageable(40), 30));
+    msw.use(libraryHandler(aWireLibrary(40), 30));
   },
   play: async ({ canvas, userEvent }) => {
     await expect(
@@ -208,7 +206,7 @@ export const SortRestores: Story = {
   },
 };
 
-const TABLE_BOOKS = pageable(150).map((book, i) =>
+const TABLE_BOOKS = aWireLibrary(150).map((book, i) =>
   i === 0
     ? {
         ...book,
@@ -501,7 +499,7 @@ export const HiddenFormats: Story = {
 const SHELF_KEY = "omnibus.landing_shelf";
 const WINTER = '{"kind":"shelf","id":3}';
 
-const FIRST_COVER = "00000000-0000-4000-8000-000000000001";
+const FIRST_COVER = uuidOf(1);
 
 // Winter reads is hand-picked and summarises five books though it holds two.
 const SHELF_LIST = [
@@ -797,9 +795,6 @@ export const ManualShelfSortLocked: Story = {
   },
 };
 
-const uuidOf = (n: number) =>
-  `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-
 const volume = (series: string, n: number, index: number) =>
   aWireBook({
     id: n,
@@ -1037,10 +1032,12 @@ const DUNE = {
 const resumeRegion = (canvas: ReturnType<typeof within>) =>
   canvas.findByRole("region", { name: "Continue reading" });
 
-const pageAccent = (canvasElement: HTMLElement) =>
-  (canvasElement.querySelector("#lmq-root") as HTMLElement).style
-    .getPropertyValue("--accent")
-    .trim();
+function pageAccent(canvasElement: HTMLElement) {
+  const root = canvasElement.querySelector("#lmq-root");
+  if (!(root instanceof HTMLElement))
+    throw new Error("the page root is missing");
+  return root.style.getPropertyValue("--accent").trim();
+}
 
 export const ResumeStackShown: Story = {
   beforeEach({ msw }) {
@@ -1192,8 +1189,8 @@ export const ScrolledPastStack: Story = {
   },
 };
 
-const AURORA_1 = "00000000-0000-4000-8000-000000000001";
-const AURORA_2 = "00000000-0000-4000-8000-000000000002";
+const AURORA_1 = uuidOf(1);
+const AURORA_2 = uuidOf(2);
 
 // Fresh per story: the bulk handler edits these in place.
 const bulkBooks = () =>
@@ -1251,7 +1248,7 @@ function suggestions(field: HTMLElement) {
 export const BulkSelect: Story = {
   beforeEach({ msw }) {
     seedTable();
-    msw.use(libraryHandler(pageable(150), 60));
+    msw.use(libraryHandler(aWireLibrary(150), 60));
   },
   play: async ({ canvas, userEvent }) => {
     const all = await canvas.findByRole("checkbox", {

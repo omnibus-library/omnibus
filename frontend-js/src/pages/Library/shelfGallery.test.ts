@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { UserId } from "../../api";
-import { aShelf } from "../../testing/books";
+import { aShelf, userId } from "../../testing/books";
 import {
   addTargets,
   attributedOwner,
@@ -10,8 +9,8 @@ import {
   shelfTabMeta,
 } from "./shelfGallery";
 
-const ME = 1 as UserId;
-const THEM = 2 as UserId;
+const ME = userId(1);
+const THEM = userId(2);
 
 describe("railShelves", () => {
   it("keeps the readers own shelves whatever their visibility or kind", () => {

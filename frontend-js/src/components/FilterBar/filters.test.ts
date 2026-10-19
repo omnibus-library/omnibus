@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FilterClause } from "../../api";
-import { aShelf } from "../../testing/books";
+import { aShelf, userId } from "../../testing/books";
 import {
   facetValue,
   formatOptions,
@@ -23,7 +23,7 @@ const tag = (...values: string[]): FilterClause => ({
   mode: "include",
   values,
 });
-const viewer = 1 as never;
+const viewer = userId(1);
 
 describe("withFieldClause", () => {
   it("replaces every clause on the field and leaves the rest", () => {
@@ -65,7 +65,7 @@ describe("facetValue", () => {
       aShelf({
         id: 4,
         name: "Book club",
-        ownerId: 2 as never,
+        ownerId: userId(2),
         ownerName: "bo",
       }),
     ],
@@ -99,10 +99,10 @@ describe("shelves", () => {
   it("names another reader's shelf with its owner but not a wishlist or your own", () => {
     expect(shelfLabel(aShelf(), viewer)).toBe("Winter reads");
     expect(
-      shelfLabel(aShelf({ ownerId: 2 as never, ownerName: "bo" }), viewer),
+      shelfLabel(aShelf({ ownerId: userId(2), ownerName: "bo" }), viewer),
     ).toBe("Winter reads · bo");
     expect(
-      shelfLabel(aShelf({ kind: "wishlist", ownerId: 2 as never }), viewer),
+      shelfLabel(aShelf({ kind: "wishlist", ownerId: userId(2) }), viewer),
     ).toBe("Winter reads");
   });
 

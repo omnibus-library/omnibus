@@ -2,9 +2,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { useState } from "react";
 import { expect, within } from "storybook/test";
-import type { FilterClause, UserId } from "../../api";
+import type { FilterClause } from "../../api";
 import { ADA } from "../../testing/AppHarness";
-import { aShelf } from "../../testing/books";
+import { aShelf, userId } from "../../testing/books";
 import { filterOptionHandlers, hanging } from "../../testing/handlers";
 import { FilterBar } from "./FilterBar";
 import type { ShelfList } from "./filters";
@@ -19,7 +19,7 @@ const LOADED: ShelfList = {
   state: "loaded",
   shelves: [
     aShelf(),
-    aShelf({ id: 4, name: "Book club", ownerId: 2 as UserId, ownerName: "bo" }),
+    aShelf({ id: 4, name: "Book club", ownerId: userId(2), ownerName: "bo" }),
     aShelf({ id: 5, name: "Rules", kind: "smart" }),
   ],
 };

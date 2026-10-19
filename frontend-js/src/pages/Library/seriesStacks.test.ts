@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SeriesStack, StackState } from "../../api";
-import { aBook, aStack } from "../../testing/books";
+import { aBook, aStack, bookUuid } from "../../testing/books";
+import { uuidOf } from "../../testing/wire";
 import {
   bandStyle,
   type GridItem,
@@ -13,22 +14,38 @@ import {
   volumeCaption,
 } from "./seriesStacks";
 
-const book = (uuid: string, index: string | null = null) =>
+// Real uuids behind the short names the cases read by.
+const ids = {
+  a: bookUuid(uuidOf(1)),
+  b: bookUuid(uuidOf(2)),
+  s1: bookUuid(uuidOf(3)),
+  s2: bookUuid(uuidOf(4)),
+  s3: bookUuid(uuidOf(5)),
+  s4: bookUuid(uuidOf(6)),
+  x: bookUuid(uuidOf(7)),
+  y: bookUuid(uuidOf(8)),
+  gone: bookUuid(uuidOf(9)),
+};
+type Name = keyof typeof ids;
+const nameOf = (uuid: string) =>
+  Object.entries(ids).find(([, id]) => id === uuid)?.[0];
+
+const book = (name: Name, index: string | null = null) =>
   aBook({
-    uuid: uuid as ReturnType<typeof aBook>["uuid"],
+    uuid: ids[name],
     series: index === null ? null : { name: "Saga", index },
   });
 
 const state = (
-  uuid: string,
+  name: Name,
   started: boolean,
   finished: boolean,
   percent: number | null = null,
-): StackState => ({ uuid, started, finished, percent });
+): StackState => ({ uuid: ids[name], started, finished, percent });
 
-const saga = (lead: string, members: string[], states: StackState[] = []) =>
+const saga = (lead: Name, members: Name[], states: StackState[] = []) =>
   aStack({
-    leadUuid: lead,
+    leadUuid: ids[lead],
     members: members.map((u, i) => book(u, String(i + 1))),
     states,
   });
@@ -37,11 +54,11 @@ const labels = (items: GridItem[]) =>
   items.map((item) => {
     switch (item.kind) {
       case "book":
-        return `book:${item.book.uuid}`;
+        return `book:${nameOf(item.book.uuid)}`;
       case "vol":
-        return `vol:${item.volume.book.uuid}`;
+        return `vol:${nameOf(item.volume.book.uuid)}`;
       default:
-        return `${item.kind}:${item.stack.leadUuid}`;
+        return `${item.kind}:${nameOf(item.stack.leadUuid)}`;
     }
   });
 
@@ -60,7 +77,7 @@ describe("gridItems", () => {
     const books = [book("a"), book("s2", "2"), book("b")];
     const stacks = [saga("s2", ["s1", "s2", "s3"])];
 
-    const items = gridItems(books, stacks, "s2");
+    const items = gridItems(books, stacks, ids.s2);
 
     expect(labels(items)).toEqual([
       "book:a",
@@ -78,7 +95,7 @@ describe("gridItems", () => {
   it("shows a book for a one-member stack", () => {
     const books = [book("s1", "1")];
 
-    expect(labels(gridItems(books, [saga("s1", ["s1"])], "s1"))).toEqual([
+    expect(labels(gridItems(books, [saga("s1", ["s1"])], ids.s1))).toEqual([
       "book:s1",
     ]);
   });
@@ -87,7 +104,7 @@ describe("gridItems", () => {
     const books = [book("s1", "1")];
 
     expect(
-      labels(gridItems(books, [saga("s1", ["s1", "s2"])], "gone")),
+      labels(gridItems(books, [saga("s1", ["s1", "s2"])], ids.gone)),
     ).toEqual(["stack:s1"]);
   });
 });
@@ -97,13 +114,13 @@ describe("itemKey", () => {
     const stack = saga("s2", ["s1", "s2"]);
     const books = [book("a"), book("s2", "2")];
 
-    expect(gridItems(books, [stack], "s2").map(itemKey)).toEqual([
-      "a",
-      "cap-s2",
-      "s1",
-      "s2",
+    expect(gridItems(books, [stack], ids.s2).map(itemKey)).toEqual([
+      ids.a,
+      `cap-${ids.s2}`,
+      ids.s1,
+      ids.s2,
     ]);
-    expect(itemKey({ kind: "stack", stack })).toBe("stack-s2");
+    expect(itemKey({ kind: "stack", stack })).toBe(`stack-${ids.s2}`);
   });
 });
 
@@ -132,7 +149,11 @@ describe("stackLeaves", () => {
       [state("s1", true, true), state("s3", true, false, 20)],
     );
 
-    expect(stackLeaves(stack).map((b) => b.uuid)).toEqual(["s3", "s1", "s2"]);
+    expect(stackLeaves(stack).map((b) => b.uuid)).toEqual([
+      ids.s3,
+      ids.s1,
+      ids.s2,
+    ]);
   });
 });
 
@@ -167,15 +188,15 @@ describe("bandStyle", () => {
 describe("stackLeads", () => {
   it("names each stack the grid folds and skips a one-member one", () => {
     expect(stackLeads([saga("s1", ["s1", "s2"]), saga("x", ["x"])])).toEqual([
-      "s1",
+      ids.s1,
     ]);
   });
 });
 
 describe("isStale", () => {
   it("flags a key no current stack leads with", () => {
-    expect(isStale("gone", ["s1"])).toBe(true);
-    expect(isStale("s1", ["s1"])).toBe(false);
-    expect(isStale(null, ["s1"])).toBe(false);
+    expect(isStale(ids.gone, [ids.s1])).toBe(true);
+    expect(isStale(ids.s1, [ids.s1])).toBe(false);
+    expect(isStale(null, [ids.s1])).toBe(false);
   });
 });
