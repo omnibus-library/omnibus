@@ -2,6 +2,7 @@ import { Outlet } from "react-router";
 import {
   SearchPaletteOverlay,
   SearchPaletteProvider,
+  useSearchPaletteOpen,
 } from "../components/SearchPalette/SearchPalette";
 import { TopNav } from "../components/TopNav/TopNav";
 import "./AppShell.css";
@@ -10,13 +11,20 @@ import "./AppShell.css";
 export function AppShell() {
   return (
     <SearchPaletteProvider>
-      <div className="app-shell">
-        <TopNav />
-        <main>
-          <Outlet />
-        </main>
-        <SearchPaletteOverlay />
-      </div>
+      <ShellFrame />
+      <SearchPaletteOverlay />
     </SearchPaletteProvider>
+  );
+}
+
+// Inert under the open palette, so focus can't wander behind its scrim.
+function ShellFrame() {
+  return (
+    <div className="app-shell" inert={useSearchPaletteOpen()}>
+      <TopNav />
+      <main>
+        <Outlet />
+      </main>
+    </div>
   );
 }

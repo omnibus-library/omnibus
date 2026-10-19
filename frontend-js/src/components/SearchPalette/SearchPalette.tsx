@@ -63,6 +63,9 @@ export function SearchPaletteProvider({ children }: { children: ReactNode }) {
   return <PaletteContext value={{ open, setOpen }}>{children}</PaletteContext>;
 }
 
+/** Whether the palette is open, for whatever must step aside while it is. */
+export const useSearchPaletteOpen = () => usePalette().open;
+
 /** The top bar's search pill: it opens the palette. */
 export function SearchPaletteTrigger() {
   const { setOpen } = usePalette();

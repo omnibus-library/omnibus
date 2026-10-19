@@ -1,5 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   createMemoryRouter,
   type RouteObject,
@@ -95,6 +96,17 @@ describe("routes", () => {
       expect(
         screen.queryByRole("navigation", { name: "Primary" }),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("search palette", () => {
+    it("makes the page behind the open palette inert", async () => {
+      renderRoute("/authors");
+      const nav = await screen.findByRole("navigation", { name: "Primary" });
+
+      await userEvent.keyboard("{Control>}k{/Control}");
+
+      expect(nav.closest(".app-shell")).toHaveAttribute("inert");
     });
   });
 

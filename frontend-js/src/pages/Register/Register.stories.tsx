@@ -114,10 +114,14 @@ export const EditingWhileCreating: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.type(await canvas.findByLabelText("Username"), "grace");
     await userEvent.type(canvas.getByLabelText("Password"), PASSWORD);
-    await userEvent.click(canvas.getByRole("button", { name: "Create account" }));
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Create account" }),
+    );
 
     await userEvent.type(canvas.getByLabelText("Username"), "x");
 
-    await expect(canvas.getByRole("button", { name: "Creating…" })).toBeDisabled();
+    await expect(
+      canvas.getByRole("button", { name: "Creating…" }),
+    ).toBeDisabled();
   },
 };
