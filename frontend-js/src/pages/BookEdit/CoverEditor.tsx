@@ -58,6 +58,10 @@ export type CoverProps = {
     | "hasCoverOverride"
   >;
   target: CoverTarget;
+  /** The page holds a write of its own, or another cover surface is mid-write: take no cover write now. */
+  disabled?: boolean;
+  /** Told when a cover write starts and ends, so the page can keep Save and Revert off meanwhile. */
+  onBusy?: (busy: boolean) => void;
 };
 
 /** The placeholder plate and the image the cover surfaces show now, for a live or a staged target. */
@@ -86,11 +90,12 @@ function stagedHint({ source, preview }: StagedCover) {
 
 /** The sidebar's cover card: preview, hint and the controls that replace or revert the cover. */
 export function CoverEditor(props: CoverProps) {
-  const { book, target } = props;
+  const { book, target, disabled = false, onBusy } = props;
   const [busy, setBusy] = useState<"file" | "url" | "revert" | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [pastedUrl, setPastedUrl] = useState("");
   const { plate, src } = coverPreview(props);
+  const locked = busy !== null || disabled;
 
   // One write at a time; the status line says what is in flight and then how it ended.
   async function write(
@@ -101,6 +106,7 @@ export function CoverEditor(props: CoverProps) {
     call: () => Promise<EditableBook>,
   ) {
     setBusy(kind);
+    onBusy?.(true);
     setStatus(working);
     try {
       const updated = await call();
@@ -112,6 +118,7 @@ export function CoverEditor(props: CoverProps) {
       return false;
     } finally {
       setBusy(null);
+      onBusy?.(false);
     }
   }
 
@@ -141,7 +148,7 @@ export function CoverEditor(props: CoverProps) {
   const applyUrl = async (e: FormEvent) => {
     e.preventDefault();
     const url = pastedUrl.trim();
-    if (target.kind !== "live" || busy || !url) return;
+    if (target.kind !== "live" || locked || !url) return;
     const { uuid } = target;
     const applied = await write(
       "url",
@@ -185,7 +192,7 @@ export function CoverEditor(props: CoverProps) {
           type="file"
           accept={ACCEPT}
           data-testid="cover-upload-input"
-          disabled={busy !== null}
+          disabled={locked}
           onChange={(e) => {
             pickFile(e.target.files?.[0]);
             // So picking the same file again still counts as a change.
@@ -204,7 +211,7 @@ export function CoverEditor(props: CoverProps) {
                 type="url"
                 placeholder="https://…"
                 data-testid="cover-url-input"
-                disabled={busy !== null}
+                disabled={locked}
                 value={pastedUrl}
                 onChange={(e) => setPastedUrl(e.target.value)}
               />
@@ -212,7 +219,7 @@ export function CoverEditor(props: CoverProps) {
                 type="submit"
                 size="sm"
                 data-testid="cover-url-apply"
-                disabled={busy !== null || !pastedUrl.trim()}
+                disabled={locked || !pastedUrl.trim()}
                 aria-busy={busy === "url"}
               >
                 <BusyLabel
@@ -232,7 +239,7 @@ export function CoverEditor(props: CoverProps) {
                   justifyContent: "center",
                 }}
                 data-testid="cover-remove-override"
-                disabled={busy !== null}
+                disabled={locked}
                 onClick={() =>
                   write(
                     "revert",

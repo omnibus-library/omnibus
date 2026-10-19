@@ -37,6 +37,7 @@ function EditForm({ book }: { book: EditableBook }) {
   // The book as the server last reported it, which a cover write moves; `book.form` stays the baseline.
   const [live, setLive] = useState(book);
   const [coverReplaced, setCoverReplaced] = useState(false);
+  const [coverBusy, setCoverBusy] = useState(false);
   const dirty = dirtyLabels(book.form, form.watch());
   const { blocker, allowLeave } = useLeaveGuard(dirty.length > 0);
 
@@ -68,10 +69,6 @@ function EditForm({ book }: { book: EditableBook }) {
     });
     queryClient.invalidateQueries({ queryKey: ["books"] });
   };
-  const cover = {
-    book: live,
-    target: { kind: "live", uuid: book.uuid, onApplied: onCoverApplied },
-  } satisfies CoverProps;
   const save = useMutation({
     mutationFn: (values: MetaForm) =>
       saveOverrides(book.uuid, overridesFrom(book.form, values)),
@@ -81,6 +78,15 @@ function EditForm({ book }: { book: EditableBook }) {
     mutationFn: () => revertOverrides(book.uuid),
     onSuccess: written,
   });
+
+  // A cover lands the moment it is picked, so none may race a save or a revert, or another cover.
+  const writing = save.isPending || revert.isPending || coverBusy;
+  const cover = {
+    book: live,
+    target: { kind: "live", uuid: book.uuid, onApplied: onCoverApplied },
+    disabled: writing,
+    onBusy: setCoverBusy,
+  } satisfies CoverProps;
 
   return (
     <div
@@ -109,7 +115,7 @@ function EditForm({ book }: { book: EditableBook }) {
         <Sidebar
           book={live}
           cover={cover}
-          saving={save.isPending || revert.isPending}
+          saving={writing}
           onRevert={() => {
             save.reset();
             revert.mutate(undefined, { onSuccess: leave });
@@ -120,7 +126,7 @@ function EditForm({ book }: { book: EditableBook }) {
         mode={{ kind: "edit", uuid: book.uuid }}
         dirty={dirty}
         coverReplaced={coverReplaced}
-        saving={save.isPending || revert.isPending}
+        saving={writing}
         error={
           form.formState.errors.printPages?.message ??
           save.error?.message ??

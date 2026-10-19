@@ -123,6 +123,7 @@ function CoverRow({
       return;
     }
     setBusy(true);
+    cover.onBusy?.(true);
     setStatus("Applying cover…");
     try {
       target.onApplied(await coverFromUrl(target.uuid, url));
@@ -133,6 +134,7 @@ function CoverRow({
       );
     } finally {
       setBusy(false);
+      cover.onBusy?.(false);
     }
   }
 
@@ -154,7 +156,7 @@ function CoverRow({
               ? `Use the cover from ${sourceName} — saves immediately`
               : `Use the cover from ${sourceName}`
           }
-          disabled={!sourceUrl || busy}
+          disabled={!sourceUrl || busy || cover.disabled}
           aria-busy={busy}
           onClick={() => sourceUrl && apply(sourceUrl)}
         >

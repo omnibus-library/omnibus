@@ -12,6 +12,7 @@ import {
 } from "../../testing/AppHarness";
 import {
   bookHandler,
+  deferred,
   failing,
   filterOptionHandlers,
   hanging,
@@ -326,6 +327,36 @@ export const ReplacingTheCoverEnablesSave: Story = {
     await expect(await canvas.findByText("Book page")).toBeInTheDocument();
     await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
     await expect(saved).toEqual([]);
+  },
+};
+
+let coverGate = deferred();
+
+export const HoldsSaveAndRevertWhileACoverUploads: Story = {
+  beforeEach({ msw }) {
+    coverGate = deferred();
+    msw.use(
+      bookHandler(OVERRIDDEN),
+      ...coverWriteHandlers(OVERRIDDEN, { gate: coverGate.promise }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    // An edit, so Save would be on offer were it not held.
+    await userEvent.type(await canvas.findByLabelText(/^Title/), "!");
+    await userEvent.upload(
+      await canvas.findByLabelText("Replace cover"),
+      new File(["png"], "new-cover.png", { type: "image/png" }),
+    );
+
+    await expect(
+      await canvas.findByText("Uploading new-cover.png…"),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("me-save")).toBeDisabled();
+    await expect(canvas.getByTestId("revert-overrides")).toBeDisabled();
+    coverGate.release();
+    await expect(await canvas.findByText("Cover updated.")).toBeInTheDocument();
+    await expect(canvas.getByTestId("me-save")).toBeEnabled();
+    await expect(canvas.getByTestId("revert-overrides")).toBeEnabled();
   },
 };
 
