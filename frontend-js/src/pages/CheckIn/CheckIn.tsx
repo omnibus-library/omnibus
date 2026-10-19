@@ -49,6 +49,8 @@ export function CheckIn() {
 
   // A copy or wishlist entry changes the book, the lists and the shelves that count it.
   const wrote = (uuid: string) => {
+    // A retry that lands must not keep the failure it recovered from.
+    setError(null);
     for (const queryKey of [
       ["book", uuid],
       ["books"],

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { HttpResponse, http } from "msw";
 import { expect, waitFor } from "storybook/test";
 import {
   expectInvalidated,
@@ -250,6 +251,34 @@ export const CheckInFailsAndStays: Story = {
     );
     await expect(canvas.getByTestId("check-in-confirm")).toBeInTheDocument();
     await expect(canvas.getByTestId("check-in-confirm-submit")).toBeEnabled();
+  },
+};
+
+export const ClearsTheFailureWhenARetrySucceeds: Story = {
+  beforeEach({ msw }) {
+    let attempts = 0;
+    msw.use(
+      http.post("/api/scan/check-in", () =>
+        ++attempts === 1
+          ? new HttpResponse("book not found", { status: 400 })
+          : HttpResponse.json({ book_uuid: BOOK.uuid }),
+      ),
+      ...handlers({ kind: "in_library_unowned", book: BOOK }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await lookUp({ canvas, userEvent });
+    await userEvent.click(await canvas.findByTestId("check-in-confirm-submit"));
+    await expect(
+      await canvas.findByTestId("check-in-error"),
+    ).toBeInTheDocument();
+
+    await userEvent.click(canvas.getByTestId("check-in-confirm-submit"));
+
+    await expect(
+      await canvas.findByTestId("check-in-success"),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByTestId("check-in-error")).toBeNull();
   },
 };
 
