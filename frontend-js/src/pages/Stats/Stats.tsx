@@ -272,6 +272,7 @@ function ReaderStats({
     queryKey: ["stats-open-books", userId],
     queryFn: () =>
       fetchRecentProgress(IN_PROGRESS_SHOWN + 1, userId).catch(() => []),
+    refetchOnWindowFocus: false,
   });
   // The previous window stays on screen while the next one loads.
   const period = useQuery({

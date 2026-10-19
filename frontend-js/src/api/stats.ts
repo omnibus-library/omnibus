@@ -164,10 +164,13 @@ export async function fetchChartSeries(spec: ChartSpec) {
   );
 }
 
+// None of these refetch on window focus, as Dioxus doesn't: a failed refetch would swap the figures on
+// screen for the page's error, or for the empty fallback the context reads settle on.
 export const statsQuery = (range: StatsRange, userId: UserId | null) =>
   queryOptions({
     queryKey: ["stats", userId, range],
     queryFn: () => fetchStats(range, userId),
+    refetchOnWindowFocus: false,
   });
 
 // The three reads below are context beside the reader's own figures, so a failure
@@ -175,17 +178,20 @@ export const statsQuery = (range: StatsRange, userId: UserId | null) =>
 export const householdReadersQuery = queryOptions({
   queryKey: ["household-readers"],
   queryFn: () => fetchHouseholdReaders().catch(() => []),
+  refetchOnWindowFocus: false,
 });
 
 export const librarySizeQuery = queryOptions({
   queryKey: ["library-size"],
   queryFn: () => fetchLibrarySize().catch(() => toLibrarySize({ books: 0 })),
+  refetchOnWindowFocus: false,
 });
 
 export const libraryCompositionQuery = queryOptions({
   queryKey: ["library-composition"],
   queryFn: () =>
     fetchLibraryComposition().catch(() => toLibraryComposition({ books: 0 })),
+  refetchOnWindowFocus: false,
 });
 
 export const chartQuery = (spec: ChartSpec) =>
@@ -193,4 +199,5 @@ export const chartQuery = (spec: ChartSpec) =>
     queryKey: ["stats-chart", spec],
     queryFn: () => fetchChartSeries(spec),
     enabled: spec.measures.length > 0,
+    refetchOnWindowFocus: false,
   });
