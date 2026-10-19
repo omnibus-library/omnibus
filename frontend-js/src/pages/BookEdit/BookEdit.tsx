@@ -16,6 +16,7 @@ import {
 import { Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
+import { UnsavedDialog, useLeaveGuard } from "../../components/Unsaved/Unsaved";
 import { dirtyLabels } from "./dirty";
 import { Breadcrumb, PageHeader } from "./EditHeader";
 import { MetaFormGrid } from "./MetaFormGrid";
@@ -31,6 +32,7 @@ function EditForm({ book }: { book: EditableBook }) {
     defaultValues: book.form,
   });
   const dirty = dirtyLabels(book.form, form.watch());
+  const { blocker, allowLeave } = useLeaveGuard(dirty.length > 0);
 
   // The book's detail page, the lists and the resume row all read what an edit changes.
   const leave = () => {
@@ -43,6 +45,7 @@ function EditForm({ book }: { book: EditableBook }) {
     ]) {
       queryClient.invalidateQueries({ queryKey });
     }
+    allowLeave();
     navigate(`/books/${book.uuid}`);
   };
   const save = useMutation({
@@ -93,7 +96,9 @@ function EditForm({ book }: { book: EditableBook }) {
           revert.error?.message
         }
         onSave={form.handleSubmit((values) => save.mutate(values))}
+        onDiscard={allowLeave}
       />
+      <UnsavedDialog blocker={blocker} />
     </div>
   );
 }

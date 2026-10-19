@@ -33,6 +33,7 @@ const OWNERS = [
   ["layouts/AppShell.css", (c) => c === "app-shell"],
   ["components/DiscPage/DiscPage.css", (c) => c.startsWith("disc-")],
   ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || c.startsWith("ebook-") || c.startsWith("sort-th") || c.startsWith("ss-") || c.startsWith("format-badge") || c.startsWith("bulk-edit") || c.startsWith("shelf-btn-") || c.startsWith("shelf-modal-") || c.startsWith("shelf-picker") || c.startsWith("pick-") || c === "author-photo-modal-backdrop" || ["landing-col", "library-empty", "cover-link"].includes(c)],
+  ["components/Unsaved/Unsaved.css", (c) => c.startsWith("mg-") || c.startsWith("del-")],
   ["pages/BookEdit/BookEdit.css", (c) => c.startsWith("me-") || c.startsWith("mes-") || c.startsWith("bd-crumb")],
   ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || c.startsWith("bd-")],
   ["styles/base.css", (c) => ["card", "divider", "label", "mono", "sr-only", "subtitle"].includes(c)],

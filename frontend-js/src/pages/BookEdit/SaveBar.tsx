@@ -9,10 +9,19 @@ type Props = {
   saving: boolean;
   error: string | undefined;
   onSave: () => void;
+  /** Called as the Discard link is followed, before the router navigates. */
+  onDiscard: () => void;
 };
 
 /** The sticky bar under the form: what is edited, any error, and Discard and Save. */
-export function SaveBar({ uuid, dirty, saving, error, onSave }: Props) {
+export function SaveBar({
+  uuid,
+  dirty,
+  saving,
+  error,
+  onSave,
+  onDiscard,
+}: Props) {
   return (
     <div className="me-save-bar">
       {dirty.length > 0 ? (
@@ -41,6 +50,7 @@ export function SaveBar({ uuid, dirty, saving, error, onSave }: Props) {
           to={`/books/${uuid}`}
           variant="ghost"
           data-testid="me-discard"
+          onClick={onDiscard}
         >
           Discard edits
         </ButtonLink>

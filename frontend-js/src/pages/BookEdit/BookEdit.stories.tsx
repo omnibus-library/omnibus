@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { Route, Routes } from "react-router";
-import { expect } from "storybook/test";
+import { useState } from "react";
+import { createMemoryRouter, RouterProvider } from "react-router";
+import { expect, waitFor } from "storybook/test";
 import { getGetEbookByUuidMockHandler404 } from "../../api/generated/omnibus.msw";
 import type { MetadataOverrides } from "../../api/generated/schemas";
 import {
@@ -22,17 +23,26 @@ const UUID = BOOK.unique_identifier;
 const saved: MetadataOverrides[] = [];
 const reverted = { count: 0 };
 
+// The page reads its uuid from the route, leaves for the book's page, and its
+// leave guard needs a data router, which the stories' own harness doesn't provide.
+function EditRoutes() {
+  const [router] = useState(() =>
+    createMemoryRouter(
+      [
+        { path: "/", element: <p>Library</p> },
+        { path: "/books/:uuid/edit", element: <BookEdit /> },
+        { path: "/books/:uuid", element: <p>Book page</p> },
+      ],
+      { initialEntries: [`/books/${UUID}/edit`] },
+    ),
+  );
+  return <RouterProvider router={router} />;
+}
+
 const meta = {
   title: "Pages/BookEdit",
-  component: BookEdit,
-  parameters: { path: `/books/${UUID}/edit` },
-  // The page reads its uuid from the route and leaves for the book's page.
-  render: () => (
-    <Routes>
-      <Route path="/books/:uuid/edit" element={<BookEdit />} />
-      <Route path="/books/:uuid" element={<p>Book page</p>} />
-    </Routes>
-  ),
+  component: EditRoutes,
+  parameters: { ownRouter: true },
   beforeEach({ msw }) {
     saved.length = 0;
     reverted.count = 0;
@@ -42,7 +52,7 @@ const meta = {
       ...filterOptionHandlers(),
     );
   },
-} satisfies Meta<typeof BookEdit>;
+} satisfies Meta<typeof EditRoutes>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -124,6 +134,7 @@ export const SavesTitle: Story = {
     );
 
     await expect(await canvas.findByText("Book page")).toBeInTheDocument();
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
     await expect(saved).toEqual([{ title: "Aurora Station" }]);
   },
 };
@@ -155,6 +166,7 @@ export const Reverts: Story = {
     await userEvent.click(canvas.getByTestId("revert-overrides"));
 
     await expect(await canvas.findByText("Book page")).toBeInTheDocument();
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
     await expect(reverted.count).toBe(1);
   },
 };
@@ -182,6 +194,7 @@ export const DiscardsWithoutSaving: Story = {
     await userEvent.click(canvas.getByRole("link", { name: "Discard edits" }));
 
     await expect(await canvas.findByText("Book page")).toBeInTheDocument();
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
     await expect(saved).toEqual([]);
   },
 };
@@ -210,5 +223,47 @@ export const PrintPagesNotANumber: Story = {
       "Print page count must be a whole number.",
     );
     await expect(saved).toEqual([]);
+  },
+};
+
+export const AsksBeforeLeavingWithEdits: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.type(await canvas.findByLabelText(/^Title/), "!");
+    await expect(window.onbeforeunload).not.toBeNull();
+    await userEvent.click(canvas.getByRole("link", { name: "Home" }));
+
+    await expect(
+      await canvas.findByRole("dialog", { name: "Discard unsaved changes" }),
+    ).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: "Keep editing" }));
+
+    await waitFor(() =>
+      expect(canvas.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await expect(canvas.getByLabelText(/^Title/)).toHaveValue(
+      "Aurora Station, Vol. 1!",
+    );
+  },
+};
+
+export const DiscardsEditsFromTheDialog: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.type(await canvas.findByLabelText(/^Title/), "!");
+    await userEvent.click(canvas.getByRole("link", { name: "Home" }));
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Discard" }),
+    );
+
+    await expect(await canvas.findByText("Library")).toBeInTheDocument();
+    await expect(saved).toEqual([]);
+    await waitFor(() => expect(window.onbeforeunload).toBeNull());
+  },
+};
+
+export const LeavesCleanWithoutAsking: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("link", { name: "Home" }));
+
+    await expect(await canvas.findByText("Library")).toBeInTheDocument();
   },
 };
