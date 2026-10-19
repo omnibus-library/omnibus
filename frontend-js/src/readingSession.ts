@@ -93,9 +93,10 @@ export function useReadingSession(uuid: BookUuid): void {
       if (r) void postSessions([r]);
     };
     tracker.start(uuid, nowSecs());
+    const suspend = () => send(tracker.suspend(nowSecs()));
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
-        send(tracker.suspend(nowSecs()));
+        suspend();
       } else {
         tracker.resume(nowSecs());
       }
@@ -106,11 +107,12 @@ export function useReadingSession(uuid: BookUuid): void {
       HEARTBEAT_MS,
     );
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("pagehide", flush);
+    // Suspend, not stop: a page restored from the back/forward cache is visible again and resumes.
+    window.addEventListener("pagehide", suspend);
     return () => {
       clearInterval(heartbeat);
       document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("pagehide", suspend);
       flush();
     };
   }, [uuid]);

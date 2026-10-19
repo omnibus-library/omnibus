@@ -161,4 +161,46 @@ describe("useReadingSession", () => {
 
     expect(posted()).toEqual([]);
   });
+
+  describe("visibility", () => {
+    const show = (state: DocumentVisibilityState) => {
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue(state);
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it("flushes the sitting when the tab hides", () => {
+      renderHook(() => useReadingSession(A));
+
+      vi.advanceTimersByTime(20_000);
+      show("hidden");
+
+      expect(posted().map((p) => p.body[0].progress_units)).toEqual([20]);
+    });
+
+    it("starts a new segment when the tab shows again", () => {
+      renderHook(() => useReadingSession(A));
+      vi.advanceTimersByTime(20_000);
+      show("hidden");
+
+      vi.advanceTimersByTime(30_000);
+      show("visible");
+      vi.advanceTimersByTime(10_000);
+      show("hidden");
+
+      expect(posted().map((p) => p.body[0].progress_units)).toEqual([20, 10]);
+    });
+
+    it("keeps recording after a page restored from the back-forward cache", () => {
+      renderHook(() => useReadingSession(A));
+      window.dispatchEvent(new Event("pagehide"));
+
+      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+      show("visible");
+      vi.advanceTimersByTime(60_000);
+
+      expect(posted().map((p) => p.body[0].progress_units)).toEqual([60]);
+    });
+  });
 });

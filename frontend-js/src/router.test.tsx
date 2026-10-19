@@ -2,6 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
+  createBrowserRouter,
   createMemoryRouter,
   type RouteObject,
   RouterProvider,
@@ -142,6 +143,44 @@ describe("routes", () => {
     expect(
       screen.queryByRole("navigation", { name: "Primary" }),
     ).not.toBeInTheDocument();
+  });
+
+  describe("reader Back", () => {
+    // A browser router, for the history index Back reads; jsdom's history is shared, so each test seeds its own.
+    const openBrowserRouter = (path: string) => {
+      window.history.replaceState(null, "", path);
+      const router = createBrowserRouter(routes);
+      render(
+        <QueryClientProvider client={harnessClient(ADA)}>
+          <AtriumRoot>
+            <RouterProvider router={router} />
+          </AtriumRoot>
+        </QueryClientProvider>,
+      );
+      return router;
+    };
+
+    it("returns to the book when the reader replaced the page the app opened on", async () => {
+      const router = openBrowserRouter(`/login?next=/comic/${UUID}`);
+      await router.navigate(`/comic/${UUID}`, { replace: true });
+
+      await userEvent.click(await screen.findByRole("button", { name: "Back" }));
+
+      await waitFor(() =>
+        expect(router.state.location.pathname).toBe(`/books/${UUID}`),
+      );
+    });
+
+    it("goes back in history when the reader was opened from inside the app", async () => {
+      const router = openBrowserRouter("/authors");
+      await router.navigate(`/comic/${UUID}`);
+
+      await userEvent.click(await screen.findByRole("button", { name: "Back" }));
+
+      await waitFor(() =>
+        expect(router.state.location.pathname).toBe("/authors"),
+      );
+    });
   });
 
   describe("layout", () => {

@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import {
   type BookDetail,
   type BookUuid,
@@ -53,7 +53,8 @@ const pageSrc = (uuid: BookUuid, page: number) =>
 /** Back goes back in history when the reader came from inside the app, else to the book. */
 export function useBackToBook(uuid: BookUuid) {
   const navigate = useNavigate();
-  const cameFromApp = useLocation().key !== "default";
+  // React Router's history index: 0 is the first entry, which a replace redirect keeps, so Back there would leave the app.
+  const cameFromApp = window.history.state?.idx > 0;
   return () => (cameFromApp ? navigate(-1) : navigate(`/books/${uuid}`));
 }
 
