@@ -1,4 +1,4 @@
-import type { Chapter } from "../../api";
+import { ApiError, type Chapter } from "../../api";
 import { MAX_RATE, MIN_RATE } from "../../playback/boot";
 
 /** `H:MM:SS`, or `M:SS` under an hour; 0:00 for anything that isn't a time. */
@@ -130,4 +130,15 @@ export function clampRate(rate: number): number {
   return (
     Math.round(Math.min(MAX_RATE, Math.max(MIN_RATE, rate)) * steps) / steps
   );
+}
+
+/** The "Synced here" button's label once a declaration settles; `failure` is what it threw, `null` on success. */
+export function syncLabel(failure: unknown): string {
+  if (failure === null) return "Synced ✓";
+  // shortcut: REST folds three refusals into one 409, so the body text tells "link first" apart; move to a distinct status once the contract has one.
+  return failure instanceof ApiError &&
+    failure.status === 409 &&
+    failure.message.startsWith("confirm the alignment first")
+    ? "Link formats first"
+    : "Sync failed";
 }

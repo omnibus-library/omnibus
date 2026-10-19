@@ -5,6 +5,7 @@ import { expect, fireEvent, waitFor, within } from "storybook/test";
 import { ADA } from "../../testing/AppHarness";
 import type { ListenWrite } from "../../testing/audioHandlers";
 import { listenHandlers } from "../../testing/audioHandlers";
+import { hanging } from "../../testing/handlers";
 import {
   aWireAudioBookmark,
   aWireAudioManifest,
@@ -548,5 +549,129 @@ export const SleepCountdownSurvivesLeavingThePlayer: Story = {
     await expect(
       await canvas.findByText(/^Sleep · 14:5\d$/),
     ).toBeInTheDocument();
+  },
+};
+
+const SYNC = "POST /api/books/sync-point";
+
+async function syncHere(canvas: ReturnType<typeof within>) {
+  await canvas.findByText("Now playing · Chapter 1 of 3");
+  const button = canvas.getByTestId("listen-sync-here");
+  fireEvent.click(button);
+  return button;
+}
+
+export const SyncHereDeclaresTheLoadedFile: Story = {
+  play: async ({ canvas }) => {
+    const button = await syncHere(canvas);
+
+    await waitFor(() => expect(button).toHaveTextContent("Synced ✓"));
+    await expect(wrote(SYNC)).toEqual([
+      {
+        book_uuid: UUID,
+        format: "audio",
+        audio_book_file_id: 917,
+        audio_seconds: 600,
+      },
+    ]);
+  },
+};
+
+export const SyncHereShowsBusyWhileTheRequestRuns: Story = {
+  beforeEach({ msw }) {
+    msw.use(hanging("/api/books/:uuid/sync-point", "post"));
+  },
+  play: async ({ canvas }) => {
+    const button = await syncHere(canvas);
+
+    await waitFor(() => expect(button).toHaveAttribute("aria-busy", "true"));
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveTextContent("Syncing…");
+  },
+};
+
+export const SyncHereAsksToLinkFirst: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...listenHandlers(BOOK, {
+        writes,
+        syncRefusal: {
+          status: 409,
+          message:
+            "confirm the alignment first — this book has several audio files",
+        },
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const button = await syncHere(canvas);
+
+    await waitFor(() => expect(button).toHaveTextContent("Link formats first"));
+  },
+};
+
+export const SyncHereReportsAFailure: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...listenHandlers(BOOK, {
+        writes,
+        syncRefusal: { status: 500, message: "boom" },
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const button = await syncHere(canvas);
+
+    await waitFor(() => expect(button).toHaveTextContent("Sync failed"));
+    await expect(button).toHaveAttribute("aria-busy", "false");
+  },
+};
+
+export const SyncHereIsOffWhenOffline: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByText("Now playing · Chapter 1 of 3");
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+    try {
+      fireEvent(window, new Event("offline"));
+
+      await waitFor(() =>
+        expect(canvas.getByTestId("listen-sync-here")).toBeDisabled(),
+      );
+    } finally {
+      // biome-ignore lint/performance/noDelete: restores the prototype's getter the stub shadowed
+      delete (navigator as { onLine?: boolean }).onLine;
+    }
+  },
+};
+
+export const FollowAtBootStartsAtTheMappedSpot: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...listenHandlers(BOOK, {
+        writes,
+        row: TEN_MINUTES_IN,
+        resume: {
+          state: "candidate",
+          follow: true,
+          candidate: {
+            book_file_id: 917,
+            audio_position_seconds: 1200,
+            confidence: "linear",
+            source_client_updated_at: 1_760_000_000,
+            source_format: "epub",
+            target: "audio",
+          },
+        },
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const times = await canvas.findByTestId("listen-scrub-times");
+
+    await expect(await within(times).findByText("20:00")).toBeInTheDocument();
+    await expect(wrote("POST /api/progress")).toEqual([]);
   },
 };

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ApiError } from "../../api";
 import {
   chapterFillPct,
   chapterIndexForElapsed,
@@ -13,6 +14,7 @@ import {
   noChapterFillPct,
   rateLabel,
   remainingAtRate,
+  syncLabel,
   thumbPct,
 } from "./listen";
 
@@ -219,5 +221,28 @@ describe("clampRate", () => {
     expect(clampRate(1.07)).toBe(1.05);
     expect(clampRate(1.08)).toBe(1.1);
     expect(clampRate(1.2 + 0.05)).toBe(1.25);
+  });
+});
+
+describe("syncLabel", () => {
+  it("confirms a declaration that went through", () => {
+    expect(syncLabel(null)).toBe("Synced ✓");
+  });
+
+  it("asks to link when the 409 is the missing-link refusal", () => {
+    const refusal = new ApiError(
+      409,
+      "confirm the alignment first — this book has several audio files",
+    );
+
+    expect(syncLabel(refusal)).toBe("Link formats first");
+  });
+
+  it.each([
+    ["another 409", new ApiError(409, "the other format has no position")],
+    ["a server error", new ApiError(500, "confirm the alignment first")],
+    ["a network error", new TypeError("Failed to fetch")],
+  ])("reports a failure for %s", (_name, failure) => {
+    expect(syncLabel(failure)).toBe("Sync failed");
   });
 });

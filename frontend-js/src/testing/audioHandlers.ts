@@ -28,6 +28,8 @@ type ListenOptions = {
   row?: ProgressRecord | null;
   resume?: CrossFormatResume;
   bookmarks?: Bookmark[];
+  /** Answers `POST …/sync-point` with this refusal instead of a 204. */
+  syncRefusal?: { status: number; message: string };
   /** Holds the manifest until it resolves. */
   gate?: Promise<void>;
 };
@@ -47,6 +49,7 @@ export function listenHandlers(
     row = null,
     resume = { state: "not_linked", follow: false },
     bookmarks = [],
+    syncRefusal,
     gate,
   }: ListenOptions = {},
 ) {
@@ -111,7 +114,9 @@ export function listenHandlers(
     ),
     http.post("/api/books/:uuid/sync-point", async ({ request }) => {
       record("POST /api/books/sync-point", await request.json());
-      return new HttpResponse(null, { status: 204 });
+      return syncRefusal
+        ? new HttpResponse(syncRefusal.message, { status: syncRefusal.status })
+        : new HttpResponse(null, { status: 204 });
     }),
     http.get("/api/bookmarks/book/:uuid", () => HttpResponse.json(marks)),
     http.post("/api/bookmarks", async ({ request }) => {

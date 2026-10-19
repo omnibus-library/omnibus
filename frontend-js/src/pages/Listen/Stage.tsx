@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Link } from "react-router";
-import type { BookDetail } from "../../api";
+import { type BookDetail, declareListeningSyncPoint } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { CoverImage } from "../../components/Cover/CoverImage";
-import { Ring } from "../../components/Loading/Loading";
+import { BusyLabel, Ring } from "../../components/Loading/Loading";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import { sleepToolbarLabel } from "../../playback/sleep";
 import {
@@ -19,6 +19,7 @@ import {
   type Pane,
   rateLabel,
   remainingAtRate,
+  syncLabel,
   thumbPct,
 } from "./listen";
 
@@ -122,6 +123,51 @@ function ChapterMap() {
         </div>
       )}
     </div>
+  );
+}
+
+function subscribeOnline(notify: () => void) {
+  window.addEventListener("online", notify);
+  window.addEventListener("offline", notify);
+  return () => {
+    window.removeEventListener("online", notify);
+    window.removeEventListener("offline", notify);
+  };
+}
+
+/** Declares the ebook and audiobook aligned at this spot; a direct call, never queued, and offline it is off. */
+function SyncHereButton() {
+  const { uuid, loadedFileId, elapsed } = usePlayback();
+  const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine);
+  const [busy, setBusy] = useState(false);
+  const [label, setLabel] = useState("Synced here");
+  const sync = async () => {
+    if (!uuid) return;
+    setBusy(true);
+    // The resolved file, not the `?file_id` request: a file-less declaration on a multi-file book is refused.
+    const failure = await declareListeningSyncPoint(
+      uuid,
+      loadedFileId,
+      elapsed,
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    setLabel(syncLabel(failure));
+    setBusy(false);
+  };
+  return (
+    <Button
+      size="sm"
+      className="lp-toolbar-btn"
+      data-testid="listen-sync-here"
+      title="Declare the ebook and audiobook aligned at this spot"
+      disabled={!online || busy}
+      aria-busy={busy}
+      onClick={sync}
+    >
+      <BusyLabel busy={busy} label={label} busyLabel="Syncing…" />
+    </Button>
   );
 }
 
@@ -288,6 +334,7 @@ export function Stage({
           >
             {pane === "chapters" ? "Chapters ↓" : "Chapters ↑"}
           </Button>
+          <SyncHereButton />
         </div>
       </div>
     </div>
