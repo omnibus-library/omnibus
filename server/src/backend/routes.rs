@@ -195,31 +195,18 @@ fn metadata_override_routes() -> OpenApiRouter<AppState> {
 /// `/api/rpc/progress*` server functions defined in `omnibus_frontend::rpc`.
 fn progress_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route("/api/progress", post(progress::post_progress))
-        .route("/api/progress/sessions", post(progress::post_sessions))
-        .route("/api/progress/recent", get(progress::get_recent_progress))
-        .route("/api/progress/{uuid}", get(progress::get_progress))
-        .route(
-            "/api/books/{uuid}/cross-format-resume",
-            get(cross_format::get_cross_format_resume),
-        )
-        .route(
-            "/api/books/{uuid}/alignment",
-            get(cross_format::get_alignment),
-        )
-        .route(
-            "/api/books/{uuid}/cross-format-link",
-            post(cross_format::post_cross_format_link)
-                .delete(cross_format::delete_cross_format_link),
-        )
-        .route(
-            "/api/books/{uuid}/sync-point",
-            post(cross_format::post_sync_point),
-        )
-        .route(
-            "/api/books/{uuid}/cross-format-follow",
-            post(cross_format::post_cross_format_follow),
-        )
+        .routes(routes!(progress::post_progress))
+        .routes(routes!(progress::post_sessions))
+        .routes(routes!(progress::get_recent_progress))
+        .routes(routes!(progress::get_progress))
+        .routes(routes!(cross_format::get_cross_format_resume))
+        .routes(routes!(cross_format::get_alignment))
+        .routes(routes!(
+            cross_format::post_cross_format_link,
+            cross_format::delete_cross_format_link
+        ))
+        .routes(routes!(cross_format::post_sync_point))
+        .routes(routes!(cross_format::post_cross_format_follow))
 }
 
 /// Admin book merge/unmerge — mobile-facing REST. Web hits the analogous
@@ -257,20 +244,11 @@ fn deletion_routes() -> OpenApiRouter<AppState> {
 /// `/api/rpc/highlights/*` server functions.
 fn highlight_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route("/api/highlights", post(highlights::post_highlight))
-        .route(
-            "/api/highlights/book/{book_uuid}",
-            get(highlights::get_highlights),
-        )
-        .route(
-            "/api/highlights/{id}/color",
-            patch(highlights::patch_highlight_color),
-        )
-        .route(
-            "/api/highlights/{id}/note",
-            patch(highlights::patch_highlight_note),
-        )
-        .route("/api/highlights/{id}", delete(highlights::delete_highlight))
+        .routes(routes!(highlights::post_highlight))
+        .routes(routes!(highlights::get_highlights))
+        .routes(routes!(highlights::patch_highlight_color))
+        .routes(routes!(highlights::patch_highlight_note))
+        .routes(routes!(highlights::delete_highlight))
 }
 
 /// Bookmarks — mobile-facing REST. Web hits the analogous
@@ -278,15 +256,9 @@ fn highlight_routes() -> OpenApiRouter<AppState> {
 /// audiobook player and the reader (position = seconds or EPUB CFI).
 fn bookmark_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route("/api/bookmarks", post(bookmarks::post_bookmark))
-        .route(
-            "/api/bookmarks/book/{book_uuid}",
-            get(bookmarks::get_bookmarks),
-        )
-        .route(
-            "/api/bookmarks/{id}",
-            put(bookmarks::put_bookmark).delete(bookmarks::delete_bookmark),
-        )
+        .routes(routes!(bookmarks::post_bookmark))
+        .routes(routes!(bookmarks::get_bookmarks))
+        .routes(routes!(bookmarks::put_bookmark, bookmarks::delete_bookmark))
 }
 
 /// Reading stats, star ratings, and read/unread state —
@@ -294,27 +266,18 @@ fn bookmark_routes() -> OpenApiRouter<AppState> {
 /// `/api/rpc/ratings/*`, and `/api/rpc/read-status/*` server functions.
 fn engagement_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route("/api/users", get(stats::get_household_readers))
-        .route("/api/stats", get(stats::get_stats))
-        .route("/api/stats/sessions", get(stats::get_session_log))
-        .route("/api/stats/goal", put(stats::put_stats_goal))
-        .route("/api/stats/goal/daily", put(stats::put_stats_daily_goal))
-        .route("/api/library-size", get(stats::get_library_size))
-        .route(
-            "/api/library-composition",
-            get(stats::get_library_composition),
-        )
-        .route("/api/ratings", post(ratings::post_rating))
-        .route(
-            "/api/ratings/others/{uuid}",
-            get(ratings::get_other_ratings),
-        )
-        .route(
-            "/api/ratings/{uuid}",
-            get(ratings::get_rating).delete(ratings::delete_rating),
-        )
-        .route("/api/read-status", put(read_status::put_read_status))
-        .route("/api/read-status/{uuid}", get(read_status::get_read_status))
+        .routes(routes!(stats::get_household_readers))
+        .routes(routes!(stats::get_stats))
+        .routes(routes!(stats::get_session_log))
+        .routes(routes!(stats::put_stats_goal))
+        .routes(routes!(stats::put_stats_daily_goal))
+        .routes(routes!(stats::get_library_size))
+        .routes(routes!(stats::get_library_composition))
+        .routes(routes!(ratings::post_rating))
+        .routes(routes!(ratings::get_other_ratings))
+        .routes(routes!(ratings::get_rating, ratings::delete_rating))
+        .routes(routes!(read_status::put_read_status))
+        .routes(routes!(read_status::get_read_status))
 }
 
 /// Physical Check-In scan flow — mobile-facing REST. Web hits the analogous
@@ -403,23 +366,11 @@ fn shelf_routes() -> OpenApiRouter<AppState> {
 /// `upload_router` (rate-limited, image body cap).
 fn journal_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route("/api/journals", post(journals::post_journal))
-        .route(
-            "/api/journals/book/{book_uuid}",
-            get(journals::get_journal_entries),
-        )
-        .route(
-            "/api/journals/preview",
-            post(journals::post_journal_preview),
-        )
-        .route(
-            "/api/journals/{id}",
-            patch(journals::patch_journal).delete(journals::delete_journal),
-        )
-        .route(
-            "/api/journals/images/{name}",
-            get(journals::get_journal_image),
-        )
+        .routes(routes!(journals::post_journal))
+        .routes(routes!(journals::get_journal_entries))
+        .routes(routes!(journals::post_journal_preview))
+        .routes(routes!(journals::patch_journal, journals::delete_journal))
+        .routes(routes!(journals::get_journal_image))
 }
 
 /// Cover/thumb/author/series/tag discovery routes, including author photo reads.
@@ -568,7 +519,7 @@ fn upload_router(limits: RateLimits) -> OpenApiRouter<AppState> {
             "/api/ebooks/{uuid}/cover/from-url",
             post(overrides::post_ebook_cover_from_url),
         )
-        .route("/api/journals/images", post(journals::post_journal_image))
+        .routes(routes!(journals::post_journal_image))
         .route("/api/account/avatar", post(profile::post_avatar))
         .route(
             "/api/authors/{id}/photo",

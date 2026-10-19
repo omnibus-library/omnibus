@@ -373,3 +373,18 @@ impl ConfirmCrossFormatLink {
         Ok(())
     }
 }
+
+/// Query parameters of `GET /api/books/{uuid}/cross-format-resume`.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct CrossFormatResumeQuery {
+    /// The format you want to resume in. The position in the other format is mapped onto
+    /// it.
+    pub target: ProgressFormat,
+    /// Set to `cfi` to also get the mapped point as an EPUB CFI in the candidate's
+    /// `epub_cfi`, when `target` is `epub`. This opens the book's EPUB, so it is slower.
+    /// Any other value is ignored.
+    #[serde(default)]
+    pub derive: Option<String>,
+}

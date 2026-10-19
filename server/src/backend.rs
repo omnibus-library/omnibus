@@ -203,44 +203,6 @@ fn content_disposition_attachment(filename: &str) -> String {
     format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{encoded}")
 }
 
-/// `?order=` on the annotation list routes. Shared by highlights and
-/// bookmarks so the two cannot drift apart on the accepted vocabulary.
-#[derive(Debug, Default, serde::Deserialize)]
-pub(super) struct AnnotationOrderQuery {
-    order: Option<String>,
-}
-
-impl From<AnnotationOrderQuery> for omnibus_db::AnnotationOrder {
-    fn from(q: AnnotationOrderQuery) -> Self {
-        q.order
-            .as_deref()
-            .map(omnibus_db::AnnotationOrder::parse)
-            .unwrap_or_default()
-    }
-}
-
-/// A create body plus `client_created_at`, the time the device made the row.
-/// The mobile outbox sends it so a create it replays after a drain keeps the
-/// time of the gesture rather than the drain; the db layer clamps it to
-/// server-now. Flattened, so the wire body is the plain create plus one field.
-#[derive(Debug, serde::Deserialize)]
-pub(super) struct ClientStamped<T> {
-    #[serde(flatten)]
-    body: T,
-    #[serde(default)]
-    client_created_at: Option<i64>,
-}
-
-impl<T> ClientStamped<T> {
-    /// A negative stamp is a 400, as `ProgressUpdate::validate` answers one.
-    fn validate_stamp(&self) -> Result<(), String> {
-        if self.client_created_at.is_some_and(|ts| ts < 0) {
-            return Err("client_created_at must be non-negative".into());
-        }
-        Ok(())
-    }
-}
-
 /// Shared axum router state — SQLite pool, worker handle, SSRF guard config.
 #[derive(Clone)]
 pub struct AppState {

@@ -152,6 +152,16 @@ impl CreateJournalEntry {
     }
 }
 
+/// The multipart form `POST /api/journals/images` takes: one part, named `image`.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct JournalImageForm {
+    /// The image: JPEG, PNG, GIF or WebP, up to 10 MiB. The part's own `Content-Type` must
+    /// be an `image/*` type other than SVG.
+    #[cfg_attr(feature = "openapi", schema(value_type = String, format = Binary))]
+    pub image: Vec<u8>,
+}
+
 /// Response for a journal image upload: the serving URL to embed in the
 /// entry's markdown (`![caption](url)`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
