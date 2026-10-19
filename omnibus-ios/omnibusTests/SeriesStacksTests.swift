@@ -1,6 +1,7 @@
 //  SeriesStacksTests.swift
 //  Stack series on the client: the wire decode (old payloads keep loading),
-//  the request and cache key, the grid projection, and the cell captions.
+//  the request and cache key, the grid projection, stacking a whole list
+//  client-side, and the cell captions.
 
 import Foundation
 import Testing
@@ -189,6 +190,52 @@ struct LibraryGridItemsTests {
     @Test func aOneMemberStackStaysAPlainBook() {
         let single = LibraryModel.stackIndex([stack(lead: one, members: [one])])
         #expect(LibraryModel.gridItems(books: [one], stacks: single, open: "u1").map(\.id) == ["book-u1"])
+    }
+}
+
+struct ClientStackTests {
+    @Test func stackBooksFoldsASeriesIntoItsFirstListedMembersSlot() {
+        let two = book(1, "Saga Two", series: "Saga", index: "2")
+        let lone = book(2, "Lone")
+        let one = book(3, "Saga One", series: "Saga", index: "1")
+        let (rows, stacks) = LibraryIndex.stackBooks([two, lone, one])
+        #expect(rows.map(\.id) == [1, 2])
+        #expect(stacks.map(\.leadUuid) == ["u1"])
+        #expect(stacks.first?.members.map(\.id) == [3, 1], "members run in series order")
+        #expect(stacks.first?.states == [], "a client-side stack carries no reading state")
+    }
+
+    @Test func stackBooksLeavesSingletonSeriesAndSerieslessBooksAlone() {
+        let books = [book(1, "Solo", series: "Solo", index: "1"), book(2, "Lone")]
+        let (rows, stacks) = LibraryIndex.stackBooks(books)
+        #expect(rows.map(\.id) == [1, 2])
+        #expect(stacks.isEmpty)
+    }
+
+    @Test func stackBooksGroupsNamesDifferingOnlyInCaseAndSpacing() {
+        let books = [book(1, "A", series: "Saga", index: "1"), book(2, "B", series: " saga ", index: "2")]
+        let (rows, stacks) = LibraryIndex.stackBooks(books)
+        #expect(rows.map(\.id) == [1])
+        #expect(stacks.first?.members.count == 2)
+    }
+
+    @Test func stackBooksPutsUnnumberedVolumesLast() {
+        let books = [
+            book(1, "Side Story", series: "Saga"),
+            book(2, "Ten", series: "Saga", index: "10"),
+            book(3, "Two", series: "Saga", index: "2"),
+        ]
+        #expect(LibraryIndex.stackBooks(books).stacks.first?.members.map(\.id) == [3, 2, 1])
+    }
+
+    @Test func listItemsStackOnlyWhileStackSeriesIsOn() {
+        let books = [book(1, "Saga One", series: "Saga", index: "1"), book(2, "Saga Two", series: "Saga", index: "2")]
+        #expect(LibraryGridItem.items(books, stacking: false, open: nil).map(\.id) == ["book-u1", "book-u2"])
+        #expect(LibraryGridItem.items(books, stacking: true, open: nil).map(\.id) == ["stack-u1"])
+        #expect(
+            LibraryGridItem.items(books, stacking: true, open: "u1").map(\.id)
+                == ["cap-u1", "vol-u1-u1", "vol-u1-u2"]
+        )
     }
 }
 

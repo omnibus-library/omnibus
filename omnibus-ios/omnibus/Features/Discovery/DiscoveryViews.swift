@@ -246,9 +246,9 @@ struct AuthorDetailView: View {
                             Spacer(minLength: 0)
                         }
 
-                        CoverGrid(detail.books, density: .compact) { book in
+                        StackedBookGrid(detail.books, density: .compact) { book, cell in
                             NavigationLink(value: Destination.book(uuid: book.uuid)) {
-                                BookGridCell(book: book)
+                                cell
                             }
                             .buttonStyle(BookPressStyle())
                             .bookContextMenu(book, onEdited: { Task { await load() } })

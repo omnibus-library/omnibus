@@ -350,9 +350,9 @@ struct SearchResultsView: View {
                 )
             } else {
                 ScrollView {
-                    CoverGrid(books, density: .compact) { book in
+                    StackedBookGrid(books, density: .compact) { book, cell in
                         NavigationLink(value: Destination.book(uuid: book.uuid)) {
-                            BookGridCell(book: book)
+                            cell
                         }
                         .buttonStyle(BookPressStyle())
                         .bookContextMenu(book, onEdited: { Task { await load() } })
