@@ -180,6 +180,33 @@ describe("routes", () => {
         screen.queryByRole("navigation", { name: "Primary" }),
       ).not.toBeInTheDocument();
     });
+
+    it("leaves an empty dock host after a page", async () => {
+      renderRoute("/");
+      await screen.findByRole("heading", { level: 1, name: "Your Library" });
+
+      expect(
+        document.querySelector(".app-shell > main + .mini-dock-host"),
+      ).toBeEmptyDOMElement();
+    });
+
+    it("docks the audiobook beneath a reader, giving the stage room only while it shows", async () => {
+      renderRoute(`/read/${UUID}`);
+      await screen.findByRole("heading", { name: "Reader" });
+
+      const host = document.querySelector(".rd-host.rd-dock-full");
+      expect(host).not.toHaveClass("rd-immersive");
+      expect(
+        host?.querySelector(":scope > .mini-dock-host"),
+      ).toBeEmptyDOMElement();
+    });
+
+    it("keeps the dock off the player", async () => {
+      renderRoute(`/listen/${UUID}`);
+      await screen.findByRole("link", { name: "Back to library" });
+
+      expect(document.querySelector(".mini-dock-host")).toBeNull();
+    });
   });
 
   describe("audio", () => {

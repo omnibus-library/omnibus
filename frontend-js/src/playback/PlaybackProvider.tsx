@@ -94,6 +94,8 @@ export type Playback = State & {
   sleep: SleepState;
   /** Boots a book unless it is the one already loaded; a bare relink (no file) keeps the current file. */
   open(uuid: BookUuid, fileId: number | null): void;
+  /** Stops the element, cancels an armed sleep timer and forgets the book, so the dock goes. */
+  close(): void;
   toggle(): void;
   skip(delta: number): void;
   seek(seconds: number): void;
@@ -323,6 +325,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       const token = ++bootRef.current;
       const isCurrent = () => bootRef.current === token;
       engine.stop();
+      // The timer outlives a page but not its book.
+      timerRef.current?.off();
       saverRef.current = null;
       nextFileRef.current = null;
       markedReading.current = false;
@@ -365,6 +369,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     openRef.current = open;
   }, [open]);
+
+  const close = useCallback(() => {
+    bootRef.current++;
+    engineRef.current?.stop();
+    timerRef.current?.off();
+    saverRef.current = null;
+    loadedRef.current = null;
+    setState(IDLE);
+  }, []);
 
   const setVolume = useCallback((next: number) => {
     const v = Number.isFinite(next) ? Math.max(0, Math.min(1, next)) : 1;
@@ -430,6 +443,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     volume,
     sleep,
     open,
+    close,
     toggle: () => engineRef.current?.toggle(),
     skip: (delta) => engineRef.current?.skip(delta),
     seek: (seconds) => engineRef.current?.seek(seconds),

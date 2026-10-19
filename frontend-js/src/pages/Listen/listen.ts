@@ -1,5 +1,11 @@
-import { ApiError, type Chapter } from "../../api";
+import {
+  ApiError,
+  type BookDetail,
+  type BookUuid,
+  type Chapter,
+} from "../../api";
 import { MAX_RATE, MIN_RATE } from "../../playback/boot";
+import type { BookState } from "../../playback/PlaybackProvider";
 
 /** `H:MM:SS`, or `M:SS` under an hour; 0:00 for anything that isn't a time. */
 export function formatHms(seconds: number): string {
@@ -142,3 +148,49 @@ export function syncLabel(failure: unknown): string {
     ? "Link formats first"
     : "Sync failed";
 }
+
+/** The book the dock shows, or `null` while it has none to: a book not yet loaded, or no uuid to link to. */
+export const dockBook = (
+  book: BookState,
+  uuid: BookUuid | null,
+): BookDetail | null => (uuid && book.status === "ready" ? book.book : null);
+
+/** Wall-clock listening time left at `rate`, as "about 1h 50m left"; `null` while unknown or once the end is reached. */
+export function timeLeftText(
+  elapsed: number,
+  duration: number,
+  rate: number,
+): string | null {
+  if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(elapsed))
+    return null;
+  const seconds = remainingAtRate(duration - elapsed, rate);
+  if (seconds <= 0) return null;
+  // A remainder under a minute still reads as one, not as a countdown in seconds.
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  const [h, m] = [Math.floor(minutes / 60), minutes % 60];
+  return h > 0 ? `about ${h}h ${m}m left` : `about ${m}m left`;
+}
+
+/** The dock's subtitle: the chapter, the book-time clock, and the rate-scaled time left. */
+export const dockSubText = (
+  chapterSub: string | null,
+  elapsed: number,
+  duration: number,
+  rate: number,
+) =>
+  [
+    chapterSub,
+    `${formatHms(elapsed)} / ${formatHms(duration)}`,
+    timeLeftText(elapsed, duration, rate),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+/** The dock's popovers, of which at most one is open. */
+export type DockPanel = "volume" | "speed" | "sleep";
+
+/** What opens after a chip click: its own panel closes, another's takes over. */
+export const togglePanel = (
+  open: DockPanel | null,
+  clicked: DockPanel,
+): DockPanel | null => (open === clicked ? null : clicked);

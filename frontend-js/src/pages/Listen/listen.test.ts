@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ApiError } from "../../api";
+import { ApiError, type BookDetail, type BookUuid } from "../../api";
 import {
   chapterFillPct,
   chapterIndexForElapsed,
@@ -8,6 +8,9 @@ import {
   chapterPrevTarget,
   chapterSubText,
   clampRate,
+  type DockPanel,
+  dockBook,
+  dockSubText,
   effectiveScrubPosition,
   formatHms,
   kickerText,
@@ -16,6 +19,8 @@ import {
   remainingAtRate,
   syncLabel,
   thumbPct,
+  timeLeftText,
+  togglePanel,
 } from "./listen";
 
 const chapters = [
@@ -245,4 +250,78 @@ describe("syncLabel", () => {
   ])("reports a failure for %s", (_name, failure) => {
     expect(syncLabel(failure)).toBe("Sync failed");
   });
+});
+
+describe("timeLeftText", () => {
+  it("is unknown while the duration is, or the playhead isn't a time", () => {
+    expect(timeLeftText(10, Number.NaN, 1)).toBeNull();
+    expect(timeLeftText(10, Number.POSITIVE_INFINITY, 1)).toBeNull();
+    expect(timeLeftText(10, 0, 1)).toBeNull();
+    expect(timeLeftText(Number.NaN, 100, 1)).toBeNull();
+  });
+
+  it("reads hours and minutes, or minutes alone under an hour", () => {
+    expect(timeLeftText(0, 6600, 1)).toBe("about 1h 50m left");
+    expect(timeLeftText(0, 1800, 1)).toBe("about 30m left");
+  });
+
+  it("divides by the speed", () => {
+    expect(timeLeftText(0, 3600, 2)).toBe("about 30m left");
+  });
+
+  it("is nothing at or past the end, so the finish shows no phantom minute", () => {
+    expect(timeLeftText(3600, 3600, 1)).toBeNull();
+    expect(timeLeftText(4000, 3600, 1)).toBeNull();
+  });
+
+  it("rounds a sub-minute remainder up to a minute and ignores a speed it cannot divide by", () => {
+    expect(timeLeftText(3599, 3600, 1)).toBe("about 1m left");
+    expect(timeLeftText(0, 1800, Number.NaN)).toBe("about 30m left");
+    expect(timeLeftText(0, 1800, 0)).toBe("about 30m left");
+  });
+});
+
+describe("dockSubText", () => {
+  it("joins the chapter, the clock and the time left", () => {
+    expect(dockSubText("Ch. 2 · The Journey", 65, 3665, 1)).toBe(
+      "Ch. 2 · The Journey · 1:05 / 1:01:05 · about 1h 0m left",
+    );
+  });
+
+  it("is the clock and the time left without chapters", () => {
+    expect(dockSubText(null, 65, 185, 1)).toBe("1:05 / 3:05 · about 2m left");
+  });
+
+  it("shows book time on the clock whatever the speed; only the time left scales", () => {
+    expect(dockSubText(null, 600, 3600, 2)).toBe(
+      "10:00 / 1:00:00 · about 25m left",
+    );
+  });
+});
+
+describe("dockBook", () => {
+  const ready = { status: "ready", book: { uuid: "u" } as BookDetail } as const;
+  const uuid = "u" as BookUuid;
+
+  it("hands over the book only once it has loaded and has a uuid to link to", () => {
+    expect(dockBook({ status: "idle" }, null)).toBeNull();
+    expect(dockBook({ status: "pending" }, uuid)).toBeNull();
+    expect(dockBook({ status: "missing" }, uuid)).toBeNull();
+    expect(dockBook(ready, null)).toBeNull();
+    expect(dockBook(ready, uuid)).toBe(ready.book);
+  });
+});
+
+describe("togglePanel", () => {
+  it.each([
+    [null, "speed", "speed"],
+    ["speed", "speed", null],
+    ["speed", "sleep", "sleep"],
+    ["sleep", "volume", "volume"],
+  ] as [DockPanel | null, DockPanel, DockPanel | null][])(
+    "from %s, a click on %s leaves %s open",
+    (open, clicked, next) => {
+      expect(togglePanel(open, clicked)).toBe(next);
+    },
+  );
 });

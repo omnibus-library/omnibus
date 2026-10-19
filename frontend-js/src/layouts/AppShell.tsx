@@ -5,6 +5,7 @@ import {
   useSearchPaletteOpen,
 } from "../components/SearchPalette/SearchPalette";
 import { TopNav } from "../components/TopNav/TopNav";
+import { MiniDock } from "../pages/Listen/MiniDock";
 import "./AppShell.css";
 
 /** The signed-in frame: the top bar over the routed page, and the search palette. */
@@ -25,6 +26,7 @@ function ShellFrame() {
       <main>
         <Outlet />
       </main>
+      <MiniDock />
     </div>
   );
 }

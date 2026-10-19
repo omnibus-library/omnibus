@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
 import { RouteError } from "./components/RouteError/RouteError";
 import { AppShell } from "./layouts/AppShell";
+import { ReaderDock } from "./layouts/ReaderDock";
 import { RequireAuth } from "./layouts/RequireAuth";
 import { Account } from "./pages/Account/Account";
 import { AddBooks } from "./pages/AddBooks/AddBooks";
@@ -29,7 +30,7 @@ import { Shelves } from "./pages/Shelves/Shelves";
 import { Stats } from "./pages/Stats/Stats";
 import { StatsChart } from "./pages/StatsChart/StatsChart";
 
-// Mirrors frontend/src/routes.rs: the readers and the player fill the screen,
+// Mirrors frontend/src/routes.rs: the readers (with the audiobook dock beneath) and the player fill the screen,
 // everything else sits under the top bar. Two error boundaries: one inside the
 // shell, so a page that throws keeps the top bar, and one at the root for
 // everything else (the session gate, the shell itself, the readers).
@@ -44,9 +45,14 @@ export const routes: RouteObject[] = [
       {
         element: <RequireAuth />,
         children: [
-          { path: "/read/:uuid", element: <Reader /> },
-          { path: "/comic/:uuid", element: <ComicReader /> },
-          { path: "/pdf/:uuid", element: <PdfReader /> },
+          {
+            element: <ReaderDock />,
+            children: [
+              { path: "/read/:uuid", element: <Reader /> },
+              { path: "/comic/:uuid", element: <ComicReader /> },
+              { path: "/pdf/:uuid", element: <PdfReader /> },
+            ],
+          },
           { path: "/listen/:uuid", element: <Listen /> },
           {
             path: "/logs",

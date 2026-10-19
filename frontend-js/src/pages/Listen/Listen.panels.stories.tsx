@@ -641,7 +641,7 @@ export const SyncHereIsOffWhenOffline: Story = {
         expect(canvas.getByTestId("listen-sync-here")).toBeDisabled(),
       );
     } finally {
-      // biome-ignore lint/performance/noDelete: restores the prototype's getter the stub shadowed
+      // Drops the stub so the prototype's getter shows again.
       delete (navigator as { onLine?: boolean }).onLine;
     }
   },
