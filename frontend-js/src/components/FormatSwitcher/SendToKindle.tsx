@@ -64,8 +64,6 @@ type SendToKindleProps = {
   fileId?: number;
   className?: string;
   testId?: string;
-  /** Told when a send starts or ends, so a host can stay open while one runs. */
-  onPendingChange?: (pending: boolean) => void;
 };
 
 /** Queues the email, shows "Sending…" while it goes, then a toast: success clears itself, a failure stays. */
@@ -74,7 +72,6 @@ export function SendToKindle({
   fileId,
   className = "btn",
   testId = "action-kindle",
-  onPendingChange,
 }: SendToKindleProps) {
   const [toast, setToast] = useState<Outcome | null>(null);
   const leaving = useRef(new AbortController());
@@ -95,10 +92,6 @@ export function SendToKindle({
     onError: (error) =>
       setToast({ error: true, message: `Send failed: ${error.message}` }),
   });
-  useEffect(
-    () => onPendingChange?.(send.isPending),
-    [onPendingChange, send.isPending],
-  );
   useEffect(() => {
     if (!toast || toast.error) return;
     const timer = setTimeout(() => setToast(null), SUCCESS_TOAST_MS);

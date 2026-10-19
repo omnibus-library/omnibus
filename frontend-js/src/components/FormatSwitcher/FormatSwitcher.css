@@ -4,6 +4,8 @@
   left: 50%;
   transform: translateX(-50%);
   z-index: 110;
+  /* Shows even inside a closed, visibility-hidden menu. */
+  visibility: visible;
   display: flex;
   align-items: center;
   gap: 12px;

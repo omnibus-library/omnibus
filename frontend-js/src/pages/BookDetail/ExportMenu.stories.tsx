@@ -156,7 +156,7 @@ export const SendToKindleKeepsTheMenuOpenAndReports: Story = {
   },
 };
 
-export const MenuStaysOpenWhileASendIsInFlight: Story = {
+export const SendOutcomeSurvivesClosingTheMenu: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /Export/ }));
     await userEvent.click(
@@ -164,12 +164,31 @@ export const MenuStaysOpenWhileASendIsInFlight: Story = {
     );
 
     await userEvent.click(canvas.getByTestId("hero-export-scrim"));
-    await userEvent.keyboard("{Escape}");
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
 
-    await expect(canvas.getByRole("dialog")).toBeInTheDocument();
-    await expect(
-      await canvas.findByTestId("kindle-send-status", {}, { timeout: 4000 }),
-    ).toHaveTextContent("Sent to your Kindle.");
+    const status = await canvas.findByTestId(
+      "kindle-send-status",
+      {},
+      { timeout: 4000 },
+    );
+    await expect(status).toHaveTextContent("Sent to your Kindle.");
+    // jest-dom's toBeVisible reads each ancestor's own style, so it would call this hidden.
+    await expect(status.checkVisibility({ visibilityProperty: true })).toBe(
+      true,
+    );
+  },
+};
+
+export const EscapeClosesTheMenuWhileASendIsInFlight: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: /Export/ }));
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Send to Kindle" }),
+    );
+    await waitFor(() => expect(canvas.getByRole("dialog")).toHaveFocus());
+
+    await userEvent.keyboard("{Escape}");
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
   },
 };
 
