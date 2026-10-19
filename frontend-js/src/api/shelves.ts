@@ -121,8 +121,11 @@ export async function deleteShelf(id: number): Promise<void> {
 }
 
 /** How many books the rules match, out of the library, with up to 12 of them; nothing is saved. */
-export async function previewShelfRule(body: RulePreviewRequest) {
-  const data = ok(await postShelfPreview(body));
+export async function previewShelfRule(
+  body: RulePreviewRequest,
+  signal?: AbortSignal,
+) {
+  const data = ok(await postShelfPreview(body, { signal }));
   return {
     matched: data.matched,
     total: data.total,

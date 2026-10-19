@@ -119,6 +119,8 @@ export function LibraryPicker({
     initialPageParam: "",
     getNextPageParam: (last) => last.next ?? undefined,
     enabled: !searching,
+    // A stale infinite query refetches every page in turn on remount.
+    staleTime: 60_000,
   });
   const search = useQuery({
     queryKey: ["picker", "search", query],

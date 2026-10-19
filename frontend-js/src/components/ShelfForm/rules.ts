@@ -117,18 +117,31 @@ export function fromRule({ field, op, value }: ShelfRule): RuleDraft {
   return { field, op, value, value2: "", unit: "d" };
 }
 
-/** The draft with `field` picked: its op snaps to the first one the field accepts, and Status seeds a valid value. */
+const inputKind = (field: RuleField) =>
+  field === "status"
+    ? "status"
+    : isDate(field)
+      ? "date"
+      : field === "rating" || field === "year"
+        ? "number"
+        : "text";
+
+/** The draft with `field` picked: its op snaps to the first one the field accepts, a value typed for another kind of input clears, and Status seeds a valid value. */
 export function withField(draft: RuleDraft, field: RuleField): RuleDraft {
   const op = accepts(field, draft.op)
     ? draft.op
     : (OPS.find(([o]) => accepts(field, o))?.[0] ?? "is");
+  const keep =
+    field === "status" || inputKind(field) === inputKind(draft.field);
+  const value = keep ? draft.value : "";
   const seeded =
-    field === "status" && !STATUS_VALUES.some((s) => s === draft.value.trim());
+    field === "status" && !STATUS_VALUES.some((s) => s === value.trim());
   return {
     ...draft,
     field,
     op,
-    value: seeded ? STATUS_VALUES[0] : draft.value,
+    value: seeded ? STATUS_VALUES[0] : value,
+    value2: keep ? draft.value2 : "",
   };
 }
 

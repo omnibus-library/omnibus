@@ -135,6 +135,23 @@ describe("withField", () => {
       "unread",
     );
   });
+
+  it.each([
+    ["a date field", "date_added"],
+    ["a number field", "year"],
+  ] as const)("clears a typed value when switching to %s", (_kind, field) => {
+    const next = withField(draft({ value: "Fantasy", value2: "x" }), field);
+
+    expect(next.value).toBe("");
+    expect(next.value2).toBe("");
+    expect(toRule(next)).toBeNull();
+  });
+
+  it("keeps a typed value when switching to another text field", () => {
+    expect(withField(draft({ value: "Fantasy" }), "author").value).toBe(
+      "Fantasy",
+    );
+  });
 });
 
 describe("previewState", () => {

@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { previewShelfRule } from "../../api";
 import type { MatchMode, RuleField } from "../../api/generated/schemas";
+import { useDebounced } from "../../useDebounced";
 import { CoverImage } from "../Cover/CoverImage";
 import { Loading, Stale } from "../Loading/Loading";
 import {
@@ -193,10 +194,13 @@ function Preview({
 }) {
   const body = previewRequest(matchMode, drafts);
   const hasRules = body.rules.length > 0;
+  // The request follows the rows once they hold still, not every keystroke.
+  const asked = useDebounced(JSON.stringify(body));
+  const settled: typeof body = JSON.parse(asked);
   const preview = useQuery({
-    queryKey: ["shelf-preview", body.match_mode, body.rules],
-    queryFn: () => previewShelfRule(body),
-    enabled: hasRules,
+    queryKey: ["shelf-preview", settled.match_mode, settled.rules],
+    queryFn: ({ signal }) => previewShelfRule(settled, signal),
+    enabled: settled.rules.length > 0,
     // The last answer stays up, dimmed, while the next one loads.
     placeholderData: keepPreviousData,
   });

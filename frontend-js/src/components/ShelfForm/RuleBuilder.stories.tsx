@@ -73,6 +73,28 @@ export const Preview: Story = {
   },
 };
 
+export const PreviewWaitsForTyping: Story = {
+  args: { initial: [FANTASY], mode: "all" },
+  beforeEach({ msw }) {
+    sent.length = 0;
+    msw.use(previewHandler(sent, aWireRulePreview()));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByTestId("rule-preview-count");
+
+    await userEvent.type(
+      canvas.getByRole("textbox", { name: "Condition value" }),
+      " Club",
+    );
+
+    await waitFor(() => expect(sent).toHaveLength(2));
+    await expect(sent.at(-1)).toEqual({
+      match_mode: "all",
+      rules: [{ field: "tag", op: "is", value: "Fantasy Club" }],
+    });
+  },
+};
+
 export const Pending: Story = {
   args: { initial: [FANTASY] },
   beforeEach({ msw }) {
