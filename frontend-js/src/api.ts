@@ -9,6 +9,7 @@ export * from "./api/auth";
 export * from "./api/books";
 export * from "./api/core";
 export * from "./api/journal";
+export * from "./api/library";
 export * from "./api/physical";
 export * from "./api/reading";
 export * from "./api/shelves";

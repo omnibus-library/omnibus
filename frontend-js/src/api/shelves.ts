@@ -1,16 +1,23 @@
+import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
+import type { Book } from "./books";
+import { toBook } from "./books";
 import type { BookUuid, UserId } from "./core";
 import { fetchJson, ok, parseBookUuid, send } from "./core";
 import {
   getAddShelfBooksUrl,
   getRemoveShelfBookUrl,
+  getShelfPage,
   getShelvesContainingUrl,
   getSmartShelvesContainingUrl,
   listShelves,
 } from "./generated/omnibus";
 import type { ShelfSummary as ShelfSummaryWire } from "./generated/schemas";
+import type { LibraryQuery } from "./library";
+import { filterParam } from "./library";
 
-function toShelf(wire: ShelfSummaryWire) {
+/** The screen's shape of one `GET /api/shelves` entry. */
+export function toShelf(wire: ShelfSummaryWire) {
   return {
     id: wire.id,
     kind: wire.kind,
@@ -29,10 +36,40 @@ function toShelf(wire: ShelfSummaryWire) {
 }
 
 export type Shelf = ReturnType<typeof toShelf>;
+export type ShelfKind = Shelf["kind"];
 
 /** Every shelf the reader can see. */
 export async function fetchShelves(): Promise<Shelf[]> {
   return ok(await listShelves()).map(toShelf);
+}
+
+export const shelvesQuery = queryOptions({
+  queryKey: ["shelves"],
+  queryFn: fetchShelves,
+});
+
+/** One shelf's books, whole, in `query`'s order and narrowed by its clauses. */
+export async function fetchShelfPage(
+  id: number,
+  query: Pick<LibraryQuery, "sort" | "dir" | "clauses">,
+): Promise<Book[]> {
+  const filter = filterParam(query.clauses);
+  const res = ok(
+    await getShelfPage(id, {
+      sort: query.sort,
+      dir: query.dir,
+      ...(filter ? { filter } : {}),
+    }),
+  );
+  return res.books.map(toBook);
+}
+
+/** Appends the books to a hand-picked shelf. */
+export async function addShelfBooks(
+  shelfId: number,
+  uuids: BookUuid[],
+): Promise<void> {
+  await send(getAddShelfBooksUrl(shelfId), "POST", { book_uuids: uuids });
 }
 
 const shelfIds = z.array(z.number().int());

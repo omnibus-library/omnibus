@@ -6,6 +6,7 @@ import {
   getRegistration,
   login as postLogin,
   register as postRegister,
+  postStackSeries,
 } from "./generated/omnibus";
 import type { UserSummary } from "./generated/schemas";
 
@@ -19,6 +20,8 @@ export function toUser(user: UserSummary) {
     canUpload: user.can_upload,
     canEdit: user.can_edit,
     hasAvatar: user.has_avatar ?? false,
+    hiddenFormats: user.hidden_formats ?? [],
+    stackSeries: user.stack_series ?? false,
   };
 }
 
@@ -53,4 +56,9 @@ export async function logout(): Promise<void> {
   if (res.status !== 204) {
     throw failure({ status: res.status, data: await res.text() });
   }
+}
+
+/** Saves the reader's Stack series preference. */
+export async function setStackSeries(enabled: boolean): Promise<void> {
+  ok(await postStackSeries({ enabled }));
 }

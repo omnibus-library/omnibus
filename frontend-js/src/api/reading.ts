@@ -38,12 +38,31 @@ import {
 } from "./generated/schemas";
 
 /** The screen's shape of one `GET /api/progress/recent` entry. */
-export function toResumePoint({ record, book }: ResumePointWire) {
+export function toResumePoint({
+  record,
+  book,
+  linked,
+  playback_rate,
+  audio_part,
+}: ResumePointWire) {
   return {
+    // The progress row's own uuid, not the resolved book's: merged books share one.
+    key: `${record.book_uuid}:${record.format}`,
     book: toBook(book),
     format: record.format,
     fileId: record.book_file_id ?? null,
     formats: book.formats ?? [],
+    percent: record.progress_percent ?? null,
+    positionSeconds: record.audio_position_seconds ?? null,
+    totalSeconds: record.total_duration_seconds ?? null,
+    playbackRate: playback_rate ?? null,
+    linked: linked ?? false,
+    // A low-confidence block measured the container's marks, which read as a part.
+    chapter:
+      record.resolved?.confidence === "high"
+        ? (record.resolved.chapter_ordinal ?? null)
+        : null,
+    part: audio_part ?? null,
   };
 }
 

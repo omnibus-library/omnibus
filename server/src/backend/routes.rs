@@ -96,6 +96,7 @@ pub(super) fn data_routes(
 /// Metadata override read/write + cover-only revert.
 fn metadata_override_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
+        .routes(routes!(overrides::post_bulk_overrides))
         .routes(routes!(
             overrides::post_ebook_overrides,
             overrides::delete_ebook_overrides

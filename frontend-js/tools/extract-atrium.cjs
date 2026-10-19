@@ -1,5 +1,5 @@
 // Usage: node tools/extract-atrium.cjs [--write] [--force]
-// Copies the atrium.css + loading.css rules the React markup can match into
+// Copies the atrium.css + loading.css + filter_bar.css rules the React markup can match into
 // per-component files: a selector is kept when every class it needs appears in
 // src/**/*.tsx, and filed under the owner of its first class (OWNERS below).
 // --write creates the CSS files that don't exist yet; --force rewrites them all.
@@ -15,6 +15,8 @@ const src = path.join(root, "frontend-js/src");
 const OWNERS = [
   ["styles/theme.css", (c) => ["atrium", "theme-snap"].includes(c)],
   ["components/Button/Button.css", (c) => c === "btn"],
+  ["components/FilterBar/FilterBar.css", (c) => c === "fb" || c.startsWith("fb-")],
+  ["components/ChipInput/ChipInput.css", (c) => c.startsWith("chip-editor") || c.startsWith("me-chip") || c === "me-tag-input"],
   ["components/Chip/Chip.css", (c) => c === "chip" || c.startsWith("chip-")],
   ["components/Cover/Cover.css", (c) => ["cover-wrap", "cover", "tpl-plate", "ca", "ct"].includes(c)],
   ["components/Loading/Loading.css", (c) => c === "ld" || c.startsWith("ld-")],
@@ -30,7 +32,6 @@ const OWNERS = [
   ["pages/Search/Search.css", (c) => c.startsWith("search-")],
   ["layouts/AppShell.css", (c) => c === "app-shell"],
   ["components/DiscPage/DiscPage.css", (c) => c.startsWith("disc-")],
-  ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || ["landing-col", "library-empty", "cover-link"].includes(c)],
   ["components/ConfirmModal/ConfirmModal.css", (c) => c.startsWith("mg-") || c.startsWith("del-") || c.startsWith("confirm-") || c.startsWith("author-photo-modal")],
   ["components/QuoteCard/QuoteCard.css", (c) => c.startsWith("rd-quote") || c.startsWith("quote-") || ["rd-chip", "rd-x", "rd-drawer-body", "rd-drawer-head", "rd-drawer-title", "rd-desktop-only", "rd-phone-only"].includes(c)],
   ["components/StarRating/StarRating.css", (c) => c.startsWith("star-")],
@@ -39,6 +40,7 @@ const OWNERS = [
   ["components/FormatSwitcher/FormatSwitcher.css", (c) => c.startsWith("format-") || c.startsWith("kindle-") || c.startsWith("kobo-")],
   ["components/ShelfTile/ShelfTile.css", (c) => c.startsWith("shv-") || c.startsWith("shelf-add-tile")],
   ["components/ShelfPicker/ShelfPicker.css", (c) => c.startsWith("shelf-picker") || c.startsWith("shelf-modal") || c.startsWith("pick-")],
+  ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || c.startsWith("ebook-") || c.startsWith("sort-th") || c.startsWith("ss-") || c.startsWith("format-badge") || c.startsWith("bulk-edit") || c.startsWith("shelf-btn-") || c.startsWith("shelf-modal-") || c.startsWith("shelf-picker") || c.startsWith("pick-") || c === "author-photo-modal-backdrop" || ["landing-col", "library-empty", "cover-link"].includes(c)],
   ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || c.startsWith("bd-") || c.startsWith("rx-") || c.startsWith("spoiler") || c.startsWith("cm-") || c === "me-textarea" || c.startsWith("suggest-") || c.startsWith("sug-") || c.startsWith("author-lead") || c.startsWith("author-portrait") || ["sh-title", "sh-sub", "fan-match"].includes(c)],
   ["styles/base.css", (c) => ["card", "divider", "label", "mono", "sr-only", "subtitle"].includes(c)],
 ];
@@ -135,7 +137,7 @@ function visit(node, wrappers) {
   }
 }
 
-for (const name of ["atrium.css", "loading.css"]) {
+for (const name of ["atrium.css", "loading.css", "filter_bar.css"]) {
   const css = fs.readFileSync(path.join(root, "frontend/assets", name), "utf8");
   for (const node of postcss.parse(css).nodes) visit(node, []);
 }

@@ -4,7 +4,6 @@ import { failure, ok, requireUuid, send } from "./core";
 import {
   getAuthorById,
   getEbookByUuid,
-  getEbooks,
   getPostEbookSummaryFetchUrl,
   getSearchPalette,
   getSeriesById,
@@ -15,7 +14,6 @@ import {
 import type {
   BookSuggestion as BookSuggestionWire,
   EbookMetadata,
-  EbookPage,
   PaletteResults as PaletteWire,
   SummarySource,
 } from "./generated/schemas";
@@ -32,6 +30,15 @@ export function toBook(wire: EbookMetadata) {
     series,
     accent: wire.accent ?? null,
     hasCover: wire.cover_url != null,
+    subjects: wire.subjects,
+    genres: wire.genres ?? [],
+    formats: wire.formats ?? [],
+    published: wire.published ?? null,
+    language: wire.language ?? null,
+    addedAt: wire.added_at ?? null,
+    modified: wire.modified ?? null,
+    hasPhysical: wire.has_physical ?? false,
+    seriesId: wire.series_id == null ? null : (wire.series_id as SeriesId),
   };
 }
 
@@ -46,15 +53,10 @@ export function toBookDetail(wire: EbookMetadata) {
   return {
     ...toBook(wire),
     description: wire.description ?? null,
-    published: wire.published ?? null,
-    genres: wire.genres ?? [],
-    subjects: wire.subjects,
-    seriesId: wire.series_id == null ? null : (wire.series_id as SeriesId),
     creators: wire.creators.map((c) => ({
       name: c.name,
       id: c.id == null ? null : (c.id as AuthorId),
     })),
-    formats,
     // M4A shares the M4B container and code path, so it counts as audio too.
     hasAudio: hasFormat(formats, "m4b", "m4a", "mp3"),
     hasEbook: hasFormat(formats, "epub"),
@@ -69,15 +71,12 @@ export function toBookDetail(wire: EbookMetadata) {
     })),
     epubSizeBytes: wire.epub_size_bytes ?? null,
     publisher: wire.publisher ?? null,
-    language: wire.language ?? null,
     identifiers: wire.identifiers.map((i) => ({
       scheme: i.scheme ?? null,
       value: i.value,
     })),
     isbn10: wire.isbn10 ?? null,
     isbn13: wire.isbn13 ?? null,
-    addedAt: wire.added_at ?? null,
-    hasPhysical: wire.has_physical ?? false,
   };
 }
 
@@ -134,34 +133,6 @@ export type PaletteResults = ReturnType<typeof toPalette>;
 
 /** One book hit in the palette or on the results page. */
 export type PaletteBook = PaletteResults["books"][number];
-
-export type BookPage = { books: Book[]; total: number; next: string | null };
-
-const countHeader = z.coerce.number().int().nonnegative();
-
-/** The screen's shape of one page of `GET /api/ebooks`, whose paging is in headers. */
-export function toBookPage(page: EbookPage, headers: Headers): BookPage {
-  const books = page.books.map(toBook);
-  return {
-    books,
-    total: countHeader.parse(headers.get("X-Total-Count") ?? books.length),
-    next: headers.get("X-Next-Cursor"),
-  };
-}
-
-/** One title-sorted page of the library; pass `""` for the first page. */
-export async function fetchBookPage(cursor: string): Promise<BookPage> {
-  // The API refuses a cursor unless sort and dir are both explicit.
-  const res = await getEbooks({
-    sort: "title",
-    dir: "asc",
-    limit: 60,
-    omit_description: true,
-    ...(cursor ? { cursor } : {}),
-  });
-  if (res.status !== 200) throw failure(res);
-  return toBookPage(res.data, res.headers);
-}
 
 /** The full record for one book, or `null` when no book has that uuid. */
 export async function fetchBook(uuid: BookUuid): Promise<BookDetail | null> {

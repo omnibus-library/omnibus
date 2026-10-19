@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { type BookDetail, toBookDetail } from "./api";
 import {
   ago,
+  bookCount,
   descriptionOverflows,
   durationLabel,
   facetQuery,
@@ -187,6 +188,16 @@ describe("singleFacetValue", () => {
   });
 });
 
+describe("bookCount", () => {
+  it.each([
+    [0, "0 books"],
+    [1, "1 book"],
+    [2, "2 books"],
+  ])("counts %i as %s", (n, words) => {
+    expect(bookCount(n)).toBe(words);
+  });
+});
+
 describe("formatYear", () => {
   it("returns the year of a full date", () => {
     expect(formatYear("2021-03-01T00:00:00+00:00")).toBe("2021");
@@ -207,6 +218,13 @@ describe("formatDateShort", () => {
     ["a year alone", "2026", "2026"],
     ["a month out of range", "2026-13-05", "2026"],
     ["a day out of range", "2026-08-40", "Aug 2026"],
+    ["a 1st, a 3rd and an 11th", "2026-08-11", "Aug 11th, 2026"],
+    ["a 3rd", "2026-08-03", "Aug 3rd, 2026"],
+    ["a 13th", "2026-08-13", "Aug 13th, 2026"],
+    ["a day past the month's end", "2016-05-32", "May 2016"],
+    ["an offset timestamp", "2016-05-02T21:00:00+00:00", "May 2nd, 2016"],
+    ["a SQLite datetime", "2024-01-02 03:04:05", "Jan 2nd, 2024"],
+    ["the earliest real year", "0102-01-01", "Jan 1st, 102"],
   ])("reads %s", (_condition, raw, shown) => {
     expect(formatDateShort(raw)).toBe(shown);
   });
@@ -214,12 +232,25 @@ describe("formatDateShort", () => {
   it.each([
     ["calibre's placeholder", "0101-01-01T00:00:00+00:00"],
     ["text", "unknown"],
+    ["nothing", ""],
+    ["year one", "0001-01-01"],
   ])("returns null for %s", (_condition, raw) => {
     expect(formatDateShort(raw)).toBeNull();
   });
 });
 
 describe("formatInstantShort", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("cuts an instant on the browser's local day by default", () => {
+    vi.stubEnv("TZ", "America/Detroit");
+
+    expect(formatInstantShort("2026-09-08T03:36:00Z")).toBe("Sep 7th, 2026");
+    expect(formatInstantShort("2026-09-08 03:36:00")).toBe("Sep 7th, 2026");
+  });
+
   it("puts an instant on the calendar of the zone asked for", () => {
     expect(formatInstantShort("2026-09-08T03:36:00Z", "UTC")).toBe(
       "Sep 8th, 2026",

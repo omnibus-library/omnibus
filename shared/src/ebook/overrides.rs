@@ -291,6 +291,33 @@ pub struct BulkMetadataEdit {
     pub remove_genres: Vec<String>,
 }
 
+/// The body of the bulk metadata edit: the books to change and the edit to apply to each.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BulkOverridesRequest {
+    /// The uuids of the books to edit.
+    pub uuids: Vec<String>,
+    pub edit: BulkMetadataEdit,
+}
+
+impl BulkOverridesRequest {
+    /// Check the request before any DB work: books chosen, a real edit, every field within its cap.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.uuids.is_empty() {
+            return Err("no books selected".into());
+        }
+        crate::validate_book_uuids(&self.uuids)?;
+        if self.edit.is_empty() {
+            return Err("no fields to apply".into());
+        }
+        // `authors` replaces the whole list, so an empty one would clear creators on every book.
+        if self.edit.authors.as_ref().is_some_and(Vec::is_empty) {
+            return Err("authors must name at least one".into());
+        }
+        self.edit.validate()
+    }
+}
+
 impl BulkMetadataEdit {
     /// True when no field would change any book — callers reject such an
     /// edit rather than writing no-op override rows.

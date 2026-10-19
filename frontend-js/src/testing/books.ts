@@ -1,10 +1,29 @@
-import { type Book, type BookUuid, parseBookUuid } from "../api";
+import { z } from "zod";
+import {
+  type Book,
+  type BookUuid,
+  parseBookUuid,
+  type ResumePoint,
+  type SeriesStack,
+  type Shelf,
+  type UserId,
+} from "../api";
 
-function bookUuid(raw: string): BookUuid {
+/** A fixture book uuid, refused if it is not a valid one. */
+export function bookUuid(raw: string): BookUuid {
   const uuid = parseBookUuid(raw);
   if (!uuid) throw new Error(`not a book uuid: ${raw}`);
   return uuid;
 }
+
+const userIdSchema = z
+  .number()
+  .int()
+  .positive()
+  .transform((id) => id as UserId);
+
+/** A fixture user id, refused if it is not a positive integer. */
+export const userId = (id: number): UserId => userIdSchema.parse(id);
 
 /** A 2:3 cover as SVG markup, for the fake API to serve. */
 export const COVER_SVG =
@@ -22,6 +41,63 @@ export function aBook(overrides: Partial<Book> = {}): Book {
     series: { name: "Aurora Station", index: "1" },
     accent: "oklch(0.555 0.153 28.4)",
     hasCover: true,
+    subjects: [],
+    genres: [],
+    formats: ["CBZ"],
+    published: "2021-03-01",
+    language: null,
+    addedAt: null,
+    modified: null,
+    hasPhysical: false,
+    seriesId: null,
+    ...overrides,
+  };
+}
+
+/** A hand-picked shelf the signed-in reader (user 1) owns; override what a case needs. */
+export function aShelf(overrides: Partial<Shelf> = {}): Shelf {
+  return {
+    id: 3,
+    kind: "manual",
+    visibility: "private",
+    name: "Winter reads",
+    accent: null,
+    owner: { id: userId(1), name: "ada", hasAvatar: false },
+    bookCount: 12,
+    covers: [],
+    ...overrides,
+  };
+}
+
+/** A folded series as the library list parses it; override what a case needs. */
+export function aStack(overrides: Partial<SeriesStack> = {}): SeriesStack {
+  return {
+    leadUuid: "s1",
+    name: "Saga",
+    seriesId: 7,
+    members: [aBook()],
+    states: [],
+    ...overrides,
+  };
+}
+
+/** An open ebook position as the continue-reading feed parses it; override what a case needs. */
+export function aResumePoint(
+  overrides: Partial<ResumePoint> = {},
+): ResumePoint {
+  return {
+    key: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0:epub",
+    book: aBook(),
+    format: "epub",
+    fileId: null,
+    formats: ["EPUB"],
+    percent: null,
+    positionSeconds: null,
+    totalSeconds: null,
+    playbackRate: null,
+    linked: false,
+    chapter: null,
+    part: null,
     ...overrides,
   };
 }

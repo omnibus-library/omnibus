@@ -4,6 +4,8 @@ use dioxus::fullstack::post;
 use dioxus::prelude::*;
 #[cfg(feature = "server")]
 use omnibus_db as db;
+#[cfg(feature = "server")]
+use omnibus_shared::BulkOverridesRequest;
 use omnibus_shared::{BulkMetadataEdit, EbookMetadata, MetadataOverrides};
 
 #[cfg(feature = "server")]
@@ -47,7 +49,8 @@ pub async fn rpc_bulk_save_overrides(
     if !user.is_admin && !user.can_edit {
         return Err(ServerFnError::new("forbidden: edit permission required").into());
     }
-    Ok(bulk_save_overrides(&pool.0, &uuids, &edit, user.id).await?)
+    let req = BulkOverridesRequest { uuids, edit };
+    Ok(bulk_save_overrides(&pool.0, &req, user.id).await?)
 }
 
 /// Server-side body of [`rpc_bulk_save_overrides`], extracted so the
@@ -56,18 +59,11 @@ pub async fn rpc_bulk_save_overrides(
 #[cfg(feature = "server")]
 async fn bulk_save_overrides(
     pool: &sqlx::SqlitePool,
-    uuids: &[String],
-    edit: &BulkMetadataEdit,
+    req: &BulkOverridesRequest,
     user_id: i64,
 ) -> Result<Vec<EbookMetadata>, ServerFnError> {
-    if uuids.is_empty() {
-        return Err(ServerFnError::new("no books selected"));
-    }
-    omnibus_shared::validate_book_uuids(uuids).map_err(ServerFnError::new)?;
-    if edit.is_empty() {
-        return Err(ServerFnError::new("no fields to apply"));
-    }
-    edit.validate().map_err(ServerFnError::new)?;
+    req.validate().map_err(ServerFnError::new)?;
+    let BulkOverridesRequest { uuids, edit } = req;
     db::bulk_merge_metadata_overrides(pool, uuids, edit, user_id)
         .await
         .map_err(|e| match e {
@@ -174,7 +170,7 @@ pub async fn rpc_rewrite_all_epubs() -> Result<()> {
 mod tests {
     use super::bulk_save_overrides;
     use omnibus_db::test_support::seed_synced_ebook;
-    use omnibus_shared::{BulkMetadataEdit, MetadataOverrides};
+    use omnibus_shared::{BulkMetadataEdit, BulkOverridesRequest, MetadataOverrides};
 
     async fn pool_with_admin() -> (sqlx::SqlitePool, i64) {
         let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
@@ -196,9 +192,11 @@ mod tests {
             add_tags: vec!["bulktag".into()],
             ..Default::default()
         };
-        let updated = bulk_save_overrides(&pool, &[uuid_a, uuid_b], &edit, user_id)
-            .await
-            .unwrap();
+        let req = BulkOverridesRequest {
+            uuids: vec![uuid_a, uuid_b],
+            edit,
+        };
+        let updated = bulk_save_overrides(&pool, &req, user_id).await.unwrap();
 
         assert_eq!(updated.len(), 2);
         for book in &updated {
@@ -215,9 +213,11 @@ mod tests {
             publisher: Some("P".into()),
             ..Default::default()
         };
-        let err = bulk_save_overrides(&pool, &[], &edit, user_id)
-            .await
-            .unwrap_err();
+        let req = BulkOverridesRequest {
+            uuids: vec![],
+            edit,
+        };
+        let err = bulk_save_overrides(&pool, &req, user_id).await.unwrap_err();
         assert!(err.to_string().contains("no books selected"));
     }
 
@@ -225,9 +225,11 @@ mod tests {
     async fn bulk_save_overrides_rejects_an_empty_edit() {
         let (pool, user_id) = pool_with_admin().await;
         let uuid = seed_synced_ebook(&pool, "a.epub", "Alpha", "Ann Author").await;
-        let err = bulk_save_overrides(&pool, &[uuid], &BulkMetadataEdit::default(), user_id)
-            .await
-            .unwrap_err();
+        let req = BulkOverridesRequest {
+            uuids: vec![uuid],
+            edit: BulkMetadataEdit::default(),
+        };
+        let err = bulk_save_overrides(&pool, &req, user_id).await.unwrap_err();
         assert!(err.to_string().contains("no fields to apply"));
     }
 
@@ -239,9 +241,11 @@ mod tests {
             add_tags: vec!["x".repeat(MetadataOverrides::TAG_MAX_LEN + 1)],
             ..Default::default()
         };
-        let err = bulk_save_overrides(&pool, &[uuid], &edit, user_id)
-            .await
-            .unwrap_err();
+        let req = BulkOverridesRequest {
+            uuids: vec![uuid],
+            edit,
+        };
+        let err = bulk_save_overrides(&pool, &req, user_id).await.unwrap_err();
         assert!(err.to_string().contains("tag exceeds"));
     }
 
@@ -253,14 +257,11 @@ mod tests {
             publisher: Some("Bulk House".into()),
             ..Default::default()
         };
-        let err = bulk_save_overrides(
-            &pool,
-            &[uuid.clone(), "no-such-uuid".into()],
-            &edit,
-            user_id,
-        )
-        .await
-        .unwrap_err();
+        let req = BulkOverridesRequest {
+            uuids: vec![uuid.clone(), "no-such-uuid".into()],
+            edit,
+        };
+        let err = bulk_save_overrides(&pool, &req, user_id).await.unwrap_err();
         assert!(err.to_string().contains("book not found"));
 
         let book = omnibus_db::get_book_by_uuid(&pool, &uuid)

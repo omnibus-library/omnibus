@@ -18,6 +18,7 @@ import type {
   ReadStatusRecord,
   ResumePoint,
   SeriesDetail,
+  SeriesStack,
   SessionLogEntry,
   ShelfSummary,
   UserSummary,
@@ -52,6 +53,8 @@ export function aWireBook(
     error: null,
     has_override: false,
     has_cover_override: false,
+    added_at: "2026-08-01T12:00:00Z",
+    modified: "2026-08-02T12:00:00Z",
     ...overrides,
   };
 }
@@ -293,24 +296,9 @@ export function aWireSuggestion(
   };
 }
 
-/** A shelf as `GET /api/shelves` sends it: Ada's hand-picked one, holding two books. */
-export function aWireShelf(
-  overrides: Partial<ShelfSummary> = {},
-): ShelfSummary {
-  return {
-    id: 7,
-    kind: "manual",
-    name: "Space operas",
-    visibility: "private",
-    accent: null,
-    book_count: 2,
-    cover_uuids: [],
-    owner_user_id: 1,
-    owner_username: "Ada Lovelace",
-    owner_has_avatar: false,
-    ...overrides,
-  };
-}
+/** The nth fixture uuid: valid, distinct, and readable in a failure. */
+export const uuidOf = (n: number) =>
+  `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
 /** `count` distinct books, uuids and titles numbered, for paging. */
 export function aWireLibrary(count: number): EbookMetadata[] {
@@ -319,7 +307,7 @@ export function aWireLibrary(count: number): EbookMetadata[] {
       id: i + 1,
       title: `Aurora Station, Vol. ${i + 1}`,
       series_index: String(i + 1),
-      unique_identifier: `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+      unique_identifier: uuidOf(i + 1),
     }),
   );
 }
@@ -358,6 +346,37 @@ export const WIRE_ADA: UserSummary = {
   can_download: true,
   kindle_email: null,
 };
+
+/** A folded series as `GET /api/ebooks` sends it with `stack_series`; override what a case needs. */
+export function aWireStack(overrides: Partial<SeriesStack> = {}): SeriesStack {
+  return {
+    lead_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    name: "Saga",
+    series_id: 7,
+    members: [],
+    states: [],
+    ...overrides,
+  };
+}
+
+/** A hand-picked shelf the signed-in admin (user 1) owns, as `GET /api/shelves` sends it. */
+export function aWireShelf(
+  overrides: Partial<ShelfSummary> = {},
+): ShelfSummary {
+  return {
+    id: 3,
+    kind: "manual",
+    name: "Winter reads",
+    visibility: "private",
+    accent: null,
+    owner_user_id: 1,
+    owner_username: "ada",
+    owner_has_avatar: false,
+    book_count: 2,
+    cover_uuids: [],
+    ...overrides,
+  };
+}
 
 /** A book hit as `GET /api/search/palette` sends it. */
 export function aWirePaletteBook(

@@ -28,6 +28,9 @@ export function initialOf(name: string): string {
 /** The plural suffix for `n` of something: "1 book", "2 books". */
 export const plural = (n: number) => (n === 1 ? "" : "s");
 
+/** A count of books in words: "1 book", "2 books". */
+export const bookCount = (n: number) => `${n} book${plural(n)}`;
+
 /**
  * The detail kicker: the series name (to link) and what follows it, or just the
  * tail for a standalone, which leads with its category.

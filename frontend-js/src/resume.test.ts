@@ -1,19 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { ResumePoint } from "./api";
-import { resumeHref } from "./resume";
-import { aBook } from "./testing/books";
+import { formatHmLeft, formatHmsShort, resumeHref, resumeMeta } from "./resume";
+import { aResumePoint as aPoint } from "./testing/books";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
-
-function aPoint(overrides: Partial<ResumePoint> = {}): ResumePoint {
-  return {
-    book: aBook(),
-    format: "epub",
-    fileId: null,
-    formats: ["EPUB"],
-    ...overrides,
-  };
-}
 
 describe("resumeHref", () => {
   it("opens the player at the saved file for an audio position", () => {
@@ -44,5 +33,79 @@ describe("resumeHref", () => {
     const point = aPoint({ format: "audio", formats: ["MP3"] });
 
     expect(resumeHref(point)).toBe(`/listen/${UUID}`);
+  });
+});
+
+// An hour into a two-hour audiobook, in part 3 of 10.
+const listening = aPoint({
+  format: "audio",
+  positionSeconds: 3600,
+  totalSeconds: 7200,
+  part: 3,
+});
+
+describe("resumeMeta", () => {
+  it("reads an ebook with a stored percent as that percent", () => {
+    expect(resumeMeta(aPoint({ percent: 42 }))).toEqual({
+      meta: "42% · Continue reading",
+      percent: 42,
+    });
+  });
+
+  it("reads an ebook with no percent as a plain continue", () => {
+    expect(resumeMeta(aPoint())).toEqual({
+      meta: "Continue reading",
+      percent: null,
+    });
+  });
+
+  it("reports percent and time left for audio with a total", () => {
+    expect(resumeMeta({ ...listening, chapter: 7 })).toEqual({
+      meta: "Ch. 7 · 50% · 1h 00m left",
+      percent: 50,
+    });
+  });
+
+  it("names a part rather than a chapter without a confident chapter", () => {
+    expect(resumeMeta(listening).meta).toBe("Pt. 3 · 50% · 1h 00m left");
+  });
+
+  it("drops the prefix when the book names neither", () => {
+    expect(resumeMeta({ ...listening, part: null }).meta).toBe(
+      "50% · 1h 00m left",
+    );
+  });
+
+  it("scales time left by the saved playback rate but not the percent", () => {
+    expect(resumeMeta({ ...listening, playbackRate: 2 })).toEqual({
+      meta: "Pt. 3 · 50% · 30m left",
+      percent: 50,
+    });
+  });
+
+  it("falls back to the raw position for audio without a total", () => {
+    const point = aPoint({ format: "audio", positionSeconds: 95 });
+
+    expect(resumeMeta(point)).toEqual({ meta: "1:35 in", percent: null });
+  });
+});
+
+describe("formatHmLeft", () => {
+  it.each([
+    [4712, "1h 19m"],
+    [240, "4m"],
+    [-5, "0m"],
+  ])("writes %s seconds as %s", (seconds, text) => {
+    expect(formatHmLeft(seconds)).toBe(text);
+  });
+});
+
+describe("formatHmsShort", () => {
+  it.each([
+    [3725, "1:02:05"],
+    [95, "1:35"],
+    [Number.NaN, "0:00"],
+  ])("writes %s seconds as %s", (seconds, text) => {
+    expect(formatHmsShort(seconds)).toBe(text);
   });
 });

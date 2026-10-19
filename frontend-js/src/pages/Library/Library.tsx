@@ -1,113 +1,232 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Link } from "react-router";
-import { type Book, fetchBookPage, thumbSrcSet, thumbUrl } from "../../api";
+import { useEffect, useRef } from "react";
+import { fetchBookPage, type LibraryQuery } from "../../api";
 import { Button } from "../../components/Button/Button";
-import { Cover } from "../../components/Cover/Cover";
-import { BusyLabel, CoverSkeletons } from "../../components/Loading/Loading";
+import { FilterBar } from "../../components/FilterBar/FilterBar";
+import {
+  BusyLabel,
+  CoverSkeletons,
+  RowSkeletons,
+} from "../../components/Loading/Loading";
 import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
+import { bookCount } from "../../format";
+import { useCurrentUser } from "../../session";
+import { useLibraryPrefs } from "../../viewPrefs";
+import { BookGrid } from "./BookGrid";
+import { BookTable } from "./BookTable";
+import { BulkEditBar, BulkEditModal, BulkShelfPicker } from "./BulkEdit";
+import { useBulkSelection } from "./bulkEdit";
+import { emptyState, headerCount } from "./libraryView";
+import {
+  EdgeResume,
+  leadAccent,
+  ResumeStack,
+  ResumeStackPending,
+  useResumeLead,
+} from "./ResumeStack";
+import { ShelfGallery } from "./ShelfGallery";
+import { useShelfLens } from "./shelfGallery";
+import { headerSort } from "./sorting";
+import { Toolbar } from "./Toolbar";
+import { useLoadMore } from "./useLoadMore";
 import "./Library.css";
 
-const TILE_SIZES = "(max-width: 640px) 160px, (max-width: 1280px) 200px, 240px";
-
-// The entrance cascade: 40ms steps, wrapping every eight tiles.
-const staggerMs = (index: number) => (index % 8) * 40;
-
-function Tile({ book, index }: { book: Book; index: number }) {
+function Receipt({
+  count,
+  hidden,
+}: {
+  count: number | "counting" | null;
+  hidden: number | null;
+}) {
+  const hiddenBooks = hidden !== null && hidden > 0 ? hidden : null;
+  if (count === null && hiddenBooks === null) return null;
   return (
-    <Link
-      to={`/books/${book.uuid}`}
-      className="cover-link lib-tile"
-      style={{ animationDelay: `${staggerMs(index)}ms` }}
-      aria-label={`Open details for ${book.title}`}
-    >
-      <span className="lib-tile-art">
-        <Cover
-          book={book}
-          src={book.hasCover ? thumbUrl(book.uuid) : null}
-          srcSet={book.hasCover ? thumbSrcSet(book.uuid) : undefined}
-          sizes={TILE_SIZES}
-        />
-      </span>
-      <span className="lib-tile-cap">
-        <span className="lib-tile-title">{book.title}</span>
-        {book.authors.length > 0 && (
-          <span className="lib-tile-author">{book.authors.join(", ")}</span>
+    <div className="lib-header-receipt">
+      <p className="lib-header-receipt-text">
+        {count === "counting" && (
+          <span className="lib-header-count">
+            <span className="ld-sheen">counting</span>
+          </span>
         )}
-      </span>
-    </Link>
-  );
-}
-
-function Count({ total }: { total: number | null }) {
-  if (total === null) {
-    return (
-      <span className="lib-header-count">
-        {" · "}
-        <span className="ld-sheen">counting</span>
-      </span>
-    );
-  }
-  return (
-    <span className="lib-header-count">
-      {` · ${total} ${total === 1 ? "book" : "books"}`}
-    </span>
+        {typeof count === "number" && (
+          <span className="lib-header-count">{bookCount(count)}</span>
+        )}
+        {hiddenBooks !== null && (
+          <span className="lib-header-hidden">{hiddenBooks} hidden</span>
+        )}
+      </p>
+    </div>
   );
 }
 
 export function Library() {
+  const user = useCurrentUser();
+  const { prefs, change, noteAnswered } = useLibraryPrefs();
+  const query: LibraryQuery = {
+    sort: prefs.sort,
+    dir: prefs.dir,
+    clauses: prefs.clauses,
+    excludeFormats: [...user.hiddenFormats].sort(),
+    stackSeries: user.stackSeries && prefs.view === "grid",
+  };
   const pages = useInfiniteQuery({
-    queryKey: ["books"],
-    queryFn: ({ pageParam }) => fetchBookPage(pageParam),
+    queryKey: ["books", query],
+    queryFn: ({ pageParam }) => fetchBookPage(query, pageParam),
     initialPageParam: "",
     getNextPageParam: (last) => last.next ?? undefined,
   });
-  const books = pages.data?.pages.flatMap((page) => page.books) ?? [];
-  const total = pages.data?.pages[0]?.total ?? null;
+  const browseBooks = pages.data?.pages.flatMap((page) => page.books) ?? [];
+  const firstPage = pages.data?.pages[0];
+  const filtered = prefs.clauses.length > 0;
+  const answeredPath = firstPage?.path;
+  useEffect(
+    () => noteAnswered(answeredPath, pages.isError),
+    [noteAnswered, answeredPath, pages.isError],
+  );
+
+  const { points, lead, leadPoint, pending, setLeadKey, past } =
+    useResumeLead();
+  const { selection, pick, shelfId, shelfPage, sortLock } = useShelfLens(prefs);
+  // The lens is the shelf's page or, on All Books, the browse list.
+  const lens = shelfId === null ? pages : shelfPage;
+  const books = shelfId === null ? browseBooks : (shelfPage.data ?? []);
+  // shortcut: shelf lens stays unstacked; port shared::stack_books when parity is wanted
+  const stacks = pages.data?.pages.flatMap((page) => page.stacks) ?? [];
+  const empty = emptyState(books.length, filtered);
+
+  // Bulk edit is the admin's, on the table.
+  const bulk = user.isAdmin && prefs.view === "table";
+  const selectAll = useRef<HTMLInputElement>(null);
+  const picked = useBulkSelection(
+    JSON.stringify([query, shelfId, prefs.view]),
+    books,
+  );
+
+  const hasNextPage = shelfId === null && pages.hasNextPage;
+  const loadMore = useLoadMore(pages, hasNextPage);
 
   return (
-    <div className="landing-col lmq" id="lmq-root">
+    <div
+      className={past ? "landing-col lmq lmq--past" : "landing-col lmq"}
+      id="lmq-root"
+      style={leadAccent(leadPoint)}
+    >
       <PageTitle />
+      {leadPoint ? (
+        <ResumeStack points={points} lead={lead} onLead={setLeadKey} />
+      ) : (
+        pending && <ResumeStackPending />
+      )}
+      <ShelfGallery
+        selection={selection}
+        pickedCount={
+          shelfId !== null && !filtered && shelfPage.data
+            ? shelfPage.data.length
+            : null
+        }
+        allCount={firstPage?.total ?? null}
+        allCovers={browseBooks
+          .filter((b) => b.hasCover)
+          .slice(0, 4)
+          .map((b) => b.uuid)}
+        onSelect={pick}
+      />
       <header className="lib-header">
-        <div className="lib-header-kicker">
-          <h1 className="label lib-header-kicker-title">Your Library</h1>
-        </div>
+        <h1 className="sr-only">Your Library</h1>
         <div className="lib-header-row">
-          <div className="lib-header-title-wrap">
-            <p className="lib-header-title">
-              <em>All Books</em>
-              <Count total={total} />
-            </p>
-          </div>
+          <FilterBar
+            clauses={prefs.clauses}
+            onChange={(clauses) => change({ ...prefs, clauses })}
+          />
+          <Receipt
+            count={headerCount(
+              filtered,
+              shelfId === null
+                ? (firstPage?.total ?? null)
+                : (shelfPage.data?.length ?? null),
+              lens.isError,
+            )}
+            hidden={shelfId === null ? (firstPage?.hidden ?? null) : null}
+          />
+          <Toolbar
+            prefs={prefs}
+            // Hidden formats narrow All Books only.
+            hiddenFormats={shelfId === null ? query.excludeFormats : []}
+            sortLock={sortLock}
+            stackable={shelfId === null}
+            onChange={change}
+          />
         </div>
+        {answeredPath === null && (
+          <p className="lib-header-hint">
+            Configure your ebook library path in Administration › Sources.
+          </p>
+        )}
       </header>
       <div className="lib-layout lib-layout--collapsed">
         <div className="lib-main lib-books">
-          {pages.status === "pending" && (
+          {lens.status === "pending" && (
             <div className="lib-loading" role="status" aria-live="polite">
               <span className="ld-sr">Taking the books off the shelf</span>
-              <CoverSkeletons />
+              {prefs.view === "table" ? (
+                <RowSkeletons count={8} avatar={false} />
+              ) : (
+                <CoverSkeletons />
+              )}
             </div>
           )}
-          {pages.status === "error" && (
+          {lens.status === "error" && !lens.data && (
             <PageError
-              message={`Couldn't load the library: ${pages.error.message}`}
+              message={`Couldn't load the library: ${lens.error.message}`}
             />
           )}
-          {pages.status === "success" && books.length === 0 && (
-            <p className="library-empty">
-              No books yet. Point Settings at a library.
+          {lens.isRefetchError && !pages.isFetchNextPageError && (
+            <p className="subtitle" role="alert">
+              Couldn't refresh the library: {lens.error?.message}
             </p>
           )}
-          {books.length > 0 && (
-            <div className="lib-grid">
-              {books.map((book, index) => (
-                <Tile key={book.uuid} book={book} index={index} />
-              ))}
+          {lens.data && empty === "empty" && (
+            <p className="library-empty">
+              {shelfId === null
+                ? "No ebooks found."
+                : "No books in this shelf."}
+            </p>
+          )}
+          {lens.data && empty === "filtered" && (
+            <div className="library-empty">
+              <p>No books match these filters.</p>
+              <Button onClick={() => change({ ...prefs, clauses: [] })}>
+                Clear filters
+              </Button>
             </div>
           )}
-          {pages.hasNextPage && (
-            <div className="lib-load-more-row">
+          {books.length > 0 &&
+            (prefs.view === "table" ? (
+              <BookTable
+                books={books}
+                prefs={prefs}
+                sortLock={sortLock}
+                selectAllRef={selectAll}
+                onSort={(key) =>
+                  change({ ...prefs, ...headerSort(prefs, key) })
+                }
+                select={
+                  bulk
+                    ? { selected: picked.selected, onChange: picked.select }
+                    : undefined
+                }
+              />
+            ) : (
+              <BookGrid books={books} stacks={shelfId === null ? stacks : []} />
+            ))}
+          {hasNextPage && (
+            <div className="lib-load-more-row" ref={loadMore}>
+              {pages.isFetchNextPageError && pages.error && (
+                <p className="subtitle" role="alert">
+                  Couldn't load more: {pages.error.message}
+                </p>
+              )}
               <Button
                 className="lib-load-more"
                 onClick={() => pages.fetchNextPage()}
@@ -124,6 +243,37 @@ export function Library() {
           )}
         </div>
       </div>
+      {bulk && picked.chosen.length > 0 && (
+        <BulkEditBar
+          count={picked.chosen.length}
+          onEdit={() => picked.setEditing(true)}
+          onAddToShelf={() => picked.setFiling(true)}
+          onClear={picked.clear}
+        />
+      )}
+      {picked.editing && picked.chosen.length > 0 && (
+        <BulkEditModal
+          books={picked.chosen}
+          fallbackFocus={selectAll}
+          onClose={() => picked.setEditing(false)}
+          onSaved={() => {
+            picked.setEditing(false);
+            picked.clear();
+          }}
+        />
+      )}
+      {picked.filing && picked.chosen.length > 0 && (
+        <BulkShelfPicker
+          books={picked.chosen}
+          fallbackFocus={selectAll}
+          onClose={() => picked.setFiling(false)}
+          onAdded={() => {
+            picked.setFiling(false);
+            picked.clear();
+          }}
+        />
+      )}
+      {leadPoint && <EdgeResume point={leadPoint} past={past} />}
     </div>
   );
 }
