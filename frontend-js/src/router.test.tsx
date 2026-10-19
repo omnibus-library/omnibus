@@ -94,12 +94,10 @@ describe("routes", () => {
       [`/listen/${UUID}?file_id=2`, "Listen", "2"],
       ["/stats?user=2", "Stats", "2"],
       ["/stats/chart", "Chart builder", null],
-      ["/settings?section=smtp", "Settings", "smtp"],
       ["/settings/cleanup/duplicates", "Cleanup review", "duplicates"],
       ["/admin?section=logs", "Administration", "logs"],
       ["/admin/cleanup/duplicates", "Cleanup review", "duplicates"],
       ["/admin/health", "Server health", null],
-      ["/account", "Account", null],
     ])("renders %s as %s with its parameters", async (path, title, param) => {
       renderRoute(path);
 
@@ -111,6 +109,15 @@ describe("routes", () => {
   });
 
   describe("ported pages", () => {
+    it("renders /settings as the settings page, not a stub", async () => {
+      renderRoute("/settings");
+
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "Settings" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+
     it.each([
       ["/series", "Gathering every series"],
       ["/series/4", "Gathering the series"],
@@ -298,13 +305,32 @@ describe("routes", () => {
     });
   });
 
-  it("redirects /logs to the settings logs section", async () => {
+  it("redirects /logs to the administration logs section", async () => {
     const router = renderRoute("/logs");
 
     await waitFor(() =>
       expect(router.state.location.search).toBe("?section=logs"),
     );
-    expect(router.state.location.pathname).toBe("/settings");
+    expect(router.state.location.pathname).toBe("/admin");
+  });
+
+  it("redirects /account to settings", async () => {
+    const router = renderRoute("/account");
+
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/settings"),
+    );
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Settings" }),
+    ).toBeInTheDocument();
+  });
+
+  it("sends an old settings section to its new one", async () => {
+    const router = renderRoute("/settings?section=kobo");
+
+    await waitFor(() =>
+      expect(router.state.location.search).toBe("?section=devices"),
+    );
   });
 
   it("redirects /connect to the library", async () => {

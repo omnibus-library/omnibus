@@ -1,15 +1,18 @@
 import { useEffect, useRef } from "react";
-import { type Blocker, useBlocker } from "react-router";
+import { type Blocker, type Location, useBlocker } from "react-router";
 import { ConfirmBody, ConfirmModal } from "../ConfirmModal/ConfirmModal";
 
-/** Holds in-app navigation and arms the browser's leave prompt while `dirty`. */
-export function useLeaveGuard(dirty: boolean) {
+const samePathname = (a: Location, b: Location) => a.pathname === b.pathname;
+
+/** Holds in-app navigation and arms the browser's leave prompt while `dirty`; `samePlace` says which moves stay on the page. */
+export function useLeaveGuard(
+  dirty: boolean,
+  samePlace: (a: Location, b: Location) => boolean = samePathname,
+) {
   const allowed = useRef(false);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      dirty &&
-      !allowed.current &&
-      currentLocation.pathname !== nextLocation.pathname,
+      dirty && !allowed.current && !samePlace(currentLocation, nextLocation),
   );
   useEffect(() => {
     if (!dirty) return;
@@ -29,7 +32,13 @@ export function useLeaveGuard(dirty: boolean) {
 }
 
 /** "Discard unsaved changes?" for a navigation the guard held back. */
-export function UnsavedDialog({ blocker }: { blocker: Blocker }) {
+export function UnsavedDialog({
+  blocker,
+  body,
+}: {
+  blocker: Blocker;
+  body: string;
+}) {
   if (blocker.state !== "blocked") return null;
   return (
     <ConfirmModal
@@ -42,7 +51,7 @@ export function UnsavedDialog({ blocker }: { blocker: Blocker }) {
     >
       <ConfirmBody
         title="Discard unsaved changes?"
-        body="You've edited this book's details without saving them."
+        body={body}
         actions={[
           {
             testId: "unsaved-keep",
