@@ -282,6 +282,15 @@ describe("fillMissing", () => {
     expect(other.series_index).toBeUndefined();
   });
 
+  it("brings the book number along with a series the record lacks", () => {
+    const filled = fillMissing(
+      aProviderEdition({ series: null, series_index: null }),
+      aProviderEdition({ series: "Dune", series_index: "2" }),
+    );
+
+    expect(filled).toMatchObject({ series: "Dune", series_index: "2" });
+  });
+
   it("takes the missing fields from the list row when the record has none", () => {
     expect(
       fillMissing(aProviderEdition({ title: " ", authors: [] }), thin),

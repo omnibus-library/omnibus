@@ -315,9 +315,9 @@ export function fillMissing(
 ): ProviderEdition {
   const fill = (a: string | null | undefined, b: string | null | undefined) =>
     blank(a) && !blank(b) ? b : a;
+  const series = fill(full.series, thinner.series);
   // A book number is a position in a series, so it only crosses over inside the same one.
-  const sameSeries =
-    (full.series?.trim() ?? "") === (thinner.series?.trim() ?? "");
+  const sameSeries = (series?.trim() ?? "") === (thinner.series?.trim() ?? "");
   return {
     ...full,
     isbn13: fill(full.isbn13, thinner.isbn13),
@@ -326,7 +326,7 @@ export function fillMissing(
     publisher: fill(full.publisher, thinner.publisher),
     description: fill(full.description, thinner.description),
     cover_url: fill(full.cover_url, thinner.cover_url),
-    series: fill(full.series, thinner.series),
+    series,
     series_index: sameSeries
       ? fill(full.series_index, thinner.series_index)
       : full.series_index,
