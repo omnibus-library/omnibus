@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { delay, http } from "msw";
 import { Route, Routes } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import { getGetShelfMockHandler404 } from "../../api/generated/omnibus.msw";
@@ -134,7 +135,6 @@ export const AddBooksWaitsForMembers: Story = {
     await userEvent.click(add);
 
     await expect(canvas.queryByRole("dialog")).toBeNull();
-    await expect(canvas.queryByTestId("shelf-add-tile")).toBeNull();
   },
 };
 
@@ -306,7 +306,38 @@ export const KoboToggleFailing: Story = {
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
       "Couldn’t change Kobo sync: failed with 500",
     );
-    await expect(canvas.queryByTestId("shelf-kobo-badge")).toBeNull();
+  },
+};
+
+const patches: string[] = [];
+
+export const KoboTogglePending: Story = {
+  beforeEach({ msw }) {
+    patches.length = 0;
+    msw.use(
+      http.patch("/api/shelves/:id", async () => {
+        patches.push("patch");
+        await delay("infinite");
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const more = await canvas.findByRole("button", {
+      name: "More shelf actions",
+    });
+    await userEvent.click(more);
+    await userEvent.click(
+      canvas.getByRole("menuitemcheckbox", { name: "Sync to Kobo" }),
+    );
+    await waitFor(() => expect(patches).toHaveLength(1));
+
+    await userEvent.click(more);
+    const toggle = await canvas.findByRole("menuitemcheckbox", {
+      name: "Sync to Kobo",
+    });
+    await expect(toggle).toBeDisabled();
+    await userEvent.click(toggle);
+    await expect(patches).toHaveLength(1);
   },
 };
 

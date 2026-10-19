@@ -111,24 +111,6 @@ export const WorkingDisablesTheForm: Story = {
     await expect(
       canvas.getByRole("button", { name: "Scan for picture" }),
     ).toBeDisabled();
-  },
-};
-
-export const EscapeIgnoredWhileWorking: Story = {
-  beforeEach({ msw }) {
-    msw.use(hanging("/api/authors/:id/photo/url", "put"));
-  },
-  play: async (context) => {
-    const { canvas, userEvent } = context;
-    await openDialog(context);
-    await userEvent.type(
-      canvas.getByLabelText("Paste image URL"),
-      "https://example.com/slow.jpg",
-    );
-    await userEvent.click(canvas.getByRole("button", { name: "Use URL" }));
-    await expect(await canvas.findByRole("status")).toHaveTextContent(
-      "Fetching…",
-    );
 
     await userEvent.keyboard("{Escape}");
 

@@ -134,18 +134,15 @@ export const CancelDisabledWhileCreating: Story = {
       canvas.getByRole("textbox", { name: "Shelf name" }),
       "Cosy reads",
     );
-    await userEvent.type(
-      canvas.getByRole("textbox", { name: "Condition value" }),
-      "Fantasy",
-    );
-    await canvas.findByTestId("rule-preview-count");
 
     await userEvent.click(canvas.getByRole("button", { name: "Create" }));
 
     await expect(
       await canvas.findByRole("button", { name: "Creating…" }),
     ).toBeDisabled();
-    await expect(canvas.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    const cancel = canvas.getByRole("button", { name: "Cancel" });
+    await expect(cancel).toBeDisabled();
+    await userEvent.click(cancel);
     await expect(args.onClose).not.toHaveBeenCalled();
   },
 };
