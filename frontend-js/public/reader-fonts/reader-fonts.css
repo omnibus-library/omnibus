@@ -1,0 +1,24 @@
+/* Reader typefaces, self-hosted: the section iframe loads them same-origin on
+   the web and from the app bundle offline on iOS. Latin subset from the Google
+   Fonts css2 API (fetched 2026-09-17). Linked by the reader page (AA-panel
+   previews) and injected into every section by epub-reader-glue.js via its
+   `fontsHref` init option. Keep this sheet and its woff2 siblings
+   byte-identical with omnibus-ios/omnibus/Reader/Web/.
+
+   EB Garamond is a VARIABLE font — Google serves one file per style covering
+   the whole weight axis, which is why 400 and 500 are one `font-weight` range
+   here rather than two files. Asking for them separately yields two
+   byte-identical copies. Bold stays synthetic in both families (a real bold
+   would mean re-fetching EB Garamond as `wght@400..800` and widening the range
+   — a follow-up, not a second file). Instrument Serif's two cuts are static and
+   genuinely distinct.
+
+   Both families are OFL. The licence texts live beside this file on the web
+   and under omnibus-ios/omnibus/Design/Fonts/ in the app, where every other
+   OFL-*.txt already sits: Xcode's synchronized group flattens Reader/Web/ into
+   the bundle root, so a second OFL-InstrumentSerif.txt there would collide
+   with the one the native chrome's faces already ship. */
+@font-face{font-family:'Instrument Serif';font-style:normal;font-weight:400;font-display:swap;src:url(InstrumentSerif-Regular.woff2) format('woff2')}
+@font-face{font-family:'Instrument Serif';font-style:italic;font-weight:400;font-display:swap;src:url(InstrumentSerif-Italic.woff2) format('woff2')}
+@font-face{font-family:'EB Garamond';font-style:normal;font-weight:400 500;font-display:swap;src:url(EBGaramond-Regular.woff2) format('woff2')}
+@font-face{font-family:'EB Garamond';font-style:italic;font-weight:400 500;font-display:swap;src:url(EBGaramond-Italic.woff2) format('woff2')}
