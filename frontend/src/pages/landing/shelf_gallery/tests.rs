@@ -44,6 +44,34 @@ fn shelf_tab_meta_names_the_owner_of_a_shelf_the_viewer_does_not_own() {
 }
 
 #[test]
+fn tab_count_reads_the_picked_shelfs_loaded_members_over_its_summary() {
+    let shelf = ShelfSummary {
+        book_count: 2,
+        ..summary(1, ShelfKind::Manual)
+    };
+    assert_eq!(tab_count(&shelf, ShelfSelection::Shelf(7), Some(3)), 3);
+}
+
+#[test]
+fn tab_count_keeps_the_summary_while_the_members_load() {
+    let shelf = ShelfSummary {
+        book_count: 2,
+        ..summary(1, ShelfKind::Manual)
+    };
+    assert_eq!(tab_count(&shelf, ShelfSelection::Shelf(7), None), 2);
+}
+
+#[test]
+fn tab_count_keeps_the_summary_on_a_shelf_that_is_not_picked() {
+    let shelf = ShelfSummary {
+        book_count: 2,
+        ..summary(1, ShelfKind::Manual)
+    };
+    assert_eq!(tab_count(&shelf, ShelfSelection::Shelf(9), Some(3)), 2);
+    assert_eq!(tab_count(&shelf, ShelfSelection::All, Some(3)), 2);
+}
+
+#[test]
 fn attributed_owner_names_only_shelves_the_viewer_does_not_own() {
     let shelf = summary(2, ShelfKind::Manual);
     assert_eq!(attributed_owner(&shelf, Some(1)), Some("elena"));
@@ -205,6 +233,7 @@ mod render {
                 shelves: Vec::new(),
                 loaded: false,
                 selection: ShelfSelection::All,
+                picked_members: None,
                 all_count: None,
                 all_cover_uuids: Vec::new(),
                 server_url: String::new(),

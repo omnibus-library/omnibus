@@ -327,11 +327,16 @@ fn render_gallery(
     on_select_shelf: EventHandler<crate::shelf_selection::ShelfSelection>,
     on_shelf_created: EventHandler<()>,
 ) -> Element {
+    // The picked shelf's own member list, not a list still loading for it.
+    let picked_members = (!(sigs.shelf_loading)())
+        .then(|| sigs.shelf_books.read().as_ref().map(Vec::len))
+        .flatten();
     rsx! {
         ShelfGallery {
             shelves: (sigs.shelves)(),
             loaded: (sigs.shelves_answered)(),
             selection: (sigs.selection)(),
+            picked_members,
             all_count: (sigs.total)(),
             all_cover_uuids,
             server_url,

@@ -102,6 +102,22 @@ pub(super) fn attributed_owner(shelf: &ShelfSummary, viewer_id: Option<i64>) -> 
         .then_some(shelf.owner_username.as_str())
 }
 
+/// What a shelf's tab counts: the picked shelf's loaded member list, which
+/// refetches with the pick, over the gallery summary, whose aggregate goes
+/// stale when membership changes elsewhere (#2255).
+pub(super) fn tab_count(
+    shelf: &ShelfSummary,
+    selection: ShelfSelection,
+    picked_members: Option<usize>,
+) -> i64 {
+    match picked_members {
+        Some(n) if selection == ShelfSelection::Shelf(shelf.id) => {
+            i64::try_from(n).unwrap_or(shelf.book_count)
+        }
+        _ => shelf.book_count,
+    }
+}
+
 /// Per-render snapshot of the row's data + selection state: the shelf list,
 /// which one is picked, the "All Books" entry's count/covers, the server URL
 /// for thumbnails, and the select/create callbacks.
@@ -111,6 +127,8 @@ pub(super) struct ShelfGalleryProps {
     /// False until the shelves fetch has answered; placeholders hold the row.
     pub loaded: bool,
     pub selection: ShelfSelection,
+    /// How many books the picked shelf holds, once its full member list loads.
+    pub picked_members: Option<usize>,
     pub all_count: Option<i64>,
     pub all_cover_uuids: Vec<String>,
     pub server_url: String,
@@ -126,6 +144,7 @@ pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
         shelves,
         loaded,
         selection,
+        picked_members,
         all_count,
         all_cover_uuids,
         server_url,
@@ -208,6 +227,7 @@ pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
                         ShelfRowEntry {
                             key: "{s.id}",
                             shelf: s.clone(),
+                            count: tab_count(s, selection, picked_members),
                             active: selection == ShelfSelection::Shelf(s.id),
                             server_url: server_url.clone(),
                             viewer_id,
@@ -245,6 +265,7 @@ pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
 #[component]
 fn ShelfRowEntry(
     shelf: ShelfSummary,
+    count: i64,
     active: bool,
     server_url: String,
     viewer_id: Option<i64>,
@@ -252,14 +273,8 @@ fn ShelfRowEntry(
 ) -> Element {
     let id = shelf.id;
     let owner = attributed_owner(&shelf, viewer_id);
-    let meta = shelf_tab_meta(shelf.book_count, owner);
-    let label = shelf_aria_label(
-        &shelf.name,
-        shelf.book_count,
-        shelf.kind,
-        shelf.visibility,
-        owner,
-    );
+    let meta = shelf_tab_meta(count, owner);
+    let label = shelf_aria_label(&shelf.name, count, shelf.kind, shelf.visibility, owner);
     let badge = match shelf.kind {
         ShelfKind::Smart => Some(cog_icon()),
         ShelfKind::Wishlist => Some(heart_icon()),
