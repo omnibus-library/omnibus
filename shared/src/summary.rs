@@ -13,6 +13,14 @@ pub enum SummarySource {
     OpenLibrary,
 }
 
+/// Body of `POST /api/ebooks/{uuid}/summary/fetch`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct FetchSummaryBody {
+    /// The provider to ask.
+    pub source: SummarySource,
+}
+
 /// Below this many words, the current summary counts as "sparse" and the
 /// book-detail page offers the fetch button.
 pub const SUMMARY_MIN_WORDS: usize = 10;

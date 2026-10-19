@@ -203,6 +203,24 @@ pub struct AuthorPhotoScanResult {
     pub resolved: bool,
 }
 
+/// Body of `PUT /api/authors/{id}/photo/url`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AuthorPhotoUrlBody {
+    /// An `http` or `https` URL of a JPEG, PNG, GIF or WebP image, up to 2048 bytes.
+    pub url: String,
+}
+
+/// Describes the multipart form `PUT /api/authors/{id}/photo` takes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AuthorPhotoUpload {
+    /// The photo: a JPEG, PNG, GIF or WebP image of 10 MiB or less, sent with an
+    /// `image/*` content type. SVG is refused.
+    #[cfg_attr(feature = "openapi", schema(value_type = String, format = Binary))]
+    pub photo: Vec<u8>,
+}
+
 /// Series detail payload for `GET /api/series/:id` and `rpc_get_series`.
 /// Books are ordered by `series_index`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]

@@ -8,22 +8,28 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db};
-use omnibus_shared::summary::SummarySource;
-use serde::Deserialize;
+use omnibus_shared::summary::{FetchSummaryBody, SummarySource};
 
 use super::{internal, AppState};
 use crate::auth::AuthUser;
 
-/// Body for `POST /api/ebooks/{uuid}/summary/fetch`.
-#[derive(Debug, Deserialize)]
-pub(super) struct FetchSummaryBody {
-    source: SummarySource,
-}
-
-/// Fetch a summary for a book from `source`. Requires `can_edit` or admin.
-/// Returns the fetched text, or `null` when that source has no summary — a
-/// clean miss the client cascades past. External network failures surface as
-/// an opaque 500.
+/// Fetch a book's summary
+///
+/// Asks one provider for a summary of the book and returns its text, or `null` when that
+/// provider has none (try the next source from `GET /api/summary/sources`). An unknown
+/// uuid also answers `null`. Nothing is saved. A provider that can't be reached is a 500.
+/// Needs the edit permission.
+#[utoipa::path(
+    post,
+    path = "/api/ebooks/{uuid}/summary/fetch",
+    tag = "Metadata",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    request_body = FetchSummaryBody,
+    responses(
+        (status = 200, description = "The summary text, or `null`.", body = Option<String>),
+        (status = 403, description = "You lack the edit permission."),
+    ),
+)]
 pub(super) async fn post_ebook_summary_fetch(
     user: AuthUser,
     State(state): State<AppState>,
@@ -43,10 +49,17 @@ pub(super) async fn post_ebook_summary_fetch(
     }
 }
 
-/// The ordered summary-source cascade for the current settings (Hardcover when
-/// keyed → Google Books always → Open Library only when no keys). Any
-/// authenticated user may read this non-sensitive plan; it drives which sources
-/// the client attempts, and in what order.
+/// List the summary sources
+///
+/// The providers to ask for a summary, in the order to ask them: Hardcover when the server
+/// has a Hardcover key, then Google Books, then Open Library only when the server has
+/// neither a Hardcover nor a Google Books key.
+#[utoipa::path(
+    get,
+    path = "/api/summary/sources",
+    tag = "Metadata",
+    responses((status = 200, description = "The sources, first to ask first.", body = Vec<SummarySource>)),
+)]
 pub(super) async fn get_summary_sources(
     _user: AuthUser,
     State(state): State<AppState>,

@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::EbookMetadata;
+use crate::{EbookMetadata, SortDir, SortKey, ViewFilters};
 
 /// Max length of a shelf name (matches the create-modal input expectation).
 pub const SHELF_NAME_MAX_LEN: usize = 120;
@@ -417,6 +417,65 @@ impl RulePreviewRequest {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ShelfPage {
     pub books: Vec<EbookMetadata>,
+}
+
+/// Body of `POST /api/shelves/{id}/books`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AddBooksRequest {
+    /// The uuids of the books to add, up to 2000.
+    pub book_uuids: Vec<String>,
+}
+
+impl AddBooksRequest {
+    /// Reject an over-long or malformed book uuid list before any DB round trip.
+    pub fn validate(&self) -> Result<(), String> {
+        validate_book_uuids(&self.book_uuids)
+    }
+}
+
+/// Query parameters of `GET /api/shelves/{id}/page`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct ShelfPageQuery {
+    /// The order to list a smart shelf's books in. Defaults to `recently_interacted`, as
+    /// does a value the server doesn't know. A hand-picked shelf keeps its own order.
+    #[cfg_attr(feature = "openapi", param(value_type = Option<SortKey>))]
+    pub sort: Option<String>,
+    /// `asc` or `desc`. Any other value, or none, means `desc`. A hand-picked shelf
+    /// ignores it.
+    #[cfg_attr(feature = "openapi", param(value_type = Option<SortDir>))]
+    pub dir: Option<String>,
+    /// Filter clauses as a percent-encoded JSON array, in the same form as `filter` on
+    /// `GET /api/ebooks`.
+    pub filter: Option<String>,
+}
+
+impl ShelfPageQuery {
+    /// The parsed `filter`, or the reason it doesn't parse.
+    pub fn filters(&self) -> Result<ViewFilters, String> {
+        match self.filter.as_deref() {
+            Some(raw) => ViewFilters::from_query_param(raw),
+            None => Ok(ViewFilters::default()),
+        }
+    }
+
+    /// The requested sort, falling back to [`SortKey::RecentlyInteracted`].
+    pub fn sort_key(&self) -> SortKey {
+        self.sort
+            .as_deref()
+            .and_then(SortKey::from_wire)
+            .unwrap_or(SortKey::RecentlyInteracted)
+    }
+
+    /// The requested direction, falling back to [`SortDir::Desc`].
+    pub fn sort_dir(&self) -> SortDir {
+        match self.dir.as_deref() {
+            Some("asc") => SortDir::Asc,
+            _ => SortDir::Desc,
+        }
+    }
 }
 
 /// Reject an over-long list of book uuids, or any uuid string itself over

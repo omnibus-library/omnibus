@@ -10,10 +10,21 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db};
+use omnibus_shared::TagWeight;
 
 use super::{internal, AppState};
 use crate::auth::AuthUser;
 
+/// List tags
+///
+/// Every tag on a book, with the number of books carrying it, most-used first. Stops at
+/// the 500 most-used tags.
+#[utoipa::path(
+    get,
+    path = "/api/tags",
+    tag = "Discovery",
+    responses((status = 200, description = "The tags.", body = Vec<TagWeight>)),
+)]
 pub(super) async fn get_tags(_user: AuthUser, State(state): State<AppState>) -> Response {
     match db::get_tag_cloud(&state.pool).await {
         Ok(tags) => Json(tags).into_response(),
