@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
 import { expect } from "storybook/test";
 import { aBook, COVER_ART } from "../../testing/books";
 import { Cover } from "./Cover";
@@ -53,5 +54,31 @@ export const BrokenImage: Story = {
       await canvas.findByText("Aurora Station, Vol. 1"),
     ).toBeInTheDocument();
     await expect(canvas.queryByRole("img")).not.toBeInTheDocument();
+  },
+};
+
+export const RecoversWhenTheAddressChanges: Story = {
+  args: { src: "/no/such/cover.png" },
+  render: (args) => {
+    const [src, setSrc] = useState(args.src);
+    return (
+      <>
+        <Cover {...args} src={src} />
+        <button type="button" onClick={() => setSrc(COVER_ART)}>
+          Use another image
+        </button>
+      </>
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(
+      await canvas.findByText("Aurora Station, Vol. 1"),
+    ).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button"));
+
+    await expect(await canvas.findByRole("img")).toHaveAttribute(
+      "src",
+      COVER_ART,
+    );
   },
 };
