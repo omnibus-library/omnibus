@@ -12,9 +12,9 @@ use crate::rate_limit::{rate_limit_by_ip, RateLimiter, RateLimits};
 
 use super::{
     account, admin_health, admin_sessions, audiobooks, author_photos, authors, bookmarks, covers,
-    cross_format, deletion, ebooks, genres, highlights, journals, kindle, merge, metadata,
-    overrides, physical, profile, progress, ratings, read_status, scan, search, series, settings,
-    shelves, stats, suggestions, summary, tags, uploads, users, AppState,
+    cross_format, deletion, ebooks, genres, highlights, journals, kindle, kobo_devices, merge,
+    metadata, overrides, physical, profile, progress, ratings, read_status, scan, search, series,
+    settings, shelves, stats, suggestions, summary, tags, uploads, users, AppState,
 };
 
 /// Health check, settings, ebooks, and audiobook playback routes.
@@ -315,7 +315,8 @@ fn metadata_routes() -> OpenApiRouter<AppState> {
 
 /// Send-to-Kindle plus the per-user account preferences that grew up
 /// beside it (hidden formats, the book-detail scroll-stops switch, Stack
-/// series, sharing stats with the household, the profile and its avatar) —
+/// series, sharing stats with the household, the profile and its avatar,
+/// the reader's Kobo devices) —
 /// all mobile-facing REST. Web hits the analogous `/api/rpc/kindle/send`,
 /// `/api/rpc/account/*`, and `/api/rpc/smtp*` server fns.
 fn kindle_routes() -> OpenApiRouter<AppState> {
@@ -323,6 +324,12 @@ fn kindle_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(kindle::post_send))
         .routes(routes!(kindle::get_send_status))
         .routes(routes!(kindle::post_kindle_email))
+        .routes(routes!(
+            kobo_devices::list_kobo_devices,
+            kobo_devices::create_kobo_device
+        ))
+        .routes(routes!(kobo_devices::regenerate_kobo_device))
+        .routes(routes!(kobo_devices::delete_kobo_device))
         .routes(routes!(account::post_hidden_formats))
         .routes(routes!(account::post_book_detail_scroll_stops))
         .routes(routes!(account::post_stack_series))

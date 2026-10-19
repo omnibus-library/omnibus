@@ -183,6 +183,131 @@
         }
       }
     },
+    "/api/account/kobo-devices": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "List your Kobo devices",
+        "description": "The Kobo e-readers registered to your account, with the secret each one syncs with.",
+        "operationId": "list_kobo_devices",
+        "responses": {
+          "200": {
+            "description": "Your Kobo devices.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KoboDeviceView"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Register a Kobo device",
+        "description": "Adds a Kobo under the given label and mints the token its sync address\n`/kobo/{token}/…` carries.",
+        "operationId": "create_kobo_device",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateKoboDevice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The new device, with its token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KoboDeviceView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The name is empty or longer than 100 bytes once trimmed."
+          }
+        }
+      }
+    },
+    "/api/account/kobo-devices/{id}": {
+      "delete": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Remove a Kobo device",
+        "description": "Deletes the registration, so the Kobo's sync address stops working.",
+        "operationId": "delete_kobo_device",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The device's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The device is removed."
+          },
+          "404": {
+            "description": "None of your devices has that id."
+          }
+        }
+      }
+    },
+    "/api/account/kobo-devices/{id}/regenerate": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Regenerate a Kobo's token",
+        "description": "Replaces the device's token, so its old sync address stops working at once. The\ndevice keeps its name and its sync progress; point the Kobo at the new address.",
+        "operationId": "regenerate_kobo_device",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The device's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The device, with its new token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KoboDeviceView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "None of your devices has that id."
+          }
+        }
+      }
+    },
     "/api/account/profile": {
       "post": {
         "tags": [
@@ -9526,6 +9651,19 @@
           }
         }
       },
+      "CreateKoboDevice": {
+        "type": "object",
+        "description": "The label for a new Kobo.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "A label of 1 to 100 bytes once trimmed, such as \"Clara HD\"."
+          }
+        }
+      },
       "CreateShelfRequest": {
         "type": "object",
         "description": "A new shelf. A `smart` shelf needs `match_mode` and at least one rule, and takes no\n`book_uuids`. A `manual` shelf takes no `match_mode` or rules, and may start with\n`book_uuids`. A `wishlist` shelf can't be created. `name` is 1 to 120 characters and\n`description` at most 2048.",
@@ -11108,6 +11246,42 @@
           }
         ],
         "description": "Where a Send to Kindle stands. `GET /api/kindle/send/status` returns it for the\n`task_id` that `POST /api/kindle/send` gave back. Poll until `status` is no longer\n`pending`. A `failed` status carries a `message` that says why."
+      },
+      "KoboDeviceView": {
+        "type": "object",
+        "description": "A Kobo e-reader registered to your account. Its `token` is the secret in the sync\naddress the Kobo is pointed at, `/kobo/{token}/…`.",
+        "required": [
+          "id",
+          "name",
+          "token",
+          "created_at",
+          "last_seen_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When it was registered, in Unix seconds."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The device's id, which the regenerate and delete routes take."
+          },
+          "last_seen_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the Kobo last synced, in Unix seconds."
+          },
+          "name": {
+            "type": "string",
+            "description": "The label you gave it."
+          },
+          "token": {
+            "type": "string",
+            "description": "The secret path segment of the sync address. Treat it like a password: anyone\nholding it can sync as you."
+          }
+        }
       },
       "LengthBucket": {
         "type": "object",
@@ -14924,7 +15098,7 @@
     },
     {
       "name": "Account",
-      "description": "Your profile, avatar and preferences, and Send to Kindle."
+      "description": "Your profile, avatar and preferences, Kobo devices, and Send to Kindle."
     },
     {
       "name": "Admin",

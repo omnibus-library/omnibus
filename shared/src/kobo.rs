@@ -9,16 +9,30 @@ use serde::{Deserialize, Serialize};
 /// Maximum byte length of a user-supplied Kobo device label.
 pub const KOBO_DEVICE_NAME_MAX_LEN: usize = 100;
 
-/// A registered Kobo as shown to its owner: the row id, its label, the
-/// re-displayable path token, and last-seen bookkeeping. The hardware
-/// `x-kobo-deviceid` and delta cursor stay server-side and are not projected.
+/// A Kobo e-reader registered to your account. Its `token` is the secret in the sync
+/// address the Kobo is pointed at, `/kobo/{token}/…`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct KoboDeviceView {
+    /// The device's id, which the regenerate and delete routes take.
     pub id: i64,
+    /// The label you gave it.
     pub name: String,
+    /// The secret path segment of the sync address. Treat it like a password: anyone
+    /// holding it can sync as you.
     pub token: String,
+    /// When it was registered, in Unix seconds.
     pub created_at: i64,
+    /// When the Kobo last synced, in Unix seconds.
     pub last_seen_at: i64,
+}
+
+/// The label for a new Kobo.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CreateKoboDevice {
+    /// A label of 1 to 100 bytes once trimmed, such as "Clara HD".
+    pub name: String,
 }
 
 /// `true` once a trimmed device name is empty or exceeds
