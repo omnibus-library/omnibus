@@ -34,6 +34,8 @@ jobs:
           filters: |
             js:
               - "frontend-js/**"
+              # The client is generated from the spec, so a spec change can break it.
+              - "openapi/openapi.json"
               - ".github/workflows/frontend-js.yml"
               - "flake.nix"
               - "flake.lock"
@@ -80,6 +82,11 @@ jobs:
 
       - name: Install dependencies
         run: nix develop .#e2e --command pnpm --dir frontend-js install --frozen-lockfile
+
+      # The zod schemas, fetchers, query hooks and MSW handlers, from
+      # openapi/openapi.json. Gitignored, so every run rebuilds them.
+      - name: Generate the API client
+        run: nix develop .#e2e --command pnpm --dir frontend-js run generate
 
       - name: Biome
         run: nix develop .#e2e --command pnpm --dir frontend-js exec biome check .

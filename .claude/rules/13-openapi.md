@@ -50,8 +50,10 @@ pub(super) async fn get_ebook_by_uuid(/* … */) -> Response {
 - **Errors:** list each 4xx the handler itself returns, saying *when* ("No book has that
   uuid."), not what the status means. Leave out the 401/408/413/429/500 any route can
   return; the overview covers them.
-- **Binary bodies:** `body = [u8], content_type = "image/webp"` (`image/*` when the type
-  varies). A route that honours `If-None-Match` lists its `304`.
+- **Binary bodies:** `body = FileBytes, content_type = "image/webp"` (`image/*` when the
+  type varies). `FileBytes` (in `shared/`) documents as a binary string; `body = [u8]`
+  would document as an array of integers. A route that honours `If-None-Match` lists
+  its `304`.
 - **Security:** inherited from the document (bearer or session cookie). A public route
   says `security(())`. A media route an `<img>`/`<audio>` loads, which also accepts
   `?token=`, says `security(("bearer" = []), ("session_cookie" = []), ("media_token" = []))`.

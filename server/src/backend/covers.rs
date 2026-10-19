@@ -10,6 +10,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use omnibus_db::{self as db};
+use omnibus_shared::FileBytes;
 
 use super::conditional::{content_etag, namespaced_content_etag, MEDIA_CACHE_CONTROL, MEDIA_VARY};
 use super::{internal, AppState};
@@ -25,7 +26,7 @@ use crate::auth::MediaAuthUser;
     security(("bearer" = []), ("session_cookie" = []), ("media_token" = [])),
     params(("uuid" = String, Path, description = "The book's uuid.")),
     responses(
-        (status = 200, description = "The cover image.", body = [u8], content_type = "image/*"),
+        (status = 200, description = "The cover image.", body = FileBytes, content_type = "image/*"),
         (status = 304, description = "The cover is unchanged since the `ETag` sent in `If-None-Match`."),
         (status = 404, description = "No book has that uuid, or the book has no cover."),
     ),
@@ -127,7 +128,7 @@ fn not_modified(etag: &str) -> Response {
     ),
     responses(
         (status = 200, description = "The thumbnail, or the full cover while the thumbnail is being made.",
-            body = [u8], content_type = "image/*"),
+            body = FileBytes, content_type = "image/*"),
         (status = 202, description = "The book has no cover, so there is no thumbnail to make."),
         (status = 304, description = "The image is unchanged since the `ETag` sent in `If-None-Match`."),
         (status = 400, description = "`size` is not `sm`, `md` or `lg`."),

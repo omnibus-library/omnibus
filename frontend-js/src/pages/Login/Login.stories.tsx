@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Route, Routes } from "react-router";
 import { expect } from "storybook/test";
-import { failing, loginHandler, sessionHandler } from "../../testing/handlers";
+import { getLoginMockHandler429 } from "../../api/generated/omnibus.msw";
+import { loginHandler, sessionHandler } from "../../testing/handlers";
 import { Login } from "./Login";
 
 const PASSWORD = "correct horse battery";
@@ -65,7 +66,7 @@ export const WrongPassword: Story = {
 
 export const RateLimited: Story = {
   beforeEach({ msw }) {
-    msw.use(failing("post", "/api/auth/login", 429));
+    msw.use(getLoginMockHandler429());
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.type(canvas.getByLabelText("Username"), "ada");

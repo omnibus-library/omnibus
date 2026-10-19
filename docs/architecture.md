@@ -12,8 +12,9 @@ just modules db/src                 # or frontend/src/pages, omnibus-ios/omnibus
 
 Cargo workspace with seven crates:
 
-- **`shared/`** (`omnibus-shared`) — serde types shared across every target,
-  plus logic the server and its clients must agree on (range parsing, text
+- **`shared/`** (`omnibus-shared`) — every type on the `/api/*` wire, plus
+  the other serde types shared across targets and logic the server and its
+  clients must agree on (range parsing, text
   folding, sort order, ETags, ISBN normalization) so the two sides cannot
   drift. No Dioxus / axum / sqlx deps.
 - **`db/`** (`omnibus-db`) — server-side data layer: SQL migrations, SQLite
@@ -69,6 +70,9 @@ Beside the workspace:
   page-object layers they use: `pages/`, `components/`, `apiRequests/`,
   `contracts/`, `data/`, `fixtures/` (plus `utils/`). Conventions in
   [rule 04](../.claude/rules/04-playwright.md).
+- **`openapi/`** — the REST contract; see [below](#the-rest-contract).
+- **`frontend-js/`** — a React client over the REST API, typed from that
+  contract.
 - **`site/`** — the marketing site; see [below](#site).
 
 ## Request flows
@@ -91,6 +95,31 @@ background tick keeps the outbox drained and the library replica fresh — see
 Most features are therefore served twice — a `/api/*` handler for the mobile and
 iOS clients, and a server function for the web — each with its own permission
 gate and error mapping. A change to one usually needs the other.
+
+## The REST contract
+
+[`openapi/openapi.json`](../openapi/openapi.json) is the OpenAPI 3.1 contract
+for the `/api/*` REST surface, and the one place a client reads it from: the
+iOS app, the React client, the MCP server and any client in another repo. It
+is generated from the Rust code, never written by hand.
+
+- **Wire types** live in `shared/` and derive `utoipa::ToSchema` behind its
+  `openapi` feature, which only the server turns on.
+- **Each handler** declares its path, parameters and responses in a
+  `#[utoipa::path]` attribute, and `routes.rs` registers it with
+  `utoipa_axum::routes!`, which reads the path from that attribute. The router
+  and the document come out of one tree (`backend::rest_routes`), so a route
+  can't be served without being documented.
+- **`backend::openapi::spec`** adds the overview, security schemes and tags.
+  `just openapi-gen` writes the file, and a test fails while the committed
+  copy is stale, so CI catches a changed route or wire type.
+- **`frontend-js/`** generates its zod schemas, fetchers, TanStack Query hooks
+  and MSW handlers from the file with orval, so a wire change becomes a
+  TypeScript error there.
+
+Left out: the Dioxus server functions (`/api/rpc/*`), Kobo and OPDS, whose
+formats their clients fix. Conventions are in
+[rule 13](../.claude/rules/13-openapi.md).
 
 ## Auth boundary
 

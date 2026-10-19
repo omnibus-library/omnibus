@@ -266,6 +266,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "The request has no live session."
           }
         }
       }
@@ -430,12 +433,7 @@
             "content": {
               "image/*": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
+                  "$ref": "#/components/schemas/FileBytes"
                 }
               }
             }
@@ -668,12 +666,7 @@
             "content": {
               "image/*": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
+                  "$ref": "#/components/schemas/FileBytes"
                 }
               }
             }
@@ -1121,6 +1114,11 @@
           }
         ],
         "description": "One response of `GET /api/ebooks`: a page of books, plus the series it folded into\nstacks when the request set `stack_series`."
+      },
+      "FileBytes": {
+        "type": "string",
+        "format": "binary",
+        "description": "A file's raw bytes, such as an image, an EPUB or an audio part. Never JSON: the\noperation's content type says what the bytes are."
       },
       "Health": {
         "type": "object",

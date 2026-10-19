@@ -1,8 +1,13 @@
-// Fixtures in the shape the server sends them: snake_case JSON, before
-// api.ts parses it. Kept beside the parsed fixtures in books.ts.
+import type { EbookMetadata, UserSummary } from "../api/generated/schemas";
+
+// Fixtures in the shape the server sends them: snake_case JSON, typed by the
+// generated schemas so a fixture that drifts from the spec fails to compile.
+// Kept beside the parsed fixtures in books.ts.
 
 /** A book as `GET /api/ebooks` and `GET /api/ebooks/{uuid}` send it. */
-export function aWireBook(overrides: Record<string, unknown> = {}) {
+export function aWireBook(
+  overrides: Partial<EbookMetadata> = {},
+): EbookMetadata {
   return {
     id: 2,
     filename: "aurora-station-01.cbz",
@@ -28,7 +33,7 @@ export function aWireBook(overrides: Record<string, unknown> = {}) {
 }
 
 /** `count` distinct books, uuids and titles numbered, for paging. */
-export function aWireLibrary(count: number) {
+export function aWireLibrary(count: number): EbookMetadata[] {
   return Array.from({ length: count }, (_, i) =>
     aWireBook({
       id: i + 1,
@@ -40,7 +45,7 @@ export function aWireLibrary(count: number) {
 }
 
 /** The signed-in admin as `GET /api/auth/me` and the login response send it. */
-export const WIRE_ADA = {
+export const WIRE_ADA: UserSummary = {
   id: 1,
   username: "ada",
   display_name: "Ada Lovelace",

@@ -26,6 +26,7 @@ Numbered rules in [.claude/rules/](.claude/rules/), applied in order. Follow the
 - [10-reader-calendar.md](.claude/rules/10-reader-calendar.md) — which calendar a figure is cut on: day boundaries take the asking client's offset (one per request), time-of-day takes the offset each session recorded; why the ledger stores a quarter-hour and never a day.
 - [11-spoiler-boundary.md](.claude/rules/11-spoiler-boundary.md) — what a reader may be shown: the three-valued spoiler filter, why every figure rounds conservatively, and why the boundary reads stored columns rather than resolving a position.
 - [12-loading-states.md](.claude/rules/12-loading-states.md) — every wait draws from `components/loading.rs`: pick the `Loading` kind by the shape it fills, unknown is never shown as empty or forbidden, no boot screen (SSR draws the loaders) + the `data-hydrated` marker, reduced motion for every animation.
+- [13-openapi.md](.claude/rules/13-openapi.md) — the REST contract: wire types in `shared/`, `#[utoipa::path]` on every `/api/*` handler registered with `routes!`, docs written for API callers, and `just openapi-gen` after any route or wire-type change.
 - [98-keep-skills-fresh.md](.claude/rules/98-keep-skills-fresh.md) — update skills when the code they reference changes.
 - [99-end-of-session.md](.claude/rules/99-end-of-session.md) — end-of-session checklist (docs sync, fmt/clippy, coverage, line-count cap).
 
@@ -56,6 +57,8 @@ Seven-crate Cargo workspace: `shared/` (serde types), `db/` (data layer + indexe
 Alongside it, `omnibus-ios/` is a native SwiftUI client — an Xcode project, not a Cargo crate; `just ios-build` / `ios-test` / `ios-test-ui` / `ios-sim` wrap xcodebuild + simctl for it (no cargo target touches it). It is the iOS surface; `mobile/` is the Android shell (nothing builds the `mobile/` crate for iOS anymore). It speaks the same `/api/*` REST surface.
 
 `site/` is the marketing site served at <https://omnibus-library.github.io/omnibus/> — static HTML with no build step, published to the `gh-pages` branch by `.github/workflows/pages.yml`. Its framed app screens are stills exported from the Claude Design "Omnibus" project, not live markup; see the `site/` section of [docs/architecture.md](docs/architecture.md).
+
+The `/api/*` REST surface is described by [openapi/openapi.json](openapi/openapi.json), the contract every client builds against, generated from the handlers (see [the REST contract](docs/architecture.md#the-rest-contract)).
 
 Crate descriptions, request flows, and mobile-auth details live in [docs/architecture.md](docs/architecture.md); the iOS app's design lives in [docs/ios.md](docs/ios.md). Per-module detail lives only in each file's own `//!` doc (a Swift file's header comment) — `just modules <dir>` prints a directory's map from them.
 
@@ -104,6 +107,8 @@ just lint-css                                               # structural CSS lin
 just lint-ts                                                # Playwright TS: biome check + tsc --noEmit (TypeScript 7), in .#e2e
 just check                                                  # lint then test
 just modules db/src                                         # module map for any directory, from each file's //! doc
+just openapi-gen                                            # regenerate openapi/openapi.json, the REST contract (a test fails while it is stale)
+just openapi                                                # regenerate, then browse the API reference on a local port
 # …or per-crate (note: `cargo test --workspace` SKIPS frontend rpc/page tests,
 #  mobile, mcp, and mock-kobo — the rpc/page tests need --features server to
 #  compile the server-function bodies; mobile, mcp, and mock-kobo are out of

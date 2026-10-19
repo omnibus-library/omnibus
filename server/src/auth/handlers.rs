@@ -419,7 +419,11 @@ async fn logout_handler(
     path = "/api/auth/me",
     tag = "Auth",
     operation_id = "get_me",
-    responses((status = 200, description = "The signed-in user.", body = UserSummary)),
+    responses(
+        (status = 200, description = "The signed-in user.", body = UserSummary),
+        // Listed although any route can answer it: clients read it here as "signed out".
+        (status = 401, description = "The request has no live session."),
+    ),
 )]
 async fn me_handler(user: AuthUser) -> Response {
     Json(user.summary()).into_response()

@@ -26,6 +26,7 @@ Pick the right submodule under `shared/src/` ([lib.rs](../../../shared/src/lib.r
 `settings.rs` (library paths), `ebook/` (book metadata + overrides), `discovery.rs` (browse / search-palette / author / series), `progress.rs` (F2.1 reading/listening), `audiobook.rs` (F2.3 manifest), `highlight.rs` (annotation colors + CRUD payloads), `view_prefs.rs` (landing-page sort/view state) + `view_filters.rs` (its include/exclude filter clauses), `auth.rs` (login/register payloads), `worker.rs` (worker progress feed). If the new type doesn't fit any of those, add a new submodule alongside them and re-export from `lib.rs`.
 
 - Define the request/response bodies with `#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]`. Add `Eq` when every field supports it (skip it on any payload that carries `f64` or another non-`Eq` type).
+- Every `/api/*` request body, query struct and response body lives here, even one only the server uses: add `#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]` (a query struct takes `utoipa::IntoParams` with `into_params(parameter_in = Query)`), and doc comments written for API callers — they become the OpenAPI schema descriptions ([13-openapi.md](../../rules/13-openapi.md)).
 - Keep this crate dioxus-free — pure serde only.
 - The flat re-exports in `lib.rs` mean callers keep writing `omnibus_shared::Foo` regardless of which submodule `Foo` lives in.
 
@@ -51,7 +52,10 @@ pub async fn rpc_my_action(input: MyInput) -> Result<MyOutput> {
 
 Write the handler function in the matching per-domain module under
 [server/src/backend/](../../../server/src/backend/) (e.g. `backend/ebooks.rs`,
-`backend/progress.rs`), then register it with `.route(...)` inside the
+`backend/progress.rs`), give it a `#[utoipa::path(...)]` attribute (method,
+path, tag, params, body, every response with a description — see
+[13-openapi.md](../../rules/13-openapi.md) and any handler in `backend/ratings.rs`
+for the shape), then register it with `.routes(routes!(handler))` inside the
 matching builder function in
 [server/src/backend/routes.rs](../../../server/src/backend/routes.rs) —
 `content_routes()`, `data_routes()`, `progress_routes()`, `shelf_routes()`,
@@ -59,8 +63,12 @@ matching builder function in
 new one and merge it into `data_routes()` (or `content_routes()`) if none
 fits. `rest_router()` / `rest_router_with_search_limiter()` in
 [server/src/backend.rs](../../../server/src/backend.rs) only **compose**
-these builder functions into the final router — individual `.route(...)`
-calls no longer live there.
+these builder functions into the final router — individual route
+registrations no longer live there. `routes!` reads the path from the
+attribute, so the path is written once; handlers that share a path go in one
+`routes!(a, b)`. Then run `just openapi-gen` and commit the regenerated
+`openapi/openapi.json` with the handler — `spec_matches_committed_openapi_json`
+fails until you do.
 
 - **First argument is the auth extractor** (`_user: AuthUser` for read paths and per-user mutations, `_admin: AdminUser` for shared-config writes). Then `State<AppState>` for the pool, `Json<T>` / `Path<…>` / `Query<…>` for the rest. F0.7 makes this mandatory — without an extractor the route would default to "any logged-in user" which defeats the per-user permission columns.
 - **Image-serving GET whose bytes go into an `<img src>`** (covers/thumbs/photos): use `_user: MediaAuthUser` instead of `AuthUser`, and add the path prefix to `is_media_read_path` in `auth/gate.rs`. Both accept the session as a `?token=` query param — a mobile WebView's `<img>` fetch carries neither the bearer header nor a cookie. On the frontend build the URL via `crate::media_url` / `crate::thumb_url` (in `contexts.rs`) so the token is appended per URL, including each `srcset` candidate. Every cacheable 200 these return must publish an `ETag` — **including a stand-in body**, like the full cover `/api/thumbs/*` serves while the WebP generates. Both offline clients cache what comes back, and one that arrives with no validator is one they can never revalidate; see [09-content-validators.md](../../rules/09-content-validators.md).

@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { parseBookDetail, parseBookPage } from "./api";
+import { toBookDetail, toBookPage } from "./api";
 import { aWireBook } from "./testing/wire";
 
 const auroraWire = aWireBook({ published: null });
 
-describe("parseBookPage", () => {
+describe("toBookPage", () => {
   it("maps wire rows to books and reads paging from the headers", () => {
     const headers = new Headers({
       "X-Total-Count": "46",
       "X-Next-Cursor": "eyJzIjoiQXVyb3JhIn0",
     });
 
-    const page = parseBookPage({ path: "/lib", books: [auroraWire] }, headers);
+    const page = toBookPage({ path: "/lib", books: [auroraWire] }, headers);
 
     expect(page).toEqual({
       books: [
@@ -30,7 +30,7 @@ describe("parseBookPage", () => {
   });
 
   it("reports no next page when the cursor header is absent", () => {
-    const page = parseBookPage({ books: [] }, new Headers());
+    const page = toBookPage({ books: [] }, new Headers());
 
     expect(page).toEqual({ books: [], total: 0, next: null });
   });
@@ -38,7 +38,7 @@ describe("parseBookPage", () => {
   it("falls back to the filename for a book with no title or cover", () => {
     const wire = { ...auroraWire, title: null, cover_url: null };
 
-    const [book] = parseBookPage({ books: [wire] }, new Headers()).books;
+    const [book] = toBookPage({ books: [wire] }, new Headers()).books;
 
     expect(book).toMatchObject({
       title: "aurora-station-01.cbz",
@@ -49,15 +49,15 @@ describe("parseBookPage", () => {
   it("rejects a row with no uuid", () => {
     const wire = { ...auroraWire, unique_identifier: null };
 
-    expect(() => parseBookPage({ books: [wire] }, new Headers())).toThrow();
+    expect(() => toBookPage({ books: [wire] }, new Headers())).toThrow();
   });
 });
 
-describe("parseBookDetail", () => {
+describe("toBookDetail", () => {
   it("defaults the genres the server omits when there are none", () => {
     const wire = { ...auroraWire, subjects: ["Space opera"] };
 
-    expect(parseBookDetail(wire)).toMatchObject({
+    expect(toBookDetail(wire)).toMatchObject({
       genres: [],
       subjects: ["Space opera"],
     });
@@ -66,6 +66,6 @@ describe("parseBookDetail", () => {
   it("treats a blank series name as no series", () => {
     const wire = { ...auroraWire, series: "  " };
 
-    expect(parseBookDetail(wire).series).toBeNull();
+    expect(toBookDetail(wire).series).toBeNull();
   });
 });

@@ -99,6 +99,17 @@ just coverage       # lcov + per-file summary via cargo-llvm-cov over nextest
 just coverage-html  # browsable per-line report
 ```
 
+### The REST contract
+
+`openapi/openapi.json` describes every `/api/*` route and is generated from the
+handlers. After changing a route or a type in `shared/`, regenerate it and commit
+the result; a test fails until you do.
+
+```bash
+just openapi-gen  # rewrite openapi/openapi.json
+just openapi      # regenerate, then browse it as an API reference on a local port
+```
+
 Per-crate, when you want a tighter loop. Note that `cargo test --workspace`
 **skips** the frontend rpc/page tests (they need `--features server` to compile
 the server-function bodies) and `mobile` (out of default-members, no tests), so

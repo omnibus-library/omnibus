@@ -21,6 +21,7 @@
   "include": [
     "src",
     ".storybook",
-    "vite.config.ts"
+    "vite.config.ts",
+    "orval.config.ts"
   ]
 }
