@@ -12,6 +12,7 @@ import {
   getGetReadStatusUrl,
   getHighlights,
   getOtherRatings,
+  getPatchHighlightColorUrl,
   getPatchHighlightNoteUrl,
   getPostCrossFormatFollowUrl,
   getRecentProgress,
@@ -327,6 +328,13 @@ export async function createHighlight(
       }),
     ),
   );
+}
+
+export async function recolorHighlight(
+  id: number,
+  color: HighlightColor,
+): Promise<void> {
+  await send(getPatchHighlightColorUrl(String(id)), "PATCH", { color });
 }
 
 /** Puts `note` on a passage; `null` removes the note. */

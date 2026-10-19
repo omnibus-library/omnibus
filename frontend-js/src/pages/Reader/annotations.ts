@@ -2,8 +2,10 @@ import { useCallback, useState } from "react";
 import {
   type BookUuid,
   createHighlight,
+  deleteHighlight,
   type Highlight,
   type HighlightColor,
+  recolorHighlight,
   saveHighlightNote,
 } from "../../api";
 import { withReader } from "./epubGlue";
@@ -89,5 +91,42 @@ export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
     setTarget(null);
   }
 
-  return { highlights, target, setTarget, load, create, saveNote };
+  /** Recolors a passage once the server has it, so a refused change leaves the row and the painted color as they were. */
+  async function recolor(highlight: Highlight, color: HighlightColor) {
+    if (color === highlight.color) return;
+    try {
+      await recolorHighlight(highlight.id, color);
+    } catch {
+      return;
+    }
+    if (highlight.anchor !== null) {
+      bridge.unpaint(highlight.anchor);
+      bridge.paint(highlight.anchor, color);
+    }
+    setHighlights((list) =>
+      list.map((h) => (h.id === highlight.id ? { ...h, color } : h)),
+    );
+  }
+
+  /** Deletes a passage and unpaints it; a refused delete keeps both. */
+  async function remove(highlight: Highlight) {
+    try {
+      await deleteHighlight(highlight.id);
+    } catch {
+      return;
+    }
+    if (highlight.anchor !== null) bridge.unpaint(highlight.anchor);
+    setHighlights((list) => list.filter((h) => h.id !== highlight.id));
+  }
+
+  return {
+    highlights,
+    target,
+    setTarget,
+    load,
+    create,
+    saveNote,
+    recolor,
+    remove,
+  };
 }

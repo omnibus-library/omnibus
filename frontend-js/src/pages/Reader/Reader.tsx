@@ -25,6 +25,7 @@ import {
   type TocEntry,
   withReader,
 } from "./epubGlue";
+import { HighlightsDrawer } from "./HighlightsDrawer";
 import { NoteComposer } from "./NoteComposer";
 import { QuotePanel } from "./QuotePanel";
 import {
@@ -104,8 +105,16 @@ function EpubPage({
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [selection, setSelection] = useState<PassageSelection | null>(null);
-  const { highlights, target, setTarget, load, create, saveNote } =
-    useHighlights(uuid, epubBridge);
+  const {
+    highlights,
+    target,
+    setTarget,
+    load,
+    create,
+    saveNote,
+    recolor,
+    remove,
+  } = useHighlights(uuid, epubBridge);
   // Retry re-runs the whole open: the fetch, the runtime load and the init.
   const [attempt, setAttempt] = useState(0);
 
@@ -364,6 +373,27 @@ function EpubPage({
             // Blank the outgoing chapter until the relocate that confirms the jump.
             setStatus("loading");
             jumpTo(href);
+          }}
+          onClose={() => setPanel(null)}
+        />
+      )}
+      {panel === "highlights" && (
+        <HighlightsDrawer
+          highlights={highlights}
+          bridge={epubBridge}
+          onRecolor={recolor}
+          onDelete={async (highlight) => {
+            await remove(highlight);
+            // The delete button was the focus; the surface is where Escape is heard.
+            surface.current?.focus();
+          }}
+          onQuote={(highlight) => {
+            setTarget({ kind: "quote", highlight });
+            setPanel(null);
+          }}
+          onEditNote={(highlight) => {
+            setTarget({ kind: "note", highlight });
+            setPanel(null);
           }}
           onClose={() => setPanel(null)}
         />

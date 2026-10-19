@@ -542,6 +542,11 @@
   display: flex;
   flex-direction: column;
 }
+.rd-drawer-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
 .rd-drawer-empty {
   padding: 48px 16px;
   text-align: center;
@@ -576,6 +581,100 @@
   background: var(--bg-2);
   color: var(--ink-0);
   border-left-color: var(--accent);
+}
+.rd-filter-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line-2);
+}
+.rd-chip-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.rd-chip-dot[data-color="amber"] {
+  background: var(--hl-amber);
+}
+.rd-chip-dot[data-color="green"] {
+  background: var(--hl-green);
+}
+.rd-chip-dot[data-color="blue"] {
+  background: var(--hl-blue);
+}
+.rd-chip-dot[data-color="rose"] {
+  background: var(--hl-rose);
+}
+.rd-chip-dot[data-color="violet"] {
+  background: var(--hl-violet);
+}
+.rd-hl-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px 14px;
+  border-left: 3px solid var(--accent);
+}
+.rd-hl-quote {
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+  color: var(--ink-0);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 16px;
+  line-height: 1.42;
+}
+.rd-hl-note {
+  display: flex;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  line-height: 1.45;
+}
+.rd-hl-swatches {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.rd-hl-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  border: 2px solid transparent;
+  transition: transform 0.12s;
+}
+@media (hover: hover) {
+  .rd-hl-swatch:hover {
+    transform: scale(1.15);
+  }
+}
+.rd-hl-swatch.on {
+  border-color: var(--ink-0);
+}
+.rd-hl-swatch[data-color="amber"] {
+  background: var(--hl-amber);
+}
+.rd-hl-swatch[data-color="green"] {
+  background: var(--hl-green);
+}
+.rd-hl-swatch[data-color="blue"] {
+  background: var(--hl-blue);
+}
+.rd-hl-swatch[data-color="rose"] {
+  background: var(--hl-rose);
+}
+.rd-hl-swatch[data-color="violet"] {
+  background: var(--hl-violet);
+}
+.rd-hl-actions {
+  display: flex;
+  gap: 2px;
 }
 .rd-note-composer {
   position: absolute;
