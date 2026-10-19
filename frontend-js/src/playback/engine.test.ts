@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createEngine, type HlsConstructor, type Media } from "./engine";
+import { createEngine, type Media } from "./engine";
+import type { HlsConstructor } from "./loadHls";
 
 /** An `<audio>` stand-in: settable fields, recorded calls, and a `load()` that resets the rate as a real one does. */
 class FakeMedia extends EventTarget {
@@ -10,7 +11,6 @@ class FakeMedia extends EventTarget {
   readyState = 4;
   playbackRate = 1;
   volume = 1;
-  preload = "";
   native = false;
   calls: string[] = [];
 
@@ -112,6 +112,42 @@ describe("initDirect", () => {
   });
 });
 
+describe("a boot whose resume seek has not landed", () => {
+  const BIG = [{ url: "/p", seconds: 10_800 }];
+
+  it("reports the resume position to a play and pause before metadata", () => {
+    const { media, on, engine } = setup();
+    engine.initDirect(BIG, 7200);
+
+    media.play();
+    media.pause();
+
+    expect(on.pause).toHaveBeenCalledWith(7200, true);
+  });
+
+  it("lands a skip on the resume plus the delta once metadata loads", () => {
+    const { media, on, engine } = setup();
+    engine.initDirect(BIG, 7200);
+
+    engine.skip(30);
+    media.fire("loadedmetadata");
+
+    expect(on.seeked).toHaveBeenCalledWith(7230);
+    expect(media.currentTime).toBe(7230);
+  });
+
+  it("lets a seek replace the boot seek of an hls stream", () => {
+    const { media, on, engine } = setup();
+    engine.initHls("/m3u8", 600, fakeHls(true).Hls);
+
+    engine.seek(900);
+    media.fire("loadedmetadata");
+
+    expect(on.seeked).toHaveBeenCalledWith(900);
+    expect(media.currentTime).toBe(900);
+  });
+});
+
 describe("seek", () => {
   it("only sets the time when the target is in the current part", () => {
     const { media, on, engine } = setup();
@@ -161,6 +197,22 @@ describe("seek", () => {
   });
 });
 
+describe("a part swap", () => {
+  it("drops the timeupdate the load fires at the part start", () => {
+    const { media, on, engine } = setup();
+    engine.initDirect(PARTS, 10);
+    media.fire("loadedmetadata");
+    media.fire("play");
+    on.time.mockClear();
+
+    engine.seek(150);
+    media.currentTime = 0;
+    media.fire("timeupdate");
+
+    expect(on.time).not.toHaveBeenCalled();
+  });
+});
+
 describe("setRate", () => {
   it("puts the rate back on every loaded part, since a real load() resets it", () => {
     const { media, engine } = setup();
@@ -179,6 +231,7 @@ describe("ended", () => {
   it("loads and plays the next part, and reports the end only after the last", () => {
     const { media, on, engine } = setup();
     engine.initDirect(PARTS, 10);
+    media.fire("loadedmetadata");
 
     media.fire("ended");
     expect(media.src).toBe("/p2");
@@ -189,6 +242,19 @@ describe("ended", () => {
     media.currentTime = 100;
     media.fire("ended");
     expect(on.ended).toHaveBeenCalledWith(300);
+  });
+});
+
+describe("with no source loaded", () => {
+  it("ignores toggle, seek and skip, so nothing is saved or played", () => {
+    const { media, on, engine } = setup();
+
+    engine.toggle();
+    engine.seek(60);
+    engine.skip(30);
+
+    expect(media.calls).toEqual([]);
+    expect(on.seeked).not.toHaveBeenCalled();
   });
 });
 
@@ -222,6 +288,20 @@ describe("teardown gates", () => {
 
     expect(on.time).not.toHaveBeenCalled();
     expect(on.pause).not.toHaveBeenCalled();
+  });
+
+  it("reports a pause that came while the page was hidden once it is restored from the cache", () => {
+    const { media, on, engine } = setup();
+    engine.initDirect(PARTS, 10);
+    media.fire("loadedmetadata");
+    media.fire("play");
+    window.dispatchEvent(new Event("pagehide"));
+    media.pause();
+    expect(on.pause).not.toHaveBeenCalled();
+
+    window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+
+    expect(on.pause).toHaveBeenCalledWith(10, true);
   });
 
   it("passes userActed false to a pause on an untouched boot with a seed", () => {
@@ -260,6 +340,18 @@ describe("stall watchdog", () => {
       vi.advanceTimersByTime(500);
       media.fire("progress");
     }
+
+    expect(on.stalled).not.toHaveBeenCalled();
+  });
+
+  it("does not carry the poll over a stop into the next boot", () => {
+    const { media, on, engine } = setup();
+    engine.initDirect(PARTS, 10);
+    engine.stop();
+    media.paused = false;
+    media.readyState = 1;
+
+    vi.advanceTimersByTime(16_000);
 
     expect(on.stalled).not.toHaveBeenCalled();
   });

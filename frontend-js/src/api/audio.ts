@@ -28,13 +28,16 @@ import {
 
 export type Chapter = { title: string; start: number; seconds: number };
 
+/** One playable piece of an audio file: its URL and length in seconds. */
+export type AudioPart = { url: string; seconds: number };
+
 export type AudioManifest =
   | {
       mode: "direct";
       fileId: number | null;
       fileCount: number;
       nextFileId: number | null;
-      parts: { url: string; seconds: number }[];
+      parts: AudioPart[];
       chapters: Chapter[];
     }
   | {

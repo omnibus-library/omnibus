@@ -1,6 +1,5 @@
+import type { AudioPart } from "../api";
 import type { HlsConstructor, HlsInstance } from "./loadHls";
-
-export type { HlsConstructor };
 
 /** The slice of an `<audio>` element the engine drives, so a test can stand in for one. */
 export type Media = Pick<
@@ -12,7 +11,6 @@ export type Media = Pick<
   | "readyState"
   | "playbackRate"
   | "volume"
-  | "preload"
   | "play"
   | "pause"
   | "load"
@@ -41,8 +39,6 @@ export type EngineEvents = {
   stalled(): void;
 };
 
-export type Part = { url: string; seconds: number };
-
 const HAVE_FUTURE_DATA = 3;
 const STALL_MS = 15_000;
 const POLL_MS = 500;
@@ -56,12 +52,14 @@ const NATIVE_HLS = "application/vnd.apple.mpegurl";
  */
 export function createEngine(media: Media, on: EngineEvents) {
   let mode: "direct" | "hls" | null = null;
-  let parts: Part[] = [];
+  let parts: AudioPart[] = [];
   let index = 0;
   let offsets: number[] = [];
   let total = 0;
   let seeded = false;
   let userActed = false;
+  // Where a seek that waits on `loadedmetadata` will land: the element's clock reads 0 until then.
+  let seed: number | null = null;
   let lastAbs = 0;
   let rate: number | null = null;
   let hls: HlsInstance | null = null;
@@ -74,7 +72,7 @@ export function createEngine(media: Media, on: EngineEvents) {
   const listen = (
     target: Pick<EventTarget, "addEventListener" | "removeEventListener">,
     type: string,
-    handler: () => void,
+    handler: (event: Event) => void,
   ) => {
     target.addEventListener(type, handler);
     removers.push(() => target.removeEventListener(type, handler));
@@ -82,6 +80,7 @@ export function createEngine(media: Media, on: EngineEvents) {
 
   // A direct file's clock restarts with each part; the whole file's is the part's offset plus it.
   const abs = () =>
+    seed ??
     (mode === "direct" ? (offsets[index] ?? 0) : 0) + (media.currentTime || 0);
 
   // A teardown can fire one last event with the clock already at 0.
@@ -107,6 +106,16 @@ export function createEngine(media: Media, on: EngineEvents) {
     media.addEventListener("loadedmetadata", once);
   };
 
+  // Lands `local` on the next `loadedmetadata`; until then positions read as `at`.
+  const landAt = (at: number, local: number, then?: () => void) => {
+    seed = at;
+    afterMetadata(() => {
+      media.currentTime = local;
+      seed = null;
+      then?.();
+    });
+  };
+
   const markProgress = () => {
     lastProgressAt = Date.now();
     stallReported = false;
@@ -119,7 +128,7 @@ export function createEngine(media: Media, on: EngineEvents) {
   });
   listen(media, "timeupdate", () => {
     markProgress();
-    if (!seeded) return;
+    if (!seeded || seed !== null) return;
     const t = abs();
     if (isTeardownArtifact(t)) return;
     lastAbs = t;
@@ -151,9 +160,16 @@ export function createEngine(media: Media, on: EngineEvents) {
   listen(window, "pagehide", () => {
     seeded = false;
   });
+  // A page restored from the bfcache missed the pause its hiding fired.
+  listen(window, "pageshow", (e) => {
+    if (!("persisted" in e && e.persisted)) return;
+    seeded = true;
+    if (media.paused) on.pause(abs(), userActed);
+  });
 
   const startWatchdog = () => {
-    watchdog ??= setInterval(() => {
+    markProgress();
+    watchdog = setInterval(() => {
       const buffering = !media.paused && media.readyState < HAVE_FUTURE_DATA;
       on.buffering(buffering);
       if (!buffering) {
@@ -178,33 +194,32 @@ export function createEngine(media: Media, on: EngineEvents) {
     total = 0;
     seeded = false;
     userActed = false;
+    seed = null;
     lastAbs = 0;
+    clearInterval(watchdog);
+    watchdog = undefined;
     if (pendingMeta) media.removeEventListener("loadedmetadata", pendingMeta);
     pendingMeta = null;
   };
 
   const seek = (seconds: number) => {
+    if (mode === null) return;
     seeded = true;
     userActed = true;
     const s = Math.max(0, seconds || 0);
     lastAbs = s;
     on.seeked(s);
-    if (mode !== "direct") {
-      media.currentTime = s;
-      return;
-    }
-    const i = partAt(s);
+    const i = mode === "direct" ? partAt(s) : 0;
     const local = s - (offsets[i] ?? 0);
-    if (i === index) {
+    if (i === index && !pendingMeta) {
       media.currentTime = local;
       return;
     }
+    // A boot seek or part swap still waiting on metadata gives way to this one.
     const wasPlaying = !media.paused;
+    landAt(s, local, () => wasPlaying && playQuietly());
+    if (i === index) return;
     index = i;
-    afterMetadata(() => {
-      media.currentTime = local;
-      if (wasPlaying) playQuietly();
-    });
     media.src = parts[i]?.url ?? "";
     media.load();
   };
@@ -219,7 +234,7 @@ export function createEngine(media: Media, on: EngineEvents) {
 
   return {
     /** Loads a file's parts, starting at `resumeAt` seconds in; `null` starts at 0 unseeded. */
-    initDirect(list: Part[], resumeAt: number | null) {
+    initDirect(list: AudioPart[], resumeAt: number | null) {
       reset();
       mode = "direct";
       parts = list;
@@ -237,8 +252,7 @@ export function createEngine(media: Media, on: EngineEvents) {
       if (!first) return;
       if (resumeAt !== null) {
         const local = start - (offsets[index] ?? 0);
-        afterMetadata(() => {
-          media.currentTime = local;
+        landAt(start, local, () => {
           seeded = true;
         });
       }
@@ -274,8 +288,7 @@ export function createEngine(media: Media, on: EngineEvents) {
       // Zero is a real position (a fresh book); null, a resume in another file, stays unseeded.
       if (resumeAt === 0) seeded = true;
       else if (resumeAt !== null) {
-        afterMetadata(() => {
-          media.currentTime = resumeAt;
+        landAt(resumeAt, resumeAt, () => {
           seeded = true;
         });
       }
@@ -284,9 +297,12 @@ export function createEngine(media: Media, on: EngineEvents) {
       return true;
     },
 
-    play: playQuietly,
     pause: () => media.pause(),
-    toggle: () => (media.paused ? playQuietly() : media.pause()),
+    toggle() {
+      if (mode === null) return;
+      if (media.paused) playQuietly();
+      else media.pause();
+    },
     seek,
     skip: (delta: number) => seek(abs() + delta),
     setRate(next: number) {
@@ -301,8 +317,6 @@ export function createEngine(media: Media, on: EngineEvents) {
     dispose() {
       stop();
       for (const remove of removers.splice(0)) remove();
-      clearInterval(watchdog);
-      watchdog = undefined;
     },
   };
 }
