@@ -57,12 +57,15 @@ server_pid() {
 }
 
 server_up() {
-  if [ "${1:-}" = "--fresh" ]; then
-    server_down
-    rm -rf "$SERVER" "$ENVFILE"
-  elif server_pid >/dev/null && [ -f "$ENVFILE" ]; then
+  if [ "${1:-}" != "--fresh" ] && server_pid >/dev/null && [ -f "$ENVFILE" ]; then
     server_status
     return 0
+  fi
+  # A live pid without env.sh is a start that never finished; it goes too, or
+  # it keeps a port in this window that nothing will ever stop.
+  server_down
+  if [ "${1:-}" = "--fresh" ]; then
+    rm -rf "$SERVER" "$ENVFILE"
   fi
   [ -d "$ROOT/test_data/epubs/public_domain" ] ||
     die "the fixture library is missing — run \`just fixtures\` first"
@@ -116,6 +119,8 @@ server_start() {
       "$bin" >"$SERVER/server.log" 2>&1 &
     echo $! >"$PIDFILE"
   )
+  # Until env.sh is written, a failed or interrupted start stops what it started.
+  trap server_down EXIT
 
   local base="http://127.0.0.1:$port" token="" waited=0
   until curl -sf --max-time 2 "$base/api/_health" >/dev/null; do
@@ -142,6 +147,7 @@ export OMNIBUS_TOUR_PASSWORD=$TOUR_PASSWORD
 export OMNIBUS_TOUR_TOKEN=$token
 export OMNIBUS_TOUR_SHOTS=$STATE/shots
 EOF
+  trap - EXIT
   server_status
 }
 
