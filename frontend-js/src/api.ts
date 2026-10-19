@@ -877,8 +877,11 @@ export type KindleSend =
   | { status: "pending" | "sent" | "unknown" }
   | { status: "failed"; message: string };
 
-export async function fetchKindleSend(taskId: number): Promise<KindleSend> {
-  const res = await getKindleSendStatus({ task_id: taskId });
+export async function fetchKindleSend(
+  taskId: number,
+  signal?: AbortSignal,
+): Promise<KindleSend> {
+  const res = await getKindleSendStatus({ task_id: taskId }, { signal });
   if (res.status === 404) return { status: "unknown" };
   if (res.status !== 200) throw failure(res);
   return res.data;

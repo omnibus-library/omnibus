@@ -18,6 +18,7 @@ type Outcome = { error: boolean; message: string };
 
 const sleep = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
     const timer = setTimeout(resolve, ms);
     signal.addEventListener(
       "abort",
@@ -36,7 +37,7 @@ async function outcomeOf(
 ): Promise<Outcome> {
   for (;;) {
     await sleep(POLL_MS, signal);
-    const send = await fetchKindleSend(taskId);
+    const send = await fetchKindleSend(taskId, signal);
     switch (send.status) {
       case "pending":
         continue;
@@ -75,7 +76,9 @@ export function SendToKindle({
   const [toast, setToast] = useState<Outcome | null>(null);
   const leaving = useRef(new AbortController());
   useEffect(() => {
-    const controller = leaving.current;
+    // Made here so a strict-mode remount gets a live one, not the aborted first.
+    const controller = new AbortController();
+    leaving.current = controller;
     return () => controller.abort();
   }, []);
   const send = useMutation({

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { delay, HttpResponse, http } from "msw";
 import { useState } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import { toBookDetail } from "../../api";
@@ -306,7 +307,19 @@ export const EpubOverTheCapLinksToAmazonsUploader: Story = {
 };
 
 export const LeavingStopsPollingTheSend: Story = {
-  beforeEach: kindle("pending"),
+  beforeEach: ({ msw }) => {
+    sent.length = 0;
+    polls.count = 0;
+    // Slow answers, so Leave lands while a poll is in flight.
+    msw.use(
+      http.get("/api/kindle/send/status", async () => {
+        polls.count++;
+        await delay(500);
+        return HttpResponse.json({ status: "pending" });
+      }),
+      ...kindleHandlers(["pending"], sent, polls),
+    );
+  },
   render: (args) => <Leavable {...args} />,
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
