@@ -23,7 +23,7 @@ export function toUser(user: UserSummary) {
     hasAvatar: user.has_avatar ?? false,
     hiddenFormats: user.hidden_formats ?? [],
     stackSeries: user.stack_series ?? false,
-    shareStats: user.share_stats ?? false,
+    shareStats: user.share_stats ?? true,
   };
 }
 

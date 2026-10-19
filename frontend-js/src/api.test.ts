@@ -285,8 +285,12 @@ describe("toUser", () => {
       hasAvatar: true,
       hiddenFormats: [],
       stackSeries: false,
-      shareStats: false,
+      shareStats: true,
     });
+  });
+
+  it("defaults sharing to on when the server omits it", () => {
+    expect(toUser(WIRE_ADA).shareStats).toBe(true);
   });
 
   it("carries the sharing preference the server sends", () => {

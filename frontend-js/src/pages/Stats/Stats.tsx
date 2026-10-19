@@ -14,10 +14,10 @@ import { Loading } from "../../components/Loading/Loading";
 import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { windowLabel } from "./calendar";
-import { Hero } from "./Hero";
 import { heading, viewing } from "./picker";
 import { ReaderPicker } from "./ReaderPicker";
 import { ShareStatsToggle } from "./ShareStatsToggle";
+import { StatsHero } from "./StatsHero";
 import {
   type Failure,
   failureOf,
@@ -168,12 +168,12 @@ function ReaderStats({
   return (
     <div className="st-page">
       <PageTitle page="Stats" />
-      <Hero summary={standing.data} who={heading(who)}>
+      <StatsHero summary={standing.data} who={heading(who)}>
         <div className="st-hero-bar">
           <ReaderPicker readers={readers} selected={userId} />
           {who.kind === "you" && <ShareStatsToggle />}
         </div>
-      </Hero>
+      </StatsHero>
       <div className="st-body">
         {isEmpty(standing.data) ? (
           <StatsEmpty whoName={who.kind === "reader" ? who.name : null} />

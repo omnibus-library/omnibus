@@ -591,6 +591,7 @@ export const SharingSwitchStartsFromTheSession: Story = {
 };
 
 export const SharingSwitchSavesStraightAway: Story = {
+  parameters: { user: { ...WIRE_ADA, share_stats: false } },
   beforeEach({ msw }) {
     held = deferred();
     msw.use(...api({ holdShare: held.promise }));
@@ -614,6 +615,7 @@ export const SharingSwitchSavesStraightAway: Story = {
 };
 
 export const SharingSwitchGoesBackWhenTheSaveIsRefused: Story = {
+  parameters: { user: { ...WIRE_ADA, share_stats: false } },
   beforeEach({ msw }) {
     msw.use(...api({ refuseShare: true }));
   },

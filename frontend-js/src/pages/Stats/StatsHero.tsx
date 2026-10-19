@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { StatsSummary } from "../../api";
 import { plural } from "../../format";
 import { dayNumber } from "./calendar";
-import { AnnualGoalRing, DailyGoalsCard, GoalsLink } from "./Goal";
+import { AnnualGoalRing, DailyGoalsCard, GoalsLink } from "./GoalCluster";
 import { buildSpark, type SparkBar, streakLine } from "./hero";
 
 // Spelled out so tools/extract-atrium.cjs sees each class.
@@ -17,7 +17,7 @@ function kicker(current: number, yours: boolean) {
 }
 
 /** The standing hero: the run the reader is on over a six-week spark; `who` names another reader's page. `children` is its first row. */
-export function Hero({
+export function StatsHero({
   summary,
   who,
   children,
