@@ -1,5 +1,5 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { fetchBookPage, type LibraryQuery } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { FilterBar } from "../../components/FilterBar/FilterBar";
@@ -97,6 +97,7 @@ export function Library() {
 
   // Bulk edit is the admin's, on the table.
   const bulk = user.isAdmin && prefs.view === "table";
+  const selectAll = useRef<HTMLInputElement>(null);
   const picked = useBulkSelection(
     JSON.stringify([query, shelfId, prefs.view]),
     books,
@@ -205,6 +206,7 @@ export function Library() {
                 books={books}
                 prefs={prefs}
                 sortLock={sortLock}
+                selectAllRef={selectAll}
                 onSort={(key) =>
                   change({ ...prefs, ...headerSort(prefs, key) })
                 }
@@ -251,6 +253,7 @@ export function Library() {
       {picked.editing && picked.chosen.length > 0 && (
         <BulkEditModal
           books={picked.chosen}
+          fallbackFocus={selectAll}
           onClose={() => picked.setEditing(false)}
           onSaved={() => {
             picked.setEditing(false);
@@ -261,6 +264,7 @@ export function Library() {
       {picked.filing && picked.chosen.length > 0 && (
         <BulkShelfPicker
           books={picked.chosen}
+          fallbackFocus={selectAll}
           onClose={() => picked.setFiling(false)}
           onAdded={() => {
             picked.setFiling(false);

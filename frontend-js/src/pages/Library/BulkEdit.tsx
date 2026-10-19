@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Link } from "react-router";
 import {
   addShelfBooks,
@@ -16,7 +22,6 @@ import { BusyLabel, Loading, Ring } from "../../components/Loading/Loading";
 import { trapTab } from "../../focusTrap";
 import { bookCount } from "../../format";
 import { useCurrentUser } from "../../session";
-import { SELECT_ALL_LABEL } from "./BookTable";
 import {
   type BulkEdit,
   bulkWire,
@@ -26,13 +31,15 @@ import {
 } from "./bulkEdit";
 import { addTargets } from "./shelfGallery";
 
-const SELECT_ALL = `input[aria-label="${SELECT_ALL_LABEL}"]`;
+/** Where focus lands when the opener is gone: the select-all checkbox, as a saved edit drops the selection. */
+type FallbackFocus = RefObject<HTMLElement | null>;
 
 type ModalProps = {
   label: string;
   busy: boolean;
   backdropClass: string;
   dialogClass: string;
+  fallbackFocus: FallbackFocus;
   onClose: () => void;
   children: ReactNode;
 };
@@ -43,6 +50,7 @@ function Modal({
   busy,
   backdropClass,
   dialogClass,
+  fallbackFocus,
   onClose,
   children,
 }: ModalProps) {
@@ -56,10 +64,10 @@ function Modal({
       const target =
         opener instanceof HTMLElement && opener.isConnected
           ? opener
-          : document.querySelector(SELECT_ALL);
-      if (target instanceof HTMLElement) target.focus();
+          : fallbackFocus.current;
+      target?.focus();
     };
-  }, []);
+  }, [fallbackFocus]);
   const dismiss = () => {
     if (!busy) onClose();
   };
@@ -157,13 +165,19 @@ const CHIP_FIELDS = [
 
 type ModalBodyProps = {
   books: Book[];
+  fallbackFocus: FallbackFocus;
   onClose: () => void;
   /** The edit is saved; the caller closes the modal and drops the selection. */
   onSaved: () => void;
 };
 
 /** The bulk edit dialog: one `edit` applied to every selected book in a single request. */
-export function BulkEditModal({ books, onClose, onSaved }: ModalBodyProps) {
+export function BulkEditModal({
+  books,
+  fallbackFocus,
+  onClose,
+  onSaved,
+}: ModalBodyProps) {
   const queryClient = useQueryClient();
   const [edit, setEdit] = useState<BulkEdit>(NO_EDIT);
   const set = <K extends keyof BulkEdit>(key: K, value: BulkEdit[K]) =>
@@ -212,6 +226,7 @@ export function BulkEditModal({ books, onClose, onSaved }: ModalBodyProps) {
       busy={apply.isPending}
       backdropClass="author-photo-modal-backdrop"
       dialogClass="bulk-edit-dialog"
+      fallbackFocus={fallbackFocus}
       onClose={onClose}
     >
       <h3 className="bulk-edit-title">Edit {count}</h3>
@@ -292,13 +307,19 @@ export function BulkEditModal({ books, onClose, onSaved }: ModalBodyProps) {
 
 type PickerProps = {
   books: Book[];
+  fallbackFocus: FallbackFocus;
   onClose: () => void;
   /** The books are on the shelf; the caller closes the picker and drops the selection. */
   onAdded: () => void;
 };
 
 /** Files every selected book on one hand-picked shelf, picked from the shelves the reader may change. */
-export function BulkShelfPicker({ books, onClose, onAdded }: PickerProps) {
+export function BulkShelfPicker({
+  books,
+  fallbackFocus,
+  onClose,
+  onAdded,
+}: PickerProps) {
   const queryClient = useQueryClient();
   const user = useCurrentUser();
   const shelves = useQuery(shelvesQuery);
@@ -331,6 +352,7 @@ export function BulkShelfPicker({ books, onClose, onAdded }: PickerProps) {
       busy={add.isPending}
       backdropClass="shelf-modal-overlay"
       dialogClass="shelf-modal-card shelf-picker-card"
+      fallbackFocus={fallbackFocus}
       onClose={onClose}
     >
       <div className="pick-head">

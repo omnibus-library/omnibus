@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type RefObject, useState } from "react";
 import { Link } from "react-router";
 import { type Book, type SortKey, thumbSrcSet, thumbUrl } from "../../api";
 import { formatDateShort, formatInstantShort } from "../../format";
@@ -7,8 +7,6 @@ import type { Prefs } from "../../viewPrefs";
 type SortableColumn = { className: string; label: string; sort: SortKey };
 
 // Spelled out whole, so the Atrium extractor finds each class.
-/** The select-all checkbox's name, which the bulk editor looks it up by. */
-export const SELECT_ALL_LABEL = "Select all books";
 
 const SORTABLE = {
   title: { className: "ebook-col-title", label: "Title", sort: "title" },
@@ -176,6 +174,8 @@ type BookTableProps = {
   onSort: (key: SortKey) => void;
   /** Bulk selection; the select column is drawn only when given. */
   select?: Selection;
+  /** The select-all checkbox, where a closing dialog hands focus back. */
+  selectAllRef?: RefObject<HTMLInputElement | null>;
 };
 
 /** The dense table view: one read-only row per book, sortable by column header. */
@@ -185,6 +185,7 @@ export function BookTable({
   sortLock,
   onSort,
   select,
+  selectAllRef,
 }: BookTableProps) {
   const all =
     books.length > 0 && books.every((book) => select?.selected.has(book.uuid));
@@ -204,8 +205,9 @@ export function BookTable({
             {select && (
               <th className="ebook-col-select">
                 <input
+                  ref={selectAllRef}
                   type="checkbox"
-                  aria-label={SELECT_ALL_LABEL}
+                  aria-label="Select all books"
                   checked={all}
                   onChange={() =>
                     select.onChange(
