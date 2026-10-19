@@ -366,11 +366,21 @@ export const SwitchingKeepsThePreviousWindowWhileItLoads: Story = {
 
     await userEvent.click(canvas.getByRole("button", { name: "Year" }));
 
+    // The pill follows the click; the label follows the figures still on screen.
+    await expect(canvas.getByRole("button", { name: "Year" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     await expect(canvas.getByTestId("stats-window-label")).toHaveTextContent(
-      "2026 · year to date",
+      "August 2026 · month to date",
     );
     await expect(canvas.queryByTestId("stats-window-loading")).toBeNull();
     held.release();
+    await waitFor(() =>
+      expect(canvas.getByTestId("stats-window-label")).toHaveTextContent(
+        "2026 · year to date",
+      ),
+    );
   },
 };
 

@@ -103,7 +103,7 @@ function WindowBand({
         <div className="st-band-heading">
           <span className="st-band-kicker">In this window</span>
           <span className="st-band-window" data-testid="stats-window-label">
-            {period ? windowLabel(range, period.as_of_day) : ""}
+            {period ? windowLabel(period.range, period.as_of_day) : ""}
           </span>
         </div>
         <div className="st-band-rule st-band-rule-accent" />
