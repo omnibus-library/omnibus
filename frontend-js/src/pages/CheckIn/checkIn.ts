@@ -13,6 +13,9 @@ export type FoundVia = "isbn" | "scan" | "search";
 /** Where the flow sits: one variant per leaf of the decision tree, plus the transient states. */
 export type Stage =
   | { kind: "lookup" }
+  | { kind: "scan" }
+  /** The keypad, reached from the scanner when asked for or when the camera won't start. */
+  | { kind: "entry" }
   | { kind: "resolving" }
   | { kind: "confirm"; book: ScanBook; isbn: string; wishlisted: boolean }
   | { kind: "closeMatch"; books: ScanBook[]; scanned: ExternalBookMeta }
@@ -153,3 +156,17 @@ export const truncationNote = (shown: number, total: number) =>
   total > shown
     ? `Showing ${shown} of ${total} matches — add the author or more of the title.`
     : null;
+
+/** Slots in the keypad's progress strip: an ISBN-13, the form every barcode carries. */
+export const ISBN_SLOTS = 13;
+
+/** One keypad press applied to the entry: backspace pops the last character, anything else appends up to the cap. */
+export function applyKey(current: string, key: string): string {
+  const cleaned = cleanIsbn(current);
+  if (key === "⌫") return cleaned.slice(0, -1);
+  return cleaned.length < ISBN_SLOTS ? cleaned + key : cleaned;
+}
+
+/** Where a rejected or failed lookup drops the reader: the screen they typed on, or the keypad after a camera decode. */
+export const manualFallback = (origin: Stage): Stage =>
+  origin.kind === "lookup" ? { kind: "lookup" } : { kind: "entry" };

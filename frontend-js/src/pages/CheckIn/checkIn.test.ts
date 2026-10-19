@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { anExternalBook, aScanBook } from "../../testing/scanHandlers";
 import {
+  applyKey,
   byline,
   cleanIsbn,
   closeMatchCopy,
   confirmSubtitle,
   foundViaLine,
   isbnRejection,
+  manualFallback,
   metaDetails,
   someIfFilled,
   stageFor,
@@ -198,5 +200,34 @@ describe("truncationNote", () => {
 
   it("says nothing when every match is shown", () => {
     expect(truncationNote(5, 5)).toBeNull();
+  });
+});
+
+describe("applyKey", () => {
+  it("appends a digit and the ISBN-10 check digit", () => {
+    expect(applyKey("97", "8")).toBe("978");
+    expect(applyKey("080442957", "X")).toBe("080442957X");
+  });
+
+  it("tidies what was typed before appending", () => {
+    expect(applyKey("978-0", "1")).toBe("97801");
+  });
+
+  it("pops the last character on backspace, and nothing from an empty entry", () => {
+    expect(applyKey("9780", "⌫")).toBe("978");
+    expect(applyKey("", "⌫")).toBe("");
+  });
+
+  it("stops at the thirteenth slot", () => {
+    expect(applyKey("9780134685991", "7")).toBe("9780134685991");
+    expect(applyKey("978013468599", "1")).toBe("9780134685991");
+  });
+});
+
+describe("manualFallback", () => {
+  it("returns to the lookup it came from and to the keypad from anywhere else", () => {
+    expect(manualFallback({ kind: "lookup" })).toEqual({ kind: "lookup" });
+    expect(manualFallback({ kind: "scan" })).toEqual({ kind: "entry" });
+    expect(manualFallback({ kind: "entry" })).toEqual({ kind: "entry" });
   });
 });

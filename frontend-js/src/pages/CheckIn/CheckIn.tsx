@@ -18,10 +18,12 @@ import {
   cleanIsbn,
   type FoundVia,
   isbnRejection,
+  manualFallback,
   type Stage,
   someIfFilled,
   stageFor,
 } from "./checkIn";
+import { EntryScreen, ScanScreen } from "./EntryScan";
 import { LinkExistingScreen } from "./LinkExisting";
 import { LookupScreen } from "./Lookup";
 import {
@@ -65,11 +67,12 @@ export function CheckIn() {
       navigate(`/books/${outcome.book.uuid}`);
     }
   };
-  // Search and linking open from the screen the reader is on, which Back returns to.
-  const toSearch = () => {
+  const toStage = (next: Stage) => () => {
     setError(null);
-    setStage(LOOKUP);
+    setStage(next);
   };
+  const toSearch = toStage(LOOKUP);
+  // Linking opens from the screen the reader is on, which Back returns to.
   const toLink = (isbn: string) => {
     setError(null);
     setStage({ kind: "link", isbn, origin: stage });
@@ -83,11 +86,12 @@ export function CheckIn() {
   };
 
   const resolve = useMutation({
-    mutationFn: resolveBook,
-    onSuccess: (outcome, cleaned) => arrive(outcome, cleaned),
-    onError: (e) => {
+    mutationFn: ({ isbn }: { isbn: string; fallback: Stage }) =>
+      resolveBook(isbn),
+    onSuccess: (outcome, { isbn }) => arrive(outcome, isbn),
+    onError: (e, { fallback }) => {
       setError(`Could not look that up: ${e.message}`);
-      setStage(LOOKUP);
+      setStage(fallback);
     },
   });
   const pick = useMutation({
@@ -155,18 +159,20 @@ export function CheckIn() {
     wishlist.isPending;
 
   const onResolve = (raw: string) => {
+    // Only the camera produces a barcode read; the keypad and the lookup field are both typing.
+    setVia(stage.kind === "scan" ? "scan" : "isbn");
     const cleaned = cleanIsbn(raw);
     const rejection = isbnRejection(cleaned);
+    // A bad decode must not strand the reader on a blank screen: back to a typing screen, digits in place.
+    const fallback = manualFallback(stage);
     if (rejection) {
-      // Back to the screen they typed on, digits in place to correct.
       setError(rejection);
-      setStage(LOOKUP);
+      setStage(fallback);
       return;
     }
-    setVia("isbn");
     setError(null);
     setStage({ kind: "resolving" });
-    resolve.mutate(cleaned);
+    resolve.mutate({ isbn: cleaned, fallback });
   };
 
   // The screen the stage calls for.
@@ -179,8 +185,31 @@ export function CheckIn() {
             busy={busy}
             onIsbn={setIsbn}
             onResolve={onResolve}
+            onScan={toStage({ kind: "scan" })}
             onPick={(meta) => pick.mutate(meta)}
             onError={setError}
+          />
+        );
+      case "scan":
+        return (
+          <ScanScreen
+            onDetect={(isbn) => {
+              setIsbn(isbn);
+              onResolve(isbn);
+            }}
+            onManual={toStage({ kind: "entry" })}
+            onSearch={toSearch}
+          />
+        );
+      case "entry":
+        return (
+          <EntryScreen
+            isbn={isbn}
+            busy={busy}
+            onIsbn={setIsbn}
+            onResolve={onResolve}
+            onScan={toStage({ kind: "scan" })}
+            onSearch={toSearch}
           />
         );
       case "resolving":

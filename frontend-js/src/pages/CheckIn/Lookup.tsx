@@ -116,6 +116,7 @@ type Props = {
   busy: boolean;
   onIsbn: (isbn: string) => void;
   onResolve: (raw: string) => void;
+  onScan: () => void;
 } & SearchProps;
 
 /** The front door: the ISBN off the back cover and a title search, together. */
@@ -124,6 +125,7 @@ export function LookupScreen({
   busy,
   onIsbn,
   onResolve,
+  onScan,
   onPick,
   onError,
 }: Props) {
@@ -175,6 +177,16 @@ export function LookupScreen({
         or
       </p>
       <TitleSearch busy={busy} onPick={onPick} onError={onError} />
+      <div className="settings-actions">
+        <Button
+          variant="ghost"
+          disabled={busy}
+          data-testid="check-in-scan-instead"
+          onClick={onScan}
+        >
+          Scan a barcode
+        </Button>
+      </div>
       <ProviderNote />
     </div>
   );
