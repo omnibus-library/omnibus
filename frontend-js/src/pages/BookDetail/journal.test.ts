@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLongEntry, journalExcerpt, marqueeJournalKicker } from "./journal";
+import { journalExcerpt, marqueeJournalKicker } from "./journal";
 
 describe("marqueeJournalKicker", () => {
   it.each([
@@ -45,21 +45,5 @@ describe("journalExcerpt", () => {
 
   it("counts a character outside the BMP once", () => {
     expect(journalExcerpt("😀".repeat(171))).toBe(`${"😀".repeat(170)}…`);
-  });
-});
-
-describe("isLongEntry", () => {
-  const lines = (n: number) =>
-    Array.from({ length: n }, () => "line").join("\n");
-
-  it.each([
-    ["900 characters", "x".repeat(900), false],
-    ["901 characters", "x".repeat(901), true],
-    ["12 lines", lines(12), false],
-    ["13 lines", lines(13), true],
-    ["12 lines and a trailing newline", `${lines(12)}\n`, false],
-    ["a short entry", "Short entry", false],
-  ])("reads %s", (_condition, md, long) => {
-    expect(isLongEntry(md)).toBe(long);
   });
 });

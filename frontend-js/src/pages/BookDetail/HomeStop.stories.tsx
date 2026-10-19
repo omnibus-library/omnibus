@@ -7,6 +7,7 @@ import {
   getGetBookInsightsMockHandler200,
   getGetProgressMockHandler200,
 } from "../../api/generated/omnibus.msw";
+import { nowSecs } from "../../format";
 import {
   bookDetailHandlers,
   failing,
@@ -346,8 +347,6 @@ export const LongDescription: Story = {
     await expect(toggle).toHaveTextContent("Show less");
   },
 };
-
-const nowSecs = () => Math.floor(Date.now() / 1000);
 
 const CHAPTERS = [
   { title: "Front matter", percent: 0, spine_index: 0 },

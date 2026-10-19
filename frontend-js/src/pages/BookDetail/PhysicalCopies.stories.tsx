@@ -3,6 +3,7 @@ import { HttpResponse, http } from "msw";
 import { useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import { type BookDetail, toBookDetail } from "../../api";
+import { nowSecs } from "../../format";
 import { failing, hanging, physicalHandlers } from "../../testing/handlers";
 import {
   aWireBook,
@@ -14,7 +15,6 @@ import {
 import { PhysicalCopies, WishlistRow } from "./PhysicalCopies";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
-const nowSecs = () => Math.floor(Date.now() / 1000);
 const DAY = 86_400;
 
 // Where the reader lands after a removal that takes the book with it.

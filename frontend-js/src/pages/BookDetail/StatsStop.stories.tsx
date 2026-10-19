@@ -9,6 +9,7 @@ import {
   getGetProgressMockHandler200,
 } from "../../api/generated/omnibus.msw";
 import { PostRatingBody, type RatingRecord } from "../../api/generated/schemas";
+import { nowSecs } from "../../format";
 import {
   bookDetailHandlers,
   failing,
@@ -30,8 +31,6 @@ import {
 } from "../../testing/wire";
 import { shelvesQuery } from "./queries";
 import { StatsStop } from "./StatsStop";
-
-const nowSecs = () => Math.floor(Date.now() / 1000);
 
 const meta = {
   title: "Pages/BookDetail/StatsStop",

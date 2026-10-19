@@ -26,7 +26,6 @@ const meta = {
   title: "Components/ShelfPicker",
   component: ShelfPicker,
   args: {
-    heading: "Add to shelf",
     viewer: ADA,
     busy: null,
     error: null,

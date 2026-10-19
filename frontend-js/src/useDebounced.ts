@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 
-/** `value`, once it has held still for `ms`. */
-export function useDebounced<T>(value: T, ms = 150): T {
+const DEBOUNCE_MS = 150;
+
+/** `value`, once it has held still for a moment. */
+export function useDebounced(value: string): string {
   const [settled, setSettled] = useState(value);
   useEffect(() => {
-    const timer = setTimeout(() => setSettled(value), ms);
+    const timer = setTimeout(() => setSettled(value), DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [value, ms]);
+  }, [value]);
   return settled;
 }

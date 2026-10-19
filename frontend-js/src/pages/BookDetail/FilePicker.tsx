@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { BookDetail, BookUuid } from "../../api";
 import { classes } from "../../classes";
+import { fileSize } from "../../format";
 
 export type BookFile = BookDetail["bookFiles"][number];
 type Kind = "read" | "listen";
@@ -27,10 +28,8 @@ export const isAudioFile = (file: BookFile) =>
   isFormat(file, "M4B", "M4A", "MP3");
 
 // A mixed EPUB+PDF book keeps the EPUB as its reader and reaches the PDF here.
-function readerRoute(file: BookFile | undefined): "read" | "pdf" | "comic" {
-  if (file && isFormat(file, "PDF")) return "pdf";
-  return file && isFormat(file, "CBZ") ? "comic" : "read";
-}
+const readerRoute = (file: BookFile | undefined) =>
+  file && isFormat(file, "PDF") ? "pdf" : "read";
 
 function href(
   kind: Kind,
@@ -39,18 +38,8 @@ function href(
   byFile: boolean,
 ): string {
   const route = kind === "listen" ? "listen" : readerRoute(file);
-  // The comic pager takes no file id.
-  const query =
-    byFile && file && route !== "comic" ? `?file_id=${file.id}` : "";
+  const query = byFile && file ? `?file_id=${file.id}` : "";
   return `/${route}/${uuid}${query}`;
-}
-
-// Decimal units, as the file's own size shows elsewhere.
-function fileSize(bytes: number): string | null {
-  if (bytes <= 0) return null;
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
-  return bytes >= 1e3 ? `${(bytes / 1e3).toFixed(1)} KB` : `${bytes} B`;
 }
 
 function ItemCopy({ kind, file }: { kind: Kind; file: BookFile }) {

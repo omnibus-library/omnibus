@@ -32,8 +32,6 @@ type ConfirmModalProps = {
   busy: boolean;
   onDismiss: () => void;
   backdropClass?: string;
-  /** A title slot above the body, for a caller whose heading differs. */
-  head?: ReactNode;
   /** Focuses the dialog so Escape and Tab work; leave off when the body autofocuses a field. */
   focusOnOpen?: boolean;
   children: ReactNode;
@@ -47,7 +45,6 @@ export function ConfirmModal({
   busy,
   onDismiss,
   backdropClass = "author-photo-modal-backdrop",
-  head,
   focusOnOpen = false,
   children,
 }: ConfirmModalProps) {
@@ -91,7 +88,6 @@ export function ConfirmModal({
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: only keeps a click inside the panel from reaching the backdrop */}
       <div className={dialogClass} onClick={(event) => event.stopPropagation()}>
-        {head}
         {children}
       </div>
     </div>

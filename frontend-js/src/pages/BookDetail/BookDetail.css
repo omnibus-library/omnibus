@@ -818,26 +818,6 @@
   padding-left: 8px;
   font-style: italic;
 }
-.bd-journal-entry-body-collapsed {
-  max-height: 230px;
-  overflow: hidden;
-}
-.bd-journal-entry-body-collapsed::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 64px;
-  pointer-events: none;
-  background: linear-gradient(to bottom, transparent, var(--bg-1) 92%);
-}
-.bd-journal-show-more {
-  margin-top: 4px;
-  font-family: var(--sans);
-  font-size: 12px;
-  padding-right: 10px;
-}
 .bd-journal-image-input {
   display: none;
 }

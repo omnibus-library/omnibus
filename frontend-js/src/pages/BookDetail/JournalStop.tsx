@@ -199,13 +199,7 @@ function Journal({ book }: { book: BookDetail }) {
           onDismiss={() => setOpenId(null)}
           focusOnOpen
         >
-          {/* Opening the row was the request for the whole entry, so no Show more. */}
-          <JournalEntryCard
-            uuid={book.uuid}
-            entry={opened}
-            viewer={viewer}
-            collapsible={false}
-          />
+          <JournalEntryCard uuid={book.uuid} entry={opened} viewer={viewer} />
           <Button
             variant="ghost"
             size="sm"

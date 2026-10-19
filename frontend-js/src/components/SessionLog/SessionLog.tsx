@@ -21,15 +21,6 @@ export const sessionLogQuery = (uuid: BookUuid) =>
     getNextPageParam: (last) => last.next ?? undefined,
   });
 
-/** The line shown when the log can't load. */
-export function SessionLogError({ message }: { message: string }) {
-  return (
-    <p className="st-log-error" role="alert" data-testid="session-log-error">
-      Couldn't load your session log: {message}
-    </p>
-  );
-}
-
 /** The list of sittings behind a book's stats, with a Show more for the next page. */
 export function SessionLog({ uuid }: { uuid: BookUuid }) {
   const log = useInfiniteQuery(sessionLogQuery(uuid));
@@ -79,7 +70,15 @@ export function SessionLog({ uuid }: { uuid: BookUuid }) {
           />
         </button>
       )}
-      {log.isError && <SessionLogError message={log.error.message} />}
+      {log.isError && (
+        <p
+          className="st-log-error"
+          role="alert"
+          data-testid="session-log-error"
+        >
+          Couldn't load your session log: {log.error.message}
+        </p>
+      )}
     </div>
   );
 }

@@ -18,7 +18,6 @@ import {
   JournalEditor,
   JournalToolbar,
 } from "./JournalEditor";
-import { isLongEntry } from "./journal";
 import { journalQuery } from "./queries";
 
 const SPOILER = "spoiler";
@@ -130,8 +129,6 @@ type JournalEntryCardProps = {
   uuid: BookUuid;
   entry: JournalEntry;
   viewer: User;
-  /** Whether a long body may open clipped behind a Show more. False where opening the card was the request for the whole entry. */
-  collapsible?: boolean;
 };
 
 /** One journal entry: byline, rendered body, and for its author Publish (a draft) and Delete. */
@@ -139,12 +136,10 @@ export function JournalEntryCard({
   uuid,
   entry,
   viewer,
-  collapsible = true,
 }: JournalEntryCardProps) {
   const client = useQueryClient();
   const refetchFeed = () =>
     client.invalidateQueries({ queryKey: journalQuery(uuid).queryKey });
-  const [expanded, setExpanded] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState(false);
   const publish = useMutation({
@@ -160,7 +155,6 @@ export function JournalEntryCard({
   });
   const isOwner = entry.author.id === viewer.id;
   const isDraft = entry.status === "draft";
-  const clipped = collapsible && isLongEntry(entry.bodyMd) && !expanded;
   const date = formatLongDate(entry.createdAt);
   return (
     <article className="card bd-journal-entry" data-testid="journal-entry">
@@ -232,26 +226,10 @@ export function JournalEntryCard({
           <div
             onClick={revealOnClick}
             onKeyDown={revealOnKey}
-            className={
-              clipped
-                ? "bd-journal-entry-body bd-journal-entry-body-collapsed"
-                : "bd-journal-entry-body"
-            }
+            className="bd-journal-entry-body"
             // biome-ignore lint/security/noDangerouslySetInnerHtml: the server renders and sanitises journal markdown, as the Dioxus page relies on
             dangerouslySetInnerHTML={{ __html: entry.bodyHtml }}
           />
-          {clipped && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="bd-journal-show-more"
-              data-testid="journal-show-more"
-              aria-expanded={false}
-              onClick={() => setExpanded(true)}
-            >
-              Show more ↓
-            </Button>
-          )}
         </>
       )}
       {publish.isError && (

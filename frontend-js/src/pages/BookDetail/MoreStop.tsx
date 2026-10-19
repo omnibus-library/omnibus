@@ -30,9 +30,9 @@ import { formatYear, plural } from "../../format";
 import { useCurrentUser } from "../../session";
 import {
   authorBooksQuery,
-  SUGGESTION_POLLS,
   seriesQuery,
   shelvesQuery,
+  suggestionPollMs,
   suggestionsQuery,
 } from "./queries";
 import { SectionHead } from "./SectionHead";
@@ -257,7 +257,6 @@ function ShelfMembership({ book }: { book: BookDetail }) {
       )}
       {picking && (
         <ShelfPicker
-          heading="Add to shelf"
           list={list}
           viewer={viewer}
           busy={toggle.isPending ? toggle.variables.shelf.id : null}
@@ -486,8 +485,10 @@ function Suggestions({ book }: { book: BookDetail }) {
   const answer = useQuery(suggestionsQuery(book.uuid)).data;
   // Asked as often as it will be, and still no answer: settles as empty.
   const searching =
-    answer?.status === "pending" &&
-    (client.getQueryState(queryKey)?.dataUpdateCount ?? 0) <= SUGGESTION_POLLS;
+    suggestionPollMs(
+      answer,
+      client.getQueryState(queryKey)?.dataUpdateCount ?? 0,
+    ) !== false;
   if (!searching && !(answer?.status === "ready" && answer.items.length > 0))
     return null;
   return (

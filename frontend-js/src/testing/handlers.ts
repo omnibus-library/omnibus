@@ -49,6 +49,7 @@ import {
   UpdateJournalEntry,
   type WishlistEntry,
 } from "../api/generated/schemas";
+import { nowSecs } from "../format";
 import { COVER_SVG } from "./books";
 import {
   aWireAlignment,
@@ -149,7 +150,7 @@ export function ratingHandlers(
     http.post("/api/ratings", async ({ request }) => {
       const body = PostRatingBody.parse(await request.json());
       writes.push(body.stars);
-      current = { ...body, updated_at: Math.floor(Date.now() / 1000) };
+      current = { ...body, updated_at: nowSecs() };
       return HttpResponse.json(current);
     }),
     http.delete("/api/ratings/:uuid", () => {
@@ -459,8 +460,7 @@ export function readStatusHandlers(
       writes.push(body);
       current = aWireReadStatus({
         ...body,
-        finished_at:
-          body.status === "finished" ? Math.floor(Date.now() / 1000) : null,
+        finished_at: body.status === "finished" ? nowSecs() : null,
       });
       return HttpResponse.json(current);
     }),

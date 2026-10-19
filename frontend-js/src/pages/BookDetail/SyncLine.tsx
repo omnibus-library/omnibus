@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type Alignment, type BookUuid, setFollow } from "../../api";
-import { recency } from "../../format";
+import { nowSecs, recency } from "../../format";
 import { alignmentQuery } from "./queries";
 import { linkedAudioAt } from "./readout";
 
@@ -61,7 +61,7 @@ function Linked({
   link: Link;
 }) {
   const at = linkedAudioAt(alignment);
-  const when = recency(Math.floor(Date.now() / 1000), link.confirmedAt);
+  const when = recency(nowSecs(), link.confirmedAt);
   return (
     <div className="mono bdmq-syncline">
       ⇄ one spot, both formats{at && ` — audio at ${at}`} · confirmed {when}

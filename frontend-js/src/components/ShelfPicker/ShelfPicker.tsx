@@ -24,7 +24,6 @@ export type PickerList =
     };
 
 type ShelfPickerProps = {
-  heading: string;
   list: PickerList;
   viewer: User;
   /** The tile whose write is in flight; every tile is inert while set. */
@@ -151,7 +150,6 @@ function Body({
 
 /** The "Add to shelf" modal: hand-picked shelves as checkbox tiles, smart ones read-only below. */
 export function ShelfPicker({
-  heading,
   list,
   viewer,
   busy,
@@ -163,7 +161,7 @@ export function ShelfPicker({
     // Dismissing is held back while a write is in flight, so its failure is never closed unseen.
     <ConfirmModal
       testId="shelf-picker"
-      ariaLabel={heading}
+      ariaLabel="Add to shelf"
       backdropClass="shelf-modal-overlay"
       dialogClass="shelf-modal-card shelf-picker-card"
       busy={busy !== null}
@@ -174,7 +172,7 @@ export function ShelfPicker({
         <div>
           <span className="pick-kicker">Hand-picked shelves</span>
           <h2 className="pick-title" data-testid="shelf-picker-title">
-            {heading}
+            Add to shelf
           </h2>
         </div>
         <button
