@@ -1,15 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  type FilterClause,
+  filterParam,
   toBookDetail,
   toBookPage,
   toPalette,
   toResumePoint,
+  toShelf,
   toUser,
 } from "./api";
 import {
   aWireBook,
   aWirePalette,
   aWireResumePoint,
+  aWireShelf,
+  aWireStack,
   WIRE_ADA,
 } from "./testing/wire";
 
@@ -20,6 +25,7 @@ describe("toBookPage", () => {
     const headers = new Headers({
       "X-Total-Count": "46",
       "X-Next-Cursor": "eyJzIjoiQXVyb3JhIn0",
+      "X-Hidden-Count": "3",
     });
 
     const page = toBookPage({ path: "/lib", books: [auroraWire] }, headers);
@@ -33,17 +39,59 @@ describe("toBookPage", () => {
           series: { name: "Aurora Station", index: "1" },
           accent: "oklch(0.555 0.153 28.4)",
           hasCover: true,
+          subjects: [],
+          genres: [],
+          formats: ["CBZ"],
+          published: null,
+          language: null,
+          addedAt: "2026-08-01T12:00:00Z",
+          modified: "2026-08-02T12:00:00Z",
+          hasPhysical: false,
+          seriesId: null,
         },
       ],
+      stacks: [],
       total: 46,
       next: "eyJzIjoiQXVyb3JhIn0",
+      hidden: 3,
+      path: "/lib",
     });
   });
 
   it("reports no next page when the cursor header is absent", () => {
     const page = toBookPage({ books: [] }, new Headers());
 
-    expect(page).toEqual({ books: [], total: 0, next: null });
+    expect(page).toEqual({
+      books: [],
+      stacks: [],
+      total: 0,
+      next: null,
+      hidden: null,
+      path: null,
+    });
+  });
+
+  it("reads the stacks riding with the page", () => {
+    const wire = aWireStack({
+      lead_uuid: auroraWire.unique_identifier ?? "",
+      members: [auroraWire],
+      states: [{ uuid: "u", started: true, percent: 40 }],
+    });
+
+    const [stack] = toBookPage(
+      { books: [], stacks: [wire] },
+      new Headers(),
+    ).stacks;
+
+    expect(stack).toMatchObject({
+      leadUuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+      name: "Saga",
+      seriesId: 7,
+      states: [{ uuid: "u", started: true, finished: false, percent: 40 }],
+    });
+    expect(stack?.members.map((b) => b.title)).toEqual([
+      "Aurora Station, Vol. 1",
+    ]);
   });
 
   it("falls back to the filename for a book with no title or cover", () => {
@@ -108,6 +156,68 @@ describe("toResumePoint", () => {
       formats: ["M4B", "EPUB"],
     });
   });
+
+  it("carries the position, the rate and the readout the stack draws", () => {
+    const wire = {
+      ...aWireResumePoint({
+        format: "audio",
+        audio_position_seconds: 3600,
+        total_duration_seconds: 7200,
+        progress_percent: 50,
+        resolved: { confidence: "high", chapter_ordinal: 7 },
+      }),
+      playback_rate: 1.5,
+      linked: true,
+      audio_part: 3,
+    };
+
+    expect(toResumePoint(wire)).toMatchObject({
+      key: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0:audio",
+      percent: 50,
+      positionSeconds: 3600,
+      totalSeconds: 7200,
+      playbackRate: 1.5,
+      linked: true,
+      chapter: 7,
+      part: 3,
+    });
+  });
+
+  it("reads a low-confidence chapter as none", () => {
+    const wire = aWireResumePoint({
+      resolved: { confidence: "low", chapter_ordinal: 7 },
+    });
+
+    expect(toResumePoint(wire).chapter).toBeNull();
+  });
+});
+
+describe("toShelf", () => {
+  it("maps a shelf summary to its owner, kind, count and cover uuids", () => {
+    const wire = aWireShelf({
+      kind: "smart",
+      visibility: "public",
+      book_count: 12,
+      cover_uuids: ["ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0"],
+    });
+
+    expect(toShelf(wire)).toEqual({
+      id: 3,
+      kind: "smart",
+      visibility: "public",
+      name: "Winter reads",
+      ownerId: 1,
+      ownerName: "ada",
+      bookCount: 12,
+      coverUuids: ["ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0"],
+    });
+  });
+
+  it("defaults the cover uuids the server omits", () => {
+    const { cover_uuids: _omitted, ...wire } = aWireShelf();
+
+    expect(toShelf(wire).coverUuids).toEqual([]);
+  });
 });
 
 describe("toUser", () => {
@@ -121,6 +231,18 @@ describe("toUser", () => {
       isAdmin: true,
       canUpload: true,
       hasAvatar: true,
+      hiddenFormats: [],
+      stackSeries: false,
+      canEdit: true,
+    });
+  });
+
+  it("carries the library preferences the server sends", () => {
+    const wire = { ...WIRE_ADA, hidden_formats: ["m4b"], stack_series: true };
+
+    expect(toUser(wire)).toMatchObject({
+      hiddenFormats: ["m4b"],
+      stackSeries: true,
     });
   });
 
@@ -136,5 +258,35 @@ describe("toPalette", () => {
     const { book_total: _omitted, ...wire } = aWirePalette();
 
     expect(toPalette(wire).totals.books).toBe(0);
+  });
+});
+
+describe("filterParam", () => {
+  it("encodes one include clause as the server does", () => {
+    const clause: FilterClause = {
+      field: "author",
+      mode: "include",
+      values: ["Sora Inkwell"],
+    };
+
+    expect(filterParam([clause])).toBe(
+      '[{"field":"author","mode":"include","values":["Sora Inkwell"]}]',
+    );
+  });
+
+  it("fixes the key order whatever order the clause was built in", () => {
+    const clause: FilterClause = {
+      values: ["epub"],
+      mode: "exclude",
+      field: "format",
+    };
+
+    expect(filterParam([clause])).toBe(
+      '[{"field":"format","mode":"exclude","values":["epub"]}]',
+    );
+  });
+
+  it("sends nothing for no clauses", () => {
+    expect(filterParam([])).toBeUndefined();
   });
 });

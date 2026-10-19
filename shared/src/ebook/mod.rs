@@ -23,8 +23,8 @@ pub use images::{
 };
 pub use metadata::{BookFileInfo, Contributor, EbookFileQuery, EbookMetadata, Identifier};
 pub use overrides::{
-    BulkMetadataEdit, BulkRewriteError, BulkRewriteSummary, CoverFromUrlBody, CoverUploadForm,
-    MetadataOverrides,
+    BulkMetadataEdit, BulkOverridesRequest, BulkRewriteError, BulkRewriteSummary, CoverFromUrlBody,
+    CoverUploadForm, MetadataOverrides,
 };
 pub use validator::{
     file_etag, DownloadFormat, DownloadValidator, DownloadValidatorQuery, DownloadValidatorRequest,

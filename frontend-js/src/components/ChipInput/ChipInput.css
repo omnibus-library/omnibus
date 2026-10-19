@@ -1,0 +1,51 @@
+.me-chip-item {
+  background: var(--bg-3);
+}
+.me-chip-remove {
+  background: none;
+  border: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+  line-height: 1;
+}
+@media (hover: hover) {
+  .me-chip-remove:hover {
+    color: var(--bad);
+  }
+}
+
+.me-chip-input {
+  flex: 1;
+  min-width: 180px;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  color: var(--ink-1);
+  font-size: 13px;
+  outline: none;
+}
+.me-tag-input {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px dashed var(--line);
+  color: var(--ink-1);
+  font-size: 12px;
+  outline: none;
+  width: 140px;
+}
+.me-tag-input:focus {
+  border-color: var(--accent);
+}
+.chip-editor-root {
+  display: contents;
+}
+.chip-editor-input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 140px;
+  display: flex;
+  align-items: center;
+}

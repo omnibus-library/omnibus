@@ -6,3 +6,10 @@ afterEach(() => {
   cleanup();
   localStorage.clear();
 });
+
+// jsdom lays nothing out, so it has no ResizeObserver.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};

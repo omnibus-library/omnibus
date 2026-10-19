@@ -9,6 +9,8 @@ import { meQuery } from "../session";
 export function RequireAuth() {
   const me = useQuery(meQuery);
   const { pathname, search } = useLocation();
+  // A failed refresh of a known session isn't a reason to drop the app.
+  if (me.data) return <Outlet />;
   switch (me.status) {
     case "pending":
       return <Loading kind="page" label="Opening your library" />;
@@ -17,11 +19,7 @@ export function RequireAuth() {
         <PageError message={`Couldn't reach the server: ${me.error.message}`} />
       );
     case "success":
-      return me.data ? (
-        <Outlet />
-      ) : (
-        <Navigate to={loginHref(pathname + search)} replace />
-      );
+      return <Navigate to={loginHref(pathname + search)} replace />;
     default: {
       const _exhaustive: never = me;
       return _exhaustive;

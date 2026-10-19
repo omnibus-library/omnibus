@@ -1,22 +1,39 @@
+import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
 import {
+  getAddShelfBooksUrl,
+  getAuthors,
   getEbookByUuid,
   getEbooks,
+  getGenres,
   getLogoutUrl,
   getMe,
+  getPostBulkOverridesUrl,
   getRecentProgress,
   getRegistration,
   getSearchPalette,
+  getShelfPage,
+  getTags,
+  listSeries,
+  listShelves,
   login as postLogin,
   register as postRegister,
+  postStackSeries,
 } from "./api/generated/omnibus";
-import type {
-  EbookMetadata,
-  EbookPage,
-  PaletteResults as PaletteWire,
-  ResumePoint as ResumePointWire,
-  UserSummary,
+import {
+  type BulkMetadataEdit,
+  type EbookMetadata,
+  type EbookPage,
+  type PaletteResults as PaletteWire,
+  type ResumePoint as ResumePointWire,
+  type SeriesStack as SeriesStackWire,
+  type ShelfSummary,
+  SortDir,
+  SortKey,
+  type UserSummary,
 } from "./api/generated/schemas";
+
+export { SortDir, SortKey };
 
 // The wire types and their zod schemas are generated from openapi/openapi.json
 // (`pnpm run generate`), and the generated fetchers validate every response.
@@ -41,7 +58,47 @@ function requireUuid(raw: string | null | undefined, id: number): BookUuid {
   return uuid;
 }
 
+export const FilterClauseSchema = z.object({
+  field: z.enum(["tag", "genre", "author", "series", "format", "shelf"]),
+  mode: z.enum(["include", "exclude"]),
+  values: z.array(z.string()),
+});
+export type FilterClause = z.infer<typeof FilterClauseSchema>;
+export type FilterField = FilterClause["field"];
+export type FilterMode = FilterClause["mode"];
+
 export type UserId = number & { readonly __brand: "UserId" };
+
+export type ShelfKind = ShelfSummary["kind"];
+
+/** A shelf as the filter bar and the shelves row show it. */
+export type Shelf = {
+  id: number;
+  kind: ShelfKind;
+  visibility: ShelfSummary["visibility"];
+  name: string;
+  ownerId: UserId;
+  ownerName: string;
+  bookCount: number;
+  /** Up to four members that have covers, in shelf order. */
+  coverUuids: BookUuid[];
+};
+
+/** The screen's shape of one `GET /api/shelves` entry. */
+export function toShelf(wire: ShelfSummary): Shelf {
+  return {
+    id: wire.id,
+    kind: wire.kind,
+    visibility: wire.visibility,
+    name: wire.name,
+    ownerId: wire.owner_user_id as UserId,
+    ownerName: wire.owner_username,
+    bookCount: wire.book_count,
+    coverUuids: (wire.cover_uuids ?? []).flatMap(
+      (uuid) => parseBookUuid(uuid) ?? [],
+    ),
+  };
+}
 
 /** The screen's shape of the user `GET /api/auth/me` and sign-in answer with. */
 export function toUser(user: UserSummary) {
@@ -52,6 +109,9 @@ export function toUser(user: UserSummary) {
     isAdmin: user.is_admin,
     canUpload: user.can_upload,
     hasAvatar: user.has_avatar ?? false,
+    hiddenFormats: user.hidden_formats ?? [],
+    stackSeries: user.stack_series ?? false,
+    canEdit: user.can_edit,
   };
 }
 
@@ -69,6 +129,15 @@ function toBook(wire: EbookMetadata) {
     series,
     accent: wire.accent ?? null,
     hasCover: wire.cover_url != null,
+    subjects: wire.subjects,
+    genres: wire.genres ?? [],
+    formats: wire.formats ?? [],
+    published: wire.published ?? null,
+    language: wire.language ?? null,
+    addedAt: wire.added_at ?? null,
+    modified: wire.modified ?? null,
+    hasPhysical: wire.has_physical ?? false,
+    seriesId: wire.series_id ?? null,
   };
 }
 
@@ -79,21 +148,37 @@ export function toBookDetail(wire: EbookMetadata) {
   return {
     ...toBook(wire),
     description: wire.description ?? null,
-    published: wire.published ?? null,
-    genres: wire.genres ?? [],
-    subjects: wire.subjects,
   };
 }
 
 export type BookDetail = ReturnType<typeof toBookDetail>;
 
 /** The screen's shape of one `GET /api/progress/recent` entry. */
-export function toResumePoint({ record, book }: ResumePointWire) {
+export function toResumePoint({
+  record,
+  book,
+  linked,
+  playback_rate,
+  audio_part,
+}: ResumePointWire) {
   return {
+    // The progress row's own uuid, not the resolved book's: merged books share one.
+    key: `${record.book_uuid}:${record.format}`,
     book: toBook(book),
     format: record.format,
     fileId: record.book_file_id ?? null,
     formats: book.formats ?? [],
+    percent: record.progress_percent ?? null,
+    positionSeconds: record.audio_position_seconds ?? null,
+    totalSeconds: record.total_duration_seconds ?? null,
+    playbackRate: playback_rate ?? null,
+    linked: linked ?? false,
+    // A low-confidence block measured the container's marks, which read as a part.
+    chapter:
+      record.resolved?.confidence === "high"
+        ? (record.resolved.chapter_ordinal ?? null)
+        : null,
+    part: audio_part ?? null,
   };
 }
 
@@ -154,17 +239,61 @@ export type PaletteResults = ReturnType<typeof toPalette>;
 /** One book hit in the palette or on the results page. */
 export type PaletteBook = PaletteResults["books"][number];
 
-export type BookPage = { books: Book[]; total: number; next: string | null };
+/** What the reader has done with one volume of a stack. */
+export type StackState = {
+  uuid: string;
+  started: boolean;
+  finished: boolean;
+  percent: number | null;
+};
+
+/** A series folded into one cell of a book list, standing in its lead's slot. */
+export type SeriesStack = {
+  leadUuid: string;
+  name: string;
+  seriesId: number | null;
+  /** Every volume that passes the request's filters, in series order. */
+  members: Book[];
+  states: StackState[];
+};
+
+function toStack(wire: SeriesStackWire): SeriesStack {
+  return {
+    leadUuid: wire.lead_uuid,
+    name: wire.name,
+    seriesId: wire.series_id ?? null,
+    members: wire.members.map(toBook),
+    states: (wire.states ?? []).map((s) => ({
+      uuid: s.uuid,
+      started: s.started ?? false,
+      finished: s.finished ?? false,
+      percent: s.percent ?? null,
+    })),
+  };
+}
+
+export type BookPage = {
+  books: Book[];
+  stacks: SeriesStack[];
+  total: number;
+  next: string | null;
+  hidden: number | null;
+  path: string | null;
+};
 
 const countHeader = z.coerce.number().int().nonnegative();
 
 /** The screen's shape of one page of `GET /api/ebooks`, whose paging is in headers. */
 export function toBookPage(page: EbookPage, headers: Headers): BookPage {
   const books = page.books.map(toBook);
+  const hidden = headers.get("X-Hidden-Count");
   return {
     books,
+    stacks: (page.stacks ?? []).map(toStack),
     total: countHeader.parse(headers.get("X-Total-Count") ?? books.length),
     next: headers.get("X-Next-Cursor"),
+    hidden: hidden === null ? null : countHeader.parse(hidden),
+    path: page.path ?? null,
   };
 }
 
@@ -223,26 +352,118 @@ export async function fetchRegistrationOpen(): Promise<boolean> {
   return res.data.enabled;
 }
 
-export async function logout(): Promise<void> {
-  // The generated fetcher JSON-parses any body, and an error's is plain text.
-  const res = await fetch(getLogoutUrl(), { method: "POST" });
+// The generated fetcher JSON-parses any body, and an error's is plain text.
+async function postNoContent(url: string, body?: unknown): Promise<void> {
+  const res = await fetch(url, {
+    method: "POST",
+    ...(body === undefined
+      ? {}
+      : {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+  });
   if (res.status !== 204) {
     throw failure({ status: res.status, data: await res.text() });
   }
 }
 
-/** One title-sorted page of the library; pass `""` for the first page. */
-export async function fetchBookPage(cursor: string): Promise<BookPage> {
+export const logout = () => postNoContent(getLogoutUrl());
+
+/**
+ * The `filter` query value: the clauses as JSON, in the key order the server's
+ * own encoding uses, or `undefined` when there are none.
+ */
+export const filterParam = (clauses: FilterClause[]) =>
+  clauses.length
+    ? JSON.stringify(
+        clauses.map(({ field, mode, values }) => ({ field, mode, values })),
+      )
+    : undefined;
+
+/** What a library page is fetched under; a change to any of it restarts at page 1. */
+export type LibraryQuery = {
+  sort: SortKey;
+  dir: SortDir;
+  clauses: FilterClause[];
+  /** The formats the reader hides from All Books, sorted. */
+  excludeFormats: string[];
+  /** Fold each series into one stack; the shelf lens never sends it. */
+  stackSeries: boolean;
+};
+
+export const PAGE_SIZE = 100;
+
+/** One page of the library in `query`'s order; pass `""` for the first page. */
+export async function fetchBookPage(
+  query: LibraryQuery,
+  cursor: string,
+): Promise<BookPage> {
   // The API refuses a cursor unless sort and dir are both explicit.
+  const filter = filterParam(query.clauses);
   const res = await getEbooks({
-    sort: "title",
-    dir: "asc",
-    limit: 60,
+    sort: query.sort,
+    dir: query.dir,
+    limit: PAGE_SIZE,
     omit_description: true,
     ...(cursor ? { cursor } : {}),
+    ...(filter ? { filter } : {}),
+    ...(query.stackSeries ? { stack_series: true } : {}),
+    ...(query.excludeFormats.length
+      ? { exclude_formats: query.excludeFormats.join(",") }
+      : {}),
   });
   if (res.status !== 200) throw failure(res);
   return toBookPage(res.data, res.headers);
+}
+
+/** Every shelf the reader can see, in the server's order. */
+export async function fetchShelves(): Promise<Shelf[]> {
+  const res = await listShelves();
+  if (res.status !== 200) throw failure(res);
+  return res.data.map(toShelf);
+}
+
+export const shelvesQuery = queryOptions({
+  queryKey: ["shelves"],
+  queryFn: fetchShelves,
+});
+
+/** One shelf's books, whole, in `query`'s order and narrowed by its clauses. */
+export async function fetchShelfPage(
+  id: number,
+  query: Pick<LibraryQuery, "sort" | "dir" | "clauses">,
+): Promise<Book[]> {
+  const filter = filterParam(query.clauses);
+  const res = await getShelfPage(id, {
+    sort: query.sort,
+    dir: query.dir,
+    ...(filter ? { filter } : {}),
+  });
+  if (res.status !== 200) throw failure(res);
+  return res.data.books.map(toBook);
+}
+
+/** Saves the reader's Stack series preference. */
+export async function setStackSeries(enabled: boolean): Promise<void> {
+  const res = await postStackSeries({ enabled });
+  if (res.status !== 200) throw failure(res);
+}
+
+/** Applies one edit to every book in a single request; the server merges tag and genre changes into each book's own lists. */
+export async function bulkSaveOverrides(
+  uuids: BookUuid[],
+  edit: BulkMetadataEdit,
+): Promise<void> {
+  return postNoContent(getPostBulkOverridesUrl(), { uuids, edit });
+}
+
+/** Appends the books to a hand-picked shelf. */
+export async function addShelfBooks(
+  shelfId: number,
+  uuids: BookUuid[],
+): Promise<void> {
+  return postNoContent(getAddShelfBooksUrl(shelfId), { book_uuids: uuids });
 }
 
 /** The full record for one book, or `null` when no book has that uuid. */
@@ -281,3 +502,34 @@ export const thumbSrcSet = (uuid: BookUuid) =>
 export const coverUrl = (uuid: BookUuid) => `/api/covers/${uuid}`;
 
 export const avatarUrl = (id: UserId) => `/api/users/${id}/avatar`;
+
+/** A name and the number of books that carry it. */
+export type NamedCount = { name: string; count: number };
+
+async function nameCounts<T>(
+  call: Promise<{ status: number; data: T[] }>,
+  toCount: (row: T) => NamedCount,
+): Promise<NamedCount[]> {
+  const res = await call;
+  if (res.status !== 200) throw failure(res);
+  return res.data.map(toCount);
+}
+
+const NAME_COUNTS = {
+  // Tags and genres are the most-used 500 at most.
+  tag: () => nameCounts(getTags(), (t) => t),
+  genre: () => nameCounts(getGenres(), (g) => g),
+  author: () =>
+    nameCounts(getAuthors(), (a) => ({ name: a.name, count: a.book_count })),
+  series: () =>
+    nameCounts(listSeries(), (s) => ({ name: s.name, count: s.book_count })),
+};
+
+export type NameCountField = keyof typeof NAME_COUNTS;
+
+/** Every value of a name field with its book count; the filter menus and the bulk editor's suggestions share it. */
+export const nameCountsQuery = (field: NameCountField) =>
+  queryOptions({
+    queryKey: ["name-counts", field],
+    queryFn: NAME_COUNTS[field],
+  });

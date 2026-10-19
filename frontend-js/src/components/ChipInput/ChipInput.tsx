@@ -1,0 +1,92 @@
+import { useId, useState } from "react";
+import { bookCount } from "../../format";
+import "../Chip/Chip.css";
+import "./ChipInput.css";
+
+/** The most suggestions drawn at once; a library's tag cloud can run to thousands. */
+const MAX_SUGGESTIONS = 50;
+
+const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+type ChipInputProps = {
+  label: string;
+  values: string[];
+  onChange: (values: string[]) => void;
+  suggestions: { name: string; count: number }[];
+  placeholder: string;
+  /** Names a chip's remove button with its value: "Remove tag" gives "Remove tag cozy". */
+  removeLabel: string;
+  /** Authors take the plain input, tags the dashed pill. */
+  inputClass?: "me-chip-input" | "me-tag-input";
+};
+
+/** A list of text chips, added by Enter, comma or a pick from the suggestions. */
+export function ChipInput({
+  label,
+  values,
+  onChange,
+  suggestions,
+  placeholder,
+  removeLabel,
+  inputClass = "me-tag-input",
+}: ChipInputProps) {
+  const [draft, setDraft] = useState("");
+  const listId = useId();
+  const picked = (name: string) => values.some((v) => sameName(v, name));
+  const add = (text: string) => {
+    const name = text.trim();
+    setDraft("");
+    if (name && !picked(name)) onChange([...values, name]);
+  };
+  const needle = draft.trim().toLowerCase();
+  const offered = suggestions
+    .filter((s) => !picked(s.name) && s.name.toLowerCase().includes(needle))
+    .slice(0, MAX_SUGGESTIONS);
+  return (
+    <div className="chip-editor-root">
+      {values.map((value) => (
+        <div key={value} className="chip me-chip-item">
+          <span className="me-chip-label">{value}</span>
+          <button
+            type="button"
+            className="me-chip-remove"
+            aria-label={`${removeLabel} ${value}`}
+            onClick={() => onChange(values.filter((v) => v !== value))}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+      <div className="chip-editor-input-wrap">
+        <input
+          className={inputClass}
+          aria-label={label}
+          placeholder={placeholder}
+          list={listId}
+          value={draft}
+          onChange={(e) => {
+            // A pick from the datalist arrives as a replacement, not as typing.
+            const picked =
+              "inputType" in e.nativeEvent &&
+              e.nativeEvent.inputType === "insertReplacementText";
+            if (picked) add(e.target.value);
+            else setDraft(e.target.value);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === ",") {
+              e.preventDefault();
+              add(draft);
+            } else if (e.key === "Backspace" && !draft && values.length) {
+              onChange(values.slice(0, -1));
+            }
+          }}
+        />
+        <datalist id={listId}>
+          {offered.map((s) => (
+            <option key={s.name} value={s.name} label={bookCount(s.count)} />
+          ))}
+        </datalist>
+      </div>
+    </div>
+  );
+}
