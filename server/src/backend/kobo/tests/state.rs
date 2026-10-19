@@ -259,7 +259,8 @@ async fn get_state_returns_the_position_a_device_previously_put() {
     assert_eq!(state["EntitlementId"], uuid.as_str());
     assert_eq!(state["CurrentBookmark"]["ProgressPercent"], 43);
     assert_eq!(state["CurrentBookmark"]["Location"]["Value"], "kobo.9.1");
-    assert_eq!(state["StatusInfo"]["Status"], "ReadyToRead");
+    // The bookmark carried no status, so the position started the book.
+    assert_eq!(state["StatusInfo"]["Status"], "Reading");
 }
 
 #[tokio::test]
