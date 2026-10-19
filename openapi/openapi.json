@@ -1494,6 +1494,37 @@
         }
       }
     },
+    "/api/auth/password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Change your password",
+        "description": "Switches your password and signs out every other session, keeping the one making this\nrequest. Sign in with your password to call it: an API token can't, so a leaked token\ncan't take the account.",
+        "operationId": "change_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The password is changed and your other sessions are signed out."
+          },
+          "400": {
+            "description": "`new_password` fails the password rules; the body says which."
+          },
+          "403": {
+            "description": "`current_password` is wrong, or the request is authenticated by an API token or HTTP Basic rather than a session."
+          }
+        }
+      }
+    },
     "/api/auth/register": {
       "post": {
         "tags": [
@@ -4570,6 +4601,28 @@
           },
           "404": {
             "description": "You have no entry with that id. Another user's entry answers the same."
+          }
+        }
+      }
+    },
+    "/api/kindle/delivery": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Check Send to Kindle delivery",
+        "description": "Whether the server can email books, and the sender address you must approve at Amazon\nbefore a Kindle accepts them. Never carries the mail server or its credentials.",
+        "operationId": "get_kindle_delivery",
+        "responses": {
+          "200": {
+            "description": "The sender address, or null when the server has no email delivery set up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KindleDelivery"
+                }
+              }
+            }
           }
         }
       }
@@ -9009,6 +9062,24 @@
           }
         }
       },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "description": "The passwords `POST /api/auth/password` takes.",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "description": "Your password now, to prove it is you."
+          },
+          "new_password": {
+            "type": "string",
+            "description": "The password to switch to. It must meet the same rules as at sign-up."
+          }
+        }
+      },
       "ChapterInfo": {
         "type": "object",
         "description": "A chapter on an audiobook file's timeline.",
@@ -11159,6 +11230,19 @@
           "draft",
           "published"
         ]
+      },
+      "KindleDelivery": {
+        "type": "object",
+        "description": "Whether Send to Kindle can deliver. It never carries the relay's host or\ncredentials.",
+        "properties": {
+          "sender_address": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The address books are sent from, which readers must add to their approved\nsenders at Amazon. Null when no SMTP relay is set up, so nothing can be sent."
+          }
+        }
       },
       "KindleSendQueued": {
         "type": "object",

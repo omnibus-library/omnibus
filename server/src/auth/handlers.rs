@@ -13,7 +13,8 @@ use axum::{
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use omnibus_db::auth::{self as auth_db, AuthError, NewSession, SessionKind};
 use omnibus_shared::{
-    LoginRequest, LoginResponse, RegisterRequest, RegistrationStatus, SessionView, UserSummary,
+    ChangePasswordRequest, LoginRequest, LoginResponse, RegisterRequest, RegistrationStatus,
+    SessionView, UserSummary,
 };
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -34,6 +35,7 @@ pub fn auth_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(me_handler))
         .routes(routes!(get_sessions_handler))
         .routes(routes!(delete_session_handler))
+        .routes(routes!(change_password_handler))
         .routes(routes!(
             super::api_tokens::get_api_tokens_handler,
             super::api_tokens::post_api_token_handler
@@ -484,6 +486,54 @@ async fn delete_session_handler(
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(AuthError::SessionNotFound) => StatusCode::NOT_FOUND.into_response(),
         Err(e) => internal("revoke own session", e),
+    }
+}
+
+/// Change your password
+///
+/// Switches your password and signs out every other session, keeping the one making this
+/// request. Sign in with your password to call it: an API token can't, so a leaked token
+/// can't take the account.
+#[utoipa::path(
+    post,
+    path = "/api/auth/password",
+    tag = "Auth",
+    operation_id = "change_password",
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 204, description = "The password is changed and your other sessions are signed out."),
+        (status = 400, description = "`new_password` fails the password rules; the body says which."),
+        (status = 403, description = "`current_password` is wrong, or the request is authenticated by an API token or HTTP Basic rather than a session."),
+    ),
+)]
+async fn change_password_handler(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Json(body): Json<ChangePasswordRequest>,
+) -> Response {
+    // A token or Basic principal has no session to keep alive.
+    if !matches!(user.session_kind, SessionKind::Cookie | SessionKind::Bearer) {
+        return (
+            StatusCode::FORBIDDEN,
+            "sign in with your password to change it",
+        )
+            .into_response();
+    }
+    match auth_db::change_password(
+        state.pool(),
+        user.id,
+        &body.current_password,
+        &body.new_password,
+        user.session_id,
+    )
+    .await
+    {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        // Not 401: the caller is signed in, and a client reads 401 as a dead session.
+        Err(AuthError::InvalidCredentials) => {
+            (StatusCode::FORBIDDEN, "current password is incorrect").into_response()
+        }
+        Err(e) => auth_error_to_response(e),
     }
 }
 

@@ -2,6 +2,7 @@
 //! sub-topic into the sibling modules below; the router and JSON request
 //! fixtures they share live here.
 
+mod password;
 mod register_login;
 mod sessions;
 mod status_me;

@@ -11,8 +11,8 @@ use axum::{
 };
 use omnibus_db::{self as db, worker::Task};
 use omnibus_shared::{
-    KindleSendQueued, KindleSendRequest, KindleSendStatus, KindleSendStatusQuery, ProgressState,
-    SetKindleEmail, SmtpConfigStatus, SmtpConfigUpdate, BOOK_UUID_MAX_LEN,
+    KindleDelivery, KindleSendQueued, KindleSendRequest, KindleSendStatus, KindleSendStatusQuery,
+    ProgressState, SetKindleEmail, SmtpConfigStatus, SmtpConfigUpdate, BOOK_UUID_MAX_LEN,
 };
 
 use super::{internal, AppState};
@@ -144,6 +144,29 @@ pub(super) async fn post_kindle_email(
             (StatusCode::UNPROCESSABLE_ENTITY, msg).into_response()
         }
         Err(e) => internal("set kindle email", e),
+    }
+}
+
+/// Check Send to Kindle delivery
+///
+/// Whether the server can email books, and the sender address you must approve at Amazon
+/// before a Kindle accepts them. Never carries the mail server or its credentials.
+#[utoipa::path(
+    get,
+    path = "/api/kindle/delivery",
+    tag = "Account",
+    operation_id = "get_kindle_delivery",
+    responses(
+        (status = 200, description = "The sender address, or null when the server has no email delivery set up.", body = KindleDelivery),
+    ),
+)]
+pub(super) async fn get_delivery(_user: AuthUser, State(state): State<AppState>) -> Response {
+    match db::effective_smtp_config(&state.pool).await {
+        Ok(config) => Json(KindleDelivery {
+            sender_address: config.map(|c| c.from_email),
+        })
+        .into_response(),
+        Err(e) => internal("read smtp config", e),
     }
 }
 

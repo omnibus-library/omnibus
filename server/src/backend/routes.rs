@@ -324,6 +324,7 @@ fn kindle_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(kindle::post_send))
         .routes(routes!(kindle::get_send_status))
         .routes(routes!(kindle::post_kindle_email))
+        .routes(routes!(kindle::get_delivery))
         .routes(routes!(
             kobo_devices::list_kobo_devices,
             kobo_devices::create_kobo_device
