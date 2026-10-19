@@ -8,10 +8,8 @@ import {
   bandStyle,
   type GridItem,
   gridItems,
-  isStale,
   itemKey,
   stackFront,
-  stackLeads,
   stackLeaves,
   stackSegments,
   type Volume,
@@ -236,14 +234,8 @@ export function BookGrid({ books, stacks }: BookGridProps) {
   const [open, setOpen] = useState<string | null>(null);
   // The stack just folded, so its tile takes focus back from Fold up.
   const [refocus, setRefocus] = useState<string | null>(null);
-
-  // A run or refocus whose stack no longer leads is dropped, so a later page never revives it.
-  const leads = stackLeads(stacks).join();
-  useEffect(() => {
-    const current = leads ? leads.split(",") : [];
-    setOpen((key) => (isStale(key, current) ? null : key));
-    setRefocus((key) => (isStale(key, current) ? null : key));
-  }, [leads]);
+  // A lead the list no longer holds is no open stack, whatever `open` still says.
+  const openLead = stacks.some((s) => s.leadUuid === open) ? open : null;
 
   // A deal-out or fold replays from the cells' boxes as they were before the click.
   const grid = useRef<HTMLDivElement>(null);
@@ -258,7 +250,7 @@ export function BookGrid({ books, stacks }: BookGridProps) {
   };
 
   const fold = () => {
-    setRefocus(open);
+    setRefocus(openLead);
     deal(null);
   };
   const spent = () => setRefocus(null);
@@ -298,13 +290,13 @@ export function BookGrid({ books, stacks }: BookGridProps) {
       className="lib-grid"
       role="list"
       onKeyDown={(e) => {
-        if (e.key === "Escape" && open !== null) {
+        if (e.key === "Escape" && openLead !== null) {
           e.preventDefault();
           fold();
         }
       }}
     >
-      {gridItems(books, stacks, open).map((item, index) => (
+      {gridItems(books, stacks, openLead).map((item, index) => (
         <Fragment key={itemKey(item)}>{render(item, index)}</Fragment>
       ))}
     </div>

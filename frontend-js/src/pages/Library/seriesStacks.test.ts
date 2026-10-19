@@ -6,9 +6,7 @@ import {
   bandStyle,
   type GridItem,
   gridItems,
-  isStale,
   itemKey,
-  stackLeads,
   stackLeaves,
   stackSegments,
   volumeCaption,
@@ -182,21 +180,5 @@ describe("bandStyle", () => {
     expect(
       bandStyle({ ...stack, members: [{ ...book("s1"), accent: null }] }),
     ).toBe("var(--accent)");
-  });
-});
-
-describe("stackLeads", () => {
-  it("names each stack the grid folds and skips a one-member one", () => {
-    expect(stackLeads([saga("s1", ["s1", "s2"]), saga("x", ["x"])])).toEqual([
-      ids.s1,
-    ]);
-  });
-});
-
-describe("isStale", () => {
-  it("flags a key no current stack leads with", () => {
-    expect(isStale(ids.gone, [ids.s1])).toBe(true);
-    expect(isStale(ids.s1, [ids.s1])).toBe(false);
-    expect(isStale(null, [ids.s1])).toBe(false);
   });
 });

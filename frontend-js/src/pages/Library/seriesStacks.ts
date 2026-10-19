@@ -103,14 +103,6 @@ export function gridItems(
   });
 }
 
-/** The lead uuids of the stacks `gridItems` folds. */
-export const stackLeads = (stacks: SeriesStack[]) =>
-  stacks.filter(folds).map((stack) => stack.leadUuid);
-
-/** Whether `key` names no current stack's lead: an open run or refocus left from an older page. */
-export const isStale = (key: string | null, leads: string[]) =>
-  key !== null && !leads.includes(key);
-
 /** The covers a folded stack fans: the front volume, then series order, at most three. */
 export function stackLeaves(stack: SeriesStack): Book[] {
   const front = stackFront(stack);
