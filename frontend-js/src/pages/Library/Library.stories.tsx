@@ -1,8 +1,8 @@
-import type { Decorator, Meta, StoryObj } from "@storybook/react-vite";
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { delay, HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 import type { BulkOverridesRequest } from "../../api/generated/schemas";
+import { storyClient } from "../../testing/AppHarness";
 import {
   addShelfBooksHandler,
   bulkOverridesHandler,
@@ -62,19 +62,6 @@ function seedTable() {
 let release: () => void = () => {};
 let holding = false;
 let refusing = false;
-
-// Hands the page's query client to a play, to refetch after a handler changes its answer.
-let pageClient: QueryClient;
-function GrabClient() {
-  pageClient = useQueryClient();
-  return null;
-}
-const withClient: Decorator = (Story) => (
-  <>
-    <GrabClient />
-    <Story />
-  </>
-);
 
 // A promise a handler awaits, so a story holds a request until it calls `release`.
 function holdRequests() {
@@ -152,7 +139,6 @@ export const Empty: Story = {
 };
 
 export const RefetchFails: Story = {
-  decorators: [withClient],
   beforeEach({ msw }) {
     refusing = false;
     msw.use(
@@ -170,7 +156,7 @@ export const RefetchFails: Story = {
     ).toBeInTheDocument();
 
     refusing = true;
-    await pageClient.invalidateQueries({ queryKey: ["books"] });
+    await storyClient().invalidateQueries({ queryKey: ["books"] });
 
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
       "Couldn't refresh the library",
@@ -1150,7 +1136,6 @@ export const ResumeStackShown: Story = {
 const recent: Parameters<typeof recentProgressHandler>[0] = [];
 
 export const BringForward: Story = {
-  decorators: [withClient],
   beforeEach({ msw }) {
     recent.splice(0, recent.length, AURORA, MARTIAN, DUNE);
     msw.use(libraryHandler(aWireLibrary(3), 10), recentProgressHandler(recent));
@@ -1191,7 +1176,7 @@ export const BringForward: Story = {
 
     // The feed reorders on a refetch, yet the book brought forward stays the lead.
     recent.reverse();
-    await pageClient.invalidateQueries({ queryKey: ["progress", "recent"] });
+    await storyClient().invalidateQueries({ queryKey: ["progress", "recent"] });
     await expect(
       within(await resumeRegion(canvas)).getByRole("heading", {
         level: 2,

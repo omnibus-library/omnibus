@@ -20,6 +20,14 @@ export function harnessClient(user: User | null = ADA): QueryClient {
   return client;
 }
 
+let current: QueryClient | undefined;
+
+/** The client the rendered story runs under, for a play to invalidate queries with. */
+export function storyClient(): QueryClient {
+  if (!current) throw new Error("No story is rendered inside an AppHarness");
+  return current;
+}
+
 type AppHarnessProps = {
   children: ReactNode;
   user?: User | null;
@@ -35,7 +43,7 @@ export function AppHarness({
   path = "/",
   router = true,
 }: AppHarnessProps) {
-  const [client] = useState(() => harnessClient(user));
+  const [client] = useState(() => (current = harnessClient(user)));
   return (
     <QueryClientProvider client={client}>
       <SearchPaletteProvider>

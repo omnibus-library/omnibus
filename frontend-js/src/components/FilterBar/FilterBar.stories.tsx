@@ -3,7 +3,7 @@ import { HttpResponse, http } from "msw";
 import { useState } from "react";
 import { expect, within } from "storybook/test";
 import type { FilterClause } from "../../api";
-import { ADA } from "../../testing/AppHarness";
+import { ADA, storyClient } from "../../testing/AppHarness";
 import { aShelf, userId } from "../../testing/books";
 import { filterOptionHandlers, hanging } from "../../testing/handlers";
 import { FilterBar } from "./FilterBar";
@@ -256,6 +256,37 @@ export const OptionsFailing: Story = {
     await expect(alert).toHaveTextContent("tags unavailable");
 
     await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
+
+    await expect(
+      await canvas.findByRole("checkbox", { name: "space opera" }),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByRole("alert")).not.toBeInTheDocument();
+  },
+};
+
+export const OptionsRefetchFailsKeepsCached: Story = {
+  beforeEach({ msw }) {
+    let calls = 0;
+    msw.use(
+      http.get("/api/tags", () =>
+        ++calls === 1
+          ? HttpResponse.json(TAGS)
+          : new HttpResponse("tags unavailable", { status: 500 }),
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const tag = canvas.getByRole("button", { name: "Tag" });
+    await userEvent.click(tag);
+    await expect(
+      await canvas.findByRole("checkbox", { name: "space opera" }),
+    ).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
+
+    // The next fetch of the list fails; the list the reader already saw stays.
+    await storyClient().invalidateQueries({ queryKey: ["name-counts"] });
+    await userEvent.click(tag);
 
     await expect(
       await canvas.findByRole("checkbox", { name: "space opera" }),
