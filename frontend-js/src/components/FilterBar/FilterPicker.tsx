@@ -1,5 +1,5 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type FilterClause,
   type FilterField,
@@ -8,6 +8,7 @@ import {
   fetchGenreOptions,
   fetchSeriesOptions,
   fetchTagOptions,
+  type NamedCount,
   type UserId,
 } from "../../api";
 import { trapTab } from "../../focusTrap";
@@ -41,9 +42,8 @@ const SOURCES = {
   series: fetchSeriesOptions,
 } satisfies Record<NamedField, unknown>;
 
-async function loadNamed(field: NamedField): Promise<OptionList> {
-  const rows = await SOURCES[field]();
-  // The tag and genre clouds stop at their most-used values; the lists don't.
+// The tag and genre clouds stop at their most-used values; the lists don't.
+function shapeNamed(field: NamedField, rows: NamedCount[]): OptionList {
   const cloud = field === "tag" || field === "genre";
   return {
     options: namedOptions(rows),
@@ -63,9 +63,15 @@ function useOptions(
   viewerId: UserId | null,
 ): Loaded {
   const named = field === "format" || field === "shelf" ? null : field;
+  // The raw rows are keyed as the bulk editor's suggestions are, so one fetch serves both.
+  const shape = useCallback(
+    (rows: NamedCount[]) => (named ? shapeNamed(named, rows) : undefined),
+    [named],
+  );
   const query = useQuery({
-    queryKey: ["filter-options", field],
-    queryFn: named ? () => loadNamed(named) : skipToken,
+    queryKey: ["name-counts", field],
+    queryFn: named ? SOURCES[named] : skipToken,
+    select: shape,
   });
   if (field === "format") {
     return { state: "ready", list: { options: formatOptions(), cap: null } };
@@ -80,7 +86,8 @@ function useOptions(
       ? { state: "failed", message: "The shelves did not load." }
       : { state: "loading" };
   }
-  if (query.isError) {
+  // A refetch that fails leaves the list it already has on screen.
+  if (query.isError && !query.data) {
     return {
       state: "failed",
       message: query.error.message,
