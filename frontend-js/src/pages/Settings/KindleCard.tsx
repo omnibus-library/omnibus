@@ -144,8 +144,8 @@ export function KindleCard() {
         <div className="settings-actions">
           {saved && (
             <Button
-              variant="ghost"
-              className="danger settings-action-start"
+              variant="danger"
+              className="settings-action-start"
               disabled={save.isPending}
               data-testid="kindle-email-clear"
               onClick={() => setConfirmClear(true)}

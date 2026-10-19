@@ -81,9 +81,8 @@ export function SessionsCard() {
                   <td className="users-col-actions">
                     {!session.is_current && (
                       <Button
-                        variant="ghost"
+                        variant="danger"
                         size="sm"
-                        className="danger"
                         disabled={revoke.isPending}
                         aria-label={`Revoke the session on ${clientOf(session)}`}
                         data-testid={`account-session-revoke-${session.id}`}

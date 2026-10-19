@@ -38,62 +38,6 @@ const CREATE_HINT =
 
 type Secret = { name: string; secret: string };
 
-type CreateFormProps = {
-  label: string;
-  hint: boolean;
-  pending: boolean;
-  /** `onCreated` empties the field once the token exists, so a refusal keeps the name. */
-  onCreate: (name: string, onCreated: () => void) => void;
-  onInvalid: (message: string) => void;
-};
-
-function CreateForm({
-  label,
-  hint,
-  pending,
-  onCreate,
-  onInvalid,
-}: CreateFormProps) {
-  const form = useForm({
-    resolver: zodResolver(NameSchema),
-    defaultValues: { name: "" },
-  });
-  return (
-    <form
-      className="settings-form tkx-create"
-      onSubmit={form.handleSubmit(
-        ({ name }) => onCreate(name, () => form.reset()),
-        (errors) => onInvalid(errors.name?.message ?? NAME_REQUIRED),
-      )}
-    >
-      <div className="settings-field">
-        <label htmlFor="api-token-name">Token name</label>
-        <input
-          type="text"
-          id="api-token-name"
-          data-testid="api-token-name-input"
-          autoComplete="off"
-          placeholder="e.g. MCP on my laptop…"
-          maxLength={100}
-          {...form.register("name")}
-        />
-        {hint && <p className="tkx-create-hint">{CREATE_HINT}</p>}
-      </div>
-      <div className="settings-actions">
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={pending}
-          aria-busy={pending}
-          data-testid="api-token-create"
-        >
-          <BusyLabel busy={pending} label={label} busyLabel="Creating…" />
-        </Button>
-      </div>
-    </form>
-  );
-}
-
 /** The one-time secret panel: shown until dismissed, since it can never be fetched again. */
 function SecretHandOff({
   secret,
@@ -161,7 +105,8 @@ type RowProps = {
 
 function TokenRow({ token, disabled, onRename, onRevoke }: RowProps) {
   const now = nowSecs();
-  const pill = statusPill(now, token.last_used_at);
+  const used = token.last_used_at;
+  const pill = statusPill(now, used);
   return (
     <li className="tkx-row" data-testid="api-token-row">
       <div className="tkx-row-name">
@@ -184,11 +129,13 @@ function TokenRow({ token, disabled, onRename, onRevoke }: RowProps) {
         <span className="mono">{utcDay(token.created_at)}</span>
       </span>
       <span className="tkx-cell">
-        {token.last_used_at == null
-          ? "never"
-          : relDate(now, token.last_used_at)}
-        {token.last_used_at != null && (
-          <span className="mono">{utcDay(token.last_used_at)}</span>
+        {used == null ? (
+          "never"
+        ) : (
+          <>
+            {relDate(now, used)}
+            <span className="mono">{utcDay(used)}</span>
+          </>
         )}
       </span>
       <span className="tkx-row-actions">
@@ -203,9 +150,8 @@ function TokenRow({ token, disabled, onRename, onRevoke }: RowProps) {
           Rename
         </Button>
         <Button
-          variant="ghost"
+          variant="danger"
           size="sm"
-          className="bad"
           disabled={disabled}
           aria-label={`Revoke ${token.name}`}
           data-testid={`api-token-revoke-${token.id}`}
@@ -330,8 +276,15 @@ export function ApiTokensCard() {
   const tokens = useQuery(apiTokensQuery);
   const [status, setStatus] = useState<Status | null>(null);
   const [secret, setSecret] = useState<Secret | null>(null);
-  const [revoking, setRevoking] = useState<number | null>(null);
-  const [renaming, setRenaming] = useState<number | null>(null);
+  // The one row being renamed or asked about revoking.
+  const [editing, setEditing] = useState<{
+    id: number;
+    mode: "rename" | "revoke";
+  } | null>(null);
+  const form = useForm({
+    resolver: zodResolver(NameSchema),
+    defaultValues: { name: "" },
+  });
 
   // Only a list that has answered is patched; the reread after a create fills the rest.
   const setList = (change: (list: ApiTokenView[]) => ApiTokenView[]) =>
@@ -354,6 +307,7 @@ export function ApiTokensCard() {
       await queryClient.cancelQueries({ queryKey: apiTokensQuery.queryKey });
     },
     onSuccess: ({ token, secret: raw }) => {
+      form.reset();
       setList((list) => [token, ...list]);
       setSecret({ name: token.name, secret: raw });
       // Announces the secret panel through the live status line.
@@ -374,7 +328,7 @@ export function ApiTokensCard() {
     onMutate: () => setStatus(null),
     onSuccess: (_, id) => {
       setList((list) => list.filter((t) => t.id !== id));
-      setRevoking(null);
+      setEditing(null);
       setStatus({ message: "Token revoked.", error: false });
     },
     onError: refused,
@@ -385,7 +339,7 @@ export function ApiTokensCard() {
     onMutate: () => setStatus(null),
     onSuccess: (_, { id, name }) => {
       setList((list) => list.map((t) => (t.id === id ? { ...t, name } : t)));
-      setRenaming(null);
+      setEditing(null);
     },
     onError: refused,
   });
@@ -475,13 +429,42 @@ export function ApiTokensCard() {
             </ol>
           </>
         )}
-        <CreateForm
-          label={empty ? "Create first token" : "Create token"}
-          hint={!empty}
-          pending={create.isPending}
-          onCreate={(name, onSuccess) => create.mutate(name, { onSuccess })}
-          onInvalid={invalid}
-        />
+        <form
+          className="settings-form tkx-create"
+          onSubmit={form.handleSubmit(
+            ({ name }) => create.mutate(name),
+            (errors) => invalid(errors.name?.message ?? NAME_REQUIRED),
+          )}
+        >
+          <div className="settings-field">
+            <label htmlFor="api-token-name">Token name</label>
+            <input
+              type="text"
+              id="api-token-name"
+              data-testid="api-token-name-input"
+              autoComplete="off"
+              placeholder="e.g. MCP on my laptop…"
+              maxLength={100}
+              {...form.register("name")}
+            />
+            {!empty && <p className="tkx-create-hint">{CREATE_HINT}</p>}
+          </div>
+          <div className="settings-actions">
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={create.isPending}
+              aria-busy={create.isPending}
+              data-testid="api-token-create"
+            >
+              <BusyLabel
+                busy={create.isPending}
+                label={empty ? "Create first token" : "Create token"}
+                busyLabel="Creating…"
+              />
+            </Button>
+          </div>
+        </form>
       </section>
 
       {secret && (
@@ -499,24 +482,25 @@ export function ApiTokensCard() {
           </div>
           <ul className="tkx-list" data-testid="api-token-list">
             {list.map((token) => {
-              if (revoking === token.id) {
+              const mode = editing?.id === token.id ? editing.mode : null;
+              if (mode === "revoke") {
                 return (
                   <RevokeConfirmRow
                     key={token.id}
                     token={token}
                     disabled={busy}
-                    onCancel={() => setRevoking(null)}
+                    onCancel={() => setEditing(null)}
                     onRevoke={() => revoke.mutate(token.id)}
                   />
                 );
               }
-              if (renaming === token.id) {
+              if (mode === "rename") {
                 return (
                   <RenameRow
                     key={token.id}
                     token={token}
                     disabled={busy}
-                    onCancel={() => setRenaming(null)}
+                    onCancel={() => setEditing(null)}
                     onRename={(name) => rename.mutate({ id: token.id, name })}
                     onInvalid={invalid}
                   />
@@ -527,14 +511,8 @@ export function ApiTokensCard() {
                   key={token.id}
                   token={token}
                   disabled={busy}
-                  onRename={() => {
-                    setRevoking(null);
-                    setRenaming(token.id);
-                  }}
-                  onRevoke={() => {
-                    setRenaming(null);
-                    setRevoking(token.id);
-                  }}
+                  onRename={() => setEditing({ id: token.id, mode: "rename" })}
+                  onRevoke={() => setEditing({ id: token.id, mode: "revoke" })}
                 />
               );
             })}

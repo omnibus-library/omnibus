@@ -169,8 +169,7 @@ function DeviceRow({ device, disabled, onAsk }: RowProps) {
           Regenerate
         </Button>
         <Button
-          variant="ghost"
-          className="danger"
+          variant="danger"
           disabled={disabled}
           aria-label={`Remove ${device.name}`}
           data-testid="kobo-device-remove"
