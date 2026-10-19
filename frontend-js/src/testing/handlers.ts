@@ -152,12 +152,35 @@ export function libraryHandler(
   });
 }
 
-/** `POST /api/account/stack-series`; each request body lands in `bodies`. */
-export function stackSeriesHandler(bodies: unknown[] = []) {
-  return http.post("/api/account/stack-series", async ({ request }) => {
-    bodies.push(await request.json());
-    return new HttpResponse(null);
-  });
+/**
+ * `POST /api/account/stack-series` and a `GET /api/auth/me` that reports what
+ * it saved, so the refetch after a save agrees with it. Each request body lands
+ * in `bodies`; `gate` holds the save until it resolves.
+ */
+export function stackSeriesHandler({
+  bodies = [],
+  gate = Promise.resolve(),
+  user = WIRE_ADA,
+}: {
+  bodies?: unknown[];
+  gate?: Promise<void>;
+  user?: typeof WIRE_ADA;
+} = {}) {
+  let enabled = user.stack_series ?? false;
+  return [
+    http.get("/api/auth/me", () =>
+      HttpResponse.json({ ...user, stack_series: enabled }),
+    ),
+    http.post("/api/account/stack-series", async ({ request }) => {
+      const body = await request.json();
+      bodies.push(body);
+      await gate;
+      if (body && typeof body === "object" && "enabled" in body) {
+        enabled = body.enabled === true;
+      }
+      return new HttpResponse(null);
+    }),
+  ];
 }
 
 /** `GET /api/shelves`. */

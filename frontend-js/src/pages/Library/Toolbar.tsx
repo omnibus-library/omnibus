@@ -11,8 +11,13 @@ type ToolbarProps = {
   hiddenFormats: string[];
   /** Why sorting is inert on this list, or `null` when it acts. */
   sortLock: string | null;
-  /** The Stack series switch: the saved preference, a refused save, and the click. */
-  stack: { on: boolean; failed: boolean; onToggle: () => void };
+  /** The Stack series switch: the saved preference, a save in flight or refused, and the click. */
+  stack: {
+    on: boolean;
+    pending: boolean;
+    failed: boolean;
+    onToggle: () => void;
+  };
   onChange: (next: Prefs) => void;
 };
 
@@ -33,6 +38,7 @@ export function Toolbar({
             type="button"
             className={stack.on ? "ss-tog on" : "ss-tog"}
             aria-pressed={stack.on}
+            disabled={stack.pending}
             onClick={stack.onToggle}
           >
             <span className="ss-sw" aria-hidden="true" />

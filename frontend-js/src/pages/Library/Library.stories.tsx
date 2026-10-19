@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { HttpResponse, http } from "msw";
+import { delay, HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 import type { BulkOverridesRequest } from "../../api/generated/schemas";
 import {
@@ -412,12 +412,17 @@ export const FilteredToNothing: Story = {
 
 let release: () => void = () => {};
 
+// A promise a handler awaits, so a story holds a request until it calls `release`.
+function holdRequests() {
+  return new Promise<void>((resolve) => {
+    release = resolve;
+  });
+}
+
 export const FilteredCounting: Story = {
   beforeEach({ msw }) {
     seedAdaFilter();
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const gate = holdRequests();
     // Holds the request, then lets the fixture handler answer it.
     msw.use(
       http.get("/api/ebooks", async () => {
@@ -846,7 +851,7 @@ export const StackedSeries: Story = {
     requests.length = 0;
     msw.use(
       libraryHandler(STACK_BOOKS, 10, { requests, stacks: STACKS }),
-      stackSeriesHandler(),
+      ...stackSeriesHandler(),
     );
   },
   play: async ({ canvas, userEvent }) => {
@@ -925,7 +930,7 @@ export const StackToggle: Story = {
     requests.length = 0;
     msw.use(
       libraryHandler(STACK_BOOKS, 10, { requests, stacks: STACKS }),
-      stackSeriesHandler(bodies),
+      ...stackSeriesHandler({ bodies, gate: holdRequests() }),
     );
     bodies.length = 0;
   },
@@ -936,8 +941,12 @@ export const StackToggle: Story = {
 
     await userEvent.click(toggle);
 
-    // The switch flips before the save answers.
+    // The switch flips before the save answers, and stays put until it does.
     await waitFor(() => expect(toggle).toHaveAttribute("aria-pressed", "true"));
+    await expect(toggle).toBeDisabled();
+    release();
+    await waitFor(() => expect(toggle).toBeEnabled());
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await expect(
       await canvas.findByRole("button", { name: "Saga, 3 books" }),
     ).toBeInTheDocument();
@@ -964,9 +973,15 @@ export const StackToggle: Story = {
 
 export const StackToggleFails: Story = {
   beforeEach({ msw }) {
+    let saves = 0;
     msw.use(
       libraryHandler(STACK_BOOKS, 10, { stacks: STACKS }),
-      failing("post", "/api/account/stack-series", 500),
+      // The first save is refused; the next is held, to show the message clearing.
+      http.post("/api/account/stack-series", async () => {
+        saves += 1;
+        if (saves > 1) await delay("infinite");
+        return new HttpResponse("failed with 500", { status: 500 });
+      }),
     );
   },
   play: async ({ canvas, userEvent }) => {
@@ -980,6 +995,12 @@ export const StackToggleFails: Story = {
     );
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await waitFor(() => expect(tiles(canvas)).toHaveLength(6));
+
+    await userEvent.click(toggle);
+
+    await waitFor(() =>
+      expect(canvas.queryByRole("alert")).not.toBeInTheDocument(),
+    );
   },
 };
 

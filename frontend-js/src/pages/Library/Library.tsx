@@ -292,6 +292,7 @@ export function Library() {
             sortLock={sortLock}
             stack={{
               on: user.stackSeries,
+              pending: stackToggle.isPending,
               failed: stackToggle.isError,
               onToggle: () => stackToggle.mutate(!user.stackSeries),
             }}

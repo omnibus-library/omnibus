@@ -61,7 +61,16 @@ export function useStackSeries() {
     );
   return useMutation({
     mutationFn: setStackSeries,
-    onMutate: show,
-    onError: (_error, enabled) => show(!enabled),
+    onMutate: async (enabled) => {
+      // A refetch already in flight would land over the optimistic value.
+      await queryClient.cancelQueries({ queryKey: meQuery.queryKey });
+      const previous = queryClient.getQueryData(meQuery.queryKey);
+      show(enabled);
+      return { previous };
+    },
+    onError: (_error, _enabled, context) =>
+      queryClient.setQueryData(meQuery.queryKey, context?.previous),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: meQuery.queryKey }),
   });
 }
