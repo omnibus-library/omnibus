@@ -7,6 +7,7 @@
 
 use axum::{
     extract::{Path, State},
+    http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
@@ -66,7 +67,7 @@ pub(super) async fn get_author_by_id(
             }
             Json(author).into_response()
         }
-        Ok(None) => axum::http::StatusCode::NOT_FOUND.into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => internal("read author", error),
     }
 }
@@ -143,7 +144,7 @@ pub(super) async fn delete_author(
     Path(id): Path<i64>,
 ) -> Response {
     match db::delete_author(&state.pool, id).await {
-        Ok(_) => axum::http::StatusCode::NO_CONTENT.into_response(),
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => internal("delete author", e),
     }
 }

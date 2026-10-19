@@ -58,6 +58,7 @@ function AuthorAvatar({
       onChange={() => {
         setVersion((v) => v + 1);
         // The bare URL is what a remount or reload asks for, so replace its day-cached entry too.
+        // shortcut: busts the browser's day-long cache from the client; upgrade when the author payload carries a photo version
         void fetch(authorPhotoUrl(id), { cache: "reload" });
         client.invalidateQueries({ queryKey: authorQuery(id).queryKey });
       }}

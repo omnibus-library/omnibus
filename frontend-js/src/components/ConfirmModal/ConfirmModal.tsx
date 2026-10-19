@@ -23,6 +23,7 @@ function trapTab(event: KeyboardEvent<HTMLElement>) {
   (event.shiftKey ? last : first).focus();
 }
 
+// shortcut: the dialog role moves to the panel only with labelledBy; upgrade by putting role and focus on the panel for every caller
 /** The dialog's name: a label on the backdrop, or the id of a title inside, which moves the dialog role onto the panel. */
 type Name =
   | { ariaLabel: string; labelledBy?: undefined }
