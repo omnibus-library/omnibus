@@ -5,8 +5,7 @@ Dioxus frontend. It talks only to the existing Axum `/api/*` REST surface — th
 one iOS and MCP already use — and adds a REST route only where a ported screen
 has none.
 
-Covers three screens: sign-in (cookie session), the library grid (keyset pages
-from `GET /api/ebooks`, thumbnails from `/api/thumbs`), and book detail.
+The screens it has ported are listed under [Routes](#routes).
 
 ## Layout
 
@@ -35,8 +34,12 @@ same split: the readers and the player fill the screen, everything else sits
 under the top bar, and a guest goes to `/login?next=…` and comes back. Login,
 Register, the library, book detail, the metadata editor (`/books/:uuid/edit`),
 add books (`/add-books`), check-in (`/check-in`), search results
-(`/search/:query`), Not Found and the three readers (`/read`, `/comic`, `/pdf`) are ported, and the top bar carries the user menu and the ⌘K search
-palette. As on Dioxus web, a bare `/search` and the native shell's `/connect`
+(`/search/:query`), the authors, series and shelves indexes with their detail
+pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), the three readers
+(`/read`, `/comic`, `/pdf`) and Not Found are ported, and the top bar carries
+the user menu and the ⌘K search palette. The phone layouts (the bottom tab bar
+and the native shell's shelves screens) are left out. As on Dioxus web, a bare
+`/search` and the native shell's `/connect`
 redirect to the library. Every other route renders `Unported`, which shows its
 parsed parameters and names its Dioxus source.
 Book detail carries all six stops (home, stats, highlights, journals, files,
@@ -63,8 +66,8 @@ throws (the session gate, the shell, a reader) renders it full-screen.
 
 ## Styling, copied out of Atrium
 
-Each CSS file holds only the `atrium.css`, `loading.css` and `filter_bar.css` rules
-its markup can match, copied by `tools/extract-atrium.cjs`.
+Each CSS file holds only the `atrium.css`, `loading.css`, `filter_bar.css` and
+`authors.css` rules its markup can match, copied by `tools/extract-atrium.cjs`.
 The components keep the Dioxus class names, which is what lets the copy apply
 unchanged: when sign-in, the library grid and book detail were first ported,
 their computed styles and screenshots matched the `atrium.css` build exactly.
@@ -152,7 +155,7 @@ shell provides it.
   status (`src/api/generated/omnibus.msw.ts`), and `src/testing/handlers.ts`
   adds the ones that need behaviour: paging headers, a password check, a journal
   that keeps what is posted, a Kindle send that answers `pending` and then
-  `sent`. Stories for the library, book detail and sign-in run against them, so their `play`
+  `sent`. Stories for the ported screens run against them, so their `play`
   tests cover loading, empty, failing and success states, and the fixtures are
   typed by the spec.
 - **Docs:** every component gets a Docs page in Storybook, built from its
@@ -167,10 +170,13 @@ shell provides it.
   page's `results`, Register's `refusal`, the library's `filters`,
   `libraryView`, `seriesStacks`, `shelfGallery`, `sorting` and `bulkEdit`, the
   editor's `metadata` (form schema and override diff), `dirty` and
-  `editionFields`, `uploads`, check-in's `checkIn` and `scan`, and the scanner's
-  `scanStatus` and `loadScanner`, and the readers' `pager`, `pdfAnchors`, `start`,
-  `relocate`, `typography`, `epubGlue`, `pdfGlue`, `readingSession` and
-  `autoReadStatus`, plus the vendored files' parity test), plus the
+  `editionFields`, `uploads`, check-in's `checkIn` and `scan`, the scanner's
+  `scanStatus` and `loadScanner`, the discovery pages' `authorsOrder`,
+  `authorPane`, `seriesIndex`, `shelvesIndex`, the shelf rules' `rules`, the
+  picker's `picker`, the shelf page's `shelfAccess` and `narrow`, and the
+  readers' `pager`, `pdfAnchors`, `start`, `relocate`, `typography`,
+  `epubGlue`, `pdfGlue`, `readingSession` and `autoReadStatus`, plus the
+  vendored files' parity test), plus the
   real route table in `src/router.test.tsx`: every unported page, the layout
   split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI
@@ -183,8 +189,8 @@ shell provides it.
 | Cold build | 80s server + 50s wasm client | 3s install + 1s `vite build` |
 | After a UI file edit | 16s server + 8s wasm, before wasm-bindgen and bundling | Vite hot reload (not timed; dev server ready in 168ms) |
 | After a `db/` edit | 17s | unchanged: still a Rust rebuild |
-| Shipped JS | wasm bundle (not measured) | 460 KB, 140 KB gzipped |
-| Shipped CSS | all of `atrium.css` + `loading.css` | 37 KB, 9 KB gzipped |
+| Shipped JS | wasm bundle (not measured) | 884 KB, 249 KB gzipped |
+| Shipped CSS | all of `atrium.css` + `loading.css` | 170 KB, 32 KB gzipped |
 
 Measured on one 16-core Linux box, dev profile, no sccache.
 

@@ -332,3 +332,93 @@ async fn api_get_author_reading_returns_500_when_reading_state_cannot_be_read() 
 
     assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
+
+fn delete_author_request(id: i64, token: &str) -> axum::http::Request<axum::body::Body> {
+    axum::http::Request::builder()
+        .uri(format!("/api/authors/{id}"))
+        .method("DELETE")
+        .header(axum::http::header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(axum::body::Body::empty())
+        .unwrap()
+}
+
+#[tokio::test]
+async fn api_delete_author_removes_the_author_and_ignores_the_name_when_admin() {
+    let (app, _state, pool) = fixture().await;
+    let id = seed_author(&pool, "Ada Lovelace").await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    let res = app
+        .oneshot(delete_author_request(id, &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::NO_CONTENT);
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM authors WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+    let ignored: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ignored_authors WHERE name = 'Ada Lovelace'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(ignored, 1);
+}
+
+#[tokio::test]
+async fn api_delete_author_returns_403_and_keeps_the_author_when_not_admin() {
+    let (app, _state, pool) = fixture().await;
+    let id = seed_author(&pool, "Ada Lovelace").await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let res = app
+        .oneshot(delete_author_request(id, &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM authors WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 1);
+}
+
+#[tokio::test]
+async fn api_delete_author_returns_204_for_unknown_id() {
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    let res = app
+        .oneshot(delete_author_request(9999, &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn api_delete_author_returns_500_when_the_author_cannot_be_deleted() {
+    let (app, _state, pool) = fixture().await;
+    let id = seed_author(&pool, "Ada Lovelace").await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+    sqlx::query("DROP TABLE ignored_authors")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let res = app
+        .oneshot(delete_author_request(id, &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}

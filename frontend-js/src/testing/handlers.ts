@@ -3,6 +3,7 @@ import type { FilterClause, FilterField } from "../api";
 import {
   getGetAlignmentMockHandler200,
   getGetAuthorByIdMockHandler200,
+  getGetAuthorReadingMockHandler200,
   getGetAuthorsMockHandler200,
   getGetBookInsightsMockHandler200,
   getGetGenresMockHandler200,
@@ -29,9 +30,11 @@ import {
 import {
   AddShelfBooksBody,
   type AlignmentView,
+  type AuthorReading,
   type AuthorSummary,
   type BookDeletionManifest,
   BulkOverridesRequest,
+  CreateShelfRequest,
   DeleteBookFilesRequest,
   type EbookMetadata,
   type EbookPage,
@@ -47,19 +50,25 @@ import {
   PostJournalBody,
   PostJournalPreviewBody,
   PostRatingBody,
+  PutAuthorPhotoUrlBody,
   PutReadStatusBody,
   type RatingRecord,
   type ReadStatusRecord,
   type ResumePoint,
+  type RulePreview,
+  RulePreviewRequest,
+  type SeriesDetail,
   type SeriesStack,
   type SeriesSummary,
   type SessionLogEntry,
   SetStackSeries,
+  type Shelf,
   type ShelfSummary,
   type TagWeight,
   UndoMergeRequest,
   UpdateCopyNoteRequest,
   UpdateJournalEntry,
+  UpdateShelfRequest,
   type WishlistEntry,
 } from "../api/generated/schemas";
 import { sameName } from "../components/FilterBar/filters";
@@ -72,6 +81,7 @@ import {
   aWireProgress,
   aWireReadStatus,
   aWireSeries,
+  aWireShelfDetail,
   aWireWishlist,
   WIRE_ADA,
 } from "./wire";
@@ -81,7 +91,7 @@ import {
 // need behaviour a generated handler can't express, such as paging headers or
 // checking the request, and their bodies are typed by the generated schemas.
 
-const svg = () =>
+export const svg = () =>
   new HttpResponse(COVER_SVG, { headers: { "Content-Type": "image/svg+xml" } });
 
 /** A held request: pass `promise` to a handler's gate, call `release` from the story when the answer may land. */
@@ -321,6 +331,183 @@ export function addShelfBooksHandler({
     added.push({ id: Number(params.id), uuids: body.book_uuids });
     return new HttpResponse(null, { status: 204 });
   });
+}
+
+/** `GET /api/authors` and the reader's `GET /api/authors/reading`. */
+export function authorsHandlers({
+  authors,
+  reading = [],
+}: {
+  authors: AuthorSummary[];
+  reading?: AuthorReading[];
+}) {
+  return [
+    getGetAuthorsMockHandler200(authors),
+    getGetAuthorReadingMockHandler200(reading),
+  ];
+}
+
+/** `GET /api/series` and `GET /api/series/{id}`. */
+export function seriesHandlers({
+  list = [],
+  detail,
+}: {
+  list?: SeriesSummary[];
+  detail?: SeriesDetail;
+}) {
+  return [
+    getListSeriesMockHandler200(list),
+    ...(detail ? [getGetSeriesByIdMockHandler200(detail)] : []),
+  ];
+}
+
+/** One write a shelf page made, in the order it made them. */
+export type ShelfWrite =
+  | { op: "add"; uuids: string[] }
+  | { op: "remove"; uuid: string }
+  | { op: "patch"; body: UpdateShelfRequest }
+  | { op: "delete" };
+
+/**
+ * One shelf and its members, kept between reads and writes: `GET` the shelf and its
+ * page (narrowed by `filter`, each request's params landing in `requests`), `POST`
+ * books from `pool` onto it, `DELETE` one off, `PATCH` fields over it, `DELETE` the
+ * shelf (after which it is a 404). Each write lands in `writes`.
+ */
+export function shelfDetailHandlers(
+  shelf: Shelf,
+  members: EbookMetadata[],
+  writes: ShelfWrite[] = [],
+  {
+    pool = [],
+    requests = [],
+  }: { pool?: EbookMetadata[]; requests?: URLSearchParams[] } = {},
+) {
+  let current: Shelf | null = shelf;
+  let held = members;
+  const gone = () => new HttpResponse("shelf not found", { status: 404 });
+  return [
+    http.get("/api/shelves/:id", () =>
+      current
+        ? HttpResponse.json({ ...current, book_count: held.length })
+        : gone(),
+    ),
+    http.get("/api/shelves/:id/page", ({ request }) => {
+      if (!current) return gone();
+      const search = new URL(request.url).searchParams;
+      requests.push(search);
+      const clauses: FilterClause[] = JSON.parse(search.get("filter") ?? "[]");
+      return HttpResponse.json({
+        books: held.filter((b) => passes(b, clauses)),
+      });
+    }),
+    http.post("/api/shelves/:id/books", async ({ request }) => {
+      const { book_uuids } = AddShelfBooksBody.parse(await request.json());
+      writes.push({ op: "add", uuids: book_uuids });
+      held = [
+        ...held,
+        ...pool.filter((b) => book_uuids.includes(b.unique_identifier ?? "")),
+      ];
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.delete("/api/shelves/:id/books/:uuid", ({ params }) => {
+      writes.push({ op: "remove", uuid: String(params.uuid) });
+      held = held.filter((b) => b.unique_identifier !== params.uuid);
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.patch("/api/shelves/:id", async ({ request }) => {
+      const body = UpdateShelfRequest.parse(await request.json());
+      writes.push({ op: "patch", body });
+      if (!current) return gone();
+      const { sync_to_kobo, name, visibility, rules, match_mode, description } =
+        body;
+      current = {
+        ...current,
+        ...(name != null && { name }),
+        ...(visibility != null && { visibility }),
+        ...(rules != null && { rules }),
+        ...(match_mode != null && { match_mode }),
+        ...(description !== undefined && { description }),
+        ...(sync_to_kobo != null && { sync_to_kobo }),
+      };
+      return HttpResponse.json({ ...current, book_count: held.length });
+    }),
+    http.delete("/api/shelves/:id", () => {
+      writes.push({ op: "delete" });
+      current = null;
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+}
+
+/**
+ * `POST /api/shelves/preview`: each request body lands in `bodies`, and the answer is
+ * `answer`, or what it returns for that body.
+ */
+export function previewHandler(
+  bodies: RulePreviewRequest[],
+  answer: RulePreview | ((body: RulePreviewRequest) => Promise<RulePreview>),
+) {
+  return http.post("/api/shelves/preview", async ({ request }) => {
+    const body = RulePreviewRequest.parse(await request.json());
+    bodies.push(body);
+    return HttpResponse.json(
+      typeof answer === "function" ? await answer(body) : answer,
+    );
+  });
+}
+
+/**
+ * `POST /api/shelves`: each body lands in `bodies`; the answer is `created` as a 201, or with
+ * `refuse` set a 409 whose plain text is that reason.
+ */
+export function createShelfHandler(
+  bodies: CreateShelfRequest[],
+  {
+    created = aWireShelfDetail({ id: 9, name: "Cosy reads" }),
+    refuse,
+  }: { created?: Shelf; refuse?: string } = {},
+) {
+  return http.post("/api/shelves", async ({ request }) => {
+    bodies.push(CreateShelfRequest.parse(await request.json()));
+    return refuse
+      ? new HttpResponse(refuse, { status: 409 })
+      : HttpResponse.json(created, { status: 201 });
+  });
+}
+
+/** `GET /api/search`: `books` as the hits, `total` (their count by default) in `X-Total-Count`. */
+export function searchHandler(books: EbookMetadata[], total = books.length) {
+  return http.get("/api/search", () =>
+    HttpResponse.json(
+      { books },
+      { headers: { "X-Total-Count": String(total) } },
+    ),
+  );
+}
+
+/**
+ * An author's photo (the sample image) and the admin's writes: `PUT .../photo/url` and
+ * `PUT .../photo` answer 204 and append `url:<url>` or `upload:<file name>` to `writes`;
+ * the scan answers `scanFound`.
+ */
+export function authorPhotoHandlers(writes: string[] = [], scanFound = true) {
+  return [
+    http.get("/api/authors/:id/photo", svg),
+    http.put("/api/authors/:id/photo/url", async ({ request }) => {
+      const { url } = PutAuthorPhotoUrlBody.parse(await request.json());
+      writes.push(`url:${url}`);
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.put("/api/authors/:id/photo", async ({ request }) => {
+      const file = (await request.formData()).get("photo");
+      writes.push(`upload:${file instanceof File ? file.name : "missing"}`);
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.post("/api/authors/:id/photo/scan", () =>
+      HttpResponse.json({ resolved: scanFound }),
+    ),
+  ];
 }
 
 /** The four lists the filter menus draw their values from. */

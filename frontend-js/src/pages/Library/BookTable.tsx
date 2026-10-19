@@ -1,6 +1,7 @@
 import { type RefObject, useState } from "react";
 import { Link } from "react-router";
 import { type Book, type SortKey, thumbSrcSet, thumbUrl } from "../../api";
+import "../../components/FormatSwitcher/FormatSwitcher.css";
 import { formatDateShort, formatInstantShort } from "../../format";
 import type { Prefs } from "../../viewPrefs";
 

@@ -2,11 +2,9 @@ import { z } from "zod";
 import type { AuthorId, BookUuid, SeriesId } from "./core";
 import { failure, ok, requireUuid, send } from "./core";
 import {
-  getAuthorById,
   getEbookByUuid,
   getPostEbookSummaryFetchUrl,
   getSearchPalette,
-  getSeriesById,
   getSuggestions,
   getSummarySources,
   postEbookOverrides,
@@ -143,16 +141,6 @@ export async function fetchBook(uuid: BookUuid): Promise<BookDetail | null> {
   return toBookDetail(res.data);
 }
 
-/** A series' name, how many of its books the library holds, and those books in reading order. */
-export async function fetchSeries(id: SeriesId) {
-  const data = ok(await getSeriesById(id));
-  return {
-    name: data.name,
-    bookCount: data.book_count,
-    books: data.books.map(toBook),
-  };
-}
-
 /** Grouped search hits for `query`; `limit` raises the per-group cap. */
 export async function fetchPalette(
   query: string,
@@ -193,22 +181,6 @@ export async function saveDescription(
       }),
     ),
   );
-}
-
-/** A book on an author's page: the listing shape, plus the date its caption's year comes from. */
-export type CreditedBook = Book & { published: string | null };
-
-/** The books an author's page credits them with, or `null` when no author has that id. */
-export async function fetchAuthorBooks(
-  id: AuthorId,
-): Promise<CreditedBook[] | null> {
-  const res = await getAuthorById(id);
-  if (res.status === 404) return null;
-  if (res.status !== 200) throw failure(res);
-  return res.data.books.map((b) => ({
-    ...toBook(b),
-    published: b.published ?? null,
-  }));
 }
 
 function toSuggestion(wire: BookSuggestionWire) {

@@ -274,7 +274,7 @@ fn discovery_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(authors::get_author_reading))
         .routes(routes!(author_photos::post_refetch_author_photos))
         .routes(routes!(author_photos::post_author_photo_scan))
-        .routes(routes!(authors::get_author_by_id))
+        .routes(routes!(authors::get_author_by_id, authors::delete_author))
         .routes(routes!(series::get_series))
         .routes(routes!(series::get_series_by_id))
         .routes(routes!(tags::get_tags))

@@ -1,8 +1,11 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
-import { fetchBookPage, type LibraryQuery } from "../../api";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router";
+import { fetchBookPage, invalidateShelf, type LibraryQuery } from "../../api";
+import { AddBooksModal } from "../../components/AddBooksModal/AddBooksModal";
 import { Button } from "../../components/Button/Button";
 import { FilterBar } from "../../components/FilterBar/FilterBar";
+import { PencilGlyph, PlusGlyph } from "../../components/Glyphs/Glyphs";
 import {
   BusyLabel,
   CoverSkeletons,
@@ -10,9 +13,18 @@ import {
 } from "../../components/Loading/Loading";
 import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
+import { EditShelfModal } from "../../components/ShelfForm/EditShelfModal";
+import { ShelfFacets } from "../../components/ShelfForm/ShelfFacets";
 import { bookCount } from "../../format";
 import { useCurrentUser } from "../../session";
-import { useLibraryPrefs } from "../../viewPrefs";
+import { useLoadMore } from "../../useLoadMore";
+import { handoffClauses, useLibraryPrefs } from "../../viewPrefs";
+import { fullList } from "../ShelfDetail/narrow";
+import {
+  addBooksState,
+  canEdit,
+  resolveAccess,
+} from "../ShelfDetail/shelfAccess";
 import { BookGrid } from "./BookGrid";
 import { BookTable } from "./BookTable";
 import { BulkEditBar, BulkEditModal, BulkShelfPicker } from "./BulkEdit";
@@ -29,40 +41,67 @@ import { ShelfGallery } from "./ShelfGallery";
 import { useShelfLens } from "./shelfGallery";
 import { headerSort } from "./sorting";
 import { Toolbar } from "./Toolbar";
-import { useLoadMore } from "./useLoadMore";
 import "./Library.css";
 
 function Receipt({
   count,
   hidden,
+  editing,
 }: {
   count: number | "counting" | null;
   hidden: number | null;
+  /** The shelf the pencil edits, when the viewer may. */
+  editing: { name: string; onEdit: () => void } | null;
 }) {
   const hiddenBooks = hidden !== null && hidden > 0 ? hidden : null;
-  if (count === null && hiddenBooks === null) return null;
+  if (count === null && hiddenBooks === null && !editing) return null;
   return (
     <div className="lib-header-receipt">
-      <p className="lib-header-receipt-text">
-        {count === "counting" && (
-          <span className="lib-header-count">
-            <span className="ld-sheen">counting</span>
-          </span>
-        )}
-        {typeof count === "number" && (
-          <span className="lib-header-count">{bookCount(count)}</span>
-        )}
-        {hiddenBooks !== null && (
-          <span className="lib-header-hidden">{hiddenBooks} hidden</span>
-        )}
-      </p>
+      {(count !== null || hiddenBooks !== null) && (
+        <p className="lib-header-receipt-text">
+          {count === "counting" && (
+            <span className="lib-header-count">
+              <span className="ld-sheen">counting</span>
+            </span>
+          )}
+          {typeof count === "number" && (
+            <span className="lib-header-count">{bookCount(count)}</span>
+          )}
+          {hiddenBooks !== null && (
+            <span className="lib-header-hidden">{hiddenBooks} hidden</span>
+          )}
+        </p>
+      )}
+      {editing && (
+        <button
+          type="button"
+          className="shelf-edit-btn"
+          data-testid="shelf-edit"
+          aria-label={`Edit ${editing.name}`}
+          onClick={editing.onEdit}
+        >
+          <PencilGlyph />
+        </button>
+      )}
     </div>
   );
 }
 
 export function Library() {
   const user = useCurrentUser();
-  const { prefs, change, noteAnswered } = useLibraryPrefs();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [handoff] = useState(() => handoffClauses(location.state));
+  const { prefs, change, noteAnswered } = useLibraryPrefs(handoff);
+  // A handed-off filter applies once: Back to this entry must not reapply it over later edits.
+  useEffect(() => {
+    if (handoff) {
+      navigate(
+        { pathname: location.pathname, search: location.search },
+        { replace: true },
+      );
+    }
+  }, [handoff, navigate, location.pathname, location.search]);
   const query: LibraryQuery = {
     sort: prefs.sort,
     dir: prefs.dir,
@@ -87,7 +126,15 @@ export function Library() {
 
   const { points, lead, leadPoint, pending, setLeadKey, past } =
     useResumeLead();
-  const { selection, pick, shelfId, shelfPage, sortLock } = useShelfLens(prefs);
+  const { selection, pick, shelfId, shelfPage, members, detail, sortLock } =
+    useShelfLens(prefs);
+  const client = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const shelf = detail.data ?? null;
+  const mayEdit = shelf !== null && canEdit(resolveAccess(user, shelf));
+  const full = fullList(members);
+  const addBooks = addBooksState(mayEdit && shelf?.kind === "manual", full);
   // The lens is the shelf's page or, on All Books, the browse list.
   const lens = shelfId === null ? pages : shelfPage;
   const books = shelfId === null ? browseBooks : (shelfPage.data ?? []);
@@ -148,6 +195,11 @@ export function Library() {
               lens.isError,
             )}
             hidden={shelfId === null ? (firstPage?.hidden ?? null) : null}
+            editing={
+              shelf && mayEdit
+                ? { name: shelf.name, onEdit: () => setEditing(true) }
+                : null
+            }
           />
           <Toolbar
             prefs={prefs}
@@ -158,6 +210,20 @@ export function Library() {
             onChange={change}
           />
         </div>
+        {shelf && <ShelfFacets shelf={shelf} />}
+        {addBooks && (
+          <button
+            type="button"
+            className="btn primary shd-action lib-shelf-add"
+            data-testid="shelf-add-books"
+            aria-disabled={!addBooks.ready}
+            title={addBooks.title}
+            onClick={() => addBooks.ready && setAdding(true)}
+          >
+            <PlusGlyph />
+            Add books
+          </button>
+        )}
         {answeredPath === null && (
           <p className="lib-header-hint">
             Configure your ebook library path in Administration › Sources.
@@ -218,7 +284,11 @@ export function Library() {
                 }
               />
             ) : (
-              <BookGrid books={books} stacks={shelfId === null ? stacks : []} />
+              <BookGrid
+                books={books}
+                stacks={shelfId === null ? stacks : []}
+                onAddTile={addBooks?.ready ? () => setAdding(true) : undefined}
+              />
             ))}
           {hasNextPage && (
             <div className="lib-load-more-row" ref={loadMore}>
@@ -274,6 +344,28 @@ export function Library() {
         />
       )}
       {leadPoint && <EdgeResume point={leadPoint} past={past} />}
+      {shelf && editing && (
+        <EditShelfModal
+          shelf={shelf}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            invalidateShelf(client, shelf.id);
+          }}
+        />
+      )}
+      {shelf && adding && (
+        <AddBooksModal
+          shelfId={shelf.id}
+          shelfName={shelf.name}
+          members={full.books.map((b) => b.uuid)}
+          onClose={() => setAdding(false)}
+          onAdded={() => {
+            setAdding(false);
+            invalidateShelf(client, shelf.id);
+          }}
+        />
+      )}
     </div>
   );
 }

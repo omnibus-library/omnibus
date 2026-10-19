@@ -8,6 +8,7 @@ export * from "./api/admin";
 export * from "./api/auth";
 export * from "./api/books";
 export * from "./api/core";
+export * from "./api/discovery";
 export * from "./api/journal";
 export * from "./api/library";
 export * from "./api/metadata";

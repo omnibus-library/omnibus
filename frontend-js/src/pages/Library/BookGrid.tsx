@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import type { Book, SeriesStack } from "../../api";
 import { CoverImage } from "../../components/Cover/CoverImage";
 import { StackGlyph } from "../../components/Glyphs/Glyphs";
+import { AddBooksTile } from "../../components/ShelfTile/ShelfTile";
 import { play, type Rects, snapshot } from "./seriesFlip";
 import {
   bandStyle,
@@ -206,10 +207,12 @@ type BookGridProps = {
   books: Book[];
   /** The series folded into stacks, riding with `books`; empty when none are. */
   stacks: SeriesStack[];
+  /** Ends the grid with an Add books tile that calls this; absent when books can't be added. */
+  onAddTile?: () => void;
 };
 
 /** The cover wall: a tile per book, with each stacked series folded into its lead's slot. */
-export function BookGrid({ books, stacks }: BookGridProps) {
+export function BookGrid({ books, stacks, onAddTile }: BookGridProps) {
   // The dealt-out stack's lead: one series is open at a time.
   const [open, setOpen] = useState<string | null>(null);
   // The stack just folded, so its tile takes focus back from Fold up.
@@ -263,6 +266,7 @@ export function BookGrid({ books, stacks }: BookGridProps) {
       }
     }
   };
+  const items = gridItems(books, stacks, openLead);
   return (
     // biome-ignore lint/a11y/useSemanticElements: the Atrium grid styles divs; list elements would bring the browser's list margins and padding
     <div
@@ -276,9 +280,15 @@ export function BookGrid({ books, stacks }: BookGridProps) {
         }
       }}
     >
-      {gridItems(books, stacks, openLead).map((item, index) => (
+      {items.map((item, index) => (
         <Fragment key={itemKey(item)}>{render(item, index)}</Fragment>
       ))}
+      {onAddTile && (
+        <AddBooksTile
+          onClick={onAddTile}
+          style={{ animationDelay: `${staggerMs(items.length)}ms` }}
+        />
+      )}
     </div>
   );
 }

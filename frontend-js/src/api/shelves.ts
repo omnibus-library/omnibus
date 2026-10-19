@@ -1,18 +1,33 @@
-import { queryOptions } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  queryOptions,
+  skipToken,
+} from "@tanstack/react-query";
 import { z } from "zod";
 import type { Book } from "./books";
 import { toBook } from "./books";
 import type { BookUuid, UserId } from "./core";
-import { fetchJson, ok, parseBookUuid, send } from "./core";
+import { failure, fetchJson, ok, parseBookUuid, send } from "./core";
 import {
   getAddShelfBooksUrl,
+  getDeleteShelfUrl,
   getRemoveShelfBookUrl,
+  getShelf,
   getShelfPage,
   getShelvesContainingUrl,
   getSmartShelvesContainingUrl,
   listShelves,
+  updateShelf as patchShelf,
+  createShelf as postShelf,
+  previewShelfRule as postShelfPreview,
 } from "./generated/omnibus";
-import type { ShelfSummary as ShelfSummaryWire } from "./generated/schemas";
+import type {
+  CreateShelfRequest,
+  RulePreviewRequest,
+  ShelfSummary as ShelfSummaryWire,
+  Shelf as ShelfWire,
+  UpdateShelfRequest,
+} from "./generated/schemas";
 import type { LibraryQuery } from "./library";
 import { filterParam } from "./library";
 
@@ -47,6 +62,76 @@ export const shelvesQuery = queryOptions({
   queryKey: ["shelves"],
   queryFn: fetchShelves,
 });
+
+/** The screen's shape of `GET /api/shelves/{id}`: the summary plus what the editor and the hero need. */
+export function toShelfDetail(wire: ShelfWire) {
+  return {
+    ...toShelf(wire),
+    description: wire.description ?? null,
+    matchMode: wire.match_mode ?? null,
+    rules: wire.rules,
+    syncToKobo: wire.sync_to_kobo ?? false,
+  };
+}
+
+export type ShelfDetail = ReturnType<typeof toShelfDetail>;
+
+/** One shelf in full, or `null` when it is gone or the reader may not see it. */
+export async function fetchShelf(id: number): Promise<ShelfDetail | null> {
+  const res = await getShelf(id);
+  if (res.status === 404) return null;
+  return toShelfDetail(ok(res));
+}
+
+export const shelfQuery = (id: number | null) =>
+  queryOptions({
+    queryKey: ["shelf", id],
+    queryFn: id === null ? skipToken : () => fetchShelf(id),
+  });
+
+/** Refetches everything that shows shelf `id` after a write to it; resolves once the active ones have answered. */
+export function invalidateShelf(client: QueryClient, id: number) {
+  return Promise.all(
+    [["shelves"], ["shelf", id], ["shelf-page", id]].map((queryKey) =>
+      client.invalidateQueries({ queryKey }),
+    ),
+  );
+}
+
+/** Creates a shelf the reader owns. */
+export async function createShelf(
+  body: CreateShelfRequest,
+): Promise<ShelfDetail> {
+  const res = await postShelf(body);
+  if (res.status !== 201) throw failure(res);
+  return toShelfDetail(res.data);
+}
+
+/** Changes the fields sent and leaves the rest. */
+export async function updateShelf(
+  id: number,
+  body: UpdateShelfRequest,
+): Promise<ShelfDetail> {
+  return toShelfDetail(ok(await patchShelf(id, body)));
+}
+
+/** Deletes a shelf; its books stay in the library. */
+export async function deleteShelf(id: number): Promise<void> {
+  await send(getDeleteShelfUrl(id), "DELETE");
+}
+
+/** How many books the rules match, out of the library, with up to 12 of them; nothing is saved. */
+export async function previewShelfRule(
+  body: RulePreviewRequest,
+  signal?: AbortSignal,
+) {
+  const data = ok(await postShelfPreview(body, { signal }));
+  return {
+    matched: data.matched,
+    total: data.total,
+    sample: data.sample.map(toBook),
+  };
+}
 
 /** One shelf's books, whole, in `query`'s order and narrowed by its clauses. */
 export async function fetchShelfPage(

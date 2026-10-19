@@ -2,11 +2,14 @@ import type {
   AlignmentView,
   AttributedRating,
   AuthorDetail,
+  AuthorReading,
+  AuthorSummary,
   BookDeletionManifest,
   BookFileInfo,
   BookInsights,
   Bookmark,
   BookProgress,
+  BookReading,
   BookSuggestion,
   EbookMetadata,
   Highlight,
@@ -18,9 +21,12 @@ import type {
   RatingRecord,
   ReadStatusRecord,
   ResumePoint,
+  RulePreview,
   SeriesDetail,
   SeriesStack,
+  SeriesSummary,
   SessionLogEntry,
+  Shelf,
   ShelfSummary,
   UserSummary,
   WishlistEntry,
@@ -438,5 +444,95 @@ export function aWirePalette(
     tag_total: groups.tags.length,
     genre_total: groups.genres.length,
     ...groups,
+  };
+}
+
+/** An author as `GET /api/authors` lists them: three books, no photo. */
+export function aWireAuthorSummary(
+  overrides: Partial<AuthorSummary> = {},
+): AuthorSummary {
+  return {
+    id: 2,
+    name: "Sora Inkwell",
+    sort: "Inkwell, Sora",
+    book_count: 3,
+    accent: "oklch(0.555 0.153 28.4)",
+    has_photo: false,
+    ...overrides,
+  };
+}
+
+/** The reader's progress through an author as `GET /api/authors/reading` sends it: one finished, one in progress. */
+export function aWireAuthorReading(
+  overrides: Partial<AuthorReading> = {},
+): AuthorReading {
+  return {
+    author_id: 2,
+    finished: 1,
+    reading: 1,
+    last_read_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** The reader's state on one book as `GET /api/authors/{id}` sends it: 42% in. */
+export function aWireBookReading(
+  overrides: Partial<BookReading> = {},
+): BookReading {
+  return {
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    status: "reading",
+    percent: 42,
+    last_read_at: 1_760_000_000,
+    format: "epub",
+    book_file_id: null,
+    ...overrides,
+  };
+}
+
+/** A series as `GET /api/series` lists it. */
+export function aWireSeriesSummary(
+  overrides: Partial<SeriesSummary> = {},
+): SeriesSummary {
+  return {
+    id: 4,
+    name: "Aurora Station",
+    sort: null,
+    book_count: 3,
+    accent: "oklch(0.555 0.153 28.4)",
+    primary_author: "Sora Inkwell",
+    ...overrides,
+  };
+}
+
+/** A hand-picked shelf the signed-in admin owns, as `GET /api/shelves/{id}` sends it. */
+export function aWireShelfDetail(overrides: Partial<Shelf> = {}): Shelf {
+  return {
+    id: 3,
+    kind: "manual",
+    name: "Winter reads",
+    description: null,
+    visibility: "private",
+    accent: null,
+    match_mode: null,
+    rules: [],
+    sync_to_kobo: false,
+    owner_user_id: 1,
+    owner_username: "ada",
+    owner_has_avatar: false,
+    book_count: 2,
+    ...overrides,
+  };
+}
+
+/** `POST /api/shelves/preview`'s answer: two of ten books match, the first two of them shown. */
+export function aWireRulePreview(
+  overrides: Partial<RulePreview> = {},
+): RulePreview {
+  return {
+    matched: 2,
+    total: 10,
+    sample: aWireLibrary(2),
+    ...overrides,
   };
 }

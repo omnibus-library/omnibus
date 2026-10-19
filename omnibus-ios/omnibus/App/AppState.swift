@@ -164,6 +164,21 @@ final class AppState {
         if let fresh = try? await AuthService.me() { user = fresh }
     }
 
+    /// Applies an account setting the server just confirmed, so every screen
+    /// reading `user` follows it even when the `refreshUser()` after it fails.
+    func applyConfirmed(_ update: (inout UserSummary) -> Void) {
+        user = Self.applying(update, to: user)
+    }
+
+    /// `user` with `update` applied; with no one signed in there is nothing to patch.
+    nonisolated static func applying(
+        _ update: (inout UserSummary) -> Void, to user: UserSummary?
+    ) -> UserSummary? {
+        guard var user else { return nil }
+        update(&user)
+        return user
+    }
+
     private func confirmIdentity() async {
         do {
             user = try await AuthService.me()

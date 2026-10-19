@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PREFS,
+  handoffClauses,
   lastLibrary,
+  loadDiscoveryPrefs,
   loadPrefs,
   loadShelfSelection,
   type Prefs,
   reconcile,
+  saveDiscoverySort,
   savePlan,
   savePrefs,
   saveShelfSelection,
@@ -154,5 +157,68 @@ describe("loadShelfSelection", () => {
     localStorage.setItem("omnibus.landing_shelf", '{"kind":"shelf"}');
 
     expect(loadShelfSelection()).toEqual({ kind: "all" });
+  });
+});
+
+describe("loadDiscoveryPrefs", () => {
+  it("is by name everywhere until a sort is saved", () => {
+    expect(loadDiscoveryPrefs()).toEqual({
+      authors_sort: "name",
+      series_sort: "name",
+      shelves_sort: "name",
+    });
+  });
+
+  it("reads the JSON the Dioxus client stored", () => {
+    localStorage.setItem(
+      "omnibus.discovery_prefs",
+      '{"authors_sort":"recent","shelves_sort":"book_count"}',
+    );
+
+    expect(loadDiscoveryPrefs()).toEqual({
+      authors_sort: "recent",
+      series_sort: "name",
+      shelves_sort: "book_count",
+    });
+  });
+
+  it("falls back to name for a value the client does not know", () => {
+    localStorage.setItem("omnibus.discovery_prefs", '{"series_sort":"recent"}');
+
+    expect(loadDiscoveryPrefs().series_sort).toBe("name");
+  });
+});
+
+describe("saveDiscoverySort", () => {
+  it("rewrites the one field and keeps the others", () => {
+    saveDiscoverySort("authors_sort", "book_count");
+    saveDiscoverySort("shelves_sort", "book_count");
+    saveDiscoverySort("authors_sort", "recent");
+
+    expect(
+      JSON.parse(localStorage.getItem("omnibus.discovery_prefs") ?? ""),
+    ).toEqual({
+      authors_sort: "recent",
+      series_sort: "name",
+      shelves_sort: "book_count",
+    });
+  });
+});
+
+describe("handoffClauses", () => {
+  const clauses = [
+    { field: "author", mode: "include", values: ["Ursula K. Le Guin"] },
+  ];
+
+  it("returns the clauses a page sent in router state", () => {
+    expect(handoffClauses({ clauses })).toEqual(clauses);
+  });
+
+  it.each([
+    ["no state", null],
+    ["state without clauses", { from: "/authors" }],
+    ["a clause the filter would refuse", { clauses: [{ field: "nope" }] }],
+  ])("returns null for %s", (_condition, state) => {
+    expect(handoffClauses(state)).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 //  SeriesStackCells.swift
-//  The library grid's Stack series cells: the folded stack tile, the head
+//  A book grid's Stack series cells: the folded stack tile, the head
 //  card an opened stack leaves in its cell, and the band behind its run.
 //  A volume itself reuses `BookGridCell` (see its caption/progress params).
 
