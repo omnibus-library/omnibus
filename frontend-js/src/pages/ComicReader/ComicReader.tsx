@@ -42,7 +42,7 @@ export function FitButton({ fit, mode, testId, onSelect }: FitButtonProps) {
 }
 
 // Spelled out: the CSS extractor reads class names from string literals.
-const STAGE_CLASS = {
+export const STAGE_CLASS = {
   width: "cr-stage cr-fit-width",
   height: "cr-stage cr-fit-height",
 } satisfies Record<Fit, string>;
@@ -50,10 +50,16 @@ const STAGE_CLASS = {
 const pageSrc = (uuid: BookUuid, page: number) =>
   `/api/ebooks/${encodeURIComponent(uuid)}/pages/${page}`;
 
-function Pager({ uuid }: { uuid: BookUuid }) {
-  const client = useQueryClient();
+/** Back goes back in history when the reader came from inside the app, else to the book. */
+export function useBackToBook(uuid: BookUuid) {
   const navigate = useNavigate();
   const cameFromApp = useLocation().key !== "default";
+  return () => (cameFromApp ? navigate(-1) : navigate(`/books/${uuid}`));
+}
+
+function Pager({ uuid }: { uuid: BookUuid }) {
+  const client = useQueryClient();
+  const back = useBackToBook(uuid);
   const root = useRef<HTMLDivElement>(null);
   const [book, setBook] = useState<BookDetail | "failed" | null>(null);
   const [page, setPage] = useState(0);
@@ -109,11 +115,6 @@ function Pager({ uuid }: { uuid: BookUuid }) {
       anchor: comicPageAnchor(next),
       percent: pagePercent(next, count),
     }).catch(() => {});
-  }
-
-  function back() {
-    if (cameFromApp) navigate(-1);
-    else navigate(`/books/${uuid}`);
   }
 
   return (

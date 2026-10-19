@@ -79,7 +79,6 @@ describe("routes", () => {
   describe("unported pages", () => {
     it.each([
       [`/read/${UUID}`, "Reader", UUID],
-      [`/pdf/${UUID}?file_id=3&page=7`, "PDF reader", "7"],
       [`/listen/${UUID}?file_id=2`, "Listen", "2"],
       ["/authors", "Authors", null],
       ["/authors/12", "Author", "12"],
@@ -130,8 +129,11 @@ describe("routes", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the comic reader at /comic/:uuid with no top bar", async () => {
-    renderRoute(`/comic/${UUID}`);
+  it.each([
+    ["the comic reader", `/comic/${UUID}`],
+    ["the PDF reader", `/pdf/${UUID}?file_id=3&page=7`],
+  ])("gives %s the whole screen", async (_name, path) => {
+    renderRoute(path);
 
     expect(await screen.findByRole("button", { name: "Back" })).toBeVisible();
     expect(

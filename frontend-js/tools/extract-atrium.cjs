@@ -47,6 +47,7 @@ const OWNERS = [
   ["components/BarcodeScanner/BarcodeScanner.css", (c) => c.startsWith("scanner")],
   ["pages/CheckIn/CheckIn.css", (c) => c.startsWith("check-in") || c.startsWith("isbn-")],
   ["pages/ComicReader/ComicReader.css", (c) => c.startsWith("cr-")],
+  ["pages/PdfReader/PdfReader.css", (c) => c.startsWith("pr-")],
   ["styles/settings.css", (c) => c.startsWith("settings-")],
   ["styles/base.css", (c) => ["card", "divider", "label", "mono", "sr-only", "subtitle"].includes(c)],
 ];
@@ -64,7 +65,9 @@ function tsxFiles(dir) {
 // Status words the code compares against, never a className.
 const STOP = new Set(["back", "error", "off", "ok", "pending", "success", "tag"]);
 const vocab = new Set();
-for (const file of tsxFiles(src)) {
+// PDF.js draws the canvas and its layers through this glue, so the class names it sets count as markup.
+const GLUES = [path.join(src, "vendor/reader/pdf-reader-glue.js")];
+for (const file of [...tsxFiles(src), ...GLUES]) {
   const text = fs.readFileSync(file, "utf8");
   for (const m of text.matchAll(/"([^"\n]*)"|`([^`]*)`/g)) {
     const literal = (m[1] ?? m[2]).replace(/\$\{[^}]*\}/g, " ");
