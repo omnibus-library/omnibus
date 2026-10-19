@@ -1147,12 +1147,13 @@ export const ResumeStackShown: Story = {
   },
 };
 
+const recent: Parameters<typeof recentProgressHandler>[0] = [];
+
 export const BringForward: Story = {
+  decorators: [withClient],
   beforeEach({ msw }) {
-    msw.use(
-      libraryHandler(aWireLibrary(3), 10),
-      recentProgressHandler([AURORA, MARTIAN, DUNE]),
-    );
+    recent.splice(0, recent.length, AURORA, MARTIAN, DUNE);
+    msw.use(libraryHandler(aWireLibrary(3), 10), recentProgressHandler(recent));
   },
   play: async ({ canvas, canvasElement, userEvent }) => {
     const stack = within(await resumeRegion(canvas));
@@ -1187,6 +1188,16 @@ export const BringForward: Story = {
     await expect(canvasElement.querySelector(".lmq-by")).toHaveTextContent(
       "synced",
     );
+
+    // The feed reorders on a refetch, yet the book brought forward stays the lead.
+    recent.reverse();
+    await pageClient.invalidateQueries({ queryKey: ["progress", "recent"] });
+    await expect(
+      within(await resumeRegion(canvas)).getByRole("heading", {
+        level: 2,
+        name: "Dune",
+      }),
+    ).toBeInTheDocument();
   },
 };
 
