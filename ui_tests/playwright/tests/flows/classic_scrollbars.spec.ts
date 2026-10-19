@@ -4,7 +4,8 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 
 // Playwright launches Chromium with `--hide-scrollbars`, so a `100vw` box that
 // overhangs a drawn scrollbar passes every other spec. This file draws them,
-// and stays short enough a window that each page scrolls down.
+// in a window short enough that each page scrolls down, and checks the bar
+// takes width so a regression can't pass with nothing to overhang.
 test.use({
   launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] },
   viewport: { width: 1280, height: 600 },
@@ -25,9 +26,9 @@ test.describe("always-on scrollbars", () => {
       await scroll.showClassicScrollbars();
     });
 
-    await test.step("check it scrolls down but not sideways", async () => {
+    await test.step("check a scrollbar takes width but nothing scrolls sideways", async () => {
       await topNav.assertDisplayed();
-      await expect.poll(() => scroll.scrollsDown()).toBe(true);
+      await expect.poll(() => scroll.scrollbarWidth()).toBeGreaterThan(0);
       expect(await scroll.scrollsSideways()).toBe(false);
     });
   });
@@ -40,7 +41,7 @@ test.describe("always-on scrollbars", () => {
     await test.step("open the library with scrollbars drawn", async () => {
       await libraryPage.goto();
       await scroll.showClassicScrollbars();
-      await expect.poll(() => scroll.scrollsDown()).toBe(true);
+      await expect.poll(() => scroll.scrollbarWidth()).toBeGreaterThan(0);
     });
 
     await test.step("open the user menu", async () => {
@@ -63,9 +64,9 @@ test.describe("always-on scrollbars", () => {
       await scroll.showClassicScrollbars();
     });
 
-    await test.step("check it scrolls down but not sideways", async () => {
+    await test.step("check a scrollbar takes width but nothing scrolls sideways", async () => {
       await expect(authorsIndexPage.previewName).toBeVisible();
-      await expect.poll(() => scroll.scrollsDown()).toBe(true);
+      await expect.poll(() => scroll.scrollbarWidth()).toBeGreaterThan(0);
       expect(await scroll.scrollsSideways()).toBe(false);
     });
   });

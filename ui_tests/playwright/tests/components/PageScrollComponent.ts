@@ -41,12 +41,11 @@ export class PageScrollComponent extends BaseComponent {
     });
   }
 
-  /** Whether the page scrolls down, so a drawn scrollbar takes its width. */
-  scrollsDown(): Promise<boolean> {
-    return this.page.evaluate(() => {
-      const root = document.documentElement;
-      return root.scrollHeight > root.clientHeight;
-    });
+  /** How much width the page's vertical scrollbar takes: zero when it overlays or is absent. */
+  scrollbarWidth(): Promise<number> {
+    return this.page.evaluate(
+      () => window.innerWidth - document.documentElement.clientWidth,
+    );
   }
 
   /** Draws always-on scrollbars; only takes in a browser launched without `--hide-scrollbars`. */
