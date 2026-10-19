@@ -1,8 +1,12 @@
 import type { HttpHandler } from "msw";
-import type { ProgressUpdate } from "../api/generated/schemas";
+import type { Highlight, ProgressUpdate } from "../api/generated/schemas";
 import { bookHandler, readStatusHandlers } from "./handlers";
 import { fakeEpubGlue } from "./readerGlue";
-import { progressHandlers } from "./readerHandlers";
+import {
+  annotationHandlers,
+  progressHandlers,
+  type RecordedWrite,
+} from "./readerHandlers";
 import { aWireBook, aWirePosition, aWireReadStatus } from "./wire";
 
 export const BOOK = aWireBook({ formats: ["EPUB"] });
@@ -25,6 +29,9 @@ export const TOC = [
 export function readerFixture() {
   const writes: ProgressUpdate[] = [];
   const statusWrites: { status: string }[] = [];
+  // The highlights the server holds (a story sets them) and the writes made against them.
+  const annotations: { highlights: Highlight[] } = { highlights: [] };
+  const annotationWrites: RecordedWrite[] = [];
   let glue: ReturnType<typeof fakeEpubGlue>;
 
   function install(options?: Parameters<typeof fakeEpubGlue>[0]) {
@@ -35,6 +42,8 @@ export function readerFixture() {
   return {
     writes,
     statusWrites,
+    annotations,
+    annotationWrites,
     install,
     get glue() {
       return glue;
@@ -45,12 +54,15 @@ export function readerFixture() {
     setup(msw: { use(...handlers: HttpHandler[]): void }) {
       writes.length = 0;
       statusWrites.length = 0;
+      annotations.highlights = [];
+      annotationWrites.length = 0;
       // The reader keeps its position and typography here, which would otherwise carry between stories.
       localStorage.clear();
       msw.use(
         bookHandler(BOOK),
         ...progressHandlers([SAVED], writes),
         ...readStatusHandlers(aWireReadStatus(), statusWrites),
+        ...annotationHandlers(annotations, annotationWrites),
       );
       return install();
     },

@@ -447,6 +447,88 @@
 .rd-top.rd-top-over-scrim {
   z-index: 9;
 }
+.rd-scrim-clear {
+  background: transparent;
+  backdrop-filter: none;
+  z-index: 18;
+}
+.rd-selection-popover {
+  position: absolute;
+  z-index: 20;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-1) 90%, transparent);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.rd-swatch-row {
+  display: flex;
+  gap: 8px;
+}
+.rd-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+@media (hover: hover) {
+  .rd-swatch:hover {
+    transform: scale(1.15);
+  }
+}
+.rd-swatch[data-color="amber"] {
+  background: rgba(245, 158, 11, 0.7);
+}
+.rd-swatch[data-color="green"] {
+  background: rgba(34, 197, 94, 0.7);
+}
+.rd-swatch[data-color="blue"] {
+  background: rgba(59, 130, 246, 0.7);
+}
+.rd-swatch[data-color="rose"] {
+  background: rgba(244, 63, 94, 0.7);
+}
+.rd-swatch[data-color="violet"] {
+  background: rgba(139, 92, 246, 0.7);
+}
+.rd-pop-div {
+  width: 1px;
+  align-self: stretch;
+  margin: 0 4px;
+  background: var(--line-2);
+}
+.rd-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-1);
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  white-space: nowrap;
+  transition:
+    background 0.14s,
+    color 0.14s;
+}
+@media (hover: hover) {
+  .rd-act:hover {
+    background: var(--bg-2);
+    color: var(--ink-0);
+  }
+}
+.rd-act.sm {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11.5px;
+}
 .rd-drawer {
   position: absolute;
   top: 0;
@@ -494,6 +576,55 @@
   background: var(--bg-2);
   color: var(--ink-0);
   border-left-color: var(--accent);
+}
+.rd-note-composer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 21;
+  width: 360px;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  box-shadow: 0 18px 50px -16px rgba(0, 0, 0, 0.7);
+  padding: 16px;
+}
+.rd-note-quote {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink-2);
+  margin-bottom: 10px;
+}
+.rd-note-input {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  padding: 11px 13px;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink-0);
+}
+.rd-note-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+.rd-note-hint {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.rd-note-buttons {
+  display: flex;
+  gap: 8px;
 }
 .rd-search-box {
   padding: 12px 20px;
@@ -687,6 +818,63 @@
   }
   .rd-seg > button {
     height: 34px;
+  }
+  .rd-note-composer {
+    width: min(360px, calc(100vw - 32px));
+  }
+  .rd-scrim-clear {
+    display: none;
+  }
+  .rd-selection-popover {
+    top: auto !important;
+    bottom: calc(66px + env(safe-area-inset-bottom)) !important;
+    left: 16px !important;
+    right: 16px !important;
+    padding: 14px 12px;
+    border-radius: 16px;
+    background: oklch(0.18 0.006 70);
+    border-color: oklch(0.3 0.01 70 / 0.5);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: 0 24px 48px -16px rgba(0, 0, 0, 0.6);
+  }
+  .rd-swatch-row {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    row-gap: 12px;
+  }
+  .rd-swatch {
+    width: 30px;
+    height: 30px;
+  }
+  .rd-pop-div {
+    width: 100%;
+    height: 1px;
+    align-self: auto;
+    margin: 2px 4px;
+    background: oklch(0.3 0.01 70 / 0.4);
+  }
+  .rd-selection-popover .rd-act {
+    flex-direction: column;
+    height: auto;
+    padding: 4px 12px;
+    gap: 5px;
+    font-size: 11px;
+    color: oklch(0.82 0.01 75);
+  }
+}
+@media (max-width: 480px) {
+  @media (hover: hover) {
+    .rd-selection-popover .rd-act:hover {
+      background: transparent;
+      color: oklch(0.97 0.006 80);
+    }
+  }
+}
+@media (max-width: 480px) {
+  .rd-selection-popover .rd-act-accent {
+    color: var(--accent);
   }
 }
 @media (pointer: coarse) {

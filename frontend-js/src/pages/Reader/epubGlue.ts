@@ -78,6 +78,16 @@ const SearchResultsSchema = z.array(
 /** One in-book search match: where it is, the text around it and the chapter it sits in. */
 export type SearchResult = z.infer<typeof SearchResultsSchema>[number];
 
+const SelectionSchema = z.object({
+  cfiRange: z.string(),
+  text: z.string().default(""),
+  // In viewport coordinates, which is what the popover is placed by.
+  rect: z.object({ x: z.number(), y: z.number(), width: z.number() }),
+});
+
+/** The passage the reader selected: its range CFI, its text and where it sits on screen. */
+export type PassageSelection = z.infer<typeof SelectionSchema>;
+
 // Glue payloads are untrusted vendor output: one that doesn't match is dropped.
 function parseWith<T>(schema: z.ZodType<T>, json: string): T | null {
   try {
@@ -89,5 +99,7 @@ function parseWith<T>(schema: z.ZodType<T>, json: string): T | null {
 
 export const parseRelocate = (json: string) => parseWith(RelocateSchema, json);
 export const parseToc = (json: string) => parseWith(TocSchema, json);
+export const parseSelection = (json: string) =>
+  parseWith(SelectionSchema, json);
 export const parseSearchResults = (json: string) =>
   parseWith(SearchResultsSchema, json);

@@ -12,9 +12,11 @@ import {
   getGetReadStatusUrl,
   getHighlights,
   getOtherRatings,
+  getPatchHighlightNoteUrl,
   getPostCrossFormatFollowUrl,
   getRecentProgress,
   getSessionLog,
+  postHighlight,
   postProgress,
   postRating,
   putReadStatus,
@@ -303,10 +305,36 @@ function toHighlight(wire: HighlightWire) {
 }
 
 export type Highlight = ReturnType<typeof toHighlight>;
+export type HighlightColor = HighlightWire["color"];
 
 /** The reader's saved passages in a book. */
 export async function fetchHighlights(uuid: BookUuid): Promise<Highlight[]> {
   return ok(await getHighlights(encodeURIComponent(uuid))).map(toHighlight);
+}
+
+/** Saves a passage the reader marked; `anchor` is an EPUB range CFI or a PDF `pdf:` anchor. */
+export async function createHighlight(
+  uuid: BookUuid,
+  passage: { anchor: string; color: HighlightColor; text: string },
+): Promise<Highlight> {
+  return toHighlight(
+    ok(
+      await postHighlight({
+        book_uuid: uuid,
+        epub_cfi_range: passage.anchor,
+        color: passage.color,
+        text: passage.text === "" ? null : passage.text,
+      }),
+    ),
+  );
+}
+
+/** Puts `note` on a passage; `null` removes the note. */
+export async function saveHighlightNote(
+  id: number,
+  note: string | null,
+): Promise<void> {
+  await send(getPatchHighlightNoteUrl(String(id)), "PATCH", { note });
 }
 
 export async function deleteHighlight(id: number): Promise<void> {

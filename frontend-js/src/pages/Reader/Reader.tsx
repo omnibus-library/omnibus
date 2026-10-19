@@ -7,17 +7,26 @@ import { classes } from "../../classes";
 import { PageNotFound } from "../../components/PageState/PageState";
 import { useTheme } from "../../components/Theme/AtriumRoot";
 import { useReadingSession } from "../../readingSession";
-import { bookQuery, progressQuery } from "../BookDetail/queries";
+import {
+  bookQuery,
+  highlightsQuery,
+  progressQuery,
+} from "../BookDetail/queries";
 import { AaPanel } from "./AaPanel";
+import { epubBridge, useHighlights } from "./annotations";
 import {
   loadEpubRuntime,
+  type PassageSelection,
   parseRelocate,
   parseSearchResults,
+  parseSelection,
   parseToc,
   type SearchResult,
   type TocEntry,
   withReader,
 } from "./epubGlue";
+import { NoteComposer } from "./NoteComposer";
+import { QuotePanel } from "./QuotePanel";
 import {
   Footer,
   PageTurnGutters,
@@ -38,6 +47,7 @@ import {
   resolveChapterPosition,
 } from "./relocate";
 import { SearchPanel } from "./SearchPanel";
+import { SelectionPopover } from "./SelectionPopover";
 import {
   furtherInPercent,
   isEpubCfi,
@@ -65,6 +75,8 @@ const HOOKS = [
   "__omnibusOnStatus",
   "__omnibusOnToc",
   "__omnibusOnSearchResults",
+  "__omnibusOnSelection",
+  "__omnibusOnSelectionCleared",
   "__omnibusOnToggleChrome",
 ] as const;
 
@@ -91,6 +103,9 @@ function EpubPage({
   const [toc, setToc] = useState<TocEntry[]>([]);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [selection, setSelection] = useState<PassageSelection | null>(null);
+  const { highlights, target, setTarget, load, create, saveNote } =
+    useHighlights(uuid, epubBridge);
   // Retry re-runs the whole open: the fetch, the runtime load and the init.
   const [attempt, setAttempt] = useState(0);
 
@@ -143,6 +158,12 @@ function EpubPage({
         if (found) setResults(found);
         setSearching(false);
       },
+      __omnibusOnSelection(json: string) {
+        const picked = parseSelection(json);
+        if (picked) setSelection(picked);
+      },
+      // The only dismiss on phones, where the popover has no scrim to tap.
+      __omnibusOnSelectionCleared: () => setSelection(null),
       __omnibusOnToggleChrome: () => setChromeHidden((hidden) => !hidden),
     } satisfies Record<(typeof HOOKS)[number], (json: string) => void>;
     for (const name of HOOKS) window[name] = hooks[name];
@@ -187,6 +208,10 @@ function EpubPage({
           locationsKey: uuid,
         },
       );
+      const saved = await client
+        .fetchQuery({ ...highlightsQuery(uuid), staleTime: 0 })
+        .catch(() => null);
+      if (saved && !cancelled) load(saved);
     };
     open().catch(() => {
       if (!cancelled) setStatus("failed");
@@ -204,10 +229,15 @@ function EpubPage({
   useEffect(() => withReader((glue) => glue.setTheme(theme)), [theme]);
 
   const back = () => navigate(`/books/${uuid}`, { replace: true });
-  const turn = (direction: "prev" | "next") =>
+  const turn = (direction: "prev" | "next") => {
+    setSelection(null);
     withReader((glue) => glue[direction]());
-  const toggle = (target: Panel) =>
-    setPanel((open) => (open === target ? null : target));
+  };
+  // Opening a tool closes whatever else is open.
+  const toggle = (tool: Panel) => {
+    setTarget(null);
+    setPanel((open) => (open === tool ? null : tool));
+  };
   function changePref<K extends PrefName>(name: K, value: ReaderPrefs[K]) {
     const next = { ...prefs, [name]: value };
     setPrefs(next);
@@ -237,7 +267,9 @@ function EpubPage({
           e.target instanceof HTMLElement &&
           e.target.closest("input, textarea");
         if (e.key === "Escape") {
-          if (panel) setPanel(null);
+          if (selection) setSelection(null);
+          else if (target) setTarget(null);
+          else if (panel) setPanel(null);
           else back();
         } else if (typing) return;
         else if (e.key === "ArrowLeft") turn("prev");
@@ -258,7 +290,7 @@ function EpubPage({
         chapterTitle={chapterTitle}
         titleSub={jumping ? "" : formatTitleSub(loc)}
         panel={panel}
-        highlightCount={0}
+        highlightCount={highlights.length}
         onBack={back}
         onToggle={toggle}
       />
@@ -273,6 +305,49 @@ function EpubPage({
         ambient={formatAmbientPage(loc)}
         pct={loc.pct}
       />
+      {selection && (
+        <SelectionPopover
+          rect={selection.rect}
+          onDismiss={() => setSelection(null)}
+          onHighlight={(color) => {
+            setSelection(null);
+            create(
+              { anchor: selection.cfiRange, color, text: selection.text },
+              null,
+            );
+          }}
+          onNote={() => {
+            setSelection(null);
+            create(
+              {
+                anchor: selection.cfiRange,
+                color: "amber",
+                text: selection.text,
+              },
+              "note",
+            );
+          }}
+          onQuote={() => {
+            setSelection(null);
+            create(
+              {
+                anchor: selection.cfiRange,
+                color: "amber",
+                text: selection.text,
+              },
+              "quote",
+            );
+          }}
+          onCopy={() => {
+            epubBridge.copy(selection.text);
+            setSelection(null);
+          }}
+          onShare={() => {
+            withReader((glue) => glue.shareText(selection.text));
+            setSelection(null);
+          }}
+        />
+      )}
       {panel === "aa" && (
         <AaPanel
           prefs={prefs}
@@ -303,6 +378,22 @@ function EpubPage({
           }}
           onNavigate={jumpTo}
           onClose={() => setPanel(null)}
+        />
+      )}
+      {target?.kind === "quote" && (
+        <QuotePanel
+          text={target.highlight.text ?? ""}
+          author={book?.authors[0] ?? ""}
+          subtitle={book?.title ?? ""}
+          accent={book?.accent ?? "#3a3027"}
+          onClose={() => setTarget(null)}
+        />
+      )}
+      {target?.kind === "note" && (
+        <NoteComposer
+          highlight={target.highlight}
+          onSave={(draft) => saveNote(target.highlight, draft)}
+          onClose={() => setTarget(null)}
         />
       )}
     </div>

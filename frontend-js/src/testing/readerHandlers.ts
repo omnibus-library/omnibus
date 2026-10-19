@@ -1,7 +1,14 @@
 import { HttpResponse, http } from "msw";
-import { type ProgressRecord, ProgressUpdate } from "../api/generated/schemas";
+import {
+  ClientStampedCreateHighlight,
+  type Highlight,
+  type ProgressRecord,
+  ProgressUpdate,
+  UpdateHighlightColor,
+  UpdateHighlightNote,
+} from "../api/generated/schemas";
 import { COVER_SVG } from "./books";
-import { aWirePosition, aWireProgress } from "./wire";
+import { aWireHighlight, aWirePosition, aWireProgress } from "./wire";
 
 // MSW fakes for the routes the readers call beyond the book itself.
 
@@ -39,3 +46,61 @@ export const comicPageHandler = http.get(
       headers: { "Content-Type": "image/svg+xml" },
     }),
 );
+
+/** One write a reader sent, for a story to read back. */
+export type RecordedWrite = { method: string; path: string; body: unknown };
+
+/**
+ * The highlights `GET` lists, `POST` creates (ids count up from 100), `PATCH` recolors or puts a
+ * note on, and `DELETE` removes, all against `state`; each write lands in `writes`.
+ */
+export function annotationHandlers(
+  state: { highlights: Highlight[] },
+  writes: RecordedWrite[],
+) {
+  const record = (method: string, path: string, body?: unknown) =>
+    writes.push({ method, path, body });
+  const change = (id: number, patch: Partial<Highlight>) => {
+    state.highlights = state.highlights.map((h) =>
+      h.id === id ? { ...h, ...patch } : h,
+    );
+  };
+  let nextId = 100;
+  return [
+    http.get("/api/highlights/book/:uuid", () =>
+      HttpResponse.json(state.highlights),
+    ),
+    http.post("/api/highlights", async ({ request }) => {
+      const body = ClientStampedCreateHighlight.parse(await request.json());
+      record("POST", "/api/highlights", body);
+      const made = aWireHighlight({
+        id: nextId++,
+        book_uuid: body.book_uuid,
+        epub_cfi_range: body.epub_cfi_range,
+        color: body.color,
+        text: body.text ?? null,
+      });
+      state.highlights = [...state.highlights, made];
+      return HttpResponse.json(made);
+    }),
+    http.patch("/api/highlights/:id/color", async ({ params, request }) => {
+      const body = UpdateHighlightColor.parse(await request.json());
+      record("PATCH", `/api/highlights/${params.id}/color`, body);
+      change(Number(params.id), { color: body.color });
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.patch("/api/highlights/:id/note", async ({ params, request }) => {
+      const body = UpdateHighlightNote.parse(await request.json());
+      record("PATCH", `/api/highlights/${params.id}/note`, body);
+      change(Number(params.id), { note: body.note ?? null });
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.delete("/api/highlights/:id", ({ params }) => {
+      record("DELETE", `/api/highlights/${params.id}`);
+      state.highlights = state.highlights.filter(
+        (h) => h.id !== Number(params.id),
+      );
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+}
