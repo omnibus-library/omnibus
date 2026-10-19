@@ -286,12 +286,14 @@ export function ApiTokensCard() {
     defaultValues: { name: "" },
   });
 
-  // Only a list that has answered is patched; the reread after a create fills the rest.
-  const setList = (change: (list: ApiTokenView[]) => ApiTokenView[]) =>
+  // A read still in flight would land over the patch, so it is dropped first; only a list that has answered is patched.
+  const setList = async (change: (list: ApiTokenView[]) => ApiTokenView[]) => {
+    await queryClient.cancelQueries({ queryKey: apiTokensQuery.queryKey });
     queryClient.setQueryData(
       apiTokensQuery.queryKey,
       (list) => list && change(list),
     );
+  };
   const fail = (error: Error) => setStatus(refusal(error));
   // After a refusal the list is read again, so it shows what the server holds.
   const refused = (error: Error) => {
@@ -301,14 +303,10 @@ export function ApiTokensCard() {
   const invalid = (message: string) => setStatus(refusal({ message }));
   const create = useMutation({
     mutationFn: createApiToken,
-    onMutate: async () => {
-      setStatus(null);
-      // A list read still in flight would land over the new row.
-      await queryClient.cancelQueries({ queryKey: apiTokensQuery.queryKey });
-    },
-    onSuccess: ({ token, secret: raw }) => {
+    onMutate: () => setStatus(null),
+    onSuccess: async ({ token, secret: raw }) => {
       form.reset();
-      setList((list) => [token, ...list]);
+      await setList((list) => [token, ...list]);
       setSecret({ name: token.name, secret: raw });
       // Announces the secret panel through the live status line.
       setStatus({
@@ -326,8 +324,8 @@ export function ApiTokensCard() {
   const revoke = useMutation({
     mutationFn: revokeApiToken,
     onMutate: () => setStatus(null),
-    onSuccess: (_, id) => {
-      setList((list) => list.filter((t) => t.id !== id));
+    onSuccess: async (_, id) => {
+      await setList((list) => list.filter((t) => t.id !== id));
       setEditing(null);
       setStatus({ message: "Token revoked.", error: false });
     },
@@ -337,8 +335,10 @@ export function ApiTokensCard() {
     mutationFn: ({ id, name }: { id: number; name: string }) =>
       renameApiToken(id, name),
     onMutate: () => setStatus(null),
-    onSuccess: (_, { id, name }) => {
-      setList((list) => list.map((t) => (t.id === id ? { ...t, name } : t)));
+    onSuccess: async (_, { id, name }) => {
+      await setList((list) =>
+        list.map((t) => (t.id === id ? { ...t, name } : t)),
+      );
       setEditing(null);
     },
     onError: refused,

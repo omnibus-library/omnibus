@@ -2,7 +2,8 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { delay, HttpResponse, http } from "msw";
 import { expect, waitFor } from "storybook/test";
 import { nowSecs } from "../../format";
-import { hanging } from "../../testing/handlers";
+import { storyClient } from "../../testing/AppHarness";
+import { deferred, hanging } from "../../testing/handlers";
 import { SettingsRoutes, said } from "../../testing/SettingsRoutes";
 import {
   aSettingsServer,
@@ -13,6 +14,7 @@ import { aWireApiToken, WIRE_ADA } from "../../testing/wire";
 
 let server: SettingsServer;
 let reads = 0;
+let release = () => {};
 
 const meta = {
   title: "Pages/Settings/Tokens",
@@ -344,5 +346,44 @@ export const FreesTheFormWithoutWaitingForTheReread: Story = {
       "true",
     );
     await expect(reads).toBe(2);
+  },
+};
+
+export const KeepsARenameWhenTheCreatesRereadLandsLate: Story = {
+  beforeEach({ msw }) {
+    withTokens();
+    const gate = deferred();
+    release = gate.release;
+    let reads = 0;
+    msw.use(
+      http.get("/api/auth/api-tokens", async () => {
+        // What the server held when the read arrived, answered once the gate opens.
+        const held = server.tokens;
+        reads += 1;
+        if (reads > 1) await gate.promise;
+        return HttpResponse.json(held);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.type(await canvas.findByLabelText("Token name"), "Laptop");
+    await userEvent.click(canvas.getByTestId("api-token-create"));
+    await expect(await canvas.findByTestId("api-token-secret")).toBeVisible();
+
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Rename Old script" }),
+    );
+    const input = await canvas.findByLabelText("New token name");
+    await userEvent.clear(input);
+    await userEvent.type(input, "Cron job");
+    await userEvent.click(canvas.getByTestId("api-token-rename-save"));
+    await expect(await canvas.findByText("Cron job")).toBeVisible();
+
+    release();
+    await waitFor(() =>
+      expect(storyClient().isFetching({ queryKey: ["api-tokens"] })).toBe(0),
+    );
+    await expect(canvas.getByText("Cron job")).toBeVisible();
+    await expect(canvas.queryByText("Old script")).toBeNull();
   },
 };
