@@ -10,7 +10,7 @@ import { Loading } from "../../components/Loading/Loading";
 import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { RANGE_LABELS, RANGES } from "../Stats/summary";
-import { ChartLegend, ChartTable } from "./ChartPlot";
+import { ChartLegend, ChartPlot, ChartTable } from "./ChartPlot";
 import {
   BUCKET_LABELS,
   canAdd,
@@ -178,6 +178,7 @@ function ChartCanvas({ spec }: { spec: ChartSpec }) {
         </p>
       ) : (
         <>
+          <ChartPlot result={chart.data} />
           <ChartLegend result={chart.data} />
           <ChartTable result={chart.data} />
         </>
