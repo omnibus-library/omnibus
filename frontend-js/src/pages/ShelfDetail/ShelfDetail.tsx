@@ -4,7 +4,7 @@ import { Link, useParams } from "react-router";
 import {
   fetchShelfPage,
   invalidateShelf,
-  type LibraryQuery,
+  type SortKey,
   shelfQuery,
 } from "../../api";
 import { AddBooksModal } from "../../components/AddBooksModal/AddBooksModal";
@@ -13,16 +13,11 @@ import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { EditShelfModal } from "../../components/ShelfForm/EditShelfModal";
 import { useCurrentUser } from "../../session";
+import { defaultDirFor } from "../Library/sorting";
+import { ShelfBooks } from "./ShelfBooks";
 import { ShelfHero } from "./ShelfHero";
-import { resolveAccess } from "./shelfAccess";
+import { canEdit, resolveAccess } from "./shelfAccess";
 import "./ShelfDetail.css";
-
-// The whole member list, in the server's default order.
-const WHOLE_SHELF: Pick<LibraryQuery, "sort" | "dir" | "clauses"> = {
-  sort: "recently_interacted",
-  dir: "desc",
-  clauses: [],
-};
 
 /** The way back to the index, above every state of the page. */
 function BackCrumb() {
@@ -51,11 +46,13 @@ export function ShelfDetail() {
   const client = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [sort, setSort] = useState<SortKey>("recently_interacted");
   const shelf = useQuery({ ...shelfQuery(id), enabled: Number.isInteger(id) });
-  // What Add books marks as already on the shelf.
+  // The whole member list, which the filter narrows and Add books marks as already on the shelf.
+  const whole = { sort, dir: defaultDirFor(sort), clauses: [] };
   const members = useQuery({
-    queryKey: ["shelf-page", id, WHOLE_SHELF],
-    queryFn: () => fetchShelfPage(id, WHOLE_SHELF),
+    queryKey: ["shelf-page", id, whole],
+    queryFn: () => fetchShelfPage(id, whole),
     enabled: shelf.data != null,
   });
 
@@ -95,6 +92,20 @@ export function ShelfDetail() {
         shelf={current}
         access={access}
         membersReady={members.isSuccess}
+        onAdd={() => setAdding(true)}
+        onEdit={() => setEditing(true)}
+      />
+      <ShelfBooks
+        shelfId={id}
+        kind={current.kind}
+        canEdit={canEdit(access)}
+        sort={sort}
+        onSort={setSort}
+        full={{
+          books: members.data ?? [],
+          ready: members.isSuccess,
+          errored: members.isError,
+        }}
         onAdd={() => setAdding(true)}
         onEdit={() => setEditing(true)}
       />

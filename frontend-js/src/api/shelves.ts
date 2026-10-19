@@ -85,11 +85,13 @@ export const shelfQuery = (id: number) =>
     queryFn: () => fetchShelf(id),
   });
 
-/** Refetches everything that shows shelf `id` after a write to it. */
+/** Refetches everything that shows shelf `id` after a write to it; resolves once the active ones have answered. */
 export function invalidateShelf(client: QueryClient, id: number) {
-  for (const queryKey of [["shelves"], ["shelf", id], ["shelf-page", id]]) {
-    client.invalidateQueries({ queryKey });
-  }
+  return Promise.all(
+    [["shelves"], ["shelf", id], ["shelf-page", id]].map((queryKey) =>
+      client.invalidateQueries({ queryKey }),
+    ),
+  );
 }
 
 /** Creates a shelf the reader owns. */
