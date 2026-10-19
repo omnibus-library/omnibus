@@ -208,3 +208,13 @@ pub struct BookFileInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_seconds: Option<i64>,
 }
+
+/// Query parameters of `GET /api/ebooks/{uuid}/file` and `GET /api/ebooks/{uuid}/download`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct EbookFileQuery {
+    /// One of the book's EPUB or PDF files, by its `id` in the book's `book_files`. Leave it
+    /// out for the file the route picks by default.
+    pub file_id: Option<i64>,
+}

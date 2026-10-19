@@ -8,7 +8,7 @@
 //! stale. The Dioxus server functions (`/api/rpc/*`), Kobo and OPDS are left out: their
 //! clients fix those formats.
 
-use omnibus_shared::{SortDir, SortKey};
+use omnibus_shared::{SortDir, SortKey, SpoilerFilter};
 use utoipa::{
     openapi::{
         security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme},
@@ -22,7 +22,7 @@ use utoipa::{
     info(title = "Omnibus API", description = include_str!("openapi/overview.md")),
     modifiers(&SecuritySchemes),
     // Types that only query parameters reference, which utoipa doesn't collect itself.
-    components(schemas(SortDir, SortKey)),
+    components(schemas(SortDir, SortKey, SpoilerFilter)),
     security(("bearer" = []), ("session_cookie" = [])),
     tags(
         (name = "Auth", description = "Sign in and out, sessions, and API tokens."),

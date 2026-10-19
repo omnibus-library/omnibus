@@ -66,3 +66,20 @@ pub struct ChapterTextResponse {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub truncated_by_progress: bool,
 }
+
+/// Query parameters of `GET /api/ebooks/{uuid}/chapters/{spine_index}/text`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct ChapterTextQuery {
+    /// Where the slice starts, in characters from the start of the chapter. Defaults to 0.
+    /// Pass the previous slice's `next_offset` to continue.
+    pub offset: Option<usize>,
+    /// The most characters to return, from 1 to 100,000. Defaults to 100,000, and a larger
+    /// value is lowered to it.
+    pub limit: Option<usize>,
+    /// Cut the text off at your own furthest reading position in this book, so you are never
+    /// handed text you haven't reached yet.
+    #[serde(default)]
+    pub stop_at_progress: bool,
+}

@@ -28,6 +28,26 @@ pub enum SpoilerFilter {
     Exclude,
 }
 
+/// Query parameters of `GET /api/search/content`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct ContentSearchQuery {
+    /// Words to find in the text, up to 1,024 bytes. A chapter matches when it holds every
+    /// word.
+    pub q: String,
+    /// Search only this book, by uuid.
+    pub book_uuid: Option<String>,
+    /// Search only these books: comma-separated uuids, up to 50, such as the books of a
+    /// series. Combines with `book_uuid`.
+    pub book_uuids: Option<String>,
+    /// The most hits to return, from 1 to 50. Defaults to 50.
+    pub limit: Option<i64>,
+    /// What to do with hits past your own reading position. Defaults to `annotate`.
+    #[serde(default)]
+    pub spoiler_filter: SpoilerFilter,
+}
+
 /// One content-search hit: a chapter-level citation plus a match excerpt.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

@@ -321,6 +321,28 @@ pub struct PaletteResults {
     pub genre_total: u32,
 }
 
+/// Query parameter of `GET /api/search`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct SearchQuery {
+    /// Words to match against titles, authors and series, up to 1,024 bytes. Prefix a word
+    /// with `author:` or `series:` to match only that field, or with `tag:` or `genre:` to
+    /// keep only books with that tag or genre, such as `author:herbert dune`.
+    pub q: String,
+}
+
+/// Query parameters of `GET /api/search/palette`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct PaletteQuery {
+    /// What to search for, up to 1,024 bytes.
+    pub q: String,
+    /// The most hits per category, from 1 to 500. Defaults to 5.
+    pub limit: Option<u32>,
+}
+
 impl PaletteResults {
     /// Total number of matches across every result category, using the true
     /// per-category totals (not the capped `Vec` lengths).

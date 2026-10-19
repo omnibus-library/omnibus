@@ -14,8 +14,10 @@ use omnibus_db::{
     self as db, scanner,
     worker::{Task, TaskOutcome},
 };
-use omnibus_shared::{EbookLibrary, EbookMetadata, EbookPage, EbooksQuery, ViewFilters};
-use serde::Deserialize;
+use omnibus_shared::{
+    DownloadValidatorRequest, DownloadValidatorResponse, EbookFileQuery, EbookLibrary,
+    EbookMetadata, EbookPage, EbooksQuery, LibraryContents, ViewFilters,
+};
 
 use super::conditional::{self, MEDIA_CACHE_CONTROL, MEDIA_VARY};
 
@@ -32,12 +34,6 @@ use crate::http_errors::invalid_filter;
 /// without an oversized first paint. An explicit `?limit=` overrides it (the
 /// db layer caps it at `MAX_BOOKS_RETURNED`).
 const DEFAULT_PAGE_LIMIT: i64 = 100;
-
-/// Query parameters for `GET /api/ebooks/{uuid}/file`.
-#[derive(Deserialize)]
-pub(super) struct EbookFileQuery {
-    file_id: Option<i64>,
-}
 
 /// List books
 ///
@@ -398,11 +394,36 @@ async fn resolve_readable_path(
     Err(StatusCode::NOT_FOUND.into_response())
 }
 
-/// Streams the raw EPUB bytes, or the CBZ archive for a comic-only book or the PDF for
-/// a PDF-only book (the whole-file download the offline clients pull). Accepts optional
-/// `?file_id=N` to target a specific EPUB or PDF `book_files` row. Gated by
-/// [`MediaAuthUser`] rather than [`AuthUser`]: epub.js fetches it from the mobile
-/// WebView, which can carry only a `?token=` query param.
+/// Get a book's file
+///
+/// The book's EPUB, else its CBZ archive for a comic, else its PDF, served inline for
+/// reading or for taking the book offline. `file_id` picks one of its EPUB or PDF files
+/// instead. Answers `Range` requests. Every response, errors included, carries
+/// `Access-Control-Allow-Origin: *`. For a copy with your metadata edits baked in, use
+/// `GET /api/ebooks/{uuid}/download`.
+#[utoipa::path(
+    get,
+    path = "/api/ebooks/{uuid}/file",
+    tag = "Library",
+    security(("bearer" = []), ("session_cookie" = []), ("media_token" = [])),
+    params(("uuid" = String, Path, description = "The book's uuid."), EbookFileQuery),
+    responses(
+        (status = 200, description = "The whole file.", content(
+            ([u8] = "application/epub+zip"),
+            ([u8] = "application/vnd.comicbook+zip"),
+            ([u8] = "application/pdf"),
+        )),
+        (status = 206, description = "The byte range asked for in `Range`.", content(
+            ([u8] = "application/epub+zip"),
+            ([u8] = "application/vnd.comicbook+zip"),
+            ([u8] = "application/pdf"),
+        )),
+        (status = 304, description = "The file is unchanged since the `ETag` sent in `If-None-Match`, or the date in `If-Modified-Since`."),
+        (status = 404, description = "No book has that uuid, the book has no EPUB, CBZ or PDF, `file_id` isn't one of its EPUB or PDF files, or the file is missing from disk."),
+        (status = 412, description = "`If-Match` or `If-Unmodified-Since` doesn't match the file."),
+        (status = 416, description = "The `Range` lies outside the file. `Content-Range` gives its length."),
+    ),
+)]
 pub(super) async fn get_ebook_file(
     _user: MediaAuthUser,
     State(state): State<AppState>,
@@ -410,6 +431,8 @@ pub(super) async fn get_ebook_file(
     Query(query): Query<EbookFileQuery>,
     req: Request,
 ) -> Response {
+    // `MediaAuthUser`, not `AuthUser`: epub.js fetches this from the mobile WebView,
+    // which can carry only a `?token=` query param.
     let mut resp = read_ebook_file(&state, &uuid, query.file_id, req).await;
     // epub.js reads this stream over a cross-origin XHR from inside the mobile
     // WebView (unlike the CORS-exempt `<img>`/`<audio>` media the app uses
@@ -439,11 +462,26 @@ async fn read_ebook_file(
     super::serve_file(req, &path, mime, None).await
 }
 
-/// Serve one page image out of the book's CBZ archive, extracted server-side so
-/// clients never download or unzip whole archives. `page` is the 0-based index into
-/// the natural-sort page order (the order `page_count` on the detail payload counts).
-/// Gated by [`MediaAuthUser`]: the pager's `<img>` fetches carry only `?token=`. 404
-/// for an unknown uuid, a book without a CBZ, or an out-of-range index; 500 if unreadable.
+/// Get a comic page
+///
+/// One page image from the book's CBZ archive, so you never download or unzip the whole
+/// archive. Pages are numbered from 0 in the archive's natural sort order, the order the
+/// book's `page_count` counts.
+#[utoipa::path(
+    get,
+    path = "/api/ebooks/{uuid}/pages/{page}",
+    tag = "Library",
+    security(("bearer" = []), ("session_cookie" = []), ("media_token" = [])),
+    params(
+        ("uuid" = String, Path, description = "The book's uuid."),
+        ("page" = usize, Path, description = "The page number, from 0."),
+    ),
+    responses(
+        (status = 200, description = "The page image.", body = [u8], content_type = "image/*"),
+        (status = 304, description = "The page is unchanged since the `ETag` sent in `If-None-Match`."),
+        (status = 404, description = "No book has that uuid, the book has no CBZ, or it has no page with that number."),
+    ),
+)]
 pub(super) async fn get_ebook_page(
     _user: MediaAuthUser,
     State(state): State<AppState>,
@@ -515,11 +553,25 @@ pub(super) async fn get_ebook_page(
 /// and warms the cache for next time.
 const KEPUB_CONVERT_BUDGET: std::time::Duration = std::time::Duration::from_secs(25);
 
-/// Convert `book_id`'s EPUB to KEPUB (via the worker, cached) and download it for USB
-/// sideload onto a Kobo. Falls back to the plain EPUB when kepubify is absent,
-/// conversion fails, or it exceeds [`KEPUB_CONVERT_BUDGET`]. The download filename is
-/// the canonical `book_uuid` so a future USB annotation import can map the device's
-/// `ContentID` back to the book.
+/// Download a book as a KEPUB
+///
+/// The book's EPUB converted to Kobo's KEPUB format, as an attachment named
+/// `{uuid}.kepub.epub`, for copying onto a Kobo over USB. The first request converts the
+/// book, which can take up to 25 seconds. When the conversion fails or runs longer, you get
+/// the plain EPUB, named `{uuid}.epub`, instead. Either file carries your metadata and cover
+/// edits. Needs the download permission.
+#[utoipa::path(
+    get,
+    path = "/api/ebooks/{uuid}/kepub",
+    tag = "Library",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses(
+        (status = 200, description = "The KEPUB, or the plain EPUB.", body = [u8], content_type = "application/epub+zip",
+            headers(("Content-Disposition" = String, description = "`attachment`, with the file name."))),
+        (status = 403, description = "Your account lacks the download permission."),
+        (status = 404, description = "No book has that uuid, or the book has no EPUB or its EPUB is missing from disk."),
+    ),
+)]
 pub(super) async fn get_ebook_kepub(
     user: AuthUser,
     State(state): State<AppState>,
@@ -533,7 +585,8 @@ pub(super) async fn get_ebook_kepub(
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
         Err(e) => return internal("resolve_book_id_by_uuid", e),
     };
-    // Canonical uuid (merged-uuid aware) is the stable filename stem.
+    // Canonical uuid (merged-uuid aware) is the stable filename stem, so a USB
+    // annotation import can map the device's `ContentID` back to the book.
     let canonical = match db::resolve_canonical_book_uuid(&state.pool, &uuid).await {
         Ok(Some(u)) => u,
         Ok(None) => uuid.clone(),
@@ -614,10 +667,33 @@ fn download_response(bytes: Vec<u8>, filename: &str) -> Response {
     resp
 }
 
-/// Serves the EPUB — or, for a book without one, the PDF — as a browser
-/// download (`Content-Disposition: attachment`). Text formats only: a comic
-/// is taken whole via `/file`. The in-app reader keeps streaming inline via
-/// `/file` while the export menu drives a real save-to-disk here.
+/// Download a book
+///
+/// The book's EPUB, or its PDF when it has no EPUB, as an attachment. `file_id` picks one of
+/// its EPUB or PDF files instead. An EPUB carries your metadata and cover edits. A comic's
+/// archive comes from `GET /api/ebooks/{uuid}/file`. Answers `Range` requests, so an
+/// interrupted download can resume. Needs the download permission.
+#[utoipa::path(
+    get,
+    path = "/api/ebooks/{uuid}/download",
+    tag = "Library",
+    params(("uuid" = String, Path, description = "The book's uuid."), EbookFileQuery),
+    responses(
+        (status = 200, description = "The whole file.", content(
+            ([u8] = "application/epub+zip"),
+            ([u8] = "application/pdf"),
+        ), headers(("Content-Disposition" = String, description = "`attachment`, with the file name."))),
+        (status = 206, description = "The byte range asked for in `Range`.", content(
+            ([u8] = "application/epub+zip"),
+            ([u8] = "application/pdf"),
+        )),
+        (status = 304, description = "The file is unchanged since the `ETag` sent in `If-None-Match`, or the date in `If-Modified-Since`."),
+        (status = 403, description = "Your account lacks the download permission."),
+        (status = 404, description = "No book has that uuid, the book has no EPUB or PDF, `file_id` isn't one of its EPUB or PDF files, or the file is missing from disk."),
+        (status = 412, description = "`If-Match` or `If-Unmodified-Since` doesn't match the file."),
+        (status = 416, description = "The `Range` lies outside the file. `Content-Range` gives its length."),
+    ),
+)]
 pub(super) async fn get_ebook_download(
     user: AuthUser,
     State(state): State<AppState>,
@@ -668,6 +744,17 @@ pub(super) async fn rewritten_or_source(
     }
 }
 
+/// Count the files in the library folders
+///
+/// How many ebook and audiobook files the configured library folders hold, by extension.
+/// It walks the folders on disk, so it counts files a scan hasn't indexed yet. A folder that
+/// is missing or unreadable reports `error` in its section instead of failing the request.
+#[utoipa::path(
+    get,
+    path = "/api/library",
+    tag = "Library",
+    responses((status = 200, description = "The file counts.", body = LibraryContents)),
+)]
 pub(super) async fn get_library(_user: AuthUser, State(state): State<AppState>) -> Response {
     match db::get_settings(&state.pool).await {
         Ok(settings) => {
@@ -684,15 +771,26 @@ pub(super) async fn get_library(_user: AuthUser, State(state): State<AppState>) 
 #[cfg(test)]
 mod tests;
 
-/// Current validators for a batch of downloaded files, so a device can check whether any
-/// library file moved in one small request instead of polling per book. Carries no
-/// metadata: just the validator per (book, format, file) the caller names. A file that
-/// is gone, or whose row the scanner has not stat'd, comes back with no `etag`, which
-/// every client reads as "can't tell", never "unchanged".
+/// Check downloaded files for changes
+///
+/// The current `etag` of each file you name, so a device can learn in one request which of
+/// its downloaded books changed: compare each with the `etag` saved at download time. A file
+/// that is gone, or that the scanner hasn't measured yet, comes back without an `etag`. Read
+/// that as "can't tell", never as "unchanged".
+#[utoipa::path(
+    post,
+    path = "/api/downloads/validators",
+    tag = "Library",
+    request_body = DownloadValidatorRequest,
+    responses(
+        (status = 200, description = "One answer per file asked about.", body = DownloadValidatorResponse),
+        (status = 422, description = "The request names more than 500 files."),
+    ),
+)]
 pub(super) async fn post_download_validators(
     _user: AuthUser,
     State(state): State<AppState>,
-    Json(request): Json<omnibus_shared::DownloadValidatorRequest>,
+    Json(request): Json<DownloadValidatorRequest>,
 ) -> Response {
     if request.files.len() > omnibus_shared::MAX_VALIDATOR_QUERY {
         return (
@@ -702,7 +800,7 @@ pub(super) async fn post_download_validators(
             .into_response();
     }
     match db::download_validators(&state.pool, &request.files).await {
-        Ok(files) => Json(omnibus_shared::DownloadValidatorResponse { files }).into_response(),
+        Ok(files) => Json(DownloadValidatorResponse { files }).into_response(),
         Err(error) => internal("download validators", error),
     }
 }
