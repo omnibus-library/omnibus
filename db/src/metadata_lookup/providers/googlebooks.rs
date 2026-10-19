@@ -190,7 +190,7 @@ pub async fn by_isbn(
         return Ok(Some(meta));
     }
     // Keyless requests share Google's anonymous daily quota (see
-    // .claude/rules/01-dev-environment.md) and exhaust it almost
+    // docs/environment.md) and exhaust it almost
     // immediately, so doubling every miss into a second request is a cost
     // only a keyed instance can afford — gate the fallback on one being
     // configured.
