@@ -33,7 +33,7 @@ import {
   shelfMeta,
   tally,
   tileBar,
-} from "./authorPane";
+} from "./authorProgress";
 
 /** The portrait under its Edit button: the cached photo, else the name's initial; a photo that fails to load falls back to the initial for that URL. */
 function AuthorAvatar({

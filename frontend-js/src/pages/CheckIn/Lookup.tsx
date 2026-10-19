@@ -6,7 +6,7 @@ import {
   searchProviders,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
-import { cleanIsbn, isbnRejection } from "./checkIn";
+import { cleanIsbn, isbnRejection } from "./checkInFlow";
 import { ExternalBookCard, IsbnField, LibrarySearchForm } from "./Screens";
 
 /** The Open Library fallback disclaimer, shown once the server reports it has no Google Books key. */

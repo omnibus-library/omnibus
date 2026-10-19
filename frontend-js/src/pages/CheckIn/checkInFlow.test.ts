@@ -13,7 +13,7 @@ import {
   someIfFilled,
   stageFor,
   truncationNote,
-} from "./checkIn";
+} from "./checkInFlow";
 
 describe("cleanIsbn", () => {
   it("drops separators from an ISBN", () => {

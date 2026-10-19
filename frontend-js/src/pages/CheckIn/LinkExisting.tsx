@@ -2,7 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { type ScanBook, searchLibraryBooks } from "../../api";
 import { Button } from "../../components/Button/Button";
-import { truncationNote } from "./checkIn";
+import { truncationNote } from "./checkInFlow";
 import { LibraryPickOption, LibrarySearchForm } from "./Screens";
 
 type Props = {

@@ -16,7 +16,7 @@ import {
   type EditOp,
   renderLines,
   type Selection,
-} from "./journalEditor";
+} from "./journalMarkdown";
 
 // The surface is a `contenteditable` whose text is the markdown, character for character: the
 // decorations are spans around it, so a caret is an absolute offset into `textContent`.

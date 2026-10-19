@@ -166,17 +166,17 @@ shell provides it.
   formatting, `safeNext`, the theme root, the session, and the pure helpers
   behind the screens (`resume`, `password`, `settingsIndex`, `viewPrefs`,
   `focusTrap`, book detail's `readout`, `identifiers`, `shelves`,
-  `journalEditor` and delete copy, the palette's `selection`, the results
+  `journalMarkdown` and delete copy, the palette's `selection`, the results
   page's `results`, Register's `refusal`, the library's `filters`,
-  `libraryView`, `seriesStacks`, `shelfGallery`, `sorting` and `bulkEdit`, the
+  `libraryView`, `seriesStacks`, `shelfLens`, `sorting` and `bulkMetadata`, the
   editor's `metadata` (form schema and override diff), `dirty` and
-  `editionFields`, `uploads`, check-in's `checkIn` and `scan`, the scanner's
+  `editionFields`, `uploads`, check-in's `checkInFlow` and `scan`, the scanner's
   `scanStatus` and `loadScanner`, the discovery pages' `authorsOrder`,
-  `authorPane`, `seriesIndex`, `shelvesIndex`, the shelf rules' `rules`, the
+  `authorProgress`, `seriesIndex`, `shelvesIndex`, the shelf rules' `rules`, the
   picker's `picker`, the shelf page's `shelfAccess` and `narrow`, and the
   readers' `pager`, `pdfAnchors`, `start`, `relocate`, `typography`,
   `epubGlue`, `pdfGlue`, `readingSession` and `autoReadStatus`, plus the
-  vendored files' parity test), plus the
+  vendored files' parity test and the `fileNames` case check), plus the
   real route table in `src/router.test.tsx`: every unported page, the layout
   split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI

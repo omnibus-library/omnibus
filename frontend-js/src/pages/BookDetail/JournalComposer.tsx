@@ -14,7 +14,7 @@ import {
   JournalEditor,
   JournalToolbar,
 } from "./JournalEditor";
-import { highlightBlockquote } from "./journalEditor";
+import { highlightBlockquote } from "./journalMarkdown";
 import { highlightsQuery, journalQuery } from "./queries";
 
 const AUTOSAVE_DEBOUNCE_MS = 2_000;
