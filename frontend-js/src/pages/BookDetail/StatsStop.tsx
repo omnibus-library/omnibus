@@ -132,8 +132,23 @@ export function StatsStop({ book }: { book: BookDetail }) {
           <div className="bdmq-k bdmq-logk">Your sessions</div>
           <SessionLog uuid={book.uuid} />
         </>
+      ) : insights.isError ? (
+        <>
+          <p className="bdmq-quiet-body" role="alert">
+            Couldn't load your reading record
+            <button
+              type="button"
+              className="bdmq-synclink"
+              onClick={() => insights.refetch()}
+            >
+              Retry
+            </button>
+          </p>
+          <div className="bdmq-k bdmq-logk">Your sessions</div>
+          <SessionLog uuid={book.uuid} />
+        </>
       ) : (
-        // No sitting yet, or the record couldn't be read: either way there is nothing to tally.
+        // No sitting yet: nothing to tally.
         <NoStats>
           Open the book and the record starts itself — time, pickups, and pace
           all land here.

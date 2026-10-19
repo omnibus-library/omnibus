@@ -205,13 +205,27 @@ export const FinishedBookSaysTheRecordIsComplete: Story = {
   },
 };
 
-export const UnreadableRecordIsTheEmptyState: Story = {
+export const UnreadableRecordOffersRetryAndKeepsTheSessionLog: Story = {
   beforeEach({ msw }) {
-    msw.use(failing("get", "/api/books/:uuid/insights", 500));
+    let reads = 0;
+    msw.use(
+      http.get("/api/books/:uuid/insights", () =>
+        reads++ === 0
+          ? new HttpResponse("failed with 500", { status: 500 })
+          : HttpResponse.json(aWireInsights()),
+      ),
+    );
   },
-  play: async ({ canvas }) => {
-    await expect(await canvas.findByText("No stats yet.")).toBeInTheDocument();
-    await expect(canvas.queryByTestId("bdmq-stats")).not.toBeInTheDocument();
+  play: async ({ canvas, userEvent }) => {
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "Couldn't load your reading record",
+    );
+    await expect(canvas.queryByText("No stats yet.")).not.toBeInTheDocument();
+    await expect(canvas.getByTestId("session-log")).toBeInTheDocument();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Retry" }));
+
+    await expect(await canvas.findByTestId("bdmq-stats")).toBeInTheDocument();
   },
 };
 
