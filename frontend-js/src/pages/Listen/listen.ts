@@ -1,4 +1,5 @@
 import type { Chapter } from "../../api";
+import { MAX_RATE, MIN_RATE } from "../../playback/boot";
 
 /** `H:MM:SS`, or `M:SS` under an hour; 0:00 for anything that isn't a time. */
 export function formatHms(seconds: number): string {
@@ -114,8 +115,19 @@ export function chapterLabelAt(
 }
 
 /** The toolbar's panes, of which at most one is open. */
-export type Pane = "bookmarks" | "chapters";
+export type Pane = "speed" | "bookmarks" | "chapters";
 
 /** Wall-clock seconds a listener at `rate` spends on `seconds` of book; unscaled for a rate that can't divide. */
 export const remainingAtRate = (seconds: number, rate: number) =>
   Number.isFinite(rate) && rate > 0 ? seconds / rate : seconds;
+
+/** The finest step the speed moves in. */
+export const RATE_STEP = 0.05;
+
+/** A speed kept in range and on the 0.05 grid; whole steps divided back out, as step * 0.05 leaks 1.2000000000000002. */
+export function clampRate(rate: number): number {
+  const steps = 1 / RATE_STEP;
+  return (
+    Math.round(Math.min(MAX_RATE, Math.max(MIN_RATE, rate)) * steps) / steps
+  );
+}

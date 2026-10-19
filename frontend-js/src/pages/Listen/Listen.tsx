@@ -19,6 +19,7 @@ import {
   useBookmarks,
 } from "./Drawers";
 import type { Pane } from "./listen";
+import { PanelShell, SpeedPanelBody } from "./Panels";
 import { Stage } from "./Stage";
 
 function FailedOverlay() {
@@ -34,7 +35,7 @@ function FailedOverlay() {
 }
 
 function Frame({ book }: { book: BookDetail }) {
-  const { ready, failed } = usePlayback();
+  const { ready, failed, rateError } = usePlayback();
   const [pane, setPane] = useState<Pane | null>(null);
   const bookmarks = useBookmarks(book.uuid);
   const close = () => setPane(null);
@@ -68,11 +69,30 @@ function Frame({ book }: { book: BookDetail }) {
         pane={pane}
         onPane={(next) => setPane((open) => (open === next ? null : next))}
       />
+      {pane === "speed" && (
+        <PanelShell
+          extraClass="lp-speed-panel"
+          label="Playback speed"
+          testId="speed-panel"
+          onClose={close}
+        >
+          <SpeedPanelBody />
+        </PanelShell>
+      )}
       {pane === "bookmarks" && (
         <BookmarksDrawer bookmarks={bookmarks} onClose={close} />
       )}
       {pane === "chapters" && <ChaptersDrawer onClose={close} />}
       {bookmarks.toast && <BookmarkToast toast={bookmarks.toast} />}
+      {rateError && (
+        <div
+          className="lp-toast"
+          role="alert"
+          data-testid="playback-rate-error"
+        >
+          <span className="lp-toast-text">{rateError}</span>
+        </div>
+      )}
     </div>
   );
 }

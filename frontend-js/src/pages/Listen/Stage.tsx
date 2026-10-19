@@ -231,9 +231,10 @@ export function Stage({
           </button>
           <button
             type="button"
-            className="lp-btn-rate"
+            className={pane === "speed" ? "lp-btn-rate on" : "lp-btn-rate"}
             data-testid="listen-rate"
             aria-label="Playback speed"
+            onClick={() => onPane("speed")}
           >
             {rateLabel(p.rate)}
           </button>

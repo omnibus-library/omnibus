@@ -6,6 +6,7 @@ import {
   chapterNextTarget,
   chapterPrevTarget,
   chapterSubText,
+  clampRate,
   effectiveScrubPosition,
   formatHms,
   kickerText,
@@ -204,5 +205,19 @@ describe("chapterLabelAt", () => {
     expect(chapterLabelAt(10, [{ title: "", start: 0, seconds: 300 }])).toBe(
       "Chapter 1",
     );
+  });
+});
+
+describe("clampRate", () => {
+  it("keeps a speed between 0.5 and 3", () => {
+    expect(clampRate(0.1)).toBe(0.5);
+    expect(clampRate(9)).toBe(3);
+  });
+
+  it("snaps to the nearest 0.05 without float residue", () => {
+    expect(clampRate(1.2)).toBe(1.2);
+    expect(clampRate(1.07)).toBe(1.05);
+    expect(clampRate(1.08)).toBe(1.1);
+    expect(clampRate(1.2 + 0.05)).toBe(1.25);
   });
 });

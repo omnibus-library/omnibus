@@ -84,6 +84,8 @@ export type Playback = State & {
   toggle(): void;
   skip(delta: number): void;
   seek(seconds: number): void;
+  /** Applies a speed (already in range) to the element, this device's copy and the server. */
+  setRate(rate: number): void;
   setVolume(volume: number): void;
 };
 
@@ -309,6 +311,27 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     engineRef.current?.setVolume(v);
   }, []);
 
+  const setRate = useCallback(
+    (rate: number) => {
+      const uuid = loadedRef.current?.uuid;
+      if (!uuid) return;
+      const token = bootRef.current;
+      patch({ rate });
+      engineRef.current?.setRate(rate);
+      if (userId !== null) saveLocalRate(userId, uuid, rate);
+      // A save that lands after a book swap says nothing about the new book.
+      savePlaybackRate(uuid, rate).then(
+        () => bootRef.current === token && patch({ rateError: null }),
+        (error) =>
+          bootRef.current === token &&
+          patch({
+            rateError: `Could not save playback speed: ${messageOf(error)}`,
+          }),
+      );
+    },
+    [userId, patch],
+  );
+
   const playback: Playback = {
     ...state,
     volume,
@@ -316,6 +339,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     toggle: () => engineRef.current?.toggle(),
     skip: (delta) => engineRef.current?.skip(delta),
     seek: (seconds) => engineRef.current?.seek(seconds),
+    setRate,
     setVolume,
   };
   return (

@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
 import { expect, fireEvent, waitFor, within } from "storybook/test";
+import { ADA } from "../../testing/AppHarness";
 import type { ListenWrite } from "../../testing/audioHandlers";
 import { listenHandlers } from "../../testing/audioHandlers";
 import {
@@ -255,5 +256,147 @@ export const FailedDeleteKeepsTheRow: Story = {
 
     await waitFor(() => expect(wrote("refused DELETE")).toHaveLength(1));
     await expect(drawer.getByTestId("bookmark-row")).toBeInTheDocument();
+  },
+};
+
+const RATE_PUT = "PUT /api/audiobooks/playback-rate";
+
+async function openSpeed(canvas: ReturnType<typeof within>) {
+  await canvas.findByText("Now playing · Chapter 1 of 3");
+  fireEvent.click(canvas.getByRole("button", { name: "Playback speed" }));
+  return within(await canvas.findByRole("dialog", { name: "Playback speed" }));
+}
+
+export const SpeedPanel: Story = {
+  play: async ({ canvas }) => {
+    const panel = await openSpeed(canvas);
+
+    for (const label of [
+      "0.5×",
+      "0.8×",
+      "1.0×",
+      "1.1×",
+      "1.2×",
+      "1.5×",
+      "1.8×",
+      "2.0×",
+    ]) {
+      await expect(
+        panel.getByRole("button", { name: label }),
+      ).toBeInTheDocument();
+    }
+    await expect(panel.getByRole("button", { name: "1.0×" })).toHaveClass("on");
+    await expect(
+      panel.getByRole("slider", { name: "Fine-tune speed" }),
+    ).toHaveValue("1");
+    await expect(canvas.getByRole("dialog")).toHaveFocus();
+  },
+};
+
+export const SpeedPresetApplies: Story = {
+  play: async ({ canvas }) => {
+    const panel = await openSpeed(canvas);
+
+    fireEvent.click(panel.getByRole("button", { name: "1.5×" }));
+
+    await expect(canvas.getByTestId("listen-rate")).toHaveTextContent("1.50×");
+    await expect(panel.getByRole("button", { name: "1.5×" })).toHaveClass("on");
+    await expect(
+      (canvas.getByTestId("listen-audio") as HTMLAudioElement).playbackRate,
+    ).toBe(1.5);
+    await expect(
+      localStorage.getItem(`omn.listening.rate::${ADA.id}::${UUID}`),
+    ).toBe("1.5");
+    await waitFor(() =>
+      expect(wrote(RATE_PUT)).toEqual([{ playback_rate: 1.5 }]),
+    );
+  },
+};
+
+export const SpeedStepperAndSliderSnapToTheGrid: Story = {
+  play: async ({ canvas }) => {
+    const panel = await openSpeed(canvas);
+
+    fireEvent.click(panel.getByRole("button", { name: "Increase speed" }));
+    await expect(await panel.findByText("1.05×")).toBeInTheDocument();
+    fireEvent.change(panel.getByRole("slider", { name: "Fine-tune speed" }), {
+      target: { value: "2.45" },
+    });
+
+    await expect(await panel.findByText("2.45×")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(wrote(RATE_PUT)).toEqual([
+        { playback_rate: 1.05 },
+        { playback_rate: 2.45 },
+      ]),
+    );
+  },
+};
+
+export const SpeedPanelClosesOnEscapeAndScrim: Story = {
+  play: async ({ canvas, canvasElement }) => {
+    await openSpeed(canvas);
+
+    fireEvent.keyDown(canvas.getByRole("dialog"), { key: "Escape" });
+    await waitFor(() => expect(canvas.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(canvas.getByRole("button", { name: "Playback speed" }));
+    await canvas.findByRole("dialog");
+    fireEvent.click(canvasElement.querySelector(".lp-scrim") as Element);
+    await waitFor(() => expect(canvas.queryByRole("dialog")).toBeNull());
+  },
+};
+
+export const SpeedSaveFailureClearsOnTheNextSave: Story = {
+  beforeEach({ msw }) {
+    let puts = 0;
+    msw.use(
+      http.put("/api/audiobooks/:uuid/playback-rate", () =>
+        puts++ === 0
+          ? new HttpResponse("failed with 500", { status: 500 })
+          : HttpResponse.json({
+              book_uuid: UUID,
+              playback_rate: 1.2,
+              updated_at: 1,
+            }),
+      ),
+      ...listenHandlers(BOOK, { writes, row: TEN_MINUTES_IN }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const panel = await openSpeed(canvas);
+
+    fireEvent.click(panel.getByRole("button", { name: "1.5×" }));
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      /^Could not save playback speed: /,
+    );
+
+    fireEvent.click(panel.getByRole("button", { name: "1.2×" }));
+    await waitFor(() => expect(canvas.queryByRole("alert")).toBeNull());
+  },
+};
+
+export const ServerSpeedWinsAtBoot: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...listenHandlers(BOOK, { writes, row: TEN_MINUTES_IN, rate: 1.25 }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("1.25×")).toBeInTheDocument();
+    await canvas.findByText("Now playing · Chapter 1 of 3");
+    await expect(wrote(RATE_PUT)).toEqual([]);
+  },
+};
+
+export const ThisDevicesSpeedSeedsTheServer: Story = {
+  beforeEach() {
+    localStorage.setItem(`omn.listening.rate::${ADA.id}::${UUID}`, "1.5");
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("1.50×")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(wrote(RATE_PUT)).toEqual([{ playback_rate: 1.5 }]),
+    );
   },
 };
