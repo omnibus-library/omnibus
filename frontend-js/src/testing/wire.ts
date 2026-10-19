@@ -34,6 +34,8 @@ export function aWireBook(
     error: null,
     has_override: false,
     has_cover_override: false,
+    added_at: "2026-08-01T12:00:00Z",
+    modified: "2026-08-02T12:00:00Z",
     ...overrides,
   };
 }

@@ -10,7 +10,11 @@ import {
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
-import { BusyLabel, CoverSkeletons } from "../../components/Loading/Loading";
+import {
+  BusyLabel,
+  CoverSkeletons,
+  RowSkeletons,
+} from "../../components/Loading/Loading";
 import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import {
@@ -22,6 +26,8 @@ import {
   savePlan,
   savePrefs,
 } from "../../viewPrefs";
+import { BookTable } from "./BookTable";
+import { headerSort } from "./sorting";
 import { Toolbar } from "./Toolbar";
 import "./Library.css";
 
@@ -88,6 +94,20 @@ export function Library() {
     reconciled.current = answeredPath;
   }, [answeredPath, prefs]);
 
+  // Fetch the next page as the button nears the viewport.
+  const loadMore = useRef<HTMLDivElement>(null);
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = pages;
+  useEffect(() => {
+    const row = loadMore.current;
+    if (!row || !hasNextPage || isFetchingNextPage) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => entry?.isIntersecting && fetchNextPage(),
+      { rootMargin: "400px" },
+    );
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
   const change = (next: Prefs) => {
     const plan = savePlan(libraryPath.current, pages.isError, lastLibrary());
     if (plan.writeTo) savePrefs(plan.writeTo, next);
@@ -114,7 +134,11 @@ export function Library() {
           {pages.status === "pending" && (
             <div className="lib-loading" role="status" aria-live="polite">
               <span className="ld-sr">Taking the books off the shelf</span>
-              <CoverSkeletons />
+              {prefs.view === "table" ? (
+                <RowSkeletons count={8} avatar={false} />
+              ) : (
+                <CoverSkeletons />
+              )}
             </div>
           )}
           {pages.status === "error" && (
@@ -125,15 +149,24 @@ export function Library() {
           {pages.status === "success" && books.length === 0 && (
             <p className="library-empty">No ebooks found.</p>
           )}
-          {books.length > 0 && (
-            <div className="lib-grid">
-              {books.map((book, index) => (
-                <Tile key={book.uuid} book={book} index={index} />
-              ))}
-            </div>
-          )}
+          {books.length > 0 &&
+            (prefs.view === "table" ? (
+              <BookTable
+                books={books}
+                prefs={prefs}
+                onSort={(key) =>
+                  change({ ...prefs, ...headerSort(prefs, key) })
+                }
+              />
+            ) : (
+              <div className="lib-grid">
+                {books.map((book, index) => (
+                  <Tile key={book.uuid} book={book} index={index} />
+                ))}
+              </div>
+            ))}
           {pages.hasNextPage && (
-            <div className="lib-load-more-row">
+            <div className="lib-load-more-row" ref={loadMore}>
               <Button
                 className="lib-load-more"
                 onClick={() => pages.fetchNextPage()}

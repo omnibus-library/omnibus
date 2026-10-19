@@ -32,3 +32,14 @@ export function defaultDirFor(key: SortKey): SortDir {
 
 export const toggleDir = (dir: SortDir): SortDir =>
   dir === "asc" ? "desc" : "asc";
+
+/** The sort a column header or axis pick lands on: the active one flips, another takes its default. */
+export function headerSort(
+  current: { sort: SortKey; dir: SortDir },
+  key: SortKey,
+): { sort: SortKey; dir: SortDir } {
+  return {
+    sort: key,
+    dir: key === current.sort ? toggleDir(current.dir) : defaultDirFor(key),
+  };
+}

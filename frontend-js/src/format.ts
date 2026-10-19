@@ -87,3 +87,69 @@ export function formatYear(raw: string): string | null {
   const year = /^\d+$/.test(lead) ? Number(lead) : 0;
   return year > SENTINEL_YEAR_MAX ? String(year) : null;
 }
+
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const DASH = "—";
+
+// 11th to 13th are the exception a last-digit rule gets wrong.
+function ordinal(day: number): string {
+  if (day % 100 >= 11 && day % 100 <= 13) return `${day}th`;
+  return `${day}${["th", "st", "nd", "rd"][day % 10 > 3 ? 0 : day % 10]}`;
+}
+
+const intOf = (part: string | undefined) =>
+  part !== undefined && /^\d+$/.test(part) ? Number(part) : undefined;
+
+/** A stored date as "Aug 1st, 2026", narrowing to "Aug 2026" or "2026"; "—" for none. */
+export function formatDateShort(raw: string): string {
+  const [year, month, day] = (raw.trim().split(/[T ]/)[0] ?? "")
+    .split("-")
+    .map(intOf);
+  if (year === undefined || year <= SENTINEL_YEAR_MAX) return DASH;
+  const name = month === undefined ? undefined : MONTHS[month - 1];
+  if (!name) return String(year);
+  return day !== undefined && day >= 1 && day <= 31
+    ? `${name} ${ordinal(day)}, ${year}`
+    : `${name} ${year}`;
+}
+
+const INSTANT =
+  /^(\d+)-(\d{1,2})-(\d{1,2})[T ](\d{1,2})(?::(\d{1,2}))?(?::(\d{1,2}))?/;
+
+/**
+ * A stored instant (UTC, such as `2026-09-08T03:36:00Z` or SQLite's
+ * `2024-01-02 03:04:05`) as a short date on the browser's own calendar. A
+ * string with no time of day reads as a plain date.
+ */
+export function formatInstantShort(raw: string): string {
+  const m = INSTANT.exec(raw.trim());
+  if (!m) return formatDateShort(raw);
+  const [year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0] = m
+    .slice(1)
+    .map((part) => Number(part ?? 0));
+  if (
+    year <= SENTINEL_YEAR_MAX ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return formatDateShort(raw);
+  }
+  const local = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  return `${MONTHS[local.getMonth()]} ${ordinal(local.getDate())}, ${local.getFullYear()}`;
+}

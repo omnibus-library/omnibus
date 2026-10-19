@@ -22,6 +22,14 @@ export function aBook(overrides: Partial<Book> = {}): Book {
     series: { name: "Aurora Station", index: "1" },
     accent: "oklch(0.555 0.153 28.4)",
     hasCover: true,
+    subjects: [],
+    genres: [],
+    formats: ["CBZ"],
+    published: "2021-03-01",
+    language: null,
+    addedAt: null,
+    modified: null,
+    hasPhysical: false,
     ...overrides,
   };
 }

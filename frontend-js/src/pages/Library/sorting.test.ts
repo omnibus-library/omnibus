@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { defaultDirFor, SORT_KEYS, sortLabel, toggleDir } from "./sorting";
+import {
+  defaultDirFor,
+  headerSort,
+  SORT_KEYS,
+  sortLabel,
+  toggleDir,
+} from "./sorting";
 
 describe("defaultDirFor", () => {
   it.each([
@@ -31,5 +37,21 @@ describe("SORT_KEYS", () => {
       "Last Updated",
       "Newest Added",
     ]);
+  });
+});
+
+describe("headerSort", () => {
+  it("flips the direction of the active axis", () => {
+    expect(headerSort({ sort: "title", dir: "asc" }, "title")).toEqual({
+      sort: "title",
+      dir: "desc",
+    });
+  });
+
+  it("starts another axis in its default direction", () => {
+    expect(headerSort({ sort: "title", dir: "asc" }, "newest_added")).toEqual({
+      sort: "newest_added",
+      dir: "desc",
+    });
   });
 });

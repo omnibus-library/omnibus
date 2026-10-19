@@ -90,6 +90,14 @@ function toBook(wire: EbookMetadata) {
     series,
     accent: wire.accent ?? null,
     hasCover: wire.cover_url != null,
+    subjects: wire.subjects,
+    genres: wire.genres ?? [],
+    formats: wire.formats ?? [],
+    published: wire.published ?? null,
+    language: wire.language ?? null,
+    addedAt: wire.added_at ?? null,
+    modified: wire.modified ?? null,
+    hasPhysical: wire.has_physical ?? false,
   };
 }
 
@@ -100,9 +108,6 @@ export function toBookDetail(wire: EbookMetadata) {
   return {
     ...toBook(wire),
     description: wire.description ?? null,
-    published: wire.published ?? null,
-    genres: wire.genres ?? [],
-    subjects: wire.subjects,
   };
 }
 
