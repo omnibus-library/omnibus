@@ -1,5 +1,20 @@
-import type { Shelf, ShelfKind, UserId } from "../../api";
+import { skipToken, useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import {
+  fetchShelfPage,
+  type Shelf,
+  type ShelfKind,
+  shelvesQuery,
+  type UserId,
+} from "../../api";
 import { bookCount } from "../../format";
+import {
+  loadShelfSelection,
+  type Prefs,
+  type ShelfSelection,
+  saveShelfSelection,
+} from "../../viewPrefs";
+import { sortLockReason } from "./sorting";
 
 /**
  * The shelves the row carries: the reader's own, plus other readers' public
@@ -70,4 +85,38 @@ export function pageTarget(
   );
   // An entry wider than the step leaves no start in reach.
   return (dir > 0 ? inReach.at(-1) : inReach[0]) ?? want;
+}
+
+/** Which list the page shows: the saved shelf pick, that shelf's page, and why its sort is locked. */
+export function useShelfLens(prefs: Prefs) {
+  const [selection, setSelection] = useState(loadShelfSelection);
+  const shelfId = selection.kind === "shelf" ? selection.id : null;
+  const shelves = useQuery(shelvesQuery).data;
+  const shelfQuery = {
+    sort: prefs.sort,
+    dir: prefs.dir,
+    clauses: prefs.clauses,
+  };
+  const shelfPage = useQuery({
+    queryKey: ["shelf-page", shelfId, shelfQuery],
+    queryFn:
+      shelfId === null ? skipToken : () => fetchShelfPage(shelfId, shelfQuery),
+  });
+  const pick = (next: ShelfSelection) => {
+    setSelection(next);
+    saveShelfSelection(next);
+  };
+
+  // A stored shelf the list no longer holds snaps back to All, judged only against a list that loaded.
+  useEffect(() => {
+    if (shelfId === null || !shelves) return;
+    if (shelves.some((s) => s.id === shelfId)) return;
+    setSelection({ kind: "all" });
+    saveShelfSelection({ kind: "all" });
+  }, [shelfId, shelves]);
+
+  const sortLock = sortLockReason(
+    shelves?.find((s) => s.id === shelfId)?.kind ?? null,
+  );
+  return { selection, pick, shelfId, shelfPage, sortLock };
 }

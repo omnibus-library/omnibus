@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Book, NamedCount } from "../../api";
 import type { BulkMetadataEdit } from "../../api/generated/schemas";
 
@@ -63,4 +64,40 @@ export function removable(
   return [...counts]
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : 1));
+}
+
+/** The table's checked books, the dialogs open on them, and the books the checks pick out of `books`. */
+export function useBulkSelection(listing: string, books: Book[]) {
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [editing, setEditing] = useState(false);
+  const [filing, setFiling] = useState(false);
+  // Invariant: checks and dialogs belong to the `listing` they were made on, so a new one drops them.
+  const [selectedIn, setSelectedIn] = useState(listing);
+  if (selectedIn !== listing) {
+    setSelectedIn(listing);
+    setSelected(new Set());
+    setEditing(false);
+    setFiling(false);
+  }
+  const chosen = books.filter((book) => selected.has(book.uuid));
+  const select = (uuids: string[], checked: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const uuid of uuids) {
+        if (checked) next.add(uuid);
+        else next.delete(uuid);
+      }
+      return next;
+    });
+  const clear = () => setSelected(new Set());
+  return {
+    selected,
+    select,
+    chosen,
+    editing,
+    setEditing,
+    filing,
+    setFiling,
+    clear,
+  };
 }

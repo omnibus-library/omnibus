@@ -1,3 +1,4 @@
+import { useCallback, useRef, useState } from "react";
 import { z } from "zod";
 import { type FilterClause, FilterClauseSchema, SortDir, SortKey } from "./api";
 
@@ -166,4 +167,46 @@ export function loadShelfSelection(): ShelfSelection {
 
 export function saveShelfSelection(selection: ShelfSelection) {
   write(SHELF_KEY, JSON.stringify(selection));
+}
+
+/** The library's prefs in memory, filed under the library page 1 names; the caller reports each answer to `noteAnswered`. */
+export function useLibraryPrefs() {
+  const [prefs, setPrefs] = useState(() => {
+    const last = lastLibrary();
+    return last ? loadPrefs(last) : DEFAULT_PREFS;
+  });
+  const libraryPath = useRef<string | null>(null);
+  const reconciled = useRef<string | null>(null);
+  const unsaved = useRef(false);
+  const pageFailed = useRef(false);
+
+  const change = (next: Prefs) => {
+    const plan = savePlan(
+      libraryPath.current,
+      pageFailed.current,
+      lastLibrary(),
+    );
+    if (plan.writeTo) savePrefs(plan.writeTo, next);
+    if (plan.unsaved) unsaved.current = true;
+    setPrefs(next);
+  };
+
+  // Page 1 names the library; until it does, `lastLibrary()` is only a guess.
+  const noteAnswered = useCallback(
+    (path: string | null | undefined, failed: boolean) => {
+      pageFailed.current = failed;
+      if (path === undefined) return;
+      libraryPath.current = path;
+      if (path === null) return;
+      const action = reconcile(reconciled.current, path, unsaved.current);
+      if (action === "adopt") setPrefs(loadPrefs(path));
+      if (action === "save") {
+        savePrefs(path, prefs);
+        unsaved.current = false;
+      }
+      reconciled.current = path;
+    },
+    [prefs],
+  );
+  return { prefs, change, noteAnswered };
 }

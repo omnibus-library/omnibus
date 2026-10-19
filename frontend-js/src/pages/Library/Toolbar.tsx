@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { SortKey } from "../../api";
 import { ArrowDownGlyph, ArrowUpGlyph } from "../../components/Glyphs/Glyphs";
+import { useCurrentUser, useStackSeries } from "../../session";
 import type { Prefs } from "../../viewPrefs";
 import { hiddenFormatsLabel } from "./libraryView";
 import { headerSort, SORT_KEYS, sortLabel, toggleDir } from "./sorting";
@@ -11,13 +12,6 @@ type ToolbarProps = {
   hiddenFormats: string[];
   /** Why sorting is inert on this list, or `null` when it acts. */
   sortLock: string | null;
-  /** The Stack series switch: the saved preference, a save in flight or refused, and the click. */
-  stack: {
-    on: boolean;
-    pending: boolean;
-    failed: boolean;
-    onToggle: () => void;
-  };
   onChange: (next: Prefs) => void;
 };
 
@@ -26,9 +20,10 @@ export function Toolbar({
   prefs,
   hiddenFormats,
   sortLock,
-  stack,
   onChange,
 }: ToolbarProps) {
+  const user = useCurrentUser();
+  const stack = useStackSeries();
   const hidden = hiddenFormatsLabel(hiddenFormats);
   return (
     <div className="lib-toolbar" role="toolbar">
@@ -36,16 +31,20 @@ export function Toolbar({
         <>
           <button
             type="button"
-            className={stack.on ? "ss-tog on" : "ss-tog"}
-            aria-pressed={stack.on}
+            className={user.stackSeries ? "ss-tog on" : "ss-tog"}
+            aria-pressed={user.stackSeries}
             // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
-            aria-disabled={stack.pending}
-            onClick={stack.pending ? undefined : stack.onToggle}
+            aria-disabled={stack.isPending}
+            onClick={
+              stack.isPending
+                ? undefined
+                : () => stack.mutate(!user.stackSeries)
+            }
           >
             <span className="ss-sw" aria-hidden="true" />
             Stack series
           </button>
-          {stack.failed && (
+          {stack.isError && (
             <span className="ss-terr" role="alert">
               Couldn't save Stack series. Try again.
             </span>

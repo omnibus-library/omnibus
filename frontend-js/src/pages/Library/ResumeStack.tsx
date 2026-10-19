@@ -1,6 +1,7 @@
-import type { CSSProperties } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { type CSSProperties, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import type { ResumePoint } from "../../api";
+import { fetchRecentProgress, type ResumePoint } from "../../api";
 import {
   BookGlyph,
   PlayGlyph,
@@ -9,6 +10,9 @@ import {
 import { Skeleton } from "../../components/Loading/Loading";
 import { resumeHref, resumeMeta } from "../../resume";
 import { CoverImage } from "./BookGrid";
+
+const RESUME_POINTS = 5;
+const PAST_STACK_PX = 240;
 
 // Per-card tilt and lift, cycled so a fan of any length keeps the hand-dealt look.
 const FAN_ROT = ["-7deg", "-2.5deg", "3deg", "7.5deg", "11deg"];
@@ -202,4 +206,37 @@ export function EdgeResume({ point }: { point: ResumePoint }) {
       </span>
     </div>
   );
+}
+
+/** The books you have open, the one brought forward, and whether the page has scrolled past the stack. */
+export function useResumeLead() {
+  // A failed feed settles to none, which hides the stack.
+  const recent = useQuery({
+    queryKey: ["progress", "recent", RESUME_POINTS],
+    queryFn: () => fetchRecentProgress(RESUME_POINTS),
+  });
+  const points = recent.data ?? [];
+  // Keyed, so a refetch that reorders the feed keeps the book the reader brought forward.
+  const [leadKey, setLeadKey] = useState<string | null>(null);
+  const lead = Math.max(
+    points.findIndex((point) => point.key === leadKey),
+    0,
+  );
+
+  // Past this much scroll the stack is off-screen, so the edge ribbon takes over.
+  const [past, setPast] = useState(false);
+  useEffect(() => {
+    const paint = () => setPast(window.scrollY > PAST_STACK_PX);
+    paint();
+    window.addEventListener("scroll", paint, { passive: true });
+    return () => window.removeEventListener("scroll", paint);
+  }, []);
+  return {
+    points,
+    lead,
+    leadPoint: points[lead],
+    pending: recent.isPending,
+    setLeadKey,
+    past,
+  };
 }
