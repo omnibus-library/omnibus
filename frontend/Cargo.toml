@@ -84,20 +84,16 @@ tokio-util = { version = "0.7", default-features = false, features = ["io"], opt
 # version already resolved in Cargo.lock (avoids adding a third duplicate).
 getrandom = { version = "0.2", optional = true }
 
-# PIN RATIONALE (#1529): frozen at v3, same reasoning as db/Cargo.toml's zip
-# pin. This crate's `mobile` feature enables `dep:zip` directly, without
-# `dep:omnibus-db` — but building the workspace (or this crate's `server`
-# feature, which does pull in `omnibus-db`) resolves one shared `zip` via
-# Cargo's version unification, so bumping here alone, out of step with
-# `db/Cargo.toml`, would reintroduce that duplicate. Lift both crates' `zip`
-# deps together, after the v4-v9 changelog audit.
+# Bump in lockstep with db/Cargo.toml's zip: the `mobile` feature enables
+# `dep:zip` without `omnibus-db`, but workspace and `server` builds unify both
+# crates on one copy, so a split bump adds a third zip beside `epub`'s 3.0.0.
 #
 # Real ZIP validation for a downloaded EPUB: reading each member to EOF is
 # what checks the CRC-32 the central directory recorded for it, which is the
 # only thing that catches a same-length splice preserving the archive's
 # structure. Mobile-only (the offline layer never compiles for web), and
-# already in the tree via `epub`, so it unifies rather than adding a build.
-zip = { version = "3", default-features = false, features = ["deflate"], optional = true }
+# already in the tree via `omnibus-db`, so it unifies rather than adding a build.
+zip = { version = "9", default-features = false, features = ["deflate"], optional = true }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 # UIKit bindings for `native_share` — WKWebView has no usable Web Share API,

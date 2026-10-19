@@ -115,7 +115,7 @@ ignore = [
     # ---- zip `extract()` advisories (SUID/SGID bits, symlink targets, perms
     # applied through symlinks), fixed only in zip >= 9.0.0. `zip 3.0.0` is
     # reachable in the default build via `epub 2.1.5` (the latest epub, which
-    # pins `zip = "3.0.0"`) and our own `zip = "3"` pins in db/ and frontend/.
+    # pins `zip = "3.0.0"`); our own db/ and frontend/ deps are on zip 9.
     # All three hit only `ZipArchive::extract()` / `ZipStreamReader::extract()`,
     # and neither this repo nor epub calls them (archives are read entry by
     # entry, never extracted to disk). Triaged 2026-10-17 (issue #2756).
@@ -323,6 +323,11 @@ skip = [
     # the tree through `image`, not through wry/tao (issue #2054).
     { name = "png", version = "0.17.16" },
     { name = "png", version = "0.18.1" },
+
+    # --- zip (epub's pin vs ours) ---
+    # 3.0.0 from `epub` 2.1.5, which asks for `zip = "3.0.0"`; 9.0.5 from
+    # omnibus-db/omnibus-frontend directly. Collapses when epub moves to zip 9.
+    { name = "zip", version = "3.0.0" },
 
     # --- rustc-hash (both versions reach the default build) ---
     # 1.1.0 from sledgehammer_utils (→ dioxus-interpreter-js → BOTH

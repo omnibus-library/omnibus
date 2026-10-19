@@ -15,7 +15,7 @@ use quick_xml::events::Event;
 use zip::read::ZipFile;
 use zip::result::{ZipError, ZipResult};
 
-use crate::comic::{read_capped, MAX_PAGE_BYTES};
+use crate::comic::{entry_index, read_capped, MAX_PAGE_BYTES};
 use crate::ebook::toc::join_href;
 
 #[cfg(test)]
@@ -203,9 +203,8 @@ fn open(file: File) -> anyhow::Result<(Package, Archive)> {
 /// while entry names are literal, so a miss retries the decoded name, as the
 /// crate's own lookup does.
 fn archive_entry<'a>(archive: &'a mut Archive, href: &str) -> ZipResult<ZipFile<'a, File>> {
-    let index = archive
-        .index_for_name(href)
-        .or_else(|| archive.index_for_name(&urlencoding::decode(href).ok()?))
+    let index = entry_index(archive, href)
+        .or_else(|| entry_index(archive, &urlencoding::decode(href).ok()?))
         .ok_or(ZipError::FileNotFound)?;
     archive.by_index(index)
 }
