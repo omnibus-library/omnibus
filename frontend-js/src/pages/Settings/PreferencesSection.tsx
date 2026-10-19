@@ -133,6 +133,7 @@ function HiddenFormats() {
               id={`hidden-format-${fmt}`}
               data-testid={`hidden-format-toggle-${fmt}`}
               checked={hiddenFormats.includes(fmt)}
+              disabled={save.isPending}
               onChange={(event) =>
                 save.mutate(
                   withFormat(hiddenFormats, fmt, event.target.checked),

@@ -178,7 +178,7 @@ export const PressesATheme: Story = {
   },
 };
 
-export const KeepsQueuedFormatsWhileAnotherPreferenceSaves: Story = {
+export const KeepsAFormatCheckedWhileAnotherPreferenceSaves: Story = {
   beforeEach({ msw }) {
     const gate = deferred();
     release = gate.release;
@@ -193,19 +193,19 @@ export const KeepsQueuedFormatsWhileAnotherPreferenceSaves: Story = {
     const epub = await canvas.findByRole("checkbox", { name: "EPUB" });
     const pdf = canvas.getByRole("checkbox", { name: "PDF" });
     await userEvent.click(epub);
-    await userEvent.click(pdf);
+    await expect(epub).toBeChecked();
+    await waitFor(() => expect(pdf).toBeDisabled());
     await userEvent.click(
       canvas.getByRole("switch", { name: "Share stats with household" }),
     );
 
-    // The switch's save lands while both format saves are still held.
+    // The switch's save lands while the format save is still held.
     await waitFor(() =>
       expect(canvas.getByTestId("share-stats-status")).toHaveTextContent(
         "Saved",
       ),
     );
     await expect(epub).toBeChecked();
-    await expect(pdf).toBeChecked();
 
     release();
     await waitFor(() =>
@@ -214,7 +214,7 @@ export const KeepsQueuedFormatsWhileAnotherPreferenceSaves: Story = {
       ),
     );
     await expect(epub).toBeChecked();
-    await expect(pdf).toBeChecked();
-    await expect(server.user.hidden_formats).toEqual(["epub", "pdf"]);
+    await expect(pdf).toBeEnabled();
+    await expect(server.user.hidden_formats).toEqual(["epub"]);
   },
 };

@@ -9,7 +9,6 @@ import { useNavigate } from "react-router";
 import {
   fetchMe,
   fetchRegistrationOpen,
-  inOrder,
   logout,
   setBookDetailScrollStops,
   setHiddenFormats,
@@ -114,16 +113,11 @@ export function useUserSwitch(setting: UserSwitch) {
   );
 }
 
-const hiddenFormatSaves = new Map<string, Promise<void>>();
-
-/** Saves the whole hidden-formats set, one save at a time so a run of clicks lands in order. */
+/** Saves the whole hidden-formats set; the boxes wait for the save, as the switches do. */
 export function useHiddenFormats() {
   return useSavedPreference<string[]>(
     "hiddenFormats",
-    (formats) =>
-      inOrder(hiddenFormatSaves, "hiddenFormats", () =>
-        setHiddenFormats(formats),
-      ),
+    setHiddenFormats,
     (user, formats) => ({ ...user, hiddenFormats: formats }),
   );
 }
