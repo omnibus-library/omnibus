@@ -90,11 +90,11 @@ export const AccentOnlyWhenSet: Story = {
     );
   },
   play: async ({ canvas }) => {
-    const [dune, foundation] = await canvas.findAllByTestId("series-card");
+    const cards = await canvas.findAllByTestId("series-card");
 
     // A self-referencing var(--accent) would invalidate the property instead of inheriting it.
-    await expect(dune.style.getPropertyValue("--accent")).toBe("");
-    await expect(foundation.style.getPropertyValue("--accent")).toBe(
+    await expect(cards[0]?.style.getPropertyValue("--accent")).toBe("");
+    await expect(cards[1]?.style.getPropertyValue("--accent")).toBe(
       "oklch(0.55 0.12 150)",
     );
   },
