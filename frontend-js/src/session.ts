@@ -54,18 +54,16 @@ export function useSignOut() {
 /** Saves the Stack series preference straight away; a refusal puts the switch back. */
 export function useStackSeries() {
   const queryClient = useQueryClient();
-  const show = (enabled: boolean) =>
-    queryClient.setQueryData(
-      meQuery.queryKey,
-      (user) => user && { ...user, stackSeries: enabled },
-    );
   return useMutation({
     mutationFn: setStackSeries,
     onMutate: async (enabled) => {
       // A refetch already in flight would land over the optimistic value.
       await queryClient.cancelQueries({ queryKey: meQuery.queryKey });
       const previous = queryClient.getQueryData(meQuery.queryKey);
-      show(enabled);
+      queryClient.setQueryData(
+        meQuery.queryKey,
+        (user) => user && { ...user, stackSeries: enabled },
+      );
       return { previous };
     },
     onError: (_error, _enabled, context) =>
