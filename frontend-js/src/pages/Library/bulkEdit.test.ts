@@ -41,13 +41,14 @@ describe("bulkWire", () => {
     });
   });
 
-  it("trims the scalars, and leaves out blank ones and an empty author list", () => {
-    expect(bulkWire(edit({ publisher: " Tor ", series: "  " }))).toMatchObject({
+  it("trims the scalars and leaves out blank ones and an empty author list", () => {
+    expect(bulkWire(edit({ publisher: " Tor ", series: "  " }))).toEqual({
       publisher: "Tor",
+      add_tags: [],
+      remove_tags: [],
+      add_genres: [],
+      remove_genres: [],
     });
-    const wire = bulkWire(edit({ publisher: " Tor ", series: "  " }));
-    expect(wire).not.toHaveProperty("series");
-    expect(wire).not.toHaveProperty("authors");
   });
 
   it("sends the authors when given", () => {

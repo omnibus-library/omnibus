@@ -134,7 +134,7 @@ describe("namedOptions", () => {
     expect(options).toEqual([{ value: "Cozy", label: "Cozy", count: 6 }]);
   });
 
-  it("keeps names that differ by more than ASCII case apart, as the engine compares them", () => {
+  it("keeps names apart that differ beyond ASCII case as the engine compares them", () => {
     const options = namedOptions([
       { name: "Émile", count: 2 },
       { name: "émile", count: 3 },
