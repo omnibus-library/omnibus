@@ -245,3 +245,15 @@ fn bulk_overrides_request_validate_rejects_an_over_long_uuid_and_an_invalid_edit
         .unwrap_err()
         .contains("tag exceeds"));
 }
+
+#[test]
+fn bulk_overrides_request_validate_rejects_an_empty_authors_list() {
+    let edit = BulkMetadataEdit {
+        authors: Some(vec![]),
+        ..Default::default()
+    };
+    assert_eq!(
+        bulk_request(&["a"], edit).validate(),
+        Err("authors must name at least one".to_string())
+    );
+}

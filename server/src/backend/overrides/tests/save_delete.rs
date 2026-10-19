@@ -385,6 +385,22 @@ async fn api_post_bulk_overrides_rejects_an_empty_edit_with_400() {
 }
 
 #[tokio::test]
+async fn api_post_bulk_overrides_rejects_an_empty_authors_list_with_400() {
+    let (app, _state, pool) = fixture().await;
+    let (_id, uuid) = seed_book_with_uuid(&pool, "/lib", "Original").await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    let res = post_bulk(
+        app,
+        &token,
+        serde_json::json!({ "uuids": [uuid], "edit": { "authors": [] } }),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn api_post_bulk_overrides_requires_edit_permission() {
     let (app, _state, pool) = fixture().await;
     let (_id, uuid) = seed_book_with_uuid(&pool, "/lib", "Original").await;

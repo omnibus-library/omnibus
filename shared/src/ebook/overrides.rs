@@ -310,6 +310,10 @@ impl BulkOverridesRequest {
         if self.edit.is_empty() {
             return Err("no fields to apply".into());
         }
+        // `authors` replaces the whole list, so an empty one would clear creators on every book.
+        if self.edit.authors.as_ref().is_some_and(Vec::is_empty) {
+            return Err("authors must name at least one".into());
+        }
         self.edit.validate()
     }
 }
