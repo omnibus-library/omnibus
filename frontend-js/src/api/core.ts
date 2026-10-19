@@ -79,6 +79,25 @@ export const CredentialsSchema = z.object({
 
 export type Credentials = z.infer<typeof CredentialsSchema>;
 
+/** Runs `run` after the earlier task under `key` settles, so writes reach the server in the order made; a failure stalls nothing. */
+export function inOrder<T>(
+  chains: Map<string, Promise<void>>,
+  key: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const result = (chains.get(key) ?? Promise.resolve()).then(run);
+  const tail = result.then(
+    () => {},
+    () => {},
+  );
+  chains.set(key, tail);
+  // Dropped once idle, so the map holds only books with a write in flight.
+  void tail.then(() => {
+    if (chains.get(key) === tail) chains.delete(key);
+  });
+  return result;
+}
+
 // The generated fetcher JSON-parses every body, and an error's is plain text.
 export async function send(
   url: string,

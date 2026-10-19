@@ -1,0 +1,2724 @@
+/*
+ * epub-reader-glue.js — Omnibus epub.js bridge.
+ *
+ * Forked: `omnibus-ios/omnibus/Reader/Web/epub-reader-glue.js` is a diverged
+ * copy. A change here does not reach iOS — check both.
+ *
+ * Depends on two globals that MUST be loaded as siblings BEFORE this file:
+ *   - `ePub`  (epubjs@0.3.93)  — vendored at ./epub.min.js
+ *   - `JSZip` (jszip@3.10.1)   — vendored at ./jszip.min.js
+ *
+ * The Rust reader page sets two optional callbacks on `window`:
+ *   - `__omnibusOnRelocate(json)` — invoked (debounced) on every epub.js
+ *     "relocated" event with a JSON string containing CFI + page/chapter
+ *     data so the Rust side can update the bottom bar and persist position.
+ *   - `__omnibusOnStatus(state)` — invoked with "ready" once the first page
+ *     paints, or "error" if the book fails to open/render. Lets the Rust side
+ *     drive a loading/error UI instead of leaving a blank viewer. Emits
+ *     "nav-error" when a display(target) navigation rejects or never lands.
+ * Same-origin .epub fetch is performed by epub.js via XHR, so the session
+ * cookie is sent automatically.
+ *
+ * Public surface: window.OmnibusReader
+ *   init(elementId, fileUrl, opts)  opts = { cfi?, fontSize?, theme?,
+ *                                           fontFamily?, fontsHref?,
+ *                                           lineHeight?,
+ *                                           maxWidth?, justify?, spread?,
+ *                                           allowScriptedContent?,
+ *                                           locationsKey? }
+ *                                   fontsHref is the reader's self-hosted
+ *                                   @font-face sheet, linked inside every
+ *                                   section; fontFamily absent/null means
+ *                                   Original — no override at all.
+ *   next()                          queued/coalesced — see the paging-turn
+ *                                   queue below (issue #1895, AC1)
+ *   prev()                          same queue as next()
+ *   retry()                         re-run the most recent init() verbatim;
+ *                                   the reader error overlay's recovery
+ *                                   action (issue #1895, AC3)
+ *   setFontSize(px)
+ *   setTheme(name)
+ *   setFont(family|null)            null clears the override (Original)
+ *   setLineHeight(value)
+ *   setMargins(maxWidth)
+ *   setJustify(on)
+ *   setSpread(mode)                 "none" (single column) or "auto"
+ *                                   (epub.js pairs columns once the stage
+ *                                   crosses its minSpreadWidth)
+ *   addAnnotation(cfiRange, color)
+ *   removeAnnotation(cfiRange)
+ *   clearAnnotations()
+ *   requestToc()                    re-emits __omnibusOnToc
+ *   display(target)                 navigate to a TOC href or CFI (also the
+ *                                   target of in-book content-link taps —
+ *                                   see installContentLinkNav())
+ *   copyText(text)                  clipboard write
+ *   shareText(text)                 navigator.share, clipboard fallback
+ *   destroy()
+ *
+ * Quote-card PNG export lives in the standalone ../quote-card.js
+ * (`window.OmnibusQuoteCard`) — it has no epub.js dependency and is also
+ * loaded by pages that never mount a rendition (book-detail passages).
+ *
+ * Selection callbacks:
+ *   - `__omnibusOnSelection(json)` — invoked when the user selects text,
+ *     with { cfiRange, text, rect: { x, y, width } } where rect is in
+ *     viewport coordinates. epub.js re-fires this as the selection is
+ *     adjusted (e.g. native handle drags), so the payload tracks the
+ *     live range.
+ *   - `__omnibusOnSelectionCleared(_)` — invoked (debounced) when the
+ *     selection collapses to nothing, so the host can dismiss its
+ *     selection UI without needing a scrim that would swallow the
+ *     native handle drags.
+ * Table-of-contents callback:
+ *   - `__omnibusOnToc(json)` — invoked once the book is ready (and on
+ *     requestToc()), with a flat [{ label, href, level }] array.
+ * Native-share shims (optional; mobile shell only):
+ *   - `__omnibusOnShareText(text)` — when defined, shareText routes here
+ *     instead of the Web Share API (absent in WKWebView) and the host
+ *     presents the OS share sheet. (`__omnibusOnShareImage` is the same
+ *     idea for quote-card.js's shareQuoteCard.)
+ */
+(function () {
+  "use strict";
+
+  var book = null;
+  var rendition = null;
+  var relocateTimer = null;
+  // Whether epub.js "locations" (the whole-book pagination map) are usable
+  // for the current book — loaded from cache or generated. Until then the
+  // relocate payload carries a coarse spine-derived percent flagged
+  // `pctApprox` instead of epub.js's frozen 0 (issue #1896).
+  var locationsReady = false;
+  // False while an initial CFI restore is still settling — mutes emitRelocate
+  // so the first-pass landing (a page or two off until fonts/theme reflow) is
+  // never persisted as reading progress.
+  var restoreSettled = true;
+  // Monotonic navigation generation: bumped by every explicit display
+  // (jumps, TOC/link nav, page turns). The restore settle chain and each
+  // displaySettled capture the value at start and skip their corrective
+  // redisplay when a later navigation has superseded them — without this
+  // the restore's re-display(initialCfi) yanks the view back off a
+  // follow-mode jump that landed while it was settling.
+  var displayToken = 0;
+  // True from a CFI restore until its first post-settle emission — that
+  // emission re-states the restored position and is tagged `echo` so the
+  // host renders it without persisting it (see emitRelocate).
+  var restoreEchoPending = false;
+  // The page the restore's echo re-stated, and the navigation generation it
+  // was stated under: the same page again with no navigation since is the
+  // settle chain landing late, not movement (see emitRelocate).
+  var restoreEchoCfi = null;
+  var restoreEchoToken = -1;
+  // Counts `relocated` events, so a deferred emission can tell one arrived.
+  var relocatedSeq = 0;
+  // How long unmute holds the echo tag for the corrective redisplay's own
+  // `relocated` — just past the relocate debounce.
+  var UNMUTE_FALLBACK_MS = 450;
+  var unmuteFallbackTimer = null;
+  // True from the first resize-driven "resized" event of a rotation/resize
+  // burst until the corrected redisplay that follows it has been reported —
+  // mutes every relocate in between (issue #2081, finding 1 & 2). A
+  // rotation re-paginates but is not reading movement: epub.js's own
+  // window-resize handler and installStageResizeWatch's ResizeObserver
+  // each re-display the pre-resize CFI through a plain, uncorrected
+  // `rendition.display()`, so left unmuted the host would see one or two
+  // relocates that both land off the actual page (no nudgeToTarget
+  // correction) and both look like real movement (no echo tag).
+  var resizeSettling = false;
+  var resizeCorrectionTimer = null;
+  var resizeCorrectionTarget = null;
+  var RESIZE_CORRECTION_DEBOUNCE_MS = 200;
+  var tocFlat = [];
+  var currentTheme = "dark";
+  // Whether the section iframe runs scripts. Only then can we await the
+  // iframe's `fonts.ready`, which is what makes the settle short enough to
+  // hide behind a fade rather than a long blank.
+  var scriptedContentAllowed = false;
+  // Re-paginates when the viewer CONTAINER resizes without a window resize —
+  // epub.js only listens for window resize, so the immersive audio dock
+  // appearing/disappearing mid-read (which shrinks/grows `.rd-stage`) would
+  // otherwise leave the last line of prose clipped behind stale pagination.
+  var stageResizeObserver = null;
+  var stageResizeTimer = null;
+  // addAnnotation calls that arrived before init() built the rendition — the
+  // host seeds saved highlights in parallel with the bootstrap poll, so the
+  // highlight list can win that race. Flushed (and emptied) by init(); not
+  // cleared in teardown(), because init() tears down first and must still
+  // flush adds that raced it.
+  var pendingAnnotations = [];
+  var annotationRepaintTimer = null;
+  // First-paint watchdog: if rendition.display() never settles, none of the
+  // ready/error emits fire and the host's loading overlay stays up forever
+  // (#2346). Armed by init(), cleared on paint or teardown; on expiry it
+  // emits "error" so the host shows its "couldn't be loaded" + Retry surface
+  // rather than an indefinite "Loading…".
+  var firstPaintWatchdog = null;
+  // Navigation watchdog: the host shows its loading overlay for a TOC jump
+  // and clears it on the relocate that lands it. A display() that rejects or
+  // never settles emits no relocate, so on either the host is told via
+  // "nav-error" instead of hanging on "Loading…" (#2450).
+  var navWatchdog = null;
+  var NAV_WATCHDOG_MS = 10000;
+  // A displayPercentage call that arrived before the book/locations were
+  // ready — the follow-mode auto-jump fires ~50ms after mount, racing both
+  // init() (book still null) and the locations pass (seconds on a first
+  // open). Applied by init()'s locations .then; cancelled by any user
+  // navigation (their own movement outranks a stale auto-jump). Like
+  // pendingAnnotations, NOT cleared in teardown() — init() tears down
+  // first and must still honor a jump that raced it; destroy() clears it.
+  var pendingJumpPct = null;
+  // CFI twin of pendingJumpPct: a displayCfi that raced init. Applied
+  // from the same locations hook (a CFI jump needs only the rendition,
+  // but one known safe point keeps the two paths in step); at most one
+  // of the two slots is ever set.
+  var pendingJumpCfi = null;
+
+  function emitStatus(state) {
+    // An error ends any pending jump, so its watchdog can't later report nav-error over it.
+    if (state === "error") clearNavWatchdog();
+    if (typeof window.__omnibusOnStatus === "function") {
+      try {
+        window.__omnibusOnStatus(state);
+      } catch (e) {
+        /* ignore handler errors */
+      }
+    }
+  }
+
+  function teardown() {
+    if (relocateTimer) {
+      clearTimeout(relocateTimer);
+      relocateTimer = null;
+    }
+    if (unmuteFallbackTimer) {
+      clearTimeout(unmuteFallbackTimer);
+      unmuteFallbackTimer = null;
+    }
+    if (stageResizeTimer) {
+      clearTimeout(stageResizeTimer);
+      stageResizeTimer = null;
+    }
+    if (resizeCorrectionTimer) {
+      clearTimeout(resizeCorrectionTimer);
+      resizeCorrectionTimer = null;
+    }
+    resizeSettling = false;
+    resizeCorrectionTarget = null;
+    if (annotationRepaintTimer) {
+      clearTimeout(annotationRepaintTimer);
+      annotationRepaintTimer = null;
+    }
+    if (firstPaintWatchdog) {
+      clearTimeout(firstPaintWatchdog);
+      firstPaintWatchdog = null;
+    }
+    clearNavWatchdog();
+    if (stageResizeObserver) {
+      try {
+        stageResizeObserver.disconnect();
+      } catch (e) {
+        /* ignore teardown errors */
+      }
+      stageResizeObserver = null;
+    }
+    cancelTurnAnim();
+    endSectionTurn();
+    endSettleFade();
+    resetTurnQueue();
+    tocFlat = [];
+    locationsReady = false;
+    if (rendition) {
+      try {
+        rendition.destroy();
+      } catch (e) {
+        /* ignore teardown errors */
+      }
+      rendition = null;
+    }
+    if (book) {
+      try {
+        book.destroy();
+      } catch (e) {
+        /* ignore teardown errors */
+      }
+      book = null;
+    }
+  }
+
+  // epub.js keeps nav/NCX hrefs verbatim, but they are relative to the TOC
+  // document, not the package. With the nav in a subfolder of the OPF's
+  // (OPF at the root, nav in OEBPS/) no spine lookup matches them, so every
+  // TOC display() rejects and findChapter never places the reader (#2450).
+  function resolveTocHrefs(items, base) {
+    if (!items || !base) return;
+    for (var i = 0; i < items.length; i++) {
+      items[i].href = resolveTocHref(items[i].href || "", base);
+      resolveTocHrefs(items[i].subitems, base);
+    }
+  }
+
+  // Rebase `href` onto `base` only when the verbatim href misses the spine
+  // and the rebased one hits it — a TOC that already resolves is untouched.
+  function resolveTocHref(href, base) {
+    var hash = href.indexOf("#");
+    var path = hash >= 0 ? href.slice(0, hash) : href;
+    if (!path || book.spine.get(path)) return href;
+    var rebased;
+    try {
+      rebased = decodeURI(new URL(path, "http://x/" + base).pathname.slice(1));
+    } catch (e) {
+      return href;
+    }
+    // The section's own href: findChapter compares hrefs with ===.
+    var section = book.spine.get(rebased);
+    if (!section) return href;
+    return hash >= 0 ? section.href + href.slice(hash) : section.href;
+  }
+
+  // Directory of the document epub.js built its navigation from (nav wins
+  // over NCX, as in Book.loadNavigation), relative to the package.
+  function tocBase() {
+    var p = book && book.packaging;
+    var nav = p && (p.navPath || p.ncxPath);
+    var slash = nav ? nav.lastIndexOf("/") : -1;
+    return slash >= 0 ? nav.slice(0, slash + 1) : "";
+  }
+
+  function flattenToc(items, out) {
+    if (!items) return;
+    for (var i = 0; i < items.length; i++) {
+      out.push(items[i]);
+      if (items[i].subitems) flattenToc(items[i].subitems, out);
+    }
+  }
+
+  // The TOC entry a position in spine item `href` sits in. Several entries can
+  // share one spine item, so with `cfi` and a `placer` for that item's
+  // document ({ doc, cfiOf(el) }) the one whose anchor is last at or before
+  // the position wins; an anchor that can't be placed keeps the item's last
+  // entry.
+  function findChapter(href, cfi, placer) {
+    if (!tocFlat.length || !href) return null;
+    var clean = href.split("#")[0];
+    var hits = [];
+    for (var i = 0; i < tocFlat.length; i++) {
+      if ((tocFlat[i].href || "").split("#")[0] === clean) hits.push(i);
+    }
+    if (!hits.length) return null;
+    var at = hits.length > 1 ? entryAtOrBefore(hits, cfi, placer) : hits[0];
+    return { index: at + 1, total: tocFlat.length, title: tocFlat[at].label.trim() };
+  }
+
+  function entryAtOrBefore(hits, cfi, placer) {
+    var last = hits[hits.length - 1];
+    if (!cfi || !placer || !placer.doc) return last;
+    var at = -1;
+    try {
+      var cmp = new ePub.CFI();
+      for (var h = 0; h < hits.length; h++) {
+        var href = tocFlat[hits[h]].href || "";
+        var hash = href.indexOf("#");
+        // No fragment: the entry opens the spine item.
+        if (hash >= 0) {
+          var el = placer.doc.getElementById(href.slice(hash + 1));
+          if (!el) return last;
+          if (cmp.compare(placer.cfiOf(el), cfi) > 0) continue;
+        }
+        at = hits[h];
+      }
+    } catch (e) {
+      return last;
+    }
+    // Ahead of every anchor: the item's first entry is the nearest name.
+    return at >= 0 ? at : hits[0];
+  }
+
+  // A placer for the rendered section at spine `index`, or null.
+  function renderedPlacer(index) {
+    try {
+      var all = rendition ? rendition.getContents() : [];
+      for (var i = 0; i < all.length; i++) {
+        if (all[i].sectionIndex === index && all[i].document) {
+          var c = all[i];
+          return { doc: c.document, cfiOf: function (el) { return c.cfiFromNode(el); } };
+        }
+      }
+    } catch (e) {
+      /* no rendered sections */
+    }
+    return null;
+  }
+
+  // Coarse whole-book percent from spine position alone — the honest stand-in
+  // while the locations map is still being generated (issue #1896). Spine
+  // index plus the visual page fraction within the current section, over the
+  // spine count. Clamped below 100 so an approximation can never claim the
+  // book is finished.
+  function spineApproxPct(start) {
+    try {
+      var spine = book && book.spine;
+      var count = spine
+        ? (spine.spineItems || spine.items || []).length || spine.length || 0
+        : 0;
+      if (!count) return 0;
+      var idx = typeof start.index === "number" ? start.index : 0;
+      var frac = 0;
+      var d = start.displayed;
+      if (d && d.total > 0 && d.page > 0) frac = (d.page - 1) / d.total;
+      var pct = Math.round(((idx + frac) / count) * 100);
+      return Math.max(0, Math.min(99, pct));
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  function buildRelocateData(location) {
+    var cfi = location && location.start ? location.start.cfi : undefined;
+    // Whole-book percent needs the locations map; until it resolves,
+    // epub.js reports `percentage` as a flat 0 for the entire session.
+    // Substitute the spine-derived approximation and say so (`pctApprox`)
+    // rather than rendering a frozen 0% (issue #1896).
+    var pct = 0;
+    var pctApprox = false;
+    // Full-precision twin of `pct` for the "synced here" declaration —
+    // an anchor pair is only as good as the fraction it records.
+    var frac = 0;
+    if (location && location.start) {
+      if (locationsReady) {
+        // `start.percentage` is a snapshot taken when the relocate fired;
+        // the post-generation re-emit reuses a location minted *before* the
+        // map existed, whose snapshot is a frozen 0 — recompute from the
+        // CFI in that case rather than reporting a mid-book position as 0%.
+        var p = location.start.percentage || 0;
+        if (!p && cfi && book && book.locations) {
+          try {
+            p = book.locations.percentageFromCfi(cfi) || 0;
+          } catch (e) {
+            p = 0;
+          }
+        }
+        pct = Math.round(p * 100);
+        frac = p;
+      } else {
+        pct = spineApproxPct(location.start);
+        pctApprox = true;
+        frac = pct / 100;
+      }
+    }
+    // `displayed` is the visual column epub.js just rendered in the current
+    // paginated flow — 1-indexed, and always exactly one away from the
+    // previous relocate's page after a next()/prev() turn. This replaced a
+    // `book.locations.locationFromCfi()` lookup (fixed ~1024-char chunks
+    // spanning the whole book), whose granularity didn't line up with a
+    // visual page turn: dense screens skipped several chunks, sparse ones
+    // (an image, a short trailing column) crossed none. The trade-off is
+    // that `page`/`totalPages` are now scoped to the current spine section
+    // rather than the whole book — `pct` (below) still carries the
+    // whole-book position.
+    var displayed = location && location.start ? location.start.displayed : null;
+    var page = displayed && displayed.page ? displayed.page : 0;
+    var totalPages = displayed && displayed.total ? displayed.total : 0;
+    var ch =
+      location && location.start
+        ? findChapter(location.start.href, cfi, renderedPlacer(location.start.index))
+        : null;
+    return {
+      cfi: cfi,
+      page: page,
+      totalPages: totalPages,
+      pct: pct,
+      frac: frac,
+      pctApprox: pctApprox,
+      // epub.js sets `atEnd` when the displayed range reaches the last page
+      // of the last spine item — `pct` alone tops out below 100 because it
+      // tracks the *start* of the visible range.
+      atEnd: !!(location && location.atEnd),
+      chapter: ch ? ch.index : 0,
+      totalChapters: ch ? ch.total : tocFlat.length,
+      chapterTitle: ch ? ch.title : "",
+    };
+  }
+
+  // Watch the mount element for container-driven size changes (the immersive
+  // dock reflowing `.rd-stage`) and re-run epub.js pagination. Skips the
+  // initial observe callback (rendition display is still settling) and
+  // debounces so a CSS transition only re-paginates once, at its final size.
+  function installStageResizeWatch(elementId) {
+    if (typeof ResizeObserver !== "function") return;
+    var el = document.getElementById(elementId);
+    if (!el) return;
+    var lastW = el.clientWidth;
+    var lastH = el.clientHeight;
+    stageResizeObserver = new ResizeObserver(function () {
+      var w = el.clientWidth;
+      var h = el.clientHeight;
+      if (w === lastW && h === lastH) return;
+      lastW = w;
+      lastH = h;
+      if (stageResizeTimer) clearTimeout(stageResizeTimer);
+      stageResizeTimer = setTimeout(function () {
+        stageResizeTimer = null;
+        if (!rendition) return;
+        try {
+          rendition.resize();
+        } catch (e) {
+          /* ignore resize races during teardown */
+        }
+      }, 120);
+    });
+    stageResizeObserver.observe(el);
+  }
+
+  // The most recent init() call's arguments — retry() replays them verbatim
+  // so a stalled/failed rendition (AC3) can recover without the Rust side
+  // having to re-derive the bootstrap literals (theme, font, saved CFI, …).
+  var lastInitArgs = null;
+
+  function init(elementId, fileUrl, opts) {
+    opts = opts || {};
+    scriptedContentAllowed = !!opts.allowScriptedContent;
+    lastInitArgs = { elementId: elementId, fileUrl: fileUrl, opts: opts };
+
+    if (typeof ePub !== "function") {
+      emitStatus("error");
+      throw new Error("OmnibusReader.init: global `ePub` is not available");
+    }
+
+    teardown();
+
+    try {
+      book = ePub(fileUrl, { openAs: "epub" });
+
+      // Font assets become data: in epub.js's replacement table before the
+      // first section renders — see inlineFontReplacements. Guarded on
+      // identity: a teardown+init for another book may supersede this one
+      // while `opened` is pending.
+      var patchedBook = book;
+      var fontsPatched = book.opened.then(
+        function () {
+          return patchedBook === book ? inlineFontReplacements(patchedBook) : 0;
+        },
+        function () { return 0; }
+      );
+      installFontSerializeHook(patchedBook, fontsPatched);
+
+      rendition = book.renderTo(elementId, {
+        width: "100%",
+        height: "100%",
+        flow: "paginated",
+        spread: "auto",
+        // Without `allow-scripts` on the section iframe, WebKit dispatches NO
+        // events to listeners inside it — gestures AND text selection are dead
+        // on iOS. The mobile shell opts in (its books are the user's own
+        // library); the web build keeps the stricter sandbox since desktop
+        // engines still fire parent-attached listeners.
+        allowScriptedContent: !!opts.allowScriptedContent,
+      });
+
+      installGestureNav();
+      installSelectionClearWatch();
+      installContentEnhancements();
+      installContentLinkNav();
+      installStageResizeWatch(elementId);
+
+      // These body backgrounds are mirrored by the per-theme `--rd-page`
+      // token in atrium.css (the reader-surface ground) — change both
+      // together or the chrome strips stop matching the page.
+      rendition.themes.register("light", {
+        body: { background: "#fcfbfa", color: foregroundColorForTheme("light") },
+      });
+      rendition.themes.register("dark", {
+        body: { background: "#201e1b", color: foregroundColorForTheme("dark") },
+      });
+      // Matches Apple Books' dark reading theme on macOS: a pure-black
+      // #000000 page with bright #ffffff text.
+      rendition.themes.register("black", {
+        body: { background: "#000000", color: foregroundColorForTheme("black") },
+      });
+      rendition.themes.register("sepia", {
+        body: { background: "#ede4d0", color: foregroundColorForTheme("sepia") },
+      });
+      rendition.themes.select(opts.theme || "dark");
+      currentTheme = opts.theme || "dark";
+      currentFontsHref = opts.fontsHref || null;
+      // Nothing has rendered yet, so the content hook applies both on first paint.
+      currentFontFamily = opts.fontFamily || null;
+
+      if (opts.fontSize) {
+        rendition.themes.fontSize(opts.fontSize + "px");
+      }
+      if (opts.lineHeight) setLineHeight(opts.lineHeight);
+      if (opts.maxWidth) setMargins(opts.maxWidth);
+      if (opts.justify !== undefined) setJustify(opts.justify);
+      if (opts.spread) rendition.spread(opts.spread);
+    } catch (e) {
+      emitStatus("error");
+      return;
+    }
+
+    // Saved highlights seeded while the bootstrap poll was still waiting on
+    // this init now have a rendition to land in; without this flush they
+    // were silently dropped and never painted. Guarded per-add so one
+    // unparseable CFI can't abort the rest of init.
+    var queued = pendingAnnotations;
+    pendingAnnotations = [];
+    for (var qi = 0; qi < queued.length; qi++) {
+      try {
+        addAnnotation(queued[qi].cfiRange, queued[qi].color);
+      } catch (e) {
+        /* skip the bad CFI, keep the rest */
+      }
+    }
+
+    // Resolved when this init's first page is on screen (the same moment
+    // the host's loading overlay drops) — the gate that keeps the
+    // locations pass out of the open path. `painted` is the synchronous
+    // mirror the error handler below reads.
+    var painted = false;
+    var paintResolve = null;
+    var firstPaint = new Promise(function (res) {
+      paintResolve = function () {
+        painted = true;
+        if (firstPaintWatchdog) {
+          clearTimeout(firstPaintWatchdog);
+          firstPaintWatchdog = null;
+        }
+        res();
+      };
+    });
+
+    // The whole-book `pct` figure comes from epub.js "locations" — a
+    // whole-book pagination pass that takes seconds on desktop and much
+    // longer in the mobile WebView (the visual page/section total in
+    // `buildRelocateData` doesn't need this pass — it reads straight off
+    // the current render). Cache the result per book (keyed by the
+    // host-supplied `locationsKey`, the book uuid) so only the very first
+    // open pays it. Storage failures (quota, private mode) and corrupt
+    // entries just fall back to regeneration. Caveat: replacing a book's
+    // file under the same uuid can leave a slightly stale pct until the
+    // entry is cleared.
+    //
+    // Generation (cache miss only) is gated on `firstPaint`: it walks and
+    // parses every spine section on the main thread, so starting it at
+    // book.ready lets it race the initial section render and starve the
+    // relocate timers — the "Loading…"-for-the-whole-book-parse and
+    // frozen-footer symptoms of issue #1896. Until it resolves, relocates
+    // carry the spine-approximate `pct` (see buildRelocateData).
+    var locationsCacheKey = opts.locationsKey ? "omn.locs::" + opts.locationsKey : null;
+    var locBook = book;
+    // If this open never paints (e.g. rendition.display() never settles), none
+    // of the ready/error emits fire and the overlay hangs forever (#2346).
+    // Bound it: on expiry, if we still haven't painted and a newer open hasn't
+    // superseded this book, emit "error" so the host shows its Retry surface.
+    // The guard mirrors the book.ready .catch below.
+    var FIRST_PAINT_WATCHDOG_MS = 15000;
+    firstPaintWatchdog = setTimeout(function () {
+      firstPaintWatchdog = null;
+      if (!painted && book === locBook) {
+        emitStatus("error");
+      }
+    }, FIRST_PAINT_WATCHDOG_MS);
+    book.ready
+      .then(function () {
+        tocFlat = [];
+        if (book.navigation && book.navigation.toc) {
+          resolveTocHrefs(book.navigation.toc, tocBase());
+          flattenToc(book.navigation.toc, tocFlat);
+        }
+        emitToc();
+        var cached = null;
+        if (locationsCacheKey) {
+          try {
+            cached = window.localStorage.getItem(locationsCacheKey);
+          } catch (e) { /* storage unavailable */ }
+        }
+        if (cached) {
+          try {
+            book.locations.load(cached);
+            locationsReady = true;
+            return null;
+          } catch (e) { /* corrupt cache — regenerate below */ }
+        }
+        return firstPaint.then(function () {
+          // A teardown+init for another book may have superseded this one
+          // while the gate was pending — never generate against it.
+          if (book !== locBook) return null;
+          return locBook.locations.generate(1024).then(function () {
+            if (book !== locBook) return null;
+            locationsReady = true;
+            if (locationsCacheKey) {
+              try {
+                window.localStorage.setItem(locationsCacheKey, locBook.locations.save());
+              } catch (e) { /* quota/unavailable — regenerate next open */ }
+            }
+            return null;
+          });
+        });
+      })
+      .then(function () {
+        // Re-emit current location now that locations are resolved so the
+        // Rust side gets a real whole-book `pct` on first load (page/total
+        // are already live off the current render — see buildRelocateData).
+        // An echo: it re-states the position, it doesn't report movement.
+        if (book === locBook && rendition && rendition.location) {
+          emitRelocate(rendition.location, true);
+        }
+        // A follow-mode auto-jump that raced this pass now has a rendition
+        // (and locations) to resolve against — apply it unless navigation
+        // cancelled it (or the book was swapped mid-chain). The CFI slot
+        // wins: it is the server-derived precise target, the percentage its
+        // locations-scale fallback.
+        if (book === locBook && pendingJumpCfi !== null) {
+          var jumpCfi = pendingJumpCfi;
+          pendingJumpCfi = null;
+          pendingJumpPct = null;
+          // Same-position guard as displayCfi: a parked jump that resolves
+          // to the page already on screen is a restatement — skipping it
+          // keeps the restore's echo tag pending so nothing writes (#1972).
+          if (!jumpIsCurrent(jumpCfi)) {
+            restoreEchoPending = false;
+            displaySettled(jumpCfi);
+          }
+        } else if (book === locBook && pendingJumpPct !== null && book && book.locations) {
+          var pct = pendingJumpPct;
+          pendingJumpPct = null;
+          // `applyPercentage` clears the echo tag only when its
+          // same-position guard passes (#1972).
+          applyPercentage(pct);
+        }
+      })
+      .catch(function () {
+        // Before the first paint this is a failed open and the host must
+        // show its error state. After it, the reader is already usable —
+        // a background locations failure only degrades the percent, so
+        // don't replace a working page with the failure overlay. A chain
+        // whose init has been superseded (book swapped) reports nothing:
+        // its failure describes a book no longer on screen.
+        if (!painted && book === locBook) emitStatus("error");
+      });
+
+    // Restoring a saved position must go through the same settle-then-
+    // redisplay correction as TOC/link navigation: the first-pass display
+    // measures a freshly rendered iframe whose metrics still shift (webfont
+    // swap, injected book CSS), landing a page or two off — and the relocate
+    // that follows would persist that drifted position over the real one.
+    // Relocates stay muted (restoreSettled) until the corrective redisplay
+    // lands, and `ready` is deferred to the same moment: the first-pass
+    // landing, the fonts/CSS reflow, and the correction all happen behind
+    // the opaque loading overlay instead of flashing in view. Books without
+    // saved progress paint (and report ready) immediately.
+    var initialCfi = opts.cfi || null;
+    restoreSettled = !initialCfi;
+    restoreEchoPending = !!initialCfi;
+    restoreEchoCfi = null;
+    // A jump or turn during the settle supersedes the restore — its
+    // corrective redisplay must not pull the view back (see displayToken).
+    var restoreToken = displayToken;
+    var restoreCurrent = function () {
+      return displayToken === restoreToken;
+    };
+    rendition.display(initialCfi || undefined).then(
+      function () {
+        if (!initialCfi) {
+          emitStatus("ready");
+          paintResolve();
+          return;
+        }
+        var r = rendition;
+        var unmute = function () {
+          // Identity check: a teardown+init for another book may have
+          // swapped the rendition while this restore was settling.
+          if (rendition !== r || restoreSettled) return;
+          restoreSettled = true;
+          emitStatus("ready");
+          paintResolve();
+          // A relocate already in flight (debounce pending) carries the
+          // freshest measured landing and will emit now that the mute is
+          // lifted — don't shadow it with a snapshot. Otherwise emit the
+          // measured current location; `rendition.location` can echo the
+          // display target rather than the rendered viewport, so it is
+          // only the fallback.
+          if (relocateTimer) return;
+          // The corrective redisplay's own `relocated` can still be a frame
+          // out, and must land as the echo too: state the landing now without
+          // spending the tag, which lapses only if none comes.
+          var seq = relocatedSeq;
+          unmuteFallbackTimer = setTimeout(function () {
+            unmuteFallbackTimer = null;
+            if (rendition !== r || relocatedSeq !== seq || relocateTimer) return;
+            restoreEchoPending = false;
+          }, UNMUTE_FALLBACK_MS);
+          var loc = null;
+          try {
+            loc = rendition.currentLocation();
+          } catch (e) {
+            /* not ready yet */
+          }
+          if (loc && loc.start) {
+            emitRelocate(loc, true);
+          } else if (rendition.location) {
+            emitRelocate(rendition.location, true);
+          }
+        };
+        redisplayWhenSettled(initialCfi, restoreCurrent)
+          .then(function () {
+            if (!restoreCurrent()) return;
+            return nudgeToTarget(initialCfi);
+          })
+          .catch(function () {
+            /* keep the first-pass landing */
+          })
+          .then(unmute);
+        // Fail-open: if the settle chain ever hangs (an epub.js display that
+        // never resolves), the mute must not permanently stop progress
+        // persistence, nor the deferred ready leave the loading overlay up
+        // forever — worst case reverts to the uncorrected landing. The chain
+        // is retired first, so a redisplay it issues late can't move the
+        // page after the echo has been spent.
+        setTimeout(function () {
+          if (rendition === r && !restoreSettled) displayToken++;
+          unmute();
+        }, 4000);
+      },
+      function () {
+        emitStatus("error");
+      }
+    );
+
+    rendition.on("relocated", function (location) {
+      relocatedSeq++;
+      if (relocateTimer) {
+        clearTimeout(relocateTimer);
+      }
+      relocateTimer = setTimeout(function () {
+        relocateTimer = null;
+        emitRelocate(location);
+      }, 400);
+    });
+
+    // epub.js's Rendition.onResized emits this, then immediately issues its
+    // own plain, uncorrected `display(e || this.location.start.cfi)` — the
+    // pre-resize position, at the moment this fires, since `location` isn't
+    // re-measured until that display resolves. Anchor the correction on the
+    // same fallback so it targets the same pre-resize page epub.js does.
+    rendition.on("resized", function (size, cfiOverride) {
+      var target =
+        cfiOverride ||
+        (rendition && rendition.location && rendition.location.start
+          ? rendition.location.start.cfi
+          : null);
+      scheduleResizeCorrection(target);
+    });
+
+    rendition.on("selected", function (cfiRange, contents) {
+      if (typeof window.__omnibusOnSelection !== "function") return;
+      if (!contents || !contents.window) return;
+      var sel = contents.window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.toString().trim()) return;
+      var range = sel.getRangeAt(0);
+      var iframeRect = { x: 0, y: 0 };
+      try {
+        var frame = contents.content.ownerDocument.defaultView.frameElement;
+        if (frame) {
+          var fr = frame.getBoundingClientRect();
+          iframeRect = { x: fr.left, y: fr.top };
+        }
+      } catch (e) { /* cross-origin safety */ }
+      var r = range.getBoundingClientRect();
+      var rect = {
+        x: r.left + iframeRect.x,
+        y: r.top + iframeRect.y,
+        width: r.width,
+      };
+      window.__omnibusOnSelection(JSON.stringify({
+        cfiRange: cfiRange,
+        text: sel.toString(),
+        rect: rect,
+      }));
+    });
+
+    // Arrow keys page the book when the content iframe has focus. Key events
+    // inside the iframe never bubble to the host document (so the Rust surface
+    // keydown handler can't see them) — epub.js forwards them here instead.
+    const prevPageKeys = new Set(["ArrowLeft", "ArrowUp", "H", "K"]);
+    const nextPageKeys = new Set(["ArrowRight", "ArrowDown", "L", "J"]);
+    rendition.on("keyup", function (e) {
+      if (!e || !e.key) return;
+      // Letter keys arrive lowercase without Shift; uppercase single-char keys
+      // so h/j/k/l match the sets (arrow-key names are multi-char, unchanged).
+      var k = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+
+      if (prevPageKeys.has(k)) {
+        prev();
+        e.preventDefault?.();
+      } else if (nextPageKeys.has(k)) {
+        next();
+        e.preventDefault?.();
+      }
+    });
+  }
+
+  // `isEcho` marks an emission that re-states a position the host already
+  // knows (the restore settle, the locations-resolved re-emit) rather than
+  // reporting movement. The host renders echoes but must not persist them:
+  // an echo write stamps a fresh clock on an unmoved position, which
+  // out-orders a newer counterpart-format position at the cross-format
+  // clock gate. The first emission after a CFI restore is an echo even
+  // when it arrives through the debounced relocated handler, so the flag
+  // is consumed here rather than trusted to the call sites — and never by an
+  // explicit echo while the settle emission is still due, which would spend
+  // it and leave that one to write.
+  function emitRelocate(location, isEcho) {
+    if (!restoreSettled || resizeSettling) return;
+    clearNavWatchdog();
+    var echo = !!isEcho;
+    var data = buildRelocateData(location);
+    if (restoreEchoPending) {
+      if (!echo || (!relocateTimer && !unmuteFallbackTimer)) {
+        restoreEchoPending = false;
+        echo = true;
+      }
+      restoreEchoCfi = data.cfi || null;
+      restoreEchoToken = displayToken;
+    } else if (!echo && restoreEchoCfi !== null) {
+      // Any movement ends it, so returning to the restored page still writes.
+      if (data.cfi === restoreEchoCfi && displayToken === restoreEchoToken) {
+        echo = true;
+      } else {
+        restoreEchoCfi = null;
+      }
+    }
+    data.echo = echo;
+    if (data.cfi && typeof window.__omnibusOnRelocate === "function") {
+      window.__omnibusOnRelocate(JSON.stringify(data));
+    }
+  }
+
+  // ── Paging-turn queue (button / keyboard next()/prev()) ────────────
+  // A click at ~1/sec (or an arrow-key repeat) called rendition.next()/
+  // prev() again before epub.js finished laying out the previous turn —
+  // the second call landed mid-transition and wedged the rendition with no
+  // console error (issue #1895, AC1). Every OmnibusReader.next()/prev() now
+  // goes through this queue: a turn already in flight absorbs later calls
+  // (coalesced to the most recent direction) instead of firing a second
+  // concurrent rendition.next()/prev(), and a watchdog surfaces a genuinely
+  // hung turn as a visible error rather than a silent black screen (AC3).
+  var TURN_WATCHDOG_MS = 4000;
+  var turnInFlight = false;
+  var turnPendingDir = null;
+  var turnWatchdog = null;
+
+  function clearTurnWatchdog() {
+    if (turnWatchdog) {
+      clearTimeout(turnWatchdog);
+      turnWatchdog = null;
+    }
+  }
+
+  // Reset the turn queue outright (teardown, or a book swap mid-turn) so a
+  // later mount can never inherit a stale in-flight flag or watchdog.
+  function resetTurnQueue() {
+    clearTurnWatchdog();
+    turnInFlight = false;
+    turnPendingDir = null;
+  }
+
+  function finishTurn() {
+    clearTurnWatchdog();
+    turnInFlight = false;
+    if (turnPendingDir !== null) {
+      var dir = turnPendingDir;
+      turnPendingDir = null;
+      queueTurn(dir);
+    }
+  }
+
+  function runTurn(dir) {
+    if (!rendition) {
+      turnInFlight = false;
+      return;
+    }
+    turnInFlight = true;
+    var result = dir > 0 ? rendition.next() : rendition.prev();
+    var p = result && typeof result.then === "function" ? result : Promise.resolve(result);
+    // Fail-open: a turn that never settles must not permanently wedge every
+    // later click — surface it once as a visible, retryable error instead.
+    turnWatchdog = setTimeout(function () {
+      turnWatchdog = null;
+      turnInFlight = false;
+      turnPendingDir = null;
+      emitStatus("error");
+    }, TURN_WATCHDOG_MS);
+    p.then(finishTurn, finishTurn);
+  }
+
+  function queueTurn(dir) {
+    if (!rendition) return;
+    // A user turn cancels any pending follow-jump or restore echo — the
+    // reader is navigating away from the target position.
+    pendingJumpPct = null;
+    pendingJumpCfi = null;
+    restoreEchoPending = false;
+    displayToken++;
+    cancelResizeCorrection();
+    if (turnInFlight) {
+      turnPendingDir = dir;
+      return;
+    }
+    runTurn(dir);
+  }
+
+  function next() {
+    queueTurn(1);
+  }
+
+  function prev() {
+    queueTurn(-1);
+  }
+
+  var sectionTurnStyleInstalled = false;
+
+  // Keep the outgoing section's pixels over epub.js while it clears the old
+  // iframe, lays out the adjacent section, and positions its landing page.
+  // Without this atomic hand-off, a previous-section turn briefly exposes the
+  // first page of that section before manager.prev() scrolls to its last page.
+  function installSectionTurnStyle() {
+    if (sectionTurnStyleInstalled || !document.head) return;
+    sectionTurnStyleInstalled = true;
+    var style = document.createElement("style");
+    style.id = "__omnibus_section_turn";
+    style.textContent =
+      "::view-transition-old(root),::view-transition-new(root){animation:none;}" +
+      "::view-transition-new(omnibus-page){animation:none;z-index:1;}" +
+      "html.omn-section-next::view-transition-old(omnibus-page){" +
+        "animation:omn-section-next 240ms cubic-bezier(.22,.72,.18,1) both;z-index:2;}" +
+      "html.omn-section-prev::view-transition-old(omnibus-page){" +
+        "animation:omn-section-prev 240ms cubic-bezier(.22,.72,.18,1) both;z-index:2;}" +
+      "@keyframes omn-section-next{to{transform:translateX(-100%);}}" +
+      "@keyframes omn-section-prev{to{transform:translateX(100%);}}" +
+      "@media(prefers-reduced-motion:reduce){" +
+        "html.omn-section-next::view-transition-old(omnibus-page)," +
+        "html.omn-section-prev::view-transition-old(omnibus-page){animation:none;}}";
+    document.head.appendChild(style);
+  }
+
+  function reportSectionLocation(result) {
+    if (result && result.then && rendition && rendition.reportLocation) {
+      result.then(rendition.reportLocation.bind(rendition));
+    } else if (rendition && rendition.reportLocation) {
+      rendition.reportLocation();
+    }
+  }
+
+  var sectionTurnInFlight = false;
+  var sectionTurnToken = 0;
+
+  // Mark a section turn in flight so new gestures can't capture a scroll
+  // base mid-layout (or fight the View Transition overlay). Returns the
+  // matching release; a fail-open timeout clears a turn whose promises
+  // never settle so gestures can't end up permanently disabled.
+  function beginSectionTurn() {
+    var token = ++sectionTurnToken;
+    sectionTurnInFlight = true;
+    var release = function () {
+      if (sectionTurnToken === token) sectionTurnInFlight = false;
+    };
+    setTimeout(release, 1500);
+    return release;
+  }
+
+  // Reset every bit of section-turn state (teardown, or a book swap while
+  // a turn was mid-flight): the gesture gate, the direction classes, and
+  // the container's view-transition-name, so a later mount starts clean
+  // and no other future View Transition accidentally captures the page.
+  function endSectionTurn() {
+    sectionTurnToken++;
+    sectionTurnInFlight = false;
+    document.documentElement.classList.remove("omn-section-next", "omn-section-prev");
+    if (rendition && rendition.manager && rendition.manager.container) {
+      rendition.manager.container.style.viewTransitionName = "";
+    }
+  }
+
+  // Whether the spine has a section on the `dir` side of the one being
+  // shown. Defaults to true on any surprise so the manager keeps the last
+  // word — callers only use `false` to skip a turn entirely.
+  function hasAdjacentSection(manager, dir) {
+    try {
+      var view = manager.views && manager.views.last && manager.views.last();
+      var section = view && view.section;
+      if (!section) return true;
+      return !!(dir > 0 ? section.next() : section.prev());
+    } catch (e) {
+      return true;
+    }
+  }
+
+  // Cross a spine boundary explicitly. A requestAnimationFrame hand-off is
+  // unreliable here because WKWebView can stop scheduling frames immediately
+  // after the final compositor transform is cleared. Returns false without
+  // turning when there is no adjacent section (the book's first/last page):
+  // the manager call would be a no-op there, stranding the resisted drag
+  // offset on screen — and the View Transition would slide a snapshot of
+  // the page over an identical copy of itself.
+  function turnAcrossSection(dir) {
+    if (!rendition || !rendition.manager) return false;
+    var manager = rendition.manager;
+    if (!hasAdjacentSection(manager, dir)) return false;
+    cancelResizeCorrection();
+    var release = beginSectionTurn();
+    var runTurn = function () {
+      return dir > 0 ? manager.next() : manager.prev();
+    };
+
+    // A same-document View Transition captures the old iframe before
+    // manager.prev()/next() synchronously clears it, waits for the returned
+    // layout promise, then reveals only the fully positioned destination.
+    // The named page snapshot continues in the swipe direction; everything
+    // else renders as a static snapshot of the settled destination for the
+    // ~240ms transition (the page counter catches up when reportLocation
+    // fires after the update).
+    if (typeof document.startViewTransition === "function" && manager.container) {
+      installSectionTurnStyle();
+      manager.container.style.viewTransitionName = "omnibus-page";
+      var turnClass = dir > 0 ? "omn-section-next" : "omn-section-prev";
+      document.documentElement.classList.add(turnClass);
+      var transition = null;
+      try {
+        transition = document.startViewTransition(runTurn);
+      } catch (e) {
+        document.documentElement.classList.remove(turnClass);
+      }
+      if (transition) {
+        var updated = transition.updateCallbackDone;
+        if (updated && updated.then) {
+          updated.then(function () {
+            if (rendition && rendition.reportLocation) rendition.reportLocation();
+          }, function () {
+            /* manager failure is reported by epub.js */
+          });
+        }
+        var finished = transition.finished;
+        if (finished && finished.then) {
+          finished.then(function () {
+            document.documentElement.classList.remove(turnClass);
+            release();
+          }, function () {
+            document.documentElement.classList.remove(turnClass);
+            release();
+          });
+        } else {
+          release();
+        }
+        return true;
+      }
+    }
+
+    // Call the manager immediately instead of queueing through rendition.
+    // Its built-in prev() waits for layout before positioning the last page of
+    // the prior section; its next() similarly lands at the next section start.
+    var result = runTurn();
+    reportSectionLocation(result);
+    if (result && result.then) {
+      result.then(release, release);
+    } else {
+      release();
+    }
+    return true;
+  }
+
+  // Emit `__omnibusOnSelectionCleared` (debounced) when the iframe selection
+  // collapses. epub.js only reports selections that exist ("selected"); the
+  // host needs the opposite edge — tap-away, iOS "done", a completed Copy —
+  // to dismiss its popover, now that no scrim overlays the prose (a scrim
+  // would swallow the native selection-handle drags, turning a range adjust
+  // into a page-spanning selection).
+  function installSelectionClearWatch() {
+    if (!rendition || !rendition.hooks || !rendition.hooks.content) return;
+    rendition.hooks.content.register(function (contents) {
+      var doc = contents.document;
+      var win = contents.window || window;
+      var clearTimer = null;
+      doc.addEventListener("selectionchange", function () {
+        if (clearTimer) clearTimeout(clearTimer);
+        // Debounce past the transient collapse WebKit emits mid-drag when a
+        // handle crosses a line boundary — only a settled empty selection
+        // should dismiss.
+        clearTimer = setTimeout(function () {
+          clearTimer = null;
+          var s = win.getSelection && win.getSelection();
+          if (s && !s.isCollapsed && String(s).trim()) return;
+          if (typeof window.__omnibusOnSelectionCleared === "function") {
+            try {
+              window.__omnibusOnSelectionCleared("");
+            } catch (e) {
+              /* ignore handler errors */
+            }
+          }
+        }, 300);
+      });
+    });
+  }
+
+  // The self-hosted @font-face sheet for the reader's named faces, handed in as
+  // `opts.fontsHref` — web passes the bundled `/assets/reader-fonts/reader-fonts.css`,
+  // iOS its `omnibus-reader://app/reader-fonts.css`. Webfonts don't cascade into
+  // the section iframe, so the sheet is linked inside every section. Absent →
+  // nothing is linked and the named stacks degrade to Georgia.
+  var currentFontsHref = null;
+
+  // Reader-owned `font-family` stack, or null for Original (no override — the
+  // publisher's faces win). Applied per section by applyFontFamily.
+  var currentFontFamily = null;
+
+  // Upsert the per-section font override. The rule is `body,body *` so a named
+  // face beats element-level publisher rules (Apple Books parity), and under
+  // Original the element is left EMPTY rather than given `inherit` or a var()
+  // fallback: any declaration on `body *`, even `inherit`, flattens publisher
+  // fonts, and an unset custom property computes to `unset` = `inherit`.
+  function applyFontFamily(doc) {
+    if (!doc || !doc.head) return;
+    var style = doc.getElementById("__omnibus_font");
+    if (!style) {
+      style = doc.createElement("style");
+      style.id = "__omnibus_font";
+      doc.head.appendChild(style);
+    }
+    style.textContent = currentFontFamily
+      ? "body,body *{font-family:" + currentFontFamily + "!important;}"
+      : "";
+  }
+
+  // Repaint the marks once a face change has actually reflowed the section.
+  // Force style+layout first so faces declared a moment ago start loading —
+  // read earlier, `fonts.ready` is the already-settled promise and the repaint
+  // lands on the fallback-font layout.
+  function armFontRepaint(doc) {
+    try {
+      void doc.documentElement.offsetHeight;
+      if (doc.fonts && doc.fonts.ready && doc.fonts.ready.then) {
+        doc.fonts.ready.then(scheduleAnnotationRepaint, function () {});
+      }
+    } catch (e) {
+      /* detached section */
+    }
+  }
+
+  // Inject the book's own stylesheets as inline <style>. epub.js rewrites each
+  // section `<link>` to a `blob:` URL, but the sandboxed iframe's opaque origin
+  // can't load a parent-minted blob (and the app CSP blocks fetching it too),
+  // so the publisher CSS silently drops and prose renders as UA defaults. We
+  // instead read the CSS straight out of epub.js's in-memory archive (JSZip)
+  // and inline it — an inline <style> the iframe honours. Fire-and-forget and
+  // fully guarded so a parsing hiccup can never stall or break the render.
+  function inlineBookStylesheets(doc) {
+    try {
+      if (!book || !book.archive || !book.packaging || doc.__omnibusBookCss) {
+        return;
+      }
+      doc.__omnibusBookCss = true;
+      var manifest = book.packaging.manifest || {};
+      var paths = [];
+      Object.keys(manifest).forEach(function (id) {
+        var item = manifest[id];
+        if (item && item.type === "text/css" && item.href) {
+          try {
+            paths.push(book.resolve(item.href));
+          } catch (e) {
+            /* unresolvable href — skip */
+          }
+        }
+      });
+      paths.forEach(function (path) {
+        book.archive
+          .getText(path)
+          .then(function (css) {
+            if (!css || !doc.head) return;
+            var style = doc.createElement("style");
+            style.setAttribute("data-omnibus-book-css", "");
+            style.textContent = css;
+            // Prepend so book CSS sits ahead of the reader baseline, which
+            // only touches html/body and should win any tie (e.g. hyphens).
+            doc.head.insertBefore(style, doc.head.firstChild);
+          })
+          .catch(function () {
+            /* unreadable asset — leave prose on UA defaults */
+          });
+      });
+    } catch (e) {
+      /* never let styling break rendering */
+    }
+  }
+
+  var FONT_EXT_RE = /\.(woff2|woff|ttf|otf|ttc)$/i;
+  var FONT_MIME = {
+    woff2: "font/woff2",
+    woff: "font/woff",
+    ttf: "font/ttf",
+    otf: "font/otf",
+    ttc: "font/collection",
+  };
+
+  // Whether an asset is a font: the manifest type when the publisher got it
+  // right, the extension when it did not (media types for fonts are all over
+  // the map in real books).
+  function isFontAsset(item) {
+    var href = String((item && item.href) || "").split(/[?#]/)[0];
+    var type = String((item && item.type) || "");
+    return (
+      FONT_EXT_RE.test(href) ||
+      /^(font\/|application\/(x-)?font|application\/vnd\.ms-opentype)/i.test(type)
+    );
+  }
+
+  function fontMimeFor(href) {
+    var m = /\.([a-z0-9]+)$/i.exec(String(href).split(/[?#]/)[0]);
+    return (m && FONT_MIME[m[1].toLowerCase()]) || null;
+  }
+
+  // Re-point every font asset in epub.js's replacement table from the blob:
+  // it minted to a data: URI, then regenerate the CSS blobs from the patched
+  // table. The section's own <link> stylesheet then carries data: @font-face
+  // sources from birth. This has to happen BEFORE the section is serialized:
+  // the browser requests a section's fonts during epub.js's first layout of
+  // it, before any content hook runs, so a copy added later — however it is
+  // ordered — cannot stop the blob: request the web CSP's `font-src` refuses
+  // (no `blob:`; `data:` is allowed). Resolves to the number of assets
+  // re-pointed and never rejects.
+  function inlineFontReplacements(b) {
+    try {
+      var res = b && b.resources;
+      if (!res || !b.archive || !res.assets || !res.urls || !res.replacementUrls) {
+        return Promise.resolve(0);
+      }
+      // epub.js drops failed entries from replacementUrls, so the parallel
+      // arrays can fall out of step; a book already in that state is left to it.
+      if (res.replacementUrls.length !== res.urls.length) return Promise.resolve(0);
+      var jobs = [];
+      res.assets.forEach(function (item, i) {
+        if (!isFontAsset(item)) return;
+        var mime = fontMimeFor(item.href);
+        var read;
+        try {
+          read = b.archive.getBase64(b.resolve(item.href)); // undefined when missing
+        } catch (e) {
+          read = null;
+        }
+        if (!read || !read.then) return;
+        jobs.push(
+          read.then(
+            function (dataUri) {
+              if (!dataUri) return 0;
+              // epub.js's mime table predates woff2; stamp the real type.
+              res.replacementUrls[i] = mime
+                ? dataUri.replace(/^data:[^;,]*/, "data:" + mime)
+                : dataUri;
+              return 1;
+            },
+            function () {
+              return 0; /* unreadable entry — leave the blob: alone */
+            }
+          )
+        );
+      });
+      if (!jobs.length) return Promise.resolve(0);
+      return Promise.all(jobs).then(function (counts) {
+        var n = counts.reduce(function (a, c) { return a + c; }, 0);
+        if (!n) return 0;
+        return res.replaceCss().then(
+          function () { return n; },
+          function () { return n; }
+        );
+      });
+    } catch (e) {
+      return Promise.resolve(0);
+    }
+  }
+
+  // Every section waits for the font table, then is re-substituted from the
+  // ORIGINAL serialized markup — the `output` epub.js's own serialize hook
+  // received and wrote `section.output` from synchronously; ours resolves
+  // later and so wins. Section.render awaits hook promises, which is what
+  // makes the first section deterministic rather than a race with the
+  // rendition's display queue.
+  function installFontSerializeHook(b, patched) {
+    if (!b.spine || !b.spine.hooks || !b.spine.hooks.serialize) return;
+    b.spine.hooks.serialize.register(function (output, section) {
+      return patched.then(function (n) {
+        if (n && b.resources && typeof output === "string") {
+          section.output = b.resources.substitute(output, section.url);
+        }
+      });
+    });
+  }
+
+  // Proactively re-point every `<img src>` / SVG `<image href|xlink:href>`
+  // that epub.js resolved to a `blob:` URL at its own bytes as a `data:`
+  // URI, read straight out of the archive — same fix, same rationale as
+  // inlineBookStylesheets above, for the other resource kind it doesn't
+  // cover. Real publisher front matter (title page, copyright, contents) is
+  // routinely a single full-page <img> or SVG-wrapped <image>, and unlike
+  // prose text a blank one is silent: no console error, nothing to notice
+  // (issue #1895, AC2). `resources.urls`/`replacementUrls` are parallel
+  // arrays (manifest-relative href -> resolved blob/base64 URL), so a
+  // reverse lookup recovers the href a `blob:` src came from. Fire-and-forget
+  // and fully guarded, like its stylesheet sibling.
+  function inlineBookImages(doc) {
+    try {
+      if (!book || !book.resources || !book.archive || doc.__omnibusBookImages) {
+        return;
+      }
+      doc.__omnibusBookImages = true;
+      var urls = book.resources.urls || [];
+      var replacementUrls = book.resources.replacementUrls || [];
+      var hrefByReplacement = {};
+      for (var i = 0; i < urls.length; i++) {
+        if (typeof replacementUrls[i] === "string") {
+          hrefByReplacement[replacementUrls[i]] = urls[i];
+        }
+      }
+      function repair(src, apply) {
+        if (!src || src.indexOf("blob:") !== 0) return;
+        var href = hrefByReplacement[src];
+        if (!href) return;
+        var path;
+        try {
+          path = book.resolve(href);
+        } catch (e) {
+          return;
+        }
+        book.archive
+          .getBase64(path)
+          .then(function (dataUri) {
+            if (dataUri) apply(dataUri);
+          })
+          .catch(function () {
+            /* unreadable asset — leave the blob: reference as-is */
+          });
+      }
+
+      var imgs = doc.querySelectorAll("img[src]");
+      for (var j = 0; j < imgs.length; j++) {
+        (function (img) {
+          repair(img.getAttribute("src"), function (dataUri) {
+            img.setAttribute("src", dataUri);
+          });
+        })(imgs[j]);
+      }
+
+      // SVG accepts the image reference as either the modern plain `href` or
+      // the legacy `xlink:href` — real-world publisher markup uses both.
+      var XLINK_NS = "http://www.w3.org/1999/xlink";
+      var svgImages = doc.querySelectorAll("image");
+      for (var k = 0; k < svgImages.length; k++) {
+        (function (el) {
+          var plain = el.hasAttribute("href");
+          var src = plain ? el.getAttribute("href") : el.getAttributeNS(XLINK_NS, "href");
+          repair(src, function (dataUri) {
+            if (plain) el.setAttribute("href", dataUri);
+            else el.setAttributeNS(XLINK_NS, "href", dataUri);
+          });
+        })(svgImages[k]);
+      }
+    } catch (e) {
+      /* never let image repair break rendering */
+    }
+  }
+
+  // Reader-owned hyperlink colour. Apple/Kindle paint links with their own
+  // accent and ignore the publisher's — so links stay a consistent, legible
+  // colour instead of whatever hue (or `:hover` red) a given book's CSS ships.
+  // Theme-aware: a dark-ground blue would wash out on the light/sepia grounds.
+  function linkColorForTheme(name) {
+    switch (name) {
+      case "light":
+      case "sepia":
+        return "#2f6fd0";
+      default:
+        return "#6fa8e6";
+    }
+  }
+
+  // Reader-owned foreground. Publisher styles often put `color` directly on a
+  // classed body (e.g. Calibre's `.calibre{color:#000}`), whose specificity
+  // beats epub.js's plain `body` theme rule.
+  function foregroundColorForTheme(name) {
+    switch (name) {
+      case "light":
+        return "#2a2725";
+      case "black":
+        return "#ffffff";
+      case "sepia":
+        return "#3b3029";
+      default:
+        return "#f5f3f0";
+    }
+  }
+
+  // Push the current theme's reader-owned colours into a section as CSS vars
+  // the baseline stylesheet reads. Runs per section and on every theme swap.
+  function applyThemeColors(doc) {
+    if (doc && doc.documentElement) {
+      doc.documentElement.style.setProperty(
+        "--omn-fg",
+        foregroundColorForTheme(currentTheme)
+      );
+      doc.documentElement.style.setProperty(
+        "--omn-link",
+        linkColorForTheme(currentTheme)
+      );
+    }
+  }
+
+  // Per-section content enhancement, registered on epub.js's content hook so it
+  // runs for every rendered spine item. The Apple/Kindle-parity fixes the
+  // sandboxed iframe would otherwise drop: the book's own stylesheet,
+  // hyphenation for justified prose (off by CSS default), the reader's own
+  // faces loaded *inside* the iframe, and the reader's `font-family` override
+  // layer — empty under Original, so the publisher's faces win. A book's
+  // *embedded* faces are not handled here and cannot be: they are requested
+  // during the section's first layout, before this hook ever runs (see
+  // inlineFontReplacements).
+  function installContentEnhancements() {
+    if (!rendition || !rendition.hooks || !rendition.hooks.content) return;
+    rendition.hooks.content.register(function (contents) {
+      var doc = contents.document;
+      if (!doc || !doc.head) return;
+
+      inlineBookStylesheets(doc);
+      inlineBookImages(doc);
+
+      // Hyphenation needs a language for its dictionary; inherit the book's,
+      // defaulting to English, without clobbering a per-document `lang`.
+      var meta = book && book.packaging && book.packaging.metadata;
+      var lang = (meta && meta.language) || "en";
+      if (doc.documentElement && !doc.documentElement.getAttribute("lang")) {
+        doc.documentElement.setAttribute("lang", lang);
+      }
+
+      if (currentFontsHref && !doc.getElementById("__omnibus_fonts")) {
+        var link = doc.createElement("link");
+        link.id = "__omnibus_fonts";
+        link.rel = "stylesheet";
+        link.href = currentFontsHref;
+        doc.head.appendChild(link);
+      }
+
+      applyThemeColors(doc);
+
+      // Reader baseline / override layer. The split mirrors Apple Books and
+      // Kindle: the reading system owns colour (and font, size, spacing,
+      // margins, justification — set elsewhere), while the publisher keeps
+      // structure — weight, style, headings, alignment, indents, small-caps.
+      //
+      // Appended last, and `!important` on colour so a publisher hue can't
+      // override the theme. Include `body` itself: descendants inheriting from
+      // a publisher-coloured, classed body otherwise stay black in Black/Dark
+      // themes. Only *real* links — `a` with an `href` — get the reader's
+      // accent. Scoping to `[href]` also spares body text that Gutenberg wraps
+      // in a self-closing *named* anchor (`<a id="chapN"/>`, no href), which
+      // the HTML parser leaves open across the chapter.
+      //
+      // `html,body{height:100%}` plus the img/svg max-size rules exist for
+      // full-page front-matter markup (a single <img> or SVG-wrapped <image>
+      // filling the section): a percentage-height image resolves against its
+      // containing block, and without an explicit height on that chain it
+      // collapses to nothing — a page that "renders" but shows no pixels
+      // (issue #1895, AC2). epub.js sets an explicit pixel height on body
+      // itself via inline style for the column layout, which (inline always
+      // beating a stylesheet rule) takes precedence over this — the rule only
+      // fills the gap for sections whose body height would otherwise be auto.
+      if (!doc.getElementById("__omnibus_baseline")) {
+        var style = doc.createElement("style");
+        style.id = "__omnibus_baseline";
+        style.textContent =
+          "html,body{-webkit-hyphens:auto;-ms-hyphens:auto;hyphens:auto;height:100%;}" +
+          "body,body *{color:var(--omn-fg,#f5f3f0)!important;}" +
+          "a:not([href]){cursor:auto;}" +
+          "a[href]{color:var(--omn-link,#4a86d8)!important;text-decoration:none;}" +
+          "img,svg{max-width:100%;max-height:100%;}" +
+          "svg{display:block;margin:0 auto;}";
+        doc.head.appendChild(style);
+      }
+
+      applyFontFamily(doc);
+      armFontRepaint(doc);
+    });
+  }
+
+  // ── Books-style page-turn (touch) ──────────────────────────────────
+  // The default paginated manager pages by moving `container.scrollLeft`
+  // in steps of `layout.delta`, with the whole section rendered as
+  // adjacent columns — so the neighbouring page's pixels already exist.
+  // Motion never touches scrollLeft directly though: every scrollLeft
+  // write fires the manager's scroll listener and its layout-reading
+  // location machinery, which visibly stutters a slow drag. Instead the
+  // drag and the snap animate a translateX on the container's children
+  // (compositor-only, invisible to epub.js) and the landing commits ONE
+  // scrollLeft assignment + transform clear in the same frame — one
+  // scroll event, one relocation, so the page counter and progress
+  // persistence ride the existing path exactly once per turn.
+  // Section boundaries (first/last page of a chapter) have no adjacent
+  // pixels, so a View Transition keeps the outgoing raster over epub.js while
+  // the adjacent section lays out, then completes the slide over the ready
+  // destination page.
+
+  var turnAnim = null; // in-flight snap animation
+
+  function pageContainer() {
+    return (rendition && rendition.manager && rendition.manager.container) || null;
+  }
+
+  function pageDelta() {
+    var m = rendition && rendition.manager;
+    if (m && m.layout && m.layout.delta) return m.layout.delta;
+    var c = pageContainer();
+    return c ? c.clientWidth : 0;
+  }
+
+  function maxScroll(c) {
+    return Math.max(0, c.scrollWidth - c.clientWidth);
+  }
+
+  // The drag/snap offset, as a translateX on every view child of the
+  // scroll container (visually identical to scrolling the clipped box).
+  function setViewOffset(c, px) {
+    var scale = window.devicePixelRatio || 1;
+    var aligned = Math.round(px * scale) / scale;
+    for (var i = 0; i < c.children.length; i++) {
+      c.children[i].style.transform = aligned ? "translate3d(" + aligned + "px,0,0)" : "";
+    }
+  }
+
+  // Promote the views to their own compositor layer for the duration of a
+  // gesture. Without this WebKit rasterizes the section iframe lazily
+  // (visible strip only), so a slow drag exposes not-yet-painted content
+  // popping in at the leading edge frame by frame; with a promoted layer
+  // the section is rasterized once and the drag just shifts a texture.
+  function armViews(c, on) {
+    for (var i = 0; i < c.children.length; i++) {
+      c.children[i].style.willChange = on ? "transform" : "";
+    }
+  }
+
+  // Land the visual offset: one scrollLeft assignment + transform clear
+  // in the same frame, so epub.js sees a single settled scroll.
+  function commitOffset(c, base, px) {
+    c.scrollLeft = Math.max(0, Math.min(maxScroll(c), base - px));
+    setViewOffset(c, 0);
+    armViews(c, false);
+  }
+
+  function cancelTurnAnim() {
+    if (!turnAnim) return;
+    var a = turnAnim;
+    turnAnim = null;
+    if (a.raf) cancelAnimationFrame(a.raf);
+    setViewOffset(a.container, 0);
+    armViews(a.container, false);
+  }
+
+  // Land an in-flight snap instantly (its target is already the settled
+  // page edge, so this is a fast-forward, never a visual glitch).
+  function finishTurnAnim() {
+    if (!turnAnim) return;
+    var a = turnAnim;
+    turnAnim = null;
+    if (a.raf) cancelAnimationFrame(a.raf);
+    commitOffset(a.container, a.base, a.targetPx);
+  }
+
+  function animateOffsetTo(c, base, fromPx, toPx, ms) {
+    finishTurnAnim();
+    var reduced = window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (fromPx === toPx || reduced) {
+      commitOffset(c, base, toPx);
+      return;
+    }
+    armViews(c, true);
+    var a = { container: c, base: base, targetPx: toPx, raf: 0 };
+    var start = null;
+    turnAnim = a;
+    function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+    function step(ts) {
+      if (turnAnim !== a) return;
+      if (start === null) start = ts;
+      var t = Math.min(1, (ts - start) / ms);
+      if (t < 1) {
+        setViewOffset(c, fromPx + (toPx - fromPx) * easeOutCubic(t));
+        a.raf = requestAnimationFrame(step);
+      } else {
+        turnAnim = null;
+        commitOffset(c, base, toPx);
+      }
+    }
+    a.raf = requestAnimationFrame(step);
+  }
+
+  // Animate one page forward/back when the neighbouring page is rendered
+  // in this section; use the atomic section hand-off at a boundary.
+  function turnAnimated(dir) {
+    var c = pageContainer();
+    var d = pageDelta();
+    if (!c || !d) {
+      if (dir > 0) next(); else prev();
+      return;
+    }
+    finishTurnAnim();
+    var base = c.scrollLeft;
+    var target = base + dir * d;
+    if (target < -0.5 || target > maxScroll(c) + 0.5) {
+      // A false return means the book's edge; the tap pulled nothing, so
+      // there is no offset to settle — just don't turn.
+      turnAcrossSection(dir);
+      return;
+    }
+    animateOffsetTo(c, base, 0, -dir * d, 260);
+  }
+
+  // Touch page-turn for mobile: a horizontal drag slides the page under the
+  // finger and snaps on release (past 30% of a page, or a flick), and a tap
+  // in the outer 20% gutters plays the same animated turn. Attached to each
+  // section iframe's document and the host reading surface, which also covers
+  // the margins around the iframe. Touch-only, so desktop mouse navigation is
+  // untouched; mobile CSS hides the visible gutter buttons.
+  function installGestureNav() {
+    if (!rendition) return;
+    var attachAll = function () {
+      var list = (rendition.getContents && rendition.getContents()) || [];
+      if (!Array.isArray(list)) list = list && list.document ? [list] : [];
+      for (var i = 0; i < list.length; i++) {
+        installGestureHandlers(list[i].document, false);
+      }
+      return list.length;
+    };
+    // Attach inside each rendered section. Re-run idempotently after every
+    // relocation because chapter changes swap the iframe document.
+    rendition.on("rendered", attachAll);
+    rendition.on("relocated", attachAll);
+    // The host listener covers stage margins and the passive bottom bar. A
+    // touch belongs to one document tree, so this cannot double-handle events
+    // received by the section iframe.
+    installGestureHandlers(document, true);
+  }
+
+  // The content window whose text selection gates page-turn gestures: the
+  // host install can't close over a specific section's window, so resolve
+  // the currently rendered one at event time.
+  function currentContentsWindow() {
+    var list = (rendition && rendition.getContents && rendition.getContents()) || [];
+    if (!Array.isArray(list)) list = list && list.document ? [list] : [];
+    return (list[0] && list[0].window) || null;
+  }
+
+  function installGestureHandlers(doc, isHost) {
+    if (!doc || doc.__omnibusGestures) return;
+    doc.__omnibusGestures = true;
+    var sx = 0, sy = 0, st = 0, hadSel = false;
+    var dragAxis = null, dragBase = 0, dragVx = 0;
+    var dragPx = 0, dragIntentPx = 0, dragPending = null, dragRaf = 0;
+    var velocitySamples = [];
+    // A second finger joined this sequence, and this stays true until the last
+    // one lifts. Every page gesture is single-finger and decides itself from
+    // state captured for the *first* touch — `sx` and `dragBase` — so a later
+    // finger read against that state answers for a touch that never happened.
+    var multiTouch = false;
+
+    // The selection that gates page turns lives in the section iframe's
+    // window regardless of which document caught the touch.
+    function selWin() {
+      return isHost ? currentContentsWindow() : (doc.defaultView || window);
+    }
+    function selText(w) {
+      return w && w.getSelection ? String(w.getSelection()) : "";
+    }
+    function nowMs() {
+      return window.performance && performance.now ? performance.now() : Date.now();
+    }
+    // `clientX` is relative to the moving iframe on iOS, so using it creates
+    // a feedback loop: each transform changes the next gesture coordinate.
+    function stableX(t) {
+      if (typeof t.screenX === "number" && isFinite(t.screenX)) return t.screenX;
+      var x = t.clientX;
+      if (!isHost) {
+        try {
+          var fe = (doc.defaultView || {}).frameElement;
+          if (fe) x += fe.getBoundingClientRect().left;
+        } catch (err) { /* cross-origin safety */ }
+      }
+      return x;
+    }
+    function sampleVelocity(x, now) {
+      velocitySamples.push({ x: x, t: now });
+      while (velocitySamples.length > 2 && velocitySamples[1].t < now - 100) {
+        velocitySamples.shift();
+      }
+      var first = velocitySamples[0];
+      dragVx = now > first.t ? (x - first.x) / (now - first.t) : 0;
+    }
+    function stopDragRaf(flush) {
+      if (dragRaf) {
+        cancelAnimationFrame(dragRaf);
+        dragRaf = 0;
+      }
+      if (flush && dragPending !== null) {
+        var c = pageContainer();
+        if (c) setViewOffset(c, dragPending);
+      }
+      dragPending = null;
+    }
+    // Apply at most one drag offset per frame — touchmove can outpace the
+    // display, and per-event writes are wasted work.
+    function applyDrag() {
+      dragRaf = 0;
+      if (dragAxis !== "x" || dragPending === null) return;
+      var c = pageContainer();
+      if (c) setViewOffset(c, dragPending);
+    }
+    function springBack() {
+      stopDragRaf(true);
+      if (dragAxis === "x") {
+        var c = pageContainer();
+        if (c) animateOffsetTo(c, dragBase, dragPx, 0, 180);
+      }
+      dragAxis = null;
+    }
+
+    // RTL books page with negative scroll offsets in some engines; keep
+    // the classic instant swipe there rather than mis-dragging.
+    var rtl = !!(book && book.packaging && book.packaging.metadata &&
+      String(book.packaging.metadata.direction || "").toLowerCase() === "rtl");
+    var skipTap = false;
+
+    doc.addEventListener("touchstart", function (e) {
+      // Before every early return below: each of them leaves `sx`/`dragBase`
+      // unset, and the flag is what stops a later lift being measured against
+      // them anyway. A drag already in flight is handed back rather than
+      // stranded at its offset.
+      if (e.touches && e.touches.length > 1) {
+        if (dragAxis === "x") springBack();
+        multiTouch = true;
+        dragAxis = "none";
+        return;
+      }
+      // The only finger on the glass, so whatever the last sequence was, this
+      // is a fresh one. Self-healing on purpose: a sequence that ended in a
+      // cancel rather than a lift must not leave the flag raised over it.
+      multiTouch = false;
+      // A section turn is still laying out (or its View Transition is
+      // holding the screen): a gesture started now would capture a stale
+      // scroll base and fight the hand-off. Ignore the touch entirely.
+      if (sectionTurnInFlight) {
+        dragAxis = "none";
+        skipTap = true;
+        return;
+      }
+      // Host install: gestures over the reading surface (stage incl.
+      // its margins, and the passive bottom bar) are page gestures;
+      // buttons, links, sheets, and drawers keep their own touch
+      // semantics untouched.
+      if (isHost) {
+        var tg = e.target;
+        var onSurface = tg && tg.closest && tg.closest(".rd-stage, .rd-bottom");
+        var onControl = tg && tg.closest && tg.closest("button, a, [role=\"button\"], input, textarea, .rd-drawer, .rd-aa-panel, .rd-note-composer, .rd-search-drawer, .m-sheet, .m-sheet-scrim");
+        if (!onSurface || onControl) { dragAxis = "none"; skipTap = true; return; }
+      }
+      skipTap = false;
+      if (!e.touches || e.touches.length !== 1) { dragAxis = "none"; return; }
+      var t = e.touches[0];
+      sx = stableX(t);
+      sy = t.clientY;
+      st = nowMs();
+      dragAxis = null;
+      dragPx = 0;
+      dragIntentPx = 0;
+      dragVx = 0;
+      velocitySamples = [];
+      // Snapshot whether a selection was live when the touch began: the
+      // tap that dismisses a selection clears it before touchend fires.
+      hadSel = selText(selWin()).length > 0;
+      // A new touch catches a settling page at its destination.
+      finishTurnAnim();
+      var c = pageContainer();
+      dragBase = c ? c.scrollLeft : 0;
+    }, { passive: true });
+
+    doc.addEventListener("touchmove", function (e) {
+      if (multiTouch || rtl || hadSel || dragAxis === "none") return;
+      if (e.touches.length !== 1) { springBack(); return; }
+      var t = e.touches[0];
+      var x = stableX(t);
+      var dx = x - sx;
+      if (dragAxis === null) {
+        // The dead zone protects taps and long-press selection. The reader is
+        // paginated, so late horizontal intent may engage despite vertical
+        // finger drift.
+        if (Math.abs(dx) < 8) return;
+        dragAxis = "x";
+        sx = x;
+        sy = t.clientY;
+        dx = 0;
+        velocitySamples = [{ x: x, t: nowMs() }];
+        var ac = pageContainer();
+        if (ac) armViews(ac, true);
+      }
+      if (selText(selWin()).length > 0) { springBack(); return; }
+      e.preventDefault();
+
+      var now = nowMs();
+      sampleVelocity(x, now);
+      var c = pageContainer();
+      if (!c) return;
+      var d = pageDelta();
+      var lo = Math.max(dragBase - maxScroll(c), d ? -d : -Infinity);
+      var hi = Math.min(dragBase, d ? d : Infinity);
+      dragIntentPx = d ? Math.max(-d, Math.min(d, dx)) : dx;
+
+      // Within a section the page tracks the finger exactly. At a chapter
+      // edge, a short resisted pull communicates the boundary while the full
+      // gesture intent remains available to choose the next section.
+      var resisted = dx;
+      if (resisted < lo) resisted = lo + (resisted - lo) * 0.18;
+      if (resisted > hi) resisted = hi + (resisted - hi) * 0.18;
+      var edge = d ? Math.min(48, d * 0.12) : 48;
+      dragPx = Math.max(lo - edge, Math.min(hi + edge, resisted));
+      dragPending = dragPx;
+      if (!dragRaf) dragRaf = requestAnimationFrame(applyDrag);
+    }, { passive: false });
+
+    doc.addEventListener("touchcancel", function (e) {
+      springBack();
+      // A cancel with fingers left down is the system taking the gesture
+      // mid-sequence; the rest of it is no more a page gesture than the part
+      // already seen. The clear below is belt-and-braces — `touchstart`
+      // already heals the flag for the next sequence — so deleting it alone
+      // changes no behaviour a test can see; the recovery is the contract,
+      // not either line on its own.
+      if (e && e.touches && e.touches.length) {
+        dragAxis = "none";
+        return;
+      }
+      multiTouch = false;
+    }, { passive: true });
+
+    doc.addEventListener("touchend", function (e) {
+      var axis = dragAxis;
+      // A finger is still on the glass, or one was alongside this one earlier
+      // in the sequence. Neither a tap nor a turn can be read off it: `sx` and
+      // `dragBase` belong to a different finger. Clearing `dragAxis` here is
+      // what used to re-arm the drag for the finger still down — against a
+      // `dragBase` of 0, which the settle then wrote to `scrollLeft`, landing
+      // the reader on the chapter's first page.
+      if (multiTouch || (e.touches && e.touches.length)) {
+        // `springBack` rather than a bare `stopDragRaf`: this handler may have
+        // armed a drag and be learning about the other finger only now — a
+        // lift that reports one still down, with no `touchstart` for it, is
+        // what a touch sequence captured to another document looks like.
+        // Dropping the raf there would leave the page at its dragged offset.
+        // A no-op when no drag was armed, which is the ordinary case.
+        springBack();
+        if (e.touches && e.touches.length) {
+          dragAxis = "none";
+          return;
+        }
+        multiTouch = false;
+        dragAxis = null;
+        skipTap = false;
+        return;
+      }
+      stopDragRaf(axis === "x");
+      dragAxis = null;
+      if (skipTap) { skipTap = false; return; }
+      // Never hijack a gesture that made — or just dismissed — a text
+      // selection; that's the highlight/note flow, not a page turn.
+      if (hadSel || selText(selWin()).length > 0) {
+        if (axis === "x") {
+          var cs = pageContainer();
+          if (cs) animateOffsetTo(cs, dragBase, dragPx, 0, 180);
+        }
+        return;
+      }
+      if (!e.changedTouches || !e.changedTouches.length) return;
+      var t = e.changedTouches[0];
+      var endX = stableX(t);
+      var endAt = nowMs();
+      var dx = endX - sx;
+      var dy = t.clientY - sy;
+      var dt = endAt - st;
+
+      if (axis === "x") {
+        var c = pageContainer(), d = pageDelta();
+        if (!c || !d) return;
+        sampleVelocity(endX, endAt);
+        var dir = 0;
+        // Synthesized and real slow drags can reverse slightly at lift-off;
+        // velocity only overrides position for an actual short flick.
+        if (Math.abs(dragVx) > 0.45 && dt < 650) dir = dragVx < 0 ? 1 : -1;
+        else if (Math.abs(dragIntentPx) > d * 0.3) dir = dragIntentPx < 0 ? 1 : -1;
+        if (dir === 0) {
+          animateOffsetTo(c, dragBase, dragPx, 0, 180);
+          return;
+        }
+        var target = dragBase + dir * d;
+        if (target < -0.5 || target > maxScroll(c) + 0.5) {
+          // Preserve the resisted drag in the outgoing snapshot so it
+          // continues smoothly instead of flashing back to centre first.
+          // At the book's first/last page there is nothing to turn to —
+          // settle the pulled page back instead of stranding the offset.
+          if (!turnAcrossSection(dir)) {
+            animateOffsetTo(c, dragBase, dragPx, 0, 180);
+          }
+          return;
+        }
+        var remaining = Math.abs((-dir * d) - dragPx) / d;
+        animateOffsetTo(c, dragBase, dragPx, -dir * d, 150 + remaining * 120);
+        return;
+      }
+
+      // RTL fallback: the classic swipe-at-release turn.
+      if (rtl && Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        if (dx < 0) next(); else prev();
+        return;
+      }
+
+      // Otherwise a stationary tap in the outer 20% gutters turns the page.
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && dt < 500) {
+        var tapX = t.clientX;
+        if (!isHost) {
+          try {
+            var fe = (doc.defaultView || {}).frameElement;
+            if (fe) tapX += fe.getBoundingClientRect().left;
+          } catch (err) { /* cross-origin safety */ }
+        }
+        var w = window.innerWidth || 360;
+        if (tapX > w * 0.8) turnAnimated(1);
+        else if (tapX < w * 0.2) turnAnimated(-1);
+        // A centre tap toggles the reader chrome for distraction-free reading.
+        else emitToggleChrome();
+      }
+    }, { passive: true });
+  }
+
+  // Ask the host to toggle the reader chrome (top/bottom bars). The bars are
+  // Dioxus-owned DOM; rather than mutate their class from here (the reconciler
+  // could clobber it, and it splits state across two owners), we signal through
+  // the same `__omnibusOn*` bridge the rest of the glue uses and let the host
+  // flip a `chrome_hidden` signal — the single source of truth on both targets.
+  function emitToggleChrome() {
+    if (typeof window.__omnibusOnToggleChrome === "function") {
+      window.__omnibusOnToggleChrome("");
+    }
+  }
+
+  function setFontSize(px) {
+    if (!rendition) return;
+    rendition.themes.fontSize(px + "px");
+    scheduleAnnotationRepaint();
+  }
+
+  function setTheme(name) {
+    if (!rendition) return;
+    rendition.themes.select(name);
+    currentTheme = name;
+    // Re-tint reader-owned colours in every rendered section for the new ground.
+    try {
+      rendition.getContents().forEach(function (c) {
+        applyThemeColors(c.document);
+      });
+    } catch (e) {
+      /* no rendered sections yet */
+    }
+  }
+
+  // A named stack, or null/"" for Original — which removes the override.
+  function setFont(family) {
+    if (!rendition) return;
+    currentFontFamily = family || null;
+    try {
+      rendition.getContents().forEach(function (c) {
+        applyFontFamily(c.document);
+        armFontRepaint(c.document);
+      });
+    } catch (e) {
+      /* no rendered sections yet */
+    }
+    scheduleAnnotationRepaint();
+  }
+
+  function setLineHeight(value) {
+    if (!rendition) return;
+    rendition.themes.override("line-height", value);
+    scheduleAnnotationRepaint();
+  }
+
+  function setMargins(maxWidth) {
+    if (!rendition) return;
+    rendition.themes.override("max-width", maxWidth);
+    rendition.themes.override("margin", "0 auto");
+    scheduleAnnotationRepaint();
+  }
+
+  function setJustify(on) {
+    if (!rendition) return;
+    rendition.themes.override("text-align", on ? "justify" : "start");
+    scheduleAnnotationRepaint();
+  }
+
+  // Single vs two-page spread. "none" forces one column; "auto" lets epub.js
+  // pair pages when the viewport is wide enough.
+  function setSpread(mode) {
+    if (!rendition) return;
+    try {
+      rendition.spread(mode);
+    } catch (e) {
+      /* older epub.js builds may not expose spread() */
+    }
+    scheduleAnnotationRepaint();
+  }
+
+  // Re-render every attached view's marks pane from live range rects.
+  // epub.js only repaints marks inside a view reframe, and expand() skips
+  // the reframe whenever a reflow lands on the same quantized column count —
+  // so a font-size step (or webfont swap) that keeps the page count leaves
+  // every highlight frozen at the previous layout's pixel rects.
+  function repaintAnnotations() {
+    if (!rendition || !rendition.manager || !rendition.manager.views) return;
+    var views = rendition.manager.views;
+    var all = typeof views.all === "function" ? views.all() : [];
+    for (var i = 0; i < all.length; i++) {
+      var pane = all[i] && all[i].pane;
+      if (!pane) continue;
+      try {
+        pane.render();
+      } catch (e) {
+        /* view mid-teardown */
+      }
+    }
+  }
+
+  // Repaint once the pending reflow has settled: after the next paint
+  // (double rAF), plus a timer backstop for settles the frame pass runs
+  // ahead of (webfont activation, epub.js's own debounced expand).
+  function scheduleAnnotationRepaint() {
+    requestAnimationFrame(function () {
+      requestAnimationFrame(repaintAnnotations);
+    });
+    if (annotationRepaintTimer) clearTimeout(annotationRepaintTimer);
+    annotationRepaintTimer = setTimeout(function () {
+      annotationRepaintTimer = null;
+      repaintAnnotations();
+    }, 450);
+  }
+
+  // Solid fills — transparency is applied once via the `fill-opacity`
+  // attribute below. Baking alpha into the color too would multiply with
+  // fill-opacity (0.3 x 0.3) and render the highlight nearly invisible.
+  var HIGHLIGHT_COLORS = {
+    amber:  "rgb(245, 158, 11)",
+    green:  "rgb(34, 197, 94)",
+    blue:   "rgb(59, 130, 246)",
+    rose:   "rgb(244, 63, 94)",
+    violet: "rgb(139, 92, 246)",
+  };
+
+  function addAnnotation(cfiRange, color) {
+    if (!rendition) {
+      pendingAnnotations.push({ cfiRange: cfiRange, color: color });
+      return;
+    }
+    var fill = HIGHLIGHT_COLORS[color] || HIGHLIGHT_COLORS.amber;
+    rendition.annotations.add(
+      "highlight", cfiRange, {}, undefined,
+      "hl-" + color,
+      { fill: fill, "fill-opacity": "0.3", "mix-blend-mode": "multiply" }
+    );
+  }
+
+  function removeAnnotation(cfiRange) {
+    pendingAnnotations = pendingAnnotations.filter(function (p) {
+      return p.cfiRange !== cfiRange;
+    });
+    if (!rendition) return;
+    rendition.annotations.remove(cfiRange, "highlight");
+  }
+
+  function clearAnnotations() {
+    pendingAnnotations = [];
+    if (!rendition || !rendition.annotations) return;
+    var store = rendition.annotations._annotations;
+    if (!store) return;
+    var keys = Object.keys(store);
+    for (var i = 0; i < keys.length; i++) {
+      var entry = store[keys[i]];
+      if (entry && entry.type === "highlight") {
+        rendition.annotations.remove(entry.cfiRange, "highlight");
+      }
+    }
+  }
+
+  function destroy() {
+    if (!rendition) return;
+    pendingJumpPct = null;
+    pendingJumpCfi = null;
+    teardown();
+  }
+
+  // Re-run the most recent init() verbatim — the recovery path behind the
+  // reader's error overlay (issue #1895, AC3). Reopens at the saved CFI the
+  // original mount used rather than wherever a wedged turn left the
+  // rendition, since a stuck rendition's own "current" position can't be
+  // trusted.
+  function retry() {
+    if (!lastInitArgs) return;
+    init(lastInitArgs.elementId, lastInitArgs.fileUrl, lastInitArgs.opts);
+  }
+
+  // Walk the nested TOC into a flat [{label, href, level}] list and hand it
+  // to the Rust side. Level is the nesting depth (0 = top), used to indent
+  // the contents drawer. Re-emittable on demand via requestToc().
+  function collectToc(items, level, out) {
+    if (!items) return;
+    for (var i = 0; i < items.length; i++) {
+      out.push({
+        label: (items[i].label || "").trim(),
+        href: items[i].href || "",
+        level: level,
+      });
+      if (items[i].subitems) collectToc(items[i].subitems, level + 1, out);
+    }
+  }
+
+  function emitToc() {
+    if (typeof window.__omnibusOnToc !== "function") return;
+    var out = [];
+    if (book && book.navigation && book.navigation.toc) {
+      collectToc(book.navigation.toc, 0, out);
+    }
+    try {
+      window.__omnibusOnToc(JSON.stringify(out));
+    } catch (e) {
+      /* ignore handler errors */
+    }
+  }
+
+  function requestToc() {
+    emitToc();
+  }
+
+  // epub.js's own content-link handling (wired in its Rendition constructor,
+  // ahead of any hook this file registers) calls the *plain* `rendition
+  // .display(href)` on every `<a href>` tap inside the book — bypassing both
+  // corrections `display()` below applies (zero-size anchor resolution and
+  // the fonts/theme settle-then-redisplay), which is why in-book links land
+  // a page or two off while TOC/CFI navigation (which already goes through
+  // `display()`) is accurate. epub.js emits a "linkClicked" event with the
+  // fully-resolved in-book path *before* issuing that plain display, so we
+  // piggyback on its own resolution (no need to reimplement href/base-tag
+  // parsing) and re-run the same href through our corrected `display()`.
+  // epub.js's own plain display() still fires first, but `rendition.display`
+  // serializes calls through an internal queue and short-circuits a
+  // still-in-flight one when a newer call arrives — the same "call display,
+  // then call it again" pattern `displaySettled()` already relies on to
+  // correct TOC navigation — so our corrected redisplay simply supersedes
+  // the stale uncorrected one before the user sees it settle.
+  function installContentLinkNav() {
+    if (!rendition || !rendition.hooks || !rendition.hooks.content) return;
+    rendition.hooks.content.register(function (contents) {
+      if (!contents || typeof contents.on !== "function") return;
+      contents.on("linkClicked", function (href) {
+        if (!book || !book.path) return;
+        display(book.path.relative(href));
+      });
+    });
+  }
+
+  // Navigate to a TOC href or a CFI (highlight / bookmark target).
+  // Display `target`, then re-display it once the section's fonts/theme have
+  // settled. The first pass measures the target's column in a freshly
+  // rendered iframe whose metrics can still shift (webfont swap, theme
+  // injection) — the reflow leaves the viewport pages past the target, and
+  // the follow-up display corrects it against the final layout.
+  // Wait for the active section's webfonts to settle, then re-display
+  // `target` against the final layout. Returns a promise resolving once the
+  // corrective redisplay completes, so callers can sequence on it.
+  function redisplayWhenSettled(target, stillCurrent) {
+    var doc = null;
+    try {
+      var contents = rendition.getContents();
+      var c = contents && contents[0];
+      doc = c && c.document;
+    } catch (e) {
+      /* best effort */
+    }
+    var ready =
+      doc && doc.fonts && doc.fonts.ready ? doc.fonts.ready : Promise.resolve();
+    // The web build's section iframe is sandboxed WITHOUT allow-scripts, and
+    // a promise minted by a scripting-disabled realm never settles — awaiting
+    // fonts.ready bare would hang forever there. Race it against a bounded
+    // timer: where fonts.ready works (mobile WebView opts into scripts) the
+    // correction stays font-accurate, and elsewhere the timer still
+    // redisplays after the layout has settled.
+    var bounded = Promise.race([
+      ready,
+      new Promise(function (res) {
+        setTimeout(res, 1500);
+      }),
+    ]);
+    return bounded
+      .then(function () {
+        return new Promise(function (res) {
+          setTimeout(res, 80);
+        });
+      })
+      .then(function () {
+        if (stillCurrent && !stillCurrent()) return;
+        if (rendition) return rendition.display(target);
+      });
+  }
+
+  // Hide the stage while a navigation corrects itself.
+  //
+  // `displaySettled` lands a first pass, waits for fonts/injected CSS, then
+  // re-displays — and that correction is a visible twitch on every chapter
+  // jump. The book-open path already hides exactly this behind the host's
+  // loading overlay; navigation had no equivalent.
+  //
+  // The stage's own opacity is the veil rather than a colour-filled overlay:
+  // the web view is transparent and the host paints the reader ground beneath
+  // it, so fading the stage out reveals the correct page colour in every
+  // theme, with nothing to keep in sync.
+  var settleFadeToken = 0;
+
+  function beginSettleFade() {
+    // Without scripts in the section iframe `fonts.ready` never settles, so
+    // the correction only lands on `redisplayWhenSettled`'s 1.5s fail-safe —
+    // far too long to hold a blank stage. Those builds keep the old visible
+    // correction rather than trading a twitch for a stall.
+    if (!scriptedContentAllowed) return function () {};
+
+    var stage = rendition && rendition.manager && rendition.manager.container;
+    if (!stage) return function () {};
+
+    var token = ++settleFadeToken;
+    // Out instantly — a fade-out would show the very frame we're hiding.
+    stage.style.transition = "none";
+    stage.style.opacity = "0";
+
+    var reveal = function () {
+      if (settleFadeToken !== token) return;
+      settleFadeToken++;
+      stage.style.transition = "opacity 180ms ease-out";
+      stage.style.opacity = "1";
+    };
+    // Fail-open: a settle chain that never resolves must not leave the reader
+    // showing a blank page forever.
+    setTimeout(reveal, 2500);
+    return reveal;
+  }
+
+  // Drop the veil outright (teardown, or a book swap mid-navigation) so a
+  // later mount can never start with a hidden stage.
+  function endSettleFade() {
+    settleFadeToken++;
+    var stage = rendition && rendition.manager && rendition.manager.container;
+    if (!stage) return;
+    stage.style.transition = "";
+    stage.style.opacity = "";
+  }
+
+  // Only display() armed the nav watchdog, so only it reports a failure.
+  function displaySettled(target, reportFailure) {
+    if (!rendition) return;
+    displayToken++;
+    var myToken = displayToken;
+    var current = function () {
+      return displayToken === myToken;
+    };
+    var reveal = beginSettleFade();
+    rendition
+      .display(target)
+      .then(function () {
+        return redisplayWhenSettled(target, current);
+      })
+      .then(reveal, function (err) {
+        reveal();
+        // After a teardown the target is simply gone; otherwise say so.
+        if (reportFailure && rendition && current()) navFailed(target, err);
+      });
+  }
+
+  function clearNavWatchdog() {
+    if (navWatchdog) {
+      clearTimeout(navWatchdog);
+      navWatchdog = null;
+    }
+  }
+
+  function armNavWatchdog(target) {
+    clearNavWatchdog();
+    navWatchdog = setTimeout(function () {
+      navWatchdog = null;
+      navFailed(target, "no relocate after " + NAV_WATCHDOG_MS + "ms");
+    }, NAV_WATCHDOG_MS);
+  }
+
+  function navFailed(target, reason) {
+    clearNavWatchdog();
+    console.warn("[omnibus-reader] display(" + target + ") failed:", reason);
+    emitStatus("nav-error");
+  }
+
+  // Saved positions are viewport-start CFIs — exact column boundaries — and
+  // epub.js's column rounding can land `display(cfi)` one spread EARLY for a
+  // boundary CFI (the target then sits just past the visible range). Compare
+  // the target against the settled viewport and page once toward it. One
+  // bounded step, best effort: anything further off is left where it landed.
+  function nudgeToTarget(target) {
+    try {
+      var loc = rendition && rendition.currentLocation();
+      if (!loc || !loc.start || !loc.end) return Promise.resolve();
+      var cmp = new ePub.CFI();
+      if (cmp.compare(target, loc.end.cfi) >= 0) {
+        return rendition.next();
+      }
+      if (cmp.compare(target, loc.start.cfi) < 0) {
+        return rendition.prev();
+      }
+    } catch (e) {
+      /* CFI compare is best effort */
+    }
+    return Promise.resolve();
+  }
+
+  // Drop any pending or in-flight resize correction and resume relocates
+  // immediately. A user-initiated turn (queueTurn, a swipe across a
+  // section) mid-burst is real reading movement: muting through the
+  // correction — or worse, letting a correction already in flight land
+  // afterward and stomp the turn's own relocate with a stale echo of the
+  // pre-resize target — leaves the page indicator, restore anchor, and
+  // persist trigger out of step with where the reader actually turned to
+  // (review finding on #2081). Bumping displayToken is what lets a
+  // correction chain already past this point (mid `display()`/settle,
+  // inside `current()`) notice it's stale and skip its landing.
+  function cancelResizeCorrection() {
+    displayToken++;
+    if (resizeCorrectionTimer) {
+      clearTimeout(resizeCorrectionTimer);
+      resizeCorrectionTimer = null;
+    }
+    resizeSettling = false;
+    resizeCorrectionTarget = null;
+  }
+
+  // The corrected, echo-tagged counterpart to epub.js's own resize-driven
+  // re-display (issue #2081, findings 1 & 2). `resizeSettling` mutes every
+  // relocate — including the raw, uncorrected ones epub.js's own onResized
+  // fires straight through `rendition.display()` — from the first "resized"
+  // event of a burst until this fires once, reporting the settled, nudged
+  // landing as a single echo. A rotation re-paginates but is not reading
+  // movement: `!data.echo` is what already keeps `build_relocate_callback`
+  // (frontend/src/pages/reader/interop.rs) from persisting it.
+  function finishResizeCorrection(r, current) {
+    // Superseded by a user turn (cancelResizeCorrection) or a newer resize
+    // burst — that path already resumed relocates (or will report its own
+    // landing); this one has nothing current to say.
+    if (current && !current()) return;
+    resizeSettling = false;
+    if (rendition !== r) return;
+    var loc = null;
+    try {
+      loc = rendition.currentLocation();
+    } catch (e) {
+      /* not ready */
+    }
+    if (loc && loc.start) {
+      emitRelocate(loc, true);
+    } else if (rendition.location) {
+      emitRelocate(rendition.location, true);
+    }
+  }
+
+  // Re-display the pre-resize target through the same settle-then-redisplay
+  // and nudgeToTarget correction the boot restore gets, rather than trusting
+  // epub.js's own plain `display()`. Mirrors the boot-restore chain in
+  // init() rather than calling displaySettled(), which does not nudge.
+  function runResizeCorrection() {
+    resizeCorrectionTimer = null;
+    var target = resizeCorrectionTarget;
+    resizeCorrectionTarget = null;
+    var r = rendition;
+    if (!target || !r) {
+      resizeSettling = false;
+      return;
+    }
+    displayToken++;
+    var myToken = displayToken;
+    var current = function () {
+      return displayToken === myToken;
+    };
+    var reveal = beginSettleFade();
+    r.display(target)
+      .then(function () {
+        return redisplayWhenSettled(target, current);
+      })
+      .then(function () {
+        if (current()) return nudgeToTarget(target);
+      })
+      .catch(function () {
+        /* keep whatever landed */
+      })
+      .then(function () {
+        reveal();
+        finishResizeCorrection(r, current);
+      });
+  }
+
+  // Coalesce the two racing resize paths (epub.js's own window-resize
+  // listener and installStageResizeWatch's container ResizeObserver) into
+  // one corrected redisplay per burst (AC4). Anchored to the FIRST target
+  // seen — not whichever raw, uncorrected redisplay happens to land last —
+  // so a mid-burst measurement can't walk the anchor away from the page the
+  // reader was actually on, and repeated rotations can't accumulate drift.
+  function scheduleResizeCorrection(target) {
+    if (!target || !rendition) return;
+    if (!resizeSettling) {
+      resizeSettling = true;
+      resizeCorrectionTarget = target;
+    }
+    if (resizeCorrectionTimer) clearTimeout(resizeCorrectionTimer);
+    resizeCorrectionTimer = setTimeout(runResizeCorrection, RESIZE_CORRECTION_DEBOUNCE_MS);
+  }
+
+  function display(target) {
+    if (!rendition || !target) return;
+    pendingJumpPct = null;
+    pendingJumpCfi = null;
+    restoreEchoPending = false;
+    // A jump is real movement, like a user turn: don't let a resize settle mute it.
+    cancelResizeCorrection();
+    var t = String(target);
+    armNavWatchdog(t);
+    var hash = t.indexOf("#");
+    // CFIs and bare hrefs pass straight through. Fragment hrefs resolve to
+    // the anchor's first *rendered* element first — Gutenberg-style TOCs
+    // point at zero-size <a id> markers, and epub.js rounds an empty box to
+    // the next column, landing a page past the chapter heading.
+    if (hash > 0 && t.indexOf("epubcfi(") !== 0 && book && book.spine) {
+      var section = book.spine.get(t.slice(0, hash));
+      var id = t.slice(hash + 1);
+      if (section) {
+        section
+          .load(book.load.bind(book))
+          .then(function (doc) {
+            var el = doc.getElementById(id);
+            var probe = el;
+            while (probe && !probe.childNodes.length) {
+              probe = probe.nextElementSibling;
+            }
+            var cfi = null;
+            try {
+              cfi = section.cfiFromElement(probe || el);
+            } catch (e) {
+              /* fall back to the raw href below */
+            }
+            displaySettled(cfi || t, true);
+          })
+          .catch(function () {
+            displaySettled(t, true);
+          });
+        return;
+      }
+    }
+    displaySettled(t, true);
+  }
+
+  function copyText(text) {
+    if (!text) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+      }
+    } catch (e) {
+      /* clipboard unavailable */
+    }
+  }
+
+  function shareText(text) {
+    if (!text) return;
+    // Native bridge first: WKWebView exposes no usable Web Share API, so the
+    // mobile shell installs this shim and presents the OS share sheet from
+    // Rust instead. Web builds never define it.
+    if (typeof window.__omnibusOnShareText === "function") {
+      try {
+        window.__omnibusOnShareText(text);
+      } catch (e) {
+        /* ignore handler errors */
+      }
+      return;
+    }
+    try {
+      if (navigator.share) {
+        navigator.share({ text: text }).catch(function () {});
+      } else {
+        copyText(text);
+      }
+    } catch (e) {
+      copyText(text);
+    }
+  }
+
+  // In-book search. Walks each spine section, loads it, runs epub.js's
+  // section.find(query), and hands a flat [{ cfi, excerpt, chapter }] array
+  // back via __omnibusOnSearchResults. Section loads are throttled by the
+  // promise chain so a large book doesn't open every section at once.
+  function search(query) {
+    if (typeof window.__omnibusOnSearchResults !== "function") return;
+    if (!book || !book.spine || !query || !query.trim()) {
+      window.__omnibusOnSearchResults(JSON.stringify([]));
+      return;
+    }
+    var q = query.trim();
+    var results = [];
+    var chain = Promise.resolve();
+    book.spine.each(function (section) {
+      chain = chain.then(function () {
+        if (results.length >= 80) return null;
+        return section
+          .load(book.load.bind(book))
+          .then(function () {
+            var found = section.find(q) || [];
+            var placer = {
+              doc: section.document,
+              cfiOf: function (el) { return section.cfiFromElement(el); },
+            };
+            for (var i = 0; i < found.length && results.length < 80; i++) {
+              var chap = findChapter(section.href, found[i].cfi, placer);
+              results.push({
+                cfi: found[i].cfi,
+                excerpt: (found[i].excerpt || "").trim(),
+                chapter: chap ? chap.title : "",
+              });
+            }
+            section.unload();
+          })
+          .catch(function () {
+            /* skip unreadable section */
+          });
+      });
+    });
+    chain.then(function () {
+      window.__omnibusOnSearchResults(JSON.stringify(results));
+    });
+  }
+
+  // A jump target that is already on screen (at the visible range's start
+  // or inside it) is a restatement, not movement — applying it lands a
+  // non-echo relocate that stamps a fresh clock on an unmoved row and
+  // shadows the counterpart at the cross-format clock gate (#1972). The
+  // observed loop: the reader restores at the row's CFI, the follow-jump
+  // derives that same CFI from the stale counterpart, and the "jump"
+  // re-clocks a position nobody moved.
+  function jumpIsCurrent(cfi) {
+    try {
+      if (!rendition || !rendition.location || !rendition.location.start) return false;
+      var c = new ePub.CFI();
+      var s = rendition.location.start.cfi;
+      if (c.compare(cfi, s) === 0) return true;
+      var e = rendition.location.end ? rendition.location.end.cfi : null;
+      return !!e && c.compare(cfi, s) >= 0 && c.compare(cfi, e) < 0;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function applyPercentage(pct) {
+    var frac = Math.min(Math.max(Number(pct) / 100, 0), 1);
+    var cfi = book.locations.cfiFromPercentage(frac);
+    // locations store RANGE CFIs; rendition.display() rejects them, so
+    // collapse to the start.
+    if (cfi && cfi.indexOf(",") !== -1) {
+      try {
+        var collapsed = new ePub.CFI(cfi);
+        collapsed.collapse(true);
+        cfi = collapsed.toString();
+      } catch (e) {
+        /* leave the range CFI; display may still handle it */
+      }
+    }
+    if (!cfi) return;
+    // Same-position guard (#1972): leave the restore's echo tag pending
+    // when nothing would move; clear it only for a real jump, whose
+    // landing must persist.
+    if (jumpIsCurrent(cfi)) return;
+    restoreEchoPending = false;
+    displaySettled(cfi);
+  }
+
+  // Jump to a whole-book percentage (0..100) via the generated locations
+  // map — the cross-format sync banner's entry point. Locations resolve
+  // seconds after a first open, so a call that arrives early (the follow-
+  // mode auto-jump fires right after mount) is parked and applied by the
+  // locations .then in init() rather than silently dropped.
+  function displayPercentage(pct) {
+    // A percentage jump that actually moves the view is real movement and
+    // must persist — `applyPercentage` clears the pending echo tag once
+    // its same-position guard passes (#1972). Parking must NOT clear it:
+    // on a locations cache miss the pct path always parks (generation
+    // waits on first paint), and an eagerly-cleared tag let the restore's
+    // own settle emission post the unmoved position with a fresh clock.
+    pendingJumpCfi = null;
+    if (!book || !book.locations || !book.locations.length()) {
+      pendingJumpPct = pct;
+      return;
+    }
+    applyPercentage(pct);
+  }
+
+  // Jump straight to a server-derived point CFI — the cross-format sync
+  // surfaces' precise entry point (displayPercentage is their fallback).
+  // Parked until init builds the rendition, like a pre-locations
+  // percentage jump.
+  function displayCfi(cfi) {
+    if (!cfi) return;
+    pendingJumpPct = null;
+    if (!rendition) {
+      restoreEchoPending = false;
+      pendingJumpCfi = cfi;
+      return;
+    }
+    pendingJumpCfi = null;
+    // Already on screen: skip the jump entirely, and leave the restore's
+    // echo tag pending — nothing user-visible moved, so nothing may write
+    // (#1972).
+    if (jumpIsCurrent(cfi)) return;
+    restoreEchoPending = false;
+    displaySettled(cfi);
+  }
+
+  window.OmnibusReader = {
+    init: init,
+    next: next,
+    prev: prev,
+    setFontSize: setFontSize,
+    setTheme: setTheme,
+    setFont: setFont,
+    setLineHeight: setLineHeight,
+    setMargins: setMargins,
+    setJustify: setJustify,
+    setSpread: setSpread,
+    addAnnotation: addAnnotation,
+    removeAnnotation: removeAnnotation,
+    clearAnnotations: clearAnnotations,
+    requestToc: requestToc,
+    display: display,
+    displayPercentage: displayPercentage,
+    displayCfi: displayCfi,
+    copyText: copyText,
+    shareText: shareText,
+    search: search,
+    destroy: destroy,
+    retry: retry,
+  };
+})();

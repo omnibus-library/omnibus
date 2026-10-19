@@ -2,30 +2,43 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
+  createBrowserRouter,
   createMemoryRouter,
   type RouteObject,
   RouterProvider,
 } from "react-router";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { User } from "./api";
+import { AtriumRoot } from "./components/Theme/AtriumRoot";
 import { routes } from "./router";
 import { meQuery } from "./session";
 import { ADA, harnessClient } from "./testing/AppHarness";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 
+function renderRouter(
+  router: ReturnType<typeof createBrowserRouter>,
+  user: User | null,
+) {
+  render(
+    <QueryClientProvider client={harnessClient(user)}>
+      <AtriumRoot>
+        <RouterProvider router={router} />
+      </AtriumRoot>
+    </QueryClientProvider>,
+  );
+  return router;
+}
+
 function renderRoute(
   path: string,
   user: User | null = ADA,
   table: RouteObject[] = routes,
 ) {
-  const router = createMemoryRouter(table, { initialEntries: [path] });
-  render(
-    <QueryClientProvider client={harnessClient(user)}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
+  return renderRouter(
+    createMemoryRouter(table, { initialEntries: [path] }),
+    user,
   );
-  return router;
 }
 
 function Collapse(): never {
@@ -78,9 +91,6 @@ describe("routes", () => {
 
   describe("unported pages", () => {
     it.each([
-      [`/read/${UUID}`, "Reader", UUID],
-      [`/comic/${UUID}`, "Comic reader", UUID],
-      [`/pdf/${UUID}?file_id=3&page=7`, "PDF reader", "7"],
       [`/listen/${UUID}?file_id=2`, "Listen", "2"],
       ["/stats?user=2", "Stats", "2"],
       ["/stats/chart", "Chart builder", null],
@@ -154,6 +164,59 @@ describe("routes", () => {
     });
   });
 
+  it.each([
+    ["the EPUB reader", `/read/${UUID}`, "Back to book"],
+    ["the comic reader", `/comic/${UUID}`, "Back"],
+    ["the PDF reader", `/pdf/${UUID}?file_id=3&page=7`, "Back"],
+  ])("gives %s the whole screen", async (_name, path, back) => {
+    renderRoute(path);
+
+    expect(await screen.findByRole("button", { name: back })).toBeVisible();
+    expect(
+      screen.queryByRole("navigation", { name: "Primary" }),
+    ).not.toBeInTheDocument();
+  });
+
+  describe("reader back", () => {
+    // A browser router, for the history index Back reads; jsdom's history is shared, so each test seeds its own and the next starts clean.
+    let router: ReturnType<typeof createBrowserRouter> | undefined;
+    const openBrowserRouter = (path: string) => {
+      window.history.replaceState(null, "", path);
+      router = renderRouter(createBrowserRouter(routes), ADA);
+      return router;
+    };
+    afterEach(() => {
+      router?.dispose();
+      window.history.replaceState(null, "", "/");
+    });
+
+    it("returns to the book when the reader replaced the page the app opened on", async () => {
+      const opened = openBrowserRouter(`/login?next=/comic/${UUID}`);
+      await opened.navigate(`/comic/${UUID}`, { replace: true });
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Back" }),
+      );
+
+      await waitFor(() =>
+        expect(opened.state.location.pathname).toBe(`/books/${UUID}`),
+      );
+    });
+
+    it("goes back in history when the reader was opened from inside the app", async () => {
+      const opened = openBrowserRouter("/authors");
+      await opened.navigate(`/comic/${UUID}`);
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Back" }),
+      );
+
+      await waitFor(() =>
+        expect(opened.state.location.pathname).toBe("/authors"),
+      );
+    });
+  });
+
   describe("layout", () => {
     it("puts a page under the top bar", async () => {
       renderRoute("/authors");
@@ -161,15 +224,6 @@ describe("routes", () => {
       expect(
         await screen.findByRole("navigation", { name: "Primary" }),
       ).toBeInTheDocument();
-    });
-
-    it("gives a reader the whole screen", async () => {
-      renderRoute(`/read/${UUID}`);
-
-      await screen.findByRole("heading", { name: "Reader" });
-      expect(
-        screen.queryByRole("navigation", { name: "Primary" }),
-      ).not.toBeInTheDocument();
     });
   });
 

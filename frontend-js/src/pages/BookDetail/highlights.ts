@@ -5,7 +5,8 @@ import {
   lastIndexWhere,
 } from "./readout";
 
-const MAX_QUADS = 60;
+/** Most quads one highlight anchor carries; past it the anchor names the page alone. */
+export const MAX_QUADS = 60;
 
 const isQuad = (quad: string) => {
   const nums = quad.split(",").map((n) => Number(n.trim()));
