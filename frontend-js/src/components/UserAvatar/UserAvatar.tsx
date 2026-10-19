@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { avatarUrl, type User } from "../../api";
+import { useState, useSyncExternalStore } from "react";
+import { avatarBust, avatarUrl, type User, watchAvatarBusts } from "../../api";
 import { initialsFor } from "../../format";
 
 type UserAvatarProps = {
@@ -16,6 +16,8 @@ export function UserAvatar({
   photoClassName,
 }: UserAvatarProps) {
   const [broken, setBroken] = useState(false);
+  // A replaced photo keeps its URL, so a bump must redraw the image.
+  useSyncExternalStore(watchAvatarBusts, () => avatarBust(user.id));
   const photo = user.hasAvatar && !broken;
   return (
     <span className={className} aria-hidden={photo ? undefined : true}>

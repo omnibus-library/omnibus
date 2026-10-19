@@ -12,6 +12,7 @@ import {
   parseSettingsSection,
   sectionHref,
 } from "../../settingsIndex";
+import { ProfileSection } from "./ProfileSection";
 
 const sectionOf = (location: Location) =>
   parseSettingsSection(new URLSearchParams(location.search).get("section"));
@@ -64,6 +65,7 @@ export function Settings() {
     >
       <PageTitle page={`${active.label} · Settings`} />
       <SectionHeader title={active.label} />
+      {active.slug === "profile" && <ProfileSection />}
     </SettingsShell>
   );
 }

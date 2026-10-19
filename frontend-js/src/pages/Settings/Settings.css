@@ -1,0 +1,76 @@
+.profile-initials-photo {
+  width: 100%;
+  height: 100%;
+  /* The monogram spans are grids with an auto implicit row, so `height:
+     100%` can collapse to auto and the photo reverts to its natural
+     aspect ratio — an ellipse once the 50% radius applies. Pinning the
+     ratio keeps the box square wherever the percentage fails. */
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+.profile-initials {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+.profile-initials {
+  font-weight: 700;
+}
+.profile-identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.profile-avatar {
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft, var(--bg-2));
+  color: var(--accent);
+  border: 1px solid var(--line-2);
+  font-size: 24px;
+  overflow: hidden;
+}
+.profile-avatar-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.profile-avatar-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.profile-avatar-actions .subtitle {
+  margin: 0;
+}
+.profile-avatar-pick {
+  position: relative;
+}
+.profile-avatar-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  opacity: 0;
+}
+.profile-avatar-pick:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.profile-avatar-pick:has(input:disabled) {
+  opacity: 0.5;
+  cursor: default;
+}

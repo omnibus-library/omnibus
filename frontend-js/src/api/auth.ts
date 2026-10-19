@@ -16,12 +16,17 @@ export function toUser(user: UserSummary) {
     id: user.id as UserId,
     username: user.username,
     name: user.display_name ?? user.username,
+    displayName: user.display_name ?? null,
+    kindleEmail: user.kindle_email ?? null,
     isAdmin: user.is_admin,
     canUpload: user.can_upload,
     canEdit: user.can_edit,
     hasAvatar: user.has_avatar ?? false,
     hiddenFormats: user.hidden_formats ?? [],
     stackSeries: user.stack_series ?? false,
+    bookDetailScrollStops: user.book_detail_scroll_stops ?? false,
+    // Matches the wire default: stats are shared until a reader opts out.
+    shareStats: user.share_stats ?? true,
   };
 }
 
