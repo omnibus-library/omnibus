@@ -284,6 +284,8 @@ export const TableView: Story = {
     await expect(row).toHaveTextContent("space opera");
     await expect(row).toHaveTextContent("Science Fiction");
     await expect(row).toHaveTextContent("Mar 1st, 2021");
+    // The added instant is noon UTC, so the local day depends on the zone.
+    await expect(row).toHaveTextContent(/Aug (1st|2nd), 2026|Jul 31st, 2026/);
     await expect(row).toHaveTextContent("CBZ");
     await expect(row).toHaveTextContent("PHYS");
     await expect(
