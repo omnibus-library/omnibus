@@ -1,11 +1,13 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type BookUuid,
   bumpCoverBust,
   coverUrl,
+  parseUserId,
   resetCoverBusts,
   thumbSrcSet,
   thumbUrl,
+  utcOffsetMinutes,
 } from "./core";
 
 const uuid = (id: string) => id as BookUuid;
@@ -47,4 +49,38 @@ describe("cover cache-busting", () => {
 
     expect(coverUrl(uuid("untouched"))).toBe("/api/covers/untouched");
   });
+});
+
+describe("parseUserId", () => {
+  it("brands a positive integer", () => {
+    expect(parseUserId("2")).toBe(2);
+  });
+
+  it.each([
+    ["an empty string", ""],
+    ["zero", "0"],
+    ["a negative number", "-1"],
+    ["a decimal", "2.5"],
+    ["text", "x"],
+    ["a missing parameter", null],
+  ])("reads %s as no user", (_case, raw) => {
+    expect(parseUserId(raw)).toBeNull();
+  });
+});
+
+describe("utcOffsetMinutes", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each([
+    ["east of UTC", -120, 120],
+    ["west of UTC", 300, -300],
+  ])(
+    "reports the device %s as east-positive minutes",
+    (_zone, getter, want) => {
+      // `getTimezoneOffset` is west-positive; the server cuts days on east-positive minutes.
+      vi.spyOn(Date.prototype, "getTimezoneOffset").mockReturnValue(getter);
+
+      expect(utcOffsetMinutes()).toBe(want);
+    },
+  );
 });

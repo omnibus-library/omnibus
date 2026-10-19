@@ -1,6 +1,6 @@
 import { toBook } from "./books";
 import type { BookUuid, UserId } from "./core";
-import { fetchJson, ok, send } from "./core";
+import { fetchJson, ok, send, utcOffsetMinutes } from "./core";
 import {
   getAlignment,
   getDeleteHighlightUrl,
@@ -44,7 +44,11 @@ export function toResumePoint({
   linked,
   playback_rate,
   audio_part,
+  audio_part_count,
 }: ResumePointWire) {
+  // A low-confidence block measured the container's marks, which read as a part.
+  const chapters =
+    record.resolved?.confidence === "high" ? record.resolved : null;
   return {
     // The progress row's own uuid, not the resolved book's: merged books share one.
     key: `${record.book_uuid}:${record.format}`,
@@ -57,22 +61,22 @@ export function toResumePoint({
     totalSeconds: record.total_duration_seconds ?? null,
     playbackRate: playback_rate ?? null,
     linked: linked ?? false,
-    // A low-confidence block measured the container's marks, which read as a part.
-    chapter:
-      record.resolved?.confidence === "high"
-        ? (record.resolved.chapter_ordinal ?? null)
-        : null,
+    chapter: chapters?.chapter_ordinal ?? null,
+    chaptersTotal: chapters?.chapters_total ?? null,
     part: audio_part ?? null,
+    partCount: audio_part_count ?? null,
   };
 }
 
 export type ResumePoint = ReturnType<typeof toResumePoint>;
 
-/** The reader's most recent reading and listening positions, newest first. */
+/** The reader's most recent reading and listening positions, newest first; `userId` reads another reader's. */
 export async function fetchRecentProgress(
   limit: number,
+  userId: UserId | null = null,
 ): Promise<ResumePoint[]> {
-  return ok(await getRecentProgress({ limit })).map(toResumePoint);
+  const params = { limit, ...(userId === null ? {} : { user_id: userId }) };
+  return ok(await getRecentProgress(params)).map(toResumePoint);
 }
 
 /** Where the reader stands in one format: a CFI or a percent, or seconds into the audio. */
@@ -300,9 +304,8 @@ export type Insights = ReturnType<typeof toInsights>;
 
 /** The reader's time in a book: when they started, how long, how often; `null` before a sitting of a minute. */
 export async function fetchInsights(uuid: BookUuid): Promise<Insights | null> {
-  // East-positive minutes, which is where the server cuts each day.
   const url = getGetBookInsightsUrl(encodeURIComponent(uuid), {
-    utc_offset_minutes: -new Date().getTimezoneOffset(),
+    utc_offset_minutes: utcOffsetMinutes(),
   });
   const data = await fetchJson(url, BookInsightsSchema.nullable());
   return data && toInsights(data);
