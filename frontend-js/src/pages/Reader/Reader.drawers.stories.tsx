@@ -32,9 +32,6 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-const calls = (method: string) =>
-  r.glue.calls.filter((c) => c.method === method).map((c) => c.args);
-
 export const ContentsWithoutATable: Story = {
   beforeEach: () => r.install({ toc: [] }),
   play: async ({ canvas, userEvent }) => {
@@ -79,7 +76,9 @@ export const ContentsJumpToAChapter: Story = {
       await canvas.findByRole("button", { name: "Landfall" }),
     );
 
-    await waitFor(() => expect(calls("display")).toEqual([["landfall.xhtml"]]));
+    await waitFor(() =>
+      expect(r.glue.argsOf("display")).toEqual([["landfall.xhtml"]]),
+    );
     await expect(canvas.queryByTestId("reader-toc-drawer")).toBeNull();
     // The outgoing chapter stays blank until the relocate that confirms the jump.
     await expect(await canvas.findByTestId("reader-loading")).toBeVisible();
@@ -92,6 +91,10 @@ export const ContentsJumpToAChapter: Story = {
     await expect(
       await canvas.findByTestId("reader-header-chapter"),
     ).toHaveTextContent("Landfall");
+    // Read off the table of contents the glue reported, not the glue's own pair.
+    await expect(
+      canvas.getByTestId("reader-chapter-counter"),
+    ).toHaveTextContent("Ch 2 of 3");
     await waitFor(() => expect(r.writes).toHaveLength(1));
   },
 };
@@ -126,7 +129,7 @@ export const SearchWhileTheGlueWalksTheBook: Story = {
     await expect(
       await canvas.findByTestId("reader-search-loading"),
     ).toHaveTextContent("Searching the book");
-    await expect(calls("search")).toEqual([["dark"]]);
+    await expect(r.glue.argsOf("search")).toEqual([["dark"]]);
     await expect(canvas.queryByText("No matches.")).toBeNull();
   },
 };
@@ -171,7 +174,9 @@ export const SearchHitsJumpToThePassage: Story = {
 
     await userEvent.click(rows[1] ?? canvas.getByText("no chapter here"));
 
-    await waitFor(() => expect(calls("display")).toEqual([[HITS[1]?.cfi]]));
+    await waitFor(() =>
+      expect(r.glue.argsOf("display")).toEqual([[HITS[1]?.cfi]]),
+    );
     await expect(canvas.queryByTestId("reader-search-drawer")).toBeNull();
   },
 };
@@ -188,7 +193,7 @@ export const SearchInputKeepsItsArrowKeys: Story = {
     );
 
     await expect(canvas.getByTestId("reader-search-input")).toHaveValue("ab");
-    await expect(calls("prev")).toEqual([]);
+    await expect(r.glue.argsOf("prev")).toEqual([]);
   },
 };
 

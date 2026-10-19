@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
-import { failing } from "../../testing/handlers";
+import { deferred, failing } from "../../testing/handlers";
 import { readerFixture, UUID } from "../../testing/readerStory";
 import { aWireHighlight } from "../../testing/wire";
 import { Reader } from "./Reader";
@@ -41,9 +41,6 @@ const refused = { count: 0 };
 const badge = (canvas: Canvas) =>
   within(canvas.getByRole("button", { name: "Highlights and notes" }));
 
-const calls = (method: string) =>
-  r.glue.calls.filter((c) => c.method === method).map((c) => c.args);
-
 /** Waits for the book, then selects `PASSAGE` the way the glue reports it. */
 async function select({
   canvas,
@@ -71,9 +68,9 @@ export const PaintsSavedHighlightsOnOpen: Story = {
     ];
   },
   play: async ({ canvas }) => {
-    await waitFor(() => expect(calls("addAnnotation")).toHaveLength(2));
+    await waitFor(() => expect(r.glue.argsOf("addAnnotation")).toHaveLength(2));
 
-    await expect(calls("addAnnotation")).toEqual([
+    await expect(r.glue.argsOf("addAnnotation")).toEqual([
       ["epubcfi(/6/4!/4/2,/1:0,/1:5)", "amber"],
       ["epubcfi(/6/6!/4/2,/1:0,/1:9)", "green"],
     ]);
@@ -108,7 +105,7 @@ export const ASwatchPaintsAndSavesTheHighlight: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await select({ canvas }));
 
-    await expect(calls("addAnnotation")).toEqual([[RANGE, "green"]]);
+    await expect(r.glue.argsOf("addAnnotation")).toEqual([[RANGE, "green"]]);
     await waitFor(() =>
       expect(r.annotationWrites).toEqual([
         {
@@ -137,8 +134,10 @@ export const AFailedSaveUnpaints: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await select({ canvas }));
 
-    await waitFor(() => expect(calls("removeAnnotation")).toEqual([[RANGE]]));
-    await expect(calls("addAnnotation")).toEqual([[RANGE, "green"]]);
+    await waitFor(() =>
+      expect(r.glue.argsOf("removeAnnotation")).toEqual([[RANGE]]),
+    );
+    await expect(r.glue.argsOf("addAnnotation")).toEqual([[RANGE, "green"]]);
     await expect(badge(canvas).queryByText("1")).toBeNull();
   },
 };
@@ -235,7 +234,7 @@ export const CopyHandsTheTextToTheGlue: Story = {
 
     await userEvent.click(canvas.getByTestId("selection-copy"));
 
-    await waitFor(() => expect(calls("copyText")).toEqual([[PASSAGE]]));
+    await waitFor(() => expect(r.glue.argsOf("copyText")).toEqual([[PASSAGE]]));
     await expect(canvas.queryByTestId("selection-copy")).toBeNull();
     await expect(r.annotationWrites).toEqual([]);
   },
@@ -247,7 +246,9 @@ export const ShareHandsTheTextToTheGlue: Story = {
 
     await userEvent.click(canvas.getByTestId("selection-share"));
 
-    await waitFor(() => expect(calls("shareText")).toEqual([[PASSAGE]]));
+    await waitFor(() =>
+      expect(r.glue.argsOf("shareText")).toEqual([[PASSAGE]]),
+    );
     await expect(canvas.queryByTestId("selection-share")).toBeNull();
   },
 };
@@ -265,12 +266,16 @@ export const TheGlueClearingTheSelectionDismissesIt: Story = {
 };
 
 export const ADroppedSelectionPayloadShowsNothing: Story = {
-  play: async ({ canvas }) => {
+  play: async ({ canvas, canvasElement }) => {
     await canvas.findByTestId("reader-header-chapter");
+    const surface = canvasElement.querySelector(".rd-surface");
 
     window.__omnibusOnSelection?.("not json");
     window.__omnibusOnSelection?.(JSON.stringify({ text: "no range or rect" }));
+    // A hook that does work, so the dropped payloads have been handled before the popover is checked.
+    window.__omnibusOnToggleChrome?.("");
 
+    await waitFor(() => expect(surface).toHaveClass("rd-chrome-hidden"));
     await expect(canvas.queryByTestId("selection-note")).toBeNull();
   },
 };
@@ -336,10 +341,8 @@ async function openDrawer({
     canvas.getByRole("button", { name: "Highlights and notes" }),
   );
   const drawer = await canvas.findByTestId("reader-highlights-drawer");
-  // The passages arrive after the book opens; a row read before they do is not there yet.
-  if (r.annotations.highlights.length > 0) {
-    await within(drawer).findAllByTestId("reader-highlight-row");
-  }
+  // The passages arrive after the book opens; the drawer draws a loader until they do.
+  await waitFor(() => expect(within(drawer).queryByRole("status")).toBeNull());
   return drawer;
 }
 
@@ -355,6 +358,79 @@ export const TheDrawerIsEmptyBeforeAnyHighlight: Story = {
 
     await expect(drawer).toHaveTextContent("No highlights yet.");
     await expect(drawer).toHaveTextContent("Highlights & notes 0");
+  },
+};
+
+let listGate = deferred();
+
+export const TheDrawerShowsALoaderUntilThePassagesArrive: Story = {
+  beforeEach({ msw }) {
+    listGate = deferred();
+    r.annotations.highlights = SAVED_PASSAGES();
+    msw.use(
+      http.get("/api/highlights/book/:uuid", async () => {
+        await listGate.promise;
+        return HttpResponse.json(r.annotations.highlights);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByTestId("reader-header-chapter");
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Highlights and notes" }),
+    );
+    const drawer = await canvas.findByTestId("reader-highlights-drawer");
+
+    await expect(within(drawer).getByRole("status")).toHaveTextContent(
+      "Loading highlights",
+    );
+    await expect(drawer).not.toHaveTextContent("No highlights yet.");
+
+    listGate.release();
+
+    await within(drawer).findAllByTestId("reader-highlight-row");
+    await expect(within(drawer).queryByRole("status")).toBeNull();
+  },
+};
+
+export const TheDrawerSaysSoWhenThePassagesFailToLoad: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/highlights/book/:uuid", 500));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByTestId("reader-header-chapter");
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Highlights and notes" }),
+    );
+    const drawer = await canvas.findByTestId("reader-highlights-drawer");
+
+    await expect(await within(drawer).findByRole("alert")).toHaveTextContent(
+      "Your highlights couldn’t be loaded.",
+    );
+    await expect(drawer).not.toHaveTextContent("No highlights yet.");
+  },
+};
+
+export const ARowAnchoredInAnotherFormatCannotBeJumpedTo: Story = {
+  beforeEach() {
+    r.annotations.highlights = [
+      aWireHighlight({
+        id: 1,
+        epub_cfi_range: "pdf:3:1,2,3,4,5,6,7,8",
+        text: "The PDF passage",
+      }),
+      aWireHighlight({
+        id: 2,
+        epub_cfi_range: GREEN_RANGE,
+        text: "The EPUB passage",
+      }),
+    ];
+  },
+  play: async ({ canvas, userEvent }) => {
+    await openDrawer({ canvas, userEvent });
+
+    await expect(canvas.getByText("“The PDF passage”")).toBeDisabled();
+    await expect(canvas.getByText("“The EPUB passage”")).toBeEnabled();
   },
 };
 
@@ -376,10 +452,6 @@ export const TheDrawerListsEveryPassage: Story = {
     await expect(within(drawer).getByText("<i>remember</i> this")).toHaveClass(
       "rd-hl-note",
     );
-    await expect(
-      within(rowOf(canvas, "The first passage").getByTestId("highlight-note"))
-        .getByText,
-    ).toBeDefined();
     await expect(
       rowOf(canvas, "The first passage").getByTestId("highlight-note"),
     ).toHaveTextContent("Edit note");
@@ -439,8 +511,11 @@ export const ARecolorRepaintsThePassage: Story = {
         body: { color: "blue" },
       },
     ]);
-    await expect(calls("removeAnnotation")).toEqual([[GREEN_RANGE]]);
-    await expect(calls("addAnnotation").at(-1)).toEqual([GREEN_RANGE, "blue"]);
+    await expect(r.glue.argsOf("removeAnnotation")).toEqual([[GREEN_RANGE]]);
+    await expect(r.glue.argsOf("addAnnotation").at(-1)).toEqual([
+      GREEN_RANGE,
+      "blue",
+    ]);
     // The anchorless row recolors too, with nothing painted to change.
     await userEvent.click(
       rowOf(canvas, "The Kobo passage").getByRole("button", {
@@ -448,7 +523,7 @@ export const ARecolorRepaintsThePassage: Story = {
       }),
     );
     await waitFor(() => expect(r.annotationWrites).toHaveLength(2));
-    await expect(calls("removeAnnotation")).toHaveLength(1);
+    await expect(r.glue.argsOf("removeAnnotation")).toHaveLength(1);
   },
 };
 
@@ -466,7 +541,7 @@ export const ARefusedRecolorLeavesThePassageAsItWas: Story = {
   play: async ({ canvas, userEvent }) => {
     await openDrawer({ canvas, userEvent });
     const row = rowOf(canvas, "The second passage");
-    const painted = calls("addAnnotation").length;
+    const painted = r.glue.argsOf("addAnnotation").length;
 
     await userEvent.click(row.getByRole("button", { name: "Recolor blue" }));
 
@@ -474,8 +549,8 @@ export const ARefusedRecolorLeavesThePassageAsItWas: Story = {
     await expect(
       row.getByRole("button", { name: "Recolor green" }),
     ).toHaveAttribute("aria-pressed", "true");
-    await expect(calls("removeAnnotation")).toEqual([]);
-    await expect(calls("addAnnotation")).toHaveLength(painted);
+    await expect(r.glue.argsOf("removeAnnotation")).toEqual([]);
+    await expect(r.glue.argsOf("addAnnotation")).toHaveLength(painted);
   },
 };
 
@@ -489,7 +564,9 @@ export const ARowJumpsToItsPassageAndClosesTheDrawer: Story = {
 
     await userEvent.click(canvas.getByText("“The second passage”"));
 
-    await waitFor(() => expect(calls("display")).toEqual([[GREEN_RANGE]]));
+    await waitFor(() =>
+      expect(r.glue.argsOf("display")).toEqual([[GREEN_RANGE]]),
+    );
     await waitFor(() =>
       expect(canvas.queryByTestId("reader-highlights-drawer")).toBeNull(),
     );
@@ -539,7 +616,7 @@ export const QuoteAndCopyActOnTheRow: Story = {
     await userEvent.click(row.getByRole("button", { name: "Copy" }));
 
     await waitFor(() =>
-      expect(calls("copyText")).toEqual([["The second passage"]]),
+      expect(r.glue.argsOf("copyText")).toEqual([["The second passage"]]),
     );
     await expect(
       rowOf(canvas, "(highlighted passage)").getByRole("button", {
@@ -573,7 +650,7 @@ export const DeletingARemovesItEverywhere: Story = {
     await expect(r.annotationWrites).toEqual([
       { method: "DELETE", path: "/api/highlights/2", body: undefined },
     ]);
-    await expect(calls("removeAnnotation")).toEqual([[GREEN_RANGE]]);
+    await expect(r.glue.argsOf("removeAnnotation")).toEqual([[GREEN_RANGE]]);
     await expect(badge(canvas).getByText("2")).toHaveClass("rd-badge");
     // The button that had focus is gone; Escape still has to be heard.
     await waitFor(() =>
@@ -602,6 +679,6 @@ export const ARefusedDeleteKeepsThePassage: Story = {
 
     await waitFor(() => expect(refused.count).toBe(1));
     await expect(canvas.getByText("“The second passage”")).toBeVisible();
-    await expect(calls("removeAnnotation")).toEqual([]);
+    await expect(r.glue.argsOf("removeAnnotation")).toEqual([]);
   },
 };

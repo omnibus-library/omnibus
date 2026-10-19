@@ -1,7 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
 import { expect, waitFor } from "storybook/test";
-import { readerFixture, UUID } from "../../testing/readerStory";
+import { deferred } from "../../testing/handlers";
+import { readerFixture, SAVED, UUID } from "../../testing/readerStory";
+import { aWireProgress } from "../../testing/wire";
 import { Reader } from "./Reader";
 
 const r = readerFixture();
@@ -32,9 +35,6 @@ async function openPanel({
   );
   return canvas.findByTestId("reader-aa-panel");
 }
-
-const calls = (method: string) =>
-  r.glue.calls.filter((c) => c.method === method).map((c) => c.args);
 
 export const OpensAndClosesFromTheAaButton: Story = {
   play: async ({ canvas, canvasElement, userEvent }) => {
@@ -83,7 +83,7 @@ export const SizeStepsAndIsRemembered: Story = {
     );
 
     await waitFor(() =>
-      expect(calls("setFontSize")).toEqual([[19], [18], [17]]),
+      expect(r.glue.argsOf("setFontSize")).toEqual([[19], [18], [17]]),
     );
     await expect(localStorage.getItem("omn.fontSize")).toBe("17");
   },
@@ -101,7 +101,7 @@ export const TypefaceReachesTheGlue: Story = {
       canvas.getByTestId("reader-typeface-original"),
     ).toHaveAttribute("aria-pressed", "false");
     await waitFor(() =>
-      expect(calls("setFont")).toEqual([
+      expect(r.glue.argsOf("setFont")).toEqual([
         ["ui-monospace,'SF Mono',Menlo,Consolas,monospace"],
       ]),
     );
@@ -110,7 +110,9 @@ export const TypefaceReachesTheGlue: Story = {
     await userEvent.click(canvas.getByTestId("reader-typeface-original"));
 
     // Original is no override, which reaches the glue as null.
-    await waitFor(() => expect(calls("setFont").at(-1)).toEqual([null]));
+    await waitFor(() =>
+      expect(r.glue.argsOf("setFont").at(-1)).toEqual([null]),
+    );
     await expect(localStorage.getItem("omn.typeface")).toBe("original");
   },
 };
@@ -123,9 +125,9 @@ export const SpacingMarginsAndPageViewReachTheGlue: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Wide" }));
     await userEvent.click(canvas.getByTestId("reader-spread-single"));
 
-    await waitFor(() => expect(calls("setSpread")).toEqual([["none"]]));
-    await expect(calls("setLineHeight")).toEqual([["2.0"]]);
-    await expect(calls("setMargins")).toEqual([
+    await waitFor(() => expect(r.glue.argsOf("setSpread")).toEqual([["none"]]));
+    await expect(r.glue.argsOf("setLineHeight")).toEqual([["2.0"]]);
+    await expect(r.glue.argsOf("setMargins")).toEqual([
       ["min(65%, calc(100% - 172px))"],
     ]);
     await expect(canvas.getByRole("button", { name: "Airy" })).toHaveAttribute(
@@ -147,7 +149,7 @@ export const JustifyToggles: Story = {
     await userEvent.click(justify);
 
     await expect(justify).toHaveAttribute("aria-checked", "true");
-    await waitFor(() => expect(calls("setJustify")).toEqual([[true]]));
+    await waitFor(() => expect(r.glue.argsOf("setJustify")).toEqual([[true]]));
     await expect(localStorage.getItem("omn.justify")).toBe("true");
   },
 };
@@ -205,6 +207,35 @@ export const SavedChoicesReachTheFirstInit: Story = {
     await expect(
       canvas.getByRole("switch", { name: "Justify text" }),
     ).toHaveAttribute("aria-checked", "true");
+  },
+};
+
+let progressGate = deferred();
+
+export const AChoiceMadeBeforeTheOpenIsInTheFirstInit: Story = {
+  beforeEach({ msw }) {
+    progressGate = deferred();
+    msw.use(
+      http.get("/api/progress/:uuid", async () => {
+        await progressGate.promise;
+        return HttpResponse.json(aWireProgress(SAVED));
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    // The glue is not opened until the saved position is known, so the panel is reachable first.
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Display settings" }),
+    );
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Increase font size" }),
+    );
+    await expect(r.inits()).toEqual([]);
+
+    progressGate.release();
+
+    await waitFor(() => expect(r.inits()).toHaveLength(1));
+    await expect(r.opens()[0]).toMatchObject({ fontSize: 19 });
   },
 };
 

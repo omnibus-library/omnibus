@@ -1,6 +1,10 @@
 /** One call a page made on a stand-in glue. */
 export type GlueCall = { method: string; args: unknown[] };
 
+/** The arguments of each call a stand-in glue recorded for `method`, in call order. */
+const argsFrom = (calls: GlueCall[]) => (method: string) =>
+  calls.filter((c) => c.method === method).map((c) => c.args);
+
 type PdfInit = Parameters<NonNullable<Window["OmnibusPdfReader"]>["init"]>[1];
 
 /**
@@ -45,6 +49,7 @@ export function fakePdfGlue({
   };
   return {
     calls,
+    argsOf: argsFrom(calls),
     restore() {
       delete window.OmnibusPdfReader;
     },
@@ -153,6 +158,7 @@ export function fakeEpubGlue({
   };
   return {
     calls,
+    argsOf: argsFrom(calls),
     restore() {
       delete window.OmnibusReader;
     },

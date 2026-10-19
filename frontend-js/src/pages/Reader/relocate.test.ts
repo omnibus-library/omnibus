@@ -75,9 +75,17 @@ describe("relocateWrite", () => {
     expect(relocateWrite(null, false, "a", false).post).toBeNull();
   });
 
-  it("swallows the held landing, counts it as posted and then writes movement", () => {
+  it("swallows the held landing and counts it as posted", () => {
+    expect(relocateWrite("a", false, null, true)).toEqual({
+      post: null,
+      lastPosted: "a",
+      hold: false,
+    });
+  });
+
+  it("writes movement after the held landing", () => {
     const held = relocateWrite("a", false, null, true);
-    expect(held).toEqual({ post: null, lastPosted: "a", hold: false });
+
     expect(relocateWrite("b", false, held.lastPosted, held.hold).post).toBe(
       "b",
     );
@@ -122,20 +130,17 @@ describe("resolveChapterPosition", () => {
   });
 });
 
-describe("format", () => {
-  const paged = { ...NO_LOCATION, page: 42, totalPages: 300, pct: 14 };
+const paged = { ...NO_LOCATION, page: 42, totalPages: 300, pct: 14 };
 
+describe("formatProgressLabels", () => {
   it("labels nothing before the first relocate", () => {
     expect(formatProgressLabels(NO_LOCATION)).toEqual({
       page: "",
       chapter: "",
     });
-    expect(formatAmbientPage(NO_LOCATION)).toBe("");
-    expect(formatTitleSub(NO_LOCATION)).toBe("");
-    expect(formatContentsProgress(NO_LOCATION)).toBe("");
   });
 
-  it("labels the page and chapter, with the non-breaking spaces and middots exact", () => {
+  it("labels the page and chapter with exact non-breaking spaces and middots", () => {
     expect(
       formatProgressLabels({ ...paged, chapter: 3, totalChapters: 24 }),
     ).toEqual({
@@ -148,38 +153,10 @@ describe("format", () => {
     expect(formatProgressLabels({ ...NO_LOCATION, pct: 7 }).page).toBe("7%");
   });
 
-  it("marks an approximate percent with a tilde everywhere it shows", () => {
+  it("marks an approximate percent with a tilde", () => {
     const loc = { ...paged, chapter: 2, pctApprox: true };
 
     expect(formatProgressLabels(loc).page).toBe("p. 42 of 300 · ~14%");
-    expect(formatTitleSub(loc)).toBe("Ch. 2 · ~14%");
-    expect(formatContentsProgress(loc)).toBe("42 / 300 · ~14%");
-    expect(
-      formatAmbientPage({ ...NO_LOCATION, pct: 47, pctApprox: true }),
-    ).toBe("~47%");
-  });
-
-  it("shows the bare page number in the ambient footer when paginated", () => {
-    expect(formatAmbientPage({ ...paged, page: 142 })).toBe("142");
-    expect(formatAmbientPage({ ...NO_LOCATION, pct: 47 })).toBe("47%");
-  });
-
-  it("builds the title sub-line from the chapter, else the percent", () => {
-    expect(formatTitleSub({ ...NO_LOCATION, chapter: 14, pct: 68 })).toBe(
-      "Ch. 14 · 68%",
-    );
-    expect(formatTitleSub({ ...NO_LOCATION, pct: 68 })).toBe("68%");
-  });
-
-  it("builds the contents progress line", () => {
-    expect(
-      formatContentsProgress({
-        ...NO_LOCATION,
-        page: 184,
-        totalPages: 272,
-        pct: 68,
-      }),
-    ).toBe("184 / 272 · 68%");
   });
 
   it("never renders a stalled page figure across a chapter boundary", () => {
@@ -198,5 +175,64 @@ describe("format", () => {
 
     expect(before.page).toBe("p. 22 of 22 · 40%");
     expect(after.page).toBe("p. 1 of 8 · 41%");
+  });
+});
+
+describe("formatAmbientPage", () => {
+  it("labels nothing before the first relocate", () => {
+    expect(formatAmbientPage(NO_LOCATION)).toBe("");
+  });
+
+  it("shows the bare page number when paginated", () => {
+    expect(formatAmbientPage({ ...paged, page: 142 })).toBe("142");
+    expect(formatAmbientPage({ ...NO_LOCATION, pct: 47 })).toBe("47%");
+  });
+
+  it("marks an approximate percent with a tilde", () => {
+    expect(
+      formatAmbientPage({ ...NO_LOCATION, pct: 47, pctApprox: true }),
+    ).toBe("~47%");
+  });
+});
+
+describe("formatTitleSub", () => {
+  it("labels nothing before the first relocate", () => {
+    expect(formatTitleSub(NO_LOCATION)).toBe("");
+  });
+
+  it("builds from the chapter, else the percent", () => {
+    expect(formatTitleSub({ ...NO_LOCATION, chapter: 14, pct: 68 })).toBe(
+      "Ch. 14 · 68%",
+    );
+    expect(formatTitleSub({ ...NO_LOCATION, pct: 68 })).toBe("68%");
+  });
+
+  it("marks an approximate percent with a tilde", () => {
+    expect(formatTitleSub({ ...paged, chapter: 2, pctApprox: true })).toBe(
+      "Ch. 2 · ~14%",
+    );
+  });
+});
+
+describe("formatContentsProgress", () => {
+  it("labels nothing before the first relocate", () => {
+    expect(formatContentsProgress(NO_LOCATION)).toBe("");
+  });
+
+  it("builds the contents progress line", () => {
+    expect(
+      formatContentsProgress({
+        ...NO_LOCATION,
+        page: 184,
+        totalPages: 272,
+        pct: 68,
+      }),
+    ).toBe("184 / 272 · 68%");
+  });
+
+  it("marks an approximate percent with a tilde", () => {
+    expect(formatContentsProgress({ ...paged, pctApprox: true })).toBe(
+      "42 / 300 · ~14%",
+    );
   });
 });

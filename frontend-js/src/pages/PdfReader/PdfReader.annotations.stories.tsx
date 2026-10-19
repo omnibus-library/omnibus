@@ -39,9 +39,6 @@ const annotations: { highlights: Highlight[]; bookmarks: Bookmark[] } = {
 const annotationWrites: RecordedWrite[] = [];
 let glue: ReturnType<typeof fakePdfGlue>;
 
-const calls = (method: string) =>
-  glue.calls.filter((c) => c.method === method).map((c) => c.args);
-
 const meta = {
   title: "Pages/PdfReader/Annotations",
   component: PdfReader,
@@ -101,7 +98,7 @@ export const SavedHighlightsAreHandedToTheGlueToPaint: Story = {
   },
   play: async ({ canvas }) => {
     await waitFor(() =>
-      expect(calls("paintHighlights").at(-1)).toEqual([
+      expect(glue.argsOf("paintHighlights").at(-1)).toEqual([
         [
           { anchor: ANCHOR, color: "green" },
           { anchor: "pdf:4", color: "rose" },
@@ -146,11 +143,11 @@ export const ASwatchSavesThePdfAnchorAndRepaints: Story = {
       ]),
     );
     await waitFor(() =>
-      expect(calls("paintHighlights").at(-1)).toEqual([
+      expect(glue.argsOf("paintHighlights").at(-1)).toEqual([
         [{ anchor: ANCHOR, color: "green" }],
       ]),
     );
-    await expect(calls("clearSelection")).toHaveLength(1);
+    await expect(glue.argsOf("clearSelection")).toHaveLength(1);
     await expect(
       canvas.queryByRole("button", { name: "Highlight green" }),
     ).toBeNull();
@@ -173,11 +170,11 @@ export const CopyAndShareHandTheTextToTheGlue: Story = {
   play: async ({ canvas, userEvent }) => {
     await select({ canvas });
     await userEvent.click(canvas.getByTestId("selection-copy"));
-    await waitFor(() => expect(calls("copyText")).toEqual([[PASSAGE]]));
+    await waitFor(() => expect(glue.argsOf("copyText")).toEqual([[PASSAGE]]));
 
     await select({ canvas });
     await userEvent.click(canvas.getByTestId("selection-share"));
-    await waitFor(() => expect(calls("shareText")).toEqual([[PASSAGE]]));
+    await waitFor(() => expect(glue.argsOf("shareText")).toEqual([[PASSAGE]]));
   },
 };
 
@@ -228,6 +225,9 @@ export const TappingAKnownHighlightOpensTheDrawer: Story = {
     ).findByText("1");
 
     window.__omnibusOnPdfHighlightTap?.("pdf:9:0,0,1,0,0,1,1,1");
+    // A hook that does work, so the unknown tap has been handled before the drawer is checked.
+    window.__omnibusOnPdfSelection?.(SELECTED);
+    await canvas.findByTestId("selection-note");
     await expect(canvas.queryByTestId("reader-highlights-drawer")).toBeNull();
 
     window.__omnibusOnPdfHighlightTap?.(ANCHOR);
@@ -254,11 +254,43 @@ export const ADrawerRowJumpsToItsPage: Story = {
 
     await userEvent.click(await within(drawer).findByText("“Far on”"));
 
-    await expect(calls("goTo")).toEqual([[4]]);
+    await expect(glue.argsOf("goTo")).toEqual([[4]]);
     await canvas.findByText("Page 5 of 5");
     await waitFor(() =>
       expect(canvas.queryByTestId("reader-highlights-drawer")).toBeNull(),
     );
+  },
+};
+
+export const DeletingAHighlightRemovesItAndRepaints: Story = {
+  beforeEach() {
+    annotations.highlights = [
+      aWireHighlight({ id: 1, epub_cfi_range: ANCHOR, text: "First" }),
+      aWireHighlight({
+        id: 2,
+        epub_cfi_range: "pdf:4",
+        color: "rose",
+        text: "Second",
+      }),
+    ];
+  },
+  play: async ({ canvas, userEvent }) => {
+    const drawer = await openDrawer({ canvas, userEvent });
+    const [first] = await within(drawer).findAllByTestId("highlight-delete");
+
+    await userEvent.click(first as HTMLElement);
+
+    await waitFor(() =>
+      expect(annotationWrites).toEqual([
+        { method: "DELETE", path: "/api/highlights/1", body: undefined },
+      ]),
+    );
+    await waitFor(() =>
+      expect(glue.argsOf("paintHighlights").at(-1)).toEqual([
+        [{ anchor: "pdf:4", color: "rose" }],
+      ]),
+    );
+    await expect(within(drawer).queryByText("“First”")).toBeNull();
   },
 };
 
@@ -306,8 +338,32 @@ export const ABookmarkRowJumpsToItsPage: Story = {
       await within(drawer).findByRole("button", { name: /Page 5/ }),
     );
 
-    await expect(calls("goTo")).toEqual([[4]]);
+    await expect(glue.argsOf("goTo")).toEqual([[4]]);
     await canvas.findByText("Page 5 of 5");
+  },
+};
+
+export const DeletingABookmarkRemovesItsRow: Story = {
+  beforeEach() {
+    annotations.bookmarks = [
+      aWireBookmark({ id: 7, position: "pdf-page:4", title: "Page 5" }),
+    ];
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByText("Page 3 of 5");
+    await userEvent.click(canvas.getByRole("button", { name: "Bookmarks" }));
+    const drawer = await canvas.findByTestId("reader-bookmarks-drawer");
+
+    await userEvent.click(
+      await within(drawer).findByRole("button", { name: "Delete bookmark" }),
+    );
+
+    await waitFor(() =>
+      expect(within(drawer).queryByTestId("reader-bookmark-row")).toBeNull(),
+    );
+    await expect(annotationWrites).toEqual([
+      { method: "DELETE", path: "/api/bookmarks/7", body: undefined },
+    ]);
   },
 };
 

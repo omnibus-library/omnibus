@@ -1,11 +1,17 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { HttpResponse, http } from "msw";
 import { StrictMode } from "react";
 import { Route, Routes } from "react-router";
 import { expect, waitFor } from "storybook/test";
 import { epubRelocate } from "../../testing/readerGlue";
 import { progressHandlers } from "../../testing/readerHandlers";
-import { readerFixture, SAVED_CFI, UUID } from "../../testing/readerStory";
-import { aWirePosition } from "../../testing/wire";
+import {
+  readerFixture,
+  SAVED,
+  SAVED_CFI,
+  UUID,
+} from "../../testing/readerStory";
+import { aWirePosition, aWireProgress } from "../../testing/wire";
 import { Reader } from "./Reader";
 
 const r = readerFixture();
@@ -65,6 +71,54 @@ export const FailsThenRetries: Story = {
   },
 };
 
+export const FailsWhenTheReaderRuntimeCannotLoad: Story = {
+  beforeEach({ msw }) {
+    // No stand-in glue, so the loader appends the real scripts and the glue's own comes back 404.
+    delete window.OmnibusReader;
+    msw.use(
+      http.get(
+        "*/epub-reader-glue*",
+        () => new HttpResponse(null, { status: 404 }),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "This book couldn’t be loaded.",
+    );
+    await expect(window.OmnibusReader).toBeUndefined();
+  },
+};
+
+const progressReads = { count: 0 };
+
+export const FailsToOpenWhenTheProgressFetchFails: Story = {
+  beforeEach({ msw }) {
+    progressReads.count = 0;
+    // The first read fails, so the reader cannot tell "nothing saved" from "unreadable".
+    msw.use(
+      http.get("/api/progress/:uuid", () =>
+        ++progressReads.count === 1
+          ? new HttpResponse("failed", { status: 500 })
+          : HttpResponse.json(aWireProgress(SAVED)),
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "This book couldn’t be loaded.",
+    );
+    await expect(inits()).toEqual([]);
+
+    await userEvent.click(canvas.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(inits()).toHaveLength(1));
+    await expect(progressReads.count).toBe(2);
+    await expect(opens()[0]).toMatchObject({ cfi: SAVED_CFI });
+    await expect(writes).toEqual([]);
+  },
+};
+
 export const ShowsANavErrorNotice: Story = {
   play: async ({ canvas }) => {
     await waitFor(() =>
@@ -86,7 +140,7 @@ export const ShowsANavErrorNotice: Story = {
 };
 
 export const OpensAtTheSavedPosition: Story = {
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
     await waitFor(() => expect(inits()).toHaveLength(1));
 
     const [id, url, opts] = inits()[0]?.args ?? [];
@@ -99,8 +153,14 @@ export const OpensAtTheSavedPosition: Story = {
       fontsHref: expect.stringContaining("reader-fonts/reader-fonts.css"),
     });
     await canvas.findByTestId("reader-header-chapter");
-    // The restore settle restates the position the server already holds.
-    await expect(writes).toEqual([]);
+
+    await userEvent.click(canvas.getByRole("button", { name: "Next page" }));
+
+    // The restore settle restates the position the server already holds: only the turn wrote.
+    await waitFor(() => expect(writes).toHaveLength(1));
+    await expect(writes[0]).toMatchObject({
+      epub_cfi: "epubcfi(/6/4!/4/2/1:0)",
+    });
   },
 };
 
@@ -288,13 +348,16 @@ export const LeavesTheGlueClean: Story = {
 
     await expect(await canvas.findByText("Book page")).toBeInTheDocument();
     await expect(r.glue.calls.map((c) => c.method)).toContain("destroy");
-    for (const hook of [
-      window.__omnibusOnRelocate,
-      window.__omnibusOnStatus,
-      window.__omnibusOnToc,
-      window.__omnibusOnToggleChrome,
-    ]) {
-      await expect(hook).toBeUndefined();
+    for (const name of [
+      "__omnibusOnRelocate",
+      "__omnibusOnStatus",
+      "__omnibusOnToc",
+      "__omnibusOnSearchResults",
+      "__omnibusOnSelection",
+      "__omnibusOnSelectionCleared",
+      "__omnibusOnToggleChrome",
+    ] as const) {
+      await expect(window[name]).toBeUndefined();
     }
   },
 };

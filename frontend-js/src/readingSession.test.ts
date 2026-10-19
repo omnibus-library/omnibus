@@ -196,7 +196,9 @@ describe("useReadingSession", () => {
       renderHook(() => useReadingSession(A));
       window.dispatchEvent(new Event("pagehide"));
 
-      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+      window.dispatchEvent(
+        new PageTransitionEvent("pageshow", { persisted: true }),
+      );
       show("visible");
       vi.advanceTimersByTime(60_000);
 

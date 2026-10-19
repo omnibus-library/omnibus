@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
-import { failing } from "../../testing/handlers";
+import { deferred, failing } from "../../testing/handlers";
 import { readerFixture, SAVED_CFI, UUID } from "../../testing/readerStory";
 import { aWireBookmark, aWireHighlight } from "../../testing/wire";
 import { Reader } from "./Reader";
@@ -43,9 +43,6 @@ const HIGHLIGHTS = () => [
   aWireHighlight({ id: 1, color: "amber", text: "The amber passage" }),
   aWireHighlight({ id: 2, color: "green", text: "The green passage" }),
 ];
-
-const calls = (method: string) =>
-  r.glue.calls.filter((c) => c.method === method).map((c) => c.args);
 
 /** Waits out the bookmark list's load, which would replace a row added before it landed. */
 const loaded = (panel: HTMLElement) =>
@@ -166,6 +163,80 @@ export const ARefusedSaveAddsNothing: Story = {
   },
 };
 
+let postGate = deferred();
+const posts = { count: 0 };
+
+export const AFastDoubleClickSavesOneBookmark: Story = {
+  beforeEach({ msw }) {
+    postGate = deferred();
+    posts.count = 0;
+    msw.use(
+      http.post("/api/bookmarks", async () => {
+        posts.count += 1;
+        await postGate.promise;
+        return HttpResponse.json(
+          aWireBookmark({ id: 100, position: SAVED_CFI, title: "Prologue" }),
+        );
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const drawer = await openDrawer({ canvas, userEvent });
+    const add = within(drawer).getByRole("button", { name: "+ Bookmark" });
+
+    await userEvent.dblClick(add);
+
+    await waitFor(() => expect(posts.count).toBe(1));
+    await expect(add).toBeDisabled();
+
+    postGate.release();
+
+    await within(drawer).findByText("Prologue");
+    await waitFor(() => expect(add).toBeEnabled());
+    await expect(posts.count).toBe(1);
+  },
+};
+
+export const TheDrawerSaysSoWhenTheBookmarksFailToLoad: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/bookmarks/book/:uuid", 500));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const drawer = await openDrawer({ canvas, userEvent });
+
+    await expect(within(drawer).getByRole("alert")).toHaveTextContent(
+      "Your bookmarks couldn’t be loaded.",
+    );
+    await expect(drawer).not.toHaveTextContent("No bookmarks yet.");
+    await expect(
+      within(drawer).getByRole("button", { name: "+ Bookmark" }),
+    ).toBeDisabled();
+  },
+};
+
+export const ABookmarkFromAnotherFormatCannotBeJumpedTo: Story = {
+  beforeEach() {
+    r.annotations.bookmarks = [
+      aWireBookmark({ id: 1, position: "pdf-page:3", title: "PDF page" }),
+      aWireBookmark({
+        id: 2,
+        position: "epubcfi(/6/8!/4/2/1:0)",
+        title: "Here",
+      }),
+    ];
+  },
+  play: async ({ canvas, userEvent }) => {
+    const drawer = await openDrawer({ canvas, userEvent });
+
+    await expect(
+      await within(drawer).findByRole("button", { name: /PDF page/ }),
+    ).toBeDisabled();
+    await expect(
+      within(drawer).getByRole("button", { name: /Here/ }),
+    ).toBeEnabled();
+  },
+};
+
 export const ARowJumpsToItsPlaceAndClosesTheDrawer: Story = {
   beforeEach() {
     r.annotations.bookmarks = BOOKMARKS();
@@ -177,7 +248,9 @@ export const ARowJumpsToItsPlaceAndClosesTheDrawer: Story = {
       await within(drawer).findByRole("button", { name: /Prologue/ }),
     );
 
-    await expect(calls("display")).toEqual([["epubcfi(/6/4!/4/2/1:0)"]]);
+    await expect(r.glue.argsOf("display")).toEqual([
+      ["epubcfi(/6/4!/4/2/1:0)"],
+    ]);
     await waitFor(() =>
       expect(canvas.queryByTestId("reader-bookmarks-drawer")).toBeNull(),
     );
@@ -204,18 +277,41 @@ export const DeletingARowRemovesIt: Story = {
   },
 };
 
+const deletes: string[] = [];
+
 export const ARefusedDeleteKeepsTheRow: Story = {
   beforeEach({ msw }) {
     r.annotations.bookmarks = BOOKMARKS();
-    msw.use(failing("delete", "/api/bookmarks/:id", 500));
+    deletes.length = 0;
+    // Row 1 is refused and row 2 goes through.
+    msw.use(
+      http.delete("/api/bookmarks/:id", ({ params }) => {
+        deletes.push(String(params.id));
+        return params.id === "1"
+          ? new HttpResponse("failed", { status: 500 })
+          : new HttpResponse(null, { status: 204 });
+      }),
+    );
   },
   play: async ({ canvas, userEvent }) => {
     const drawer = await openDrawer({ canvas, userEvent });
     await userEvent.click(await firstDelete(drawer));
+    await waitFor(() => expect(deletes).toEqual(["1"]));
 
+    // Row 2's delete is answered after row 1's refusal, so once its row is gone the refusal has been handled.
+    const [, second] = within(drawer).getAllByRole("button", {
+      name: "Delete bookmark",
+    });
+    await userEvent.click(second as HTMLElement);
+
+    await waitFor(() =>
+      expect(within(drawer).getAllByTestId("reader-bookmark-row")).toHaveLength(
+        1,
+      ),
+    );
     await expect(
-      within(drawer).getAllByTestId("reader-bookmark-row"),
-    ).toHaveLength(2);
+      within(drawer).getByTestId("reader-bookmark-row"),
+    ).toHaveTextContent("Prologue");
   },
 };
 
@@ -227,6 +323,20 @@ export const TheSheetIsEmptyBeforeAnyAnnotation: Story = {
       "Nothing here yet. Highlight a passage or tap + Bookmark to save your place.",
     );
     await expect(sheet).toHaveTextContent("0 highlights · 0 bookmarks");
+  },
+};
+
+export const TheSheetSaysSoWhenTheBookmarksFailToLoad: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/bookmarks/book/:uuid", 500));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const sheet = await openSheet({ canvas, userEvent });
+
+    await expect(within(sheet).getByRole("alert")).toHaveTextContent(
+      "Your annotations couldn’t be loaded.",
+    );
+    await expect(sheet).not.toHaveTextContent("Nothing here yet.");
   },
 };
 
@@ -305,7 +415,9 @@ export const ARowInTheSheetJumpsAndClosesIt: Story = {
       await within(sheet).findByRole("button", { name: /Prologue/ }),
     );
 
-    await expect(calls("display")).toEqual([["epubcfi(/6/4!/4/2/1:0)"]]);
+    await expect(r.glue.argsOf("display")).toEqual([
+      ["epubcfi(/6/4!/4/2/1:0)"],
+    ]);
     await waitFor(() =>
       expect(canvas.queryByTestId("reader-annotations-drawer")).toBeNull(),
     );

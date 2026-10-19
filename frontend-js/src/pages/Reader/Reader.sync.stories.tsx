@@ -47,9 +47,6 @@ const AUDIO_PLACE = {
   target: "epub",
 } as const;
 
-const calls = (method: string) =>
-  r.glue.calls.filter((c) => c.method === method).map((c) => c.args);
-
 const asked = () => r.syncCalls.filter((c) => c.method === "GET").length;
 
 /** Waits until the resume answer has been handled: a page turn runs through the same event loop. */
@@ -57,7 +54,7 @@ async function afterTheAnswer({ canvas, userEvent }: Args) {
   await canvas.findByTestId("reader-header-chapter");
   await waitFor(() => expect(asked()).toBe(1));
   await userEvent.click(canvas.getByRole("button", { name: "Next page" }));
-  await waitFor(() => expect(calls("next")).toHaveLength(1));
+  await waitFor(() => expect(r.glue.argsOf("next")).toHaveLength(1));
 }
 
 /** A glue that reports one relocate with the given overrides, then `ready`. */
@@ -85,11 +82,39 @@ export const FollowMovesTheTextToTheServerCfi: Story = {
   play: async ({ canvas }) => {
     await canvas.findByTestId("reader-header-chapter");
 
-    await waitFor(() => expect(calls("displayCfi")).toEqual([[SERVER_CFI]]));
-    await expect(calls("displayPercentage")).toEqual([]);
+    await waitFor(() =>
+      expect(r.glue.argsOf("displayCfi")).toEqual([[SERVER_CFI]]),
+    );
+    await expect(r.glue.argsOf("displayPercentage")).toEqual([]);
     await expect(r.syncCalls).toEqual([
       { method: "GET", path: RESUME_URL, body: undefined },
     ]);
+  },
+};
+
+export const ADeepLinkIsNotOverriddenByAFollowJump: Story = {
+  parameters: {
+    path: `/read/${UUID}?cfi=${encodeURIComponent("epubcfi(/6/20!/4/10/1:4)")}`,
+  },
+  beforeEach() {
+    r.crossFormat.resume = resume({
+      ...AUDIO_PLACE,
+      epub_cfi: SERVER_CFI,
+      fraction: 0.6,
+      percent: 60,
+    });
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByTestId("reader-header-chapter");
+    await userEvent.click(canvas.getByRole("button", { name: "Next page" }));
+    await waitFor(() => expect(r.glue.argsOf("next")).toHaveLength(1));
+
+    await expect(r.opens()[0]).toMatchObject({
+      cfi: "epubcfi(/6/20!/4/10/1:4)",
+    });
+    await expect(asked()).toBe(0);
+    await expect(r.glue.argsOf("displayCfi")).toEqual([]);
+    await expect(r.glue.argsOf("displayPercentage")).toEqual([]);
   },
 };
 
@@ -104,8 +129,10 @@ export const FollowFallsBackToTheFractionAsAPercentage: Story = {
   play: async ({ canvas }) => {
     await canvas.findByTestId("reader-header-chapter");
 
-    await waitFor(() => expect(calls("displayPercentage")).toEqual([[50]]));
-    await expect(calls("displayCfi")).toEqual([]);
+    await waitFor(() =>
+      expect(r.glue.argsOf("displayPercentage")).toEqual([[50]]),
+    );
+    await expect(r.glue.argsOf("displayCfi")).toEqual([]);
   },
 };
 
@@ -116,7 +143,9 @@ export const FollowFallsBackToThePercentWithNoFraction: Story = {
   play: async ({ canvas }) => {
     await canvas.findByTestId("reader-header-chapter");
 
-    await waitFor(() => expect(calls("displayPercentage")).toEqual([[37]]));
+    await waitFor(() =>
+      expect(r.glue.argsOf("displayPercentage")).toEqual([[37]]),
+    );
   },
 };
 
@@ -130,8 +159,8 @@ export const WithFollowOffTheTextStaysPut: Story = {
   play: async (args) => {
     await afterTheAnswer(args);
 
-    await expect(calls("displayCfi")).toEqual([]);
-    await expect(calls("displayPercentage")).toEqual([]);
+    await expect(r.glue.argsOf("displayCfi")).toEqual([]);
+    await expect(r.glue.argsOf("displayPercentage")).toEqual([]);
   },
 };
 
@@ -139,8 +168,8 @@ export const AnUnlinkedBookStaysPut: Story = {
   play: async (args) => {
     await afterTheAnswer(args);
 
-    await expect(calls("displayCfi")).toEqual([]);
-    await expect(calls("displayPercentage")).toEqual([]);
+    await expect(r.glue.argsOf("displayCfi")).toEqual([]);
+    await expect(r.glue.argsOf("displayPercentage")).toEqual([]);
   },
 };
 
@@ -156,8 +185,8 @@ export const ARefusedResumeLeavesTheTextAlone: Story = {
   play: async (args) => {
     await afterTheAnswer(args);
 
-    await expect(calls("displayCfi")).toEqual([]);
-    await expect(calls("displayPercentage")).toEqual([]);
+    await expect(r.glue.argsOf("displayCfi")).toEqual([]);
+    await expect(r.glue.argsOf("displayPercentage")).toEqual([]);
   },
 };
 

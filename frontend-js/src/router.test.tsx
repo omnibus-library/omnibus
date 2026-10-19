@@ -164,7 +164,9 @@ describe("routes", () => {
       const router = openBrowserRouter(`/login?next=/comic/${UUID}`);
       await router.navigate(`/comic/${UUID}`, { replace: true });
 
-      await userEvent.click(await screen.findByRole("button", { name: "Back" }));
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Back" }),
+      );
 
       await waitFor(() =>
         expect(router.state.location.pathname).toBe(`/books/${UUID}`),
@@ -175,7 +177,9 @@ describe("routes", () => {
       const router = openBrowserRouter("/authors");
       await router.navigate(`/comic/${UUID}`);
 
-      await userEvent.click(await screen.findByRole("button", { name: "Back" }));
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Back" }),
+      );
 
       await waitFor(() =>
         expect(router.state.location.pathname).toBe("/authors"),

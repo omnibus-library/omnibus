@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
 import { expect, fireEvent, waitFor } from "storybook/test";
 import type { ProgressUpdate } from "../../api/generated/schemas";
@@ -92,11 +93,31 @@ export const NoPages: Story = {
   },
 };
 
+export const FailsToOpenWhenTheProgressFetchFails: Story = {
+  beforeEach({ msw }) {
+    // The reader cannot tell "nothing saved" from "unreadable", so it must not open at page 1.
+    msw.use(
+      bookHandler(BOOK),
+      http.get(
+        "/api/progress/:uuid",
+        () => new HttpResponse("failed", { status: 500 }),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "This comic could not be opened.",
+    );
+    await expect(canvas.queryByTestId("comic-page-image")).toBeNull();
+    await expect(writes).toEqual([]);
+  },
+};
+
 export const OpensAtTheSavedPage: Story = {
   beforeEach({ msw }) {
     msw.use(bookHandler(BOOK), ...progressHandlers([SAVED], writes));
   },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
     const image = await canvas.findByTestId("comic-page-image");
     await expect(image).toHaveAttribute("src", `/api/ebooks/${UUID}/pages/2`);
     await expect(image).toHaveAccessibleName("Page 3");
@@ -113,7 +134,12 @@ export const OpensAtTheSavedPage: Story = {
       `/api/ebooks/${UUID}/pages/3`,
       `/api/ebooks/${UUID}/pages/1`,
     ]);
-    await expect(writes).toEqual([]);
+
+    await userEvent.click(canvas.getByRole("button", { name: "Next page" }));
+
+    // Opening restates nothing: only the turn wrote.
+    await waitFor(() => expect(writes).toHaveLength(1));
+    await expect(writes[0]).toMatchObject({ epub_cfi: "comic-page:3" });
   },
 };
 
@@ -162,7 +188,10 @@ export const StopsAtTheEnds: Story = {
     await userEvent.keyboard("{ArrowLeft}");
 
     await expect(canvas.getByText("Page 1 of 5")).toBeInTheDocument();
-    await expect(writes).toEqual([]);
+    await userEvent.click(canvas.getByRole("button", { name: "Next page" }));
+    await canvas.findByText("Page 2 of 5");
+    await waitFor(() => expect(writes).toHaveLength(1));
+    await expect(writes[0]).toMatchObject({ epub_cfi: "comic-page:1" });
   },
 };
 

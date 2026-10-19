@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
 import { expect, fireEvent, waitFor } from "storybook/test";
 import type { ProgressUpdate } from "../../api/generated/schemas";
@@ -12,7 +13,12 @@ import {
   annotationHandlers,
   progressHandlers,
 } from "../../testing/readerHandlers";
-import { aWireBook, aWirePosition, aWireReadStatus } from "../../testing/wire";
+import {
+  aWireBook,
+  aWirePosition,
+  aWireProgress,
+  aWireReadStatus,
+} from "../../testing/wire";
 import { PdfReader } from "./PdfReader";
 
 const BOOK = aWireBook({ formats: ["PDF"] });
@@ -118,8 +124,58 @@ export const FailsThenRetries: Story = {
   },
 };
 
-export const OpensAtTheSavedPage: Story = {
+export const FailsWhenTheGlueCannotLoad: Story = {
+  beforeEach({ msw }) {
+    // No stand-in glue, so the loader appends the real script, which comes back 404.
+    delete window.OmnibusPdfReader;
+    msw.use(
+      http.get(
+        "*/pdf-reader-glue*",
+        () => new HttpResponse(null, { status: 404 }),
+      ),
+    );
+  },
   play: async ({ canvas }) => {
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "This PDF could not be opened.",
+    );
+    await expect(canvas.getByTestId("pdf-error-detail")).toHaveTextContent(
+      "glue failed to load",
+    );
+  },
+};
+
+const progressReads = { count: 0 };
+
+export const FailsToOpenWhenTheProgressFetchFails: Story = {
+  beforeEach({ msw }) {
+    progressReads.count = 0;
+    // The first read fails, so the reader cannot tell "nothing saved" from "unreadable".
+    msw.use(
+      http.get("/api/progress/:uuid", () =>
+        ++progressReads.count === 1
+          ? new HttpResponse("failed", { status: 500 })
+          : HttpResponse.json(aWireProgress(SAVED)),
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "This PDF could not be opened.",
+    );
+    await expect(inits()).toEqual([]);
+
+    await userEvent.click(canvas.getByRole("button", { name: "Retry" }));
+
+    await canvas.findByText("Page 3 of 5");
+    await expect(progressReads.count).toBe(2);
+    await expect(inits()[0]?.args[1]).toMatchObject({ startPage: 2 });
+    await expect(writes).toEqual([]);
+  },
+};
+
+export const OpensAtTheSavedPage: Story = {
+  play: async ({ canvas, userEvent }) => {
     await canvas.findByText("Page 3 of 5");
 
     await expect(
@@ -140,8 +196,12 @@ export const OpensAtTheSavedPage: Story = {
         wasmUrl: expect.stringMatching(/\/$/),
       }),
     );
-    // The Ready report restates the resumed page; it must not post an echo.
-    await expect(writes).toEqual([]);
+
+    await userEvent.click(canvas.getByRole("button", { name: "Next page" }));
+
+    // The Ready report restates the resumed page; it must not post an echo, so only the turn wrote.
+    await waitFor(() => expect(writes).toHaveLength(1));
+    await expect(writes[0]).toMatchObject({ epub_cfi: "pdf-page:3" });
   },
 };
 
@@ -218,9 +278,12 @@ export const DropsAMalformedReport: Story = {
 
     window.__omnibusOnPdfPage?.("not json");
     window.__omnibusOnPdfPage?.(JSON.stringify({ page: "four" }));
+    // A good report after them: once it shows, the bad ones have had their say.
+    window.__omnibusOnPdfPage?.(JSON.stringify({ page: 4, pageCount: 5 }));
 
-    await expect(canvas.getByText("Page 3 of 5")).toBeInTheDocument();
-    await expect(writes).toEqual([]);
+    await canvas.findByText("Page 5 of 5");
+    await waitFor(() => expect(writes).toHaveLength(1));
+    await expect(writes[0]).toMatchObject({ epub_cfi: "pdf-page:4" });
   },
 };
 
@@ -242,7 +305,12 @@ export const StopsAtTheEnds: Story = {
     await userEvent.keyboard("{ArrowRight}");
 
     await expect(canvas.getByText("Page 5 of 5")).toBeInTheDocument();
-    await expect(writes).toEqual([]);
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Previous page" }),
+    );
+    await canvas.findByText("Page 4 of 5");
+    await waitFor(() => expect(writes).toHaveLength(1));
+    await expect(writes[0]).toMatchObject({ epub_cfi: "pdf-page:3" });
   },
 };
 
@@ -301,8 +369,15 @@ export const LeavesTheGlueClean: Story = {
 
     await expect(await canvas.findByText("Book page")).toBeInTheDocument();
     await expect(glue.calls.map((c) => c.method)).toContain("destroy");
-    await expect(window.__omnibusOnPdfReady).toBeUndefined();
-    await expect(window.__omnibusOnPdfPage).toBeUndefined();
-    await expect(window.__omnibusOnPdfError).toBeUndefined();
+    for (const name of [
+      "__omnibusOnPdfReady",
+      "__omnibusOnPdfPage",
+      "__omnibusOnPdfError",
+      "__omnibusOnPdfSelection",
+      "__omnibusOnPdfSelectionCleared",
+      "__omnibusOnPdfHighlightTap",
+    ] as const) {
+      await expect(window[name]).toBeUndefined();
+    }
   },
 };
