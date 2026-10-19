@@ -130,19 +130,27 @@ export function usePlayback(): Playback {
 
 type Engine = ReturnType<typeof createEngine>;
 
-type Boot = {
+/** One boot of a book: what it loaded and what it has done so far. */
+type Session = {
   uuid: BookUuid;
+  /** The file asked for, then the one the manifest resolved: what a link must name to need no reboot. */
   fileId: number | null;
+  saver: ReturnType<typeof createPositionSaver> | null;
+  /** Where the book plays on when this file ends; set once the manifest says. */
+  nextFile: number | null;
+  /** The first `play` of a boot marks the book reading; `play` also fires on every resume. */
+  markedReading: boolean;
+  /** True once the listener picked a speed during this boot. */
+  rateSet: boolean;
+};
+
+type Boot = {
+  s: Session;
   userId: number | null;
   engine: Engine;
   /** False once another book (or a teardown) took over: a stale boot writes nothing. */
   isCurrent(): boolean;
-  /** Where the book plays on when this file ends; set once the manifest says. */
-  nextFile: { current: number | null };
-  /** True once the listener picked a speed during this boot. */
-  rateSet: { current: boolean };
   patch(change: Partial<State>): void;
-  startSaver(saveFileId: number | null): void;
 };
 
 const messageOf = (error: unknown) =>
@@ -162,19 +170,29 @@ function bookStateOf(
   return { status: "pending" };
 }
 
+/** Saves a speed to the server; a save that lands after a book swap says nothing about the new book. */
+function saveRate(
+  { s, isCurrent, patch }: Pick<Boot, "s" | "isCurrent" | "patch">,
+  rate: number,
+) {
+  return savePlaybackRate(s.uuid, rate).then(
+    () => isCurrent() && patch({ rateError: null }),
+    (error) =>
+      isCurrent() &&
+      patch({
+        rateError: `Could not save playback speed: ${messageOf(error)}`,
+      }),
+  );
+}
+
 /** Takes the server's speed (seeding it from this device's when it has none) and applies it. */
-async function reconcileRate({
-  uuid,
-  userId,
-  engine,
-  isCurrent,
-  rateSet,
-  patch,
-}: Boot) {
+async function reconcileRate(boot: Boot) {
+  const { s, userId, engine, isCurrent, patch } = boot;
+  const { uuid } = s;
   const server = await fetchPlaybackRate(uuid).catch(() => "failed" as const);
   if (!isCurrent()) return false;
   // The listener's pick during the wait beats the late answer.
-  if (rateSet.current) return true;
+  if (s.rateSet) return true;
   if (userId !== null && typeof server === "number") {
     saveLocalRate(userId, uuid, server);
   }
@@ -184,26 +202,18 @@ async function reconcileRate({
   );
   patch({ rate });
   engine.setRate(rate);
-  if (seed) {
-    await savePlaybackRate(uuid, rate).catch((error) => {
-      if (isCurrent()) {
-        patch({
-          rateError: `Could not save playback speed: ${messageOf(error)}`,
-        });
-      }
-    });
-  }
+  if (seed) await saveRate(boot, rate);
   return isCurrent();
 }
 
 /** Waits for the transcode, then hands the stream to hls.js. */
 async function bootHls(
-  { uuid, engine, isCurrent, patch }: Boot,
+  { s, engine, isCurrent, patch }: Boot,
   url: string,
   resumeAt: number | null,
 ) {
   for (;;) {
-    const state = await fetchTranscodeState(uuid);
+    const state = await fetchTranscodeState(s.uuid);
     if (!isCurrent()) return;
     if (state === "failed") return patch({ failed: true });
     if (state === "ready") {
@@ -220,7 +230,8 @@ async function bootHls(
 
 /** Resolves where to start from the server and this device, then loads the book's audio. */
 async function runBoot(boot: Boot) {
-  const { uuid, fileId, isCurrent, patch, engine } = boot;
+  const { s, isCurrent, patch, engine } = boot;
+  const { uuid, fileId } = s;
   // A failed read is not "no position": booting from 0 would overwrite the saved one on first play.
   const row = await fetchListeningRow(uuid).catch(() => "failed" as const);
   if (!isCurrent()) return;
@@ -238,7 +249,12 @@ async function runBoot(boot: Boot) {
   if (!isCurrent()) return;
   if (!manifest) return patch({ failed: true });
 
-  boot.startSaver(manifest.fileId);
+  const saveFileId = manifest.fileId;
+  s.fileId = saveFileId ?? fileId;
+  s.saver = createPositionSaver((seconds) => {
+    saveLocalPosition(uuid, seconds);
+    return saveListeningPosition(uuid, saveFileId, seconds);
+  });
   const resumeAt = bootResumePosition(
     follow,
     row,
@@ -255,7 +271,7 @@ async function runBoot(boot: Boot) {
     return bootHls(boot, manifest.playlistUrl, resumeAt);
   }
   if (manifest.parts.length === 0) return patch({ failed: true });
-  boot.nextFile.current = manifest.nextFileId;
+  s.nextFile = manifest.nextFileId;
   patch({ chapters: manifest.chapters });
   engine.initDirect(manifest.parts, resumeAt);
 }
@@ -275,15 +291,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     live.current = state;
   });
-  const saverRef = useRef<ReturnType<typeof createPositionSaver> | null>(null);
-  const loadedRef = useRef<{ uuid: BookUuid; fileId: number | null } | null>(
-    null,
-  );
-  const bootRef = useRef(0);
-  const nextFileRef = useRef<number | null>(null);
-  // The first `play` of a boot marks the book reading; `play` also fires on every resume.
-  const markedReading = useRef(false);
-  const rateSetRef = useRef(false);
+  // The current boot; replaced on open and dropped on close, so a stale boot sees it isn't current.
+  const sessionRef = useRef<Session | null>(null);
   const openRef = useRef<Playback["open"] | null>(null);
   const volumeRef = useRef(volume);
 
@@ -323,33 +332,33 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       const events: EngineEvents = {
         time(t, userActed) {
           patch({ elapsed: t });
-          saverRef.current?.time(t, userActed);
+          sessionRef.current?.saver?.time(t, userActed);
         },
         seeked(t) {
           patch({ elapsed: t });
-          saverRef.current?.seeked(t);
+          sessionRef.current?.saver?.seeked(t);
           timerRef.current?.seeked(live.current.chapters, t, live.current.rate);
         },
         duration: (duration) => patch({ duration }),
         play() {
           patch({ playing: true });
-          const uuid = live.current.uuid;
-          if (!uuid || markedReading.current) return;
-          markedReading.current = true;
-          markRead(uuid, false);
+          const s = sessionRef.current;
+          if (!s || s.markedReading) return;
+          s.markedReading = true;
+          markRead(s.uuid, false);
         },
         pause(t, userActed) {
           patch({ playing: false });
-          void saverRef.current?.pause(t, userActed);
+          void sessionRef.current?.saver?.pause(t, userActed);
         },
         ended() {
-          const uuid = live.current.uuid;
-          if (!uuid) return;
+          const s = sessionRef.current;
+          if (!s) return;
           // A file of a sequence played through: the next one waits paused; only the last finishes the book.
-          if (nextFileRef.current !== null) {
-            openRef.current?.(uuid, nextFileRef.current);
+          if (s.nextFile !== null) {
+            openRef.current?.(s.uuid, s.nextFile);
           } else {
-            markRead(uuid, true);
+            markRead(s.uuid, true);
           }
         },
         booted: () => patch({ ready: true }),
@@ -368,11 +377,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         setSleep,
       );
       return () => {
-        bootRef.current++;
+        sessionRef.current = null;
         engine.dispose();
         engineRef.current = null;
         timerRef.current = null;
-        loadedRef.current = null;
       };
     },
     [patch, markRead],
@@ -381,41 +389,32 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const open = useCallback(
     (uuid: BookUuid, fileId: number | null) => {
       const engine = engineRef.current;
-      if (!engine || !needsReload(loadedRef.current, uuid, fileId)) return;
-      const sameBook = loadedRef.current?.uuid === uuid;
-      loadedRef.current = { uuid, fileId };
-      const token = ++bootRef.current;
-      const isCurrent = () => bootRef.current === token;
+      if (!engine || !needsReload(sessionRef.current, uuid, fileId)) return;
+      const sameBook = sessionRef.current?.uuid === uuid;
+      const s: Session = {
+        uuid,
+        fileId,
+        saver: null,
+        nextFile: null,
+        markedReading: false,
+        rateSet: false,
+      };
+      sessionRef.current = s;
       engine.stop();
       // The timer outlives a page, and a file of the same book, but not another book.
       if (sameBook) timerRef.current?.fileChanged();
       else timerRef.current?.off();
-      saverRef.current = null;
-      nextFileRef.current = null;
-      markedReading.current = false;
-      rateSetRef.current = false;
       setState({
         ...IDLE,
         uuid,
         rate: userId === null ? 1 : (loadLocalRate(userId, uuid) ?? 1),
       });
       void runBoot({
-        uuid,
-        fileId,
+        s,
         userId,
         engine,
-        isCurrent,
-        nextFile: nextFileRef,
-        rateSet: rateSetRef,
+        isCurrent: () => sessionRef.current === s,
         patch,
-        startSaver: (saveFileId) => {
-          // The file the manifest resolved is the one loaded, so a link naming it needs no reboot.
-          loadedRef.current = { uuid, fileId: saveFileId ?? fileId };
-          saverRef.current = createPositionSaver((seconds) => {
-            saveLocalPosition(uuid, seconds);
-            return saveListeningPosition(uuid, saveFileId, seconds);
-          });
-        },
       });
     },
     [userId, patch],
@@ -426,11 +425,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [open]);
 
   const close = useCallback(() => {
-    bootRef.current++;
+    sessionRef.current = null;
     engineRef.current?.stop();
     timerRef.current?.off();
-    saverRef.current = null;
-    loadedRef.current = null;
     setState(IDLE);
   }, []);
 
@@ -444,21 +441,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
   const setRate = useCallback(
     (rate: number) => {
-      const uuid = loadedRef.current?.uuid;
-      if (!uuid) return;
-      const token = bootRef.current;
-      rateSetRef.current = true;
+      const s = sessionRef.current;
+      if (!s) return;
+      s.rateSet = true;
       patch({ rate });
       engineRef.current?.setRate(rate);
-      if (userId !== null) saveLocalRate(userId, uuid, rate);
-      // A save that lands after a book swap says nothing about the new book.
-      savePlaybackRate(uuid, rate).then(
-        () => bootRef.current === token && patch({ rateError: null }),
-        (error) =>
-          bootRef.current === token &&
-          patch({
-            rateError: `Could not save playback speed: ${messageOf(error)}`,
-          }),
+      if (userId !== null) saveLocalRate(userId, s.uuid, rate);
+      void saveRate(
+        { s, isCurrent: () => sessionRef.current === s, patch },
+        rate,
       );
     },
     [userId, patch],
@@ -490,7 +481,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     // Rolled over, not stopped: a refused logout leaves the player playing.
     const session = tracker.rollover(nowSecs());
     await Promise.all([
-      at && saverRef.current?.pause(at.seconds, at.userActed),
+      at && sessionRef.current?.saver?.pause(at.seconds, at.userActed),
       session && postSessions([session]),
     ]);
   }, [tracker]);
