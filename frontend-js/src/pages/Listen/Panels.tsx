@@ -4,6 +4,7 @@ import { MAX_RATE, MIN_RATE } from "../../playback/boot";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import { SLEEP_PRESETS } from "../../playback/sleep";
 import { clampRate, formatHms, RATE_STEP } from "./listen";
+import "./Listen.css";
 
 type DrawerShellProps = {
   testId: string;

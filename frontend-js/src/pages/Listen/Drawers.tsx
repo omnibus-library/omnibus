@@ -17,6 +17,7 @@ import {
   remainingAtRate,
 } from "./listen";
 import { DrawerShell } from "./Panels";
+import "./Listen.css";
 
 type Toast = { time: string; chapter: string };
 

@@ -17,6 +17,8 @@ import {
   togglePanel,
 } from "./listen";
 import { SleepPanelBody, SpeedPanelBody } from "./Panels";
+import "./Listen.css";
+import "./MiniDock.css";
 
 function Icon({
   strokeWidth = 1.8,

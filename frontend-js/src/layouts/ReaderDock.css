@@ -1,0 +1,14 @@
+.rd-host {
+  --rd-dock-h: 68px;
+  --rd-dock-gap: 8px;
+  --rd-bottom-h: 54px;
+}
+.rd-dock-full {
+  --rd-dock-h: 78px;
+  --rd-foot-h: 40px;
+}
+@media (max-width: 480px) {
+  .rd-host {
+    --rd-bottom-h: 30px;
+  }
+}

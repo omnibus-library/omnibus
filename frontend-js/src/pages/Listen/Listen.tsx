@@ -21,6 +21,7 @@ import {
 import type { Pane } from "./listen";
 import { PanelShell, SleepPanelBody, SpeedPanelBody } from "./Panels";
 import { Stage } from "./Stage";
+import "./Listen.css";
 
 function FailedOverlay() {
   return (
