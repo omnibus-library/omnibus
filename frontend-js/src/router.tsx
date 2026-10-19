@@ -12,7 +12,6 @@ import { BookEdit } from "./pages/BookEdit/BookEdit";
 import { CheckIn } from "./pages/CheckIn/CheckIn";
 import { CleanupReview } from "./pages/CleanupReview/CleanupReview";
 import { ComicReader } from "./pages/ComicReader/ComicReader";
-import { Connect } from "./pages/Connect/Connect";
 import { Library } from "./pages/Library/Library";
 import { Listen } from "./pages/Listen/Listen";
 import { Login } from "./pages/Login/Login";
@@ -39,7 +38,8 @@ export const routes: RouteObject[] = [
     children: [
       { path: "/login", element: <Login /> },
       { path: "/register", element: <Register /> },
-      { path: "/connect", element: <Connect /> },
+      // The native shell's server picker; a browser is already on its server.
+      { path: "/connect", element: <Navigate to="/" replace /> },
       {
         element: <RequireAuth />,
         children: [

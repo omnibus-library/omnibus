@@ -8,7 +8,11 @@ import {
 } from "../src/components/Theme/AtriumRoot";
 import { watchImageLoads } from "../src/imageWatch";
 import { ADA, AppHarness } from "../src/testing/AppHarness";
-import { coverHandlers, sessionHandler } from "../src/testing/handlers";
+import {
+  coverHandlers,
+  registrationHandler,
+  sessionHandler,
+} from "../src/testing/handlers";
 import "../src/styles/theme.css";
 import "../src/styles/base.css";
 
@@ -25,7 +29,7 @@ const preview = {
   loaders: [mswLoader()],
   // Every story starts on the fake API; a story's own `beforeEach` overrides it.
   beforeEach({ msw }) {
-    msw.use(sessionHandler(), ...coverHandlers);
+    msw.use(sessionHandler(), registrationHandler(true), ...coverHandlers);
   },
   globalTypes: {
     theme: {

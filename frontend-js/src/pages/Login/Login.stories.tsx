@@ -1,7 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Route, Routes } from "react-router";
 import { expect } from "storybook/test";
-import { failing, loginHandler, sessionHandler } from "../../testing/handlers";
+import {
+  failing,
+  loginHandler,
+  registrationHandler,
+  sessionHandler,
+} from "../../testing/handlers";
 import { Login } from "./Login";
 
 const PASSWORD = "correct horse battery";
@@ -75,5 +80,24 @@ export const RateLimited: Story = {
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
       "Too many attempts",
     );
+  },
+};
+
+export const OffersRegistration: Story = {
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("link", { name: "Create an account" }),
+    ).toHaveAttribute("href", "/register");
+  },
+};
+
+export const RegistrationClosed: Story = {
+  beforeEach({ msw }) {
+    msw.use(registrationHandler(false));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.queryByRole("link", { name: "Create an account" }),
+    ).not.toBeInTheDocument();
   },
 };

@@ -5,6 +5,7 @@ import {
   parsePalette,
   parseResumePoints,
   parseUser,
+  registerErrorField,
 } from "./api";
 import {
   aWireBook,
@@ -128,5 +129,16 @@ describe("parsePalette", () => {
     const { book_total: _omitted, ...wire } = aWirePalette();
 
     expect(parsePalette(wire).totals.books).toBe(0);
+  });
+});
+
+describe("registerErrorField", () => {
+  it.each([
+    ["username", "username already taken"],
+    ["username", "User already exists"],
+    ["password", "Password must be at least 10 characters"],
+    ["banner", "Registration is closed"],
+  ])("routes the refusal to the %s for %j", (field, message) => {
+    expect(registerErrorField(message)).toBe(field);
   });
 });

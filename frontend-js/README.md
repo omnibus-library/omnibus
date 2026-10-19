@@ -28,8 +28,11 @@ load before the screens that override them.
 `src/router.tsx` carries all 28 routes from `frontend/src/routes.rs`, with the
 same split: the readers and the player fill the screen, everything else sits
 under the top bar, and a guest goes to `/login?next=…` and comes back. Login,
-the library, book detail and Not Found are ported; every other route renders
-`Unported`, which shows its parsed parameters and names its Dioxus source.
+Register, the library, book detail, search results (`/search/:query`) and Not
+Found are ported, and the top bar carries the user menu and the ⌘K search
+palette. As on Dioxus web, a bare `/search` and the native shell's `/connect`
+redirect to the library. Every other route renders `Unported`, which shows its
+parsed parameters and names its Dioxus source.
 A page that throws renders `RouteError` inside the top bar; anything else that
 throws (the session gate, the shell, a reader) renders it full-screen.
 
@@ -44,7 +47,16 @@ unchanged: computed styles and screenshots of all three screens match the
 To port a screen: write its markup with the Dioxus class names, map its class
 prefix to its CSS file in the script's `OWNERS`, then run
 `node tools/extract-atrium.cjs --write` (it only creates missing files) and
-`pnpm exec biome check --write .`.
+`pnpm exec biome check --write .`. The script reads class names from string
+literals, so build a class from a template and it won't see it: spell it out,
+as `UserAvatar`'s `photoClassName` does. A rule a screen needs in a file that
+already exists goes in by hand; `--write --force` regenerates every file
+unformatted and drops their hand edits.
+
+`index.html` draws a themed "Opening your library" loader inside `#root`, so the
+first paint isn't blank while the bundle loads; React replaces it on its first
+render. The user menu's version line is `OMNIBUS_VERSION` at build time, or
+`dev`.
 
 ## Run it
 

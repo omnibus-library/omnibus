@@ -99,8 +99,7 @@ describe("routes", () => {
   describe("signed-out pages", () => {
     it.each([
       ["/login", "Welcome back"],
-      ["/register", "Join the library"],
-      ["/connect", "Find your server"],
+      ["/register", "Make yourself at home"],
     ])("renders %s without a session", async (path, title) => {
       renderRoute(path, null);
 
@@ -164,6 +163,12 @@ describe("routes", () => {
       expect(router.state.location.search).toBe("?section=logs"),
     );
     expect(router.state.location.pathname).toBe("/settings");
+  });
+
+  it("redirects /connect to the library", async () => {
+    const router = renderRoute("/connect");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });
 
   it("redirects a bare /search to the library", async () => {

@@ -91,6 +91,31 @@ export function paletteHandler(
   });
 }
 
+/** `GET /api/auth/registration`: whether self-registration is open. */
+export function registrationHandler(enabled: boolean) {
+  return http.get("/api/auth/registration", () =>
+    HttpResponse.json({ enabled }),
+  );
+}
+
+/** `POST /api/auth/register`, refusing `taken` as the server refuses a duplicate. */
+export function registerHandler(taken = "taken") {
+  return http.post("/api/auth/register", async ({ request }) => {
+    const body: unknown = await request.json();
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      !("username" in body) ||
+      !("password" in body)
+    ) {
+      return new HttpResponse("missing credentials", { status: 422 });
+    }
+    return body.username === taken
+      ? new HttpResponse("username already taken", { status: 409 })
+      : HttpResponse.json({ user: { ...WIRE_ADA, username: body.username } });
+  });
+}
+
 /** `POST /api/auth/login` accepting `password` for any username. */
 export function loginHandler(password: string) {
   return http.post("/api/auth/login", async ({ request }) => {

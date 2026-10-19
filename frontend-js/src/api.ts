@@ -285,6 +285,34 @@ export async function login(credentials: Credentials): Promise<User> {
   return z.object({ user: UserSchema }).parse(await readJson(res)).user;
 }
 
+/** Opens a cookie session for a new account; the server sets the cookie. */
+export async function register(credentials: Credentials): Promise<User> {
+  const res = await fetch("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(credentials),
+  });
+  return z.object({ user: UserSchema }).parse(await readJson(res)).user;
+}
+
+/** Whether self-registration is open; an admin can close it. */
+export async function fetchRegistrationOpen(): Promise<boolean> {
+  const res = await fetch("/api/auth/registration");
+  return z.object({ enabled: z.boolean() }).parse(await readJson(res)).enabled;
+}
+
+/** Which part of the register form a server refusal belongs under. */
+export function registerErrorField(
+  message: string,
+): "username" | "password" | "banner" {
+  // Keyed on words, as the Dioxus page is, so a reworded refusal still lands.
+  const lower = message.toLowerCase();
+  if (lower.includes("username") || lower.includes("user already")) {
+    return "username";
+  }
+  return lower.includes("password") ? "password" : "banner";
+}
+
 export async function logout(): Promise<void> {
   await ensureOk(await fetch("/api/auth/logout", { method: "POST" }));
 }

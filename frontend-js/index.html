@@ -10,9 +10,33 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400..700;1,400..700&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap"
     />
+    <!-- No SSR draws a loader, so this one paints before the bundle arrives,
+         tinted by the saved theme; React replaces it on its first render. -->
+    <script>
+      try {
+        document.documentElement.dataset.bootTheme =
+          localStorage.getItem("omn.theme") || "dark";
+      } catch {}
+    </script>
+    <style>
+      html { background: oklch(0.135 0.006 70); color: oklch(0.62 0.012 70); }
+      html[data-boot-theme="black"] { background: oklch(0 0 0); color: oklch(0.63 0 0); }
+      html[data-boot-theme="light"] { background: oklch(0.985 0.003 75); color: oklch(0.52 0.01 70); }
+      html[data-boot-theme="sepia"] { background: oklch(0.945 0.022 80); color: oklch(0.52 0.032 58); }
+      .boot {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        font: 500 10.5px/1 "Space Mono", ui-monospace, monospace;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot" role="status" aria-live="polite">Opening your library</div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
