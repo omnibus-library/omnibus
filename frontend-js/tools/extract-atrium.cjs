@@ -43,6 +43,7 @@ const OWNERS = [
   ["pages/Series/Series.css", (c) => c.startsWith("idx-")],
   ["pages/SeriesDetail/SeriesDetail.css", (c) => c === "series-cards" || c.startsWith("series-card")],
   ["pages/ShelfDetail/ShelfDetail.css", (c) => c.startsWith("shd-") || c === "shelf-grid" || c === "shelf-actions-menu" || c.startsWith("shelf-menu-")],
+  ["pages/Shelves/Shelves.css", (c) => ["shv-page", "shv-header", "shv-head-row", "shv-admin-note", "shv-new", "shv-new-plus", "shv-toolbar", "shv-owners", "shv-owner-chip", "shv-owner-chip--all", "shv-chip-av", "shv-empty", "shv-empty-msg", "shv-body", "shv-group", "shv-group-head", "shv-group-av", "shv-group-title", "shv-group-count", "shv-grid", "shv-cell"].includes(c)],
   ["components/ShelfTile/ShelfTile.css", (c) => c.startsWith("shv-") || c.startsWith("shelf-add-tile")],
   ["components/ShelfPicker/ShelfPicker.css", (c) => c.startsWith("shelf-picker") || c.startsWith("shelf-modal") || c.startsWith("pick-")],
   ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || c.startsWith("ebook-") || c.startsWith("sort-th") || c.startsWith("ss-") || c.startsWith("format-badge") || c.startsWith("bulk-edit") || c.startsWith("shelf-btn-") || c.startsWith("shelf-modal-") || c.startsWith("shelf-picker") || c.startsWith("pick-") || c === "author-photo-modal-backdrop" || ["landing-col", "library-empty", "cover-link"].includes(c)],

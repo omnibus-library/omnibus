@@ -11,6 +11,7 @@ import {
   type SeriesSort,
   splitLastWord,
 } from "./seriesIndex";
+import "../../components/DiscPage/DiscPage.css";
 import "./Series.css";
 
 const SORTS = [

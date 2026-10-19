@@ -103,11 +103,14 @@ export function ShelfTileFace({
   shelf,
   viewerId,
   prefix,
+  ownerLabel: owner = ownerLabel(viewerId, shelf),
 }: {
   shelf: Shelf;
   viewerId: UserId;
   /** Names the tile's ids, so one shelf drawn twice on a page keeps its labels apart. */
   prefix: string;
+  /** What the foot says in place of `ownerLabel(viewerId, shelf)`. */
+  ownerLabel?: string;
 }) {
   return (
     <>
@@ -143,7 +146,7 @@ export function ShelfTileFace({
               className="shv-card-owner-name"
               id={`${prefix}-owner-${shelf.id}`}
             >
-              {ownerLabel(viewerId, shelf)}
+              {owner}
             </span>
           </span>
         </div>

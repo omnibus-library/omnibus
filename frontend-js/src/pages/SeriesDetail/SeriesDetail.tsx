@@ -7,6 +7,7 @@ import { Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { seriesEyebrow } from "../Series/seriesIndex";
+import "../../components/DiscPage/DiscPage.css";
 import "./SeriesDetail.css";
 
 /** `/series/:id`: the series' books in reading order, each with its blurb. */

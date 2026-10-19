@@ -85,7 +85,6 @@ describe("routes", () => {
       [`/listen/${UUID}?file_id=2`, "Listen", "2"],
       ["/stats?user=2", "Stats", "2"],
       ["/stats/chart", "Chart builder", null],
-      ["/shelves", "Shelves", null],
       ["/shelves/9", "Shelf", "9"],
       ["/settings?section=smtp", "Settings", "smtp"],
       ["/settings/cleanup/duplicates", "Cleanup review", "duplicates"],
@@ -109,6 +108,7 @@ describe("routes", () => {
     it.each([
       ["/series", "Gathering every series"],
       ["/series/4", "Gathering the series"],
+      ["/shelves", "Gathering your shelves"],
     ])("renders %s as its loading page, not a stub", async (path, label) => {
       renderRoute(path);
 
