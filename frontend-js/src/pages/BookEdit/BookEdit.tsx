@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router";
 import {
@@ -31,6 +32,10 @@ function EditForm({ book }: { book: EditableBook }) {
     resolver: zodResolver(MetaFormSchema),
     defaultValues: book.form,
   });
+  // The book as the server last reported it, which a cover write moves; `book.form` stays the baseline.
+  const [live, setLive] = useState(book);
+  const [coverBust, setCoverBust] = useState(0);
+  const [coverReplaced, setCoverReplaced] = useState(false);
   const dirty = dirtyLabels(book.form, form.watch());
   const { blocker, allowLeave } = useLeaveGuard(dirty.length > 0);
 
@@ -47,6 +52,15 @@ function EditForm({ book }: { book: EditableBook }) {
     }
     allowLeave();
     navigate(`/books/${book.uuid}`);
+  };
+  // A cover is written the moment it is picked, so Save has nothing to send for it.
+  const onCoverApplied = (updated: EditableBook) => {
+    setLive(updated);
+    setCoverBust((n) => n + 1);
+    setCoverReplaced(true);
+    for (const queryKey of [["book", book.uuid], ["books"]]) {
+      queryClient.invalidateQueries({ queryKey });
+    }
   };
   const save = useMutation({
     mutationFn: (values: MetaForm) =>
@@ -81,7 +95,10 @@ function EditForm({ book }: { book: EditableBook }) {
           filename={book.filename}
         />
         <Sidebar
-          book={book}
+          book={live}
+          target={{ kind: "live", uuid: book.uuid }}
+          coverBust={coverBust}
+          onCoverApplied={onCoverApplied}
           saving={save.isPending || revert.isPending}
           onRevert={() => revert.mutate()}
         />
@@ -89,6 +106,7 @@ function EditForm({ book }: { book: EditableBook }) {
       <SaveBar
         uuid={book.uuid}
         dirty={dirty}
+        coverReplaced={coverReplaced}
         saving={save.isPending}
         error={
           form.formState.errors.printPages?.message ??

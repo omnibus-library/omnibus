@@ -6,6 +6,8 @@ import { editedSummary, saveLabel } from "./dirty";
 type Props = {
   uuid: BookUuid;
   dirty: string[];
+  /** A cover was replaced: already saved, but worth leaving through Save. */
+  coverReplaced: boolean;
   saving: boolean;
   error: string | undefined;
   onSave: () => void;
@@ -17,6 +19,7 @@ type Props = {
 export function SaveBar({
   uuid,
   dirty,
+  coverReplaced,
   saving,
   error,
   onSave,
@@ -30,6 +33,10 @@ export function SaveBar({
           <span className="me-dirty-label">{editedSummary(dirty.length)}</span>
           <span className="mono me-dirty-names">{dirty.join(" · ")}</span>
         </>
+      ) : coverReplaced ? (
+        <span className="mono me-dirty-label" data-testid="me-cover-replaced">
+          Cover replaced · already saved
+        </span>
       ) : (
         <span className="mono me-dirty-label" style={{ color: "var(--ink-3)" }}>
           No changes
@@ -57,7 +64,7 @@ export function SaveBar({
         <Button
           variant="primary"
           data-testid="me-save"
-          disabled={dirty.length === 0 || saving}
+          disabled={(dirty.length === 0 && !coverReplaced) || saving}
           aria-busy={saving}
           onClick={onSave}
         >

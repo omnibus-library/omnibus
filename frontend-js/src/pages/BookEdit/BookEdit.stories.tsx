@@ -12,6 +12,7 @@ import {
 } from "../../testing/handlers";
 import {
   anEditableWireBook,
+  coverWriteHandlers,
   overridesHandlers,
 } from "../../testing/metadataHandlers";
 import { BookEdit } from "./BookEdit";
@@ -49,6 +50,7 @@ const meta = {
     msw.use(
       bookHandler(BOOK),
       ...overridesHandlers(BOOK, { saved, reverted }),
+      ...coverWriteHandlers(BOOK),
       ...filterOptionHandlers(),
     );
   },
@@ -265,5 +267,32 @@ export const LeavesCleanWithoutAsking: Story = {
     await userEvent.click(await canvas.findByRole("link", { name: "Home" }));
 
     await expect(await canvas.findByText("Library")).toBeInTheDocument();
+  },
+};
+
+export const ReplacingTheCoverEnablesSave: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await expect(await canvas.findByText("No changes")).toBeInTheDocument();
+    await expect(canvas.getByTestId("me-save")).toBeDisabled();
+    await userEvent.upload(
+      canvas.getByLabelText("Replace cover"),
+      new File(["png"], "new-cover.png", { type: "image/png" }),
+    );
+
+    await expect(
+      await canvas.findByTestId("me-cover-replaced"),
+    ).toHaveTextContent("Cover replaced · already saved");
+    await expect(canvas.getByTestId("me-save")).toBeEnabled();
+    await expect(canvas.getByTestId("me-save")).toHaveTextContent("Done");
+    // The book now has an edit to revert.
+    await expect(
+      await canvas.findByText("Override active"),
+    ).toBeInTheDocument();
+
+    await userEvent.click(canvas.getByTestId("me-save"));
+
+    await expect(await canvas.findByText("Book page")).toBeInTheDocument();
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
+    await expect(saved).toEqual([]);
   },
 };

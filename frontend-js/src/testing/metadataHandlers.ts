@@ -1,6 +1,9 @@
 import { HttpResponse, http } from "msw";
-import type { EbookMetadata } from "../api/generated/schemas";
-import { MetadataOverrides } from "../api/generated/schemas";
+import {
+  CoverFromUrlBody,
+  type EbookMetadata,
+  MetadataOverrides,
+} from "../api/generated/schemas";
 import { aWireBook } from "./wire";
 
 // MSW fakes and fixtures for the metadata edit page.
@@ -57,6 +60,54 @@ export function overridesHandlers(
       if (refuse) return new HttpResponse(refuse, { status: 400 });
       reverted.count += 1;
       return HttpResponse.json({ ...book, has_override: false });
+    }),
+  ];
+}
+
+/**
+ * `POST /api/ebooks/{uuid}/cover` (the picked file's name lands in `uploaded`),
+ * `POST .../cover/from-url` (the URL lands in `fetched`) and `DELETE
+ * .../cover`. Each answers with the book as the write leaves it; with
+ * `refuse` set, a 400 whose plain text is that reason.
+ */
+export function coverWriteHandlers(
+  book: EbookMetadata,
+  {
+    uploaded = [],
+    fetched = [],
+    reverted = { count: 0 },
+    refuse,
+    gate,
+  }: {
+    uploaded?: string[];
+    fetched?: string[];
+    reverted?: { count: number };
+    refuse?: string;
+    /** Held until it settles, so a story can act while an upload is in flight. */
+    gate?: Promise<void>;
+  } = {},
+) {
+  let current = book;
+  const answer = (changes: Partial<EbookMetadata>) => {
+    if (refuse) return new HttpResponse(refuse, { status: 400 });
+    current = { ...current, ...changes };
+    return HttpResponse.json(current);
+  };
+  return [
+    http.post("/api/ebooks/:uuid/cover", async ({ request }) => {
+      await gate;
+      const cover = (await request.formData()).get("cover");
+      if (!refuse && cover instanceof File) uploaded.push(cover.name);
+      return answer({ has_override: true, has_cover_override: true });
+    }),
+    http.post("/api/ebooks/:uuid/cover/from-url", async ({ request }) => {
+      const body = CoverFromUrlBody.parse(await request.json());
+      if (!refuse) fetched.push(body.url);
+      return answer({ has_override: true, has_cover_override: true });
+    }),
+    http.delete("/api/ebooks/:uuid/cover", () => {
+      if (!refuse) reverted.count += 1;
+      return answer({ has_cover_override: false });
     }),
   ];
 }

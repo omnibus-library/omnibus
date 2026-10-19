@@ -261,6 +261,54 @@
 .me-sidebar-card {
   padding: 16px;
 }
+.me-sidebar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+.me-cover-preview {
+  width: 100%;
+}
+.me-cover-hint {
+  font-size: 10px;
+  color: var(--ink-3);
+  margin-top: 10px;
+}
+.me-cover-actions {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.me-cover-file {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  color: var(--ink-0);
+  font-family: var(--sans);
+  font-size: 12px;
+  cursor: pointer;
+}
+.me-cover-file:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.me-cover-file:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+.me-cover-url {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.me-cover-url .me-input {
+  flex: 1;
+  min-width: 0;
+}
 .me-ident-list {
   display: flex;
   flex-direction: column;
@@ -330,6 +378,9 @@
   margin-left: auto;
   display: flex;
   gap: 8px;
+}
+.me-cover-ring {
+  margin-right: 0.5em;
 }
 @media (max-width: 560px) {
   .me-field-grid {

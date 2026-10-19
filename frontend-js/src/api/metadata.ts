@@ -2,8 +2,11 @@ import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
 import { type BookUuid, failure, requireUuid } from "../api";
 import {
+  deleteEbookCover,
   deleteEbookOverrides,
   getEbookByUuid,
+  postEbookCover,
+  postEbookCoverFromUrl,
   postEbookOverrides,
 } from "./generated/omnibus";
 import type { EbookMetadata, MetadataOverrides } from "./generated/schemas";
@@ -105,6 +108,8 @@ export function toEditableBook(wire: EbookMetadata) {
     sortBy: first ? (first.file_as ?? first.name) : "",
     identifiers: wire.identifiers,
     hasOverride: wire.has_override ?? false,
+    hasCoverOverride: wire.has_cover_override ?? false,
+    coverUrl: wire.cover_url ?? null,
     form: formFromBook(wire),
   };
 }
@@ -144,4 +149,31 @@ export async function saveOverrides(
 export async function revertOverrides(uuid: BookUuid): Promise<void> {
   const res = await deleteEbookOverrides(uuid);
   if (res.status !== 200) throw failure(res);
+}
+
+/** Replaces the book's cover with an image the reader picked; answers with the book as it now reads. */
+export async function uploadCover(
+  uuid: BookUuid,
+  cover: File,
+): Promise<EditableBook> {
+  const res = await postEbookCover(uuid, { cover });
+  if (res.status !== 200) throw failure(res);
+  return toEditableBook(res.data);
+}
+
+/** Has the server fetch `url` as the book's cover; answers with the book as it now reads. */
+export async function coverFromUrl(
+  uuid: BookUuid,
+  url: string,
+): Promise<EditableBook> {
+  const res = await postEbookCoverFromUrl(uuid, { url });
+  if (res.status !== 200) throw failure(res);
+  return toEditableBook(res.data);
+}
+
+/** Puts the scanned cover back; answers with the book as it now reads. */
+export async function revertCover(uuid: BookUuid): Promise<EditableBook> {
+  const res = await deleteEbookCover(uuid);
+  if (res.status !== 200) throw failure(res);
+  return toEditableBook(res.data);
 }
