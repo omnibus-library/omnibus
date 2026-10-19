@@ -16,6 +16,7 @@ const OWNERS = [
   ["styles/theme.css", (c) => ["atrium", "theme-snap"].includes(c)],
   ["components/Button/Button.css", (c) => c === "btn"],
   ["components/FilterBar/FilterBar.css", (c) => c === "fb" || c.startsWith("fb-")],
+  ["components/ChipInput/ChipInput.css", (c) => c.startsWith("chip-editor") || c.startsWith("me-chip") || c === "me-tag-input"],
   ["components/Chip/Chip.css", (c) => c === "chip" || c.startsWith("chip-")],
   ["components/Cover/Cover.css", (c) => ["cover-wrap", "cover", "tpl-plate", "ca", "ct"].includes(c)],
   ["components/Loading/Loading.css", (c) => c === "ld" || c.startsWith("ld-")],
