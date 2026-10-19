@@ -12,11 +12,7 @@ import { classes } from "../../classes";
 import { PageNotFound } from "../../components/PageState/PageState";
 import { useTheme } from "../../components/Theme/AtriumRoot";
 import { useReadingSession } from "../../readingSession";
-import {
-  bookQuery,
-  highlightsQuery,
-  progressQuery,
-} from "../BookDetail/queries";
+import { bookQuery, progressQuery } from "../BookDetail/queries";
 import { AaPanel } from "./AaPanel";
 import { AnnotationsSheet } from "./AnnotationsSheet";
 import { AnnotationTargets } from "./AnnotationTargets";
@@ -119,6 +115,7 @@ function EpubPage({
     target,
     setTarget,
     load,
+    markFailed,
     create,
     saveNote,
     rowActions,
@@ -192,7 +189,7 @@ function EpubPage({
     // A failed open leaves the highlights drawer saying so rather than spinning.
     const fail = () => {
       setStatus("failed");
-      load(null);
+      markFailed();
     };
     const open = async () => {
       // Started now, beside the progress fetch.
@@ -231,10 +228,7 @@ function EpubPage({
           locationsKey: uuid,
         },
       );
-      const saved = await client
-        .fetchQuery({ ...highlightsQuery(uuid), staleTime: 0 })
-        .catch(() => null);
-      if (!cancelled) load(saved);
+      if (!cancelled) await load();
     };
     open().catch(() => {
       if (!cancelled) fail();

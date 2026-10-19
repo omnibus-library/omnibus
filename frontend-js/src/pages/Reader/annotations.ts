@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import {
   type BookUuid,
@@ -8,6 +9,7 @@ import {
   recolorHighlight,
   saveHighlightNote,
 } from "../../api";
+import { highlightsQuery } from "../BookDetail/queries";
 import { withReader } from "./epubGlue";
 import { isEpubCfi } from "./start";
 
@@ -57,18 +59,35 @@ const NONE: Highlight[] = [];
  * and unpainted again if saving it fails; `after` opens the panel the action asked for on the saved row.
  */
 export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
+  const client = useQueryClient();
   const [highlights, setHighlights] = useState<HighlightList>("loading");
   const [target, setTarget] = useState<AnnotationTarget | null>(null);
 
-  /** Takes the fetched list; `null` is a fetch that failed, which never wipes rows already held. */
-  const load = useCallback(
-    (saved: Highlight[] | null) => {
-      for (const h of saved ?? [])
-        if (h.anchor !== null) bridge.paint(h.anchor, h.color);
-      setHighlights((now) => saved ?? (Array.isArray(now) ? now : "failed"));
-    },
-    [bridge],
+  /** A failed list never wipes rows already held. */
+  const markFailed = useCallback(
+    () => setHighlights((now) => (Array.isArray(now) ? now : "failed")),
+    [],
   );
+
+  /** Fetches the list and paints it; a failed fetch is `markFailed`. */
+  const load = useCallback(async () => {
+    let saved: Highlight[];
+    try {
+      saved = await client.fetchQuery({
+        ...highlightsQuery(uuid),
+        staleTime: 0,
+      });
+    } catch {
+      return markFailed();
+    }
+    for (const h of saved)
+      if (h.anchor !== null) bridge.paint(h.anchor, h.color);
+    setHighlights(saved);
+  }, [client, uuid, bridge, markFailed]);
+
+  /** Applies `f` to the held rows; an unknown list has none to change. */
+  const mapHeld = (f: (rows: Highlight[]) => Highlight[]) =>
+    setHighlights((list) => (Array.isArray(list) ? f(list) : list));
 
   async function create(
     passage: { anchor: string; color: HighlightColor; text: string },
@@ -95,10 +114,8 @@ export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
     } catch {
       return;
     }
-    setHighlights((list) =>
-      Array.isArray(list)
-        ? list.map((h) => (h.id === highlight.id ? { ...h, note } : h))
-        : list,
+    mapHeld((list) =>
+      list.map((h) => (h.id === highlight.id ? { ...h, note } : h)),
     );
     setTarget(null);
   }
@@ -115,10 +132,8 @@ export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
       bridge.unpaint(highlight.anchor);
       bridge.paint(highlight.anchor, color);
     }
-    setHighlights((list) =>
-      Array.isArray(list)
-        ? list.map((h) => (h.id === highlight.id ? { ...h, color } : h))
-        : list,
+    mapHeld((list) =>
+      list.map((h) => (h.id === highlight.id ? { ...h, color } : h)),
     );
   }
 
@@ -130,9 +145,7 @@ export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
       return;
     }
     if (highlight.anchor !== null) bridge.unpaint(highlight.anchor);
-    setHighlights((list) =>
-      Array.isArray(list) ? list.filter((h) => h.id !== highlight.id) : list,
-    );
+    mapHeld((list) => list.filter((h) => h.id !== highlight.id));
   }
 
   /** What the drawers' rows need; the reader supplies how a tool closes and where focus returns. */
@@ -162,6 +175,7 @@ export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
     target,
     setTarget,
     load,
+    markFailed,
     create,
     saveNote,
     rowActions,

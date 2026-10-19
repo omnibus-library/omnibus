@@ -15,11 +15,7 @@ import { Loading } from "../../components/Loading/Loading";
 import { PageNotFound } from "../../components/PageState/PageState";
 import { useReadingSession } from "../../readingSession";
 import { pdfAnchorPage } from "../BookDetail/highlights";
-import {
-  bookQuery,
-  highlightsQuery,
-  progressQuery,
-} from "../BookDetail/queries";
+import { bookQuery, progressQuery } from "../BookDetail/queries";
 import {
   type Fit,
   FitButton,
@@ -108,6 +104,7 @@ function PdfPage({
     target,
     setTarget,
     load,
+    markFailed,
     create,
     saveNote,
     rowActions,
@@ -170,14 +167,16 @@ function PdfPage({
       setPage(position.page);
       save(position.page, position.pageCount);
     };
-    const onError = (message: string) => {
+    // A failed open leaves the highlights drawer saying so rather than spinning.
+    const fail = (message: string | null) => {
       setError(message);
       setStatus("failed");
+      markFailed();
     };
     const hooks = {
       __omnibusOnPdfReady: onReady,
       __omnibusOnPdfPage: onPage,
-      __omnibusOnPdfError: onError,
+      __omnibusOnPdfError: fail,
       __omnibusOnPdfSelection(json: string) {
         const picked = parsePdfSelection(json);
         if (picked) setSelection(picked);
@@ -193,11 +192,6 @@ function PdfPage({
     } satisfies Record<(typeof HOOKS)[number], (json: string) => void>;
     for (const name of HOOKS) window[name] = hooks[name];
 
-    // A failed open leaves the highlights drawer saying so rather than spinning.
-    const fail = () => {
-      setStatus("failed");
-      load(null);
-    };
     const open = async () => {
       const [found, progress] = await Promise.all([
         client.fetchQuery({ ...bookQuery(uuid), staleTime: 0 }),
@@ -208,7 +202,7 @@ function PdfPage({
           : client.fetchQuery({ ...progressQuery(uuid), staleTime: 0 }),
       ]);
       if (cancelled) return;
-      if (!found) return fail();
+      if (!found) return fail(null);
       const saved = progress?.reading;
       const start = pdfStartPage(
         deepLink,
@@ -223,10 +217,7 @@ function PdfPage({
         () => false,
       );
       if (cancelled) return;
-      if (!glue) {
-        onError("glue failed to load");
-        return load(null);
-      }
+      if (!glue) return fail("glue failed to load");
       const url = `/api/ebooks/${encodeURIComponent(uuid)}/file`;
       window.OmnibusPdfReader?.init(HOST_ID, {
         url: fileId === null ? url : `${url}?file_id=${fileId}`,
@@ -234,13 +225,10 @@ function PdfPage({
         startPage: start,
         fit: fitNow.current,
       });
-      const passages = await client
-        .fetchQuery({ ...highlightsQuery(uuid), staleTime: 0 })
-        .catch(() => null);
-      if (!cancelled) load(passages);
+      if (!cancelled) await load();
     };
     open().catch(() => {
-      if (!cancelled) fail();
+      if (!cancelled) fail(null);
     });
 
     return () => {
@@ -250,7 +238,7 @@ function PdfPage({
       }
       window.OmnibusPdfReader?.destroy();
     };
-  }, [client, uuid, fileId, deepLink, attempt, save, load]);
+  }, [client, uuid, fileId, deepLink, attempt, save, load, markFailed]);
 
   useEffect(() => {
     window.OmnibusPdfReader?.setFit(fit);
