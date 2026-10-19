@@ -7,12 +7,11 @@ import { usePlayback } from "../../playback/PlaybackProvider";
 import { sleepChipLabel } from "../../playback/sleep";
 import {
   chapterIndexForElapsed,
-  chapterNextTarget,
-  chapterPrevTarget,
   chapterSubText,
   type DockPanel,
   dockBook,
   dockSubText,
+  seekChapter,
   thumbPct,
 } from "./listen";
 import { SleepPanelBody, SpeedPanelBody } from "./Panels";
@@ -176,9 +175,6 @@ function DockSleep({ open, onToggle }: Toggle) {
 /** `[⟨CH] [-30] [play] [+30] [CH⟩]`; the narrow-viewport rule sheds all but play. */
 function DockTransport() {
   const p = usePlayback();
-  const index = chapterIndexForElapsed(p.chapters, p.elapsed);
-  const prev = chapterPrevTarget(p.chapters, p.elapsed, index);
-  const next = chapterNextTarget(p.chapters, index);
   const noChapters = p.chapters.length === 0;
   return (
     <div className="mini-dock-mid">
@@ -189,7 +185,7 @@ function DockTransport() {
         disabled={noChapters}
         aria-label="Previous chapter"
         title="Previous chapter"
-        onClick={() => prev !== null && p.seek(prev)}
+        onClick={() => seekChapter(p, -1)}
       >
         <span className="lp-ch-bar" />
         <span className="lp-ch-tri-left" />
@@ -235,7 +231,7 @@ function DockTransport() {
         disabled={noChapters}
         aria-label="Next chapter"
         title="Next chapter"
-        onClick={() => next !== null && p.seek(next)}
+        onClick={() => seekChapter(p, 1)}
       >
         <span className="lp-ch-tri-right" />
         <span className="lp-ch-bar" />

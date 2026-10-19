@@ -53,6 +53,19 @@ export const chapterNextTarget = (
   index: number,
 ): number | null => chapters[index + 1]?.start ?? null;
 
+/** The transports' "previous chapter" (-1) and "next chapter" (1); does nothing when there is no chapter to go to. */
+export function seekChapter(
+  { chapters, elapsed, seek }: Pick<Playback, "chapters" | "elapsed" | "seek">,
+  step: -1 | 1,
+): void {
+  const index = chapterIndexForElapsed(chapters, elapsed);
+  const target =
+    step < 0
+      ? chapterPrevTarget(chapters, elapsed, index)
+      : chapterNextTarget(chapters, index);
+  if (target !== null) seek(target);
+}
+
 /** How full chapter segment `i` is: played ones 100, the current one by progress, the rest 0. */
 export function chapterFillPct(
   i: number,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ApiError, type BookDetail, type BookUuid } from "../../api";
 import {
   chapterFillPct,
@@ -14,6 +14,7 @@ import {
   kickerText,
   rateLabel,
   remainingAtRate,
+  seekChapter,
   syncLabel,
   thumbPct,
   timeLeftText,
@@ -98,6 +99,25 @@ describe("chapterSubText", () => {
   it("is null with no chapters or an untitled one", () => {
     expect(chapterSubText([], 0)).toBeNull();
     expect(chapterSubText([{ title: "", start: 0, seconds: 5 }], 0)).toBeNull();
+  });
+});
+
+describe("seekChapter", () => {
+  it("seeks the chapter before or after the one playing", () => {
+    const seek = vi.fn();
+
+    seekChapter({ chapters, elapsed: 350, seek }, -1);
+    seekChapter({ chapters, elapsed: 350, seek }, 1);
+
+    expect(seek.mock.calls).toEqual([[300], [600]]);
+  });
+
+  it("stays put past the last chapter", () => {
+    const seek = vi.fn();
+
+    seekChapter({ chapters, elapsed: 650, seek }, 1);
+
+    expect(seek).not.toHaveBeenCalled();
   });
 });
 

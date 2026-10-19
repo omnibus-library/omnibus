@@ -10,14 +10,13 @@ import { formatHmsShort } from "../../resume";
 import {
   chapterFillPct,
   chapterIndexForElapsed,
-  chapterNextTarget,
-  chapterPrevTarget,
   chapterSubText,
   effectiveScrubPosition,
   kickerText,
   type Pane,
   rateLabel,
   remainingAtRate,
+  seekChapter,
   syncLabel,
   thumbPct,
 } from "./listen";
@@ -215,14 +214,7 @@ export function Stage({
             disabled={p.chapters.length === 0}
             aria-label="Previous chapter"
             title="Previous chapter"
-            onClick={() => {
-              const target = chapterPrevTarget(
-                p.chapters,
-                p.elapsed,
-                chapterIndex,
-              );
-              if (target !== null) p.seek(target);
-            }}
+            onClick={() => seekChapter(p, -1)}
           >
             <span className="lp-ch-bar" />
             <span className="lp-ch-tri-left" />
@@ -268,10 +260,7 @@ export function Stage({
             disabled={p.chapters.length === 0}
             aria-label="Next chapter"
             title="Next chapter"
-            onClick={() => {
-              const target = chapterNextTarget(p.chapters, chapterIndex);
-              if (target !== null) p.seek(target);
-            }}
+            onClick={() => seekChapter(p, 1)}
           >
             <span>CH</span>
             <span className="lp-ch-tri-right" />
