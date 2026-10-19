@@ -13,11 +13,11 @@ import { CoverImage } from "../../components/Cover/CoverImage";
 import { FilterBar } from "../../components/FilterBar/FilterBar";
 import { PlusGlyph, XGlyph } from "../../components/Glyphs/Glyphs";
 import { CoverSkeletons } from "../../components/Loading/Loading";
+import { AddBooksTile } from "../../components/ShelfTile/ShelfTile";
 import { lastLibrary, loadPrefs, savePrefs } from "../../viewPrefs";
 import { defaultDirFor } from "../Library/sorting";
 import { type FullList, rows } from "./narrow";
 import "../Library/Library.css";
-import "../../components/ShelfTile/ShelfTile.css";
 import "./ShelfDetail.css";
 
 const SORTS = [
@@ -266,19 +266,7 @@ export function ShelfBooks({
               onRemove={() => take(book)}
             />
           ))}
-          {removable && (
-            <button
-              type="button"
-              className="shelf-add-tile"
-              data-testid="shelf-add-tile"
-              onClick={onAdd}
-            >
-              <span className="shelf-add-tile-plus">
-                <PlusGlyph />
-              </span>
-              <span>Add books</span>
-            </button>
-          )}
+          {removable && <AddBooksTile onClick={onAdd} />}
         </div>
       )}
     </section>

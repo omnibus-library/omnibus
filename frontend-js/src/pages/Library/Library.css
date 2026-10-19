@@ -223,6 +223,9 @@
 .lib-header .shelf-facets {
   margin-top: 8px;
 }
+.lib-header .lib-shelf-add {
+  align-self: flex-start;
+}
 .lib-header-hint {
   color: var(--ink-2);
   font-size: 13px;

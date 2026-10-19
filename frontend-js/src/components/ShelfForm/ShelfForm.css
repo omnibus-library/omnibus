@@ -225,6 +225,26 @@
   color: #34d399;
   border-color: #34d39955;
 }
+.shelf-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-2);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  margin-right: auto;
+  flex-shrink: 0;
+}
+@media (hover: hover) {
+  .shelf-edit-btn:hover {
+    color: var(--ink-0);
+    background: var(--bg-2);
+  }
+}
 .shelf-facets {
   display: flex;
   align-items: center;

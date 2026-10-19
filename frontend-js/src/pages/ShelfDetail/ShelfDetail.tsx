@@ -47,7 +47,7 @@ export function ShelfDetail() {
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
   const [sort, setSort] = useState<SortKey>("recently_interacted");
-  const shelf = useQuery({ ...shelfQuery(id), enabled: Number.isInteger(id) });
+  const shelf = useQuery(shelfQuery(Number.isInteger(id) ? id : null));
   // The whole member list, which the filter narrows and Add books marks as already on the shelf.
   const whole = { sort, dir: defaultDirFor(sort), clauses: [] };
   const members = useQuery({

@@ -7,6 +7,7 @@ import {
   HeartGlyph,
   LockGlyph,
   PeopleGlyph,
+  PlusGlyph,
 } from "../Glyphs/Glyphs";
 import { UserAvatar } from "../UserAvatar/UserAvatar";
 import "./ShelfTile.css";
@@ -153,5 +154,29 @@ export function ShelfTileFace({
         </div>
       </div>
     </>
+  );
+}
+
+/** The grid's last tile: opens the picker that adds books to the shelf. */
+export function AddBooksTile({
+  onClick,
+  style,
+}: {
+  onClick: () => void;
+  style?: CSSProperties;
+}) {
+  return (
+    <button
+      type="button"
+      className="shelf-add-tile"
+      data-testid="shelf-add-tile"
+      style={style}
+      onClick={onClick}
+    >
+      <span className="shelf-add-tile-plus">
+        <PlusGlyph />
+      </span>
+      <span>Add books</span>
+    </button>
   );
 }

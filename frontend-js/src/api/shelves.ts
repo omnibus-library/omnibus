@@ -1,4 +1,8 @@
-import { type QueryClient, queryOptions } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  queryOptions,
+  skipToken,
+} from "@tanstack/react-query";
 import { z } from "zod";
 import type { Book } from "./books";
 import { toBook } from "./books";
@@ -79,10 +83,10 @@ export async function fetchShelf(id: number): Promise<ShelfDetail | null> {
   return toShelfDetail(ok(res));
 }
 
-export const shelfQuery = (id: number) =>
+export const shelfQuery = (id: number | null) =>
   queryOptions({
     queryKey: ["shelf", id],
-    queryFn: () => fetchShelf(id),
+    queryFn: id === null ? skipToken : () => fetchShelf(id),
   });
 
 /** Refetches everything that shows shelf `id` after a write to it; resolves once the active ones have answered. */

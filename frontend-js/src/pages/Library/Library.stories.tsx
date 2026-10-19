@@ -2,17 +2,24 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { delay, HttpResponse, http } from "msw";
 import { Navigate, Route, Routes, useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
-import type { BulkOverridesRequest } from "../../api/generated/schemas";
+import { getGetShelfMockHandler404 } from "../../api/generated/omnibus.msw";
+import type {
+  BulkOverridesRequest,
+  CreateShelfRequest,
+} from "../../api/generated/schemas";
 import { storyClient } from "../../testing/AppHarness";
 import {
   addShelfBooksHandler,
   bulkOverridesHandler,
+  createShelfHandler,
   failing,
   filterOptionHandlers,
   hanging,
   LIBRARY_PATH,
   libraryHandler,
   recentProgressHandler,
+  type ShelfWrite,
+  shelfDetailHandlers,
   shelfPageHandler,
   shelvesHandler,
   stackSeriesHandler,
@@ -22,6 +29,7 @@ import {
   aWireLibrary,
   aWireResumePoint,
   aWireShelf,
+  aWireShelfDetail,
   aWireStack,
   uuidOf,
   WIRE_ADA,
@@ -35,7 +43,12 @@ const meta = {
   component: Library,
   // The three keys the page reads, so no story inherits another's prefs.
   beforeEach({ msw }) {
-    msw.use(shelvesHandler([]), recentProgressHandler([]));
+    // A story that picks a shelf answers its detail; the rest see it gone.
+    msw.use(
+      shelvesHandler([]),
+      recentProgressHandler([]),
+      getGetShelfMockHandler404(),
+    );
     for (const key of [
       PREFS_KEY,
       "omnibus.view_prefs.last_library",
@@ -1834,5 +1847,251 @@ export const ShelfRowArrows: Story = {
 
     await userEvent.click(earlier);
     await waitFor(() => expect(row.scrollLeft).toBeLessThan(paged));
+  },
+};
+
+const writes: ShelfWrite[] = [];
+const created: CreateShelfRequest[] = [];
+const NOT_ADMIN = { ...WIRE_ADA, is_admin: false };
+const LIBRARY = aWireLibrary(6);
+
+// Winter reads (3) is Ada's hand-picked shelf; the first two library books are on it.
+const winter = (overrides: Parameters<typeof aWireShelfDetail>[0] = {}) =>
+  shelfDetailHandlers(
+    aWireShelfDetail({ id: 3, ...overrides }),
+    LIBRARY.slice(0, 2),
+    writes,
+    { pool: LIBRARY },
+  );
+
+const lens = (id: number) => `{"kind":"shelf","id":${id}}`;
+
+export const NewShelfFromGallery: Story = {
+  beforeEach({ msw }) {
+    created.length = 0;
+    shelfReads = 0;
+    msw.use(
+      libraryHandler(LIBRARY, 100),
+      http.get("/api/shelves", () => {
+        shelfReads += 1;
+        return HttpResponse.json(SHELF_LIST);
+      }),
+      createShelfHandler(created),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const region = await canvas.findByRole("region", { name: "Shelves" });
+    const buttons = within(region).getAllByRole("button", {
+      name: /New shelf|All shelves/,
+    });
+    // New shelf comes before the link to every shelf.
+    await expect(buttons[0]).toHaveTextContent("New shelf");
+    await waitFor(() => expect(shelfReads).toBe(1));
+
+    await userEvent.click(canvas.getByTestId("new-shelf"));
+    const dialog = await canvas.findByRole("dialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Hand-picked" }),
+    );
+    await userEvent.type(
+      within(dialog).getByRole("textbox", { name: "Shelf name" }),
+      "Cosy reads",
+    );
+    await userEvent.click(within(dialog).getByTestId("shelf-create-submit"));
+
+    await waitFor(() => expect(canvas.queryByRole("dialog")).toBeNull());
+    await expect(created).toEqual([
+      {
+        kind: "manual",
+        name: "Cosy reads",
+        visibility: "private",
+        match_mode: null,
+        rules: [],
+        book_uuids: [],
+      },
+    ]);
+    await waitFor(() => expect(shelfReads).toBe(2));
+  },
+};
+
+export const LensFacets: Story = {
+  beforeEach({ msw }) {
+    localStorage.setItem(SHELF_KEY, lens(5));
+    msw.use(
+      libraryHandler(LIBRARY, 100),
+      SHELVES,
+      ...shelfDetailHandlers(
+        aWireShelfDetail({
+          id: 5,
+          kind: "smart",
+          name: "Space Operas",
+          visibility: "public",
+          rules: [{ field: "tag", op: "is", value: "Fantasy" }],
+        }),
+        LIBRARY,
+        writes,
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    const facets = await canvas.findByTestId("shelf-facets");
+    await expect(facets).toHaveTextContent("Smart shelf");
+    await expect(facets).toHaveTextContent("Public");
+    await expect(facets).toHaveTextContent("Tag is Fantasy");
+    // A smart shelf fills itself: no Add books.
+    await expect(canvas.queryByTestId("shelf-add-books")).toBeNull();
+  },
+};
+
+export const LensEditPencil: Story = {
+  beforeEach({ msw }) {
+    writes.length = 0;
+    localStorage.setItem(SHELF_KEY, WINTER);
+    msw.use(libraryHandler(LIBRARY, 100), SHELVES, ...winter());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Edit Winter reads" }),
+    );
+    const dialog = await canvas.findByRole("dialog", { name: "Edit shelf" });
+    const name = within(dialog).getByRole("textbox", { name: "Shelf name" });
+    await userEvent.clear(name);
+    await userEvent.type(name, "Spring reads");
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(canvas.queryByRole("dialog")).toBeNull());
+    await expect(writes).toEqual([
+      {
+        op: "patch",
+        body: {
+          name: "Spring reads",
+          visibility: "private",
+          sync_to_kobo: false,
+        },
+      },
+    ]);
+  },
+};
+
+export const LensEditPencilHiddenOnOthersShelf: Story = {
+  parameters: { user: NOT_ADMIN },
+  beforeEach({ msw }) {
+    localStorage.setItem(SHELF_KEY, lens(7));
+    msw.use(
+      libraryHandler(LIBRARY, 100),
+      SHELVES,
+      ...shelfDetailHandlers(
+        aWireShelfDetail({
+          id: 7,
+          name: "Book club",
+          visibility: "public",
+          owner_user_id: 2,
+          owner_username: "bo",
+        }),
+        LIBRARY.slice(0, 2),
+        writes,
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    // The facets arrive with the detail, so the pencil's absence is judged after it.
+    await expect(await canvas.findByTestId("shelf-facets")).toHaveTextContent(
+      "Hand-picked shelf",
+    );
+    await expect(canvas.queryByTestId("shelf-edit")).toBeNull();
+    await expect(canvas.queryByTestId("shelf-add-books")).toBeNull();
+    await expect(canvas.queryByTestId("shelf-add-tile")).toBeNull();
+  },
+};
+
+export const LensAddBooks: Story = {
+  beforeEach({ msw }) {
+    writes.length = 0;
+    localStorage.setItem(SHELF_KEY, WINTER);
+    msw.use(libraryHandler(LIBRARY, 100), SHELVES, ...winter());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(2));
+    const add = canvas.getByTestId("shelf-add-books");
+    await waitFor(() => expect(add).toHaveAttribute("aria-disabled", "false"));
+
+    await userEvent.click(add);
+    const dialog = await canvas.findByRole("dialog", {
+      name: "Add books to Winter reads",
+    });
+    // The shelf's own books read as already on it.
+    await expect(
+      await within(dialog).findByTestId(`picker-tile-${uuidOf(1)}`),
+    ).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(
+      within(dialog).getByTestId(`picker-tile-${uuidOf(4)}`),
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Add 1 book" }),
+    );
+
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(3));
+    await expect(writes).toEqual([{ op: "add", uuids: [uuidOf(4)] }]);
+    await expect(canvas.queryByRole("dialog")).toBeNull();
+  },
+};
+
+export const LensAddTile: Story = {
+  beforeEach({ msw }) {
+    localStorage.setItem(SHELF_KEY, WINTER);
+    msw.use(libraryHandler(LIBRARY, 100), SHELVES, ...winter());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("shelf-add-tile"));
+
+    await expect(
+      await canvas.findByRole("dialog", { name: "Add books to Winter reads" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const LensAddBooksWaiting: Story = {
+  beforeEach({ msw }) {
+    localStorage.setItem(SHELF_KEY, WINTER);
+    msw.use(
+      libraryHandler(LIBRARY, 100),
+      SHELVES,
+      hanging("/api/shelves/:id/page"),
+      ...winter(),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const add = await canvas.findByTestId("shelf-add-books");
+    await expect(add).toHaveAttribute("aria-disabled", "true");
+    await expect(add).toHaveAttribute(
+      "title",
+      "Still loading this shelf’s books…",
+    );
+    await userEvent.click(add);
+    await expect(canvas.queryByRole("dialog")).toBeNull();
+    await expect(canvas.queryByTestId("shelf-add-tile")).toBeNull();
+  },
+};
+
+export const LensAddBooksUnavailable: Story = {
+  beforeEach({ msw }) {
+    localStorage.setItem(SHELF_KEY, WINTER);
+    msw.use(
+      libraryHandler(LIBRARY, 100),
+      SHELVES,
+      failing("get", "/api/shelves/:id/page", 500),
+      ...winter(),
+    );
+  },
+  play: async ({ canvas }) => {
+    const add = await canvas.findByTestId("shelf-add-books");
+    await waitFor(() =>
+      expect(add).toHaveAttribute(
+        "title",
+        "This shelf’s books couldn’t be loaded.",
+      ),
+    );
+    await expect(add).toHaveAttribute("aria-disabled", "true");
   },
 };
