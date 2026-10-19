@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { loadScript } from "../../loadScript";
+import { loadScript, parseWith } from "../../loadScript";
 import pdfjsUrl from "../../vendor/reader/pdf.min.mjs?url";
 import workerUrl from "../../vendor/reader/pdf.worker.min.mjs?url";
 import glueUrl from "../../vendor/reader/pdf-reader-glue.js?url";
@@ -28,13 +28,11 @@ export function loadPdfGlue(): Promise<void> {
   return loading;
 }
 
+// The glue's position report: the 0-based page showing and PDF.js's own page count.
 const PositionSchema = z.object({
   page: z.int().nonnegative(),
   pageCount: z.int().nonnegative(),
 });
-
-/** The glue's position report: the 0-based page showing and PDF.js's own page count. */
-export type PdfPosition = z.infer<typeof PositionSchema>;
 
 const SelectionSchema = z
   .object({
@@ -53,15 +51,6 @@ const SelectionSchema = z
 
 /** The passage selected on the text layer: the `pdf:` anchor it is saved under, its text and where it sits. */
 export type PdfSelection = z.infer<typeof SelectionSchema>;
-
-// Glue payloads are untrusted vendor output: one that doesn't match is dropped.
-function parseWith<T>(schema: z.ZodType<T>, json: string): T | null {
-  try {
-    return schema.parse(JSON.parse(json));
-  } catch {
-    return null;
-  }
-}
 
 export const parsePdfPosition = (json: string) =>
   parseWith(PositionSchema, json);

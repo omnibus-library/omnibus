@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Highlight, HighlightColor } from "../../api";
+import { pdfAnchorPage } from "../BookDetail/highlights";
 import { pagePercent } from "../ComicReader/pager";
 import {
   deepLinkPage,
   encodePdfAnchor,
   paintList,
-  parsePdfAnchor,
   parsePdfPageAnchor,
   pdfPageAnchor,
   pdfStartPage,
@@ -66,7 +66,7 @@ describe("pdfStartPage", () => {
     expect(pdfStartPage(null, "pdf-page:999", null, 12)).toBe(11);
   });
 
-  it("passes a page through when the count is unknown, leaving the clamp to the glue", () => {
+  it("passes a page through when the count is unknown", () => {
     expect(pdfStartPage(999, null, null, 0)).toBe(999);
     expect(pdfStartPage(null, null, 50, 0)).toBe(0);
   });
@@ -101,21 +101,8 @@ describe("encodePdfAnchor", () => {
     expect(encodePdfAnchor(2, Array(61).fill(QUAD))).toBe("pdf:2");
   });
 
-  it("round trips through parsePdfAnchor", () => {
-    expect(parsePdfAnchor(encodePdfAnchor(9, [QUAD]))).toBe(9);
-  });
-});
-
-describe("parsePdfAnchor", () => {
-  it.each([
-    ["a page-only anchor", "pdf:7", 7],
-    ["a quad anchor", "pdf:2:0,0,1,0,0,1,1,1", 2],
-    ["a position anchor", "pdf-page:7", null],
-    ["a CFI", "epubcfi(/6/4!/4/2,/1:0,/1:4)", null],
-    ["a quad with seven numbers", "pdf:2:0,0,1,0,0,1,1", null],
-    ["a quad that is not numeric", "pdf:2:a,b,c,d,e,f,g,h", null],
-  ])("reads %s", (_condition, anchor, page) => {
-    expect(parsePdfAnchor(anchor)).toBe(page);
+  it("round trips through pdfAnchorPage", () => {
+    expect(pdfAnchorPage(encodePdfAnchor(9, [QUAD]))).toBe(9);
   });
 });
 
@@ -140,6 +127,7 @@ describe("paintList", () => {
       highlight(null),
       highlight("pdf:7", "rose"),
       highlight("pdf:2:1,2,3"),
+      highlight("pdf-page:7"),
     ]);
 
     expect(list).toEqual([

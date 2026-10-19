@@ -61,7 +61,6 @@ export function SyncHerePill({
   const precise = !loc.pctApprox && loc.cfi !== null;
 
   async function declare() {
-    if (!navigator.onLine) return;
     setLabel(SYNCING);
     try {
       await declareSyncPoint(uuid, { fraction: loc.frac, cfi: loc.cfi });

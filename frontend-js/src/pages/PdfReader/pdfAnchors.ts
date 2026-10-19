@@ -49,16 +49,12 @@ export function encodePdfAnchor(
   return `pdf:${page}:${encoded.join(";")}`;
 }
 
-/** The 0-based page a highlight's `pdf:` anchor names; `null` for any other anchor or a malformed quad list. */
-export const parsePdfAnchor = (anchor: string) =>
-  anchor.startsWith("pdf:") ? pdfAnchorPage(anchor) : null;
-
 /** The highlights the glue can place: EPUB CFIs and anchorless Kobo rows are left out, not handed to a painter that can't read them. */
 export function paintList(
   highlights: readonly Highlight[],
 ): { anchor: string; color: HighlightColor }[] {
   return highlights.flatMap(({ anchor, color }) =>
-    anchor !== null && parsePdfAnchor(anchor) !== null
+    anchor?.startsWith("pdf:") && pdfAnchorPage(anchor) !== null
       ? [{ anchor, color }]
       : [],
   );

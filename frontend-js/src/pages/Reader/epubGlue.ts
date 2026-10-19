@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { loadScript } from "../../loadScript";
+import { loadScript, parseWith } from "../../loadScript";
 import epubUrl from "../../vendor/reader/epub.min.js?url";
 import glueUrl from "../../vendor/reader/epub-reader-glue.js?url";
 import jszipUrl from "../../vendor/reader/jszip.min.js?url";
@@ -87,15 +87,6 @@ const SelectionSchema = z.object({
 
 /** The passage the reader selected: its range CFI, its text and where it sits on screen. */
 export type PassageSelection = z.infer<typeof SelectionSchema>;
-
-// Glue payloads are untrusted vendor output: one that doesn't match is dropped.
-function parseWith<T>(schema: z.ZodType<T>, json: string): T | null {
-  try {
-    return schema.parse(JSON.parse(json));
-  } catch {
-    return null;
-  }
-}
 
 export const parseRelocate = (json: string) => parseWith(RelocateSchema, json);
 export const parseToc = (json: string) => parseWith(TocSchema, json);

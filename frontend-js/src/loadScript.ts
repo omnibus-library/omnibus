@@ -1,3 +1,5 @@
+import type { z } from "zod";
+
 const LOAD_TIMEOUT_MS = 10_000;
 
 /** Appends a classic `<script>` and settles when it loads, fails or takes over 10 s. */
@@ -21,4 +23,13 @@ export function loadScript(src: string): Promise<void> {
     };
     document.head.append(script);
   });
+}
+
+/** Parses a glue's JSON payload; vendor output is untrusted, so one that doesn't match the schema is dropped (`null`). */
+export function parseWith<T>(schema: z.ZodType<T>, json: string): T | null {
+  try {
+    return schema.parse(JSON.parse(json));
+  } catch {
+    return null;
+  }
 }
