@@ -9,6 +9,7 @@ import {
 import { Link, type Location } from "react-router";
 import { classes } from "../../classes";
 import { UnsavedDialog, useLeaveGuard } from "../Unsaved/Unsaved";
+import "../../styles/settings.css";
 
 export type NavItem = {
   to: string;

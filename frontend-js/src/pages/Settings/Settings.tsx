@@ -20,6 +20,7 @@ import { PasswordCard } from "./PasswordCard";
 import { PreferencesSection } from "./PreferencesSection";
 import { ProfileSection } from "./ProfileSection";
 import { SessionsCard } from "./SessionsCard";
+import "./Settings.css";
 
 const sectionOf = (location: Location) =>
   parseSettingsSection(new URLSearchParams(location.search).get("section"));
