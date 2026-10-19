@@ -210,6 +210,17 @@ describe("an end-of-chapter timer", () => {
     expect(state()).toMatchObject({ remaining: null, choice: { kind: "off" } });
   });
 
+  it("restores the listener's volume when a slower speed moves the boundary back out of the fade", () => {
+    const { timer, sink } = aTimer(0.8);
+    timer.endOfChapter(chapters, 420, 1);
+    timer.position(880, 1);
+    expect(sink.setVolume).toHaveBeenLastCalledWith((0.8 * 20) / 30);
+
+    timer.position(880, 0.5);
+
+    expect(sink.setVolume).toHaveBeenLastCalledWith(0.8);
+  });
+
   it("re-anchors to the chapter a seek lands in, and undoes a fade", () => {
     const { timer, sink, state } = aTimer(0.8);
     timer.endOfChapter(chapters, 420, 1);

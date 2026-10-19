@@ -121,15 +121,18 @@ export function createSleepTimer(
       choice: { kind: "endOfChapter" },
     });
   };
+  // Whether the last reading ramped the volume down, so a remainder moved back out of the window restores it.
+  let faded = false;
   // Scaled to the listener's own volume: ramping to 1 would raise anyone sitting lower.
   const fadeOut = () => {
-    if (
-      state.fade &&
-      state.remaining !== null &&
-      state.remaining <= FADE_SECONDS
-    ) {
-      sink.setVolume((sink.targetVolume() * state.remaining) / FADE_SECONDS);
+    const { fade, remaining } = state;
+    const inWindow = fade && remaining !== null && remaining <= FADE_SECONDS;
+    if (inWindow) {
+      sink.setVolume((sink.targetVolume() * remaining) / FADE_SECONDS);
+    } else if (faded) {
+      restoreVolume();
     }
+    faded = inWindow;
   };
 
   return {
