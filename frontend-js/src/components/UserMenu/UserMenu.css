@@ -317,3 +317,7 @@
   width: 100%;
   height: 100%;
 }
+/* By hand: the extractor's stop list drops `error`, which is a modifier here. */
+.um-now-reading-state.error {
+  color: var(--bad);
+}

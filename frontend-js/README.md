@@ -50,7 +50,8 @@ prefix to its CSS file in the script's `OWNERS`, then run
 `pnpm exec biome check --write .`. The script reads class names from string
 literals, so build a class from a template and it won't see it: spell it out,
 as `UserAvatar`'s `photoClassName` does. A rule a screen needs in a file that
-already exists goes in by hand; `--write --force` regenerates every file
+already exists goes in by hand, as does one whose modifier class (`ok`, `error`)
+is on the script's stop list; `--write --force` regenerates every file
 unformatted and drops their hand edits.
 
 `index.html` draws a themed "Opening your library" loader inside `#root`, so the

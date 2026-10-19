@@ -20,7 +20,7 @@ import {
   ServerGlyph,
   SlidersGlyph,
 } from "../Glyphs/Glyphs";
-import { BusyLabel, Skeleton } from "../Loading/Loading";
+import { Skeleton } from "../Loading/Loading";
 import { ThemePicker } from "../ThemePicker/ThemePicker";
 import { UserAvatar } from "../UserAvatar/UserAvatar";
 import "./UserMenu.css";
@@ -276,13 +276,7 @@ function SessionRows() {
         <span className="um-row-icon" aria-hidden="true">
           ⏻
         </span>
-        <span className="um-row-label">
-          <BusyLabel
-            busy={signOut.isPending}
-            label="Sign out"
-            busyLabel="Signing out…"
-          />
-        </span>
+        <span className="um-row-label">Sign out</span>
       </button>
       {signOut.isError && (
         <div className="um-now-reading-state error" role="alert">
