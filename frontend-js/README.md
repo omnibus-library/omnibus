@@ -16,8 +16,9 @@ from `GET /api/ebooks`, thumbnails from `/api/thumbs`), and book detail.
 | `src/components/<Name>/` | shared building blocks: `<Name>.tsx` beside its `.css` and `.stories.tsx` |
 | `src/layouts/` | `RequireAuth` (the session gate) and `AppShell` (top bar + page) |
 | `src/pages/<Name>/` | one folder per route, its CSS beside it |
-| `src/api.ts` | a barrel over `src/api/*.ts`, one file per resource: every REST call the screens make, mapping wire shapes to the ones they render, and the form schemas |
+| `src/api.ts` | a barrel over `src/api/*.ts`, one file per resource: every REST call the screens make, mapping wire shapes to the ones they render, and the form schemas; an api module re-exports a wire type verbatim when the screen uses it unchanged, so pages never import `api/generated/schemas` |
 | `src/api/generated/` | zod schemas, fetchers, TanStack Query hooks and MSW handlers that orval generates from `../openapi/openapi.json`; gitignored, rebuilt by `pnpm run generate` (`pnpm install` runs it too) |
+| `src/vendor/barcode/` | the camera scanner's zxing decoder, its wasm and the glue: byte copies of `frontend/assets/vendor/`, loaded by `<script>` from Vite `?url` imports (the zxing IIFE declares a global that bundling would scope away) |
 | `src/testing/` | `AppHarness`, parsed and wire-format fixtures, the MSW handlers orval can't generate (`handlers.ts`), the Vitest setup |
 | `.storybook/` | Storybook's config, the preview every story renders inside, and MSW's worker |
 | `tools/extract-atrium.cjs` | copies Atrium rules into component CSS when a screen is ported |
@@ -30,8 +31,9 @@ load before the screens that override them.
 `src/router.tsx` carries all 30 routes from `frontend/src/routes.rs`, with the
 same split: the readers and the player fill the screen, everything else sits
 under the top bar, and a guest goes to `/login?next=…` and comes back. Login,
-Register, the library, book detail, search results (`/search/:query`) and Not
-Found are ported, and the top bar carries the user menu and the ⌘K search
+Register, the library, book detail, the metadata editor (`/books/:uuid/edit`),
+add books (`/add-books`), check-in (`/check-in`), search results
+(`/search/:query`) and Not Found are ported, and the top bar carries the user menu and the ⌘K search
 palette. As on Dioxus web, a bare `/search` and the native shell's `/connect`
 redirect to the library. Every other route renders `Unported`, which shows its
 parsed parameters and names its Dioxus source.
@@ -39,7 +41,16 @@ Book detail carries all six stops (home, stats, highlights, journals, files,
 more) with the rating, quote cards, journal editor, copies and wishlist, shelf
 picker, Send to Kindle, merge and delete. It leaves the alignment modal, the
 snapped scroll mode, the genre and tag chip editor, the playback dock and the
-check-in overlay to the screens that own them.
+check-in overlay (the top bar links to the `/check-in` page instead) to the
+screens that own them.
+The metadata editor saves overrides, replaces the cover, and copies a provider
+edition's fields and cover into the form; add books inspects an EPUB, PDF or
+audiobook with upload progress, reviews it on the same form, and files it. A
+413 (or a connection the server drops mid-send) reads as "larger than this
+server accepts": the cap is the server's `OMNIBUS_MAX_UPLOAD_BYTES`, which no
+route reports, so the page cannot refuse a big file before sending it. Check-in
+takes an ISBN typed, scanned or found by title, and files a copy or a wishlist
+entry; the camera never opens until "Scan a barcode" is pressed.
 A page that throws renders `RouteError` inside the top bar; anything else that
 throws (the session gate, the shell, a reader) renders it full-screen.
 
@@ -59,7 +70,8 @@ literals, so build a class from a template and it won't see it: spell it out,
 as `UserAvatar`'s `photoClassName` does. A rule a screen needs in a file that
 already exists goes in by hand, as does one whose modifier class (`ok`, `error`)
 is on the script's stop list; `--write --force` regenerates every file
-unformatted and drops their hand edits.
+unformatted and drops their hand edits. `.add-books-progress` in `AddBooks.css` is
+hand-written and React-only: the Dioxus page has no such element.
 
 A CSS file that is pure script output (`Library.css`) can be regenerated after
 its markup changes by emptying it (`: > src/pages/Library/Library.css`) and
@@ -134,7 +146,10 @@ shell provides it.
   `focusTrap`, book detail's `readout`, `identifiers`, `shelves`,
   `journalEditor` and delete copy, the palette's `selection`, the results
   page's `results`, Register's `refusal`, the library's `filters`,
-  `libraryView`, `seriesStacks`, `shelfGallery`, `sorting` and `bulkEdit`), plus the
+  `libraryView`, `seriesStacks`, `shelfGallery`, `sorting` and `bulkEdit`, the
+  editor's `metadata` (form schema and override diff), `dirty` and
+  `editionFields`, `uploads`, check-in's `checkIn` and `scan`, and the scanner's
+  `scanStatus` and `loadScanner`), plus the
   real route table in `src/router.test.tsx`: every unported page, the layout
   split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI

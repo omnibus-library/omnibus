@@ -12,8 +12,9 @@ type CoverProps = {
 
 /** A book cover, or the typeset plate when there is no image or it fails. */
 export function Cover({ book, src, srcSet, sizes }: CoverProps) {
-  const [broken, setBroken] = useState(false);
-  const shown = src !== null && !broken;
+  // Keyed by address, so a new src gets its own chance to load.
+  const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
+  const shown = src !== null && src !== brokenSrc;
   return (
     <div
       className="cover-wrap"
@@ -30,7 +31,7 @@ export function Cover({ book, src, srcSet, sizes }: CoverProps) {
             sizes={sizes}
             alt={`Cover of ${book.title}`}
             loading="lazy"
-            onError={() => setBroken(true)}
+            onError={() => setBrokenSrc(src)}
           />
         ) : (
           <>

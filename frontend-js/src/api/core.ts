@@ -88,12 +88,28 @@ export async function fetchJson<T>(
   return schema.parse(await (await send(url, "GET")).json());
 }
 
-export const thumbUrl = (uuid: BookUuid, size: "sm" | "md" = "md") =>
-  `/api/thumbs/${uuid}/${size}`;
+// Bumped when a cover is rewritten, so every URL built after it skips the browser's cached image.
+const coverBusts = new Map<BookUuid, number>();
+
+export const bumpCoverBust = (uuid: BookUuid) =>
+  coverBusts.set(uuid, (coverBusts.get(uuid) ?? 0) + 1);
+
+/** Forgets every bump; a story starts from the cover the server first sent. */
+export const resetCoverBusts = () => coverBusts.clear();
+
+/** `url` with the book's cover generation appended, once a write has bumped it. */
+export const bustCover = (url: string, uuid: BookUuid) => {
+  const n = coverBusts.get(uuid);
+  return n ? `${url}?v=${n}` : url;
+};
+
+export const thumbUrl = (uuid: BookUuid, size: "sm" | "md" | "lg" = "md") =>
+  bustCover(`/api/thumbs/${uuid}/${size}`, uuid);
 
 export const thumbSrcSet = (uuid: BookUuid) =>
-  `/api/thumbs/${uuid}/sm 160w, /api/thumbs/${uuid}/md 320w, /api/thumbs/${uuid}/lg 640w`;
+  `${thumbUrl(uuid, "sm")} 160w, ${thumbUrl(uuid, "md")} 320w, ${thumbUrl(uuid, "lg")} 640w`;
 
-export const coverUrl = (uuid: BookUuid) => `/api/covers/${uuid}`;
+export const coverUrl = (uuid: BookUuid) =>
+  bustCover(`/api/covers/${uuid}`, uuid);
 
 export const avatarUrl = (id: UserId) => `/api/users/${id}/avatar`;

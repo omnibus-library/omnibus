@@ -91,7 +91,15 @@ export function WishlistCtas({ book }: { book: BookDetail }) {
         >
           Find a copy
         </a>
-        <ButtonLink size="lg" to="/check-in" data-testid="wishlist-check-in">
+        <ButtonLink
+          size="lg"
+          to={
+            book.isbn13
+              ? `/check-in?isbn=${encodeURIComponent(book.isbn13)}`
+              : "/check-in"
+          }
+          data-testid="wishlist-check-in"
+        >
           Check in when acquired
         </ButtonLink>
         <Button

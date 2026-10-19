@@ -1,0 +1,880 @@
+.bd-crumb {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-bottom: 18px;
+}
+.bd-crumb a,
+.bd-crumb-home {
+  color: var(--ink-2);
+  border-bottom: 1px solid transparent;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+@media (hover: hover) {
+  .bd-crumb a:hover,
+  .bd-crumb-home:hover {
+    color: var(--ink-0);
+    border-bottom-color: var(--line);
+  }
+}
+.bd-crumb-sep {
+  color: var(--ink-3);
+}
+.bd-crumb-curr {
+  color: var(--ink-0);
+}
+.bd-crumb-step {
+  color: var(--ink-2);
+}
+
+.me-root {
+  width: 100%;
+  padding-bottom: 80px;
+}
+
+@media (max-width: 720px) {
+  .me-root {
+    padding-bottom: calc(80px + 68px + env(safe-area-inset-bottom));
+  }
+}
+.me-crumb {
+  padding: 0 clamp(20px, 4vw, 56px);
+  margin-bottom: 8px;
+}
+
+.me-page-header {
+  padding: 0 clamp(20px, 4vw, 56px) 24px;
+}
+.me-page-title {
+  font-family: var(--serif);
+  /* Fluid rather than fixed: at 38px a two-word title plus its author breaks
+     across three ragged lines on a phone, with the author landing alone under
+     the title at a size that reads as a second heading. */
+  font-size: clamp(28px, 6.5vw, 42px);
+  font-weight: 600;
+  --lh: 1.05;
+  line-height: var(--lh);
+  margin-top: 4px;
+}
+.me-page-title-author {
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-style: normal;
+  font-size: 17px;
+  margin-left: 14px;
+  font-weight: 400;
+}
+@media (max-width: 560px) {
+  .me-page-title-author {
+    display: block;
+    margin-left: 0;
+    margin-top: 4px;
+    font-size: 15px;
+  }
+}
+.me-page-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.me-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 40px;
+  padding: 0 clamp(20px, 4vw, 56px);
+  align-items: flex-start;
+}
+
+@media (max-width: 900px) {
+  .me-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.me-form {
+  min-width: 0;
+  /* A fieldset, to disable every control at once; its own frame is not wanted. */
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.me-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 18px;
+}
+
+@media (min-width: 769px) and (max-width: 1180px) {
+  .me-field-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 900px) {
+  .me-field-grid {
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .me-field-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.me-field {
+  min-width: 0;
+}
+.me-field-w2 {
+  grid-column: span 2;
+}
+.me-field-full {
+  grid-column: 1 / -1;
+}
+@media (max-width: 560px) {
+  .me-field-w2 {
+    grid-column: span 1;
+  }
+}
+.me-label {
+  display: flex;
+  align-items: center;
+  /* The hint (`margin-left: auto`) shares this row with the label text. In a
+     narrow column the two collide and the label breaks mid-word — "ISBN-/13".
+     Wrapping drops the hint to its own line instead, which costs one line and
+     keeps every label readable at any column width. */
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.me-label-edited {
+  color: var(--accent);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+.me-label-hint {
+  color: var(--ink-3);
+  font-size: 9px;
+  margin-left: auto;
+  /* Never the reason the row wraps: the label text has to break first. */
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.me-input {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  color: var(--ink-0);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.me-input:focus {
+  border-color: var(--accent);
+}
+.me-input-big {
+  font-size: 20px;
+}
+.me-input-serif {
+  font-family: var(--serif);
+}
+.me-input-mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.me-input-edited {
+  border-color: color-mix(in oklch, var(--accent) 60%, transparent);
+}
+.me-input:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.me-textarea.me-input-edited {
+  border-color: color-mix(in oklch, var(--accent) 60%, transparent);
+}
+.me-tags-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.me-tag-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.me-series-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 14px;
+  margin-top: 10px;
+}
+@media (max-width: 480px) {
+  .me-series-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.me-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  position: sticky;
+  top: 80px;
+}
+.me-sidebar-card {
+  padding: 16px;
+}
+.me-sidebar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+.me-cover-preview {
+  width: 100%;
+}
+.me-cover-hint {
+  font-size: 10px;
+  color: var(--ink-3);
+  margin-top: 10px;
+}
+.me-cover-actions {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.me-cover-file {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  color: var(--ink-0);
+  font-family: var(--sans);
+  font-size: 12px;
+  cursor: pointer;
+}
+.me-cover-file:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.me-cover-file:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+.me-cover-url {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.me-cover-url .me-input {
+  flex: 1;
+  min-width: 0;
+}
+.me-ident-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.me-ident-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  /* Flex items default to `min-width: auto`, which lets a long unbroken
+     value force the row wider than its parent card. Pin to 0 so the value
+     box below can shrink and trigger overflow-wrap. */
+  min-width: 0;
+}
+.me-ident-key {
+  min-width: 78px;
+}
+.me-ident-val {
+  flex: 1;
+  /* Same `min-width: auto` problem as the parent row — without this, a
+     URL-shaped identifier (no whitespace, no hyphens) would push the value
+     box past the card's right edge. `overflow-wrap: anywhere` lets the
+     string break mid-word once the box is shrinkable. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 6px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--ink-1);
+}
+.me-save-bar {
+  position: sticky;
+  bottom: 0;
+  background: color-mix(in oklch, var(--bg-0) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line-2);
+  padding: 14px clamp(20px, 4vw, 56px);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  z-index: 10;
+}
+@media (max-width: 720px) {
+  .me-save-bar {
+    bottom: calc(68px + env(safe-area-inset-bottom));
+  }
+}
+.me-dirty-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 25%, transparent);
+  flex-shrink: 0;
+}
+.me-dirty-label {
+  font-size: 12px;
+  color: var(--ink-1);
+}
+.me-dirty-names {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.me-save-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+.mes-open-btn {
+  gap: 9px;
+  background: color-mix(in oklch, var(--accent) 16%, var(--bg-1));
+  border-color: color-mix(in oklch, var(--accent) 55%, transparent);
+  color: var(--ink-0);
+}
+@media (hover: hover) {
+  .mes-open-btn:hover {
+    background: color-mix(in oklch, var(--accent) 24%, var(--bg-1));
+    border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+  }
+}
+.mes-open-mark {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.mes-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in oklch, var(--bg-0) 70%, transparent);
+  backdrop-filter: blur(6px);
+  animation: sp-fade-in 0.12s ease-out;
+  /* A wheel over the scrim would otherwise scroll the page behind it, and
+     reaching the end of the panel's own scroll would hand the rest of the
+     gesture to the page ("scroll chaining"). Making the scrim a scroll
+     container that contains its overscroll stops both — the page stays
+     exactly where the reader left it. */
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+.mes-panel {
+  position: relative;
+  width: min(680px, 100%);
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  padding: 26px 26px 0;
+  box-shadow: 0 24px 60px color-mix(in oklch, black 55%, transparent);
+  animation: mes-panel-in 0.16s ease-out;
+}
+.mes-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mes-close:hover {
+  background: var(--bg-2);
+  color: var(--ink-0);
+}
+
+.mes-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.mes-screen-results {
+  padding-bottom: 22px;
+}
+.mes-title {
+  margin: 0;
+  font-family: var(--serif, inherit);
+  font-size: 21px;
+  --lh: 1.25;
+  line-height: var(--lh);
+  color: var(--ink-0);
+  overflow-wrap: anywhere;
+}
+.mes-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.mes-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--bad);
+}
+.mes-foot {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.mes-empty {
+  color: var(--ink-3);
+}
+.mes-query {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+.mes-query-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 150px;
+  min-width: 0;
+}
+.mes-query-field:has(> #mes-query-isbn) {
+  flex: 1 1 110px;
+}
+.mes-query-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.mes-query-input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  color: var(--ink-0);
+  font-size: 14px;
+}
+.mes-query-input:focus-visible {
+  outline: none;
+  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+}
+.mes-query-btn {
+  height: 38px;
+}
+
+.mes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(52vh, 460px);
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.mes-row-item {
+  margin: 0;
+}
+.mes-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: inherit;
+  cursor: pointer;
+}
+.mes-row:hover,
+.mes-row:focus-visible {
+  background: var(--bg-2);
+  border-color: color-mix(in oklch, var(--accent) 45%, transparent);
+  outline: none;
+}
+.mes-row-cover {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--bg-2);
+}
+.mes-row-plate {
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+}
+.mes-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.mes-row-title {
+  font-size: 14.5px;
+  color: var(--ink-0);
+  overflow-wrap: anywhere;
+}
+.mes-row-authors {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.mes-row-imprint {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.mes-badge {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.mes-sources {
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.mes-source-problem {
+  color: var(--bad);
+}
+.mes-back {
+  align-self: flex-start;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--ink-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.mes-back:hover {
+  color: var(--ink-0);
+}
+.mes-compare-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mes-compare-head .mes-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.mes-cover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line-2);
+}
+.mes-cover-pair {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+.mes-cover-cell {
+  display: flex;
+}
+.mes-cover-thumb {
+  width: 62px;
+}
+.mes-cover-img {
+  width: 62px;
+  height: 93px;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+  background: var(--bg-2);
+}
+.mes-cover-note {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.mes-cover-ring,
+.me-cover-ring {
+  margin-right: 0.5em;
+}
+
+.mes-fields {
+  display: flex;
+  flex-direction: column;
+}
+.mes-field {
+  display: grid;
+  grid-template-columns: minmax(72px, 96px) 1fr 30px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 9px 0;
+  border-bottom: 1px solid color-mix(in oklch, var(--line-2) 55%, transparent);
+}
+.mes-field:last-child {
+  border-bottom: none;
+}
+.mes-field-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-top: 3px;
+}
+.mes-field-mine,
+.mes-field-theirs {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  max-height: 5.5em;
+  /* Explicitly `hidden` across, not just `auto` down: setting one axis to
+     `auto` computes the other from `visible` to `auto` as well, and the
+     browser then reserves a horizontal scrollbar track under every cell —
+     15px of grey bar under a value that has nothing to scroll. Wrapping is
+     `anywhere`, so there is never anything to scroll sideways to. */
+  overflow: hidden auto;
+  scrollbar-width: thin;
+}
+.mes-field.mes-field-long {
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    "label"
+    "mine"
+    "act"
+    "theirs";
+  gap: 8px;
+  padding: 12px 0;
+}
+.mes-field-long .mes-field-label {
+  grid-area: label;
+  padding-top: 0;
+}
+.mes-field-long .mes-field-mine {
+  grid-area: mine;
+}
+.mes-field-long .mes-apply {
+  grid-area: act;
+  justify-self: center;
+}
+.mes-field-long .mes-field-theirs {
+  grid-area: theirs;
+}
+.mes-field.mes-field-long :is(.mes-field-mine, .mes-field-theirs) {
+  max-height: 12em;
+  padding: 9px 11px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-2);
+  line-height: 1.5;
+}
+.mes-field-mine {
+  color: var(--ink-2);
+}
+.mes-field-theirs {
+  color: var(--ink-0);
+}
+.mes-apply {
+  justify-self: center;
+  width: 26px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  color: var(--ink-1);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.mes-apply:hover:not([disabled]),
+.mes-apply:focus-visible:not([disabled]) {
+  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+  background: color-mix(in oklch, var(--accent) 20%, var(--bg-2));
+  color: var(--ink-0);
+}
+.mes-apply[disabled] {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.mes-undo {
+  border-color: color-mix(in oklch, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+.mes-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.mes-skel-cover {
+  width: 62px;
+  height: 93px;
+  align-self: center;
+  border-radius: 4px;
+}
+.mes-skel-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 96px) 1fr 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid color-mix(in oklch, var(--line-2) 55%, transparent);
+}
+.mes-skel-bar {
+  height: 11px;
+  border-radius: 3px;
+}
+.mes-skel-label {
+  opacity: 0.6;
+}
+
+.mes-footbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding: 12px 0 22px;
+  background: var(--bg-1);
+  border-top: 1px solid var(--line-2);
+}
+.mes-done {
+  margin-left: auto;
+}
+.mes-footbar .btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.mes-footbar .mes-foot {
+  flex: 1 0 100%;
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .mes-scrim {
+    padding: 0;
+    align-items: stretch;
+  }
+  .mes-screen-results {
+    padding-bottom: calc(22px + env(safe-area-inset-bottom));
+  }
+  .mes-panel {
+    width: 100%;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    /* Bottom padding stays zero here for the same reason it is zero on
+       desktop: the action bar is sticky against the panel's *padding* box, so
+       any padding beneath it becomes a strip the rows scroll through under
+       the buttons. The bar carries the inset instead. */
+    padding: 22px 18px 0;
+  }
+  .mes-footbar {
+    padding-bottom: calc(22px + env(safe-area-inset-bottom));
+  }
+  .mes-list {
+    max-height: none;
+    overflow-y: visible;
+  }
+  .mes-field {
+    grid-template-columns: 1fr 30px 1fr;
+  }
+  .mes-field-label {
+    grid-column: 1 / -1;
+    padding-top: 0;
+  }
+}
+@media (max-width: 560px) {
+  .me-field-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mes-scrim,
+  .mes-panel {
+    animation: none;
+  }
+}
+@keyframes mes-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

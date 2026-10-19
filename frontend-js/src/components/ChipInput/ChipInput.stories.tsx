@@ -127,3 +127,18 @@ export const CapsSuggestions: Story = {
     await expect(offered()).toHaveLength(11);
   },
 };
+
+export const RemovesOnlyTheChipClicked: Story = {
+  args: { values: ["Fiction", "Fiction"] },
+  play: async ({ canvas, userEvent, args }) => {
+    const [first] = canvas.getAllByRole("button", {
+      name: "Remove tag Fiction",
+    });
+    if (!first) throw new Error("no remove button");
+
+    await userEvent.click(first);
+
+    await expect(args.onChange).toHaveBeenLastCalledWith(["Fiction"]);
+    await expect(canvas.getAllByText("Fiction")).toHaveLength(1);
+  },
+};
