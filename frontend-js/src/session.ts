@@ -66,9 +66,11 @@ function useSavedPreference<V>(
   apply: (user: User, value: V) => User,
 ) {
   const queryClient = useQueryClient();
-  const mutationKey = ["preference", key];
+  // The last save of any preference rereads the session, so none drops another's pending value.
+  const lastSaving = () =>
+    queryClient.isMutating({ mutationKey: ["preference"] }) <= 1;
   return useMutation({
-    mutationKey,
+    mutationKey: ["preference", key],
     mutationFn: save,
     onMutate: async (value) => {
       // A refetch already in flight would land over the optimistic value.
@@ -80,11 +82,12 @@ function useSavedPreference<V>(
       );
       return { previous };
     },
+    // With other saves pending, the snapshot is stale; the last one's reread corrects it.
     onError: (_error, _value, context) =>
+      lastSaving() &&
       queryClient.setQueryData(meQuery.queryKey, context?.previous),
-    // Only after the last save lands: an earlier read would drop the ones still queued.
     onSettled: () =>
-      queryClient.isMutating({ mutationKey }) <= 1
+      lastSaving()
         ? queryClient.invalidateQueries({ queryKey: meQuery.queryKey })
         : undefined,
   });

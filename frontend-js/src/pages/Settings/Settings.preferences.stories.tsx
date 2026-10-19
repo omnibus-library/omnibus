@@ -1,12 +1,18 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor } from "storybook/test";
+import { SetHiddenFormats } from "../../api/generated/schemas";
+import { deferred } from "../../testing/handlers";
 import { SettingsRoutes } from "../../testing/SettingsRoutes";
 import {
   aSettingsServer,
+  type SettingsServer,
   settingsHandlers,
 } from "../../testing/settingsHandlers";
 import { WIRE_ADA } from "../../testing/wire";
+
+let server: SettingsServer;
+let release = () => {};
 
 const meta = {
   title: "Pages/Settings/Preferences",
@@ -14,7 +20,8 @@ const meta = {
   args: { path: "/settings?section=preferences" },
   parameters: { ownRouter: true },
   beforeEach({ msw }) {
-    msw.use(...settingsHandlers(aSettingsServer()));
+    server = aSettingsServer();
+    msw.use(...settingsHandlers(server));
   },
 } satisfies Meta<typeof SettingsRoutes>;
 
@@ -169,5 +176,48 @@ export const PressesATheme: Story = {
     await userEvent.click(sepia);
 
     await expect(sepia).toHaveAttribute("aria-pressed", "true");
+  },
+};
+
+export const KeepsQueuedFormatsWhileAnotherPreferenceSaves: Story = {
+  beforeEach({ msw }) {
+    const gate = deferred();
+    release = gate.release;
+    msw.use(
+      http.post("/api/account/hidden-formats", async ({ request }) => {
+        await gate.promise;
+        const { formats } = SetHiddenFormats.parse(await request.json());
+        server.user = { ...server.user, hidden_formats: formats ?? [] };
+        return new HttpResponse(null);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const epub = await canvas.findByRole("checkbox", { name: "EPUB" });
+    const pdf = canvas.getByRole("checkbox", { name: "PDF" });
+    await userEvent.click(epub);
+    await userEvent.click(pdf);
+    await userEvent.click(
+      canvas.getByRole("switch", { name: "Share stats with household" }),
+    );
+
+    // The switch's save lands while both format saves are still held.
+    await waitFor(() =>
+      expect(canvas.getByTestId("share-stats-status")).toHaveTextContent(
+        "Saved",
+      ),
+    );
+    await expect(epub).toBeChecked();
+    await expect(pdf).toBeChecked();
+
+    release();
+    await waitFor(() =>
+      expect(canvas.getByTestId("hidden-formats-status")).toHaveTextContent(
+        "Saved",
+      ),
+    );
+    await expect(epub).toBeChecked();
+    await expect(pdf).toBeChecked();
+    await expect(server.user.hidden_formats).toEqual(["epub", "pdf"]);
   },
 };
