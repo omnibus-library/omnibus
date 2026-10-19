@@ -7,6 +7,7 @@ import {
   HeartGlyph,
   LockGlyph,
   PeopleGlyph,
+  PlusGlyph,
 } from "../Glyphs/Glyphs";
 import { UserAvatar } from "../UserAvatar/UserAvatar";
 import "./ShelfTile.css";
@@ -26,7 +27,8 @@ const EMPTY_LEDGE = {
   wishlist: "Nothing wished for",
 } satisfies Record<Shelf["kind"], string>;
 
-function KindGlyph({ kind }: { kind: Shelf["kind"] }) {
+/** The glyph marking a shelf's kind. */
+export function KindGlyph({ kind }: { kind: Shelf["kind"] }) {
   switch (kind) {
     case "smart":
       return <CogGlyph />;
@@ -103,11 +105,14 @@ export function ShelfTileFace({
   shelf,
   viewerId,
   prefix,
+  ownerLabel: owner = ownerLabel(viewerId, shelf),
 }: {
   shelf: Shelf;
   viewerId: UserId;
   /** Names the tile's ids, so one shelf drawn twice on a page keeps its labels apart. */
   prefix: string;
+  /** What the foot says in place of `ownerLabel(viewerId, shelf)`. */
+  ownerLabel?: string;
 }) {
   return (
     <>
@@ -143,11 +148,35 @@ export function ShelfTileFace({
               className="shv-card-owner-name"
               id={`${prefix}-owner-${shelf.id}`}
             >
-              {ownerLabel(viewerId, shelf)}
+              {owner}
             </span>
           </span>
         </div>
       </div>
     </>
+  );
+}
+
+/** The grid's last tile: opens the picker that adds books to the shelf. */
+export function AddBooksTile({
+  onClick,
+  style,
+}: {
+  onClick: () => void;
+  style?: CSSProperties;
+}) {
+  return (
+    <button
+      type="button"
+      className="shelf-add-tile"
+      data-testid="shelf-add-tile"
+      style={style}
+      onClick={onClick}
+    >
+      <span className="shelf-add-tile-plus">
+        <PlusGlyph />
+      </span>
+      <span>Add books</span>
+    </button>
   );
 }

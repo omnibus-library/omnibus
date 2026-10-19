@@ -7,6 +7,7 @@
 
 use axum::{
     extract::{Path, State},
+    http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
@@ -14,7 +15,7 @@ use omnibus_db::{self as db, worker::Task};
 use omnibus_shared::{AuthorDetail, AuthorReading, AuthorSummary};
 
 use super::{internal, AppState};
-use crate::auth::AuthUser;
+use crate::auth::{AdminUser, AuthUser};
 
 /// Get an author
 ///
@@ -66,7 +67,7 @@ pub(super) async fn get_author_by_id(
             }
             Json(author).into_response()
         }
-        Ok(None) => axum::http::StatusCode::NOT_FOUND.into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => internal("read author", error),
     }
 }
@@ -119,6 +120,32 @@ pub(super) async fn get_author_reading(user: AuthUser, State(state): State<AppSt
     match db::author_reading(&state.pool, user.id, &paths).await {
         Ok(rows) => Json(rows).into_response(),
         Err(e) => internal("author reading", e),
+    }
+}
+
+/// Delete an author
+///
+/// Removes the author and un-links them from their books; the books stay. Later library
+/// scans ignore the name, so the author isn't added back. Succeeds for an unknown id.
+/// Needs an admin account.
+#[utoipa::path(
+    delete,
+    path = "/api/authors/{id}",
+    tag = "Discovery",
+    params(("id" = i64, Path, description = "The author's id.")),
+    responses(
+        (status = 204, description = "The author is gone."),
+        (status = 403, description = "You aren't an admin."),
+    ),
+)]
+pub(super) async fn delete_author(
+    _admin: AdminUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    match db::delete_author(&state.pool, id).await {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => internal("delete author", e),
     }
 }
 

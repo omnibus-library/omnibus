@@ -442,3 +442,34 @@ export function SyncGlyph({ size = 14 }: GlyphProps) {
     </svg>
   );
 }
+
+/** A pencil, for "edit". */
+export function PencilGlyph({ size = 15 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...stroked}
+      aria-hidden="true"
+    >
+      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+    </svg>
+  );
+}
+
+/** A tick, for "picked". */
+export function CheckGlyph({ size = 12 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...stroked}
+      strokeWidth={3}
+      aria-hidden="true"
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}

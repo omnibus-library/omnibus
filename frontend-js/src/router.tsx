@@ -7,7 +7,7 @@ import { AddBooks } from "./pages/AddBooks/AddBooks";
 import { Admin } from "./pages/Admin/Admin";
 import { AdminHealth } from "./pages/AdminHealth/AdminHealth";
 import { AuthorDetail } from "./pages/AuthorDetail/AuthorDetail";
-import { Authors } from "./pages/Authors/Authors";
+import { Authors, AuthorsIndexPane } from "./pages/Authors/Authors";
 import { BookDetail } from "./pages/BookDetail/BookDetail";
 import { BookEdit } from "./pages/BookEdit/BookEdit";
 import { CheckIn } from "./pages/CheckIn/CheckIn";
@@ -61,8 +61,14 @@ export const routes: RouteObject[] = [
                   { path: "/", element: <Library /> },
                   { path: "/books/:uuid", element: <BookDetail /> },
                   { path: "/books/:uuid/edit", element: <BookEdit /> },
-                  { path: "/authors", element: <Authors /> },
-                  { path: "/authors/:id", element: <AuthorDetail /> },
+                  {
+                    path: "/authors",
+                    element: <Authors />,
+                    children: [
+                      { index: true, element: <AuthorsIndexPane /> },
+                      { path: ":id", element: <AuthorDetail /> },
+                    ],
+                  },
                   { path: "/series", element: <Series /> },
                   { path: "/series/:id", element: <SeriesDetail /> },
                   { path: "/stats", element: <Stats /> },

@@ -170,6 +170,11 @@ export function formatDateShort(raw: string): string | null {
   return shortDate(year, month || null, validDay);
 }
 
+/** A stored date as `May 2016`, narrowing to the year alone; `null` when it names no real year. */
+export function formatMonthYear(raw: string): string | null {
+  return formatDateShort(raw.trim().slice(0, 7));
+}
+
 const INSTANT = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/;
 
 /**
@@ -197,7 +202,9 @@ export function formatInstantShort(
 
 export const nowSecs = () => Math.floor(Date.now() / 1000);
 
-const unitsAgo = (n: number, unit: string) => `${n} ${unit}${plural(n)} ago`;
+/** "3 hours ago": `n` of `unit`, pluralised. */
+export const unitsAgo = (n: number, unit: string) =>
+  `${n} ${unit}${plural(n)} ago`;
 
 /** How long before `now` a unix-seconds time was: "just now", "3 hours ago". */
 export function ago(now: number, then: number): string {

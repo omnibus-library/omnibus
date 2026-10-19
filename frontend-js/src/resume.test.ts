@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { formatHmLeft, formatHmsShort, resumeHref, resumeMeta } from "./resume";
-import { aResumePoint as aPoint } from "./testing/books";
+import {
+  formatHmLeft,
+  formatHmsShort,
+  readerHref,
+  resumeHref,
+  resumeMeta,
+} from "./resume";
+import { aResumePoint as aPoint, bookUuid } from "./testing/books";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 
@@ -33,6 +39,28 @@ describe("resumeHref", () => {
     const point = aPoint({ format: "audio", formats: ["MP3"] });
 
     expect(resumeHref(point)).toBe(`/listen/${UUID}`);
+  });
+});
+
+describe("readerHref", () => {
+  const uuid = bookUuid(UUID);
+
+  it("opens the player at the file for an audio position", () => {
+    expect(readerHref(uuid, ["M4B"], "audio", 7)).toBe(
+      `/listen/${UUID}?file_id=7`,
+    );
+  });
+
+  it("opens the player at its first file for an unread audio-only book", () => {
+    expect(readerHref(uuid, ["m4b"], null, null)).toBe(`/listen/${UUID}`);
+  });
+
+  it("opens the reader for an unread book that has an epub beside its audio", () => {
+    expect(readerHref(uuid, ["M4B", "EPUB"], null, null)).toBe(`/read/${UUID}`);
+  });
+
+  it("opens the epub reader when a book has no readable or audio format", () => {
+    expect(readerHref(uuid, [], null, null)).toBe(`/read/${UUID}`);
   });
 });
 

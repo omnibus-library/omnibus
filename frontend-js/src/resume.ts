@@ -1,19 +1,31 @@
-import type { ResumePoint } from "./api";
+import type { BookUuid, ResumePoint } from "./api";
+import type { ProgressFormat } from "./api/generated/schemas";
 
-/** Where a "Continue" link resumes: the player at its file, or a reader. */
-export function resumeHref(point: ResumePoint): string {
-  const uuid = point.book.uuid;
-  const has = (format: string) =>
-    point.formats.some((f) => f.toLowerCase() === format);
-  if (point.format === "audio") {
-    const file = point.fileId === null ? "" : `?file_id=${point.fileId}`;
-    return `/listen/${uuid}${file}`;
+/** Where a book opens: the player at its file for audio, else a reader by the EPUB > CBZ > PDF ladder. */
+export function readerHref(
+  uuid: BookUuid,
+  formats: readonly string[],
+  format: ProgressFormat | null,
+  fileId: number | null,
+): string {
+  const has = (name: string) => formats.some((f) => f.toLowerCase() === name);
+  if (format === "audio") {
+    return `/listen/${uuid}${fileId === null ? "" : `?file_id=${fileId}`}`;
   }
   // EPUB > CBZ > PDF: comics and PDFs share the epub progress lane.
   if (has("epub")) return `/read/${uuid}`;
   if (has("cbz")) return `/comic/${uuid}`;
   if (has("pdf")) return `/pdf/${uuid}`;
+  // Unread audio-only books have no position to name a format.
+  if (format === null && (has("m4b") || has("m4a") || has("mp3"))) {
+    return `/listen/${uuid}`;
+  }
   return `/read/${uuid}`;
+}
+
+/** Where a "Continue" link resumes: the player at its file, or a reader. */
+export function resumeHref(point: ResumePoint): string {
+  return readerHref(point.book.uuid, point.formats, point.format, point.fileId);
 }
 
 /** `7h 50m` / `50m` for a span of remaining seconds. */

@@ -4,6 +4,7 @@ import {
   fetchShelfPage,
   type Shelf,
   type ShelfKind,
+  shelfQuery,
   shelvesQuery,
   type UserId,
 } from "../../api";
@@ -87,20 +88,25 @@ export function pageTarget(
   return (dir > 0 ? inReach.at(-1) : inReach[0]) ?? want;
 }
 
-/** Which list the page shows: the saved shelf pick, that shelf's page, and why its sort is locked. */
+/** Which list the page shows: the saved shelf pick, that shelf's page and detail, and why its sort is locked. */
 export function useShelfLens(prefs: Prefs) {
   const [selection, setSelection] = useState(loadShelfSelection);
   const shelfId = selection.kind === "shelf" ? selection.id : null;
   const shelves = useQuery(shelvesQuery).data;
-  const shelfQuery = {
-    sort: prefs.sort,
-    dir: prefs.dir,
-    clauses: prefs.clauses,
-  };
+  const lens = { sort: prefs.sort, dir: prefs.dir, clauses: prefs.clauses };
   const shelfPage = useQuery({
-    queryKey: ["shelf-page", shelfId, shelfQuery],
+    queryKey: ["shelf-page", shelfId, lens],
+    queryFn: shelfId === null ? skipToken : () => fetchShelfPage(shelfId, lens),
+  });
+  // Every member, filter aside: what Add books marks as already on the shelf. Unfiltered it is the lens query itself.
+  const whole = { ...lens, clauses: [] };
+  const detail = useQuery(shelfQuery(shelfId));
+  const members = useQuery({
+    queryKey: ["shelf-page", shelfId, whole],
     queryFn:
-      shelfId === null ? skipToken : () => fetchShelfPage(shelfId, shelfQuery),
+      shelfId === null ? skipToken : () => fetchShelfPage(shelfId, whole),
+    // Only Add books on a manual shelf reads it.
+    enabled: detail.data?.kind === "manual",
   });
   const pick = (next: ShelfSelection) => {
     setSelection(next);
@@ -118,5 +124,5 @@ export function useShelfLens(prefs: Prefs) {
   const sortLock = sortLockReason(
     shelves?.find((s) => s.id === shelfId)?.kind ?? null,
   );
-  return { selection, pick, shelfId, shelfPage, sortLock };
+  return { selection, pick, shelfId, shelfPage, members, detail, sortLock };
 }

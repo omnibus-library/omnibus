@@ -28,6 +28,10 @@
   padding: 2px 6px;
   background: transparent;
 }
+.format-badge--physical {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 .format-switcher {
   display: flex;
   flex-direction: column;

@@ -24,6 +24,11 @@
   color: var(--ink-0);
   border-color: var(--accent);
 }
+.chip .count {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+}
 .chip-genre {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line-2));
 }

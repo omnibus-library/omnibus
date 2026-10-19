@@ -1,17 +1,14 @@
 import {
   type QueryClient,
   queryOptions,
-  skipToken,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import {
-  type AuthorId,
   type BookDetail,
   type BookUuid,
   fetchAlignment,
-  fetchAuthorBooks,
   fetchBook,
   fetchCopies,
   fetchHighlights,
@@ -19,13 +16,11 @@ import {
   fetchJournalEntries,
   fetchProgress,
   fetchReadStatus,
-  fetchSeries,
   fetchShelves,
   fetchShelvesContaining,
   fetchSmartShelvesContaining,
   fetchSuggestions,
   fetchWishlist,
-  type SeriesId,
   type Suggestions,
 } from "../../api";
 import type { ShelfFacts } from "./shelves";
@@ -51,12 +46,6 @@ export function useLeaveBook(uuid: BookUuid) {
     navigate("/", { replace: true });
   };
 }
-
-export const seriesQuery = (id: SeriesId | null) =>
-  queryOptions({
-    queryKey: ["series", id],
-    queryFn: id === null ? skipToken : () => fetchSeries(id),
-  });
 
 export const progressQuery = (uuid: BookUuid) =>
   queryOptions({
@@ -123,12 +112,6 @@ export const shelvesQuery = (uuid: BookUuid) =>
       ]);
       return { all, manualIds, smartIds, wished: wishlist !== null };
     },
-  });
-
-export const authorBooksQuery = (id: AuthorId | null) =>
-  queryOptions({
-    queryKey: ["author", id],
-    queryFn: id === null ? skipToken : () => fetchAuthorBooks(id),
   });
 
 const SUGGESTION_POLL_MS = 2500;

@@ -82,14 +82,8 @@ describe("routes", () => {
       [`/comic/${UUID}`, "Comic reader", UUID],
       [`/pdf/${UUID}?file_id=3&page=7`, "PDF reader", "7"],
       [`/listen/${UUID}?file_id=2`, "Listen", "2"],
-      ["/authors", "Authors", null],
-      ["/authors/12", "Author", "12"],
-      ["/series", "Series", null],
-      ["/series/4", "Series", "4"],
       ["/stats?user=2", "Stats", "2"],
       ["/stats/chart", "Chart builder", null],
-      ["/shelves", "Shelves", null],
-      ["/shelves/9", "Shelf", "9"],
       ["/settings?section=smtp", "Settings", "smtp"],
       ["/settings/cleanup/duplicates", "Cleanup review", "duplicates"],
       ["/admin?section=logs", "Administration", "logs"],
@@ -106,29 +100,58 @@ describe("routes", () => {
     });
   });
 
-  it("renders the metadata editor at /books/:uuid/edit", async () => {
-    renderRoute(`/books/${UUID}/edit`);
+  describe("ported pages", () => {
+    it.each([
+      ["/series", "Gathering every series"],
+      ["/series/4", "Gathering the series"],
+      ["/shelves", "Gathering your shelves"],
+      ["/shelves/9", "Opening the shelf"],
+    ])("renders %s as its loading page, not a stub", async (path, label) => {
+      renderRoute(path);
 
-    // jsdom has no server to fetch from, so the editor settles on its error page.
-    expect(
-      await screen.findByRole("link", { name: "Back to book" }),
-    ).toHaveAttribute("href", `/books/${UUID}`);
-  });
+      expect(await screen.findByText(label)).toBeInTheDocument();
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
 
-  it("renders the upload page at /add-books", async () => {
-    renderRoute("/add-books");
+    it.each([["/authors"], ["/authors/12"]])(
+      "renders %s as the authors browser, not a stub",
+      async (path) => {
+        renderRoute(path);
 
-    expect(
-      await screen.findByRole("heading", { level: 1, name: "Upload a book" }),
-    ).toBeInTheDocument();
-  });
+        expect(
+          await screen.findByRole("heading", { level: 1, name: "Authors" }),
+        ).toBeInTheDocument();
+        expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+      },
+    );
 
-  it("renders the check-in flow at /check-in", async () => {
-    renderRoute("/check-in");
+    it("renders the metadata editor at /books/:uuid/edit", async () => {
+      renderRoute(`/books/${UUID}/edit`);
 
-    expect(
-      await screen.findByRole("heading", { level: 1, name: "Check in a book" }),
-    ).toBeInTheDocument();
+      // jsdom has no server to fetch from, so the editor settles on its error page.
+      expect(
+        await screen.findByRole("link", { name: "Back to book" }),
+      ).toHaveAttribute("href", `/books/${UUID}`);
+    });
+
+    it("renders the upload page at /add-books", async () => {
+      renderRoute("/add-books");
+
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "Upload a book" }),
+      ).toBeInTheDocument();
+    });
+
+    it("renders the check-in flow at /check-in", async () => {
+      renderRoute("/check-in");
+
+      expect(
+        await screen.findByRole("heading", {
+          level: 1,
+          name: "Check in a book",
+        }),
+      ).toBeInTheDocument();
+    });
   });
 
   describe("layout", () => {

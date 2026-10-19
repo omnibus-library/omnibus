@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ReactNode,
   type RefObject,
@@ -21,8 +21,10 @@ import {
   ChevronRightGlyph,
   CogGlyph,
   HeartGlyph,
+  PlusGlyph,
 } from "../../components/Glyphs/Glyphs";
 import { Skeleton } from "../../components/Loading/Loading";
+import { CreateShelfModal } from "../../components/ShelfForm/CreateShelfModal";
 import { bookCount } from "../../format";
 import { prefersReducedMotion } from "../../motion";
 import { useCurrentUser } from "../../session";
@@ -154,6 +156,8 @@ export function ShelfGallery({
     allCount === null ? "Your whole library" : bookCount(allCount);
   const viewerId = useCurrentUser().id;
   const shelves = useQuery(shelvesQuery);
+  const client = useQueryClient();
+  const [creating, setCreating] = useState(false);
   const rail = shelves.data ? railShelves(shelves.data, viewerId) : [];
   const row = useRef<HTMLDivElement>(null);
   const reach = useRowReach(row);
@@ -176,86 +180,110 @@ export function ShelfGallery({
     });
   };
   return (
-    <section className="lmq-shelves" aria-labelledby="lmq-shelves-title">
-      <h2 className="lmq-shelves-title" id="lmq-shelves-title">
-        Shelves
-      </h2>
-      <div className="lmq-slab-acts">
-        <Link to="/shelves" className="lmq-slink">
-          All shelves
-          <ChevronRightGlyph />
-        </Link>
-      </div>
-      <div className="lmq-shwrap">
-        <button
-          type="button"
-          className={
-            reach.before
-              ? "lmq-shnav lmq-shnav--l on"
-              : "lmq-shnav lmq-shnav--l"
-          }
-          aria-label="Earlier shelves"
-          tabIndex={reach.before ? 0 : -1}
-          onClick={() => page(-1)}
-        >
-          <CaretLeftGlyph />
-        </button>
-        <button
-          type="button"
-          className={
-            reach.after ? "lmq-shnav lmq-shnav--r on" : "lmq-shnav lmq-shnav--r"
-          }
-          aria-label="More shelves"
-          tabIndex={reach.after ? 0 : -1}
-          onClick={() => page(1)}
-        >
-          <CaretRightGlyph />
-        </button>
-        <div ref={row} className="lmq-shtx" id="lmq-shelf-row">
+    <>
+      <section className="lmq-shelves" aria-labelledby="lmq-shelves-title">
+        <h2 className="lmq-shelves-title" id="lmq-shelves-title">
+          Shelves
+        </h2>
+        <div className="lmq-slab-acts">
           <button
             type="button"
-            className="lmq-shent"
-            aria-pressed={selection.kind === "all"}
-            aria-label={`All Books, ${allMeta}`}
-            onClick={() => onSelect({ kind: "all" })}
+            className="lmq-slink"
+            data-testid="new-shelf"
+            onClick={() => setCreating(true)}
           >
-            <Peek covers={allCovers} />
-            <span className="lmq-shent-name">All Books</span>
-            {allCount !== null && (
-              <span className="lmq-shent-meta">{allCount}</span>
-            )}
+            <PlusGlyph />
+            New shelf
           </button>
-          {rail.map((shelf) => {
-            const active =
-              selection.kind === "shelf" && selection.id === shelf.id;
-            return (
-              <ShelfEntry
-                key={shelf.id}
-                shelf={shelf}
-                count={
-                  active && pickedCount !== null ? pickedCount : shelf.bookCount
-                }
-                active={active}
-                viewerId={viewerId}
-                onSelect={() => onSelect({ kind: "shelf", id: shelf.id })}
-              />
-            );
-          })}
-          {shelves.isPending &&
-            [0, 1, 2].map((i) => (
-              <span
-                key={i}
-                className="lmq-shent lmq-shent-pending"
-                aria-hidden="true"
-              >
-                <Skeleton
-                  index={i}
-                  style={{ "--w": `${118 - i * 18}px`, height: 20 }}
-                />
-              </span>
-            ))}
+          <Link to="/shelves" className="lmq-slink">
+            All shelves
+            <ChevronRightGlyph />
+          </Link>
         </div>
-      </div>
-    </section>
+        <div className="lmq-shwrap">
+          <button
+            type="button"
+            className={
+              reach.before
+                ? "lmq-shnav lmq-shnav--l on"
+                : "lmq-shnav lmq-shnav--l"
+            }
+            aria-label="Earlier shelves"
+            tabIndex={reach.before ? 0 : -1}
+            onClick={() => page(-1)}
+          >
+            <CaretLeftGlyph />
+          </button>
+          <button
+            type="button"
+            className={
+              reach.after
+                ? "lmq-shnav lmq-shnav--r on"
+                : "lmq-shnav lmq-shnav--r"
+            }
+            aria-label="More shelves"
+            tabIndex={reach.after ? 0 : -1}
+            onClick={() => page(1)}
+          >
+            <CaretRightGlyph />
+          </button>
+          <div ref={row} className="lmq-shtx" id="lmq-shelf-row">
+            <button
+              type="button"
+              className="lmq-shent"
+              aria-pressed={selection.kind === "all"}
+              aria-label={`All Books, ${allMeta}`}
+              onClick={() => onSelect({ kind: "all" })}
+            >
+              <Peek covers={allCovers} />
+              <span className="lmq-shent-name">All Books</span>
+              {allCount !== null && (
+                <span className="lmq-shent-meta">{allCount}</span>
+              )}
+            </button>
+            {rail.map((shelf) => {
+              const active =
+                selection.kind === "shelf" && selection.id === shelf.id;
+              return (
+                <ShelfEntry
+                  key={shelf.id}
+                  shelf={shelf}
+                  count={
+                    active && pickedCount !== null
+                      ? pickedCount
+                      : shelf.bookCount
+                  }
+                  active={active}
+                  viewerId={viewerId}
+                  onSelect={() => onSelect({ kind: "shelf", id: shelf.id })}
+                />
+              );
+            })}
+            {shelves.isPending &&
+              [0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="lmq-shent lmq-shent-pending"
+                  aria-hidden="true"
+                >
+                  <Skeleton
+                    index={i}
+                    style={{ "--w": `${118 - i * 18}px`, height: 20 }}
+                  />
+                </span>
+              ))}
+          </div>
+        </div>
+      </section>
+      {creating && (
+        <CreateShelfModal
+          onClose={() => setCreating(false)}
+          onCreated={() => {
+            setCreating(false);
+            client.invalidateQueries({ queryKey: shelvesQuery.queryKey });
+          }}
+        />
+      )}
+    </>
   );
 }
