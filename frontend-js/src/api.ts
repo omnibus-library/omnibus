@@ -1,21 +1,35 @@
 import { z } from "zod";
 import {
+  getAlignment,
   getEbookByUuid,
   getEbooks,
   getLogoutUrl,
   getMe,
+  getPostCrossFormatFollowUrl,
+  getPostEbookSummaryFetchUrl,
+  getProgress,
+  getReadStatus,
   getRecentProgress,
   getRegistration,
   getSearchPalette,
   getSeriesById,
+  getSummarySources,
+  postEbookOverrides,
   login as postLogin,
   register as postRegister,
+  putReadStatus,
 } from "./api/generated/omnibus";
 import type {
+  AlignmentViewOutput,
+  BookProgress as BookProgressWire,
   EbookMetadata,
   EbookPage,
   PaletteResults as PaletteWire,
+  ProgressRecord as PositionWire,
+  ReadStatus as ReadState,
+  ReadStatusRecord as ReadStatusWire,
   ResumePoint as ResumePointWire,
+  SummarySource,
   UserSummary,
 } from "./api/generated/schemas";
 
@@ -312,6 +326,165 @@ export async function fetchPalette(
   const res = await getSearchPalette({ q: query, limit }, { signal });
   if (res.status !== 200) throw failure(res);
   return toPalette(res.data);
+}
+
+/** Where the reader stands in one format: a CFI or a percent, or seconds into the audio. */
+function toPosition(wire: PositionWire) {
+  return {
+    cfi: wire.epub_cfi ?? null,
+    percent: wire.progress_percent ?? null,
+    audioSeconds: wire.audio_position_seconds ?? null,
+    updatedAt: wire.client_updated_at,
+  };
+}
+
+/** The screen's shape of `GET /api/progress/{uuid}`: a position per format, `null` if never opened. */
+export function toProgress(wire: BookProgressWire | null) {
+  const at = (format: PositionWire["format"]) => {
+    const record = wire?.records.find((r) => r.format === format);
+    return record ? toPosition(record) : null;
+  };
+  return { reading: at("epub"), listening: at("audio") };
+}
+
+export type Progress = ReturnType<typeof toProgress>;
+export type Position = NonNullable<Progress["reading"]>;
+
+/** The reader's saved positions in a book, one per format. */
+export async function fetchProgress(uuid: BookUuid): Promise<Progress> {
+  const res = await getProgress(encodeURIComponent(uuid));
+  if (res.status !== 200) throw failure(res);
+  return toProgress(res.data);
+}
+
+/** The screen's shape of `GET /api/books/{uuid}/alignment`. */
+export function toAlignment(wire: AlignmentViewOutput) {
+  return {
+    chapters:
+      wire.ebook?.chapters.map((c) => ({
+        title: c.title,
+        percent: c.percent,
+        spineIndex: c.spine_index ?? 0,
+        anchorPath: c.anchor_path ?? null,
+      })) ?? null,
+    audioFiles: wire.audio_files.map((f) => ({
+      id: f.book_file_id,
+      seconds: f.duration_seconds,
+    })),
+    anchorPairs: wire.anchor_pairs ?? [],
+    reading: wire.reading ? { percent: wire.reading.percent ?? null } : null,
+    listening: wire.listening
+      ? {
+          fileId: wire.listening.book_file_id ?? null,
+          seconds: wire.listening.seconds,
+        }
+      : null,
+    link: wire.link
+      ? {
+          stale: wire.link.stale,
+          follow: wire.link.follow ?? false,
+          confirmedAt: wire.link.confirmed_at,
+        }
+      : null,
+  };
+}
+
+export type Alignment = ReturnType<typeof toAlignment>;
+
+/** How the ebook and audiobook line up: chapters, audio files, link and both positions. */
+export async function fetchAlignment(uuid: BookUuid): Promise<Alignment> {
+  const res = await getAlignment(encodeURIComponent(uuid));
+  if (res.status !== 200) throw failure(res);
+  return toAlignment(res.data);
+}
+
+export type ReadStatusValue = ReadState;
+
+function toReadStatus(wire: ReadStatusWire) {
+  return { status: wire.status, finishedAt: wire.finished_at ?? null };
+}
+
+export type ReadStatusRecord = ReturnType<typeof toReadStatus>;
+
+/** The reader's read status for a book, or `null` when they never set one. */
+export async function fetchReadStatus(
+  uuid: BookUuid,
+): Promise<ReadStatusRecord | null> {
+  const res = await getReadStatus(encodeURIComponent(uuid));
+  if (res.status !== 200) throw failure(res);
+  return res.data && toReadStatus(res.data);
+}
+
+export async function saveReadStatus(
+  uuid: BookUuid,
+  status: ReadStatusValue,
+): Promise<ReadStatusRecord> {
+  const res = await putReadStatus({ book_uuid: uuid, status });
+  if (res.status !== 200) throw failure(res);
+  return toReadStatus(res.data);
+}
+
+// The generated fetcher JSON-parses every body, and an error's is plain text.
+async function send(
+  url: string,
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
+  body?: unknown,
+): Promise<Response> {
+  const res = await fetch(url, {
+    method,
+    ...(body === undefined
+      ? {}
+      : {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+  });
+  if (!res.ok) throw failure({ status: res.status, data: await res.text() });
+  return res;
+}
+
+/** Turns follow mode on or off for a linked book. */
+export async function setFollow(
+  uuid: BookUuid,
+  enabled: boolean,
+): Promise<void> {
+  await send(getPostCrossFormatFollowUrl(encodeURIComponent(uuid)), "POST", {
+    enabled,
+  });
+}
+
+/** The providers to ask for a summary, in the order to ask them. */
+export async function fetchSummarySources(): Promise<SummarySource[]> {
+  const res = await getSummarySources();
+  if (res.status !== 200) throw failure(res);
+  return res.data;
+}
+
+const summaryText = z.string().nullable();
+
+/** One provider's summary of the book, or `null` when it has none. Nothing is saved. */
+export async function fetchSummary(
+  uuid: BookUuid,
+  source: SummarySource,
+): Promise<string | null> {
+  const res = await send(
+    getPostEbookSummaryFetchUrl(encodeURIComponent(uuid)),
+    "POST",
+    { source },
+  );
+  return summaryText.parse(await res.json());
+}
+
+/** Saves `description` over the scanned one and returns the book as it now reads. */
+export async function saveDescription(
+  uuid: BookUuid,
+  description: string,
+): Promise<BookDetail> {
+  const res = await postEbookOverrides(encodeURIComponent(uuid), {
+    description,
+  });
+  if (res.status !== 200) throw failure(res);
+  return toBookDetail(res.data);
 }
 
 export const thumbUrl = (uuid: BookUuid, size: "sm" | "md" = "md") =>

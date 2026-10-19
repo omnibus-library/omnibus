@@ -1,19 +1,31 @@
 import { delay, HttpResponse, http } from "msw";
 import {
+  getGetAlignmentMockHandler200,
   getGetMeMockHandler200,
   getGetMeMockHandler401,
+  getGetProgressMockHandler200,
+  getGetReadStatusMockHandler200,
   getGetRegistrationMockHandler200,
   getGetSeriesByIdMockHandler200,
 } from "../api/generated/omnibus.msw";
-import type {
-  EbookMetadata,
-  EbookPage,
-  LoginResponse,
-  PaletteResults,
-  ResumePoint,
+import {
+  type EbookMetadata,
+  type EbookPage,
+  type LoginResponse,
+  type PaletteResults,
+  PostCrossFormatFollowBody,
+  PutReadStatusBody,
+  type ReadStatusRecord,
+  type ResumePoint,
 } from "../api/generated/schemas";
 import { COVER_SVG } from "./books";
-import { aWireSeries, WIRE_ADA } from "./wire";
+import {
+  aWireAlignment,
+  aWireProgress,
+  aWireReadStatus,
+  aWireSeries,
+  WIRE_ADA,
+} from "./wire";
 
 // The MSW fake of the `/api/*` routes the client calls. orval generates a
 // handler per documented status (`../api/generated/omnibus.msw`); the ones here
@@ -67,7 +79,48 @@ export function bookHandler(book: EbookMetadata) {
 
 /** Every GET the whole book page fires, answered quietly for `book`: its series holds three. */
 export function bookDetailHandlers(book: EbookMetadata) {
-  return [bookHandler(book), getGetSeriesByIdMockHandler200(aWireSeries())];
+  return [
+    bookHandler(book),
+    getGetSeriesByIdMockHandler200(aWireSeries()),
+    getGetReadStatusMockHandler200(null),
+    getGetProgressMockHandler200(aWireProgress()),
+    getGetAlignmentMockHandler200(aWireAlignment()),
+  ];
+}
+
+/**
+ * The read status `GET` and `PUT` keep between them, starting at `initial`;
+ * a `PUT` answers the record it stored and appends its body to `writes`.
+ */
+export function readStatusHandlers(
+  initial: ReadStatusRecord | null,
+  writes: { status: string }[] = [],
+) {
+  let current = initial;
+  return [
+    http.get("/api/read-status/:uuid", () => HttpResponse.json(current)),
+    http.put("/api/read-status", async ({ request }) => {
+      const body = PutReadStatusBody.parse(await request.json());
+      writes.push(body);
+      current = aWireReadStatus({
+        ...body,
+        finished_at:
+          body.status === "finished" ? Math.floor(Date.now() / 1000) : null,
+      });
+      return HttpResponse.json(current);
+    }),
+  ];
+}
+
+/** `POST /api/books/:uuid/cross-format-follow`, answering `204` and appending the body to `writes`. */
+export function followHandler(writes: { enabled: boolean }[]) {
+  return http.post(
+    "/api/books/:uuid/cross-format-follow",
+    async ({ request }) => {
+      writes.push(PostCrossFormatFollowBody.parse(await request.json()));
+      return new HttpResponse(null, { status: 204 });
+    },
+  );
 }
 
 /** `GET /api/progress/recent`, answering the first `limit` of `points`. */
@@ -147,8 +200,10 @@ export function loginHandler(password: string) {
   });
 }
 
+type Method = "get" | "post" | "put" | "patch" | "delete";
+
 /** Answers `path` with `status` and a plain-text body, as an Axum error does. */
-export function failing(method: "get" | "post", path: string, status: number) {
+export function failing(method: Method, path: string, status: number) {
   return http[method](
     path,
     () => new HttpResponse(`failed with ${status}`, { status }),
@@ -156,7 +211,7 @@ export function failing(method: "get" | "post", path: string, status: number) {
 }
 
 /** Never answers `path`, to hold a screen in its loading state. */
-export function hanging(path: string, method: "get" | "post" = "get") {
+export function hanging(path: string, method: Method = "get") {
   return http[method](path, async () => {
     await delay("infinite");
     return new HttpResponse(null);

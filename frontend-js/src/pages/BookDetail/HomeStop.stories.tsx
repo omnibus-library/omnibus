@@ -1,9 +1,26 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, within } from "storybook/test";
+import { HttpResponse, http } from "msw";
+import { expect, waitFor, within } from "storybook/test";
 import { toBookDetail } from "../../api";
-import { getGetSeriesByIdMockHandler200 } from "../../api/generated/omnibus.msw";
-import { failing, hanging } from "../../testing/handlers";
-import { aWireBook, aWireFile, aWireSeries } from "../../testing/wire";
+import {
+  getGetAlignmentMockHandler200,
+  getGetProgressMockHandler200,
+} from "../../api/generated/omnibus.msw";
+import {
+  bookDetailHandlers,
+  failing,
+  followHandler,
+  hanging,
+  readStatusHandlers,
+} from "../../testing/handlers";
+import {
+  aWireAlignment,
+  aWireBook,
+  aWireFile,
+  aWirePosition,
+  aWireProgress,
+  aWireReadStatus,
+} from "../../testing/wire";
 import { HomeStop } from "./HomeStop";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
@@ -34,7 +51,7 @@ const meta = {
   component: HomeStop,
   args: { book: aBook() },
   beforeEach({ msw }) {
-    msw.use(getGetSeriesByIdMockHandler200(aWireSeries()));
+    msw.use(...bookDetailHandlers(aWireBook()));
   },
 } satisfies Meta<typeof HomeStop>;
 
@@ -280,5 +297,392 @@ export const LongDescription: Story = {
 
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     await expect(toggle).toHaveTextContent("Show less");
+  },
+};
+
+const nowSecs = () => Math.floor(Date.now() / 1000);
+
+const CHAPTERS = [
+  { title: "Front matter", percent: 0, spine_index: 0 },
+  { title: "Chapter One", percent: 20, spine_index: 2 },
+  { title: "Chapter Two", percent: 60, spine_index: 4 },
+];
+
+const DUAL = aBook({ formats: ["EPUB", "M4B"], book_files: [EPUB, AUDIO] });
+
+const ALIGNED = aWireAlignment({
+  ebook: { total_chars: 1000, chapters: CHAPTERS },
+  audio_files: [
+    {
+      book_file_id: 21,
+      duration_seconds: 10_800,
+      chapter_starts: [],
+      label: "a.m4b",
+    },
+  ],
+  listening: { book_file_id: 21, seconds: 5400, client_updated_at: nowSecs() },
+  link: {
+    confirmed_at: nowSecs() - 3 * 86_400,
+    stale: false,
+    follow: true,
+    mode: "sequence",
+  },
+});
+
+export const ReadStatusNotStarted: Story = {
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("read-status-meta"),
+    ).toHaveTextContent("Not started");
+    await expect(
+      canvas.getByRole("button", { name: "Unread" }),
+    ).toHaveAttribute("aria-pressed", "true");
+  },
+};
+
+export const ReadStatusReading: Story = {
+  beforeEach({ msw }) {
+    msw.use(...readStatusHandlers(aWireReadStatus({ status: "reading" })));
+  },
+  play: async ({ canvas }) => {
+    await waitFor(() =>
+      expect(canvas.getByRole("button", { name: "Reading" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+    await expect(canvas.getByTestId("read-status-meta")).toHaveTextContent(
+      "In progress",
+    );
+  },
+};
+
+export const ReadStatusFinished: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...readStatusHandlers(
+        aWireReadStatus({
+          status: "finished",
+          finished_at: nowSecs() - 3 * 3600,
+        }),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await waitFor(() =>
+      expect(canvas.getByTestId("read-status-meta")).toHaveTextContent(
+        "Finished 3 hours ago",
+      ),
+    );
+  },
+};
+
+const statusWrites: { status: string }[] = [];
+
+export const ReadStatusSaved: Story = {
+  beforeEach({ msw }) {
+    statusWrites.length = 0;
+    msw.use(...readStatusHandlers(null, statusWrites));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Finished" }),
+    );
+
+    await expect(
+      canvas.getByRole("button", { name: "Finished" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() =>
+      expect(statusWrites).toEqual([{ book_uuid: UUID, status: "finished" }]),
+    );
+    await waitFor(() =>
+      expect(canvas.getByTestId("read-status-meta")).toHaveTextContent(
+        "Finished just now",
+      ),
+    );
+  },
+};
+
+export const ReadStatusSaveFails: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      failing("put", "/api/read-status", 500),
+      ...readStatusHandlers(aWireReadStatus({ status: "reading" })),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await waitFor(() =>
+      expect(canvas.getByRole("button", { name: "Reading" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+
+    await userEvent.click(canvas.getByRole("button", { name: "Finished" }));
+
+    await expect(
+      await canvas.findByText("Couldn't save — try again"),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", { name: "Reading" }),
+    ).toHaveAttribute("aria-pressed", "true");
+  },
+};
+
+const WITH_CHAPTERS = getGetAlignmentMockHandler200(
+  aWireAlignment({ ebook: { total_chars: 1000, chapters: CHAPTERS } }),
+);
+
+export const ResumeNamesTheChapter: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      getGetProgressMockHandler200(
+        aWireProgress(
+          aWirePosition({
+            progress_percent: 45,
+            epub_cfi: "epubcfi(/6/6!/4/2/1:0)",
+          }),
+        ),
+      ),
+      WITH_CHAPTERS,
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("link", { name: "Resume — Ch. 2 · Chapter One" }),
+    ).toBeInTheDocument();
+    const ruler = canvas.getByTestId("bdmq-ruler");
+    await expect(
+      within(ruler).getByText("Ch. 2 of 3 · 45%"),
+    ).toBeInTheDocument();
+    await expect(within(ruler).getByText("Ch. 2")).toBeInTheDocument();
+    await expect(within(ruler).getByText(/^last opened /)).toBeInTheDocument();
+  },
+};
+
+export const ResumeWithoutAChapterTable: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      getGetProgressMockHandler200(
+        aWireProgress(aWirePosition({ progress_percent: 45 })),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("link", { name: "Resume reading" }),
+    ).toBeInTheDocument();
+    await expect(
+      within(canvas.getByTestId("bdmq-ruler")).getByText("45% of the book"),
+    ).toBeInTheDocument();
+  },
+};
+
+export const NotStartedHasNoRuler: Story = {
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("link", { name: "Start reading" }),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByTestId("bdmq-ruler")).not.toBeInTheDocument();
+  },
+};
+
+export const FinishedBook: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      getGetProgressMockHandler200(
+        aWireProgress(aWirePosition({ progress_percent: 100 })),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    const ruler = await canvas.findByTestId("bdmq-ruler");
+    await expect(ruler.querySelector(".rx-fill")).toHaveClass("done");
+    await expect(ruler.querySelector(".rx-caret")).toBeNull();
+  },
+};
+
+export const ListeningResumes: Story = {
+  args: { book: aBook({ formats: ["M4B"], book_files: [AUDIO] }) },
+  beforeEach({ msw }) {
+    msw.use(
+      getGetProgressMockHandler200(
+        aWireProgress(
+          aWirePosition({
+            format: "audio",
+            audio_position_seconds: 5400,
+            progress_percent: 50,
+          }),
+        ),
+      ),
+      getGetAlignmentMockHandler200(ALIGNED),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("link", { name: "Resume listening from 1h 30m" }),
+    ).toBeInTheDocument();
+    const ruler = canvas.getByTestId("bdmq-ruler");
+    await expect(
+      within(ruler).getByText("1h 30m of 3h 00m · 50%"),
+    ).toBeInTheDocument();
+    await expect(
+      within(ruler).getByText("≈ 1h 30m left at 1.0×"),
+    ).toBeInTheDocument();
+  },
+};
+
+export const DualFormatShowsTheSyncLine: Story = {
+  args: { book: DUAL },
+  beforeEach({ msw }) {
+    msw.use(
+      getGetProgressMockHandler200(
+        aWireProgress(
+          aWirePosition({
+            progress_percent: 45,
+            epub_cfi: "epubcfi(/6/6!/4/2/1:0)",
+          }),
+          aWirePosition({
+            format: "audio",
+            audio_position_seconds: 5400,
+            progress_percent: 50,
+          }),
+        ),
+      ),
+      getGetAlignmentMockHandler200(ALIGNED),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("link", { name: "Listen from 1h 30m" }),
+    ).toBeInTheDocument();
+    await expect(
+      await canvas.findByText(
+        /one spot, both formats — audio at 1h 30m · confirmed 3d ago/,
+      ),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByText(/^last opened /)).not.toBeInTheDocument();
+  },
+};
+
+export const SyncUnlinked: Story = {
+  args: { book: DUAL },
+  beforeEach({ msw }) {
+    msw.use(getGetAlignmentMockHandler200({ ...ALIGNED, link: null }));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText(
+        "⇄ positions aren't synced — each format keeps its own spot",
+      ),
+    ).toBeInTheDocument();
+  },
+};
+
+export const SyncStale: Story = {
+  args: { book: DUAL },
+  beforeEach({ msw }) {
+    msw.use(
+      getGetAlignmentMockHandler200({
+        ...ALIGNED,
+        link: { confirmed_at: 1, stale: true, follow: true, mode: "sequence" },
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText(
+        "⇄ the audiobook files changed since you linked — sync is paused",
+      ),
+    ).toHaveAttribute("role", "status");
+  },
+};
+
+const followWrites: { enabled: boolean }[] = [];
+
+export const SyncFollowSwitch: Story = {
+  args: { book: DUAL },
+  beforeEach({ msw }) {
+    followWrites.length = 0;
+    msw.use(
+      getGetAlignmentMockHandler200(ALIGNED),
+      followHandler(followWrites),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const toggle = await canvas.findByRole("switch", {
+      name: "Follow the other format",
+    });
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
+    await expect(toggle).toHaveTextContent("following");
+
+    await userEvent.click(toggle);
+
+    await waitFor(() => expect(followWrites).toEqual([{ enabled: false }]));
+    await waitFor(() =>
+      expect(toggle).toHaveAttribute("aria-checked", "false"),
+    );
+    await expect(toggle).toHaveTextContent("not following");
+  },
+};
+
+export const SyncFollowFails: Story = {
+  args: { book: DUAL },
+  beforeEach({ msw }) {
+    msw.use(
+      http.post(
+        "/api/books/:uuid/cross-format-follow",
+        () => new HttpResponse("link not confirmed", { status: 409 }),
+      ),
+      getGetAlignmentMockHandler200(ALIGNED),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("switch", { name: "Follow the other format" }),
+    );
+
+    await expect(
+      await canvas.findByText("link not confirmed"),
+    ).toBeInTheDocument();
+    await expect(canvas.getByRole("switch")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+  },
+};
+
+export const SyncLoadFails: Story = {
+  args: { book: DUAL },
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/books/:uuid/alignment", 500));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText("couldn't load the sync status"),
+    ).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Retry" })).toBeEnabled();
+  },
+};
+
+export const SparseDescriptionOffersFetchSummary: Story = {
+  args: { book: aBook({ description: "<p>Too short.</p>" }) },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("button", { name: "Fetch Summary" }),
+    ).toBeEnabled();
+  },
+};
+
+export const LongDescriptionHasNoFetchSummary: Story = {
+  args: {
+    book: aBook({
+      description: `<p>${"A station at the edge of the map hears something answer. ".repeat(3)}</p>`,
+    }),
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.queryByRole("button", { name: "Fetch Summary" }),
+    ).not.toBeInTheDocument();
   },
 };

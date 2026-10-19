@@ -48,16 +48,25 @@ export function homeKicker(book: BookDetail, seriesTotal: number | null) {
   return { series: null, tail: `${lead} · standalone${yearTail}` };
 }
 
+const wordCount = (html: string) =>
+  html
+    .replace(/<[^>]*>/g, " ")
+    .split(/\s+/)
+    .filter(Boolean).length;
+
 const DESCRIPTION_CLAMP_WORDS = 50;
 
 /** Whether a description runs past the clamp and needs a Show more toggle. */
 export function descriptionOverflows(html: string): boolean {
-  const words = html
-    .replace(/<[^>]*>/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-  return words.length > DESCRIPTION_CLAMP_WORDS;
+  return wordCount(html) > DESCRIPTION_CLAMP_WORDS;
 }
+
+// The server's own threshold for offering to fetch a summary.
+const SUMMARY_MIN_WORDS = 10;
+
+/** Whether a description is too short to count as a summary. */
+export const summaryIsSparse = (html: string) =>
+  wordCount(html) < SUMMARY_MIN_WORDS;
 
 /** The query that narrows search to one tag or genre: `tag:"Dark academia"`. */
 export function facetQuery(prefix: "tag" | "genre", value: string): string {
@@ -160,4 +169,49 @@ export function formatInstantShort(
   const part = (type: string) =>
     Number(parts.find((p) => p.type === type)?.value);
   return shortDate(part("year"), part("month"), part("day"));
+}
+
+const unitsAgo = (n: number, unit: string) => `${n} ${unit}${plural(n)} ago`;
+
+/** How long before `now` a unix-seconds time was: "just now", "3 hours ago". */
+export function ago(now: number, then: number): string {
+  const secs = Math.max(0, now - then);
+  if (secs < 60) return "just now";
+  if (secs < 3600) return unitsAgo(Math.floor(secs / 60), "minute");
+  if (secs < 86_400) return unitsAgo(Math.floor(secs / 3600), "hour");
+  return unitsAgo(Math.floor(secs / 86_400), "day");
+}
+
+/** A coarser "ago" for sync copy: "12m ago", "yesterday". */
+export function recency(now: number, then: number): string {
+  const secs = Math.max(0, now - then);
+  if (secs < 90) return "just now";
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  if (secs < 86_400) return `${Math.floor(secs / 3600)}h ago`;
+  return secs < 172_800 ? "yesterday" : `${Math.floor(secs / 86_400)}d ago`;
+}
+
+/** "6h 31m" or "41m"; minutes are floored, as a duration must never claim more time than exists. */
+export function formatHm(seconds: number): string {
+  const mins = Math.floor(Math.max(0, seconds) / 60);
+  const [h, m] = [Math.floor(mins / 60), mins % 60];
+  return h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
+}
+
+/** "2h 5m", "2h", "41m": the length of a sitting or a stretch of reading. */
+export function durationLabel(seconds: number): string {
+  const secs = Math.max(0, seconds);
+  const [h, m] = [Math.floor(secs / 3600), Math.floor((secs % 3600) / 60)];
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+/** A unix-seconds time as the reader's calendar day, "May 17, 2026". */
+export function formatLongDate(unixSecs: number, timeZone?: string): string {
+  return new Date(unixSecs * 1000).toLocaleDateString("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 }

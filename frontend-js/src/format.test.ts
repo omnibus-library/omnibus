@@ -1,16 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { type BookDetail, toBookDetail } from "./api";
 import {
+  ago,
   descriptionOverflows,
+  durationLabel,
   facetQuery,
   formatDateShort,
+  formatHm,
   formatInstantShort,
+  formatLongDate,
   formatYear,
   homeKicker,
   initialOf,
   initialsFor,
   plateAuthor,
+  recency,
   singleFacetValue,
+  summaryIsSparse,
 } from "./format";
 import { aWireBook } from "./testing/wire";
 
@@ -205,5 +211,73 @@ describe("formatInstantShort", () => {
     expect(formatInstantShort("2021-03-01", "Pacific/Kiritimati")).toBe(
       "Mar 1st, 2021",
     );
+  });
+});
+
+describe("ago", () => {
+  it.each([
+    [30, "just now"],
+    [60, "1 minute ago"],
+    [59 * 60, "59 minutes ago"],
+    [3 * 3600, "3 hours ago"],
+    [86_400, "1 day ago"],
+    [-5, "just now"],
+  ])("reads %i seconds as %s", (secs, phrase) => {
+    expect(ago(1_000_000 + secs, 1_000_000)).toBe(phrase);
+  });
+});
+
+describe("recency", () => {
+  it.each([
+    [89, "just now"],
+    [90, "1m ago"],
+    [7200, "2h ago"],
+    [86_400, "yesterday"],
+    [172_800, "2d ago"],
+  ])("reads %i seconds as %s", (secs, phrase) => {
+    expect(recency(1_000_000 + secs, 1_000_000)).toBe(phrase);
+  });
+});
+
+describe("formatHm", () => {
+  it.each([
+    [0, "0m"],
+    [2459, "40m"],
+    [3600, "1h 00m"],
+    [23_460, "6h 31m"],
+    [-5, "0m"],
+  ])("reads %i seconds as %s", (secs, label) => {
+    expect(formatHm(secs)).toBe(label);
+  });
+});
+
+describe("durationLabel", () => {
+  it.each([
+    [0, "0m"],
+    [2460, "41m"],
+    [7200, "2h"],
+    [7500, "2h 5m"],
+    [-1, "0m"],
+  ])("reads %i seconds as %s", (secs, label) => {
+    expect(durationLabel(secs)).toBe(label);
+  });
+});
+
+describe("formatLongDate", () => {
+  it("puts a unix time on the calendar day of the zone asked for", () => {
+    expect(formatLongDate(1_786_586_400, "UTC")).toBe("August 13, 2026");
+    expect(formatLongDate(1_786_586_400, "America/Detroit")).toBe(
+      "August 12, 2026",
+    );
+  });
+});
+
+describe("summaryIsSparse", () => {
+  it("counts the words outside the tags against the 10-word minimum", () => {
+    const words = (n: number) => `<p>${"word ".repeat(n)}</p>`;
+
+    expect(summaryIsSparse(words(9))).toBe(true);
+    expect(summaryIsSparse(words(10))).toBe(false);
+    expect(summaryIsSparse("")).toBe(true);
   });
 });

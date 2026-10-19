@@ -1,8 +1,12 @@
 import type {
+  AlignmentView,
   BookFileInfo,
+  BookProgress,
   EbookMetadata,
   PaletteBookHit,
   PaletteResults,
+  ProgressRecord,
+  ReadStatusRecord,
   ResumePoint,
   SeriesDetail,
   UserSummary,
@@ -62,6 +66,48 @@ export function aWireSeries(
     name: "Aurora Station",
     book_count: 3,
     books: [],
+    ...overrides,
+  };
+}
+
+/** A saved position as `GET /api/progress/{uuid}` sends it: an EPUB one 42% in, by default. */
+export function aWirePosition(
+  overrides: Partial<ProgressRecord> = {},
+): ProgressRecord {
+  return {
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    format: "epub",
+    epub_cfi: null,
+    audio_position_seconds: null,
+    progress_percent: 42,
+    kobo_location: null,
+    book_file_id: null,
+    updated_at: 1_760_000_000,
+    client_updated_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** `GET /api/progress/{uuid}`'s answer for a book holding `records`. */
+export function aWireProgress(...records: ProgressRecord[]): BookProgress {
+  return { book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0", records };
+}
+
+/** `GET /api/books/{uuid}/alignment`'s answer; an ebook with no audio, by default. */
+export function aWireAlignment(
+  overrides: Partial<AlignmentView> = {},
+): AlignmentView {
+  return { audio_files: [], ...overrides };
+}
+
+/** A read status as `GET /api/read-status/{uuid}` sends it. */
+export function aWireReadStatus(
+  overrides: Partial<ReadStatusRecord> = {},
+): ReadStatusRecord {
+  return {
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    status: "reading",
+    updated_at: 1_760_000_000,
     ...overrides,
   };
 }

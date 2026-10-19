@@ -1,7 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
-import { getGetEbookByUuidMockHandler404 } from "../../api/generated/omnibus.msw";
+import {
+  getGetEbookByUuidMockHandler404,
+  getPostEbookOverridesMockHandler200,
+} from "../../api/generated/omnibus.msw";
 import { bookDetailHandlers, failing } from "../../testing/handlers";
 import { aWireBook, aWireFile } from "../../testing/wire";
 import { BookDetail } from "./BookDetail";
@@ -90,6 +94,38 @@ export const SectionRail: Story = {
     );
 
     await waitFor(() => expect(dots[0]).toHaveClass("on"));
+  },
+};
+
+const FOUND =
+  "A station at the edge of the map hears something answer, and the crew must decide whether to reply.";
+
+export const FetchSummaryReplacesASparseDescription: Story = {
+  beforeEach({ msw }) {
+    const sparse = aWireBook({ ...BOOK, description: "<p>Too short.</p>" });
+    msw.use(
+      ...bookDetailHandlers(sparse),
+      http.get("/api/summary/sources", () =>
+        HttpResponse.json(["GoogleBooks"]),
+      ),
+      http.post("/api/ebooks/:uuid/summary/fetch", () =>
+        HttpResponse.json(FOUND),
+      ),
+      getPostEbookOverridesMockHandler200({
+        ...sparse,
+        description: `<p>${FOUND}</p>`,
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Fetch Summary" }),
+    );
+
+    await expect(await canvas.findByText(FOUND)).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("button", { name: "Fetch Summary" }),
+    ).not.toBeInTheDocument();
   },
 };
 

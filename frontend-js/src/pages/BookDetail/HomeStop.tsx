@@ -1,12 +1,27 @@
-import { skipToken, useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
 import { Link } from "react-router";
-import { type BookDetail as Detail, fetchSeries } from "../../api";
+import {
+  type BookDetail as Detail,
+  type Progress,
+  saveDescription,
+} from "../../api";
 import { Button, ButtonLink } from "../../components/Button/Button";
 import { Chip } from "../../components/Chip/Chip";
+import { FetchSummary } from "../../components/FetchSummary/FetchSummary";
 import { ImmersiveGlyph } from "../../components/Glyphs/Glyphs";
-import { descriptionOverflows, homeKicker } from "../../format";
+import {
+  descriptionOverflows,
+  durationLabel,
+  formatLongDate,
+  homeKicker,
+  summaryIsSparse,
+} from "../../format";
 import { FilePicker, isAudioFile, isReadableFile } from "./FilePicker";
+import { alignmentQuery, progressQuery, seriesQuery } from "./queries";
+import { ReadStatus } from "./ReadStatus";
+import { type HomeReadout, homeReadout, newestPercent } from "./readout";
+import { SyncLine } from "./SyncLine";
 
 type ChipRowProps = {
   label: string;
@@ -63,10 +78,7 @@ function Description({ book }: { book: Detail }) {
 
 function Kicker({ book }: { book: Detail }) {
   const { seriesId } = book;
-  const series = useQuery({
-    queryKey: ["series", seriesId],
-    queryFn: seriesId === null ? skipToken : () => fetchSeries(seriesId),
-  });
+  const series = useQuery(seriesQuery(seriesId));
   const { series: name, tail } = homeKicker(
     book,
     series.data?.bookCount ?? null,
@@ -111,11 +123,28 @@ function Authors({ book }: { book: Detail }) {
 const NO_FILES =
   "No ebook or audiobook files in your library yet — this title is tracked from your physical collection or wishlist.";
 
+type CtaRowProps = { book: Detail; progress: Progress; readout: HomeReadout };
+
 // The reader ladder is EPUB, then CBZ, then PDF, then audio.
-function CtaRow({ book }: { book: Detail }) {
+function CtaRow({ book, progress, readout }: CtaRowProps) {
   const { uuid, hasEbook, hasAudio, hasComic, hasPdf } = book;
   const hasText = hasEbook || hasComic || hasPdf;
   const audioFiles = book.bookFiles.filter(isAudioFile);
+  const { chNow, audioAt } = readout;
+  const startedReading = (progress.reading?.percent ?? 0) > 0;
+  const startedListening = (progress.listening?.audioSeconds ?? 0) > 0;
+  const readVerb = !startedReading
+    ? "Start reading"
+    : chNow
+      ? `Resume — Ch. ${chNow.n} · ${chNow.title}`
+      : "Resume reading";
+  const listenVerb = !startedListening
+    ? "Start listening"
+    : audioAt
+      ? `Resume listening from ${audioAt}`
+      : "Resume listening";
+  const listenSecondary =
+    startedListening && audioAt ? `Listen from ${audioAt}` : "Listen";
   if (!hasText && !hasAudio) {
     return (
       <div className="bdmq-ctarow">
@@ -132,7 +161,7 @@ function CtaRow({ book }: { book: Detail }) {
           uuid={uuid}
           kind="read"
           files={book.bookFiles.filter(isReadableFile)}
-          label="Start reading"
+          label={readVerb}
           buttonClass="btn primary lg"
           singleTestId="start-reading"
         />
@@ -143,7 +172,7 @@ function CtaRow({ book }: { book: Detail }) {
           to={`/comic/${uuid}`}
           data-testid="start-reading-comic"
         >
-          Start reading
+          {readVerb}
         </ButtonLink>
       ) : hasPdf ? (
         <ButtonLink
@@ -152,14 +181,14 @@ function CtaRow({ book }: { book: Detail }) {
           to={`/pdf/${uuid}`}
           data-testid="start-reading-pdf"
         >
-          Start reading
+          {readVerb}
         </ButtonLink>
       ) : (
         <FilePicker
           uuid={uuid}
           kind="listen"
           files={audioFiles}
-          label="Start listening"
+          label={listenVerb}
           buttonClass="btn primary lg"
           singleTestId="start-listening"
         />
@@ -169,7 +198,7 @@ function CtaRow({ book }: { book: Detail }) {
           uuid={uuid}
           kind="listen"
           files={audioFiles}
-          label="Listen"
+          label={listenSecondary}
           buttonClass="btn lg"
           singleTestId="listen-secondary"
         />
@@ -192,8 +221,68 @@ function CtaRow({ book }: { book: Detail }) {
   );
 }
 
-/** Stop 01: the hero, with the kicker, title, authors, chips, description and the read and listen buttons. */
+type RulerProps = {
+  pct: number;
+  readout: HomeReadout;
+  lastOpened: string | null;
+};
+
+// Chapter ticks when the chapter table is known, a caret flag naming the chapter
+// (or the bare percent), and the time left on the audio timeline at 1.0×.
+function Ruler({ pct, readout, lastOpened }: RulerProps) {
+  const { chTotal, chNow, audioAt, audioTotal, audioLeftSecs } = readout;
+  const done = pct >= 100;
+  const axis =
+    chNow && chTotal
+      ? `Ch. ${chNow.n} of ${chTotal} · ${pct}%`
+      : audioAt && audioTotal
+        ? `${audioAt} of ${audioTotal} · ${pct}%`
+        : `${pct}% of the book`;
+  return (
+    <div className="bdmq-rulerwrap" data-testid="bdmq-ruler">
+      <div className="rx-ruler">
+        <div
+          className={done ? "rx-fill done" : "rx-fill"}
+          style={{ width: `${pct}%` }}
+        />
+        {chTotal !== null && (
+          <div className="rx-tix" style={{ "--n": chTotal }} />
+        )}
+        {!done && (
+          <div className="rx-caret" style={{ left: `${pct}%` }}>
+            <i>{chNow ? `Ch. ${chNow.n}` : `${pct}%`}</i>
+          </div>
+        )}
+      </div>
+      <div className="rx-ruler-axis">
+        <span>{axis}</span>
+        {!done && audioLeftSecs !== null && audioLeftSecs > 0 && (
+          <span>≈ {durationLabel(audioLeftSecs)} left at 1.0×</span>
+        )}
+      </div>
+      {lastOpened && <div className="mono bdmq-lastopened">{lastOpened}</div>}
+    </div>
+  );
+}
+
+/** Stop 01: the hero, with the kicker, title, authors, chips, description, the read and listen buttons, and where the reader stands. */
 export function HomeStop({ book }: { book: Detail }) {
+  const client = useQueryClient();
+  const hasFiles =
+    book.hasEbook || book.hasAudio || book.hasComic || book.hasPdf;
+  const progress = useQuery({ ...progressQuery(book.uuid), enabled: hasFiles });
+  const alignment = useQuery({
+    ...alignmentQuery(book.uuid),
+    enabled: hasFiles,
+  });
+  const positions = progress.data ?? { reading: null, listening: null };
+  const readout = homeReadout(alignment.data, positions.reading);
+  const percent = newestPercent(positions);
+  const dual = book.hasEbook && book.hasAudio;
+  const updatedAt = Math.max(
+    positions.reading?.updatedAt ?? 0,
+    positions.listening?.updatedAt ?? 0,
+  );
   return (
     <>
       <Kicker book={book} />
@@ -227,7 +316,34 @@ export function HomeStop({ book }: { book: Detail }) {
         />
       </div>
       <Description book={book} />
-      <CtaRow book={book} />
+      {summaryIsSparse(book.description ?? "") && (
+        <FetchSummary
+          uuid={book.uuid}
+          onFetched={async (text) =>
+            client.setQueryData(
+              ["book", book.uuid],
+              await saveDescription(book.uuid, text),
+            )
+          }
+        />
+      )}
+      <CtaRow book={book} progress={positions} readout={readout} />
+      <div className="bdmq-statusrow">
+        <ReadStatus uuid={book.uuid} />
+      </div>
+      {percent !== null && (
+        <Ruler
+          pct={Math.min(Math.max(percent, 0), 100)}
+          readout={readout}
+          // A dual-format book has the sync line instead of a second recency line.
+          lastOpened={
+            dual || !updatedAt
+              ? null
+              : `last opened ${formatLongDate(updatedAt)}`
+          }
+        />
+      )}
+      {dual && <SyncLine uuid={book.uuid} />}
     </>
   );
 }
