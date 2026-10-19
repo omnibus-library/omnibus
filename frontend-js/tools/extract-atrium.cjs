@@ -39,7 +39,7 @@ const OWNERS = [
   ["components/FormatSwitcher/FormatSwitcher.css", (c) => c.startsWith("format-") || c.startsWith("kindle-") || c.startsWith("kobo-")],
   ["components/ShelfTile/ShelfTile.css", (c) => c.startsWith("shv-") || c.startsWith("shelf-add-tile")],
   ["components/ShelfPicker/ShelfPicker.css", (c) => c.startsWith("shelf-picker") || c.startsWith("shelf-modal") || c.startsWith("pick-")],
-  ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || c.startsWith("bd-") || c.startsWith("rx-") || c.startsWith("spoiler") || c.startsWith("cm-") || c === "me-textarea"],
+  ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || c.startsWith("bd-") || c.startsWith("rx-") || c.startsWith("spoiler") || c.startsWith("cm-") || c === "me-textarea" || c.startsWith("suggest-") || c.startsWith("sug-") || c.startsWith("author-lead") || c.startsWith("author-portrait") || ["sh-title", "sh-sub", "fan-match"].includes(c)],
   ["styles/base.css", (c) => ["card", "divider", "label", "mono", "sr-only", "subtitle"].includes(c)],
 ];
 const CONTEXT = new Set(["atrium", "theme-snap"]);

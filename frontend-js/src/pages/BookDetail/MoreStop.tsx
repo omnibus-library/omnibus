@@ -2,9 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
 import {
+  type AuthorId,
   type Book,
   type BookDetail,
+  type CreditedBook,
   type Shelf,
+  type Suggestion,
   setShelfMember,
   thumbSrcSet,
   thumbUrl,
@@ -13,7 +16,7 @@ import {
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
 import { PlusGlyph } from "../../components/Glyphs/Glyphs";
-import { Loading } from "../../components/Loading/Loading";
+import { Loading, Ring } from "../../components/Loading/Loading";
 import {
   type PickerList,
   ShelfPicker,
@@ -23,8 +26,16 @@ import {
   ShelfTileFace,
   tileLabelledBy,
 } from "../../components/ShelfTile/ShelfTile";
+import { formatYear, plural } from "../../format";
 import { useCurrentUser } from "../../session";
-import { seriesQuery, shelvesQuery } from "./queries";
+import {
+  authorBooksQuery,
+  SUGGESTION_POLLS,
+  seriesQuery,
+  shelvesQuery,
+  suggestionsQuery,
+} from "./queries";
+import { SectionHead } from "./SectionHead";
 import {
   automaticShelves,
   heldShelves,
@@ -264,7 +275,245 @@ function ShelfMembership({ book }: { book: BookDetail }) {
   );
 }
 
-/** Stop 06: the series shelf and the shelves holding the book. */
+const surname = (author: string) =>
+  author.trim().split(/\s+/).at(-1) || "this author";
+
+type LeadProps = {
+  author: string;
+  owned: number;
+  rest: number;
+  id: AuthorId | null;
+};
+
+/** The card heading the same-hand stack: portrait, name and count, linking to the author page when it has one. */
+function AuthorLead({ author, owned, rest, id }: LeadProps) {
+  const count = `${owned} book${plural(owned)} in your library`;
+  const portrait = (
+    <>
+      <span className="glyph">{author.charAt(0).toUpperCase()}</span>
+      {id !== null && <span className="hint">Author page →</span>}
+    </>
+  );
+  return (
+    <div className="cover-link author-lead">
+      <div className="author-lead-card">
+        {id === null ? (
+          <>
+            <div className="author-portrait">{portrait}</div>
+            <div>
+              <div className="author-lead-name">{author}</div>
+              <div className="author-lead-count">{count}</div>
+            </div>
+          </>
+        ) : (
+          <>
+            <Link
+              to={`/authors/${id}`}
+              className="author-portrait"
+              title={
+                author.trim()
+                  ? `Open ${author}'s author page`
+                  : "Open author page"
+              }
+            >
+              {portrait}
+            </Link>
+            <div>
+              <Link to={`/authors/${id}`} className="author-lead-name">
+                {author}
+              </Link>
+              <div className="author-lead-count">{count}</div>
+            </div>
+            {rest > 0 && (
+              <Link to={`/authors/${id}`} className="author-lead-more">
+                +{rest} more →
+              </Link>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The author's other books as a spreading stack of covers behind a lead card. */
+function SameHand({ book }: { book: BookDetail }) {
+  const author = book.authors[0] ?? "";
+  const id = book.creators[0]?.id ?? null;
+  const page = useQuery(authorBooksQuery(id));
+  // The author's page is the source of the count; with no author read, this book alone.
+  const credited: CreditedBook[] | undefined =
+    id === null ? [book] : page.isPending ? undefined : (page.data ?? [book]);
+  const label = surname(author);
+  const head = (
+    <SectionHead
+      kicker={author ? `More by ${author}` : "More to read"}
+      title="From the same hand"
+      action={
+        id !== null && (
+          <Link to={`/authors/${id}`} className="btn ghost sm">
+            Author page →
+          </Link>
+        )
+      }
+    />
+  );
+  if (credited === undefined) {
+    return (
+      <>
+        {head}
+        <Loading
+          kind="section"
+          className="start"
+          label={`Looking for more by ${label}`}
+        />
+      </>
+    );
+  }
+  const others = credited.filter((b) => b.uuid !== book.uuid);
+  const lead = {
+    author,
+    id,
+    owned: credited.length,
+    rest: Math.max(0, others.length - 4),
+  };
+  if (others.length === 0) {
+    const holdsThis = credited.some((b) => b.uuid === book.uuid);
+    return (
+      <>
+        {head}
+        <div className="bd-same-hand-empty" data-testid="from-same-hand-empty">
+          <AuthorLead {...lead} />
+          <div className="bd-same-hand-note">
+            {holdsThis
+              ? `This is the only book by ${label} in your library so far.`
+              : `No books by ${label} are in your library yet.`}
+          </div>
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      {head}
+      <p className="mono bd-same-hand-hint">
+        Hover the row to spread · click a cover to open the book, the portrait
+        to open the author
+      </p>
+      <div className="suggest-stack" data-testid="from-same-hand">
+        <AuthorLead {...lead} />
+        {others.slice(0, 4).map((other) => {
+          const year = other.published && formatYear(other.published);
+          return (
+            <Link
+              key={other.uuid}
+              to={`/books/${other.uuid}`}
+              className="cover-link"
+              data-testid="from-same-hand-tile"
+              title={`Open ${other.title}`}
+            >
+              <Cover
+                book={other}
+                src={other.hasCover ? thumbUrl(other.uuid) : null}
+                srcSet={other.hasCover ? thumbSrcSet(other.uuid) : undefined}
+              />
+              <div className="sug-cap">
+                <div className="sh-title">{other.title}</div>
+                {year && <div className="sh-sub">{year}</div>}
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+const COLLAPSED_SUGGESTIONS = 5;
+
+function SuggestionCards({ items }: { items: Suggestion[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? items : items.slice(0, COLLAPSED_SUGGESTIONS);
+  const more = items.length - COLLAPSED_SUGGESTIONS;
+  return (
+    <>
+      <div className={expanded ? "suggest-static" : "suggest-stack"}>
+        {shown.map((s) => (
+          <a
+            key={s.id}
+            className="cover-link suggest-card"
+            href={s.hardcoverUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="suggestion-card"
+          >
+            <Cover
+              book={{ title: s.title, authors: [s.author], accent: null }}
+              src={s.cover}
+            />
+            <div className="fan-match mono">
+              on {s.lists} list{plural(s.lists)}
+            </div>
+            <div className="sug-cap">
+              <div className="sug-cap-title">{s.title}</div>
+              <div className="sug-cap-author">{s.author}</div>
+            </div>
+          </a>
+        ))}
+      </div>
+      {more > 0 && !expanded && (
+        <div className="bd-suggest-actions">
+          <Button
+            size="sm"
+            data-testid="suggestions-show-more"
+            onClick={() => setExpanded(true)}
+          >
+            Show {more} more
+          </Button>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Hardcover's read-alikes. Nothing at all unless the server has some, or is still looking. */
+function Suggestions({ book }: { book: BookDetail }) {
+  const client = useQueryClient();
+  const { queryKey } = suggestionsQuery(book.uuid);
+  const answer = useQuery(suggestionsQuery(book.uuid)).data;
+  // Asked as often as it will be, and still no answer: settles as empty.
+  const searching =
+    answer?.status === "pending" &&
+    (client.getQueryState(queryKey)?.dataUpdateCount ?? 0) <= SUGGESTION_POLLS;
+  if (!searching && !(answer?.status === "ready" && answer.items.length > 0))
+    return null;
+  return (
+    <>
+      <div className="bdmq-morerule" />
+      <SectionHead
+        kicker={`If you liked ${book.title}…`}
+        title="Suggested for you"
+      />
+      <div className="bd-suggest" data-testid="suggestions-strip">
+        {answer?.status === "ready" ? (
+          <SuggestionCards items={answer.items} />
+        ) : (
+          <div
+            className="bd-suggest-pending bd-suggest-loading card"
+            data-testid="suggestions-pending"
+          >
+            <Ring />
+            <p className="mono bd-stub-hint">
+              Looking for read-alikes via Hardcover…
+            </p>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** Stop 06: the series shelf, the shelves holding the book, then the author's other work and read-alikes. */
 export function MoreStop({ book }: { book: BookDetail }) {
   return (
     <div className="bdmq-tight bdmq-more" data-testid="bdmq-more">
@@ -272,6 +521,9 @@ export function MoreStop({ book }: { book: BookDetail }) {
         <SeriesShelf book={book} seriesId={book.seriesId} />
       )}
       <ShelfMembership book={book} />
+      <div className="bdmq-morerule" />
+      <SameHand book={book} />
+      <Suggestions book={book} />
     </div>
   );
 }

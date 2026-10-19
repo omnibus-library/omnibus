@@ -4,7 +4,7 @@ import { plateAuthor } from "../../format";
 import "./Cover.css";
 
 type CoverProps = {
-  book: Book;
+  book: Pick<Book, "title" | "authors" | "accent">;
   src: string | null;
   srcSet?: string;
   sizes?: string;

@@ -1,8 +1,10 @@
 import type {
   AlignmentView,
   AttributedRating,
+  AuthorDetail,
   BookFileInfo,
   BookProgress,
+  BookSuggestion,
   EbookMetadata,
   Highlight,
   JournalEntry,
@@ -217,6 +219,34 @@ export function aWireWishlist(
     user_id: 1,
     source: "detail",
     added_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** An author as `GET /api/authors/{id}` sends them. */
+export function aWireAuthor(
+  overrides: Partial<AuthorDetail> = {},
+): AuthorDetail {
+  return {
+    id: 2,
+    name: "Sora Inkwell",
+    book_count: 0,
+    books: [],
+    ...overrides,
+  };
+}
+
+/** A read-alike as `GET /api/ebooks/{uuid}/suggestions` sends it. */
+export function aWireSuggestion(
+  overrides: Partial<BookSuggestion> = {},
+): BookSuggestion {
+  return {
+    hardcover_id: 1,
+    title: "Piranesi",
+    author: "Susanna Clarke",
+    hardcover_url: "https://hardcover.app/books/piranesi",
+    list_count: 4,
+    cover_url: null,
     ...overrides,
   };
 }

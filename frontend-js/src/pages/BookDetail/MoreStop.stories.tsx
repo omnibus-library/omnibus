@@ -1,7 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 import { toBookDetail } from "../../api";
-import { getGetSeriesByIdMockHandler200 } from "../../api/generated/omnibus.msw";
+import {
+  getGetAuthorByIdMockHandler200,
+  getGetSeriesByIdMockHandler200,
+  getGetSuggestionsMockHandler200,
+} from "../../api/generated/omnibus.msw";
 import {
   bookDetailHandlers,
   failing,
@@ -10,9 +15,11 @@ import {
   shelvesHandlers,
 } from "../../testing/handlers";
 import {
+  aWireAuthor,
   aWireBook,
   aWireSeries,
   aWireShelf,
+  aWireSuggestion,
   aWireWishlist,
   WIRE_ADA,
 } from "../../testing/wire";
@@ -302,5 +309,279 @@ export const PickerListsOnlyShelvesTheReaderMayChange: Story = {
     await expect(
       within(dialog).getByTestId("shelf-picker-auto-3"),
     ).toHaveTextContent("Unread sci-fi");
+  },
+};
+
+const other = (n: number) =>
+  aWireBook({
+    id: 10 + n,
+    title: `Tidewater ${n}`,
+    unique_identifier: `00000000-0000-4000-8000-00000000010${n}`,
+    published: `20${10 + n}-05-01`,
+    series: null,
+    series_id: null,
+  });
+const THIS_BOOK = aWireBook();
+
+export const SameHandSpreadsTheAuthorsOtherBooks: Story = {
+  args: { book: aBook({ series: null, series_id: null }) },
+  beforeEach({ msw }) {
+    msw.use(
+      getGetAuthorByIdMockHandler200(
+        aWireAuthor({
+          book_count: 3,
+          books: [THIS_BOOK, other(2), other(3)],
+        }),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText("More by Sora Inkwell"),
+    ).toBeInTheDocument();
+    const tiles = await canvas.findAllByTestId("from-same-hand-tile");
+    // This book is the lead's count, not a tile.
+    await expect(tiles).toHaveLength(2);
+    await expect(tiles[0]).toHaveAttribute(
+      "href",
+      `/books/${other(2).unique_identifier}`,
+    );
+    await expect(tiles[0]).toHaveTextContent("Tidewater 2");
+    await expect(tiles[0]).toHaveTextContent("2012");
+    const lead = canvas.getByText("3 books in your library");
+    await expect(lead).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("link", { name: "Sora Inkwell" }),
+    ).toHaveAttribute("href", "/authors/2");
+    await expect(
+      canvas.getByRole("link", { name: "Author page →" }),
+    ).toHaveAttribute("href", "/authors/2");
+    await expect(canvas.queryByText(/more →/)).not.toBeInTheDocument();
+  },
+};
+
+export const SameHandShowsFourAndCountsTheRest: Story = {
+  args: { book: aBook({ series: null, series_id: null }) },
+  beforeEach({ msw }) {
+    msw.use(
+      getGetAuthorByIdMockHandler200(
+        aWireAuthor({
+          book_count: 6,
+          books: [THIS_BOOK, ...[2, 3, 4, 5, 6].map(other)],
+        }),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findAllByTestId("from-same-hand-tile"),
+    ).toHaveLength(4);
+    await expect(
+      canvas.getByRole("link", { name: "+1 more →" }),
+    ).toHaveAttribute("href", "/authors/2");
+  },
+};
+
+export const SameHandAloneSaysItIsTheOnlyBook: Story = {
+  args: { book: aBook({ series: null, series_id: null }) },
+  beforeEach({ msw }) {
+    msw.use(
+      getGetAuthorByIdMockHandler200(
+        aWireAuthor({ book_count: 1, books: [THIS_BOOK] }),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("from-same-hand-empty"),
+    ).toHaveTextContent(
+      "This is the only book by Inkwell in your library so far.",
+    );
+    await expect(
+      canvas.queryByTestId("from-same-hand"),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const SameHandNotCountingAWishlistOnlyBook: Story = {
+  args: { book: aBook({ series: null, series_id: null }) },
+  beforeEach({ msw }) {
+    msw.use(
+      getGetAuthorByIdMockHandler200(
+        aWireAuthor({ book_count: 1, books: [other(2)] }),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    // The author page credits only the other book, so this one is not claimed.
+    await expect(
+      await canvas.findAllByTestId("from-same-hand-tile"),
+    ).toHaveLength(1);
+  },
+};
+
+export const SameHandAuthorNotFoundFallsBackToThisBook: Story = {
+  args: { book: aBook({ series: null, series_id: null }) },
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/authors/:id", 404));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("from-same-hand-empty"),
+    ).toHaveTextContent("only book by Inkwell");
+  },
+};
+
+export const SameHandFailureFallsBackToThisBook: Story = {
+  args: { book: aBook({ series: null, series_id: null }) },
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/authors/:id", 500));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("from-same-hand-empty"),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByText(/Looking for more by/),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const SameHandLoadingNeverClaimsACount: Story = {
+  args: { book: aBook({ series: null, series_id: null }) },
+  beforeEach({ msw }) {
+    msw.use(hanging("/api/authors/:id"));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByText("Looking for more by Inkwell"),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByTestId("from-same-hand-empty"),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const SameHandWithoutAnAuthorIdHasNoLinks: Story = {
+  args: {
+    book: aBook({
+      series: null,
+      series_id: null,
+      creators: [{ name: "Sora Inkwell", role: null, file_as: null }],
+    }),
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("from-same-hand-empty"),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("link", { name: /Author page/ }),
+    ).not.toBeInTheDocument();
+    await expect(
+      canvas.getByText("Sora Inkwell", { selector: ".author-lead-name" }),
+    ).toBeInTheDocument();
+  },
+};
+
+const READY = {
+  status: "ready",
+  items: [1, 2, 3, 4, 5, 6, 7].map((n) =>
+    aWireSuggestion({
+      hardcover_id: n,
+      title: `Suggested ${n}`,
+      hardcover_url: `https://hardcover.app/books/s${n}`,
+      list_count: n,
+      cover_url: n === 1 ? "/api/suggestions/x/1/cover" : null,
+    }),
+  ),
+} as const;
+
+export const SuggestionsStripLinksOutToHardcover: Story = {
+  beforeEach({ msw }) {
+    msw.use(getGetSuggestionsMockHandler200(READY));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(
+      await canvas.findByText("If you liked Aurora Station, Vol. 1…"),
+    ).toBeInTheDocument();
+    const cards = canvas.getAllByTestId("suggestion-card");
+    await expect(cards).toHaveLength(5);
+    await expect(cards[0]).toHaveAttribute(
+      "href",
+      "https://hardcover.app/books/s1",
+    );
+    await expect(cards[0]).toHaveAttribute("target", "_blank");
+    await expect(cards[0]).toHaveTextContent("on 1 list");
+    await expect(cards[1]).toHaveTextContent("on 2 lists");
+    await expect(cards[1]).toHaveTextContent("Suggested 2Susanna Clarke");
+
+    await userEvent.click(canvas.getByTestId("suggestions-show-more"));
+
+    await expect(canvas.getAllByTestId("suggestion-card")).toHaveLength(7);
+    await expect(
+      canvas.queryByTestId("suggestions-show-more"),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const SuggestionsPendingThenReady: Story = {
+  beforeEach({ msw }) {
+    let asked = 0;
+    msw.use(
+      http.get("/api/ebooks/:uuid/suggestions", () =>
+        HttpResponse.json(++asked < 2 ? { status: "pending" } : READY),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("suggestions-pending"),
+    ).toHaveTextContent("Looking for read-alikes via Hardcover…");
+    // Asked again after 2.5 seconds.
+    await expect(
+      await canvas.findAllByTestId("suggestion-card", {}, { timeout: 6000 }),
+    ).toHaveLength(5);
+    await expect(
+      canvas.queryByTestId("suggestions-pending"),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const SuggestionsRenderNothingWhenThereAreNone: Story = {
+  beforeEach({ msw }) {
+    msw.use(getGetSuggestionsMockHandler200({ status: "ready", items: [] }));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("bdmq-add-to-shelf");
+    await expect(
+      canvas.queryByTestId("suggestions-strip"),
+    ).not.toBeInTheDocument();
+    await expect(
+      canvas.queryByText("Suggested for you"),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const SuggestionsRenderNothingWithoutAKey: Story = {
+  beforeEach({ msw }) {
+    msw.use(getGetSuggestionsMockHandler200({ status: "not_configured" }));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("bdmq-add-to-shelf");
+    await expect(
+      canvas.queryByTestId("suggestions-strip"),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const SuggestionsRenderNothingWhenTheFetchFails: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/ebooks/:uuid/suggestions", 500));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("bdmq-add-to-shelf");
+    await expect(
+      canvas.queryByTestId("suggestions-strip"),
+    ).not.toBeInTheDocument();
   },
 };

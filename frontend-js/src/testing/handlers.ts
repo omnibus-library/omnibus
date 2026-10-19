@@ -1,6 +1,7 @@
 import { delay, HttpResponse, http } from "msw";
 import {
   getGetAlignmentMockHandler200,
+  getGetAuthorByIdMockHandler200,
   getGetHighlightsMockHandler200,
   getGetJournalEntriesMockHandler200,
   getGetMeMockHandler200,
@@ -12,6 +13,7 @@ import {
   getGetRegistrationMockHandler200,
   getGetSeriesByIdMockHandler200,
   getGetSessionLogMockHandler200,
+  getGetSuggestionsMockHandler200,
   getGetWishlistEntryMockHandler200,
   getListPhysicalCopiesMockHandler200,
   getListShelvesMockHandler200,
@@ -43,6 +45,7 @@ import {
 import { COVER_SVG } from "./books";
 import {
   aWireAlignment,
+  aWireAuthor,
   aWireJournalEntry,
   aWireProgress,
   aWireReadStatus,
@@ -119,6 +122,8 @@ export function bookDetailHandlers(book: EbookMetadata) {
     getListShelvesMockHandler200([]),
     getShelvesContainingMockHandler200([]),
     getSmartShelvesContainingMockHandler200([]),
+    getGetAuthorByIdMockHandler200(aWireAuthor()),
+    getGetSuggestionsMockHandler200({ status: "ready", items: [] }),
   ];
 }
 

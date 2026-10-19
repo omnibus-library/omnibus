@@ -1,8 +1,10 @@
 import { queryOptions, skipToken, useQuery } from "@tanstack/react-query";
 import {
+  type AuthorId,
   type BookDetail,
   type BookUuid,
   fetchAlignment,
+  fetchAuthorBooks,
   fetchCopies,
   fetchHighlights,
   fetchJournalEntries,
@@ -12,8 +14,10 @@ import {
   fetchShelves,
   fetchShelvesContaining,
   fetchSmartShelvesContaining,
+  fetchSuggestions,
   fetchWishlist,
   type SeriesId,
+  type Suggestions,
 } from "../../api";
 import type { ShelfFacts } from "./shelves";
 
@@ -89,4 +93,33 @@ export const shelvesQuery = (uuid: BookUuid) =>
       ]);
       return { all, manualIds, smartIds, wished: wishlist !== null };
     },
+  });
+
+export const authorBooksQuery = (id: AuthorId | null) =>
+  queryOptions({
+    queryKey: ["author", id],
+    queryFn: id === null ? skipToken : () => fetchAuthorBooks(id),
+  });
+
+const SUGGESTION_POLL_MS = 2500;
+/** How many times a still-pending answer is asked for again before it settles as empty. */
+export const SUGGESTION_POLLS = 5;
+
+/** The wait before asking again: while the server is still fetching, up to {@link SUGGESTION_POLLS} more times. */
+export const suggestionPollMs = (
+  data: Suggestions | undefined,
+  answers: number,
+) =>
+  data?.status === "pending" && answers <= SUGGESTION_POLLS
+    ? SUGGESTION_POLL_MS
+    : false;
+
+export const suggestionsQuery = (uuid: BookUuid) =>
+  queryOptions({
+    queryKey: ["book", uuid, "suggestions"],
+    queryFn: () => fetchSuggestions(uuid),
+    // A repeated "pending" must still reach the screen, which counts the answers.
+    structuralSharing: false,
+    refetchInterval: (query) =>
+      suggestionPollMs(query.state.data, query.state.dataUpdateCount),
   });

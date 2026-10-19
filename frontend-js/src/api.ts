@@ -3,6 +3,7 @@ import {
   deleteWishlistEntry,
   getAddShelfBooksUrl,
   getAlignment,
+  getAuthorById,
   getDeleteFilelessBookUrl,
   getDeleteHighlightUrl,
   getDeleteJournalUrl,
@@ -27,6 +28,7 @@ import {
   getSearchPalette,
   getSeriesById,
   getSessionLog,
+  getSuggestions,
   getSummarySources,
   getWishlistEntry,
   listPhysicalCopies,
@@ -47,6 +49,7 @@ import {
 import type {
   AlignmentViewOutput,
   BookProgress as BookProgressWire,
+  BookSuggestion as BookSuggestionWire,
   EbookMetadata,
   EbookPage,
   Highlight as HighlightWire,
@@ -782,6 +785,48 @@ export async function removeFromWishlist(
   const res = await deleteWishlistEntry(encodeURIComponent(uuid));
   if (res.status !== 200) throw failure(res);
   return { bookDeleted: res.data.book_deleted };
+}
+
+/** A book on an author's page: the listing shape, plus the date its caption's year comes from. */
+export type CreditedBook = Book & { published: string | null };
+
+/** The books an author's page credits them with, or `null` when no author has that id. */
+export async function fetchAuthorBooks(
+  id: AuthorId,
+): Promise<CreditedBook[] | null> {
+  const res = await getAuthorById(id);
+  if (res.status === 404) return null;
+  if (res.status !== 200) throw failure(res);
+  return res.data.books.map((b) => ({
+    ...toBook(b),
+    published: b.published ?? null,
+  }));
+}
+
+function toSuggestion(wire: BookSuggestionWire) {
+  return {
+    id: wire.hardcover_id,
+    title: wire.title,
+    author: wire.author,
+    hardcoverUrl: wire.hardcover_url,
+    lists: wire.list_count,
+    cover: wire.cover_url ?? null,
+  };
+}
+
+export type Suggestion = ReturnType<typeof toSuggestion>;
+
+export type Suggestions =
+  | { status: "not_configured" | "pending" }
+  | { status: "ready"; items: Suggestion[] };
+
+/** Hardcover's read-alikes for a book, or why there are none yet. */
+export async function fetchSuggestions(uuid: BookUuid): Promise<Suggestions> {
+  const res = await getSuggestions(encodeURIComponent(uuid));
+  if (res.status !== 200) throw failure(res);
+  return res.data.status === "ready"
+    ? { status: "ready", items: res.data.items.map(toSuggestion) }
+    : { status: res.data.status };
 }
 
 function toShelf(wire: ShelfSummaryWire) {
