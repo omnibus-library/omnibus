@@ -6,7 +6,7 @@ import type {
   ProgressUpdate,
 } from "../api/generated/schemas";
 import { bookHandler, readStatusHandlers } from "./handlers";
-import { fakeEpubGlue } from "./readerGlue";
+import { fakeEpubGlue, fakePdfGlue } from "./readerGlue";
 import {
   annotationHandlers,
   crossFormatHandlers,
@@ -83,6 +83,57 @@ export function readerFixture() {
         ...readStatusHandlers(aWireReadStatus(), statusWrites),
         ...annotationHandlers(annotations, annotationWrites),
         ...crossFormatHandlers(crossFormat, syncCalls),
+      );
+      return install();
+    },
+  };
+}
+
+export const PDF_BOOK = aWireBook({ formats: ["PDF"] });
+export const PDF_UUID = PDF_BOOK.unique_identifier;
+export const PDF_SAVED = aWirePosition({
+  epub_cfi: "pdf-page:2",
+  progress_percent: 60,
+});
+
+/** What every PDF reader story shares, as `readerFixture` does for EPUB: the book saved at `PDF_SAVED`, the writes it records and the stand-in glue. */
+export function pdfFixture() {
+  const writes: ProgressUpdate[] = [];
+  const statusWrites: { status: string }[] = [];
+  const annotations: { highlights: Highlight[]; bookmarks: Bookmark[] } = {
+    highlights: [],
+    bookmarks: [],
+  };
+  const annotationWrites: RecordedWrite[] = [];
+  let glue: ReturnType<typeof fakePdfGlue>;
+
+  function install(options?: Parameters<typeof fakePdfGlue>[0]) {
+    glue = fakePdfGlue(options);
+    return glue.restore;
+  }
+
+  return {
+    writes,
+    statusWrites,
+    annotations,
+    annotationWrites,
+    install,
+    get glue() {
+      return glue;
+    },
+    inits: () => glue.argsOf("init"),
+    goTos: () => glue.argsOf("goTo"),
+    setup(msw: { use(...handlers: HttpHandler[]): void }) {
+      writes.length = 0;
+      statusWrites.length = 0;
+      annotations.highlights = [];
+      annotations.bookmarks = [];
+      annotationWrites.length = 0;
+      msw.use(
+        bookHandler(PDF_BOOK),
+        ...progressHandlers([PDF_SAVED], writes),
+        ...readStatusHandlers(aWireReadStatus(), statusWrites),
+        ...annotationHandlers(annotations, annotationWrites),
       );
       return install();
     },

@@ -4,8 +4,8 @@ import { Route, Routes } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import type { CrossFormatResume } from "../../api/generated/schemas";
 import { failing } from "../../testing/handlers";
+import { readerFixture, SAVED_CFI, UUID } from "../../testing/readerFixtures";
 import { epubRelocate } from "../../testing/readerGlue";
-import { readerFixture, SAVED_CFI, UUID } from "../../testing/readerStory";
 import { aWireHighlight } from "../../testing/wire";
 import { Reader } from "./Reader";
 

@@ -14,21 +14,21 @@ export const TYPEFACE_CSS = {
   mono: "ui-monospace,'SF Mono',Menlo,Consolas,monospace",
 } as const;
 
-export const LINE_HEIGHT_CSS = {
+const LINE_HEIGHT_CSS = {
   tight: "1.4",
   cozy: "1.7",
   airy: "2.0",
 } as const;
 
 // The column's max-width, kept clear of the page-turn gutters.
-export const MARGINS_CSS = {
+const MARGINS_CSS = {
   narrow: "min(95%, calc(100% - 172px))",
   normal: "min(80%, calc(100% - 172px))",
   wide: "min(65%, calc(100% - 172px))",
 } as const;
 
 // epub.js's `spread` modes: "none" forces one column, "auto" pairs pages once the stage is wide enough.
-export const SPREAD_MODE = { single: "none", double: "auto" } as const;
+const SPREAD_MODE = { single: "none", double: "auto" } as const;
 
 export type ReaderPrefs = {
   fontSize: number;

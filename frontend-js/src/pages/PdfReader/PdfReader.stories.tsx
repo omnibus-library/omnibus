@@ -1,54 +1,32 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Route, Routes } from "react-router";
 import { expect, fireEvent, waitFor, within } from "storybook/test";
-import type { ProgressUpdate } from "../../api/generated/schemas";
 import {
   bookHandler,
   failing,
   hanging,
   readStatusHandlers,
 } from "../../testing/handlers";
-import { fakePdfGlue } from "../../testing/readerGlue";
 import {
-  annotationHandlers,
+  pdfFixture,
+  PDF_SAVED as SAVED,
+  PDF_UUID as UUID,
+} from "../../testing/readerFixtures";
+import {
   progressFailingOnce,
   progressHandlers,
 } from "../../testing/readerHandlers";
-import { aWireBook, aWirePosition, aWireReadStatus } from "../../testing/wire";
+import { aWireBook, aWirePosition } from "../../testing/wire";
 import { PdfReader } from "./PdfReader";
 
-const BOOK = aWireBook({ formats: ["PDF"] });
-const UUID = BOOK.unique_identifier;
-const SAVED = aWirePosition({ epub_cfi: "pdf-page:2", progress_percent: 60 });
-
-const writes: ProgressUpdate[] = [];
-const statusWrites: { status: string }[] = [];
-let glue: ReturnType<typeof fakePdfGlue>;
-
-/** Installs the stand-in glue, so no real PDF.js runs; the story's cleanup removes it. */
-function install(options?: Parameters<typeof fakePdfGlue>[0]) {
-  glue = fakePdfGlue(options);
-  return glue.restore;
-}
-
-const inits = () => glue.calls.filter((c) => c.method === "init");
-const goTos = () => glue.calls.filter((c) => c.method === "goTo");
+const pdf = pdfFixture();
+const { writes, statusWrites, inits, goTos, install } = pdf;
 
 const meta = {
   title: "Pages/PdfReader",
   component: PdfReader,
   parameters: { path: `/pdf/${UUID}` },
-  beforeEach({ msw }) {
-    writes.length = 0;
-    statusWrites.length = 0;
-    msw.use(
-      bookHandler(BOOK),
-      ...progressHandlers([SAVED], writes),
-      ...readStatusHandlers(aWireReadStatus(), statusWrites),
-      ...annotationHandlers({ highlights: [], bookmarks: [] }, []),
-    );
-    return install();
-  },
+  beforeEach: ({ msw }) => pdf.setup(msw),
   render: () => (
     <Routes>
       <Route path="/pdf/:uuid" element={<PdfReader />} />
@@ -163,7 +141,7 @@ export const FailsToOpenWhenTheProgressFetchFails: Story = {
 
     await canvas.findByText("Page 3 of 5");
     await expect(progressReads.count).toBe(2);
-    await expect(inits()[0]?.args[1]).toMatchObject({ startPage: 2 });
+    await expect(inits()[0]?.[1]).toMatchObject({ startPage: 2 });
     await expect(writes).toEqual([]);
 
     await userEvent.click(canvas.getByRole("button", { name: "Next page" }));
@@ -181,7 +159,7 @@ export const OpensAtTheSavedPage: Story = {
       canvas.getByRole("heading", { name: "Aurora Station, Vol. 1" }),
     ).toBeInTheDocument();
     await expect(inits()).toHaveLength(1);
-    const [id, opts] = inits()[0]?.args ?? [];
+    const [id, opts] = inits()[0] ?? [];
     await expect(id).toBe("omnibus-pdf-page");
     await expect(opts).toMatchObject({
       url: `/api/ebooks/${UUID}/file`,
@@ -211,7 +189,7 @@ export const ADeepLinkOpensWithoutReadingTheProgress: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await canvas.findByText("Page 4 of 5");
-    await expect(inits()[0]?.args[1]).toMatchObject({ startPage: 3 });
+    await expect(inits()[0]?.[1]).toMatchObject({ startPage: 3 });
 
     await userEvent.click(canvas.getByRole("button", { name: "Next page" }));
 
@@ -225,7 +203,7 @@ export const DeepLinkBeatsTheSavedPage: Story = {
   play: async ({ canvas }) => {
     await canvas.findByText("Page 4 of 5");
 
-    await expect(inits()[0]?.args[1]).toMatchObject({
+    await expect(inits()[0]?.[1]).toMatchObject({
       url: `/api/ebooks/${UUID}/file?file_id=3`,
       startPage: 3,
     });
@@ -244,7 +222,7 @@ export const IgnoresAForeignAnchor: Story = {
   play: async ({ canvas }) => {
     await canvas.findByText("Page 1 of 5");
 
-    await expect(inits()[0]?.args[1]).toMatchObject({ startPage: 0 });
+    await expect(inits()[0]?.[1]).toMatchObject({ startPage: 0 });
   },
 };
 
@@ -268,7 +246,7 @@ export const SavesEveryTurn: Story = {
       ["pdf-page:0", 20],
     ]);
     await expect(writes[0]).toMatchObject({ format: "epub" });
-    await expect(goTos().map((c) => c.args[0])).toEqual([3, 2, 0]);
+    await expect(goTos().map((args) => args[0])).toEqual([3, 2, 0]);
   },
 };
 
@@ -342,7 +320,10 @@ export const FitModes: Story = {
     await expect(fitHeight).toHaveAttribute("aria-pressed", "false");
     await expect(canvas.getByTestId("pdf-stage")).toHaveClass("cr-fit-width");
     await waitFor(() =>
-      expect(glue.calls).toContainEqual({ method: "setFit", args: ["width"] }),
+      expect(pdf.glue.calls).toContainEqual({
+        method: "setFit",
+        args: ["width"],
+      }),
     );
   },
 };
@@ -353,7 +334,7 @@ export const EscapeClearsTheSelection: Story = {
 
     await userEvent.keyboard("{Escape}");
 
-    await expect(glue.calls).toContainEqual({
+    await expect(pdf.glue.calls).toContainEqual({
       method: "clearSelection",
       args: [],
     });
@@ -383,7 +364,7 @@ export const LeavesTheGlueClean: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Back" }));
 
     await expect(await canvas.findByText("Book page")).toBeInTheDocument();
-    await expect(glue.calls.map((c) => c.method)).toContain("destroy");
+    await expect(pdf.glue.calls.map((c) => c.method)).toContain("destroy");
     for (const name of [
       "__omnibusOnPdfReady",
       "__omnibusOnPdfPage",

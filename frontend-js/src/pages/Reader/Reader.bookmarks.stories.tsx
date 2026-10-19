@@ -3,7 +3,7 @@ import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import { deferred, failing } from "../../testing/handlers";
-import { readerFixture, SAVED_CFI, UUID } from "../../testing/readerStory";
+import { readerFixture, SAVED_CFI, UUID } from "../../testing/readerFixtures";
 import { aWireBookmark, aWireHighlight } from "../../testing/wire";
 import { Reader } from "./Reader";
 

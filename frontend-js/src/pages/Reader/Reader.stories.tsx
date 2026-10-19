@@ -3,17 +3,17 @@ import { StrictMode } from "react";
 import { Route, Routes } from "react-router";
 import { expect, waitFor } from "storybook/test";
 import { failing } from "../../testing/handlers";
-import { epubRelocate } from "../../testing/readerGlue";
-import {
-  progressFailingOnce,
-  progressHandlers,
-} from "../../testing/readerHandlers";
 import {
   readerFixture,
   SAVED,
   SAVED_CFI,
   UUID,
-} from "../../testing/readerStory";
+} from "../../testing/readerFixtures";
+import { epubRelocate } from "../../testing/readerGlue";
+import {
+  progressFailingOnce,
+  progressHandlers,
+} from "../../testing/readerHandlers";
 import { aWirePosition } from "../../testing/wire";
 import { Reader } from "./Reader";
 

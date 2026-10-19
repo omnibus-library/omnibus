@@ -3,7 +3,7 @@ import { type BookUuid, postSessions, type SessionReport } from "./api";
 import { nowSecs } from "./format";
 
 /** Sittings shorter than this are a bounce into and out of a book, not reading. */
-export const MIN_SESSION_SECS = 5;
+const MIN_SESSION_SECS = 5;
 const HEARTBEAT_MS = 60_000;
 
 type Phase =

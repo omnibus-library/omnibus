@@ -24,11 +24,7 @@ export function applyGlueStatus(
 export const clearedByRelocate = (status: ReaderStatus) =>
   status === "loading" || status === "navFailed";
 
-/**
- * What a relocate writes. Only a moved, non-echo position posts, and a held landing counts as
- * posted without being sent, so only movement off it writes. Compares against the last
- * *posted* cfi: the glue's locations-ready re-emit is an echo that would swallow a turn's write.
- */
+/** What a relocate writes; compares against the last *posted* cfi, since the glue's locations-ready re-emit is an echo that would swallow a turn's write. */
 export function relocateWrite(
   cfi: string | null,
   echo: boolean,
@@ -40,11 +36,7 @@ export function relocateWrite(
   return { post: hold ? null : cfi, lastPosted: cfi, hold: false };
 }
 
-/**
- * The chapter number and total from the flat TOC's own array order, not the glue's pair,
- * carrying the previous chapter when the title matches no entry. 1-based against a 1-based
- * total; a total of 0 means no TOC and stays 0.
- */
+/** The chapter number and total from the flat TOC's own order, not the glue's pair; carries the previous chapter when the title matches no entry. */
 export function resolveChapterPosition(
   toc: readonly TocEntry[],
   incoming: Pick<Relocate, "chapter" | "totalChapters" | "chapterTitle">,

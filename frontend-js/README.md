@@ -80,6 +80,18 @@ is on the script's stop list; `--write --force` regenerates every file
 unformatted and drops their hand edits. `.add-books-progress` in `AddBooks.css` is
 hand-written and React-only: the Dioxus page has no such element.
 
+A screen driven by a vendored glue (the readers) is ported differently. The
+glue is a byte copy in `src/vendor/reader/`, loaded by `loadScript` from a
+`?url` import; it talks back through `window.__omnibusOn*` hooks declared in
+`src/env.d.ts`, listed in the page's `HOOKS` array and installed and removed in
+its mount effect. Stories swap in a stand-in from `src/testing/readerGlue.ts`.
+A new vendored file goes in `src/vendor/reader/parity.test.ts`; editing
+`frontend/assets/vendor/` or `reader-fonts/` runs this project's CI and fails
+parity until the copy here changes in the same PR. The audiobook dock mounts in
+the EPUB footer's `pill` slot (`Footer` in `ReaderChrome.tsx`). Readers are lazy
+chunks, so a tab left open across a redeploy asks for an old chunk hash, which
+404s into `RouteError` until a reload.
+
 A CSS file that is pure script output (`Library.css`) can be regenerated after
 its markup changes by emptying it (`: > src/pages/Library/Library.css`) and
 rerunning `--write`, which recreates only that file.

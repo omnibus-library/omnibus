@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Route, Routes } from "react-router";
 import { expect, waitFor } from "storybook/test";
+import { readerFixture, UUID } from "../../testing/readerFixtures";
 import { epubRelocate } from "../../testing/readerGlue";
-import { readerFixture, UUID } from "../../testing/readerStory";
 import { Reader } from "./Reader";
 
 const r = readerFixture();

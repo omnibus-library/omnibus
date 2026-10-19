@@ -36,12 +36,7 @@ export const furtherInPercent = (record: Position | null) => {
   return percent !== null && percent >= 1 && percent <= 100 ? percent : null;
 };
 
-/**
- * Where the reader opens: a `?cfi=` deep link outright, else the server's own CFI, else the
- * CFI it derived for a percent-only row, else this device's last save. `holdFirstWrite` is set
- * when it opens at the start under a stored percent it could not place: that landing is where
- * the reader was put, and writing it would put the cover over the stored position.
- */
+/** Where the reader opens; `holdFirstWrite` stops the cover landing under a stored percent it could not place from overwriting it. */
 export function readerStart(
   deepLink: string | null,
   record: Position | null,

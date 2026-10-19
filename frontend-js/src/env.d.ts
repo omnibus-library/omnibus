@@ -22,7 +22,18 @@ interface Window {
     init(
       elementId: string,
       fileUrl: string,
-      opts: Record<string, unknown>,
+      opts: {
+        fontSize: number;
+        fontFamily: string | null;
+        lineHeight: string;
+        maxWidth: string;
+        justify: boolean;
+        spread: string;
+        cfi: string | null;
+        theme: string;
+        fontsHref: string;
+        locationsKey: string;
+      },
     ): void;
     next(): void;
     prev(): void;

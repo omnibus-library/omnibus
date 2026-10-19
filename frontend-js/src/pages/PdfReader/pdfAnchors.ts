@@ -17,11 +17,7 @@ export function deepLinkPage(raw: string | null): number | null {
   return page >= 1 ? page - 1 : null;
 }
 
-/**
- * The 0-based page the reader opens on: a deep link (landing there is its whole point), else
- * the saved anchor, else the inverse of the saved percent, else page 0. Clamped once the page
- * count is known; the glue clamps again against PDF.js's own.
- */
+/** The 0-based page the reader opens on; clamped to the indexed count, which the glue clamps again against PDF.js's own. */
 export function pdfStartPage(
   deepLink: number | null,
   anchor: string | null,

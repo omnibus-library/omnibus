@@ -1,5 +1,5 @@
 /** One call a page made on a stand-in glue. */
-export type GlueCall = { method: string; args: unknown[] };
+type GlueCall = { method: string; args: unknown[] };
 
 /** The arguments of each call a stand-in glue recorded for `method`, in call order. */
 const argsFrom = (calls: GlueCall[]) => (method: string) =>
@@ -117,8 +117,8 @@ export function fakeEpubGlue({
       window.__omnibusOnToc?.(JSON.stringify(toc));
       window.__omnibusOnRelocate?.(
         epubRelocate({
-          ...(typeof opts.cfi === "string" && { cfi: opts.cfi }),
-          echo: typeof opts.cfi === "string",
+          ...(opts.cfi !== null && { cfi: opts.cfi }),
+          echo: opts.cfi !== null,
           chapterTitle: toc[0]?.label ?? "",
           totalChapters: toc.length,
         }),
