@@ -13,11 +13,13 @@ import {
   getPutBookmarkUrl,
   getPutPlaybackRateUrl,
   postBookmark,
+  postSessions,
 } from "./generated/omnibus";
 import type {
   AudiobookManifestOutput,
   Bookmark as BookmarkWire,
   CrossFormatResumeState,
+  SessionReport,
 } from "./generated/schemas";
 import {
   BookProgress as BookProgressSchema,
@@ -245,4 +247,15 @@ export async function renameBookmark(
 // shortcut: duplicates OMNI-2785's deleteBookmark; fold into it once both land
 export async function deleteAudioBookmark(id: number): Promise<void> {
   await send(getDeleteBookmarkUrl(String(id)), "DELETE");
+}
+
+// shortcut: duplicates OMNI-2785's SessionReport; fold into it once both land
+export type ListeningReport = SessionReport;
+
+// shortcut: duplicates OMNI-2785's postSessions; fold into it once both land
+/** Sends finished listening sessions. `keepalive` lets one outlive the page; a failed send is dropped, as nothing retries it. */
+export async function postListeningSessions(
+  reports: ListeningReport[],
+): Promise<void> {
+  await postSessions(reports, { keepalive: true }).catch(() => {});
 }

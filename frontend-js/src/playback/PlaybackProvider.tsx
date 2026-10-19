@@ -18,9 +18,12 @@ import {
   fetchListeningRow,
   fetchPlaybackRate,
   fetchTranscodeState,
+  type ListeningReport,
+  postListeningSessions,
   saveListeningPosition,
   savePlaybackRate,
 } from "../api";
+import { nowSecs } from "../format";
 import { meQuery } from "../session";
 import {
   bootResumePosition,
@@ -37,6 +40,7 @@ import {
   saveVolume,
 } from "./boot";
 import { createEngine, type EngineEvents } from "./engine";
+import { applyAutoReadStatus, ListeningTracker } from "./listening";
 import { loadHls } from "./loadHls";
 import {
   createSleepTimer,
@@ -121,6 +125,8 @@ type Boot = {
   engine: Engine;
   /** False once another book (or a teardown) took over: a stale boot writes nothing. */
   isCurrent(): boolean;
+  /** Where the book plays on when this file ends; set once the manifest says. */
+  nextFile: { current: number | null };
   patch(change: Partial<State>): void;
   startSaver(saveFileId: number | null): void;
 };
@@ -209,6 +215,7 @@ async function runBoot(boot: Boot) {
     return bootHls(boot, manifest.playlistUrl, resumeAt);
   }
   if (manifest.parts.length === 0) return patch({ failed: true });
+  boot.nextFile.current = manifest.nextFileId;
   patch({ chapters: manifest.chapters });
   engine.initDirect(manifest.parts, resumeAt);
 }
@@ -231,6 +238,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     null,
   );
   const bootRef = useRef(0);
+  const nextFileRef = useRef<number | null>(null);
+  // The first `play` of a boot marks the book reading; `play` also fires on every resume.
+  const markedReading = useRef(false);
+  const openRef = useRef<Playback["open"] | null>(null);
   const volumeRef = useRef(volume);
 
   const patch = useCallback((change: Partial<State>) => {
@@ -257,12 +268,27 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
           timerRef.current?.seeked(live.current.chapters, t, live.current.rate);
         },
         duration: (duration) => patch({ duration }),
-        play: () => patch({ playing: true }),
+        play() {
+          patch({ playing: true });
+          const uuid = live.current.uuid;
+          if (!uuid || markedReading.current) return;
+          markedReading.current = true;
+          void applyAutoReadStatus(uuid, false);
+        },
         pause(t, userActed) {
           patch({ playing: false });
           saverRef.current?.pause(t, userActed);
         },
-        ended: () => {},
+        ended() {
+          const uuid = live.current.uuid;
+          if (!uuid) return;
+          // A file of a sequence played through: the next one waits paused; only the last finishes the book.
+          if (nextFileRef.current !== null) {
+            openRef.current?.(uuid, nextFileRef.current);
+          } else {
+            void applyAutoReadStatus(uuid, true);
+          }
+        },
         booted: () => patch({ ready: true }),
         buffering: (buffering) => patch({ buffering }),
         stalled: () => patch({ failed: true }),
@@ -298,6 +324,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       const isCurrent = () => bootRef.current === token;
       engine.stop();
       saverRef.current = null;
+      nextFileRef.current = null;
+      markedReading.current = false;
       setState({
         ...IDLE,
         uuid,
@@ -321,6 +349,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         userId,
         engine,
         isCurrent,
+        nextFile: nextFileRef,
         patch,
         startSaver: (saveFileId) => {
           saverRef.current = createPositionSaver((seconds) => {
@@ -332,6 +361,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     },
     [userId, patch],
   );
+
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
 
   const setVolume = useCallback((next: number) => {
     const v = Number.isFinite(next) ? Math.max(0, Math.min(1, next)) : 1;
@@ -366,6 +399,25 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     timerRef.current?.position(state.elapsed, state.rate);
   }, [state.elapsed, state.rate]);
+  // One session per stretch of a book playing: reported on pause, a book swap, every minute and at pagehide.
+  const { uuid, playing } = state;
+  useEffect(() => {
+    if (!uuid || !playing) return;
+    const tracker = new ListeningTracker();
+    const send = (session: ListeningReport | null) => {
+      if (session) void postListeningSessions([session]);
+    };
+    tracker.start(uuid, nowSecs());
+    const flush = () => send(tracker.stop(nowSecs()));
+    const beat = setInterval(() => send(tracker.rollover(nowSecs())), 60_000);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      clearInterval(beat);
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [uuid, playing]);
+
   const armed = sleep.remaining !== null;
   useEffect(() => {
     if (!armed) return;

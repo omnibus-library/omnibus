@@ -6,9 +6,15 @@ import type {
   CrossFormatResume,
   EbookMetadata,
   ProgressRecord,
+  ReadStatusRecord,
 } from "../api/generated/schemas";
 import { bookHandler, coverHandlers } from "./handlers";
-import { aWireAudioBookmark, aWireAudioManifest, aWireProgress } from "./wire";
+import {
+  aWireAudioBookmark,
+  aWireAudioManifest,
+  aWireProgress,
+  aWireReadStatus,
+} from "./wire";
 
 // MSW fakes for the audiobook player: a book the listen routes all answer for.
 
@@ -28,6 +34,8 @@ type ListenOptions = {
   row?: ProgressRecord | null;
   resume?: CrossFormatResume;
   bookmarks?: Bookmark[];
+  /** The reader's read status: `null` for none, `"failed"` for a 500. */
+  readStatus?: ReadStatusRecord | null | "failed";
   /** Answers `POST …/sync-point` with this refusal instead of a 204. */
   syncRefusal?: { status: number; message: string };
   /** Holds the manifest until it resolves. */
@@ -49,6 +57,7 @@ export function listenHandlers(
     row = null,
     resume = { state: "not_linked", follow: false },
     bookmarks = [],
+    readStatus = null,
     syncRefusal,
     gate,
   }: ListenOptions = {},
@@ -117,6 +126,16 @@ export function listenHandlers(
       return syncRefusal
         ? new HttpResponse(syncRefusal.message, { status: syncRefusal.status })
         : new HttpResponse(null, { status: 204 });
+    }),
+    http.get("/api/read-status/:uuid", () =>
+      readStatus === "failed"
+        ? new HttpResponse("no status", { status: 500 })
+        : HttpResponse.json(readStatus),
+    ),
+    http.put("/api/read-status", async ({ request }) => {
+      const body = (await request.json()) as { status: "reading" | "finished" };
+      record("PUT /api/read-status", body);
+      return HttpResponse.json(aWireReadStatus({ status: body.status }));
     }),
     http.get("/api/bookmarks/book/:uuid", () => HttpResponse.json(marks)),
     http.post("/api/bookmarks", async ({ request }) => {

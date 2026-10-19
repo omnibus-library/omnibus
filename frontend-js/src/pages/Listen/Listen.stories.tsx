@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { act } from "@testing-library/react";
+import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
 import { expect, fireEvent, waitFor, within } from "storybook/test";
 import type { ListenWrite } from "../../testing/audioHandlers";
@@ -10,6 +12,7 @@ import {
   aWireChapter,
   aWireHlsManifest,
   aWirePosition,
+  aWireReadStatus,
 } from "../../testing/wire";
 import { Listen } from "./Listen";
 
@@ -19,6 +22,9 @@ const BOOK = aWireBook({ formats: ["M4B"] });
 const writes: ListenWrite[] = [];
 const positions = () =>
   writes.filter((w) => w.request === "POST /api/progress").map((w) => w.body);
+
+const wrote = (request: string) =>
+  writes.filter((w) => w.request === request).map((w) => w.body);
 
 const meta = {
   title: "Pages/Listen",
@@ -322,5 +328,114 @@ export const ShowsBufferingWhilePlaying: Story = {
     await expect(
       await canvas.findByTestId("listen-buffering"),
     ).toHaveTextContent("Buffering…");
+  },
+};
+
+const audioOf = (canvas: ReturnType<typeof within>) =>
+  canvas.getByTestId("listen-audio") as HTMLAudioElement;
+
+export const FirstPlayMarksTheBookReading: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByText("Now playing · Chapter 1 of 3");
+
+    fireEvent.play(audioOf(canvas));
+
+    await waitFor(() =>
+      expect(wrote("PUT /api/read-status")).toEqual([
+        { book_uuid: UUID, status: "reading" },
+      ]),
+    );
+  },
+};
+
+export const PagehideReportsAListeningSession: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByText("Now playing · Chapter 1 of 3");
+    const audio = audioOf(canvas);
+    Object.defineProperty(audio, "paused", { value: false });
+    // A hand-set clock: Storybook's instrumented spy recurses through Date.now.
+    const realNow = Date.now;
+    Date.now = () => 1_760_000_000_000;
+    try {
+      // act flushes the effect that starts the clock, so the time moves on after it began.
+      act(() => {
+        fireEvent.play(audio);
+      });
+      Date.now = () => 1_760_000_006_000;
+
+      fireEvent(window, new Event("pagehide"));
+
+      await waitFor(() =>
+        expect(wrote("POST /api/progress/sessions")).toMatchObject([
+          [
+            {
+              book_uuid: UUID,
+              format: "audio",
+              started_at: 1_760_000_000,
+              ended_at: 1_760_000_006,
+              progress_units: 6,
+            },
+          ],
+        ]),
+      );
+    } finally {
+      Date.now = realNow;
+    }
+  },
+};
+
+/** Two files: the first names the second as next; the second is the last. */
+const twoFiles = [
+  http.get("/api/audiobooks/:uuid/manifest", ({ request }) => {
+    const file = new URL(request.url).searchParams.get("file_id");
+    requestedFiles.push(file);
+    return HttpResponse.json(
+      aWireAudioManifest({
+        book_file_id: file === "918" ? 918 : 917,
+        audio_file_count: 2,
+        next_file_id: file === "918" ? null : 918,
+      }),
+    );
+  }),
+];
+const requestedFiles: (string | null)[] = [];
+
+export const EndOfAFileOpensTheNextOneUnseeded: Story = {
+  beforeEach({ msw }) {
+    requestedFiles.length = 0;
+    msw.use(...twoFiles);
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByText("Now playing · Chapter 1 of 3");
+
+    fireEvent.ended(audioOf(canvas));
+
+    await waitFor(() => expect(requestedFiles).toEqual([null, "918"]));
+    await canvas.findByText("Now playing · Chapter 1 of 3");
+    await expect(audioOf(canvas).paused).toBe(true);
+    await expect(positions()).toEqual([]);
+    await expect(wrote("PUT /api/read-status")).toEqual([]);
+  },
+};
+
+export const EndOfTheLastFileFinishesTheBook: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...listenHandlers(BOOK, {
+        writes,
+        readStatus: aWireReadStatus({ status: "reading" }),
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByText("Now playing · Chapter 1 of 3");
+
+    fireEvent.ended(audioOf(canvas));
+
+    await waitFor(() =>
+      expect(wrote("PUT /api/read-status")).toEqual([
+        { book_uuid: UUID, status: "finished" },
+      ]),
+    );
   },
 };
