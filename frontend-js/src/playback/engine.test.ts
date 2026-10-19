@@ -198,6 +198,22 @@ describe("seek", () => {
     expect(media.calls).toEqual(["play"]);
   });
 
+  it("stays paused when a pause (a sleep timer expiring) comes while a part swap waits on metadata", () => {
+    const { media, engine } = setup();
+    engine.initDirect(PARTS, 10);
+    media.fire("loadedmetadata");
+    media.paused = false;
+    engine.seek(150);
+    media.paused = true; // what a real load() does, with no pause event
+
+    engine.pause();
+    media.calls = [];
+    media.fire("loadedmetadata");
+
+    expect(media.currentTime).toBe(50);
+    expect(media.calls).toEqual([]);
+  });
+
   it("lands skip(-30) from 10 s into part 2 at 80 s of part 1", () => {
     const { media, on, engine } = setup();
     engine.initDirect(PARTS, 110);

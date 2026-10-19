@@ -296,7 +296,11 @@ export function createEngine(media: Media, on: EngineEvents) {
 
     /** Where the playhead stands, and whether the listener has acted since the boot. */
     where: () => ({ seconds: abs(), userActed }),
-    pause: () => media.pause(),
+    pause() {
+      // A part swap still waiting on metadata would otherwise resume once it lands.
+      playOnLand = false;
+      media.pause();
+    },
     toggle() {
       if (mode === null) return;
       if (media.paused) playQuietly();
