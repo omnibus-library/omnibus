@@ -27,6 +27,8 @@ import {
 } from "./bulkEdit";
 import { addTargets } from "./shelfGallery";
 
+const SELECT_ALL = 'input[aria-label="Select all books"]';
+
 type ModalProps = {
   label: string;
   busy: boolean;
@@ -46,11 +48,17 @@ function Modal({
   children,
 }: ModalProps) {
   const dialog = useRef<HTMLDivElement>(null);
+  const pressedBackdrop = useRef(false);
   useEffect(() => {
     const opener = document.activeElement;
     dialog.current?.focus();
     return () => {
-      if (opener instanceof HTMLElement) opener.focus();
+      // A saved edit drops the selection and its bar, the opener with them; the table is the next stop.
+      const target =
+        opener instanceof HTMLElement && opener.isConnected
+          ? opener
+          : document.querySelector(SELECT_ALL);
+      if (target instanceof HTMLElement) target.focus();
     };
   }, []);
   const dismiss = () => {
@@ -64,7 +72,14 @@ function Modal({
       aria-modal="true"
       aria-label={label}
       tabIndex={-1}
-      onClick={dismiss}
+      onPointerDown={(e) => {
+        pressedBackdrop.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        // A drag that began in the card and ended on the backdrop is not a dismissal.
+        if (pressedBackdrop.current && e.target === e.currentTarget) dismiss();
+        pressedBackdrop.current = false;
+      }}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.preventDefault();
@@ -73,10 +88,7 @@ function Modal({
         trapTab(e, e.currentTarget);
       }}
     >
-      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: only keeps a click inside the card from reaching the backdrop */}
-      <div className={dialogClass} onClick={(e) => e.stopPropagation()}>
-        {children}
-      </div>
+      <div className={dialogClass}>{children}</div>
     </div>
   );
 }
@@ -306,8 +318,9 @@ export function BulkShelfPicker({ books, onClose, onAdded }: PickerProps) {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["shelves"] });
-      queryClient.invalidateQueries({ queryKey: ["shelf-page"] });
+      for (const queryKey of [["shelves"], ["shelf-page"], ["books"]]) {
+        queryClient.invalidateQueries({ queryKey });
+      }
       onAdded();
     },
   });

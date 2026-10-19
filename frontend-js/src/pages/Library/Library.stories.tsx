@@ -1339,6 +1339,12 @@ export const BulkEditApplies: Story = {
       "found family, slow burn",
     );
     await expect(canvas.queryByText(/selected$/)).not.toBeInTheDocument();
+    // The Edit button left with the selection, so focus lands in the table.
+    await expect(canvas.getByRole("table")).toContainElement(
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null,
+    );
   },
 };
 
@@ -1425,9 +1431,18 @@ export const BulkEditNothingToApply: Story = {
     await expect(canvas.getByRole("button", { name: "Edit" })).toHaveFocus();
     await expect(canvas.getByText("2 books selected")).toBeInTheDocument();
 
-    // So does a click on the backdrop.
+    // A press that starts in the card and is released on the backdrop keeps it open.
     await userEvent.click(canvas.getByRole("button", { name: "Edit" }));
-    await userEvent.click(canvas.getByRole("dialog"));
+    const dialog = canvas.getByRole("dialog");
+    await userEvent.pointer([
+      { keys: "[MouseLeft>]", target: within(dialog).getByRole("heading") },
+      { target: dialog },
+      { keys: "[/MouseLeft]" },
+    ]);
+    await expect(dialog).toBeInTheDocument();
+
+    // A click on the backdrop closes it.
+    await userEvent.click(dialog);
     await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
   },
 };
@@ -1470,8 +1485,9 @@ export const BulkAddToShelf: Story = {
     seedTable();
     added.length = 0;
     shelfReads = 0;
+    requests.length = 0;
     msw.use(
-      libraryHandler(bulkBooks(), 10),
+      libraryHandler(bulkBooks(), 10, { requests }),
       http.get("/api/shelves", () => {
         shelfReads += 1;
         return HttpResponse.json(SHELF_LIST);
@@ -1491,6 +1507,7 @@ export const BulkAddToShelf: Story = {
     ).toBeNull();
     await expect(form.queryByRole("button", { name: /Wishlist/ })).toBeNull();
     const reads = shelfReads;
+    const listings = requests.length;
 
     await userEvent.click(form.getByRole("button", { name: /^Winter reads/ }));
 
@@ -1501,6 +1518,8 @@ export const BulkAddToShelf: Story = {
     await expect(canvas.queryByText(/selected$/)).not.toBeInTheDocument();
     // The shelves refetch, so the new count shows.
     await waitFor(() => expect(shelfReads).toBeGreaterThan(reads));
+    // So does the library list, which a shelf filter narrows.
+    await waitFor(() => expect(requests.length).toBeGreaterThan(listings));
   },
 };
 
