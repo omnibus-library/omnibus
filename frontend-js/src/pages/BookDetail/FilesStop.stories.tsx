@@ -126,6 +126,8 @@ export const ListsCopiesAndTheWishlistAmongTheFormats: Story = {
     await expect(
       await canvas.findByTestId("physical-copy-card"),
     ).toBeInTheDocument();
-    await expect(canvas.getByTestId("wishlist-card")).toBeInTheDocument();
+    await expect(
+      await canvas.findByTestId("wishlist-card"),
+    ).toBeInTheDocument();
   },
 };

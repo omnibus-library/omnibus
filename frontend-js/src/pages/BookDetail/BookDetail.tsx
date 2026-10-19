@@ -16,6 +16,7 @@ import { FilesStop } from "./FilesStop";
 import { HighlightsStop } from "./HighlightsStop";
 import { HomeStop } from "./HomeStop";
 import { JournalStop } from "./JournalStop";
+import { MoreStop } from "./MoreStop";
 import { StatsStop } from "./StatsStop";
 import { useFlowScroll } from "./useFlowScroll";
 import "./BookDetail.css";
@@ -39,6 +40,7 @@ function Marquee({ book }: { book: Detail }) {
     Highlights: <HighlightsStop book={book} />,
     Journals: <JournalStop book={book} />,
     "The files": <FilesStop book={book} />,
+    More: <MoreStop book={book} />,
   };
   const sections = MARQUEE_SECTIONS.flatMap((name, i) => {
     const stop = stops[name];

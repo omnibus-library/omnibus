@@ -15,6 +15,7 @@ import type {
   ResumePoint,
   SeriesDetail,
   SessionLogEntry,
+  ShelfSummary,
   UserSummary,
   WishlistEntry,
 } from "../api/generated/schemas";
@@ -216,6 +217,25 @@ export function aWireWishlist(
     user_id: 1,
     source: "detail",
     added_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** A shelf as `GET /api/shelves` sends it: Ada's hand-picked one, holding two books. */
+export function aWireShelf(
+  overrides: Partial<ShelfSummary> = {},
+): ShelfSummary {
+  return {
+    id: 7,
+    kind: "manual",
+    name: "Space operas",
+    visibility: "private",
+    accent: null,
+    book_count: 2,
+    cover_uuids: [],
+    owner_user_id: 1,
+    owner_username: "Ada Lovelace",
+    owner_has_avatar: false,
     ...overrides,
   };
 }

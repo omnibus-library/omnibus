@@ -912,10 +912,12 @@ button.spoiler.revealed {
   margin: 26px 0 0;
   max-width: 560px;
 }
-.bdmq .author-photo-modal-backdrop {
+.bdmq .author-photo-modal-backdrop,
+.bdmq .shelf-modal-overlay {
   padding-top: calc(var(--bdmq-top, 61px) + 12px);
 }
-.bdmq .mg-modal {
+.bdmq .mg-modal,
+.bdmq .shelf-picker-card {
   max-height: calc(100vh - var(--bdmq-top, 61px) - 52px);
 }
 .bdmq-stage {
@@ -1821,6 +1823,86 @@ button.spoiler.revealed {
 }
 .bdmq .bd-physical-panel .bd-section-head {
   display: none;
+}
+
+.rx-shelf {
+  display: flex;
+  gap: 30px;
+  align-items: flex-end;
+  padding: 14px 2px 16px;
+  border-bottom: 2px solid var(--bg-3);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.rx-shelf-item {
+  width: 132px;
+  flex: 0 0 auto;
+  position: relative;
+}
+.rx-shelf-item .rx-upnext {
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.rx-shelf-cap {
+  margin-top: 12px;
+}
+.rx-shelf-cap .t {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rx-shelf-item.current .rx-shelf-cap .t {
+  color: var(--accent);
+}
+.rx-shelf-cap .u {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  margin-top: 3px;
+  letter-spacing: 0.03em;
+}
+.bdmq-shelves {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+}
+.bdmq-shelves .bdmq-shelf-add {
+  min-height: 120px;
+}
+.bdmq-shelf-actions {
+  margin-top: 14px;
+}
+.bdmq-k-below {
+  margin-top: 34px;
+}
+.bdmq-tight .cover-link .cover-wrap {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+}
+.bdmq-tight .divider {
+  display: none;
+}
+.bdmq-tight .bd-section-head h3 {
+  font-size: 20px;
+}
+.bdmq-tight .bd-section-head {
+  margin-bottom: 8px;
 }
 .bdmq .bd-section-head .bd-section-kicker {
   font-family: var(--mono);

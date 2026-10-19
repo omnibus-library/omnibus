@@ -14,6 +14,9 @@ import {
   getGetSessionLogMockHandler200,
   getGetWishlistEntryMockHandler200,
   getListPhysicalCopiesMockHandler200,
+  getListShelvesMockHandler200,
+  getShelvesContainingMockHandler200,
+  getSmartShelvesContainingMockHandler200,
 } from "../api/generated/omnibus.msw";
 import {
   type EbookMetadata,
@@ -32,6 +35,7 @@ import {
   type ReadStatusRecord,
   type ResumePoint,
   type SessionLogEntry,
+  type ShelfSummary,
   UpdateCopyNoteRequest,
   UpdateJournalEntry,
   type WishlistEntry,
@@ -112,6 +116,9 @@ export function bookDetailHandlers(book: EbookMetadata) {
     getGetJournalEntriesMockHandler200([]),
     getListPhysicalCopiesMockHandler200([]),
     getGetWishlistEntryMockHandler200(null),
+    getListShelvesMockHandler200([]),
+    getShelvesContainingMockHandler200([]),
+    getSmartShelvesContainingMockHandler200([]),
   ];
 }
 
@@ -261,6 +268,42 @@ export function physicalHandlers(
       writes.push("wishlist:remove");
       wishlist = null;
       return HttpResponse.json({ book_deleted: removalDeletesBook });
+    }),
+  ];
+}
+
+/**
+ * The shelf list with the ids holding the book by hand and by rule, kept between reads and
+ * writes. A hand-picked `POST`/`DELETE` appends `add:<shelf>` or `remove:<shelf>` to `writes`
+ * and moves the book in or out; `failOn` is a shelf whose writes answer 500.
+ */
+export function shelvesHandlers(
+  shelves: ShelfSummary[],
+  held: { manual?: number[]; smart?: number[] } = {},
+  writes: string[] = [],
+  failOn?: number,
+) {
+  let manual = held.manual ?? [];
+  const refused = () => new HttpResponse("failed with 500", { status: 500 });
+  return [
+    http.get("/api/shelves", () => HttpResponse.json(shelves)),
+    http.get("/api/shelves/containing/:uuid", () => HttpResponse.json(manual)),
+    http.get("/api/shelves/containing/:uuid/smart", () =>
+      HttpResponse.json(held.smart ?? []),
+    ),
+    http.post("/api/shelves/:id/books", ({ params }) => {
+      const id = Number(params.id);
+      if (id === failOn) return refused();
+      writes.push(`add:${id}`);
+      manual = [...manual, id];
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.delete("/api/shelves/:id/books/:uuid", ({ params }) => {
+      const id = Number(params.id);
+      if (id === failOn) return refused();
+      writes.push(`remove:${id}`);
+      manual = manual.filter((m) => m !== id);
+      return new HttpResponse(null, { status: 204 });
     }),
   ];
 }

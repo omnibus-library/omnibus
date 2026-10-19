@@ -1,0 +1,303 @@
+.shv-card-owner-av {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--bg-3);
+  color: var(--ink-1);
+  font-family: var(--mono);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.shv-card-owner-av {
+  width: 22px;
+  height: 22px;
+  font-size: 8.5px;
+  border: 1px solid var(--line-2);
+}
+.shv-av {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+.shv-av-photo {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+.shv-card {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+@media (hover: hover) {
+  .shv-card:is(a, button:enabled):hover {
+    border-color: color-mix(in oklch, var(--shelf-accent) 55%, var(--line));
+    background: var(--bg-2);
+  }
+}
+.shv-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.shv-ledge {
+  position: relative;
+  height: 134px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px 18px 14px;
+  background:
+    radial-gradient(
+      120% 95% at 50% 115%,
+      color-mix(in oklch, var(--shelf-accent) 30%, transparent),
+      transparent 72%
+    ),
+    var(--bg-2);
+  border-bottom: 1px solid var(--line-2);
+}
+.shv-ledge::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 10px;
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in oklch, var(--shelf-accent) 40%, var(--bg-3));
+  box-shadow: 0 4px 10px color-mix(in oklch, black 38%, transparent);
+}
+.shv-ledge-book {
+  position: relative;
+  z-index: 1;
+  flex: 0 1 58px;
+  min-width: 0;
+  aspect-ratio: 2 / 3;
+  margin-bottom: 4px;
+  border-radius: 2px 4px 4px 2px;
+  overflow: hidden;
+  background: var(--cover-fallback-bg);
+  box-shadow:
+    0 10px 16px color-mix(in oklch, black 42%, transparent),
+    inset 0 0 0 1px color-mix(in oklch, black 18%, transparent);
+  transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.shv-ledge-book img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.shv-ledge-book--blank {
+  background: linear-gradient(
+    165deg,
+    color-mix(in oklch, var(--shelf-accent) 18%, var(--bg-3)),
+    var(--cover-fallback-bg)
+  );
+}
+.shv-ledge-book:last-child:not(:only-child) {
+  transform: rotate(-6deg);
+  transform-origin: 100% 100%;
+}
+@media (hover: hover) {
+  .shv-card:is(a, button:enabled):hover .shv-ledge-book {
+    transform: translateY(-4px);
+  }
+  .shv-card:is(a, button:enabled):hover .shv-ledge-book:nth-child(2) {
+    transition-delay: 0.03s;
+  }
+  .shv-card:is(a, button:enabled):hover .shv-ledge-book:nth-child(3) {
+    transition-delay: 0.06s;
+  }
+  .shv-card:is(a, button:enabled):hover
+    .shv-ledge-book:last-child:not(:only-child) {
+    transform: translateY(-4px) rotate(-6deg);
+    transition-delay: 0.09s;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shv-ledge-book {
+    transition: none;
+  }
+}
+.shv-ledge-empty {
+  position: relative;
+  z-index: 1;
+  align-self: center;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border: 1.5px dashed var(--line);
+  border-radius: 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.shv-ledge-empty svg {
+  color: color-mix(in oklch, var(--shelf-accent) 70%, var(--ink-2));
+}
+
+.shv-card-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 15px;
+}
+.shv-card-name {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 22px;
+  line-height: 1.08;
+  letter-spacing: -0.005em;
+  color: var(--ink-0);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.shv-card-facets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.shv-facet {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.shv-facet--kind {
+  color: color-mix(in oklch, var(--shelf-accent) 78%, var(--ink-1));
+}
+.shv-card-foot {
+  margin-top: auto;
+  padding-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--ink-1);
+}
+.shv-card-count {
+  white-space: nowrap;
+}
+.shv-card-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--ink-2);
+}
+.shv-card-owner-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .shv-ledge {
+    height: 112px;
+    gap: 5px;
+    padding: 14px 12px 12px;
+  }
+  .shv-ledge-book {
+    flex-basis: 42px;
+  }
+  .shv-card-body {
+    padding: 12px 12px 13px;
+  }
+  .shv-card-name {
+    font-size: 19px;
+  }
+}
+.shv-card--compact .shv-ledge {
+  height: 92px;
+  gap: 5px;
+  padding: 12px 12px 10px;
+}
+.shv-card--compact .shv-ledge::after {
+  left: 10px;
+  right: 10px;
+  bottom: 8px;
+}
+.shv-card--compact .shv-ledge-book {
+  flex-basis: 36px;
+  margin-bottom: 3px;
+}
+.shv-card--compact .shv-ledge-empty {
+  padding: 8px 12px;
+  gap: 5px;
+  font-size: 9px;
+}
+.shv-card--compact .shv-card-body {
+  gap: 6px;
+  padding: 10px 12px 11px;
+}
+.shv-card--compact .shv-card-name {
+  font-size: 16px;
+}
+.shv-card--compact .shv-card-foot {
+  padding-top: 2px;
+  font-size: 11.5px;
+}
+.shelf-add-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 180px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1.5px dashed var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s;
+}
+@media (hover: hover) {
+  .shelf-add-tile:hover {
+    color: var(--ink-0);
+    border-color: var(--accent);
+    background: var(--bg-1);
+  }
+}
+.shelf-add-tile-plus {
+  font-size: 24px;
+  line-height: 1;
+  display: inline-flex;
+}
+.shelf-add-tile-plus svg {
+  width: 22px;
+  height: 22px;
+}

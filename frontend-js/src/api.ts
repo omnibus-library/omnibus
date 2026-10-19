@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   deleteWishlistEntry,
+  getAddShelfBooksUrl,
   getAlignment,
   getDeleteFilelessBookUrl,
   getDeleteHighlightUrl,
@@ -22,12 +23,14 @@ import {
   getReadStatus,
   getRecentProgress,
   getRegistration,
+  getRemoveShelfBookUrl,
   getSearchPalette,
   getSeriesById,
   getSessionLog,
   getSummarySources,
   getWishlistEntry,
   listPhysicalCopies,
+  listShelves,
   patchCopyNote,
   patchJournal,
   postEbookOverrides,
@@ -38,6 +41,8 @@ import {
   register as postRegister,
   postWishlistEntry,
   putReadStatus,
+  shelvesContaining,
+  smartShelvesContaining,
 } from "./api/generated/omnibus";
 import type {
   AlignmentViewOutput,
@@ -55,6 +60,7 @@ import type {
   ReadStatusRecord as ReadStatusWire,
   ResumePoint as ResumePointWire,
   SessionLogPageOutput,
+  ShelfSummary as ShelfSummaryWire,
   SummarySource,
   UserSummary,
   WishlistEntry as WishlistEntryWire,
@@ -329,11 +335,15 @@ export async function fetchBook(uuid: BookUuid): Promise<BookDetail | null> {
   return toBookDetail(res.data);
 }
 
-/** A series' name and how many of its books the library holds. */
+/** A series' name, how many of its books the library holds, and those books in reading order. */
 export async function fetchSeries(id: SeriesId) {
   const res = await getSeriesById(id);
   if (res.status !== 200) throw failure(res);
-  return { name: res.data.name, bookCount: res.data.book_count };
+  return {
+    name: res.data.name,
+    bookCount: res.data.book_count,
+    books: res.data.books.map(toBook),
+  };
 }
 
 /** The reader's most recent reading and listening positions, newest first. */
@@ -772,6 +782,67 @@ export async function removeFromWishlist(
   const res = await deleteWishlistEntry(encodeURIComponent(uuid));
   if (res.status !== 200) throw failure(res);
   return { bookDeleted: res.data.book_deleted };
+}
+
+function toShelf(wire: ShelfSummaryWire) {
+  return {
+    id: wire.id,
+    kind: wire.kind,
+    name: wire.name,
+    visibility: wire.visibility,
+    accent: wire.accent ?? null,
+    bookCount: wire.book_count,
+    // Up to four members that have a cover, for the ledge.
+    covers: (wire.cover_uuids ?? []).flatMap((u) => parseBookUuid(u) ?? []),
+    owner: {
+      id: wire.owner_user_id as UserId,
+      name: wire.owner_username,
+      hasAvatar: wire.owner_has_avatar ?? false,
+    },
+  };
+}
+
+export type Shelf = ReturnType<typeof toShelf>;
+
+/** Every shelf the reader can see. */
+export async function fetchShelves(): Promise<Shelf[]> {
+  const res = await listShelves();
+  if (res.status !== 200) throw failure(res);
+  return res.data.map(toShelf);
+}
+
+/** The ids of the hand-picked shelves holding a book. */
+export async function fetchShelvesContaining(
+  uuid: BookUuid,
+): Promise<number[]> {
+  const res = await shelvesContaining(encodeURIComponent(uuid));
+  if (res.status !== 200) throw failure(res);
+  return res.data;
+}
+
+/** The ids of the smart shelves whose rules match a book. */
+export async function fetchSmartShelvesContaining(
+  uuid: BookUuid,
+): Promise<number[]> {
+  const res = await smartShelvesContaining(encodeURIComponent(uuid));
+  if (res.status !== 200) throw failure(res);
+  return res.data;
+}
+
+/** Puts a book on a hand-picked shelf, or takes it off. */
+export async function setShelfMember(
+  shelfId: number,
+  uuid: BookUuid,
+  member: boolean,
+): Promise<void> {
+  if (member) {
+    await send(getAddShelfBooksUrl(shelfId), "POST", { book_uuids: [uuid] });
+  } else {
+    await send(
+      getRemoveShelfBookUrl(shelfId, encodeURIComponent(uuid)),
+      "DELETE",
+    );
+  }
 }
 
 export const thumbUrl = (uuid: BookUuid, size: "sm" | "md" = "md") =>

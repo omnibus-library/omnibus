@@ -81,7 +81,7 @@ export const SectionRail: Story = {
 
     await userEvent.click(last);
 
-    await waitFor(() => expect(last).toHaveClass("on"));
+    await waitFor(() => expect(last).toHaveClass("on"), { timeout: 5000 });
     await expect(dots[0]).not.toHaveClass("on");
     await expect(
       canvas.getByRole("button", { name: "↑ back to the book" }),

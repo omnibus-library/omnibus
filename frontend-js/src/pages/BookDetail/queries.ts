@@ -9,9 +9,13 @@ import {
   fetchProgress,
   fetchReadStatus,
   fetchSeries,
+  fetchShelves,
+  fetchShelvesContaining,
+  fetchSmartShelvesContaining,
   fetchWishlist,
   type SeriesId,
 } from "../../api";
+import type { ShelfFacts } from "./shelves";
 
 // The cached answers more than one stop reads; the keys let a write invalidate by prefix.
 
@@ -71,3 +75,18 @@ export function useWish(book: BookDetail) {
   });
   return wish.data ?? null;
 }
+
+/** The shelf list, the shelves holding the book by hand and by rule, and whether it is wished: one read, so they agree. */
+export const shelvesQuery = (uuid: BookUuid) =>
+  queryOptions({
+    queryKey: ["book", uuid, "shelves"],
+    queryFn: async (): Promise<ShelfFacts> => {
+      const [all, manualIds, smartIds, wishlist] = await Promise.all([
+        fetchShelves(),
+        fetchShelvesContaining(uuid),
+        fetchSmartShelvesContaining(uuid),
+        fetchWishlist(uuid),
+      ]);
+      return { all, manualIds, smartIds, wished: wishlist !== null };
+    },
+  });
