@@ -7,6 +7,9 @@ import type { Prefs } from "../../viewPrefs";
 type SortableColumn = { className: string; label: string; sort: SortKey };
 
 // Spelled out whole, so the Atrium extractor finds each class.
+/** The select-all checkbox's name, which the bulk editor looks it up by. */
+export const SELECT_ALL_LABEL = "Select all books";
+
 const SORTABLE = {
   title: { className: "ebook-col-title", label: "Title", sort: "title" },
   author: { className: "ebook-col-author", label: "Author", sort: "author" },
@@ -202,7 +205,7 @@ export function BookTable({
               <th className="ebook-col-select">
                 <input
                   type="checkbox"
-                  aria-label="Select all books"
+                  aria-label={SELECT_ALL_LABEL}
                   checked={all}
                   onChange={() =>
                     select.onChange(

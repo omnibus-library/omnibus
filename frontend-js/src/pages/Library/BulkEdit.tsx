@@ -19,6 +19,7 @@ import { BusyLabel, Loading, Ring } from "../../components/Loading/Loading";
 import { trapTab } from "../../focusTrap";
 import { bookCount } from "../../format";
 import { useCurrentUser } from "../../session";
+import { SELECT_ALL_LABEL } from "./BookTable";
 import {
   type BulkEdit,
   bulkWire,
@@ -28,7 +29,7 @@ import {
 } from "./bulkEdit";
 import { addTargets } from "./shelfGallery";
 
-const SELECT_ALL = 'input[aria-label="Select all books"]';
+const SELECT_ALL = `input[aria-label="${SELECT_ALL_LABEL}"]`;
 
 type ModalProps = {
   label: string;
