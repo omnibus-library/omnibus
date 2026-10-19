@@ -18,7 +18,11 @@ export function ExportMenu({ book }: { book: BookDetail }) {
     const frame = requestAnimationFrame(() => panel.current?.focus());
     return () => cancelAnimationFrame(frame);
   }, [open]);
-  const close = () => setOpen(false);
+  const [sending, setSending] = useState(false);
+  // Closing mid-send would unmount the toast that reports how it went.
+  const close = () => {
+    if (!sending) setOpen(false);
+  };
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== "Escape") return;
     event.preventDefault();
@@ -36,7 +40,7 @@ export function ExportMenu({ book }: { book: BookDetail }) {
         data-testid="hero-export"
         aria-haspopup="dialog"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={() => (open ? close() : setOpen(true))}
       >
         Export
         <span className="bd-export-caret" aria-hidden="true">
@@ -112,6 +116,7 @@ export function ExportMenu({ book }: { book: BookDetail }) {
                   uuid={uuid}
                   className="bd-export-item"
                   testId="hero-send-kindle"
+                  onPendingChange={setSending}
                 />
               ))}
             {hasEbook && (

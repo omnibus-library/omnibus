@@ -156,6 +156,23 @@ export const SendToKindleKeepsTheMenuOpenAndReports: Story = {
   },
 };
 
+export const MenuStaysOpenWhileASendIsInFlight: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: /Export/ }));
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Send to Kindle" }),
+    );
+
+    await userEvent.click(canvas.getByTestId("hero-export-scrim"));
+    await userEvent.keyboard("{Escape}");
+
+    await expect(canvas.getByRole("dialog")).toBeInTheDocument();
+    await expect(
+      await canvas.findByTestId("kindle-send-status", {}, { timeout: 4000 }),
+    ).toHaveTextContent("Sent to your Kindle.");
+  },
+};
+
 export const OversizeEpubPointsToAmazonsUploader: Story = {
   args: { book: aBook(["EPUB"], [EPUB], 50_000_001) },
   play: async ({ canvas, userEvent }) => {
