@@ -83,13 +83,17 @@ export function togglePick(picked: string[], value: string): string[] {
 export const isPicked = (picked: string[], value: string) =>
   picked.some((p) => sameName(p, value));
 
+/** The owner a shelf is credited to, or `null` for the viewer's own and for a wishlist, whose name opens with its owner. */
+export function attributedOwner(shelf: Shelf, viewerId: UserId): string | null {
+  return shelf.ownerId !== viewerId && shelf.kind !== "wishlist"
+    ? shelf.ownerName
+    : null;
+}
+
 /** A shelf's name, then its owner's when it is another reader's, so two shelves with one name stay apart. */
-export function shelfLabel(shelf: Shelf, viewerId: UserId | null): string {
-  const attributed =
-    viewerId !== null &&
-    viewerId !== shelf.ownerId &&
-    shelf.kind !== "wishlist";
-  return attributed ? `${shelf.name} · ${shelf.ownerName}` : shelf.name;
+export function shelfLabel(shelf: Shelf, viewerId: UserId): string {
+  const owner = attributedOwner(shelf, viewerId);
+  return owner === null ? shelf.name : `${shelf.name} · ${owner}`;
 }
 
 const UNAVAILABLE_SHELF = "unavailable shelf";
@@ -99,7 +103,7 @@ function valueLabel(
   field: FilterField,
   value: string,
   shelves: ShelfList,
-  viewerId: UserId | null,
+  viewerId: UserId,
 ): string | null {
   if (field === "format") return value.toUpperCase();
   if (field !== "shelf") return value;
@@ -116,7 +120,7 @@ function valueLabel(
 export function facetValue(
   clause: FilterClause,
   shelves: ShelfList,
-  viewerId: UserId | null,
+  viewerId: UserId,
 ): (string | null)[] {
   const [first, ...rest] = clause.values;
   return [
@@ -156,7 +160,7 @@ export function namedOptions(
 /** Hand-picked and wishlist shelves, valued by shelf id. */
 export function shelfOptions(
   shelves: Shelf[],
-  viewerId: UserId | null,
+  viewerId: UserId,
 ): FilterOption[] {
   return shelves
     .filter((s) => s.kind !== "smart")

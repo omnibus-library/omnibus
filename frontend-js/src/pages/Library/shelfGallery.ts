@@ -1,5 +1,7 @@
 import type { Shelf, ShelfKind, UserId } from "../../api";
 
+export { attributedOwner } from "../../components/FilterBar/filters";
+
 /**
  * The shelves the row carries: the reader's own, plus other readers' public
  * shelves, minus any wishlist nobody has put a book in. The server's order is
@@ -13,13 +15,6 @@ export function railShelves(all: Shelf[], viewerId: UserId): Shelf[] {
     const unusedWishlist = s.kind === "wishlist" && s.bookCount === 0;
     return (own || sharedByAnother) && !unusedWishlist;
   });
-}
-
-/** The owner a shelf should be attributed to, or `null` for the reader's own and for a wishlist, whose name opens with its owner. */
-export function attributedOwner(shelf: Shelf, viewerId: UserId): string | null {
-  return shelf.ownerId !== viewerId && shelf.kind !== "wishlist"
-    ? shelf.ownerName
-    : null;
 }
 
 /** What follows a shelf's name in its tab: the count, then the owner when the reader doesn't own it. */

@@ -14,6 +14,7 @@ import {
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { ChipInput } from "../../components/ChipInput/ChipInput";
+import { attributedOwner } from "../../components/FilterBar/filters";
 import { BusyLabel, Loading, Ring } from "../../components/Loading/Loading";
 import { trapTab } from "../../focusTrap";
 import { plural } from "../../format";
@@ -376,8 +377,7 @@ export function BulkShelfPicker({ books, onClose, onAdded }: PickerProps) {
           <div className="pick-grid">
             {targets.map((shelf) => {
               const cover = shelf.coverUuids[0];
-              const owner =
-                shelf.ownerId === user.id ? "" : ` · ${shelf.ownerName}`;
+              const owner = attributedOwner(shelf, user.id);
               return (
                 <button
                   key={shelf.id}
@@ -401,7 +401,7 @@ export function BulkShelfPicker({ books, onClose, onAdded }: PickerProps) {
                     <span className="pick-name">{shelf.name}</span>
                     <span className="pick-author">
                       {shelf.bookCount} book{plural(shelf.bookCount)}
-                      {owner}
+                      {owner && ` · ${owner}`}
                     </span>
                   </span>
                   <span className="pick-check" aria-hidden="true">

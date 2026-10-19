@@ -60,7 +60,7 @@ type Loaded =
 function useOptions(
   field: FilterField,
   shelves: ShelfList,
-  viewerId: UserId | null,
+  viewerId: UserId,
 ): Loaded {
   const named = field === "format" || field === "shelf" ? null : field;
   // The raw rows are keyed as the bulk editor's suggestions are, so one fetch serves both.
@@ -101,7 +101,7 @@ function useOptions(
 
 type PickerProps = {
   shelves: ShelfList;
-  viewerId: UserId | null;
+  viewerId: UserId;
   /** The clause the menu opens on: its field, mode and values. */
   initial: FilterClause;
   onApply: (clause: FilterClause) => void;

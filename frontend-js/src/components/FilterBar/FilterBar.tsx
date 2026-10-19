@@ -16,7 +16,7 @@ import "./FilterBar.css";
 type FilterBarProps = {
   clauses: FilterClause[];
   shelves: ShelfList;
-  viewerId: UserId | null;
+  viewerId: UserId;
   /** Called with the whole next clause list. */
   onChange: (clauses: FilterClause[]) => void;
 };
