@@ -8,6 +8,7 @@ import { clampRate, formatHms, RATE_STEP, thumbPct } from "./listen";
 import "./Listen.css";
 
 type DrawerShellProps = {
+  label: string;
   testId: string;
   onClose: () => void;
   /** The kicker and title block. */
@@ -17,8 +18,9 @@ type DrawerShellProps = {
   children: ReactNode;
 };
 
-/** A scrim and the right-hand drawer: head, actions, close button, then the body. */
+/** A scrim and the right-hand drawer: head, actions, close button, then the body. Escape or a click away closes. */
 export function DrawerShell({
+  label,
   testId,
   onClose,
   head,
@@ -26,51 +28,23 @@ export function DrawerShell({
   children,
 }: DrawerShellProps) {
   return (
-    <>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a click-away scrim; "Close" is the keyboard's way out */}
-      <div className="lp-scrim" onClick={onClose} />
-      <div className="lp-drawer" data-testid={testId}>
-        <div className="lp-drawer-head">
-          {head}
-          <div className="lp-drawer-head-actions">
-            {actions}
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              Close ↓
-            </Button>
-          </div>
-        </div>
-        <div className="lp-drawer-body">{children}</div>
-      </div>
-    </>
-  );
-}
-
-type PanelShellProps = {
-  /** The panel's own class, such as `lp-speed-panel`. */
-  extraClass: string;
-  label: string;
-  testId: string;
-  onClose: () => void;
-  children: ReactNode;
-};
-
-/** A scrim and a small dialog over it: Escape or a click away closes, focus stays inside and returns on close. */
-export function PanelShell({
-  extraClass,
-  label,
-  testId,
-  onClose,
-  children,
-}: PanelShellProps) {
-  return (
     <Modal
       label={label}
       backdropClass="lp-scrim"
-      dialogClass={`lp-panel ${extraClass}`}
+      dialogClass="lp-drawer"
       dialogTestId={testId}
       onClose={onClose}
     >
-      {children}
+      <div className="lp-drawer-head">
+        {head}
+        <div className="lp-drawer-head-actions">
+          {actions}
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Close ↓
+          </Button>
+        </div>
+      </div>
+      <div className="lp-drawer-body">{children}</div>
     </Modal>
   );
 }

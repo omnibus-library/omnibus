@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from "react-router";
 import type { BookDetail } from "../../api";
 import { parseBookUuid, positiveInt } from "../../api";
 import { Loading } from "../../components/Loading/Loading";
+import { Modal } from "../../components/Modal/Modal";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import {
@@ -19,7 +20,7 @@ import {
   useBookmarks,
 } from "./Drawers";
 import type { Pane } from "./listen";
-import { PanelShell, SleepPanelBody, SpeedPanelBody } from "./Panels";
+import { SleepPanelBody, SpeedPanelBody } from "./Panels";
 import { Stage } from "./Stage";
 import "./Listen.css";
 
@@ -71,24 +72,26 @@ function Frame({ book }: { book: BookDetail }) {
         onPane={(next) => setPane((open) => (open === next ? null : next))}
       />
       {pane === "speed" && (
-        <PanelShell
-          extraClass="lp-speed-panel"
+        <Modal
           label="Playback speed"
-          testId="speed-panel"
+          backdropClass="lp-scrim"
+          dialogClass="lp-panel lp-speed-panel"
+          dialogTestId="speed-panel"
           onClose={close}
         >
           <SpeedPanelBody />
-        </PanelShell>
+        </Modal>
       )}
       {pane === "sleep" && (
-        <PanelShell
-          extraClass="lp-sleep-panel"
+        <Modal
           label="Sleep timer"
-          testId="sleep-panel"
+          backdropClass="lp-scrim"
+          dialogClass="lp-panel lp-sleep-panel"
+          dialogTestId="sleep-panel"
           onClose={close}
         >
           <SleepPanelBody />
-        </PanelShell>
+        </Modal>
       )}
       {pane === "bookmarks" && (
         <BookmarksDrawer bookmarks={bookmarks} onClose={close} />

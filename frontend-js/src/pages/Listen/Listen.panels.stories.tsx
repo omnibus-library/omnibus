@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { Link, Route, Routes } from "react-router";
 import { expect, fireEvent, spyOn, waitFor, within } from "storybook/test";
-import { ADA } from "../../testing/AppHarness";
+import { ADA, storyClient } from "../../testing/AppHarness";
 import type { ListenWrite } from "../../testing/audioHandlers";
 import { listenHandlers, TEN_MINUTES_IN } from "../../testing/audioHandlers";
 import { failing, hanging } from "../../testing/handlers";
@@ -136,13 +136,29 @@ export const DrawersCloseFromTheirScrimAndButton: Story = {
   play: async ({ canvas, canvasElement }) => {
     await openChapters(canvas);
 
-    fireEvent.click(canvasElement.querySelector(".lp-scrim") as Element);
+    const scrim = canvasElement.querySelector(".lp-scrim") as Element;
+    fireEvent.pointerDown(scrim);
+    fireEvent.click(scrim);
     await waitFor(() =>
       expect(canvas.queryByTestId("chapters-drawer")).toBeNull(),
     );
 
     fireEvent.click(canvas.getByRole("button", { name: "Chapters ↑" }));
     fireEvent.click(await canvas.findByRole("button", { name: "Close ↓" }));
+    await waitFor(() =>
+      expect(canvas.queryByTestId("chapters-drawer")).toBeNull(),
+    );
+  },
+};
+
+export const DrawersCloseOnEscape: Story = {
+  play: async ({ canvas }) => {
+    await openChapters(canvas);
+
+    fireEvent.keyDown(canvas.getByRole("dialog", { name: "Chapters" }), {
+      key: "Escape",
+    });
+
     await waitFor(() =>
       expect(canvas.queryByTestId("chapters-drawer")).toBeNull(),
     );
@@ -203,6 +219,37 @@ export const BookmarksFailingToLoadSaySo: Story = {
       "Couldn't load your bookmarks",
     );
     await expect(drawer.queryByText("No bookmarks yet")).toBeNull();
+  },
+};
+
+let bookmarksDown = false;
+
+export const BookmarksKeepTheirRowsWhenARefreshFails: Story = {
+  beforeEach({ msw }) {
+    bookmarksDown = false;
+    msw.use(
+      http.get("/api/bookmarks/book/:uuid", () =>
+        bookmarksDown
+          ? new HttpResponse("no", { status: 500 })
+          : HttpResponse.json([aWireAudioBookmark()]),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    const drawer = await openBookmarks(canvas);
+    await drawer.findByTestId("bookmark-row");
+
+    bookmarksDown = true;
+    const key = ["audio-bookmarks", UUID];
+    await storyClient().refetchQueries({ queryKey: key });
+    await waitFor(() =>
+      expect(storyClient().getQueryState(key)?.status).toBe("error"),
+    );
+    // Let the failed state reach the render before looking for what it shows.
+    await new Promise((resolve) => setTimeout(resolve));
+
+    await expect(drawer.getByTestId("bookmark-row")).toBeInTheDocument();
+    await expect(drawer.queryByRole("alert")).toBeNull();
   },
 };
 

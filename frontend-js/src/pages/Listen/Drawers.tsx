@@ -30,10 +30,13 @@ export function useBookmarks(uuid: BookUuid) {
   const { chapters, elapsed } = usePlayback();
   const client = useQueryClient();
   const key = ["audio-bookmarks", uuid];
-  const { data: list = [], status } = useQuery({
+  const { data, status: queryStatus } = useQuery({
     queryKey: key,
     queryFn: () => fetchAudioBookmarks(uuid),
   });
+  const list = data ?? [];
+  // A failed refresh keeps the marks already loaded.
+  const status = data === undefined ? queryStatus : "success";
   const [freshId, setFreshId] = useState<number | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   useEffect(() => {
@@ -105,6 +108,7 @@ export function ChaptersDrawer({ onClose }: { onClose: () => void }) {
   const current = chapterIndexForElapsed(chapters, elapsed);
   return (
     <DrawerShell
+      label="Chapters"
       testId="chapters-drawer"
       onClose={onClose}
       head={
@@ -272,6 +276,7 @@ export function BookmarksDrawer({
   const { list, status, add } = bookmarks;
   return (
     <DrawerShell
+      label="Bookmarks"
       testId="bookmarks-drawer"
       onClose={onClose}
       head={
