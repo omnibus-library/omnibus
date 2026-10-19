@@ -84,7 +84,7 @@ pub(super) fn rewrite_archive(
 
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).context("read zip entry")?;
-        let name = entry.name().to_owned();
+        let name = entry.name().context("read zip entry name")?.into_owned();
 
         // Already emitted first, above.
         if name == "mimetype" {

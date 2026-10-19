@@ -199,7 +199,7 @@ pub(crate) mod test_support {
 
         for i in 0..archive.len() {
             let mut entry = archive.by_index(i).expect("read entry");
-            let entry_name = entry.name().to_string();
+            let entry_name = entry.name().expect("entry name").into_owned();
             let mut bytes = Vec::new();
             entry.read_to_end(&mut bytes).expect("read entry bytes");
             if entry_name.ends_with(".opf") {

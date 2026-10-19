@@ -228,6 +228,7 @@ fn indexed_book_from(
 fn page_names<R: Read + std::io::Seek>(archive: &zip::ZipArchive<R>) -> Vec<String> {
     let mut pages: Vec<String> = archive
         .file_names()
+        .filter_map(Result::ok)
         .filter(|name| {
             if name.ends_with('/') {
                 return false;
@@ -241,7 +242,7 @@ fn page_names<R: Read + std::io::Seek>(archive: &zip::ZipArchive<R>) -> Vec<Stri
             }
             is_page_name(name)
         })
-        .map(str::to_string)
+        .map(String::from)
         .collect();
     pages.sort_by(|a, b| natural_cmp(a, b));
     pages
@@ -273,13 +274,14 @@ fn is_page_name(name: &str) -> bool {
 fn comic_info_entry<R: Read + std::io::Seek>(archive: &zip::ZipArchive<R>) -> Option<String> {
     archive
         .file_names()
+        .filter_map(Result::ok)
         .find(|name| {
-            Path::new(name)
+            Path::new(name.as_ref())
                 .file_name()
                 .and_then(|f| f.to_str())
                 .is_some_and(|f| f.eq_ignore_ascii_case("ComicInfo.xml"))
         })
-        .map(str::to_string)
+        .map(String::from)
 }
 
 /// Read one entry's bytes; `None` on any failure so a single corrupt entry
