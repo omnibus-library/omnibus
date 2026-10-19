@@ -45,6 +45,7 @@ jobs:
             ios:
               - "omnibus-ios/**"
               - "scripts/ios-test.sh"
+              - "scripts/lib/ios-sim.sh"
               - "scripts/xccov-to-lcov.sh"
               - ".github/workflows/ios-tests.yml"
 

@@ -79,6 +79,8 @@ test_data/epubs/**/*.webp
 # Runtime scratch for scripts/dev-server-up.sh — server.log, server.pid,
 # port, env.sh. Per-checkout, ephemeral.
 .claude/runtime/
+# Scratch screenshot tours (.claude/skills/ios-validate); never committed.
+omnibus-ios/omnibusUITests/ScreenTour*.swift
 
 # Local ebook library (test data)
 /epubs
