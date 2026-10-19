@@ -116,6 +116,18 @@ export const CreateConflict: Story = {
   },
 };
 
+export const FocusesTheDialogAndClosesOnEscape: Story = {
+  play: async ({ args, canvas, userEvent }) => {
+    await waitFor(() =>
+      expect(canvas.getByRole("dialog", { name: "New shelf" })).toHaveFocus(),
+    );
+
+    await userEvent.keyboard("{Escape}");
+
+    await expect(args.onClose).toHaveBeenCalledOnce();
+  },
+};
+
 export const Cancel: Story = {
   play: async ({ args, canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: "Cancel" }));

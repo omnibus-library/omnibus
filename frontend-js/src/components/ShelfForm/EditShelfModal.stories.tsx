@@ -68,6 +68,18 @@ export const EditSmart: Story = {
   },
 };
 
+export const FocusesTheDialogAndClosesOnEscape: Story = {
+  play: async ({ args, canvas, userEvent }) => {
+    await waitFor(() =>
+      expect(canvas.getByRole("dialog", { name: "Edit shelf" })).toHaveFocus(),
+    );
+
+    await userEvent.keyboard("{Escape}");
+
+    await expect(args.onClose).toHaveBeenCalledOnce();
+  },
+};
+
 export const EditKoboOn: Story = {
   args: {
     shelf: toShelfDetail(aWireShelfDetail({ id: 3, kind: "manual" })),

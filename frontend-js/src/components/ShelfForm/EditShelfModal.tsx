@@ -74,6 +74,7 @@ export function EditShelfModal({
       ariaLabel="Edit shelf"
       backdropClass="shelf-modal-overlay"
       dialogClass="shelf-modal-card"
+      focusOnOpen
       busy={save.isPending}
       onDismiss={onClose}
     >

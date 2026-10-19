@@ -47,6 +47,7 @@ export function AddBooksModal({
       labelledBy="add-books-title"
       backdropClass="shelf-modal-overlay"
       dialogClass="shelf-modal-card"
+      focusOnOpen
       busy={add.isPending}
       onDismiss={onClose}
     >

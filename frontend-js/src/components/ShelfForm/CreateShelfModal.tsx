@@ -43,6 +43,7 @@ export function CreateShelfModal({
       ariaLabel="New shelf"
       backdropClass="shelf-modal-overlay"
       dialogClass="shelf-modal-card"
+      focusOnOpen
       busy={create.isPending}
       onDismiss={onClose}
     >

@@ -1890,6 +1890,8 @@ export const NewShelfFromGallery: Story = {
 
     await userEvent.click(canvas.getByTestId("new-shelf"));
     const dialog = await canvas.findByRole("dialog");
+    // The overlay must sit directly under .lmq, outside the shelves section's stacking context.
+    await expect(region.contains(dialog)).toBe(false);
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Hand-picked" }),
     );
