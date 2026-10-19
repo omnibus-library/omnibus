@@ -97,3 +97,42 @@ export function GenreDonut({ summary }: { summary: StatsSummary }) {
     </div>
   );
 }
+
+/** "How long they were": the finished books bucketed by page count, as rows with no card chrome since it is the Finished tile's detail. The server owns the buckets, order and labels, "Unknown" included. */
+export function LengthRows({ summary }: { summary: StatsSummary }) {
+  const buckets = summary.length_buckets;
+  if (buckets.reduce((total, bucket) => total + bucket.books, 0) <= 0) {
+    return (
+      <p className="st-card-empty" data-testid="stats-length-empty">
+        No books finished in this period yet.
+      </p>
+    );
+  }
+  const percents = percentages(buckets.map((bucket) => bucket.books));
+  return (
+    <div className="st-length-rows" data-testid="stats-length-split">
+      {buckets.map((bucket, i) => (
+        <div
+          // biome-ignore lint/suspicious/noArrayIndexKey: two server-owned labels could collide
+          key={i}
+          className="st-split-half"
+          data-testid="stats-length-row"
+        >
+          <div className="st-split-head">
+            <span className="st-split-name">{bucket.label}</span>
+            {/* The count, not the share: "3 books" answers what a reader brought to a length chart. */}
+            <span key={bucket.books} className="st-split-pct">
+              {bucket.books}
+            </span>
+          </div>
+          <div className="st-split-track">
+            <div
+              className="st-split-fill"
+              style={{ width: `${percents[i]}%`, background: sliceVar(i) }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

@@ -14,7 +14,9 @@ import { Loading } from "../../components/Loading/Loading";
 import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { windowLabel } from "./calendar";
+import { DrillInSheet } from "./DrillInSheet";
 import { GenreDonut } from "./GenreDonut";
+import { HeadlineTiles } from "./HeadlineTiles";
 import { heading, viewing } from "./picker";
 import { ReaderPicker } from "./ReaderPicker";
 import { ReadingClock } from "./ReadingClock";
@@ -29,6 +31,7 @@ import {
   RANGE_LABELS,
   RANGES,
 } from "./summary";
+import type { Metric } from "./tiles";
 import "./Stats.css";
 
 /** A reader's figures can't be shown; another reader's page returns to the caller's own. */
@@ -67,15 +70,20 @@ function StatsEmpty({ whoName }: { whoName: string | null }) {
   );
 }
 
+/** The metric whose sheet is open, with the summary it was opened on. */
+type OpenMetric = { metric: Metric; summary: StatsSummary };
+
 /** Everything the period pills govern, under one label and one boundary. */
 function WindowBand({
   range,
   onRange,
   period,
+  onOpen,
 }: {
   range: StatsRange;
   onRange: (range: StatsRange) => void;
   period: StatsSummary | undefined;
+  onOpen: (open: OpenMetric) => void;
 }) {
   return (
     <section className="st-band" data-testid="stats-period-section">
@@ -105,6 +113,10 @@ function WindowBand({
       </div>
       {period ? (
         <div className="st-band-body">
+          <HeadlineTiles
+            summary={period}
+            onOpen={(metric) => onOpen({ metric, summary: period })}
+          />
           <div className="st-duo">
             <ReadingClock summary={period} />
             <GenreDonut summary={period} />
@@ -153,6 +165,7 @@ function ReaderStats({
   onRange: (range: StatsRange) => void;
   readers: HouseholdReader[] | undefined;
 }) {
+  const [open, setOpen] = useState<OpenMetric | null>(null);
   const standing = useQuery(statsQuery("all_time", userId));
   // The previous window stays on screen while the next one loads.
   const period = useQuery({
@@ -188,7 +201,12 @@ function ReaderStats({
           <StatsEmpty whoName={who.kind === "reader" ? who.name : null} />
         ) : (
           <div className="st-scope" data-testid="stats-scope-user">
-            <WindowBand range={range} onRange={onRange} period={period.data} />
+            <WindowBand
+              range={range}
+              onRange={onRange}
+              period={period.data}
+              onOpen={setOpen}
+            />
             <StandingBand />
           </div>
         )}
@@ -196,6 +214,13 @@ function ReaderStats({
           {freshnessNote()}
         </p>
       </div>
+      {open && (
+        <DrillInSheet
+          metric={open.metric}
+          summary={open.summary}
+          onClose={() => setOpen(null)}
+        />
+      )}
     </div>
   );
 }

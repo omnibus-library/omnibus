@@ -334,3 +334,497 @@ export const StandoutsAreAbsentWhenNothingStandsOut: Story = {
     await expect(canvas.queryByTestId("stats-superlatives")).toBeNull();
   },
 };
+
+const FINISHED_TILE = { name: "Expand Finished details" };
+
+export const TilesShowTheFourHeadlineFigures: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByRole("button", FINISHED_TILE);
+    await expect(
+      canvas
+        .getAllByRole("button", { name: /^Expand .* details$/ })
+        .map((tile) => tile.getAttribute("aria-label")),
+    ).toEqual([
+      "Expand Finished details",
+      "Expand Pages read details",
+      "Expand Listening details",
+      "Expand How you rated details",
+    ]);
+    const finished = canvas.getByRole("button", FINISHED_TILE);
+    await expect(finished).toHaveClass("accent");
+    await expect(finished).toHaveTextContent("3books+1Finished");
+    await expect(canvas.getByTestId("stats-tile-finished-delta")).toHaveClass(
+      "up",
+    );
+    await expect(
+      canvas.getByRole("button", { name: "Expand Pages read details" }),
+    ).toHaveTextContent("1,240pages+38%Pages read");
+    await expect(
+      canvas.getByRole("button", { name: "Expand Listening details" }),
+    ).toHaveTextContent("5.0hours+100%Listening");
+    await expect(
+      canvas.getByRole("button", { name: "Expand How you rated details" }),
+    ).toHaveTextContent("4.3★ avg+0.2How you rated");
+    await expect(
+      finished.querySelector(".st-tile-fill")?.getAttribute("style"),
+    ).toBe("width: 100%;");
+  },
+};
+
+export const TileDeltasFollowTheDirectionOfChange: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...inWindow({
+        books_finished: 1,
+        previous: {
+          books_finished: 3,
+          avg_stars: 4.25,
+          listening_seconds: 18_000,
+          pages_read: 900,
+        },
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const finished = await canvas.findByTestId("stats-tile-finished-delta");
+    await expect(finished).toHaveTextContent("−2");
+    await expect(finished).toHaveClass("down");
+    await expect(canvas.getByTestId("stats-tile-listening-delta")).toHaveClass(
+      "flat",
+    );
+    await expect(
+      canvas.getByTestId("stats-tile-listening-delta"),
+    ).toHaveTextContent("flat");
+  },
+};
+
+export const UnratedTileDrawsADashWithNoUnitOrDelta: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inWindow({ avg_stars: null }));
+  },
+  play: async ({ canvas }) => {
+    const tile = await canvas.findByRole("button", {
+      name: "Expand How you rated details",
+    });
+    await expect(tile).toHaveTextContent(/^—How you rated$/);
+    await expect(
+      canvas.queryByTestId("stats-tile-avg-rating-delta"),
+    ).toBeNull();
+    await expect(tile.querySelector(".st-tile-track")).toBeNull();
+  },
+};
+
+export const LifetimeDropsEveryTileComparison: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByRole("button", FINISHED_TILE);
+    await userEvent.click(canvas.getByRole("button", { name: "Lifetime" }));
+    await waitFor(() =>
+      expect(canvas.getByTestId("stats-window-label")).toHaveTextContent(
+        "Everything you have tracked",
+      ),
+    );
+    await expect(canvas.queryByTestId("stats-tile-finished-delta")).toBeNull();
+    await expect(canvas.queryByTestId("stats-tile-pages-delta")).toBeNull();
+    await expect(canvas.queryByTestId("stats-tile-listening-delta")).toBeNull();
+    await expect(
+      canvas.queryByTestId("stats-tile-avg-rating-delta"),
+    ).toBeNull();
+    await expect(document.querySelectorAll(".st-tile-track")).toHaveLength(0);
+    await expect(canvas.getByRole("button", FINISHED_TILE)).toHaveTextContent(
+      "3booksFinished",
+    );
+  },
+};
+
+async function openSheet(
+  canvas: ReturnType<typeof within>,
+  userEvent: { click: (element: Element) => Promise<void> },
+  tile: string,
+  sheet: string,
+) {
+  await userEvent.click(await canvas.findByRole("button", { name: tile }));
+  return canvas.findByRole("dialog", { name: sheet });
+}
+
+export const FinishedSheetStatesTheTilesComparisonAndTheBooks: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const sheet = await openSheet(
+      canvas,
+      userEvent,
+      "Expand Finished details",
+      "Finished detail",
+    );
+    await waitFor(() => expect(sheet).toHaveFocus());
+    await expect(
+      within(sheet).getByTestId("stats-drill-delta"),
+    ).toHaveTextContent("▲ +1 vs last month");
+    await expect(
+      within(sheet).getByRole("img", { name: "Finished trend" }).children,
+    ).toHaveLength(12);
+    const lengths = within(sheet).getByTestId("stats-length-split");
+    await expect(
+      within(lengths)
+        .getAllByTestId("stats-length-row")
+        .map((row) => row.textContent),
+    ).toEqual(["Under 2001", "200–4001", "Unknown1"]);
+    const books = within(sheet).getByTestId("stats-drill-finished-list");
+    await expect(books).toHaveTextContent(
+      "Aurora Station, Vol. 1Sora Inkwell4.5 ★",
+    );
+    await expect(
+      within(books).getByRole("img", {
+        name: "Cover of Aurora Station, Vol. 1",
+      }),
+    ).toHaveAttribute(
+      "src",
+      "/api/thumbs/ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0/md",
+    );
+    // Three finished, one listed: the rail says it is cut.
+    await expect(sheet).toHaveTextContent(
+      "Showing the latest 1 of 3 finished books.",
+    );
+  },
+};
+
+export const FinishedSheetWithNothingFinishedSaysSo: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...inWindow({
+        books_finished: 0,
+        finished_books: [],
+        length_buckets: [{ label: "Under 200", books: 0 }],
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const sheet = await openSheet(
+      canvas,
+      userEvent,
+      "Expand Finished details",
+      "Finished detail",
+    );
+    await expect(
+      within(sheet).getByText("No books finished in this window."),
+    ).toBeInTheDocument();
+    await expect(
+      within(sheet).getByText("No books finished in this period yet."),
+    ).toBeInTheDocument();
+    await expect(within(sheet).queryByTestId("stats-length-split")).toBeNull();
+  },
+};
+
+export const SheetClosesFromTheButtonEscapeAndTheBackdrop: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const tile = await canvas.findByRole("button", FINISHED_TILE);
+    const closers = [
+      () => userEvent.click(canvas.getByRole("button", { name: "Close" })),
+      () => userEvent.keyboard("{Escape}"),
+      () => userEvent.click(canvas.getByRole("dialog")),
+    ];
+
+    for (const close of closers) {
+      await userEvent.click(tile);
+      await waitFor(() => expect(canvas.getByRole("dialog")).toHaveFocus());
+      await close();
+      await waitFor(() => expect(canvas.queryByRole("dialog")).toBeNull());
+      await waitFor(() => expect(tile).toHaveFocus());
+    }
+  },
+};
+
+export const SheetKeepsTheWindowItWasOpenedOn: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...api({
+        stats: ({ range }) =>
+          aWireStatsSummary({
+            range,
+            ...(range === "year"
+              ? {
+                  books_finished: 10,
+                  previous: {
+                    books_finished: 4,
+                    avg_stars: 4,
+                    listening_seconds: 9000,
+                    pages_read: 900,
+                  },
+                }
+              : {}),
+          }),
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const sheet = await openSheet(
+      canvas,
+      userEvent,
+      "Expand Finished details",
+      "Finished detail",
+    );
+
+    await userEvent.click(canvas.getByRole("button", { name: "Year" }));
+    await waitFor(() =>
+      expect(canvas.getByTestId("stats-tile-finished-delta")).toHaveTextContent(
+        "+6",
+      ),
+    );
+
+    // The tile behind it moved on; the sheet still names the month it was measured over.
+    await expect(
+      within(sheet).getByTestId("stats-drill-delta"),
+    ).toHaveTextContent("▲ +1 vs last month");
+  },
+};
+
+export const LifetimeSheetHasNothingToCompare: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByRole("button", FINISHED_TILE);
+    await userEvent.click(canvas.getByRole("button", { name: "Lifetime" }));
+    await waitFor(() =>
+      expect(canvas.getByTestId("stats-window-label")).toHaveTextContent(
+        "Everything you have tracked",
+      ),
+    );
+
+    const sheet = await openSheet(
+      canvas,
+      userEvent,
+      "Expand Finished details",
+      "Finished detail",
+    );
+
+    await expect(
+      within(sheet).getByTestId("stats-drill-delta"),
+    ).toHaveTextContent("Not enough data yet to compare.");
+  },
+};
+
+export const SwitchingReaderClosesTheSheet: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await openSheet(
+      canvas,
+      userEvent,
+      "Expand Finished details",
+      "Finished detail",
+    );
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Stats for You" }),
+    );
+    await userEvent.click(canvas.getByTestId("stats-reader-option-2"));
+
+    await waitFor(() => expect(canvas.queryByRole("dialog")).toBeNull());
+    await expect(await canvas.findByText("Grace's stats")).toBeInTheDocument();
+  },
+};
+
+export const RatingSheetShowsTheTrendAndTheHistogram: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const sheet = await openSheet(
+      canvas,
+      userEvent,
+      "Expand How you rated details",
+      "Avg rating detail",
+    );
+    await expect(
+      within(sheet).getByTestId("stats-drill-delta"),
+    ).toHaveTextContent("▲ +0.2 vs last month");
+    await expect(
+      within(sheet).getByText("Average rating by month"),
+    ).toBeInTheDocument();
+    await expect(
+      within(sheet).getByTestId("stats-drill-trend-caption"),
+    ).toHaveTextContent(
+      "Jul 2026 – Aug 2026 · the last 12 months, whatever period is selected",
+    );
+    const trend = within(sheet).getByRole("img", {
+      name: "Average rating by month",
+    });
+    await expect(
+      Array.from(
+        trend.querySelectorAll("[data-testid=stats-drill-bar-value]"),
+      ).map((value) => value.textContent),
+    ).toEqual(["4.5", "4.3"]);
+
+    await expect(
+      within(sheet).getByTestId("stats-drill-histogram-caption"),
+    ).toHaveTextContent("Rated this month");
+    const histogram = within(sheet).getByRole("img", {
+      name: "Star rating distribution",
+    });
+    await expect(histogram.children).toHaveLength(10);
+    await expect(
+      histogram.querySelector('[title="4.5 ★ · 2 books"]'),
+    ).toHaveTextContent("2");
+  },
+};
+
+export const RatingSheetWithNothingRatedSaysSo: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...inWindow({
+        avg_stars: null,
+        rating_monthly: [],
+        rating_histogram: Array.from({ length: 10 }, (_, i) => ({
+          half_stars: i + 1,
+          books: 0,
+        })),
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const sheet = await openSheet(
+      canvas,
+      userEvent,
+      "Expand How you rated details",
+      "Avg rating detail",
+    );
+    await expect(
+      within(sheet).getByTestId("stats-drill-delta"),
+    ).toHaveTextContent("Not enough data yet to compare.");
+    await expect(
+      within(sheet).getByTestId("stats-drill-histogram-empty"),
+    ).toHaveTextContent("No ratings in this window yet.");
+    await expect(
+      within(sheet).queryByText("Average rating by month"),
+    ).toBeNull();
+    await expect(
+      within(sheet).queryByTestId("stats-drill-histogram"),
+    ).toBeNull();
+  },
+};
+
+export const ListeningSheetTrendsMinutesADay: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const sheet = await openSheet(
+      canvas,
+      userEvent,
+      "Expand Listening details",
+      "Listening detail",
+    );
+    await expect(
+      within(sheet).getByTestId("stats-drill-delta"),
+    ).toHaveTextContent("▲ +100% vs last month");
+    await expect(
+      within(sheet).getByRole("img", { name: "Listening trend" }).children,
+    ).toHaveLength(1);
+    await expect(
+      within(sheet).getByTestId("stats-drill-bar-label"),
+    ).toHaveTextContent("12");
+  },
+};
+
+export const PagesSheetStatesTheRateAndWhatItCouldNotMeasure: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const sheet = await openSheet(
+      canvas,
+      userEvent,
+      "Expand Pages read details",
+      "Pages read detail",
+    );
+    await expect(
+      within(sheet).getByTestId("stats-drill-pages-rate"),
+    ).toHaveTextContent("39 est. pages an hour");
+    const note = within(sheet).getByTestId("stats-drill-pages-note");
+    await expect(note).toHaveTextContent("Across 3 books this period.");
+    await expect(note).toHaveTextContent(
+      "1 more book has no known length yet, so nothing it contributed is counted.",
+    );
+    // The window opens after tracking began, so the date is context, not a caveat.
+    await expect(
+      within(sheet).getByTestId("stats-drill-pages-cutover"),
+    ).toHaveTextContent(/^Page tracking began 2026-01-01\.$/);
+  },
+};
+
+export const PagesSheetWithoutARateExplainsWhy: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inWindow({ pages_per_hour: null }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const sheet = await openSheet(
+      canvas,
+      userEvent,
+      "Expand Pages read details",
+      "Pages read detail",
+    );
+    await expect(
+      within(sheet).getByTestId("stats-drill-pages-rate"),
+    ).toHaveTextContent(
+      "No book finished in this window has both a measurable length and recorded reading time yet.",
+    );
+    await expect(within(sheet).queryByText("Reading speed")).toBeNull();
+  },
+};
+
+export const PagesSheetOfAnAudioOnlyWindowReadsZero: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...inWindow({
+        pages_read: null,
+        pages_per_hour: null,
+        pages_detail: {
+          audio_books: 2,
+          measured_books: 0,
+          unmeasured_books: 0,
+          since_day: null,
+          daily: [],
+          window_predates_ledger: false,
+        },
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const sheet = await openSheet(
+      canvas,
+      userEvent,
+      "Expand Pages read details",
+      "Pages read detail",
+    );
+    await expect(
+      canvas.getByRole("button", { name: "Expand Pages read details" }),
+    ).toHaveTextContent("0pages−100%Pages read");
+    await expect(
+      within(sheet).getByTestId("stats-drill-pages-note"),
+    ).toHaveTextContent(
+      "Only audiobooks this period — listening turns no pages.",
+    );
+    await expect(
+      within(sheet).queryByTestId("stats-drill-pages-cutover"),
+    ).toBeNull();
+  },
+};
+
+export const PagesSheetWarnsWhenTheWindowPredatesTracking: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...inWindow({
+        pages_detail: {
+          audio_books: 0,
+          measured_books: 3,
+          unmeasured_books: 0,
+          since_day: "2026-01-01",
+          daily: [],
+          window_predates_ledger: true,
+        },
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const sheet = await openSheet(
+      canvas,
+      userEvent,
+      "Expand Pages read details",
+      "Pages read detail",
+    );
+    await expect(
+      within(sheet).getByTestId("stats-drill-pages-cutover"),
+    ).toHaveTextContent(
+      "Page tracking began 2026-01-01; reading before then can’t be counted, so this period is only partly covered.",
+    );
+    // No daily series: the empty trend draws nothing.
+    await expect(
+      within(sheet).queryByRole("img", { name: "Pages read trend" }),
+    ).toBeNull();
+  },
+};
