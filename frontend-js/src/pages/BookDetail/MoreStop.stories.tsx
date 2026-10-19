@@ -125,6 +125,17 @@ export const SeriesUnavailable: Story = {
   },
 };
 
+export const SeriesMissing: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/series/:id", 404));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("bdmq-series-unavailable"),
+    ).toHaveTextContent("the shelf didn’t load — series page →");
+  },
+};
+
 export const StandaloneOnNoShelf: Story = {
   args: { book: aBook({ series: null, series_id: null }) },
   play: async ({ canvas }) => {

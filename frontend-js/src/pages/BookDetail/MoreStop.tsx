@@ -115,7 +115,7 @@ function SeriesShelf({
           </div>
           <div className="mono bdmq-quiet-hint">{seriesPage}</div>
         </>
-      ) : series.isError ? (
+      ) : series.isError || series.data === null ? (
         <div
           className="mono bdmq-quiet-hint"
           data-testid="bdmq-series-unavailable"
