@@ -41,3 +41,7 @@
     --rd-bottom-h: 30px;
   }
 }
+/* The comic and PDF readers fill the viewport, so while the dock shows they stop above it. */
+.rd-immersive .cr-root {
+  height: calc(100dvh - var(--rd-dock-h) - env(safe-area-inset-bottom));
+}

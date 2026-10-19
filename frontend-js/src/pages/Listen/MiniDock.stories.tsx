@@ -15,6 +15,7 @@ import {
 } from "../../testing/audioHandlers";
 import { Listen } from "./Listen";
 import { MiniDock } from "./MiniDock";
+import "../ComicReader/ComicReader.css";
 import "../Reader/Reader.css";
 
 /** Starts the book the way a player page does, so the dock has something to show. */
@@ -282,5 +283,35 @@ export const ReaderChromeClearsTheDock: Story = {
       dock.getBoundingClientRect().height,
     );
     await expect(rect("reader-stage").bottom).toBeLessThanOrEqual(bottom.top);
+  },
+};
+
+export const ComicFooterClearsTheDock: Story = {
+  render: () => (
+    <Opened>
+      <Routes>
+        <Route element={<ReaderDock />}>
+          <Route
+            path="/"
+            element={
+              <div className="cr-root" data-testid="comic-root">
+                <div className="cr-stage" />
+                <footer className="cr-bottom" />
+              </div>
+            }
+          />
+        </Route>
+      </Routes>
+    </Opened>
+  ),
+  play: async ({ canvas }) => {
+    const dock = await canvas.findByRole("region", { name: "Now playing" });
+
+    const root = canvas.getByTestId("comic-root").getBoundingClientRect();
+
+    // The story pads the page, so check the room the viewport-high root leaves rather than where it ends.
+    await expect(window.innerHeight - root.height).toBeGreaterThanOrEqual(
+      dock.getBoundingClientRect().height,
+    );
   },
 };
