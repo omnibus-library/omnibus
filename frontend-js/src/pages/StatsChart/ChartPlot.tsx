@@ -360,6 +360,8 @@ export function ChartPlot({
             onMouseDown={() => setAnchor(i)}
             onMouseUp={() => {
               if (anchor !== null) onBrush(anchor, i);
+              // A drag across buckets zooms and re-lays the plot, so the hovered index would name a bucket the pointer isn't over.
+              if (anchor !== null && anchor !== i) setHovered(null);
               setAnchor(null);
             }}
           />

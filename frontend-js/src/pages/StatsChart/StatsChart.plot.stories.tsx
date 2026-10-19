@@ -644,6 +644,30 @@ export const ABrushInsideAZoomNarrowsIt: Story = {
   },
 };
 
+export const ABrushThatZoomsLeavesNoHoverCardBehind: Story = {
+  play: async (ctx) => {
+    const plot = await drawn(ctx);
+
+    drag(plot, 5, 1);
+
+    await ctx.canvas.findByText("Zoomed to 5 of 12 periods");
+    await expect(ctx.canvas.queryByRole("status")).toBeNull();
+    await expect(plot.querySelectorAll(".cb-band")).toHaveLength(0);
+  },
+};
+
+export const ABrushToTheLastBucketLeavesNoBandPastThePlot: Story = {
+  play: async (ctx) => {
+    const plot = await drawn(ctx);
+
+    drag(plot, 1, 11);
+
+    // Eleven buckets remain, so the bucket the pointer let go over no longer exists.
+    await ctx.canvas.findByText("Zoomed to 11 of 12 periods");
+    await expect(plot.querySelectorAll(".cb-band")).toHaveLength(0);
+  },
+};
+
 export const RegroupingDropsAZoomWhoseKeysAreGone: Story = {
   beforeEach({ msw }) {
     msw.use(
