@@ -352,14 +352,12 @@ export const FailedCopyDeleteOffersNoLibraryRetry: Story = {
 export const FailedRemovalCanBeRetriedAndLeaves: Story = {
   ...lastCopy,
   beforeEach({ msw }) {
-    let refusals = 1;
     msw.use(
-      http.delete("/api/physical/:uuid", () => {
-        if (refusals-- > 0)
-          return new HttpResponse("failed with 409", { status: 409 });
-        writes.push("delete-book");
-        return new HttpResponse(null, { status: 204 });
-      }),
+      http.delete(
+        "/api/physical/:uuid",
+        () => new HttpResponse("failed with 409", { status: 409 }),
+        { once: true },
+      ),
       ...physicalHandlers({ copies: [MINE] }, writes),
     );
   },
