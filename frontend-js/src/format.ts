@@ -214,6 +214,15 @@ export function recency(now: number, then: number): string {
   return secs < 172_800 ? "yesterday" : `${Math.floor(secs / 86_400)}d ago`;
 }
 
+/** A file's size in decimal units, "3.1 MB"; `null` for an unknown or empty one. */
+export function fileSize(bytes: number): string | null {
+  if (bytes <= 0) return null;
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
+  if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
 /** "6h 31m" or "41m"; minutes are floored, as a duration must never claim more time than exists. */
 export function formatHm(seconds: number): string {
   const mins = Math.floor(Math.max(0, seconds) / 60);

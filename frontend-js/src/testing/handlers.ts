@@ -21,12 +21,15 @@ import {
   getSmartShelvesContainingMockHandler200,
 } from "../api/generated/omnibus.msw";
 import {
+  type BookDeletionManifest,
+  DeleteBookFilesRequest,
   type EbookMetadata,
   type EbookPage,
   type Highlight,
   type JournalEntry,
   KindleSendRequest,
   type LoginResponse,
+  MergeBooksRequest,
   type PaletteResults,
   type PhysicalCopy,
   PostCrossFormatFollowBody,
@@ -39,6 +42,7 @@ import {
   type ResumePoint,
   type SessionLogEntry,
   type ShelfSummary,
+  UndoMergeRequest,
   UpdateCopyNoteRequest,
   UpdateJournalEntry,
   type WishlistEntry,
@@ -342,6 +346,73 @@ export function kindleHandlers(
       return HttpResponse.json(
         typeof answer === "string" ? { status: answer } : answer,
       );
+    }),
+  ];
+}
+
+/**
+ * Merging: the candidates whose title holds the query, then `POST`s that record `merge:<source>><target>`
+ * and `undo:<id>` in `writes` (merge log id 5, restoring `restored`). `refuse` answers the merge with that status.
+ */
+export function mergeHandlers(
+  candidates: EbookMetadata[],
+  writes: string[] = [],
+  refuse?: number,
+  restored = "00000000-0000-4000-8000-000000000002",
+) {
+  return [
+    http.get("/api/books/merge/candidates", ({ request }) => {
+      const q = (
+        new URL(request.url).searchParams.get("q") ?? ""
+      ).toLowerCase();
+      return HttpResponse.json(
+        candidates.filter((b) => b.title?.toLowerCase().includes(q)),
+      );
+    }),
+    http.post("/api/books/merge", async ({ request }) => {
+      if (refuse) {
+        return new HttpResponse(`failed with ${refuse}`, { status: refuse });
+      }
+      const body = MergeBooksRequest.parse(await request.json());
+      writes.push(`merge:${body.source_uuid}>${body.target_uuid}`);
+      return HttpResponse.json({
+        merge_log_id: 5,
+        target_uuid: body.target_uuid,
+      });
+    }),
+    http.post("/api/books/merge/undo", async ({ request }) => {
+      const body = UndoMergeRequest.parse(await request.json());
+      writes.push(`undo:${body.merge_log_id}`);
+      return HttpResponse.json({ restored_uuid: restored });
+    }),
+  ];
+}
+
+/**
+ * Deleting: the book's `manifest`, and a `POST` that records `delete:files=<ids>;copies=<ids>`
+ * in `writes` and answers `bookDeleted`, taking a `delayMs` to do it.
+ */
+export function deletionHandlers(
+  manifest: BookDeletionManifest,
+  writes: string[] = [],
+  bookDeleted = false,
+  delayMs = 0,
+) {
+  return [
+    http.get("/api/books/:uuid/deletion-manifest", () =>
+      HttpResponse.json(manifest),
+    ),
+    http.post("/api/books/:uuid/delete-files", async ({ request }) => {
+      const body = DeleteBookFilesRequest.parse(await request.json());
+      writes.push(
+        `delete:files=${(body.file_ids ?? []).join(",")};copies=${(body.copy_ids ?? []).join(",")}`,
+      );
+      await delay(delayMs);
+      return HttpResponse.json({
+        book_deleted: bookDeleted,
+        deleted_file_ids: body.file_ids ?? [],
+        deleted_copy_ids: body.copy_ids ?? [],
+      });
     }),
   ];
 }

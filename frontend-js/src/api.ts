@@ -9,6 +9,7 @@ import {
   getDeleteJournalUrl,
   getDeletePhysicalCopyUrl,
   getDeleteRatingUrl,
+  getDeletionManifest,
   getEbookByUuid,
   getEbooks,
   getHighlights,
@@ -16,6 +17,7 @@ import {
   getKindleSendStatus,
   getLogoutUrl,
   getMe,
+  getMergeCandidates,
   getOtherRatings,
   getPostCrossFormatFollowUrl,
   getPostEbookSummaryFetchUrl,
@@ -34,14 +36,17 @@ import {
   getWishlistEntry,
   listPhysicalCopies,
   listShelves,
+  mergeBooks,
   patchCopyNote,
   patchJournal,
+  postDeleteBookFiles,
   postEbookOverrides,
   postJournal,
   postJournalImage,
   login as postLogin,
   postRating,
   register as postRegister,
+  undoMerge as postUndoMerge,
   postWishlistEntry,
   putReadStatus,
   sendToKindle,
@@ -50,6 +55,7 @@ import {
 } from "./api/generated/omnibus";
 import type {
   AlignmentViewOutput,
+  BookDeletionManifest as BookDeletionManifestWire,
   BookProgress as BookProgressWire,
   BookSuggestion as BookSuggestionWire,
   EbookMetadata,
@@ -851,6 +857,68 @@ export async function fetchKindleSend(taskId: number): Promise<KindleSend> {
   if (res.status === 404) return { status: "unknown" };
   if (res.status !== 200) throw failure(res);
   return res.data;
+}
+
+/** Books to merge into this one, matched on title, author or series; ebooks and audiobooks alike. */
+export async function fetchMergeCandidates(q: string): Promise<BookDetail[]> {
+  const res = await getMergeCandidates({ q });
+  if (res.status !== 200) throw failure(res);
+  return res.data.map(toBookDetail);
+}
+
+/** Folds `source` into `target`; answers the id that undoes it. */
+export async function mergeBooksInto(
+  source: BookUuid,
+  target: BookUuid,
+): Promise<number> {
+  const res = await mergeBooks({ source_uuid: source, target_uuid: target });
+  if (res.status !== 200) throw failure(res);
+  return res.data.merge_log_id;
+}
+
+export async function undoBookMerge(logId: number): Promise<void> {
+  const res = await postUndoMerge({ merge_log_id: logId });
+  if (res.status !== 200) throw failure(res);
+}
+
+function toManifest(wire: BookDeletionManifestWire) {
+  return {
+    files: wire.files.map((f) => ({
+      id: f.id,
+      format: f.format,
+      label: f.label ?? null,
+      filename: f.filename,
+      sizeBytes: f.size_bytes ?? 0,
+      path: f.path ?? null,
+    })),
+    copies: wire.copies.map(toCopy),
+    impact: wire.impact,
+  };
+}
+
+export type DeletionManifest = ReturnType<typeof toManifest>;
+
+/** What an admin can delete of a book, and the reader data at stake. */
+export async function fetchDeletionManifest(
+  uuid: BookUuid,
+): Promise<DeletionManifest> {
+  const res = await getDeletionManifest(encodeURIComponent(uuid));
+  if (res.status !== 200) throw failure(res);
+  return toManifest(res.data);
+}
+
+/** Deletes files and copies; `bookDeleted` is true when nothing of the book was left. */
+export async function deleteBookFiles(
+  uuid: BookUuid,
+  fileIds: number[],
+  copyIds: number[],
+): Promise<{ bookDeleted: boolean }> {
+  const res = await postDeleteBookFiles(encodeURIComponent(uuid), {
+    file_ids: fileIds,
+    copy_ids: copyIds,
+  });
+  if (res.status !== 200) throw failure(res);
+  return { bookDeleted: res.data.book_deleted };
 }
 
 function toShelf(wire: ShelfSummaryWire) {

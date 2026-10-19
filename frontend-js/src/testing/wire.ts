@@ -2,6 +2,7 @@ import type {
   AlignmentView,
   AttributedRating,
   AuthorDetail,
+  BookDeletionManifest,
   BookFileInfo,
   BookProgress,
   BookSuggestion,
@@ -219,6 +220,26 @@ export function aWireWishlist(
     user_id: 1,
     source: "detail",
     added_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** What an admin can delete of a book: one EPUB and no copies or reader data, by default. */
+export function aWireManifest(
+  overrides: Partial<BookDeletionManifest> = {},
+): BookDeletionManifest {
+  return {
+    files: [aWireFile({ path: "sora-inkwell/aurora-station-01.epub" })],
+    copies: [],
+    impact: {
+      bookmarks: 0,
+      highlights: 0,
+      journal_entries: 0,
+      listening_sessions: 0,
+      ratings: 0,
+      reading_sessions: 0,
+      shelves: 0,
+    },
     ...overrides,
   };
 }

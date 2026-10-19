@@ -5,6 +5,7 @@ import {
   descriptionOverflows,
   durationLabel,
   facetQuery,
+  fileSize,
   formatDateShort,
   formatHm,
   formatInstantShort,
@@ -94,6 +95,19 @@ describe("homeKicker", () => {
         tail: `On your wishlist · added from ${phrase}`,
       },
     );
+  });
+});
+
+describe("fileSize", () => {
+  it.each([
+    [0, null],
+    [-5, null],
+    [512, "512 B"],
+    [1_500, "1.5 KB"],
+    [3_100_000, "3.1 MB"],
+    [2_400_000_000, "2.4 GB"],
+  ])("sizes %i bytes as %s", (bytes, label) => {
+    expect(fileSize(bytes)).toBe(label);
   });
 });
 
