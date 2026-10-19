@@ -56,6 +56,7 @@ import {
 } from "./relocate";
 import { SearchPanel } from "./SearchPanel";
 import { SelectionPopover } from "./SelectionPopover";
+import { SyncHerePill, SyncJumpBanner } from "./SyncBanner";
 import {
   furtherInPercent,
   isEpubCfi,
@@ -329,6 +330,7 @@ function EpubPage({
         onBack={back}
         onToggle={toggle}
       />
+      <SyncJumpBanner uuid={uuid} />
       <ViewerStage status={status} onRetry={() => setAttempt((n) => n + 1)} />
       <PageTurnGutters
         onPrev={() => turn("prev")}
@@ -336,6 +338,7 @@ function EpubPage({
       />
       <Footer
         page={labels.page}
+        pill={<SyncHerePill uuid={uuid} loc={loc} />}
         chapter={labels.chapter}
         ambient={formatAmbientPage(loc)}
         pct={loc.pct}

@@ -66,7 +66,7 @@ export function AnnotationsSheet({
         <Button
           size="sm"
           data-testid="reader-annotations-add"
-          disabled={position === null}
+          disabled={position === null || bookmarks === null}
           onClick={() => position !== null && add(position, label)}
         >
           + Bookmark

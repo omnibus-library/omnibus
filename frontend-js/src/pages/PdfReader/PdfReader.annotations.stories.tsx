@@ -267,6 +267,9 @@ export const BookmarksSaveTheCurrentPageTitledByItsNumber: Story = {
     await canvas.findByText("Page 3 of 5");
     await userEvent.click(canvas.getByRole("button", { name: "Bookmarks" }));
     const drawer = await canvas.findByTestId("reader-bookmarks-drawer");
+    await waitFor(() =>
+      expect(within(drawer).queryByRole("status")).toBeNull(),
+    );
 
     await userEvent.click(
       within(drawer).getByRole("button", { name: "+ Bookmark" }),
@@ -295,6 +298,9 @@ export const ABookmarkRowJumpsToItsPage: Story = {
     await canvas.findByText("Page 3 of 5");
     await userEvent.click(canvas.getByRole("button", { name: "Bookmarks" }));
     const drawer = await canvas.findByTestId("reader-bookmarks-drawer");
+    await waitFor(() =>
+      expect(within(drawer).queryByRole("status")).toBeNull(),
+    );
 
     await userEvent.click(
       await within(drawer).findByRole("button", { name: /Page 5/ }),

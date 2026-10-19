@@ -1,6 +1,7 @@
 import type { HttpHandler } from "msw";
 import type {
   Bookmark,
+  CrossFormatResume,
   Highlight,
   ProgressUpdate,
 } from "../api/generated/schemas";
@@ -8,6 +9,7 @@ import { bookHandler, readStatusHandlers } from "./handlers";
 import { fakeEpubGlue } from "./readerGlue";
 import {
   annotationHandlers,
+  crossFormatHandlers,
   progressHandlers,
   type RecordedWrite,
 } from "./readerHandlers";
@@ -39,6 +41,11 @@ export function readerFixture() {
     bookmarks: [],
   };
   const annotationWrites: RecordedWrite[] = [];
+  // What the cross-format resume route answers (a story sets it) and the calls made to it and the sync point.
+  const crossFormat: { resume: CrossFormatResume } = {
+    resume: { state: "not_linked" },
+  };
+  const syncCalls: RecordedWrite[] = [];
   let glue: ReturnType<typeof fakeEpubGlue>;
 
   function install(options?: Parameters<typeof fakeEpubGlue>[0]) {
@@ -51,6 +58,8 @@ export function readerFixture() {
     statusWrites,
     annotations,
     annotationWrites,
+    crossFormat,
+    syncCalls,
     install,
     get glue() {
       return glue;
@@ -64,6 +73,8 @@ export function readerFixture() {
       annotations.highlights = [];
       annotations.bookmarks = [];
       annotationWrites.length = 0;
+      crossFormat.resume = { state: "not_linked" };
+      syncCalls.length = 0;
       // The reader keeps its position and typography here, which would otherwise carry between stories.
       localStorage.clear();
       msw.use(
@@ -71,6 +82,7 @@ export function readerFixture() {
         ...progressHandlers([SAVED], writes),
         ...readStatusHandlers(aWireReadStatus(), statusWrites),
         ...annotationHandlers(annotations, annotationWrites),
+        ...crossFormatHandlers(crossFormat, syncCalls),
       );
       return install();
     },

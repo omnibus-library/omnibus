@@ -5,6 +5,7 @@ import { fetchJson, ok, send } from "./core";
 import {
   getAlignment,
   getBookmarks,
+  getCrossFormatResume,
   getDeleteBookmarkUrl,
   getDeleteHighlightUrl,
   getDeleteRatingUrl,
@@ -17,6 +18,7 @@ import {
   getPatchHighlightColorUrl,
   getPatchHighlightNoteUrl,
   getPostCrossFormatFollowUrl,
+  getPostSyncPointUrl,
   getRecentProgress,
   getSessionLog,
   postBookmark,
@@ -31,6 +33,7 @@ import type {
   BookInsights as BookInsightsWire,
   Bookmark as BookmarkWire,
   BookProgress as BookProgressWire,
+  CrossFormatResumeOutput as CrossFormatResume,
   Highlight as HighlightWire,
   AttributedRating as OtherRatingWire,
   ProgressRecord as PositionWire,
@@ -379,6 +382,32 @@ export async function createBookmark(
 
 export async function deleteBookmark(id: number): Promise<void> {
   await send(getDeleteBookmarkUrl(String(id)), "DELETE");
+}
+
+export type { CrossFormatResume };
+
+/** Where the other format has the reader, mapped onto the ebook; `null` when the route has no answer. */
+export async function fetchCrossFormatResume(
+  uuid: BookUuid,
+): Promise<CrossFormatResume | null> {
+  const res = await getCrossFormatResume(encodeURIComponent(uuid), {
+    target: "epub",
+    derive: "cfi",
+  }).catch(() => null);
+  return res?.status === 200 ? res.data : null;
+}
+
+/** Declares the spot the reader is at as matching their place in the other format. A 409 means the formats aren't linked. */
+export async function declareSyncPoint(
+  uuid: BookUuid,
+  at: { fraction: number; cfi: string | null },
+): Promise<void> {
+  await send(getPostSyncPointUrl(encodeURIComponent(uuid)), "POST", {
+    book_uuid: uuid,
+    format: "epub",
+    ebook_fraction: Math.min(Math.max(at.fraction, 0), 1),
+    epub_cfi: at.cfi,
+  });
 }
 
 function toInsights(wire: BookInsightsWire) {

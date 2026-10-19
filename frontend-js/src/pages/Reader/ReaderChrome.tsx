@@ -251,19 +251,22 @@ export function PageTurnGutters({
 
 type FooterProps = {
   page: string;
+  /** Sits between the page and the chapter readouts. */
+  pill?: ReactNode;
   chapter: string;
   ambient: string;
   pct: number;
 };
 
 /** The page and chapter readouts and the progress ribbon. */
-export function Footer({ page, chapter, ambient, pct }: FooterProps) {
+export function Footer({ page, pill, chapter, ambient, pct }: FooterProps) {
   return (
     <>
       <div className="rd-bottom" data-testid="reader-footer">
         <span className="rd-bottom-page" style={{ color: "var(--ink-2)" }}>
           {page}
         </span>
+        {pill}
         <div
           style={{ flex: 1, textAlign: "center", letterSpacing: ".08em" }}
           data-testid="reader-chapter-counter"

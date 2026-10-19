@@ -27,7 +27,7 @@ export function useBookmarks(uuid: BookUuid) {
     };
   }, [uuid]);
 
-  /** Saves the place; a refused save adds nothing. */
+  /** Saves the place; a refused save adds nothing. Callers wait for the list, which would otherwise replace the new row. */
   async function add(position: string, label: string) {
     try {
       const saved = await createBookmark(uuid, {
@@ -141,7 +141,7 @@ export function BookmarksDrawer({
         <Button
           size="sm"
           data-testid="reader-bookmark-add"
-          disabled={position === null}
+          disabled={position === null || bookmarks === null}
           onClick={() => position !== null && add(position, label)}
         >
           + Bookmark

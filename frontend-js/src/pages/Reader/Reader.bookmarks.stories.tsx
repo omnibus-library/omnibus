@@ -47,11 +47,17 @@ const HIGHLIGHTS = () => [
 const calls = (method: string) =>
   r.glue.calls.filter((c) => c.method === method).map((c) => c.args);
 
+/** Waits out the bookmark list's load, which would replace a row added before it landed. */
+const loaded = (panel: HTMLElement) =>
+  waitFor(() => expect(within(panel).queryByRole("status")).toBeNull());
+
 /** Waits for the book, then opens the bookmarks drawer. */
 async function openDrawer({ canvas, userEvent }: Args) {
   await canvas.findByTestId("reader-header-chapter");
   await userEvent.click(canvas.getByRole("button", { name: "Bookmarks" }));
-  return canvas.findByTestId("reader-bookmarks-drawer");
+  const drawer = await canvas.findByTestId("reader-bookmarks-drawer");
+  await loaded(drawer);
+  return drawer;
 }
 
 /** The first row's delete button, once the list has loaded. */
@@ -67,7 +73,9 @@ async function firstDelete(drawer: HTMLElement) {
 async function openSheet({ canvas, userEvent }: Args) {
   await canvas.findByTestId("reader-header-chapter");
   await userEvent.click(canvas.getByTestId("reader-annotations"));
-  return canvas.findByTestId("reader-annotations-drawer");
+  const sheet = await canvas.findByTestId("reader-annotations-drawer");
+  await loaded(sheet);
+  return sheet;
 }
 
 export const TheDrawerIsEmptyBeforeAnyBookmark: Story = {

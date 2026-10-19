@@ -3,6 +3,8 @@ import {
   type Bookmark,
   ClientStampedCreateBookmark,
   ClientStampedCreateHighlight,
+  type CrossFormatResume,
+  DeclareSyncPoint,
   type Highlight,
   type ProgressRecord,
   ProgressUpdate,
@@ -130,6 +132,32 @@ export function annotationHandlers(
       state.bookmarks = state.bookmarks.filter(
         (b) => b.id !== Number(params.id),
       );
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+}
+
+/**
+ * The cross-format resume `GET` answers `state.resume`, and the sync-point `POST` answers 204;
+ * both land in `calls`, the `GET` with its query so a story can read what was asked.
+ */
+export function crossFormatHandlers(
+  state: { resume: CrossFormatResume },
+  calls: RecordedWrite[],
+) {
+  return [
+    http.get("/api/books/:uuid/cross-format-resume", ({ request }) => {
+      const { pathname, search } = new URL(request.url);
+      calls.push({ method: "GET", path: pathname + search, body: undefined });
+      return HttpResponse.json(state.resume);
+    }),
+    http.post("/api/books/:uuid/sync-point", async ({ params, request }) => {
+      const body = DeclareSyncPoint.parse(await request.json());
+      calls.push({
+        method: "POST",
+        path: `/api/books/${params.uuid}/sync-point`,
+        body,
+      });
       return new HttpResponse(null, { status: 204 });
     }),
   ];
