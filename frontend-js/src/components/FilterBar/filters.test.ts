@@ -95,7 +95,7 @@ describe("facetValue", () => {
   });
 });
 
-describe("shelves", () => {
+describe("shelfLabel", () => {
   it("names another reader's shelf with its owner but not a wishlist or your own", () => {
     expect(shelfLabel(aShelf(), viewer)).toBe("Winter reads");
     expect(
@@ -105,7 +105,9 @@ describe("shelves", () => {
       shelfLabel(aShelf({ kind: "wishlist", ownerId: userId(2) }), viewer),
     ).toBe("Winter reads");
   });
+});
 
+describe("shelfOptions", () => {
   it("offers hand-picked and wishlist shelves by id, never a smart one", () => {
     const options = shelfOptions(
       [
@@ -142,7 +144,7 @@ describe("namedOptions", () => {
   });
 });
 
-describe("options", () => {
+describe("formatOptions", () => {
   it("lists the six formats uppercase", () => {
     expect(formatOptions().map((o) => o.label)).toEqual([
       "EPUB",
@@ -153,7 +155,9 @@ describe("options", () => {
       "MP3",
     ]);
   });
+});
 
+describe("matching", () => {
   it("matches a search by label and caps the rows while counting every match", () => {
     const options = namedOptions(
       Array.from({ length: 5 }, (_, i) => ({ name: `Tag ${i}`, count: 1 })),
@@ -163,7 +167,9 @@ describe("options", () => {
     expect(matching(options, "tag", 2).shown).toHaveLength(2);
     expect(matching(options, "zz", 2)).toEqual({ shown: [], total: 0 });
   });
+});
 
+describe("withStranded", () => {
   it("lists a pick the source no longer offers first", () => {
     const list = { options: formatOptions(), cap: null };
 
@@ -181,7 +187,7 @@ describe("options", () => {
   });
 });
 
-describe("status lines", () => {
+describe("statusLine", () => {
   it("says when a row cap cut the matches and when a full cloud holds only its most-used", () => {
     expect(statusLine("tags", 200, 450, null)).toBe(
       "Showing 200 of 450 · search to narrow",
@@ -191,7 +197,9 @@ describe("status lines", () => {
       "Showing 200 of the 500 most-used tags · search narrows within them",
     );
   });
+});
 
+describe("noMatchLine", () => {
   it("words an unmatched search, noting a capped source", () => {
     expect(noMatchLine("tags", " zz ", null)).toBe("No tags match “zz”.");
     expect(noMatchLine("tags", "zz", 500)).toBe(

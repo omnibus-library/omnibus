@@ -127,15 +127,17 @@ describe("reconcile", () => {
   );
 });
 
-describe("shelf selection", () => {
-  it("round trips a shelf and the whole library", () => {
+describe("saveShelfSelection", () => {
+  it("round trips a shelf and the whole library through loadShelfSelection", () => {
     saveShelfSelection({ kind: "shelf", id: 42 });
     expect(loadShelfSelection()).toEqual({ kind: "shelf", id: 42 });
 
     saveShelfSelection({ kind: "all" });
     expect(loadShelfSelection()).toEqual({ kind: "all" });
   });
+});
 
+describe("loadShelfSelection", () => {
   it("reads unparsable JSON as the whole library", () => {
     localStorage.setItem("omnibus.landing_shelf", '{"kind":"shelf"}');
 
