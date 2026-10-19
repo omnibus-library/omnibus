@@ -12,6 +12,7 @@ import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { bookCount } from "../../format";
 import { useCurrentUser } from "../../session";
+import { useLoadMore } from "../../useLoadMore";
 import { useLibraryPrefs } from "../../viewPrefs";
 import { BookGrid } from "./BookGrid";
 import { BookTable } from "./BookTable";
@@ -29,7 +30,6 @@ import { ShelfGallery } from "./ShelfGallery";
 import { useShelfLens } from "./shelfGallery";
 import { headerSort } from "./sorting";
 import { Toolbar } from "./Toolbar";
-import { useLoadMore } from "./useLoadMore";
 import "./Library.css";
 
 function Receipt({

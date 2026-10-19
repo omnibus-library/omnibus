@@ -9,6 +9,7 @@ import {
   getEbooks,
   getGenres,
   getPostBulkOverridesUrl,
+  getSearch,
   getTags,
   listSeries,
 } from "./generated/omnibus";
@@ -133,6 +134,18 @@ export async function fetchBookPage(
   });
   if (res.status !== 200) throw failure(res);
   return toBookPage(res.data, res.headers);
+}
+
+/** The books whose title, author or series match `q`, best match first, and how many matched. */
+export async function searchBooks(q: string, signal?: AbortSignal) {
+  const res = await getSearch({ q }, { signal });
+  if (res.status !== 200) throw failure(res);
+  return {
+    books: res.data.books.map(toBook),
+    total: countHeader.parse(
+      res.headers.get("X-Total-Count") ?? res.data.books.length,
+    ),
+  };
 }
 
 /** Applies one edit to every book in a single request; the server merges tag and genre changes into each book's own lists. */

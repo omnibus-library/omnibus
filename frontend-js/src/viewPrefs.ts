@@ -45,6 +45,7 @@ const Stored = z.object({
   filters_open: z.boolean().default(false),
 });
 
+const DISCOVERY_KEY = "omnibus.discovery_prefs";
 const PREFS_PREFIX = "omnibus.view_prefs::";
 const LAST_LIBRARY_KEY = "omnibus.view_prefs.last_library";
 const SHELF_KEY = "omnibus.landing_shelf";
@@ -169,15 +170,51 @@ export function saveShelfSelection(selection: ShelfSelection) {
   write(SHELF_KEY, JSON.stringify(selection));
 }
 
-/** The library's prefs in memory, filed under the library page 1 names; the caller reports each answer to `noteAnswered`. */
-export function useLibraryPrefs() {
+const DiscoveryStored = z.object({
+  authors_sort: z.enum(["name", "book_count", "recent"]).default("name"),
+  series_sort: z.enum(["name", "book_count"]).default("name"),
+  shelves_sort: z.enum(["name", "book_count"]).default("name"),
+});
+
+/** The authors, series and shelves indexes' saved orders; the same key and JSON as Dioxus. */
+export type DiscoveryPrefs = z.infer<typeof DiscoveryStored>;
+
+/** The saved index orders; anything unreadable is by name. */
+export function loadDiscoveryPrefs(): DiscoveryPrefs {
+  const parsed = DiscoveryStored.safeParse(readJson(DISCOVERY_KEY) ?? {});
+  return parsed.success ? parsed.data : DiscoveryStored.parse({});
+}
+
+/** Saves one index's order and keeps the others as they were. */
+export function saveDiscoverySort<K extends keyof DiscoveryPrefs>(
+  field: K,
+  value: DiscoveryPrefs[K],
+) {
+  write(
+    DISCOVERY_KEY,
+    JSON.stringify({ ...loadDiscoveryPrefs(), [field]: value }),
+  );
+}
+
+const Handoff = z.object({ clauses: z.array(FilterClauseSchema) });
+
+/** The filter a page sent the library through router state, or `null` when the state carries none. */
+export function handoffClauses(state: unknown): FilterClause[] | null {
+  const parsed = Handoff.safeParse(state);
+  return parsed.success ? parsed.data.clauses : null;
+}
+
+/** The library's prefs in memory (opening on `handoff`'s filter, if any), filed under the library page 1 names; the caller reports each answer to `noteAnswered`. */
+export function useLibraryPrefs(handoff: FilterClause[] | null = null) {
   const [prefs, setPrefs] = useState(() => {
     const last = lastLibrary();
-    return last ? loadPrefs(last) : DEFAULT_PREFS;
+    const saved = last ? loadPrefs(last) : DEFAULT_PREFS;
+    return handoff ? { ...saved, clauses: handoff } : saved;
   });
   const libraryPath = useRef<string | null>(null);
   const reconciled = useRef<string | null>(null);
-  const unsaved = useRef(false);
+  // A handed-off filter is in no library's store yet; page 1's reconcile files it.
+  const unsaved = useRef(handoff !== null);
   const pageFailed = useRef(false);
 
   const change = (next: Prefs) => {

@@ -3,11 +3,13 @@ import { useState } from "react";
 import { Link } from "react-router";
 import {
   type AuthorId,
+  authorBooksQuery,
   type Book,
   type BookDetail,
   type CreditedBook,
   type Shelf,
   type Suggestion,
+  seriesQuery,
   setShelfMember,
   thumbSrcSet,
   thumbUrl,
@@ -28,13 +30,7 @@ import {
 } from "../../components/ShelfTile/ShelfTile";
 import { formatYear, plural } from "../../format";
 import { useCurrentUser } from "../../session";
-import {
-  authorBooksQuery,
-  seriesQuery,
-  shelvesQuery,
-  suggestionPollMs,
-  suggestionsQuery,
-} from "./queries";
+import { shelvesQuery, suggestionPollMs, suggestionsQuery } from "./queries";
 import { SectionHead } from "./SectionHead";
 import {
   automaticShelves,

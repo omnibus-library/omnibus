@@ -6,6 +6,7 @@ import {
   type Insights,
   type Progress,
   saveDescription,
+  seriesQuery,
   type WishlistEntry,
 } from "../../api";
 import { Button, ButtonLink } from "../../components/Button/Button";
@@ -27,7 +28,6 @@ import {
   bookQuery,
   insightsQuery,
   progressQuery,
-  seriesQuery,
   useWish,
 } from "./queries";
 import { ReadStatus } from "./ReadStatus";
