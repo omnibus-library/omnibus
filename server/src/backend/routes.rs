@@ -321,29 +321,20 @@ fn engagement_routes() -> OpenApiRouter<AppState> {
 /// `/api/rpc/scan/*` server functions.
 fn check_in_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route("/api/scan/resolve", post(scan::post_resolve))
-        .route("/api/scan/search", post(scan::post_search))
-        .route("/api/scan/resolve-meta", post(scan::post_resolve_meta))
-        .route("/api/scan/check-in", post(scan::post_check_in))
-        .route(
-            "/api/scan/physical-only",
-            post(scan::post_add_physical_only),
-        )
-        .route("/api/scan/wishlist", post(scan::post_wishlist_add))
-        // Whether a server-wide Google Books key is configured — any
-        // authenticated user may read this non-sensitive flag (mirrors
-        // `/api/summary/hardcover-configured`). Drives the check-in scan
-        // screen's provider note without the admin-only masked-status route.
-        .route(
-            "/api/scan/google-books-configured",
-            get(scan::get_google_books_configured),
-        )
-        // Google Books API key (admin) — mobile-facing REST. Web hits the
-        // analogous `/api/rpc/google-books-key` server fn.
-        .route(
-            "/api/google-books-key",
-            get(scan::get_google_books_key).post(scan::post_google_books_key),
-        )
+        .routes(routes!(scan::post_resolve))
+        .routes(routes!(scan::post_search))
+        .routes(routes!(scan::post_resolve_meta))
+        .routes(routes!(scan::post_check_in))
+        .routes(routes!(scan::post_add_physical_only))
+        .routes(routes!(scan::post_wishlist_add))
+        // Any user may read this flag; it drives the check-in scan screen's
+        // provider note without the admin-only masked-status route.
+        .routes(routes!(scan::get_google_books_configured))
+        // Admin. Web hits the analogous `/api/rpc/google-books-key` server fn.
+        .routes(routes!(
+            scan::get_google_books_key,
+            scan::post_google_books_key
+        ))
 }
 
 /// F Physical Check-In — book-detail collection + wishlist reads/edits.
@@ -351,18 +342,14 @@ fn check_in_routes() -> OpenApiRouter<AppState> {
 /// param route can't shadow them.
 fn physical_collection_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route(
-            "/api/physical/copies/{copy_id}",
-            patch(physical::patch_copy_note).delete(physical::delete_copy),
-        )
-        .route("/api/physical/{uuid}/copies", get(physical::get_copies))
-        .route(
-            "/api/physical/{uuid}/wishlist",
-            get(physical::get_wishlist_entry)
-                .post(physical::post_wishlist_entry)
-                .delete(physical::delete_wishlist_entry),
-        )
-        .route("/api/physical/{uuid}", delete(physical::delete_book))
+        .routes(routes!(physical::patch_copy_note, physical::delete_copy))
+        .routes(routes!(physical::get_copies))
+        .routes(routes!(
+            physical::get_wishlist_entry,
+            physical::post_wishlist_entry,
+            physical::delete_wishlist_entry
+        ))
+        .routes(routes!(physical::delete_book))
 }
 
 /// Shelves — mobile-facing REST. Web hits the analogous
@@ -370,31 +357,18 @@ fn physical_collection_routes() -> OpenApiRouter<AppState> {
 /// are registered before the `{id}` param route so it can't shadow them.
 fn shelf_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route(
-            "/api/shelves",
-            get(shelves::list_shelves).post(shelves::create_shelf),
-        )
-        .route("/api/shelves/preview", post(shelves::preview_rule))
-        .route(
-            "/api/shelves/containing/{uuid}",
-            get(shelves::shelves_containing),
-        )
-        .route(
-            "/api/shelves/containing/{uuid}/smart",
-            get(shelves::smart_shelves_containing),
-        )
-        .route(
-            "/api/shelves/{id}",
-            get(shelves::get_shelf)
-                .patch(shelves::update_shelf)
-                .delete(shelves::delete_shelf),
-        )
-        .route("/api/shelves/{id}/page", get(shelves::get_shelf_page))
-        .route("/api/shelves/{id}/books", post(shelves::add_shelf_books))
-        .route(
-            "/api/shelves/{id}/books/{uuid}",
-            delete(shelves::remove_shelf_book),
-        )
+        .routes(routes!(shelves::list_shelves, shelves::create_shelf))
+        .routes(routes!(shelves::preview_rule))
+        .routes(routes!(shelves::shelves_containing))
+        .routes(routes!(shelves::smart_shelves_containing))
+        .routes(routes!(
+            shelves::get_shelf,
+            shelves::update_shelf,
+            shelves::delete_shelf
+        ))
+        .routes(routes!(shelves::get_shelf_page))
+        .routes(routes!(shelves::add_shelf_books))
+        .routes(routes!(shelves::remove_shelf_book))
 }
 
 /// Public journal entries — mobile-facing REST. Web hits the analogous
@@ -428,56 +402,41 @@ fn journal_routes() -> OpenApiRouter<AppState> {
 /// POST, photo PUT, photo-url PUT) carry the per-IP frequency cap.
 fn discovery_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route(
-            "/api/authors/{id}/photo",
-            get(author_photos::get_author_photo).delete(author_photos::delete_author_photo),
-        )
+        .routes(routes!(
+            author_photos::get_author_photo,
+            author_photos::delete_author_photo
+        ))
         .routes(routes!(covers::get_cover))
         .routes(routes!(covers::get_thumb))
-        .route("/api/authors", get(authors::get_authors))
-        .route("/api/authors/reading", get(authors::get_author_reading))
-        .route(
-            "/api/authors/refetch-photos",
-            post(author_photos::post_refetch_author_photos),
-        )
-        .route(
-            "/api/authors/{id}/photo/scan",
-            post(author_photos::post_author_photo_scan),
-        )
-        .route("/api/authors/{id}", get(authors::get_author_by_id))
-        .route("/api/series", get(series::get_series))
-        .route("/api/series/{id}", get(series::get_series_by_id))
-        .route("/api/tags", get(tags::get_tags))
-        .route("/api/genres", get(genres::get_genres))
+        .routes(routes!(authors::get_authors))
+        .routes(routes!(authors::get_author_reading))
+        .routes(routes!(author_photos::post_refetch_author_photos))
+        .routes(routes!(author_photos::post_author_photo_scan))
+        .routes(routes!(authors::get_author_by_id))
+        .routes(routes!(series::get_series))
+        .routes(routes!(series::get_series_by_id))
+        .routes(routes!(tags::get_tags))
+        .routes(routes!(genres::get_genres))
 }
 
 /// Suggestions — mobile-facing REST. Web hits the analogous
 /// `/api/rpc/ebook-suggestions` + `/api/rpc/hardcover-key` server fns.
 fn suggestion_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route(
-            "/api/ebooks/{uuid}/suggestions",
-            get(suggestions::get_suggestions),
-        )
-        .route(
-            "/api/suggestions/{uuid}/{rank}/cover",
-            get(suggestions::get_suggestion_cover),
-        )
-        .route(
-            "/api/hardcover-key",
-            get(suggestions::get_hardcover_key).post(suggestions::post_hardcover_key),
-        )
+        .routes(routes!(suggestions::get_suggestions))
+        .routes(routes!(suggestions::get_suggestion_cover))
+        .routes(routes!(
+            suggestions::get_hardcover_key,
+            suggestions::post_hardcover_key
+        ))
 }
 
 /// "Fetch Summary" — mobile-facing REST. Web hits the analogous
 /// `/api/rpc/ebook/summary/*` server fns.
 fn summary_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route(
-            "/api/ebooks/{uuid}/summary/fetch",
-            post(summary::post_ebook_summary_fetch),
-        )
-        .route("/api/summary/sources", get(summary::get_summary_sources))
+        .routes(routes!(summary::post_ebook_summary_fetch))
+        .routes(routes!(summary::get_summary_sources))
 }
 
 /// The metadata-provider surface — mobile-facing REST. Web hits the analogous
@@ -487,15 +446,9 @@ fn summary_routes() -> OpenApiRouter<AppState> {
 /// side's gate or response shape and the other needs the same edit.
 fn metadata_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route("/api/metadata/providers", get(metadata::get_providers))
-        .route(
-            "/api/metadata/editions/search",
-            post(metadata::post_edition_search),
-        )
-        .route(
-            "/api/metadata/editions/hydrate",
-            post(metadata::post_edition_hydrate),
-        )
+        .routes(routes!(metadata::get_providers))
+        .routes(routes!(metadata::post_edition_search))
+        .routes(routes!(metadata::post_edition_hydrate))
 }
 
 /// Send-to-Kindle plus the per-user account preferences that grew up
@@ -570,14 +523,8 @@ fn upload_router(limits: RateLimits) -> OpenApiRouter<AppState> {
         )
         .route("/api/journals/images", post(journals::post_journal_image))
         .route("/api/account/avatar", post(profile::post_avatar))
-        .route(
-            "/api/authors/{id}/photo",
-            put(author_photos::put_author_photo),
-        )
-        .route(
-            "/api/authors/{id}/photo/url",
-            put(author_photos::put_author_photo_url),
-        )
+        .routes(routes!(author_photos::put_author_photo))
+        .routes(routes!(author_photos::put_author_photo_url))
         // Image uploads need more than the global 1 MiB cap; layered closer
         // to the handler than the global limit in `main.rs`, so axum picks
         // this larger value for these routes (preserves the prior 11 MiB cap

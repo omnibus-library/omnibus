@@ -88,5 +88,15 @@ pub struct HardcoverKeyStatus {
     pub source: String,
 }
 
+/// Body of `POST /api/hardcover-key`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SetHardcoverKey {
+    /// The Hardcover API token, up to 2048 bytes. `null`, absent or blank clears the
+    /// saved key.
+    #[serde(default)]
+    pub key: Option<String>,
+}
+
 #[cfg(test)]
 mod tests;

@@ -13,8 +13,9 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, worker::Task};
-use omnibus_shared::{BookSuggestion, RawSuggestion, SuggestionsResponse};
-use serde::Deserialize;
+use omnibus_shared::{
+    BookSuggestion, HardcoverKeyStatus, RawSuggestion, SetHardcoverKey, SuggestionsResponse,
+};
 
 use super::{internal, AppState};
 use crate::auth::{AdminUser, AuthUser, MediaAuthUser};
@@ -27,9 +28,19 @@ fn now_secs() -> i64 {
         .unwrap_or(0)
 }
 
-/// Serve a book's cached "readers also enjoyed" strip. Enqueues a single
-/// background resolution (marking `pending` first) when the cache is
-/// absent/stale so a refresh or a burst of viewers never re-hits Hardcover.
+/// Get a book's suggestions
+///
+/// Books that Hardcover's curated lists pair with this one, for a "readers also enjoyed"
+/// strip. `status` is `not_configured` when the server has no Hardcover key, `pending`
+/// while the server fetches them in the background (ask again shortly), or `ready` with
+/// the items, which may be empty. Results are kept for 30 days, then refreshed.
+#[utoipa::path(
+    get,
+    path = "/api/ebooks/{uuid}/suggestions",
+    tag = "Metadata",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses((status = 200, description = "The suggestions, or why there are none yet.", body = SuggestionsResponse)),
+)]
 pub(super) async fn get_suggestions(
     _user: AuthUser,
     State(state): State<AppState>,
@@ -44,6 +55,8 @@ pub(super) async fn get_suggestions(
         Ok(m) => m,
         Err(e) => return internal("read suggestion state", e),
     };
+    // Marking `pending` before the post means a refresh or a burst of viewers
+    // enqueues one resolution, never one each.
     let decision = db::decide(marker, now_secs());
     if decision.enqueue {
         if let Err(e) = db::mark_pending(&state.pool, &uuid).await {
@@ -81,8 +94,24 @@ pub(super) async fn get_suggestions(
     }
 }
 
-/// Stream a cached suggestion cover's bytes; 404 on miss. Same cache semantics
-/// as `/api/covers/{uuid}`.
+/// Get a suggestion's cover
+///
+/// The cover of one suggested book. A suggestion's `cover_url` points here when it has a
+/// cover.
+#[utoipa::path(
+    get,
+    path = "/api/suggestions/{uuid}/{rank}/cover",
+    tag = "Metadata",
+    security(("bearer" = []), ("session_cookie" = []), ("media_token" = [])),
+    params(
+        ("uuid" = String, Path, description = "The uuid of the book the suggestion is for."),
+        ("rank" = i64, Path, description = "The suggestion's rank, from its `cover_url`."),
+    ),
+    responses(
+        (status = 200, description = "The cover image.", body = [u8], content_type = "image/*"),
+        (status = 404, description = "No cover is stored for that book and rank."),
+    ),
+)]
 pub(super) async fn get_suggestion_cover(
     _user: MediaAuthUser,
     State(state): State<AppState>,
@@ -104,7 +133,19 @@ pub(super) async fn get_suggestion_cover(
     }
 }
 
-/// Admin-only: masked status of the server-wide Hardcover key.
+/// Get the Hardcover key's status
+///
+/// Whether a Hardcover API key is set, where it comes from, and a masked preview. The key
+/// itself is never returned. Needs an admin account.
+#[utoipa::path(
+    get,
+    path = "/api/hardcover-key",
+    tag = "Admin",
+    responses(
+        (status = 200, description = "The key's status.", body = HardcoverKeyStatus),
+        (status = 403, description = "You aren't an admin."),
+    ),
+)]
 pub(super) async fn get_hardcover_key(
     _admin: AdminUser,
     State(state): State<AppState>,
@@ -115,16 +156,24 @@ pub(super) async fn get_hardcover_key(
     }
 }
 
-/// Body for `POST /api/hardcover-key`. A `null`/absent/blank key clears it.
-#[derive(Debug, Deserialize)]
-pub(super) struct SetHardcoverKey {
-    #[serde(default)]
-    key: Option<String>,
-}
-
-/// Admin-only: save or clear the Hardcover key; returns the new masked status.
-/// A value over `HARDCOVER_API_KEY_MAX_LEN` returns 422 with the typed
-/// validation message so an admin sees a per-case error rather than a 500.
+/// Set the Hardcover key
+///
+/// Saves the server-wide Hardcover API token, or clears it when `key` is `null`, absent or
+/// blank. The key turns on book suggestions, makes Hardcover the first source for
+/// summaries, and adds it as the last source for ISBN lookups. Clearing the saved key
+/// falls back to the server's `HARDCOVER_API_KEY` environment variable, when that is set.
+/// Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/hardcover-key",
+    tag = "Admin",
+    request_body = SetHardcoverKey,
+    responses(
+        (status = 200, description = "The key's new status.", body = HardcoverKeyStatus),
+        (status = 403, description = "You aren't an admin."),
+        (status = 422, description = "The key is longer than 2048 bytes."),
+    ),
+)]
 pub(super) async fn post_hardcover_key(
     _admin: AdminUser,
     State(state): State<AppState>,

@@ -94,6 +94,16 @@ pub struct GoogleBooksKeyStatus {
     pub source: String,
 }
 
+/// Body of `POST /api/google-books-key`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SetGoogleBooksKey {
+    /// The Google Books API key, up to 512 bytes. `null`, absent or blank clears the
+    /// saved key.
+    #[serde(default)]
+    pub key: Option<String>,
+}
+
 /// Normalized book metadata resolved from an external provider. Every field but
 /// `isbn13`, `title`, and `source` is best-effort — providers disagree on which
 /// they carry. `cover_url` is a provider-hosted image the caller fetches only
