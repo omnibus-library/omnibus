@@ -171,6 +171,7 @@ export function DeleteBookDialog({
       dialogClass="mg-modal del-modal"
       busy={busy}
       onDismiss={onClose}
+      focusOnOpen
     >
       {pane}
     </ConfirmModal>

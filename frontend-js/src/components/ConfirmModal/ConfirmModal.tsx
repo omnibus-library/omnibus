@@ -53,12 +53,13 @@ export function ConfirmModal({
   const dismiss = () => {
     if (!busy) onDismiss();
   };
+  // Again when `busy` clears: the button that was working is disabled, which drops focus to the page.
   useEffect(() => {
-    if (!focusOnOpen) return;
+    if (!focusOnOpen || busy) return;
     // After paint, or the focus ring never shows.
     const frame = requestAnimationFrame(() => backdrop.current?.focus());
     return () => cancelAnimationFrame(frame);
-  }, [focusOnOpen]);
+  }, [focusOnOpen, busy]);
   return (
     <div
       ref={backdrop}

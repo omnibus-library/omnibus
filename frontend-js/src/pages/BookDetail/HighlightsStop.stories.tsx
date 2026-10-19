@@ -305,6 +305,12 @@ export const DeleteFailureKeepsTheRow: Story = {
     );
     await expect(canvas.getByRole("dialog")).toBeInTheDocument();
     await expect(canvas.getAllByTestId("highlight-card")).toHaveLength(2);
+
+    // The failure ended the wait, so the dialog can be dismissed again.
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(canvas.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
   },
 };
 

@@ -133,6 +133,20 @@ export const MergingReportsTheUndoId: Story = {
   },
 };
 
+export const EscapeClosesTheConfirmStep: Story = {
+  play: async ({ args, canvas, userEvent }) => {
+    await userEvent.type(canvas.getByTestId("merge-search"), "aurora");
+    await userEvent.click(
+      (await canvas.findAllByTestId("merge-candidate"))[0] as HTMLElement,
+    );
+    await canvas.findByTestId("merge-confirm");
+    await waitFor(() => expect(canvas.getByRole("dialog")).toHaveFocus());
+    await userEvent.keyboard("{Escape}");
+
+    await waitFor(() => expect(args.onClose).toHaveBeenCalled());
+  },
+};
+
 export const MergeInFlightIsGuardedAndCannotBeDismissed: Story = {
   beforeEach({ msw }) {
     msw.use(

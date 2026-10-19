@@ -52,6 +52,16 @@ export const LoadingTheManifest: Story = {
   },
 };
 
+export const EscapeClosesOnceTheManifestLoads: Story = {
+  play: async ({ args, canvas, userEvent }) => {
+    await canvas.findByTestId("delete-file-11");
+    await waitFor(() => expect(canvas.getByRole("dialog")).toHaveFocus());
+    await userEvent.keyboard("{Escape}");
+
+    await waitFor(() => expect(args.onClose).toHaveBeenCalled());
+  },
+};
+
 export const ManifestFailureSaysSo: Story = {
   beforeEach({ msw }) {
     msw.use(failing("get", "/api/books/:uuid/deletion-manifest", 500));
