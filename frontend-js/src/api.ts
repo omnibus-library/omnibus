@@ -87,7 +87,8 @@ import {
 } from "./api/generated/schemas";
 
 // The wire types and their zod schemas are generated from openapi/openapi.json
-// (`pnpm run generate`), and the generated fetchers validate every response.
+// (`pnpm run generate`), and the generated fetchers validate every response, except
+// a nullable or inline-array 200, which `fetchJson` parses.
 // This file turns the wire shapes into the ones the screens render.
 
 export type BookUuid = string & { readonly __brand: "BookUuid" };
@@ -485,18 +486,10 @@ export async function saveReadStatus(
   return toReadStatus(res.data);
 }
 
-// orval emits no validator for a nullable or inline-array 200, so these reads parse here.
-async function fetchJson<T>(url: string, schema: z.ZodType<T>): Promise<T> {
-  const res = await fetch(url);
-  if (res.status !== 200)
-    throw failure({ status: res.status, data: await res.text() });
-  return schema.parse(await res.json());
-}
-
 // The generated fetcher JSON-parses every body, and an error's is plain text.
 async function send(
   url: string,
-  method: "POST" | "PUT" | "PATCH" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   body?: unknown,
 ): Promise<Response> {
   const res = await fetch(url, {
@@ -510,6 +503,11 @@ async function send(
   });
   if (!res.ok) throw failure({ status: res.status, data: await res.text() });
   return res;
+}
+
+// orval emits no validator for a nullable or inline-array 200, so these reads parse here.
+async function fetchJson<T>(url: string, schema: z.ZodType<T>): Promise<T> {
+  return schema.parse(await (await send(url, "GET")).json());
 }
 
 /** Turns follow mode on or off for a linked book. */
