@@ -257,7 +257,7 @@ const answer = (value: object | number) =>
 
 /**
  * Every route the stats page and the chart builder read. `stats` and `chart` choose the
- * answer per request (`stats` may hold one back); any answer may be a status number instead,
+ * answer per request (either may hold one back); any answer may be a status number instead,
  * to fail that route. Each request lands in `calls`.
  * The session reports what the sharing switch saved (off to start), `refuseShare` makes
  * the save answer 400, and `holdShare` holds it until it resolves.
@@ -281,7 +281,9 @@ export function statsHandlers({
   recent?: ResumePoint[] | number;
   size?: LibrarySize | number;
   composition?: LibraryComposition | number;
-  chart?: (spec: ChartSpec) => ChartResult | number;
+  chart?: (
+    spec: ChartSpec,
+  ) => ChartResult | number | Promise<ChartResult | number>;
   refuseShare?: boolean;
   holdShare?: Promise<void>;
   calls?: StatsCalls;
@@ -334,7 +336,7 @@ export function statsHandlers({
       seen("chart", request);
       const spec = ChartSpec.parse(await request.json());
       calls.specs.push(spec);
-      return answer(chart(spec));
+      return answer(await chart(spec));
     }),
   ];
 }

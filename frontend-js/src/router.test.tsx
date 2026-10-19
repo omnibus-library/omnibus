@@ -82,7 +82,6 @@ describe("routes", () => {
       [`/comic/${UUID}`, "Comic reader", UUID],
       [`/pdf/${UUID}?file_id=3&page=7`, "PDF reader", "7"],
       [`/listen/${UUID}?file_id=2`, "Listen", "2"],
-      ["/stats/chart", "Chart builder", null],
       ["/settings?section=smtp", "Settings", "smtp"],
       ["/settings/cleanup/duplicates", "Cleanup review", "duplicates"],
       ["/admin?section=logs", "Administration", "logs"],
@@ -110,6 +109,17 @@ describe("routes", () => {
       renderRoute(path);
 
       expect(await screen.findByText(label)).toBeInTheDocument();
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+
+    it("renders /stats/chart as the chart builder, not a stub", async () => {
+      renderRoute("/stats/chart");
+
+      expect(
+        await screen.findByText(
+          "Nothing plotted yet — tick a measure above and it'll appear here.",
+        ),
+      ).toBeInTheDocument();
       expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
     });
 

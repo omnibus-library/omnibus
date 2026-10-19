@@ -16,11 +16,17 @@ import type {
 } from "./generated/schemas";
 
 export type {
+  ChartAxis,
+  ChartBreakdown,
   ChartResult,
+  ChartSeries,
   ChartSpec,
+  ChartUnit,
   HouseholdReader,
   StatsRange,
 } from "./generated/schemas";
+// Values as well as types: the picker lists every option the spec allows.
+export { ChartBucket, ChartMeasure } from "./generated/schemas";
 
 // The stats and chart answers stay wire-shaped (snake_case): each helper behind the
 // page is a port of its Rust over the same field names. The one mapping is filling
