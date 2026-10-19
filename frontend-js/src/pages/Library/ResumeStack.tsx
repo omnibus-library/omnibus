@@ -177,12 +177,19 @@ export function ResumeStackPending() {
 }
 
 /** Resume once the stack has scrolled away: a ribbon in the page edge that widens when pointed at. */
-export function EdgeResume({ point }: { point: ResumePoint }) {
+export function EdgeResume({
+  point,
+  past,
+}: {
+  point: ResumePoint;
+  past: boolean;
+}) {
   const navigate = useNavigate();
   const { audio, title, href, whereLine, veilLabel } = readout(point);
   const { book } = point;
   return (
-    <div className="lmq-edge" style={accentOf(point)}>
+    // inert while hidden: the ribbon is transparent and offscreen, so its button must not be tabbable.
+    <div className="lmq-edge" style={accentOf(point)} inert={!past}>
       <span className="lmq-edge-strip" aria-hidden="true">
         <span className="lmq-edge-vert">{veilLabel}</span>
       </span>

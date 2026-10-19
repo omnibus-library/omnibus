@@ -273,7 +273,7 @@ export function Library() {
           }}
         />
       )}
-      {leadPoint && <EdgeResume point={leadPoint} />}
+      {leadPoint && <EdgeResume point={leadPoint} past={past} />}
     </div>
   );
 }

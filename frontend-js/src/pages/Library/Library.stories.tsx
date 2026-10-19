@@ -1251,8 +1251,13 @@ export const ScrolledPastStack: Story = {
     await canvas.findAllByRole("link", { name: /^Open details for/ });
     const root = canvasElement.querySelector("#lmq-root");
     await expect(root).not.toHaveClass("lmq--past");
+    // The ribbon is offscreen and transparent, so Tab must not reach its button.
+    const resume = await canvas.findByRole("button", { name: /^Resume/ });
+    await expect(resume.closest("[inert]")).not.toBeNull();
+
     window.scrollTo(0, 600);
     await waitFor(() => expect(root).toHaveClass("lmq--past"));
+    await waitFor(() => expect(resume.closest("[inert]")).toBeNull());
 
     window.scrollTo(0, 0);
     await waitFor(() => expect(root).not.toHaveClass("lmq--past"));
