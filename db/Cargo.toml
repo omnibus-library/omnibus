@@ -57,7 +57,7 @@ pdf-extract = "0.12"
 # major lands. Default features off + only `deflate-flate2` (pure-Rust
 # miniz_oxide deflate) — EPUBs are deflate-only, so we skip zip's default
 # bzip2/zstd/lzma/aes backends and their native -sys crates.
-zip = { version = "3", default-features = false, features = ["deflate-flate2"] }
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
 # F5.8 export-with-overrides (#1372): a real read-modify-write XML parser for
 # the in-place OPF edit. Unlike `render_opf`'s whole-document string build, the

@@ -97,7 +97,7 @@ getrandom = { version = "0.2", optional = true }
 # only thing that catches a same-length splice preserving the archive's
 # structure. Mobile-only (the offline layer never compiles for web), and
 # already in the tree via `epub`, so it unifies rather than adding a build.
-zip = { version = "3", default-features = false, features = ["deflate"], optional = true }
+zip = { version = "9", default-features = false, features = ["deflate"], optional = true }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 # UIKit bindings for `native_share` — WKWebView has no usable Web Share API,
