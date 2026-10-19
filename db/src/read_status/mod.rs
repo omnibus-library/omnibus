@@ -3,6 +3,8 @@
 //! so a pruned book detaches rather than deleting). `finished_at` is stamped when
 //! a book becomes `finished` and cleared otherwise, so the stats "finished"
 //! aggregations can window completions like the journal path windows `created_at`.
+//! The one other writer is a position: `progress::upsert_progress_tx` creates a
+//! `reading` row for a book that has none.
 
 use omnibus_shared::{ReadStatus, ReadStatusRecord, SetReadStatus};
 use sqlx::{Row, Sqlite, SqlitePool, Transaction};

@@ -1154,3 +1154,14 @@ pub async fn seed_epub_position(pool: &SqlitePool, user: i64, uuid: &str) {
     .await
     .expect("seed position");
 }
+
+/// Drop `(user, uuid)`'s read status and leave any position without one: the
+/// state a position stored before positions marked their book `reading` is in.
+pub async fn forget_read_status(pool: &SqlitePool, user: i64, uuid: &str) {
+    sqlx::query("DELETE FROM book_read_status WHERE user_id = ? AND book_uuid = ?")
+        .bind(user)
+        .bind(uuid)
+        .execute(pool)
+        .await
+        .expect("forget read status");
+}

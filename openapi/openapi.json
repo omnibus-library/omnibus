@@ -3393,7 +3393,18 @@
           "422": {
             "description": "The book has no EPUB."
           }
-        }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session_cookie": []
+          },
+          {
+            "media_token": []
+          }
+        ]
       }
     },
     "/api/ebooks/{uuid}/images/link": {
@@ -4971,7 +4982,7 @@
           "Progress"
         ],
         "summary": "Save a position",
-        "description": "Records where you are in a book in one format: `epub` with an `epub_cfi`, a\n`progress_percent` or both, or `audio` with `audio_position_seconds`. The latest\nposition wins, judged by `client_updated_at` (the server's clock when absent), so a\nwrite older than the stored position changes nothing. An `audio` position without\n`book_file_id` also loses to a stored one that names a file of a multi-file audiobook.\nThe response is the position the server kept, yours or the stored one.",
+        "description": "Records where you are in a book in one format: `epub` with an `epub_cfi`, a\n`progress_percent` or both, or `audio` with `audio_position_seconds`. The latest\nposition wins, judged by `client_updated_at` (the server's clock when absent), so a\nwrite older than the stored position changes nothing. An `audio` position without\n`book_file_id` also loses to a stored one that names a file of a multi-file audiobook.\nThe response is the position the server kept, yours or the stored one. A book you\nhaven't given a read status becomes `reading`; one you have keeps its status.",
         "operationId": "post_progress",
         "requestBody": {
           "content": {
@@ -5331,7 +5342,7 @@
           "Read status"
         ],
         "summary": "Get a book's read status",
-        "description": "Your read status for the book. The body is `null` when you have never set one, or no\nbook has the uuid; treat that as `unread`.",
+        "description": "Your read status for the book. Saving a position sets `reading` when you have no\nstatus. The body is `null` when you have neither set one nor saved a position, or no\nbook has the uuid; treat that as `unread`.",
         "operationId": "get_read_status",
         "parameters": [
           {

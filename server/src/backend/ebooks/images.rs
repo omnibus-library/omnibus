@@ -204,6 +204,7 @@ async fn epub_path(state: &AppState, uuid: &str) -> Result<PathBuf, Response> {
     get,
     path = "/api/ebooks/{uuid}/images/file",
     tag = "Library",
+    security(("bearer" = []), ("session_cookie" = []), ("media_token" = [])),
     params(("uuid" = String, Path, description = "The book's uuid."), ImageHrefQuery),
     responses(
         (status = 200, description = "The image.", body = FileBytes, content_type = "image/*",

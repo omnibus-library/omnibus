@@ -18,7 +18,7 @@ pub enum ReadStatus {
     /// Not started, or set back to unread. A book with no status set is unread.
     #[default]
     Unread,
-    /// Being read.
+    /// Being read. Saving a position sets it on a book that has no status.
     Reading,
     /// Read to the end. The reading stats count it as a finished book.
     Finished,
