@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import type { BookDetail } from "../../api";
 import { parseBookUuid, positiveInt } from "../../api";
@@ -12,6 +12,13 @@ import {
 } from "../../components/SearchPalette/SearchPalette";
 import { TopNav } from "../../components/TopNav/TopNav";
 import { usePlayback } from "../../playback/PlaybackProvider";
+import {
+  BookmarksDrawer,
+  BookmarkToast,
+  ChaptersDrawer,
+  useBookmarks,
+} from "./Drawers";
+import type { Pane } from "./listen";
 import { Stage } from "./Stage";
 
 function FailedOverlay() {
@@ -28,6 +35,9 @@ function FailedOverlay() {
 
 function Frame({ book }: { book: BookDetail }) {
   const { ready, failed } = usePlayback();
+  const [pane, setPane] = useState<Pane | null>(null);
+  const bookmarks = useBookmarks(book.uuid);
+  const close = () => setPane(null);
   // Inert under the open palette, so focus can't wander behind its scrim.
   const inert = useSearchPaletteOpen();
   return (
@@ -53,7 +63,16 @@ function Frame({ book }: { book: BookDetail }) {
           />
         )
       )}
-      <Stage book={book} />
+      <Stage
+        book={book}
+        pane={pane}
+        onPane={(next) => setPane((open) => (open === next ? null : next))}
+      />
+      {pane === "bookmarks" && (
+        <BookmarksDrawer bookmarks={bookmarks} onClose={close} />
+      )}
+      {pane === "chapters" && <ChaptersDrawer onClose={close} />}
+      {bookmarks.toast && <BookmarkToast toast={bookmarks.toast} />}
     </div>
   );
 }

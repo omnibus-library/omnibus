@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   chapterFillPct,
   chapterIndexForElapsed,
+  chapterLabelAt,
   chapterNextTarget,
   chapterPrevTarget,
   chapterSubText,
@@ -187,5 +188,21 @@ describe("remainingAtRate", () => {
     for (const rate of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(remainingAtRate(600, rate)).toBe(600);
     }
+  });
+});
+
+describe("chapterLabelAt", () => {
+  it("is generic when the book has no chapters", () => {
+    expect(chapterLabelAt(10, [])).toBe("Bookmark");
+  });
+
+  it("numbers and titles the chapter the position falls in", () => {
+    expect(chapterLabelAt(420, chapters)).toBe("Ch. 2 · Two");
+  });
+
+  it("falls back to the number for an untitled chapter", () => {
+    expect(chapterLabelAt(10, [{ title: "", start: 0, seconds: 300 }])).toBe(
+      "Chapter 1",
+    );
   });
 });

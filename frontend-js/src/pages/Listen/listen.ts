@@ -102,6 +102,20 @@ export function effectiveScrubPosition(
   };
 }
 
+/** What a bookmark at `seconds` is called: its chapter, numbered and titled when it has a title. */
+export function chapterLabelAt(
+  seconds: number,
+  chapters: readonly Chapter[],
+): string {
+  if (chapters.length === 0) return "Bookmark";
+  const index = chapterIndexForElapsed(chapters, seconds);
+  const title = chapters[index]?.title;
+  return title ? `Ch. ${index + 1} · ${title}` : `Chapter ${index + 1}`;
+}
+
+/** The toolbar's panes, of which at most one is open. */
+export type Pane = "bookmarks" | "chapters";
+
 /** Wall-clock seconds a listener at `rate` spends on `seconds` of book; unscaled for a rate that can't divide. */
 export const remainingAtRate = (seconds: number, rate: number) =>
   Number.isFinite(rate) && rate > 0 ? seconds / rate : seconds;

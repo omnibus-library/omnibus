@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { BookDetail } from "../../api";
+import { Button } from "../../components/Button/Button";
 import { CoverImage } from "../../components/Cover/CoverImage";
 import { Ring } from "../../components/Loading/Loading";
 import { usePlayback } from "../../playback/PlaybackProvider";
@@ -14,6 +15,7 @@ import {
   formatHms,
   kickerText,
   noChapterFillPct,
+  type Pane,
   rateLabel,
   remainingAtRate,
   thumbPct,
@@ -122,8 +124,17 @@ function ChapterMap() {
   );
 }
 
-/** The cover column and the info column: title, chapter map, transport. */
-export function Stage({ book }: { book: BookDetail }) {
+/** The cover column and the info column: title, chapter map, transport, toolbar. */
+export function Stage({
+  book,
+  pane,
+  onPane,
+}: {
+  book: BookDetail;
+  /** The open pane, which its toolbar button shows as on. */
+  pane: Pane | null;
+  onPane: (pane: Pane) => void;
+}) {
   const p = usePlayback();
   const author = book.creators[0]?.name ?? "Unknown Author";
   const chapterIndex = chapterIndexForElapsed(p.chapters, p.elapsed);
@@ -242,6 +253,27 @@ export function Stage({ book }: { book: BookDetail }) {
             />
             <span className="lp-volume-pct">{Math.round(p.volume * 100)}%</span>
           </div>
+        </div>
+        <div className="lp-toolbar">
+          <Button
+            size="sm"
+            className={
+              pane === "bookmarks" ? "lp-toolbar-btn on" : "lp-toolbar-btn"
+            }
+            data-testid="listen-bookmark"
+            onClick={() => onPane("bookmarks")}
+          >
+            Bookmark
+          </Button>
+          <Button
+            size="sm"
+            className={
+              pane === "chapters" ? "lp-toolbar-btn on" : "lp-toolbar-btn"
+            }
+            onClick={() => onPane("chapters")}
+          >
+            {pane === "chapters" ? "Chapters ↓" : "Chapters ↑"}
+          </Button>
         </div>
       </div>
     </div>
