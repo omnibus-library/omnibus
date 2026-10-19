@@ -1,6 +1,13 @@
 import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
-import { type BookUuid, failure, ok, requireUuid, send } from "./core";
+import {
+  type BookUuid,
+  bumpCoverBust,
+  failure,
+  ok,
+  requireUuid,
+  send,
+} from "./core";
 import {
   deleteEbookCover,
   deleteEbookOverrides,
@@ -159,6 +166,7 @@ export async function saveOverrides(
 /** Drops every edit to the book, its cover included. */
 export async function revertOverrides(uuid: BookUuid): Promise<void> {
   ok(await deleteEbookOverrides(uuid));
+  bumpCoverBust(uuid);
 }
 
 /** Replaces the book's cover with an image the reader picked; answers with the book as it now reads. */
@@ -166,7 +174,9 @@ export async function uploadCover(
   uuid: BookUuid,
   cover: File,
 ): Promise<EditableBook> {
-  return toEditableBook(ok(await postEbookCover(uuid, { cover })));
+  const book = toEditableBook(ok(await postEbookCover(uuid, { cover })));
+  bumpCoverBust(uuid);
+  return book;
 }
 
 /** Has the server fetch `url` as the book's cover; answers with the book as it now reads. */
@@ -174,12 +184,16 @@ export async function coverFromUrl(
   uuid: BookUuid,
   url: string,
 ): Promise<EditableBook> {
-  return toEditableBook(ok(await postEbookCoverFromUrl(uuid, { url })));
+  const book = toEditableBook(ok(await postEbookCoverFromUrl(uuid, { url })));
+  bumpCoverBust(uuid);
+  return book;
 }
 
 /** Puts the scanned cover back; answers with the book as it now reads. */
 export async function revertCover(uuid: BookUuid): Promise<EditableBook> {
-  return toEditableBook(ok(await deleteEbookCover(uuid)));
+  const book = toEditableBook(ok(await deleteEbookCover(uuid)));
+  bumpCoverBust(uuid);
+  return book;
 }
 
 /** The metadata providers, by the name and the stable slug the UI shows them under. */

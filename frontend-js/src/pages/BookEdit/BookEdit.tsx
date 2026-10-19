@@ -5,7 +5,6 @@ import { useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router";
 import {
   type BookUuid,
-  bumpCoverBust,
   type EditableBook,
   editableBookQuery,
   type MetaForm,
@@ -61,7 +60,6 @@ function EditForm({ book }: { book: EditableBook }) {
   // A cover is written the moment it is picked, so Save has nothing to send for it.
   const onCoverApplied = (updated: EditableBook) => {
     setLive(updated);
-    bumpCoverBust(book.uuid);
     setCoverReplaced(true);
     // Exact, so the edit query holding the unsaved form isn't refetched out from under it.
     queryClient.invalidateQueries({
@@ -82,11 +80,7 @@ function EditForm({ book }: { book: EditableBook }) {
   });
   const revert = useMutation({
     mutationFn: () => revertOverrides(book.uuid),
-    onSuccess: () => {
-      // The server drops the override cover and its thumbnails.
-      bumpCoverBust(book.uuid);
-      written();
-    },
+    onSuccess: written,
   });
 
   return (

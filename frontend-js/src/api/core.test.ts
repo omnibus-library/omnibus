@@ -1,16 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   type BookUuid,
   bumpCoverBust,
   coverUrl,
+  resetCoverBusts,
   thumbSrcSet,
   thumbUrl,
 } from "./core";
 
-// The bust store is module state, so each test keeps to a uuid of its own.
 const uuid = (id: string) => id as BookUuid;
 
 describe("cover cache-busting", () => {
+  // The bust store is module state, so each test starts from the cover first sent.
+  beforeEach(resetCoverBusts);
+
   it("keeps the plain URLs until a write bumps the book", () => {
     const book = uuid("plain");
 

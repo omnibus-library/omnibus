@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { expect, waitFor } from "storybook/test";
 import {
-  bumpCoverBust,
   formFromBook,
   hasProviderQuery,
   toEditableBook,
@@ -107,10 +106,7 @@ function Picker({ stagedCover = false }: { stagedCover?: boolean }) {
     : {
         book: live,
         target: { kind: "live", uuid: live.uuid },
-        onApplied: (updated) => {
-          setLive(updated);
-          bumpCoverBust(live.uuid);
-        },
+        onApplied: setLive,
       };
   return (
     <>
