@@ -1,0 +1,1607 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Omnibus API",
+    "description": "The REST API behind every Omnibus client. The web app, the iOS app and the MCP server all use it, and a new client can too.\n\n## Signing in\n\n`POST /api/auth/login` opens a session. Set `client_kind` to `ios`, `android` or `bearer` and the token comes back in the response body; send it on every request as `Authorization: Bearer <token>`. Leave `client_kind` out and the server sets a session cookie instead, which is what a browser wants.\n\nAn API token (`omni_…`, from `POST /api/auth/api-tokens`) works anywhere a session token does, and suits scripts.\n\nSome media, such as covers, audio parts and book files, gets loaded straight into an `<img>` or `<audio>` element, which can't send a header. Those routes also take the token as a `token` query parameter, and list `media_token` among their security schemes.\n\nEvery route needs a session unless it says otherwise.\n\n## Errors\n\nA request that fails answers with a 4xx or 5xx status and a short plain-text body, such as `book not found`. Each operation lists the statuses particular to it. Any route can also answer:\n\n- `401` when the request has no valid session.\n- `403` when your account lacks a permission the route needs: admin, upload, edit or download. The route's description says which.\n- `408` when the request takes longer than 30 seconds. Book uploads are exempt.\n- `413` when the body is too large: over 1 MiB of JSON, 11 MiB for an image, or the server's configured limit for a book upload.\n- `429` when one address sends too many requests. Signing in, search and uploads have per-IP limits.\n- `500` when something fails on the server.\n\n## Paging\n\n`GET /api/ebooks` pages through the library when you pass `sort`, `dir`, `limit` or `cursor`. `X-Total-Count` holds the number of books that match, and `X-Next-Cursor` the cursor for the next page; the last page has none. A cursor only makes sense under the order that produced it, so send `sort` and `dir` with it.\n\n## Caching\n\nRoutes that serve files send an `ETag`. Send it back in `If-None-Match`, and an unchanged file answers `304 Not Modified` with no body. Book and audio files also answer `Range` requests, so a player can seek.\n\n## Versions\n\nThe `openapi/openapi.json` at a release tag describes that release.\n",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/_health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Check the server is up",
+        "description": "Answers without a session, so a client can probe a server address before signing in.\n`time` lets a client measure its clock's offset before it stamps progress writes.",
+        "operationId": "get_health",
+        "responses": {
+          "200": {
+            "description": "The server is up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/auth/api-tokens": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "List your API tokens",
+        "description": "Names, dates and the last four characters of each live token. A token's secret is shown\nonly once, when it is created.",
+        "operationId": "list_api_tokens",
+        "responses": {
+          "200": {
+            "description": "Your live API tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiTokenView"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Create an API token",
+        "description": "Makes a long-lived token that authenticates as you, for scripts and integrations. Copy\n`secret` from the response: the server keeps only a hash of it and can't show it again.",
+        "operationId": "create_api_token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApiTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The new token, with its secret.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateApiTokenResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The name is empty or too long."
+          }
+        }
+      }
+    },
+    "/api/auth/api-tokens/{id}": {
+      "delete": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Revoke an API token",
+        "description": "The token stops working at once.",
+        "operationId": "revoke_api_token",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The token's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked."
+          },
+          "404": {
+            "description": "You have no live token with that id."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Rename an API token",
+        "operationId": "rename_api_token",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The token's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameApiTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Renamed."
+          },
+          "400": {
+            "description": "The name is empty or too long."
+          },
+          "404": {
+            "description": "You have no live token with that id."
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Sign in",
+        "description": "Checks the username and password and opens a session. Set `client_kind` to `ios`,\n`android` or `bearer` to get the token in the body, for an `Authorization: Bearer`\nheader; without it the session arrives as a cookie. Send `device_name` as well and the\nsession is listed under that name.",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Signed in.",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "The session cookie, unless `client_kind` asked for a token."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`device_name` or `client_version` is too long or holds control characters."
+          },
+          "401": {
+            "description": "Wrong username or password."
+          },
+          "429": {
+            "description": "Too many wrong passwords: the account is locked for the number of seconds in `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "description": "Seconds until the account unlocks."
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Sign out",
+        "description": "Ends the session the request carries and clears the session cookie. Signing out of a\nsession that has already ended still succeeds.",
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "Signed out."
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Get the signed-in user",
+        "description": "The account the request's session belongs to: its permissions and preferences.",
+        "operationId": "get_me",
+        "responses": {
+          "200": {
+            "description": "The signed-in user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Create an account",
+        "description": "Creates a user and signs them in, exactly as `POST /api/auth/login` does. The first\naccount on a new server becomes its admin. After that, registration works only while an\nadmin keeps it open; `GET /api/auth/registration` says whether it is.",
+        "operationId": "register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The account exists and is signed in.",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "The session cookie, unless `client_kind` asked for a token."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The username or password breaks a rule; the body says which."
+          },
+          "403": {
+            "description": "Registration is closed."
+          },
+          "409": {
+            "description": "That username is taken."
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/auth/registration": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Check whether registration is open",
+        "description": "Whether `POST /api/auth/register` will accept a new account. An admin opens and closes\nregistration with `POST /api/settings/registration`.",
+        "operationId": "get_registration",
+        "responses": {
+          "200": {
+            "description": "Whether registration is open.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationStatus"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/auth/sessions": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "List your sessions",
+        "description": "Every live session on your account. The one making this request has `is_current` set,\nsince it can't be ended from here.",
+        "operationId": "list_sessions",
+        "responses": {
+          "200": {
+            "description": "Your live sessions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SessionView"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/sessions/{id}": {
+      "delete": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "End one of your sessions",
+        "description": "Signs that session out wherever it is. To end the session making this request, use\n`POST /api/auth/logout`.",
+        "operationId": "delete_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session's id, from `GET /api/auth/sessions`.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The session has ended."
+          },
+          "400": {
+            "description": "That is the session making this request."
+          },
+          "404": {
+            "description": "You have no live session with that id."
+          }
+        }
+      }
+    },
+    "/api/covers/{uuid}": {
+      "get": {
+        "tags": [
+          "Covers"
+        ],
+        "summary": "Get a book's cover",
+        "description": "The full-size cover image, in the format it was stored in.",
+        "operationId": "get_cover",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The cover image.",
+            "content": {
+              "image/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The cover is unchanged since the `ETag` sent in `If-None-Match`."
+          },
+          "404": {
+            "description": "No book has that uuid, or the book has no cover."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session_cookie": []
+          },
+          {
+            "media_token": []
+          }
+        ]
+      }
+    },
+    "/api/ebooks": {
+      "get": {
+        "tags": [
+          "Library"
+        ],
+        "summary": "List books",
+        "description": "The library's books, ebooks and audiobooks together. Without paging parameters the\nresponse is the whole library, capped at 50,000 books: `X-Total-Count` holds the true\ntotal, and `X-Total-Cap` appears when the cap cut the list short. Set `sort`, `dir`,\n`limit` or `cursor` to page through it instead, following `X-Next-Cursor`.",
+        "operationId": "get_ebooks",
+        "parameters": [
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "The order to list books in.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SortKey"
+            }
+          },
+          {
+            "name": "dir",
+            "in": "query",
+            "description": "Ascending or descending.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SortDir"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Where the page starts: the previous page's `X-Next-Cursor`. Needs `sort` and `dir`,\nset as they were for that page.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Books per page. Defaults to 100.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "formats",
+            "in": "query",
+            "description": "Comma-separated formats to include, such as `m4b,mp3`. Older clients send this;\nnewer ones put a `format` clause in `filter`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filter",
+            "in": "query",
+            "description": "Filter clauses as a percent-encoded JSON array, such as\n`[{\"field\":\"format\",\"mode\":\"include\",\"values\":[\"epub\"]}]`. A clause matches a book\nwhen any of its values does, and a book must match every clause. Up to 16 clauses\nof up to 64 values each.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "exclude_formats",
+            "in": "query",
+            "description": "Comma-separated formats to leave out, such as `cbz`: the formats the user hides\nfrom their library view.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack_series",
+            "in": "query",
+            "description": "Fold each series of two or more books into one row and list the series in `stacks`.\n`X-Total-Count` still counts books. Applies to a paged request only.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "omit_description",
+            "in": "query",
+            "description": "Leave each book's description out, for a lighter page. Applies to a paged request only.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of books, or the whole library.",
+            "headers": {
+              "X-Hidden-Count": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "description": "How many books `exclude_formats` left out. Sent on the first page only."
+              },
+              "X-Next-Cursor": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "The `cursor` for the next page. Absent on the last page, and when the request wasn't paged."
+              },
+              "X-Total-Cap": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "description": "The cap, sent when it cut an unpaged response short."
+              },
+              "X-Total-Count": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "description": "How many books match."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EbookPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A `cursor` came without `sort` and `dir`, or a `cursor` or `filter` is malformed."
+          }
+        }
+      }
+    },
+    "/api/ebooks/{uuid}": {
+      "get": {
+        "tags": [
+          "Library"
+        ],
+        "summary": "Get a book",
+        "description": "One book's full record.",
+        "operationId": "get_ebook_by_uuid",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The book.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EbookMetadata"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No book has that uuid."
+          }
+        }
+      }
+    },
+    "/api/thumbs/{uuid}/{size}": {
+      "get": {
+        "tags": [
+          "Covers"
+        ],
+        "summary": "Get a cover thumbnail",
+        "description": "The cover as a WebP thumbnail, `sm` (160×240), `md` (320×480) or `lg` (640×960). A\nthumbnail is made on first request: until it is ready, which takes seconds, the full\ncover stands in for it, marked to be cached for only a few seconds.",
+        "operationId": "get_thumb",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "in": "path",
+            "description": "`sm`, `md` or `lg`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thumbnail, or the full cover while the thumbnail is being made.",
+            "content": {
+              "image/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The book has no cover, so there is no thumbnail to make."
+          },
+          "304": {
+            "description": "The image is unchanged since the `ETag` sent in `If-None-Match`."
+          },
+          "400": {
+            "description": "`size` is not `sm`, `md` or `lg`."
+          },
+          "404": {
+            "description": "No book has that uuid."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session_cookie": []
+          },
+          {
+            "media_token": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiTokenView": {
+        "type": "object",
+        "description": "One live API token in the management listing (`GET /api/auth/api-tokens`).\nNever carries the secret — that appears exactly once, in\n[`CreateApiTokenResponse::secret`].",
+        "required": [
+          "id",
+          "name",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_used_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "`None` until the token first authenticates a request."
+          },
+          "name": {
+            "type": "string"
+          },
+          "suffix": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Last 4 characters of the raw token, for the `omni_…xxxx` display\nidentifier. `None` on tokens minted before the suffix was recorded."
+          }
+        }
+      },
+      "BookFileInfo": {
+        "type": "object",
+        "description": "One `book_files` row — a single physical file on disk. Exposed to the\nfrontend so the format switcher can offer a file picker when N > 1.",
+        "required": [
+          "id",
+          "format",
+          "filename",
+          "ordinal"
+        ],
+        "properties": {
+          "duration_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Playing time of this file, summed over its parts. Present for audio rows only,\nso never guess an audiobook's runtime from elsewhere.\n\nWhole seconds, unlike the fractional `ProgressRecord::total_duration_seconds`:\na catalog row is read for \"how long is it\", not for position arithmetic."
+          },
+          "etag": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Content validator for this file (see [`crate::file_etag`]). An offline client\nsnapshots it at download time and compares it with a later metadata refresh to\nlearn its copy is stale. `None` for rows the scanner has not stat'd yet, so the\none-time backfill never reads as a content change."
+          },
+          "filename": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ordinal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Library-relative path (`book_files.scan_key`, e.g.\n`clarke/piranesi.epub`) — what the delete dialog shows so an admin can\nsee exactly which file on disk a row stands for. `None` for rows\npredating the `scan_key` backfill."
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "On-disk size of this file. Lets the per-file Send-to-Kindle rows gate\noversized EPUBs the same way the hero export menu does."
+          }
+        }
+      },
+      "Contributor": {
+        "type": "object",
+        "description": "A contributor (or creator) with the optional OPF refinements: the MARC role\ncode (`aut`, `ill`, `edt`, `bkp`, `trl`, …) and the sort-key name.\n\n`id` is the `authors.id` primary key, set when loaded from a m2m join and\n`None` for contributors created by the EPUB parser before indexing.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "file_as": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CreateApiTokenRequest": {
+        "type": "object",
+        "description": "Body of `POST /api/auth/api-tokens`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateApiTokenResponse": {
+        "type": "object",
+        "description": "Response from `POST /api/auth/api-tokens`. `secret` is the raw `omni_…`\ntoken, shown to the client exactly once — the server keeps only its hash,\nso it is unrecoverable afterward. Deliberately does not derive `Debug`,\nsame as `LoginRequest`: a stray `tracing::debug!(?resp)` must not leak a\nlong-lived credential.",
+        "required": [
+          "token",
+          "secret"
+        ],
+        "properties": {
+          "secret": {
+            "type": "string"
+          },
+          "token": {
+            "$ref": "#/components/schemas/ApiTokenView"
+          }
+        }
+      },
+      "EbookLibrary": {
+        "type": "object",
+        "description": "Response payload for `GET /api/ebooks` and `rpc_get_ebooks`.",
+        "required": [
+          "books"
+        ],
+        "properties": {
+          "books": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EbookMetadata"
+            }
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Total FTS5 hit count *before* the server-side `MAX_BOOKS_RETURNED` cap,\nset by the search paths so the web client can show \"N of M results\"\neven when `books` is truncated. `None` for the full-library\n(`/api/ebooks`, `rpc_get_ebooks`) responses, which surface truncation\nvia the `X-Total-Count` header instead."
+          }
+        }
+      },
+      "EbookMetadata": {
+        "type": "object",
+        "description": "Parsed metadata for a single ebook file.\n\n`cover_url` is a relative URL to `/api/covers/:id` when the book has a cover;\nclients combine it with their configured server base. OPF\n`<dc:contributor>` entries are merged into `creators` (creators first).",
+        "required": [
+          "id",
+          "filename",
+          "creators",
+          "subjects",
+          "identifiers"
+        ],
+        "properties": {
+          "accent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Cover-derived accent color. Opaque CSS color value extracted\nduring indexing. `None` means \"no cover or extraction failed\" —\nthe frontend falls back to the theme default accent."
+          },
+          "added_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Row insertion timestamp from `books.timestamp` — SQLite\n`datetime('now')` format (`YYYY-MM-DD HH:MM:SS`, UTC, space separator).\nDrives the \"Newest Added\" sort — distinct from `modified` (DC\nlast-write)."
+          },
+          "book_files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookFileInfo"
+            },
+            "description": "Every `book_files` row on this book, one per file on disk, including ordinary\nsingle-file books. Each row carries that file's content validator\n(`BookFileInfo::etag`) for offline staleness checks; count rows per format\nrather than reading emptiness as a proxy. Empty only on the list projection,\nwhich does not join this table."
+          },
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "creators": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Contributor"
+            }
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Sanitized HTML. `None` on browse rows — `LibraryPage.books`, their stack\nmembers, and keyset `/api/ebooks` pages sent `omit_description=true` —\nwhich never carry it: absent there is not empty, so read the book's\ndetail for it."
+          },
+          "epub_size_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "On-disk size of the file the hero \"Send to Kindle\" would deliver (the\nlowest-ordinal EPUB, else the PDF). `None` when the book has neither.\nDrives the oversized-file gate on the email button — see\n`kindle_email_oversize`."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "filename": {
+            "type": "string"
+          },
+          "formats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "genres": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "User-assigned genres. Unlike `subjects` (which the EPUB OPF supplies\nvia `<dc:subject>`), no file format Omnibus reads carries a genre, so\nthis list is sourced entirely from `metadata_overrides` — there is no\nscanned baseline to revert to and no canonical link table behind it."
+          },
+          "has_cover_override": {
+            "type": "boolean",
+            "description": "True when `cover_url` is a user-uploaded override cover, not the scanned original."
+          },
+          "has_override": {
+            "type": "boolean",
+            "description": "True when user-supplied metadata overrides are active for this book.\nThe detail page uses this to show a \"has overrides\" indicator and\noffer a revert action."
+          },
+          "has_physical": {
+            "type": "boolean",
+            "description": "Whether the book has ≥1 physical copy checked in (drives the physical badge)."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "identifiers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          },
+          "isbn10": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Secondary ISBN-10, sourced entirely from `metadata_overrides` — no\nfile format Omnibus reads carries a distinct ISBN-10 alongside its\nISBN-13, so unlike `isbn13` there is no scanned baseline underneath\nthis one."
+          },
+          "isbn13": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Primary ISBN-13: derived from whichever `identifiers` entry (in\nDB-projection order, not original OPF scan order) has a scheme\nmentioning \"isbn\" and a value that normalizes to 13 ASCII digits, or\na user override from `metadata_overrides` layered on top at read\ntime. `None` when neither source has one."
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_interacted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Most recent moment *anyone* interacted with the book — rated it,\npublished a journal entry, changed its read status, added it to the\nlibrary, edited its metadata or cover, or checked in a physical copy.\nFixed-width ISO, so it sorts lexicographically. Drives the \"Recently\nInteracted\" sort; `None` only for a book carrying no signal at all."
+          },
+          "modified": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Page count of the CBZ archive `/api/ebooks/{uuid}/pages/{n}` would\nserve, so the comic pager can render a slider and map progress onto\npage indices. `None` for an EPUB-only book, a malformed archive, or\na row not yet backfilled since being indexed."
+          },
+          "print_pages": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "User-supplied print edition page count, sourced entirely from\n`metadata_overrides`. Distinct from `page_count`, the CBZ archive's *image*\ncount that drives a comic's page slider: this is bibliographic metadata about\na print edition and can coexist with it."
+          },
+          "published": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publisher": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "series": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "series_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Stable `series.id` primary key from the normalized DB. Set when the\nbook was loaded from a join; `None` for books not in any series."
+          },
+          "series_index": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unique_identifier": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "OPF unique identifier (`<dc:identifier id=\"…\">`). Used by the\nfrontend to construct `/books/:uuid` and `/api/covers/:uuid` URLs."
+          }
+        }
+      },
+      "EbookPage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/EbookLibrary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "stacks": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SeriesStack"
+                },
+                "description": "The series folded into one row each. Absent unless the request set `stack_series`\nand the page held a series of two or more books."
+              }
+            }
+          }
+        ],
+        "description": "One response of `GET /api/ebooks`: a page of books, plus the series it folded into\nstacks when the request set `stack_series`."
+      },
+      "Health": {
+        "type": "object",
+        "description": "A running server's liveness and build details.",
+        "required": [
+          "app",
+          "status",
+          "build_id",
+          "repo_root",
+          "version",
+          "time"
+        ],
+        "properties": {
+          "app": {
+            "type": "string",
+            "description": "Always `omnibus`, which tells this server apart from another program on the port."
+          },
+          "build_id": {
+            "type": "string",
+            "description": "When this server process started, in Unix milliseconds. It changes on every restart,\nso a new value means a rebuilt server is up."
+          },
+          "repo_root": {
+            "type": "string",
+            "description": "The directory the server runs from. Development tooling uses it to tell the servers of\ntwo checkouts apart."
+          },
+          "status": {
+            "type": "string",
+            "description": "Always `ok`."
+          },
+          "time": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The server's clock in Unix seconds, so a client can measure how far its own clock is off."
+          },
+          "version": {
+            "type": "string",
+            "description": "The release, such as `v0.9.3`, or `dev` for a local build."
+          }
+        }
+      },
+      "Identifier": {
+        "type": "object",
+        "description": "A typed identifier from the OPF, e.g. `{ scheme: \"ISBN\", value: \"…\" }`.",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "scheme": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "description": "Request body for `POST /api/auth/login`.\n\nDeliberately does not derive `Debug`: the struct holds a plaintext\npassword, and a stray `tracing::debug!(?req)` would write it to logs.",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "client_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional — when present, server issues a bearer session instead of a\ncookie session and includes the raw token in the response."
+          },
+          "client_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "device_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "password": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "description": "Response from `POST /api/auth/login` and `POST /api/auth/register`.\n`token` is populated only for bearer (mobile) sessions; cookie sessions\nreturn the cookie in a `Set-Cookie` header and `token` is `None`.",
+        "required": [
+          "user"
+        ],
+        "properties": {
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserSummary"
+          }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "description": "Request body for `POST /api/auth/register`. See [`LoginRequest`] for\nwhy `Debug` is deliberately not derived.",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "client_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "device_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "password": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "RegistrationStatus": {
+        "type": "object",
+        "description": "Whether self-registration is open; the body of `GET /api/auth/registration`\nand `POST /api/settings/registration`.",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RenameApiTokenRequest": {
+        "type": "object",
+        "description": "Body of `PATCH /api/auth/api-tokens/{id}` — the row's Rename action.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "SeriesStack": {
+        "type": "object",
+        "description": "A series folded into one grid tile.",
+        "required": [
+          "lead_uuid",
+          "name",
+          "members"
+        ],
+        "properties": {
+          "lead_uuid": {
+            "type": "string",
+            "description": "The member standing in the result list; the stack renders in its slot."
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EbookMetadata"
+            },
+            "description": "Every member in the result set, in series order."
+          },
+          "name": {
+            "type": "string",
+            "description": "The series name as displayed."
+          },
+          "series_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The series page to link, when one resolves."
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StackMemberState"
+            },
+            "description": "One state per member on server pages; empty on client-grouped stacks."
+          }
+        }
+      },
+      "SessionView": {
+        "type": "object",
+        "description": "A session row as shown to its owner or an admin (device & session\nmanagement). Never exposes the token hash — only enough to\nidentify and revoke the row. Shared by the self-service\n`GET /api/auth/sessions` and the admin `GET /api/admin/users/{id}/sessions`.",
+        "required": [
+          "id",
+          "kind",
+          "created_at",
+          "last_used_at",
+          "expires_at"
+        ],
+        "properties": {
+          "client": {
+            "type": "string",
+            "description": "Human-readable name of the client holding this session — the registered\ndevice's name for a native client (\"Seamus's iPhone\"), otherwise a label\nderived from the captured `User-Agent` (\"Firefox on macOS\"). Derived\nserver-side so the raw header never reaches a page; falls back to\n[`UNKNOWN_CLIENT`] for a session minted before migration `0088`."
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "device_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "is_current": {
+            "type": "boolean",
+            "description": "`true` when this is the session the request authenticated with. Only set by\nthe self-service listing; the admin listing always returns `false`, even for\nthe admin's own session. Enforcement lives on the write side: the self-service\n`DELETE /api/auth/sessions/{id}` refuses (400) to revoke the request's own\nsession id."
+          },
+          "kind": {
+            "type": "string",
+            "description": "`\"cookie\"` or `\"bearer\"`."
+          },
+          "last_used_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "SortDir": {
+        "type": "string",
+        "description": "Ascending or descending sort direction for a [`SortKey`].",
+        "enum": [
+          "asc",
+          "desc"
+        ]
+      },
+      "SortKey": {
+        "type": "string",
+        "description": "Sortable axes exposed in the toolbar / table headers.",
+        "enum": [
+          "title",
+          "author",
+          "series",
+          "last_updated",
+          "newest_added",
+          "recently_interacted"
+        ]
+      },
+      "StackMemberState": {
+        "type": "object",
+        "description": "The viewer's reading state for one member of a stack.",
+        "required": [
+          "uuid"
+        ],
+        "properties": {
+          "finished": {
+            "type": "boolean"
+          },
+          "percent": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Whole-book percent (0-100) from the ebook position, if any.",
+            "minimum": 0
+          },
+          "started": {
+            "type": "boolean",
+            "description": "Opened in any format: a status, a percent, or a listening position."
+          },
+          "uuid": {
+            "type": "string"
+          }
+        }
+      },
+      "UserSummary": {
+        "type": "object",
+        "description": "Safe projection of a `users` row. No password fields ever cross the wire.",
+        "required": [
+          "id",
+          "username",
+          "is_admin",
+          "can_upload",
+          "can_edit",
+          "can_download"
+        ],
+        "properties": {
+          "book_detail_scroll_stops": {
+            "type": "boolean",
+            "description": "Whether this user's book detail page uses the snap-stop marquee.\n`false` — the default, and what a pre-0092 payload decodes to —\nrenders it as one continuous scroll."
+          },
+          "can_download": {
+            "type": "boolean"
+          },
+          "can_edit": {
+            "type": "boolean"
+          },
+          "can_upload": {
+            "type": "boolean"
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Presentation name other users see, or `None` to fall back to\n[`Self::username`] — which stays the login and admin identity."
+          },
+          "has_avatar": {
+            "type": "boolean",
+            "description": "Whether this user has uploaded an avatar. Clients render\n`GET /api/users/{id}/avatar` when set and a monogram otherwise."
+          },
+          "hidden_formats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Formats this user hides from the landing All Books view — canonical\nlowercase tokens (`\"cbz\"`). Clients pass it back as the listing\nrequest's `exclude_formats`; empty means nothing hidden."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "is_admin": {
+            "type": "boolean"
+          },
+          "kindle_email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Send-to-Kindle destination address, or `None` when the user hasn't\nconfigured one. Non-secret — the user set it themselves."
+          },
+          "share_stats": {
+            "type": "boolean",
+            "description": "Whether other readers on this server may see this user's stats page.\n`true` — the default, and what a pre-0099 payload decodes to."
+          },
+          "stack_series": {
+            "type": "boolean",
+            "description": "Whether this user's landing grid folds each series into one tile."
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "A session token from `POST /api/auth/login`, or an API token (`omni_…`) from `POST /api/auth/api-tokens`."
+      },
+      "media_token": {
+        "type": "apiKey",
+        "in": "query",
+        "name": "token",
+        "description": "A bearer token passed in the URL, for media that an `<img>` or `<audio>` element loads and so can't send a header with. Only routes that list this scheme accept it."
+      },
+      "session_cookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-omnibus_session",
+        "description": "The cookie a browser sign-in sets. A server running without secure cookies (`OMNIBUS_SECURE_COOKIES=0`) names it `omnibus_session` instead."
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "session_cookie": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "Sign in and out, sessions, and API tokens."
+    },
+    {
+      "name": "Library",
+      "description": "Books: the listing, one book's details, its files, chapters and images."
+    },
+    {
+      "name": "Search",
+      "description": "Search by title, author and series, or through the text of every book."
+    },
+    {
+      "name": "Audiobooks",
+      "description": "Audiobook playback: the manifest, part files, HLS streams and playback speed."
+    },
+    {
+      "name": "Covers",
+      "description": "Book covers and thumbnails, and changing a book's cover."
+    },
+    {
+      "name": "Metadata",
+      "description": "Correcting a book's metadata, and looking books up at external providers."
+    },
+    {
+      "name": "Uploads",
+      "description": "Adding your own books and audiobooks to the library."
+    },
+    {
+      "name": "Progress",
+      "description": "Reading and listening positions, reading sessions, and moving between a book's formats."
+    },
+    {
+      "name": "Annotations",
+      "description": "Highlights and bookmarks."
+    },
+    {
+      "name": "Journals",
+      "description": "Journal entries about a book, and the images in them."
+    },
+    {
+      "name": "Ratings",
+      "description": "Star ratings."
+    },
+    {
+      "name": "Read status",
+      "description": "Whether you have read a book, and when."
+    },
+    {
+      "name": "Stats",
+      "description": "Reading statistics and goals: yours, and those other readers share."
+    },
+    {
+      "name": "Shelves",
+      "description": "Shelves you fill by hand, and smart shelves that fill themselves from a rule."
+    },
+    {
+      "name": "Physical books",
+      "description": "The physical collection: ISBN check-in, copies, and the wishlist."
+    },
+    {
+      "name": "Discovery",
+      "description": "Authors, series, tags and genres."
+    },
+    {
+      "name": "Account",
+      "description": "Your profile, avatar and preferences, and Send to Kindle."
+    },
+    {
+      "name": "Admin",
+      "description": "Server administration: users, sessions, settings, maintenance and health."
+    },
+    {
+      "name": "System",
+      "description": "Health check."
+    }
+  ]
+}

@@ -13,6 +13,7 @@ mod tests;
 /// string (`"unread"` / `"reading"` / `"finished"`) matching the
 /// `book_read_status.status` CHECK constraint.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ReadStatus {
@@ -57,6 +58,7 @@ impl ReadStatus {
 
 /// Write payload: set the current user's read state for a book.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SetReadStatus {
     pub book_uuid: String,
     pub status: ReadStatus,
@@ -84,6 +86,7 @@ impl SetReadStatus {
 /// `updated_at` is unix seconds (SQLite `strftime('%s')`); `finished_at` is the
 /// moment the book most recently became `finished` (`None` otherwise).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ReadStatusRecord {
     pub book_uuid: String,

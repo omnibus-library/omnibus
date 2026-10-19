@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 /// `id` is the `authors.id` primary key, set when loaded from a m2m join and
 /// `None` for contributors created by the EPUB parser before indexing.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Contributor {
     pub name: String,
@@ -23,6 +24,7 @@ pub struct Contributor {
 
 /// A typed identifier from the OPF, e.g. `{ scheme: "ISBN", value: "…" }`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Identifier {
     pub value: String,
@@ -35,6 +37,7 @@ pub struct Identifier {
 /// clients combine it with their configured server base. OPF
 /// `<dc:contributor>` entries are merged into `creators` (creators first).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct EbookMetadata {
     pub id: i64,
@@ -172,6 +175,7 @@ impl EbookMetadata {
 /// One `book_files` row — a single physical file on disk. Exposed to the
 /// frontend so the format switcher can offer a file picker when N > 1.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookFileInfo {
     pub id: i64,

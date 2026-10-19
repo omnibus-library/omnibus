@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 /// closures. `#[non_exhaustive]` so future worker actions can be added
 /// without breaking client matches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum TaskKind {
@@ -29,6 +30,7 @@ pub enum TaskKind {
 /// (e.g. scanner tree-walk); with `Some`, `processed / total` is a stable ratio.
 /// `Done` and `Failed` stay in [`WorkerStatus::recent_complete`] for ~10s.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum ProgressState {
     Running {
@@ -60,6 +62,7 @@ pub enum ProgressState {
 /// their backing file this scan out of `total` file-backed books in the
 /// library, clearing the warn threshold but staying under the abort guard.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct GhostFilesWarning {
     pub removed: u32,
     pub total: u32,
@@ -71,6 +74,7 @@ pub struct GhostFilesWarning {
 /// to no `detail` key. `current_item` is user-facing display text and must never
 /// carry an absolute server path: `rpc_worker_status` is readable by any user.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TaskDetail {
     /// Short human-readable phase label, e.g. "Walking the library".
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -95,6 +99,7 @@ impl TaskDetail {
 /// `found`, and how the diff classified them. Counts are fixed once the
 /// diff completes; the UI renders them alongside the per-file progress.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ScanTallies {
     pub found: u32,
     pub new: u32,
@@ -108,6 +113,7 @@ pub struct ScanTallies {
 /// worker id (not stable across server restarts); the UI uses it only as a
 /// stable key for list rendering and dismiss-tracking.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TaskProgress {
     pub task_id: u64,
     pub kind: TaskKind,
@@ -131,6 +137,7 @@ pub struct TaskProgress {
 /// Both vecs are sorted by `task_id` for stable list rendering across polls;
 /// callers can check `recent_complete.is_empty()` to skip a fade timer.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct WorkerStatus {
     pub active: Vec<TaskProgress>,
     pub recent_complete: Vec<TaskProgress>,
@@ -141,6 +148,7 @@ pub struct WorkerStatus {
 /// including one an ungraceful shutdown left stuck, which is itself a
 /// useful signal on the admin dashboard rather than something to hide.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum BackgroundTaskStatus {
     Running,
@@ -178,6 +186,7 @@ impl std::str::FromStr for BackgroundTaskStatus {
 /// perspective — the admin dashboard only ever fetches these, never writes
 /// them (the worker is the sole writer, via `omnibus_db::background_tasks`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BackgroundTaskRecord {
     pub id: i64,
     pub task_kind: String,

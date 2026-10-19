@@ -14,8 +14,8 @@ use omnibus_db::{
     self as db, scanner,
     worker::{Task, TaskOutcome},
 };
-use omnibus_shared::{EbookLibrary, SeriesStack, SortDir, SortKey, ViewFilters};
-use serde::{Deserialize, Serialize};
+use omnibus_shared::{EbookLibrary, EbookMetadata, EbookPage, EbooksQuery, ViewFilters};
+use serde::Deserialize;
 
 use super::conditional::{self, MEDIA_CACHE_CONTROL, MEDIA_VARY};
 
@@ -33,45 +33,33 @@ use crate::http_errors::invalid_filter;
 /// db layer caps it at `MAX_BOOKS_RETURNED`).
 const DEFAULT_PAGE_LIMIT: i64 = 100;
 
-/// Query params for the paginated form of `GET /api/ebooks`. With none present the
-/// handler returns the full (capped) library; any of `sort`/`dir`/`cursor`/`limit`
-/// switches it to a keyset page that also emits `X-Next-Cursor`. The cursor is
-/// interpreted under the request's sort axis, so a `cursor` without an explicit
-/// `sort` **and** `dir` is a 400.
-#[derive(Deserialize)]
-pub(super) struct EbooksQuery {
-    sort: Option<SortKey>,
-    dir: Option<SortDir>,
-    cursor: Option<String>,
-    limit: Option<i64>,
-    /// Comma-separated `book_files.format` values (lowercase wire form, e.g.
-    /// `?formats=m4b,m4a,mp3`). The legacy list older clients (iOS builds, MCP)
-    /// still send; merged as an include-format clause.
-    formats: Option<String>,
-    /// Percent-encoded JSON array of `FilterClause` (`?filter=`); see
-    /// `ViewFilters::from_query_param`. Alone it selects the keyset form.
-    filter: Option<String>,
-    /// Comma-separated formats the caller's user hides from their landing
-    /// view (`?exclude_formats=cbz`). Client-passed by design: the mirror
-    /// syncs send nothing here and stay full-library (rule: exclusion is a
-    /// landing concern, and offline toggling must restore hidden books
-    /// without a resync).
-    exclude_formats: Option<String>,
-    /// Fold 2+-book series into one row plus `stacks` (keyset form only).
-    /// `X-Total-Count` still counts books, not the folded rows.
-    stack_series: Option<bool>,
-    /// `?omit_description=true`: read keyset rows (plain and stacked) through
-    /// `Projection::List`. Keyset form only; absent/false keeps full rows,
-    /// which the iOS offline mirror and MCP rely on.
-    omit_description: Option<bool>,
-}
-
 /// Query parameters for `GET /api/ebooks/{uuid}/file`.
 #[derive(Deserialize)]
 pub(super) struct EbookFileQuery {
     file_id: Option<i64>,
 }
 
+/// List books
+///
+/// The library's books, ebooks and audiobooks together. Without paging parameters the
+/// response is the whole library, capped at 50,000 books: `X-Total-Count` holds the true
+/// total, and `X-Total-Cap` appears when the cap cut the list short. Set `sort`, `dir`,
+/// `limit` or `cursor` to page through it instead, following `X-Next-Cursor`.
+#[utoipa::path(
+    get,
+    path = "/api/ebooks",
+    tag = "Library",
+    params(EbooksQuery),
+    responses(
+        (status = 200, description = "A page of books, or the whole library.", body = EbookPage, headers(
+            ("X-Total-Count" = i64, description = "How many books match."),
+            ("X-Next-Cursor" = String, description = "The `cursor` for the next page. Absent on the last page, and when the request wasn't paged."),
+            ("X-Hidden-Count" = i64, description = "How many books `exclude_formats` left out. Sent on the first page only."),
+            ("X-Total-Cap" = i64, description = "The cap, sent when it cut an unpaged response short."),
+        )),
+        (status = 400, description = "A `cursor` came without `sort` and `dir`, or a `cursor` or `filter` is malformed."),
+    ),
+)]
 pub(super) async fn get_ebooks(
     user: AuthUser,
     State(state): State<AppState>,
@@ -140,22 +128,13 @@ async fn page_totals(
     Ok((total, hidden))
 }
 
-/// `EbookLibrary` plus the page's stacks; omitted when empty so an unstacked body is unchanged.
-#[derive(Serialize)]
-struct KeysetBody {
-    #[serde(flatten)]
-    library: EbookLibrary,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    stacks: Vec<SeriesStack>,
-}
-
 /// Assemble the `X-Total-Count` / `X-Hidden-Count` / `X-Next-Cursor` response
 /// headers onto a JSON body. Unlike the full-library path, a keyset page is
 /// *not* truncated to `MAX_BOOKS_RETURNED` overall (the limit is a per-page
 /// clamp), so this emits the true `X-Total-Count` but never `X-Total-Cap` —
 /// the page is complete.
 fn keyset_page_response(
-    body: KeysetBody,
+    body: EbookPage,
     total: i64,
     hidden: Option<i64>,
     next: Option<db::PageCursor>,
@@ -227,7 +206,7 @@ async fn respond_keyset_page(
             Err(error) => return internal("count books", error),
         };
 
-    let body = KeysetBody {
+    let body = EbookPage {
         library: EbookLibrary {
             path,
             books: page.books,
@@ -293,6 +272,19 @@ async fn keyset_rows(
     }
 }
 
+/// Get a book
+///
+/// One book's full record.
+#[utoipa::path(
+    get,
+    path = "/api/ebooks/{uuid}",
+    tag = "Library",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses(
+        (status = 200, description = "The book.", body = EbookMetadata),
+        (status = 404, description = "No book has that uuid."),
+    ),
+)]
 pub(super) async fn get_ebook_by_uuid(
     _user: AuthUser,
     State(state): State<AppState>,

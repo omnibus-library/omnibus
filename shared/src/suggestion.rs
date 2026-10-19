@@ -8,6 +8,7 @@ const HARDCOVER_BOOK_BASE: &str = "https://hardcover.app/books/";
 /// One suggested read-alike from Hardcover. External to the library — clicking
 /// opens `hardcover_url` in a new tab.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BookSuggestion {
     pub hardcover_id: i64,
     /// Outbound Hardcover book page.
@@ -63,6 +64,7 @@ impl BookSuggestion {
 
 /// Response for a book's suggestions strip.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum SuggestionsResponse {
     /// No Hardcover key is configured — the UI shows a connect message.
@@ -77,6 +79,7 @@ pub enum SuggestionsResponse {
 /// Masked status of the server-wide Hardcover key for the Settings UI. **Never
 /// carries the raw key** — only a short masked preview.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct HardcoverKeyStatus {
     pub configured: bool,
     /// Short masked preview (e.g. `hc_l…3f9a`), or `None` when unset.

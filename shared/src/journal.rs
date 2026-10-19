@@ -34,6 +34,7 @@ fn validate_body(body_md: &str, progress: Option<u8>) -> Result<(), String> {
 /// Publication state of a journal entry: owner-private `Draft` vs shared-feed
 /// `Published` (the default, so pre-drafts clients/rows keep their behaviour).
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum JournalStatus {
@@ -65,6 +66,7 @@ impl JournalStatus {
 /// server-rendered, sanitized markdown; `body_md` is the raw source (the owner
 /// edits it). `created_at` / `updated_at` are unix seconds.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct JournalEntry {
     pub id: i64,
@@ -111,6 +113,7 @@ impl JournalEntry {
 /// Write payload: create a new journal entry on a book. `status` defaults to
 /// `published` so pre-drafts mobile clients keep their old behaviour.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateJournalEntry {
     pub book_uuid: String,
     pub body_md: String,
@@ -152,6 +155,7 @@ impl CreateJournalEntry {
 /// Response for a journal image upload: the serving URL to embed in the
 /// entry's markdown (`![caption](url)`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct JournalImageUpload {
     pub url: String,
 }
@@ -160,6 +164,7 @@ pub struct JournalImageUpload {
 /// `status: Some(_)` transitions the entry (publish a draft); `None` — the
 /// default, so pre-drafts clients are unaffected — keeps the stored status.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateJournalEntry {
     pub body_md: String,
     pub progress: Option<u8>,

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// Which external provider a summary fetch should hit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum SummarySource {
     Hardcover,
     GoogleBooks,

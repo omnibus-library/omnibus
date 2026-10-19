@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// digital file) but changed only by the reader who filed it — see
 /// [`Self::can_change`]. A book can have many; each is individually deletable.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PhysicalCopy {
     pub id: i64,
@@ -54,6 +55,7 @@ impl PhysicalCopy {
 /// off the cover, an ISBN typed at the keypad, and a title search whose ISBN
 /// came from the *provider* rather than the reader.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum WishlistSource {
@@ -93,6 +95,7 @@ impl WishlistSource {
 /// Body of the copy-note edit (`PATCH /api/physical/copies/{id}`). `None` — and
 /// any blank string — clears the note.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateCopyNoteRequest {
     #[serde(default)]
     pub note: Option<String>,
@@ -118,6 +121,7 @@ impl UpdateCopyNoteRequest {
 
 /// A book on one user's physical wishlist. Unique per `(user_id, book_uuid)`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct WishlistEntry {
     pub id: i64,
     pub user_id: i64,
@@ -131,6 +135,7 @@ pub struct WishlistEntry {
 /// with its last entry, and `book_deleted` is how the client learns the page
 /// it is standing on is gone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct WishlistRemoval {
     pub book_deleted: bool,
 }

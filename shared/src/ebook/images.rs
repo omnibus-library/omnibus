@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// One spine document that shows an image.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookImageReference {
     /// Index into the spine, as in the chapter listing.
@@ -17,6 +18,7 @@ pub struct BookImageReference {
 
 /// One image in an EPUB's manifest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookImage {
     /// The image's path inside the EPUB archive: the handle the fetch takes.
@@ -36,6 +38,7 @@ pub struct BookImage {
 /// `GET /api/ebooks/{uuid}/images` response: every manifest image of the
 /// book's EPUB.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookImageList {
     pub book_uuid: String,
@@ -47,6 +50,7 @@ pub struct BookImageList {
 /// without a session until `expires_at` (unix seconds). The link opens that one
 /// image and nothing else.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookImageLink {
     pub path: String,
@@ -56,6 +60,7 @@ pub struct BookImageLink {
 /// What `read_book_image` answers: the image's facts plus a `download_url` that
 /// fetches the original bytes without a session until `expires_at`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookImageRead {
     pub book_uuid: String,

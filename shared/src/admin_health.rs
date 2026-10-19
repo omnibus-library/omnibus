@@ -10,6 +10,7 @@ use crate::worker::TaskKind;
 
 /// Library index summary: configured library paths and row counts.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct IndexStatus {
     pub ebook_library_path: Option<String>,
     pub audiobook_library_path: Option<String>,
@@ -26,6 +27,7 @@ pub struct IndexStatus {
 /// Timings are milliseconds (wire-friendly; the db-side `Worker::metrics`
 /// uses `std::time::Duration`, which doesn't serialize), oldest first.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct WorkerQueueEntry {
     pub kind: TaskKind,
     pub queue_depth: usize,
@@ -36,6 +38,7 @@ pub struct WorkerQueueEntry {
 /// (`POST /api/fts/rebuild`) always restores `in_sync`; drift here means a
 /// post-commit FTS update failed silently on some earlier write.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FtsHealth {
     pub books_rows: i64,
     pub fts_rows: i64,
@@ -44,6 +47,7 @@ pub struct FtsHealth {
 
 /// Disk usage across the book library and every on-disk cache.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StorageStats {
     /// Sum of `book_files.size_bytes` — the on-disk footprint of the
     /// indexed library itself (not a cache, so it carries no cap).
@@ -62,6 +66,7 @@ pub struct StorageStats {
 /// (web). The web page re-fetches this on a 5-second live-update poll
 /// in addition to its initial page-load fetch.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AdminHealthReport {
     pub index: IndexStatus,
     pub worker_queue: Vec<WorkerQueueEntry>,

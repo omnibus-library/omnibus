@@ -14,6 +14,7 @@ mod tests;
 
 /// Which list view to render on the library page.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ViewMode {
     Table,
@@ -23,6 +24,7 @@ pub enum ViewMode {
 
 /// Sortable axes exposed in the toolbar / table headers.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SortKey {
@@ -71,6 +73,7 @@ impl SortKey {
 
 /// Ascending or descending sort direction for a [`SortKey`].
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum SortDir {
@@ -92,6 +95,7 @@ impl SortDir {
 
 /// Persisted library-view preference for a single library path.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ViewPrefs {
     pub view_mode: ViewMode,
     pub sort_key: SortKey,
@@ -107,6 +111,7 @@ pub struct ViewPrefs {
 
 /// Sort axis for the Series and Shelves index pages (name A–Z or most books first).
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum IndexSort {
     #[default]
@@ -118,6 +123,7 @@ pub enum IndexSort {
 /// reader read most recently. Its tokens match `IndexSort`'s, so a choice
 /// stored before `Recent` existed still parses.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AuthorSort {
     #[default]
@@ -128,6 +134,7 @@ pub enum AuthorSort {
 
 /// Persisted, library-wide sort choices for the index pages (Authors, Series, Shelves).
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DiscoveryPrefs {
     #[serde(default)]
     pub authors_sort: AuthorSort,

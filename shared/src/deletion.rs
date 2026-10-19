@@ -12,6 +12,7 @@ use crate::physical::PhysicalCopy;
 /// Everything the delete dialog needs for one book: the deletable items and
 /// the user data a total delete would take with them.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BookDeletionManifest {
     pub files: Vec<BookFileInfo>,
     pub copies: Vec<PhysicalCopy>,
@@ -29,6 +30,7 @@ impl BookDeletionManifest {
 /// What a total delete would take with the book — the numbers the confirm
 /// dialog names before an admin commits.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BookDeletionImpact {
     pub highlights: i64,
     pub journal_entries: i64,
@@ -68,6 +70,7 @@ impl BookDeletionImpact {
 /// ids and physical-copy ids to remove. Either list may be empty; both empty
 /// on a book with no items at all deletes the record.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DeleteBookFilesRequest {
     #[serde(default)]
@@ -78,6 +81,7 @@ pub struct DeleteBookFilesRequest {
 
 /// What a delete actually removed.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DeleteBookFilesResult {
     pub deleted_file_ids: Vec<i64>,
     pub deleted_copy_ids: Vec<i64>,

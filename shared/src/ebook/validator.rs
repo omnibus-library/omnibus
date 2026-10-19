@@ -23,6 +23,7 @@ pub fn file_etag(size_bytes: i64, mtime_epoch: i64) -> Option<String> {
 /// Which of a book's two downloadable formats a validator query is about.
 /// The wire form is the same token the client's download registry uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum DownloadFormat {
     Epub,
@@ -43,6 +44,7 @@ impl DownloadFormat {
 
 /// One "what is this file's validator now?" question.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DownloadValidatorQuery {
     pub book_uuid: String,
     pub format: DownloadFormat,
@@ -58,6 +60,7 @@ pub struct DownloadValidatorQuery {
 /// the chosen file is gone, or when the scanner has not stat'd it — all of
 /// which a client reads as "can't tell", never as "unchanged".
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DownloadValidator {
     pub book_uuid: String,
     pub format: DownloadFormat,
@@ -69,12 +72,14 @@ pub struct DownloadValidator {
 
 /// `POST /api/downloads/validators` request body.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DownloadValidatorRequest {
     pub files: Vec<DownloadValidatorQuery>,
 }
 
 /// `POST /api/downloads/validators` response body.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DownloadValidatorResponse {
     pub files: Vec<DownloadValidator>,
 }

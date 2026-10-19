@@ -9,6 +9,7 @@ use crate::scan::SEARCH_QUERY_MAX_LEN;
 
 /// Which external provider a lookup resolved against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum MetadataProvider {
@@ -46,6 +47,7 @@ impl MetadataProvider {
 /// provider module to parse the field onto [`ProviderEdition`], because a
 /// fixture cross-check fails a flag that outruns its parser.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProviderCapabilities {
     pub search_by_title: bool,
     pub search_by_isbn: bool,
@@ -60,6 +62,7 @@ pub struct ProviderCapabilities {
 /// **Never carries key material** — `configured` is a bool, not a masked
 /// preview, because this endpoint is reachable by any authenticated user.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProviderInfo {
     pub id: MetadataProvider,
     pub display_name: String,
@@ -82,6 +85,7 @@ pub const GOOGLE_BOOKS_API_KEY_MAX_LEN: usize = 512;
 /// **Never carries the raw key** — only a short masked preview. Mirrors
 /// [`crate::suggestion::HardcoverKeyStatus`].
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct GoogleBooksKeyStatus {
     pub configured: bool,
     /// Short masked preview (e.g. `AIza…9f3a`), or `None` when unset.
@@ -95,6 +99,7 @@ pub struct GoogleBooksKeyStatus {
 /// they carry. `cover_url` is a provider-hosted image the caller fetches only
 /// when a book/wishlist entry is actually created, not at lookup time.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ExternalBookMeta {
     /// The normalized ISBN-13 that resolved (always 13 digits, no hyphens).
@@ -186,6 +191,7 @@ impl ExternalBookMeta {
 /// is for. A separate type from [`ExternalBookMeta`], the frozen check-in wire
 /// payload; convert with `TryFrom` where a check-in-shaped value is wanted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ProviderEdition {
     pub source: MetadataProvider,
@@ -359,6 +365,7 @@ impl TryFrom<ProviderEdition> for ExternalBookMeta {
 /// asked it", and "we asked and never got an answer" are different facts, and
 /// collapsing them makes an outage read as a miss.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum ProviderSearchStatus {
@@ -384,6 +391,7 @@ pub enum ProviderSearchStatus {
 
 /// One row of the per-source status table returned alongside the candidates.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ProviderSearchSource {
     pub provider: MetadataProvider,
@@ -393,6 +401,7 @@ pub struct ProviderSearchSource {
 
 /// Body for `POST /api/metadata/editions/search`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct EditionSearchRequest {
     /// The query as free text — what the reader sees in the search box, and
@@ -474,6 +483,7 @@ impl EditionSearchRequest {
 /// `provider_ref` is echoed back exactly as the search handed it over; Omnibus
 /// never parses it, so it is capped rather than validated for shape.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct EditionHydrateRequest {
     pub source: MetadataProvider,
@@ -528,6 +538,7 @@ impl EditionHydrateRequest {
 /// skipped or failed, which is why a caller can render "Hardcover: couldn't
 /// reach it" instead of quietly showing a shorter list.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct EditionSearchResponse {
     pub editions: Vec<ProviderEdition>,

@@ -30,6 +30,7 @@ pub const MAX_PREVIEW_RULES: usize = 50;
 
 /// Kind of shelf, fixed at creation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ShelfKind {
@@ -51,6 +52,7 @@ impl ShelfKind {
 
 /// Who can see a shelf. `Private` = owner + admins; `Public` = every user.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Visibility {
@@ -61,6 +63,7 @@ pub enum Visibility {
 
 /// How smart conditions combine: `Any` = OR, `All` = AND.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MatchMode {
@@ -71,6 +74,7 @@ pub enum MatchMode {
 /// A field a smart rule can match on. Mirrors the advanced-search query vocabulary plus
 /// the acquisition-date fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum RuleField {
@@ -93,6 +97,7 @@ pub enum RuleField {
 
 /// A comparison operator for a smart rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum RuleOp {
@@ -200,6 +205,7 @@ impl RuleField {
 /// date fields → ISO date, `START..END`, or `30d`/`3m`/`1y`;
 /// status → `unread`/`reading`/`finished`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ShelfRule {
     pub field: RuleField,
@@ -231,6 +237,7 @@ impl ShelfRule {
 
 /// Compact shelf row for the rail: identity, kind, visibility, accent, count.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ShelfSummary {
     pub id: i64,
@@ -256,6 +263,7 @@ pub struct ShelfSummary {
 
 /// Full shelf detail: the summary fields plus description, rule, and match mode.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Shelf {
     pub id: i64,
@@ -284,6 +292,7 @@ pub struct Shelf {
 /// Create payload. For smart: `match_mode` + `rules` set, `book_uuids` empty.
 /// For manual: `match_mode`/`rules` empty, `book_uuids` optional.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateShelfRequest {
     pub kind: ShelfKind,
     pub name: String,
@@ -340,6 +349,7 @@ impl CreateShelfRequest {
 /// Partial update. `None` fields are left unchanged. `rules` replaces the whole
 /// rule set (smart shelves only).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateShelfRequest {
     #[serde(default)]
     pub name: Option<String>,
@@ -374,6 +384,7 @@ impl UpdateShelfRequest {
 
 /// Live-preview result for the create modal: "N of M match" + sample covers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct RulePreview {
     pub matched: i64,
@@ -383,6 +394,7 @@ pub struct RulePreview {
 
 /// Unsaved rule sent to the preview endpoint.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RulePreviewRequest {
     pub match_mode: MatchMode,
     pub rules: Vec<ShelfRule>,
@@ -402,6 +414,7 @@ impl RulePreviewRequest {
 
 /// One page of a shelf's books (v1: capped, no cursor).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ShelfPage {
     pub books: Vec<EbookMetadata>,
 }

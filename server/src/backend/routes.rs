@@ -5,11 +5,9 @@
 
 use std::{sync::Arc, time::Duration};
 
-use axum::{
-    routing::{delete, get, patch, post, put},
-    Router,
-};
+use axum::routing::{delete, get, patch, post, put};
 use tower_http::timeout::RequestBodyTimeoutLayer;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::rate_limit::{rate_limit_by_ip, RateLimiter, RateLimits};
 
@@ -21,9 +19,9 @@ use super::{
 };
 
 /// Health check, settings, ebooks, and audiobook playback routes.
-pub(super) fn content_routes() -> Router<AppState> {
-    Router::new()
-        .route("/api/_health", get(super::health::get_health))
+pub(super) fn content_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(super::health::get_health))
         .route("/api/settings", get(settings::get_settings))
         .route("/api/settings", post(settings::post_settings))
         // Admin write only; the public read is GET /api/auth/registration.
@@ -76,8 +74,8 @@ pub(super) fn content_routes() -> Router<AppState> {
             "/api/downloads/validators",
             post(ebooks::post_download_validators),
         )
-        .route("/api/ebooks", get(ebooks::get_ebooks))
-        .route("/api/ebooks/{uuid}", get(ebooks::get_ebook_by_uuid))
+        .routes(routes!(ebooks::get_ebooks))
+        .routes(routes!(ebooks::get_ebook_by_uuid))
         .route(
             "/api/ebooks/{uuid}/chapters",
             get(ebooks::chapters::get_ebook_chapters),
@@ -149,8 +147,8 @@ pub(super) fn content_routes() -> Router<AppState> {
 pub(super) fn data_routes(
     search_limiter: Arc<RateLimiter>,
     limits: RateLimits,
-) -> Router<AppState> {
-    Router::new()
+) -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .merge(metadata_override_routes())
         .merge(progress_routes())
         .merge(merge_routes())
@@ -172,8 +170,8 @@ pub(super) fn data_routes(
 }
 
 /// Metadata override read/write + cover-only revert.
-fn metadata_override_routes() -> Router<AppState> {
-    Router::new()
+fn metadata_override_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route(
             "/api/ebooks/{uuid}/overrides",
             post(overrides::post_ebook_overrides).delete(overrides::delete_ebook_overrides),
@@ -195,8 +193,8 @@ fn metadata_override_routes() -> Router<AppState> {
 
 /// Progress sync — mobile-facing REST. Web hits the analogous
 /// `/api/rpc/progress*` server functions defined in `omnibus_frontend::rpc`.
-fn progress_routes() -> Router<AppState> {
-    Router::new()
+fn progress_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route("/api/progress", post(progress::post_progress))
         .route("/api/progress/sessions", post(progress::post_sessions))
         .route("/api/progress/recent", get(progress::get_recent_progress))
@@ -229,8 +227,8 @@ fn progress_routes() -> Router<AppState> {
 /// `omnibus_frontend::rpc::books`, which repeat these handlers' `AdminUser` gate: the
 /// merge transaction is shared, but the gate and error mapping are not, so change one
 /// side's gate or response shape and the other needs the same edit.
-fn merge_routes() -> Router<AppState> {
-    Router::new()
+fn merge_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route("/api/books/merge", post(merge::post_merge_books))
         .route("/api/books/merge/undo", post(merge::post_undo_merge))
         .route(
@@ -243,8 +241,8 @@ fn merge_routes() -> Router<AppState> {
 /// `/api/rpc/books/deletion-manifest` and `/api/rpc/books/delete-files`
 /// server fns in `omnibus_frontend::rpc::books`; same gate-parity note as
 /// [`merge_routes`].
-fn deletion_routes() -> Router<AppState> {
-    Router::new()
+fn deletion_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route(
             "/api/books/{uuid}/deletion-manifest",
             get(deletion::get_deletion_manifest),
@@ -257,8 +255,8 @@ fn deletion_routes() -> Router<AppState> {
 
 /// Highlight annotations — mobile-facing REST. Web hits the analogous
 /// `/api/rpc/highlights/*` server functions.
-fn highlight_routes() -> Router<AppState> {
-    Router::new()
+fn highlight_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route("/api/highlights", post(highlights::post_highlight))
         .route(
             "/api/highlights/book/{book_uuid}",
@@ -278,8 +276,8 @@ fn highlight_routes() -> Router<AppState> {
 /// Bookmarks — mobile-facing REST. Web hits the analogous
 /// `/api/rpc/bookmarks/*` server functions. One model serves both the
 /// audiobook player and the reader (position = seconds or EPUB CFI).
-fn bookmark_routes() -> Router<AppState> {
-    Router::new()
+fn bookmark_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route("/api/bookmarks", post(bookmarks::post_bookmark))
         .route(
             "/api/bookmarks/book/{book_uuid}",
@@ -294,8 +292,8 @@ fn bookmark_routes() -> Router<AppState> {
 /// Reading stats, star ratings, and read/unread state —
 /// mobile-facing REST. Web hits the analogous `/api/rpc/stats`,
 /// `/api/rpc/ratings/*`, and `/api/rpc/read-status/*` server functions.
-fn engagement_routes() -> Router<AppState> {
-    Router::new()
+fn engagement_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route("/api/users", get(stats::get_household_readers))
         .route("/api/stats", get(stats::get_stats))
         .route("/api/stats/sessions", get(stats::get_session_log))
@@ -321,8 +319,8 @@ fn engagement_routes() -> Router<AppState> {
 
 /// Physical Check-In scan flow — mobile-facing REST. Web hits the analogous
 /// `/api/rpc/scan/*` server functions.
-fn check_in_routes() -> Router<AppState> {
-    Router::new()
+fn check_in_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route("/api/scan/resolve", post(scan::post_resolve))
         .route("/api/scan/search", post(scan::post_search))
         .route("/api/scan/resolve-meta", post(scan::post_resolve_meta))
@@ -351,8 +349,8 @@ fn check_in_routes() -> Router<AppState> {
 /// F Physical Check-In — book-detail collection + wishlist reads/edits.
 /// The literal `copies` routes are registered before `/{uuid}` so the
 /// param route can't shadow them.
-fn physical_collection_routes() -> Router<AppState> {
-    Router::new()
+fn physical_collection_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route(
             "/api/physical/copies/{copy_id}",
             patch(physical::patch_copy_note).delete(physical::delete_copy),
@@ -370,8 +368,8 @@ fn physical_collection_routes() -> Router<AppState> {
 /// Shelves — mobile-facing REST. Web hits the analogous
 /// `/api/rpc/shelves*` server functions. `/preview` and `/containing/{uuid}`
 /// are registered before the `{id}` param route so it can't shadow them.
-fn shelf_routes() -> Router<AppState> {
-    Router::new()
+fn shelf_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route(
             "/api/shelves",
             get(shelves::list_shelves).post(shelves::create_shelf),
@@ -403,8 +401,8 @@ fn shelf_routes() -> Router<AppState> {
 /// `/api/rpc/journals/*` server functions. Embedded-image reads are
 /// media-gated like covers/thumbs; the matching upload POST lives in
 /// `upload_router` (rate-limited, image body cap).
-fn journal_routes() -> Router<AppState> {
-    Router::new()
+fn journal_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route("/api/journals", post(journals::post_journal))
         .route(
             "/api/journals/book/{book_uuid}",
@@ -428,14 +426,14 @@ fn journal_routes() -> Router<AppState> {
 /// GET/DELETE for author photos carry no upload body (DELETE mutates, but cheaply), so
 /// they stay outside the rate-limited `upload_router`; only the binary uploads (cover
 /// POST, photo PUT, photo-url PUT) carry the per-IP frequency cap.
-fn discovery_routes() -> Router<AppState> {
-    Router::new()
+fn discovery_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route(
             "/api/authors/{id}/photo",
             get(author_photos::get_author_photo).delete(author_photos::delete_author_photo),
         )
-        .route("/api/covers/{uuid}", get(covers::get_cover))
-        .route("/api/thumbs/{uuid}/{size}", get(covers::get_thumb))
+        .routes(routes!(covers::get_cover))
+        .routes(routes!(covers::get_thumb))
         .route("/api/authors", get(authors::get_authors))
         .route("/api/authors/reading", get(authors::get_author_reading))
         .route(
@@ -455,8 +453,8 @@ fn discovery_routes() -> Router<AppState> {
 
 /// Suggestions — mobile-facing REST. Web hits the analogous
 /// `/api/rpc/ebook-suggestions` + `/api/rpc/hardcover-key` server fns.
-fn suggestion_routes() -> Router<AppState> {
-    Router::new()
+fn suggestion_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route(
             "/api/ebooks/{uuid}/suggestions",
             get(suggestions::get_suggestions),
@@ -473,8 +471,8 @@ fn suggestion_routes() -> Router<AppState> {
 
 /// "Fetch Summary" — mobile-facing REST. Web hits the analogous
 /// `/api/rpc/ebook/summary/*` server fns.
-fn summary_routes() -> Router<AppState> {
-    Router::new()
+fn summary_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route(
             "/api/ebooks/{uuid}/summary/fetch",
             post(summary::post_ebook_summary_fetch),
@@ -487,8 +485,8 @@ fn summary_routes() -> Router<AppState> {
 /// repeat these handlers' gates: the catalog is read-only for any authenticated user,
 /// the edition search and hydrate are `can_edit`-gated inside their handlers. Change one
 /// side's gate or response shape and the other needs the same edit.
-fn metadata_routes() -> Router<AppState> {
-    Router::new()
+fn metadata_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route("/api/metadata/providers", get(metadata::get_providers))
         .route(
             "/api/metadata/editions/search",
@@ -505,8 +503,8 @@ fn metadata_routes() -> Router<AppState> {
 /// series, sharing stats with the household, the profile and its avatar) —
 /// all mobile-facing REST. Web hits the analogous `/api/rpc/kindle/send`,
 /// `/api/rpc/account/*`, and `/api/rpc/smtp*` server fns.
-fn kindle_routes() -> Router<AppState> {
-    Router::new()
+fn kindle_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route("/api/kindle/send", post(kindle::post_send))
         .route("/api/kindle/send/status", get(kindle::get_send_status))
         .route("/api/account/kindle-email", post(kindle::post_kindle_email))
@@ -535,8 +533,8 @@ fn kindle_routes() -> Router<AppState> {
 /// principal at `SEARCH_RATE_LIMIT_MAX` requests per `SEARCH_RATE_LIMIT_WINDOW` since each
 /// handler runs heavy SQL. The `limiter` is passed in so the live server can share one
 /// `Arc` across both search families; `rest_router` supplies a fresh dedicated one.
-fn search_router(limiter: Arc<RateLimiter>) -> Router<AppState> {
-    Router::new()
+fn search_router(limiter: Arc<RateLimiter>) -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route("/api/search", get(search::get_search))
         .route("/api/search/content", get(search::get_search_content))
         .route("/api/search/palette", get(search::get_search_palette))
@@ -551,7 +549,7 @@ fn search_router(limiter: Arc<RateLimiter>) -> Router<AppState> {
 /// [`super::rest_router`]. Its routes (cover `POST`, cover from-URL `POST`, journal image,
 /// avatar, author-photo `PUT`s) each accept a multi-MiB payload or drive an outbound fetch,
 /// so they share a per-IP budget. The `GET`/`DELETE` author-photo routes stay in `rest_router`.
-fn upload_router(limits: RateLimits) -> Router<AppState> {
+fn upload_router(limits: RateLimits) -> OpenApiRouter<AppState> {
     let limiter = Arc::new(
         RateLimiter::with_policy(
             super::UPLOAD_RATE_LIMIT_WINDOW,
@@ -559,7 +557,7 @@ fn upload_router(limits: RateLimits) -> Router<AppState> {
         )
         .with_limits(limits),
     );
-    Router::new()
+    OpenApiRouter::new()
         .route(
             "/api/ebooks/{uuid}/cover",
             post(overrides::post_ebook_cover),
@@ -601,7 +599,7 @@ fn upload_router(limits: RateLimits) -> Router<AppState> {
 pub(super) fn book_upload_router(
     body_idle_timeout: Duration,
     limits: RateLimits,
-) -> Router<AppState> {
+) -> OpenApiRouter<AppState> {
     let limiter = Arc::new(
         RateLimiter::with_policy(
             super::UPLOAD_RATE_LIMIT_WINDOW,
@@ -609,7 +607,7 @@ pub(super) fn book_upload_router(
         )
         .with_limits(limits),
     );
-    Router::new()
+    OpenApiRouter::new()
         .route(
             "/api/uploads/ebooks/inspect",
             post(uploads::post_inspect_ebook),

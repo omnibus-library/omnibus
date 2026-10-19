@@ -13,6 +13,7 @@ pub const MAX_AUDIOBOOK_PLAYBACK_RATE: f64 = 3.0;
 
 /// Request payload for changing one audiobook's playback rate.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AudiobookPlaybackRateUpdate {
     pub playback_rate: f64,
 }
@@ -34,6 +35,7 @@ impl AudiobookPlaybackRateUpdate {
 
 /// Server-authoritative playback-rate preference for one audiobook.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AudiobookPlaybackRateRecord {
     pub book_uuid: String,
     pub playback_rate: f64,
@@ -42,6 +44,7 @@ pub struct AudiobookPlaybackRateRecord {
 
 /// One part of an audiobook in the direct-play manifest.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ManifestPart {
     pub ordinal: i64,
     pub url: String,
@@ -51,6 +54,7 @@ pub struct ManifestPart {
 
 /// Chapter marker within an audiobook's timeline.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ChapterInfo {
     pub ordinal: i64,
     pub title: String,
@@ -64,6 +68,7 @@ pub struct ChapterInfo {
 /// must name) and `audio_file_count` (`> 1`: a position is only meaningful with
 /// its file id); both default to 0, meaning "identity unknown".
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "mode", rename_all = "lowercase")]
 pub enum AudiobookManifest {
     Direct {

@@ -49,6 +49,7 @@ impl CrossFormatErrorCode {
 /// How a book's multiple audio files relate — declared by the user when
 /// confirming a link, never guessed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CrossFormatLinkMode {
     /// Files play end to end as one audiobook, in ordinal order.
@@ -60,6 +61,7 @@ pub enum CrossFormatLinkMode {
 /// The tier that produced a mapped position. Linear is the v1 floor;
 /// chapter-anchored lands as a sibling variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MappingConfidence {
@@ -73,6 +75,7 @@ pub enum MappingConfidence {
 
 /// Why (or whether) the endpoint has a candidate to offer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CrossFormatResumeState {
     /// The user has never confirmed a link for this book — sync is off.
@@ -93,6 +96,7 @@ pub enum CrossFormatResumeState {
 
 /// Response shape of the cross-format resume read.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CrossFormatResume {
     pub state: CrossFormatResumeState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -117,6 +121,7 @@ impl CrossFormatResume {
 /// One mapped resume position. The audio-half fields are set when
 /// `target` is audio; `percent` when the target is the ebook.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct CrossFormatCandidate {
     /// The format this candidate resumes (the request's `?target=`).
@@ -167,6 +172,7 @@ pub struct CrossFormatCandidate {
 /// preview arithmetic — it must re-run live as the user changes the
 /// declaration, so shipping raw data beats shipping one precomputed map.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<AlignmentLink>,
@@ -199,6 +205,7 @@ pub struct AlignmentView {
 /// How well the two chapter structures matched, for the modal's readout
 /// ("12 of 14 chapter names matched").
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentMatch {
     pub matched: i64,
     pub ebook_chapters: i64,
@@ -208,6 +215,7 @@ pub struct AlignmentMatch {
 /// The stored link as the modal needs it, plus whether the audio set has
 /// drifted since confirmation (mapping paused until re-confirmed).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentLink {
     pub mode: CrossFormatLinkMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -227,12 +235,14 @@ pub struct AlignmentLink {
 /// Absent when the structure backfill hasn't reached the book — the
 /// modal then shows the honest low-confidence (linear estimate) notice.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentEbook {
     pub total_chars: i64,
     pub chapters: Vec<AlignmentEbookChapter>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentEbookChapter {
     pub title: String,
     /// Whole-book percent where the chapter starts, 0..=100.
@@ -253,6 +263,7 @@ pub struct AlignmentEbookChapter {
 
 /// One audio file segment for the lane, in current ordinal order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentAudioFile {
     pub book_file_id: i64,
     pub label: String,
@@ -264,6 +275,7 @@ pub struct AlignmentAudioFile {
 /// Current reading position (percent may be absent for a fresh CFI whose
 /// derivation hasn't landed).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentPosition {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub percent: Option<i64>,
@@ -272,6 +284,7 @@ pub struct AlignmentPosition {
 
 /// Current listening position.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentAudioPosition {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub book_file_id: Option<i64>,
@@ -283,6 +296,7 @@ pub struct AlignmentAudioPosition {
 /// (when present) persists a re-ordering of the audio files' ordinals —
 /// library-wide data, so the server gates it on edit permission.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ConfirmCrossFormatLink {
     pub book_uuid: String,
     pub mode: CrossFormatLinkMode,
@@ -296,6 +310,7 @@ pub struct ConfirmCrossFormatLink {
 /// position; the counterpart half of the anchor pair comes from the
 /// server's stored row for the other format at declaration time.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DeclareSyncPoint {
     pub book_uuid: String,
     /// The surface making the declaration.
@@ -337,6 +352,7 @@ impl DeclareSyncPoint {
 
 /// Body of `POST /api/books/{uuid}/cross-format-follow`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SetFollowMode {
     pub enabled: bool,
 }

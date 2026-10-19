@@ -44,6 +44,7 @@ pub fn parse_comic_page_anchor(anchor: &str) -> Option<usize> {
 /// / [`ProgressRecord`] / [`SessionReport`]. Serializes as a plain
 /// lowercase string (`"epub"` / `"audio"`) so the wire shape stays compact.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ProgressFormat {
@@ -68,6 +69,7 @@ impl ProgressFormat {
 /// `audio_position_seconds`. The server validates this at the handler
 /// boundary via [`ProgressUpdate::validate`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProgressUpdate {
     pub book_uuid: String,
     pub format: ProgressFormat,
@@ -186,6 +188,7 @@ impl ProgressUpdate {
 /// `client_updated_at` is the event time most-recent-wins resolves on (clamped
 /// to server now for a fast clock; server now when the write carried none).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ProgressRecord {
     pub book_uuid: String,
@@ -229,6 +232,7 @@ pub struct ProgressRecord {
 /// Reported rather than withheld: a coarse answer a caller knows is coarse
 /// beats an absent block it fills in by guessing.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum PositionConfidence {
@@ -248,6 +252,7 @@ pub enum PositionConfidence {
 /// missing (a TOC-less EPUB, an audiobook with no marks); [`Self::confidence`]
 /// says how much of the block to lean on.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ResolvedPosition {
     /// 0-based spine document index, matching `GET /api/ebooks/{uuid}/chapters`.
@@ -279,6 +284,7 @@ pub struct ResolvedPosition {
 /// place, which an EPUB-only answer would misreport. `format` narrows
 /// [`Self::records`] to a single entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookProgress {
     /// The canonical book uuid the positions were resolved against — not
@@ -304,6 +310,7 @@ pub struct BookProgress {
 
 /// "Pick up where you left off" entry returned by `GET /api/progress/recent` and `rpc_recent_progress`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ResumePoint {
     pub record: ProgressRecord,
@@ -379,6 +386,7 @@ impl ResumePoint {
 /// best-effort on unmount. `progress_units` is seconds_read (epub) or
 /// seconds_listened (audio).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionReport {
     pub book_uuid: String,
     pub format: ProgressFormat,

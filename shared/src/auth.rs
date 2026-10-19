@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// Safe projection of a `users` row. No password fields ever cross the wire.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UserSummary {
     pub id: i64,
     pub username: String,
@@ -63,6 +64,7 @@ impl UserSummary {
 
 /// One reader in the household listing (`GET /api/users`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct HouseholdReader {
     /// User id; pass it as `user_id` to the stats reads.
@@ -80,6 +82,7 @@ pub struct HouseholdReader {
 /// other three; the storage layer keeps them as independent flags (there is
 /// no role enum). Used by the admin create/edit endpoints.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UserPermissions {
     pub is_admin: bool,
     pub can_upload: bool,
@@ -92,6 +95,7 @@ pub struct UserPermissions {
 /// table renders, without bloating the login-path summary. No password
 /// fields ever cross the wire.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AdminUserRow {
     pub id: i64,
     pub username: String,
@@ -114,6 +118,7 @@ pub struct AdminUserRow {
 /// Request body for `POST /api/admin/users` (admin create). See
 /// [`LoginRequest`] for why `Debug` is deliberately not derived.
 #[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateUserRequest {
     pub username: String,
     pub password: String,
@@ -123,6 +128,7 @@ pub struct CreateUserRequest {
 /// Request body for `POST /api/admin/users/{id}/password` (admin password
 /// reset). See [`LoginRequest`] for why `Debug` is deliberately not derived.
 #[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SetPasswordRequest {
     pub password: String,
 }
@@ -146,6 +152,7 @@ fn unknown_client() -> String {
 /// identify and revoke the row. Shared by the self-service
 /// `GET /api/auth/sessions` and the admin `GET /api/admin/users/{id}/sessions`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionView {
     pub id: i64,
     #[serde(default)]
@@ -175,6 +182,7 @@ pub struct SessionView {
 /// admin `GET /api/admin/users/{id}/devices` listing (self-service devices
 /// are deferred — see `/api/auth/devices` note in the PR body).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DeviceView {
     pub id: i64,
     pub name: String,
@@ -188,6 +196,7 @@ pub struct DeviceView {
 /// Whether self-registration is open; the body of `GET /api/auth/registration`
 /// and `POST /api/settings/registration`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RegistrationStatus {
     pub enabled: bool,
 }
@@ -197,6 +206,7 @@ pub struct RegistrationStatus {
 /// Deliberately does not derive `Debug`: the struct holds a plaintext
 /// password, and a stray `tracing::debug!(?req)` would write it to logs.
 #[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
@@ -213,6 +223,7 @@ pub struct LoginRequest {
 /// Request body for `POST /api/auth/register`. See [`LoginRequest`] for
 /// why `Debug` is deliberately not derived.
 #[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RegisterRequest {
     pub username: String,
     pub password: String,
@@ -228,6 +239,7 @@ pub struct RegisterRequest {
 /// `token` is populated only for bearer (mobile) sessions; cookie sessions
 /// return the cookie in a `Set-Cookie` header and `token` is `None`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LoginResponse {
     pub user: UserSummary,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -238,6 +250,7 @@ pub struct LoginResponse {
 /// Never carries the secret — that appears exactly once, in
 /// [`CreateApiTokenResponse::secret`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ApiTokenView {
     pub id: i64,
     pub name: String,
@@ -253,12 +266,14 @@ pub struct ApiTokenView {
 
 /// Body of `POST /api/auth/api-tokens`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateApiTokenRequest {
     pub name: String,
 }
 
 /// Body of `PATCH /api/auth/api-tokens/{id}` — the row's Rename action.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RenameApiTokenRequest {
     pub name: String,
 }
@@ -269,6 +284,7 @@ pub struct RenameApiTokenRequest {
 /// same as `LoginRequest`: a stray `tracing::debug!(?resp)` must not leak a
 /// long-lived credential.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateApiTokenResponse {
     pub token: ApiTokenView,
     pub secret: String,

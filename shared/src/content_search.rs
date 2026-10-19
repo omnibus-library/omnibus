@@ -14,6 +14,7 @@ mod tests;
 /// answer, but it's ahead of you"; `Exclude` is for callers who must not see the
 /// payoff at all.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SpoilerFilter {
@@ -29,6 +30,7 @@ pub enum SpoilerFilter {
 
 /// One content-search hit: a chapter-level citation plus a match excerpt.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ContentSearchHit {
     /// Durable book identity (`books.uuid`).
@@ -60,6 +62,7 @@ pub struct ContentSearchHit {
 
 /// Response body for `GET /api/search/content`, best-ranked hit first.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ContentSearchResults {
     pub hits: Vec<ContentSearchHit>,

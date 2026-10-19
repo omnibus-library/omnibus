@@ -15,6 +15,21 @@ use super::conditional::{content_etag, namespaced_content_etag, MEDIA_CACHE_CONT
 use super::{internal, AppState};
 use crate::auth::MediaAuthUser;
 
+/// Get a book's cover
+///
+/// The full-size cover image, in the format it was stored in.
+#[utoipa::path(
+    get,
+    path = "/api/covers/{uuid}",
+    tag = "Covers",
+    security(("bearer" = []), ("session_cookie" = []), ("media_token" = [])),
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses(
+        (status = 200, description = "The cover image.", body = [u8], content_type = "image/*"),
+        (status = 304, description = "The cover is unchanged since the `ETag` sent in `If-None-Match`."),
+        (status = 404, description = "No book has that uuid, or the book has no cover."),
+    ),
+)]
 pub(super) async fn get_cover(
     _user: MediaAuthUser,
     State(state): State<AppState>,
@@ -96,6 +111,29 @@ fn not_modified(etag: &str) -> Response {
     super::conditional::not_modified(etag, MEDIA_CACHE_CONTROL, MEDIA_VARY)
 }
 
+/// Get a cover thumbnail
+///
+/// The cover as a WebP thumbnail, `sm` (160×240), `md` (320×480) or `lg` (640×960). A
+/// thumbnail is made on first request: until it is ready, which takes seconds, the full
+/// cover stands in for it, marked to be cached for only a few seconds.
+#[utoipa::path(
+    get,
+    path = "/api/thumbs/{uuid}/{size}",
+    tag = "Covers",
+    security(("bearer" = []), ("session_cookie" = []), ("media_token" = [])),
+    params(
+        ("uuid" = String, Path, description = "The book's uuid."),
+        ("size" = String, Path, description = "`sm`, `md` or `lg`."),
+    ),
+    responses(
+        (status = 200, description = "The thumbnail, or the full cover while the thumbnail is being made.",
+            body = [u8], content_type = "image/*"),
+        (status = 202, description = "The book has no cover, so there is no thumbnail to make."),
+        (status = 304, description = "The image is unchanged since the `ETag` sent in `If-None-Match`."),
+        (status = 400, description = "`size` is not `sm`, `md` or `lg`."),
+        (status = 404, description = "No book has that uuid."),
+    ),
+)]
 pub(super) async fn get_thumb(
     _user: MediaAuthUser,
     State(state): State<AppState>,

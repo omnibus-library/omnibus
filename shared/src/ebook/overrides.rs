@@ -12,6 +12,7 @@ use super::metadata::Contributor;
 /// scanned value at read time; M2M fields (`creators`, `subjects`, `genres`)
 /// replace the whole list rather than appending.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct MetadataOverrides {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -271,6 +272,7 @@ fn validate_name_list(
 /// list when `Some`; an empty chip list maps to `None`, so bulk cannot clear
 /// authors. Tags and genres are add/remove deltas against each book's current list.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BulkMetadataEdit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub authors: Option<Vec<String>>,
@@ -383,6 +385,7 @@ fn apply_delta(current: &[String], remove: &[String], add: &[String]) -> Vec<Str
 
 /// Summary of a fleet-wide EPUB override bake: each book counts exactly once, into `rewritten`, `skipped`, or `errors`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BulkRewriteSummary {
     pub rewritten: usize,
     pub skipped: usize,
@@ -391,6 +394,7 @@ pub struct BulkRewriteSummary {
 
 /// One per-book failure from a fleet-wide EPUB rewrite pass.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BulkRewriteError {
     pub book_uuid: String,
     pub message: String,

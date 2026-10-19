@@ -1,7 +1,8 @@
-//! Shared API types between the `omnibus` server and `omnibus-mobile`
-//! client. Kept free of Dioxus and transport-layer dependencies so both
-//! `#[server]` functions (web) and `reqwest` calls (mobile) can depend on
-//! it. Types are organized by domain into submodules and re-exported flat
+//! Every type that crosses the `/api/*` wire: request bodies, query parameters and
+//! responses. The server, its Rust clients and the OpenAPI document all read them from
+//! here, so the contract lives in one place. Kept free of Dioxus and transport-layer
+//! dependencies so both `#[server]` functions (web) and `reqwest` calls (mobile) can
+//! depend on it. Types are organized by domain into submodules and re-exported flat
 //! from the crate root as `omnibus_shared::Foo`.
 
 pub mod admin_health;
@@ -16,6 +17,7 @@ pub mod deletion;
 pub mod discovery;
 pub mod ebook;
 pub mod error_ring;
+pub mod health;
 pub mod highlight;
 pub mod http_range;
 pub mod image_format;
@@ -113,6 +115,7 @@ pub use deletion::*;
 pub use discovery::*;
 pub use ebook::*;
 pub use error_ring::*;
+pub use health::*;
 pub use highlight::*;
 pub use image_format::detect_image_format;
 pub use isbn::*;

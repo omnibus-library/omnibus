@@ -12,6 +12,7 @@ pub const ERROR_RING_CAPACITY: usize = 200;
 
 /// One captured ERROR-level tracing event.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CapturedError {
     /// Unix-seconds timestamp when the event was captured.
     pub timestamp: i64,

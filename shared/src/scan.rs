@@ -10,6 +10,7 @@ use crate::physical::WishlistSource;
 /// A library book matched during scan resolution — just enough to display and
 /// act on it (the confirm/decision screens).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ScanBook {
     pub uuid: String,
@@ -35,6 +36,7 @@ pub struct ScanBook {
 /// the client must confirm before any write, so a hit on several rows is a
 /// picker rather than a reason to decline the match.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum ScanOutcome {
@@ -65,6 +67,7 @@ pub enum ScanOutcome {
 
 /// Resolve a scanned/typed ISBN.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ResolveRequest {
     pub isbn: String,
 }
@@ -94,6 +97,7 @@ pub const SEARCH_QUERY_MAX_LEN: usize = 200;
 /// Search the external providers by title text — the fallback offered when an
 /// ISBN scan resolves to [`ScanOutcome::Unresolved`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ScanSearchRequest {
     pub query: String,
 }
@@ -114,6 +118,7 @@ impl ScanSearchRequest {
 /// Title-search results: provider-resolved candidates for the reader to pick
 /// from, each complete enough to feed [`ResolveMetaRequest`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ScanSearchResponse {
     pub results: Vec<ExternalBookMeta>,
@@ -123,6 +128,7 @@ pub struct ScanSearchResponse {
 /// library rungs applied to metadata already in hand, so no provider round
 /// trip (which could miss on an ISBN the search itself just surfaced).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ResolveMetaRequest {
     pub meta: ExternalBookMeta,
 }
@@ -153,6 +159,7 @@ fn validate_note(note: &Option<String>) -> Result<(), String> {
 
 /// Check in a physical copy of a book already in the library.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CheckInRequest {
     pub book_uuid: String,
     #[serde(default)]
@@ -186,6 +193,7 @@ impl CheckInRequest {
 /// Add a physical-only book (not in the library) from resolved external meta —
 /// creates a fileless book plus its first physical copy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AddPhysicalOnlyRequest {
     pub meta: ExternalBookMeta,
     #[serde(default)]
@@ -205,6 +213,7 @@ impl AddPhysicalOnlyRequest {
 /// book (`book_uuid`) or a new fileless book from external meta. Set one; if
 /// both are present `book_uuid` wins and `meta` is ignored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct WishlistAddRequest {
     #[serde(default)]
     pub book_uuid: Option<String>,
@@ -239,6 +248,7 @@ impl WishlistAddRequest {
 
 /// The uuid of the book a check-in / add / wishlist write landed on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookRef {
     pub book_uuid: String,

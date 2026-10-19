@@ -11,6 +11,7 @@ use crate::highlight::CreateHighlight;
 ///
 /// `PartialEq` but not `Eq`: `percent_through_book` is a float.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Bookmark {
     pub id: i64,
@@ -44,6 +45,7 @@ pub struct Bookmark {
 
 /// Payload for creating a new bookmark.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateBookmark {
     pub book_uuid: String,
     pub position: String,
@@ -105,6 +107,7 @@ impl CreateBookmark {
 
 /// Payload for updating a bookmark's title/note. `None` clears the title.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateBookmark {
     pub title: Option<String>,
 }

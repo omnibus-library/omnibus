@@ -13,6 +13,7 @@ mod tests;
 /// The book attribute a [`FilterClause`] matches against. A `Shelf` value is a
 /// shelf id as a decimal string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FilterField {
     Tag,
@@ -31,6 +32,7 @@ pub const MAX_FILTER_VALUES: usize = 64;
 
 /// Whether a clause keeps the books that match it or drops them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FilterMode {
     Include,
@@ -39,6 +41,7 @@ pub enum FilterMode {
 
 /// One clause: its values OR together; a filter's clauses AND together.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FilterClause {
     pub field: FilterField,
     pub mode: FilterMode,
@@ -70,6 +73,7 @@ impl FilterClause {
 /// into include clauses; serializing writes `clauses` alone. Format values are
 /// stored lowercase (`"epub"`, `"m4b"`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(from = "ViewFiltersWire")]
 pub struct ViewFilters {
     pub clauses: Vec<FilterClause>,
@@ -77,6 +81,7 @@ pub struct ViewFilters {
 
 /// Every key a stored or posted filter has ever carried.
 #[derive(Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 struct ViewFiltersWire {
     #[serde(default)]
     clauses: Vec<FilterClause>,

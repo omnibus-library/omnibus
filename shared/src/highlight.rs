@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// Valid highlight palette colors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum HighlightColor {
@@ -52,6 +53,7 @@ impl std::fmt::Display for HighlightColor {
 ///
 /// `PartialEq` but not `Eq`: `percent_through_book` is a float.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Highlight {
     pub id: i64,
@@ -97,6 +99,7 @@ pub struct Highlight {
 
 /// Payload for creating a new highlight.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateHighlight {
     pub book_uuid: String,
     pub epub_cfi_range: String,
@@ -166,6 +169,7 @@ impl CreateHighlight {
 
 /// Payload for updating a highlight's note text.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateHighlightNote {
     pub note: Option<String>,
 }

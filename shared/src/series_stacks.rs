@@ -14,6 +14,7 @@ mod tests;
 
 /// The viewer's reading state for one member of a stack.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StackMemberState {
     pub uuid: String,
     /// Whole-book percent (0-100) from the ebook position, if any.
@@ -28,6 +29,7 @@ pub struct StackMemberState {
 
 /// A series folded into one grid tile.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SeriesStack {
     /// The member standing in the result list; the stack renders in its slot.
     pub lead_uuid: String,

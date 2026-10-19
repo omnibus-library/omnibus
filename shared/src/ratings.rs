@@ -20,6 +20,7 @@ pub fn stars_from_half_stars(half_stars: i64) -> f32 {
 
 /// Write payload: set (or change) the current user's rating for a book.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RatingUpdate {
     pub book_uuid: String,
     /// Star rating in `0.5..=5.0`, in half-star steps.
@@ -56,6 +57,7 @@ impl RatingUpdate {
 /// Server-authoritative rating returned by the set/get endpoints. `updated_at`
 /// is unix seconds (SQLite `strftime('%s')`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RatingRecord {
     pub book_uuid: String,
     /// Star rating in `0.5..=5.0`, in half-star steps.
@@ -65,6 +67,7 @@ pub struct RatingRecord {
 
 /// A rating with the user identity needed for an attributed book-detail row.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AttributedRating {
     pub user_id: i64,
     /// The rater's display name, falling back to their username.

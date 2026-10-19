@@ -28,6 +28,7 @@ pub enum SettingsError {
 /// User-configurable paths for the ebook and audiobook libraries, plus the
 /// optional periodic-rescan cadence.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Settings {
     pub ebook_library_path: Option<String>,
     pub audiobook_library_path: Option<String>,
@@ -73,6 +74,7 @@ impl Settings {
 /// provider; the other variants are stored but are no-ops in the merge path (see
 /// `db::metadata_overrides::upsert::apply_overrides`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MetadataSource {
     FolderStructure,
@@ -131,6 +133,7 @@ pub fn is_plausible_email(s: &str) -> bool {
 
 /// Transport security for the outbound SMTP connection.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SmtpSecurity {
     /// Upgrade a plaintext connection with STARTTLS (typical on port 587).
@@ -165,6 +168,7 @@ impl SmtpSecurity {
 /// that a stray `tracing::debug!(?req)` would log. `password` is `None` to leave
 /// the stored password unchanged; a `Some("")` clears it.
 #[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SmtpConfigUpdate {
     pub host: String,
     pub port: u16,
@@ -179,6 +183,7 @@ pub struct SmtpConfigUpdate {
 /// Masked status of the server-wide SMTP config for the Settings UI. **Never
 /// carries the raw password** — only a short masked preview.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SmtpConfigStatus {
     pub configured: bool,
     pub host: Option<String>,
@@ -196,6 +201,7 @@ pub struct SmtpConfigStatus {
 /// sender address a reader must approve at Amazon, or `None` when no relay is
 /// set up, and never the relay's host or credentials.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct KindleDelivery {
     pub sender_address: Option<String>,
 }
@@ -208,6 +214,7 @@ pub const DEFAULT_EBOOK_CONVERT_BIN: &str = "ebook-convert";
 /// Calibre is optional: `available == false` means format conversion is
 /// disabled, not that the server is misconfigured.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EbookConvertStatus {
     /// `true` when [`EbookConvertStatus::path`] is present and runnable.
     pub available: bool,
@@ -258,6 +265,7 @@ pub fn kindle_email_oversize(size_bytes: u64) -> bool {
 /// once, then polls this until it flips off `Pending`. `Failed.message` is the
 /// per-case reason surfaced to the button toast.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum KindleSendStatus {
     Pending,
@@ -270,6 +278,7 @@ pub enum KindleSendStatus {
 /// `counts_by_ext` is an ordered list of `(extension, count)` pairs for the
 /// extensions the caller asked the scanner to track, in the caller's order.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct LibrarySection {
     pub path: Option<String>,
@@ -280,6 +289,7 @@ pub struct LibrarySection {
 
 /// Response payload for `GET /api/library`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct LibraryContents {
     pub ebooks: LibrarySection,
@@ -293,6 +303,7 @@ mod tests;
 /// `GET`/`POST /api/settings/mcp` and the matching rpc pair. Mirrors
 /// `RegistrationStatus`'s shape for the other instance-level switch.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct McpStatus {
     pub enabled: bool,
 }

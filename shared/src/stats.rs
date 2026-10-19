@@ -23,6 +23,7 @@ pub const STATS_TTL_SECS: i64 = 60;
 /// Reporting window for the stats page. Serializes as a compact snake-case
 /// string so the wire shape stays stable across the RPC boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum StatsRange {
@@ -73,6 +74,7 @@ impl StatsRange {
 /// One heatmap cell: a calendar day (`YYYY-MM-DD` on the reader's calendar)
 /// and the total active seconds recorded that day across reading and listening.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DayActivity {
     pub day: String,
@@ -81,6 +83,7 @@ pub struct DayActivity {
 
 /// A ranked entity (author or tag) by total active seconds in the window.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct RankedEntity {
     pub name: String,
@@ -93,6 +96,7 @@ pub struct RankedEntity {
 /// [`StatsSummary`] but for a single `(user, book_uuid)`. The RPC wraps this in
 /// `Option`; `None` means no live book for the uuid or no sitting worth reporting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookInsights {
     /// Unix seconds of the earliest recorded session (reading or listening).
@@ -132,6 +136,7 @@ pub struct BookInsights {
 /// The server sends every genre, not a top-N, so the donut can size its
 /// "Other" fold over the real tail instead of over a silently truncated one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct GenreShare {
     pub name: String,
@@ -142,6 +147,7 @@ pub struct GenreShare {
 /// read-status `finished`. `finished_at` is the most recent such moment
 /// (unix secs).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct FinishedBook {
     pub book_uuid: String,
@@ -167,6 +173,7 @@ pub struct FinishedBook {
 
 /// One month's finished-book count in the trailing-12-month trend chart.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct MonthCount {
     /// Calendar month on the reader's calendar, `YYYY-MM`.
@@ -178,6 +185,7 @@ pub struct MonthCount {
 /// `YYYY-MM-DD` or a month `YYYY-MM`, depending on the series) and the
 /// metric's value over that period.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct TrendPoint {
     pub label: String,
@@ -190,6 +198,7 @@ pub struct TrendPoint {
 /// `half_stars` is the stored 1..=10 scale, **not** stars: renderers must halve
 /// it (`stars()` does), or a 5-star rating reads as a 10-point scale.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct RatingBucket {
     pub half_stars: i64,
@@ -212,6 +221,7 @@ impl RatingBucket {
 /// rung of the length ladder can measure, e.g. an audiobook); render it, don't
 /// drop it, or the distribution covers fewer books than the window.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct LengthBucket {
     pub label: String,
@@ -224,6 +234,7 @@ pub struct LengthBucket {
 /// denominator reports a partly-backfilled library as a smaller one. `books == 0`
 /// means nothing has been measured, which surfaces render as an empty state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct MeasuredTotal {
     pub total: i64,
@@ -242,6 +253,7 @@ impl MeasuredTotal {
 /// hours of audio. **Library-scoped, not user-scoped**: the same for every
 /// reader, so deliberately not a field on [`StatsSummary`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LibrarySize {
     /// Live books: those with at least one surviving `book_files` row. The
     /// denominator every coverage figure below is read against.
@@ -278,6 +290,7 @@ impl LibrarySize {
 /// offset each session carried at capture (`db::stats::patterns`), never the
 /// viewing client's zone. [`StatsSummary::hour_of_day`] carries all 24, zeros included.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct HourBucket {
     pub hour: i64,
@@ -290,6 +303,7 @@ pub struct HourBucket {
 /// convention a client could get wrong. [`StatsSummary::day_of_week`] always
 /// carries all 7, Monday first, zeros included.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WeekdayBucket {
     pub weekday: i64,
@@ -309,6 +323,7 @@ pub const FASTEST_READ_MIN_SECS: i64 = 1800;
 /// superlatives, seconds for the longest sit, days for the fastest read), each
 /// documented on [`Superlatives`]. Renderers must not guess.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookSuperlative {
     pub book_uuid: String,
@@ -323,6 +338,7 @@ pub struct BookSuperlative {
 /// **Every field is optional, and an absent one is the point.** A window that
 /// can't support a superlative omits it rather than crowning its only datum.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Superlatives {
     /// The longest book finished in the window, in **pages** as resolved by
@@ -373,6 +389,7 @@ impl Superlatives {
 /// analogue, so zero pages is *correct*), and reading in books whose length no
 /// rung of the ladder resolves.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PagesReadDetail {
     /// UTC `YYYY-MM-DD` the forward-progress ledger began recording. Reading
@@ -425,6 +442,7 @@ impl PagesReadDetail {
 /// rather than against the whole of it. `Default` (all zero / `None`) for
 /// [`StatsRange::AllTime`], which has no prior window to compare against.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PeriodComparison {
     pub books_finished: i64,
@@ -444,6 +462,7 @@ pub struct PeriodComparison {
 /// `book_read_status` (once if both, live books only); every completion metric
 /// shares that definition. `pages_read` measures ground covered instead.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct StatsSummary {
     pub range: StatsRange,
@@ -662,6 +681,7 @@ pub const MAX_GOAL_YEAR: i64 = 2999;
 /// metric on [`StatsSummary`]**, bounded to the goal's own year so raising this
 /// year's target never moves last year's number.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ReadingGoal {
     /// What is being counted — [`GOAL_KIND_BOOKS`] today.
@@ -706,6 +726,7 @@ impl ReadingGoal {
 /// calendar (the client's declared offset, else their latest session's, else
 /// UTC).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DailyGoal {
     /// What is being counted — [`GOAL_KIND_PAGES`] or [`GOAL_KIND_MINUTES`].
@@ -747,6 +768,7 @@ impl DailyGoal {
 /// A reader's daily goals — at most one per kind, each independent of the
 /// other and of the annual [`ReadingGoal`].
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DailyGoals {
     /// The pages goal, `None` when unset.
@@ -786,6 +808,7 @@ impl DailyGoals {
 /// of two goals. An absent `target` **clears** that kind, like
 /// [`ReadingGoalUpdate::target`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DailyGoalUpdate {
     pub kind: String,
@@ -843,6 +866,7 @@ impl DailyGoalUpdate {
 /// so the common client sends `{"target": 24}` alone. A `null` / absent `target`
 /// **clears** the goal for that `(year, kind)`; there is no separate DELETE route.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ReadingGoalUpdate {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub year: Option<i64>,
@@ -905,6 +929,7 @@ impl ReadingGoalUpdate {
 /// One bucket of a [`LibraryComposition`] dimension: a display label and the
 /// distinct live books behind it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CompositionSlice {
     pub label: String,
     pub books: i64,
@@ -916,6 +941,7 @@ pub struct CompositionSlice {
 /// dimension describes; they differ when a book lands in several buckets.
 /// `coverage.books == 0` means no book carries this dimension: show an empty state.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CompositionDimension {
     #[serde(default)]
     pub slices: Vec<CompositionSlice>,
@@ -950,6 +976,7 @@ impl CompositionDimension {
 /// **Library-scoped, not user-scoped**, like [`LibrarySize`]. Every count is
 /// `DISTINCT` over books, never rows: a twelve-part M4B is twelve `book_files` rows.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LibraryComposition {
     /// Live books — those with at least one surviving `book_files` row. The
     /// denominator every dimension's coverage is read against, and the same
@@ -1012,6 +1039,7 @@ impl LibraryComposition {
 /// one stretch stitches into a single sitting (see `db::stats::sessionize`), and
 /// naming either format alone would misreport it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SessionFormat {
@@ -1037,6 +1065,7 @@ impl SessionFormat {
 /// `seconds` is the *recorded* time, not `ended_at - started_at`: a paused
 /// sitting spans more wall clock than it recorded.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct SessionLogEntry {
     pub book_uuid: String,
@@ -1115,6 +1144,7 @@ impl SessionCursor {
 
 /// One page of the reading-session log, newest first.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct SessionLogPage {
     pub entries: Vec<SessionLogEntry>,

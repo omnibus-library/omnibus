@@ -30,6 +30,7 @@ pub mod commit_fields {
 /// on-disk folder. The original four fields stay top-level and the rest are
 /// `#[serde(default)]`, so an older server's reply still decodes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UploadInspection {
     pub title: Option<String>,
     /// The first creator the file declares — what the Author field holds.
@@ -99,6 +100,7 @@ impl UploadInspection {
 
 /// Tag-derived metadata returned by the audiobook inspect step — the audiobook sibling of [`UploadInspection`].
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AudiobookInspection {
     pub title: Option<String>,
     pub author: Option<String>,
@@ -158,6 +160,7 @@ fn names_to_contributors(names: &[String]) -> Vec<Contributor> {
 /// Result of a successful commit: the durable uuid of the newly-filed book,
 /// so the client can navigate straight to its detail page.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UploadCommitResult {
     pub uuid: String,
 }
