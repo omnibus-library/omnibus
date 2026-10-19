@@ -8,6 +8,15 @@ const apiPort = process.env.OMNIBUS_PORT ?? "3000";
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rolldownOptions: {
+      // The generated client declares a zod schema per wire type at module
+      // scope; without this every one of them ships, used or not.
+      treeshake: {
+        moduleSideEffects: (id: string) => !id.includes("/src/api/generated/"),
+      },
+    },
+  },
   server: {
     // Host stays the dev server's, so the API's Origin-vs-Host CSRF check
     // accepts cookie-authed POSTs (logout) without touching its allowlist.
