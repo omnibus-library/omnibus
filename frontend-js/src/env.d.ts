@@ -12,4 +12,6 @@ interface Window {
   __omnibusOnScanStatus?: (state: string) => void;
   __omnibusOnScanTorch?: (flag: string) => void;
   __omnibusOnScanResult?: (text: string) => void;
+  /** hls.js (`src/vendor/hls/`): the global its script adds. */
+  Hls?: import("./playback/loadHls").HlsConstructor;
 }

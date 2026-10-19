@@ -1,15 +1,18 @@
 import type {
   AlignmentView,
   AttributedRating,
+  AudiobookManifest,
   AuthorDetail,
   AuthorReading,
   AuthorSummary,
   BookDeletionManifest,
   BookFileInfo,
   BookInsights,
+  Bookmark,
   BookProgress,
   BookReading,
   BookSuggestion,
+  ChapterInfo,
   EbookMetadata,
   Highlight,
   JournalEntry,
@@ -520,6 +523,81 @@ export function aWireRulePreview(
     matched: 2,
     total: 10,
     sample: aWireLibrary(2),
+    ...overrides,
+  };
+}
+
+type DirectManifest = Extract<AudiobookManifest, { mode: "direct" }>;
+type HlsManifest = Extract<AudiobookManifest, { mode: "hls" }>;
+
+/** One chapter of an audio file as the manifest sends it: an hour long, the first by default. */
+export function aWireChapter(
+  overrides: Partial<ChapterInfo> = {},
+): ChapterInfo {
+  return {
+    ordinal: 1,
+    title: "Departures",
+    start_seconds: 0,
+    duration_seconds: 3600,
+    ...overrides,
+  };
+}
+
+/** `GET /api/audiobooks/{uuid}/manifest` for a direct book: file 917, three hour-long chapters in one part. */
+export function aWireAudioManifest(
+  overrides: Partial<DirectManifest> = {},
+): DirectManifest {
+  return {
+    mode: "direct",
+    book_file_id: 917,
+    audio_file_count: 1,
+    next_file_id: null,
+    parts: [
+      {
+        ordinal: 1,
+        url: "/api/audiobooks/ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0/parts/1?file_id=917",
+        duration_seconds: 10_800,
+        mime: "audio/mpeg",
+      },
+    ],
+    total_duration_seconds: 10_800,
+    chapters: [
+      aWireChapter(),
+      aWireChapter({
+        ordinal: 2,
+        title: "The Long Water",
+        start_seconds: 3600,
+      }),
+      aWireChapter({ ordinal: 3, title: "Landfall", start_seconds: 7200 }),
+    ],
+    ...overrides,
+  };
+}
+
+/** The manifest of a book the browser can't play natively: one transcoded stream. */
+export function aWireHlsManifest(
+  overrides: Partial<HlsManifest> = {},
+): HlsManifest {
+  return {
+    mode: "hls",
+    book_file_id: 917,
+    audio_file_count: 1,
+    playlist_url:
+      "/api/audiobooks/ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0/playlist.m3u8",
+    ...overrides,
+  };
+}
+
+/** An audio bookmark as `GET /api/bookmarks/book/{uuid}` sends it: ten minutes in, unnamed. */
+export function aWireAudioBookmark(
+  overrides: Partial<Bookmark> = {},
+): Bookmark {
+  return {
+    id: 1,
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    position: "600",
+    title: null,
+    created_at: 1_760_000_000,
     ...overrides,
   };
 }

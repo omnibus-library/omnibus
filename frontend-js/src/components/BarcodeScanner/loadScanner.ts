@@ -6,7 +6,7 @@ import zxingUrl from "../../vendor/barcode/zxing-reader.min.js?url";
 // which bundling would scope away.
 const LOAD_TIMEOUT_MS = 10_000;
 
-function loadScript(src: string): Promise<void> {
+export function loadScript(src: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = src;

@@ -5,6 +5,7 @@
 // resource; this barrel keeps the screens' imports stable.
 
 export * from "./api/admin";
+export * from "./api/audio";
 export * from "./api/auth";
 export * from "./api/books";
 export * from "./api/core";

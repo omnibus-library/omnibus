@@ -1,0 +1,141 @@
+import { HttpResponse, http } from "msw";
+import type {
+  AudiobookManifest,
+  AudiobookStatusState,
+  Bookmark,
+  CrossFormatResume,
+  EbookMetadata,
+  ProgressRecord,
+} from "../api/generated/schemas";
+import { bookHandler, coverHandlers } from "./handlers";
+import { aWireAudioBookmark, aWireAudioManifest, aWireProgress } from "./wire";
+
+// MSW fakes for the audiobook player: a book the listen routes all answer for.
+
+/** One write the player sent: `"POST /api/progress"` and the JSON body it carried. */
+export type ListenWrite = { request: string; body: unknown };
+
+type ListenOptions = {
+  /** Every write lands here. */
+  writes?: ListenWrite[];
+  /** The manifest; `null` answers 404. */
+  manifest?: AudiobookManifest | null;
+  /** The HLS transcode state `/status` reports. */
+  state?: AudiobookStatusState;
+  /** The speed the reader saved, or `null` for none. */
+  rate?: number | null;
+  /** The reader's saved listening position. */
+  row?: ProgressRecord | null;
+  resume?: CrossFormatResume;
+  bookmarks?: Bookmark[];
+  /** Holds the manifest until it resolves. */
+  gate?: Promise<void>;
+};
+
+/**
+ * Every request the listen routes make for `book`, quiet by default: no saved position,
+ * speed or bookmarks, a direct manifest and no linked ebook. Writes are recorded and kept
+ * (a bookmark POSTed shows in the next GET).
+ */
+export function listenHandlers(
+  book: EbookMetadata,
+  {
+    writes = [],
+    manifest = aWireAudioManifest(),
+    state = "preparing",
+    rate = null,
+    row = null,
+    resume = { state: "not_linked", follow: false },
+    bookmarks = [],
+    gate,
+  }: ListenOptions = {},
+) {
+  const uuid = book.unique_identifier;
+  let saved = rate;
+  let marks = [...bookmarks];
+  const record = (request: string, body: unknown) =>
+    writes.push({ request, body });
+  return [
+    bookHandler(book),
+    ...coverHandlers,
+    http.get("/api/audiobooks/:uuid/manifest", async () => {
+      await gate;
+      return manifest
+        ? HttpResponse.json(manifest)
+        : new HttpResponse("no audiobook", { status: 404 });
+    }),
+    http.get("/api/audiobooks/:uuid/status", () =>
+      HttpResponse.json({ state, ready: state === "ready", progress: 0.5 }),
+    ),
+    // The player streams parts and segments with a real <audio>; an empty body is enough.
+    http.get(
+      "/api/audiobooks/:uuid/parts/:ordinal",
+      () =>
+        new HttpResponse(null, { headers: { "Content-Type": "audio/mpeg" } }),
+    ),
+    http.get("/api/audiobooks/:uuid/playback-rate", () =>
+      HttpResponse.json(
+        saved === null
+          ? null
+          : {
+              book_uuid: uuid,
+              playback_rate: saved,
+              updated_at: 1_760_000_000,
+            },
+      ),
+    ),
+    http.put("/api/audiobooks/:uuid/playback-rate", async ({ request }) => {
+      const body = (await request.json()) as { playback_rate: number };
+      record("PUT /api/audiobooks/playback-rate", body);
+      saved = body.playback_rate;
+      return HttpResponse.json({
+        book_uuid: uuid,
+        playback_rate: saved,
+        updated_at: 1_760_000_000,
+      });
+    }),
+    http.get("/api/progress/:uuid", () =>
+      HttpResponse.json(row ? aWireProgress(row) : aWireProgress()),
+    ),
+    http.post("/api/progress", async ({ request }) => {
+      const body = await request.json();
+      record("POST /api/progress", body);
+      return HttpResponse.json(body);
+    }),
+    http.post("/api/progress/sessions", async ({ request }) => {
+      record("POST /api/progress/sessions", await request.json());
+      return HttpResponse.json({ recorded: 1 });
+    }),
+    http.get("/api/books/:uuid/cross-format-resume", () =>
+      HttpResponse.json(resume),
+    ),
+    http.post("/api/books/:uuid/sync-point", async ({ request }) => {
+      record("POST /api/books/sync-point", await request.json());
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.get("/api/bookmarks/book/:uuid", () => HttpResponse.json(marks)),
+    http.post("/api/bookmarks", async ({ request }) => {
+      const body = (await request.json()) as { position: string };
+      record("POST /api/bookmarks", body);
+      const made = aWireAudioBookmark({
+        id: Math.max(0, ...marks.map((m) => m.id)) + 1,
+        position: body.position,
+      });
+      marks = [...marks, made];
+      return HttpResponse.json(made);
+    }),
+    http.put("/api/bookmarks/:id", async ({ request, params }) => {
+      const body = (await request.json()) as { title: string | null };
+      record(`PUT /api/bookmarks/${params.id}`, body);
+      marks = marks.map((m) =>
+        String(m.id) === params.id ? { ...m, title: body.title } : m,
+      );
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.delete("/api/bookmarks/:id", ({ params }) => {
+      record(`DELETE /api/bookmarks/${params.id}`, null);
+      marks = marks.filter((m) => String(m.id) !== params.id);
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+}
