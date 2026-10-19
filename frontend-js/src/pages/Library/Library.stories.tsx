@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { delay, HttpResponse, http } from "msw";
+import { Navigate, Route, Routes, useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import type { BulkOverridesRequest } from "../../api/generated/schemas";
 import { storyClient } from "../../testing/AppHarness";
@@ -425,6 +426,59 @@ export const Filtered: Story = {
     await expect(requests.at(-1)?.get("filter")).toBe(ADA_FILTER);
     await expect(await canvas.findByText("3 books")).toBeInTheDocument();
     await expect(localStorage.getItem(PREFS_KEY)).toContain('"Ada Lovelace"');
+  },
+};
+
+function StateProbe() {
+  return <p data-testid="state">{JSON.stringify(useLocation().state)}</p>;
+}
+
+export const OpensFilteredToTheAuthorAnotherPageSent: Story = {
+  parameters: { path: "/start" },
+  beforeEach({ msw }) {
+    requests.length = 0;
+    msw.use(
+      libraryHandler(BY_TWO_AUTHORS, 10, { requests }),
+      ...AUTHOR_OPTIONS,
+    );
+  },
+  render: () => (
+    <Routes>
+      <Route
+        path="/start"
+        element={
+          <Navigate
+            to="/"
+            replace
+            state={{
+              clauses: [
+                { field: "author", mode: "include", values: ["Ada Lovelace"] },
+              ],
+            }}
+          />
+        }
+      />
+      <Route
+        path="/"
+        element={
+          <>
+            <Library />
+            <StateProbe />
+          </>
+        }
+      />
+    </Routes>
+  ),
+  play: async ({ canvas }) => {
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(3));
+
+    await expect(requests[0]?.get("filter")).toBe(ADA_FILTER);
+    await waitFor(() =>
+      expect(localStorage.getItem(PREFS_KEY)).toContain('"Ada Lovelace"'),
+    );
+    await waitFor(() =>
+      expect(canvas.getByTestId("state")).toHaveTextContent(/^null$/),
+    );
   },
 };
 

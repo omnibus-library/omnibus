@@ -1,5 +1,6 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router";
 import { fetchBookPage, type LibraryQuery } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { FilterBar } from "../../components/FilterBar/FilterBar";
@@ -13,7 +14,7 @@ import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { bookCount } from "../../format";
 import { useCurrentUser } from "../../session";
 import { useLoadMore } from "../../useLoadMore";
-import { useLibraryPrefs } from "../../viewPrefs";
+import { handoffClauses, useLibraryPrefs } from "../../viewPrefs";
 import { BookGrid } from "./BookGrid";
 import { BookTable } from "./BookTable";
 import { BulkEditBar, BulkEditModal, BulkShelfPicker } from "./BulkEdit";
@@ -62,7 +63,19 @@ function Receipt({
 
 export function Library() {
   const user = useCurrentUser();
-  const { prefs, change, noteAnswered } = useLibraryPrefs();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [handoff] = useState(() => handoffClauses(location.state));
+  const { prefs, change, noteAnswered } = useLibraryPrefs(handoff);
+  // A handed-off filter applies once: Back to this entry must not reapply it over later edits.
+  useEffect(() => {
+    if (handoff) {
+      navigate(
+        { pathname: location.pathname, search: location.search },
+        { replace: true },
+      );
+    }
+  }, [handoff, navigate, location.pathname, location.search]);
   const query: LibraryQuery = {
     sort: prefs.sort,
     dir: prefs.dir,

@@ -130,6 +130,8 @@ export const authorBooksQuery = (id: AuthorId | null) =>
     select: (page) => (page === null ? null : page.books),
   });
 
+export const authorPhotoUrl = (id: AuthorId) => `/api/authors/${id}/photo`;
+
 /** Removes the author and un-links their books; the books stay. Admins only. */
 export async function deleteAuthor(id: AuthorId): Promise<void> {
   await send(getDeleteAuthorUrl(id), "DELETE");

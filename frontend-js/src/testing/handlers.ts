@@ -459,11 +459,13 @@ export function searchHandler(books: EbookMetadata[], total = books.length) {
 }
 
 /**
- * The admin's author photo writes: `PUT .../photo/url` and `PUT .../photo` answer 204 and
- * append `url:<url>` or `upload:<file name>` to `writes`; the scan answers `scanFound`.
+ * An author's photo (the sample image) and the admin's writes: `PUT .../photo/url` and
+ * `PUT .../photo` answer 204 and append `url:<url>` or `upload:<file name>` to `writes`;
+ * the scan answers `scanFound`.
  */
 export function authorPhotoHandlers(writes: string[] = [], scanFound = true) {
   return [
+    http.get("/api/authors/:id/photo", svg),
     http.put("/api/authors/:id/photo/url", async ({ request }) => {
       const { url } = PutAuthorPhotoUrlBody.parse(await request.json());
       writes.push(`url:${url}`);
