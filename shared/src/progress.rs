@@ -500,3 +500,41 @@ impl SessionReport {
         Ok(())
     }
 }
+
+/// The response of `POST /api/progress/sessions`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionsRecorded {
+    /// How many sessions named a book the server knows; it drops the rest, so this can be
+    /// less than the number sent. A session repeating a stored `client_id` counts here but
+    /// isn't stored twice.
+    pub recorded: usize,
+}
+
+/// Query parameters of `GET /api/progress/{uuid}`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct ProgressQuery {
+    /// Return only the position in this format. Absent, every format you have a position
+    /// in comes back.
+    #[serde(default)]
+    pub format: Option<ProgressFormat>,
+}
+
+/// Query parameters of `GET /api/progress/recent`.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct RecentProgressQuery {
+    /// How many books to return, from 1 to 20. Defaults to 1; a value outside the range is
+    /// moved to the nearest end.
+    #[serde(default = "default_recent_limit")]
+    pub limit: i64,
+    /// Read another reader's books instead of your own. They must share their stats.
+    pub user_id: Option<i64>,
+}
+
+fn default_recent_limit() -> i64 {
+    1
+}

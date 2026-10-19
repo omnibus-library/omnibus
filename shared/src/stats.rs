@@ -11,8 +11,11 @@
 
 use serde::{Deserialize, Serialize};
 
+mod query;
 #[cfg(test)]
 mod tests;
+
+pub use query::*;
 
 /// Per-user aggregate cache TTL for `db::stats::user_stats`, in seconds.
 /// Lives here (rather than only in `omnibus-db`) so the `/stats` page's

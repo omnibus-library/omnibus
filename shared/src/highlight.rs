@@ -1,4 +1,5 @@
-//! Highlight annotation wire types shared between web and mobile clients.
+//! Highlight annotation wire types shared between web and mobile clients, plus the
+//! pieces every annotation route shares: the list order and the client-stamped create.
 //!
 //! The five highlight colors match the CHECK constraint on
 //! `annotations.color` (migration 0059, formerly `highlights` in 0017).
@@ -187,6 +188,49 @@ impl UpdateHighlightNote {
             if note.chars().count() > Self::NOTE_MAX_LEN {
                 return Err(format!("note exceeds {} characters", Self::NOTE_MAX_LEN));
             }
+        }
+        Ok(())
+    }
+}
+
+/// The body of `PATCH /api/highlights/{id}/color`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct UpdateHighlightColor {
+    pub color: HighlightColor,
+}
+
+/// Query parameters of the highlight and bookmark lists.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct AnnotationOrderQuery {
+    /// `position` (the default) lists them in reading order through the book, with any the
+    /// server can't place last. `chronological` (or `created`) lists them oldest first. Any
+    /// other value means `position`.
+    pub order: Option<String>,
+}
+
+/// A create body plus the time the device made the item: the wrapped body's fields and
+/// `client_created_at`, side by side in one JSON object. Highlight, bookmark and journal
+/// creates take this shape, so an offline client that sends a create later keeps the time
+/// of the gesture.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ClientStamped<T> {
+    #[serde(flatten)]
+    pub body: T,
+    /// When the device made the item, in Unix seconds. The server uses its own clock when
+    /// this is absent or in the future.
+    #[serde(default)]
+    pub client_created_at: Option<i64>,
+}
+
+impl<T> ClientStamped<T> {
+    /// Reject a negative `client_created_at`; handlers answer 400.
+    pub fn validate_stamp(&self) -> Result<(), String> {
+        if self.client_created_at.is_some_and(|ts| ts < 0) {
+            return Err("client_created_at must be non-negative".into());
         }
         Ok(())
     }

@@ -40,6 +40,12 @@ impl AnnotationOrder {
     }
 }
 
+impl From<omnibus_shared::AnnotationOrderQuery> for AnnotationOrder {
+    fn from(q: omnibus_shared::AnnotationOrderQuery) -> Self {
+        q.order.as_deref().map(Self::parse).unwrap_or_default()
+    }
+}
+
 /// Sort key placing unplaceable anchors last: `Option`'s own ordering puts
 /// `None` first, which would open every list with the anchors it could say
 /// least about.
