@@ -43,6 +43,7 @@ Auto-discoverable skills in [.claude/skills/](.claude/skills/) — Claude Code l
 - [add-playwright-flow](.claude/skills/add-playwright-flow/SKILL.md) — adding a new E2E spec.
 - [create-github-issue](.claude/skills/create-github-issue/SKILL.md) — filing GitHub issues in the omnibus house style: bracketed `[Scope]` title prefixes, a standard body template, consistent labels, and native sub-issue linking.
 - [ui-validate](.claude/skills/ui-validate/SKILL.md) — bring up a port-walking dev server, log in as the seeded admin, drive the browser, poll `/api/_health` for rebuild signal.
+- [ios-validate](.claude/skills/ios-validate/SKILL.md) — screenshot tours of the native iOS app: a scratch server, a simulator per worktree, screens opened by DEBUG deep link.
 
 ### Browser tools
 
