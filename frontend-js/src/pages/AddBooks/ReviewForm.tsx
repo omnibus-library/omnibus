@@ -76,6 +76,7 @@ export function ReviewForm({ pick, saving, error, onAdd, onStartOver }: Props) {
           dirty={dirty}
           sortBy=""
           filename={pick.label}
+          disabled={saving}
         />
         <Sidebar
           book={{ identifiers: pick.identifiers, hasOverride: false }}

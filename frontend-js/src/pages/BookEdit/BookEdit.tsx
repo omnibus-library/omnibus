@@ -80,7 +80,8 @@ function EditForm({ book }: { book: EditableBook }) {
   });
 
   // A cover lands the moment it is picked, so none may race a save or a revert, or another cover.
-  const writing = save.isPending || revert.isPending || coverBusy;
+  const saving = save.isPending || revert.isPending;
+  const writing = saving || coverBusy;
   const cover = {
     book: live,
     target: { kind: "live", uuid: book.uuid, onApplied: onCoverApplied },
@@ -111,6 +112,7 @@ function EditForm({ book }: { book: EditableBook }) {
           dirty={dirty}
           sortBy={book.sortBy}
           filename={book.filename}
+          disabled={saving}
         />
         <Sidebar
           book={live}

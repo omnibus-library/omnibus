@@ -360,6 +360,31 @@ export const HoldsSaveAndRevertWhileACoverUploads: Story = {
   },
 };
 
+let saveGate = deferred();
+
+export const HoldsTheFieldsWhileSaving: Story = {
+  beforeEach({ msw }) {
+    saveGate = deferred();
+    msw.use(
+      http.post("/api/ebooks/:uuid/overrides", async () => {
+        await saveGate.promise;
+        return HttpResponse.json(BOOK);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const title = await canvas.findByLabelText(/^Title/);
+    await userEvent.type(title, "!");
+    await userEvent.click(canvas.getByTestId("me-save"));
+
+    await expect(await canvas.findByText("Saving…")).toBeInTheDocument();
+    await expect(title).toBeDisabled();
+    await expect(canvas.getByLabelText("Author(s)")).toBeDisabled();
+    saveGate.release();
+    await expect(await canvas.findByText("Book page")).toBeInTheDocument();
+  },
+};
+
 const bookReads = { count: 0 };
 
 // The first read answers; every later one fails.

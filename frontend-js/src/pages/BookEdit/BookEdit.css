@@ -99,6 +99,10 @@
 
 .me-form {
   min-width: 0;
+  /* A fieldset, to disable every control at once; its own frame is not wanted. */
+  border: 0;
+  padding: 0;
+  margin: 0;
 }
 
 .me-field-grid {

@@ -18,6 +18,8 @@ type Props = {
   dirty: DirtyLabel[];
   sortBy: string;
   filename: string;
+  /** A write is in flight: the fields hold still, so nothing typed now is lost when it lands. */
+  disabled: boolean;
 };
 
 /** The edit form's fields, bound to `form`: the grid, then tags, genres and series. */
@@ -28,6 +30,7 @@ export function MetaFormGrid({
   dirty,
   sortBy,
   filename,
+  disabled,
 }: Props) {
   const { register, control } = form;
   const edited = (label: DirtyLabel) => dirty.includes(label);
@@ -40,7 +43,7 @@ export function MetaFormGrid({
   };
   const seriesList = useId();
   return (
-    <div className="me-form">
+    <fieldset className="me-form" disabled={disabled}>
       <div className="me-field-grid">
         <MeField
           label="Title"
@@ -199,6 +202,6 @@ export function MetaFormGrid({
           input={register("seriesIndex")}
         />
       </div>
-    </div>
+    </fieldset>
   );
 }
