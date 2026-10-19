@@ -30,7 +30,6 @@ export function toAuthorSummary(wire: AuthorSummaryWire) {
     sort: wire.sort ?? null,
     bookCount: wire.book_count,
     accent: wire.accent ?? null,
-    hasPhoto: wire.has_photo ?? false,
   };
 }
 

@@ -1,5 +1,5 @@
 import type { Book, BookState, SeriesId } from "../../api";
-import { bookCount, plural } from "../../format";
+import { bookCount, unitsAgo } from "../../format";
 
 /** The reader's state on each of an author's books, by book uuid. */
 export type BookStates = ReadonlyMap<string, BookState>;
@@ -33,13 +33,12 @@ export function currentBook(books: readonly Book[], states: BookStates) {
 export function readAgo(now: number, then: number, zoneSecs: number): string {
   const day = (at: number) => Math.floor((at + zoneSecs) / DAY);
   const days = Math.max(0, day(now) - day(then));
-  const ago = (n: number, unit: string) => `${n} ${unit}${plural(n)} ago`;
   if (days === 0) return "today";
   if (days === 1) return "yesterday";
-  if (days < 14) return ago(days, "day");
-  if (days < 60) return ago(Math.floor(days / 7), "week");
-  if (days < 730) return ago(Math.floor(days / 30), "month");
-  return ago(Math.floor(days / 365), "year");
+  if (days < 14) return unitsAgo(days, "day");
+  if (days < 60) return unitsAgo(Math.floor(days / 7), "week");
+  if (days < 730) return unitsAgo(Math.floor(days / 30), "month");
+  return unitsAgo(Math.floor(days / 365), "year");
 }
 
 /** The meta line under the current book, "Earthsea 2 · 42% · read 3 days ago", each part dropped when unknown. */
