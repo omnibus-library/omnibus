@@ -30,9 +30,11 @@ load before the screens that override them.
 `src/router.tsx` carries all 30 routes from `frontend/src/routes.rs`, with the
 same split: the readers and the player fill the screen, everything else sits
 under the top bar, and a guest goes to `/login?next=…` and comes back. Login,
-Register, the library, book detail, search results (`/search/:query`) and Not
-Found are ported, and the top bar carries the user menu and the ⌘K search
-palette. As on Dioxus web, a bare `/search` and the native shell's `/connect`
+Register, the library, book detail, search results (`/search/:query`), the
+authors, series and shelves indexes with their detail pages (`/authors/:id`,
+`/series/:id`, `/shelves/:id`) and Not Found are ported, and the top bar carries
+the user menu and the ⌘K search palette. The phone layouts (the bottom tab bar
+and the native shell's shelves screens) are left out. As on Dioxus web, a bare `/search` and the native shell's `/connect`
 redirect to the library. Every other route renders `Unported`, which shows its
 parsed parameters and names its Dioxus source.
 Book detail carries all six stops (home, stats, highlights, journals, files,
@@ -134,7 +136,10 @@ shell provides it.
   `focusTrap`, book detail's `readout`, `identifiers`, `shelves`,
   `journalEditor` and delete copy, the palette's `selection`, the results
   page's `results`, Register's `refusal`, the library's `filters`,
-  `libraryView`, `seriesStacks`, `shelfGallery`, `sorting` and `bulkEdit`), plus the
+  `libraryView`, `seriesStacks`, `shelfGallery`, `sorting` and `bulkEdit`; the
+  discovery pages' `authorsOrder`, `authorPane`, `seriesIndex`, `shelvesIndex`,
+  the shelf rules' `rules`, the picker's `picker`, and the shelf page's
+  `shelfAccess` and `narrow`), plus the
   real route table in `src/router.test.tsx`: every unported page, the layout
   split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI
@@ -147,8 +152,8 @@ shell provides it.
 | Cold build | 80s server + 50s wasm client | 3s install + 1s `vite build` |
 | After a UI file edit | 16s server + 8s wasm, before wasm-bindgen and bundling | Vite hot reload (not timed; dev server ready in 168ms) |
 | After a `db/` edit | 17s | unchanged: still a Rust rebuild |
-| Shipped JS | wasm bundle (not measured) | 460 KB, 140 KB gzipped |
-| Shipped CSS | all of `atrium.css` + `loading.css` | 37 KB, 9 KB gzipped |
+| Shipped JS | wasm bundle (not measured) | 884 KB, 249 KB gzipped |
+| Shipped CSS | all of `atrium.css` + `loading.css` | 170 KB, 32 KB gzipped |
 
 Measured on one 16-core Linux box, dev profile, no sccache.
 
