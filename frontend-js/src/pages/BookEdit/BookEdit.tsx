@@ -140,7 +140,10 @@ function EditForm({ book }: { book: EditableBook }) {
         })}
         onDiscard={allowLeave}
       />
-      <UnsavedDialog blocker={blocker} />
+      <UnsavedDialog
+        blocker={blocker}
+        body="You've edited this book's details without saving them."
+      />
     </div>
   );
 }

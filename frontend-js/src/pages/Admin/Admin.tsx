@@ -1,13 +1,102 @@
-import { useSearchParams } from "react-router";
-import { Unported } from "../../components/Unported/Unported";
+import type { ReactNode } from "react";
+import { Link, useSearchParams } from "react-router";
+import { PageTitle } from "../../components/PageTitle/PageTitle";
+import {
+  NavGroup,
+  NavItem,
+  SectionHeader,
+  SettingsShell,
+} from "../../components/SettingsShell/SettingsShell";
+import { useCurrentUser } from "../../session";
+import {
+  ADMIN_SECTIONS,
+  type AdminSection,
+  adminTitle,
+  parseSection,
+} from "./sections";
+import "./Admin.css";
 
-export function Admin() {
-  const [search] = useSearchParams();
+const sectionOf = (search: string) =>
+  parseSection(new URLSearchParams(search).get("section")).slug;
+
+/** The cards of an admin section; each section's port fills in its arm. */
+function sectionContent(slug: AdminSection["slug"]): ReactNode {
+  switch (slug) {
+    case "sources":
+    case "maintenance":
+    case "metadata":
+    case "cleanup":
+    case "people":
+    case "integrations":
+    case "health":
+    case "logs":
+      return null;
+    default: {
+      const _exhaustive: never = slug;
+      return _exhaustive;
+    }
+  }
+}
+
+/** Library and Server groups, plus the way back to personal settings. */
+function AdminNav({ active }: { active: AdminSection }) {
   return (
-    <Unported
-      title="Administration"
-      source="frontend/src/pages/admin/"
-      params={{ section: search.get("section") }}
-    />
+    <>
+      {(["Library", "Server"] as const).map((group) => (
+        <NavGroup key={group} label={group}>
+          {ADMIN_SECTIONS.filter((s) => s.group === group).map((s) => (
+            <NavItem
+              key={s.slug}
+              to={`/admin?section=${s.slug}`}
+              label={s.label}
+              testId={`admin-nav-${s.slug}`}
+              active={s.slug === active.slug}
+            />
+          ))}
+        </NavGroup>
+      ))}
+      <NavGroup divided>
+        <NavItem
+          to="/settings"
+          label="Your settings"
+          testId="admin-nav-settings"
+          active={false}
+        />
+      </NavGroup>
+    </>
+  );
+}
+
+/** Server administration: the settings shell over the sections an admin owns. */
+export function Admin() {
+  const { isAdmin } = useCurrentUser();
+  const [search] = useSearchParams();
+  const raw = search.get("section");
+  const active = parseSection(raw);
+  return (
+    <>
+      <PageTitle page={adminTitle(raw)} />
+      <SettingsShell
+        title="Administration"
+        testId="admin-layout"
+        navLabel="Administration sections"
+        backTo={isAdmin ? "/admin" : null}
+        hasSection={raw !== null || !isAdmin}
+        openSection={sectionOf}
+        nav={isAdmin ? <AdminNav active={active} /> : null}
+      >
+        {isAdmin ? (
+          <>
+            <SectionHeader title={active.label} />
+            {sectionContent(active.slug)}
+          </>
+        ) : (
+          <div className="admin-forbidden" data-testid="admin-forbidden">
+            <p>Administration is only open to server administrators.</p>
+            <Link to="/settings">Go to your settings</Link>
+          </div>
+        )}
+      </SettingsShell>
+    </>
   );
 }

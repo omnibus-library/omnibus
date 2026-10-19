@@ -1,0 +1,7 @@
+.admin-forbidden {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  color: var(--ink-1);
+}

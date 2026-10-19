@@ -18,7 +18,10 @@ function Form() {
         Edited
       </label>
       <Link to="/elsewhere">Leave</Link>
-      <UnsavedDialog blocker={blocker} />
+      <UnsavedDialog
+        blocker={blocker}
+        body="You've edited this book's details without saving them."
+      />
     </>
   );
 }

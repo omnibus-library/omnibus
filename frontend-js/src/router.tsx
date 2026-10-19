@@ -1,5 +1,10 @@
 import { lazy, type ReactNode, Suspense } from "react";
-import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
+import {
+  createBrowserRouter,
+  Navigate,
+  type RouteObject,
+  useParams,
+} from "react-router";
 import { Loading } from "./components/Loading/Loading";
 import { RouteError } from "./components/RouteError/RouteError";
 import { AppShell } from "./layouts/AppShell";
@@ -7,7 +12,6 @@ import { RequireAuth } from "./layouts/RequireAuth";
 import { Account } from "./pages/Account/Account";
 import { AddBooks } from "./pages/AddBooks/AddBooks";
 import { Admin } from "./pages/Admin/Admin";
-import { AdminHealth } from "./pages/AdminHealth/AdminHealth";
 import { AuthorDetail } from "./pages/AuthorDetail/AuthorDetail";
 import { Authors, AuthorsIndexPane } from "./pages/Authors/Authors";
 import { BookDetail } from "./pages/BookDetail/BookDetail";
@@ -45,6 +49,12 @@ const reader = (element: ReactNode) => (
   <Suspense fallback={<Loading kind="stage" />}>{element}</Suspense>
 );
 
+// The review queue's address before it moved under /admin.
+function LegacyCleanupReview() {
+  const { kind = "" } = useParams();
+  return <Navigate to={`/admin/cleanup/${encodeURIComponent(kind)}`} replace />;
+}
+
 // Mirrors frontend/src/routes.rs: the readers and the player fill the screen,
 // everything else sits under the top bar. Two error boundaries: one inside the
 // shell, so a page that throws keeps the top bar, and one at the root for
@@ -66,7 +76,7 @@ export const routes: RouteObject[] = [
           { path: "/listen/:uuid", element: <Listen /> },
           {
             path: "/logs",
-            element: <Navigate to="/settings?section=logs" replace />,
+            element: <Navigate to="/admin?section=logs" replace />,
           },
           {
             element: <AppShell />,
@@ -97,14 +107,17 @@ export const routes: RouteObject[] = [
                   { path: "/settings", element: <Settings /> },
                   {
                     path: "/settings/cleanup/:kind",
-                    element: <CleanupReview />,
+                    element: <LegacyCleanupReview />,
                   },
                   { path: "/admin", element: <Admin /> },
                   {
                     path: "/admin/cleanup/:kind",
                     element: <CleanupReview />,
                   },
-                  { path: "/admin/health", element: <AdminHealth /> },
+                  {
+                    path: "/admin/health",
+                    element: <Navigate to="/admin?section=health" replace />,
+                  },
                   { path: "/account", element: <Account /> },
                   { path: "/add-books", element: <AddBooks /> },
                   { path: "/check-in", element: <CheckIn /> },
