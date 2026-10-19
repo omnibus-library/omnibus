@@ -5,7 +5,6 @@
 
 use std::{sync::Arc, time::Duration};
 
-use axum::routing::{delete, get, patch, post, put};
 use tower_http::timeout::RequestBodyTimeoutLayer;
 use utoipa_axum::{router::OpenApiRouter, routes};
 

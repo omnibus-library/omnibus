@@ -12,8 +12,8 @@ use axum::{
 };
 use omnibus_db::{self as db, journals::JournalError};
 use omnibus_shared::{
-    ClientStamped, CreateJournalEntry, JournalEntry, JournalImageForm, JournalImageUpload,
-    UpdateJournalEntry, BODY_MAX_LEN,
+    ClientStamped, CreateJournalEntry, FileBytes, JournalEntry, JournalImageForm,
+    JournalImageUpload, UpdateJournalEntry, BODY_MAX_LEN,
 };
 
 use super::{image_upload, internal, AppState};
@@ -216,7 +216,7 @@ pub(super) async fn post_journal_image(
     security(("bearer" = []), ("session_cookie" = []), ("media_token" = [])),
     params(("name" = String, Path, description = "The last segment of the URL the upload returned: a uuid and an extension.")),
     responses(
-        (status = 200, description = "The image.", body = [u8], content_type = "image/*"),
+        (status = 200, description = "The image.", body = FileBytes, content_type = "image/*"),
         (status = 404, description = "No image has that name."),
     ),
 )]
