@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  type FilterClause,
+  filterParam,
   toBookDetail,
   toBookPage,
   toPalette,
@@ -165,5 +167,35 @@ describe("toPalette", () => {
     const { book_total: _omitted, ...wire } = aWirePalette();
 
     expect(toPalette(wire).totals.books).toBe(0);
+  });
+});
+
+describe("filterParam", () => {
+  it("encodes one include clause as the server does", () => {
+    const clause: FilterClause = {
+      field: "author",
+      mode: "include",
+      values: ["Sora Inkwell"],
+    };
+
+    expect(filterParam([clause])).toBe(
+      '[{"field":"author","mode":"include","values":["Sora Inkwell"]}]',
+    );
+  });
+
+  it("fixes the key order whatever order the clause was built in", () => {
+    const clause: FilterClause = {
+      values: ["epub"],
+      mode: "exclude",
+      field: "format",
+    };
+
+    expect(filterParam([clause])).toBe(
+      '[{"field":"format","mode":"exclude","values":["epub"]}]',
+    );
+  });
+
+  it("sends nothing for no clauses", () => {
+    expect(filterParam([])).toBeUndefined();
   });
 });

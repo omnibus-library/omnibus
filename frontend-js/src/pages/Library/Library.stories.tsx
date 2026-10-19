@@ -1,12 +1,14 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 import {
   failing,
+  filterOptionHandlers,
   hanging,
   LIBRARY_PATH,
   libraryHandler,
 } from "../../testing/handlers";
-import { aWireLibrary } from "../../testing/wire";
+import { aWireLibrary, WIRE_ADA } from "../../testing/wire";
 import { Library } from "./Library";
 
 const PREFS_KEY = `omnibus.view_prefs::${LIBRARY_PATH}`;
@@ -39,7 +41,7 @@ function seedTable() {
   localStorage.setItem(PREFS_KEY, TABLE_PREFS);
 }
 
-// A page of 30 puts "Load more" past the 400px the scroll observer watches.
+// Enough rows per page that "Load more" starts beyond the 400px the scroll observer watches.
 const pageable = (count: number) => aWireLibrary(count);
 
 export const Loaded: Story = {
@@ -158,7 +160,7 @@ export const SortRestores: Story = {
   },
 };
 
-const TABLE_BOOKS = pageable(90).map((book, i) =>
+const TABLE_BOOKS = pageable(150).map((book, i) =>
   i === 0
     ? {
         ...book,
@@ -236,19 +238,19 @@ export const TableRestores: Story = {
 export const TablePaging: Story = {
   beforeEach({ msw }) {
     seedTable();
-    msw.use(libraryHandler(TABLE_BOOKS, 30));
+    msw.use(libraryHandler(TABLE_BOOKS, 60));
   },
   play: async ({ canvas, userEvent }) => {
     const rows = () =>
       canvas.queryAllByRole("link", { name: /^Open details for/ });
-    await waitFor(() => expect(rows()).toHaveLength(30));
+    await waitFor(() => expect(rows()).toHaveLength(60));
 
     await userEvent.click(canvas.getByRole("button", { name: "Load more" }));
-    await waitFor(() => expect(rows()).toHaveLength(60));
+    await waitFor(() => expect(rows()).toHaveLength(120));
 
     // The observer takes the last page as the button nears the viewport.
     canvas.getByRole("button", { name: "Load more" }).scrollIntoView();
-    await waitFor(() => expect(rows()).toHaveLength(90));
+    await waitFor(() => expect(rows()).toHaveLength(150));
     await expect(
       canvas.queryByRole("button", { name: "Load more" }),
     ).not.toBeInTheDocument();
@@ -265,5 +267,180 @@ export const TableLoading: Story = {
       "Taking the books off the shelf",
     );
     await expect(canvasElement.querySelector(".ld-rows")).not.toBeNull();
+  },
+};
+
+const ADA_FILTER =
+  '[{"field":"author","mode":"include","values":["Ada Lovelace"]}]';
+
+// Half the books are Ada Lovelace's, the other half Sora Inkwell's.
+const BY_TWO_AUTHORS = aWireLibrary(6).map((book, i) => ({
+  ...book,
+  creators: [
+    {
+      name: i % 2 ? "Ada Lovelace" : "Sora Inkwell",
+      role: null,
+      file_as: null,
+      id: 2 + (i % 2),
+    },
+  ],
+}));
+
+const AUTHOR_OPTIONS = filterOptionHandlers({
+  authors: [
+    { id: 2, name: "Sora Inkwell", book_count: 3 },
+    { id: 3, name: "Ada Lovelace", book_count: 3 },
+    { id: 4, name: "Nobody", book_count: 0 },
+  ],
+});
+
+// Opens the browse list under an author filter saved by an earlier visit.
+function seedAdaFilter() {
+  localStorage.setItem("omnibus.view_prefs.last_library", LIBRARY_PATH);
+  localStorage.setItem(
+    PREFS_KEY,
+    `{"view_mode":"grid","sort_key":"title","sort_dir":"asc","filters":{"clauses":${ADA_FILTER}}}`,
+  );
+}
+
+const tiles = (canvas: ReturnType<typeof within>) =>
+  canvas.queryAllByRole("link", { name: /^Open details for/ });
+
+export const Filtered: Story = {
+  beforeEach({ msw }) {
+    requests.length = 0;
+    msw.use(
+      libraryHandler(BY_TWO_AUTHORS, 10, { requests }),
+      ...AUTHOR_OPTIONS,
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(6));
+    await expect(canvas.queryByText(/^\d+ books?$/)).not.toBeInTheDocument();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Author" }));
+    await userEvent.click(
+      await canvas.findByRole("checkbox", { name: "Ada Lovelace" }),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Apply (1)" }));
+
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(3));
+    await expect(requests.at(-1)?.get("filter")).toBe(ADA_FILTER);
+    await expect(await canvas.findByText("3 books")).toBeInTheDocument();
+    await expect(localStorage.getItem(PREFS_KEY)).toContain('"Ada Lovelace"');
+  },
+};
+
+export const FilteredToNothing: Story = {
+  beforeEach({ msw }) {
+    msw.use(libraryHandler(BY_TWO_AUTHORS, 10), ...AUTHOR_OPTIONS);
+  },
+  play: async ({ canvas, userEvent }) => {
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(6));
+    await userEvent.click(canvas.getByRole("button", { name: "Author" }));
+    await userEvent.click(
+      await canvas.findByRole("checkbox", { name: "Nobody" }),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Apply (1)" }));
+
+    await expect(
+      await canvas.findByText("No books match these filters."),
+    ).toBeInTheDocument();
+    await expect(await canvas.findByText("0 books")).toBeInTheDocument();
+    await expect(
+      canvas.queryByText("No ebooks found."),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Clear filters" }),
+    );
+
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(6));
+    await expect(localStorage.getItem(PREFS_KEY)).toContain(
+      '"filters":{"clauses":[]}',
+    );
+  },
+};
+
+let release: () => void = () => {};
+
+export const FilteredCounting: Story = {
+  beforeEach({ msw }) {
+    seedAdaFilter();
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // Holds the request, then lets the fixture handler answer it.
+    msw.use(
+      http.get("/api/ebooks", async () => {
+        await gate;
+      }),
+      libraryHandler(BY_TWO_AUTHORS, 10),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("counting")).toBeInTheDocument();
+    await expect(canvas.queryByText("0 books")).not.toBeInTheDocument();
+
+    release();
+
+    await expect(await canvas.findByText("3 books")).toBeInTheDocument();
+    await expect(canvas.queryByText("counting")).not.toBeInTheDocument();
+  },
+};
+
+export const FilterRestores: Story = {
+  beforeEach({ msw }) {
+    seedAdaFilter();
+    requests.length = 0;
+    msw.use(libraryHandler(BY_TWO_AUTHORS, 10, { requests }));
+  },
+  play: async ({ canvas }) => {
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(3));
+
+    await expect(requests[0]?.get("filter")).toBe(ADA_FILTER);
+    await expect(
+      canvas.getByRole("button", { name: /^Author/ }),
+    ).toHaveTextContent("AuthorAda Lovelace");
+    await expect(
+      canvas.getByRole("button", { name: "Clear all" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const FilterFailing: Story = {
+  beforeEach({ msw }) {
+    seedAdaFilter();
+    msw.use(failing("get", "/api/ebooks", 500));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "Couldn't load the library",
+    );
+    await expect(canvas.queryByText("counting")).not.toBeInTheDocument();
+  },
+};
+
+export const HiddenFormats: Story = {
+  parameters: {
+    user: { ...WIRE_ADA, hidden_formats: ["mp3", "m4b"] },
+  },
+  beforeEach({ msw }) {
+    requests.length = 0;
+    const audio = aWireLibrary(6).map((book, i) =>
+      i % 3 === 0 ? { ...book, formats: ["MP3"] } : book,
+    );
+    msw.use(libraryHandler(audio, 10, { requests }));
+  },
+  play: async ({ canvas }) => {
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(4));
+
+    await expect(requests[0]?.get("exclude_formats")).toBe("m4b,mp3");
+    await expect(canvas.getByText("2 hidden")).toBeInTheDocument();
+    const link = canvas.getByRole("link", { name: /^Hidden: M4B, MP3/ });
+    await expect(link).toHaveAttribute("href", "/settings?section=preferences");
+    await expect(link).toHaveTextContent(
+      "Hidden: M4B, MP3. Change in Settings",
+    );
   },
 };

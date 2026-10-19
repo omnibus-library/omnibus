@@ -203,6 +203,24 @@
   gap: 18px;
   flex-wrap: wrap;
 }
+.lib-header-receipt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.lib-header-receipt-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.lib-header-count + .lib-header-hidden::before {
+  content: " \00b7 ";
+}
+.lib-header-hidden {
+  color: var(--ink-3);
+}
 .lib-header-hint {
   color: var(--ink-2);
   font-size: 13px;
@@ -468,6 +486,9 @@
   padding: 0 0 20px;
   gap: 10px;
 }
+.lmq .lib-header-row > .fb {
+  flex: 0 1 auto;
+}
 .lmq .lib-toolbar {
   margin-left: auto;
 }
@@ -602,6 +623,44 @@
   .lmq .lib-tile:hover .lib-tile-art {
     transform: none;
   }
+}
+.lib-hidden-formats {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.lmq .lib-hidden-formats {
+  height: 30px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.lib-hidden-formats:hover {
+  color: var(--ink-0);
+  border-color: var(--ink-3);
+}
+.lib-hidden-formats:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lib-hidden-formats {
+    transition: none;
+  }
+}
+.lmq > *:has(.fb-pop) {
+  z-index: 41;
 }
 @keyframes lib-sweep-in {
   from {

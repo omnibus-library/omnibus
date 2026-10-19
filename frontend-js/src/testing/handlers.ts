@@ -1,4 +1,5 @@
 import { delay, HttpResponse, http } from "msw";
+import type { FilterClause, FilterField } from "../api";
 import {
   getGetAuthorsMockHandler200,
   getGetGenresMockHandler200,
@@ -44,9 +45,41 @@ export function sessionHandler(user: typeof WIRE_ADA | null = WIRE_ADA) {
 /** The library path the fixture server reports on page 1. */
 export const LIBRARY_PATH = "/library";
 
+const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+// What a book carries under a filter field; shelf membership isn't on the book.
+function carried(book: EbookMetadata, field: FilterField): string[] {
+  switch (field) {
+    case "tag":
+      return book.subjects;
+    case "genre":
+      return book.genres ?? [];
+    case "author":
+      return book.creators.map((c) => c.name);
+    case "series":
+      return book.series ? [book.series] : [];
+    case "format":
+      return book.formats ?? [];
+    case "shelf":
+      return [];
+  }
+}
+
+/** Whether `book` passes every clause, as the server decides: any value matches, exclude inverts. */
+function passes(book: EbookMetadata, clauses: FilterClause[]): boolean {
+  return clauses
+    .filter((c) => c.field !== "shelf")
+    .every((c) => {
+      const held = carried(book, c.field);
+      const hit = c.values.some((v) => held.some((h) => sameName(h, v)));
+      return c.mode === "include" ? hit : !hit;
+    });
+}
+
 /**
- * Library pages of `pageSize` in fixture order, with the API's paging headers.
- * Each request's search params land in `requests`, for assertions.
+ * Library pages of `pageSize` in fixture order, narrowed by `filter` and
+ * `exclude_formats` as the server does, with its paging headers. Each
+ * request's search params land in `requests`, for assertions.
  */
 export function libraryHandler(
   books: EbookMetadata[],
@@ -66,13 +99,27 @@ export function libraryHandler(
     ) {
       return new HttpResponse("cursor without sort and dir", { status: 400 });
     }
+    const clauses: FilterClause[] = JSON.parse(
+      url.searchParams.get("filter") ?? "[]",
+    );
+    const exclude = (url.searchParams.get("exclude_formats") ?? "")
+      .split(",")
+      .filter(Boolean);
+    const narrowed = books.filter((b) => passes(b, clauses));
+    const shown = narrowed.filter(
+      (b) =>
+        !(b.formats ?? []).some((f) => exclude.some((x) => sameName(f, x))),
+    );
     const start = Number(url.searchParams.get("cursor") ?? "0");
     const end = start + pageSize;
     const headers: Record<string, string> = {
-      "X-Total-Count": String(books.length),
+      "X-Total-Count": String(shown.length),
     };
-    if (end < books.length) headers["X-Next-Cursor"] = String(end);
-    const page = { books: books.slice(start, end), path } satisfies EbookPage;
+    if (end < shown.length) headers["X-Next-Cursor"] = String(end);
+    if (exclude.length) {
+      headers["X-Hidden-Count"] = String(narrowed.length - shown.length);
+    }
+    const page = { books: shown.slice(start, end), path } satisfies EbookPage;
     return HttpResponse.json(page, { headers });
   });
 }

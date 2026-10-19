@@ -283,8 +283,25 @@ export async function logout(): Promise<void> {
   }
 }
 
+/**
+ * The `filter` query value: the clauses as JSON, in the key order the server's
+ * own encoding uses, or `undefined` when there are none.
+ */
+export const filterParam = (clauses: FilterClause[]) =>
+  clauses.length
+    ? JSON.stringify(
+        clauses.map(({ field, mode, values }) => ({ field, mode, values })),
+      )
+    : undefined;
+
 /** What a library page is fetched under; a change to any of it restarts at page 1. */
-export type LibraryQuery = { sort: SortKey; dir: SortDir };
+export type LibraryQuery = {
+  sort: SortKey;
+  dir: SortDir;
+  clauses: FilterClause[];
+  /** The formats the reader hides from All Books, sorted. */
+  excludeFormats: string[];
+};
 
 export const PAGE_SIZE = 100;
 
@@ -294,12 +311,17 @@ export async function fetchBookPage(
   cursor: string,
 ): Promise<BookPage> {
   // The API refuses a cursor unless sort and dir are both explicit.
+  const filter = filterParam(query.clauses);
   const res = await getEbooks({
     sort: query.sort,
     dir: query.dir,
     limit: PAGE_SIZE,
     omit_description: true,
     ...(cursor ? { cursor } : {}),
+    ...(filter ? { filter } : {}),
+    ...(query.excludeFormats.length
+      ? { exclude_formats: query.excludeFormats.join(",") }
+      : {}),
   });
   if (res.status !== 200) throw failure(res);
   return toBookPage(res.data, res.headers);

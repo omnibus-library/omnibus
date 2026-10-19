@@ -10,6 +10,8 @@ import {
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
+import { FilterBar } from "../../components/FilterBar/FilterBar";
+import type { ShelfList } from "../../components/FilterBar/filters";
 import {
   BusyLabel,
   CoverSkeletons,
@@ -17,6 +19,8 @@ import {
 } from "../../components/Loading/Loading";
 import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
+import { plural } from "../../format";
+import { useCurrentUser } from "../../session";
 import {
   DEFAULT_PREFS,
   lastLibrary,
@@ -27,6 +31,7 @@ import {
   savePrefs,
 } from "../../viewPrefs";
 import { BookTable } from "./BookTable";
+import { emptyState, headerCount } from "./libraryView";
 import { headerSort } from "./sorting";
 import { Toolbar } from "./Toolbar";
 import "./Library.css";
@@ -62,12 +67,51 @@ function Tile({ book, index }: { book: Book; index: number }) {
   );
 }
 
+// The shelf list arrives with the shelves row; until then the Shelf facet waits.
+const SHELVES: ShelfList = { state: "pending" };
+
+function Receipt({
+  count,
+  hidden,
+}: {
+  count: number | "counting" | null;
+  hidden: number | null;
+}) {
+  const hiddenBooks = hidden !== null && hidden > 0 ? hidden : null;
+  if (count === null && hiddenBooks === null) return null;
+  return (
+    <div className="lib-header-receipt">
+      <p className="lib-header-receipt-text">
+        {count === "counting" && (
+          <span className="lib-header-count">
+            <span className="ld-sheen">counting</span>
+          </span>
+        )}
+        {typeof count === "number" && (
+          <span className="lib-header-count">
+            {count} book{plural(count)}
+          </span>
+        )}
+        {hiddenBooks !== null && (
+          <span className="lib-header-hidden">{hiddenBooks} hidden</span>
+        )}
+      </p>
+    </div>
+  );
+}
+
 export function Library() {
+  const user = useCurrentUser();
   const [prefs, setPrefs] = useState(() => {
     const last = lastLibrary();
     return last ? loadPrefs(last) : DEFAULT_PREFS;
   });
-  const query: LibraryQuery = { sort: prefs.sort, dir: prefs.dir };
+  const query: LibraryQuery = {
+    sort: prefs.sort,
+    dir: prefs.dir,
+    clauses: prefs.clauses,
+    excludeFormats: [...user.hiddenFormats].sort(),
+  };
   const pages = useInfiniteQuery({
     queryKey: ["books", query],
     queryFn: ({ pageParam }) => fetchBookPage(query, pageParam),
@@ -75,9 +119,11 @@ export function Library() {
     getNextPageParam: (last) => last.next ?? undefined,
   });
   const books = pages.data?.pages.flatMap((page) => page.books) ?? [];
+  const firstPage = pages.data?.pages[0];
+  const filtered = prefs.clauses.length > 0;
 
   // Page 1 names the library; until it does, `lastLibrary()` is only a guess.
-  const answeredPath = pages.data?.pages[0]?.path;
+  const answeredPath = firstPage?.path;
   const libraryPath = useRef<string | null>(null);
   const reconciled = useRef<string | null>(null);
   const unsaved = useRef(false);
@@ -121,7 +167,25 @@ export function Library() {
       <header className="lib-header">
         <h1 className="sr-only">Your Library</h1>
         <div className="lib-header-row">
-          <Toolbar prefs={prefs} onChange={change} />
+          <FilterBar
+            clauses={prefs.clauses}
+            shelves={SHELVES}
+            viewerId={user.id}
+            onChange={(clauses) => change({ ...prefs, clauses })}
+          />
+          <Receipt
+            count={headerCount(
+              filtered,
+              firstPage?.total ?? null,
+              pages.isError,
+            )}
+            hidden={firstPage?.hidden ?? null}
+          />
+          <Toolbar
+            prefs={prefs}
+            hiddenFormats={query.excludeFormats}
+            onChange={change}
+          />
         </div>
         {answeredPath === null && (
           <p className="lib-header-hint">
@@ -146,9 +210,19 @@ export function Library() {
               message={`Couldn't load the library: ${pages.error.message}`}
             />
           )}
-          {pages.status === "success" && books.length === 0 && (
-            <p className="library-empty">No ebooks found.</p>
-          )}
+          {pages.status === "success" &&
+            emptyState(books.length, filtered) === "empty" && (
+              <p className="library-empty">No ebooks found.</p>
+            )}
+          {pages.status === "success" &&
+            emptyState(books.length, filtered) === "filtered" && (
+              <div className="library-empty">
+                <p>No books match these filters.</p>
+                <Button onClick={() => change({ ...prefs, clauses: [] })}>
+                  Clear filters
+                </Button>
+              </div>
+            )}
           {books.length > 0 &&
             (prefs.view === "table" ? (
               <BookTable

@@ -39,8 +39,8 @@ throws (the session gate, the shell, a reader) renders it full-screen.
 
 ## Styling, copied out of Atrium
 
-Each CSS file holds only the `atrium.css` and `loading.css` rules its markup can
-match, copied by `tools/extract-atrium.cjs` — 1,282 of Atrium's 13,178 lines.
+Each CSS file holds only the `atrium.css`, `loading.css` and `filter_bar.css` rules
+its markup can match, copied by `tools/extract-atrium.cjs` — 1,282 of Atrium's 13,178 lines.
 The components keep the Dioxus class names, which is what lets the copy apply
 unchanged: computed styles and screenshots of all three screens match the
 `atrium.css` build exactly.

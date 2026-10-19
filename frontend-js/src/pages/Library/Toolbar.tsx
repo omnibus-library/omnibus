@@ -1,12 +1,20 @@
+import { Link } from "react-router";
 import { SortKey } from "../../api";
 import { ArrowDownGlyph, ArrowUpGlyph } from "../../components/Glyphs/Glyphs";
 import type { Prefs } from "../../viewPrefs";
+import { hiddenFormatsLabel } from "./libraryView";
 import { headerSort, SORT_KEYS, sortLabel, toggleDir } from "./sorting";
 
-type ToolbarProps = { prefs: Prefs; onChange: (next: Prefs) => void };
+type ToolbarProps = {
+  prefs: Prefs;
+  /** The formats the reader's preference keeps off this list. */
+  hiddenFormats: string[];
+  onChange: (next: Prefs) => void;
+};
 
-/** The view toggle and, in grid view, the sort controls. */
-export function Toolbar({ prefs, onChange }: ToolbarProps) {
+/** The view toggle, in grid view the sort controls, and the hidden-formats note. */
+export function Toolbar({ prefs, hiddenFormats, onChange }: ToolbarProps) {
+  const hidden = hiddenFormatsLabel(hiddenFormats);
   return (
     <div className="lib-toolbar" role="toolbar">
       {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings a default border and min-width that .lib-view-toggle never resets */}
@@ -53,6 +61,13 @@ export function Toolbar({ prefs, onChange }: ToolbarProps) {
             {prefs.dir === "asc" ? <ArrowUpGlyph /> : <ArrowDownGlyph />}
           </button>
         </div>
+      )}
+      {hidden && (
+        // The note links to the preference, so a missing book never reads as a missing file.
+        <Link className="lib-hidden-formats" to="/settings?section=preferences">
+          {hidden}
+          <span className="sr-only">. Change in Settings</span>
+        </Link>
       )}
     </div>
   );

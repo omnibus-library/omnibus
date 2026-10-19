@@ -41,7 +41,7 @@ function Bar({
         viewerId={ADA.id}
         onChange={setClauses}
       />
-      <code aria-label="Clauses">{JSON.stringify(clauses)}</code>
+      <code data-testid="clauses">{JSON.stringify(clauses)}</code>
     </>
   );
 }
@@ -108,13 +108,13 @@ export const ActiveFacet: Story = {
       canvas.getByRole("button", { name: "Clear the Tag filter" }),
     );
 
-    await expect(canvas.getByLabelText("Clauses")).toHaveTextContent(
+    await expect(canvas.getByTestId("clauses")).toHaveTextContent(
       '[{"field":"format","mode":"include","values":["epub"]}]',
     );
     await expect(tag).toHaveFocus();
 
     await userEvent.click(canvas.getByRole("button", { name: "Clear all" }));
-    await expect(canvas.getByLabelText("Clauses")).toHaveTextContent("[]");
+    await expect(canvas.getByTestId("clauses")).toHaveTextContent("[]");
   },
 };
 
@@ -141,7 +141,7 @@ export const PickAndApply: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Apply (2)" }));
 
     await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
-    await expect(canvas.getByLabelText("Clauses")).toHaveTextContent(
+    await expect(canvas.getByTestId("clauses")).toHaveTextContent(
       '[{"field":"tag","mode":"include","values":["space opera","cozy"]}]',
     );
     await expect(tag).toHaveFocus();
@@ -180,7 +180,7 @@ export const UntickToClear: Story = {
     // Nothing picked, but the field had values: Apply clears it.
     await userEvent.click(canvas.getByRole("button", { name: "Apply" }));
 
-    await expect(canvas.getByLabelText("Clauses")).toHaveTextContent("[]");
+    await expect(canvas.getByTestId("clauses")).toHaveTextContent("[]");
   },
 };
 
