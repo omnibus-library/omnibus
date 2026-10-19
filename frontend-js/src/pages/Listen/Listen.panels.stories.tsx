@@ -4,7 +4,11 @@ import { Link, Route, Routes } from "react-router";
 import { expect, fireEvent, spyOn, waitFor, within } from "storybook/test";
 import { ADA, storyClient } from "../../testing/AppHarness";
 import type { ListenWrite } from "../../testing/audioHandlers";
-import { listenHandlers, TEN_MINUTES_IN } from "../../testing/audioHandlers";
+import {
+  listenHandlers,
+  TEN_MINUTES_IN,
+  wrote,
+} from "../../testing/audioHandlers";
 import { failing, hanging } from "../../testing/handlers";
 import {
   aWireAudioBookmark,
@@ -18,9 +22,6 @@ const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 const BOOK = aWireBook({ formats: ["M4B"] });
 
 const writes: ListenWrite[] = [];
-const wrote = (request: string) =>
-  writes.filter((w) => w.request === request).map((w) => w.body);
-
 const meta = {
   title: "Pages/Listen/Panels",
   component: Listen,
@@ -69,7 +70,7 @@ export const ChaptersDrawerSeeks: Story = {
     fireEvent.click(drawer.getByText("Landfall"));
 
     await waitFor(() =>
-      expect(wrote("POST /api/progress")).toMatchObject([
+      expect(wrote(writes, "POST /api/progress")).toMatchObject([
         { audio_position_seconds: 7200 },
       ]),
     );
@@ -262,7 +263,7 @@ export const BookmarkAdds: Story = {
     const row = await drawer.findByTestId("bookmark-row");
     await expect(row).toHaveClass("fresh");
     await expect(row).toHaveTextContent("Ch. 1 · Departures10:00");
-    await expect(wrote("POST /api/bookmarks")).toMatchObject([
+    await expect(wrote(writes, "POST /api/bookmarks")).toMatchObject([
       { book_uuid: UUID, position: "600" },
     ]);
     await expect(canvas.getByTestId("bookmark-toast")).toHaveTextContent(
@@ -296,7 +297,7 @@ export const BookmarkRowActions: Story = {
 
     fireEvent.click(row.getByText("Ch. 2 · The Long Water"));
     await waitFor(() =>
-      expect(wrote("POST /api/progress")).toMatchObject([
+      expect(wrote(writes, "POST /api/progress")).toMatchObject([
         { audio_position_seconds: 4000 },
       ]),
     );
@@ -306,7 +307,9 @@ export const BookmarkRowActions: Story = {
     fireEvent.change(note, { target: { value: "  The reveal " } });
     fireEvent.keyDown(note, { key: "Enter" });
     await waitFor(() =>
-      expect(wrote("PUT /api/bookmarks/1")).toEqual([{ title: "The reveal" }]),
+      expect(wrote(writes, "PUT /api/bookmarks/1")).toEqual([
+        { title: "The reveal" },
+      ]),
     );
     await expect(
       await row.findByRole("button", { name: "The reveal" }),
@@ -318,7 +321,7 @@ export const BookmarkRowActions: Story = {
     });
     fireEvent.focusOut(row.getByPlaceholderText("Add a note…"));
     await waitFor(() =>
-      expect(wrote("PUT /api/bookmarks/1")).toEqual([
+      expect(wrote(writes, "PUT /api/bookmarks/1")).toEqual([
         { title: "The reveal" },
         { title: null },
       ]),
@@ -326,7 +329,7 @@ export const BookmarkRowActions: Story = {
 
     fireEvent.click(row.getByRole("button", { name: "Delete bookmark" }));
     await waitFor(() =>
-      expect(wrote("DELETE /api/bookmarks/1")).toHaveLength(1),
+      expect(wrote(writes, "DELETE /api/bookmarks/1")).toHaveLength(1),
     );
     await expect(
       await drawer.findByText("No bookmarks yet"),
@@ -354,7 +357,9 @@ export const FailedDeleteKeepsTheRow: Story = {
 
     fireEvent.click(row.getByRole("button", { name: "Delete bookmark" }));
 
-    await waitFor(() => expect(wrote("refused DELETE")).toHaveLength(1));
+    await waitFor(() =>
+      expect(wrote(writes, "refused DELETE")).toHaveLength(1),
+    );
     await expect(drawer.getByTestId("bookmark-row")).toBeInTheDocument();
   },
 };
@@ -408,7 +413,7 @@ export const SpeedPresetApplies: Story = {
       localStorage.getItem(`omn.listening.rate::${ADA.id}::${UUID}`),
     ).toBe("1.5");
     await waitFor(() =>
-      expect(wrote(RATE_PUT)).toEqual([{ playback_rate: 1.5 }]),
+      expect(wrote(writes, RATE_PUT)).toEqual([{ playback_rate: 1.5 }]),
     );
   },
 };
@@ -425,7 +430,7 @@ export const SpeedStepperAndSliderSnapToTheGrid: Story = {
 
     await expect(await panel.findByText("2.45×")).toBeInTheDocument();
     await waitFor(() =>
-      expect(wrote(RATE_PUT)).toEqual([
+      expect(wrote(writes, RATE_PUT)).toEqual([
         { playback_rate: 1.05 },
         { playback_rate: 2.45 },
       ]),
@@ -487,7 +492,7 @@ export const ServerSpeedWinsAtBoot: Story = {
   play: async ({ canvas }) => {
     await expect(await canvas.findByText("1.25×")).toBeInTheDocument();
     await canvas.findByText("Now playing · Chapter 1 of 3");
-    await expect(wrote(RATE_PUT)).toEqual([]);
+    await expect(wrote(writes, RATE_PUT)).toEqual([]);
   },
 };
 
@@ -498,7 +503,7 @@ export const ThisDevicesSpeedSeedsTheServer: Story = {
   play: async ({ canvas }) => {
     await expect(await canvas.findByText("1.50×")).toBeInTheDocument();
     await waitFor(() =>
-      expect(wrote(RATE_PUT)).toEqual([{ playback_rate: 1.5 }]),
+      expect(wrote(writes, RATE_PUT)).toEqual([{ playback_rate: 1.5 }]),
     );
   },
 };
@@ -667,7 +672,7 @@ export const SyncHereDeclaresTheLoadedFile: Story = {
     const button = await syncHere(canvas);
 
     await waitFor(() => expect(button).toHaveTextContent("Synced ✓"));
-    await expect(wrote(SYNC)).toEqual([
+    await expect(wrote(writes, SYNC)).toEqual([
       {
         book_uuid: UUID,
         format: "audio",
@@ -775,6 +780,6 @@ export const FollowAtBootStartsAtTheMappedSpot: Story = {
     const times = await canvas.findByTestId("listen-scrub-times");
 
     await expect(await within(times).findByText("20:00")).toBeInTheDocument();
-    await expect(wrote("POST /api/progress")).toEqual([]);
+    await expect(wrote(writes, "POST /api/progress")).toEqual([]);
   },
 };

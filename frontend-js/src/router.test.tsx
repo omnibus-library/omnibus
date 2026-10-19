@@ -23,12 +23,13 @@ function renderRoute(
   table: RouteObject[] = routes,
 ) {
   const router = createMemoryRouter(table, { initialEntries: [path] });
+  const client = harnessClient(user);
   render(
-    <QueryClientProvider client={harnessClient(user)}>
+    <QueryClientProvider client={client}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
-  return router;
+  return { router, client };
 }
 
 function Collapse(): never {
@@ -212,7 +213,7 @@ describe("routes", () => {
       afterAll(() => server.close());
 
       it("gives a reader's stage room above the dock", async () => {
-        const router = renderRoute(`/listen/${UUID}`);
+        const { router } = renderRoute(`/listen/${UUID}`);
         await screen.findByText("Now playing · Chapter 1 of 3");
 
         act(() => {
@@ -237,13 +238,7 @@ describe("routes", () => {
   describe("audio", () => {
     it("stops the element when the session ends", async () => {
       const pause = vi.spyOn(HTMLMediaElement.prototype, "pause");
-      const client = harnessClient();
-      const router = createMemoryRouter(routes, { initialEntries: ["/"] });
-      render(
-        <QueryClientProvider client={client}>
-          <RouterProvider router={router} />
-        </QueryClientProvider>,
-      );
+      const { client } = renderRoute("/");
       await screen.findByRole("heading", { level: 1, name: "Your Library" });
       pause.mockClear();
 
@@ -255,13 +250,7 @@ describe("routes", () => {
 
     it("starts a fresh player when another user takes the session", async () => {
       const pause = vi.spyOn(HTMLMediaElement.prototype, "pause");
-      const client = harnessClient();
-      const router = createMemoryRouter(routes, { initialEntries: ["/"] });
-      render(
-        <QueryClientProvider client={client}>
-          <RouterProvider router={router} />
-        </QueryClientProvider>,
-      );
+      const { client } = renderRoute("/");
       await screen.findByRole("heading", { level: 1, name: "Your Library" });
       pause.mockClear();
 
@@ -301,7 +290,7 @@ describe("routes", () => {
     });
 
     it("sends a guest to sign in with the page they asked for", async () => {
-      const router = renderRoute("/shelves/9", null);
+      const { router } = renderRoute("/shelves/9", null);
 
       await waitFor(() =>
         expect(router.state.location.pathname).toBe("/login"),
@@ -349,7 +338,7 @@ describe("routes", () => {
   });
 
   it("redirects /logs to the settings logs section", async () => {
-    const router = renderRoute("/logs");
+    const { router } = renderRoute("/logs");
 
     await waitFor(() =>
       expect(router.state.location.search).toBe("?section=logs"),
@@ -358,13 +347,13 @@ describe("routes", () => {
   });
 
   it("redirects /connect to the library", async () => {
-    const router = renderRoute("/connect");
+    const { router } = renderRoute("/connect");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });
 
   it("redirects a bare /search to the library", async () => {
-    const router = renderRoute("/search");
+    const { router } = renderRoute("/search");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });

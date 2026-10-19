@@ -45,6 +45,10 @@ export function twoFiles(requested: (string | null)[]) {
 /** One write the player sent: `"POST /api/progress"` and the JSON body it carried. */
 export type ListenWrite = { request: string; body: unknown };
 
+/** The bodies of the writes to `request`, oldest first. */
+export const wrote = (writes: ListenWrite[], request: string) =>
+  writes.filter((w) => w.request === request).map((w) => w.body);
+
 type ListenOptions = {
   /** Every write lands here. */
   writes?: ListenWrite[];

@@ -8,6 +8,7 @@ import {
   listenHandlers,
   TEN_MINUTES_IN,
   twoFiles,
+  wrote,
 } from "../../testing/audioHandlers";
 import { failing, hanging } from "../../testing/handlers";
 import {
@@ -24,9 +25,6 @@ const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 const BOOK = aWireBook({ formats: ["M4B"] });
 
 const writes: ListenWrite[] = [];
-const wrote = (request: string) =>
-  writes.filter((w) => w.request === request).map((w) => w.body);
-
 const meta = {
   title: "Pages/Listen",
   component: Listen,
@@ -147,7 +145,7 @@ export const ResumesSavedPosition: Story = {
   play: async ({ canvas }) => {
     const times = await canvas.findByTestId("listen-scrub-times");
     await expect(await within(times).findByText("10:00")).toBeInTheDocument();
-    await expect(wrote("POST /api/progress")).toEqual([]);
+    await expect(wrote(writes, "POST /api/progress")).toEqual([]);
   },
 };
 
@@ -165,7 +163,7 @@ export const SkipPostsPosition: Story = {
     await skipForwardFrom600(canvas);
 
     await waitFor(() =>
-      expect(wrote("POST /api/progress")).toEqual([
+      expect(wrote(writes, "POST /api/progress")).toEqual([
         {
           book_uuid: UUID,
           format: "audio",
@@ -190,7 +188,7 @@ export const SkipLeavesOutAnUnknownFile: Story = {
     await skipForwardFrom600(canvas);
 
     await waitFor(() =>
-      expect(wrote("POST /api/progress")).toEqual([
+      expect(wrote(writes, "POST /api/progress")).toEqual([
         { book_uuid: UUID, format: "audio", audio_position_seconds: 630 },
       ]),
     );
@@ -224,7 +222,7 @@ export const ChapterNav: Story = {
       canvas.getByText("Ch. 2 · The Long Water"),
     ).toBeInTheDocument();
     await waitFor(() =>
-      expect(wrote("POST /api/progress")).toMatchObject([
+      expect(wrote(writes, "POST /api/progress")).toMatchObject([
         { audio_position_seconds: 3600 },
       ]),
     );
@@ -257,12 +255,12 @@ export const ScrubberPreviewsThenSeeksOnRelease: Story = {
 
     // The bubble and the elapsed time both preview the target.
     await expect(await canvas.findAllByText("30:00")).toHaveLength(2);
-    await expect(wrote("POST /api/progress")).toEqual([]);
+    await expect(wrote(writes, "POST /api/progress")).toEqual([]);
 
     fireEvent.change(seek);
 
     await waitFor(() =>
-      expect(wrote("POST /api/progress")).toEqual([
+      expect(wrote(writes, "POST /api/progress")).toEqual([
         {
           book_uuid: UUID,
           format: "audio",
@@ -345,7 +343,7 @@ export const FirstPlayMarksTheBookReading: Story = {
     fireEvent.play(audioOf(canvas));
 
     await waitFor(() =>
-      expect(wrote("PUT /api/read-status")).toEqual([
+      expect(wrote(writes, "PUT /api/read-status")).toEqual([
         { book_uuid: UUID, status: "reading" },
       ]),
     );
@@ -370,7 +368,7 @@ export const PagehideReportsAListeningSession: Story = {
       fireEvent(window, new Event("pagehide"));
 
       await waitFor(() =>
-        expect(wrote("POST /api/progress/sessions")).toMatchObject([
+        expect(wrote(writes, "POST /api/progress/sessions")).toMatchObject([
           [
             {
               book_uuid: UUID,
@@ -409,8 +407,8 @@ export const EndOfAFileOpensTheNextOneUnseeded: Story = {
     // The saved 10:00 belongs to file 917, so the next file starts from its top.
     await expect(await (await times()).findByText("0:00")).toBeInTheDocument();
     await expect(audioOf(canvas).paused).toBe(true);
-    await expect(wrote("POST /api/progress")).toEqual([]);
-    await expect(wrote("PUT /api/read-status")).toEqual([]);
+    await expect(wrote(writes, "POST /api/progress")).toEqual([]);
+    await expect(wrote(writes, "PUT /api/read-status")).toEqual([]);
   },
 };
 
@@ -429,7 +427,7 @@ export const EndOfTheLastFileFinishesTheBook: Story = {
     fireEvent.ended(audioOf(canvas));
 
     await waitFor(() =>
-      expect(wrote("PUT /api/read-status")).toEqual([
+      expect(wrote(writes, "PUT /api/read-status")).toEqual([
         { book_uuid: UUID, status: "finished" },
       ]),
     );
@@ -514,7 +512,9 @@ export const SigningOutDoesNotWaitOnAHungSave: Story = {
     );
     await userEvent.click(canvas.getByRole("button", { name: "Sign out" }));
 
-    await waitFor(() => expect(wrote("POST /api/auth/logout")).toHaveLength(1));
+    await waitFor(() =>
+      expect(wrote(writes, "POST /api/auth/logout")).toHaveLength(1),
+    );
   },
 };
 
@@ -558,7 +558,8 @@ export const ATranscodeThatFailedFailsThePlayer: Story = {
 };
 
 const SECOND_UUID = "0b9e5e0e-5f0a-4c36-9a3e-2f5d6c1d7a11";
-let releaseManifests = () => {};
+let releaseFirstManifest = () => {};
+let firstManifestAsked = false;
 
 export const ASlowManifestNeverLandsOnTheBookThatReplacedIt: Story = {
   render: () => (
@@ -570,15 +571,18 @@ export const ASlowManifestNeverLandsOnTheBookThatReplacedIt: Story = {
     </>
   ),
   beforeEach({ msw }) {
+    firstManifestAsked = false;
     const held = new Promise<void>((resolve) => {
-      releaseManifests = resolve;
+      releaseFirstManifest = resolve;
     });
     msw.use(
       http.get("/api/audiobooks/:uuid/manifest", async ({ params }) => {
+        if (params.uuid !== UUID) {
+          return HttpResponse.json(aWireAudioManifest({ chapters: [] }));
+        }
+        firstManifestAsked = true;
         await held;
-        return HttpResponse.json(
-          aWireAudioManifest(params.uuid === UUID ? {} : { chapters: [] }),
-        );
+        return HttpResponse.json(aWireAudioManifest());
       }),
       http.get("/api/ebooks/:uuid", ({ params }) =>
         HttpResponse.json(
@@ -594,15 +598,18 @@ export const ASlowManifestNeverLandsOnTheBookThatReplacedIt: Story = {
     );
   },
   play: async ({ canvas }) => {
-    await canvas.findByRole("link", {
-      name: "Open details for Aurora Station, Vol. 1",
-    });
-
+    await waitFor(() => expect(firstManifestAsked).toBe(true));
     fireEvent.click(canvas.getByRole("link", { name: "Open the second book" }));
     await canvas.findByRole("link", { name: "Open details for Second Book" });
-    releaseManifests();
+    await waitFor(() =>
+      expect(canvas.queryByTestId("listen-preparing")).toBeNull(),
+    );
 
-    await expect(await canvas.findByText("Now playing")).toBeInTheDocument();
+    releaseFirstManifest();
+    // Time for the first book's answer to be acted on, were it going to be.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    await expect(canvas.getByText("Now playing")).toBeInTheDocument();
     await expect(canvas.queryByText(/Chapter 1 of 3/)).toBeNull();
   },
 };

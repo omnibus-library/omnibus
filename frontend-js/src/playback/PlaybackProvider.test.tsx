@@ -20,6 +20,7 @@ import {
   listenHandlers,
   TEN_MINUTES_IN,
   twoFiles,
+  wrote,
 } from "../testing/audioHandlers";
 import { aWireBook, aWireHlsManifest } from "../testing/wire";
 import {
@@ -40,9 +41,6 @@ beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterAll(() => server.close());
 
 const writes: ListenWrite[] = [];
-const wrote = (request: string) =>
-  writes.filter((w) => w.request === request).map((w) => w.body);
-
 beforeEach(() => {
   writes.length = 0;
   server.use(...listenHandlers(BOOK, { writes, row: TEN_MINUTES_IN }));
@@ -256,7 +254,7 @@ describe("PlaybackProvider", () => {
       );
       expect(client.getQueryState(shelves)?.isInvalidated).toBe(true);
       expect(client.getQueryState(edit)?.isInvalidated).toBe(false);
-      expect(wrote("PUT /api/read-status")).toEqual([
+      expect(wrote(writes, "PUT /api/read-status")).toEqual([
         { book_uuid: UUID, status: "reading" },
       ]);
     });
@@ -288,10 +286,10 @@ describe("PlaybackProvider", () => {
 
       await act(() => player.flush());
 
-      expect(wrote("POST /api/progress/sessions")).toMatchObject([
+      expect(wrote(writes, "POST /api/progress/sessions")).toMatchObject([
         [{ book_uuid: UUID, started_at: 1_760_000_000, progress_units: 6 }],
       ]);
-      expect(wrote("POST /api/progress")).toEqual([
+      expect(wrote(writes, "POST /api/progress")).toEqual([
         {
           book_uuid: UUID,
           format: "audio",
@@ -313,7 +311,7 @@ describe("PlaybackProvider", () => {
       });
 
       await waitFor(() =>
-        expect(wrote("POST /api/progress/sessions")).toHaveLength(2),
+        expect(wrote(writes, "POST /api/progress/sessions")).toHaveLength(2),
       );
     });
   });

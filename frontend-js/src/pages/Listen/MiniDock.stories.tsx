@@ -5,7 +5,11 @@ import { expect, fireEvent, spyOn, waitFor, within } from "storybook/test";
 import type { BookUuid } from "../../api";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import type { ListenWrite } from "../../testing/audioHandlers";
-import { listenHandlers, TEN_MINUTES_IN } from "../../testing/audioHandlers";
+import {
+  listenHandlers,
+  TEN_MINUTES_IN,
+  wrote,
+} from "../../testing/audioHandlers";
 import { aWireBook } from "../../testing/wire";
 import { Listen } from "./Listen";
 import { MiniDock } from "./MiniDock";
@@ -14,9 +18,6 @@ const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 const BOOK = aWireBook({ formats: ["M4B"] });
 
 const writes: ListenWrite[] = [];
-const wrote = (request: string) =>
-  writes.filter((w) => w.request === request).map((w) => w.body);
-
 /** Starts the book the way a player page does, so the dock has something to show. */
 function Opened({ children }: { children: ReactNode }) {
   const { open } = usePlayback();
@@ -98,7 +99,7 @@ export const NextChapterSeeksAndPostsThePosition: Story = {
       await dock.findByText(/^Ch\. 2 · The Long Water · 1:00:00 \/ 3:00:00/),
     ).toBeInTheDocument();
     await waitFor(() =>
-      expect(wrote("POST /api/progress")).toMatchObject([
+      expect(wrote(writes, "POST /api/progress")).toMatchObject([
         { audio_position_seconds: 3600 },
       ]),
     );
