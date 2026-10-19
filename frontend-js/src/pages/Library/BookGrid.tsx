@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { type Book, type SeriesStack, thumbSrcSet, thumbUrl } from "../../api";
-import { Cover } from "../../components/Cover/Cover";
+import type { Book, SeriesStack } from "../../api";
+import { CoverImage } from "../../components/Cover/CoverImage";
 import { StackGlyph } from "../../components/Glyphs/Glyphs";
 import { play, type Rects, snapshot } from "./seriesFlip";
 import {
@@ -15,28 +15,8 @@ import {
   type Volume,
 } from "./seriesStacks";
 
-const TILE_SIZES = "(max-width: 640px) 160px, (max-width: 1280px) 200px, 240px";
-
 // The entrance cascade: 40ms steps, wrapping every eight tiles.
 const staggerMs = (index: number) => (index % 8) * 40;
-
-/** A book's cover from its thumbnails, or the plate when it has none; `sizes` is the width it is drawn at. */
-export function CoverImage({
-  book,
-  sizes = TILE_SIZES,
-}: {
-  book: Book;
-  sizes?: string;
-}) {
-  return (
-    <Cover
-      book={book}
-      src={book.hasCover ? thumbUrl(book.uuid) : null}
-      srcSet={book.hasCover ? thumbSrcSet(book.uuid) : undefined}
-      sizes={sizes}
-    />
-  );
-}
 
 function Tile({
   book,

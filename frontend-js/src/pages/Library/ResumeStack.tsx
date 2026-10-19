@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type CSSProperties, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { fetchRecentProgress, type ResumePoint } from "../../api";
+import { CoverImage } from "../../components/Cover/CoverImage";
 import {
   BookGlyph,
   PlayGlyph,
@@ -9,7 +10,6 @@ import {
 } from "../../components/Glyphs/Glyphs";
 import { Skeleton } from "../../components/Loading/Loading";
 import { resumeHref, resumeMeta } from "../../resume";
-import { CoverImage } from "./BookGrid";
 
 const RESUME_POINTS = 5;
 const PAST_STACK_PX = 240;
