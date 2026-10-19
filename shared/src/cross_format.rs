@@ -46,63 +46,66 @@ impl CrossFormatErrorCode {
     }
 }
 
-/// How a book's multiple audio files relate — declared by the user when
-/// confirming a link, never guessed.
+/// How a book's audio files relate to each other. The user says which when linking the
+/// formats; the server never guesses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CrossFormatLinkMode {
-    /// Files play end to end as one audiobook, in ordinal order.
+    /// The files play one after another as one audiobook, in their stored order.
     Sequence,
-    /// Each file is a complete recording; only the primary is aligned.
+    /// Each file is a complete recording of the book. Only the primary one is aligned with
+    /// the ebook.
     Narrations,
 }
 
-/// The tier that produced a mapped position. Linear is the v1 floor;
-/// chapter-anchored lands as a sibling variant.
+/// How a position was mapped from one format to the other, from least to most precise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MappingConfidence {
+    /// By proportion. A point some fraction of the way through one format maps to the same
+    /// fraction of the other. Clients should present the result as approximate.
     Linear,
-    /// Piecewise interpolation through matched chapter anchors.
+    /// Between chapters whose titles match in the ebook and the audio.
     ChapterAnchored,
-    /// At least one user-declared sync point backs the interpolation —
-    /// ground truth that outranks chapter matching.
+    /// Between sync points the user declared. These outrank matched chapters.
     UserAnchored,
 }
 
-/// Why (or whether) the endpoint has a candidate to offer.
+/// Whether there is a position to resume in the other format, and if not, why not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CrossFormatResumeState {
-    /// The user has never confirmed a link for this book — sync is off.
+    /// You have never linked this book's formats, so sync is off.
     NotLinked,
-    /// The audio file set changed since the link was confirmed; mapping
-    /// is paused until re-confirmation.
+    /// The audio files changed after you linked the formats. Sync is paused until you link
+    /// them again.
     LinkStale,
-    /// Linked, but the other format holds nothing newer to offer.
+    /// The formats are linked, but the other format has no newer position, or it can't be
+    /// mapped.
     NothingNewer,
-    /// A mapped position is available in `candidate`.
+    /// `candidate` holds the mapped position.
     Candidate,
-    /// The two formats already sit within the equivalence tolerance of
-    /// each other. `candidate` still carries the mapped position (the
-    /// hero's format-switch affordance wants it), but prompt surfaces
-    /// must not offer a jump — it would move the user nowhere.
+    /// Both formats are already at the same place, within about half a percent of the
+    /// book. `candidate` still holds the mapped position, but a client should not offer to
+    /// jump there, since the jump would not move the reader.
     Aligned,
 }
 
-/// Response shape of the cross-format resume read.
+/// Where to resume a book in the other format, as
+/// `GET /api/books/{uuid}/cross-format-resume` returns it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CrossFormatResume {
     pub state: CrossFormatResumeState,
+    /// The mapped position. Present when `state` is `candidate` or `aligned`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub candidate: Option<CrossFormatCandidate>,
-    /// Follow mode on the link: a `Candidate` should be applied silently
-    /// (resolve-at-read) instead of offered as a prompt.
+    /// Whether follow mode is on. With it on, a client moves to a `candidate` position
+    /// without asking.
     #[serde(default)]
     pub follow: bool,
 }
@@ -118,215 +121,237 @@ impl CrossFormatResume {
     }
 }
 
-/// One mapped resume position. The audio-half fields are set when
-/// `target` is audio; `percent` when the target is the ebook.
+/// Your position in one format, mapped onto the other. The audio fields are set when
+/// `target` is `audio`, and `percent`, `fraction` and `epub_cfi` when it is `epub`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct CrossFormatCandidate {
-    /// The format this candidate resumes (the request's `?target=`).
+    /// The format to resume in.
     pub target: ProgressFormat,
     /// The format the position was mapped from.
     pub source_format: ProgressFormat,
-    /// Ordering clock (client event time) of the source row, so clients
-    /// can de-duplicate prompts against positions they already know.
+    /// The `client_updated_at` of the position it was mapped from, in Unix seconds. A
+    /// client can compare it with positions it already knows to avoid offering the same
+    /// one twice.
     pub source_client_updated_at: i64,
     pub confidence: MappingConfidence,
+    /// The audio file to play.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub book_file_id: Option<i64>,
+    /// Where to start, in seconds from the start of `book_file_id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_position_seconds: Option<f64>,
+    /// The length of the whole audiobook in seconds, across all its files.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_duration_seconds: Option<f64>,
+    /// How far through the book, from 0 to 100, rounded down from `fraction`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub percent: Option<i64>,
-    /// Full-precision position fraction (`0.0..=1.0`) for epub-target
-    /// candidates: the jump destination; `percent` is its floored display
-    /// twin. Absent on audio targets, whose seconds already carry
-    /// precision.
+    /// How far through the book, from 0 to 1, at full precision. Jump to this, and show
+    /// `percent`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fraction: Option<f64>,
-    /// Server-derived point CFI at the mapped fraction, present only when
-    /// the caller asked (`?derive=cfi`): the web reader displays it
-    /// directly, so the fraction is never reinterpreted on epub.js's
-    /// different locations scale. Absent on audio targets and on
-    /// derivation failure — `fraction` remains the fallback.
+    // The web reader shows this directly, so the fraction is never
+    // reinterpreted on epub.js's different locations scale.
+    /// The mapped place as a point EPUB CFI. Present only when the request asked for it
+    /// with `derive=cfi` and the server could work it out. Otherwise use `fraction`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub epub_cfi: Option<String>,
-    /// The source listening row's own position as global timeline seconds
-    /// — the reader banner's "you listened to ≈ 16h 05m" copy. Epub
-    /// targets only.
+    /// The listening position it was mapped from, in seconds from the start of the whole
+    /// audiobook. Set when `target` is `epub`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_position_seconds: Option<f64>,
-    /// Whether the mapped source position sits ahead of the target's own
-    /// current position — `Some(false)` marks a backward offer (the source
-    /// regressed), so prompt copy must not claim "further". `None` when
-    /// the target has no comparable position (treat as ahead).
+    /// Whether the mapped position is ahead of your current position in `target`. False
+    /// means the offer moves you back, so don't describe it as further on. Absent when
+    /// there is no comparable position in `target`. Treat that as ahead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_ahead: Option<bool>,
 }
 
-/// Everything the alignment modal renders for one book, in one read:
-/// the stored link (if any) with its staleness, both timelines' raw
-/// material, and both current positions. The client does the linear
-/// preview arithmetic — it must re-run live as the user changes the
-/// declaration, so shipping raw data beats shipping one precomputed map.
+// Raw data rather than one precomputed map: the client re-runs the linear
+// preview live as the user changes the declaration.
+/// How a book's ebook and audiobook line up, as `GET /api/books/{uuid}/alignment` returns
+/// it: the link and whether it is out of date, both formats' timelines, and your position
+/// in each.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentView {
+    /// The link you confirmed. Absent when the formats aren't linked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<AlignmentLink>,
-    /// Chapter-anchor match statistics for a linked, non-stale book —
-    /// `None` when no trustworthy anchoring exists (the linear notice).
+    /// How well the ebook's chapters matched the audio's. For an unlinked book it shows what
+    /// a `sequence` link would get. Absent when nothing anchors the mapping, which then
+    /// works by proportion, and when `link.stale` is true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub anchor_match: Option<AlignmentMatch>,
+    /// The ebook's timeline. Absent when the book has no EPUB, or the server hasn't measured
+    /// it yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ebook: Option<AlignmentEbook>,
+    /// The book's audio files, in their stored order.
     pub audio_files: Vec<AlignmentAudioFile>,
+    /// Your reading position. Absent when you have none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reading: Option<AlignmentPosition>,
+    /// Your listening position. Absent when you have none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub listening: Option<AlignmentAudioPosition>,
-    /// Matched anchor pairs `(text_frac, audio_frac)` in `0.0..=1.0`, in text order:
-    /// the connector threads and anchored preview interpolation the modal draws.
-    /// Empty when anchoring is off. Always serialized: the iOS `Codable` decode
-    /// requires the key.
+    // Always serialized: the iOS `Codable` decode requires the key.
+    /// The pairs of points the mapping runs through, in ebook order. Each pair is the
+    /// fraction through the ebook, then the fraction through the audio, both from 0 to 1.
+    /// Empty when nothing anchors the mapping.
     #[serde(default)]
     pub anchor_pairs: Vec<(f64, f64)>,
-    /// Usable (titled, non-synthetic) audio chapter marks on the preview timeline.
-    /// With `anchor_match` absent on a non-stale view, zero means "no marks in the
-    /// audio" and nonzero means "marks exist but couldn't be aligned". On a stale
-    /// link the whole preview (this count included) is suppressed at 0; check
-    /// `link.stale` before interpreting it.
+    /// How many usable chapter marks the audio has. Untitled marks don't count, and neither
+    /// do the "Part 1", "Part 2" marks the server makes for files without chapters. When
+    /// `anchor_match` is absent, zero means the audio has no chapter marks, and more than
+    /// zero means its marks didn't match the ebook. Always zero when `link.stale` is true,
+    /// so check that first.
     #[serde(default)]
     pub audio_chapter_marks: i64,
 }
 
-/// How well the two chapter structures matched, for the modal's readout
-/// ("12 of 14 chapter names matched").
+/// How well the ebook's chapters matched the audio's, such as 12 of 14 chapter titles.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentMatch {
+    /// How many ebook chapters matched an audio chapter.
     pub matched: i64,
+    /// How many chapters the ebook has.
     pub ebook_chapters: i64,
     pub confidence: MappingConfidence,
 }
 
-/// The stored link as the modal needs it, plus whether the audio set has
-/// drifted since confirmation (mapping paused until re-confirmed).
+/// The link between a book's formats that you confirmed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentLink {
     pub mode: CrossFormatLinkMode,
+    /// The narration aligned with the ebook, in `narrations` mode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary_book_file_id: Option<i64>,
+    /// Whether the audio files changed since you confirmed the link. Sync is paused until
+    /// you confirm it again.
     pub stale: bool,
+    /// When you confirmed the link, in Unix seconds.
     pub confirmed_at: i64,
-    /// Follow mode: surfaces resolve the freshest position across both
-    /// formats instead of offering prompts.
+    /// Whether follow mode is on. With it on, a client moves to the newer position in the
+    /// other format without asking.
     #[serde(default)]
     pub follow: bool,
-    /// How many "synced here" declarations back the mapping.
+    /// How many sync points you declared with `POST /api/books/{uuid}/sync-point`.
     #[serde(default)]
     pub user_anchors: i64,
 }
 
-/// Text-side lane: total visible chars plus chapter tick positions.
-/// Absent when the structure backfill hasn't reached the book — the
-/// modal then shows the honest low-confidence (linear estimate) notice.
+/// The ebook's timeline: its length and where each chapter starts.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentEbook {
+    /// The ebook's length in visible characters.
     pub total_chars: i64,
     pub chapters: Vec<AlignmentEbookChapter>,
 }
 
+/// One chapter on the ebook's timeline.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentEbookChapter {
     pub title: String,
-    /// Whole-book percent where the chapter starts, 0..=100.
+    /// How far through the book the chapter starts, from 0 to 100.
     pub percent: f64,
-    /// 0-based spine item the chapter starts in. Lets a reading position's CFI
-    /// spine step resolve to the same chapter the reader opens, instead of the
-    /// rounded whole-book percent that lands one chapter ahead when a boundary
-    /// falls inside the rounding window. `#[serde(default)]` so a
-    /// payload from a server predating the field still decodes.
+    // `#[serde(default)]` so a payload from a server predating the field still decodes.
+    /// The 0-based spine document the chapter starts in. Match a CFI's spine step against it
+    /// to find a position's chapter. The rounded `percent` can land one chapter ahead when
+    /// a chapter starts close to the position.
     #[serde(default)]
     pub spine_index: i64,
-    /// In-document CFI step path (`/4/2/6`) of the chapter's anchor when it
-    /// shares its spine item with another chapter, placing a position
-    /// between them. `None` for a chapter with its spine item to itself.
+    /// The CFI step path of the chapter's start inside its spine document, such as
+    /// `/4/2/6`, when the chapter shares that document with another chapter. It tells a
+    /// client which of them a position is in. Absent when the chapter has its spine
+    /// document to itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub anchor_path: Option<String>,
 }
 
-/// One audio file segment for the lane, in current ordinal order.
+/// One of a book's audio files.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentAudioFile {
     pub book_file_id: i64,
+    /// The file's path inside the library folder.
     pub label: String,
     pub duration_seconds: f64,
-    /// Chapter start offsets within this file, seconds from its start.
+    /// Where each chapter in the file starts, in seconds from the start of the file.
     pub chapter_starts: Vec<f64>,
 }
 
-/// Current reading position (percent may be absent for a fresh CFI whose
-/// derivation hasn't landed).
+/// Your reading position, as the alignment shows it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentPosition {
+    /// How far through the book, from 0 to 100. Absent for a moment after a position
+    /// arrives with only a CFI, until the server works out the percent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub percent: Option<i64>,
+    /// When the device recorded the position, in Unix seconds.
     pub client_updated_at: i64,
 }
 
-/// Current listening position.
+/// Your listening position, as the alignment shows it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AlignmentAudioPosition {
+    /// The audio file the position is in. Absent when the position didn't name one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub book_file_id: Option<i64>,
+    /// The position, in seconds from the start of the file.
     pub seconds: f64,
+    /// When the device recorded the position, in Unix seconds.
     pub client_updated_at: i64,
 }
 
-/// The confirm write: the user's declaration for one book. `audio_order`
-/// (when present) persists a re-ordering of the audio files' ordinals —
-/// library-wide data, so the server gates it on edit permission.
+/// How a book's ebook and audiobook line up, as `POST /api/books/{uuid}/cross-format-link`
+/// takes it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ConfirmCrossFormatLink {
+    /// Required, but the server uses the uuid in the path instead.
     pub book_uuid: String,
     pub mode: CrossFormatLinkMode,
+    /// The narration to align with the ebook. Required in `narrations` mode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary_book_file_id: Option<i64>,
+    /// A new order for the book's audio files, as a list of every `book_file_id` once. It
+    /// changes the order for every user, so it needs the edit permission. May be left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_order: Option<Vec<i64>>,
 }
 
-/// One "synced here" declaration: the declaring surface names its own
-/// position; the counterpart half of the anchor pair comes from the
-/// server's stored row for the other format at declaration time.
+/// A sync point, as `POST /api/books/{uuid}/sync-point` takes it: your position in the
+/// format you're using, which the server pairs with your saved position in the other.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DeclareSyncPoint {
+    /// Required, but the server uses the uuid in the path instead.
     pub book_uuid: String,
-    /// The surface making the declaration.
+    /// The format you're using.
     pub format: ProgressFormat,
-    /// Reading surface: whole-book fraction (`0.0..=1.0`).
+    /// How far through the book you are, from 0 to 1. Required for `epub`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ebook_fraction: Option<f64>,
-    /// Reading surface, optional precision upgrade: the reader's current
-    /// CFI. When present the server derives the anchor fraction from it on
-    /// its own spine-stats ruler, overriding `ebook_fraction` (which the
-    /// web reader measures on epub.js's different locations scale).
+    // `ebook_fraction` from the web reader is on epub.js's locations scale,
+    // which differs from the server's spine stats.
+    /// Your position as an EPUB CFI, for `epub`. May be left out. When present, the server
+    /// works out the fraction from it and ignores `ebook_fraction`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub epub_cfi: Option<String>,
-    /// Listening surface: the playing file and seconds within it.
+    /// The audio file you're playing, for `audio`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_book_file_id: Option<i64>,
+    /// Your position in seconds from the start of `audio_book_file_id`. Required for
+    /// `audio`, and must not be negative.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_seconds: Option<f64>,
 }
@@ -350,7 +375,7 @@ impl DeclareSyncPoint {
     }
 }
 
-/// Body of `POST /api/books/{uuid}/cross-format-follow`.
+/// Whether `POST /api/books/{uuid}/cross-format-follow` turns follow mode on or off.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SetFollowMode {
