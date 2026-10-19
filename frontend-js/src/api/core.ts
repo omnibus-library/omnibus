@@ -27,6 +27,11 @@ export type UserId = number & { readonly __brand: "UserId" };
 export type AuthorId = number & { readonly __brand: "AuthorId" };
 export type SeriesId = number & { readonly __brand: "SeriesId" };
 
+/** Brands a route parameter as an author id, or `null` unless it is a positive integer. */
+export function parseAuthorId(raw: string | null | undefined): AuthorId | null {
+  return raw && /^[1-9]\d*$/.test(raw) ? (Number(raw) as AuthorId) : null;
+}
+
 /** A non-2xx answer, carrying the status and the server's plain-text body. */
 export class ApiError extends Error {
   readonly status: number;

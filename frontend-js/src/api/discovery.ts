@@ -46,7 +46,7 @@ export const authorsQuery = queryOptions({
   queryFn: fetchAuthors,
 });
 
-function toAuthorReading(wire: AuthorReadingWire) {
+export function toAuthorReading(wire: AuthorReadingWire) {
   return {
     authorId: wire.author_id as AuthorId,
     finished: wire.finished,

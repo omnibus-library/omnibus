@@ -1,5 +1,5 @@
 // Usage: node tools/extract-atrium.cjs [--write] [--force]
-// Copies the atrium.css + loading.css + filter_bar.css rules the React markup can match into
+// Copies the atrium.css + loading.css + filter_bar.css + authors.css rules the React markup can match into
 // per-component files: a selector is kept when every class it needs appears in
 // src/**/*.tsx, and filed under the owner of its first class (OWNERS below).
 // --write creates the CSS files that don't exist yet; --force rewrites them all.
@@ -38,6 +38,7 @@ const OWNERS = [
   ["components/SessionLog/SessionLog.css", (c) => c.startsWith("st-log") || c.startsWith("session-log")],
   ["components/FetchSummary/FetchSummary.css", (c) => c.startsWith("fs-")],
   ["components/FormatSwitcher/FormatSwitcher.css", (c) => c.startsWith("format-") || c.startsWith("kindle-") || c.startsWith("kobo-")],
+  ["pages/Authors/Authors.css", (c) => c.startsWith("au-")],
   ["components/ShelfTile/ShelfTile.css", (c) => c.startsWith("shv-") || c.startsWith("shelf-add-tile")],
   ["components/ShelfPicker/ShelfPicker.css", (c) => c.startsWith("shelf-picker") || c.startsWith("shelf-modal") || c.startsWith("pick-")],
   ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || c.startsWith("ebook-") || c.startsWith("sort-th") || c.startsWith("ss-") || c.startsWith("format-badge") || c.startsWith("bulk-edit") || c.startsWith("shelf-btn-") || c.startsWith("shelf-modal-") || c.startsWith("shelf-picker") || c.startsWith("pick-") || c === "author-photo-modal-backdrop" || ["landing-col", "library-empty", "cover-link"].includes(c)],
@@ -137,7 +138,7 @@ function visit(node, wrappers) {
   }
 }
 
-for (const name of ["atrium.css", "loading.css", "filter_bar.css"]) {
+for (const name of ["atrium.css", "loading.css", "filter_bar.css", "authors.css"]) {
   const css = fs.readFileSync(path.join(root, "frontend/assets", name), "utf8");
   for (const node of postcss.parse(css).nodes) visit(node, []);
 }
