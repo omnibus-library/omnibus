@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
-import { Route, Routes } from "react-router";
+import { Route, Routes, useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import {
   getGetEbookByUuidMockHandler404,
@@ -341,5 +341,35 @@ export const WishlistWriteRefetchesOnlyWhatItChanged: Story = {
 
     // The record, the copies and the wish, and the shelf facts that read it.
     await expect(reads.length - before).toBeLessThanOrEqual(8);
+  },
+};
+
+const ALIAS = "00000000-0000-4000-8000-0000000000aa";
+
+export const MergedAwayUuidMovesToTheSurvivingBook: Story = {
+  parameters: { path: `/books/${ALIAS}` },
+  beforeEach({ msw }) {
+    msw.use(
+      // A merged-away uuid resolves to the book that absorbed it.
+      http.get("/api/ebooks/:uuid", () => HttpResponse.json(BOOK)),
+      ...bookDetailHandlers(BOOK),
+    );
+  },
+  render: () => (
+    <>
+      <Routes>
+        <Route path="/books/:uuid" element={<BookDetail />} />
+      </Routes>
+      <output data-testid="location">{useLocation().pathname}</output>
+    </>
+  ),
+  play: async ({ canvas }) => {
+    await canvas.findByRole("heading", { name: "Aurora Station, Vol. 1" });
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("location")).toHaveTextContent(
+        `/books/${BOOK.unique_identifier}`,
+      ),
+    );
   },
 };

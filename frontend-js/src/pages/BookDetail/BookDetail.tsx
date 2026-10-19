@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useRef } from "react";
-import { useParams } from "react-router";
+import { type ReactNode, useEffect, useRef } from "react";
+import { useNavigate, useParams } from "react-router";
 import {
   type BookUuid,
   coverUrl,
@@ -123,6 +123,14 @@ function BookDetailFor({ uuid }: { uuid: BookUuid }) {
     queryKey: ["book", uuid],
     queryFn: () => fetchBook(uuid),
   });
+  const navigate = useNavigate();
+  const canonical = book.data?.uuid;
+  // A merged-away uuid resolves to the surviving book; its page keys are the survivor's.
+  useEffect(() => {
+    if (canonical && canonical !== uuid) {
+      navigate(`/books/${canonical}`, { replace: true });
+    }
+  }, [canonical, uuid, navigate]);
   switch (book.status) {
     case "pending":
       return <Loading kind="page" label="Taking it off the shelf" />;
