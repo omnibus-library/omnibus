@@ -83,8 +83,6 @@ describe("routes", () => {
       [`/comic/${UUID}`, "Comic reader", UUID],
       [`/pdf/${UUID}?file_id=3&page=7`, "PDF reader", "7"],
       [`/listen/${UUID}?file_id=2`, "Listen", "2"],
-      ["/series", "Series", null],
-      ["/series/4", "Series", "4"],
       ["/stats?user=2", "Stats", "2"],
       ["/stats/chart", "Chart builder", null],
       ["/shelves", "Shelves", null],
@@ -108,6 +106,16 @@ describe("routes", () => {
   });
 
   describe("ported pages", () => {
+    it.each([
+      ["/series", "Gathering every series"],
+      ["/series/4", "Gathering the series"],
+    ])("renders %s as its loading page, not a stub", async (path, label) => {
+      renderRoute(path);
+
+      expect(await screen.findByText(label)).toBeInTheDocument();
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+
     it.each([["/authors"], ["/authors/12"]])(
       "renders %s as the authors browser, not a stub",
       async (path) => {

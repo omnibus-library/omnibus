@@ -27,9 +27,17 @@ export type UserId = number & { readonly __brand: "UserId" };
 export type AuthorId = number & { readonly __brand: "AuthorId" };
 export type SeriesId = number & { readonly __brand: "SeriesId" };
 
+const positiveInt = (raw: string | null | undefined) =>
+  raw && /^[1-9]\d*$/.test(raw) ? Number(raw) : null;
+
 /** Brands a route parameter as an author id, or `null` unless it is a positive integer. */
 export function parseAuthorId(raw: string | null | undefined): AuthorId | null {
-  return raw && /^[1-9]\d*$/.test(raw) ? (Number(raw) as AuthorId) : null;
+  return positiveInt(raw) as AuthorId | null;
+}
+
+/** Brands a route parameter as a series id, or `null` unless it is a positive integer. */
+export function parseSeriesId(raw: string | null | undefined): SeriesId | null {
+  return positiveInt(raw) as SeriesId | null;
 }
 
 /** A non-2xx answer, carrying the status and the server's plain-text body. */

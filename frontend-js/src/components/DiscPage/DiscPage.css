@@ -46,3 +46,13 @@
 .disc-body {
   padding: 32px 0 0;
 }
+.disc-series-header {
+  padding: 48px 0 32px;
+}
+.disc-series-head-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+  margin-top: 12px;
+}

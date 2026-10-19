@@ -40,6 +40,8 @@ const OWNERS = [
   ["components/FormatSwitcher/FormatSwitcher.css", (c) => c.startsWith("format-") || c.startsWith("kindle-") || c.startsWith("kobo-")],
   ["pages/Authors/Authors.css", (c) => c.startsWith("au-")],
   ["components/AuthorPhotoEdit/AuthorPhotoEdit.css", (c) => c.startsWith("author-photo-edit") || c.startsWith("author-delete-modal") || c === "me-input"],
+  ["pages/Series/Series.css", (c) => c.startsWith("idx-")],
+  ["pages/SeriesDetail/SeriesDetail.css", (c) => c === "series-cards" || c.startsWith("series-card")],
   ["pages/ShelfDetail/ShelfDetail.css", (c) => c.startsWith("shd-") || c === "shelf-grid" || c === "shelf-actions-menu" || c.startsWith("shelf-menu-")],
   ["components/ShelfTile/ShelfTile.css", (c) => c.startsWith("shv-") || c.startsWith("shelf-add-tile")],
   ["components/ShelfPicker/ShelfPicker.css", (c) => c.startsWith("shelf-picker") || c.startsWith("shelf-modal") || c.startsWith("pick-")],

@@ -188,9 +188,11 @@ export const seriesListQuery = queryOptions({
   queryFn: fetchSeriesList,
 });
 
-/** A series' name, how many of its books the library holds, and those books in reading order. */
+/** A series' name, how many of its books the library holds, and those books in reading order; `null` when no series has that id. */
 export async function fetchSeries(id: SeriesId) {
-  const data = ok(await getSeriesById(id));
+  const res = await getSeriesById(id);
+  if (res.status === 404) return null;
+  const data = ok(res);
   return {
     id,
     name: data.name,
