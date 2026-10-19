@@ -2405,6 +2405,59 @@
         }
       }
     },
+    "/api/books/{uuid}/insights": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Get your insights into a book",
+        "description": "How you have read and listened to one book: when you started, the time you have spent\nin it, how often you picked it up, your longest sitting and a per-day strip. `null`\nwhen you have no sitting of a minute or more in it. Days are cut on your\n`utc_offset_minutes`.",
+        "operationId": "get_book_insights",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "utc_offset_minutes",
+            "in": "query",
+            "description": "Your device's offset from UTC in minutes, east positive, which decides where each\nday starts in the daily strip and in `as_of_day`. Absent, unreadable, or outside\n-720 to 840, the server uses the offset of your most recent reading session, then\nUTC.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Your insights, or `null` without a sitting in the book.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/BookInsights"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No book has that uuid."
+          }
+        }
+      }
+    },
     "/api/books/{uuid}/sync-point": {
       "post": {
         "tags": [
@@ -8345,6 +8398,62 @@
             "type": "integer",
             "format": "int64",
             "description": "The document's spine index, as in `GET /api/ebooks/{uuid}/chapters`."
+          }
+        }
+      },
+      "BookInsights": {
+        "type": "object",
+        "description": "One user's reading and listening in one book.",
+        "required": [
+          "started_at",
+          "seconds_total",
+          "sessions",
+          "longest_seconds",
+          "longest_started_at",
+          "daily",
+          "as_of_day"
+        ],
+        "properties": {
+          "as_of_day": {
+            "type": "string",
+            "description": "Today, as `YYYY-MM-DD` in your time zone. It is the last day `daily` could cover."
+          },
+          "daily": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DayActivity"
+            },
+            "description": "Seconds per day in the book, active days only, oldest first. Days are in your time\nzone. Fill the gaps up to `as_of_day`."
+          },
+          "longest_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Seconds in the longest sitting."
+          },
+          "longest_started_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the longest sitting started, in Unix seconds."
+          },
+          "seconds_total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Seconds read and listened in the book, including sittings too short to count in\n`sessions`."
+          },
+          "sessions": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many sittings the book had, which is how often it was picked up. A sitting is\nrecorded time on the book with no break over 15 minutes, in either format. Sittings\nunder a minute don't count."
+          },
+          "sitting_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Seconds in the sittings `sessions` counts. Divide it by `sessions` for the mean\nsitting, which `seconds_total` would skew. Never more than `seconds_total`."
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the first session in the book started, in Unix seconds."
           }
         }
       },

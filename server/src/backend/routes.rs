@@ -178,6 +178,7 @@ fn engagement_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(stats::get_household_readers))
         .routes(routes!(stats::get_stats))
         .routes(routes!(stats::get_session_log))
+        .routes(routes!(stats::get_book_insights))
         .routes(routes!(stats::put_stats_goal))
         .routes(routes!(stats::put_stats_daily_goal))
         .routes(routes!(stats::get_library_size))
