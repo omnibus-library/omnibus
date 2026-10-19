@@ -19,7 +19,7 @@ import {
   useBookmarks,
 } from "./Drawers";
 import type { Pane } from "./listen";
-import { PanelShell, SpeedPanelBody } from "./Panels";
+import { PanelShell, SleepPanelBody, SpeedPanelBody } from "./Panels";
 import { Stage } from "./Stage";
 
 function FailedOverlay() {
@@ -77,6 +77,16 @@ function Frame({ book }: { book: BookDetail }) {
           onClose={close}
         >
           <SpeedPanelBody />
+        </PanelShell>
+      )}
+      {pane === "sleep" && (
+        <PanelShell
+          extraClass="lp-sleep-panel"
+          label="Sleep timer"
+          testId="sleep-panel"
+          onClose={close}
+        >
+          <SleepPanelBody />
         </PanelShell>
       )}
       {pane === "bookmarks" && (

@@ -2,7 +2,8 @@ import { type ReactNode, useEffect, useRef } from "react";
 import { Button } from "../../components/Button/Button";
 import { MAX_RATE, MIN_RATE } from "../../playback/boot";
 import { usePlayback } from "../../playback/PlaybackProvider";
-import { clampRate, RATE_STEP } from "./listen";
+import { SLEEP_PRESETS } from "../../playback/sleep";
+import { clampRate, formatHms, RATE_STEP } from "./listen";
 
 type DrawerShellProps = {
   testId: string;
@@ -187,6 +188,73 @@ export function SpeedPanelBody() {
           +
         </button>
       </div>
+    </>
+  );
+}
+
+/** The sleep controls the full player and the mini dock both host: presets, end of chapter and the fade. */
+export function SleepPanelBody() {
+  const { sleep, chapters, sleepFor, sleepAtChapterEnd, toggleFade } =
+    usePlayback();
+  const counting = sleep.remaining !== null && sleep.remaining > 0;
+  return (
+    <>
+      <div className="lp-panel-head">
+        <div>
+          <div className="lp-panel-kicker">Sleep timer</div>
+          <div className="lp-panel-title">Drift off</div>
+        </div>
+        <div className="lp-sleep-status">
+          <div className="lp-sleep-status-value" data-testid="sleep-status">
+            {counting ? formatHms(sleep.remaining ?? 0) : "—"}
+          </div>
+          <div className="label">{counting ? "remaining" : "inactive"}</div>
+        </div>
+      </div>
+      <div className="lp-sleep-grid">
+        {SLEEP_PRESETS.map(([label, seconds]) => {
+          const on =
+            sleep.choice.kind === "off"
+              ? seconds === 0
+              : sleep.choice.kind === "preset" &&
+                sleep.choice.seconds === seconds;
+          return (
+            <button
+              key={label}
+              type="button"
+              className={on ? "lp-sleep-btn on" : "lp-sleep-btn"}
+              onClick={() => sleepFor(seconds)}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        className={
+          sleep.choice.kind === "endOfChapter"
+            ? "lp-sleep-eoc on"
+            : "lp-sleep-eoc"
+        }
+        disabled={chapters.length === 0}
+        onClick={sleepAtChapterEnd}
+      >
+        <span className="lp-sleep-eoc-dot" />
+        End of chapter
+      </button>
+      <button
+        type="button"
+        className={sleep.fade ? "lp-sleep-fade on" : "lp-sleep-fade"}
+        aria-pressed={sleep.fade}
+        aria-label="Fade out volume"
+        onClick={toggleFade}
+      >
+        <span className="lp-sleep-fade-track">
+          <span className="lp-sleep-fade-thumb" />
+        </span>
+        Fade out volume
+      </button>
     </>
   );
 }

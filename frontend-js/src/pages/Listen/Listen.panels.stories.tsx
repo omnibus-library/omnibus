@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
-import { Route, Routes } from "react-router";
+import { Link, Route, Routes } from "react-router";
 import { expect, fireEvent, waitFor, within } from "storybook/test";
 import { ADA } from "../../testing/AppHarness";
 import type { ListenWrite } from "../../testing/audioHandlers";
@@ -398,5 +398,155 @@ export const ThisDevicesSpeedSeedsTheServer: Story = {
     await waitFor(() =>
       expect(wrote(RATE_PUT)).toEqual([{ playback_rate: 1.5 }]),
     );
+  },
+};
+
+async function openSleep(
+  canvas: ReturnType<typeof within>,
+  kicker = "Now playing · Chapter 1 of 3",
+) {
+  await canvas.findByText(kicker);
+  fireEvent.click(canvas.getByTestId("listen-sleep"));
+  return within(await canvas.findByRole("dialog", { name: "Sleep timer" }));
+}
+
+export const SleepPanelOff: Story = {
+  play: async ({ canvas }) => {
+    const panel = await openSleep(canvas);
+
+    await expect(canvas.getByTestId("listen-sleep")).toHaveTextContent(
+      "Sleep · off",
+    );
+    await expect(panel.getByTestId("sleep-status")).toHaveTextContent("—");
+    await expect(panel.getByText("inactive")).toBeInTheDocument();
+    await expect(panel.getByRole("button", { name: "Off" })).toHaveClass("on");
+    await expect(
+      panel.getByRole("button", { name: "Fade out volume" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    for (const label of [
+      "15 min",
+      "30 min",
+      "45 min",
+      "1 hour",
+      "2 hours",
+      "3 hours",
+      "4 hours",
+    ]) {
+      await expect(
+        panel.getByRole("button", { name: label }),
+      ).toBeInTheDocument();
+    }
+  },
+};
+
+export const SleepPresetArmsAndOffRestoresTheListenersVolume: Story = {
+  play: async ({ canvas }) => {
+    const slider = await canvas.findByRole("slider", { name: "Volume" });
+    fireEvent.change(slider, { target: { value: "0.4" } });
+    const panel = await openSleep(canvas);
+
+    fireEvent.click(panel.getByRole("button", { name: "15 min" }));
+
+    await expect(canvas.getByTestId("listen-sleep")).toHaveTextContent(
+      /^Sleep · 15:00$/,
+    );
+    await expect(panel.getByTestId("sleep-status")).toHaveTextContent("15:00");
+    await expect(panel.getByText("remaining")).toBeInTheDocument();
+    await expect(panel.getByRole("button", { name: "15 min" })).toHaveClass(
+      "on",
+    );
+
+    fireEvent.click(panel.getByRole("button", { name: "Off" }));
+
+    await expect(canvas.getByTestId("listen-sleep")).toHaveTextContent(
+      "Sleep · off",
+    );
+    await expect(
+      (canvas.getByTestId("listen-audio") as HTMLAudioElement).volume,
+    ).toBeCloseTo(0.4);
+  },
+};
+
+export const SleepEndOfChapterReadsWallTimeToTheBoundary: Story = {
+  play: async ({ canvas }) => {
+    const panel = await openSleep(canvas);
+
+    fireEvent.click(panel.getByRole("button", { name: "End of chapter" }));
+
+    // Ten minutes into a one-hour chapter, at 1x.
+    await expect(panel.getByTestId("sleep-status")).toHaveTextContent("50:00");
+    await expect(
+      panel.getByRole("button", { name: "End of chapter" }),
+    ).toHaveClass("on");
+    await expect(canvas.getByTestId("listen-sleep")).toHaveTextContent(
+      "Sleep · 50:00",
+    );
+
+    // A seek into the next chapter moves the boundary to that chapter's end.
+    fireEvent.click(canvas.getByRole("button", { name: "Next chapter" }));
+
+    await expect(
+      within(canvas.getByRole("dialog", { name: "Sleep timer" })).getByTestId(
+        "sleep-status",
+      ),
+    ).toHaveTextContent("1:00:00");
+  },
+};
+
+export const SleepEndOfChapterNeedsChapters: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...listenHandlers(BOOK, {
+        writes,
+        manifest: aWireAudioManifest({ chapters: [] }),
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const panel = await openSleep(canvas, "Now playing");
+
+    await expect(
+      panel.getByRole("button", { name: "End of chapter" }),
+    ).toBeDisabled();
+  },
+};
+
+export const SleepFadeToggles: Story = {
+  play: async ({ canvas }) => {
+    const panel = await openSleep(canvas);
+
+    fireEvent.click(panel.getByRole("button", { name: "Fade out volume" }));
+
+    await expect(
+      panel.getByRole("button", { name: "Fade out volume" }),
+    ).toHaveAttribute("aria-pressed", "false");
+  },
+};
+
+export const SleepCountdownSurvivesLeavingThePlayer: Story = {
+  render: () => (
+    <>
+      <Link to="/">Leave the player</Link>
+      <Routes>
+        <Route path="/listen/:uuid" element={<Listen />} />
+        <Route
+          path="/"
+          element={<Link to={`/listen/${UUID}`}>Return to the player</Link>}
+        />
+      </Routes>
+    </>
+  ),
+  play: async ({ canvas }) => {
+    const panel = await openSleep(canvas);
+    fireEvent.click(panel.getByRole("button", { name: "15 min" }));
+
+    fireEvent.click(canvas.getByRole("link", { name: "Leave the player" }));
+    await canvas.findByRole("link", { name: "Return to the player" });
+    fireEvent.click(canvas.getByRole("link", { name: "Return to the player" }));
+
+    // Only a timer that kept ticking while the page was gone can have moved.
+    await expect(
+      await canvas.findByText(/^Sleep · 14:5\d$/),
+    ).toBeInTheDocument();
   },
 };

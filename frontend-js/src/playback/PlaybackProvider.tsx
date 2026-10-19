@@ -4,6 +4,7 @@ import {
   type ReactNode,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useState,
 } from "react";
@@ -37,6 +38,12 @@ import {
 } from "./boot";
 import { createEngine, type EngineEvents } from "./engine";
 import { loadHls } from "./loadHls";
+import {
+  createSleepTimer,
+  SLEEP_OFF,
+  type SleepState,
+  type SleepTimer,
+} from "./sleep";
 
 export type BookState =
   | { status: "idle" }
@@ -79,6 +86,8 @@ const IDLE: State = {
 
 export type Playback = State & {
   volume: number;
+  /** Lives here, not in a page, so a countdown keeps going when the listener leaves `/listen`. */
+  sleep: SleepState;
   /** Boots a book unless it is the one already loaded; a bare relink (no file) keeps the current file. */
   open(uuid: BookUuid, fileId: number | null): void;
   toggle(): void;
@@ -87,6 +96,10 @@ export type Playback = State & {
   /** Applies a speed (already in range) to the element, this device's copy and the server. */
   setRate(rate: number): void;
   setVolume(volume: number): void;
+  /** A preset in seconds; 0 turns the timer off. */
+  sleepFor(seconds: number): void;
+  sleepAtChapterEnd(): void;
+  toggleFade(): void;
 };
 
 const PlaybackContext = createContext<Playback | null>(null);
@@ -205,7 +218,14 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const userId = useQuery(meQuery).data?.id ?? null;
   const [state, setState] = useState(IDLE);
   const [volume, setVolumeState] = useState(loadVolume);
+  const [sleep, setSleep] = useState(SLEEP_OFF);
   const engineRef = useRef<Engine | null>(null);
+  const timerRef = useRef<SleepTimer | null>(null);
+  // What the engine's events saw last: they outlive the render that attached them.
+  const live = useRef(state);
+  useEffect(() => {
+    live.current = state;
+  });
   const saverRef = useRef<ReturnType<typeof createPositionSaver> | null>(null);
   const loadedRef = useRef<{ uuid: BookUuid; fileId: number | null } | null>(
     null,
@@ -234,6 +254,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         seeked(t) {
           patch({ elapsed: t });
           saverRef.current?.seeked(t);
+          timerRef.current?.seeked(live.current.chapters, t, live.current.rate);
         },
         duration: (duration) => patch({ duration }),
         play: () => patch({ playing: true }),
@@ -249,10 +270,19 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       const engine = createEngine(audio, events);
       engine.setVolume(volumeRef.current);
       engineRef.current = engine;
+      timerRef.current = createSleepTimer(
+        {
+          pause: engine.pause,
+          setVolume: engine.setVolume,
+          targetVolume: () => volumeRef.current,
+        },
+        setSleep,
+      );
       return () => {
         bootRef.current++;
         engine.dispose();
         engineRef.current = null;
+        timerRef.current = null;
         loadedRef.current = null;
       };
     },
@@ -332,15 +362,31 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     [userId, patch],
   );
 
+  // The playhead and the speed are what an end-of-chapter timer reads its boundary and readout from.
+  useEffect(() => {
+    timerRef.current?.position(state.elapsed, state.rate);
+  }, [state.elapsed, state.rate]);
+  const armed = sleep.remaining !== null;
+  useEffect(() => {
+    if (!armed) return;
+    const id = setInterval(() => timerRef.current?.tick(), 1000);
+    return () => clearInterval(id);
+  }, [armed]);
+
   const playback: Playback = {
     ...state,
     volume,
+    sleep,
     open,
     toggle: () => engineRef.current?.toggle(),
     skip: (delta) => engineRef.current?.skip(delta),
     seek: (seconds) => engineRef.current?.seek(seconds),
     setRate,
     setVolume,
+    sleepFor: (seconds) => timerRef.current?.sleepFor(seconds),
+    sleepAtChapterEnd: () =>
+      timerRef.current?.endOfChapter(state.chapters, state.elapsed, state.rate),
+    toggleFade: () => timerRef.current?.toggleFade(),
   };
   return (
     <PlaybackContext value={playback}>

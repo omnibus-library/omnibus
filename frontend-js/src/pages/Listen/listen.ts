@@ -115,7 +115,7 @@ export function chapterLabelAt(
 }
 
 /** The toolbar's panes, of which at most one is open. */
-export type Pane = "speed" | "bookmarks" | "chapters";
+export type Pane = "speed" | "sleep" | "bookmarks" | "chapters";
 
 /** Wall-clock seconds a listener at `rate` spends on `seconds` of book; unscaled for a rate that can't divide. */
 export const remainingAtRate = (seconds: number, rate: number) =>

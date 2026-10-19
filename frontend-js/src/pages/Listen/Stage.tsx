@@ -5,6 +5,7 @@ import { Button } from "../../components/Button/Button";
 import { CoverImage } from "../../components/Cover/CoverImage";
 import { Ring } from "../../components/Loading/Loading";
 import { usePlayback } from "../../playback/PlaybackProvider";
+import { sleepToolbarLabel } from "../../playback/sleep";
 import {
   chapterFillPct,
   chapterIndexForElapsed,
@@ -256,6 +257,18 @@ export function Stage({
           </div>
         </div>
         <div className="lp-toolbar">
+          <Button
+            size="sm"
+            className={
+              pane === "sleep" || p.sleep.remaining !== null
+                ? "lp-toolbar-btn on"
+                : "lp-toolbar-btn"
+            }
+            data-testid="listen-sleep"
+            onClick={() => onPane("sleep")}
+          >
+            {sleepToolbarLabel(p.sleep.remaining)}
+          </Button>
           <Button
             size="sm"
             className={
