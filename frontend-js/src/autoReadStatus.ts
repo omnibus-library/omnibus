@@ -2,9 +2,12 @@ import { useEffect, useState } from "react";
 import {
   type BookUuid,
   fetchReadStatus,
+  inOrder,
   type ReadStatusValue,
   saveReadStatus,
 } from "./api";
+
+const statusWrites = new Map<string, Promise<void>>();
 
 /** The status to write for a book stored as `current`; `null` for no write, so opening never downgrades `finished`. */
 export function autoTransition(
@@ -49,6 +52,9 @@ export function useAutoReadStatus(uuid: BookUuid, atEnd: boolean): void {
     if (!next) return;
     // Optimistic, so the re-render this causes settles instead of repeating the write.
     setStored({ uuid, status: next });
-    saveReadStatus(uuid, next).catch(() => {});
+    // Ordered, so a slow `reading` can't land after `finished` and overwrite it.
+    inOrder(statusWrites, uuid, () => saveReadStatus(uuid, next)).catch(
+      () => {},
+    );
   }, [stored, atEnd, uuid]);
 }
