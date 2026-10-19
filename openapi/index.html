@@ -14,7 +14,7 @@
       crossorigin="anonymous"
     ></script>
     <script>
-      // A read-only reference: no telemetry, web fonts, request client or AI agent.
+      // A read-only reference: no telemetry, web fonts, request client, AI agent or MCP promo.
       Scalar.createApiReference("#app", {
         url: "./openapi.json",
         telemetry: false,
@@ -23,6 +23,7 @@
         hideTestRequestButton: true,
         showDeveloperTools: "never",
         agent: { disabled: true },
+        mcp: { disabled: true },
       });
     </script>
   </body>
