@@ -33,6 +33,7 @@ import {
   type UserSummary,
 } from "./api/generated/schemas";
 
+export * from "./api/metadata";
 export { SortDir, SortKey };
 
 // The wire types and their zod schemas are generated from openapi/openapi.json
@@ -52,7 +53,10 @@ export function parseBookUuid(raw: string | null | undefined): BookUuid | null {
   return parsed.success ? parsed.data : null;
 }
 
-function requireUuid(raw: string | null | undefined, id: number): BookUuid {
+export function requireUuid(
+  raw: string | null | undefined,
+  id: number,
+): BookUuid {
   const uuid = parseBookUuid(raw);
   if (!uuid) throw new Error(`book ${id} has no uuid`);
   return uuid;
@@ -307,7 +311,7 @@ export class ApiError extends Error {
   }
 }
 
-function failure(res: { status: number; data: unknown }): ApiError {
+export function failure(res: { status: number; data: unknown }): ApiError {
   const message =
     typeof res.data === "string" && res.data
       ? res.data

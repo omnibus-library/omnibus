@@ -18,7 +18,18 @@ type ChipInputProps = {
   removeLabel: string;
   /** Authors take the plain input, tags the dashed pill. */
   inputClass?: "me-chip-input" | "me-tag-input";
+  /** Draws each chip's initials, as author chips do. */
+  avatar?: boolean;
+  /** The input's `data-testid`, which the E2E suite finds the editor by. */
+  testId?: string;
 };
+
+/** The first two capitals of a name: "Sora Inkwell" gives "SI". */
+const initials = (name: string) =>
+  name
+    .match(/\p{Lu}/gu)
+    ?.slice(0, 2)
+    .join("");
 
 /** A list of text chips, added by Enter, comma or a pick from the suggestions. */
 export function ChipInput({
@@ -29,6 +40,8 @@ export function ChipInput({
   placeholder,
   removeLabel,
   inputClass = "me-tag-input",
+  avatar = false,
+  testId,
 }: ChipInputProps) {
   const [draft, setDraft] = useState("");
   const listId = useId();
@@ -46,6 +59,7 @@ export function ChipInput({
     <div className="chip-editor-root">
       {values.map((value) => (
         <div key={value} className="chip me-chip-item">
+          {avatar && <span className="me-avatar">{initials(value)}</span>}
           <span className="me-chip-label">{value}</span>
           <button
             type="button"
@@ -61,6 +75,7 @@ export function ChipInput({
         <input
           className={inputClass}
           aria-label={label}
+          data-testid={testId}
           placeholder={placeholder}
           list={listId}
           value={draft}

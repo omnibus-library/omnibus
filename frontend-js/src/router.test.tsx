@@ -78,7 +78,6 @@ describe("routes", () => {
 
   describe("unported pages", () => {
     it.each([
-      [`/books/${UUID}/edit`, "Edit metadata", UUID],
       [`/read/${UUID}`, "Reader", UUID],
       [`/comic/${UUID}`, "Comic reader", UUID],
       [`/pdf/${UUID}?file_id=3&page=7`, "PDF reader", "7"],
@@ -107,6 +106,15 @@ describe("routes", () => {
       ).toBeInTheDocument();
       if (param) expect(screen.getByText(param)).toBeInTheDocument();
     });
+  });
+
+  it("renders the metadata editor at /books/:uuid/edit", async () => {
+    renderRoute(`/books/${UUID}/edit`);
+
+    // jsdom has no server to fetch from, so the editor settles on its error page.
+    expect(
+      await screen.findByRole("link", { name: "Back to book" }),
+    ).toHaveAttribute("href", `/books/${UUID}`);
   });
 
   describe("layout", () => {

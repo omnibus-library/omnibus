@@ -16,7 +16,7 @@ const OWNERS = [
   ["styles/theme.css", (c) => ["atrium", "theme-snap"].includes(c)],
   ["components/Button/Button.css", (c) => c === "btn"],
   ["components/FilterBar/FilterBar.css", (c) => c === "fb" || c.startsWith("fb-")],
-  ["components/ChipInput/ChipInput.css", (c) => c.startsWith("chip-editor") || c.startsWith("me-chip") || c === "me-tag-input"],
+  ["components/ChipInput/ChipInput.css", (c) => c.startsWith("chip-editor") || c.startsWith("me-chip") || c === "me-tag-input" || c === "me-avatar"],
   ["components/Chip/Chip.css", (c) => c === "chip" || c.startsWith("chip-")],
   ["components/Cover/Cover.css", (c) => ["cover-wrap", "cover", "tpl-plate", "ca", "ct"].includes(c)],
   ["components/Loading/Loading.css", (c) => c === "ld" || c.startsWith("ld-")],
@@ -33,8 +33,9 @@ const OWNERS = [
   ["layouts/AppShell.css", (c) => c === "app-shell"],
   ["components/DiscPage/DiscPage.css", (c) => c.startsWith("disc-")],
   ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || c.startsWith("ebook-") || c.startsWith("sort-th") || c.startsWith("ss-") || c.startsWith("format-badge") || c.startsWith("bulk-edit") || c.startsWith("shelf-btn-") || c.startsWith("shelf-modal-") || c.startsWith("shelf-picker") || c.startsWith("pick-") || c === "author-photo-modal-backdrop" || ["landing-col", "library-empty", "cover-link"].includes(c)],
+  ["pages/BookEdit/BookEdit.css", (c) => c.startsWith("me-") || c.startsWith("mes-") || c.startsWith("bd-crumb")],
   ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || c.startsWith("bd-")],
-  ["styles/base.css", (c) => ["divider", "label", "mono", "sr-only", "subtitle"].includes(c)],
+  ["styles/base.css", (c) => ["card", "divider", "label", "mono", "sr-only", "subtitle"].includes(c)],
 ];
 const CONTEXT = new Set(["atrium", "theme-snap"]);
 
