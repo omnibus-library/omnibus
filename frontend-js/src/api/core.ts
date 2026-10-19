@@ -40,6 +40,11 @@ export function parseSeriesId(raw: string | null | undefined): SeriesId | null {
   return positiveInt(raw) as SeriesId | null;
 }
 
+/** A route parameter as a shelf id, or `null` unless it is a positive integer. */
+export function parseShelfId(raw: string | null | undefined): number | null {
+  return positiveInt(raw);
+}
+
 /** A non-2xx answer, carrying the status and the server's plain-text body. */
 export class ApiError extends Error {
   readonly status: number;

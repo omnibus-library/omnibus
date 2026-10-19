@@ -125,18 +125,17 @@ export function ShelfBooks({
     setClauses(next);
   };
   const take = async (book: Book) => {
-    if (leaving.includes(book.uuid)) return;
     setLeaving((l) => [...l, book.uuid]);
     setRemoveError(null);
     try {
       await setShelfMember(shelfId, book.uuid, false);
       await invalidateShelf(client, shelfId);
-      setLeaving((l) => l.filter((u) => u !== book.uuid));
     } catch (e) {
-      setLeaving((l) => l.filter((u) => u !== book.uuid));
       setRemoveError(
         `Couldn’t remove “${book.title}” from this shelf: ${e instanceof Error ? e.message : e}`,
       );
+    } finally {
+      setLeaving((l) => l.filter((u) => u !== book.uuid));
     }
   };
 
@@ -266,7 +265,7 @@ export function ShelfBooks({
               onRemove={() => take(book)}
             />
           ))}
-          {removable && <AddBooksTile onClick={onAdd} />}
+          {removable && full.ready && <AddBooksTile onClick={onAdd} />}
         </div>
       )}
     </section>

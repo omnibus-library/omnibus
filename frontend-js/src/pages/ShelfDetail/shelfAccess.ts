@@ -31,6 +31,24 @@ export function resolveAccess(
 /** Whether the edit controls act. */
 export const canEdit = (access: ShelfAccess) => access.kind !== "locked";
 
+/** How far the member list's fetch has got. */
+export type MembersStatus = { isSuccess: boolean; isError: boolean };
+
+/** Whether Add books acts, and why not: it waits on the whole member list, which marks what the shelf already holds. */
+export function addBooksState(
+  editable: boolean,
+  members: MembersStatus,
+): {
+  state: "ready" | "waiting" | "unavailable" | "hidden";
+  title?: string;
+} {
+  if (!editable) return { state: "hidden" };
+  if (members.isSuccess) return { state: "ready" };
+  return members.isError
+    ? { state: "unavailable", title: "This shelf’s books couldn’t be loaded." }
+    : { state: "waiting", title: "Still loading this shelf’s books…" };
+}
+
 /** The one-line refusal. */
 export function lockHeadline(reason: LockReason): string {
   if (reason.why === "not-owner") {

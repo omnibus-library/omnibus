@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { UserId } from "../../api";
 import {
+  addBooksState,
   canEdit,
   lockDetail,
   lockHeadline,
@@ -68,5 +69,40 @@ describe("resolveAccess", () => {
     expect(lockDetail(reason(theirs))).toBe(
       "A wishlist fills itself from what its owner wishes for.",
     );
+  });
+});
+
+describe("addBooksState", () => {
+  it.each([
+    [
+      "not editable",
+      false,
+      { isSuccess: true, isError: false },
+      "hidden",
+      undefined,
+    ],
+    [
+      "the members landed",
+      true,
+      { isSuccess: true, isError: false },
+      "ready",
+      undefined,
+    ],
+    [
+      "the members are still loading",
+      true,
+      { isSuccess: false, isError: false },
+      "waiting",
+      "Still loading this shelf’s books…",
+    ],
+    [
+      "the members failed",
+      true,
+      { isSuccess: false, isError: true },
+      "unavailable",
+      "This shelf’s books couldn’t be loaded.",
+    ],
+  ])("is %s", (_condition, editable, members, state, title) => {
+    expect(addBooksState(editable, members)).toEqual({ state, title });
   });
 });

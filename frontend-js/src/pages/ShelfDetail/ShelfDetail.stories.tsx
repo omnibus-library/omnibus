@@ -101,6 +101,7 @@ export const Owner: Story = {
       canvas.getByRole("navigation", { name: "Breadcrumb" }),
     ).toHaveTextContent("← All shelves");
     await expect(canvas.queryByRole("note")).toBeNull();
+    await waitFor(() => expect(document.title).toBe("Omnibus | Winter reads"));
     // Add books waits until the members have landed.
     await waitFor(() =>
       expect(canvas.getByTestId("shelf-add-books")).toHaveAttribute(
@@ -133,6 +134,7 @@ export const AddBooksWaitsForMembers: Story = {
     await userEvent.click(add);
 
     await expect(canvas.queryByRole("dialog")).toBeNull();
+    await expect(canvas.queryByTestId("shelf-add-tile")).toBeNull();
   },
 };
 
@@ -288,6 +290,26 @@ export const KoboToggle: Story = {
   },
 };
 
+export const KoboToggleFailing: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("patch", "/api/shelves/:id", 500));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "More shelf actions" }),
+    );
+
+    await userEvent.click(
+      canvas.getByRole("menuitemcheckbox", { name: "Sync to Kobo" }),
+    );
+
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "Couldn’t change Kobo sync: failed with 500",
+    );
+    await expect(canvas.queryByTestId("shelf-kobo-badge")).toBeNull();
+  },
+};
+
 export const EditSaved: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
@@ -392,6 +414,16 @@ export const NotFound: Story = {
     await expect(
       canvas.getByRole("navigation", { name: "Breadcrumb" }),
     ).toBeInTheDocument();
+  },
+};
+
+export const MalformedId: Story = {
+  parameters: { path: "/shelves/0" },
+  play: async ({ canvas }) => {
+    // The default handlers answer any id, so a request would have drawn the shelf.
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "Shelf not found.",
+    );
   },
 };
 
@@ -608,6 +640,12 @@ export const RefetchFailing: Story = {
     );
     await expect(canvas.queryByTestId("shelf-count")).toBeNull();
     await expect(canvas.queryByTestId("shelf-empty")).toBeNull();
+    // Without the member list the tile would open a picker that marks nothing as already added.
+    await expect(canvas.queryByTestId("shelf-add-tile")).toBeNull();
+    await expect(canvas.getByTestId("shelf-add-books")).toHaveAttribute(
+      "title",
+      "This shelf’s books couldn’t be loaded.",
+    );
   },
 };
 

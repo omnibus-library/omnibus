@@ -19,7 +19,11 @@ import { bookCount } from "../../format";
 import { useCurrentUser } from "../../session";
 import { useLoadMore } from "../../useLoadMore";
 import { handoffClauses, useLibraryPrefs } from "../../viewPrefs";
-import { canEdit, resolveAccess } from "../ShelfDetail/shelfAccess";
+import {
+  addBooksState,
+  canEdit,
+  resolveAccess,
+} from "../ShelfDetail/shelfAccess";
 import { BookGrid } from "./BookGrid";
 import { BookTable } from "./BookTable";
 import { BulkEditBar, BulkEditModal, BulkShelfPicker } from "./BulkEdit";
@@ -128,15 +132,7 @@ export function Library() {
   const [adding, setAdding] = useState(false);
   const shelf = detail.data ?? null;
   const mayEdit = shelf !== null && canEdit(resolveAccess(user, shelf));
-  // Add books waits on the whole member list, which marks what the shelf already holds.
-  const addBooks =
-    shelf !== null && mayEdit && shelf.kind === "manual"
-      ? members.isSuccess
-        ? "ready"
-        : members.isError
-          ? "unavailable"
-          : "waiting"
-      : "hidden";
+  const addBooks = addBooksState(mayEdit && shelf?.kind === "manual", members);
   // The lens is the shelf's page or, on All Books, the browse list.
   const lens = shelfId === null ? pages : shelfPage;
   const books = shelfId === null ? browseBooks : (shelfPage.data ?? []);
@@ -213,20 +209,14 @@ export function Library() {
           />
         </div>
         {shelf && <ShelfFacets shelf={shelf} />}
-        {addBooks !== "hidden" && (
+        {addBooks.state !== "hidden" && (
           <button
             type="button"
             className="btn primary shd-action lib-shelf-add"
             data-testid="shelf-add-books"
-            aria-disabled={addBooks !== "ready"}
-            title={
-              addBooks === "waiting"
-                ? "Still loading this shelf’s books…"
-                : addBooks === "unavailable"
-                  ? "This shelf’s books couldn’t be loaded."
-                  : undefined
-            }
-            onClick={() => addBooks === "ready" && setAdding(true)}
+            aria-disabled={addBooks.state !== "ready"}
+            title={addBooks.title}
+            onClick={() => addBooks.state === "ready" && setAdding(true)}
           >
             <PlusGlyph />
             Add books
@@ -296,7 +286,7 @@ export function Library() {
                 books={books}
                 stacks={shelfId === null ? stacks : []}
                 onAddTile={
-                  addBooks === "ready" ? () => setAdding(true) : undefined
+                  addBooks.state === "ready" ? () => setAdding(true) : undefined
                 }
               />
             ))}

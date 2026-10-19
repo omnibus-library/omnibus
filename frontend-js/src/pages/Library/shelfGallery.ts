@@ -100,12 +100,14 @@ export function useShelfLens(prefs: Prefs) {
   });
   // Every member, filter aside: what Add books marks as already on the shelf. Unfiltered it is the lens query itself.
   const whole = { ...lens, clauses: [] };
+  const detail = useQuery(shelfQuery(shelfId));
   const members = useQuery({
     queryKey: ["shelf-page", shelfId, whole],
     queryFn:
       shelfId === null ? skipToken : () => fetchShelfPage(shelfId, whole),
+    // Only Add books on a manual shelf reads it.
+    enabled: detail.data?.kind === "manual",
   });
-  const detail = useQuery(shelfQuery(shelfId));
   const pick = (next: ShelfSelection) => {
     setSelection(next);
     saveShelfSelection(next);

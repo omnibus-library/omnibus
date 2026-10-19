@@ -26,9 +26,11 @@ import { KindGlyph } from "../../components/ShelfTile/ShelfTile";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
 import { bookCount } from "../../format";
 import {
+  addBooksState,
   canEdit,
   lockDetail,
   lockHeadline,
+  type MembersStatus,
   type ShelfAccess,
 } from "./shelfAccess";
 import "../../components/ShelfForm/ShelfForm.css";
@@ -176,19 +178,17 @@ function DeleteShelfModal({
 /** The ⋯ menu's Kobo toggle and Delete, over a scrim that closes it. */
 function MoreMenu({
   shelf,
+  toggling,
   onClose,
+  onToggle,
   onDelete,
 }: {
   shelf: ShelfDetail;
+  toggling: boolean;
   onClose: () => void;
+  onToggle: () => void;
   onDelete: () => void;
 }) {
-  const client = useQueryClient();
-  const toggle = useMutation({
-    mutationFn: () =>
-      updateShelf(shelf.id, { sync_to_kobo: !shelf.syncToKobo }),
-    onSuccess: () => invalidateShelf(client, shelf.id),
-  });
   return (
     <>
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a click-away scrim; the menu closes from the keyboard by choosing an item */}
@@ -204,9 +204,10 @@ function MoreMenu({
           role="menuitemcheckbox"
           aria-checked={shelf.syncToKobo}
           data-testid="shelf-toggle-kobo"
+          disabled={toggling}
           onClick={() => {
             onClose();
-            toggle.mutate();
+            onToggle();
           }}
         >
           <span className="shd-menu-check" aria-hidden="true">
@@ -232,20 +233,21 @@ function MoreMenu({
 type ActionsProps = {
   shelf: ShelfDetail;
   access: ShelfAccess;
-  /** The member list has landed, so Add books can mark what the shelf already holds. */
-  membersReady: boolean;
+  /** Add books waits on the member list, which marks what the shelf already holds. */
+  members: MembersStatus;
   onAdd: () => void;
   onEdit: () => void;
 };
 
 /** Add books, Edit shelf and ⋯: each stays put but greyed and inert, described by the lock note, when the viewer can't edit. */
-function ShelfActions({
-  shelf,
-  access,
-  membersReady,
-  onAdd,
-  onEdit,
-}: ActionsProps) {
+function ShelfActions({ shelf, access, members, onAdd, onEdit }: ActionsProps) {
+  const client = useQueryClient();
+  // Lives here, not in the menu, which unmounts on choosing an item.
+  const toggle = useMutation({
+    mutationFn: () =>
+      updateShelf(shelf.id, { sync_to_kobo: !shelf.syncToKobo }),
+    onSuccess: () => invalidateShelf(client, shelf.id),
+  });
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const editable = canEdit(access);
@@ -253,10 +255,10 @@ function ShelfActions({
   const tip = lock ? lockHeadline(lock) : undefined;
   const describedBy = lock ? LOCK_NOTE_ID : undefined;
   const manual = shelf.kind === "manual";
-  const canAdd = editable && membersReady;
+  const add = addBooksState(editable, members);
+  const canAdd = add.state === "ready";
   // A lock outranks "still loading".
-  const addTip =
-    editable && !membersReady ? "Still loading this shelf’s books…" : tip;
+  const addTip = add.title ?? tip;
   return (
     <>
       {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings a border and min-width the hero never resets */}
@@ -305,7 +307,9 @@ function ShelfActions({
           {editable && menuOpen && (
             <MoreMenu
               shelf={shelf}
+              toggling={toggle.isPending}
               onClose={() => setMenuOpen(false)}
+              onToggle={() => toggle.mutate()}
               onDelete={() => {
                 setMenuOpen(false);
                 setDeleting(true);
@@ -314,6 +318,15 @@ function ShelfActions({
           )}
         </div>
       </div>
+      {toggle.error && (
+        <p
+          role="alert"
+          className="error shd-alert"
+          data-testid="shelf-kobo-error"
+        >
+          {`Couldn’t change Kobo sync: ${toggle.error.message}`}
+        </p>
+      )}
       {deleting && (
         <DeleteShelfModal shelf={shelf} onClose={() => setDeleting(false)} />
       )}
