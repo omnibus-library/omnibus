@@ -42,19 +42,14 @@ epub = "2"
 hayro = "0.7"
 pdf-extract = "0.12"
 
-# PIN RATIONALE (#1529): frozen at v3 (current stable is several majors
-# ahead) pending a deliberate audit of the v4-v9 changelog against this
-# crate's untrusted-input parsing path — it reads user-uploaded EPUB and
-# audiobook zip archives via the "add your own books" path. Lifting it
-# means that audit plus re-verifying the `deflate-flate2`/`deflate` feature
-# names still resolve (they've moved across `zip` majors before), done in
-# lockstep with the `frontend/Cargo.toml` copy below so both stay unified.
+# v9 for the zip `extract()` advisories (#1529 audit: v4-v9 broke only the API
+# and hardened the read path). `epub` still pins zip 3.0.0, so both majors stay
+# in the lock (docs/dependency-audit.md); bump in lockstep with frontend/Cargo.toml.
 #
 # F5.8 export-with-overrides (#1372): the `epub` crate is read-only, so baking
 # DB metadata/cover overrides *into* the exported EPUB needs a zip *writer*. We
 # read-through the source archive and rewrite only the OPF + cover entries.
-# Pinned to the same 3.x already in the lock transitively via `epub`, so no new
-# major lands. Default features off + only `deflate-flate2` (pure-Rust
+# Default features off + only `deflate-flate2` (pure-Rust
 # miniz_oxide deflate) — EPUBs are deflate-only, so we skip zip's default
 # bzip2/zstd/lzma/aes backends and their native -sys crates.
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
