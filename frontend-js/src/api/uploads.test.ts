@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   ApiError,
   classifyPick,
+  commitFields,
   formFromAudiobookInspection,
   formFromEbookInspection,
+  hasIdentity,
   uploadFailureMessage,
 } from "../api";
 import {
@@ -104,5 +106,73 @@ describe("uploadFailureMessage", () => {
     expect(uploadFailureMessage(new ApiError(400, "not an epub"))).toBe(
       "not an epub",
     );
+  });
+});
+
+describe("commitFields", () => {
+  const BASE = formFromEbookInspection(anEbookInspection());
+  const KEEP = { kind: "keep" } as const;
+
+  it("sends the identity and series, and no overrides for an untouched review", () => {
+    expect(commitFields(BASE, BASE, KEEP)).toEqual([
+      ["title", "The Salt Road"],
+      ["author", "Mara Okafor"],
+      ["series", "Tidewater"],
+      ["series_index", "2"],
+    ]);
+  });
+
+  it("trims the identity and leaves out a blank series", () => {
+    const values = { ...BASE, title: "  Salt  ", series: " ", seriesIndex: "" };
+
+    expect(commitFields(BASE, values, KEEP)).toEqual([
+      ["title", "Salt"],
+      ["author", "Mara Okafor"],
+      [
+        "overrides",
+        JSON.stringify({ title: "  Salt  ", series: " ", series_index: "" }),
+      ],
+    ]);
+  });
+
+  it("carries only the changed fields as overrides", () => {
+    const values = {
+      ...BASE,
+      publisher: "Other Press",
+      tags: ["travel", "sea"],
+    };
+
+    const fields = commitFields(BASE, values, KEEP);
+
+    expect(fields.at(-1)).toEqual([
+      "overrides",
+      JSON.stringify({ publisher: "Other Press", subjects: ["travel", "sea"] }),
+    ]);
+  });
+
+  it("adds a picked image or a provider's URL as the cover", () => {
+    const file = new File(["png"], "mine.png");
+
+    expect(commitFields(BASE, BASE, { kind: "file", file }).at(-1)).toEqual([
+      "cover",
+      file,
+    ]);
+    expect(
+      commitFields(BASE, BASE, {
+        kind: "url",
+        url: "https://img.example/a.jpg",
+      }).at(-1),
+    ).toEqual(["cover_url", "https://img.example/a.jpg"]);
+  });
+});
+
+describe("hasIdentity", () => {
+  const BASE = formFromEbookInspection(anEbookInspection());
+
+  it("needs a title and a first author, ignoring blanks", () => {
+    expect(hasIdentity(BASE)).toBe(true);
+    expect(hasIdentity({ ...BASE, title: "  " })).toBe(false);
+    expect(hasIdentity({ ...BASE, authors: [] })).toBe(false);
+    expect(hasIdentity({ ...BASE, authors: [" "] })).toBe(false);
   });
 });

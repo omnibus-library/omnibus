@@ -4,17 +4,12 @@ import {
   coverFromUrl,
   type EditableBook,
   revertCover,
+  type StagedSource,
   uploadCover,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
 import { BusyLabel, Ring } from "../../components/Loading/Loading";
-
-/** Where a cover choice goes. */
-export type StagedSource =
-  | { kind: "keep" }
-  | { kind: "file"; file: File }
-  | { kind: "url"; url: string };
 
 /** A cover chosen during review, not yet written anywhere. */
 export type StagedCover = {

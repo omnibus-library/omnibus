@@ -1,9 +1,12 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type ChangeEvent, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import {
   classifyPick,
+  commitUpload,
   type Inspected,
   inspectUpload,
+  type MetaForm,
   pickLabel,
   UPLOAD_ACCEPT,
   type UploadKind,
@@ -12,6 +15,7 @@ import {
 import { Ring } from "../../components/Loading/Loading";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { useCurrentUser } from "../../session";
+import type { StagedCover } from "../BookEdit/CoverEditor";
 import { ReviewForm } from "./ReviewForm";
 import "../../styles/settings.css";
 import "./AddBooks.css";
@@ -131,7 +135,12 @@ function FileDropZone({
   );
 }
 
+const uploadFailed = (error: unknown) =>
+  `Upload failed: ${uploadFailureMessage(error)}`;
+
 function AddBooksForm() {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [review, setReview] = useState<{ pick: Inspected; key: number } | null>(
     null,
   );
@@ -140,10 +149,34 @@ function AddBooksForm() {
   // So a new pick remounts the review rather than carrying the last pick's edits into it.
   const picks = useRef(0);
 
+  const add = useMutation({
+    mutationFn: ({
+      pick,
+      values,
+      cover,
+    }: {
+      pick: Inspected;
+      values: MetaForm;
+      cover: StagedCover;
+    }) => commitUpload(pick, values, cover.source, setProgress),
+    onMutate: () => {
+      setProgress(0);
+      setStatus({ text: "Adding to your library…", tone: "working" });
+    },
+    onSuccess: (uuid) => {
+      // The new book belongs on the library's lists the next time they are read.
+      for (const queryKey of [["books"], ["shelves"], ["shelf-page"]]) {
+        queryClient.invalidateQueries({ queryKey });
+      }
+      navigate(`/books/${uuid}`);
+    },
+    onError: (error) => setStatus({ text: uploadFailed(error), tone: "error" }),
+  });
   const inspect = useMutation({
     mutationFn: ({ kind, files }: { kind: UploadKind; files: File[] }) =>
       inspectUpload(kind, files, setProgress),
     onMutate: ({ files }) => {
+      add.reset();
       setReview(null);
       setProgress(0);
       setStatus({ text: `Uploading ${pickLabel(files)}…`, tone: "working" });
@@ -162,7 +195,7 @@ function AddBooksForm() {
         tone: "error",
       }),
   });
-  const busy = inspect.isPending;
+  const busy = inspect.isPending || add.isPending;
 
   const onPick = (files: File[]) => {
     if (files.length === 0) return;
@@ -187,10 +220,13 @@ function AddBooksForm() {
         <ReviewForm
           key={review.key}
           pick={review.pick}
-          saving={false}
-          error={undefined}
-          onAdd={() => {}}
+          saving={add.isPending}
+          error={add.error ? uploadFailed(add.error) : undefined}
+          onAdd={(values, cover) =>
+            add.mutate({ pick: review.pick, values, cover })
+          }
           onStartOver={() => {
+            add.reset();
             setReview(null);
             setStatus(null);
           }}

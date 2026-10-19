@@ -88,3 +88,44 @@ export function inspectHandlers(
     http.post("/api/uploads/audiobooks/inspect", answer(audiobook)),
   ];
 }
+
+/** What a commit carried: which ingest took it, and every multipart field, a file as `file:<name>`. */
+export type Committed = {
+  route: "ebooks" | "audiobooks";
+  fields: [string, string][];
+};
+
+/**
+ * `POST /api/uploads/ebooks` and `.../audiobooks`, answering 201 with `uuid`. Each
+ * request lands in `committed`; with `refuse` set, that status and plain text;
+ * `gate` holds the answer until it resolves.
+ */
+export function commitHandlers(
+  uuid: string,
+  {
+    committed = [],
+    refuse,
+    gate,
+  }: { committed?: Committed[]; refuse?: Refusal; gate?: Promise<void> } = {},
+) {
+  const answer =
+    (route: Committed["route"]) =>
+    async ({ request }: { request: Request }) => {
+      const fields: [string, string][] = [];
+      for (const [name, value] of (await request.formData()).entries()) {
+        fields.push([
+          name,
+          value instanceof File ? `file:${value.name}` : value,
+        ]);
+      }
+      committed.push({ route, fields });
+      await gate;
+      return refuse
+        ? new HttpResponse(refuse.text, { status: refuse.status })
+        : HttpResponse.json({ uuid }, { status: 201 });
+    };
+  return [
+    http.post("/api/uploads/ebooks", answer("ebooks")),
+    http.post("/api/uploads/audiobooks", answer("audiobooks")),
+  ];
+}

@@ -3,13 +3,16 @@ import { ApiError } from "./core";
 import {
   getPostInspectAudiobookUrl,
   getPostInspectEbookUrl,
+  getPostUploadAudiobookUrl,
+  getPostUploadEbookUrl,
 } from "./generated/omnibus";
 import {
   AudiobookInspection,
   type Identifier,
+  UploadCommitResult,
   UploadInspection,
 } from "./generated/schemas";
-import type { MetaForm } from "./metadata";
+import { type MetaForm, overridesFrom } from "./metadata";
 
 // The add books page's reads and writes: pick a file, have the server read it, then review the record.
 
@@ -203,4 +206,56 @@ export async function inspectUpload(
     identifiers: [],
     coverPreview: insp.cover_preview ?? null,
   };
+}
+
+/** Where a book's cover comes from at the add: the file's own, a picked image, or a provider's image URL. */
+export type StagedSource =
+  | { kind: "keep" }
+  | { kind: "file"; file: File }
+  | { kind: "url"; url: string };
+
+/** Whether the review names what the commit cannot do without: a title and a first author file the book. */
+export const hasIdentity = (values: MetaForm) =>
+  Boolean(values.title.trim() && values.authors[0]?.trim());
+
+/** The commit's text and cover fields, without the file(s), which go last. */
+export function commitFields(
+  baseline: MetaForm,
+  values: MetaForm,
+  cover: StagedSource,
+): [string, string | File][] {
+  const fields: [string, string | File][] = [
+    ["title", values.title.trim()],
+    ["author", values.authors[0]?.trim() ?? ""],
+  ];
+  const series = values.series.trim();
+  const seriesIndex = values.seriesIndex.trim();
+  if (series) fields.push(["series", series]);
+  if (seriesIndex) fields.push(["series_index", seriesIndex]);
+  const overrides = overridesFrom(baseline, values);
+  if (Object.keys(overrides).length > 0) {
+    fields.push(["overrides", JSON.stringify(overrides)]);
+  }
+  if (cover.kind === "file") fields.push(["cover", cover.file]);
+  if (cover.kind === "url") fields.push(["cover_url", cover.url]);
+  return fields;
+}
+
+/** Files the picked book with the reviewed record and cover in one request; answers with its uuid. */
+export async function commitUpload(
+  pick: Inspected,
+  values: MetaForm,
+  cover: StagedSource,
+  onProgress: (fraction: number) => void,
+): Promise<string> {
+  const form = new FormData();
+  for (const [name, value] of commitFields(pick.form, values, cover)) {
+    form.append(name, value);
+  }
+  for (const file of pick.files) form.append("file", file);
+  const url =
+    pick.kind === "ebook"
+      ? getPostUploadEbookUrl()
+      : getPostUploadAudiobookUrl();
+  return (await sendMultipart(url, form, UploadCommitResult, onProgress)).uuid;
 }

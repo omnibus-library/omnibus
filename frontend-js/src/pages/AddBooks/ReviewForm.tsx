@@ -1,7 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
-import { type Inspected, type MetaForm, MetaFormSchema } from "../../api";
+import {
+  hasIdentity,
+  type Inspected,
+  type MetaForm,
+  MetaFormSchema,
+} from "../../api";
 import type { CoverProps, StagedCover } from "../BookEdit/CoverEditor";
 import { dirtyLabels } from "../BookEdit/dirty";
 import { PageHeader } from "../BookEdit/EditHeader";
@@ -40,6 +45,7 @@ export function ReviewForm({ pick, saving, error, onAdd, onStartOver }: Props) {
     },
     [],
   );
+  const [missing, setMissing] = useState<string>();
   const dirty = dirtyLabels(pick.form, form.watch());
   const cover = {
     book: {
@@ -86,8 +92,15 @@ export function ReviewForm({ pick, saving, error, onAdd, onStartOver }: Props) {
         dirty={dirty}
         coverReplaced={staged.source.kind !== "keep"}
         saving={saving}
-        error={form.formState.errors.printPages?.message ?? error}
-        onSave={form.handleSubmit((values) => onAdd(values, staged))}
+        error={form.formState.errors.printPages?.message ?? missing ?? error}
+        onSave={form.handleSubmit((values) => {
+          // Refused here rather than as a 400 after the upload.
+          const refusal = hasIdentity(values)
+            ? undefined
+            : "A title and at least one author are required.";
+          setMissing(refusal);
+          if (!refusal) onAdd(values, staged);
+        })}
         onDiscard={onStartOver}
       />
     </div>
