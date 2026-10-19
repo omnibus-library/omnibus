@@ -16,8 +16,11 @@ import {
 } from "./checkIn";
 
 describe("cleanIsbn", () => {
-  it("drops separators and upper-cases the X check digit", () => {
+  it("drops separators from an ISBN", () => {
     expect(cleanIsbn(" 978-0-13 468599-1 ")).toBe("9780134685991");
+  });
+
+  it("upper-cases the X check digit", () => {
     expect(cleanIsbn("080442957x")).toBe("080442957X");
   });
 });
@@ -73,7 +76,7 @@ describe("stageFor", () => {
     });
   });
 
-  it("lists a close match's head and tail as one list", () => {
+  it("lists the head then the others of a close match", () => {
     const other = aScanBook({ uuid: "other" });
 
     expect(
@@ -82,6 +85,9 @@ describe("stageFor", () => {
         "1",
       ),
     ).toEqual({ kind: "closeMatch", books: [book, other], scanned: online });
+  });
+
+  it("lists the head alone when a close match has no others", () => {
     expect(
       stageFor({ kind: "close_match", book, scanned: online }, "1"),
     ).toMatchObject({ books: [book] });
@@ -123,7 +129,7 @@ describe("closeMatchCopy", () => {
     });
   });
 
-  it("asks which of several, naming a scan or a picked edition", () => {
+  it("asks which one a scan matched", () => {
     expect(closeMatchCopy(true, "scan")).toMatchObject({
       heading: "Which one is this?",
       subtitle:
@@ -131,6 +137,9 @@ describe("closeMatchCopy", () => {
       pick: "This one",
       decline: "None of these",
     });
+  });
+
+  it("names a picked edition when several match", () => {
     expect(closeMatchCopy(true, "search").subtitle).toMatch(
       /^That edition's ISBN/,
     );
@@ -185,8 +194,11 @@ describe("metaDetails", () => {
 });
 
 describe("someIfFilled", () => {
-  it("trims a note and drops a blank one", () => {
+  it("trims a note", () => {
     expect(someIfFilled("  Paperback ")).toBe("Paperback");
+  });
+
+  it("drops a blank note", () => {
     expect(someIfFilled("   ")).toBeUndefined();
   });
 });
@@ -204,8 +216,11 @@ describe("truncationNote", () => {
 });
 
 describe("applyKey", () => {
-  it("appends a digit and the ISBN-10 check digit", () => {
+  it("appends a digit", () => {
     expect(applyKey("97", "8")).toBe("978");
+  });
+
+  it("appends the ISBN-10 check digit", () => {
     expect(applyKey("080442957", "X")).toBe("080442957X");
   });
 
@@ -213,8 +228,11 @@ describe("applyKey", () => {
     expect(applyKey("978-0", "1")).toBe("97801");
   });
 
-  it("pops the last character on backspace, and nothing from an empty entry", () => {
+  it("pops the last character on backspace", () => {
     expect(applyKey("9780", "⌫")).toBe("978");
+  });
+
+  it("pops nothing from an empty entry", () => {
     expect(applyKey("", "⌫")).toBe("");
   });
 
@@ -225,8 +243,11 @@ describe("applyKey", () => {
 });
 
 describe("manualFallback", () => {
-  it("returns to the lookup it came from and to the keypad from anywhere else", () => {
+  it("returns to the lookup it came from", () => {
     expect(manualFallback({ kind: "lookup" })).toEqual({ kind: "lookup" });
+  });
+
+  it("returns to the keypad from anywhere else", () => {
     expect(manualFallback({ kind: "scan" })).toEqual({ kind: "entry" });
     expect(manualFallback({ kind: "entry" })).toEqual({ kind: "entry" });
   });

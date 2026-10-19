@@ -3,9 +3,8 @@ import { useState } from "react";
 import { googleBooksConfiguredQuery, searchProviders } from "../../api";
 import type { ExternalBookMeta } from "../../api/generated/schemas";
 import { Button } from "../../components/Button/Button";
-import { BusyLabel } from "../../components/Loading/Loading";
 import { cleanIsbn, isbnRejection } from "./checkIn";
-import { ExternalBookCard } from "./Screens";
+import { ExternalBookCard, IsbnField, LibrarySearchForm } from "./Screens";
 
 /** The Open Library fallback disclaimer, shown once the server reports it has no Google Books key. */
 export function ProviderNote() {
@@ -31,7 +30,6 @@ type SearchProps = {
 
 /** Title search over the providers, for a copy whose ISBN is unknown, unreadable or in no provider's index. */
 function TitleSearch({ busy, onPick, onError }: SearchProps) {
-  const [query, setQuery] = useState("");
   // Null until a search lands, so the empty line can't show before anyone has searched.
   const [results, setResults] = useState<ExternalBookMeta[] | null>(null);
   const search = useMutation({
@@ -41,46 +39,16 @@ function TitleSearch({ busy, onPick, onError }: SearchProps) {
     // The results stay on screen to retry from.
     onError: (e) => onError(`Could not search: ${e.message}`),
   });
-  const trimmed = query.trim();
   return (
     <div className="check-in-search" data-testid="check-in-search">
-      <form
-        className="settings-form"
-        data-testid="check-in-search-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (trimmed && !search.isPending) search.mutate(trimmed);
-        }}
-      >
-        <div className="settings-field">
-          <label htmlFor="check-in-search-query">Title</label>
-          <input
-            id="check-in-search-query"
-            data-testid="check-in-search-query"
-            type="search"
-            autoComplete="off"
-            placeholder="The Name of the Wind"
-            value={query}
-            disabled={busy || search.isPending}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-        <div className="settings-actions">
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={busy || search.isPending || !trimmed}
-            aria-busy={search.isPending}
-            data-testid="check-in-search-submit"
-          >
-            <BusyLabel
-              busy={search.isPending}
-              label="Search"
-              busyLabel="Searching…"
-            />
-          </Button>
-        </div>
-      </form>
+      <LibrarySearchForm
+        prefix="check-in-search"
+        label="Title"
+        submitLabel="Search"
+        busy={busy}
+        pending={search.isPending}
+        onSearch={search.mutate}
+      />
       {results?.length === 0 && (
         <p className="check-in-why" data-testid="check-in-search-empty">
           No books match that title. Check the spelling, or try just the main
@@ -148,20 +116,7 @@ export function LookupScreen({
           onResolve(isbn);
         }}
       >
-        <div className="settings-field">
-          <label htmlFor="check-in-isbn">ISBN</label>
-          <input
-            id="check-in-isbn"
-            data-testid="check-in-isbn"
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            placeholder="9780000000000"
-            value={isbn}
-            disabled={busy}
-            onChange={(e) => onIsbn(e.target.value)}
-          />
-        </div>
+        <IsbnField isbn={isbn} busy={busy} onIsbn={onIsbn} />
         <div className="settings-actions">
           <Button
             type="submit"

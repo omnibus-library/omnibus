@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   addPhysicalOnly,
   checkInBook,
@@ -44,7 +44,9 @@ export function CheckIn() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [stage, setStage] = useState<Stage>(LOOKUP);
-  const [isbn, setIsbn] = useState("");
+  // The book page's "Check in when acquired" brings the ISBN it already holds.
+  const [params] = useSearchParams();
+  const [isbn, setIsbn] = useState(params.get("isbn") ?? "");
   const [note, setNote] = useState("");
   const [via, setVia] = useState<FoundVia>("isbn");
   const [error, setError] = useState<string | null>(null);
@@ -85,10 +87,10 @@ export function CheckIn() {
     setStage(LOOKUP);
   };
 
+  // `arrive` can navigate, so its callers pass it per call: TanStack drops those once the page is gone.
   const resolve = useMutation({
     mutationFn: ({ isbn }: { isbn: string; fallback: Stage }) =>
       resolveBook(isbn),
-    onSuccess: (outcome, { isbn }) => arrive(outcome, isbn),
     onError: (e, { fallback }) => {
       setError(`Could not look that up: ${e.message}`);
       setStage(fallback);
@@ -100,7 +102,6 @@ export function CheckIn() {
       setVia("search");
       setError(null);
     },
-    onSuccess: (outcome, meta) => arrive(outcome, meta.isbn13),
     // Stays on the search screen with its results to retry from.
     onError: (e) => setError(`Could not match that book: ${e.message}`),
   });
@@ -110,8 +111,8 @@ export function CheckIn() {
         book_uuid: confirm.book.uuid,
         isbn: confirm.isbn,
         note: someIfFilled(note),
-      }).then((uuid) => ({ uuid, confirm })),
-    onSuccess: ({ uuid, confirm }) => {
+      }),
+    onSuccess: (uuid, confirm) => {
       wrote(uuid);
       setStage({
         kind: "checkedIn",
@@ -124,11 +125,8 @@ export function CheckIn() {
   });
   const ownIt = useMutation({
     mutationFn: (meta: ExternalBookMeta) =>
-      addPhysicalOnly({ meta, note: someIfFilled(note) }).then((uuid) => ({
-        uuid,
-        meta,
-      })),
-    onSuccess: ({ uuid, meta }) => {
+      addPhysicalOnly({ meta, note: someIfFilled(note) }),
+    onSuccess: (uuid, meta) => {
       wrote(uuid);
       setStage({
         kind: "checkedIn",
@@ -140,14 +138,10 @@ export function CheckIn() {
     onError: (e) => setError(`Could not add that book: ${e.message}`),
   });
   const wishlist = useMutation({
-    mutationFn: (req: WishlistAddRequest) =>
-      wishlistScanned(req).then((uuid) => ({
-        uuid,
-        title: req.meta?.title ?? "",
-      })),
-    onSuccess: ({ uuid, title }) => {
+    mutationFn: wishlistScanned,
+    onSuccess: (uuid, req) => {
       wrote(uuid);
-      setStage({ kind: "wishlisted", title });
+      setStage({ kind: "wishlisted", title: req.meta?.title ?? "" });
     },
     onError: (e) => setError(`Could not add to your wishlist: ${e.message}`),
   });
@@ -172,7 +166,10 @@ export function CheckIn() {
     }
     setError(null);
     setStage({ kind: "resolving" });
-    resolve.mutate({ isbn: cleaned, fallback });
+    resolve.mutate(
+      { isbn: cleaned, fallback },
+      { onSuccess: (outcome) => arrive(outcome, cleaned) },
+    );
   };
 
   // The screen the stage calls for.
@@ -186,7 +183,11 @@ export function CheckIn() {
             onIsbn={setIsbn}
             onResolve={onResolve}
             onScan={toStage({ kind: "scan" })}
-            onPick={(meta) => pick.mutate(meta)}
+            onPick={(meta) =>
+              pick.mutate(meta, {
+                onSuccess: (outcome) => arrive(outcome, meta.isbn13),
+              })
+            }
             onError={setError}
           />
         );

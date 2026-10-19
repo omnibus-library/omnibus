@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
-import { expect } from "storybook/test";
+import { expect, waitFor } from "storybook/test";
 import type {
   AddPhysicalOnlyRequest,
   CheckInRequest,
@@ -37,7 +37,8 @@ const gate = { release: () => {} };
 function Page() {
   return (
     <Routes>
-      <Route path="/" element={<CheckIn />} />
+      <Route path="/check-in" element={<CheckIn />} />
+      <Route path="/" element={<h1>Library</h1>} />
       <Route path="/books/:uuid" element={<p>Book page</p>} />
     </Routes>
   );
@@ -67,6 +68,7 @@ const handlers = (
 const meta = {
   title: "Pages/CheckIn",
   component: Page,
+  parameters: { path: "/check-in" },
   beforeEach({ msw }) {
     for (const list of [
       resolved,
@@ -193,6 +195,42 @@ export const OpensABookAlreadyOwned: Story = {
     await lookUp({ canvas, userEvent });
 
     await expect(await canvas.findByText("Book page")).toBeInTheDocument();
+  },
+};
+
+export const StaysPutWhenLeftBeforeTheBookIsFound: Story = {
+  beforeEach({ msw }) {
+    let release = () => {};
+    gate.release = () => release();
+    msw.use(
+      ...handlers(
+        { kind: "already_owned", book: BOOK },
+        { gate: new Promise<void>((r) => (release = r)) },
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await lookUp({ canvas, userEvent });
+    await userEvent.click(await canvas.findByTestId("check-in-close"));
+    await expect(
+      await canvas.findByRole("heading", { name: "Library" }),
+    ).toBeInTheDocument();
+
+    gate.release();
+    await waitFor(() => expect(storyClient().isMutating()).toBe(0));
+
+    await expect(canvas.queryByText("Book page")).toBeNull();
+    await expect(
+      canvas.getByRole("heading", { name: "Library" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const PrefillsTheIsbnFromTheLink: Story = {
+  parameters: { path: `/check-in?isbn=${ISBN}` },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("check-in-isbn")).toHaveValue(ISBN);
+    await expect(canvas.getByTestId("check-in-submit")).toBeEnabled();
   },
 };
 
@@ -760,11 +798,25 @@ export const LinkFromUnresolvedConfirmsWithTheTypedIsbn: Story = {
 
 export const UnresolvedOffersTitleSearchInstead: Story = {
   beforeEach({ msw }) {
-    msw.use(...handlers({ kind: "unresolved" }));
+    msw.use(
+      ...handlers({ kind: "unresolved" }),
+      failing("get", "/api/search/palette", 500),
+    );
   },
   play: async ({ canvas, userEvent }) => {
     await lookUp({ canvas, userEvent });
-    await userEvent.click(await canvas.findByTestId("check-in-search-instead"));
+    // A failed link search leaves its error up when Back returns here.
+    await userEvent.click(await canvas.findByTestId("check-in-link-existing"));
+    await userEvent.type(canvas.getByLabelText("Title or author"), "harbour");
+    await userEvent.click(canvas.getByTestId("check-in-link-submit"));
+    await canvas.findByTestId("check-in-error");
+    await userEvent.click(canvas.getByTestId("check-in-link-back"));
+    await expect(
+      await canvas.findByTestId("check-in-unresolved"),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("check-in-error")).toBeInTheDocument();
+
+    await userEvent.click(canvas.getByTestId("check-in-search-instead"));
 
     await expect(
       await canvas.findByTestId("check-in-lookup"),

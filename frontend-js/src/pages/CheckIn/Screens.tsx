@@ -26,6 +26,94 @@ export function ResolvingScreen() {
   );
 }
 
+type IsbnFieldProps = {
+  isbn: string;
+  busy: boolean;
+  onIsbn: (isbn: string) => void;
+};
+
+/** The ISBN text field both typing screens share. */
+export function IsbnField({ isbn, busy, onIsbn }: IsbnFieldProps) {
+  return (
+    <div className="settings-field">
+      <label htmlFor="check-in-isbn">ISBN</label>
+      <input
+        id="check-in-isbn"
+        data-testid="check-in-isbn"
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        placeholder="9780000000000"
+        value={isbn}
+        disabled={busy}
+        onChange={(e) => onIsbn(e.target.value)}
+      />
+    </div>
+  );
+}
+
+type SearchFormProps = {
+  /** The form's ids and testids are `${prefix}-form`, `-query` and `-submit`. */
+  prefix: string;
+  label: string;
+  submitLabel: string;
+  busy: boolean;
+  pending: boolean;
+  onSearch: (query: string) => void;
+};
+
+/** A one-field search form with a busy submit, for the title search and the library link search. */
+export function LibrarySearchForm({
+  prefix,
+  label,
+  submitLabel,
+  busy,
+  pending,
+  onSearch,
+}: SearchFormProps) {
+  const [query, setQuery] = useState("");
+  const trimmed = query.trim();
+  return (
+    <form
+      className="settings-form"
+      data-testid={`${prefix}-form`}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (trimmed && !pending) onSearch(trimmed);
+      }}
+    >
+      <div className="settings-field">
+        <label htmlFor={`${prefix}-query`}>{label}</label>
+        <input
+          id={`${prefix}-query`}
+          data-testid={`${prefix}-query`}
+          type="search"
+          autoComplete="off"
+          placeholder="The Name of the Wind"
+          value={query}
+          disabled={busy || pending}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+      <div className="settings-actions">
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={busy || pending || !trimmed}
+          aria-busy={pending}
+          data-testid={`${prefix}-submit`}
+        >
+          <BusyLabel
+            busy={pending}
+            label={submitLabel}
+            busyLabel="Searching…"
+          />
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 type CardProps = {
   cover: string | null | undefined;
   title: string;

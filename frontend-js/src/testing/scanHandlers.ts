@@ -51,12 +51,7 @@ export const NEW_BOOK_UUID = "a7d94e6e-3f0b-4b57-9f4c-6f2d51c0b8aa";
 
 type Refusals = Partial<
   Record<
-    | "resolve"
-    | "resolveMeta"
-    | "search"
-    | "checkIn"
-    | "physicalOnly"
-    | "wishlist",
+    "resolve" | "resolveMeta" | "checkIn" | "physicalOnly" | "wishlist",
     string
   >
 >;
@@ -108,7 +103,7 @@ export function scanHandlers(
     }),
     http.post("/api/scan/search", async ({ request }) => {
       searched.push(ScanSearchRequest.parse(await request.json()).query);
-      return refused("search") ?? HttpResponse.json({ results: found });
+      return HttpResponse.json({ results: found });
     }),
     http.post("/api/scan/check-in", async ({ request }) => {
       const body = CheckInRequest.parse(await request.json());

@@ -2,6 +2,7 @@ import { BarcodeScanner } from "../../components/BarcodeScanner/BarcodeScanner";
 import { Button } from "../../components/Button/Button";
 import { applyKey, cleanIsbn, ISBN_SLOTS, isbnRejection } from "./checkIn";
 import { ProviderNote } from "./Lookup";
+import { IsbnField } from "./Screens";
 
 /** The keypad's face, row-major; `X` is the ISBN-10 check digit, the one non-digit a valid ISBN can end with. */
 const SLOTS = Array.from({ length: ISBN_SLOTS }, (_, i) => i);
@@ -71,20 +72,7 @@ export function EntryScreen({
           onResolve(isbn);
         }}
       >
-        <div className="settings-field">
-          <label htmlFor="check-in-isbn">ISBN</label>
-          <input
-            id="check-in-isbn"
-            data-testid="check-in-isbn"
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            placeholder="9780000000000"
-            value={isbn}
-            disabled={busy}
-            onChange={(e) => onIsbn(e.target.value)}
-          />
-        </div>
+        <IsbnField isbn={isbn} busy={busy} onIsbn={onIsbn} />
         {/* Each slot shows its character once typed, so a misread digit is visible without counting along. */}
         <div
           className="isbn-progress"

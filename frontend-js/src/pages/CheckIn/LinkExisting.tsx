@@ -3,9 +3,8 @@ import { useState } from "react";
 import { searchLibraryBooks } from "../../api";
 import type { ScanBook } from "../../api/generated/schemas";
 import { Button } from "../../components/Button/Button";
-import { BusyLabel } from "../../components/Loading/Loading";
 import { truncationNote } from "./checkIn";
-import { LibraryPickOption } from "./Screens";
+import { LibraryPickOption, LibrarySearchForm } from "./Screens";
 
 type Props = {
   busy: boolean;
@@ -19,7 +18,6 @@ type Props = {
  * matching ladder can bridge. The reader names the book instead of the matcher guessing.
  */
 export function LinkExistingScreen({ busy, onPick, onBack, onError }: Props) {
-  const [query, setQuery] = useState("");
   // Null until a search lands, so the empty line can't show before anyone has searched.
   const [found, setFound] = useState<{
     books: ScanBook[];
@@ -31,7 +29,6 @@ export function LinkExistingScreen({ busy, onPick, onBack, onError }: Props) {
     onSuccess: setFound,
     onError: (e) => onError(`Could not search your library: ${e.message}`),
   });
-  const trimmed = query.trim();
   const note = found && truncationNote(found.books.length, found.total);
   return (
     <div className="check-in-screen" data-testid="check-in-link">
@@ -40,43 +37,14 @@ export function LinkExistingScreen({ busy, onPick, onBack, onError }: Props) {
         Find it in your library and we'll file this copy against it — no new
         book, no duplicate to merge later.
       </p>
-      <form
-        className="settings-form"
-        data-testid="check-in-link-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (trimmed && !search.isPending) search.mutate(trimmed);
-        }}
-      >
-        <div className="settings-field">
-          <label htmlFor="check-in-link-query">Title or author</label>
-          <input
-            id="check-in-link-query"
-            data-testid="check-in-link-query"
-            type="search"
-            autoComplete="off"
-            placeholder="The Name of the Wind"
-            value={query}
-            disabled={busy || search.isPending}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-        <div className="settings-actions">
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={busy || search.isPending || !trimmed}
-            aria-busy={search.isPending}
-            data-testid="check-in-link-submit"
-          >
-            <BusyLabel
-              busy={search.isPending}
-              label="Search my library"
-              busyLabel="Searching…"
-            />
-          </Button>
-        </div>
-      </form>
+      <LibrarySearchForm
+        prefix="check-in-link"
+        label="Title or author"
+        submitLabel="Search my library"
+        busy={busy}
+        pending={search.isPending}
+        onSearch={search.mutate}
+      />
       {found?.books.length === 0 && (
         <p className="check-in-why" data-testid="check-in-link-empty">
           No book in your library matches that. Try the author's name, or a

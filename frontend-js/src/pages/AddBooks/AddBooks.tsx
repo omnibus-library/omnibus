@@ -18,6 +18,7 @@ import { useCurrentUser } from "../../session";
 import type { StagedCover } from "../BookEdit/CoverEditor";
 import { ReviewForm } from "./ReviewForm";
 import "../../styles/settings.css";
+import "../BookEdit/BookEdit.css";
 import "./AddBooks.css";
 
 type Status = { text: string; tone: "working" | "error" | "success" };
@@ -163,12 +164,11 @@ function AddBooksForm() {
       setProgress(0);
       setStatus({ text: "Adding to your library…", tone: "working" });
     },
-    onSuccess: (uuid) => {
+    onSuccess: () => {
       // The new book belongs on the library's lists the next time they are read.
       for (const queryKey of [["books"], ["shelves"], ["shelf-page"]]) {
         queryClient.invalidateQueries({ queryKey });
       }
-      navigate(`/books/${uuid}`);
     },
     onError: (error) => setStatus({ text: uploadFailed(error), tone: "error" }),
   });
@@ -223,7 +223,11 @@ function AddBooksForm() {
           saving={add.isPending}
           error={add.error ? uploadFailed(add.error) : undefined}
           onAdd={(values, cover) =>
-            add.mutate({ pick: review.pick, values, cover })
+            // Per call, so an answer that lands after the page was left doesn't navigate.
+            add.mutate(
+              { pick: review.pick, values, cover },
+              { onSuccess: (uuid) => navigate(`/books/${uuid}`) },
+            )
           }
           onStartOver={() => {
             add.reset();
