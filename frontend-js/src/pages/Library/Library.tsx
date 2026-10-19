@@ -1,17 +1,12 @@
 import { skipToken, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
 import {
-  type Book,
   fetchBookPage,
   fetchShelfPage,
   fetchShelves,
   type LibraryQuery,
-  thumbSrcSet,
-  thumbUrl,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
-import { Cover } from "../../components/Cover/Cover";
 import { FilterBar } from "../../components/FilterBar/FilterBar";
 import type { ShelfList } from "../../components/FilterBar/filters";
 import {
@@ -22,7 +17,7 @@ import {
 import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { plural } from "../../format";
-import { useCurrentUser } from "../../session";
+import { useCurrentUser, useStackSeries } from "../../session";
 import {
   DEFAULT_PREFS,
   lastLibrary,
@@ -35,43 +30,13 @@ import {
   savePrefs,
   saveShelfSelection,
 } from "../../viewPrefs";
+import { BookGrid } from "./BookGrid";
 import { BookTable } from "./BookTable";
 import { emptyState, headerCount } from "./libraryView";
 import { ShelfGallery } from "./ShelfGallery";
 import { headerSort, sortLockReason } from "./sorting";
 import { Toolbar } from "./Toolbar";
 import "./Library.css";
-
-const TILE_SIZES = "(max-width: 640px) 160px, (max-width: 1280px) 200px, 240px";
-
-// The entrance cascade: 40ms steps, wrapping every eight tiles.
-const staggerMs = (index: number) => (index % 8) * 40;
-
-function Tile({ book, index }: { book: Book; index: number }) {
-  return (
-    <Link
-      to={`/books/${book.uuid}`}
-      className="cover-link lib-tile"
-      style={{ animationDelay: `${staggerMs(index)}ms` }}
-      aria-label={`Open details for ${book.title}`}
-    >
-      <span className="lib-tile-art">
-        <Cover
-          book={book}
-          src={book.hasCover ? thumbUrl(book.uuid) : null}
-          srcSet={book.hasCover ? thumbSrcSet(book.uuid) : undefined}
-          sizes={TILE_SIZES}
-        />
-      </span>
-      <span className="lib-tile-cap">
-        <span className="lib-tile-title">{book.title}</span>
-        {book.authors.length > 0 && (
-          <span className="lib-tile-author">{book.authors.join(", ")}</span>
-        )}
-      </span>
-    </Link>
-  );
-}
 
 function Receipt({
   count,
@@ -114,7 +79,9 @@ export function Library() {
     dir: prefs.dir,
     clauses: prefs.clauses,
     excludeFormats: [...user.hiddenFormats].sort(),
+    stackSeries: user.stackSeries && prefs.view === "grid",
   };
+  const stackToggle = useStackSeries();
   const pages = useInfiniteQuery({
     queryKey: ["books", query],
     queryFn: ({ pageParam }) => fetchBookPage(query, pageParam),
@@ -149,6 +116,8 @@ export function Library() {
   // The lens is the shelf's page or, on All Books, the browse list.
   const lens = shelfId === null ? pages : shelfPage;
   const books = shelfId === null ? browseBooks : (shelfPage.data ?? []);
+  // shortcut: shelf lens stays unstacked; port shared::stack_books when parity is wanted
+  const stacks = pages.data?.pages.flatMap((page) => page.stacks) ?? [];
   const sortLock = sortLockReason(
     shelvesQuery.data?.find((s) => s.id === shelfId)?.kind ?? null,
   );
@@ -192,7 +161,9 @@ export function Library() {
     const row = loadMore.current;
     if (!row || !hasNextPage || isFetchingNextPage) return;
     const observer = new IntersectionObserver(
-      ([entry]) => entry?.isIntersecting && fetchNextPage(),
+      // Entries queue while the page is busy, so a stale "not yet" can precede the current one.
+      (entries) =>
+        entries.some((entry) => entry.isIntersecting) && fetchNextPage(),
       { rootMargin: "400px" },
     );
     observer.observe(row);
@@ -249,6 +220,11 @@ export function Library() {
             // Hidden formats narrow All Books only.
             hiddenFormats={shelfId === null ? query.excludeFormats : []}
             sortLock={sortLock}
+            stack={{
+              on: user.stackSeries,
+              failed: stackToggle.isError,
+              onToggle: () => stackToggle.mutate(!user.stackSeries),
+            }}
             onChange={change}
           />
         </div>
@@ -303,11 +279,7 @@ export function Library() {
                 }
               />
             ) : (
-              <div className="lib-grid">
-                {books.map((book, index) => (
-                  <Tile key={book.uuid} book={book} index={index} />
-                ))}
-              </div>
+              <BookGrid books={books} stacks={shelfId === null ? stacks : []} />
             ))}
           {hasNextPage && (
             <div className="lib-load-more-row" ref={loadMore}>

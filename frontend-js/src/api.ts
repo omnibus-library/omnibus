@@ -15,12 +15,14 @@ import {
   listShelves,
   login as postLogin,
   register as postRegister,
+  postStackSeries,
 } from "./api/generated/omnibus";
 import {
   type EbookMetadata,
   type EbookPage,
   type PaletteResults as PaletteWire,
   type ResumePoint as ResumePointWire,
+  type SeriesStack as SeriesStackWire,
   type ShelfSummary,
   SortDir,
   SortKey,
@@ -136,6 +138,7 @@ function toBook(wire: EbookMetadata) {
     addedAt: wire.added_at ?? null,
     modified: wire.modified ?? null,
     hasPhysical: wire.has_physical ?? false,
+    seriesId: wire.series_id ?? null,
   };
 }
 
@@ -218,8 +221,42 @@ export type PaletteResults = ReturnType<typeof toPalette>;
 /** One book hit in the palette or on the results page. */
 export type PaletteBook = PaletteResults["books"][number];
 
+/** What the reader has done with one volume of a stack. */
+export type StackState = {
+  uuid: string;
+  started: boolean;
+  finished: boolean;
+  percent: number | null;
+};
+
+/** A series folded into one cell of a book list, standing in its lead's slot. */
+export type SeriesStack = {
+  leadUuid: string;
+  name: string;
+  seriesId: number | null;
+  /** Every volume that passes the request's filters, in series order. */
+  members: Book[];
+  states: StackState[];
+};
+
+function toStack(wire: SeriesStackWire): SeriesStack {
+  return {
+    leadUuid: wire.lead_uuid,
+    name: wire.name,
+    seriesId: wire.series_id ?? null,
+    members: wire.members.map(toBook),
+    states: (wire.states ?? []).map((s) => ({
+      uuid: s.uuid,
+      started: s.started ?? false,
+      finished: s.finished ?? false,
+      percent: s.percent ?? null,
+    })),
+  };
+}
+
 export type BookPage = {
   books: Book[];
+  stacks: SeriesStack[];
   total: number;
   next: string | null;
   hidden: number | null;
@@ -234,6 +271,7 @@ export function toBookPage(page: EbookPage, headers: Headers): BookPage {
   const hidden = headers.get("X-Hidden-Count");
   return {
     books,
+    stacks: (page.stacks ?? []).map(toStack),
     total: countHeader.parse(headers.get("X-Total-Count") ?? books.length),
     next: headers.get("X-Next-Cursor"),
     hidden: hidden === null ? null : countHeader.parse(hidden),
@@ -322,6 +360,8 @@ export type LibraryQuery = {
   clauses: FilterClause[];
   /** The formats the reader hides from All Books, sorted. */
   excludeFormats: string[];
+  /** Fold each series into one stack; the shelf lens never sends it. */
+  stackSeries: boolean;
 };
 
 export const PAGE_SIZE = 100;
@@ -340,6 +380,7 @@ export async function fetchBookPage(
     omit_description: true,
     ...(cursor ? { cursor } : {}),
     ...(filter ? { filter } : {}),
+    ...(query.stackSeries ? { stack_series: true } : {}),
     ...(query.excludeFormats.length
       ? { exclude_formats: query.excludeFormats.join(",") }
       : {}),
@@ -368,6 +409,12 @@ export async function fetchShelfPage(
   });
   if (res.status !== 200) throw failure(res);
   return res.data.books.map(toBook);
+}
+
+/** Saves the reader's Stack series preference. */
+export async function setStackSeries(enabled: boolean): Promise<void> {
+  const res = await postStackSeries({ enabled });
+  if (res.status !== 200) throw failure(res);
 }
 
 /** The full record for one book, or `null` when no book has that uuid. */

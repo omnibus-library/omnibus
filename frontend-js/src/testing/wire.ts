@@ -3,6 +3,7 @@ import type {
   PaletteBookHit,
   PaletteResults,
   ResumePoint,
+  SeriesStack,
   ShelfSummary,
   UserSummary,
 } from "../api/generated/schemas";
@@ -87,6 +88,18 @@ export const WIRE_ADA: UserSummary = {
   can_download: true,
   kindle_email: null,
 };
+
+/** A folded series as `GET /api/ebooks` sends it with `stack_series`; override what a case needs. */
+export function aWireStack(overrides: Partial<SeriesStack> = {}): SeriesStack {
+  return {
+    lead_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    name: "Saga",
+    series_id: 7,
+    members: [],
+    states: [],
+    ...overrides,
+  };
+}
 
 /** A hand-picked shelf the signed-in admin (user 1) owns, as `GET /api/shelves` sends it. */
 export function aWireShelf(

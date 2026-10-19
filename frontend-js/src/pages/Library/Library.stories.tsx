@@ -9,8 +9,15 @@ import {
   libraryHandler,
   shelfPageHandler,
   shelvesHandler,
+  stackSeriesHandler,
 } from "../../testing/handlers";
-import { aWireLibrary, aWireShelf, WIRE_ADA } from "../../testing/wire";
+import {
+  aWireBook,
+  aWireLibrary,
+  aWireShelf,
+  aWireStack,
+  WIRE_ADA,
+} from "../../testing/wire";
 import { Library } from "./Library";
 
 const PREFS_KEY = `omnibus.view_prefs::${LIBRARY_PATH}`;
@@ -35,6 +42,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 const requests: URLSearchParams[] = [];
+const bodies: unknown[] = [];
 
 const TABLE_PREFS = '{"view_mode":"table","sort_key":"title","sort_dir":"asc"}';
 
@@ -743,5 +751,196 @@ export const ManualShelfSortLocked: Story = {
     await expect(
       canvas.getByRole("columnheader", { name: /^Title/ }),
     ).toHaveAttribute("aria-sort", "ascending");
+  },
+};
+
+const uuidOf = (n: number) =>
+  `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
+const volume = (series: string, n: number, index: number) =>
+  aWireBook({
+    id: n,
+    title: `${series}, Vol. ${index}`,
+    series,
+    series_index: String(index),
+    unique_identifier: uuidOf(n),
+  });
+
+// Two series and a standalone, in the order the server lists them before folding.
+const STACK_BOOKS = [
+  volume("Saga", 101, 1),
+  volume("Saga", 102, 2),
+  volume("Saga", 103, 3),
+  volume("Duo", 201, 1),
+  volume("Duo", 202, 2),
+  aWireBook({
+    id: 301,
+    title: "Standalone",
+    series: null,
+    series_index: null,
+    unique_identifier: uuidOf(301),
+  }),
+];
+
+// Saga's first volume is finished and its second is 40% read.
+const STACKS = [
+  aWireStack({
+    lead_uuid: uuidOf(101),
+    members: STACK_BOOKS.slice(0, 3),
+    states: [
+      { uuid: uuidOf(101), started: true, finished: true },
+      { uuid: uuidOf(102), started: true, percent: 40 },
+    ],
+  }),
+  aWireStack({
+    lead_uuid: uuidOf(201),
+    name: "Duo",
+    series_id: 8,
+    members: STACK_BOOKS.slice(3, 5),
+  }),
+];
+
+const STACKED_USER = { ...WIRE_ADA, stack_series: true };
+
+export const StackedSeries: Story = {
+  parameters: { user: STACKED_USER },
+  beforeEach({ msw }) {
+    requests.length = 0;
+    msw.use(
+      libraryHandler(STACK_BOOKS, 10, { requests, stacks: STACKS }),
+      stackSeriesHandler(),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const saga = await canvas.findByRole("button", { name: "Saga, 3 books" });
+    await expect(saga).toHaveAttribute("aria-expanded", "false");
+    await expect(saga).toHaveTextContent("3 books · Sora Inkwell");
+    await expect(
+      canvas.getByRole("button", { name: "Duo, 2 books" }),
+    ).toBeInTheDocument();
+    // The stacks stand in for their leads; only the standalone keeps a tile.
+    await expect(tiles(canvas)).toHaveLength(1);
+    await expect(requests[0]?.get("stack_series")).toBe("true");
+
+    const fills = [...saga.querySelectorAll<HTMLElement>(".ss-segs b")].map(
+      (fill) => fill.style.width,
+    );
+    await expect(fills).toEqual(["100%", "40%", "0%"]);
+    // The volume in progress fans in front.
+    await expect(saga.querySelector(".ss-leaf img")).toHaveAttribute(
+      "alt",
+      "Cover of Saga, Vol. 2",
+    );
+
+    await userEvent.click(canvas.getByRole("button", { name: "Table" }));
+
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(6));
+    await expect(requests.at(-1)?.has("stack_series")).toBe(false);
+  },
+};
+
+export const DealOutAndFold: Story = {
+  parameters: { user: STACKED_USER },
+  beforeEach({ msw }) {
+    msw.use(libraryHandler(STACK_BOOKS, 10, { stacks: STACKS }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Saga, 3 books" }),
+    );
+
+    const fold = await canvas.findByRole("button", { name: /^Fold up/ });
+    await waitFor(() => expect(fold).toHaveFocus());
+    await expect(
+      canvas.getByRole("heading", { level: 3, name: "Saga" }),
+    ).toBeInTheDocument();
+    await expect(canvas.getByText(/^3 in your library/)).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("link", { name: "Series page →" }),
+    ).toHaveAttribute("href", "/series/7");
+    await expect(canvas.getByText("Vol. 1 · read")).toBeInTheDocument();
+    await expect(canvas.getByText("Vol. 2")).toBeInTheDocument();
+    await expect(canvas.getByText("Vol. 3")).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("button", { name: "Saga, 3 books" }),
+    ).not.toBeInTheDocument();
+
+    // One run at a time: dealing out Duo folds Saga.
+    await userEvent.click(canvas.getByRole("button", { name: "Duo, 2 books" }));
+    await expect(
+      await canvas.findByRole("heading", { level: 3, name: "Duo" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", { name: "Saga, 3 books" }),
+    ).toBeInTheDocument();
+
+    await userEvent.keyboard("{Escape}");
+
+    const duo = await canvas.findByRole("button", { name: "Duo, 2 books" });
+    await waitFor(() => expect(duo).toHaveFocus());
+    await expect(canvas.queryByRole("heading", { level: 3 })).toBeNull();
+  },
+};
+
+export const StackToggle: Story = {
+  beforeEach({ msw }) {
+    requests.length = 0;
+    msw.use(
+      libraryHandler(STACK_BOOKS, 10, { requests, stacks: STACKS }),
+      stackSeriesHandler(bodies),
+    );
+    bodies.length = 0;
+  },
+  play: async ({ canvas, userEvent }) => {
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(6));
+    const toggle = canvas.getByRole("button", { name: "Stack series" });
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    await userEvent.click(toggle);
+
+    // The switch flips before the save answers.
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-pressed", "true"));
+    await expect(
+      await canvas.findByRole("button", { name: "Saga, 3 books" }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(bodies).toEqual([{ enabled: true }]));
+    await expect(requests.at(-1)?.get("stack_series")).toBe("true");
+
+    await userEvent.click(toggle);
+
+    await waitFor(() =>
+      expect(toggle).toHaveAttribute("aria-pressed", "false"),
+    );
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(6));
+    await waitFor(() =>
+      expect(bodies).toEqual([{ enabled: true }, { enabled: false }]),
+    );
+
+    await userEvent.click(canvas.getByRole("button", { name: "Table" }));
+
+    await expect(
+      canvas.queryByRole("button", { name: "Stack series" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const StackToggleFails: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      libraryHandler(STACK_BOOKS, 10, { stacks: STACKS }),
+      failing("post", "/api/account/stack-series", 500),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(6));
+    const toggle = canvas.getByRole("button", { name: "Stack series" });
+
+    await userEvent.click(toggle);
+
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "Couldn't save Stack series. Try again.",
+    );
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(6));
   },
 };

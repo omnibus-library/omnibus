@@ -18,6 +18,7 @@ import type {
   LoginResponse,
   PaletteResults,
   ResumePoint,
+  SeriesStack,
   SeriesSummary,
   ShelfSummary,
   TagWeight,
@@ -81,7 +82,8 @@ function passes(book: EbookMetadata, clauses: FilterClause[]): boolean {
 /**
  * Library pages of `pageSize` in fixture order, narrowed by `filter` and
  * `exclude_formats` as the server does, with its paging headers. Each
- * request's search params land in `requests`, for assertions.
+ * request's search params land in `requests`, for assertions. A request with
+ * `stack_series` gets `stacks` folded into their leads' slots.
  */
 export function libraryHandler(
   books: EbookMetadata[],
@@ -89,7 +91,12 @@ export function libraryHandler(
   {
     path = LIBRARY_PATH,
     requests = [],
-  }: { path?: string | null; requests?: URLSearchParams[] } = {},
+    stacks = [],
+  }: {
+    path?: string | null;
+    requests?: URLSearchParams[];
+    stacks?: SeriesStack[];
+  } = {},
 ) {
   return http.get("/api/ebooks", ({ request }) => {
     const url = new URL(request.url);
@@ -112,17 +119,42 @@ export function libraryHandler(
       (b) =>
         !(b.formats ?? []).some((f) => exclude.some((x) => sameName(f, x))),
     );
+    const folding = url.searchParams.get("stack_series") === "true";
+    const members = new Set(
+      stacks.flatMap((s) => s.members.map((m) => m.unique_identifier)),
+    );
+    const leads = new Set(stacks.map((s) => s.lead_uuid));
+    // A stack takes its lead's slot, so the other members leave the list.
+    const listed = folding
+      ? shown.filter(
+          (b) =>
+            !members.has(b.unique_identifier) ||
+            leads.has(b.unique_identifier ?? ""),
+        )
+      : shown;
     const start = Number(url.searchParams.get("cursor") ?? "0");
     const end = start + pageSize;
     const headers: Record<string, string> = {
-      "X-Total-Count": String(shown.length),
+      "X-Total-Count": String(listed.length),
     };
-    if (end < shown.length) headers["X-Next-Cursor"] = String(end);
+    if (end < listed.length) headers["X-Next-Cursor"] = String(end);
     if (exclude.length) {
       headers["X-Hidden-Count"] = String(narrowed.length - shown.length);
     }
-    const page = { books: shown.slice(start, end), path } satisfies EbookPage;
+    const page = {
+      books: listed.slice(start, end),
+      path,
+      ...(folding && { stacks }),
+    } satisfies EbookPage;
     return HttpResponse.json(page, { headers });
+  });
+}
+
+/** `POST /api/account/stack-series`; each request body lands in `bodies`. */
+export function stackSeriesHandler(bodies: unknown[] = []) {
+  return http.post("/api/account/stack-series", async ({ request }) => {
+    bodies.push(await request.json());
+    return new HttpResponse(null);
   });
 }
 

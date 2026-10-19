@@ -11,6 +11,8 @@ type ToolbarProps = {
   hiddenFormats: string[];
   /** Why sorting is inert on this list, or `null` when it acts. */
   sortLock: string | null;
+  /** The Stack series switch: the saved preference, a refused save, and the click. */
+  stack: { on: boolean; failed: boolean; onToggle: () => void };
   onChange: (next: Prefs) => void;
 };
 
@@ -19,11 +21,30 @@ export function Toolbar({
   prefs,
   hiddenFormats,
   sortLock,
+  stack,
   onChange,
 }: ToolbarProps) {
   const hidden = hiddenFormatsLabel(hiddenFormats);
   return (
     <div className="lib-toolbar" role="toolbar">
+      {prefs.view === "grid" && (
+        <>
+          <button
+            type="button"
+            className={stack.on ? "ss-tog on" : "ss-tog"}
+            aria-pressed={stack.on}
+            onClick={stack.onToggle}
+          >
+            <span className="ss-sw" aria-hidden="true" />
+            Stack series
+          </button>
+          {stack.failed && (
+            <span className="ss-terr" role="alert">
+              Couldn't save Stack series. Try again.
+            </span>
+          )}
+        </>
+      )}
       {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings a default border and min-width that .lib-view-toggle never resets */}
       <div className="lib-view-toggle" role="group" aria-label="View mode">
         {(["table", "grid"] as const).map((view) => (

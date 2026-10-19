@@ -2,6 +2,7 @@ import {
   type Book,
   type BookUuid,
   parseBookUuid,
+  type SeriesStack,
   type Shelf,
   type UserId,
 } from "../api";
@@ -36,6 +37,7 @@ export function aBook(overrides: Partial<Book> = {}): Book {
     addedAt: null,
     modified: null,
     hasPhysical: false,
+    seriesId: null,
     ...overrides,
   };
 }
@@ -51,6 +53,18 @@ export function aShelf(overrides: Partial<Shelf> = {}): Shelf {
     ownerName: "ada",
     bookCount: 12,
     coverUuids: [],
+    ...overrides,
+  };
+}
+
+/** A folded series as the library list parses it; override what a case needs. */
+export function aStack(overrides: Partial<SeriesStack> = {}): SeriesStack {
+  return {
+    leadUuid: "s1",
+    name: "Saga",
+    seriesId: 7,
+    members: [aBook()],
+    states: [],
     ...overrides,
   };
 }

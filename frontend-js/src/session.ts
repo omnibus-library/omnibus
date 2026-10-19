@@ -6,7 +6,13 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { fetchMe, fetchRegistrationOpen, logout, type User } from "./api";
+import {
+  fetchMe,
+  fetchRegistrationOpen,
+  logout,
+  setStackSeries,
+  type User,
+} from "./api";
 
 export const meQuery = queryOptions({ queryKey: ["me"], queryFn: fetchMe });
 
@@ -42,5 +48,20 @@ export function useSignOut() {
       queryClient.setQueryData(meQuery.queryKey, null);
       queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
     },
+  });
+}
+
+/** Saves the Stack series preference straight away; a refusal puts the switch back. */
+export function useStackSeries() {
+  const queryClient = useQueryClient();
+  const show = (enabled: boolean) =>
+    queryClient.setQueryData(
+      meQuery.queryKey,
+      (user) => user && { ...user, stackSeries: enabled },
+    );
+  return useMutation({
+    mutationFn: setStackSeries,
+    onMutate: show,
+    onError: (_error, enabled) => show(!enabled),
   });
 }

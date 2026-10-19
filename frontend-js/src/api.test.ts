@@ -14,6 +14,7 @@ import {
   aWirePalette,
   aWireResumePoint,
   aWireShelf,
+  aWireStack,
   WIRE_ADA,
 } from "./testing/wire";
 
@@ -46,8 +47,10 @@ describe("toBookPage", () => {
           addedAt: "2026-08-01T12:00:00Z",
           modified: "2026-08-02T12:00:00Z",
           hasPhysical: false,
+          seriesId: null,
         },
       ],
+      stacks: [],
       total: 46,
       next: "eyJzIjoiQXVyb3JhIn0",
       hidden: 3,
@@ -60,11 +63,35 @@ describe("toBookPage", () => {
 
     expect(page).toEqual({
       books: [],
+      stacks: [],
       total: 0,
       next: null,
       hidden: null,
       path: null,
     });
+  });
+
+  it("reads the stacks riding with the page", () => {
+    const wire = aWireStack({
+      lead_uuid: auroraWire.unique_identifier ?? "",
+      members: [auroraWire],
+      states: [{ uuid: "u", started: true, percent: 40 }],
+    });
+
+    const [stack] = toBookPage(
+      { books: [], stacks: [wire] },
+      new Headers(),
+    ).stacks;
+
+    expect(stack).toMatchObject({
+      leadUuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+      name: "Saga",
+      seriesId: 7,
+      states: [{ uuid: "u", started: true, finished: false, percent: 40 }],
+    });
+    expect(stack?.members.map((b) => b.title)).toEqual([
+      "Aurora Station, Vol. 1",
+    ]);
   });
 
   it("falls back to the filename for a book with no title or cover", () => {

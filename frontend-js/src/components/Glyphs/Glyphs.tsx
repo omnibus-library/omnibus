@@ -233,3 +233,21 @@ export function HeartGlyph({ size = 13 }: GlyphProps) {
     </svg>
   );
 }
+
+/** Two offset sheets, the count badge's mark on a stacked series. */
+export function StackGlyph({ size = 10 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 10 10"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.2}
+      aria-hidden="true"
+    >
+      <rect x="1" y="3" width="5.5" height="6.5" rx="0.8" />
+      <path d="M3.5 1.2h5v6.3" />
+    </svg>
+  );
+}
