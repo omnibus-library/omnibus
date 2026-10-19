@@ -320,23 +320,26 @@ export function Library() {
               message={`Couldn't load the library: ${lens.error.message}`}
             />
           )}
-          {lens.status === "success" &&
-            emptyState(books.length, filtered) === "empty" && (
-              <p className="library-empty">
-                {shelfId === null
-                  ? "No ebooks found."
-                  : "No books in this shelf."}
-              </p>
-            )}
-          {lens.status === "success" &&
-            emptyState(books.length, filtered) === "filtered" && (
-              <div className="library-empty">
-                <p>No books match these filters.</p>
-                <Button onClick={() => change({ ...prefs, clauses: [] })}>
-                  Clear filters
-                </Button>
-              </div>
-            )}
+          {lens.isRefetchError && !isFetchNextPageError && (
+            <p className="subtitle" role="alert">
+              Couldn't refresh the library: {lens.error?.message}
+            </p>
+          )}
+          {lens.data && emptyState(books.length, filtered) === "empty" && (
+            <p className="library-empty">
+              {shelfId === null
+                ? "No ebooks found."
+                : "No books in this shelf."}
+            </p>
+          )}
+          {lens.data && emptyState(books.length, filtered) === "filtered" && (
+            <div className="library-empty">
+              <p>No books match these filters.</p>
+              <Button onClick={() => change({ ...prefs, clauses: [] })}>
+                Clear filters
+              </Button>
+            </div>
+          )}
           {books.length > 0 &&
             (prefs.view === "table" ? (
               <BookTable

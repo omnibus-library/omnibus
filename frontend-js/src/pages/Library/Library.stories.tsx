@@ -1,4 +1,5 @@
-import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { Decorator, Meta, StoryObj } from "@storybook/react-vite";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { delay, HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 import type { BulkOverridesRequest } from "../../api/generated/schemas";
@@ -56,6 +57,30 @@ const TABLE_PREFS = '{"view_mode":"table","sort_key":"title","sort_dir":"asc"}';
 function seedTable() {
   localStorage.setItem("omnibus.view_prefs.last_library", LIBRARY_PATH);
   localStorage.setItem(PREFS_KEY, TABLE_PREFS);
+}
+
+let release: () => void = () => {};
+let holding = false;
+let refusing = false;
+
+// Hands the page's query client to a play, to refetch after a handler changes its answer.
+let pageClient: QueryClient;
+function GrabClient() {
+  pageClient = useQueryClient();
+  return null;
+}
+const withClient: Decorator = (Story) => (
+  <>
+    <GrabClient />
+    <Story />
+  </>
+);
+
+// A promise a handler awaits, so a story holds a request until it calls `release`.
+function holdRequests() {
+  return new Promise<void>((resolve) => {
+    release = resolve;
+  });
 }
 
 export const Loaded: Story = {
@@ -123,6 +148,34 @@ export const Empty: Story = {
     await expect(
       await canvas.findByText("No ebooks found."),
     ).toBeInTheDocument();
+  },
+};
+
+export const RefetchFails: Story = {
+  decorators: [withClient],
+  beforeEach({ msw }) {
+    refusing = false;
+    msw.use(
+      http.get("/api/ebooks", () =>
+        refusing
+          ? new HttpResponse("failed with 500", { status: 500 })
+          : undefined,
+      ),
+      libraryHandler([]),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText("No ebooks found."),
+    ).toBeInTheDocument();
+
+    refusing = true;
+    await pageClient.invalidateQueries({ queryKey: ["books"] });
+
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "Couldn't refresh the library",
+    );
+    await expect(canvas.getByText("No ebooks found.")).toBeInTheDocument();
   },
 };
 
@@ -418,16 +471,6 @@ export const FilteredToNothing: Story = {
     );
   },
 };
-
-let release: () => void = () => {};
-let holding = false;
-
-// A promise a handler awaits, so a story holds a request until it calls `release`.
-function holdRequests() {
-  return new Promise<void>((resolve) => {
-    release = resolve;
-  });
-}
 
 export const FilteredCounting: Story = {
   beforeEach({ msw }) {
