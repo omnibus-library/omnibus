@@ -149,6 +149,8 @@ type StatusLineProps = {
   error: boolean;
   /** Sits in a card's footer row beside the actions. */
   action?: boolean;
+  /** The message is a wait, drawn as a sheen rather than a result. */
+  pending?: boolean;
 };
 
 /** A card's save result: a live region mounted empty, so its first message is announced. */
@@ -157,6 +159,7 @@ export function StatusLine({
   message,
   error,
   action = false,
+  pending = false,
 }: StatusLineProps) {
   return (
     <p
@@ -164,11 +167,11 @@ export function StatusLine({
       className={classes(
         "settings-status",
         action && "settings-action-status",
-        message && (error ? "error" : "success"),
+        message && !pending && (error ? "error" : "success"),
       )}
       data-testid={testId}
     >
-      {message}
+      {pending ? <span className="ld-sheen">{message}</span> : message}
     </p>
   );
 }

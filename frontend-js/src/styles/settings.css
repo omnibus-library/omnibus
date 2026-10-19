@@ -314,6 +314,42 @@
 .settings-layout .settings-actions .settings-action-status {
   margin-right: auto;
 }
+.settings-field-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--bad);
+}
 .settings-field input[aria-invalid="true"] {
   border-color: var(--bad);
+}
+.settings-field input.ld-unknown:not([type="checkbox"]) {
+  cursor: progress;
+  background: color-mix(in oklch, var(--ink-3) 14%, var(--bg-2));
+}
+.settings-switch input[type="checkbox"].ld-unknown:disabled {
+  opacity: 1;
+  cursor: progress;
+  background: color-mix(in oklch, var(--ink-3) 22%, var(--bg-2));
+}
+.settings-switch input[type="checkbox"].ld-unknown::after {
+  left: 50%;
+  margin: -7px 0 0 -7px;
+  transform: none;
+  animation: ld-knob 1.6s var(--ld-ease) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-switch input[type="checkbox"].ld-unknown::after {
+    animation: none;
+  }
+}
+@keyframes ld-knob {
+  0%,
+  100% {
+    transform: translateX(-3px);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateX(3px);
+    opacity: 0.9;
+  }
 }

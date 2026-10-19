@@ -132,7 +132,7 @@ const WITH_UNKNOWN = { ...WIRE_ADA, hidden_formats: ["djvu", "pdf"] };
 export const ShowsAgainAFormatTheListDoesNotKnow: Story = {
   parameters: { user: WITH_UNKNOWN },
   beforeEach({ msw }) {
-    msw.use(...settingsHandlers(aSettingsServer(WITH_UNKNOWN)));
+    msw.use(...settingsHandlers(aSettingsServer({ user: WITH_UNKNOWN })));
   },
   play: async ({ canvas, userEvent }) => {
     const djvu = await canvas.findByRole("checkbox", { name: "DJVU" });

@@ -12,6 +12,7 @@ import {
   parseSettingsSection,
   sectionHref,
 } from "../../settingsIndex";
+import { GoalsSection } from "./GoalsSection";
 import { PreferencesSection } from "./PreferencesSection";
 import { ProfileSection } from "./ProfileSection";
 
@@ -68,6 +69,7 @@ export function Settings() {
       <SectionHeader title={active.label} />
       {active.slug === "profile" && <ProfileSection />}
       {active.slug === "preferences" && <PreferencesSection />}
+      {active.slug === "goals" && <GoalsSection />}
     </SettingsShell>
   );
 }

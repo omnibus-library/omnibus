@@ -1,19 +1,37 @@
 import { HttpResponse, http } from "msw";
+import type { GoalTargets } from "../api";
 import {
+  DailyGoalUpdate,
+  ReadingGoalUpdate,
   SetHiddenFormats,
   SetProfile,
   SetStackSeries,
   type UserSummary,
 } from "../api/generated/schemas";
 import { svg } from "./handlers";
-import { WIRE_ADA } from "./wire";
+import { aWireStatsGoals, WIRE_ADA } from "./wire";
 
 /** What the fake settings routes read and write, so a write shows on the next read. */
-export type SettingsServer = { user: UserSummary };
+export type SettingsServer = {
+  user: UserSummary;
+  goals: GoalTargets;
+  /** Each goal write that landed, as `kind=target`. */
+  goalWrites: string[];
+  /** Goal kinds whose write the server refuses. */
+  refuseGoals: string[];
+};
 
 export const aSettingsServer = (
-  user: UserSummary = WIRE_ADA,
-): SettingsServer => ({ user: { ...user } });
+  init: Partial<SettingsServer> = {},
+): SettingsServer => ({
+  user: WIRE_ADA,
+  goals: [null, null, null],
+  goalWrites: [],
+  refuseGoals: [],
+  ...init,
+});
+
+const refused = () => new HttpResponse("target refused", { status: 400 });
 
 const empty = (status = 200) => new HttpResponse(null, { status });
 
@@ -54,6 +72,25 @@ export function settingsHandlers(server: SettingsServer) {
         return empty();
       }),
     ),
+    http.get("/api/stats", () =>
+      HttpResponse.json(aWireStatsGoals(...server.goals)),
+    ),
+    http.put("/api/stats/goal", async ({ request }) => {
+      const { target } = ReadingGoalUpdate.parse(await request.json());
+      if (server.refuseGoals.includes("books")) return refused();
+      server.goalWrites.push(`books=${target}`);
+      server.goals = [target ?? null, server.goals[1], server.goals[2]];
+      return HttpResponse.json(null);
+    }),
+    http.put("/api/stats/goal/daily", async ({ request }) => {
+      const { kind, target } = DailyGoalUpdate.parse(await request.json());
+      if (server.refuseGoals.includes(kind)) return refused();
+      server.goalWrites.push(`${kind}=${target}`);
+      const goals: GoalTargets = [...server.goals];
+      goals[kind === "pages" ? 1 : 2] = target ?? null;
+      server.goals = goals;
+      return HttpResponse.json({});
+    }),
     http.post("/api/account/hidden-formats", async ({ request }) => {
       const { formats } = SetHiddenFormats.parse(await request.json());
       patch({ hidden_formats: formats ?? [] });

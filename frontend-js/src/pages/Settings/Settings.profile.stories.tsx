@@ -127,7 +127,7 @@ export const UploadsAPicture: Story = {
 export const RedrawsAReplacedPicture: Story = {
   parameters: { user: WITH_PHOTO },
   beforeEach({ msw }) {
-    msw.use(...settingsHandlers(aSettingsServer(WITH_PHOTO)));
+    msw.use(...settingsHandlers(aSettingsServer({ user: WITH_PHOTO })));
   },
   play: async ({ canvas, userEvent }) => {
     const photo = await canvas.findByRole("img", { name: "Ada Lovelace" });
@@ -173,7 +173,7 @@ export const RefusesAPicture: Story = {
 export const RemovesThePictureOnceConfirmed: Story = {
   parameters: { user: WITH_PHOTO },
   beforeEach({ msw }) {
-    msw.use(...settingsHandlers(aSettingsServer(WITH_PHOTO)));
+    msw.use(...settingsHandlers(aSettingsServer({ user: WITH_PHOTO })));
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByTestId("avatar-remove"));

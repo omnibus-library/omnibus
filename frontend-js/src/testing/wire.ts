@@ -1,3 +1,4 @@
+import { getGetStatsResponseMock } from "../api/generated/omnibus.msw";
 import type {
   AlignmentView,
   AttributedRating,
@@ -28,6 +29,7 @@ import type {
   SessionLogEntry,
   Shelf,
   ShelfSummary,
+  StatsSummary,
   UserSummary,
   WishlistEntry,
 } from "../api/generated/schemas";
@@ -535,4 +537,29 @@ export function aWireRulePreview(
     sample: aWireLibrary(2),
     ...overrides,
   };
+}
+
+/** `GET /api/stats` carrying the given targets (books, pages, minutes; `null` is none); the rest is generated filler. */
+export function aWireStatsGoals(
+  books: number | null,
+  pages: number | null,
+  minutes: number | null,
+): StatsSummary {
+  const progress = { current: 0, day: "2026-10-19" };
+  return getGetStatsResponseMock({
+    // The generated mock draws this from the enum's keys, which the schema refuses.
+    range: "all_time",
+    goal:
+      books === null
+        ? null
+        : { ...progress, kind: "books", target: books, year: 2026 },
+    daily_goals: {
+      pages:
+        pages === null ? null : { ...progress, kind: "pages", target: pages },
+      minutes:
+        minutes === null
+          ? null
+          : { ...progress, kind: "minutes", target: minutes },
+    },
+  });
 }
