@@ -108,8 +108,22 @@ pub fn read_page_named(path: &Path, name: &str) -> anyhow::Result<(&'static str,
 /// from one opened inode rather than three separate opens of the path.
 pub fn read_page_from_file(file: File, name: &str) -> anyhow::Result<(&'static str, Vec<u8>)> {
     let mut archive = zip::ZipArchive::new(file)?;
-    let entry = archive.by_name(name)?;
+    let index = entry_index(&archive, name).ok_or(zip::result::ZipError::FileNotFound)?;
+    let entry = archive.by_index(index)?;
     Ok((mime_for_page(name), read_capped(entry, name)?))
+}
+
+/// The index of the entry `file_names()` lists as `name`. zip 9 looks names up
+/// by their raw bytes, so a CP437-encoded name only matches in decoded form.
+pub(crate) fn entry_index<R: Read + std::io::Seek>(
+    archive: &zip::ZipArchive<R>,
+    name: &str,
+) -> Option<usize> {
+    archive.index_for_name(name).or_else(|| {
+        archive
+            .file_names()
+            .position(|n| n.is_ok_and(|n| n == name))
+    })
 }
 
 /// Decompress one archive entry, bailing past [`MAX_PAGE_BYTES`].
@@ -290,7 +304,8 @@ fn read_entry<R: Read + std::io::Seek>(
     archive: &mut zip::ZipArchive<R>,
     name: &str,
 ) -> Option<Vec<u8>> {
-    let mut entry = archive.by_name(name).ok()?;
+    let index = entry_index(archive, name)?;
+    let mut entry = archive.by_index(index).ok()?;
     let mut bytes = Vec::new();
     entry.read_to_end(&mut bytes).ok()?;
     Some(bytes)
