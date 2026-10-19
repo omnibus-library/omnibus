@@ -1,9 +1,10 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import type { ReactNode } from "react";
 import { Button } from "../../components/Button/Button";
+import { Modal } from "../../components/Modal/Modal";
 import { MAX_RATE, MIN_RATE } from "../../playback/boot";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import { SLEEP_PRESETS } from "../../playback/sleep";
-import { clampRate, formatHms, RATE_STEP } from "./listen";
+import { clampRate, formatHms, RATE_STEP, thumbPct } from "./listen";
 import "./Listen.css";
 
 type DrawerShellProps = {
@@ -53,7 +54,7 @@ type PanelShellProps = {
   children: ReactNode;
 };
 
-/** A scrim and a small dialog that takes focus on open, so Escape closes it without a click first. */
+/** A scrim and a small dialog over it: Escape or a click away closes, focus stays inside and returns on close. */
 export function PanelShell({
   extraClass,
   label,
@@ -61,29 +62,16 @@ export function PanelShell({
   onClose,
   children,
 }: PanelShellProps) {
-  const panel = useRef<HTMLDivElement>(null);
-  useEffect(() => panel.current?.focus(), []);
   return (
-    <>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: Escape closes the panel from the keyboard; the scrim is the pointer's way out */}
-      <div className="lp-scrim" onClick={onClose} />
-      <div
-        ref={panel}
-        className={`lp-panel ${extraClass}`}
-        data-testid={testId}
-        role="dialog"
-        aria-label={label}
-        tabIndex={-1}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            onClose();
-          }
-        }}
-      >
-        {children}
-      </div>
-    </>
+    <Modal
+      label={label}
+      backdropClass="lp-scrim"
+      dialogClass={`lp-panel ${extraClass}`}
+      dialogTestId={testId}
+      onClose={onClose}
+    >
+      {children}
+    </Modal>
   );
 }
 
@@ -93,10 +81,7 @@ const PRESETS = [0.5, 0.8, 1, 1.1, 1.2, 1.5, 1.8, 2];
 export function SpeedPanelBody() {
   const { rate, setRate } = usePlayback();
   const apply = (next: number) => setRate(clampRate(next));
-  const pct = Math.min(
-    100,
-    Math.max(0, ((rate - MIN_RATE) / (MAX_RATE - MIN_RATE)) * 100),
-  ).toFixed(1);
+  const pct = thumbPct(rate - MIN_RATE, MAX_RATE - MIN_RATE).toFixed(1);
   return (
     <>
       <div className="lp-panel-head">

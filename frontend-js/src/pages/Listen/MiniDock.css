@@ -348,8 +348,3 @@
     max-width: calc(50% - 44px);
   }
 }
-@media (max-width: 720px) {
-  .mini-dock {
-    bottom: calc(62px + env(safe-area-inset-bottom) + 8px);
-  }
-}

@@ -9,6 +9,7 @@ import {
   renameBookmark,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
+import { Loading } from "../../components/Loading/Loading";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import {
   chapterIndexForElapsed,
@@ -29,7 +30,7 @@ export function useBookmarks(uuid: BookUuid) {
   const { chapters, elapsed } = usePlayback();
   const client = useQueryClient();
   const key = ["audio-bookmarks", uuid];
-  const { data: list = [] } = useQuery({
+  const { data: list = [], status } = useQuery({
     queryKey: key,
     queryFn: () => fetchAudioBookmarks(uuid),
   });
@@ -46,6 +47,7 @@ export function useBookmarks(uuid: BookUuid) {
   // shortcut: a failed write is dropped without a word, as on Dioxus; surface it once there is a place to
   return {
     list,
+    status,
     freshId,
     toast,
     async add() {
@@ -126,7 +128,8 @@ export function ChaptersDrawer({ onClose }: { onClose: () => void }) {
           const left = Math.max(chapter.start + chapter.seconds - elapsed, 0);
           return (
             <button
-              key={chapter.start}
+              // biome-ignore lint/suspicious/noArrayIndexKey: the list is fixed per manifest, and two markers can share a start
+              key={i}
               type="button"
               className={ROW_CLASS[state]}
               data-testid={`chapter-row-${state}`}
@@ -225,6 +228,39 @@ function BookmarkRow({
   );
 }
 
+function BookmarksBody({ bookmarks }: { bookmarks: Bookmarks }) {
+  const { list, status, freshId } = bookmarks;
+  if (status === "pending") {
+    return <Loading kind="sheet" label="Loading your bookmarks" />;
+  }
+  if (status === "error") {
+    return (
+      <div className="lp-drawer-empty" role="alert">
+        <p className="lp-drawer-empty-title">Couldn't load your bookmarks</p>
+      </div>
+    );
+  }
+  if (list.length === 0) {
+    return (
+      <div className="lp-drawer-empty">
+        <p className="lp-drawer-empty-title">No bookmarks yet</p>
+        {/* The toolbar's Bookmark button only opens this drawer; "+ Bookmark" is what saves. */}
+        <p className="lp-drawer-empty-detail">
+          Tap + Bookmark above to save your place. Add a note to any mark below.
+        </p>
+      </div>
+    );
+  }
+  return list.map((bookmark) => (
+    <BookmarkRow
+      key={bookmark.id}
+      bookmark={bookmark}
+      fresh={freshId === bookmark.id}
+      bookmarks={bookmarks}
+    />
+  ));
+}
+
 /** The saved marks: a click seeks to one, its note edits in place, and "+ Bookmark" saves the current spot. */
 export function BookmarksDrawer({
   bookmarks,
@@ -233,14 +269,16 @@ export function BookmarksDrawer({
   bookmarks: Bookmarks;
   onClose: () => void;
 }) {
-  const { list, freshId, add } = bookmarks;
+  const { list, status, add } = bookmarks;
   return (
     <DrawerShell
       testId="bookmarks-drawer"
       onClose={onClose}
       head={
         <div>
-          <div className="lp-panel-kicker">Bookmarks · {list.length}</div>
+          <div className="lp-panel-kicker">
+            Bookmarks{status === "success" && ` · ${list.length}`}
+          </div>
           <div className="lp-panel-title">Your marks</div>
         </div>
       }
@@ -250,25 +288,7 @@ export function BookmarksDrawer({
         </Button>
       }
     >
-      {list.length === 0 ? (
-        <div className="lp-drawer-empty">
-          <p className="lp-drawer-empty-title">No bookmarks yet</p>
-          {/* The toolbar's Bookmark button only opens this drawer; "+ Bookmark" is what saves. */}
-          <p className="lp-drawer-empty-detail">
-            Tap + Bookmark above to save your place. Add a note to any mark
-            below.
-          </p>
-        </div>
-      ) : (
-        list.map((bookmark) => (
-          <BookmarkRow
-            key={bookmark.id}
-            bookmark={bookmark}
-            fresh={freshId === bookmark.id}
-            bookmarks={bookmarks}
-          />
-        ))
-      )}
+      <BookmarksBody bookmarks={bookmarks} />
     </DrawerShell>
   );
 }

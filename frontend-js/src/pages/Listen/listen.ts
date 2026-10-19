@@ -80,10 +80,6 @@ export function chapterFillPct(
   );
 }
 
-/** The single segment's fill when the book has no chapters. */
-export const noChapterFillPct = (elapsed: number, duration: number) =>
-  duration > 0 ? Math.min(100, (elapsed / duration) * 100) : 0;
-
 /** The playhead's offset along the bar, kept inside it; 0 when the bar has no length. */
 export const thumbPct = (position: number, max: number) =>
   max > 0 ? Math.min(100, Math.max(0, (position / max) * 100)) : 0;
@@ -116,8 +112,7 @@ export function chapterLabelAt(
 ): string {
   if (chapters.length === 0) return "Bookmark";
   const index = chapterIndexForElapsed(chapters, seconds);
-  const title = chapters[index]?.title;
-  return title ? `Ch. ${index + 1} · ${title}` : `Chapter ${index + 1}`;
+  return chapterSubText(chapters, index) ?? `Chapter ${index + 1}`;
 }
 
 /** The toolbar's panes, of which at most one is open. */
@@ -188,9 +183,3 @@ export const dockSubText = (
 
 /** The dock's popovers, of which at most one is open. */
 export type DockPanel = "volume" | "speed" | "sleep";
-
-/** What opens after a chip click: its own panel closes, another's takes over. */
-export const togglePanel = (
-  open: DockPanel | null,
-  clicked: DockPanel,
-): DockPanel | null => (open === clicked ? null : clicked);

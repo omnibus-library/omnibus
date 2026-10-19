@@ -8,19 +8,16 @@ import {
   chapterPrevTarget,
   chapterSubText,
   clampRate,
-  type DockPanel,
   dockBook,
   dockSubText,
   effectiveScrubPosition,
   formatHms,
   kickerText,
-  noChapterFillPct,
   rateLabel,
   remainingAtRate,
   syncLabel,
   thumbPct,
   timeLeftText,
-  togglePanel,
 } from "./listen";
 
 const chapters = [
@@ -132,13 +129,6 @@ describe("chapterFillPct", () => {
     expect(chapterFillPct(1, 1, 250, chapter)).toBe(25);
     expect(chapterFillPct(1, 1, 999, chapter)).toBe(100);
     expect(chapterFillPct(1, 1, 100, chapter)).toBe(0);
-  });
-});
-
-describe("noChapterFillPct", () => {
-  it("is proportional to the duration, and 0 while it is unknown", () => {
-    expect(noChapterFillPct(30, 120)).toBe(25);
-    expect(noChapterFillPct(0, 0)).toBe(0);
   });
 });
 
@@ -310,18 +300,4 @@ describe("dockBook", () => {
     expect(dockBook(ready, null)).toBeNull();
     expect(dockBook(ready, uuid)).toBe(ready.book);
   });
-});
-
-describe("togglePanel", () => {
-  it.each([
-    [null, "speed", "speed"],
-    ["speed", "speed", null],
-    ["speed", "sleep", "sleep"],
-    ["sleep", "volume", "volume"],
-  ] as [DockPanel | null, DockPanel, DockPanel | null][])(
-    "from %s, a click on %s leaves %s open",
-    (open, clicked, next) => {
-      expect(togglePanel(open, clicked)).toBe(next);
-    },
-  );
 });

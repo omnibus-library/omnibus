@@ -1,16 +1,16 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { Link, Route, Routes } from "react-router";
-import { expect, fireEvent, waitFor, within } from "storybook/test";
+import { expect, fireEvent, spyOn, waitFor, within } from "storybook/test";
 import { ADA } from "../../testing/AppHarness";
 import type { ListenWrite } from "../../testing/audioHandlers";
-import { listenHandlers } from "../../testing/audioHandlers";
-import { hanging } from "../../testing/handlers";
+import { listenHandlers, TEN_MINUTES_IN } from "../../testing/audioHandlers";
+import { failing, hanging } from "../../testing/handlers";
 import {
   aWireAudioBookmark,
   aWireAudioManifest,
   aWireBook,
-  aWirePosition,
+  aWireChapter,
 } from "../../testing/wire";
 import { Listen } from "./Listen";
 
@@ -20,14 +20,6 @@ const BOOK = aWireBook({ formats: ["M4B"] });
 const writes: ListenWrite[] = [];
 const wrote = (request: string) =>
   writes.filter((w) => w.request === request).map((w) => w.body);
-
-// Ten minutes into the first of three hour-long chapters.
-const TEN_MINUTES_IN = aWirePosition({
-  format: "audio",
-  progress_percent: null,
-  audio_position_seconds: 600,
-  book_file_id: 917,
-});
 
 const meta = {
   title: "Pages/Listen/Panels",
@@ -87,6 +79,38 @@ export const ChaptersDrawerSeeks: Story = {
     await expect(drawer.getAllByText("✓")).toHaveLength(2);
     await expect(drawer.getByTestId("chapter-row-current")).toHaveTextContent(
       "▶Landfall",
+    );
+  },
+};
+
+let consoleError: ReturnType<typeof spyOn>;
+
+export const ChaptersSharingAStartAllShow: Story = {
+  beforeEach({ msw }) {
+    // Installed before the render, which is where a duplicate key is reported.
+    consoleError = spyOn(console, "error");
+    msw.use(
+      ...listenHandlers(BOOK, {
+        writes,
+        row: TEN_MINUTES_IN,
+        manifest: aWireAudioManifest({
+          chapters: [
+            aWireChapter({ title: "Opening Credits", duration_seconds: 0 }),
+            aWireChapter({ ordinal: 2, title: "Chapter One" }),
+          ],
+        }),
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByText("Now playing · Chapter 2 of 2");
+    fireEvent.click(canvas.getByRole("button", { name: "Chapters ↑" }));
+    const drawer = within(await canvas.findByTestId("chapters-drawer"));
+
+    await expect(drawer.getByText("Opening Credits")).toBeInTheDocument();
+    await expect(drawer.getByText("Chapter One")).toBeInTheDocument();
+    await expect(consoleError.mock.calls.flat().join(" ")).not.toContain(
+      "same key",
     );
   },
 };
@@ -151,6 +175,34 @@ export const NoBookmarks: Story = {
     await expect(
       await drawer.findByText("No bookmarks yet"),
     ).toBeInTheDocument();
+  },
+};
+
+export const BookmarksWaitInsteadOfReadingAsEmpty: Story = {
+  beforeEach({ msw }) {
+    msw.use(hanging("/api/bookmarks/book/:uuid"));
+  },
+  play: async ({ canvas }) => {
+    const drawer = await openBookmarks(canvas);
+
+    await expect(
+      await drawer.findByText("Loading your bookmarks"),
+    ).toBeInTheDocument();
+    await expect(drawer.queryByText("No bookmarks yet")).toBeNull();
+  },
+};
+
+export const BookmarksFailingToLoadSaySo: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/bookmarks/book/:uuid", 500));
+  },
+  play: async ({ canvas }) => {
+    const drawer = await openBookmarks(canvas);
+
+    await expect(await drawer.findByRole("alert")).toHaveTextContent(
+      "Couldn't load your bookmarks",
+    );
+    await expect(drawer.queryByText("No bookmarks yet")).toBeNull();
   },
 };
 
@@ -343,7 +395,9 @@ export const SpeedPanelClosesOnEscapeAndScrim: Story = {
 
     fireEvent.click(canvas.getByRole("button", { name: "Playback speed" }));
     await canvas.findByRole("dialog");
-    fireEvent.click(canvasElement.querySelector(".lp-scrim") as Element);
+    const scrim = canvasElement.querySelector(".lp-scrim") as Element;
+    fireEvent.pointerDown(scrim);
+    fireEvent.click(scrim);
     await waitFor(() => expect(canvas.queryByRole("dialog")).toBeNull());
   },
 };

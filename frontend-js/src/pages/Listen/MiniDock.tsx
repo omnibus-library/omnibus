@@ -14,7 +14,6 @@ import {
   dockBook,
   dockSubText,
   thumbPct,
-  togglePanel,
 } from "./listen";
 import { SleepPanelBody, SpeedPanelBody } from "./Panels";
 import "./Listen.css";
@@ -250,7 +249,7 @@ function DockBar({ book }: { book: BookDetail }) {
   const [panel, setPanel] = useState<DockPanel | null>(null);
   const toggle = (clicked: DockPanel): Toggle => ({
     open: panel === clicked,
-    onToggle: () => setPanel((open) => togglePanel(open, clicked)),
+    onToggle: () => setPanel((open) => (open === clicked ? null : clicked)),
   });
   const sub = dockSubText(
     chapterSubText(p.chapters, chapterIndexForElapsed(p.chapters, p.elapsed)),

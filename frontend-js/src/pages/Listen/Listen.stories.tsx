@@ -24,9 +24,6 @@ const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 const BOOK = aWireBook({ formats: ["M4B"] });
 
 const writes: ListenWrite[] = [];
-const positions = () =>
-  writes.filter((w) => w.request === "POST /api/progress").map((w) => w.body);
-
 const wrote = (request: string) =>
   writes.filter((w) => w.request === request).map((w) => w.body);
 
@@ -150,7 +147,7 @@ export const ResumesSavedPosition: Story = {
   play: async ({ canvas }) => {
     const times = await canvas.findByTestId("listen-scrub-times");
     await expect(await within(times).findByText("10:00")).toBeInTheDocument();
-    await expect(positions()).toEqual([]);
+    await expect(wrote("POST /api/progress")).toEqual([]);
   },
 };
 
@@ -168,7 +165,7 @@ export const SkipPostsPosition: Story = {
     await skipForwardFrom600(canvas);
 
     await waitFor(() =>
-      expect(positions()).toEqual([
+      expect(wrote("POST /api/progress")).toEqual([
         {
           book_uuid: UUID,
           format: "audio",
@@ -193,7 +190,7 @@ export const SkipLeavesOutAnUnknownFile: Story = {
     await skipForwardFrom600(canvas);
 
     await waitFor(() =>
-      expect(positions()).toEqual([
+      expect(wrote("POST /api/progress")).toEqual([
         { book_uuid: UUID, format: "audio", audio_position_seconds: 630 },
       ]),
     );
@@ -227,7 +224,9 @@ export const ChapterNav: Story = {
       canvas.getByText("Ch. 2 · The Long Water"),
     ).toBeInTheDocument();
     await waitFor(() =>
-      expect(positions()).toMatchObject([{ audio_position_seconds: 3600 }]),
+      expect(wrote("POST /api/progress")).toMatchObject([
+        { audio_position_seconds: 3600 },
+      ]),
     );
   },
 };
@@ -258,12 +257,12 @@ export const ScrubberPreviewsThenSeeksOnRelease: Story = {
 
     // The bubble and the elapsed time both preview the target.
     await expect(await canvas.findAllByText("30:00")).toHaveLength(2);
-    await expect(positions()).toEqual([]);
+    await expect(wrote("POST /api/progress")).toEqual([]);
 
     fireEvent.change(seek);
 
     await waitFor(() =>
-      expect(positions()).toEqual([
+      expect(wrote("POST /api/progress")).toEqual([
         {
           book_uuid: UUID,
           format: "audio",
@@ -410,7 +409,7 @@ export const EndOfAFileOpensTheNextOneUnseeded: Story = {
     // The saved 10:00 belongs to file 917, so the next file starts from its top.
     await expect(await (await times()).findByText("0:00")).toBeInTheDocument();
     await expect(audioOf(canvas).paused).toBe(true);
-    await expect(positions()).toEqual([]);
+    await expect(wrote("POST /api/progress")).toEqual([]);
     await expect(wrote("PUT /api/read-status")).toEqual([]);
   },
 };

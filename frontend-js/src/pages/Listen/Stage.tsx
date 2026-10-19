@@ -15,7 +15,6 @@ import {
   effectiveScrubPosition,
   formatHms,
   kickerText,
-  noChapterFillPct,
   type Pane,
   rateLabel,
   remainingAtRate,
@@ -62,14 +61,15 @@ function ChapterMap() {
               <div
                 className="lp-chapter-seg-fill"
                 style={{
-                  width: `${noChapterFillPct(position, duration).toFixed(1)}%`,
+                  width: `${thumbPct(position, duration).toFixed(1)}%`,
                 }}
               />
             </div>
           ) : (
             chapters.map((chapter, i) => (
               <div
-                key={chapter.start}
+                // biome-ignore lint/suspicious/noArrayIndexKey: the list is fixed per manifest, and two markers can share a start
+                key={i}
                 className={
                   i === index ? "lp-chapter-seg current" : "lp-chapter-seg"
                 }
