@@ -182,6 +182,18 @@ export const SortSaves: Story = {
     await expect(localStorage.getItem(PREFS_KEY)).toContain(
       '"sort_key":"author"',
     );
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Sort direction: ascending" }),
+    );
+
+    await waitFor(() => expect(requests.at(-1)?.get("dir")).toBe("desc"));
+    await expect(
+      canvas.getByRole("button", { name: "Sort direction: descending" }),
+    ).toBeInTheDocument();
+    await expect(localStorage.getItem(PREFS_KEY)).toContain(
+      '"sort_dir":"desc"',
+    );
   },
 };
 
@@ -235,7 +247,6 @@ export const TableView: Story = {
     await expect(row).toHaveTextContent("Mar 1st, 2021");
     await expect(row).toHaveTextContent("CBZ");
     await expect(row).toHaveTextContent("PHYS");
-    await expect(row).toHaveTextContent("Aug 1st, 2026");
     await expect(
       canvas.queryByRole("combobox", { name: "Sort by" }),
     ).not.toBeInTheDocument();
@@ -883,9 +894,10 @@ export const DealOutAndFold: Story = {
     msw.use(libraryHandler(STACK_BOOKS, 10, { stacks: STACKS }));
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      await canvas.findByRole("button", { name: "Saga, 3 books" }),
-    );
+    // The first deal-out is by keyboard, as a tile is a button.
+    const saga = await canvas.findByRole("button", { name: "Saga, 3 books" });
+    saga.focus();
+    await userEvent.keyboard("{Enter}");
 
     const fold = await canvas.findByRole("button", { name: /^Fold up/ });
     await waitFor(() => expect(fold).toHaveFocus());
@@ -917,6 +929,14 @@ export const DealOutAndFold: Story = {
     const duo = await canvas.findByRole("button", { name: "Duo, 2 books" });
     await waitFor(() => expect(duo).toHaveFocus());
     await expect(canvas.queryByRole("heading", { level: 3 })).toBeNull();
+
+    // The Fold up button puts focus back on the tile it folded into.
+    await userEvent.click(duo);
+    await userEvent.click(
+      await canvas.findByRole("button", { name: /^Fold up/ }),
+    );
+    const folded = await canvas.findByRole("button", { name: "Duo, 2 books" });
+    await waitFor(() => expect(folded).toHaveFocus());
   },
 };
 

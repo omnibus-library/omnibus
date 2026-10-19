@@ -197,6 +197,21 @@ export const EscapeCloses: Story = {
   },
 };
 
+export const ScrimCloses: Story = {
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const author = canvas.getByRole("button", { name: "Author" });
+    await userEvent.click(author);
+    const scrim = canvasElement.querySelector(".fb-scrim");
+    if (!(scrim instanceof HTMLElement))
+      throw new Error("the scrim is missing");
+
+    await userEvent.click(scrim);
+
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
+    await expect(author).toHaveFocus();
+  },
+};
+
 export const AtClauseCap: Story = {
   args: {
     initial: Array.from({ length: 16 }, (_, i) => include("author", `A${i}`)),
