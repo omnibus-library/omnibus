@@ -14,7 +14,7 @@ describe("dirtyLabels", () => {
     expect(dirtyLabels(BASE, edit({}))).toEqual([]);
   });
 
-  it("names the edited fields in the form's order, not the order they were edited", () => {
+  it("names the edited fields in form order", () => {
     const values = edit({
       genres: [],
       title: "New",

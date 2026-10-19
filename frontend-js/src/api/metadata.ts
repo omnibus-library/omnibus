@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
-import { type BookUuid, failure, ok, requireUuid } from "./core";
+import { type BookUuid, failure, ok, requireUuid, send } from "./core";
 import {
   deleteEbookCover,
   deleteEbookOverrides,
@@ -39,6 +39,11 @@ export const MetaFormSchema = z.object({
     .refine(
       (v) => /^\d*$/.test(v.trim()),
       "Print page count must be a whole number.",
+    )
+    // The server refuses anything outside 1..=PRINT_PAGES_MAX; non-digits are the refine above's to name.
+    .refine(
+      (v) => !/^\d+$/.test(v.trim()) || (+v >= 1 && +v <= 20000),
+      "Print pages must be between 1 and 20000.",
     ),
   authors: z.array(z.string()),
   tags: z.array(z.string()),
@@ -65,17 +70,18 @@ export function formFromBook(wire: EbookMetadata): MetaForm {
   };
 }
 
-const TEXT_FIELDS = {
-  title: "title",
-  description: "description",
-  publisher: "publisher",
-  published: "published",
-  language: "language",
-  series: "series",
-  seriesIndex: "series_index",
-  isbn13: "isbn13",
-  isbn10: "isbn10",
-} as const;
+// [form field, wire field] for the fields the form and the API spell alike or nearly.
+const TEXT_FIELDS = [
+  ["title", "title"],
+  ["description", "description"],
+  ["publisher", "publisher"],
+  ["published", "published"],
+  ["language", "language"],
+  ["series", "series"],
+  ["seriesIndex", "series_index"],
+  ["isbn13", "isbn13"],
+  ["isbn10", "isbn10"],
+] as const;
 
 /** Whether two lists hold the same values in the same order. */
 export const sameList = (a: string[], b: string[]) =>
@@ -87,10 +93,7 @@ export function overridesFrom(
   values: MetaForm,
 ): MetadataOverrides {
   const edit: MetadataOverrides = {};
-  for (const [field, wire] of Object.entries(TEXT_FIELDS) as [
-    keyof typeof TEXT_FIELDS,
-    (typeof TEXT_FIELDS)[keyof typeof TEXT_FIELDS],
-  ][]) {
+  for (const [field, wire] of TEXT_FIELDS) {
     if (values[field] !== baseline[field]) edit[wire] = values[field];
   }
   const pages = values.printPages.trim();
@@ -272,19 +275,11 @@ export function inStableOrder(
 export async function hydrateEdition(
   edition: ProviderEdition,
 ): Promise<ProviderEdition | null> {
-  // The generated fetcher JSON-parses every body, and a 502's is plain text.
-  const res = await fetch(getPostEditionHydrateUrl(), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      source: edition.source,
-      provider_ref: edition.provider_ref,
-      isbn13: edition.isbn13,
-    }),
+  const res = await send(getPostEditionHydrateUrl(), "POST", {
+    source: edition.source,
+    provider_ref: edition.provider_ref,
+    isbn13: edition.isbn13,
   });
-  if (res.status !== 200) {
-    throw failure({ status: res.status, data: await res.text() });
-  }
   return ProviderEdition.nullable().parse(await res.json());
 }
 

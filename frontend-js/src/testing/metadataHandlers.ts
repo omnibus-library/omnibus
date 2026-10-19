@@ -37,7 +37,7 @@ export function anEditableWireBook(
 /**
  * `POST` and `DELETE /api/ebooks/{uuid}/overrides`. Each saved body lands in
  * `saved`, each revert bumps `reverted`; with `refuse` set, a 400 whose plain
- * text is that reason. `gate` holds the write until it resolves.
+ * text is that reason.
  */
 export function overridesHandlers(
   book: EbookMetadata,
@@ -45,23 +45,19 @@ export function overridesHandlers(
     saved = [],
     reverted = { count: 0 },
     refuse,
-    gate,
   }: {
     saved?: MetadataOverrides[];
     reverted?: { count: number };
     refuse?: string;
-    gate?: Promise<void>;
   } = {},
 ) {
   return [
     http.post("/api/ebooks/:uuid/overrides", async ({ request }) => {
-      await gate;
       if (refuse) return new HttpResponse(refuse, { status: 400 });
       saved.push(MetadataOverrides.parse(await request.json()));
       return HttpResponse.json(book);
     }),
-    http.delete("/api/ebooks/:uuid/overrides", async () => {
-      await gate;
+    http.delete("/api/ebooks/:uuid/overrides", () => {
       if (refuse) return new HttpResponse(refuse, { status: 400 });
       reverted.count += 1;
       return HttpResponse.json({ ...book, has_override: false });
@@ -80,13 +76,11 @@ export function coverWriteHandlers(
   {
     uploaded = [],
     fetched = [],
-    reverted = { count: 0 },
     refuse,
     gate,
   }: {
     uploaded?: string[];
     fetched?: string[];
-    reverted?: { count: number };
     refuse?: string;
     /** Held until it settles, so a story can act while an upload is in flight. */
     gate?: Promise<void>;
@@ -110,10 +104,9 @@ export function coverWriteHandlers(
       if (!refuse) fetched.push(body.url);
       return answer({ has_override: true, has_cover_override: true });
     }),
-    http.delete("/api/ebooks/:uuid/cover", () => {
-      if (!refuse) reverted.count += 1;
-      return answer({ has_cover_override: false });
-    }),
+    http.delete("/api/ebooks/:uuid/cover", () =>
+      answer({ has_cover_override: false }),
+    ),
   ];
 }
 
@@ -134,10 +127,9 @@ export function aProviderEdition(
 }
 
 /** `GET /api/metadata/providers` with one provider that is `configured` or not. */
-export function providersHandler(configured: boolean, calls = { count: 0 }) {
-  return http.get("/api/metadata/providers", () => {
-    calls.count += 1;
-    return HttpResponse.json([
+export function providersHandler(configured: boolean) {
+  return http.get("/api/metadata/providers", () =>
+    HttpResponse.json([
       {
         id: "open_library",
         display_name: "Open Library",
@@ -151,8 +143,8 @@ export function providersHandler(configured: boolean, calls = { count: 0 }) {
           search_by_title: true,
         },
       },
-    ] satisfies ProviderInfo[]);
-  });
+    ] satisfies ProviderInfo[]),
+  );
 }
 
 /**

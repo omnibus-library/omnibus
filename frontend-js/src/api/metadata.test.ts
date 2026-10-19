@@ -20,7 +20,7 @@ const edit = (changes: Partial<MetaForm>): MetaForm => ({
 });
 
 describe("formFromBook", () => {
-  it("reads a book's fields and leaves a missing one blank", () => {
+  it("reads a book into the form with a blank for each missing field", () => {
     const form = formFromBook(
       anEditableWireBook({
         publisher: null,
@@ -41,7 +41,7 @@ describe("formFromBook", () => {
 });
 
 describe("MetaFormSchema", () => {
-  it.each(["", "  ", "320", " 32 "])(
+  it.each(["", "  ", "320", " 32 ", "1", "20000"])(
     "accepts %j as the page count",
     (printPages) => {
       expect(MetaFormSchema.safeParse(edit({ printPages })).success).toBe(true);
@@ -58,6 +58,17 @@ describe("MetaFormSchema", () => {
       );
     },
   );
+
+  it.each(["0", "20001", "99999999999999999999"])(
+    "refuses %j as the page count with the range message",
+    (printPages) => {
+      const parsed = MetaFormSchema.safeParse(edit({ printPages }));
+
+      expect(parsed.error?.issues[0]?.message).toBe(
+        "Print pages must be between 1 and 20000.",
+      );
+    },
+  );
 });
 
 describe("overridesFrom", () => {
@@ -65,7 +76,7 @@ describe("overridesFrom", () => {
     expect(overridesFrom(BASE, edit({}))).toEqual({});
   });
 
-  it("sends only the fields that changed, text keyed as the API names it", () => {
+  it("sends only the changed fields under the API names", () => {
     expect(
       overridesFrom(BASE, edit({ title: "New", seriesIndex: "2" })),
     ).toEqual({
@@ -74,7 +85,7 @@ describe("overridesFrom", () => {
     });
   });
 
-  it("sends a cleared text field as an empty string, which clears the override", () => {
+  it("sends a cleared text field as an empty string", () => {
     expect(overridesFrom(BASE, edit({ isbn13: "" }))).toEqual({ isbn13: "" });
   });
 
@@ -87,7 +98,7 @@ describe("overridesFrom", () => {
     });
   });
 
-  it("sends a list that changed, even to empty", () => {
+  it("sends a changed list even when it is now empty", () => {
     expect(overridesFrom(BASE, edit({ tags: ["a", "b"], genres: [] }))).toEqual(
       {
         subjects: ["a", "b"],
@@ -113,7 +124,7 @@ describe("editionRequest", () => {
     expect(editionRequest(" ", "", "\t")).toBeNull();
   });
 
-  it("composes the free-text query from title and author and leaves a blank field out", () => {
+  it("composes the free-text query from the filled fields", () => {
     expect(editionRequest(" Dune ", "Frank Herbert", "")).toEqual({
       query: "Dune Frank Herbert",
       title: "Dune",
@@ -197,7 +208,7 @@ describe("inStableOrder", () => {
     ]);
   });
 
-  it("leads with the server's relevance and puts the unscored last", () => {
+  it("orders by relevance with the unscored last", () => {
     const sorted = inStableOrder(
       [
         edition("Dune", "1"),
@@ -214,7 +225,7 @@ describe("inStableOrder", () => {
     ]);
   });
 
-  it("falls back to the editions' own fields for a blank query", () => {
+  it("orders by the editions own fields for a blank query", () => {
     const sorted = inStableOrder(
       [edition("Zebra", "1", "google_books"), edition("Alpha", "2")],
       "   ",
@@ -271,7 +282,7 @@ describe("fillMissing", () => {
     expect(other.series_index).toBeUndefined();
   });
 
-  it("falls back to the list row's title and authors when the record has none", () => {
+  it("takes the missing fields from the list row when the record has none", () => {
     expect(
       fillMissing(aProviderEdition({ title: " ", authors: [] }), thin),
     ).toMatchObject({

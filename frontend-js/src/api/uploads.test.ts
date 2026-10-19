@@ -78,7 +78,7 @@ describe("formFromEbookInspection", () => {
 });
 
 describe("formFromAudiobookInspection", () => {
-  it("fills the title and artist and leaves the rest blank", () => {
+  it("fills an audiobook form from the inspected title with the rest blank", () => {
     expect(formFromAudiobookInspection(anAudiobookInspection())).toMatchObject({
       title: "Harbour Lights",
       authors: ["Ines Varga"],
@@ -102,7 +102,7 @@ describe("uploadFailureMessage", () => {
     );
   });
 
-  it("passes on the server's own text otherwise", () => {
+  it("passes on the server text otherwise", () => {
     expect(uploadFailureMessage(new ApiError(400, "not an epub"))).toBe(
       "not an epub",
     );
@@ -113,7 +113,7 @@ describe("commitFields", () => {
   const BASE = formFromEbookInspection(anEbookInspection());
   const KEEP = { kind: "keep" } as const;
 
-  it("sends the identity and series, and no overrides for an untouched review", () => {
+  it("sends the identity fields with no overrides for an untouched review", () => {
     expect(commitFields(BASE, BASE, KEEP)).toEqual([
       ["title", "The Salt Road"],
       ["author", "Mara Okafor"],
@@ -122,7 +122,7 @@ describe("commitFields", () => {
     ]);
   });
 
-  it("trims the identity and leaves out a blank series", () => {
+  it("sends trimmed identity fields with a blank series left out", () => {
     const values = { ...BASE, title: "  Salt  ", series: " ", seriesIndex: "" };
 
     expect(commitFields(BASE, values, KEEP)).toEqual([
@@ -150,13 +150,16 @@ describe("commitFields", () => {
     ]);
   });
 
-  it("adds a picked image or a provider's URL as the cover", () => {
+  it("adds a picked image as the cover", () => {
     const file = new File(["png"], "mine.png");
 
     expect(commitFields(BASE, BASE, { kind: "file", file }).at(-1)).toEqual([
       "cover",
       file,
     ]);
+  });
+
+  it("adds a provider URL as the cover", () => {
     expect(
       commitFields(BASE, BASE, {
         kind: "url",
@@ -169,7 +172,7 @@ describe("commitFields", () => {
 describe("hasIdentity", () => {
   const BASE = formFromEbookInspection(anEbookInspection());
 
-  it("needs a title and a first author, ignoring blanks", () => {
+  it("requires a non-blank title with a first author", () => {
     expect(hasIdentity(BASE)).toBe(true);
     expect(hasIdentity({ ...BASE, title: "  " })).toBe(false);
     expect(hasIdentity({ ...BASE, authors: [] })).toBe(false);

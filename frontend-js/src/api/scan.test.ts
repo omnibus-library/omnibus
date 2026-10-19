@@ -5,7 +5,7 @@ import { aWirePaletteBook } from "../testing/wire";
 describe("scanBookFromHit", () => {
   const HIT = { ...aWirePaletteBook(), uuid: "u-1" };
 
-  it("keeps the author display as one entry, a sort-form name included", () => {
+  it("keeps a sort-form author display as one entry", () => {
     expect(
       scanBookFromHit({ ...HIT, author_display: "Weir, Andy" }).authors,
     ).toEqual(["Weir, Andy"]);
@@ -17,14 +17,17 @@ describe("scanBookFromHit", () => {
     );
   });
 
-  it("reads files from the formats and the copy flag from the hit", () => {
-    expect(scanBookFromHit({ ...HIT, formats: ["EPUB"] })).toMatchObject({
-      uuid: "u-1",
-      has_files: true,
-      has_physical: false,
-    });
-    expect(
-      scanBookFromHit({ ...HIT, formats: [], has_physical: true }),
-    ).toMatchObject({ has_files: false, has_physical: true });
+  it("reads has_files from the hit formats", () => {
+    expect(scanBookFromHit({ ...HIT, formats: ["EPUB"] }).has_files).toBe(true);
+    expect(scanBookFromHit({ ...HIT, formats: [] }).has_files).toBe(false);
+  });
+
+  it("reads has_physical from the hit copy flag", () => {
+    expect(scanBookFromHit({ ...HIT, has_physical: true }).has_physical).toBe(
+      true,
+    );
+    expect(scanBookFromHit({ ...HIT, has_physical: false }).has_physical).toBe(
+      false,
+    );
   });
 });

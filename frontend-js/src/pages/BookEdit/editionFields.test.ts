@@ -53,7 +53,7 @@ describe("sourceStatusText", () => {
     },
   );
 
-  it("carries a failure's own message as the detail", () => {
+  it("carries the failure message as the detail", () => {
     expect(
       sourceStatusText(source({ kind: "failed", message: "timed out" })).detail,
     ).toBe("timed out");
@@ -68,7 +68,7 @@ const field = (label: string): MetadataField => {
 };
 
 describe("FIELDS", () => {
-  it("names each row's test id as the edit form names its input, without the prefix", () => {
+  it("slugs each row id from the label the edit form gives its input", () => {
     expect(FIELDS.map((f) => f.slug)).toEqual([
       "title",
       "author-s-",
@@ -84,13 +84,13 @@ describe("FIELDS", () => {
     ]);
   });
 
-  it("leaves tags out, since a provider's vocabulary would overwrite the file's own", () => {
+  it("leaves tags out so a provider vocabulary cannot overwrite the file tags", () => {
     expect(FIELDS.map((f) => f.key)).not.toContain("tags");
   });
 });
 
 describe("sourceValue and currentValue", () => {
-  it("read the same text on both sides, lists joined without their blank entries", () => {
+  it("reads the same text on both sides with lists joined without blank entries", () => {
     const edition = aProviderEdition({ authors: ["A", " ", "B"], pages: 352 });
 
     expect(sourceValue(field("Author(s)"), edition)).toBe("A, B");
@@ -103,22 +103,25 @@ describe("sourceValue and currentValue", () => {
 });
 
 describe("differs", () => {
-  it("is false when the source has nothing, so a gap is never a difference", () => {
+  it("is false when the source has nothing", () => {
     expect(differs(field("Description"), BOOK, aProviderEdition())).toBe(false);
   });
 
-  it("is false when both sides agree and true when they do not", () => {
+  it("is false when both sides agree", () => {
     const edition = aProviderEdition({ title: BOOK.title });
 
     expect(differs(field("Title"), BOOK, edition)).toBe(false);
-    expect(differs(field("Title"), BOOK, { ...edition, title: "Other" })).toBe(
-      true,
-    );
+  });
+
+  it("is true when the sides differ", () => {
+    const edition = aProviderEdition({ title: "Other" });
+
+    expect(differs(field("Title"), BOOK, edition)).toBe(true);
   });
 });
 
 describe("isStaged", () => {
-  it("is true only for a field that left the baseline, however it got there", () => {
+  it("is true only for a field that left the baseline", () => {
     const edited = { ...BOOK, title: "New", genres: [...BOOK.genres] };
 
     expect(isStaged(field("Title"), edited, BOOK)).toBe(true);
@@ -127,7 +130,7 @@ describe("isStaged", () => {
 });
 
 describe("applyField", () => {
-  it("offers nothing when the source has nothing, so a copy never blanks a value", () => {
+  it("offers nothing when the source has nothing", () => {
     expect(
       applyField(field("Publisher"), aProviderEdition({ publisher: " " })),
     ).toBeUndefined();
@@ -136,13 +139,15 @@ describe("applyField", () => {
     ).toBeUndefined();
   });
 
-  it("offers a list as a list and text trimmed", () => {
-    const edition = aProviderEdition({
-      genres: ["Drama", " "],
-      year: " 2022 ",
-    });
+  it("offers a list as a list", () => {
+    const edition = aProviderEdition({ genres: ["Drama", " "] });
 
     expect(applyField(field("Genres"), edition)).toEqual(["Drama"]);
+  });
+
+  it("offers text trimmed", () => {
+    const edition = aProviderEdition({ year: " 2022 " });
+
     expect(applyField(field("Published"), edition)).toBe("2022");
   });
 });

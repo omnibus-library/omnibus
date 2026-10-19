@@ -132,7 +132,7 @@ export const KeepsFocusInside: Story = {
     const leave = canvas.getByRole("link", { name: "Leave" });
     await userEvent.click(leave);
     const dialog = await canvas.findByRole("dialog");
-    await expect(dialog).toHaveFocus();
+    await waitFor(() => expect(dialog).toHaveFocus());
 
     // Keep editing, Discard, then back around to Keep editing.
     await userEvent.tab();

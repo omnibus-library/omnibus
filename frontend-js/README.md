@@ -70,7 +70,8 @@ literals, so build a class from a template and it won't see it: spell it out,
 as `UserAvatar`'s `photoClassName` does. A rule a screen needs in a file that
 already exists goes in by hand, as does one whose modifier class (`ok`, `error`)
 is on the script's stop list; `--write --force` regenerates every file
-unformatted and drops their hand edits.
+unformatted and drops their hand edits. `.add-books-progress` in `AddBooks.css` is
+hand-written and React-only: the Dioxus page has no such element.
 
 A CSS file that is pure script output (`Library.css`) can be regenerated after
 its markup changes by emptying it (`: > src/pages/Library/Library.css`) and
