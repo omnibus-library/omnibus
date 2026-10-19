@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { HttpResponse, http } from "msw";
 import { useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import { type BookDetail, toBookDetail } from "../../api";
@@ -322,6 +323,38 @@ export const FailedFollowUpLeavesTheCopyGoneAndSaysWhy: Story = {
       canvas.queryByTestId("physical-copy-card"),
     ).not.toBeInTheDocument();
     await expect(writes).toEqual(["delete-copy:4"]);
+  },
+};
+
+export const FailedRemovalCanBeRetriedAndLeaves: Story = {
+  ...lastCopy,
+  beforeEach({ msw }) {
+    let refusals = 1;
+    msw.use(
+      http.delete("/api/physical/:uuid", () => {
+        if (refusals-- > 0)
+          return new HttpResponse("failed with 409", { status: 409 });
+        writes.push("delete-book");
+        return new HttpResponse(null, { status: 204 });
+      }),
+      ...physicalHandlers({ copies: [MINE] }, writes),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("copy-delete"));
+    await userEvent.click(canvas.getByTestId("last-copy-remove"));
+    await canvas.findByTestId("physical-error");
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Retry removing from library" }),
+    );
+
+    await waitFor(() =>
+      expect(writes).toEqual(["delete-copy:4", "delete-book"]),
+    );
+    await waitFor(() =>
+      expect(canvas.getByTestId("location")).toHaveTextContent("/"),
+    );
   },
 };
 

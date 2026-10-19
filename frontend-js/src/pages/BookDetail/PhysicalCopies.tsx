@@ -407,6 +407,16 @@ export function PhysicalCopies({ book }: { book: BookDetail }) {
   const [removing, setRemoving] = useState<number | null>(null);
   const refresh = () =>
     client.invalidateQueries({ queryKey: ["book", book.uuid] });
+  const leave = () => {
+    client.removeQueries({ queryKey: ["book", book.uuid] });
+    navigate("/", { replace: true });
+  };
+  const mayRemoveBook = viewer.isAdmin || viewer.canEdit;
+  // Offered when the copy went but the book did not, which `remove` cannot redo.
+  const retryRemoval = useMutation({
+    mutationFn: () => deleteFilelessBook(book.uuid),
+    onSuccess: leave,
+  });
   const remove = useMutation({
     mutationFn: async ({ copyId, next }: { copyId: number; next: Next }) => {
       await deleteCopy(copyId);
@@ -417,8 +427,7 @@ export function PhysicalCopies({ book }: { book: BookDetail }) {
     },
     onSuccess: (_done, { next }) => {
       if (next !== "library") return refresh();
-      client.removeQueries({ queryKey: ["book", book.uuid] });
-      navigate("/", { replace: true });
+      leave();
     },
     // The copy may be gone even so: let the page say what is left.
     onError: refresh,
@@ -455,13 +464,25 @@ export function PhysicalCopies({ book }: { book: BookDetail }) {
       )}
       {remove.isError && removing === null && (
         <p role="alert" className="bd-phys-error" data-testid="physical-error">
-          {remove.error.message}
+          {(retryRemoval.error ?? remove.error).message}
         </p>
       )}
+      {remove.isError &&
+        removing === null &&
+        mayRemoveBook &&
+        remove.variables?.next === "library" && (
+          <Button
+            variant="ghost"
+            disabled={retryRemoval.isPending}
+            onClick={() => retryRemoval.mutate()}
+          >
+            Retry removing from library
+          </Button>
+        )}
       {removing !== null && (
         <RemovalDialog
           lastFileless={lastFileless}
-          mayRemoveBook={viewer.isAdmin || viewer.canEdit}
+          mayRemoveBook={mayRemoveBook}
           busy={remove.isPending}
           error={remove.isError ? remove.error.message : null}
           onCancel={() => setRemoving(null)}
