@@ -21,7 +21,7 @@ use crate::backend::AppState;
 /// fetch can carry. Kept in lockstep with the handlers gated on [`MediaAuthUser`].
 ///
 /// [`MediaAuthUser`]: super::MediaAuthUser
-pub(crate) fn is_media_read_path(path: &str) -> bool {
+pub fn is_media_read_path(path: &str) -> bool {
     path.starts_with("/api/covers/")
         || path.starts_with("/api/thumbs/")
         || (path.starts_with("/api/authors/") && path.ends_with("/photo"))
@@ -32,9 +32,10 @@ pub(crate) fn is_media_read_path(path: &str) -> bool {
         || (path.starts_with("/api/audiobooks/") && path.contains("/parts/"))
         // The EPUB file stream is fetched by epub.js from the mobile WebView,
         // a cross-origin XHR that carries neither cookie nor bearer header.
-        // Only `/file` opts in, `/images/file` included; `/download` and `/kepub` stay header/cookie-only.
+        // Only `/file` opts in; `/download` and `/kepub` stay header/cookie-only.
         || (path.starts_with("/api/ebooks/") && path.ends_with("/file"))
-        // The EPUB image listing is read by clients that cannot set headers, so it takes `?token=`.
+        // The EPUB image listing, and `/images/file` through the `/file` arm above,
+        // are read by clients that cannot set headers, so they take `?token=`.
         || (path.starts_with("/api/ebooks/") && path.ends_with("/images"))
         // CBZ pages feed the comic pager's `<img src>`, which from the mobile
         // WebView can only carry the session as `?token=` — same as covers.

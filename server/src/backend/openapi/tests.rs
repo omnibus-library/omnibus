@@ -105,6 +105,7 @@ fn spec_lists_media_token_on_exactly_the_routes_the_gate_opens_to_it() {
     let wrong: Vec<String> = operations(&doc)
         .into_iter()
         .filter(|(path, method, op)| {
+            // Templates stand in for request paths: the gate only matches fixed segments.
             if *method == "get" && is_media_read_path(path) {
                 op["security"] != triple
             } else {
