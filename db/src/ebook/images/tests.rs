@@ -39,6 +39,19 @@ fn image<'a>(images: &'a [BookImage], href: &str) -> &'a BookImage {
         .unwrap_or_else(|| panic!("no image {href} in {images:?}"))
 }
 
+/// `archive` with every `from` byte run overwritten by the same-length `to`, so
+/// an entry can carry a name a `&str` fixture builder cannot write.
+fn overwrite_bytes(mut archive: Vec<u8>, from: &[u8], to: &[u8]) -> Vec<u8> {
+    assert_eq!(from.len(), to.len(), "a length change would break offsets");
+    let mut start = 0;
+    while let Some(at) = archive[start..].windows(from.len()).position(|w| w == from) {
+        let at = start + at;
+        archive[at..at + to.len()].copy_from_slice(to);
+        start = at + to.len();
+    }
+    archive
+}
+
 #[test]
 fn list_images_returns_each_manifest_image_with_size_dimensions_and_references() {
     let png = solid_color_png(10, 20, 30, 7, 5);
@@ -417,6 +430,25 @@ fn read_image_returns_the_bytes_for_a_percent_encoded_manifest_href() {
     );
 
     let read = read_image(File::open(&path).unwrap(), "Images/my%20map.png").unwrap();
+
+    assert_eq!(read, Some(("image/png".to_string(), png)));
+}
+
+#[test]
+fn read_image_returns_the_bytes_for_an_image_with_a_cp437_name() {
+    let png = solid_color_png(9, 9, 9, 3, 3);
+    let epub = assemble_test_epub(
+        &[("c1.xhtml", &page("<p>text</p>"))],
+        r#"<item id="cafe" href="café.png" media-type="image/png"/>"#,
+        "",
+        &[("caf_.png", png.clone())],
+    );
+    // The entry becomes `café.png` in CP437, as older Windows archivers write it.
+    let epub = overwrite_bytes(epub, b"caf_.png", b"caf\x82.png");
+    let path = make_test_dir("book_images_cp437").join("book.epub");
+    std::fs::write(&path, epub).unwrap();
+
+    let read = read_image(File::open(&path).unwrap(), "café.png").unwrap();
 
     assert_eq!(read, Some(("image/png".to_string(), png)));
 }
