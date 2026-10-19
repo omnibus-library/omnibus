@@ -85,7 +85,12 @@ export function useHighlights(uuid: BookUuid, bridge: AnnotationBridge) {
       if (isCancelled()) return;
       for (const h of saved)
         if (h.anchor !== null) bridge.paint(h.anchor, h.color);
-      setHighlights(saved);
+      // Rows made while the list loaded are newer than the snapshot, so they stay.
+      setHighlights((now) => {
+        if (!Array.isArray(now)) return saved;
+        const fetched = new Set(saved.map((h) => h.id));
+        return [...saved, ...now.filter((h) => !fetched.has(h.id))];
+      });
     },
     [client, uuid, bridge, markFailed],
   );

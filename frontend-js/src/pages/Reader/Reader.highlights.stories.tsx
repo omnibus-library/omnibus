@@ -362,6 +362,7 @@ export const TheDrawerIsEmptyBeforeAnyHighlight: Story = {
 };
 
 let listGate = deferred();
+let askedForList: Promise<void> = Promise.resolve();
 
 export const TheDrawerShowsALoaderUntilThePassagesArrive: Story = {
   beforeEach({ msw }) {
@@ -427,6 +428,38 @@ export const AHighlightMadeWhileTheListFailedToLoadIsListed: Story = {
     ).toHaveLength(1);
     await expect(within(drawer).queryByRole("alert")).toBeNull();
     await expect(drawer).toHaveTextContent("Highlights & notes 1");
+  },
+};
+
+export const AHighlightMadeWhileTheListLoadsStaysListed: Story = {
+  beforeEach({ msw }) {
+    listGate = deferred();
+    const asked = deferred();
+    askedForList = asked.promise;
+    r.annotations.highlights = SAVED_PASSAGES();
+    msw.use(
+      http.get("/api/highlights/book/:uuid", async () => {
+        // The list as it stood when asked, so the highlight made next is not in it.
+        const snapshot = [...r.annotations.highlights];
+        asked.release();
+        await listGate.promise;
+        return HttpResponse.json(snapshot);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await askedForList;
+    await userEvent.click(await select({ canvas }));
+    await waitFor(() => expect(r.annotationWrites).toHaveLength(1));
+    await expect(await badge(canvas).findByText("1")).toHaveClass("rd-badge");
+
+    listGate.release();
+
+    await expect(await badge(canvas).findByText("4")).toHaveClass("rd-badge");
+    const drawer = await openDrawer({ canvas, userEvent });
+    await expect(
+      within(drawer).getAllByTestId("reader-highlight-row"),
+    ).toHaveLength(4);
   },
 };
 
