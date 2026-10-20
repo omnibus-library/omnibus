@@ -1,4 +1,9 @@
-import { type KeyboardEvent, type ReactNode, useEffect, useRef } from "react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+} from "react";
 import { Link } from "react-router";
 import {
   CLEANUP_KINDS,
@@ -86,24 +91,25 @@ function KindLine({
   );
 }
 
-/** The crumb, the heading with its progress, and the kind line around a review; the column takes focus on mount. */
+/** The crumb, the heading with its progress, and the kind line around a review; the column, which the caller can refocus through `columnRef`, takes focus on mount. */
 export function ReviewFrame({
   kind,
   counts,
   progress,
+  columnRef: column,
   onKeyDown,
   children,
 }: {
   kind: CleanupKind | null;
   counts: CleanupKindCounts[] | undefined;
   progress: { index: number; total: number } | null;
+  columnRef: RefObject<HTMLDivElement | null>;
   onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
   children: ReactNode;
 }) {
-  const column = useRef<HTMLDivElement>(null);
   useEffect(() => {
     column.current?.focus();
-  }, []);
+  }, [column]);
   return (
     <div className="crx-root">
       <Crumb kind={kind} />

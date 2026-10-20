@@ -663,6 +663,92 @@ export const HeldKeysDecideTheCardOnce: Story = {
   },
 };
 
+/** A story that holds every decision until `heldGate` is released. */
+const holdingDecisions = (play: Story["play"]): Story => ({
+  beforeEach({ msw }) {
+    heldGate = deferred();
+    msw.use(cleanupDecisionHandler({ decided, until: heldGate.promise }));
+  },
+  play,
+});
+
+/** Y, then `second`, dispatched in one task so no render lands between them. */
+const yThen = (second: string) =>
+  holdingDecisions(async ({ canvas }) => {
+    const column = await canvas.findByTestId("cleanup-review");
+    await canvas.findByTestId("cleanup-card");
+
+    fireEvent.keyDown(column, { key: "y" });
+    fireEvent.keyDown(column, { key: second });
+
+    await waitFor(() => expect(decided).toHaveLength(1));
+    await expect(progressText(canvas)).toContain("1 of 3");
+    heldGate.release();
+    await canvas.findByText("Split this tag into its parts.");
+    await expect(decided).toEqual([
+      { id: 1, request: { decision: "accepted" } },
+    ]);
+    await expect(progressText(canvas)).toContain("2 of 3");
+  });
+
+export const YThenYInOneTaskDecidesTheCardOnce = yThen("y");
+export const YThenNInOneTaskDecidesTheCardOnce = yThen("n");
+export const YThenSpaceInOneTaskDoesNotSkipTheNextCard = yThen(" ");
+
+export const IgnoresAHeldDecisionKey: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const column = await canvas.findByTestId("cleanup-review");
+    await canvas.findByTestId("cleanup-card");
+    await userEvent.keyboard("y");
+    await canvas.findByText("Split this tag into its parts.");
+
+    fireEvent.keyDown(column, { key: "y", repeat: true });
+    fireEvent.keyDown(column, { key: "n", repeat: true });
+    // A fresh press still decides the card the repeats left alone.
+    await userEvent.keyboard("n");
+
+    await waitFor(() => expect(progressText(canvas)).toContain("3 of 3"));
+    await expect(decided).toEqual([
+      { id: 1, request: { decision: "accepted" } },
+      { id: 2, request: { decision: "rejected" } },
+    ]);
+  },
+};
+
+export const IgnoresAHeldSpaceButStillStopsTheScroll: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const column = await canvas.findByTestId("cleanup-review");
+    await canvas.findByTestId("cleanup-card");
+    await userEvent.keyboard(" ");
+    await canvas.findByText("Split this tag into its parts.");
+
+    const notCancelled = fireEvent.keyDown(column, { key: " ", repeat: true });
+
+    await expect(notCancelled).toBe(false);
+    await expect(progressText(canvas)).toContain("2 of 3");
+  },
+};
+
+export const IgnoresAnEnterHeldDownInTheProposal: Story = renaming(
+  async ({ canvas, userEvent }) => {
+    const input = await canvas.findByRole("textbox", {
+      name: "Proposed title",
+    });
+    await userEvent.type(input, " (1818)");
+
+    fireEvent.keyDown(input, { key: "Enter", repeat: true });
+    await userEvent.type(input, "!{Enter}");
+
+    await canvas.findByDisplayValue("Emma");
+    await expect(decided).toEqual([
+      {
+        id: 11,
+        request: { decision: "accepted", value: "Frankenstein (1818)!" },
+      },
+    ]);
+  },
+);
+
 export const HotkeysDoNothingPastTheLastCard: Story = {
   play: async ({ canvas, userEvent }) => {
     await canvas.findByTestId("cleanup-card");
@@ -896,6 +982,48 @@ export const ShowsAnUndoRefusalAndKeepsTheOffer: Story = {
     await expect(canvas.getByTestId("cleanup-undo-bar")).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Undo" })).toBeEnabled();
     await expect(queueReads).toBe(1);
+  },
+};
+
+export const IgnoresKeysWhileAnUndoIsOut: Story = {
+  beforeEach({ msw }) {
+    undoGate = deferred();
+    msw.use(
+      http.post("/api/admin/cleanup/undo/:logId", async ({ params }) => {
+        undone.push(Number(params.logId));
+        await undoGate.promise;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const column = await canvas.findByTestId("cleanup-review");
+    await canvas.findByTestId("cleanup-card");
+    await userEvent.click(canvas.getByRole("button", { name: "Accept (Y)" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Undo" }));
+    await canvas.findByRole("button", { name: "Undoing…" });
+
+    for (const key of ["y", "n", " "]) fireEvent.keyDown(column, { key });
+
+    await expect(decided).toHaveLength(1);
+    await expect(progressText(canvas)).toContain("2 of 3");
+    undoGate.release();
+    await canvas.findByTestId("cleanup-undone");
+  },
+};
+
+export const KeepsTheHotkeysWorkingAfterAnUndo: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByTestId("cleanup-card");
+    await userEvent.keyboard("y");
+    await userEvent.click(await canvas.findByRole("button", { name: "Undo" }));
+    await canvas.findByTestId("cleanup-undone");
+    await canvas.findByText("Merge these tags into one.");
+
+    await userEvent.keyboard("y");
+
+    await waitFor(() => expect(decided).toHaveLength(2));
+    await expect(canvas.getByTestId("cleanup-review")).toHaveFocus();
   },
 };
 

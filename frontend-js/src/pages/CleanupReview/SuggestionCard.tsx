@@ -76,10 +76,10 @@ function ProposedValue({
       value={draft}
       onChange={(e) => onDraft(e.target.value)}
       onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          onCommit();
-        }
+        // A held Enter accepts one card, not every card it reaches.
+        if (e.key !== "Enter" || e.repeat) return;
+        e.preventDefault();
+        onCommit();
       }}
     />
   );

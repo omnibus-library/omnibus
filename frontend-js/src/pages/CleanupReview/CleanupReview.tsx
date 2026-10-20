@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type KeyboardEvent, useState } from "react";
+import { type KeyboardEvent, useRef, useState } from "react";
 import { useParams } from "react-router";
 import {
   type CleanupKind,
@@ -131,6 +131,9 @@ function ReviewQueue({ kind }: { kind: CleanupKind }) {
   const [edit, setEdit] = useState<{ id: number; value: string } | null>(null);
   const [tally, setTally] = useState(NOTHING_YET);
   const [undo, setUndo] = useState<UndoState>({ state: "none" });
+  const column = useRef<HTMLDivElement>(null);
+  // Set before a request starts: render-time `isPending` lags two keys pressed in one task.
+  const inFlight = useRef(false);
 
   const cards = queue.data;
   const card = cards?.[cursor];
@@ -165,6 +168,9 @@ function ReviewQueue({ kind }: { kind: CleanupKind }) {
       setTally((was) => ({ ...was, [counted]: was[counted] + 1 }));
       setCursor((at) => at + 1);
     },
+    onSettled: () => {
+      inFlight.current = false;
+    },
   });
   const undoLast = useMutation({
     mutationFn: undoCleanup,
@@ -180,23 +186,30 @@ function ReviewQueue({ kind }: { kind: CleanupKind }) {
       void queryClient.invalidateQueries({
         queryKey: cleanupCountsQuery.queryKey,
       });
+      // The Undo button is about to unmount, which would drop focus and the hotkeys with it.
+      column.current?.focus();
+    },
+    onSettled: () => {
+      inFlight.current = false;
     },
   });
   const busy = decide.isPending || undoLast.isPending;
 
-  // Each is a no-op past the last card and while a request is out, so a held key neither double-decides nor over-counts.
+  // Each is a no-op past the last card and while a request is out, so a fast key neither double-decides nor over-counts.
   const decideCard = (decision: Decision["decision"]) => {
-    if (card === undefined || busy) return;
+    if (card === undefined || inFlight.current) return;
+    inFlight.current = true;
     undoLast.reset();
     decide.mutate({ card, draft, decision });
   };
   const skip = () => {
-    if (card === undefined || busy) return;
+    if (card === undefined || inFlight.current) return;
     setTally((was) => ({ ...was, skipped: was.skipped + 1 }));
     setCursor(cursor + 1);
   };
   const undoOffered = () => {
-    if (undo.state !== "offer" || busy) return;
+    if (undo.state !== "offer" || inFlight.current) return;
+    inFlight.current = true;
     decide.reset();
     undoLast.mutate(undo.logId);
   };
@@ -210,7 +223,12 @@ function ReviewQueue({ kind }: { kind: CleanupKind }) {
     ) {
       return;
     }
-    switch (reviewKeyAction(event.key)) {
+    const action = reviewKeyAction(event.key);
+    // A held Space would otherwise scroll the page.
+    if (action === "skip") event.preventDefault();
+    // A held key is one decision, not one per card it reaches.
+    if (event.repeat) return;
+    switch (action) {
       case "accept":
         decideCard("accepted");
         break;
@@ -218,9 +236,14 @@ function ReviewQueue({ kind }: { kind: CleanupKind }) {
         decideCard("rejected");
         break;
       case "skip":
-        event.preventDefault();
         skip();
         break;
+      case null:
+        break;
+      default: {
+        const _exhaustive: never = action;
+        return _exhaustive;
+      }
     }
   };
 
@@ -230,6 +253,7 @@ function ReviewQueue({ kind }: { kind: CleanupKind }) {
       kind={kind}
       counts={counts.data}
       progress={cards?.length ? { index: cursor, total: cards.length } : null}
+      columnRef={column}
       onKeyDown={onKeyDown}
     >
       <UndoBar
@@ -281,8 +305,14 @@ function ReviewQueue({ kind }: { kind: CleanupKind }) {
 
 /** A slug that names no kind: the frame and a line saying so, with nothing fetched. */
 function UnknownKind() {
+  const column = useRef<HTMLDivElement>(null);
   return (
-    <ReviewFrame kind={null} counts={undefined} progress={null}>
+    <ReviewFrame
+      kind={null}
+      counts={undefined}
+      progress={null}
+      columnRef={column}
+    >
       <p
         className="settings-status error"
         role="status"
