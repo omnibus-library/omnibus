@@ -534,6 +534,15 @@ export const PickerTriggerNamesTheShownReader: Story = {
   },
 };
 
+export const PickerMarksYouCurrentWhenYourOwnIdIsSelected: Story = {
+  parameters: { path: `/stats?user=${WIRE_ADA.id}` },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("stats-reader-option-you"),
+    ).toHaveAttribute("aria-current", "page");
+  },
+};
+
 export const PickerNamesNoOneForAnUnlistedReader: Story = {
   parameters: { path: "/stats?user=99" },
   play: async ({ canvas }) => {
