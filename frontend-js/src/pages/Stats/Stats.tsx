@@ -149,7 +149,7 @@ function WindowBand({
   );
 }
 
-/** What the pills don't govern: nothing under this label moves when they do. */
+/** What the pills don't govern. Nothing under this label moves when they do. */
 function StandingBand({
   summary,
   openBooks,
@@ -179,7 +179,10 @@ function StandingBand({
   );
 }
 
-/** Whose figures the page shows: the reader's own, or the shelf's. The period pills govern every user figure and no library one, so a third tab would split one governed set in half. */
+/**
+ * Whose figures the page shows: the reader's own, or the shelf's. The period pills govern every user
+ * figure and no library one, so a third tab would split one governed set in half.
+ */
 type Scope = "user" | "library";
 
 function ScopeTab({
@@ -242,7 +245,10 @@ function ScopeSwitch({
   );
 }
 
-/** The library's reads, fetched once per page: they describe the shelf, so neither the pills nor a reader switch can change them. `undefined` until they land. */
+/**
+ * The library's reads, fetched once per page. They describe the shelf, so neither the pills nor a reader
+ * switch can change them. `undefined` until they arrive.
+ */
 type LibraryReads = {
   size: LibrarySize | undefined;
   composition: LibraryComposition | undefined;
@@ -280,7 +286,8 @@ function ReaderStats({
     placeholderData: keepPreviousData,
   });
 
-  // Waits for the picker's list too, or it pops in after the page has settled and reads as content shifting; and for the open books, or "Nothing open right now." shows before the answer.
+  // Waits for the picker's list too, or it appears after the page has settled and reads as content shifting.
+  // Waits for the open books as well, or "Nothing open right now." shows before the answer.
   if (standing.isPending || openBooks.isPending || readers === undefined) {
     return <Loading kind="page" label="Tallying your reading" />;
   }

@@ -50,7 +50,7 @@ export function parseShelfId(raw: string | null | undefined): number | null {
   return positiveInt(raw);
 }
 
-/** The device's UTC offset in minutes, east positive: where the server cuts each day. */
+/** The device's UTC offset in minutes, east positive. The server cuts each day on it. */
 export const utcOffsetMinutes = () => -new Date().getTimezoneOffset();
 
 /** A non-2xx answer, carrying the status and the server's plain-text body. */

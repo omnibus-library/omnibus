@@ -9,7 +9,7 @@ type HourBucket = StatsSummary["hour_of_day"][number];
 type WeekdayBucket = StatsSummary["day_of_week"][number];
 
 const DEGREES_PER_HOUR = 15;
-/** Distance from the dial's centre to the inner end of every tick: just past the inner ring, so the ticks read as a rim. */
+/** Distance from the dial's centre to the inner end of every tick. It sits just past the inner ring, so the ticks read as a rim. */
 const TICK_INSET_PX = 58;
 /** How far the busiest hour's tick reaches beyond the inset. */
 export const TICK_REACH_PX = 40;
@@ -32,7 +32,7 @@ export type Weekday = {
   readout: string;
 };
 
-/** `Iterator::max_by_key`: the last of the equal maxima, so a tie goes to the later item. */
+/** The item with the greatest key, taking the last of equal maxima as `Iterator::max_by_key` does. */
 function lastMax<T>(items: readonly T[], key: (item: T) => number) {
   return items.reduce<T | undefined>(
     (best, item) =>
@@ -68,13 +68,13 @@ export function buildTicks(hours: readonly HourBucket[]): Tick[] {
   });
 }
 
-/** "8pm" / "12am": the hour on the clock a reader keeps. */
+/** The hour as a reader's clock shows it, "8pm" or "12am". */
 export function hourLabel(hour: number): string {
   const h = remEuclid(hour, 24);
   return `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? "am" : "pm"}`;
 }
 
-/** The busiest hour's label, or an em-dash when nothing is placeable: a row of zeros has no peak, not one at midnight. */
+/** The busiest hour's label, or an em-dash when nothing is placeable, since a row of zeros has no peak rather than one at midnight. */
 export function peakHour(hours: readonly HourBucket[]): string {
   const peak = lastMax(
     hours.filter((h) => h.seconds > 0),
@@ -108,7 +108,7 @@ function bandSeconds(hours: readonly HourBucket[], from: number, to: number) {
   return sum(hours.filter((h) => inBand(h.hour)).map((h) => h.seconds));
 }
 
-/** Which part of the day the window belongs to and how much of it lands there; `null` when nothing can be placed on a clock. */
+/** Which part of the day the window belongs to and how much of it falls there; `null` when nothing can be placed on a clock. */
 export function clockLine(hours: readonly HourBucket[]): string | null {
   const total = sum(hours.map((h) => h.seconds));
   if (total <= 0) return null;
@@ -121,7 +121,7 @@ export function clockLine(hours: readonly HourBucket[]): string | null {
   return `${band.lead} — ${pct}% of your recorded time lands ${band.span}.`;
 }
 
-/** "58m" / "1h 28m" / "3h", and an em-dash for a day with nothing on it: a quiet day is an absence, never "0h 0m". */
+/** A day's time as "58m", "1h 28m" or "3h", and an em-dash for a day with nothing on it, since a quiet day is an absence, never "0h 0m". */
 export const dayReadout = (seconds: number) =>
   seconds <= 0 ? "—" : durationLabel(seconds);
 
@@ -136,7 +136,7 @@ export function buildWeekdays(days: readonly WeekdayBucket[]): Weekday[] {
   }));
 }
 
-/** Activity with no capture-time timezone is stated rather than absorbed: bucketing it in UTC would put an evening at 4am. */
+/** Activity with no capture-time timezone is stated rather than absorbed, since bucketing it in UTC would put an evening at 4am. */
 export const unzonedNote = (seconds: number) =>
   seconds > 0
     ? `${dayReadout(seconds)} of activity was recorded without a timezone and isn’t shown here.`

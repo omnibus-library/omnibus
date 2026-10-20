@@ -41,7 +41,7 @@ export function buildSpark(
 }
 
 /**
- * The line under the headline: where this run stands against the record. `yours` picks
+ * The line under the headline: where this run compares with the record. `yours` picks
  * first- or third-person; `null` when there is no record to compare against.
  */
 export function streakLine(

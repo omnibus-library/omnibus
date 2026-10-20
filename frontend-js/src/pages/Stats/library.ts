@@ -33,14 +33,17 @@ function scaled(n: number, tiers: Tiers, gap: string): string | null {
   return `${fixed(value, value < 100 ? 1 : 0)}${gap}${tier[2]}`;
 }
 
-/** A large count in the form a reader can hold, "412M" or "94.2K": a word count's last four digits help nobody. */
+/** A large count in a form a reader can hold, "412M" or "94.2K", since a word count's last four digits help nobody. */
 export const compact = (n: number) => scaled(n, COMPACT, "") ?? String(n);
 
-/** A count spelled the way a reader would say it, "412 million": "412M" mid-sentence reads as a part number. */
+/** A count spelled the way a reader would say it, "412 million", since "412M" mid-sentence reads as a part number. */
 export const spelled = (n: number) =>
   scaled(n, SPELLED, " ") ?? groupThousands(n);
 
-/** Audio length in the unit that fits it, hours below a week and days beyond. The unit follows the rounded figure, or 1h40m reads "2 hour" and a week arrives as "168 hours". */
+/**
+ * Audio length in the unit that fits it, hours below a week and days beyond. The unit follows the rounded
+ * figure, or 1h40m reads "2 hour" and a week arrives as "168 hours".
+ */
 export function audioValue(seconds: number): { value: string; unit: string } {
   const hours = seconds / 3600;
   const whole = Math.round(hours);
@@ -50,14 +53,14 @@ export function audioValue(seconds: number): { value: string; unit: string } {
   return { value: fixed(hours / 24, 0), unit: "days" };
 }
 
-/** "across 1,204 of 1,510 books": the denominator, always, as a figure without it is a guess wearing a number. */
+/** The coverage line, "across 1,204 of 1,510 books", which always states the denominator because a figure without one can't be judged. */
 export const coverage = (measured: Measured, libraryBooks: number) =>
   `across ${groupThousands(measured.books)} of ${groupThousands(libraryBooks)} book${plural(libraryBooks)}`;
 
 /** Whether nothing in the library has been measured for this figure. */
 const unmeasured = (measured: Measured) => measured.books === 0;
 
-/** The figures the library supports, skipping any nothing has been measured for: "0 words" would describe a library that doesn't exist. */
+/** The figures the library supports, skipping any nothing has been measured for, since "0 words" would describe a library that doesn't exist. */
 export function buildFigures(size: LibrarySize): Figure[] {
   const figures: Figure[] = [];
   if (!unmeasured(size.words)) {
@@ -83,7 +86,10 @@ export function buildFigures(size: LibrarySize): Figure[] {
   return figures;
 }
 
-/** The hero's opening sentence, split so the middle clause can be tinted. It says nothing of how long the shelf would take to read: that is the reader's pace, and this scope isn't the reader's. */
+/**
+ * The hero's opening sentence, split so the middle clause can be tinted. It says nothing of how long the shelf
+ * would take to read, because that is the reader's pace and this scope isn't the reader's.
+ */
 export function heroSentence(size: Pick<LibrarySize, "books" | "words">) {
   const books = `${groupThousands(size.books)} book${plural(size.books)}.`;
   if (unmeasured(size.words)) return { books, words: null, tail: "" };

@@ -68,11 +68,11 @@ describe("buildRatingTrendBars", () => {
       month("2026-09", 4.25),
     ]);
 
-    // A 2.5 is half height even beside a 5: the bar is the rating, not a share of the best month.
+    // A 2.5 is half height even beside a 5, since the bar is the rating, not a share of the best month.
     expect(bars.map((b) => b.heightPct)).toEqual([50, 0, 100, 85]);
     expect(bars.map((b) => b.value)).toEqual(["2.5", null, "5.0", "4.3"]);
     expect(bars[3]?.title).toBe("Sep 2026 · 4.3 ★");
-    // A month nobody rated is an empty slot, never a stub.
+    // A month nobody rated is an empty slot, never a short bar.
     expect(bars.map((b) => b.empty)).toEqual([false, true, false, false]);
     expect(bars[1]?.title).toBe("Jul 2026 · no ratings");
   });
@@ -228,7 +228,7 @@ describe("unmeasuredLine", () => {
     expect(unmeasuredLine(3, true)).toMatch(/^3 more books have/);
   });
 
-  // With nothing measured the line above says so: "more" has no antecedent, and the singular needs "it".
+  // With nothing measured the line above says so. "more" has no antecedent there, and the singular needs "it".
   it("drops 'more' when nothing was measured", () => {
     expect(unmeasuredLine(1, false)).toBe(
       "1 book has no known length yet, so nothing it contributed is counted.",

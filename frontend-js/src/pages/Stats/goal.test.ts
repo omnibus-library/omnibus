@@ -32,7 +32,7 @@ describe("remainderCaption", () => {
 });
 
 describe("ariaValueNow", () => {
-  // ARIA forbids a value past `aria-valuemax`; `aria-valuetext` carries the honest ratio.
+  // ARIA forbids a value past `aria-valuemax`; `aria-valuetext` carries the unclamped ratio.
   it("clamps into the range ARIA requires", () => {
     expect(ariaValueNow(3, 24)).toBe(3);
     expect(ariaValueNow(24, 24)).toBe(24);
@@ -68,7 +68,7 @@ describe("goalMet", () => {
 });
 
 describe("paceNote", () => {
-  // Half a year in against a 30-book target: 15 is on pace. 2026-07-02 is day 183 of 365.
+  // Half a year in against a 30-book target, 15 is on pace. 2026-07-02 is day 183 of 365.
   it("reports the gap against an even spread of the year", () => {
     expect(paceNote({ current: 15, target: 30 }, "2026-07-02")).toBe("on pace");
     expect(paceNote({ current: 18, target: 30 }, "2026-07-02")).toBe(
@@ -89,7 +89,7 @@ describe("paceNote", () => {
     );
   });
 
-  // A met goal has no pace left to keep: "12 ahead of pace" beside "Goal met" is the same fact twice.
+  // A met goal has no pace left to keep, and "12 ahead of pace" beside "Goal met" is the same fact twice.
   it("is silent once the goal is met or the day is unknown", () => {
     expect(paceNote({ current: 30, target: 30 }, "2026-07-02")).toBeNull();
     expect(paceNote({ current: 1, target: 30 }, "not-a-day")).toBeNull();
@@ -101,7 +101,7 @@ describe("rowLabel", () => {
     // With a target, "a day" is what the target means.
     expect(rowLabel("Pages", true, true)).toBe("Pages a day");
     expect(rowLabel("Pages", true, false)).toBe("Pages a day");
-    // No target and no sibling goal: the header already says "Today".
+    // With no target and no sibling goal, the header already says "Today".
     expect(rowLabel("Pages", false, true)).toBe("Pages");
     // A sibling is set, so the header says "Every day" and this row carries its own timeframe.
     expect(rowLabel("Minutes", false, false)).toBe("Minutes today");

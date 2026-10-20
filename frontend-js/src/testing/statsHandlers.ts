@@ -255,11 +255,11 @@ const answer = (value: object | number) =>
     : HttpResponse.json(value);
 
 /**
- * Every route the stats page and the chart builder read. `stats` and `chart` choose the
- * answer per request (either may hold one back); any answer may be a status number instead,
- * to fail that route. Each request lands in `calls`.
- * The session reports what the sharing switch saved (off to start), `refuseShare` makes
- * the save answer 400, and `holdShare` holds it until it resolves.
+ * Every route the stats page and the chart builder read, recording each request in `calls`.
+ * `stats` and `chart` choose the answer per request and may hold one back. Any answer may be a
+ * status number instead, which fails that route.
+ * The session reports what the sharing switch saved (off to start). `refuseShare` makes the
+ * save answer 400, and `holdShare` holds it until it resolves.
  */
 export function statsHandlers({
   stats = ({ range }) => aWireStatsSummary({ range }),

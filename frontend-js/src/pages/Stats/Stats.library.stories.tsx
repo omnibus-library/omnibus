@@ -164,7 +164,7 @@ export const LibrarySizeShowsAPlaceholderUntilTheReadLands: Story = {
     await expect(
       canvas.getByTestId("stats-library-size-loading"),
     ).toHaveAttribute("role", "status");
-    // A placeholder never wears the card's testid, or a spec would read it as the card.
+    // A placeholder never has the card's testid, or a spec would read it as the card.
     await expect(canvas.queryByTestId("stats-library-size")).toBeNull();
   },
 };

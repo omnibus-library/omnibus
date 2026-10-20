@@ -3,7 +3,7 @@ import { yearFraction } from "./calendar";
 
 type Progress = { current: number; target: number };
 
-/** "3 of 24 books": the honest ratio, so a reader past their target sees that they are. */
+/** The ratio as "3 of 24 books", unclamped so a reader past their target sees that they are. */
 export const progressCaption = (
   current: number,
   target: number,
@@ -25,7 +25,7 @@ export function remainderCaption(
 export const ariaValueNow = (current: number, target: number) =>
   Math.min(Math.max(current, 0), target);
 
-/** Progress as a whole percent clamped to 0 to 100: a bar's width, not the ratio. */
+/** Progress as a whole percent clamped to 0 to 100. This is a bar's width, not the ratio. */
 export function goalPercent({ current, target }: Progress): number {
   if (target <= 0) return 0;
   return Math.min(Math.max(Math.trunc((current * 100) / target), 0), 100);
@@ -33,7 +33,7 @@ export function goalPercent({ current, target }: Progress): number {
 
 export const goalMet = ({ current, target }: Progress) => current >= target;
 
-// `Math.round` settles a half toward +infinity; Rust's `f64::round` settles it away from zero.
+// `Math.round` rounds a half toward +infinity; Rust's `f64::round` rounds it away from zero.
 const roundHalfAway = (x: number) => Math.sign(x) * Math.round(Math.abs(x));
 
 /**
@@ -49,8 +49,8 @@ export function paceNote(goal: Progress, asOfDay: string): string | null {
 }
 
 /**
- * A daily row's label: the noun plus the timeframe the row itself has to supply. With a
- * target it says "a day"; without one it stands alone under a "Today" header, else says "today".
+ * A daily row's label: the noun plus the timeframe the row has to supply itself. With a target it
+ * says "a day". Without one it adds no timeframe under a "Today" header, and otherwise says "today".
  */
 export function rowLabel(
   noun: string,

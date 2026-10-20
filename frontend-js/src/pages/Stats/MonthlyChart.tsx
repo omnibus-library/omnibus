@@ -7,7 +7,10 @@ function columnClass(bar: MonthBar, peak: number) {
   return peak > 0 && bar.books === peak ? "st-mo-col peak" : "st-mo-col";
 }
 
-/** The trailing-12-month books-finished chart with its per-month average; the busiest month is called out beside the current one, or a tall bar mid-year is just tall. */
+/**
+ * The trailing-12-month books-finished chart with its per-month average. The busiest month is called out
+ * beside the current one; without it, a tall bar mid-year would have no label.
+ */
 export function MonthlyChart({ summary }: { summary: StatsSummary }) {
   const months = summary.books_per_month;
   if (months.length === 0) {

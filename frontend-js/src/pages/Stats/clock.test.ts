@@ -48,7 +48,7 @@ describe("buildTicks", () => {
     expect(ticks).toHaveLength(24);
     expect(ticks[20]?.heightPx).toBe(TICK_REACH_PX);
     expect(ticks[8]?.heightPx).toBe(TICK_REACH_PX / 2);
-    // A quiet hour still leaves a mark: an invisible tick would read as a missing hour.
+    // A quiet hour still leaves a mark, since an invisible tick would read as a missing hour.
     expect(ticks[3]?.heightPx).toBe(TICK_MIN_PX);
     expect(ticks[0]?.heightPx).toBe(TICK_MIN_PX);
   });
@@ -98,7 +98,7 @@ describe("peakHour", () => {
     expect(peakHour(hours(values))).toBe("8pm");
   });
 
-  // The first maximum of a row of zeros would claim a reader with no activity reads at midnight.
+  // The first maximum of a row of zeros would imply a reader with no activity reads at midnight.
   it("never claims midnight on an empty window", () => {
     expect(peakHour(hours(quietDay()))).toBe("—");
     expect(peakHour([])).toBe("—");

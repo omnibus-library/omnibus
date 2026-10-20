@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import type { ChartResult, ChartSeries } from "../../api";
 
 // Values are interpolated, never geometry, so bars, dots and the line move from one mechanism. Axes snap,
-// as a lerped maximum drags its tick labels through 3.7 and 7.4. Marks match by identity (a series by
+// as a lerped maximum moves its tick labels through 3.7 and 7.4. Marks match by identity (a series by
 // measure and slice, a value by bucket key), as a positional blend would interpolate March into April.
 
 // At FRAME_MS apiece, STEPS frames are the whole duration.
 const STEPS = 22;
 const FRAME_MS = 16;
-// Past this many buckets the motion costs more than it is worth: the bars are a pixel wide anyway.
+// Past this many buckets the motion costs more than it is worth, since the bars are a pixel wide anyway.
 const MAX_TWEEN_BUCKETS = 120;
 
 /** Ease-out cubic, matching the `--cb-ease` curve the entrance animation uses. */
@@ -48,8 +48,8 @@ export function blend(
 }
 
 /**
- * A view of `target` that travels to each new value. The first result and any over 120 buckets show
- * at once; until a tween's first frame lands the previous frame stays, and a newer result takes over
+ * A view of `target` that animates to each new value. The first result and any over 120 buckets show
+ * at once; until a tween's first frame renders the previous frame stays, and a newer result takes over
  * a running tween from the frame it had reached.
  */
 export function useTweened(target: ChartResult | null): ChartResult | null {

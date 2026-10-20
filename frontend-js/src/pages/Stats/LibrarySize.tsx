@@ -2,7 +2,11 @@ import type { LibrarySize } from "../../api";
 import { Skeleton } from "../../components/Loading/Loading";
 import { buildFigures, heroSentence } from "./library";
 
-/** The Library scope's hero: the collection in one sentence over its size in words, pages and hours of audio. A placeholder until the read lands, never carrying the card's testid, and nothing when the library has been measured for nothing, as three zeroes would read as a claim about the collection. */
+/**
+ * The Library scope's hero: the collection in one sentence over its size in words, pages and hours of audio.
+ * Until the read returns it shows a placeholder without the card's testid. It shows nothing when no figure
+ * was measured, since three zeroes would read as a claim about the collection.
+ */
 export function LibrarySizeHero({ size }: { size: LibrarySize | undefined }) {
   if (size === undefined) {
     return (

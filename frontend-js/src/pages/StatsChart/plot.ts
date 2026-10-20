@@ -13,7 +13,7 @@ function part(key: string, i: number): number | null {
 const isMonth = (m: number | null): m is number =>
   m !== null && m >= 1 && m <= 12;
 
-/** A bucket key on the x-axis; a key it can't parse stands for itself rather than taking the page down. */
+/** A bucket key on the x-axis; a key it can't parse is shown as is rather than taking the page down. */
 export function bucketLabel(key: string, bucket: ChartBucket): string {
   switch (bucket) {
     case "year":
@@ -21,7 +21,7 @@ export function bucketLabel(key: string, bucket: ChartBucket): string {
     case "month": {
       const [year, month] = [part(key, 0), part(key, 1)];
       if (year === null || !isMonth(month)) return key;
-      // The year rides along on January, so a multi-year axis doesn't repeat it twelve times.
+      // January shows the year, so a multi-year axis doesn't repeat it twelve times.
       return month === 1
         ? `${monthAbbr(month)} ${year % 100}`
         : monthAbbr(month);
@@ -71,7 +71,7 @@ export function tickLabel(value: number): string {
   return fixed(value, value >= 10 ? 0 : 1);
 }
 
-// The logical drawing surface: the SVG scales to its container, so these are the only coordinates the geometry deals in.
+// The SVG's logical size. It scales to its container, so these are the only coordinates the geometry uses.
 export const VIEW_W = 760;
 export const VIEW_H = 340;
 export const PAD_T = 14;
@@ -81,7 +81,7 @@ export const PAD_L = 56;
 export const PAD_R_SINGLE = 18;
 export const PAD_R_DUAL = 56;
 
-/** Where a result's marks land in view coordinates. */
+/** Where a result's marks fall in view coordinates. */
 export function plotGeometry(result: Pick<ChartResult, "axes" | "buckets">) {
   const padR = result.axes.length > 1 ? PAD_R_DUAL : PAD_R_SINGLE;
   const plotH = VIEW_H - PAD_T - PAD_B;
@@ -92,7 +92,7 @@ export function plotGeometry(result: Pick<ChartResult, "axes" | "buckets">) {
     bandW,
     baseline: PAD_T + plotH,
     bandCentre: (i: number) => PAD_L + bandW * (i + 0.5),
-    /** `value` on an axis of `max`, clamped so one overshooting its axis still lands in the frame. */
+    /** `value` on an axis of `max`, clamped so one overshooting its axis still fits in the frame. */
     y: (value: number, max: number) =>
       PAD_T +
       plotH * (1 - (max > 0 ? Math.min(Math.max(value / max, 0), 1) : 0)),
@@ -112,7 +112,7 @@ const pairs = <T>(items: readonly T[]) =>
   });
 
 /**
- * A monotone-cubic path through `pts`, the interpolation `d3.curveMonotoneX` uses: it can't
+ * A monotone-cubic path through `pts`, the interpolation `d3.curveMonotoneX` uses. It can't
  * overshoot, so the curve never draws past the data. Two points are a straight segment.
  */
 export function monotonePath(pts: readonly Point[]): string {
@@ -124,13 +124,13 @@ export function monotonePath(pts: readonly Point[]): string {
     const dx = b.x - a.x;
     return Math.abs(dx) < Number.EPSILON ? 0 : (b.y - a.y) / dx;
   });
-  // Fritsch-Carlson tangents: zero at every local extremum, which is what keeps the curve inside the data's range.
+  // Fritsch-Carlson tangents are zero at every local extremum, which keeps the curve inside the data's range.
   const tangents = pts.map((_, i) => {
     const [a, b] = [secants[i - 1], secants[i]];
     if (a === undefined) return b ?? 0;
     if (b === undefined) return a;
     if (a * b <= 0) return 0;
-    // Clamped to three times the shallower secant, so a steep neighbour can't drag the curve past the point it passes through.
+    // Clamped to three times the shallower secant, so a steep neighbour can't push the curve past the point it passes through.
     const limit = 3 * Math.min(Math.abs(a), Math.abs(b));
     return Math.min(Math.max((a + b) / 2, -limit), limit);
   });
@@ -151,12 +151,12 @@ export function monotonePath(pts: readonly Point[]): string {
   return d;
 }
 
-/** One unbroken stretch of a line series: its path, and the same closed down to the baseline as a soft wash. */
+/** One unbroken stretch of a line series: its path, and the same closed down to the baseline as a soft fill. */
 type LineRun = { path: string; area: string };
 
 /**
- * The runs of present values as curved paths. A gap breaks the line rather than bridging it: an average
- * with no data in a bucket is unknown, and drawing through would assert a value never measured.
+ * The runs of present values as curved paths. A gap breaks the line rather than bridging it, because an
+ * average with no data in a bucket is unknown and drawing through would imply a value never measured.
  */
 export function lineRuns(
   plot: PlotGeometry,
@@ -171,7 +171,7 @@ export function lineRuns(
   return runs.flatMap((pts) => {
     const [head] = pts;
     const tail = pts.at(-1);
-    // A single point can't be a path; its dot carries it.
+    // A single point can't be a path, so only its dot draws it.
     if (head === undefined || tail === undefined || pts.length < 2) return [];
     const path = monotonePath(pts);
     const floor = fixed(plot.baseline, 1);
@@ -189,7 +189,7 @@ export const axisMax = (result: ChartResult, series: ChartSeries) =>
   (result.axes[series.axis] ?? result.axes[0])?.max ?? 1;
 
 /**
- * The running total beneath each stacked bar, per series per bucket. An absent value adds nothing:
+ * The running total beneath each stacked bar, per series per bucket. An absent value adds nothing, so
  * the bar above it sits lower rather than the column gaining a hole.
  */
 export function stackOffsets(

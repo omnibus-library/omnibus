@@ -17,7 +17,7 @@ export function joinUnits(units: readonly ChartUnit[]): string {
 
 const unitsOf = (result: ChartResult) => result.axes.map((a) => a.unit);
 
-/** How the y-scales are laid out. Two axes say outright that a crossing means nothing: the easiest thing on this chart to misread. */
+/** How the y-scales are laid out. Two axes say outright that a crossing means nothing, which is the easiest thing on this chart to misread. */
 export function scalesNote(result: ChartResult): string | null {
   const [left, right] = unitsOf(result);
   if (left === undefined) return null;
@@ -48,7 +48,7 @@ export function splitNote(result: ChartResult): string | null {
     : `Split by genre, side by side rather than stacked: these are averages, and averages don't add up into a total.${tail}`;
 }
 
-/** What dragging across the chart does, and the limit of it: said, so a zoom that won't subdivide doesn't look broken. */
+/** What dragging across the chart does, and its limit, so a zoom that won't subdivide doesn't look broken. */
 export function zoomNote(result: ChartResult): string {
   const base = "Drag across the chart to zoom into a stretch of it.";
   return result.truncated

@@ -1,10 +1,11 @@
 import type { ChartResult } from "../../api";
 import { fitAxes } from "./chart";
 
-// A zoom is held as bucket keys, never indices: regroup monthly to weekly and index 3 is another week, where
-// a key that has left the axis stops resolving, and the page drops the zoom. It only narrows the buckets already fetched.
+// A zoom is held as bucket keys, never indices. After a regroup from monthly to weekly, index 3 is
+// another week, while a key that has left the axis stops resolving and the page drops the zoom.
+// It only narrows the buckets already fetched.
 
-/** The fewest buckets a brush may select: one is a click, and zooming to it would leave a single bar filling the frame. */
+/** The fewest buckets a brush may select, since one is a click and zooming to it would leave a single bar filling the frame. */
 const MIN_BRUSH_BUCKETS = 2;
 
 /** A zoom, as the first and last bucket key it spans. */
@@ -34,7 +35,7 @@ export function apply(
     values: s.values.slice(lo, hi + 1),
   }));
   const buckets = result.buckets.slice(lo, hi + 1);
-  // Refitted, not inherited: an axis sized for the whole range leaves a zoomed-in quiet stretch flat on the floor.
+  // Refitted, not inherited, since an axis sized for the whole range leaves a zoomed-in quiet stretch flat on the floor.
   const { axes, divisions } = fitAxes(series, result.stacked, buckets.length);
   return { ...result, buckets, series, axes, divisions };
 }

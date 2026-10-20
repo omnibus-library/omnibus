@@ -17,7 +17,7 @@ export type Level = 0 | 1 | 2 | 3 | 4;
 
 const LEVELS: readonly Level[] = [0, 1, 2, 3, 4];
 
-/** Zero maps to 0; anything active lands 1 to 4 relative to the busiest day. */
+/** Zero maps to 0; anything active gets 1 to 4 relative to the busiest day. */
 export function intensity(secs: number, max: number): Level {
   if (secs <= 0 || max <= 0) return 0;
   return LEVELS[Math.min(1 + Math.trunc((secs * 4 - 1) / max), 4)] ?? 4;
@@ -45,7 +45,10 @@ export function trailingMonthLabels(anchor: number): string[] {
 const gridStart = (anchor: number) =>
   anchor - remEuclid(anchor + 3, 7) - (WEEKS - 1) * 7;
 
-/** Days with any recorded activity in the window and the share of it they are. The denominator stops at `anchor`: counting days after today against a reader would report every December as a failure. */
+/**
+ * Days with any recorded activity in the window and the share of it they are. The denominator stops at
+ * `anchor`, since counting days after today against a reader would report every December as a failure.
+ */
 export function coverage(
   byDay: ReadonlyMap<number, number>,
   start: number,
@@ -95,7 +98,7 @@ export function buildHeatmap(
     const n = dayNumber(day);
     return n === null ? [] : [[n, seconds] as const];
   });
-  // The server's clock, else the newest active day, so a missing stamp still draws something sensible.
+  // The server's clock, else the newest active day, so a missing timestamp still draws a grid.
   const anchor =
     dayNumber(summary.as_of_day) ??
     (active.length > 0 ? Math.max(...active.map(([n]) => n)) : null);

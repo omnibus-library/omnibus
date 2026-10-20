@@ -68,7 +68,7 @@ export const AnnualGoalPastItsTarget: Story = {
     const ring = await canvas.findByRole("progressbar", {
       name: "Books finished in 2026",
     });
-    // ARIA keeps the value inside the range; the text and the figure stay honest.
+    // ARIA keeps the value inside the range; the text and the figure show the real one.
     await expect(ring).toHaveAttribute("aria-valuenow", "24");
     await expect(ring).toHaveAttribute("aria-valuetext", "30 of 24 books");
     await expect(ring.style.getPropertyValue("--st-ring-pct")).toBe("100%");
@@ -154,7 +154,7 @@ export const DailyGoalsBothSet: Story = {
       "width: 40%;",
     );
 
-    // 50 of 45 minutes: met, with the bar full but the figure honest.
+    // 50 of 45 minutes is met, with the bar full and the figure still showing the real total.
     const minutes = canvas.getByRole("progressbar", {
       name: "Minutes a day on 2026-08-14",
     });
@@ -280,7 +280,7 @@ export const HeatmapDrawsATrailingYearMondayFirst: Story = {
       name: "Daily reading activity, trailing year",
     });
     await expect(grid.children).toHaveLength(364);
-    // 2026-08-14 is a Friday: the Saturday and Sunday after it are spacers.
+    // 2026-08-14 is a Friday, so the Saturday and Sunday after it are spacers.
     await expect(grid.querySelectorAll(".st-hm-future")).toHaveLength(2);
     // The twelve-day run is outlined; the busiest day is the darkest.
     await expect(grid.querySelectorAll(".run")).toHaveLength(12);
@@ -422,7 +422,7 @@ export const OpenBooksListThreeRowsWithTheirReadouts: Story = {
       "style",
       "width: 0%;",
     );
-    // Four came back, three are listed: the card says it is a cut list.
+    // Four came back and three are listed, so the card says the list is cut.
     await expect(
       within(card).getByTestId("stats-in-progress-more"),
     ).toHaveTextContent("Showing the 3 most recently opened.");

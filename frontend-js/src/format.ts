@@ -235,10 +235,10 @@ export function fileSize(bytes: number): string | null {
 
 /** `value` to `digits` places, ties to even on its exact binary value, as Rust's `{:.N}` writes it. */
 export function fixed(value: number, digits: number): string {
-  // A true tie reads as a trailing 5 one place further, so only a possible tie pays for the exact expansion.
+  // A true tie reads as a trailing 5 one place further, so only a possible tie needs the exact expansion.
   if (!value.toFixed(digits + 1).endsWith("5")) return value.toFixed(digits);
   const rounded = value.toFixed(digits);
-  // `toFixed` settles an exact tie upward; the exact expansion shows whether this is one.
+  // `toFixed` rounds an exact tie upward; the exact expansion shows whether this is one.
   const exact = Math.abs(value).toFixed(100);
   const point = exact.indexOf(".");
   const kept = digits === 0 ? point : point + 1 + digits;

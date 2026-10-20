@@ -22,11 +22,11 @@ import {
 const BAR_SHARE = 0.68;
 const WIDE_BAR_SHARE = 0.88;
 const CROWDED_BARS = 2;
-// The surface gap between two bars sharing a band, halved once a slot is too narrow to spare it.
+// The gap in view units between two bars sharing a band, halved once a slot is too narrow to spare it.
 const BAR_GAP = 2;
 const NARROW_SLOT = 7;
 const MAX_X_LABELS = 12;
-// Entrance stagger per bucket, capped so a wide chart still settles quickly.
+// Entrance stagger per bucket, capped so a wide chart still finishes quickly.
 const STAGGER_MS = 18;
 const STAGGER_CAP_MS = 320;
 // Past this share of the width the hover card flips to the other side of the cursor.
@@ -68,7 +68,7 @@ export function ChartLegend({ result }: { result: ChartResult }) {
   );
 }
 
-/** The plotted numbers as a real, openable table: three light-mode series colours sit under 3:1, and this is the relief for it. */
+/** The plotted numbers as a real, openable table, which is the accessible alternative for three light-mode series colours that sit under 3:1 contrast. */
 export function ChartTable({ result }: { result: ChartResult }) {
   return (
     <details className="cb-table-wrap" data-testid="chart-table">
@@ -150,7 +150,10 @@ function ChartHoverCard({
   );
 }
 
-/** One SVG drawing whatever result it is handed, with no chart library so the marks take the page's own tokens. `onBrush` gets the first and last bucket a drag covered; the page decides whether that is a zoom. */
+/**
+ * One SVG drawing whatever result it is handed, with no chart library so the marks take the page's own tokens.
+ * `onBrush` gets the first and last bucket a drag covered, and the page decides whether that is a zoom.
+ */
 export function ChartPlot({
   result,
   onBrush,
@@ -161,11 +164,10 @@ export function ChartPlot({
   const [hovered, setHovered] = useState<number | null>(null);
   const [dragStart, setDragStart] = useState<number | null>(null);
   const plot = plotGeometry(result);
-  // A series' position is its identity: a split repeats the measure, and a genre may be called "Other".
+  // A series' position is its identity, since a split repeats the measure and a genre may be called "Other".
   const placed = result.series.map((series, idx) => ({ series, idx }));
   const bars = placed.filter(({ series }) => series.mark === "bar");
   const lines = placed.filter(({ series }) => series.mark === "line");
-  // Stacked bars share one slot per bucket; grouped ones split the band.
   const slots = result.stacked ? 1 : bars.length;
   const barZone =
     plot.bandW * (slots > CROWDED_BARS ? WIDE_BAR_SHARE : BAR_SHARE);
@@ -345,7 +347,7 @@ export function ChartPlot({
           );
         })}
 
-        {/* One full-height target per bucket, above everything: a short bar shouldn't have to be hit, and the card reads every series anyway. */}
+        {/* One full-height target per bucket, above everything, so a short bar doesn't have to be hit and the card reads every series anyway. */}
         {result.buckets.map((key, i) => (
           // biome-ignore lint/a11y/noStaticElementInteractions: the hover is a pointer aid; the legend and the table carry the same numbers
           <rect

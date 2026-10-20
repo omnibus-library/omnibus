@@ -69,7 +69,7 @@ describe("resumeReadout", () => {
     expect(resumeReadout(aResumePoint({ percent: 62 }))).toBe("62%");
   });
 
-  // The container's marks are parts, not chapters: a 65-chapter novel stored as 12 files is not on chapter 3.
+  // The container's marks are parts, not chapters, so a 65-chapter novel stored as 12 files is not on chapter 3.
   it("falls back to the structural position instead of a zero", () => {
     expect(resumeReadout(aResumePoint({ part: 3, partCount: 12 }))).toBe(
       "Pt 3 of 12",

@@ -7,7 +7,7 @@ export type Row = { label: string; headline: string; detail: string };
 
 type Book = NonNullable<StatsSummary["superlatives"]["longest_book"]>;
 
-/** A `YYYY-MM-DD` as "14 Nov 2023"; a malformed day is still better company for its figure than no label. */
+/** A `YYYY-MM-DD` as "14 Nov 2023". A malformed day comes back unchanged, which labels its figure better than nothing. */
 export function prettyDay(day: string): string {
   const days = dayNumber(day);
   if (days === null) return day;
@@ -15,10 +15,10 @@ export function prettyDay(day: string): string {
   return `${d} ${monthAbbr(m)} ${y}`;
 }
 
-/** "412 pages" / "1 page": the unit belongs to the row, `value` carries a bare number. */
+/** A length as "412 pages" or "1 page". The unit belongs to the row, so `value` is a bare number. */
 export const pagesDetail = (pages: number) => `${pages} page${plural(pages)}`;
 
-/** "in 3 days" / "in a day": the server collapses a same-day read to 1. */
+/** A span as "in 3 days" or "in a day", since the server collapses a same-day read to 1. */
 export const daysDetail = (days: number) =>
   days === 1 ? "in a day" : `in ${days} days`;
 

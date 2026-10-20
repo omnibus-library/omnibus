@@ -57,7 +57,7 @@ describe("averageLabel", () => {
     );
   });
 
-  // Three books over twelve months is 0.25 exactly: Rust's `{:.1}` settles it on 0.2, where toFixed says 0.3.
+  // Three books over twelve months is exactly 0.25, which Rust's `{:.1}` rounds to 0.2 where toFixed gives 0.3.
   it("settles a half-way average on the even decimal, as Rust formats it", () => {
     const year = Array.from({ length: 12 }, (_, i) =>
       month(`2026-${String(i + 1).padStart(2, "0")}`, i < 3 ? 1 : 0),

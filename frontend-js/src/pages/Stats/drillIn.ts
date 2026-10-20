@@ -14,7 +14,7 @@ export type TrendBar = {
   heightPct: number;
   /** The figure printed on the column, so its height reads without hovering. */
   value: string | null;
-  /** Nothing was measured here: an empty slot, never a stub that reads as a low value. */
+  /** Nothing was measured here, so the slot is empty rather than a short bar that reads as a low value. */
   empty: boolean;
 };
 
@@ -33,7 +33,7 @@ export const VS_LABELS = {
   all_time: "",
 } as const satisfies Record<StatsRange, string>;
 
-/** The arrow beside a comparison's label: the tile tints its delta, the sheet draws a glyph. */
+/** The arrow beside a comparison's label. The tile tints its delta and the sheet draws a glyph. */
 export const GLYPHS = {
   up: "▲",
   down: "▼",
@@ -48,7 +48,7 @@ function yearMonth(month: string): [number, number] | null {
   return m >= 1 && m <= 12 ? [Number(parts[1]), m] : null;
 }
 
-/** The three-letter name of a `YYYY-MM` month, `?` when malformed. Never an initial: June and July would share "J". */
+/** The three-letter name of a `YYYY-MM` month, `?` when malformed. Never an initial, because June and July would share "J". */
 export function shortMonth(month: string): string {
   const parsed = yearMonth(month);
   return parsed ? monthAbbr(parsed[1]) : "?";
@@ -85,7 +85,7 @@ export function buildTrendBars(
   }));
 }
 
-/** A rating bucket's axis label in stars, "0.5" to "5": the buckets are half-stars, which would read as a ten-point scale. */
+/** A rating bucket's axis label in stars, "0.5" to "5", since the buckets are half-stars and would otherwise read as a ten-point scale. */
 export const starLabel = ({ half_stars }: RatingBucket) =>
   String(half_stars / 2);
 
@@ -155,13 +155,13 @@ export function trendBars(
   }
 }
 
-/** The heading a trend needs to be read: the rating trend sits beside a histogram and covers a different period. */
+/** The heading a trend needs to be read. The rating trend sits beside a histogram and covers a different period. */
 export const trendTitle = (metric: Metric) =>
   metric === "avg_rating" ? "Average rating by month" : null;
 
 const RATING_TREND_SPAN = "last 12 months, whatever period is selected";
 
-/** The period the rating trend covers: the trailing twelve months whatever the switcher says, while the delta and histogram follow it. */
+/** The period the rating trend covers. It is always the trailing twelve months, while the delta and histogram follow the switcher. */
 export function ratingTrendCaption(points: readonly TrendPoint[]): string {
   const first = points.at(0);
   const last = points.at(-1);
@@ -172,7 +172,7 @@ export function ratingTrendCaption(points: readonly TrendPoint[]): string {
     : `The ${RATING_TREND_SPAN}`;
 }
 
-/** The period the rating histogram covers: the one the switcher selected. */
+/** The period the rating histogram covers, which is the one the switcher selected. */
 export const HISTOGRAM_CAPTIONS = {
   week: "Rated this week",
   month: "Rated this month",
@@ -180,17 +180,20 @@ export const HISTOGRAM_CAPTIONS = {
   all_time: "Rated at any time",
 } as const satisfies Record<StatsRange, string>;
 
-/** A reading rate: one decimal under ten pages an hour, whole pages above, since a decimal would dress an estimate as a measurement. The branch tests the rounded figure, as 9.96 at one decimal is "10.0". */
+/**
+ * A reading rate in one decimal under ten pages an hour and in whole pages above, since a decimal would make
+ * an estimate look like a measurement. The branch tests the rounded figure, because 9.96 at one decimal is "10.0".
+ */
 export function rateValue(rate: number): string {
   const oneDecimal = Math.round(rate * 10) / 10;
   return oneDecimal < 10 ? fixed(oneDecimal, 1) : String(Math.round(rate));
 }
 
-/** "Across N books this period.": the population behind the headline. */
+/** The population behind the headline, "Across N books this period." */
 export const measuredLine = (books: number) =>
   `Across ${bookCount(books)} this period.`;
 
-/** The books whose length nothing resolves, named rather than absorbed: they were read, and the total leaves them out. */
+/** The books whose length nothing resolves, named rather than absorbed, since they were read and the total leaves them out. */
 export function unmeasuredLine(books: number, anyMeasured: boolean): string {
   const verb = books === 1 ? "has" : "have";
   const pronoun = books === 1 ? "it" : "they";
@@ -203,7 +206,7 @@ export function unmeasuredLine(books: number, anyMeasured: boolean): string {
 export const predatesLedger = (detail: Pages) =>
   detail.since_day !== null && detail.window_predates_ledger;
 
-/** The cutover sentence: no trail of stored positions exists before the ledger began, so earlier reading is unrecoverable, not merely missing. */
+/** The cutover sentence. No trail of stored positions exists before the ledger began, so earlier reading is unrecoverable, not merely missing. */
 export const cutoverLine = (since: string, overlaps: boolean) =>
   overlaps
     ? `Page tracking began ${since}; reading before then can’t be counted, so this period is only partly covered.`

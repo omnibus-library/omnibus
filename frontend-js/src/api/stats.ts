@@ -25,12 +25,12 @@ export type {
   HouseholdReader,
   StatsRange,
 } from "./generated/schemas";
-// Values as well as types: the picker lists every option the spec allows.
+// These are values as well as types, because the picker lists every option the spec allows.
 export { ChartBucket, ChartMeasure } from "./generated/schemas";
 
-// The stats and chart answers stay wire-shaped (snake_case): each helper behind the
-// page is a port of its Rust over the same field names. The one mapping is filling
-// every field the server may omit with its Rust `Default`, once, so no screen does.
+// The stats and chart answers stay wire-shaped (snake_case), because each helper behind the
+// page is a port of its Rust over the same field names. The one mapping fills every field
+// the server may omit with its Rust `Default`, once, so no screen does.
 
 const UNMEASURED = { books: 0, total: 0 };
 
@@ -164,8 +164,8 @@ export async function fetchChartSeries(spec: ChartSpec) {
   );
 }
 
-// Dioxus refetches on neither focus nor reconnect: a failed refetch would swap the figures on screen
-// for the page's error, or for the empty fallback the context reads settle on.
+// Dioxus refetches on neither focus nor reconnect. A refetch that failed here would replace the
+// figures on screen with the page's error, or with the empty fallback the context reads return.
 export const NO_AMBIENT_REFETCH = {
   refetchOnWindowFocus: false,
   refetchOnReconnect: false,
@@ -179,7 +179,7 @@ export const statsQuery = (range: StatsRange, userId: UserId | null) =>
   });
 
 // The three reads below are context beside the reader's own figures, so a failure
-// settles on the empty answer rather than blanking the page.
+// returns the empty answer rather than blanking the page.
 export const householdReadersQuery = queryOptions({
   queryKey: ["household-readers"],
   queryFn: () => fetchHouseholdReaders().catch(() => []),

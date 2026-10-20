@@ -57,7 +57,7 @@ describe("durationValue", () => {
 });
 
 describe("avgStarsValue", () => {
-  // `{:.1}` alone would settle 4.25 on 4.2; the tile rounds half away from zero first.
+  // `{:.1}` alone would round 4.25 to 4.2; the tile rounds half away from zero first.
   it("rounds half up to one decimal, or shows an em-dash", () => {
     expect(avgStarsValue(4.25)).toBe("4.3");
     expect(avgStarsValue(4.24)).toBe("4.2");
@@ -75,7 +75,7 @@ describe("pagesValue", () => {
     expect(pagesValue(null, false)).toBe("—");
   });
 
-  // Listening turns no pages, which the tile can state; an em-dash would claim the server doesn't know.
+  // Listening turns no pages, which the tile can state; an em-dash would imply the server doesn't know.
   it("reads an audio-only window as zero, not as unknown", () => {
     expect(pagesValue(null, true)).toBe("0");
     expect(pagesValue(31, true)).toBe("31");
@@ -134,7 +134,7 @@ describe("percentComparison", () => {
 });
 
 describe("starsComparison", () => {
-  // A ratio between the two means would peg the bar at full for a window that rated as well as the last.
+  // A ratio between the two means would fill the bar completely for a window that rated as well as the last.
   it("draws against the five-star ceiling, not the last window", () => {
     expect(starsComparison(4, 4)).toEqual({
       label: "flat",
@@ -175,7 +175,7 @@ describe("buildTiles", () => {
     expect(tiles[0]).toMatchObject({ value: "3", unit: "books" });
   });
 
-  // "— ★ avg" reads as a measured value of nothing; the bare dash reads as the absence it is.
+  // A dash with a unit reads as a measured value of nothing, while a bare dash reads as an absence.
   it("drops the star unit when nothing was rated", () => {
     const [, , , unrated] = buildTiles(summary({ avg_stars: null }));
     const [, , , rated] = buildTiles(summary({ avg_stars: 4.3 }));

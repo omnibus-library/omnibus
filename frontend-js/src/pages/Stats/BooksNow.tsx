@@ -99,7 +99,7 @@ function FinishedRow({ book }: { book: FinishedBook }) {
   );
 }
 
-/** "Recently finished": the latest completions with the rating each carries, whatever window is showing, so it can't contradict the Finished tile above. */
+/** "Recently finished": the latest completions with their ratings, whatever window is showing, so it can't contradict the Finished tile above. */
 export function RecentlyFinishedCard({ books }: { books: FinishedBook[] }) {
   return (
     <div className="card st-finished" data-testid="stats-recently-finished">

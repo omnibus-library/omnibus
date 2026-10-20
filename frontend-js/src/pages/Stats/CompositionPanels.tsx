@@ -10,7 +10,10 @@ import {
 } from "./composition";
 import { groupThousands } from "./summary";
 
-/** One dimension's bars, or a sentence when nothing in the library carries it rather than an axis with no bars. Every slice the server sent is drawn; the decade histogram is unfolded and untruncated. */
+/**
+ * One dimension's bars, or a sentence when nothing in the library has it, rather than an axis with no bars.
+ * Every slice the server sent is drawn, and the decade histogram is neither folded nor truncated.
+ */
 function CompositionPanel({ panel }: { panel: Panel }) {
   const max = Math.max(0, ...panel.slices.map((slice) => slice.books));
   return (
@@ -60,7 +63,10 @@ function CompositionPanel({ panel }: { panel: Panel }) {
   );
 }
 
-/** What the collection is made of, a card per dimension. Placeholder panels until the read lands, never carrying the card's testid, and nothing for a library with no live books. */
+/**
+ * What the collection is made of, a card per dimension. Until the read returns it shows placeholder
+ * panels without the card's testid, and it shows nothing for a library with no live books.
+ */
 export function CompositionPanels({
   composition,
 }: {

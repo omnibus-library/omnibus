@@ -30,7 +30,7 @@ const series = (
   ...overrides,
 });
 
-/** Books finished (bars, left) against average length (line, right): the comparison the builder exists for, with a gap in the average. */
+/** Books finished (bars, left) against average length (line, right), the comparison the builder exists for, with a gap in the average. */
 const SAMPLE: ChartResult = {
   bucket: "month",
   buckets: ["2026-01", "2026-02", "2026-03", "2026-04"],
@@ -165,7 +165,7 @@ describe("lineRuns", () => {
   };
 
   it("breaks the line at a bucket with no data", () => {
-    // Two points then a gap: one run, as the lone trailing point is not a second (a segment needs two ends).
+    // Two points then a gap make one run, since the lone trailing point is not a second (a segment needs two ends).
     const runs = lineOf([1, 2, null, 3]);
 
     expect(runs).toHaveLength(1);

@@ -22,13 +22,13 @@ const MINUS = "−";
 export const clampPct = (value: number) =>
   Math.round(Math.min(Math.max(value, 0), 100));
 
-/** Listening with no reading at all: the one empty state whose honest headline is `0`, not an em-dash. */
+/** Listening with no reading at all, the one empty state whose correct headline is `0`, not an em-dash. */
 export const audioOnly = (detail: Pages) =>
   detail.audio_books > 0 &&
   detail.measured_books === 0 &&
   detail.unmeasured_books === 0;
 
-/** How close this window has come to the last, pegged once past it; a window with no baseline fills when it has something to show. */
+/** How close this window has come to the last, capped once past it; a window with no baseline fills when it has something to show. */
 export function fillPct(current: number, previous: number): number {
   if (previous <= 0) return current > 0 ? 100 : 0;
   return clampPct((current / previous) * 100);
@@ -37,7 +37,7 @@ export function fillPct(current: number, previous: number): number {
 const directionOf = (change: number): Direction =>
   change > 0 ? "up" : change < 0 ? "down" : "flat";
 
-/** A count delta in whole units, "+2" / "−1" / "flat": a percentage over a handful of books is noise. */
+/** A count delta in whole units, "+2", "−1" or "flat", since a percentage over a handful of books is noise. */
 export function countComparison(current: number, previous: number): Comparison {
   const change = current - previous;
   return {
@@ -72,7 +72,10 @@ export function percentComparison(
   };
 }
 
-/** A star delta in stars, drawn against the five-star ceiling: a ratio between two means would peg at 100% for any window rated as well as the last. `null` without a mean to report. */
+/**
+ * A star delta in stars, drawn against the five-star ceiling, since a ratio between two means would reach
+ * 100% for any window rated as well as the last. `null` without a mean to report.
+ */
 export function starsComparison(
   current: number | null,
   previous: number | null,
@@ -102,7 +105,10 @@ type Compared = Pick<
   | "previous"
 >;
 
-/** A metric's comparison against the same slice of the previous window: the one value its tile and its drill-in both state. `null` on Lifetime, which has no previous window, and for a rating with no mean. */
+/**
+ * A metric's comparison against the same slice of the previous window, as the one value its tile and
+ * its drill-in both state. `null` on Lifetime, which has no previous window, and for a rating with no mean.
+ */
 export function comparison(
   metric: Metric,
   summary: Compared,
@@ -193,7 +199,7 @@ export function buildTiles(
     },
     {
       value: avgStarsValue(summary.avg_stars),
-      // No unit beside the dash: "— ★ avg" reads as a measured value of nothing.
+      // No unit beside the dash, since a dash with a unit reads as a measured value of nothing.
       unit: summary.avg_stars === null ? "" : "★ avg",
       label: "How you rated",
       testid: "stats-tile-avg-rating",

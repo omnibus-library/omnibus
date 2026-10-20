@@ -52,7 +52,7 @@ describe("blend", () => {
   });
 
   it("puts the new axis on every frame instead of tweening it", () => {
-    // Lerping the maximum would drag the tick labels through 3.7 and 7.4.
+    // Lerping the maximum would move the tick labels through 3.7 and 7.4.
     const a = twoBuckets([1], 5);
     const b = twoBuckets([9], 10);
 
@@ -73,7 +73,7 @@ describe("blend", () => {
   });
 
   it("matches values by bucket key, not by position", () => {
-    // The window slid on a month: February is index 1 before and index 0 after.
+    // The window slid on a month, so February is index 1 before and index 0 after.
     const a = result(["2026-01", "2026-02"], [[null, [0, 10]]]);
     const b = result(["2026-02", "2026-03"], [[null, [10, 6]]]);
 
@@ -196,7 +196,7 @@ describe("useTweened", () => {
     const { result, rerender } = tweened(first);
 
     rerender({ target: next });
-    // Until the first frame lands the old chart stays.
+    // Until the first frame renders, the old chart stays.
     expect(result.current?.series[0]?.values).toEqual([0, 0]);
 
     advance(1);
@@ -243,7 +243,7 @@ describe("useTweened", () => {
     rerender({ target: c });
 
     advance(11);
-    // Had the first run kept going it would pull the bars back under 10.
+    // Had the first run kept going, it would move the bars back under 10.
     expect(shown.current?.series[0]?.values[0]).toBeGreaterThan(15);
 
     advance(FRAMES - 11);

@@ -64,7 +64,7 @@ describe("monthName", () => {
 });
 
 describe("windowLabel", () => {
-  // Every one is "to date": a label reading "August 2026" alone claims a whole month was counted.
+  // Every one is "to date", because a label reading "August 2026" alone implies a whole month was counted.
   it("says what each range actually covers", () => {
     expect(windowLabel("month", "2026-08-14")).toBe(
       "August 2026 · month to date",
@@ -94,7 +94,7 @@ describe("windowLabel", () => {
 });
 
 describe("streakSpan", () => {
-  // A run that ended yesterday is still live: measuring back from today would outline one cell too many.
+  // A run that ended yesterday is still live, since measuring back from today would outline one cell too many.
   it("measures back from the last active day, not from today", () => {
     expect(streakSpan(day(12), [day(9), day(10), day(11)], 3)).toEqual([
       day(9),

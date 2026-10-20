@@ -5,7 +5,7 @@ import { groupThousands } from "./summary";
 
 type Dimension = LibraryComposition["formats"];
 
-/** One dimension: its heading, its bars, and the line beneath them that says what the bars can't speak for. */
+/** One dimension: its heading, its bars, and the line beneath them that says what the bars don't cover. */
 export type Panel = {
   title: string;
   testId: string;
@@ -15,15 +15,21 @@ export type Panel = {
   empty: string;
 };
 
-/** A bar's width as a percent of the dimension's largest slice: scaled to the tallest rather than the library total, or one dominant bucket would shrink every other bar to a few pixels. */
+/**
+ * A bar's width as a percent of the dimension's largest slice. Scaling to the library total would shrink
+ * every other bar to a few pixels beside one dominant bucket.
+ */
 export const barWidth = (books: number, max: number) =>
   max <= 0 ? 0 : Math.min(Math.max(Math.trunc((books * 100) / max), 0), 100);
 
-/** "across 1,204 of 1,510 books": a distribution without its coverage is a guess wearing a chart. */
+/** The coverage line, "across 1,204 of 1,510 books". A distribution without it can't be judged. */
 export const coverageNote = (dim: Dimension, libraryBooks: number) =>
   `across ${groupThousands(dim.coverage.books)} of ${groupThousands(libraryBooks)} books`;
 
-/** How many books the format bars count twice, or the bars don't add up to the library and a reader can't tell double-counting from a missing bucket. */
+/**
+ * How many books the format bars count twice. Without it the bars don't add up to the library,
+ * and a reader can't tell double-counting from a missing bucket.
+ */
 export function overlapNote(dim: Dimension): string | null {
   const overlap = Math.max(dim.coverage.total - dim.coverage.books, 0);
   return overlap === 0
@@ -31,7 +37,10 @@ export function overlapNote(dim: Dimension): string | null {
     : `+${bookCount(overlap)} held in more than one format`;
 }
 
-/** Books with no file on disk carry no format, so they'd vanish from the format bars and leave the counts not reconciling; worded for rows that never had files too. */
+/**
+ * Books with no file on disk have no format, so they would drop out of the format bars and the counts
+ * wouldn't reconcile. The wording also covers rows that never had files.
+ */
 export const ghostedNote = (ghosted: number) =>
   ghosted === 0
     ? null
@@ -66,7 +75,7 @@ export function buildPanels(c: LibraryComposition): Panel[] {
       title: "Published",
       testId: "stats-composition-decades",
       slices: c.decades.slices,
-      // The uncovered books have an absent or unparseable date: unknown, never bucketed into a decade they'd share with real dates.
+      // The uncovered books have an absent or unparseable date, so they stay unknown and never share a decade with real dates.
       note: coverageNote(c.decades, c.books),
       empty: "No publication dates yet.",
     },
@@ -90,5 +99,8 @@ export const isEmptyComposition = (c: LibraryComposition) =>
     dimensionEmpty,
   );
 
-/** The bar colour for a slice: the donut ramp clamped at its faintest step rather than cycled, so a fifth row doesn't repeat the leader's accent and imply it ranks with the first. */
+/**
+ * The bar colour for a slice, from the donut ramp clamped at its faintest step rather than cycled, so a fifth
+ * row doesn't repeat the leader's accent and imply it ranks with the first.
+ */
 export const sliceColor = (index: number) => sliceVar(Math.min(index, 3));

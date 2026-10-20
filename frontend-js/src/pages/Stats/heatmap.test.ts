@@ -14,7 +14,7 @@ const day = (n: number) =>
   dayNumber(`2026-07-${String(n).padStart(2, "0")}`) ?? 0;
 
 describe("coverage", () => {
-  // A year is not over: dividing by 364 would report every December as a failure to read days that haven't happened.
+  // A year is not over, so dividing by 364 would report every December as a failure to read days that haven't happened.
   it("measures against the days elapsed, not the whole grid", () => {
     const byDay = new Map([1, 2, 3, 4, 5].map((n) => [day(n), 600]));
 
@@ -127,7 +127,7 @@ describe("cellTitle", () => {
 describe("buildHeatmap", () => {
   const bare = { as_of_day: "", heatmap: [], current_streak_days: 0 };
 
-  // With no day to anchor on the card holds its space rather than drawing days it would have to invent.
+  // With no day to anchor on, the card reserves its space instead of drawing days it would have to invent.
   it("is absent without a server day or any activity", () => {
     expect(buildHeatmap(bare)).toBeNull();
   });

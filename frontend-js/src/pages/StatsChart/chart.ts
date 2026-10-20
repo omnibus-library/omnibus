@@ -83,7 +83,7 @@ export const MEASURES = {
   },
 } satisfies Record<ChartMeasure, MeasureInfo>;
 
-/** Why two measures can't be summed: what each row of its table is. */
+/** Why two measures can't be summed, given by what each row of its table is. */
 export const GRAIN_LABELS = {
   sitting: "per sitting",
   ledger: "per day read",
@@ -101,7 +101,7 @@ export const BUCKET_LABELS = {
 /** The most y-scales one chart may carry. */
 export const MAX_AXES = 2;
 
-/** No measures: opening on a chart invites a reader to accept it, and an empty one greys nothing out. */
+/** The default spec has no measures, since opening on a chart invites a reader to accept it, and an empty one greys nothing out. */
 export const DEFAULT_SPEC: ChartSpec = {
   measures: [],
   bucket: "month",
@@ -126,12 +126,12 @@ export function axisFor(spec: ChartSpec, measure: ChartMeasure): 0 | 1 | null {
 export const canAdd = (spec: ChartSpec, measure: ChartMeasure) =>
   !spec.measures.includes(measure) && axisFor(spec, measure) !== null;
 
-/** Whether a genre can split `measure`: a genre belongs to a book, so only per-book measures qualify. */
+/** Whether a genre can split `measure`. A genre belongs to a book, so only per-book measures qualify. */
 export const supportsBreakdown = (measure: ChartMeasure) =>
   MEASURES[measure].grain === "completion";
 
 /**
- * Adds or removes `measure`, keeping selection order, as the first chosen owns the left axis. Adding one
+ * Adds or removes `measure`, keeping selection order, as the first chosen takes the left axis. Adding one
  * that can't join does nothing. A split survives only while one splittable measure is left to describe.
  */
 export function toggle(spec: ChartSpec, measure: ChartMeasure): ChartSpec {
@@ -191,7 +191,7 @@ function axisStep(max: number, divisions: number, integral: boolean): number {
   return integral ? Math.ceil(step) : step;
 }
 
-/** An axis maximum and the gridline count that divides it, so the ticks land on round numbers and the data fills the frame. */
+/** An axis maximum and the gridline count that divides it, so the ticks fall on round numbers and the data fills the frame. */
 export function niceAxis(
   max: number,
   integral: boolean,
@@ -209,14 +209,14 @@ export function niceAxis(
       return { max: top, divisions };
     }
   }
-  // No tick count fits inside the headroom: take the default's ceiling rather than overflow the axis.
+  // No tick count fits inside the headroom, so take the default's ceiling rather than overflow the axis.
   return {
     max: axisStep(max, DEFAULT_DIVISIONS, integral) * DEFAULT_DIVISIONS,
     divisions: DEFAULT_DIVISIONS,
   };
 }
 
-/** An axis maximum on a fixed gridline count: both axes share one set of gridlines, so the right can't pick its own. */
+/** An axis maximum on a fixed gridline count, since both axes share one set of gridlines and the right can't pick its own. */
 export function axisMaxOn(
   max: number,
   divisions: number,

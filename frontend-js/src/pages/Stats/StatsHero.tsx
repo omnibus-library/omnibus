@@ -16,7 +16,7 @@ function kicker(current: number, yours: boolean) {
   return yours ? "You are on a run" : "On a run";
 }
 
-/** The standing hero: the run the reader is on over a six-week spark; `who` names another reader's page. `children` is its first row. */
+/** The standing hero shows the run the reader is on over a six-week spark. `who` names another reader's page, and `children` is its first row. */
 export function StatsHero({
   summary,
   who,

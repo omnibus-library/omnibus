@@ -2,13 +2,13 @@ import type { StatsRange } from "../../api";
 import { RANGE_LABELS } from "./summary";
 
 // Day math runs on epoch-day numbers over the stats' `YYYY-MM-DD` strings, with no date
-// library, as the Rust page does, so every figure lands on the same day.
+// library, as the Rust page does, so every figure falls on the same day.
 
 export const remEuclid = (a: number, b: number) => ((a % b) + b) % b;
 
 const MS_PER_DAY = 86_400_000;
 
-/** Days since 1970-01-01 for a civil date; `setUTCFullYear`, as `Date.UTC` reads years 0 to 99 as 19xx. */
+/** Days since 1970-01-01 for a civil date. It uses `setUTCFullYear` because `Date.UTC` reads years 0 to 99 as 19xx. */
 function daysFromCivil(y: number, m: number, d: number): number {
   const t = new Date(0);
   t.setUTCFullYear(y, m - 1, d);
@@ -88,7 +88,7 @@ export function windowLabel(range: StatsRange, asOfDay: string): string {
 
 /**
  * The live streak's inclusive day range, anchored on the last active day rather than
- * `anchor`: a run that ended yesterday still counts, as today isn't over. `null` without a live run.
+ * `anchor`, since a run that ended yesterday still counts while today isn't over. `null` without a live run.
  */
 export function streakSpan(
   anchor: number,
@@ -102,8 +102,8 @@ export function streakSpan(
 }
 
 /**
- * How far through its year `asOfDay` is, 0 to 1: the pace an annual target is read against.
- * `null` for a day the server never sent.
+ * How far through its year `asOfDay` is, 0 to 1, which an annual target's pace is read
+ * against. `null` for a day the server never sent.
  */
 export function yearFraction(asOfDay: string): number | null {
   const today = dayNumber(asOfDay);

@@ -11,7 +11,7 @@ import {
   rowLabel,
 } from "./goal";
 
-/** The hero's one goals control: goals are account configuration, set together in Settings. */
+/** The hero's one goals control. Goals are account configuration, set together in Settings. */
 export function GoalsLink({ anySet }: { anySet: boolean }) {
   return (
     <Link
@@ -25,9 +25,9 @@ export function GoalsLink({ anySet }: { anySet: boolean }) {
 }
 
 /**
- * The annual books goal: a ring carrying the ratio, with the figure and pace beside it.
+ * The annual books goal: a ring showing the ratio, with the figure and pace beside it.
  * Without a target it drops the ring, which only a target can support, and reports the
- * year's real count. `asOfDay` is the server's, and the year is cut from it.
+ * year's real count. The year is cut from `asOfDay`, the server's day.
  */
 export function AnnualGoalRing({
   goal,
@@ -97,7 +97,7 @@ export function AnnualGoalRing({
   );
 }
 
-/** One daily goal's row: with a target the ratio and a bar, without one today's bare figure, since a bar is a claim about a target. */
+/** One daily goal's row. With a target it shows the ratio and a bar; without one it shows today's bare figure, since a bar implies a target. */
 function DailyGoalRow({
   kind,
   noun,
@@ -176,7 +176,7 @@ export function DailyGoalsCard({
 }: {
   daily: StatsSummary["daily_goals"];
 }) {
-  // "Every day" promises a recurrence, which is only true once something recurs.
+  // "Every day" implies a recurrence, which only holds once something recurs.
   const neither = daily.pages === null && daily.minutes === null;
   return (
     <div className="st-daily" data-testid="stats-daily-goals">

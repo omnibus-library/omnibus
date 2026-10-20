@@ -21,10 +21,10 @@ const RUN_CELL_CLASS = {
 
 const LEGEND_LEVELS: readonly Level[] = [0, 1, 2, 3, 4];
 
-/** The trailing-year grid with the live run outlined, the days-read coverage and the streak record in its header; the run the reader is on is the hero's to state. */
+/** The trailing-year grid with the live run outlined, and the days-read coverage and streak record in its header. The hero states the run the reader is on. */
 export function HeatmapCard({ summary }: { summary: StatsSummary }) {
   const heat = buildHeatmap(summary);
-  // Without a day to anchor on the card holds its space rather than drawing days it would have to invent.
+  // Without a day to anchor on, the card reserves its space instead of drawing days it would have to invent.
   if (heat === null) {
     return <div className="card st-card-placeholder" aria-hidden="true" />;
   }
@@ -55,7 +55,7 @@ export function HeatmapCard({ summary }: { summary: StatsSummary }) {
               {longest}
               <span className="st-heat-value-unit">{` day${plural(longest)}`}</span>
             </div>
-            {/* "best run", never "best runs": the figure is how long the record run was, not how many there were. */}
+            {/* "best run", never "best runs", because the figure is how long the record run was, not how many there were. */}
             <div className="label">best run</div>
           </div>
         </div>

@@ -8,7 +8,10 @@ const DELTA_CLASS = {
   flat: "st-tile-delta flat",
 } as const satisfies Record<Direction, string>;
 
-/** The four-tile headline row. Each tile is a button that opens its metric's drill-in: the face carries the comparison, the sheet the trend and caveats. */
+/**
+ * The four-tile headline row. Each tile is a button that opens its metric's drill-in.
+ * The face shows the comparison and the sheet shows the trend and caveats.
+ */
 export function HeadlineTiles({
   summary,
   onOpen,
@@ -32,7 +35,7 @@ export function HeadlineTiles({
             <span key={tile.value} className="st-tile-value">
               {tile.value}
             </span>
-            {/* Omitted rather than empty: the row is a flex with a gap, so an empty span would still push the delta across. */}
+            {/* Omitted rather than empty, because the row is a flex with a gap and an empty span would still push the delta across. */}
             {tile.unit !== "" && (
               <span className="st-tile-unit">{tile.unit}</span>
             )}

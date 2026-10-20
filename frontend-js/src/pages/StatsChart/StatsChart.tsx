@@ -48,7 +48,7 @@ function scalesHint(units: number) {
 
 type ControlsProps = { spec: ChartSpec; onChange: (spec: ChartSpec) => void };
 
-/** The picker: each control writes one field of the spec, and any write refetches. */
+/** The picker. Each control writes one field of the spec, and any write refetches. */
 function ChartControls({ spec, onChange }: ControlsProps) {
   // A split describes one measure's population, so it needs exactly one.
   const solo = spec.measures.length === 1 ? spec.measures[0] : undefined;
@@ -152,7 +152,7 @@ function ChartControls({ spec, onChange }: ControlsProps) {
   );
 }
 
-/** The chart for one spec. The last chart stays, dimmed, while the next loads; only the first load blanks the surface. */
+/** The chart for one spec. The last chart stays, dimmed, while the next loads; only the first load blanks the chart area. */
 function ChartCanvas({ spec }: { spec: ChartSpec }) {
   // Held as bucket keys, so a regroup that replaces the axis drops the zoom instead of framing another stretch of history.
   const [zoomed, setZoomed] = useState<ZoomRange | null>(null);
@@ -163,7 +163,7 @@ function ChartCanvas({ spec }: { spec: ChartSpec }) {
   // Dropped once the keys leave the axis, or a later spec that brings them back would silently re-apply it.
   if (chart.data && zoomed && resolveZoom(chart.data.buckets, zoomed) === null)
     setZoomed(null);
-  // Zoomed before tweened: narrowing the window is itself worth animating, and each surviving bucket keeps its key.
+  // Zoomed before tweened, since narrowing the window is itself worth animating and each surviving bucket keeps its key.
   const view = useMemo(
     () => (chart.data ? applyZoom(chart.data, zoomed) : null),
     [chart.data, zoomed],

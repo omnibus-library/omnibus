@@ -7,7 +7,7 @@ import {
   untaggedNote,
 } from "./donut";
 
-/** The read-versus-listened share of active seconds along the card's foot; two bars, since the ratio is the thing. */
+/** The read-versus-listened share of active seconds along the card's foot, drawn as two bars because the ratio is what matters. */
 function FormatSplit({ summary }: { summary: StatsSummary }) {
   if (summary.reading_seconds + summary.listening_seconds <= 0) return null;
   const [read = 0, listened = 0] = percentages([
@@ -41,7 +41,10 @@ function FormatSplit({ summary }: { summary: StatsSummary }) {
   );
 }
 
-/** "Where the time went": the genre ring and its legend, with the read/listened split beneath; the centre counts the books the slices are drawn from, and the gap to the active books is disclosed apart from them. */
+/**
+ * "Where the time went": the genre ring and its legend, with the read/listened split beneath.
+ * The centre counts the books the slices are drawn from, and the gap to the active books is stated separately.
+ */
 export function GenreDonut({ summary }: { summary: StatsSummary }) {
   const folded = foldShares(summary.genre_share);
   const tagged = summary.genre_tagged_books;
@@ -98,7 +101,10 @@ export function GenreDonut({ summary }: { summary: StatsSummary }) {
   );
 }
 
-/** "How long they were": the finished books bucketed by page count, as rows with no card chrome since it is the Finished tile's detail. The server owns the buckets, order and labels, "Unknown" included. */
+/**
+ * The "How long they were" rows bucket the finished books by page count, without card chrome because
+ * they are the Finished tile's detail. The server chooses the buckets, order and labels, "Unknown" included.
+ */
 export function LengthRows({ summary }: { summary: StatsSummary }) {
   const buckets = summary.length_buckets;
   if (buckets.reduce((total, bucket) => total + bucket.books, 0) <= 0) {
@@ -120,7 +126,7 @@ export function LengthRows({ summary }: { summary: StatsSummary }) {
         >
           <div className="st-split-head">
             <span className="st-split-name">{bucket.label}</span>
-            {/* The count, not the share: "3 books" answers what a reader brought to a length chart. */}
+            {/* The count, not the share, because "3 books" answers what a reader brought to a length chart. */}
             <span key={bucket.books} className="st-split-pct">
               {bucket.books}
             </span>

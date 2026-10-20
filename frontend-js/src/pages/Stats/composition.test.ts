@@ -72,7 +72,7 @@ describe("barWidth", () => {
 });
 
 describe("coverageNote", () => {
-  // A distribution without its coverage is a guess wearing a chart.
+  // A distribution without its coverage can't be judged.
   it("always states the denominator", () => {
     expect(coverageNote(dim([["Fantasy", 40]], 58), 1_510)).toBe(
       "across 58 of 1,510 books",

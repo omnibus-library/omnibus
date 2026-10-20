@@ -1,7 +1,7 @@
 import type { ResumePoint, StatsSummary } from "../../api";
 import { yearFraction } from "./calendar";
 
-/** How far into the year the projection stays quiet: one book by the 5th of January would project seventy-three. */
+/** How far into the year the projection is withheld, since one book by the 5th of January would project seventy-three. */
 const PROJECTION_MIN_FRACTION = 0.15;
 
 /** How many open books the card lists; the page asks for one more, which is how the card knows it is showing only some. */
@@ -16,7 +16,7 @@ export const booksThisYear = (
     .filter((m) => m.month.startsWith(year))
     .reduce((total, m) => total + m.books, 0);
 
-/** Where this year's pace lands by 31 December, or `null` when it is too early for the extrapolation to mean anything. */
+/** The count this year's pace reaches by 31 December, or `null` when it is too early for the extrapolation to mean anything. */
 export function yearProjection(
   summary: Pick<StatsSummary, "as_of_day" | "books_per_month">,
 ): number | null {
@@ -34,7 +34,10 @@ type Position = Pick<
   "percent" | "chapter" | "chaptersTotal" | "part" | "partCount"
 >;
 
-/** An open book's readout: a whole-book percent when it can report one, else its structural position; a book that can say neither says nothing rather than inventing a zero. */
+/**
+ * An open book's readout: a whole-book percent when it can report one, else its structural position.
+ * A book that can say neither says nothing rather than inventing a zero.
+ */
 export function resumeReadout(point: Position): string | null {
   if (point.percent !== null) return `${point.percent}%`;
   // A resolved chapter outranks the part even when it has no total to read out.

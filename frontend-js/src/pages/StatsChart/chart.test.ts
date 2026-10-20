@@ -112,7 +112,7 @@ describe("toggle", () => {
     s = toggle(s, "avg_page_length");
     expect(s.measures).toEqual(["books_finished", "pages_read"]);
 
-    // A third unit is a no-op: the control offering it is already disabled.
+    // A third unit is a no-op, since the control offering it is already disabled.
     expect(toggle(s, "avg_rating").measures).toEqual(s.measures);
   });
 
@@ -225,7 +225,7 @@ describe("niceAxis", () => {
   it("keeps the data filling most of the frame", () => {
     // A peak of 550 once took a 1000 axis and drew every shape at half height.
     expect(niceAxis(550, false)).toEqual({ max: 600, divisions: 3 });
-    // Stars top out at 5: a 4.5 peak must not open an axis past it.
+    // Stars top out at 5, so a 4.5 peak must not open an axis past it.
     expect(niceAxis(4.5, false)).toEqual({ max: 5, divisions: 5 });
   });
 

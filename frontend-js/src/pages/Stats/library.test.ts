@@ -14,7 +14,7 @@ describe("compact", () => {
   it("scales into K, M and B and leaves small counts alone", () => {
     expect(compact(0)).toBe("0");
     expect(compact(812)).toBe("812");
-    // Under 10,000 stays exact: "9K" loses more than it saves.
+    // Under 10,000 stays exact, since "9K" loses more than it saves.
     expect(compact(9_999)).toBe("9999");
     expect(compact(94_200)).toBe("94.2K");
     expect(compact(412_000_000)).toBe("412M");
@@ -30,7 +30,7 @@ describe("compact", () => {
     expect(compact(999_499_999)).toBe("999M");
   });
 
-  // 1.25 is exact in binary, so Rust's `{:.1}` settles it on the even 1.2 where toFixed says 1.3.
+  // 1.25 is exact in binary, so Rust's `{:.1}` rounds it to the even 1.2 where toFixed gives 1.3.
   it("settles a half-way figure on the even decimal, as Rust formats it", () => {
     expect(compact(1_250_000)).toBe("1.2M");
   });

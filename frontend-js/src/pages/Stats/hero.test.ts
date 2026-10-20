@@ -24,7 +24,7 @@ describe("buildSpark", () => {
 
     expect(bars).toHaveLength(SPARK_DAYS);
     expect(bars.at(-1)).toMatchObject({ day: "2026-08-12", heightPct: 50 });
-    // The quiet days keep their slots: the gaps are what make a run visible.
+    // The quiet days keep their slots, since the gaps are what make a run visible.
     expect(bars.filter((b) => !b.active).length).toBeGreaterThan(30);
   });
 
@@ -60,7 +60,7 @@ describe("streakLine", () => {
     expect(streakLine(61, 61, true)).toBe(
       "That is the longest run you have recorded.",
     );
-    // Nothing recorded yet: the sentence would be furniture.
+    // With nothing recorded yet the sentence would say nothing.
     expect(streakLine(0, 0, true)).toBeNull();
   });
 

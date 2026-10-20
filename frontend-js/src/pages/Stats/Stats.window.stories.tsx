@@ -41,7 +41,7 @@ export const ClockDrawsTheDialAndTheWeekdays: Story = {
       name: "Activity by hour of day",
     });
     await expect(dial.querySelectorAll(".st-clock-tick")).toHaveLength(24);
-    // 20:00 is the busiest hour: a full-reach tick at 480deg, and the hub names it.
+    // 20:00 is the busiest hour, so it has a full-reach tick at 480deg and the hub names it.
     await expect(dial.children[20]).toHaveAttribute(
       "style",
       "transform: rotate(480deg) translateY(58px); height: 40px;",
@@ -159,7 +159,7 @@ export const DonutShowsTheGenreMix: Story = {
     await expect(rows).toHaveLength(2);
     await expect(rows[0]).toHaveTextContent("Fantasy50%");
     await expect(rows[1]).toHaveTextContent("Science fiction50%");
-    // Five active books, four with a genre: the gap is disclosed, not drawn as a slice.
+    // Five active books, four with a genre. The gap is disclosed, not drawn as a slice.
     await expect(canvas.getByTestId("stats-donut-untagged")).toHaveTextContent(
       "+1 book without a genre",
     );
@@ -250,7 +250,7 @@ export const DonutBodyRemountsOnlyWhenTheMixChanges: Story = {
     const card = await canvas.findByTestId("stats-genre-donut");
     const first = card.querySelector(".st-spend-body");
 
-    // Lifetime reports the same mix as the month: the body keeps its node and its motion.
+    // Lifetime reports the same mix as the month, so the body keeps its node and its motion.
     await userEvent.click(canvas.getByRole("button", { name: "Lifetime" }));
     await waitFor(() =>
       expect(canvas.getByTestId("stats-window-label")).toHaveTextContent(
@@ -285,7 +285,7 @@ export const SplitPercentRemountsOnlyWhenItsShareChanges: Story = {
     const first = shares();
     await expect(first.map((node) => node.textContent)).toEqual(["75%", "25%"]);
 
-    // Lifetime reports the same split as the month: each number keeps its node and its fade.
+    // Lifetime reports the same split as the month, so each number keeps its node and its fade.
     await userEvent.click(canvas.getByRole("button", { name: "Lifetime" }));
     await waitFor(() =>
       expect(canvas.getByTestId("stats-window-label")).toHaveTextContent(
@@ -520,7 +520,7 @@ export const FinishedSheetStatesTheTilesComparisonAndTheBooks: Story = {
       "src",
       "/api/thumbs/ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0/md",
     );
-    // Three finished, one listed: the rail says it is cut.
+    // Three finished and one listed, so the rail says it is cut.
     await expect(sheet).toHaveTextContent(
       "Showing the latest 1 of 3 finished books.",
     );
@@ -863,7 +863,7 @@ export const PagesSheetWarnsWhenTheWindowPredatesTracking: Story = {
     ).toHaveTextContent(
       "Page tracking began 2026-01-01; reading before then can’t be counted, so this period is only partly covered.",
     );
-    // No daily series: the empty trend draws nothing.
+    // With no daily series, the empty trend draws nothing.
     await expect(
       within(sheet).queryByRole("img", { name: "Pages read trend" }),
     ).toBeNull();

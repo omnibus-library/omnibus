@@ -48,7 +48,10 @@ function Delta({ delta, vs }: { delta: Comparison | null; vs: string }) {
   );
 }
 
-/** One normalized column per point with its axis label beneath; the trend and the rating histogram share it, as the histogram is the same widget on a different x-axis. */
+/**
+ * One normalized column per point with its axis label beneath. The trend and the rating histogram
+ * share it, since the histogram is the same widget on a different x-axis.
+ */
 function BarStrip({
   bars,
   testId,
@@ -127,7 +130,7 @@ function SectionHead({
   );
 }
 
-/** The distribution the mean can't tell: a reader who rates everything 4 from one who splits between 2 and 5. */
+/** The rating distribution, which tells apart a reader who rates everything 4 from one who splits between 2 and 5, as the mean can't. */
 function Histogram({ summary }: { summary: StatsSummary }) {
   if (summary.rating_histogram.every((bucket) => bucket.books === 0)) {
     return (
@@ -181,7 +184,10 @@ function PagesRate({ rate }: { rate: number | null }) {
   );
 }
 
-/** What the window covered, what it could not measure, and the date before which it cannot measure anything: silence about the cutover would let a Lifetime total that excludes years of reading look complete. */
+/**
+ * What the window covered, what it could not measure, and the date before which it cannot measure anything.
+ * Without the cutover date, a Lifetime total that excludes years of reading would look complete.
+ */
 function PagesNote({ summary }: { summary: StatsSummary }) {
   const detail = summary.pages_detail;
   return (
@@ -257,7 +263,10 @@ function FinishedList({ summary }: { summary: StatsSummary }) {
   );
 }
 
-/** The metric's detail sheet: its tile's own delta, its trend, and what the face has no room for. `summary` is the one the sheet was opened on, so the delta names the window it was measured over. */
+/**
+ * The metric's detail sheet: its tile's own delta, its trend, and what the face has no room for.
+ * `summary` is the one the sheet was opened on, so the delta names the window it was measured over.
+ */
 export function DrillInSheet({
   metric,
   summary,
@@ -305,7 +314,7 @@ export function DrillInSheet({
             testId="stats-drill-trend-caption"
           />
         )}
-        {/* An empty series keeps its slot in the sheet's rhythm; the Pages note beneath explains why there are no bars. */}
+        {/* An empty series keeps its slot so the sheet's spacing doesn't change; the Pages note beneath explains why there are no bars. */}
         {bars.length === 0 ? (
           <div />
         ) : (

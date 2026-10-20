@@ -15,7 +15,7 @@ export const RANGE_LABELS = {
   all_time: "Lifetime",
 } as const satisfies Record<StatsRange, string>;
 
-/** Whether the reader has nothing to show: judged on recorded seconds, not `sessions`, which drops glances. */
+/** Whether the reader has nothing to show. It is judged on recorded seconds, not `sessions`, which drops glances. */
 export const isEmpty = (
   s: Pick<
     StatsSummary,

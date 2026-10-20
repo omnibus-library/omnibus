@@ -103,7 +103,7 @@ const days = (n: number): ChartResult =>
     axes: [{ unit: "minutes", max: 40 }],
   });
 
-/** Seven quiet months and one tall one: the axis is sized for 400, so a zoom on the quiet stretch has to refit it. */
+/** Seven quiet months and one tall one. The axis is sized for 400, so a zoom on the quiet stretch has to refit it. */
 const TALL_LAST = aWireChartResult({
   buckets: MONTHS.slice(0, 8),
   series: [
@@ -287,7 +287,7 @@ export const ThinsTheLabelsAndStaggersTheBars: Story = {
     const bars = [...plot.querySelectorAll(".cb-bar")];
     await expect(bars[0]?.getAttribute("style")).toContain("--cb-delay: 0ms");
     await expect(bars[1]?.getAttribute("style")).toContain("--cb-delay: 18ms");
-    // The stagger stops growing, so a wide chart still settles quickly.
+    // The stagger stops growing, so a wide chart still finishes quickly.
     await expect(bars[29]?.getAttribute("style")).toContain(
       "--cb-delay: 320ms",
     );

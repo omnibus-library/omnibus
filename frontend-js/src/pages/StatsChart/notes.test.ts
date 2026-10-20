@@ -133,7 +133,7 @@ describe("splitNote", () => {
 
 describe("emptyNote", () => {
   it("tells a zero total from an absent average", () => {
-    // Both kinds on screen: the sentence has to cover both.
+    // Both kinds on screen, so the sentence has to cover both.
     const both = emptyNote(TWO_SCALES);
     expect(both).toContain("zero for the totals");
     expect(both).toContain("can't average nothing");
