@@ -335,7 +335,7 @@ export const ReadsTheReportAgainEveryFiveSeconds: Story = {
       () => expect(kvRows(card)[2]).toBe("Books indexed: 43"),
       NEXT_POLL,
     );
-    // Allows for the timer firing a hair early.
+    // The timer may fire a few milliseconds early.
     await expect(
       (polledAt[1] ?? 0) - (polledAt[0] ?? 0),
     ).toBeGreaterThanOrEqual(4_900);

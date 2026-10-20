@@ -30,7 +30,7 @@ export const SECRET_KEYS = {
   },
 } as const satisfies Record<SecretKeyKind, object>;
 
-/** What removing a key stops, and why it can't simply be undone: a removed key can't be read back. */
+/** What removing a key stops. A removed key can't be read back, so the admin needs the original to restore it. */
 export const clearWarning = (kind: SecretKeyKind) =>
   `${SECRET_KEYS[kind].clearConsequence} The key can’t be shown again, so you’ll need the original to put it back.`;
 

@@ -1,7 +1,7 @@
 //! The admin-triggered worker tasks: a settings save kicks off a scan,
 //! and the reindex, scan-library, backfill-chapters and FTS-rebuild routes
 //! each gate on auth and admin (including a second promoted admin), answer
-//! 409 without a library path, and surface a worker failure as 500.
+//! 409 without a library path, and report a worker failure as 500.
 
 use axum::{
     body::{to_bytes, Body},

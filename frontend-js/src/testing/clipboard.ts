@@ -1,6 +1,6 @@
 /**
  * Replaces the browser's clipboard with one that records what it is asked to
- * write. Returns what puts the real one back, for a story's `beforeEach` to return.
+ * write. Returns a function that restores the real one, for a story's `beforeEach` to return.
  */
 export function fakeClipboard(copied: string[]) {
   Object.defineProperty(navigator, "clipboard", {

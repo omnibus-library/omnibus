@@ -126,7 +126,7 @@ function ModalError({ error }: { error: string | null }) {
   );
 }
 
-// While `busy` (a save out, or edits a stray click would discard) the scrim and Escape are held; the cross always works.
+// While `busy` (a save is out, or the form holds edits a stray click would discard) the scrim and Escape do nothing. The cross always works.
 function ModalShell({
   title,
   testId,
@@ -263,9 +263,9 @@ export function NewUserModal({
 
 /**
  * Changes an account's permissions, and resets its password when one is typed.
- * `onChanged` runs once the permissions have landed and the password step has
- * settled, even if it failed, with whether the password was reset; `onSaved`
- * runs after everything asked for is saved.
+ * `onChanged` runs after the permission change and the password step have both
+ * finished, even if the password step failed, and says whether the password was
+ * reset. `onSaved` runs once everything asked for is saved.
  */
 export function EditUserModal({
   user,

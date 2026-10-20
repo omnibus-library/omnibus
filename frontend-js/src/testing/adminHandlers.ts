@@ -86,7 +86,7 @@ export function aWireSettings(overrides: Partial<Settings> = {}): Settings {
 
 /**
  * `GET` and `POST /api/settings`: the settings last saved, which a POST
- * replaces. Each posted body lands in `saved`.
+ * replaces. The handler adds each posted body to `saved`.
  */
 export function settingsHandlers(
   initial: Settings,
@@ -161,7 +161,7 @@ export const JOB_ROUTES = {
   bake: "/api/admin/rewrite-all-epubs",
 } as const;
 
-/** The four maintenance job routes, each answering as queued; every POST lands in `queued` as its path. */
+/** The four maintenance job routes, each answering as queued; adds the path of every POST to `queued`. */
 export function maintenanceJobHandlers(queued: string[] = []) {
   return Object.values(JOB_ROUTES).map((path) =>
     http.post(path, () => {
@@ -184,7 +184,7 @@ export type SavedOrder = { library: MetadataLibrary; order: MetadataSource[] };
 
 /**
  * `GET` and `POST /api/settings/metadata-precedence/{library}`: each library's
- * saved order, which a POST replaces. Each posted body lands in `saved`.
+ * saved order, which a POST replaces. The handler adds each posted body to `saved`.
  */
 export function metadataOrderHandlers({
   saved = [],
@@ -259,7 +259,7 @@ export type Decided = { id: number; request: CleanupDecisionRequest };
 
 /**
  * `POST /api/admin/cleanup/suggestions/{id}/decision`: an accept answers the log id
- * `100 + id`, a reject answers null. Every decision lands in `decided`, and the answer
+ * `100 + id`, a reject answers null. The handler adds every decision to `decided`, and the answer
  * waits for `until` when a story holds it.
  */
 export function cleanupDecisionHandler({
@@ -283,7 +283,7 @@ export function cleanupDecisionHandler({
   );
 }
 
-/** `POST /api/admin/cleanup/undo/{log_id}`, answering as undone; every log id lands in `undone`. */
+/** `POST /api/admin/cleanup/undo/{log_id}`, answering as undone; adds every log id to `undone`. */
 export function cleanupUndoHandler({
   undone = [],
 }: {
@@ -335,7 +335,7 @@ export function aWireAdminUsers(): AdminUserRow[] {
 
 /**
  * `GET /api/auth/registration` and `POST /api/settings/registration`: sign-up
- * starts open, and a POST replaces that. Each posted value lands in `saved`.
+ * starts open, and a POST replaces that. The handler adds each posted value to `saved`.
  */
 export function registrationHandlers({
   saved = [],
@@ -364,8 +364,8 @@ export type UserWrites = {
 
 /**
  * The `/api/admin/users` routes over one list of accounts: a create adds a row,
- * a permission change or an unlock edits one, a delete removes one. Every write
- * lands in its `UserWrites` list.
+ * a permission change or an unlock edits one, a delete removes one. The handler adds
+ * every write to its `UserWrites` list.
  */
 export function usersHandlers(
   initial: AdminUserRow[],
@@ -528,7 +528,7 @@ export type SmtpWrites = {
 
 /**
  * The `/api/smtp` routes over one relay: a save replaces it, a clear empties it,
- * a test sends nothing. Every write lands in `SmtpWrites`.
+ * a test sends nothing. The handler records every write in `SmtpWrites`.
  */
 export function smtpHandlers(
   initial: SmtpConfigStatus,
@@ -583,8 +583,8 @@ export const NO_KEY: HardcoverKeyStatus = {
 
 /**
  * `GET` and `POST` on one key route (`/api/hardcover-key` or
- * `/api/google-books-key`): a save sets the key, a null key removes it. Each
- * posted key, or null, lands in `saved`.
+ * `/api/google-books-key`): a save sets the key, a null key removes it. The handler
+ * adds each posted key, or null, to `saved`.
  */
 export function secretKeyHandlers(
   path: "/api/hardcover-key" | "/api/google-books-key",
@@ -619,7 +619,7 @@ export function aWireEbookConvert(
 
 /**
  * `GET` and `POST /api/settings/ebook-convert`: a save pins the path, a null path
- * goes back to the `PATH` lookup. Each posted path, or null, lands in `saved`.
+ * goes back to the `PATH` lookup. The handler adds each posted path, or null, to `saved`.
  */
 export function ebookConvertHandlers(
   initial: EbookConvertStatus,
@@ -641,7 +641,7 @@ export function ebookConvertHandlers(
 
 /**
  * `GET` and `POST /api/settings/mcp`: whether the endpoint is on, which a POST
- * replaces. Each posted value lands in `saved`.
+ * replaces. The handler adds each posted value to `saved`.
  */
 export function mcpHandlers(
   initial: boolean,
@@ -719,7 +719,7 @@ export function aWireLogPage(overrides: Partial<LogPage> = {}): LogPage {
 /** The query parameters of one `GET /api/admin/logs`, as received. */
 export type LogRequest = Record<string, string>;
 
-/** `GET /api/admin/logs`: `page` answers each request, and every request's query lands in `received`. */
+/** `GET /api/admin/logs`: `page` answers each request, and the handler adds every request's query to `received`. */
 export function logsHandler(
   page: (request: LogRequest) => LogPage | Promise<LogPage>,
   { received = [] }: { received?: LogRequest[] } = {},

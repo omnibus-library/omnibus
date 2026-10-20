@@ -165,9 +165,9 @@ pub async fn decide_suggestion(
 }
 
 /// The title an accepted rename writes: the reviewer's wording when they typed
-/// over the proposal, the detector's otherwise. Trimmed; empty is refused (a
-/// blank field is a slip, and adopting it would leave the book untitled) and so
-/// is one over the length cap a manual title edit is held to.
+/// over the proposal, the detector's otherwise. Trimmed. An empty title is refused,
+/// because a blank field is a slip and adopting it would leave the book untitled. A
+/// title over the length cap a manual title edit is held to is refused too.
 fn resolved_title<'a>(
     proposed: &'a str,
     edited_value: Option<&'a str>,

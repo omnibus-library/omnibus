@@ -394,8 +394,8 @@
   content-visibility: auto;
   contain-intrinsic-size: auto 1.6em;
   /* max-content + min-width:100% makes each line grow to its own width so the
-     container's scrollWidth tracks the widest line — that's what enables the
-     horizontal scroll instead of wrapping. */
+     container's scrollWidth tracks the widest line, which gives horizontal
+     scroll instead of wrapping. */
   white-space: pre;
   width: max-content;
   min-width: 100%;

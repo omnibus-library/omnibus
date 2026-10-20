@@ -2,8 +2,9 @@
 //! Administration Cleanup section and its review page. REST twins of the
 //! `rpc_cleanup_*` server functions, all `AdminUser`-gated.
 //!
-//! A refusal the reviewer can act on becomes a 409 carrying its sentence; a
-//! fault in the database or in a stored row is logged and answered generically.
+//! A refusal the reviewer can act on becomes a 409 carrying its sentence. For a
+//! fault in the database or in a stored row, the handler logs it and answers with a
+//! generic 500.
 
 use axum::{
     extract::{Path, State},

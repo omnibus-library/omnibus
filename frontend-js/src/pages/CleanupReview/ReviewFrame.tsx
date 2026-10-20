@@ -92,7 +92,7 @@ function KindLine({
   );
 }
 
-/** The crumb, the heading with its progress, and the kind line around a review; the column, which the caller can refocus through `columnRef`, takes focus on mount. */
+/** The crumb, the heading with its progress, and the kind line around a review. The review column takes focus on mount; a caller that has to refocus it passes `columnRef`. */
 export function ReviewFrame({
   kind,
   counts,

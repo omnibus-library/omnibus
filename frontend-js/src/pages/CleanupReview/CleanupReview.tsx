@@ -34,7 +34,7 @@ const NOTHING_YET: Tally = {
   undone: 0,
 };
 
-/** What the undo bar offers: nothing yet, the last applied change, or word that it was undone. */
+/** What the undo bar shows: nothing yet, the last applied change, or a note that it was undone. */
 type UndoState =
   | { state: "none" }
   | { state: "offer"; logId: number; summary: string }
@@ -89,7 +89,7 @@ function UndoBar({
   }
 }
 
-/** The end of a pass: what this sitting did, and the way back. */
+/** The end of a pass: what this sitting did, and a note that the last change can be undone. */
 function PassDone({ tally }: { tally: Tally }) {
   const rows = tallyRows(tally);
   return (

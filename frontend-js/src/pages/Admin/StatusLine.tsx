@@ -1,6 +1,5 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 
-/** A card's result line: its words and whether it reports a failure. */
 export type Status = { text: string; isError: boolean };
 
 /** A card's result line. It stays mounted while empty, so its first message is announced. */
