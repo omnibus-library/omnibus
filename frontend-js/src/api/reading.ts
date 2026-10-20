@@ -75,7 +75,7 @@ export async function fetchRecentProgress(
   limit: number,
   userId: UserId | null = null,
 ): Promise<ResumePoint[]> {
-  const params = { limit, ...(userId === null ? {} : { user_id: userId }) };
+  const params = { limit, user_id: userId ?? undefined };
   return ok(await getRecentProgress(params)).map(toResumePoint);
 }
 

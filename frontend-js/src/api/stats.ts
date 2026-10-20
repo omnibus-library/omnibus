@@ -29,8 +29,9 @@ export type {
 export { ChartBucket, ChartMeasure } from "./generated/schemas";
 
 // The stats and chart answers stay wire-shaped (snake_case), because each helper behind the
-// page is a port of its Rust over the same field names. The one mapping fills every field
-// the server may omit with its Rust `Default`, once, so no screen does.
+// page is a port of its Rust over the same field names. The summary and library mappers fill the
+// fields the server may omit with their Rust `Default`, once; the finished books' `rating` and
+// `author`, a chart series' `slice` and the chart result stay optional and are guarded on screen.
 
 const UNMEASURED = { books: 0, total: 0 };
 
@@ -133,7 +134,7 @@ export async function fetchStats(
   const params = {
     range,
     utc_offset_minutes: utcOffsetMinutes(),
-    ...(userId === null ? {} : { user_id: userId }),
+    user_id: userId ?? undefined,
   };
   return toStatsSummary(ok(await getStats(params)));
 }

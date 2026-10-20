@@ -301,8 +301,8 @@ pub async fn fetch_session_log(
 ///
 /// No mobile arm: the builder is a web surface, so there is nothing on the
 /// native side to serve (`POST /api/stats/chart` is its REST counterpart).
-/// Uncached for the same reason `rpc_chart_series` is — an open spec space has
-/// no small key to cache on.
+/// Uncached, like `rpc_chart_series`, because an open spec space has no small
+/// key to cache on.
 #[cfg(not(feature = "mobile"))]
 pub async fn fetch_chart_series(
     _server_url: &str,
