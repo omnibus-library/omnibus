@@ -914,6 +914,104 @@ export const SessionsShowsALoadFailure: Story = {
   },
 };
 
+let listGate = deferred();
+
+// The sessions list answers `first` at once and every later read only once `listGate` opens.
+function gatedSessionReads(first: () => Response) {
+  let reads = 0;
+  return http.get("/api/admin/users/:id/sessions", async () => {
+    if (++reads === 1) return first();
+    await listGate.promise;
+    return HttpResponse.json([aWireSession()]);
+  });
+}
+
+export const SessionsHoldsTheRevokeUntilBothListsAreReadAgain: Story = {
+  beforeEach({ msw }) {
+    listGate = deferred();
+    msw.use(gatedSessionReads(() => HttpResponse.json([aWireSession()])));
+  },
+  render: () => <SessionsModal user={ALICE} onClose={close} />,
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await canvas.findByRole("dialog", {
+      name: "Sessions & devices — alice",
+    });
+    const revoke = await within(dialog).findByRole("button", {
+      name: "Revoke the session on Firefox on macOS",
+    });
+    await userEvent.click(revoke);
+
+    await waitFor(() => expect(revoked.sessions).toEqual([3]));
+    await expect(revoke).toHaveAttribute("aria-busy", "true");
+    await expect(revoke).toBeDisabled();
+    listGate.release();
+    await waitFor(() => expect(revoke).toBeEnabled());
+  },
+};
+
+export const SessionsClearsARevokeRefusalOnceTheListsAreReadAgain: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("delete", "/api/admin/sessions/:id", 404));
+  },
+  render: () => <SessionsModal user={ALICE} onClose={close} />,
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await canvas.findByRole("dialog", {
+      name: "Sessions & devices — alice",
+    });
+    await userEvent.click(
+      await within(dialog).findByRole("button", {
+        name: "Revoke the session on Firefox on macOS",
+      }),
+    );
+    await expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "failed with 404",
+    );
+
+    await storyClient().refetchQueries({
+      queryKey: userSessionsQuery(ALICE.id).queryKey,
+    });
+
+    await waitFor(() =>
+      expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument(),
+    );
+  },
+};
+
+export const SessionsHidesALoadFailureWhileTheListsAreReadAgain: Story = {
+  beforeEach({ msw }) {
+    listGate = deferred();
+    msw.use(
+      gatedSessionReads(
+        () => new HttpResponse("failed with 500", { status: 500 }),
+      ),
+    );
+  },
+  render: () => <SessionsModal user={ALICE} onClose={close} />,
+  play: async ({ canvas }) => {
+    const dialog = await canvas.findByRole("dialog", {
+      name: "Sessions & devices — alice",
+    });
+    await expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "failed with 500",
+    );
+
+    void storyClient().refetchQueries({
+      queryKey: userSessionsQuery(ALICE.id).queryKey,
+    });
+
+    await waitFor(() =>
+      expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument(),
+    );
+    await expect(
+      within(dialog).getByTestId("user-sessions-loading"),
+    ).toBeInTheDocument();
+    listGate.release();
+    await expect(
+      await within(dialog).findByTestId("user-sessions-list"),
+    ).toBeInTheDocument();
+  },
+};
+
 export const SessionsCloseButtonsClose: Story = {
   render: () => <SessionsModal user={ALICE} onClose={close} />,
   play: async ({ canvas, userEvent }) => {

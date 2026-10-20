@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 import {
   type AdminUserRow,
   createUser,
@@ -464,15 +464,19 @@ export function SessionsModal({
     mutationFn: ({ kind, id }: Revoking) =>
       kind === "session" ? revokeUserSession(id) : revokeUserDevice(id),
     // Revoking a device also ends the sessions tied to it, so both lists are read again.
-    onSuccess: () => {
-      for (const { queryKey } of [
-        userSessionsQuery(user.id),
-        userDevicesQuery(user.id),
-      ]) {
-        void queryClient.invalidateQueries({ queryKey });
-      }
-    },
+    onSuccess: () =>
+      Promise.all(
+        [userSessionsQuery(user.id), userDevicesQuery(user.id)].map(
+          ({ queryKey }) => queryClient.invalidateQueries({ queryKey }),
+        ),
+      ),
   });
+  // A revoke's refusal says nothing about lists that are being read again.
+  const reloading = sessions.isFetching || devices.isFetching;
+  const { reset: clearRevokeError } = revoke;
+  useEffect(() => {
+    if (reloading && revoke.isError) clearRevokeError();
+  }, [reloading, revoke.isError, clearRevokeError]);
   const working = (kind: Revoking["kind"], id: number) =>
     revoke.isPending &&
     revoke.variables.kind === kind &&
