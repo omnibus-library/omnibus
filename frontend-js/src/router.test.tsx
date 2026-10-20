@@ -186,6 +186,9 @@ describe("routes", () => {
           name: "Administration",
         }),
       ).toBeInTheDocument();
+      expect(
+        await screen.findByRole("heading", { level: 2, name: "People" }),
+      ).toBeInTheDocument();
       expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
     });
   });

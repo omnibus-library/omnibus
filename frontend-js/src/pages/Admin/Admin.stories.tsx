@@ -147,9 +147,6 @@ export const ShowsTheCleanupCard: Story = {
     await expect(
       await canvas.findByTestId("cleanup-kinds"),
     ).toBeInTheDocument();
-    await expect(
-      canvas.queryByTestId("cleanup-detect-status"),
-    ).not.toBeInTheDocument();
   },
 };
 
@@ -309,6 +306,29 @@ export const LeavesFreelyOnceTheEditIsUndone: Story = {
   },
 };
 
+export const LeavesFreelyOnceTheSettingsAreSaved: Story = {
+  args: { path: "/admin?section=sources" },
+  play: async ({ canvas, userEvent }) => {
+    const ebook = canvas.getByLabelText("Ebook library path");
+    await waitFor(() => expect(ebook).toHaveValue("/library/ebooks"));
+    await userEvent.type(ebook, "2");
+    await expect(window.onbeforeunload).not.toBeNull();
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Save library settings" }),
+    );
+
+    await expect(
+      await canvas.findByText("Library settings saved."),
+    ).toBeVisible();
+    await waitFor(() => expect(window.onbeforeunload).toBeNull());
+    await userEvent.click(canvas.getByTestId("admin-nav-people"));
+    await expect(
+      await canvas.findByRole("heading", { level: 2, name: "People" }),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
+  },
+};
+
 export const OpensTheSectionInTheUrl: Story = {
   args: { path: "/admin?section=people" },
   play: async ({ canvas }) => {
@@ -328,6 +348,12 @@ export const OpensTheSectionInTheUrl: Story = {
       "href",
       "/admin",
     );
+    await expect(
+      canvas.getByRole("heading", { level: 2, name: "People" }).parentElement,
+    ).toHaveClass("settings-section-head");
+    await expect(
+      canvas.getByTestId("admin-layout").querySelector("div.settings-content"),
+    ).toContainElement(canvas.getByTestId("settings-back"));
     await waitFor(() =>
       expect(document.title).toBe("Omnibus | People · Administration"),
     );

@@ -270,6 +270,7 @@ export const RecentTasksRows: Story = {
       name: "Recent background tasks",
     });
     const rows = within(region).getAllByTestId("background-tasks-row");
+    for (const row of rows) await expect(row).toHaveClass("logs-line");
     await expect(rows.map((row) => row.textContent)).toEqual([
       "2023-11-14 22:13:20 UTC SUCCESS Library scan 45s",
       "2023-11-14 22:13:20 UTC FAILED EPUB override bake 3m 20s disk full",
