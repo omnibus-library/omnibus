@@ -20,8 +20,6 @@ type Fields = { ebook: string; audiobook: string; interval: string };
 
 const BLANK: Fields = { ebook: "", audiobook: "", interval: "" };
 
-const NOT_LOADED =
-  "The saved settings haven’t loaded, so saving now would clear them.";
 const INTERVAL_MESSAGE = "Enter a whole number of hours, or leave it blank.";
 
 function LibrarySummary({
@@ -97,7 +95,6 @@ export function SourcesCard() {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (save.isPending) return;
     setIntervalInvalid(false);
     const payload = sourcesPayload(
       saved !== null,
@@ -105,10 +102,6 @@ export function SourcesCard() {
       fields.audiobook,
       fields.interval,
     );
-    if (payload.refused === "not-loaded") {
-      setStatus({ text: NOT_LOADED, isError: true });
-      return;
-    }
     // A number field reads half-typed text as blank, which would save as "no interval".
     if (
       payload.refused === "bad-interval" ||
@@ -117,6 +110,8 @@ export function SourcesCard() {
       setIntervalInvalid(true);
       return;
     }
+    // The other refusal is "not-loaded", and Save stays disabled until the settings load.
+    if (payload.refused !== null) return;
     setStatus(null);
     const submitted = fields;
     save.mutate(payload.settings, {

@@ -1,14 +1,9 @@
-import type { AdminUserRow } from "../../api";
-
-type Permissions = Pick<
-  AdminUserRow,
-  "is_admin" | "can_upload" | "can_edit" | "can_download"
->;
+import type { UserPermissions } from "../../api";
 
 const FLAGS = ["is_admin", "can_upload", "can_edit", "can_download"] as const;
 
 /** A row's permission flags, as the edit form starts them. */
-export const permissionsOf = (user: Permissions): Permissions => ({
+export const permissionsOf = (user: UserPermissions): UserPermissions => ({
   is_admin: user.is_admin,
   can_upload: user.can_upload,
   can_edit: user.can_edit,
@@ -21,7 +16,7 @@ export const ADMIN_CHIP = "Admin";
 export const NO_PERMISSIONS = "—";
 
 /** A single "Admin" chip for an administrator, else one per granted capability, or a dash when none. */
-export function permissionChips(user: Permissions): string[] {
+export function permissionChips(user: UserPermissions): string[] {
   if (user.is_admin) return [ADMIN_CHIP];
   const chips = [
     user.can_upload && "Upload",
@@ -33,8 +28,8 @@ export function permissionChips(user: Permissions): string[] {
 
 /** Whether the edit form holds a change that a stray click on the scrim would throw away. */
 export const editIsDirty = (
-  user: Permissions,
-  permissions: Permissions,
+  user: UserPermissions,
+  permissions: UserPermissions,
   password: string,
 ) => password !== "" || FLAGS.some((flag) => permissions[flag] !== user[flag]);
 

@@ -33,7 +33,7 @@ const meta = {
     saved.length = 0;
     unlocked.length = 0;
     msw.use(
-      ...registrationHandlers(true, { saved }),
+      ...registrationHandlers({ saved }),
       ...usersHandlers(aWireAdminUsers(), { unlocked }),
     );
   },

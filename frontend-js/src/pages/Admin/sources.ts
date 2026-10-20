@@ -1,5 +1,6 @@
 import type { LibrarySection, Settings } from "../../api";
 import { plural } from "../../format";
+import { noneIfBlank } from "./logs";
 
 /** Mirrors `SCAN_INTERVAL_MIN_HOURS` in `shared/src/settings.rs`; the server enforces it. */
 export const SCAN_INTERVAL_MIN_HOURS = 1;
@@ -12,8 +13,6 @@ export type SourcesPayload =
   | { refused: "not-loaded" }
   | { refused: "bad-interval" }
   | { refused: null; settings: Settings };
-
-const blankToNull = (value: string) => value.trim() || null;
 
 /**
  * Save writes every field, so it waits for the loaded settings: blank fields
@@ -33,8 +32,8 @@ export function sourcesPayload(
   return {
     refused: null,
     settings: {
-      ebook_library_path: blankToNull(ebook),
-      audiobook_library_path: blankToNull(audiobook),
+      ebook_library_path: noneIfBlank(ebook),
+      audiobook_library_path: noneIfBlank(audiobook),
       scan_interval_hours: hours ? Number(hours) : null,
     },
   };

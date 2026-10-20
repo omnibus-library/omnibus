@@ -50,7 +50,6 @@ export async function saveSettings(settings: Settings): Promise<Settings> {
   return ok(await postSettings(settings));
 }
 
-// A job's route answers with no body, so the generated fetcher would JSON-parse a refusal's plain text.
 async function queue(url: string) {
   await send(url, "POST");
 }

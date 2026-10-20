@@ -42,7 +42,6 @@ export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (write.isPending || current.data === undefined) return;
     const key = typed.trim();
     // Removing a key is the Clear button's job, so a blank save never wipes it.
     if (key === "") {

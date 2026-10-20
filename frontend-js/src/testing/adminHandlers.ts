@@ -338,14 +338,15 @@ export function aWireAdminUsers(): AdminUserRow[] {
 }
 
 /**
- * `GET /api/auth/registration` and `POST /api/settings/registration`: whether
- * sign-up is open, which a POST replaces. Each posted value lands in `saved`.
+ * `GET /api/auth/registration` and `POST /api/settings/registration`: sign-up
+ * starts open, and a POST replaces that. Each posted value lands in `saved`.
  */
-export function registrationHandlers(
-  initial: boolean,
-  { saved = [] }: { saved?: boolean[] } = {},
-) {
-  let enabled = initial;
+export function registrationHandlers({
+  saved = [],
+}: {
+  saved?: boolean[];
+} = {}) {
+  let enabled = true;
   return [
     http.get("/api/auth/registration", () => HttpResponse.json({ enabled })),
     http.post("/api/settings/registration", async ({ request }) => {
@@ -745,7 +746,7 @@ export function adminHandlers() {
     ...metadataOrderHandlers(),
     cleanupCountsHandler(aWireCleanupCounts),
     cleanupDetectHandler(),
-    ...registrationHandlers(true),
+    ...registrationHandlers(),
     ...usersHandlers(aWireAdminUsers()),
     ...sessionsHandlers({
       sessions: [aWireSession()],

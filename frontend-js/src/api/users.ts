@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { fetchRegistrationOpen } from "./auth";
 import { ok, send } from "./core";
 import {
   adminListUserDevices,
@@ -12,17 +13,10 @@ import {
   getAdminSetUserPermissionsUrl,
   getAdminUnlockUserUrl,
   getPostRegistrationUrl,
-  getRegistration,
 } from "./generated/omnibus";
 import type { CreateUserRequest, UserPermissions } from "./generated/schemas";
 
-export type {
-  AdminUserRow,
-  CreateUserRequest,
-  DeviceView,
-  SessionView,
-  UserPermissions,
-} from "./generated/schemas";
+export type { AdminUserRow, UserPermissions } from "./generated/schemas";
 
 // The People section's reads and writes. Every query key starts with "admin".
 
@@ -33,12 +27,11 @@ export type {
  */
 export const registrationStatusQuery = queryOptions({
   queryKey: ["admin", "registration"],
-  queryFn: async () => ok(await getRegistration()).enabled,
+  queryFn: fetchRegistrationOpen,
 });
 
 /** Opens or closes self-registration. */
 export async function setRegistrationOpen(enabled: boolean) {
-  // The route answers with no body, so the generated fetcher would JSON-parse a refusal's plain text.
   await send(getPostRegistrationUrl(), "POST", { enabled });
 }
 

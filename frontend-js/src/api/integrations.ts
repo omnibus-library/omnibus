@@ -49,7 +49,6 @@ export async function resetSmtpConfig(): Promise<SmtpConfigStatus> {
 
 /** Sends a test email to the signed-in account's Kindle address through the relay. */
 export async function sendSmtpTest() {
-  // The route answers with no body, so the generated fetcher would JSON-parse a refusal's plain text.
   await send(getTestSmtpConfigUrl(), "POST");
 }
 
@@ -57,7 +56,7 @@ export async function sendSmtpTest() {
 export type SecretKeyKind = "hardcover" | "google-books";
 
 /** A key's state with the key masked; the two wire types are the same shape. */
-export type SecretKeyStatus = HardcoverKeyStatus;
+type SecretKeyStatus = HardcoverKeyStatus;
 
 /** Whether a server-wide key is set, where it came from, and its masked preview. */
 export const secretKeyQuery = (kind: SecretKeyKind) =>
@@ -100,6 +99,5 @@ export const mcpQuery = queryOptions({
 
 /** Turns the hosted `/mcp` endpoint on or off. */
 export async function setMcpEnabled(enabled: boolean) {
-  // The route answers with no body, so the generated fetcher would JSON-parse a refusal's plain text.
   await send(getPostMcpUrl(), "POST", { enabled });
 }

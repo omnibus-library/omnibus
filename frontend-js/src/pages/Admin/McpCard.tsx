@@ -69,7 +69,7 @@ export function McpCard() {
             aria-label="Hosted MCP endpoint"
             disabled={toggle.isPending || enabled === null}
             data-testid="mcp-toggle"
-            onClick={() => enabled !== null && toggle.mutate(!enabled)}
+            onClick={() => toggle.mutate(!enabled)}
           >
             <span className="tkx-knob" />
           </button>

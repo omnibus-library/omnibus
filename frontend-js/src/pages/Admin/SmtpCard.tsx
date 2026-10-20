@@ -58,7 +58,6 @@ export function SmtpCard() {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (busy) return;
     const result = smtpUpdate(saved !== null, draft);
     if (result.refused !== null) {
       setStatus({ text: result.refused, isError: true });

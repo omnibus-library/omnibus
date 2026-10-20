@@ -6,7 +6,6 @@ import type { GetLogsParams } from "./generated/schemas";
 export type {
   AdminHealthReport,
   CapturedError,
-  LogPage,
   LogRecord,
   WorkerQueueEntry,
 } from "./generated/schemas";

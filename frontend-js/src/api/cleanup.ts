@@ -41,7 +41,6 @@ export const cleanupCountsQuery = queryOptions({
 
 /** Queues a pass of every detector; the counts change as it finishes. */
 export async function detectCleanup() {
-  // The route answers with no body, so the generated fetcher would JSON-parse a refusal's plain text.
   await send(getPostCleanupDetectUrl(), "POST");
 }
 
@@ -74,6 +73,5 @@ export async function decideCleanup(
 
 /** Reverses an applied change by its log id. */
 export async function undoCleanup(logId: number) {
-  // The route answers with no body, so the generated fetcher would JSON-parse a refusal's plain text.
   await send(getPostCleanupUndoUrl(logId), "POST");
 }

@@ -32,7 +32,7 @@ import "./Admin.css";
 const sectionOf = (search: string) =>
   parseSection(new URLSearchParams(search).get("section")).slug;
 
-/** The cards of an admin section; each section's port fills in its arm. */
+/** The cards of an admin section. */
 function sectionContent(slug: AdminSection["slug"]): ReactNode {
   switch (slug) {
     case "sources":

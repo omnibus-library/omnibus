@@ -35,7 +35,6 @@ export function EbookConvertCard() {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (write.isPending) return;
     const path = typed.trim();
     // Going back to auto-detection is the "Use auto-detection" button's job.
     if (path === "") {
