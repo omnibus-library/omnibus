@@ -120,28 +120,47 @@ pub(super) fn BdReviewComposer(
                 error,
                 highlights: notes_highlights,
             }
-            div { class: "bd-journal-composer-foot",
-                if let Some(msg) = error() {
-                    span { class: "mono bd-journal-error", role: "alert", "{msg}" }
-                }
-                span { class: "bd-journal-foot-spacer" }
-                button {
-                    r#type: "button",
-                    class: "btn ghost sm",
-                    "data-testid": "review-cancel",
-                    disabled: saving(),
-                    onclick: move |_| open.set(false),
-                    "Cancel"
-                }
-                button {
-                    r#type: "button",
-                    class: "btn primary sm",
-                    "data-testid": "review-save",
-                    disabled: saving(),
-                    "aria-busy": if saving() { "true" } else { "false" },
-                    onclick: on_save,
-                    BusyLabel { busy: saving(), label: "Save review", busy_label: "Saving\u{2026}" }
-                }
+            ComposerFoot {
+                saving: saving(),
+                error: error(),
+                on_cancel: move |_| open.set(false),
+                on_save,
+            }
+        }
+    }
+}
+
+/// The composer's foot: a refusal's reason, then Cancel and Save, both held
+/// while a save is out.
+#[component]
+fn ComposerFoot(
+    saving: bool,
+    error: Option<String>,
+    on_cancel: EventHandler<()>,
+    on_save: EventHandler<()>,
+) -> Element {
+    rsx! {
+        div { class: "bd-journal-composer-foot",
+            if let Some(msg) = error {
+                span { class: "mono bd-journal-error", role: "alert", "{msg}" }
+            }
+            span { class: "bd-journal-foot-spacer" }
+            button {
+                r#type: "button",
+                class: "btn ghost sm",
+                "data-testid": "review-cancel",
+                disabled: saving,
+                onclick: move |_| on_cancel.call(()),
+                "Cancel"
+            }
+            button {
+                r#type: "button",
+                class: "btn primary sm",
+                "data-testid": "review-save",
+                disabled: saving,
+                "aria-busy": if saving { "true" } else { "false" },
+                onclick: move |_| on_save.call(()),
+                BusyLabel { busy: saving, label: "Save review", busy_label: "Saving\u{2026}" }
             }
         }
     }

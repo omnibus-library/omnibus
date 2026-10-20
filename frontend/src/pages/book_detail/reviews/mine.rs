@@ -27,8 +27,7 @@ pub(super) fn BdMyReview(
     overlay_composer: bool,
 ) -> Element {
     let server_url = use_server_url();
-    let mut composer_open = use_signal(|| false);
-    let delete_confirm = use_signal(|| false);
+    let composer_open = use_signal(|| false);
     let failure = (ctx.failure)();
     let stars = mine.as_ref().and_then(|r| r.stars);
     let body_html = mine
@@ -44,38 +43,14 @@ pub(super) fn BdMyReview(
     let pick_uuid = uuid.clone();
     let pick_url = server_url.clone();
 
-    let write_label = if has_writing {
-        "Edit review"
-    } else {
-        "Write review"
-    };
-
     rsx! {
         section { class: "bd-review-mine", "data-testid": "my-review", aria_label: "Your review",
-            div { class: "bd-review-mine-head",
-                div { class: "label bd-review-mine-k", "Your review" }
-                div { class: "bd-review-tools",
-                    // An open editor already is what the pencil would open.
-                    if !composer_open() {
-                        button {
-                            r#type: "button",
-                            class: "bd-review-tool",
-                            "data-testid": "review-write",
-                            aria_label: "{write_label}",
-                            title: "{write_label}",
-                            onclick: move |_| composer_open.set(true),
-                            {pencil_glyph()}
-                        }
-                    }
-                    // Mounted even with nothing to delete: the delete's own
-                    // task re-reads the household after the card empties.
-                    DeleteReviewButton {
-                        uuid: uuid.clone(),
-                        ctx,
-                        shown: mine.is_some(),
-                        confirm: delete_confirm,
-                    }
-                }
+            MyReviewHead {
+                uuid: uuid.clone(),
+                ctx,
+                has_writing,
+                has_review: mine.is_some(),
+                composer_open,
             }
             div { class: "bd-review-starsline",
                 BdStarPicker {
@@ -105,6 +80,46 @@ pub(super) fn BdMyReview(
                         BdReviewComposer { uuid: uuid.clone(), ctx, seed, open: composer_open }
                     }
                 }
+            }
+        }
+    }
+}
+
+/// The card's head row: the label, then the pencil (hidden while the editor
+/// is open, since that is what it opens) and the trash can at the far right.
+#[component]
+fn MyReviewHead(
+    uuid: String,
+    ctx: ReviewsCtx,
+    has_writing: bool,
+    has_review: bool,
+    composer_open: Signal<bool>,
+) -> Element {
+    let mut composer_open = composer_open;
+    let delete_confirm = use_signal(|| false);
+    let write_label = if has_writing {
+        "Edit review"
+    } else {
+        "Write review"
+    };
+    rsx! {
+        div { class: "bd-review-mine-head",
+            div { class: "label bd-review-mine-k", "Your review" }
+            div { class: "bd-review-tools",
+                if !composer_open() {
+                    button {
+                        r#type: "button",
+                        class: "bd-review-tool",
+                        "data-testid": "review-write",
+                        aria_label: "{write_label}",
+                        title: "{write_label}",
+                        onclick: move |_| composer_open.set(true),
+                        {pencil_glyph()}
+                    }
+                }
+                // Mounted even with nothing to delete: the delete's own task
+                // re-reads the household after the card empties.
+                DeleteReviewButton { uuid, ctx, shown: has_review, confirm: delete_confirm }
             }
         }
     }
@@ -243,38 +258,49 @@ fn DeleteReviewButton(
                         confirm.set(false);
                     }
                 },
-                {confirm_modal_body(
-                    "Delete your review?",
-                    "This removes your stars, your review and your private notes for good. This can\u{2019}t be undone.",
-                    note,
-                    vec![
-                        ConfirmModalAction {
-                            testid: "review-delete-cancel".to_string(),
-                            label: "Cancel".to_string(),
-                            busy_label: None,
-                            busy: false,
-                            tone: ConfirmModalTone::Ghost,
-                            disabled: is_busy,
-                            on_click: EventHandler::new(move |_| {
-                                if !busy() {
-                                    confirm.set(false);
-                                }
-                            }),
-                        },
-                        ConfirmModalAction {
-                            testid: "review-delete-confirm".to_string(),
-                            label: "Delete".to_string(),
-                            busy_label: Some("Deleting\u{2026}".to_string()),
-                            busy: is_busy,
-                            tone: ConfirmModalTone::Danger,
-                            disabled: is_busy,
-                            on_click: EventHandler::new(do_delete),
-                        },
-                    ],
-                )}
+                {delete_modal_body(is_busy, note, EventHandler::new(move |_| {
+                    if !busy() {
+                        confirm.set(false);
+                    }
+                }), EventHandler::new(do_delete))}
             }
         }
     }
+}
+
+/// The delete dialog's copy and its Cancel / Delete row, with `note` (the
+/// refusal, when there was one) above the buttons.
+fn delete_modal_body(
+    busy: bool,
+    note: Option<Element>,
+    on_cancel: EventHandler<()>,
+    on_delete: EventHandler<()>,
+) -> Element {
+    confirm_modal_body(
+        "Delete your review?",
+        "This removes your stars, your review and your private notes for good. This can\u{2019}t be undone.",
+        note,
+        vec![
+            ConfirmModalAction {
+                testid: "review-delete-cancel".to_string(),
+                label: "Cancel".to_string(),
+                busy_label: None,
+                busy: false,
+                tone: ConfirmModalTone::Ghost,
+                disabled: busy,
+                on_click: on_cancel,
+            },
+            ConfirmModalAction {
+                testid: "review-delete-confirm".to_string(),
+                label: "Delete".to_string(),
+                busy_label: Some("Deleting\u{2026}".to_string()),
+                busy,
+                tone: ConfirmModalTone::Danger,
+                disabled: busy,
+                on_click: on_delete,
+            },
+        ],
+    )
 }
 
 /// Trash-can icon for the delete tool, stroked like the pencil beside it.

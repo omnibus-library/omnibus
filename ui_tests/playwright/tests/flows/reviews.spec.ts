@@ -223,16 +223,33 @@ test.describe("book reviews", () => {
       await expect(section.summaryCount).toContainText("2 readers");
       await expect(section.jumpLink).toContainText("3.8 · 2 readers");
     });
+  });
 
-    await test.step("jump to the reviews from the title", async () => {
-      await readerBookDetailPage.jumpToSection("Home");
-      await expect(readerBookDetailPage.sectionDot("Home")).toHaveClass(
-        ON_CLASS,
-      );
+  test("jump to the reviews from the title", async ({
+    bookDetailPage,
+    request,
+    presetReview,
+  }) => {
+    const { reviews: section } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, REVIEW_BOOK.title);
+
+    await test.step("rate the book as two readers through the api", async () => {
+      await presetReview(uuid, { stars: 4 });
+      await presetReview(uuid, { stars: 3 }, "reader");
+    });
+
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(uuid);
+      await expect(bookDetailPage.sectionDot("Home")).toHaveClass(ON_CLASS);
+    });
+
+    await test.step("check the title shows the household rating", async () => {
+      await expect(section.jumpLink).toContainText("3.5 · 2 readers");
+    });
+
+    await test.step("jump to the reviews", async () => {
       await section.jumpToReviews();
-      await expect(readerBookDetailPage.sectionDot("Reviews")).toHaveClass(
-        ON_CLASS,
-      );
+      await expect(bookDetailPage.sectionDot("Reviews")).toHaveClass(ON_CLASS);
     });
   });
 
@@ -373,6 +390,47 @@ test.describe("book reviews", () => {
       await expect
         .poll(() => storedReview(uuid), { message: "stored review" })
         .toBeNull();
+    });
+  });
+
+  test("show an error when a review fails to delete", async ({
+    bookDetailPage,
+    request,
+    presetReview,
+    storedReview,
+    expectMutation,
+  }) => {
+    const { reviews: section } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, REVIEW_BOOK.title);
+
+    await test.step("rate and review the book through the api", async () => {
+      await presetReview(uuid, { stars: 4, body_md: REVIEW_TEXT });
+    });
+
+    await test.step("open the book while deletes fail", async () => {
+      await bookDetailPage.goto(uuid);
+      await bookDetailPage.forceServerError(reviews.delete(uuid));
+    });
+
+    await test.step("delete the review", async () => {
+      await section.openDeleteDialog();
+      await expectMutation(failing(reviews.delete(uuid)), () =>
+        section.confirmDelete(),
+      );
+    });
+
+    // Nothing applies before the server confirms, so nothing comes back either.
+    await test.step("check the dialog stays with the reason", async () => {
+      await expect(section.deleteDialog).toBeVisible();
+      await expect(section.deleteError).toBeVisible();
+    });
+
+    await test.step("check the review is untouched", async () => {
+      await expect(section.myText).toHaveText(REVIEW_TEXT);
+      await expect(section.starsMeta).toContainText("4 of 5");
+      await expect
+        .poll(() => storedReview(uuid), { message: "stored review" })
+        .toMatchObject({ stars: 4, body_md: REVIEW_TEXT });
     });
   });
 

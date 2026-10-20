@@ -22,6 +22,7 @@ export class ReviewsComponent extends BaseComponent {
   readonly writeButton: Locator;
   readonly deleteButton: Locator;
   readonly deleteDialog: Locator;
+  readonly deleteError: Locator;
   private readonly confirmDeleteButton: Locator;
 
   readonly composer: Locator;
@@ -46,7 +47,8 @@ export class ReviewsComponent extends BaseComponent {
     super(page);
     this.section = page.getByTestId("reviews-section");
     this.kicker = page.getByTestId("reviews-kicker");
-    this.jumpLink = page.getByRole("button", { name: /go to the reviews$/ });
+    // Tests assert both tools absent, so they keep their test ids (rule 04d).
+    this.jumpLink = page.getByTestId("reviews-jump");
 
     this.myReview = page.getByRole("region", { name: "Your review" });
     this.starsGroup = this.myReview.getByRole("group", { name: "Your rating" });
@@ -55,12 +57,11 @@ export class ReviewsComponent extends BaseComponent {
     this.myNotes = page.getByTestId("my-review-notes");
     this.myReviewCheckboxes = this.myReview.getByRole("checkbox");
     this.writeButton = page.getByTestId("review-write");
-    this.deleteButton = this.myReview.getByRole("button", {
-      name: "Delete review",
-    });
+    this.deleteButton = page.getByTestId("review-delete");
     this.deleteDialog = page.getByRole("dialog", {
       name: "Delete your review?",
     });
+    this.deleteError = this.deleteDialog.getByRole("alert");
     this.confirmDeleteButton = this.deleteDialog.getByRole("button", {
       name: "Delete",
       exact: true,

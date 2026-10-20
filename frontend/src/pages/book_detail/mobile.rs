@@ -28,7 +28,9 @@ use super::identifiers::bd_identifier_rows;
 use super::immersive::BdImmersiveButton;
 use super::journal::BdJournalSection;
 use super::read_status::BdReadStatusControl;
-use super::reviews::{use_book_reviews, BdReviewsJumpLink, BdReviewsSection, ReviewsCtx};
+use super::reviews::{
+    use_book_reviews, BdReviewsJumpLink, BdReviewsKicker, BdReviewsSection, ReviewsCtx,
+};
 use super::rule_facts::RuleFactsSaved;
 use super::{derive_loaded_view, BdFormatBadge, BdMetaRow, DescriptionSignals, LoadedBookView};
 
@@ -412,12 +414,7 @@ fn info_sections(
         section { class: "m-section m-bd-reviews", id: "m-bd-reviews", "data-testid": "mobile-reviews",
             div { class: "m-section-head",
                 div { class: "label", "Reviews" }
-                span { class: "mono m-section-meta", "data-testid": "reviews-kicker",
-                    match reviews.kicker() {
-                        Some(kicker) => rsx! { "{kicker}" },
-                        None => rsx! { span { class: "ld-sheen", "Counting reviews" } },
-                    }
-                }
+                BdReviewsKicker { ctx: reviews, class: "mono m-section-meta" }
             }
             BdReviewsSection { uuid: uuid.to_string(), ctx: reviews }
         }
