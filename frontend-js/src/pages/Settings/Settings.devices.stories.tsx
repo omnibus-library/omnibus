@@ -468,19 +468,24 @@ export const KeepsEarlierKobosWhenTheListFailedBeforeAnAdd: Story = {
 };
 
 let release = () => {};
+let answered = false;
 
 export const KeepsARemovalWhenTheAddsRereadLandsLate: Story = {
   beforeEach({ msw }) {
     withKobos();
     const gate = deferred();
     release = gate.release;
+    answered = false;
     let reads = 0;
     msw.use(
       http.get("/api/account/kobo-devices", async () => {
         // What the server held when the read arrived, answered once the gate opens.
         const held = server.kobo;
         reads += 1;
-        if (reads > 1) await gate.promise;
+        if (reads > 1) {
+          await gate.promise;
+          answered = true;
+        }
         return HttpResponse.json(held);
       }),
     );
@@ -488,8 +493,8 @@ export const KeepsARemovalWhenTheAddsRereadLandsLate: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.type(await canvas.findByLabelText("Device name"), "Aurora");
     await userEvent.click(canvas.getByTestId("kobo-device-add"));
-    await expect(await canvas.findAllByTestId("kobo-device-row")).toHaveLength(
-      3,
+    await waitFor(() =>
+      expect(canvas.getAllByTestId("kobo-device-row")).toHaveLength(3),
     );
 
     await userEvent.click(
@@ -501,6 +506,9 @@ export const KeepsARemovalWhenTheAddsRereadLandsLate: Story = {
     await said(canvas, "kobo-devices-status", "Kobo removed.");
 
     release();
+    await waitFor(() => expect(answered).toBe(true));
+    // A later round trip, so the held answer has been delivered before the list is read.
+    await fetch("/api/account/kobo-devices");
     await waitFor(() =>
       expect(storyClient().isFetching({ queryKey: ["kobo-devices"] })).toBe(0),
     );

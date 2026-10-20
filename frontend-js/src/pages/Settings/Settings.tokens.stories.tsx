@@ -15,6 +15,7 @@ import { aWireApiToken, WIRE_ADA } from "../../testing/wire";
 let server: SettingsServer;
 let reads = 0;
 let release = () => {};
+let answered = false;
 
 const meta = {
   title: "Pages/Settings/Tokens",
@@ -354,13 +355,17 @@ export const KeepsARenameWhenTheCreatesRereadLandsLate: Story = {
     withTokens();
     const gate = deferred();
     release = gate.release;
+    answered = false;
     let reads = 0;
     msw.use(
       http.get("/api/auth/api-tokens", async () => {
         // What the server held when the read arrived, answered once the gate opens.
         const held = server.tokens;
         reads += 1;
-        if (reads > 1) await gate.promise;
+        if (reads > 1) {
+          await gate.promise;
+          answered = true;
+        }
         return HttpResponse.json(held);
       }),
     );
@@ -380,6 +385,9 @@ export const KeepsARenameWhenTheCreatesRereadLandsLate: Story = {
     await expect(await canvas.findByText("Cron job")).toBeVisible();
 
     release();
+    await waitFor(() => expect(answered).toBe(true));
+    // A later round trip, so the held answer has been delivered before the list is read.
+    await fetch("/api/auth/api-tokens");
     await waitFor(() =>
       expect(storyClient().isFetching({ queryKey: ["api-tokens"] })).toBe(0),
     );
