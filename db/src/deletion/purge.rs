@@ -104,13 +104,15 @@ pub(super) async fn delete_copy_rows(
 
 /// Hard-delete the book: every uuid-keyed row, any remaining `merged_uuids`
 /// guard, the `books` row, its search twin, and any taxonomy the delete
-/// orphaned. `pub(crate)` so `physical::delete_fileless_book` reuses the same
-/// [`UUID_KEYED_TABLES`] sweep.
+/// orphaned. `pub(crate)` so `physical`'s fileless and wishlist-only deletes
+/// reuse the same [`UUID_KEYED_TABLES`] sweep. Returns the journal-image names
+/// the purged text embedded, for the caller to sweep once committed.
 pub(crate) async fn purge_book(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
     uuid: &str,
-) -> Result<(), DeleteError> {
+) -> Result<Vec<String>, DeleteError> {
+    let images = journal_image_names(tx, book_id, uuid).await?;
     for table in UUID_KEYED_TABLES {
         // Table names come from the constant above, never from caller input.
         let sql = format!("DELETE FROM {table} WHERE book_uuid = ?");
@@ -128,15 +130,15 @@ pub(crate) async fn purge_book(
     // this door — same as the GC purge and the merge source delete.
     crate::sync::delete_fts(tx, book_id).await?;
     crate::taxonomy::delete_orphan_taxonomy(tx).await?;
-    Ok(())
+    Ok(images)
 }
 
 /// Journal-image file names embedded in this book's journal entries and
 /// reviews, and in the reviews its open merges' snapshots hold (those cascade
 /// away with it), collected before the purge drops the text that references
-/// them. Candidates only — run [`orphaned_images`] after the commit to drop
-/// any another book still uses.
-pub(super) async fn journal_image_names(
+/// them. Candidates only — sweep them after the commit, which keeps any
+/// another book still uses.
+async fn journal_image_names(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
     uuid: &str,
