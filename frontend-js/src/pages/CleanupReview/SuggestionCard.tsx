@@ -76,8 +76,8 @@ function ProposedValue({
       value={draft}
       onChange={(e) => onDraft(e.target.value)}
       onKeyDown={(e) => {
-        // A held Enter accepts one card, not every card it reaches.
-        if (e.key !== "Enter" || e.repeat) return;
+        // A held Enter accepts one card, not every card it reaches; an IME's Enter only confirms its text.
+        if (e.key !== "Enter" || e.repeat || e.nativeEvent.isComposing) return;
         e.preventDefault();
         onCommit();
       }}

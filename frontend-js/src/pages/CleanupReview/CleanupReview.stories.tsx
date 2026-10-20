@@ -791,6 +791,26 @@ export const IgnoresAnEnterHeldDownInTheProposal: Story = renaming(
   },
 );
 
+export const IgnoresAnEnterThatConfirmsAnImeComposition: Story = renaming(
+  async ({ canvas, userEvent }) => {
+    const input = await canvas.findByRole("textbox", {
+      name: "Proposed title",
+    });
+    await userEvent.type(input, " (18");
+
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    await userEvent.type(input, "18){Enter}");
+
+    await expect(await canvas.findByDisplayValue("Emma")).toBeInTheDocument();
+    await expect(decided).toEqual([
+      {
+        id: 11,
+        request: { decision: "accepted", value: "Frankenstein (1818)" },
+      },
+    ]);
+  },
+);
+
 export const HotkeysDoNothingPastTheLastCard: Story = {
   play: async ({ canvas, userEvent }) => {
     await canvas.findByTestId("cleanup-card");
