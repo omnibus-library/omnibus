@@ -2,7 +2,7 @@
 //! they may see) and `GET /api/admin/background-tasks` (admin only, newest first,
 //! capped at `RECENT_TASKS_LIMIT`).
 
-use axum::{body::to_bytes, http::StatusCode};
+use axum::http::StatusCode;
 use omnibus_db::{
     background_tasks::{finish_task, start_task},
     worker::Task,
@@ -33,8 +33,7 @@ mod get_worker_status {
     #[tokio::test]
     async fn returns_the_feed_to_a_reader() {
         let (app, state, pool) = fixture().await;
-        let reader = auth_test_support::create_user(&pool, "reader").await;
-        let token = auth_test_support::bearer_token(&pool, reader.id).await;
+        let token = reader_token(&pool).await;
         let scan = state.worker().post(Task::Scan {
             library_path: "/no/such/library".to_string(),
         });
@@ -46,8 +45,7 @@ mod get_worker_status {
             .expect("request should succeed");
 
         assert_eq!(res.status(), StatusCode::OK);
-        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-        let status: WorkerStatus = serde_json::from_slice(&bytes).unwrap();
+        let status: WorkerStatus = body_json(res).await;
         let finished: Vec<_> = status
             .recent_complete
             .iter()
@@ -77,8 +75,7 @@ mod get_worker_status {
                     .oneshot(get_with_bearer("/api/worker/status", &token))
                     .await
                     .expect("request should succeed");
-                let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-                feed_ids(&serde_json::from_slice(&bytes).unwrap())
+                feed_ids(&body_json(res).await)
             }
         };
 
@@ -107,8 +104,7 @@ mod get_background_tasks {
     #[tokio::test]
     async fn returns_403_when_not_admin() {
         let (app, _, pool) = fixture().await;
-        let reader = auth_test_support::create_user(&pool, "reader").await;
-        let token = auth_test_support::bearer_token(&pool, reader.id).await;
+        let token = reader_token(&pool).await;
         let res = app
             .oneshot(get_with_bearer("/api/admin/background-tasks", &token))
             .await
@@ -119,8 +115,7 @@ mod get_background_tasks {
     #[tokio::test]
     async fn returns_recorded_runs_newest_first() {
         let (app, _, pool) = fixture().await;
-        let admin = auth_test_support::create_admin(&pool, "admin").await;
-        let token = auth_test_support::bearer_token(&pool, admin.id).await;
+        let token = admin_token(&pool).await;
         let first = record(&pool, "scan", 1_000).await;
         finish_task(&pool, first, 1_050, Ok(())).await.unwrap();
         let second = record(&pool, "generate_thumbs", 2_000).await;
@@ -134,8 +129,7 @@ mod get_background_tasks {
             .expect("request should succeed");
 
         assert_eq!(res.status(), StatusCode::OK);
-        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-        let rows: Vec<BackgroundTaskRecord> = serde_json::from_slice(&bytes).unwrap();
+        let rows: Vec<BackgroundTaskRecord> = body_json(res).await;
         assert_eq!(
             rows.iter().map(|r| (r.id, r.status)).collect::<Vec<_>>(),
             vec![
@@ -149,8 +143,7 @@ mod get_background_tasks {
     #[tokio::test]
     async fn returns_at_most_the_recent_task_limit() {
         let (app, _, pool) = fixture().await;
-        let admin = auth_test_support::create_admin(&pool, "admin").await;
-        let token = auth_test_support::bearer_token(&pool, admin.id).await;
+        let token = admin_token(&pool).await;
         let mut newest = 0;
         for n in 0..101 {
             newest = record(&pool, "scan", n).await;
@@ -161,8 +154,7 @@ mod get_background_tasks {
             .await
             .expect("request should succeed");
 
-        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-        let rows: Vec<BackgroundTaskRecord> = serde_json::from_slice(&bytes).unwrap();
+        let rows: Vec<BackgroundTaskRecord> = body_json(res).await;
         assert_eq!(rows.len(), 100);
         assert_eq!(rows[0].id, newest);
     }
@@ -170,8 +162,7 @@ mod get_background_tasks {
     #[tokio::test]
     async fn returns_500_when_the_history_cannot_be_read() {
         let (app, _, pool) = fixture().await;
-        let admin = auth_test_support::create_admin(&pool, "admin").await;
-        let token = auth_test_support::bearer_token(&pool, admin.id).await;
+        let token = admin_token(&pool).await;
         sqlx::query("DROP TABLE background_tasks")
             .execute(&pool)
             .await

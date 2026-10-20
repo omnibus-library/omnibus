@@ -489,12 +489,9 @@ fn backfill_chapters_request(token: Option<&str>) -> Request<Body> {
 
 /// Whether the worker holds a chapter-backfill task, queued, running or just finished.
 fn backfill_queued(state: &AppState) -> bool {
-    let status = state.worker().progress_snapshot();
-    status
-        .active
-        .iter()
-        .chain(&status.recent_complete)
-        .any(|task| task.kind == omnibus_shared::TaskKind::BackfillChapters)
+    worker_holds_task(state, |task| {
+        task.kind == omnibus_shared::TaskKind::BackfillChapters
+    })
 }
 
 #[tokio::test]

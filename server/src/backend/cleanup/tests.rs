@@ -9,7 +9,7 @@ use axum::{
 use omnibus_shared::{CleanupDecisionOutcome, CleanupKind, CleanupKindCounts, SuggestionCard};
 use tower::ServiceExt;
 
-use crate::backend::{test_support::*, AppState};
+use crate::backend::test_support::*;
 
 fn request(
     method: &str,
@@ -74,16 +74,6 @@ async fn seed_rename_over_corrupt_overrides(pool: &sqlx::SqlitePool) -> i64 {
     .fetch_one(pool)
     .await
     .expect("seed suggestion")
-}
-
-/// Whether the worker holds a cleanup-detection task, queued, running or just finished.
-fn cleanup_detection_queued(state: &AppState) -> bool {
-    let status = state.worker().progress_snapshot();
-    status
-        .active
-        .iter()
-        .chain(&status.recent_complete)
-        .any(|task| task.resource_key.as_deref() == Some("cleanup"))
 }
 
 fn decision_uri(suggestion: i64) -> String {
@@ -507,7 +497,9 @@ mod post_cleanup_detect {
 
         assert_eq!(res.status(), StatusCode::ACCEPTED);
         assert_eq!(body_text(res).await, "");
-        assert!(cleanup_detection_queued(&state));
+        let is_cleanup =
+            |task: &omnibus_shared::TaskProgress| task.resource_key.as_deref() == Some("cleanup");
+        assert!(worker_holds_task(&state, is_cleanup));
     }
 }
 

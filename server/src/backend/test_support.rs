@@ -41,6 +41,19 @@ pub(crate) async fn reader_token(pool: &sqlx::SqlitePool) -> String {
     auth_test_support::bearer_token(pool, reader.id).await
 }
 
+/// Whether the worker holds a task `wanted` accepts, queued, running or just finished.
+pub(crate) fn worker_holds_task(
+    state: &AppState,
+    wanted: impl Fn(&omnibus_shared::TaskProgress) -> bool,
+) -> bool {
+    let status = state.worker().progress_snapshot();
+    status
+        .active
+        .iter()
+        .chain(&status.recent_complete)
+        .any(wanted)
+}
+
 /// Save the ebook and audiobook library folders, leaving the scan interval unset.
 pub(crate) async fn set_library_paths(
     pool: &sqlx::SqlitePool,
