@@ -29,10 +29,13 @@ export function recordKindLabel(kind: string): string {
 }
 
 /** Time between a run's start and finish in its two largest units ("45s", "3m 20s", "1h 2m"), or "running…". */
-export function fmtDuration(
-  startedAt: number,
-  finishedAt: number | null | undefined,
-): string {
+export function fmtDuration({
+  startedAt,
+  finishedAt,
+}: {
+  startedAt: number;
+  finishedAt: number | null | undefined;
+}): string {
   if (finishedAt == null) return "running…";
   const secs = Math.max(0, finishedAt - startedAt);
   const [h, m, s] = [

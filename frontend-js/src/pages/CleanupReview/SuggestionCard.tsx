@@ -227,7 +227,7 @@ export function DecideBar({
       </Button>
       <span className="crx-decide-spacer" />
       <span className="crx-decide-note mono" data-testid="cleanup-decide-note">
-        {decideNote(edited, editable)}
+        {decideNote({ edited, editable })}
       </span>
     </div>
   );

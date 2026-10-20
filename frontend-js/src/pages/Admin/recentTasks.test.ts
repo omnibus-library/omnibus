@@ -43,13 +43,17 @@ describe("fmtDuration", () => {
     ["hours and minutes, dropping the seconds", 0, 3_729, "1h 2m"],
     ["a finish before the start", 100, 50, "0s"],
   ])("reads %s", (_condition, started, finished, text) => {
-    expect(fmtDuration(started, finished)).toBe(text);
+    expect(fmtDuration({ startedAt: started, finishedAt: finished })).toBe(
+      text,
+    );
   });
 
   it.each([
     ["null", null],
     ["absent", undefined],
   ])("reads running… when the finish is %s", (_condition, finished) => {
-    expect(fmtDuration(1_000, finished)).toBe("running…");
+    expect(fmtDuration({ startedAt: 1_000, finishedAt: finished })).toBe(
+      "running…",
+    );
   });
 });

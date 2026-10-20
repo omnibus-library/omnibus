@@ -60,7 +60,13 @@ export const dotState = (slot: number, index: number) =>
   slot < index ? "done" : slot === index ? "on" : "";
 
 /** What the note beside the buttons says accepting will do. */
-export function decideNote(edited: boolean, editable: boolean): string {
+export function decideNote({
+  edited,
+  editable,
+}: {
+  edited: boolean;
+  editable: boolean;
+}): string {
   if (edited) return "your wording replaces the proposal";
   return editable
     ? "accepting applies at once · you can undo it"

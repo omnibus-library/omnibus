@@ -150,21 +150,24 @@ function StorageCard({ storage }: { storage: AdminHealthReport["storage"] }) {
         <KvRow label="Covers" value={formatBytes(storage.covers_bytes)} />
         <KvRow
           label="Thumbnail cache"
-          value={formatCacheUsage(
-            storage.thumbs_bytes,
-            storage.thumbs_cap_bytes,
-          )}
+          value={formatCacheUsage({
+            used: storage.thumbs_bytes,
+            cap: storage.thumbs_cap_bytes,
+          })}
         />
         <KvRow
           label="HLS transcode cache"
-          value={formatCacheUsage(storage.hls_bytes, storage.hls_cap_bytes)}
+          value={formatCacheUsage({
+            used: storage.hls_bytes,
+            cap: storage.hls_cap_bytes,
+          })}
         />
         <KvRow
           label="Export-EPUB cache"
-          value={formatCacheUsage(
-            storage.export_epub_bytes,
-            storage.export_epub_cap_bytes,
-          )}
+          value={formatCacheUsage({
+            used: storage.export_epub_bytes,
+            cap: storage.export_epub_cap_bytes,
+          })}
         />
       </div>
     </section>

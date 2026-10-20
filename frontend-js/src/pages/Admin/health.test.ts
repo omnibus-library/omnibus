@@ -20,13 +20,13 @@ describe("formatDurationMs", () => {
 
 describe("formatCacheUsage", () => {
   it("joins the used and cap figures", () => {
-    expect(formatCacheUsage(12_300_000, 5_000_000_000)).toBe(
+    expect(formatCacheUsage({ used: 12_300_000, cap: 5_000_000_000 })).toBe(
       "12.3 MB / 5.0 GB cap",
     );
   });
 
   it("reads an empty cache as 0 B", () => {
-    expect(formatCacheUsage(0, 0)).toBe("0 B / 0 B cap");
+    expect(formatCacheUsage({ used: 0, cap: 0 })).toBe("0 B / 0 B cap");
   });
 });
 

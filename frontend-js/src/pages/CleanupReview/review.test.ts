@@ -146,7 +146,7 @@ describe("decideNote", () => {
     ],
     ["a card with nothing to edit", false, false, "accepting applies at once"],
   ])("reads %s", (_condition, edited, editable, note) => {
-    expect(decideNote(edited, editable)).toBe(note);
+    expect(decideNote({ edited, editable })).toBe(note);
   });
 });
 

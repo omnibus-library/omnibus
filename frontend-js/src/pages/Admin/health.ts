@@ -9,8 +9,13 @@ export function formatDurationMs(ms: number): string {
 export const formatBytes = (n: number) => fileSize(n) ?? "0 B";
 
 /** "12.3 MB / 5.0 GB cap". */
-export const formatCacheUsage = (used: number, cap: number) =>
-  `${formatBytes(used)} / ${formatBytes(cap)} cap`;
+export const formatCacheUsage = ({
+  used,
+  cap,
+}: {
+  used: number;
+  cap: number;
+}) => `${formatBytes(used)} / ${formatBytes(cap)} cap`;
 
 /** How many books have lost their files, agreeing with the count. */
 export const ghostedLine = (count: number) =>

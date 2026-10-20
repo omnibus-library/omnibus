@@ -24,7 +24,10 @@ function TaskLine({ task }: { task: BackgroundTaskRecord }) {
         {recordKindLabel(task.task_kind)}
       </span>{" "}
       <span className="logs-fields" data-testid="background-tasks-duration">
-        {fmtDuration(task.started_at, task.finished_at)}
+        {fmtDuration({
+          startedAt: task.started_at,
+          finishedAt: task.finished_at,
+        })}
       </span>
       {task.error != null && (
         <>
