@@ -11,7 +11,7 @@ use omnibus_shared::{CleanupDecisionOutcome, CleanupKind, CleanupKindCounts, Sug
 use tower::ServiceExt;
 
 use crate::auth::test_support as auth_test_support;
-use crate::backend::test_support::*;
+use crate::backend::{test_support::*, AppState};
 
 fn request(
     method: &str,
@@ -91,6 +91,16 @@ async fn seed_rename_over_corrupt_overrides(pool: &sqlx::SqlitePool) -> i64 {
     .fetch_one(pool)
     .await
     .expect("seed suggestion")
+}
+
+/// Whether the worker holds a cleanup-detection task, queued, running or just finished.
+fn cleanup_detection_queued(state: &AppState) -> bool {
+    let status = state.worker().progress_snapshot();
+    status
+        .active
+        .iter()
+        .chain(&status.recent_complete)
+        .any(|task| task.resource_key.as_deref() == Some("cleanup"))
 }
 
 fn decision_uri(suggestion: i64) -> String {
@@ -499,7 +509,7 @@ mod post_cleanup_detect {
 
     #[tokio::test]
     async fn returns_202_once_the_detection_is_queued() {
-        let (app, _, pool) = fixture().await;
+        let (app, state, pool) = fixture().await;
         let token = admin_token(&pool).await;
 
         let res = app
@@ -514,6 +524,7 @@ mod post_cleanup_detect {
 
         assert_eq!(res.status(), StatusCode::ACCEPTED);
         assert_eq!(body_text(res).await, "");
+        assert!(cleanup_detection_queued(&state));
     }
 }
 
@@ -617,5 +628,23 @@ mod post_cleanup_undo {
 
         assert_eq!(res.status(), StatusCode::CONFLICT);
         assert_eq!(body_text(res).await, "cleanup was already undone");
+    }
+
+    #[tokio::test]
+    async fn returns_500_when_the_log_cannot_be_read() {
+        let (app, _, pool) = fixture().await;
+        let token = admin_token(&pool).await;
+        sqlx::query("DROP TABLE cleanup_log")
+            .execute(&pool)
+            .await
+            .expect("drop cleanup_log");
+
+        let res = app
+            .oneshot(undo(Some(&token), 1))
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body_text(res).await, "internal server error");
     }
 }
