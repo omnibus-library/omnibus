@@ -16,7 +16,7 @@ import {
   StatusLine,
   useUnsavedGuard,
 } from "../../components/SettingsShell/SettingsShell";
-import { refreshMe, useCurrentUser } from "../../session";
+import { patchMe, refreshMe, useCurrentUser } from "../../session";
 
 const EmailSchema = z.object({
   email: z.string().trim().min(1, "Enter a Kindle email to save."),
@@ -97,6 +97,7 @@ export function KindleCard() {
   const save = useMutation({
     mutationFn: async (email: string | null) => {
       await setKindleEmail(email);
+      patchMe(queryClient, (u) => ({ ...u, kindleEmail: email }));
       await refreshMe(queryClient);
       return email;
     },

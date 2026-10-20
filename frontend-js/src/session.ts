@@ -29,6 +29,10 @@ export const registrationQuery = queryOptions({
 export const refreshMe = (client: QueryClient) =>
   client.invalidateQueries({ queryKey: meQuery.queryKey });
 
+/** Shows an accepted write on the session at once, so a reread that fails leaves the screens right. */
+export const patchMe = (client: QueryClient, change: (user: User) => User) =>
+  client.setQueryData(meQuery.queryKey, (user) => user && change(user));
+
 /** Makes `user` the session, dropping every answer cached for whoever came before. */
 export function startSession(client: QueryClient, user: User) {
   client.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
@@ -85,10 +89,7 @@ function useSavedPreference<V>(
       // A refetch already in flight would land over the optimistic value.
       await queryClient.cancelQueries({ queryKey: meQuery.queryKey });
       const previous = queryClient.getQueryData(meQuery.queryKey);
-      queryClient.setQueryData(
-        meQuery.queryKey,
-        (user) => user && apply(user, value),
-      );
+      patchMe(queryClient, (user) => apply(user, value));
       return { previous };
     },
     // With other saves pending, the snapshot is stale; the last one's reread corrects it.

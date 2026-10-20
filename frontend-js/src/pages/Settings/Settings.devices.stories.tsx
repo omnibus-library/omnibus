@@ -116,6 +116,31 @@ export const SavesAnAddress: Story = {
   },
 };
 
+export const KeepsTheSavedAddressWhenTheSessionRereadFails: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/auth/me", 500));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.type(
+      await canvas.findByLabelText("Kindle email"),
+      "ada@kindle.com",
+    );
+    await userEvent.click(canvas.getByTestId("kindle-email-save"));
+
+    await said(canvas, "kindle-email-status", "Kindle email saved.");
+    await expect(
+      canvas.getByTestId("kindle-email-connected"),
+    ).toHaveTextContent("A Kindle email is configured.");
+    await expect(canvas.getByTestId("kindle-email-clear")).toBeVisible();
+    // The write was accepted, so leaving asks nothing.
+    await userEvent.click(canvas.getByTestId("settings-nav-profile"));
+    await expect(
+      await canvas.findByRole("heading", { level: 2, name: "Profile" }),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByTestId("unsaved-confirm")).toBeNull();
+  },
+};
+
 export const RefusesAnAddress: Story = {
   beforeEach({ msw }) {
     msw.use(
