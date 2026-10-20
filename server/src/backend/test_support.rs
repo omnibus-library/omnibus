@@ -140,6 +140,26 @@ pub(crate) fn get_anon(uri: &str) -> Request<Body> {
     Request::builder().uri(uri).body(Body::empty()).unwrap()
 }
 
+/// A request with an optional bearer token and an optional JSON body.
+pub(crate) fn request(
+    method: &str,
+    uri: &str,
+    token: Option<&str>,
+    body: Option<serde_json::Value>,
+) -> Request<Body> {
+    let mut builder = Request::builder().uri(uri).method(method);
+    if let Some(token) = token {
+        builder = builder.header(AUTHORIZATION, format!("Bearer {token}"));
+    }
+    match body {
+        Some(body) => builder
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string())),
+        None => builder.body(Body::empty()),
+    }
+    .unwrap()
+}
+
 /// Convenience: GET request with a bearer auth header plus an
 /// `If-None-Match` conditional header, for exercising the cover/thumb
 /// 304-revalidation path.

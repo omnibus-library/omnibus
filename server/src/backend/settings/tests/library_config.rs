@@ -5,31 +5,13 @@
 
 use axum::{
     body::Body,
-    http::{header::AUTHORIZATION, Request, StatusCode},
+    http::{Request, StatusCode},
 };
 use omnibus_db::test_support::EnvVarGuard;
 use omnibus_shared::{EbookConvertStatus, MetadataSource, DEFAULT_METADATA_PRECEDENCE};
 use tower::ServiceExt;
 
 use crate::backend::test_support::*;
-
-fn json_request(
-    method: &str,
-    uri: &str,
-    token: Option<&str>,
-    body: serde_json::Value,
-) -> Request<Body> {
-    let builder = Request::builder()
-        .uri(uri)
-        .method(method)
-        .header("content-type", "application/json");
-    match token {
-        Some(token) => builder.header(AUTHORIZATION, format!("Bearer {token}")),
-        None => builder,
-    }
-    .body(Body::from(body.to_string()))
-    .unwrap()
-}
 
 async fn drop_settings_table(pool: &sqlx::SqlitePool) {
     sqlx::query("DROP TABLE settings")
@@ -98,11 +80,11 @@ mod post_ebook_convert {
     use super::*;
 
     fn save(token: Option<&str>, path: serde_json::Value) -> Request<Body> {
-        json_request(
+        request(
             "POST",
             "/api/settings/ebook-convert",
             token,
-            serde_json::json!({ "path": path }),
+            Some(serde_json::json!({ "path": path })),
         )
     }
 
@@ -296,11 +278,11 @@ mod post_metadata_precedence {
     use super::*;
 
     fn save(library: &str, token: Option<&str>, order: &[MetadataSource]) -> Request<Body> {
-        json_request(
+        request(
             "POST",
             &format!("/api/settings/metadata-precedence/{library}"),
             token,
-            serde_json::json!(order),
+            Some(serde_json::json!(order)),
         )
     }
 

@@ -4,31 +4,12 @@
 
 use axum::{
     body::Body,
-    http::{header::AUTHORIZATION, Request, StatusCode},
+    http::{Request, StatusCode},
 };
 use omnibus_shared::{CleanupDecisionOutcome, CleanupKind, CleanupKindCounts, SuggestionCard};
 use tower::ServiceExt;
 
 use crate::backend::test_support::*;
-
-fn request(
-    method: &str,
-    uri: &str,
-    token: Option<&str>,
-    body: Option<serde_json::Value>,
-) -> Request<Body> {
-    let mut builder = Request::builder().uri(uri).method(method);
-    if let Some(token) = token {
-        builder = builder.header(AUTHORIZATION, format!("Bearer {token}"));
-    }
-    match body {
-        Some(body) => builder
-            .header("content-type", "application/json")
-            .body(Body::from(body.to_string())),
-        None => builder.body(Body::empty()),
-    }
-    .unwrap()
-}
 
 /// A pending suggestion to merge "J. Smith" into "Jane Smith", as a detector writes it.
 async fn seed_author_merge(pool: &sqlx::SqlitePool) -> i64 {

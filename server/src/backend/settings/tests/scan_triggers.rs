@@ -476,15 +476,7 @@ async fn post_fts_rebuild_returns_403_when_not_admin() {
 }
 
 fn backfill_chapters_request(token: Option<&str>) -> Request<Body> {
-    let builder = Request::builder()
-        .uri("/api/audiobooks/backfill-chapters")
-        .method("POST");
-    match token {
-        Some(token) => builder.header(AUTHORIZATION, format!("Bearer {token}")),
-        None => builder,
-    }
-    .body(Body::empty())
-    .unwrap()
+    request("POST", "/api/audiobooks/backfill-chapters", token, None)
 }
 
 /// Whether the worker holds a chapter-backfill task, queued, running or just finished.
