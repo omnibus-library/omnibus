@@ -219,8 +219,9 @@
     color: var(--ink-1);
     font-weight: 400;
   }
+  /* Atrium's later `.atrium h2` clamp is what Dioxus renders here, not 28px. */
   .settings-section-head h2 {
-    font-size: 28px;
+    font-size: clamp(24px, 8vw, 32px);
   }
 }
 @media (prefers-reduced-motion: reduce) {
