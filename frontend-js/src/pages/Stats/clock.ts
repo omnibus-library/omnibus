@@ -1,4 +1,6 @@
 import type { StatsSummary } from "../../api";
+import { durationLabel } from "../../format";
+import { remEuclid } from "./calendar";
 
 // The reading clock draws exactly the buckets the server sent and derives nothing from a
 // timestamp, so this card and the iOS charts cannot disagree about the same seconds.
@@ -29,8 +31,6 @@ export type Weekday = {
   weight: "hot" | "warm" | "idle";
   readout: string;
 };
-
-const remEuclid = (a: number, b: number) => ((a % b) + b) % b;
 
 /** `Iterator::max_by_key`: the last of the equal maxima, so a tie goes to the later item. */
 function lastMax<T>(items: readonly T[], key: (item: T) => number) {
@@ -122,13 +122,8 @@ export function clockLine(hours: readonly HourBucket[]): string | null {
 }
 
 /** "58m" / "1h 28m" / "3h", and an em-dash for a day with nothing on it: a quiet day is an absence, never "0h 0m". */
-export function dayReadout(seconds: number): string {
-  if (seconds <= 0) return "—";
-  const h = Math.trunc(seconds / 3600);
-  const m = Math.trunc((seconds % 3600) / 60);
-  if (h === 0) return `${m}m`;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
-}
+export const dayReadout = (seconds: number) =>
+  seconds <= 0 ? "—" : durationLabel(seconds);
 
 /** The seven weekday rows scaled to the busiest day; labels are the server's, since a client assuming Sunday-first draws every row one place out. */
 export function buildWeekdays(days: readonly WeekdayBucket[]): Weekday[] {
