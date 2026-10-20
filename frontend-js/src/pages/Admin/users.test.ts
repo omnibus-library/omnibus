@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { permissionChips, registrationStatusLine } from "./users";
+import { editIsDirty, permissionChips, registrationStatusLine } from "./users";
 
 const NONE = {
   is_admin: false,
@@ -45,6 +45,32 @@ describe("permissionChips", () => {
 
   it("returns a dash when nothing is granted", () => {
     expect(permissionChips(NONE)).toEqual(["—"]);
+  });
+});
+
+describe("editIsDirty", () => {
+  const user = {
+    is_admin: false,
+    can_upload: true,
+    can_edit: false,
+    can_download: true,
+  };
+
+  it("returns false while the permissions and password are untouched", () => {
+    expect(editIsDirty(user, { ...user }, "")).toBe(false);
+  });
+
+  it("returns true once a password is typed", () => {
+    expect(editIsDirty(user, { ...user }, "hunter2hunter2")).toBe(true);
+  });
+
+  it.each([
+    ["is_admin"],
+    ["can_upload"],
+    ["can_edit"],
+    ["can_download"],
+  ] as const)("returns true once %s is flipped", (flag) => {
+    expect(editIsDirty(user, { ...user, [flag]: !user[flag] }, "")).toBe(true);
   });
 });
 

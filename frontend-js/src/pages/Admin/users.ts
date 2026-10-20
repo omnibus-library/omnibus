@@ -5,6 +5,16 @@ type Permissions = Pick<
   "is_admin" | "can_upload" | "can_edit" | "can_download"
 >;
 
+const FLAGS = ["is_admin", "can_upload", "can_edit", "can_download"] as const;
+
+/** A row's permission flags, as the edit form starts them. */
+export const permissionsOf = (user: Permissions): Permissions => ({
+  is_admin: user.is_admin,
+  can_upload: user.can_upload,
+  can_edit: user.can_edit,
+  can_download: user.can_download,
+});
+
 export const ADMIN_CHIP = "Admin";
 
 /** The chip a row shows when it holds no permission. */
@@ -20,6 +30,13 @@ export function permissionChips(user: Permissions): string[] {
   ].filter((chip) => chip !== false);
   return chips.length > 0 ? chips : [NO_PERMISSIONS];
 }
+
+/** Whether the edit form holds a change that a stray click on the scrim would throw away. */
+export const editIsDirty = (
+  user: Permissions,
+  permissions: Permissions,
+  password: string,
+) => password !== "" || FLAGS.some((flag) => permissions[flag] !== user[flag]);
 
 /** What the self-registration setting means, in terms of who can create an account; `null` while it loads. */
 export function registrationStatusLine(enabled: boolean | null): string {

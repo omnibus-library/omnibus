@@ -1,8 +1,14 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { HttpResponse, http } from "msw";
 import { useState } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
-import { adminHandlers } from "../../testing/adminHandlers";
+import {
+  adminHandlers,
+  aWireAdminUsers,
+  type UserWrites,
+  usersHandlers,
+} from "../../testing/adminHandlers";
 import { WIRE_ADA } from "../../testing/wire";
 import { Admin } from "./Admin";
 
@@ -313,5 +319,34 @@ export const RefusesAReaderOnASection: Story = {
     await expect(
       canvas.queryByRole("heading", { level: 2 }),
     ).not.toBeInTheDocument();
+  },
+};
+
+export const RefusesAnAdminWhoDemotesThemself: Story = {
+  args: { path: "/admin?section=people" },
+  beforeEach({ msw }) {
+    const permissions: UserWrites["permissions"] = [];
+    msw.use(
+      ...usersHandlers(aWireAdminUsers(), { permissions }),
+      // The session reads as a reader once the permission change has landed.
+      http.get("/api/auth/me", () =>
+        HttpResponse.json(permissions.length > 0 ? READER : WIRE_ADA),
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Edit ada" }),
+    );
+    const dialog = await canvas.findByRole("dialog", { name: "Edit ada" });
+    await userEvent.click(
+      within(dialog).getByRole("checkbox", { name: "Administrator" }),
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
+
+    await expect(await canvas.findByTestId("admin-forbidden")).toBeVisible();
+    await expect(canvas.queryByTestId("admin-nav-people")).toBeNull();
   },
 };

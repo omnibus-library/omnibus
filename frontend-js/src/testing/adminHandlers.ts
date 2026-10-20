@@ -1,15 +1,20 @@
 import { HttpResponse, http } from "msw";
 import type { MetadataLibrary } from "../api";
 import {
+  AdminSetUserPasswordBody,
   type AdminUserRow,
   type BackgroundTaskRecord,
   type CleanupKindCounts,
+  CreateUserRequest,
+  type DeviceView,
   type LibraryContents,
   type LibrarySection,
   MetadataSource,
   RegistrationStatus,
+  type SessionView,
   Settings,
   type TaskProgress,
+  UserPermissions,
   type WorkerStatus,
 } from "../api/generated/schemas";
 
@@ -267,24 +272,138 @@ export function registrationHandlers(
   ];
 }
 
+/** What `usersHandlers` records of the writes it answers, for a story to assert on. */
+export type UserWrites = {
+  unlocked: number[];
+  created: CreateUserRequest[];
+  permissions: { id: number; permissions: UserPermissions }[];
+  passwords: { id: number; password: string }[];
+  deleted: number[];
+};
+
 /**
- * `GET /api/admin/users` and `POST /api/admin/users/{id}/unlock`: the accounts,
- * where an unlock clears that account's lock. Each unlocked id lands in `unlocked`.
+ * The `/api/admin/users` routes over one list of accounts: a create adds a row,
+ * a permission change or an unlock edits one, a delete removes one. Every write
+ * lands in its `UserWrites` list.
  */
 export function usersHandlers(
   initial: AdminUserRow[],
-  { unlocked = [] }: { unlocked?: number[] } = {},
+  {
+    unlocked = [],
+    created = [],
+    permissions = [],
+    passwords = [],
+    deleted = [],
+  }: Partial<UserWrites> = {},
 ) {
   let rows = initial;
+  const edit = (id: number, change: Partial<AdminUserRow>) => {
+    rows = rows.map((row) => (row.id === id ? { ...row, ...change } : row));
+  };
+  const noContent = () => new HttpResponse(null, { status: 204 });
   return [
     http.get("/api/admin/users", () => HttpResponse.json(rows)),
+    http.post("/api/admin/users", async ({ request }) => {
+      const body = CreateUserRequest.parse(await request.json());
+      created.push(body);
+      const row = aWireAdminUser({
+        id: Math.max(0, ...rows.map((r) => r.id)) + 1,
+        username: body.username,
+        ...body.permissions,
+      });
+      rows = [...rows, row];
+      return HttpResponse.json(row, { status: 201 });
+    }),
+    http.patch(
+      "/api/admin/users/:id/permissions",
+      async ({ params, request }) => {
+        const id = Number(params.id);
+        const body = UserPermissions.parse(await request.json());
+        permissions.push({ id, permissions: body });
+        edit(id, body);
+        return noContent();
+      },
+    ),
+    http.post("/api/admin/users/:id/password", async ({ params, request }) => {
+      const { password } = AdminSetUserPasswordBody.parse(await request.json());
+      passwords.push({ id: Number(params.id), password });
+      return noContent();
+    }),
     http.post("/api/admin/users/:id/unlock", ({ params }) => {
       const id = Number(params.id);
       unlocked.push(id);
-      rows = rows.map((row) =>
-        row.id === id ? { ...row, locked: false } : row,
-      );
-      return new HttpResponse(null, { status: 204 });
+      edit(id, { locked: false });
+      return noContent();
+    }),
+    http.delete("/api/admin/users/:id", ({ params }) => {
+      const id = Number(params.id);
+      deleted.push(id);
+      rows = rows.filter((row) => row.id !== id);
+      return noContent();
+    }),
+  ];
+}
+
+/** A live session as `GET /api/admin/users/{id}/sessions` lists it. */
+export function aWireSession(
+  overrides: Partial<SessionView> = {},
+): SessionView {
+  return {
+    id: 3,
+    kind: "cookie",
+    client: "Firefox on macOS",
+    device_id: null,
+    created_at: 1_700_000_000,
+    last_used_at: 1_704_067_200,
+    expires_at: 1_706_659_200,
+    is_current: false,
+    ...overrides,
+  };
+}
+
+/** A registered device as `GET /api/admin/users/{id}/devices` lists it. */
+export function aWireDevice(overrides: Partial<DeviceView> = {}): DeviceView {
+  return {
+    id: 4,
+    name: "Kobo Clara",
+    client_kind: "kobo",
+    client_version: null,
+    created_at: 1_700_000_000,
+    last_seen_at: 1_704_067_200,
+    ...overrides,
+  };
+}
+
+/** What `sessionsHandlers` records of the revokes it answers. */
+export type Revoked = { sessions: number[]; devices: number[] };
+
+/**
+ * The session and device lists of whichever user is asked about, and the two
+ * revokes. Revoking a device also ends the sessions tied to it, as the server does.
+ */
+export function sessionsHandlers(
+  initial: { sessions: SessionView[]; devices: DeviceView[] },
+  { revoked = { sessions: [], devices: [] } }: { revoked?: Revoked } = {},
+) {
+  let { sessions, devices } = initial;
+  const noContent = () => new HttpResponse(null, { status: 204 });
+  return [
+    http.get("/api/admin/users/:id/sessions", () =>
+      HttpResponse.json(sessions),
+    ),
+    http.get("/api/admin/users/:id/devices", () => HttpResponse.json(devices)),
+    http.delete("/api/admin/sessions/:id", ({ params }) => {
+      const id = Number(params.id);
+      revoked.sessions.push(id);
+      sessions = sessions.filter((session) => session.id !== id);
+      return noContent();
+    }),
+    http.delete("/api/admin/devices/:id", ({ params }) => {
+      const id = Number(params.id);
+      revoked.devices.push(id);
+      devices = devices.filter((device) => device.id !== id);
+      sessions = sessions.filter((session) => session.device_id !== id);
+      return noContent();
     }),
   ];
 }
@@ -302,5 +421,9 @@ export function adminHandlers() {
     cleanupDetectHandler(),
     ...registrationHandlers(true),
     ...usersHandlers(aWireAdminUsers()),
+    ...sessionsHandlers({
+      sessions: [aWireSession()],
+      devices: [aWireDevice()],
+    }),
   ];
 }

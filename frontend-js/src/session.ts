@@ -35,19 +35,25 @@ export function useCurrentUser(): User {
   return data;
 }
 
+/** Leaves the session: to /login, with every cached answer dropped. */
+export function endSession(
+  client: QueryClient,
+  navigate: (to: string, options: { replace: true }) => void,
+) {
+  navigate("/login", { replace: true });
+  // Null, not cleared: the gate unmounts the signed-in screens before
+  // anything under it can read a missing user.
+  client.setQueryData(meQuery.queryKey, null);
+  client.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
+}
+
 /** Ends the session, drops every cached answer, and returns to /login. */
 export function useSignOut() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   return useMutation({
     mutationFn: logout,
-    onSuccess: () => {
-      navigate("/login", { replace: true });
-      // Null, not cleared: the gate unmounts the signed-in screens before
-      // anything under it can read a missing user.
-      queryClient.setQueryData(meQuery.queryKey, null);
-      queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
-    },
+    onSuccess: () => endSession(queryClient, navigate),
   });
 }
 
