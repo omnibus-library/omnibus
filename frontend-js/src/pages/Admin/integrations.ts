@@ -59,3 +59,19 @@ export function saveOutcomeMessage(available: boolean): Status {
         error: true,
       };
 }
+
+/** Where a credential's read stands: still out, failed, or answered as set or unset. */
+export type CredentialState =
+  | "checking"
+  | "unavailable"
+  | "configured"
+  | "unconfigured";
+
+/** `configured` is undefined until the read answers; `failed` says it never will. */
+export function credentialState(
+  configured: boolean | undefined,
+  failed: boolean,
+): CredentialState {
+  if (configured === undefined) return failed ? "unavailable" : "checking";
+  return configured ? "configured" : "unconfigured";
+}

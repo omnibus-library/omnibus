@@ -1,6 +1,5 @@
 import type { LibrarySection, Settings } from "../../api";
-import { plural } from "../../format";
-import { noneIfBlank } from "./logs";
+import { noneIfBlank, plural } from "../../format";
 
 /** Mirrors `SCAN_INTERVAL_MIN_HOURS` in `shared/src/settings.rs`; the server enforces it. */
 export const SCAN_INTERVAL_MIN_HOURS = 1;

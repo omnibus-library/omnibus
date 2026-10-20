@@ -221,6 +221,9 @@ export const formatUtcDay = (unixSecs: number) =>
 export const capitalize = (text: string) =>
   text.charAt(0).toUpperCase() + text.slice(1);
 
+/** A form field trimmed, or null when it is blank. */
+export const noneIfBlank = (value: string) => value.trim() || null;
+
 /** "3 hours ago": `n` of `unit`, pluralised. */
 export const unitsAgo = (n: number, unit: string) =>
   `${n} ${unit}${plural(n)} ago`;

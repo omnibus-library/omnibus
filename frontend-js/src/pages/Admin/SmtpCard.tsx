@@ -18,6 +18,7 @@ import {
   useUnsavedGuard,
 } from "../../components/SettingsShell/SettingsShell";
 import { CredentialStatus } from "./CredentialStatus";
+import { credentialState } from "./integrations";
 import {
   BLANK_SMTP_DRAFT,
   isSmtpEdited,
@@ -224,8 +225,7 @@ export function SmtpCard() {
         <div className="settings-actions">
           <CredentialStatus
             testId="smtp-status"
-            configured={config.data?.configured ?? null}
-            readFailed={readFailed}
+            state={credentialState(config.data?.configured, readFailed)}
             detail={config.data ? `Configured · ${config.data.source}` : ""}
             unconfigured="Not configured"
           />

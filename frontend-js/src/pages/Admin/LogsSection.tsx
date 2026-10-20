@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { type LogQuery, type LogRecord, logsQuery } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel, RowSkeletons } from "../../components/Loading/Loading";
-import { localToUtcPrefix, noneIfBlank } from "./logs";
+import { noneIfBlank } from "../../format";
+import { localToUtcPrefix } from "./logs";
 
 const FIRST_PAGE: LogQuery = {
   level: null,

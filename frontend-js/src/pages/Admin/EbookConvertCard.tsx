@@ -15,6 +15,7 @@ import {
 } from "../../components/SettingsShell/SettingsShell";
 import { CredentialStatus } from "./CredentialStatus";
 import {
+  credentialState,
   ebookConvertDetail,
   ebookConvertPlaceholder,
   isOverridden,
@@ -121,8 +122,7 @@ export function EbookConvertCard() {
         <div className="settings-actions">
           <CredentialStatus
             testId="ebook-convert-status"
-            configured={current.data?.available ?? null}
-            readFailed={readFailed}
+            state={credentialState(current.data?.available, readFailed)}
             detail={ebookConvertDetail(current.data)}
             unconfigured="Not detected"
           />

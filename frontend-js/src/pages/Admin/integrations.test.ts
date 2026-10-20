@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EbookConvertStatus } from "../../api";
 import {
   clearWarning,
+  credentialState,
   ebookConvertDetail,
   ebookConvertPlaceholder,
   isOverridden,
@@ -77,4 +78,18 @@ describe("saveOutcomeMessage", () => {
       error: true,
     });
   });
+});
+
+describe("credentialState", () => {
+  it.each([
+    ["a read that found it set", true, false, "configured"],
+    ["a read that found it unset", false, false, "unconfigured"],
+    ["a read still out", undefined, false, "checking"],
+    ["a read that failed", undefined, true, "unavailable"],
+  ] as const)(
+    "returns the state for %s",
+    (_condition, configured, failed, state) => {
+      expect(credentialState(configured, failed)).toBe(state);
+    },
+  );
 });

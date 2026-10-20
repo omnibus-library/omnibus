@@ -17,7 +17,7 @@ import {
   useUnsavedGuard,
 } from "../../components/SettingsShell/SettingsShell";
 import { CredentialStatus } from "./CredentialStatus";
-import { clearWarning, SECRET_KEYS } from "./integrations";
+import { clearWarning, credentialState, SECRET_KEYS } from "./integrations";
 
 /** A server-wide key the admin sets: its masked state, a field to replace it, and a way to remove it. */
 export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
@@ -121,8 +121,7 @@ export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
         <div className="settings-actions">
           <CredentialStatus
             testId={`${copy.testId}-status`}
-            configured={current.data?.configured ?? null}
-            readFailed={readFailed}
+            state={credentialState(current.data?.configured, readFailed)}
             detail={
               current.data
                 ? `Connected · ${current.data.source} · ${masked ?? ""}`

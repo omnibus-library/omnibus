@@ -1,5 +1,4 @@
-/** A filter field trimmed, or null when it is blank. */
-export const noneIfBlank = (value: string) => value.trim() || null;
+import { noneIfBlank } from "../../format";
 
 /**
  * A `datetime-local` value (the admin's wall clock) as the UTC minute the server's

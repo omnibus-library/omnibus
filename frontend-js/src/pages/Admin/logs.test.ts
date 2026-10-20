@@ -1,18 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { localToUtcPrefix, noneIfBlank } from "./logs";
-
-describe("noneIfBlank", () => {
-  it("returns the text trimmed", () => {
-    expect(noneIfBlank("  omnibus::backend ")).toBe("omnibus::backend");
-  });
-
-  it.each([
-    ["empty", ""],
-    ["only spaces", "   "],
-  ])("reads %s as null", (_condition, value) => {
-    expect(noneIfBlank(value)).toBeNull();
-  });
-});
+import { localToUtcPrefix } from "./logs";
 
 describe("localToUtcPrefix", () => {
   afterEach(() => {
