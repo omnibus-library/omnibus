@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import {
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   type AdminUserRow,
   createUser,
@@ -478,11 +484,15 @@ export function SessionsModal({
         ),
       ),
   });
-  // A revoke's refusal says nothing about lists that are being read again.
+  // A refusal from before a read starts says nothing about the lists it reads; one that lands mid-read stays.
   const reloading = sessions.isFetching || devices.isFetching;
+  const wasReloading = useRef(false);
   const { reset: clearRevokeError } = revoke;
   useEffect(() => {
-    if (reloading && revoke.isError) clearRevokeError();
+    if (reloading && !wasReloading.current && revoke.isError) {
+      clearRevokeError();
+    }
+    wasReloading.current = reloading;
   }, [reloading, revoke.isError, clearRevokeError]);
   const working = (kind: Revoking["kind"], id: number) =>
     revoke.isPending &&

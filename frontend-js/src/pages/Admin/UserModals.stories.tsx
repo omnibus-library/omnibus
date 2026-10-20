@@ -988,6 +988,43 @@ export const SessionsClearsARevokeRefusalOnceTheListsAreReadAgain: Story = {
   },
 };
 
+export const SessionsKeepsARevokeRefusalThatArrivesWhileTheListsAreRead: Story =
+  {
+    beforeEach({ msw }) {
+      listGate = deferred();
+      msw.use(
+        gatedSessionReads(() => HttpResponse.json([aWireSession()])),
+        failing("delete", "/api/admin/sessions/:id", 404),
+      );
+    },
+    render: () => <SessionsModal user={ALICE} onClose={close} />,
+    play: async ({ canvas, userEvent }) => {
+      const dialog = await canvas.findByRole("dialog", {
+        name: "Sessions & devices — alice",
+      });
+      const revoke = await within(dialog).findByRole("button", {
+        name: "Revoke the session on Firefox on macOS",
+      });
+      const sessionsKey = userSessionsQuery(ALICE.id).queryKey;
+      const reread = storyClient().refetchQueries({ queryKey: sessionsKey });
+      await waitFor(() =>
+        expect(storyClient().getQueryState(sessionsKey)?.fetchStatus).toBe(
+          "fetching",
+        ),
+      );
+      await userEvent.click(revoke);
+
+      await expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+        "failed with 404",
+      );
+      listGate.release();
+      await reread;
+      await expect(within(dialog).getByRole("alert")).toHaveTextContent(
+        "failed with 404",
+      );
+    },
+  };
+
 export const SessionsHidesALoadFailureWhileTheListsAreReadAgain: Story = {
   beforeEach({ msw }) {
     listGate = deferred();
