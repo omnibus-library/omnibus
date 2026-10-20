@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 import {
   type LibrarySection,
   libraryContentsQuery,
@@ -60,6 +60,7 @@ export function SourcesCard() {
   const [saved, setSaved] = useState<Fields | null>(null);
   const [intervalInvalid, setIntervalInvalid] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
+  const intervalInput = useRef<HTMLInputElement>(null);
 
   // Cached settings wait out their re-read, so the form starts from what the server holds now.
   if (settings.data && !settings.isFetching && saved === null) {
@@ -103,7 +104,11 @@ export function SourcesCard() {
       setStatus({ text: NOT_LOADED, isError: true });
       return;
     }
-    if (payload.refused === "bad-interval") {
+    // A number field reads half-typed text as blank, which would save as "no interval".
+    if (
+      payload.refused === "bad-interval" ||
+      intervalInput.current?.validity.badInput
+    ) {
       setIntervalInvalid(true);
       return;
     }
@@ -190,6 +195,7 @@ export function SourcesCard() {
             Automatic rescan interval (hours)
           </label>
           <input
+            ref={intervalInput}
             type="number"
             min={SCAN_INTERVAL_MIN_HOURS}
             inputMode="numeric"

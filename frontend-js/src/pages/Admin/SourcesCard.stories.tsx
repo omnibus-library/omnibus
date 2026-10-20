@@ -339,6 +339,30 @@ export const RefusesABadInterval: Story = {
   },
 };
 
+export const RefusesAnIntervalTheBrowserCannotRead: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const interval = canvas.getByLabelText<HTMLInputElement>(
+      "Automatic rescan interval (hours)",
+    );
+    await waitFor(() => expect(interval).toHaveValue(24));
+    await userEvent.clear(interval);
+    // Typed for real: a scripted value never leaves the field holding text it cannot read.
+    interval.focus();
+    document.execCommand("insertText", false, "1e");
+    await expect(interval.validity.badInput).toBe(true);
+    await expect(interval).toHaveValue(null);
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Save library settings" }),
+    );
+
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "Enter a whole number of hours, or leave it blank.",
+    );
+    await expect(interval).toHaveAttribute("aria-invalid", "true");
+    await expect(saved).toEqual([]);
+  },
+};
+
 export const ShowsASaveRefusal: Story = {
   beforeEach({ msw }) {
     msw.use(failing("post", "/api/settings", 500));
