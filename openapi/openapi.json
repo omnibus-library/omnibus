@@ -6656,7 +6656,7 @@
           "Stats"
         ],
         "summary": "Chart your reading",
-        "description": "Runs a chart you composed: one or two measures over a period, bucketed by day, week,\nmonth or year, optionally split by genre. Each series lines up with `buckets`, and a\nnull value means no data, which for an average is not zero. Days are cut on your\n`utc_offset_minutes`. Nothing is saved.",
+        "description": "Runs a chart you composed: measures on at most two scales over a period, bucketed by\nday, week, month or year, optionally split by genre. Measures that share a unit share a\nscale. Each series lines up with `buckets`, and a null value means no data, which for an\naverage is not zero. Days are cut on your `utc_offset_minutes`. Nothing is saved.",
         "operationId": "post_stats_chart",
         "parameters": [
           {
@@ -9236,7 +9236,7 @@
         "properties": {
           "breakdown": {
             "$ref": "#/components/schemas/ChartBreakdown",
-            "description": "Optional split, honoured only for a single breakdown-capable measure."
+            "description": "Optional split. Allowed only with exactly one measure, and only one that\nsupports a split (a per-book measure); any other combination is rejected."
           },
           "bucket": {
             "$ref": "#/components/schemas/ChartBucket",
@@ -9247,7 +9247,7 @@
             "items": {
               "$ref": "#/components/schemas/ChartMeasure"
             },
-            "description": "One or two measures. A second opens the right-hand axis when its unit\ndiffers from the first's."
+            "description": "The measures to plot, each at most once. Measures that share a unit share a\nscale, and a second unit opens the right-hand axis. A third unit is rejected."
           },
           "range": {
             "$ref": "#/components/schemas/StatsRange",

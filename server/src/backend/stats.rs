@@ -208,10 +208,10 @@ pub(super) async fn get_library_composition(
 
 /// Chart your reading
 ///
-/// Runs a chart you composed: one or two measures over a period, bucketed by day, week,
-/// month or year, optionally split by genre. Each series lines up with `buckets`, and a
-/// null value means no data, which for an average is not zero. Days are cut on your
-/// `utc_offset_minutes`. Nothing is saved.
+/// Runs a chart you composed: measures on at most two scales over a period, bucketed by
+/// day, week, month or year, optionally split by genre. Measures that share a unit share a
+/// scale. Each series lines up with `buckets`, and a null value means no data, which for an
+/// average is not zero. Days are cut on your `utc_offset_minutes`. Nothing is saved.
 #[utoipa::path(
     post,
     path = "/api/stats/chart",

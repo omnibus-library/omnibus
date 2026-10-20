@@ -379,14 +379,15 @@ impl ChartBreakdown {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ChartSpec {
-    /// One or two measures. A second opens the right-hand axis when its unit
-    /// differs from the first's.
+    /// The measures to plot, each at most once. Measures that share a unit share a
+    /// scale, and a second unit opens the right-hand axis. A third unit is rejected.
     pub measures: Vec<ChartMeasure>,
     /// The shared x-axis granularity.
     pub bucket: ChartBucket,
     /// The window, reusing the stats page's own range vocabulary.
     pub range: crate::stats::StatsRange,
-    /// Optional split, honoured only for a single breakdown-capable measure.
+    /// Optional split. Allowed only with exactly one measure, and only one that
+    /// supports a split (a per-book measure); any other combination is rejected.
     #[serde(default)]
     pub breakdown: ChartBreakdown,
 }
