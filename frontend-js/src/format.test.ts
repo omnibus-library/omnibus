@@ -3,6 +3,7 @@ import { type BookDetail, toBookDetail } from "./api";
 import {
   ago,
   bookCount,
+  capitalize,
   descriptionOverflows,
   durationLabel,
   facetQuery,
@@ -13,10 +14,13 @@ import {
   formatInstantShort,
   formatLongDate,
   formatMonthYear,
+  formatUtcDay,
+  formatUtcTimestamp,
   formatYear,
   homeKicker,
   initialOf,
   initialsFor,
+  noneIfBlank,
   plateAuthor,
   recency,
   singleFacetValue,
@@ -352,6 +356,61 @@ describe("summaryIsSparse", () => {
     expect(summaryIsSparse(words(9))).toBe(true);
     expect(summaryIsSparse(words(10))).toBe(false);
     expect(summaryIsSparse("")).toBe(true);
+  });
+});
+
+describe("formatUtcTimestamp", () => {
+  it.each([
+    [1_700_000_000, "2023-11-14 22:13:20 UTC"],
+    [0, "1970-01-01 00:00:00 UTC"],
+    [-1, "1969-12-31 23:59:59 UTC"],
+  ])("writes %i unix seconds as %s", (secs, text) => {
+    expect(formatUtcTimestamp(secs)).toBe(text);
+  });
+});
+
+describe("formatUtcDay", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    [1_700_000_000, "Nov 14, 2023"],
+    [0, "Jan 1, 1970"],
+    [1_704_067_200, "Jan 1, 2024"],
+    [1_704_067_199, "Dec 31, 2023"],
+    [-1, "Dec 31, 1969"],
+  ])("writes %i unix seconds as %s", (secs, text) => {
+    expect(formatUtcDay(secs)).toBe(text);
+  });
+
+  it("names the UTC day however far the runner's zone is ahead", () => {
+    vi.stubEnv("TZ", "Pacific/Kiritimati");
+
+    expect(formatUtcDay(1_704_067_199)).toBe("Dec 31, 2023");
+  });
+});
+
+describe("capitalize", () => {
+  it("upper-cases the first letter only", () => {
+    expect(capitalize("library scan")).toBe("Library scan");
+  });
+
+  it("leaves an empty string empty", () => {
+    expect(capitalize("")).toBe("");
+  });
+});
+
+describe("noneIfBlank", () => {
+  it("returns the text trimmed", () => {
+    expect(noneIfBlank("  omnibus::backend ")).toBe("omnibus::backend");
+  });
+
+  it.each([
+    ["empty", ""],
+    ["only spaces", "   "],
+  ])("reads %s as null", (_condition, value) => {
+    expect(noneIfBlank(value)).toBeNull();
   });
 });
 

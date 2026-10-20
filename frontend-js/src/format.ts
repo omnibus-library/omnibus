@@ -202,6 +202,28 @@ export function formatInstantShort(
 
 export const nowSecs = () => Math.floor(Date.now() / 1000);
 
+/** A unix-seconds time as UTC to the second: "2023-11-14 22:13:20 UTC". */
+export function formatUtcTimestamp(unixSecs: number): string {
+  const iso = new Date(unixSecs * 1000).toISOString();
+  return `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
+}
+
+/** A unix-seconds time as its UTC calendar day, "Nov 14, 2023", so every client names the same day. */
+export const formatUtcDay = (unixSecs: number) =>
+  new Date(unixSecs * 1000).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+
+/** `text` with its first letter upper-cased, to open a sentence. */
+export const capitalize = (text: string) =>
+  text.charAt(0).toUpperCase() + text.slice(1);
+
+/** A form field trimmed, or null when it is blank. */
+export const noneIfBlank = (value: string) => value.trim() || null;
+
 /** "3 hours ago": `n` of `unit`, pluralised. */
 export const unitsAgo = (n: number, unit: string) =>
   `${n} ${unit}${plural(n)} ago`;

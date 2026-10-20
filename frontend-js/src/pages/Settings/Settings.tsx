@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { type Location, Navigate, useSearchParams } from "react-router";
+import { Navigate, useSearchParams } from "react-router";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import {
   type NavGroup,
@@ -12,6 +12,7 @@ import {
   PERSONAL_SECTIONS,
   type PersonalSlug,
   parseSettingsSection,
+  sameSection,
   sectionHref,
 } from "../../settingsIndex";
 import { ApiTokensCard } from "./ApiTokensCard";
@@ -51,13 +52,6 @@ const BODIES: Record<PersonalSlug, ComponentType> = {
   devices: Devices,
   security: Security,
 };
-
-const sectionOf = (location: Location) =>
-  parseSettingsSection(new URLSearchParams(location.search).get("section"));
-
-/** Moving between two places that open the same section drops no edits. */
-export const sameSection = (a: Location, b: Location) =>
-  a.pathname === b.pathname && sectionOf(a).slug === sectionOf(b).slug;
 
 /** Personal settings: five sections picked by `?section=`, and a way into Administration for admins. */
 export function Settings() {

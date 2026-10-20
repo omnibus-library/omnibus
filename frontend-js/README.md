@@ -22,7 +22,7 @@ The screens it has ported are listed under [Routes](#routes).
 | `src/vendor/barcode/` | the camera scanner's zxing decoder, its wasm and the glue: byte copies of `frontend/assets/vendor/`, loaded by `<script>` from Vite `?url` imports (the zxing IIFE declares a global that bundling would scope away) |
 | `src/vendor/reader/` | the EPUB and PDF reader runtimes (epub.js, PDF.js and the two glue files): byte copies of `frontend/assets/vendor/`, loaded from Vite `?url` imports; `parity.test.ts` fails when a copy drifts |
 | `public/` | `vendor/pdfjs-wasm/` and `reader-fonts/`, copied verbatim and kept by name because PDF.js and `reader-fonts.css` build URLs onto their directories |
-| `src/testing/` | `AppHarness`, parsed and wire-format fixtures, the MSW handlers orval can't generate (`handlers.ts`), the Vitest setup |
+| `src/testing/` | `AppHarness`, parsed and wire-format fixtures, the MSW handlers orval can't generate (`handlers.ts`, and `adminHandlers.ts` for the admin screens), the Vitest setup |
 | `.storybook/` | Storybook's config, the preview every story renders inside, and MSW's worker |
 | `tools/extract-atrium.cjs` | copies Atrium rules into component CSS when a screen is ported |
 
@@ -39,16 +39,15 @@ add books (`/add-books`), check-in (`/check-in`), search results
 (`/search/:query`), the authors, series and shelves indexes with their detail
 pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), the three readers
 (`/read`, `/comic`, `/pdf`), the audiobook player (`/listen/:uuid`, `?file_id`
-picks one of a book's files), personal settings (`/settings`), stats
-(`/stats`), the chart builder (`/stats/chart`) and Not Found are ported, and
-the top bar carries the user menu and the ⌘K search palette. The phone layouts
-(the bottom tab bar and the native shell's shelves screens) are left out. As on
-Dioxus web, a bare `/search` and the native shell's `/connect` redirect to the
-library. `/settings` has its five sections (Profile, Preferences, Goals,
-Devices, Sign-in & security) picked by `?section=`; an old slug redirects to
-its new home and `/account` redirects to it. Its frame, `SettingsShell`, takes
-its navigation as data so `/admin` can reuse it. Every other route renders
-`Unported`, which shows its parsed parameters and names its Dioxus source.
+picks one of a book's files), personal settings (`/settings`), Administration
+(`/admin`, `/admin/cleanup/:kind`), stats (`/stats`), the chart builder
+(`/stats/chart`) and Not Found are ported, and the top bar carries the user
+menu and the ⌘K search palette. The phone layouts (the bottom tab bar and the
+native shell's shelves screens) are left out. As on Dioxus web, a bare
+`/search` and the native shell's `/connect` redirect to the library.
+`/settings` has its five sections (Profile, Preferences, Goals, Devices,
+Sign-in & security) picked by `?section=`; an old slug redirects to its new
+home and `/account` redirects to it.
 Book detail carries all six stops (home, stats, highlights, journals, files,
 more) with the rating, quote cards, journal editor, copies and wishlist, shelf
 picker, Send to Kindle, merge and delete. It leaves the alignment modal, the
@@ -72,6 +71,15 @@ React effect; each saves its position as pages turn and records reading
 sessions and read status. The EPUB and PDF readers carry highlights, notes,
 quotes and bookmarks, and the EPUB reader adds contents, search, the Aa panel and
 cross-format follow. The audiobook mini dock on `/read` waits for the player.
+Administration shares `/settings`' frame, `SettingsShell`, which takes its
+navigation as data. Its eight sections are Sources, Maintenance, Metadata and
+Cleanup under Library; People, Integrations, Health and Logs under Server. A
+section with unsaved edits asks before any in-app navigation leaves it. A
+reader at `/admin` or the review queue gets one refusal line, with no sidebar
+or breadcrumb. The review queue (`/admin/cleanup/:kind`) takes Y, N and Space,
+an edited book title and an undo, and tallies the pass. `/logs`,
+`/admin/health` and `/settings/cleanup/:kind` redirect to their `/admin`
+homes, as on Dioxus.
 Stats has the streak hero with its goals, the period pills over the window band
 (tiles and their drill-in, reading clock, genre donut, standouts), the standing
 band (heatmap, books open and finished, monthly chart), the User / Library
@@ -177,9 +185,19 @@ shell provides it.
   status (`src/api/generated/omnibus.msw.ts`), and `src/testing/handlers.ts`
   adds the ones that need behaviour: paging headers, a password check, a journal
   that keeps what is posted, a Kindle send that answers `pending` and then
-  `sent`. Stories for the ported screens run against them, so their `play`
-  tests cover loading, empty, failing and success states, and the fixtures are
-  typed by the spec.
+  `sent`. `src/testing/adminHandlers.ts` does the same for the admin screens.
+  A story uses the generated handler itself for a one-route read (the library
+  folders, the worker feed, the task list, the cleanup counts and queue, the
+  health report) and for the cleanup detect route: it takes a function that is
+  read on every request, so a story can change the answer between reads, and
+  the detect one calls back instead of recording. The cleanup undo handler wraps
+  the generated one to record the log ids. Each other write handler records
+  what it received, and those over a setting or a list (the settings, accounts,
+  sessions, the relay, the keys) serve the new state on the next read; a cleanup
+  decision, an undo and a job are only recorded.
+  `adminHandlers()` is the default set for the sections. Stories for the ported
+  screens run against them, so their `play` tests cover loading, empty, failing
+  and success states, and the fixtures are typed by the spec.
 - **Docs:** every component gets a Docs page in Storybook, built from its
   stories, its TypeScript props and its doc comment.
 - **Forms** use react-hook-form with a zod resolver (`CredentialsSchema` on the
@@ -202,11 +220,14 @@ shell provides it.
   `engine`, `boot`, `sleep`, `loadHls` and `listen`, stats' `calendar`,
   `summary`, `picker`, `hero`, `goal`, `clock`, `donut`, `superlatives`,
   `tiles`, `drillIn`, `heatmap`, `readingNow`, `monthly`, `library` and
-  `composition`, and the chart builder's `chart`, `plot`, `notes`, `zoom` and
-  `tween`, plus the vendored files' parity test), the two stats pages'
-  refusal to refetch on window focus (against `msw/node`), plus the real route
-  table in `src/router.test.tsx`: every unported page, the settings redirects,
-  the layout split, the guest redirect and the redirects.
+  `composition`, the chart builder's `chart`, `plot`, `notes`, `zoom` and
+  `tween`, the admin screens' `sources`, `recentTasks`,
+  `workerLines`, `metadataOrder`, `users`, `smtp`, `integrations`, `health`
+  and `logs`, and the cleanup review's `review`, plus the vendored files'
+  parity test), the two stats pages' refusal to refetch on window focus
+  (against `msw/node`), plus the real route table in `src/router.test.tsx`:
+  the settings redirects, the layout split, the guest redirect, the admin
+  refusals and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI
   uploads each one's lcov to Codecov under the `frontend-js` flag.
 
@@ -232,4 +253,4 @@ Measured on one 16-core Linux box, dev profile, no sccache.
 - **No SSR.** The first paint is blank until the bundle loads, which undoes the
   server-drawn loaders rule 12 is built on.
 - **Not done:** Axum serving `dist/` with an SPA fallback, and REST parity for
-  the 142 server functions the Dioxus client calls instead.
+  the 129 server functions the Dioxus client calls instead.

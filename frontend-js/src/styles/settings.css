@@ -79,6 +79,14 @@
 .settings-content > * {
   min-width: 0;
 }
+.settings-content:has(
+  .ah-page,
+  .logs-page,
+  [data-testid="background-tasks-card"],
+  [data-testid="users-table"]
+) {
+  max-width: 1120px;
+}
 .settings-sidebar {
   display: flex;
   flex-direction: column;
@@ -141,7 +149,9 @@
   --lh: 1.1;
   font-size: 32px;
 }
-.settings-content > .card {
+.settings-content > .card,
+.settings-content .ah-card,
+.settings-content .logs-page > .card {
   background: none;
   border: 0;
   border-top: 1px solid var(--line-2);
@@ -150,6 +160,7 @@
 }
 .settings-content > .card h2,
 .settings-content > .card h3,
+.settings-content .logs-page > .card h3,
 .settings-content .tkx-title {
   --lh: 1.3;
   font-family: var(--sans);
@@ -162,6 +173,35 @@
   font-size: 0.875rem;
   margin: 0.3rem 0 0;
   max-width: 62ch;
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.9rem 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.setting-row:last-child {
+  border-bottom: 0;
+}
+.setting-row-text {
+  min-width: 0;
+}
+.setting-row-label {
+  color: var(--ink-0);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.setting-row-desc {
+  margin-top: 2px;
+  color: var(--ink-2);
+  font-size: 0.85rem;
+  max-width: 56ch;
+}
+.setting-row-control {
+  flex: none;
 }
 .table-scroll {
   max-width: 100%;
@@ -213,8 +253,9 @@
     color: var(--ink-1);
     font-weight: 400;
   }
+  /* Atrium's later `.atrium h2` clamp is what Dioxus renders here, not 28px. */
   .settings-section-head h2 {
-    font-size: 28px;
+    font-size: clamp(24px, 8vw, 32px);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -229,7 +270,36 @@
 .settings-content .users-table .mono {
   font-size: 11px;
 }
+
+.users-created {
+  white-space: nowrap;
+}
+
+/* On a phone the accounts table reads as a list, one block per person, with
+   the columns inline and the actions on a line of their own. This block must
+   stay before the base `.users-table td` rule below, which then wins on padding
+   and border: that is what Dioxus renders. */
 @media (max-width: 720px) {
+  [data-testid="users-table"] thead {
+    display: none;
+  }
+  [data-testid="users-table"],
+  [data-testid="users-table"] tbody,
+  [data-testid="users-table"] tr,
+  [data-testid="users-table"] td {
+    display: block;
+  }
+  [data-testid="users-table"] tr {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--line-2);
+  }
+  [data-testid="users-table"] tbody tr:last-child {
+    border-bottom: 0;
+  }
+  [data-testid="users-table"] td {
+    padding: 0.15rem 0;
+    border: 0;
+  }
   [data-testid="users-table"] td.users-col-actions {
     padding-top: 0.5rem;
     text-align: left;
@@ -237,6 +307,13 @@
   [data-testid="users-table"] .users-col-actions .btn {
     margin: 0 0.35rem 0.35rem 0;
   }
+}
+.users-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
 }
 .users-table {
   width: 100%;
@@ -269,12 +346,123 @@
   color: var(--ink-2);
   font-weight: 400;
 }
+.users-kindle {
+  color: var(--ink-1);
+}
 .users-col-actions {
   text-align: right;
   white-space: nowrap;
 }
 .users-col-actions .btn {
   margin-left: 0.35rem;
+}
+
+.users-chip,
+.users-chip-admin {
+  display: inline-block;
+  margin: 0 0.25rem 0.15rem 0;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: 999px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  color: var(--ink-1);
+}
+.users-chip-admin {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+  font-weight: 600;
+}
+.users-chip-none {
+  color: var(--ink-2);
+}
+.users-badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: 999px;
+  color: var(--ink-2);
+}
+.users-badge-locked {
+  color: var(--bad);
+  background: color-mix(in oklch, var(--bad) 14%, transparent);
+  margin-right: 0.4rem;
+}
+
+.users-perms {
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  padding: 0.6rem 0.8rem;
+}
+.users-perms legend {
+  font-size: 0.8rem;
+  color: var(--ink-2);
+  padding: 0 0.35rem;
+}
+.users-perm-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  cursor: pointer;
+}
+
+.users-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in oklch, black 62%, transparent);
+  backdrop-filter: blur(3px);
+  overscroll-behavior: contain;
+}
+.users-modal-card {
+  width: min(460px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px color-mix(in oklch, black 55%, transparent);
+  padding: 1.1rem 1.25rem;
+}
+.users-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.users-modal-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--ink-0);
+}
+.users-modal-close {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: -6px -6px -6px 0;
+  border-radius: 8px;
+  color: var(--ink-2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .users-modal-close:hover {
+    color: var(--ink-0);
+    background: var(--bg-2);
+  }
+}
+.users-modal-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .settings-form {
@@ -288,7 +476,8 @@
   flex-direction: column;
   gap: 0.4rem;
 }
-.settings-field label {
+.settings-field label,
+.settings-label {
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--ink-2);
@@ -355,6 +544,9 @@
   gap: 8px;
   color: var(--ink-2);
 }
+.users-modal-card > .del-body {
+  padding: 0;
+}
 .settings-layout .settings-actions {
   display: flex;
   flex-wrap: wrap;
@@ -369,6 +561,9 @@
 .settings-layout .settings-actions .settings-action-start,
 .settings-layout .settings-actions .settings-action-status {
   margin-right: auto;
+}
+.settings-layout .settings-actions .api-key-status {
+  margin: 0 auto 0 0;
 }
 .settings-field-error {
   margin: 0;
@@ -396,16 +591,5 @@
 @media (prefers-reduced-motion: reduce) {
   .settings-switch input[type="checkbox"].ld-unknown::after {
     animation: none;
-  }
-}
-@keyframes ld-knob {
-  0%,
-  100% {
-    transform: translateX(-3px);
-    opacity: 0.55;
-  }
-  50% {
-    transform: translateX(3px);
-    opacity: 0.9;
   }
 }

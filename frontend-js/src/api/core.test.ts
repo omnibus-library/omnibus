@@ -1,3 +1,4 @@
+import { QueryClient, queryOptions } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   avatarUrl,
@@ -6,6 +7,7 @@ import {
   bumpCoverBust,
   coverUrl,
   parseUserId,
+  replaceQueryData,
   resetImageBusts,
   thumbSrcSet,
   thumbUrl,
@@ -51,6 +53,37 @@ describe("cover cache-busting", () => {
     bumpCoverBust(uuid("other"));
 
     expect(coverUrl(uuid("untouched"))).toBe("/api/covers/untouched");
+  });
+});
+
+describe("replaceQueryData", () => {
+  const thing = (read: () => Promise<string>) =>
+    queryOptions({ queryKey: ["thing"], queryFn: read });
+
+  it("stores the answer in place of the cached read", async () => {
+    const client = new QueryClient();
+    const { queryKey } = thing(async () => "stale");
+    client.setQueryData(queryKey, "stale");
+
+    await replaceQueryData(client, queryKey, "answer");
+
+    expect(client.getQueryData(queryKey)).toBe("answer");
+  });
+
+  it("keeps an older read still in flight from landing over the answer", async () => {
+    const client = new QueryClient();
+    let reply: (value: string) => void = () => {};
+    const late = new Promise<string>((resolve) => {
+      reply = resolve;
+    });
+    const options = thing(() => late);
+    const inFlight = client.fetchQuery(options).catch(() => {});
+
+    await replaceQueryData(client, options.queryKey, "answer");
+    reply("stale");
+    await inFlight;
+
+    expect(client.getQueryData(options.queryKey)).toBe("answer");
   });
 });
 

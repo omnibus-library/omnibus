@@ -1,4 +1,4 @@
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { setupServer } from "msw/node";
@@ -101,22 +101,6 @@ describe("routes", () => {
     ).toBeInTheDocument();
   });
 
-  describe("unported pages", () => {
-    it.each([
-      ["/settings/cleanup/duplicates", "Cleanup review", "duplicates"],
-      ["/admin?section=logs", "Administration", "logs"],
-      ["/admin/cleanup/duplicates", "Cleanup review", "duplicates"],
-      ["/admin/health", "Server health", null],
-    ])("renders %s as %s with its parameters", async (path, title, param) => {
-      renderRoute(path);
-
-      expect(
-        await screen.findByRole("heading", { level: 1, name: title }),
-      ).toBeInTheDocument();
-      if (param) expect(screen.getByText(param)).toBeInTheDocument();
-    });
-  });
-
   describe("ported pages", () => {
     it("renders /settings as the settings page, not a stub", async () => {
       renderRoute("/settings");
@@ -200,6 +184,117 @@ describe("routes", () => {
         }),
       ).toBeInTheDocument();
     });
+
+    it("renders the cleanup review at /admin/cleanup/tag, not a stub", async () => {
+      renderRoute("/admin/cleanup/tag");
+
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "Review tags" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+
+    it("renders an unknown cleanup kind as a notice, not a stub", async () => {
+      renderRoute("/admin/cleanup/duplicates");
+
+      expect(
+        await screen.findByText("Unknown cleanup kind."),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+
+    it("renders the administration shell at /admin?section=people, not a stub", async () => {
+      renderRoute("/admin?section=people");
+
+      expect(
+        await screen.findByRole("heading", {
+          level: 1,
+          name: "Administration",
+        }),
+      ).toBeInTheDocument();
+      expect(
+        await screen.findByRole("heading", { level: 2, name: "People" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("administration", () => {
+    const READER: User = { ...ADA, isAdmin: false };
+
+    it.each(["/admin", "/logs", "/admin/health"])(
+      "refuses a reader at %s without the admin sidebar",
+      async (path) => {
+        renderRoute(path, READER);
+
+        expect(await screen.findByTestId("admin-forbidden")).toHaveTextContent(
+          "Administration is only open to server administrators.",
+        );
+        expect(
+          screen.getByRole("heading", { level: 1, name: "Administration" }),
+        ).toBeInTheDocument();
+        expect(
+          screen.queryByRole("navigation", { name: "Administration sections" }),
+        ).not.toBeInTheDocument();
+        expect(
+          screen.queryByTestId("admin-nav-people"),
+        ).not.toBeInTheDocument();
+      },
+    );
+
+    it("refuses a reader at /admin/cleanup/tag without the admin chrome", async () => {
+      renderRoute("/admin/cleanup/tag", READER);
+
+      expect(
+        await screen.findByTestId("cleanup-review-forbidden"),
+      ).toHaveTextContent(
+        "Administrator access is required to review library cleanup.",
+      );
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Review tags" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("navigation", { name: "breadcrumb" }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId("cleanup-kindline")).not.toBeInTheDocument();
+    });
+
+    it("waits on the session loader, not the shell, while the session is pending", async () => {
+      const client = new QueryClient();
+      void client.fetchQuery({
+        ...meQuery,
+        queryFn: () => new Promise<never>(() => {}),
+      });
+      render(
+        <QueryClientProvider client={client}>
+          <RouterProvider
+            router={createMemoryRouter(routes, {
+              initialEntries: ["/admin"],
+            })}
+          />
+        </QueryClientProvider>,
+      );
+
+      expect(await screen.findByText("Opening your library")).toBeVisible();
+      expect(screen.queryByTestId("admin-layout")).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ["/logs", "/admin", "?section=logs"],
+      ["/admin/health", "/admin", "?section=health"],
+      ["/settings/cleanup/tag", "/admin/cleanup/tag", ""],
+    ])(
+      "sends %s to %s%s in place of the old entry",
+      async (from, pathname, search) => {
+        const { router } = renderRoute(from);
+
+        await waitFor(() =>
+          expect(router.state.location.pathname).toBe(pathname),
+        );
+        expect(router.state.location.search).toBe(search);
+        expect(router.state.historyAction).toBe("REPLACE");
+      },
+    );
   });
 
   it.each([
@@ -423,15 +518,6 @@ describe("routes", () => {
       ).not.toBeInTheDocument();
       vi.restoreAllMocks();
     });
-  });
-
-  it("redirects /logs to the administration logs section", async () => {
-    const { router } = renderRoute("/logs");
-
-    await waitFor(() =>
-      expect(router.state.location.search).toBe("?section=logs"),
-    );
-    expect(router.state.location.pathname).toBe("/admin");
   });
 
   it("redirects /account to settings", async () => {

@@ -33,8 +33,9 @@ export const refreshMe = (client: QueryClient) =>
 export const patchMe = (client: QueryClient, change: (user: User) => User) =>
   client.setQueryData(meQuery.queryKey, (user) => user && change(user));
 
-/** Makes `user` the session, dropping every answer cached for whoever came before. */
+/** Makes `user` the session, dropping every answer and typed write cached for whoever came before. */
 export function startSession(client: QueryClient, user: User) {
+  client.getMutationCache().clear();
   client.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
   client.setQueryData(meQuery.queryKey, user);
 }
@@ -44,6 +45,21 @@ export function useCurrentUser(): User {
   const { data } = useQuery(meQuery);
   if (!data) throw new Error("useCurrentUser rendered outside RequireAuth");
   return data;
+}
+
+/** Leaves the session: to /login, with every cached answer and typed write dropped. */
+export function endSession(
+  client: QueryClient,
+  navigate: (to: string, options: { replace: true }) => void,
+) {
+  navigate("/login", { replace: true });
+  // A read still in flight would sign you back in.
+  void client.cancelQueries({ queryKey: meQuery.queryKey });
+  // Null, not cleared: the gate unmounts the signed-in screens before
+  // anything under it can read a missing user.
+  client.setQueryData(meQuery.queryKey, null);
+  client.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
+  client.getMutationCache().clear();
 }
 
 /** How long a sign-out waits on `beforeLogout` before it goes ahead without it. */
@@ -62,13 +78,7 @@ export function useSignOut(beforeLogout: () => Promise<void>) {
       ]);
       await logout();
     },
-    onSuccess: () => {
-      navigate("/login", { replace: true });
-      // Null, not cleared: the gate unmounts the signed-in screens before
-      // anything under it can read a missing user.
-      queryClient.setQueryData(meQuery.queryKey, null);
-      queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
-    },
+    onSuccess: () => endSession(queryClient, navigate),
   });
 }
 

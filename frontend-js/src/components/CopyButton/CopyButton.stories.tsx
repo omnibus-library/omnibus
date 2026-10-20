@@ -79,6 +79,31 @@ export const CopiesThroughASelectedFieldWithoutTheClipboardApi: Story = {
   },
 };
 
+export const CopiesThroughASelectedFieldWhenTheClipboardApiRefuses: Story = {
+  beforeEach() {
+    written.length = 0;
+    return stubClipboard(
+      async () => {
+        throw new Error("denied");
+      },
+      () => {
+        written.push(document.querySelector("textarea")?.value ?? "");
+        return true;
+      },
+    );
+  },
+  play: async ({ canvas, userEvent, args }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Copy URL" }));
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("copy-url-feedback")).toHaveTextContent(
+        "Copied",
+      ),
+    );
+    await expect(written).toEqual([args.text]);
+  },
+};
+
 export const SaysWhenTheCopyFailed: Story = {
   beforeEach: () =>
     stubClipboard(

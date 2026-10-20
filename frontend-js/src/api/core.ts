@@ -1,3 +1,4 @@
+import type { DataTag, QueryClient, QueryKey } from "@tanstack/react-query";
 import { z } from "zod";
 
 export type BookUuid = string & { readonly __brand: "BookUuid" };
@@ -123,6 +124,16 @@ export async function send(
   });
   if (!res.ok) throw failure({ status: res.status, data: await res.text() });
   return res;
+}
+
+/** Stores a write's answer as the cached read, after cancelling any read in flight so its older reply cannot land over it. */
+export async function replaceQueryData<TData, TKey extends QueryKey>(
+  client: QueryClient,
+  queryKey: DataTag<TKey, TData, Error>,
+  data: TData,
+): Promise<void> {
+  await client.cancelQueries({ queryKey });
+  client.setQueryData<TData>(queryKey, data);
 }
 
 // orval emits no validator for a nullable or inline-array 200, so these reads parse here.

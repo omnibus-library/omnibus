@@ -62,7 +62,7 @@ h1 {
   border: 0;
 }
 .subtitle {
-  color: #94a3b8;
+  color: var(--ink-2);
   margin-bottom: 1rem;
 }
 
