@@ -1665,15 +1665,35 @@ html, body { overscroll-behavior: none; }
   padding: 16px 18px; border: 1px solid var(--line-2); border-radius: 12px;
   background: color-mix(in oklch, var(--bg-1) 72%, transparent);
 }
+/* The head row: the label, and the card's two icon tools at the far right.
+   The tools' 32px hit area hangs into the card's padding rather than
+   pushing the stars down. */
+.bd-review-mine-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: -8px -10px -6px 0;
+}
 .bd-review-mine-k { color: var(--ink-2); }
+.bd-review-tools { display: flex; align-items: center; gap: 2px; }
+.bd-review-tool {
+  display: inline-grid; place-items: center; flex: 0 0 auto;
+  width: 32px; height: 32px; padding: 0;
+  border: 0; border-radius: 8px; background: transparent;
+  color: var(--ink-3); cursor: pointer;
+  transition: color .15s, background-color .15s;
+}
+.bd-review-tool svg { display: block; }
+.bd-review-tool:hover {
+  color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+}
+.bd-review-tool-danger:hover {
+  color: var(--bad);
+  background: color-mix(in oklch, var(--bad) 12%, transparent);
+}
+.bd-review-tool:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; color: var(--ink-0); }
 .bd-review-starsline { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .bd-review-starsmeta { font-size: 11px; color: var(--ink-3); }
 .bd-review-mine-body { display: flex; flex-direction: column; gap: 12px; }
-.bd-review-spoilerrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.bd-review-spoiler {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 12.5px; color: var(--ink-2); cursor: pointer;
-}
 /* Your notes never leave your account, so they read as set apart: dashed,
    tinted, and labelled private above the text. */
 .bd-review-notes {
@@ -1685,9 +1705,12 @@ html, body { overscroll-behavior: none; }
   margin-bottom: 6px; font-size: 10px; letter-spacing: .08em;
   text-transform: uppercase; color: var(--accent);
 }
-.bd-review-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-
 .bd-review-composer { display: flex; flex-direction: column; gap: 16px; }
+/* Tucked under the public field it qualifies. */
+.bd-review-spoiler {
+  display: inline-flex; align-items: center; gap: 8px; align-self: flex-start;
+  margin-top: -6px; font-size: 12.5px; color: var(--ink-2); cursor: pointer;
+}
 .bd-review-field-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
 .bd-review-field-private { padding-top: 14px; border-top: 1px dashed var(--line-2); }
 .bd-review-private-tag { font-size: 10.5px; color: var(--accent); }

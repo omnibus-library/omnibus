@@ -16,8 +16,9 @@ export class ReviewsComponent extends BaseComponent {
   readonly starsMeta: Locator;
   readonly myText: Locator;
   readonly myNotes: Locator;
-  readonly spoilerCheckbox: Locator;
-  /** Its label reads Write review or Edit review with the card's state. */
+  /** Any checkbox on your card, to show read mode carries none. */
+  readonly myReviewCheckboxes: Locator;
+  /** The pencil; its name reads Write review or Edit review with the card's state. */
   readonly writeButton: Locator;
   readonly deleteButton: Locator;
   readonly deleteDialog: Locator;
@@ -26,6 +27,7 @@ export class ReviewsComponent extends BaseComponent {
   readonly composer: Locator;
   readonly textEditor: Locator;
   readonly notesEditor: Locator;
+  readonly spoilerCheckbox: Locator;
   readonly composerError: Locator;
   private readonly saveButton: Locator;
 
@@ -51,9 +53,7 @@ export class ReviewsComponent extends BaseComponent {
     this.starsMeta = page.getByTestId("review-stars-meta");
     this.myText = page.getByTestId("my-review-text");
     this.myNotes = page.getByTestId("my-review-notes");
-    this.spoilerCheckbox = this.myReview.getByRole("checkbox", {
-      name: "Contains spoilers",
-    });
+    this.myReviewCheckboxes = this.myReview.getByRole("checkbox");
     this.writeButton = page.getByTestId("review-write");
     this.deleteButton = this.myReview.getByRole("button", {
       name: "Delete review",
@@ -72,6 +72,9 @@ export class ReviewsComponent extends BaseComponent {
     });
     this.notesEditor = this.composer.getByRole("textbox", {
       name: "Private notes",
+    });
+    this.spoilerCheckbox = this.composer.getByRole("checkbox", {
+      name: "Contains spoilers",
     });
     this.composerError = this.composer.getByRole("alert");
     this.saveButton = this.composer.getByRole("button", {

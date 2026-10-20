@@ -3,6 +3,7 @@
 
 use omnibus_shared::{AttributedReview, BookReviews, Review, ReviewBucket, ReviewPatch};
 
+use super::composer::{save_patch, ComposerSeed};
 use super::mine::{rated_ago, rendered, stars_meta};
 use super::others::{needs_read_more, split_others, spoiler_veiled};
 use super::reviews_kicker;
@@ -89,6 +90,44 @@ fn text_patch_clears_a_field_emptied_to_whitespace() {
 fn text_patch_is_empty_when_nothing_changed() {
     assert_eq!(text_patch("a", "b", "a", "b"), ReviewPatch::default());
     assert_eq!(text_patch("", "", " ", ""), ReviewPatch::default());
+}
+
+fn seed(body: &str, notes: &str, spoiler: bool) -> ComposerSeed {
+    ComposerSeed {
+        body: body.into(),
+        notes: notes.into(),
+        spoiler,
+    }
+}
+
+#[test]
+fn save_patch_sends_the_spoiler_flag_with_the_text_only_when_it_moved() {
+    let patch = save_patch(&seed("Loved it", "", false), "Loved it, again", "", true);
+    assert_eq!(patch.body_md, Some(Some("Loved it, again".into())));
+    assert_eq!(patch.spoiler, Some(true));
+
+    let kept = save_patch(&seed("Loved it", "", true), "Loved it, again", "", true);
+    assert_eq!(
+        kept.spoiler, None,
+        "an unchanged flag stays out of the patch"
+    );
+}
+
+// A flag flipped on its own is a change, so Save sends it rather than closing.
+#[test]
+fn save_patch_counts_a_spoiler_flip_alone_as_a_change() {
+    let patch = save_patch(&seed("Loved it", "", false), "Loved it", "", true);
+    assert_eq!(
+        patch,
+        ReviewPatch {
+            spoiler: Some(true),
+            ..Default::default()
+        }
+    );
+    assert_eq!(
+        save_patch(&seed("Loved it", "", true), "Loved it", "", true),
+        ReviewPatch::default()
+    );
 }
 
 #[test]
@@ -274,7 +313,7 @@ mod render {
     use omnibus_shared::ReviewSummary;
 
     use super::*;
-    use crate::pages::book_detail::reviews::composer::{BdReviewComposer, ComposerSeed};
+    use crate::pages::book_detail::reviews::composer::BdReviewComposer;
     use crate::pages::book_detail::reviews::{BdReviewsJumpLink, BdReviewsSection, ReviewsCtx};
     use crate::pages::book_detail::rule_facts::RuleFactsSaved;
     use crate::pages::book_detail::FeedState;
@@ -369,7 +408,7 @@ mod render {
     fn my_review_offers_to_write_one_when_there_is_none() {
         let html = render_in_vdom(|| section(Some(empty()), FeedState::Loaded, false));
         assert!(html.contains("Not rated yet"), "{html}");
-        assert!(html.contains("Write review"), "{html}");
+        assert!(html.contains("aria-label=\"Write review\""), "{html}");
         assert!(!html.contains("data-testid=\"review-delete\""), "{html}");
         assert!(!html.contains("data-testid=\"review-spoiler\""), "{html}");
         assert!(
@@ -379,19 +418,28 @@ mod render {
     }
 
     #[test]
-    fn my_review_shows_its_text_spoiler_box_and_private_notes() {
+    fn my_review_shows_its_text_and_private_notes_under_its_icon_tools() {
         let html = render_in_vdom(|| section(Some(written()), FeedState::Loaded, false));
         assert!(html.contains("<p>Loved the ending</p>"), "{html}");
-        assert!(html.contains("data-testid=\"review-spoiler\""), "{html}");
-        assert!(html.contains("checked"), "{html}");
         assert!(html.contains("data-testid=\"my-review-notes\""), "{html}");
         assert!(html.contains("only you can see these"), "{html}");
-        assert!(html.contains("Edit review"), "{html}");
-        assert!(html.contains("data-testid=\"review-delete\""), "{html}");
+        assert!(html.contains("aria-label=\"Edit review\""), "{html}");
+        assert!(html.contains("aria-label=\"Delete review\""), "{html}");
+        // The pencil sits left of the trash, both in the card's head row.
+        let (head, _) = html
+            .split_once("bd-review-starsline")
+            .expect("the stars follow the head");
+        let pencil = head.find("data-testid=\"review-write\"").expect("pencil");
+        let trash = head.find("data-testid=\"review-delete\"").expect("trash");
+        assert!(pencil < trash, "{html}");
         assert!(
             html.contains("aria-label=\"Clear your 4.5-star rating\""),
             "{html}"
         );
+        // The flag is set in the editor; read mode marks nothing.
+        assert!(!html.contains("data-testid=\"review-spoiler\""), "{html}");
+        assert!(!html.contains("type=\"checkbox\""), "{html}");
+        assert!(!html.contains("bd-review-actions"), "{html}");
     }
 
     #[test]
@@ -464,10 +512,7 @@ mod render {
                 BdReviewComposer {
                     uuid: "book-1".to_string(),
                     ctx: ctx(Some(written()), FeedState::Loaded, false),
-                    seed: ComposerSeed {
-                        body: "Loved the ending".into(),
-                        notes: "Reread part two".into(),
-                    },
+                    seed: seed("Loved the ending", "Reread part two", true),
                     open: Signal::new(true),
                 }
             }
@@ -481,5 +526,14 @@ mod render {
         assert!(html.contains("review-body-insert-highlight"), "{html}");
         assert!(html.contains("review-notes-insert-highlight"), "{html}");
         assert!(html.contains("Save review"), "{html}");
+        // The spoiler flag lives here, under the public field, seeded on.
+        let (before_notes, _) = html
+            .split_once("data-testid=\"review-notes-field\"")
+            .expect("the notes field renders");
+        assert!(
+            before_notes.contains("data-testid=\"review-spoiler\""),
+            "{html}"
+        );
+        assert!(before_notes.contains("checked"), "{html}");
     }
 }

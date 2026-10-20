@@ -1,11 +1,13 @@
-//! Your review card, always first in the section: the one-tap stars and their
-//! status line, your rendered text with its spoiler checkbox, your private
-//! notes (marked private), Write/Edit to open the composer, and Delete review
-//! behind the app's confirm modal. Only this card carries edit controls.
+//! Your review card, always first in the section: a head row with the pencil
+//! (write or edit, opening the composer) and the trash can (delete, behind the
+//! app's confirm modal), the one-tap stars and their status line, then your
+//! rendered text and your private notes, marked private. Only this card
+//! carries edit controls, and they are icons so the card reads as the review.
 
 use dioxus::prelude::*;
 use omnibus_shared::Review;
 
+use crate::components::shelf_facets::pencil_glyph;
 use crate::components::{
     confirm_modal_body, fmt_stars, ConfirmModal, ConfirmModalAction, ConfirmModalTone,
 };
@@ -42,9 +44,39 @@ pub(super) fn BdMyReview(
     let pick_uuid = uuid.clone();
     let pick_url = server_url.clone();
 
+    let write_label = if has_writing {
+        "Edit review"
+    } else {
+        "Write review"
+    };
+
     rsx! {
         section { class: "bd-review-mine", "data-testid": "my-review", aria_label: "Your review",
-            div { class: "label bd-review-mine-k", "Your review" }
+            div { class: "bd-review-mine-head",
+                div { class: "label bd-review-mine-k", "Your review" }
+                div { class: "bd-review-tools",
+                    // An open editor already is what the pencil would open.
+                    if !composer_open() {
+                        button {
+                            r#type: "button",
+                            class: "bd-review-tool",
+                            "data-testid": "review-write",
+                            aria_label: "{write_label}",
+                            title: "{write_label}",
+                            onclick: move |_| composer_open.set(true),
+                            {pencil_glyph()}
+                        }
+                    }
+                    // Mounted even with nothing to delete: the delete's own
+                    // task re-reads the household after the card empties.
+                    DeleteReviewButton {
+                        uuid: uuid.clone(),
+                        ctx,
+                        shown: mine.is_some(),
+                        confirm: delete_confirm,
+                    }
+                }
+            }
             div { class: "bd-review-starsline",
                 BdStarPicker {
                     value: stars,
@@ -62,30 +94,7 @@ pub(super) fn BdMyReview(
                 if composing_inline {
                     BdReviewComposer { uuid: uuid.clone(), ctx, seed: seed.clone(), open: composer_open }
                 } else {
-                    MyReviewWriting {
-                        uuid: uuid.clone(),
-                        ctx,
-                        body_html,
-                        notes_html,
-                        spoiler: mine.as_ref().is_some_and(|r| r.spoiler),
-                    }
-                    div { class: "bd-review-actions",
-                        button {
-                            r#type: "button",
-                            class: "btn sm",
-                            "data-testid": "review-write",
-                            onclick: move |_| composer_open.set(true),
-                            if has_writing { "\u{270e} Edit review" } else { "\u{270e} Write review" }
-                        }
-                        // Mounted even with nothing to delete: the delete's own
-                        // task re-reads the household after the card empties.
-                        DeleteReviewButton {
-                            uuid: uuid.clone(),
-                            ctx,
-                            shown: mine.is_some(),
-                            confirm: delete_confirm,
-                        }
-                    }
+                    MyReviewWriting { body_html, notes_html }
                 }
             }
             // Deliberately not click-outside-dismissable: a stray click must
@@ -101,42 +110,17 @@ pub(super) fn BdMyReview(
     }
 }
 
-/// Your rendered text with its spoiler checkbox, then your private notes,
-/// marked as private. Either is absent until written.
+/// Your rendered text, then your private notes, marked as private. Either is
+/// absent until written. The spoiler flag is set in the composer, so read
+/// mode carries no marker of it.
 #[component]
-fn MyReviewWriting(
-    uuid: String,
-    ctx: ReviewsCtx,
-    body_html: Option<String>,
-    notes_html: Option<String>,
-    spoiler: bool,
-) -> Element {
-    let server_url = use_server_url();
-    let failed = (ctx.failure)() == Some(QuickWrite::Spoiler);
+fn MyReviewWriting(body_html: Option<String>, notes_html: Option<String>) -> Element {
     rsx! {
         if let Some(html) = body_html {
             div {
                 class: "bd-journal-entry-body bd-review-text",
                 "data-testid": "my-review-text",
                 dangerous_inner_html: "{html}",
-            }
-            div { class: "bd-review-spoilerrow",
-                label { class: "bd-review-spoiler", "data-testid": "review-spoiler",
-                    input {
-                        r#type: "checkbox",
-                        checked: spoiler,
-                        oninput: move |e| {
-                            let on = e.value() == "true";
-                            writes::set_spoiler(ctx, uuid.clone(), server_url.clone(), on)
-                        },
-                    }
-                    "Contains spoilers"
-                }
-                if failed {
-                    span { class: "mono bd-journal-error", role: "alert", "data-testid": "review-spoiler-error",
-                        "Couldn\u{2019}t save \u{2014} try again"
-                    }
-                }
             }
         }
         if let Some(html) = notes_html {
@@ -195,7 +179,7 @@ pub(super) fn rated_ago(now: i64, at: i64) -> String {
     }
 }
 
-/// Delete review and its confirm modal. The delete fires only from the
+/// The trash can and its confirm modal. The delete fires only from the
 /// modal's own button and lands only on success; a refusal keeps the modal
 /// open with the reason, and your review stays as it was. `shown` hides the
 /// button once there is nothing to delete.
@@ -237,13 +221,15 @@ fn DeleteReviewButton(
         if shown {
             button {
                 r#type: "button",
-                class: "btn ghost sm bd-journal-delete",
+                class: "bd-review-tool bd-review-tool-danger",
                 "data-testid": "review-delete",
+                aria_label: "Delete review",
+                title: "Delete review",
                 onclick: move |_| {
                     error.set(None);
                     confirm.set(true);
                 },
-                "Delete review"
+                {trash_glyph()}
             }
         }
         if confirm() {
@@ -287,6 +273,21 @@ fn DeleteReviewButton(
                     ],
                 )}
             }
+        }
+    }
+}
+
+/// Trash-can icon for the delete tool, stroked like the pencil beside it.
+fn trash_glyph() -> Element {
+    rsx! {
+        svg {
+            width: "15", height: "15", view_box: "0 0 24 24", fill: "none",
+            stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
+            "aria-hidden": "true",
+            polyline { points: "3 6 5 6 21 6" }
+            path { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }
+            line { x1: "10", y1: "11", x2: "10", y2: "17" }
+            line { x1: "14", y1: "11", x2: "14", y2: "17" }
         }
     }
 }

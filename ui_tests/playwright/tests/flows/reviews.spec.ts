@@ -46,7 +46,7 @@ test.describe("book reviews", () => {
       await expect(section.kicker).toHaveText("No reviews yet");
       await expect(section.starsGroup).toBeVisible();
       await expect(section.starsMeta).toHaveText("Not rated yet");
-      await expect(section.writeButton).toHaveText(/Write review/);
+      await expect(section.writeButton).toHaveAccessibleName("Write review");
       await expect(section.deleteButton).toHaveCount(0);
       await expect(section.noOtherReviewsMessage).toBeVisible();
     });
@@ -84,12 +84,18 @@ test.describe("book reviews", () => {
       await expect(section.clearButton(4.5)).toBeVisible();
     });
 
-    await test.step("write the review and its private notes", async () => {
+    await test.step("write the review, its private notes and its spoiler flag", async () => {
       await section.openComposer();
+      await expect(section.writeButton).toHaveCount(0);
       await section.writeText(REVIEW_TEXT);
       await section.writeNotes(NOTES_TEXT);
+      await section.toggleSpoiler();
       await expectMutation(
-        reviews.update(uuid, { body_md: REVIEW_TEXT, notes_md: NOTES_TEXT }),
+        reviews.update(uuid, {
+          body_md: REVIEW_TEXT,
+          notes_md: NOTES_TEXT,
+          spoiler: true,
+        }),
         () => section.save(),
       );
     });
@@ -99,15 +105,14 @@ test.describe("book reviews", () => {
       await expect(section.myText).toHaveText(REVIEW_TEXT);
       await expect(section.myNotes).toContainText(NOTES_TEXT);
       await expect(section.myNotes).toContainText("only you can see these");
-      await expect(section.writeButton).toHaveText(/Edit review/);
+      await expect(section.writeButton).toHaveAccessibleName("Edit review");
+      await expect(section.deleteButton).toBeVisible();
       await expect(section.kicker).toHaveText("1 review · 1 rating");
     });
 
-    await test.step("mark the review as containing spoilers", async () => {
-      await expectMutation(reviews.update(uuid, { spoiler: true }), () =>
-        section.toggleSpoiler(),
-      );
-      await expect(section.spoilerCheckbox).toBeChecked();
+    // The flag is set in the editor alone; read mode shows no box for it.
+    await test.step("check the card shows no spoiler checkbox", async () => {
+      await expect(section.myReviewCheckboxes).toHaveCount(0);
     });
 
     await test.step("check the server stored every field", async () => {
@@ -119,6 +124,47 @@ test.describe("book reviews", () => {
           notes_md: NOTES_TEXT,
           spoiler: true,
         });
+    });
+  });
+
+  test("flag an existing review as containing spoilers from the editor", async ({
+    bookDetailPage,
+    request,
+    presetReview,
+    storedReview,
+    expectMutation,
+  }) => {
+    const { reviews: section } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, REVIEW_BOOK.title);
+
+    await test.step("review the book through the api", async () => {
+      await presetReview(uuid, { body_md: REVIEW_TEXT, spoiler: false });
+    });
+
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(uuid);
+    });
+
+    // A flag flipped on its own is still a change, so Save sends just it.
+    await test.step("tick the spoiler flag alone and save", async () => {
+      await section.openComposer();
+      await expect(section.spoilerCheckbox).not.toBeChecked();
+      await section.toggleSpoiler();
+      await expectMutation(reviews.update(uuid, { spoiler: true }), () =>
+        section.save(),
+      );
+    });
+
+    await test.step("check the server stored the flag and kept the text", async () => {
+      await expect(section.composer).toHaveCount(0);
+      await expect
+        .poll(() => storedReview(uuid), { message: "stored review" })
+        .toMatchObject({ body_md: REVIEW_TEXT, spoiler: true });
+    });
+
+    await test.step("check the editor reopens with the flag ticked", async () => {
+      await section.openComposer();
+      await expect(section.spoilerCheckbox).toBeChecked();
     });
   });
 

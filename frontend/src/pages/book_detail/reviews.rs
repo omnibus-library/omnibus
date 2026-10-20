@@ -35,11 +35,11 @@ mod tests;
 
 pub(super) use summary::BdReviewsJumpLink;
 
-/// Which of your quick writes last failed, so its own line can say so.
+/// Which of your quick writes last failed, so its own line can say so. The
+/// spoiler flag rides the composer's Save, so stars are the only one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum QuickWrite {
     Stars,
-    Spoiler,
 }
 
 /// The Reviews section's live state, shared by the section and the title
@@ -59,7 +59,7 @@ pub(super) struct ReviewsCtx {
     refreshing: Signal<bool>,
     /// That re-read failed, so they predate your last stars change.
     refresh_failed: Signal<bool>,
-    /// The last stars or spoiler write the server refused.
+    /// The last stars write the server refused.
     failure: Signal<Option<QuickWrite>>,
     /// The page's smart-shelf counter; a stars change may move the book.
     saved: RuleFactsSaved,

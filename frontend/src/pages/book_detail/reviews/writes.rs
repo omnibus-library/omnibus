@@ -1,10 +1,11 @@
 //! Every write to your review, each explicit about its four fallbacks.
 //!
-//! - **Stars / spoiler** ([`pick_stars`], [`set_spoiler`]): drawn at once,
-//!   put back and flagged on [`ReviewsCtx::failure`] if refused. A stars
-//!   change then re-reads the household, whose summary and order it moved.
-//! - **Text and notes** ([`save_text`]): not optimistic, because the rendered
-//!   Markdown comes from the server; the composer holds the draft until then.
+//! - **Stars** ([`pick_stars`]): drawn at once, put back and flagged on
+//!   [`ReviewsCtx::failure`] if refused, then the household is re-read, whose
+//!   summary and order the change moved.
+//! - **Text, notes and the spoiler flag** ([`save_text`]): one patch from the
+//!   composer's Save, not optimistic, because the rendered Markdown comes from
+//!   the server; the composer holds the draft until then.
 //! - **Delete** ([`delete`]): confirmed first, applied on success only.
 //!
 //! No client cache holds reviews (web reads through server functions, mobile
@@ -122,15 +123,6 @@ pub(super) fn pick_stars(ctx: ReviewsCtx, uuid: String, server_url: String, pick
     );
 }
 
-/// Flag (or unflag) your public text as containing spoilers.
-pub(super) fn set_spoiler(ctx: ReviewsCtx, uuid: String, server_url: String, spoiler: bool) {
-    let patch = ReviewPatch {
-        spoiler: Some(spoiler),
-        ..Default::default()
-    };
-    quick_write(ctx, (uuid, server_url), patch, QuickWrite::Spoiler);
-}
-
 /// A write the client can draw before the server answers. The server's answer
 /// replaces the drawn one; a refusal puts the previous review back.
 fn quick_write(
@@ -170,8 +162,8 @@ fn quick_write(
     });
 }
 
-/// Save the composer's text and notes. The composer stays open until this
-/// returns, and a refusal leaves its draft in place for another try.
+/// Save the composer's text, notes and spoiler flag. The composer stays open
+/// until this returns, and a refusal leaves its draft in place for another try.
 pub(super) async fn save_text(
     ctx: ReviewsCtx,
     uuid: &str,

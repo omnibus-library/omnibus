@@ -1,7 +1,8 @@
 //! The review composer: the journal's Markdown editor twice over, once for the
-//! public review text and once for your private notes, each with the
-//! formatting toolbar, image upload and insert-from-highlights. Text saves on
-//! Save only, as one patch of the fields that changed.
+//! public review text (with the Contains spoilers flag under it) and once for
+//! your private notes, each with the formatting toolbar, image upload and
+//! insert-from-highlights. Everything saves on Save only, as one patch of the
+//! fields that changed.
 
 use dioxus::prelude::*;
 use omnibus_shared::{Review, ReviewPatch};
@@ -15,11 +16,13 @@ use crate::use_server_url;
 
 use super::{writes, ReviewsCtx};
 
-/// What the composer opens with: your saved text and notes, as Markdown.
+/// What the composer opens with: your saved text and notes, as Markdown, and
+/// your spoiler flag.
 #[derive(Clone, PartialEq)]
 pub(super) struct ComposerSeed {
     pub(super) body: String,
     pub(super) notes: String,
+    pub(super) spoiler: bool,
 }
 
 impl ComposerSeed {
@@ -28,12 +31,28 @@ impl ComposerSeed {
         Self {
             body: mine.and_then(|r| r.body_md.clone()).unwrap_or_default(),
             notes: mine.and_then(|r| r.notes_md.clone()).unwrap_or_default(),
+            spoiler: mine.is_some_and(|r| r.spoiler),
         }
     }
 }
 
+/// The patch Save sends: the changed text fields, plus the spoiler flag only
+/// when it moved. Empty when nothing changed, which just closes the composer.
+pub(super) fn save_patch(
+    seed: &ComposerSeed,
+    body: &str,
+    notes: &str,
+    spoiler: bool,
+) -> ReviewPatch {
+    ReviewPatch {
+        spoiler: (spoiler != seed.spoiler).then_some(spoiler),
+        ..writes::text_patch(&seed.body, &seed.notes, body, notes)
+    }
+}
+
 /// The two-field composer. Cancel drops the draft; Save sends the changed
-/// fields, closes on success, and keeps the draft with the reason on failure.
+/// fields and flag, closes on success, and keeps the draft with the reason on
+/// failure.
 #[component]
 pub(super) fn BdReviewComposer(
     uuid: String,
@@ -44,6 +63,7 @@ pub(super) fn BdReviewComposer(
     let server_url = use_server_url();
     let body = use_signal(|| seed.body.clone());
     let notes = use_signal(|| seed.notes.clone());
+    let mut spoiler = use_signal(|| seed.spoiler);
     let mut saving = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
     let body_highlights = use_highlights_insert_state();
@@ -56,7 +76,7 @@ pub(super) fn BdReviewComposer(
         if saving() {
             return;
         }
-        let patch = writes::text_patch(&seed.body, &seed.notes, &body(), &notes());
+        let patch = save_patch(&seed, &body(), &notes(), spoiler());
         if patch == ReviewPatch::default() {
             open.set(false);
             return;
@@ -83,6 +103,14 @@ pub(super) fn BdReviewComposer(
                 body,
                 error,
                 highlights: body_highlights,
+            }
+            label { class: "bd-review-spoiler", "data-testid": "review-spoiler",
+                input {
+                    r#type: "checkbox",
+                    checked: spoiler(),
+                    oninput: move |e| spoiler.set(e.value() == "true"),
+                }
+                "Contains spoilers"
             }
             ReviewField {
                 field: ReviewFieldKind::Notes,
