@@ -220,3 +220,39 @@ fn ebook_convert_status_default_is_the_unconfigured_path_lookup() {
     assert_eq!(d.path, DEFAULT_EBOOK_CONVERT_BIN);
     assert_eq!(d.source, "path");
 }
+
+fn two_libraries() -> Settings {
+    Settings {
+        ebook_library_path: Some("/lib/ebooks".into()),
+        audiobook_library_path: Some("/lib/audiobooks".into()),
+        scan_interval_hours: None,
+    }
+}
+
+#[test]
+fn precedence_library_path_resolves_ebook() {
+    let path = precedence_library_path(&two_libraries(), "ebook").unwrap();
+    assert_eq!(path.as_deref(), Some("/lib/ebooks"));
+}
+
+#[test]
+fn precedence_library_path_resolves_audiobook() {
+    let path = precedence_library_path(&two_libraries(), "audiobook").unwrap();
+    assert_eq!(path.as_deref(), Some("/lib/audiobooks"));
+}
+
+#[test]
+fn precedence_library_path_returns_none_for_an_unconfigured_path() {
+    let path = precedence_library_path(&Settings::default(), "ebook").unwrap();
+    assert_eq!(path, None);
+}
+
+#[test]
+fn precedence_library_path_rejects_an_unrecognized_key() {
+    let err = precedence_library_path(&two_libraries(), "comics").unwrap_err();
+    assert_eq!(err, SettingsError::UnknownLibrary);
+    assert_eq!(
+        err.to_string(),
+        "library must be \"ebook\" or \"audiobook\""
+    );
+}

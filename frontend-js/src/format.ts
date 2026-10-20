@@ -129,7 +129,7 @@ export function formatYear(raw: string): string | null {
   return year > SENTINEL_YEAR_MAX ? String(year) : null;
 }
 
-const MONTHS = [
+export const MONTHS = [
   "Jan",
   "Feb",
   "Mar",
@@ -202,6 +202,28 @@ export function formatInstantShort(
 
 export const nowSecs = () => Math.floor(Date.now() / 1000);
 
+/** A unix-seconds time as UTC to the second: "2023-11-14 22:13:20 UTC". */
+export function formatUtcTimestamp(unixSecs: number): string {
+  const iso = new Date(unixSecs * 1000).toISOString();
+  return `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
+}
+
+/** A unix-seconds time as its UTC calendar day, "Nov 14, 2023", so every client names the same day. */
+export const formatUtcDay = (unixSecs: number) =>
+  new Date(unixSecs * 1000).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+
+/** `text` with its first letter upper-cased, to open a sentence. */
+export const capitalize = (text: string) =>
+  text.charAt(0).toUpperCase() + text.slice(1);
+
+/** A form field trimmed, or null when it is blank. */
+export const noneIfBlank = (value: string) => value.trim() || null;
+
 /** "3 hours ago": `n` of `unit`, pluralised. */
 export const unitsAgo = (n: number, unit: string) =>
   `${n} ${unit}${plural(n)} ago`;
@@ -231,6 +253,21 @@ export function fileSize(bytes: number): string | null {
   if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
   if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(1)} KB`;
   return `${bytes} B`;
+}
+
+/** `value` to `digits` places, ties to even on its exact binary value, as Rust's `{:.N}` writes it. */
+export function fixed(value: number, digits: number): string {
+  // A true tie reads as a trailing 5 one place further, so only a possible tie needs the exact expansion.
+  if (!value.toFixed(digits + 1).endsWith("5")) return value.toFixed(digits);
+  const rounded = value.toFixed(digits);
+  // `toFixed` rounds an exact tie upward; the exact expansion shows whether this is one.
+  const exact = Math.abs(value).toFixed(100);
+  const point = exact.indexOf(".");
+  const kept = digits === 0 ? point : point + 1 + digits;
+  const truncated = exact.slice(0, kept);
+  const rest = exact.slice(digits === 0 ? kept + 1 : kept);
+  if (!/^50*$/.test(rest) || Number(truncated.at(-1)) % 2 === 1) return rounded;
+  return (value < 0 ? "-" : "") + truncated;
 }
 
 /** "6h 31m" or "41m"; minutes are floored, as a duration must never claim more time than exists. */
@@ -272,3 +309,8 @@ export function formatStarted(unixSecs: number, timeZone?: string): string {
   const part = (type: string) => parts.find((p) => p.type === type)?.value;
   return `${part("month")} ${part("day")}, ${part("year")} · ${part("hour")}:${part("minute")}`;
 }
+
+// shortcut: the UTC day, as the Dioxus tables cut it; switch to the reader's offset (rule 10) when both clients move.
+/** A Unix-seconds timestamp as `YYYY-MM-DD`, UTC. */
+export const utcDay = (unixSecs: number) =>
+  new Date(unixSecs * 1000).toISOString().slice(0, 10);

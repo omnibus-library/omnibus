@@ -49,7 +49,7 @@ use utoipa::{
         (name = "Shelves", description = "Shelves you fill by hand, and smart shelves that fill themselves from a rule."),
         (name = "Physical books", description = "The physical collection: ISBN check-in, copies, and the wishlist."),
         (name = "Discovery", description = "Authors, series, tags and genres."),
-        (name = "Account", description = "Your profile, avatar and preferences, and Send to Kindle."),
+        (name = "Account", description = "Your profile, avatar and preferences, Kobo devices, and Send to Kindle."),
         (name = "Admin", description = "Server administration: users, sessions, settings, maintenance and health."),
         (name = "System", description = "Health check."),
     )

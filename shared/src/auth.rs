@@ -134,6 +134,17 @@ pub struct SetPasswordRequest {
     pub password: String,
 }
 
+// Deliberately not `Debug`: it holds plaintext passwords (see `LoginRequest`).
+/// The passwords `POST /api/auth/password` takes.
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ChangePasswordRequest {
+    /// Your password now, to prove it is you.
+    pub current_password: String,
+    /// The password to switch to. It must meet the same rules as at sign-up.
+    pub new_password: String,
+}
+
 /// Stands in for a session whose holder can't be named — one minted before
 /// migration `0088`, or a caller that sent no `User-Agent`. Lives beside the
 /// wire type rather than beside the labelling logic in `server::auth` because

@@ -10,7 +10,7 @@ use omnibus_db::{
 };
 use sqlx::SqlitePool;
 
-use super::{BEARER_TTL_SECS, COOKIE_TTL_SECS, SESSION_COOKIE};
+use super::{AuthUser, BEARER_TTL_SECS, COOKIE_TTL_SECS, SESSION_COOKIE};
 // `SESSION_COOKIE` (plain name) is intentionally used here even on a
 // production-shaped deploy: the read side `parse_session_token` accepts
 // either form, so integration-test cookies don't need to negotiate the
@@ -124,4 +124,27 @@ pub async fn cookie_value(pool: &SqlitePool, user_id: i64) -> String {
     .await
     .expect("create_session should succeed");
     format!("{}={}", SESSION_COOKIE, issued.raw_token)
+}
+
+/// A non-admin `AuthUser` for driving a handler directly with a pool closed afterwards:
+/// closing it before a routed request would fail the extractor's own session lookup
+/// instead of the handler body under test.
+pub fn fake_auth_user(id: i64, session_id: i64) -> AuthUser {
+    AuthUser {
+        id,
+        username: "reader".to_string(),
+        is_admin: false,
+        can_upload: false,
+        can_edit: false,
+        can_download: true,
+        kindle_email: None,
+        display_name: None,
+        has_avatar: false,
+        hidden_formats: Vec::new(),
+        book_detail_scroll_stops: false,
+        stack_series: false,
+        share_stats: true,
+        session_id,
+        session_kind: SessionKind::Bearer,
+    }
 }

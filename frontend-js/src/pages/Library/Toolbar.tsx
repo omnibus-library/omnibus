@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import { SortKey } from "../../api";
 import { ArrowDownGlyph, ArrowUpGlyph } from "../../components/Glyphs/Glyphs";
-import { useCurrentUser, useStackSeries } from "../../session";
+import { useCurrentUser, useUserSwitch } from "../../session";
 import type { Prefs } from "../../viewPrefs";
 import { hiddenFormatsLabel } from "./libraryView";
 import { headerSort, SORT_KEYS, sortLabel, toggleDir } from "./sorting";
@@ -26,7 +26,7 @@ export function Toolbar({
   onChange,
 }: ToolbarProps) {
   const user = useCurrentUser();
-  const stack = useStackSeries();
+  const stack = useUserSwitch("stackSeries");
   const hidden = hiddenFormatsLabel(hiddenFormats);
   return (
     <div className="lib-toolbar" role="toolbar">

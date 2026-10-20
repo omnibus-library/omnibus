@@ -799,3 +799,31 @@ async fn list_authors_omits_an_author_left_with_zero_books_by_an_override() {
         "the index must never surface a 0-book author"
     );
 }
+
+#[test]
+fn numbered_placeholders_numbers_each_slot_from_start() {
+    assert_eq!(numbered_placeholders(2, 3), "(?2), (?3), (?4)");
+}
+
+#[test]
+fn numbered_placeholders_yields_a_null_row_when_n_is_zero() {
+    assert_eq!(numbered_placeholders(2, 0), "(NULL)");
+}
+
+#[tokio::test]
+async fn numbered_placeholders_bind_the_arguments_after_a_numbered_slot() {
+    let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let sql = format!(
+        "SELECT ?1, column1 FROM (VALUES {}) ORDER BY column1",
+        numbered_placeholders(2, 2)
+    );
+    let rows: Vec<(i64, String)> = sqlx::query_as(&sql)
+        .bind(7_i64)
+        .bind("/a")
+        .bind("/b")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    // A bare `(?)` list would have bound the reader's `7` into the first row.
+    assert_eq!(rows, vec![(7, "/a".to_string()), (7, "/b".to_string())]);
+}

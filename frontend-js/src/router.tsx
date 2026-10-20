@@ -1,19 +1,21 @@
 import { lazy, type ReactNode, Suspense } from "react";
-import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
+import {
+  createBrowserRouter,
+  Navigate,
+  type RouteObject,
+  useParams,
+} from "react-router";
 import { Loading } from "./components/Loading/Loading";
 import { RouteError } from "./components/RouteError/RouteError";
 import { AppShell } from "./layouts/AppShell";
+import { ReaderDock } from "./layouts/ReaderDock";
 import { RequireAuth } from "./layouts/RequireAuth";
-import { Account } from "./pages/Account/Account";
 import { AddBooks } from "./pages/AddBooks/AddBooks";
-import { Admin } from "./pages/Admin/Admin";
-import { AdminHealth } from "./pages/AdminHealth/AdminHealth";
 import { AuthorDetail } from "./pages/AuthorDetail/AuthorDetail";
 import { Authors, AuthorsIndexPane } from "./pages/Authors/Authors";
 import { BookDetail } from "./pages/BookDetail/BookDetail";
 import { BookEdit } from "./pages/BookEdit/BookEdit";
 import { CheckIn } from "./pages/CheckIn/CheckIn";
-import { CleanupReview } from "./pages/CleanupReview/CleanupReview";
 import { Library } from "./pages/Library/Library";
 import { Listen } from "./pages/Listen/Listen";
 import { Login } from "./pages/Login/Login";
@@ -22,13 +24,12 @@ import { Register } from "./pages/Register/Register";
 import { Search } from "./pages/Search/Search";
 import { Series } from "./pages/Series/Series";
 import { SeriesDetail } from "./pages/SeriesDetail/SeriesDetail";
-import { Settings } from "./pages/Settings/Settings";
 import { ShelfDetail } from "./pages/ShelfDetail/ShelfDetail";
 import { Shelves } from "./pages/Shelves/Shelves";
 import { Stats } from "./pages/Stats/Stats";
 import { StatsChart } from "./pages/StatsChart/StatsChart";
 
-// Each reader is its own chunk, so the library never downloads one.
+// Each reader, the settings page, Administration and the cleanup review is its own chunk, so the library never downloads one.
 const Reader = lazy(() =>
   import("./pages/Reader/Reader").then((m) => ({ default: m.Reader })),
 );
@@ -41,11 +42,31 @@ const PdfReader = lazy(() =>
   import("./pages/PdfReader/PdfReader").then((m) => ({ default: m.PdfReader })),
 );
 
-const reader = (element: ReactNode) => (
-  <Suspense fallback={<Loading kind="stage" />}>{element}</Suspense>
+const Settings = lazy(() =>
+  import("./pages/Settings/Settings").then((m) => ({ default: m.Settings })),
 );
 
-// Mirrors frontend/src/routes.rs: the readers and the player fill the screen,
+const Admin = lazy(() =>
+  import("./pages/Admin/Admin").then((m) => ({ default: m.Admin })),
+);
+
+const CleanupReview = lazy(() =>
+  import("./pages/CleanupReview/CleanupReview").then((m) => ({
+    default: m.CleanupReview,
+  })),
+);
+
+const chunk = (element: ReactNode, kind: "stage" | "page" = "stage") => (
+  <Suspense fallback={<Loading kind={kind} />}>{element}</Suspense>
+);
+
+// The review queue's address before it moved under /admin.
+function LegacyCleanupReview() {
+  const { kind = "" } = useParams();
+  return <Navigate to={`/admin/cleanup/${encodeURIComponent(kind)}`} replace />;
+}
+
+// Mirrors frontend/src/routes.rs: the readers (with the audiobook dock beneath) and the player fill the screen,
 // everything else sits under the top bar. Two error boundaries: one inside the
 // shell, so a page that throws keeps the top bar, and one at the root for
 // everything else (the session gate, the shell itself, the readers).
@@ -60,13 +81,18 @@ export const routes: RouteObject[] = [
       {
         element: <RequireAuth />,
         children: [
-          { path: "/read/:uuid", element: reader(<Reader />) },
-          { path: "/comic/:uuid", element: reader(<ComicReader />) },
-          { path: "/pdf/:uuid", element: reader(<PdfReader />) },
+          {
+            element: <ReaderDock />,
+            children: [
+              { path: "/read/:uuid", element: chunk(<Reader />) },
+              { path: "/comic/:uuid", element: chunk(<ComicReader />) },
+              { path: "/pdf/:uuid", element: chunk(<PdfReader />) },
+            ],
+          },
           { path: "/listen/:uuid", element: <Listen /> },
           {
             path: "/logs",
-            element: <Navigate to="/settings?section=logs" replace />,
+            element: <Navigate to="/admin?section=logs" replace />,
           },
           {
             element: <AppShell />,
@@ -94,18 +120,24 @@ export const routes: RouteObject[] = [
                   // Web search is the palette; only /search/:query is a page.
                   { path: "/search", element: <Navigate to="/" replace /> },
                   { path: "/search/:query", element: <Search /> },
-                  { path: "/settings", element: <Settings /> },
+                  { path: "/settings", element: chunk(<Settings />, "page") },
                   {
                     path: "/settings/cleanup/:kind",
-                    element: <CleanupReview />,
+                    element: <LegacyCleanupReview />,
                   },
-                  { path: "/admin", element: <Admin /> },
+                  { path: "/admin", element: chunk(<Admin />, "page") },
                   {
                     path: "/admin/cleanup/:kind",
-                    element: <CleanupReview />,
+                    element: chunk(<CleanupReview />, "page"),
                   },
-                  { path: "/admin/health", element: <AdminHealth /> },
-                  { path: "/account", element: <Account /> },
+                  {
+                    path: "/admin/health",
+                    element: <Navigate to="/admin?section=health" replace />,
+                  },
+                  {
+                    path: "/account",
+                    element: <Navigate to="/settings" replace />,
+                  },
                   { path: "/add-books", element: <AddBooks /> },
                   { path: "/check-in", element: <CheckIn /> },
                   { path: "*", element: <NotFound /> },

@@ -89,9 +89,14 @@ modules dir:
 module-map-test:
     python3 scripts/tests/module-map.test.py
 
-# Run the full unit/integration test matrix via cargo-nextest (the same runner
-# CI uses, so local and CI results match; no doctests in the tree, which is all
-# nextest can't run). A bare `--workspace` is a trap here — it silently skips
+# Run every unit/integration suite: the Rust matrix first, then the Python
+# script suites. Rust leads so a failing script suite can't stop the recipe
+# before the cargo results are in.
+test: test-rust explore-test module-map-test
+
+# The Rust half of `just test`: the full matrix via cargo-nextest (the same
+# runner CI uses, so local and CI results match; no doctests in the tree, which
+# is all nextest can't run). A bare `--workspace` is a trap here — it silently skips
 # the frontend rpc/page tests (they need --features server) — so run each crate
 # explicitly. The frontend runs twice
 # with different feature sets: `server` (rpc/page tests) and `mobile` (the
@@ -100,7 +105,7 @@ module-map-test:
 # The `omnibus-mobile` shell crate itself has no tests (lint covers it via
 # `just lint`).
 # Self-wraps in the slim nix shell so it works from a bare checkout too.
-test: fixtures explore-test module-map-test
+test-rust: fixtures
     scripts/with-dev-env.sh default bash -ec '\
         cargo nextest run -p omnibus-db && \
         cargo nextest run -p omnibus && \
@@ -148,7 +153,8 @@ coverage-html: fixtures
         cargo llvm-cov report --html --open'
 
 # Structural CSS lint — stylelint over frontend/assets, scoped to parse /
-# structural errors only (unclosed rules, misplaced @import), not style.
+# structural errors (unclosed rules, misplaced @import, a selector declared
+# twice in one stylesheet), not style.
 # An unclosed `}` silently reparents later rules under CSS nesting, so a
 # missing brace must fail the build. stylelint is Nix-pinned in slimPackages.
 lint-css:
@@ -166,6 +172,16 @@ lint-ts:
         pnpm install --frozen-lockfile && \
         pnpm exec biome check . && \
         pnpm exec tsc --noEmit'
+
+# Run Playwright the way CI does (scripts/e2e-ci.sh): `dx bundle` the web app,
+# start its standalone server on a scratch DB and a free port in this worktree's
+# window, run the specs against it, and tear the server down. Never touches the
+# dev server or its DB. Args pass through to `playwright test`, so specs are
+# relative to ui_tests/playwright: `just e2e-ci tests/flows/landing.spec.ts`.
+# OMNIBUS_E2E_RELEASE=1 bundles `--release` like CI (slower to build).
+[positional-arguments]
+e2e-ci *specs: fixtures
+    scripts/with-dev-env.sh e2e scripts/e2e-ci.sh "$@"
 
 # Regenerate openapi/openapi.json, the REST API contract, from the handlers'
 # `#[utoipa::path]` annotations. A test fails while the committed file is stale,

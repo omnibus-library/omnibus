@@ -1,18 +1,29 @@
-import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { setupServer } from "msw/node";
 import {
   createBrowserRouter,
   createMemoryRouter,
   type RouteObject,
   RouterProvider,
 } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type { User } from "./api";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import { toUser, type User } from "./api";
 import { AtriumRoot } from "./components/Theme/AtriumRoot";
 import { routes } from "./router";
 import { meQuery } from "./session";
 import { ADA, harnessClient } from "./testing/AppHarness";
+import { listenHandlers } from "./testing/audioHandlers";
+import { aWireBook, WIRE_ADA } from "./testing/wire";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 
@@ -20,14 +31,15 @@ function renderRouter(
   router: ReturnType<typeof createBrowserRouter>,
   user: User | null,
 ) {
+  const client = harnessClient(user);
   render(
-    <QueryClientProvider client={harnessClient(user)}>
+    <QueryClientProvider client={client}>
       <AtriumRoot>
         <RouterProvider router={router} />
       </AtriumRoot>
     </QueryClientProvider>,
   );
-  return router;
+  return { router, client };
 }
 
 function renderRoute(
@@ -89,37 +101,37 @@ describe("routes", () => {
     ).toBeInTheDocument();
   });
 
-  describe("unported pages", () => {
-    it.each([
-      [`/listen/${UUID}?file_id=2`, "Listen", "2"],
-      ["/stats?user=2", "Stats", "2"],
-      ["/stats/chart", "Chart builder", null],
-      ["/settings?section=smtp", "Settings", "smtp"],
-      ["/settings/cleanup/duplicates", "Cleanup review", "duplicates"],
-      ["/admin?section=logs", "Administration", "logs"],
-      ["/admin/cleanup/duplicates", "Cleanup review", "duplicates"],
-      ["/admin/health", "Server health", null],
-      ["/account", "Account", null],
-    ])("renders %s as %s with its parameters", async (path, title, param) => {
-      renderRoute(path);
+  describe("ported pages", () => {
+    it("renders /settings as the settings page, not a stub", async () => {
+      renderRoute("/settings");
 
       expect(
-        await screen.findByRole("heading", { level: 1, name: title }),
+        await screen.findByRole("heading", { level: 1, name: "Settings" }),
       ).toBeInTheDocument();
-      if (param) expect(screen.getByText(param)).toBeInTheDocument();
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
     });
-  });
 
-  describe("ported pages", () => {
     it.each([
       ["/series", "Gathering every series"],
       ["/series/4", "Gathering the series"],
       ["/shelves", "Gathering your shelves"],
       ["/shelves/9", "Opening the shelf"],
+      ["/stats?user=2", "Tallying your reading"],
     ])("renders %s as its loading page, not a stub", async (path, label) => {
       renderRoute(path);
 
       expect(await screen.findByText(label)).toBeInTheDocument();
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+
+    it("renders /stats/chart as the chart builder, not a stub", async () => {
+      renderRoute("/stats/chart");
+
+      expect(
+        await screen.findByText(
+          "Nothing plotted yet — tick a measure above and it'll appear here.",
+        ),
+      ).toBeInTheDocument();
       expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
     });
 
@@ -144,6 +156,16 @@ describe("routes", () => {
       ).toHaveAttribute("href", `/books/${UUID}`);
     });
 
+    it("renders the player page at /listen/:uuid", async () => {
+      renderRoute(`/listen/${UUID}?file_id=2`);
+
+      // jsdom has no server to fetch from, so the player settles on its error page.
+      expect(
+        await screen.findByRole("link", { name: "Back to library" }),
+      ).toHaveAttribute("href", "/");
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+
     it("renders the upload page at /add-books", async () => {
       renderRoute("/add-books");
 
@@ -162,6 +184,117 @@ describe("routes", () => {
         }),
       ).toBeInTheDocument();
     });
+
+    it("renders the cleanup review at /admin/cleanup/tag, not a stub", async () => {
+      renderRoute("/admin/cleanup/tag");
+
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "Review tags" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+
+    it("renders an unknown cleanup kind as a notice, not a stub", async () => {
+      renderRoute("/admin/cleanup/duplicates");
+
+      expect(
+        await screen.findByText("Unknown cleanup kind."),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+
+    it("renders the administration shell at /admin?section=people, not a stub", async () => {
+      renderRoute("/admin?section=people");
+
+      expect(
+        await screen.findByRole("heading", {
+          level: 1,
+          name: "Administration",
+        }),
+      ).toBeInTheDocument();
+      expect(
+        await screen.findByRole("heading", { level: 2, name: "People" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("administration", () => {
+    const READER: User = { ...ADA, isAdmin: false };
+
+    it.each(["/admin", "/logs", "/admin/health"])(
+      "refuses a reader at %s without the admin sidebar",
+      async (path) => {
+        renderRoute(path, READER);
+
+        expect(await screen.findByTestId("admin-forbidden")).toHaveTextContent(
+          "Administration is only open to server administrators.",
+        );
+        expect(
+          screen.getByRole("heading", { level: 1, name: "Administration" }),
+        ).toBeInTheDocument();
+        expect(
+          screen.queryByRole("navigation", { name: "Administration sections" }),
+        ).not.toBeInTheDocument();
+        expect(
+          screen.queryByTestId("admin-nav-people"),
+        ).not.toBeInTheDocument();
+      },
+    );
+
+    it("refuses a reader at /admin/cleanup/tag without the admin chrome", async () => {
+      renderRoute("/admin/cleanup/tag", READER);
+
+      expect(
+        await screen.findByTestId("cleanup-review-forbidden"),
+      ).toHaveTextContent(
+        "Administrator access is required to review library cleanup.",
+      );
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Review tags" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("navigation", { name: "breadcrumb" }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId("cleanup-kindline")).not.toBeInTheDocument();
+    });
+
+    it("waits on the session loader, not the shell, while the session is pending", async () => {
+      const client = new QueryClient();
+      void client.fetchQuery({
+        ...meQuery,
+        queryFn: () => new Promise<never>(() => {}),
+      });
+      render(
+        <QueryClientProvider client={client}>
+          <RouterProvider
+            router={createMemoryRouter(routes, {
+              initialEntries: ["/admin"],
+            })}
+          />
+        </QueryClientProvider>,
+      );
+
+      expect(await screen.findByText("Opening your library")).toBeVisible();
+      expect(screen.queryByTestId("admin-layout")).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ["/logs", "/admin", "?section=logs"],
+      ["/admin/health", "/admin", "?section=health"],
+      ["/settings/cleanup/tag", "/admin/cleanup/tag", ""],
+    ])(
+      "sends %s to %s%s in place of the old entry",
+      async (from, pathname, search) => {
+        const { router } = renderRoute(from);
+
+        await waitFor(() =>
+          expect(router.state.location.pathname).toBe(pathname),
+        );
+        expect(router.state.location.search).toBe(search);
+        expect(router.state.historyAction).toBe("REPLACE");
+      },
+    );
   });
 
   it.each([
@@ -182,7 +315,7 @@ describe("routes", () => {
     let router: ReturnType<typeof createBrowserRouter> | undefined;
     const openBrowserRouter = (path: string) => {
       window.history.replaceState(null, "", path);
-      router = renderRouter(createBrowserRouter(routes), ADA);
+      router = renderRouter(createBrowserRouter(routes), ADA).router;
       return router;
     };
     afterEach(() => {
@@ -225,6 +358,95 @@ describe("routes", () => {
         await screen.findByRole("navigation", { name: "Primary" }),
       ).toBeInTheDocument();
     });
+
+    it("gives a reader the whole screen", async () => {
+      renderRoute(`/read/${UUID}`);
+
+      await screen.findByTestId("reader-top");
+      expect(
+        screen.queryByRole("navigation", { name: "Primary" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("leaves an empty dock host after a page", async () => {
+      renderRoute("/");
+      await screen.findByRole("heading", { level: 1, name: "Your Library" });
+
+      expect(
+        document.querySelector(".app-shell > main + .mini-dock-host"),
+      ).toBeEmptyDOMElement();
+    });
+
+    it("docks the audiobook beneath a reader, giving the stage room only while it shows", async () => {
+      renderRoute(`/read/${UUID}`);
+      await screen.findByTestId("reader-top");
+
+      const host = document.querySelector(".rd-host.rd-dock-full");
+      expect(host).not.toHaveClass("rd-immersive");
+      expect(
+        host?.querySelector(":scope > .mini-dock-host"),
+      ).toBeEmptyDOMElement();
+    });
+
+    describe("with an audiobook loaded", () => {
+      const server = setupServer(
+        ...listenHandlers(aWireBook({ formats: ["M4B"] })),
+      );
+      beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
+      afterAll(() => server.close());
+
+      it("gives a reader's stage room above the dock", async () => {
+        const { router } = renderRoute(`/listen/${UUID}`);
+        await screen.findByText("Now playing · Chapter 1 of 3");
+
+        act(() => {
+          void router.navigate(`/read/${UUID}`);
+        });
+
+        await screen.findByRole("region", { name: "Now playing" });
+        expect(document.querySelector(".rd-host.rd-dock-full")).toHaveClass(
+          "rd-immersive",
+        );
+      });
+    });
+
+    it("keeps the dock off the player", async () => {
+      renderRoute(`/listen/${UUID}`);
+      await screen.findByRole("link", { name: "Back to library" });
+
+      expect(document.querySelector(".mini-dock-host")).toBeNull();
+    });
+  });
+
+  describe("audio", () => {
+    it("stops the element when the session ends", async () => {
+      const pause = vi.spyOn(HTMLMediaElement.prototype, "pause");
+      const { client } = renderRoute("/");
+      await screen.findByRole("heading", { level: 1, name: "Your Library" });
+      pause.mockClear();
+
+      act(() => client.setQueryData(meQuery.queryKey, null));
+
+      await waitFor(() => expect(pause).toHaveBeenCalled());
+      vi.restoreAllMocks();
+    });
+
+    it("starts a fresh player when another user takes the session", async () => {
+      const pause = vi.spyOn(HTMLMediaElement.prototype, "pause");
+      const { client } = renderRoute("/");
+      await screen.findByRole("heading", { level: 1, name: "Your Library" });
+      pause.mockClear();
+
+      act(() =>
+        client.setQueryData(
+          meQuery.queryKey,
+          toUser({ ...WIRE_ADA, id: WIRE_ADA.id + 1 }),
+        ),
+      );
+
+      await waitFor(() => expect(pause).toHaveBeenCalled());
+      vi.restoreAllMocks();
+    });
   });
 
   describe("search palette", () => {
@@ -251,7 +473,7 @@ describe("routes", () => {
     });
 
     it("sends a guest to sign in with the page they asked for", async () => {
-      const router = renderRoute("/shelves/9", null);
+      const { router } = renderRoute("/shelves/9", null);
 
       await waitFor(() =>
         expect(router.state.location.pathname).toBe("/login"),
@@ -298,23 +520,35 @@ describe("routes", () => {
     });
   });
 
-  it("redirects /logs to the settings logs section", async () => {
-    const router = renderRoute("/logs");
+  it("redirects /account to settings", async () => {
+    const { router } = renderRoute("/account");
 
     await waitFor(() =>
-      expect(router.state.location.search).toBe("?section=logs"),
+      expect(router.state.location.pathname).toBe("/settings"),
     );
-    expect(router.state.location.pathname).toBe("/settings");
+    expect(router.state.historyAction).toBe("REPLACE");
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Settings" }),
+    ).toBeInTheDocument();
+  });
+
+  it("sends an old settings section to its new one", async () => {
+    const { router } = renderRoute("/settings?section=kobo");
+
+    await waitFor(() =>
+      expect(router.state.location.search).toBe("?section=devices"),
+    );
+    expect(router.state.historyAction).toBe("REPLACE");
   });
 
   it("redirects /connect to the library", async () => {
-    const router = renderRoute("/connect");
+    const { router } = renderRoute("/connect");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });
 
   it("redirects a bare /search to the library", async () => {
-    const router = renderRoute("/search");
+    const { router } = renderRoute("/search");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });

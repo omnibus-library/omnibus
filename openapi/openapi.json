@@ -183,6 +183,131 @@
         }
       }
     },
+    "/api/account/kobo-devices": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "List your Kobo devices",
+        "description": "The Kobo e-readers registered to your account, with the secret each one syncs with.",
+        "operationId": "list_kobo_devices",
+        "responses": {
+          "200": {
+            "description": "Your Kobo devices.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KoboDeviceView"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Register a Kobo device",
+        "description": "Adds a Kobo under the given label and mints the token its sync address\n`/kobo/{token}/…` carries.",
+        "operationId": "create_kobo_device",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateKoboDevice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The new device, with its token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KoboDeviceView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The name is empty or longer than 100 characters once trimmed."
+          }
+        }
+      }
+    },
+    "/api/account/kobo-devices/{id}": {
+      "delete": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Remove a Kobo device",
+        "description": "Deletes the registration, so the Kobo's sync address stops working.",
+        "operationId": "delete_kobo_device",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The device's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The device is removed."
+          },
+          "404": {
+            "description": "None of your devices has that id."
+          }
+        }
+      }
+    },
+    "/api/account/kobo-devices/{id}/regenerate": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Regenerate a Kobo's token",
+        "description": "Replaces the device's token, so its old sync address stops working at once. The\ndevice keeps its name and its sync progress; point the Kobo at the new address.",
+        "operationId": "regenerate_kobo_device",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The device's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The device, with its new token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KoboDeviceView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "None of your devices has that id."
+          }
+        }
+      }
+    },
     "/api/account/profile": {
       "post": {
         "tags": [
@@ -261,6 +386,205 @@
         }
       }
     },
+    "/api/admin/background-tasks": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List recent background tasks",
+        "description": "The most recent recorded runs of background tasks, newest first, up to 100. Each has its\nkind, status and timing and, for a failed run, why it failed. Needs an admin account.",
+        "operationId": "get_background_tasks",
+        "responses": {
+          "200": {
+            "description": "The recorded runs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BackgroundTaskRecord"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/admin/cleanup/counts": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the cleanup counts",
+        "description": "How many cleanup suggestions are pending, accepted and rejected for each kind of\nrecord, in the order `author`, `series`, `tag`, `book_title`. Needs an admin account.",
+        "operationId": "get_cleanup_counts",
+        "responses": {
+          "200": {
+            "description": "The counts for each kind.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CleanupKindCounts"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/admin/cleanup/detect": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Look for cleanup suggestions",
+        "description": "Queues a pass of every detector and answers without waiting for it. The counts update\nas it finishes. Needs an admin account.",
+        "operationId": "post_cleanup_detect",
+        "responses": {
+          "202": {
+            "description": "The detection is queued."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/admin/cleanup/suggestions/{id}/decision": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Decide a cleanup suggestion",
+        "description": "Accepts or rejects one pending suggestion. An accept applies the change before the call\nanswers, and returns the id that undoes it; a reject changes nothing. Needs an admin\naccount.",
+        "operationId": "post_cleanup_decision",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The suggestion's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CleanupDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The decision is recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CleanupDecisionOutcome"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "409": {
+            "description": "No suggestion has that id, it was already reviewed, `decision` is `pending`, `value` isn't accepted for it, is blank, or is over 500 characters, or the change can't be applied."
+          }
+        }
+      }
+    },
+    "/api/admin/cleanup/undo/{log_id}": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Undo a cleanup change",
+        "description": "Reverses a change an accepted suggestion applied, by the `log_id` that decision\nreturned. Needs an admin account.",
+        "operationId": "post_cleanup_undo",
+        "parameters": [
+          {
+            "name": "log_id",
+            "in": "path",
+            "description": "The id the accepted decision returned.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The change is undone."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "409": {
+            "description": "No change has that id, or it was already undone."
+          }
+        }
+      }
+    },
+    "/api/admin/cleanup/{kind}/queue": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List a kind's cleanup suggestions",
+        "description": "The suggestions of one kind still waiting for a decision, oldest first, up to 50. Each\nhas the names involved and how many books it would touch. Needs an admin account.",
+        "operationId": "get_cleanup_queue",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "The kind of record to review.",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CleanupKind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pending suggestions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SuggestionCard"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`kind` isn't `author`, `series`, `tag` or `book_title`."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
     "/api/admin/devices/{id}": {
       "delete": {
         "tags": [
@@ -312,6 +636,94 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/admin/logs": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Read the server logs",
+        "description": "One page of the server's log records, newest first, narrowed by level, module and\ntime range. Needs an admin account.",
+        "operationId": "get_logs",
+        "parameters": [
+          {
+            "name": "level",
+            "in": "query",
+            "description": "Only records at this level, ignoring case, e.g. `ERROR`. Leave it out or empty to\nkeep every level.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "module",
+            "in": "query",
+            "description": "Only records whose module contains this text, ignoring case, e.g.\n`omnibus::backend`. Leave it out or empty to keep every module.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Earliest time to include, as an ISO-8601 prefix such as `2026-07-19T00:00`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Latest time to include, as an ISO-8601 prefix. A bound to the minute includes that\nwhole minute.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Zero-based page index.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "description": "Requested page size. 0 means 50, and a size over 200 is cut to 200.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching records.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter is malformed, such as a `page` that isn't a whole number."
           },
           "403": {
             "description": "You aren't an admin."
@@ -677,6 +1089,27 @@
           },
           "404": {
             "description": "No user has that id."
+          }
+        }
+      }
+    },
+    "/api/audiobooks/backfill-chapters": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Extract audiobook chapters",
+        "description": "Queues a job that reads chapter markers from audiobooks added before chapters were\nrecorded, and answers without waiting for it. Needs an admin account.",
+        "operationId": "post_backfill_chapters",
+        "responses": {
+          "200": {
+            "description": "The job is queued."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "409": {
+            "description": "No audiobook library path is set."
           }
         }
       }
@@ -1365,6 +1798,37 @@
           },
           "401": {
             "description": "The request has no live session."
+          }
+        }
+      }
+    },
+    "/api/auth/password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Change your password",
+        "description": "Switches your password and signs out every other session, keeping the one making this\nrequest. Sign in with your password to call it: an API token can't, so a leaked token\ncan't take the account.",
+        "operationId": "change_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The password is changed and your other sessions are signed out."
+          },
+          "400": {
+            "description": "`new_password` fails the password rules; the body says which."
+          },
+          "403": {
+            "description": "`current_password` is wrong, or the request is authenticated by an API token or HTTP Basic rather than a session."
           }
         }
       }
@@ -4460,6 +4924,28 @@
         }
       }
     },
+    "/api/kindle/delivery": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Check Send to Kindle delivery",
+        "description": "Whether the server can email books, and the sender address you must approve at Amazon\nbefore a Kindle accepts them. Never carries the mail server or its credentials.",
+        "operationId": "get_kindle_delivery",
+        "responses": {
+          "200": {
+            "description": "The sender address, or null when the server has no email delivery set up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KindleDelivery"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/kindle/send": {
       "post": {
         "tags": [
@@ -5957,6 +6443,67 @@
         }
       }
     },
+    "/api/settings/ebook-convert": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the Calibre setting",
+        "description": "Whether the server can run Calibre's `ebook-convert`, which command it runs and where\nthat command came from. Calibre is optional, so a command that can't run is a normal\nanswer, not an error. Needs an admin account.",
+        "operationId": "get_ebook_convert",
+        "responses": {
+          "200": {
+            "description": "The command in effect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EbookConvertStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Set the Calibre path",
+        "description": "Saves the path of `ebook-convert`. A null or blank `path` clears it, so the server falls\nback to the `OMNIBUS_EBOOK_CONVERT_PATH` environment variable and then to `ebook-convert`\non its `PATH`. Needs an admin account.",
+        "operationId": "post_ebook_convert",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EbookConvertUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The path is saved; the body is the command now in effect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EbookConvertStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "422": {
+            "description": "`path` is over 4096 bytes."
+          }
+        }
+      }
+    },
     "/api/settings/mcp": {
       "get": {
         "tags": [
@@ -6004,6 +6551,104 @@
           },
           "403": {
             "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/settings/metadata-precedence/{library}": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get a library's metadata order",
+        "description": "The order of metadata sources for the ebook or audiobook library, lowest priority first:\na later source wins over an earlier one. It is the default order until the library's\nfolder is set. Needs an admin account.",
+        "operationId": "get_metadata_precedence",
+        "parameters": [
+          {
+            "name": "library",
+            "in": "path",
+            "description": "`ebook` or `audiobook`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The sources, lowest priority first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MetadataSource"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`library` isn't `ebook` or `audiobook`."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Set a library's metadata order",
+        "description": "Saves the order of metadata sources for the ebook or audiobook library, lowest priority\nfirst. The list must name each of the five sources exactly once, and the library's folder\nmust already be set. Needs an admin account.",
+        "operationId": "post_metadata_precedence",
+        "parameters": [
+          {
+            "name": "library",
+            "in": "path",
+            "description": "`ebook` or `audiobook`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MetadataSource"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The order is saved; the body is what is now set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MetadataSource"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`library` isn't `ebook` or `audiobook`, or the list doesn't name each source exactly once."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "409": {
+            "description": "The library's folder isn't set."
           }
         }
       }
@@ -6657,6 +7302,53 @@
           },
           "404": {
             "description": "`user_id` names no reader, or one who doesn't share their stats."
+          }
+        }
+      }
+    },
+    "/api/stats/chart": {
+      "post": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Chart your reading",
+        "description": "Runs a chart you composed: measures on at most two scales over a period, bucketed by\nday, week, month or year, optionally split by genre. Measures that share a unit share a\nscale. Each series lines up with `buckets`, and a null value means no data, which for an\naverage is not zero. Days are cut on your `utc_offset_minutes`. Nothing is saved.",
+        "operationId": "post_stats_chart",
+        "parameters": [
+          {
+            "name": "utc_offset_minutes",
+            "in": "query",
+            "description": "Your device's offset from UTC in minutes, east positive, which decides which bucket\neach day falls in and where the period starts. Absent, unreadable, or outside -720\nto 840, the server uses the offset of your most recent reading session, then UTC.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChartSpec"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The chart's series, aligned on its buckets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChartResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The spec describes a chart that can't be drawn: a measure twice, a third scale, or a split of anything but one per-book measure. The body says which."
           }
         }
       }
@@ -7395,6 +8087,28 @@
             "media_token": []
           }
         ]
+      }
+    },
+    "/api/worker/status": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the background task feed",
+        "description": "The background tasks running now and those that finished in the last 10 seconds or so,\nfor a progress display to poll. A task one user started, such as a Send to Kindle,\nshows only to that user.",
+        "operationId": "get_worker_status",
+        "responses": {
+          "200": {
+            "description": "The task feed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerStatus"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -8241,6 +8955,57 @@
           }
         }
       },
+      "BackgroundTaskRecord": {
+        "type": "object",
+        "description": "One recorded run of a background task: its kind, status and timing. Clients can read\nthese but never write them.",
+        "required": [
+          "id",
+          "task_kind",
+          "status",
+          "started_at"
+        ],
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the run failed. Null unless `status` is `failed`. The text is safe to show\nand holds no server internals."
+          },
+          "finished_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "When the run finished, in Unix seconds. Null while `status` is `running`."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the run started, in Unix seconds."
+          },
+          "status": {
+            "$ref": "#/components/schemas/BackgroundTaskStatus"
+          },
+          "task_kind": {
+            "type": "string"
+          }
+        }
+      },
+      "BackgroundTaskStatus": {
+        "type": "string",
+        "description": "Where a recorded background task run ended up. `running` also covers a run that never\nfinished because the server stopped abruptly.",
+        "enum": [
+          "running",
+          "success",
+          "failed"
+        ]
+      },
       "BookDeletionImpact": {
         "type": "object",
         "description": "The reader data that deleting a book removes, counted across every reader.",
@@ -8895,6 +9660,24 @@
           }
         }
       },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "description": "The passwords `POST /api/auth/password` takes.",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "description": "Your password now, to prove it is you."
+          },
+          "new_password": {
+            "type": "string",
+            "description": "The password to switch to. It must meet the same rules as at sign-up."
+          }
+        }
+      },
       "ChapterInfo": {
         "type": "object",
         "description": "A chapter on an audiobook file's timeline.",
@@ -9029,6 +9812,207 @@
           }
         }
       },
+      "ChartAxis": {
+        "type": "object",
+        "description": "One axis of the rendered chart.",
+        "required": [
+          "unit",
+          "max"
+        ],
+        "properties": {
+          "max": {
+            "type": "number",
+            "format": "double",
+            "description": "Upper bound of the axis. Always > 0 — a flat-zero axis is nudged to 1\nso the renderer never divides by zero."
+          },
+          "unit": {
+            "$ref": "#/components/schemas/ChartUnit"
+          }
+        }
+      },
+      "ChartBreakdown": {
+        "type": "string",
+        "description": "An optional split of a single measure into several series.",
+        "enum": [
+          "none",
+          "genre"
+        ]
+      },
+      "ChartBucket": {
+        "type": "string",
+        "description": "How wide each bucket on the x-axis is: a day, a week (starting Monday), a month or a\nyear. The x-axis is always time.",
+        "enum": [
+          "day",
+          "week",
+          "month",
+          "year"
+        ]
+      },
+      "ChartMark": {
+        "type": "string",
+        "description": "How a series is drawn. Derived from the measure, never picked by the\nreader — a pie chart of minutes-over-time is a question the builder should\nnot be able to ask.",
+        "enum": [
+          "bar",
+          "line"
+        ]
+      },
+      "ChartMeasure": {
+        "type": "string",
+        "description": "What a chart can plot: one number per bucket, in a unit of its own. Measures sharing a\nunit share a scale, and a chart holds at most two scales.",
+        "enum": [
+          "books_finished",
+          "avg_page_length",
+          "avg_rating",
+          "reading_minutes",
+          "listening_minutes",
+          "session_count",
+          "avg_session_minutes",
+          "pages_read"
+        ]
+      },
+      "ChartResult": {
+        "type": "object",
+        "description": "The series a chart spec asks for, aligned on one shared set of buckets.",
+        "required": [
+          "bucket",
+          "buckets",
+          "series",
+          "axes",
+          "divisions",
+          "stacked",
+          "truncated",
+          "caveats"
+        ],
+        "properties": {
+          "axes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChartAxis"
+            },
+            "description": "Left axis, then optionally the right."
+          },
+          "bucket": {
+            "$ref": "#/components/schemas/ChartBucket",
+            "description": "The granularity `buckets` are keyed at. Carried on the answer so a\nrenderer can label the axis without being handed the spec separately —\nand so a result can never be labelled at a granularity it wasn't\nbucketed at."
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The shared x-axis: bucket keys ascending. `YYYY-MM-DD` for Day and\nWeek (the week's Monday), `YYYY-MM` for Month, `YYYY` for Year."
+          },
+          "caveats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Caveats carried by the selected measures."
+          },
+          "divisions": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Gridlines dividing the plot, shared by both axes. Two different counts\nwould put the right axis's labels between the lines they belong to.",
+            "minimum": 0
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChartSeries"
+            }
+          },
+          "stacked": {
+            "type": "boolean",
+            "description": "Whether the bar series stack into one column per bucket.\n\nOnly true for a **breakdown of one additive measure**, where the slices are\nparts of a whole. Different measures never stack, nor does a split average,\nsince means do not add."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "Set when `buckets` was clipped to the most recent 366."
+          }
+        }
+      },
+      "ChartSeries": {
+        "type": "object",
+        "description": "One plotted series: a measure (optionally narrowed to a breakdown slice) and\nits value in every bucket of the shared axis. `values` is positionally\naligned with `buckets`; null means *no data*, which for an average is a real\nstate and not a zero.",
+        "required": [
+          "measure",
+          "axis",
+          "mark",
+          "values"
+        ],
+        "properties": {
+          "axis": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Which axis this series is scaled against — `0` left, `1` right.",
+            "minimum": 0
+          },
+          "mark": {
+            "$ref": "#/components/schemas/ChartMark"
+          },
+          "measure": {
+            "$ref": "#/components/schemas/ChartMeasure"
+          },
+          "slice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The breakdown slice this series describes, when the spec asked for one."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            }
+          }
+        }
+      },
+      "ChartSpec": {
+        "type": "object",
+        "description": "What a reader composed in the builder.",
+        "required": [
+          "measures",
+          "bucket",
+          "range"
+        ],
+        "properties": {
+          "breakdown": {
+            "$ref": "#/components/schemas/ChartBreakdown",
+            "description": "Optional split. Allowed only with exactly one measure, and only one that\nsupports a split (a per-book measure); any other combination is rejected."
+          },
+          "bucket": {
+            "$ref": "#/components/schemas/ChartBucket",
+            "description": "The shared x-axis granularity."
+          },
+          "measures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChartMeasure"
+            },
+            "description": "The measures to plot, each at most once. Measures that share a unit share a\nscale, and a second unit opens the right-hand axis. A third unit is rejected."
+          },
+          "range": {
+            "$ref": "#/components/schemas/StatsRange",
+            "description": "The window, reusing the stats page's own range vocabulary."
+          }
+        }
+      },
+      "ChartUnit": {
+        "type": "string",
+        "description": "The unit a measure is expressed in. Two measures sharing a unit share an\naxis; a second distinct unit opens the right-hand axis.",
+        "enum": [
+          "books",
+          "pages",
+          "minutes",
+          "sessions",
+          "stars"
+        ]
+      },
       "CheckInRequest": {
         "type": "object",
         "description": "A physical copy to check in, of a book the library already has. `isbn` may be up to\n32 characters and `note` up to 4096.",
@@ -9050,6 +10034,101 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "CleanupAction": {
+        "type": "string",
+        "description": "What a cleanup suggestion proposes doing.",
+        "enum": [
+          "merge",
+          "split",
+          "rename",
+          "delete"
+        ]
+      },
+      "CleanupCounts": {
+        "type": "object",
+        "description": "How many cleanup suggestions are in each review state.",
+        "required": [
+          "pending",
+          "accepted",
+          "rejected"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pending": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rejected": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CleanupDecisionOutcome": {
+        "type": "object",
+        "description": "What a cleanup decision did.",
+        "properties": {
+          "log_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The change an accept applied, which `POST /api/admin/cleanup/undo/{log_id}` reverses.\nNull for a reject, which changes nothing."
+          }
+        }
+      },
+      "CleanupDecisionRequest": {
+        "type": "object",
+        "description": "A reviewer's decision on one cleanup suggestion.",
+        "required": [
+          "decision"
+        ],
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/Decision",
+            "description": "`accepted` applies the suggestion and `rejected` dismisses it. `pending` is refused."
+          },
+          "value": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The reviewer's own wording, used in place of the proposed one. Only a book-title\nrename takes it; for any other suggestion it is refused."
+          }
+        }
+      },
+      "CleanupKind": {
+        "type": "string",
+        "description": "What a cleanup suggestion is about: an author, a series, a tag or a book's title.",
+        "enum": [
+          "author",
+          "series",
+          "tag",
+          "book_title"
+        ]
+      },
+      "CleanupKindCounts": {
+        "type": "object",
+        "description": "One kind's suggestions counted by review state.",
+        "required": [
+          "kind",
+          "counts"
+        ],
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/CleanupCounts",
+            "description": "How many of that kind's suggestions are in each review state."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CleanupKind",
+            "description": "The kind of record the suggestions are about."
           }
         }
       },
@@ -9537,6 +10616,19 @@
           }
         }
       },
+      "CreateKoboDevice": {
+        "type": "object",
+        "description": "The label for a new Kobo.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "A label of 1 to 100 characters once trimmed, such as \"Clara HD\"."
+          }
+        }
+      },
       "CreateShelfRequest": {
         "type": "object",
         "description": "A new shelf. A `smart` shelf needs `match_mode` and at least one rule, and takes no\n`book_uuids`. A `manual` shelf takes no `match_mode` or rules, and may start with\n`book_uuids`. A `wishlist` shelf can't be created. `name` is 1 to 120 characters and\n`description` at most 2048.",
@@ -9858,6 +10950,15 @@
           }
         }
       },
+      "Decision": {
+        "type": "string",
+        "description": "Where a cleanup suggestion stands in review.",
+        "enum": [
+          "pending",
+          "accepted",
+          "rejected"
+        ]
+      },
       "DeclareSyncPoint": {
         "type": "object",
         "description": "A sync point, as `POST /api/books/{uuid}/sync-point` takes it: your position in the\nformat you're using, which the server pairs with your saved position in the other.",
@@ -10081,6 +11182,42 @@
             "items": {
               "$ref": "#/components/schemas/DownloadValidator"
             }
+          }
+        }
+      },
+      "EbookConvertStatus": {
+        "type": "object",
+        "description": "Whether the server can run Calibre's `ebook-convert` to convert book formats.\nCalibre is optional. Without it, format conversion is off and nothing else is wrong.",
+        "required": [
+          "available",
+          "path",
+          "source"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "True when `path` exists and runs."
+          },
+          "path": {
+            "type": "string",
+            "description": "The command the server runs: a saved path, the `OMNIBUS_EBOOK_CONVERT_PATH`\nenvironment variable, or plain `ebook-convert` found on the server's `PATH`."
+          },
+          "source": {
+            "type": "string",
+            "description": "Where `path` came from: `settings`, `env` or `path`."
+          }
+        }
+      },
+      "EbookConvertUpdate": {
+        "type": "object",
+        "description": "The `ebook-convert` path to save.",
+        "properties": {
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The path of Calibre's `ebook-convert`, up to 4096 bytes. Null or blank clears the\nsaved path."
           }
         }
       },
@@ -10635,6 +11772,26 @@
           }
         }
       },
+      "GhostFilesWarning": {
+        "type": "object",
+        "description": "How many books lost their files in one scan. `removed` books lost theirs, out of the\n`total` that had files. The share was high enough to warn about, but below the point\nwhere the scan stops.",
+        "required": [
+          "removed",
+          "total"
+        ],
+        "properties": {
+          "removed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "GoogleBooksKeyStatus": {
         "type": "object",
         "description": "Whether the server has a Google Books API key, with the key masked. It never carries\nthe key itself.",
@@ -11033,6 +12190,19 @@
           "published"
         ]
       },
+      "KindleDelivery": {
+        "type": "object",
+        "description": "Whether Send to Kindle can deliver. It never carries the relay's host or\ncredentials.",
+        "properties": {
+          "sender_address": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The address books are sent from, which readers must add to their approved\nsenders at Amazon. Null when no SMTP relay is set up, so nothing can be sent."
+          }
+        }
+      },
       "KindleSendQueued": {
         "type": "object",
         "description": "A Send to Kindle that is queued to go out.",
@@ -11119,6 +12289,42 @@
           }
         ],
         "description": "Where a Send to Kindle stands. `GET /api/kindle/send/status` returns it for the\n`task_id` that `POST /api/kindle/send` gave back. Poll until `status` is no longer\n`pending`. A `failed` status carries a `message` that says why."
+      },
+      "KoboDeviceView": {
+        "type": "object",
+        "description": "A Kobo e-reader registered to your account. Its `token` is the secret in the sync\naddress the Kobo is pointed at, `/kobo/{token}/…`.",
+        "required": [
+          "id",
+          "name",
+          "token",
+          "created_at",
+          "last_seen_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When it was registered, in Unix seconds."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The device's id, which the regenerate and delete routes take."
+          },
+          "last_seen_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the Kobo last synced, in Unix seconds."
+          },
+          "name": {
+            "type": "string",
+            "description": "The label you gave it."
+          },
+          "token": {
+            "type": "string",
+            "description": "The secret path segment of the sync address. Treat it like a password: anyone\nholding it can sync as you."
+          }
+        }
       },
       "LengthBucket": {
         "type": "object",
@@ -11261,6 +12467,76 @@
           "words": {
             "$ref": "#/components/schemas/MeasuredTotal",
             "description": "Total words, over the books whose word count is known."
+          }
+        }
+      },
+      "LogPage": {
+        "type": "object",
+        "description": "One page of matching log records, newest first.",
+        "required": [
+          "records",
+          "page",
+          "per_page",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean",
+            "description": "Whether more matching records follow this page."
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The zero-based page index that was read.",
+            "minimum": 0
+          },
+          "per_page": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The page size that was used, after the default and the cap.",
+            "minimum": 0
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogRecord"
+            },
+            "description": "Matching records for this page, newest first."
+          }
+        }
+      },
+      "LogRecord": {
+        "type": "object",
+        "description": "One parsed structured-log record surfaced to the admin log viewer.",
+        "required": [
+          "timestamp",
+          "level",
+          "target",
+          "message"
+        ],
+        "properties": {
+          "fields": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The event's other fields and its request's method and path, as compact JSON.\nAbsent when there was nothing beyond the message."
+          },
+          "level": {
+            "type": "string",
+            "description": "Level string as written: `ERROR` / `WARN` / `INFO` / `DEBUG` / `TRACE`."
+          },
+          "message": {
+            "type": "string",
+            "description": "The event's `message` field, or empty when the event carried none."
+          },
+          "target": {
+            "type": "string",
+            "description": "The module that logged the event, which the `module` filter matches against."
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp as logged. Fixed-width, so sorting the strings sorts by time."
           }
         }
       },
@@ -11532,6 +12808,17 @@
           "open_library",
           "google_books",
           "hardcover"
+        ]
+      },
+      "MetadataSource": {
+        "type": "string",
+        "description": "A source of book metadata, as a library's precedence list orders them. Only\n`embedded_tags`, the metadata inside the book file, and `omnibus_overrides`, the\nedits made in Omnibus, supply data today. The others are stored but change nothing.",
+        "enum": [
+          "folder_structure",
+          "embedded_tags",
+          "opf_sidecar",
+          "omnibus_overrides",
+          "provider_match"
         ]
       },
       "MonthCount": {
@@ -12042,6 +13329,98 @@
             "description": "When the server received the position, in Unix seconds."
           }
         }
+      },
+      "ProgressState": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "processed",
+              "state"
+            ],
+            "properties": {
+              "processed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "running"
+                ]
+              },
+              "total": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "processed",
+              "state"
+            ],
+            "properties": {
+              "bake_errors": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "The uuids of books whose EPUB couldn't be rebuilt with their edited metadata,\nafter a rebuild of every EPUB. Absent otherwise, and never present together\nwith `ghost_warning`."
+              },
+              "ghost_warning": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/GhostFilesWarning",
+                    "description": "Present when a scan found many books' files missing, though not so many that\nit stopped. Clients warn about it."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "processed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "done"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "state"
+            ],
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "failed"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Where a background task stands. `state` says which case it is. A `running` task\nwithout `total` hasn't counted its work yet. With `total`, `processed` out of `total`\nis its progress. `done` and `failed` tasks stay in `recent_complete` for about 10\nseconds."
       },
       "ProgressUpdate": {
         "type": "object",
@@ -13023,6 +14402,50 @@
             "items": {
               "$ref": "#/components/schemas/ExternalBookMeta"
             }
+          }
+        }
+      },
+      "ScanTallies": {
+        "type": "object",
+        "description": "File counts from a library scan. `found` is how many files it found on disk, and the\nother counts say how it sorted them against the index. The counts are final once the\nscan has compared every file.",
+        "required": [
+          "found",
+          "new",
+          "changed",
+          "removed",
+          "moved",
+          "unchanged"
+        ],
+        "properties": {
+          "changed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "found": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "moved": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "new": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "removed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "unchanged": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -14155,6 +15578,76 @@
           }
         }
       },
+      "SuggestionCard": {
+        "type": "object",
+        "description": "One cleanup suggestion with the names and counts to show it for review.\n`secondary_name` and `photo_url` are null when they don't apply: a tag split has no\nsingle other name, and only author suggestions can have a photo.",
+        "required": [
+          "id",
+          "kind",
+          "action",
+          "decision",
+          "primary_name",
+          "book_count",
+          "created_at"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/CleanupAction"
+          },
+          "book_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many library books are affected if the suggestion is applied."
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix seconds the suggestion was detected."
+          },
+          "decision": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CleanupKind"
+          },
+          "photo_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Relative URL of the author's cached photo. Null for other kinds and for an\nauthor without one."
+          },
+          "primary_name": {
+            "type": "string",
+            "description": "The name the suggestion centres on: the record a merge keeps, the tag being\nsplit, the record being deleted, or a book's current title."
+          },
+          "proposed_parts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The tags a split would produce, in the order they appear in the original. Empty\nfor every other action."
+          },
+          "secondary_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The suggestion's second name, where it has one: the proposed title on a rename,\nor the record folding away in a two-way merge. Null for a split, a delete, and\na merge of three or more records, which `source_names` lists instead."
+          },
+          "source_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every name a merge would fold into `primary_name`. Empty for the other actions."
+          }
+        }
+      },
       "SuggestionsResponse": {
         "oneOf": [
           {
@@ -14299,6 +15792,37 @@
           }
         }
       },
+      "TaskDetail": {
+        "type": "object",
+        "description": "Live detail about a task: its phase, the item it is on and, for a scan, its file\ncounts. Every field may be absent.",
+        "properties": {
+          "current_item": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The item the task is working on, such as \"books/Author/Title.epub\"."
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A short label for the task's current phase, such as \"Walking the library\"."
+          },
+          "tallies": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ScanTallies",
+                "description": "A scan's file counts. They stay on the finished task, so a client can sum up what\nthe scan changed."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "TaskKind": {
         "type": "string",
         "description": "The kind of a background task. `scan` also covers the jobs that follow a scan and\nother jobs without a kind of their own. More kinds may come, so clients should accept\nvalues they don't know.",
@@ -14310,6 +15834,58 @@
           "backfill_chapters",
           "resolve_suggestions"
         ]
+      },
+      "TaskProgress": {
+        "type": "object",
+        "description": "One background task in the progress feed. `task_id` identifies it until the server\nrestarts.",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "started_at_ms",
+          "last_update_ms"
+        ],
+        "properties": {
+          "detail": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TaskDetail",
+                "description": "Live detail about the task. Absent for kinds of task that don't report it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TaskKind"
+          },
+          "last_update_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the task last reported progress, in Unix milliseconds."
+          },
+          "resource_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the task works on, such as a library folder or a book. Tasks with the same\nkey run one after another. Absent when the task claims nothing."
+          },
+          "started_at_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the task started, in Unix milliseconds by the server's clock. It is for\nshowing elapsed time only."
+          },
+          "state": {
+            "$ref": "#/components/schemas/ProgressState"
+          },
+          "task_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
       },
       "TrendPoint": {
         "type": "object",
@@ -14838,6 +16414,28 @@
             "description": "How long each of the last 20 finished tasks took, in milliseconds, oldest first.\nFailed tasks count too."
           }
         }
+      },
+      "WorkerStatus": {
+        "type": "object",
+        "description": "The background task progress feed: tasks running now, and tasks that finished in the\nlast 10 seconds or so. Both lists are sorted by `task_id`.",
+        "required": [
+          "active",
+          "recent_complete"
+        ],
+        "properties": {
+          "active": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskProgress"
+            }
+          },
+          "recent_complete": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskProgress"
+            }
+          }
+        }
       }
     },
     "securitySchemes": {
@@ -14935,7 +16533,7 @@
     },
     {
       "name": "Account",
-      "description": "Your profile, avatar and preferences, and Send to Kindle."
+      "description": "Your profile, avatar and preferences, Kobo devices, and Send to Kindle."
     },
     {
       "name": "Admin",

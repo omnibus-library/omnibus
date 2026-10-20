@@ -289,6 +289,70 @@ async fn read_logs_paginates_with_has_more() {
 }
 
 #[tokio::test]
+async fn read_logs_pages_across_a_file_boundary() {
+    let dir = make_test_dir("logs_page_files");
+    write_log(
+        &dir,
+        "2026-07-18",
+        &[
+            &rec("2026-07-18T09:00:00Z", "INFO", "a", "old-1"),
+            &rec("2026-07-18T10:00:00Z", "INFO", "a", "old-2"),
+        ],
+    );
+    write_log(
+        &dir,
+        "2026-07-19",
+        &[
+            &rec("2026-07-19T08:00:00Z", "INFO", "a", "new-1"),
+            &rec("2026-07-19T09:00:00Z", "INFO", "a", "new-2"),
+        ],
+    );
+
+    let page = read_logs(
+        &dir,
+        &LogQuery {
+            per_page: 3,
+            page: 1,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let messages: Vec<_> = page.records.iter().map(|r| r.message.as_str()).collect();
+    assert_eq!(messages, vec!["old-1"]);
+    assert!(!page.has_more);
+}
+
+#[tokio::test]
+async fn read_logs_returns_an_empty_page_past_the_last_match() {
+    let dir = make_test_dir("logs_page_far");
+    write_log(
+        &dir,
+        "2026-07-19",
+        &[
+            &rec("2026-07-19T08:00:00Z", "INFO", "a", "m0"),
+            &rec("2026-07-19T09:00:00Z", "INFO", "a", "m1"),
+        ],
+    );
+
+    let page = read_logs(
+        &dir,
+        &LogQuery {
+            per_page: 2,
+            page: u32::MAX,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(page.records.is_empty());
+    assert!(!page.has_more);
+    assert_eq!(page.page, u32::MAX);
+}
+
+#[tokio::test]
 async fn read_logs_ignores_non_log_files() {
     let dir = make_test_dir("logs_stray");
     write_log(

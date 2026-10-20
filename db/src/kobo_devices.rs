@@ -31,6 +31,19 @@ pub struct KoboDevice {
     pub last_seen_at: i64,
 }
 
+impl From<KoboDevice> for omnibus_shared::KoboDeviceView {
+    /// The re-displayable projection: the hardware id and delta cursor stay server-side.
+    fn from(d: KoboDevice) -> Self {
+        Self {
+            id: d.id,
+            name: d.name,
+            token: d.token,
+            created_at: d.created_at,
+            last_seen_at: d.last_seen_at,
+        }
+    }
+}
+
 /// Principal resolved from a `/kobo/<TOKEN>/…` path token: which device row and
 /// which user it belongs to. The Kobo path-token extractor builds its
 /// authenticated user from this.

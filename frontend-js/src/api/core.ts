@@ -1,3 +1,4 @@
+import type { DataTag, QueryClient, QueryKey } from "@tanstack/react-query";
 import { z } from "zod";
 
 export type BookUuid = string & { readonly __brand: "BookUuid" };
@@ -27,7 +28,7 @@ export type UserId = number & { readonly __brand: "UserId" };
 export type AuthorId = number & { readonly __brand: "AuthorId" };
 export type SeriesId = number & { readonly __brand: "SeriesId" };
 
-const positiveInt = (raw: string | null | undefined) =>
+export const positiveInt = (raw: string | null | undefined) =>
   raw && /^[1-9]\d*$/.test(raw) ? Number(raw) : null;
 
 /** Brands a route parameter as an author id, or `null` unless it is a positive integer. */
@@ -40,10 +41,18 @@ export function parseSeriesId(raw: string | null | undefined): SeriesId | null {
   return positiveInt(raw) as SeriesId | null;
 }
 
+/** Brands a route parameter as a user id, or `null` unless it is a positive integer. */
+export function parseUserId(raw: string | null | undefined): UserId | null {
+  return positiveInt(raw) as UserId | null;
+}
+
 /** A route parameter as a shelf id, or `null` unless it is a positive integer. */
 export function parseShelfId(raw: string | null | undefined): number | null {
   return positiveInt(raw);
 }
+
+/** The device's UTC offset in minutes, east positive. The server cuts each day on it. */
+export const utcOffsetMinutes = () => -new Date().getTimezoneOffset();
 
 /** A non-2xx answer, carrying the status and the server's plain-text body. */
 export class ApiError extends Error {
@@ -117,6 +126,16 @@ export async function send(
   return res;
 }
 
+/** Stores a write's answer as the cached read, after cancelling any read in flight so its older reply cannot land over it. */
+export async function replaceQueryData<TData, TKey extends QueryKey>(
+  client: QueryClient,
+  queryKey: DataTag<TKey, TData, Error>,
+  data: TData,
+): Promise<void> {
+  await client.cancelQueries({ queryKey });
+  client.setQueryData<TData>(queryKey, data);
+}
+
 // orval emits no validator for a nullable or inline-array 200, so these reads parse here.
 export async function fetchJson<T>(
   url: string,
@@ -131,8 +150,29 @@ const coverBusts = new Map<BookUuid, number>();
 export const bumpCoverBust = (uuid: BookUuid) =>
   coverBusts.set(uuid, (coverBusts.get(uuid) ?? 0) + 1);
 
-/** Forgets every bump; a story starts from the cover the server first sent. */
-export const resetCoverBusts = () => coverBusts.clear();
+// The same for an avatar, which a reader replaces under the same URL.
+const avatarBusts = new Map<UserId, number>();
+
+const avatarWatchers = new Set<() => void>();
+
+/** Calls `onChange` after any bump, so a mounted avatar redraws with the new URL. */
+export const watchAvatarBusts = (onChange: () => void) => {
+  avatarWatchers.add(onChange);
+  return () => {
+    avatarWatchers.delete(onChange);
+  };
+};
+
+export const bumpAvatarBust = (id: UserId) => {
+  avatarBusts.set(id, (avatarBusts.get(id) ?? 0) + 1);
+  for (const onChange of avatarWatchers) onChange();
+};
+
+/** Forgets every bump, covers and avatars; a story starts from the image the server first sent. */
+export const resetImageBusts = () => {
+  coverBusts.clear();
+  avatarBusts.clear();
+};
 
 /** `url` with the book's cover generation appended, once a write has bumped it. */
 export const bustCover = (url: string, uuid: BookUuid) => {
@@ -149,4 +189,7 @@ export const thumbSrcSet = (uuid: BookUuid) =>
 export const coverUrl = (uuid: BookUuid) =>
   bustCover(`/api/covers/${uuid}`, uuid);
 
-export const avatarUrl = (id: UserId) => `/api/users/${id}/avatar`;
+export const avatarUrl = (id: UserId) => {
+  const n = avatarBusts.get(id);
+  return n ? `/api/users/${id}/avatar?v=${n}` : `/api/users/${id}/avatar`;
+};
