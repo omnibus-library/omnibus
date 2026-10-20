@@ -88,6 +88,10 @@ export function SourcesCard() {
       void queryClient.invalidateQueries({
         queryKey: libraryContentsQuery.queryKey,
       });
+      // Each library's source order is the default one until its folder is set.
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "metadata-order"],
+      });
     },
   });
 

@@ -4,7 +4,11 @@ import { HttpResponse, http } from "msw";
 import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import { type Settings, settingsQuery } from "../../api";
-import { storyClient } from "../../testing/AppHarness";
+import {
+  expectInvalidated,
+  seedQueries,
+  storyClient,
+} from "../../testing/AppHarness";
 import {
   aWireLibraryContents,
   aWireLibrarySection,
@@ -258,6 +262,30 @@ export const SavesTheSettings: Story = {
     await expect(
       await canvas.findByText("9 files found. 9 .epub found."),
     ).toBeInTheDocument();
+  },
+};
+
+export const ReadsTheMetadataOrderAgainAfterASave: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await waitFor(() =>
+      expect(canvas.getByLabelText("Ebook library path")).toHaveValue(
+        "/library/ebooks",
+      ),
+    );
+    // A library's order is the default one until its folder is set.
+    const orders = [
+      ["admin", "metadata-order", "ebook"],
+      ["admin", "metadata-order", "audiobook"],
+    ];
+    seedQueries(orders);
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Save library settings" }),
+    );
+
+    await expect(
+      await canvas.findByText("Library settings saved."),
+    ).toBeVisible();
+    await expectInvalidated(orders);
   },
 };
 
