@@ -266,7 +266,7 @@ async fn api_other_ratings_returns_500_on_db_failure() {
     let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
     let alice = auth_test_support::create_user(&pool, "alice").await;
     let token = auth_test_support::bearer_token(&pool, alice.id).await;
-    sqlx::query("DROP TABLE user_ratings")
+    sqlx::query("DROP TABLE reviews")
         .execute(&pool)
         .await
         .unwrap();

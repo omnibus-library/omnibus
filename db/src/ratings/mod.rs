@@ -1,13 +1,15 @@
-//! Per-user star-rating CRUD. One row per `(user, book)`, last-write-wins on the
-//! value, soft-referencing the durable `books.uuid` (no FK/cascade) through the
-//! merged-uuid-aware canonical resolver. A pruned book detaches its rating
-//! rather than deleting it; the missing-files GC keeps any book a rating
-//! references.
+//! The stars-only view of [`crate::reviews`], for the older `/api/ratings`
+//! routes, their Dioxus server functions and the Kobo `RateBook` ingest. A
+//! rating is a review's stars and `rated_at`; setting or clearing one patches
+//! only the stars, so text and private notes on the same review survive.
 
-use omnibus_shared::{stars_from_half_stars, AttributedRating, RatingRecord, RatingUpdate};
+use omnibus_shared::{
+    stars_from_half_stars, AttributedRating, RatingRecord, RatingUpdate, Review, ReviewPatch,
+};
 use sqlx::{Row, SqlitePool};
 
 use crate::resolve_canonical_book_uuid;
+use crate::reviews::{self, ReviewError};
 
 /// Hard cap on how many other-user ratings `list_other_ratings` returns for
 /// a single book. Practical usage stays well under this; the cap exists so
@@ -24,93 +26,55 @@ pub enum RatingError {
     Sqlx(#[from] sqlx::Error),
 }
 
-impl From<crate::books::BooksError> for RatingError {
-    fn from(e: crate::books::BooksError) -> Self {
+impl From<ReviewError> for RatingError {
+    fn from(e: ReviewError) -> Self {
         match e {
-            crate::books::BooksError::Db(inner) => Self::Sqlx(inner),
-            // `resolve_canonical_book_uuid` is the only `BooksError`-returning
-            // call this module makes and it never reads overrides, so neither
-            // remaining variant is reachable here. Fold them into a decode
-            // error rather than panicking, mirroring `progress`.
-            crate::books::BooksError::OverridesJson(inner) => {
-                Self::Sqlx(sqlx::Error::Decode(Box::new(inner)))
-            }
-            crate::books::BooksError::Other(msg) => Self::Sqlx(sqlx::Error::Decode(msg.into())),
+            ReviewError::BookNotFound => Self::BookNotFound,
+            ReviewError::Sqlx(inner) => Self::Sqlx(inner),
         }
     }
 }
 
-/// Upsert the rating for `(user, book)` and return the new server-authoritative
-/// record. Resolves the request uuid to the **canonical** `books.uuid` (keeping
-/// the `BookNotFound` guard — you cannot rate a book the server has never
-/// indexed) and stores/keys on it.
+impl From<crate::books::BooksError> for RatingError {
+    fn from(e: crate::books::BooksError) -> Self {
+        ReviewError::from(e).into()
+    }
+}
+
+/// Set the stars on the reader's review of a book and return the new
+/// server-authoritative record. Resolves the request uuid to the **canonical**
+/// `books.uuid` (keeping the `BookNotFound` guard — you cannot rate a book the
+/// server has never indexed) and stores/keys on it.
 pub async fn set_rating(
     pool: &SqlitePool,
     user_id: i64,
     update: &RatingUpdate,
 ) -> Result<RatingRecord, RatingError> {
-    let book_uuid = resolve_canonical_book_uuid(pool, &update.book_uuid)
-        .await?
-        .ok_or(RatingError::BookNotFound)?;
-    sqlx::query(
-        "INSERT INTO user_ratings (user_id, book_uuid, half_stars, updated_at)
-         VALUES (?, ?, ?, strftime('%s','now'))
-         ON CONFLICT(user_id, book_uuid) DO UPDATE SET
-             half_stars = excluded.half_stars,
-             updated_at = strftime('%s','now')",
-    )
-    .bind(user_id)
-    .bind(&book_uuid)
-    .bind(update.half_stars())
-    .execute(pool)
-    .await?;
-
-    let row = sqlx::query(
-        "SELECT half_stars, updated_at FROM user_ratings
-         WHERE user_id = ? AND book_uuid = ?",
-    )
-    .bind(user_id)
-    .bind(&book_uuid)
-    .fetch_one(pool)
-    .await?;
-    Ok(RatingRecord {
-        book_uuid,
-        stars: stars_from_half_stars(row.try_get::<i64, _>("half_stars")?),
-        updated_at: row.try_get::<i64, _>("updated_at")?,
-    })
+    let patch = ReviewPatch {
+        stars: Some(Some(update.stars)),
+        ..Default::default()
+    };
+    let review = reviews::update_review(pool, user_id, &update.book_uuid, &patch).await?;
+    // A patch that sets stars always leaves a review holding them.
+    review
+        .as_ref()
+        .and_then(rating_record)
+        .ok_or(RatingError::Sqlx(sqlx::Error::RowNotFound))
 }
 
 /// Fetch the current rating for `(user, book_uuid)`. Returns `Ok(None)` for an
-/// unknown book uuid or for a book the user has not rated yet.
+/// unknown book uuid, an unreviewed book, or a review with no stars.
 pub async fn get_rating(
     pool: &SqlitePool,
     user_id: i64,
     book_uuid: &str,
 ) -> Result<Option<RatingRecord>, RatingError> {
-    let Some(canonical) = resolve_canonical_book_uuid(pool, book_uuid).await? else {
-        return Ok(None);
-    };
-    let Some(row) = sqlx::query(
-        "SELECT half_stars, updated_at FROM user_ratings
-         WHERE user_id = ? AND book_uuid = ?",
-    )
-    .bind(user_id)
-    .bind(&canonical)
-    .fetch_optional(pool)
-    .await?
-    else {
-        return Ok(None);
-    };
-    Ok(Some(RatingRecord {
-        book_uuid: canonical,
-        stars: stars_from_half_stars(row.try_get::<i64, _>("half_stars")?),
-        updated_at: row.try_get::<i64, _>("updated_at")?,
-    }))
+    let review = reviews::get_review(pool, user_id, book_uuid).await?;
+    Ok(review.as_ref().and_then(rating_record))
 }
 
-/// List every other user's rating for a book, newest first, capped at
-/// [`LIST_OTHER_RATINGS_LIMIT`]. The viewer's own rating stays in the
-/// separate interactive widget.
+/// List every other user's rating for a book, most recently rated first,
+/// capped at [`LIST_OTHER_RATINGS_LIMIT`]. Reviews with no stars are skipped.
 pub async fn list_other_ratings(
     pool: &SqlitePool,
     viewer_id: i64,
@@ -120,13 +84,13 @@ pub async fn list_other_ratings(
         return Ok(vec![]);
     };
     let rows = sqlx::query(
-        "SELECT ur.user_id, COALESCE(u.display_name, u.username) AS username,
+        "SELECT r.user_id, COALESCE(u.display_name, u.username) AS username,
                 EXISTS(SELECT 1 FROM user_avatars a WHERE a.user_id = u.id) AS has_avatar,
-                ur.half_stars, ur.updated_at
-           FROM user_ratings ur
-           JOIN users u ON u.id = ur.user_id
-          WHERE ur.book_uuid = ? AND ur.user_id != ?
-          ORDER BY ur.updated_at DESC, ur.user_id DESC
+                r.half_stars, r.rated_at
+           FROM reviews r
+           JOIN users u ON u.id = r.user_id
+          WHERE r.book_uuid = ? AND r.user_id != ? AND r.half_stars IS NOT NULL
+          ORDER BY r.rated_at DESC, r.user_id DESC
           LIMIT ?",
     )
     .bind(canonical)
@@ -142,30 +106,37 @@ pub async fn list_other_ratings(
                 username: row.try_get("username")?,
                 has_avatar: row.try_get::<i64, _>("has_avatar")? != 0,
                 stars: stars_from_half_stars(row.try_get("half_stars")?),
-                updated_at: row.try_get("updated_at")?,
+                updated_at: row.try_get("rated_at")?,
             })
         })
         .collect()
 }
 
-/// Remove the current user's rating for a book (un-rate). A no-op when no row
-/// exists — clearing an absent rating is not an error. Resolves the uuid the
-/// same merged-uuid-aware way as the writes so a format-merged uuid clears the
-/// surviving book's row.
+/// Clear the stars on the reader's review of a book (un-rate), keeping any
+/// text and notes; a review with neither goes entirely. A no-op when there are
+/// no stars — clearing an absent rating is not an error.
 pub async fn delete_rating(
     pool: &SqlitePool,
     user_id: i64,
     book_uuid: &str,
 ) -> Result<(), RatingError> {
-    let Some(canonical) = resolve_canonical_book_uuid(pool, book_uuid).await? else {
-        return Ok(());
+    let patch = ReviewPatch {
+        stars: Some(None),
+        ..Default::default()
     };
-    sqlx::query("DELETE FROM user_ratings WHERE user_id = ? AND book_uuid = ?")
-        .bind(user_id)
-        .bind(&canonical)
-        .execute(pool)
-        .await?;
-    Ok(())
+    match reviews::update_review(pool, user_id, book_uuid, &patch).await {
+        Ok(_) | Err(ReviewError::BookNotFound) => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// A review's stars as a rating, `rated_at` standing in for `updated_at`.
+fn rating_record(review: &Review) -> Option<RatingRecord> {
+    Some(RatingRecord {
+        book_uuid: review.book_uuid.clone(),
+        stars: review.stars?,
+        updated_at: review.rated_at?,
+    })
 }
 
 #[cfg(test)]

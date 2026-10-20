@@ -160,7 +160,7 @@ async fn delete_book_items_purges_the_book_and_its_user_data_when_every_item_goe
     for table in [
         "annotations",
         "bookmarks",
-        "user_ratings",
+        "reviews",
         "journal_entries",
         "physical_copies",
         "reading_progress",
@@ -654,8 +654,8 @@ async fn seed_user_data(pool: &SqlitePool, user_id: i64, uuid: &str) -> i64 {
          VALUES (?1, ?2, 'x', 1)",
         "INSERT INTO annotations (user_id, book_uuid, epub_cfi_range, created_at)
          VALUES (?1, ?2, 'x', 1)",
-        "INSERT INTO user_ratings (user_id, book_uuid, half_stars, updated_at)
-         VALUES (?1, ?2, 8, 1)",
+        "INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at, updated_at)
+         VALUES (?1, ?2, 8, 1, 1)",
         "INSERT INTO journal_entries (user_id, book_uuid, body_md, created_at, updated_at)
          VALUES (?1, ?2, 'note', 1, 1)",
     ] {

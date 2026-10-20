@@ -362,7 +362,7 @@ pub(super) const RETARGET_TABLES: [&str; 18] = [
     "kobo_annotations_sync",
     "journal_entries",
     "book_read_status",
-    "user_ratings",
+    "reviews",
     "shelf_books",
     "physical_copies",
     "wishlist_entries",
@@ -443,7 +443,7 @@ pub(super) const COLLISION_TABLES: [Collision; 9] = [
         keep: Keep::Max("updated_at"),
     },
     Collision {
-        table: "user_ratings",
+        table: "reviews",
         keys: &["user_id"],
         keep: Keep::Max("updated_at"),
     },

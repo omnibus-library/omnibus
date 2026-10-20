@@ -175,14 +175,14 @@ async fn rating_rule_resolves_against_shelf_owner() {
     let saga = uuid_by_title(&pool, "Saga: Book One").await;
 
     // Owner rates it 5★; the other user rates a different book 5★.
-    sqlx::query("INSERT INTO user_ratings (user_id, book_uuid, half_stars) VALUES (?, ?, 10)")
+    sqlx::query("INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at) VALUES (?, ?, 10, strftime('%s','now'))")
         .bind(owner)
         .bind(&saga)
         .execute(&pool)
         .await
         .unwrap();
     let standalone = uuid_by_title(&pool, "Standalone").await;
-    sqlx::query("INSERT INTO user_ratings (user_id, book_uuid, half_stars) VALUES (?, ?, 10)")
+    sqlx::query("INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at) VALUES (?, ?, 10, strftime('%s','now'))")
         .bind(other)
         .bind(&standalone)
         .execute(&pool)

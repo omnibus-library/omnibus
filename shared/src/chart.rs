@@ -90,7 +90,7 @@ pub enum ChartGrain {
     Ledger,
     /// One row per completion — the `FINISHED_EVENTS` union.
     Completion,
-    /// One row per rating — `user_ratings`.
+    /// One row per rating — a review with stars.
     Rating,
 }
 

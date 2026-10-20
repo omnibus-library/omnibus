@@ -82,8 +82,8 @@ async fn interacted_at_tracks_a_rating_by_any_user() {
     let pool = seeded_pool(1).await;
     let user = seed_user(&pool, "alice").await;
     sqlx::query(
-        "INSERT INTO user_ratings (user_id, book_uuid, half_stars, updated_at)
-         VALUES (?, ?, 8, 4000)",
+        "INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at, updated_at)
+         VALUES (?1, ?2, 8, 4000, 4000)",
     )
     .bind(user)
     .bind(uuid(1))
@@ -129,6 +129,22 @@ async fn interacted_at_ignores_a_private_journal_draft() {
 }
 
 #[tokio::test]
+async fn interacted_at_ignores_a_review_holding_only_private_notes() {
+    let pool = seeded_pool(1).await;
+    let user = seed_user(&pool, "alice").await;
+    sqlx::query(
+        "INSERT INTO reviews (user_id, book_uuid, notes_md, updated_at)
+         VALUES (?1, ?2, 'mine alone', 4300)",
+    )
+    .bind(user)
+    .bind(uuid(1))
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(interacted_at(&pool, &uuid(1)).await, Some(1000));
+}
+
+#[tokio::test]
 async fn interacted_at_tracks_a_read_status_change() {
     let pool = seeded_pool(1).await;
     let user = seed_user(&pool, "alice").await;
@@ -163,8 +179,8 @@ async fn interacted_at_takes_the_most_recent_signal_across_users_and_kinds() {
     let alice = seed_user(&pool, "alice").await;
     let bob = seed_user(&pool, "bob").await;
     sqlx::query(
-        "INSERT INTO user_ratings (user_id, book_uuid, half_stars, updated_at)
-         VALUES (?, ?, 8, 4000)",
+        "INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at, updated_at)
+         VALUES (?1, ?2, 8, 4000, 4000)",
     )
     .bind(alice)
     .bind(uuid(1))
@@ -224,8 +240,8 @@ async fn recently_interacted_paging_matches_an_unpaged_read_in_both_directions()
     // the flat library-add clock so the id tiebreak is exercised too.
     for (n, at) in [(2, 9000), (4, 3000), (5, 9000), (7, 1500), (9, 500)] {
         sqlx::query(
-            "INSERT INTO user_ratings (user_id, book_uuid, half_stars, updated_at)
-             VALUES (?, ?, 6, ?)",
+            "INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at, updated_at)
+             VALUES (?1, ?2, 6, ?3, ?3)",
         )
         .bind(user)
         .bind(uuid(n))

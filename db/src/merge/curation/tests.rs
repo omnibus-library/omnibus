@@ -1,5 +1,5 @@
 //! Tests for the curation snapshot and its replay: the pure planner, then
-//! merge-then-undo end to end for read status, ratings and the identifier
+//! merge-then-undo end to end for read status, reviews and the identifier
 //! tuples that travel with them.
 
 use super::*;
@@ -12,10 +12,15 @@ use crate::test_support::{
 
 // --- the planner, in isolation ---
 
-fn rating(user_id: i64, half_stars: i64, updated_at: i64) -> RatingRow {
-    RatingRow {
+fn rating(user_id: i64, half_stars: i64, updated_at: i64) -> ReviewRow {
+    ReviewRow {
         user_id,
-        half_stars,
+        half_stars: Some(half_stars),
+        body_md: None,
+        notes_md: None,
+        spoiler: false,
+        rated_at: Some(updated_at),
+        created_at: Some(updated_at),
         updated_at,
     }
 }
@@ -210,8 +215,8 @@ async fn seed_curation(
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO user_ratings (user_id, book_uuid, half_stars, updated_at)
-         VALUES (?, ?, ?, ?)",
+        "INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?4)",
     )
     .bind(user)
     .bind(book_uuid)
@@ -245,7 +250,7 @@ async fn curation_of(pool: &sqlx::SqlitePool, user: i64, book_uuid: &str) -> Cur
     .await
     .unwrap();
     let rating: Option<(i64, i64)> = sqlx::query_as(
-        "SELECT half_stars, updated_at FROM user_ratings WHERE user_id = ? AND book_uuid = ?",
+        "SELECT half_stars, updated_at FROM reviews WHERE user_id = ? AND book_uuid = ?",
     )
     .bind(user)
     .bind(book_uuid)
@@ -387,7 +392,7 @@ async fn undo_merge_leaves_a_reader_the_merge_never_moved_a_row_for_alone() {
     let out = merge_books(&pool, &source, &target, Some(mover))
         .await
         .unwrap();
-    sqlx::query("UPDATE user_ratings SET half_stars = 10 WHERE user_id = ?")
+    sqlx::query("UPDATE reviews SET half_stars = 10 WHERE user_id = ?")
         .bind(bystander)
         .execute(&pool)
         .await
@@ -437,7 +442,7 @@ async fn undo_merge_survives_a_reader_whose_account_was_deleted_after_the_merge(
         0,
         "the departed reader's rows must not be resurrected against a dead FK"
     );
-    assert_eq!(count(&pool, "SELECT COUNT(*) FROM user_ratings").await, 0);
+    assert_eq!(count(&pool, "SELECT COUNT(*) FROM reviews").await, 0);
 }
 
 #[tokio::test]
@@ -460,7 +465,7 @@ async fn undo_merge_allows_a_timestamp_only_touch_of_the_survivor() {
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE user_ratings SET updated_at = 9000 WHERE book_uuid = ?")
+    sqlx::query("UPDATE reviews SET updated_at = 9000 WHERE book_uuid = ?")
         .bind(&target)
         .execute(&pool)
         .await
@@ -531,7 +536,7 @@ async fn undo_merge_refuses_when_only_the_survivors_rating_was_recurated() {
         .unwrap();
     // Read status left exactly as the merge produced it, so only the rating
     // planner can raise.
-    sqlx::query("UPDATE user_ratings SET half_stars = 2 WHERE book_uuid = ?")
+    sqlx::query("UPDATE reviews SET half_stars = 2 WHERE book_uuid = ?")
         .bind(&target)
         .execute(&pool)
         .await
@@ -539,7 +544,7 @@ async fn undo_merge_refuses_when_only_the_survivors_rating_was_recurated() {
 
     let err = undo_merge(&pool, out.merge_log_id).await.unwrap_err();
     assert!(matches!(err, MergeError::UndoConflict(_)), "got {err:?}");
-    assert!(err.to_string().contains("rating"), "got {err}");
+    assert!(err.to_string().contains("review"), "got {err}");
     assert_eq!(count(&pool, "SELECT COUNT(*) FROM books").await, 1);
 }
 
@@ -714,8 +719,8 @@ async fn undo_merge_allows_it_when_a_later_merge_moved_only_the_other_curation_t
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO user_ratings (user_id, book_uuid, half_stars, updated_at)
-         VALUES (?, ?, 7, 2000)",
+        "INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at, updated_at)
+         VALUES (?1, ?2, 7, 2000, 2000)",
     )
     .bind(user)
     .bind(&second)

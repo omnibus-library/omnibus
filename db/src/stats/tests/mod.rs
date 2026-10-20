@@ -154,8 +154,8 @@ pub(super) async fn rate_book(
     updated_at: i64,
 ) {
     sqlx::query(
-        "INSERT INTO user_ratings (user_id, book_uuid, half_stars, updated_at)
-         VALUES (?, ?, ?, ?)",
+        "INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?4)",
     )
     .bind(user)
     .bind(uuid)

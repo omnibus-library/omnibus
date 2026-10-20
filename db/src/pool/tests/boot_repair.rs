@@ -116,8 +116,8 @@ async fn seed_repair_user_data(pool: &SqlitePool, target_uuid: &str) {
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO user_ratings (user_id, book_uuid, half_stars)
-         VALUES (1, ?, 9)",
+        "INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at)
+         VALUES (1, ?, 9, strftime('%s','now'))",
     )
     .bind(target_uuid)
     .execute(pool)
@@ -152,7 +152,7 @@ async fn repair_user_data_counts(pool: &SqlitePool, target_uuid: &str) -> (i64, 
     sqlx::query_as(
         "SELECT
              (SELECT COUNT(*) FROM reading_progress WHERE book_uuid = ?),
-             (SELECT COUNT(*) FROM user_ratings WHERE book_uuid = ?),
+             (SELECT COUNT(*) FROM reviews WHERE book_uuid = ?),
              (SELECT COUNT(*) FROM journal_entries WHERE book_uuid = ?)",
     )
     .bind(target_uuid)
@@ -322,7 +322,7 @@ async fn boot_backfill_replants_multipart_guards_and_drops_resurrected_duplicate
     .execute(&pool)
     .await
     .unwrap();
-    sqlx::query("INSERT INTO user_ratings (user_id, book_uuid, half_stars) VALUES (1, ?, 8)")
+    sqlx::query("INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at) VALUES (1, ?, 8, strftime('%s','now'))")
         .bind(&dupe3_uuid)
         .execute(&pool)
         .await
@@ -368,7 +368,7 @@ async fn boot_backfill_replants_multipart_guards_and_drops_resurrected_duplicate
         1,
         "a dupe carrying user data is preserved for manual handling"
     );
-    assert_eq!(count(&pool, "SELECT COUNT(*) FROM user_ratings").await, 1);
+    assert_eq!(count(&pool, "SELECT COUNT(*) FROM reviews").await, 1);
 
     // Idempotent: a second run changes nothing.
     run_boot_backfills(&pool).await.unwrap();

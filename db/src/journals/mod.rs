@@ -233,12 +233,12 @@ pub async fn delete_journal_entry(
     Ok(())
 }
 
-/// Best-effort delete of any `candidates` no longer referenced by any
-/// `journal_entries.body_md`, called after the caller's own mutation has
-/// committed. Failures (a DB error on the reference check, a panic in the
-/// unlink) are logged and swallowed, never failing that mutation; the sibling
+/// Best-effort delete of any `candidates` no longer embedded by any journal
+/// entry or review, called after the caller's own mutation has committed.
+/// Failures (a DB error on the reference check, a panic in the unlink) are
+/// logged and swallowed, never failing that mutation; the sibling
 /// `deletion::purge::orphaned_images` propagates the DB error instead.
-async fn cleanup_orphaned_images(pool: &SqlitePool, candidates: HashSet<String>) {
+pub(crate) async fn cleanup_orphaned_images(pool: &SqlitePool, candidates: HashSet<String>) {
     let orphaned = match unreferenced_image_names(pool, candidates).await {
         Ok(names) => names,
         Err(e) => {
@@ -260,8 +260,9 @@ async fn cleanup_orphaned_images(pool: &SqlitePool, candidates: HashSet<String>)
     }
 }
 
-/// Narrow `candidates` to the names no `journal_entries.body_md` still embeds,
-/// matched on the full embed path so a bare-name substring can't false-positive.
+/// Narrow `candidates` to the names no journal entry and no review (text or
+/// notes) still embeds — both share the one image store — matched on the full
+/// embed path so a bare-name substring can't false-positive.
 /// Returns the raw `sqlx::Error` for each caller to handle: [`cleanup_orphaned_images`]
 /// swallows and logs, `deletion::purge::orphaned_images` propagates.
 pub(crate) async fn unreferenced_image_names(
@@ -274,9 +275,13 @@ pub(crate) async fn unreferenced_image_names(
     }
     // One fetch matched in memory beats a per-candidate `instr()` scan while the
     // table stays small.
-    let bodies: Vec<String> = sqlx::query_scalar("SELECT body_md FROM journal_entries")
-        .fetch_all(pool)
-        .await?;
+    let bodies: Vec<String> = sqlx::query_scalar(
+        "SELECT body_md FROM journal_entries
+         UNION ALL SELECT body_md FROM reviews WHERE body_md IS NOT NULL
+         UNION ALL SELECT notes_md FROM reviews WHERE notes_md IS NOT NULL",
+    )
+    .fetch_all(pool)
+    .await?;
     Ok(candidates
         .into_iter()
         .filter(|name| {

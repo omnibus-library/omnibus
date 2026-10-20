@@ -23,7 +23,7 @@ const UUID_KEYED_TABLES: &[&str] = &[
     // `checkforchanges` re-report the purged uuid forever, since the GET that
     // would ack it can only 404.
     "kobo_annotations_sync",
-    "user_ratings",
+    "reviews",
     "audiobook_playback_preferences",
     "journal_entries",
     "shelf_books",
@@ -131,18 +131,22 @@ pub(crate) async fn purge_book(
     Ok(())
 }
 
-/// Journal-image file names embedded in this book's entries, collected before
-/// the purge drops the bodies that reference them. Candidates only — run
-/// [`orphaned_images`] after the commit to drop any another book still uses.
+/// Journal-image file names embedded in this book's journal entries and
+/// reviews, collected before the purge drops the text that references them.
+/// Candidates only — run [`orphaned_images`] after the commit to drop any
+/// another book still uses.
 pub(super) async fn journal_image_names(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     uuid: &str,
 ) -> Result<Vec<String>, DeleteError> {
-    let bodies: Vec<String> =
-        sqlx::query_scalar("SELECT body_md FROM journal_entries WHERE book_uuid = ?")
-            .bind(uuid)
-            .fetch_all(&mut **tx)
-            .await?;
+    let bodies: Vec<String> = sqlx::query_scalar(
+        "SELECT body_md FROM journal_entries WHERE book_uuid = ?1
+         UNION ALL SELECT body_md FROM reviews WHERE book_uuid = ?1 AND body_md IS NOT NULL
+         UNION ALL SELECT notes_md FROM reviews WHERE book_uuid = ?1 AND notes_md IS NOT NULL",
+    )
+    .bind(uuid)
+    .fetch_all(&mut **tx)
+    .await?;
     let mut names: Vec<String> = bodies
         .iter()
         .flat_map(|body| crate::journal_images::referenced_image_names(body))
@@ -152,7 +156,7 @@ pub(super) async fn journal_image_names(
     Ok(names)
 }
 
-/// Narrow `candidates` to the names no surviving `journal_entries.body_md`
+/// Narrow `candidates` to the names no surviving journal entry or review
 /// still embeds, via the shared batched check in
 /// [`crate::journals::unreferenced_image_names`] — unlike its
 /// swallow-and-log sibling `journals::cleanup_orphaned_images`, this caller

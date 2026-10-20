@@ -19,7 +19,7 @@ use super::MergeError;
 /// `curation`, which also detects re-curation of the survivor. The content
 /// index is regenerated from the files: a book holding any chapters is never
 /// re-indexed, so a partial set moved back would stay partial for good.
-const UNRELOCATED: [&str; 3] = ["book_read_status", "user_ratings", "book_content_chapters"];
+const UNRELOCATED: [&str; 3] = ["book_read_status", "reviews", "book_content_chapters"];
 
 /// Tables whose row is a reader's *current* value rather than an event. One
 /// updated on the survivor after the merge is the survivor's now; undo leaves

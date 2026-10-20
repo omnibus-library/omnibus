@@ -88,7 +88,7 @@ pub async fn book_deletion_manifest(
         ("bookmarks", &mut impact.bookmarks),
         ("reading_sessions", &mut impact.reading_sessions),
         ("listening_sessions", &mut impact.listening_sessions),
-        ("user_ratings", &mut impact.ratings),
+        ("reviews", &mut impact.ratings),
         ("shelf_books", &mut impact.shelves),
     ] {
         *slot = count_by_uuid(pool, table, &uuid).await?;
