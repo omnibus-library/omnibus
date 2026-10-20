@@ -7,3 +7,5 @@ allowBuilds:
 minimumReleaseAgeExclude:
   # Renovate security update: pnpm@11.11.0
   - pnpm@11.11.0
+  # Renovate security update: vite@8.3.3
+  - vite@8.3.3
