@@ -372,13 +372,13 @@ export function DeleteUserModal({
     >
       {isSelf && (
         <p className="settings-status error" data-testid="delete-self-warning">
-          This is your own account — you’ll be signed out.
+          This is your own account — you'll be signed out.
         </p>
       )}
       <ModalError error={error} />
       <ConfirmBody
         title={title}
-        body={`Permanently delete ${user.username} and all of their reading data. This can’t be undone.`}
+        body={`Permanently delete ${user.username} and all of their reading data. This can't be undone.`}
         actions={[
           {
             testId: "delete-user-cancel",

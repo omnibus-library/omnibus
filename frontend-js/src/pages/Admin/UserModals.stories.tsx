@@ -466,7 +466,7 @@ export const DeleteUserAsksBeforeDeleting: Story = {
     ).toBeInTheDocument();
     await expect(
       within(dialog).getByText(
-        "Permanently delete alice and all of their reading data. This can’t be undone.",
+        "Permanently delete alice and all of their reading data. This can't be undone.",
       ),
     ).toBeInTheDocument();
     await expect(
@@ -530,7 +530,7 @@ export const DeleteUserOnYourOwnRowSignsYouOut: Story = {
     const dialog = await canvas.findByRole("dialog", { name: "Delete ada" });
     await expect(
       within(dialog).getByTestId("delete-self-warning"),
-    ).toHaveTextContent("This is your own account — you’ll be signed out.");
+    ).toHaveTextContent("This is your own account — you'll be signed out.");
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Delete user" }),
     );
