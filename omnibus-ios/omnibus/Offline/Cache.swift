@@ -200,9 +200,16 @@ enum Cache {
     /// error.
     ///
     /// `storing` shapes what the replica keeps; the caller still gets the full answer.
+    ///
+    /// `guardsWrites` stores the answer only if nothing wrote `key` while the
+    /// request was out, yielding the replica instead — for a key a local write
+    /// and its own refresh also store (a review), where an answer fetched
+    /// before the write would otherwise put the old state back. Off for keys
+    /// written constantly, such as positions, which would refuse every answer.
     static func live<T: Codable & Sendable>(
         _ key: String,
         storing: (@Sendable (T) -> T)? = nil,
+        guardsWrites: Bool = false,
         fetch: @escaping @Sendable () async throws -> T
     ) -> AsyncThrowingStream<CacheRead<T>, Error> {
         AsyncThrowingStream { continuation in
@@ -226,6 +233,10 @@ enum Cache {
                 }
 
                 do {
+                    var generation: Int?
+                    if guardsWrites {
+                        generation = await OfflineStore.shared.cacheGeneration(key)
+                    }
                     let fresh = try await fetch()
 
                     // Re-checked *after* the fetch as well as before it. The
@@ -251,7 +262,21 @@ enum Cache {
                     // replica is written either way.
                     let freshData = try? encoder.encode(fresh)
                     let storedData = storing.map { try? encoder.encode($0(fresh)) } ?? freshData
-                    if let storedData { await OfflineStore.shared.cachePut(key, storedData) }
+                    if let storedData {
+                        if let generation {
+                            guard await OfflineStore.shared.cachePut(
+                                key, storedData, ifGeneration: generation
+                            ) else {
+                                // Something wrote the key while this was out, so
+                                // the replica is newer than this answer.
+                                await yieldReplica(key, since: cachedData, to: continuation)
+                                continuation.finish()
+                                return
+                            }
+                        } else {
+                            await OfflineStore.shared.cachePut(key, storedData)
+                        }
+                    }
                     guard !Task.isCancelled else {
                         continuation.finish()
                         return

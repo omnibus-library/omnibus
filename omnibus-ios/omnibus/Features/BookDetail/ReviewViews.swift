@@ -841,10 +841,16 @@ struct ReviewDraft: Equatable {
     /// Move onto `latest`. A field you haven't touched follows it; one you
     /// have keeps what you typed, and comes back as a conflict when `latest`
     /// moved it too — so the composer can say so before a save replaces it.
-    /// The spoiler flag describes the text, so edited text keeps the flag it
+    /// The spoiler flag describes the text, so text you wrote keeps the flag it
     /// was written under, and a flag moved underneath it is a conflict.
     mutating func rebase(onto latest: Review?) -> Set<Field> {
         let typed = touched
+        // Only text you wrote carries a flag; clearing the text leaves the
+        // flag nothing to describe.
+        let writesText: Bool = {
+            if case .set = patch.bodyMd { return true }
+            return false
+        }()
         var conflicts: Set<Field> = []
         if (baseline?.bodyMd ?? "") != (latest?.bodyMd ?? "") {
             if typed.contains(.body) { conflicts.insert(.body) } else { body = latest?.bodyMd ?? "" }
@@ -853,7 +859,7 @@ struct ReviewDraft: Equatable {
             if typed.contains(.notes) { conflicts.insert(.notes) } else { notes = latest?.notesMd ?? "" }
         }
         if (baseline?.spoiler ?? false) != (latest?.spoiler ?? false) {
-            if typed.contains(.spoiler) || typed.contains(.body) {
+            if typed.contains(.spoiler) || writesText {
                 conflicts.insert(.spoiler)
             } else {
                 spoiler = latest?.spoiler ?? false

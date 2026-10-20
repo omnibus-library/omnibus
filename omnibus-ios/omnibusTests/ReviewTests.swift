@@ -497,6 +497,16 @@ struct ReviewDraftTests {
         #expect(draft.patch == ReviewPatch(bodyMd: .set("mine"), spoiler: false))
     }
 
+    @Test("clearing your text lets the flag follow, and claims no spoiler conflict")
+    func clearedTextReleasesTheFlag() {
+        var draft = ReviewDraft(review(body: "old", spoiler: true))
+        draft.body = ""
+        let conflicts = draft.rebase(onto: review(body: "old", spoiler: false))
+        #expect(conflicts.isEmpty)
+        #expect(!draft.spoiler)
+        #expect(draft.patch == ReviewPatch(bodyMd: .cleared))
+    }
+
     @Test("blank text over no text is no edit, so a fresher review fills it and nothing is cleared")
     func blankOverNothingIsUntouched() {
         var draft = ReviewDraft(nil)
@@ -553,5 +563,65 @@ struct ReviewOutboxOpTests {
         #expect(op.method == "DELETE")
         #expect(op.superseding == [OpKind.rating(uuid)])
         #expect(op.legacyStars == nil)
+    }
+}
+
+// MARK: - The page read
+
+/// `.serialized`: these read and write the shared replica, under keys of
+/// their own.
+@Suite("Review page read", .serialized)
+struct ReviewPageReadTests {
+    private func stars(_ value: Double, for uuid: String) -> BookReviews {
+        BookReviews(
+            mine: Review(
+                bookUUID: uuid, stars: value, bodyMd: nil, bodyHtml: nil, notesMd: nil,
+                notesHtml: nil, spoiler: false, ratedAt: 1, createdAt: 1, updatedAt: 1
+            ),
+            others: [], summary: nil
+        )
+    }
+
+    @Test("a page read that answers after a tap landed never puts the old stars back")
+    func stalePageReadYieldsTheReplica() async throws {
+        await OfflineStore.shared.open()
+        let uuid = "stale-read-\(UUID().uuidString)"
+        let key = CacheKey.reviews(uuid)
+        await Cache.write(key, stars(2, for: uuid))
+
+        let stale = stars(2, for: uuid)
+        let reads = UserDataService.reviewsReads(uuid: uuid) {
+            // The tap, made while this request was out.
+            await UserDataService.mutateLocalReviews(uuid) {
+                $0 = $0.applying(.stars(5), uuid: uuid, now: 2)
+            }
+            return stale
+        }
+        var shown: [Double?] = []
+        for try await read in reads { shown.append(read.value.mine?.stars) }
+
+        let stored: BookReviews? = await Cache.read(key)
+        await OfflineStore.shared.cacheDelete(key)
+        #expect(shown == [2, 5])
+        #expect(stored?.mine?.stars == 5)
+    }
+
+    @Test("a page read nothing raced is stored and shown")
+    func undisturbedPageReadIsStored() async throws {
+        await OfflineStore.shared.open()
+        let uuid = "fresh-read-\(UUID().uuidString)"
+        let key = CacheKey.reviews(uuid)
+        await Cache.write(key, stars(2, for: uuid))
+
+        let fresh = stars(4, for: uuid)
+        var shown: [Double?] = []
+        for try await read in UserDataService.reviewsReads(uuid: uuid, fetch: { fresh }) {
+            shown.append(read.value.mine?.stars)
+        }
+
+        let stored: BookReviews? = await Cache.read(key)
+        await OfflineStore.shared.cacheDelete(key)
+        #expect(shown == [2, 4])
+        #expect(stored?.mine?.stars == 4)
     }
 }

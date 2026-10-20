@@ -236,9 +236,18 @@ enum UserDataService {
     /// A book's reviews, replica first: yours with its private notes, every
     /// other reader's, and the household summary when the server sends one.
     static func reviews(uuid: String) -> AsyncThrowingStream<CacheRead<BookReviews>, Error> {
-        Cache.live(CacheKey.reviews(uuid)) {
+        reviewsReads(uuid: uuid) {
             try await APIClient.shared.get("/api/reviews/\(uuid)")
         }
+    }
+
+    /// The reviews read with its fetch injected. Guards writes: a page read
+    /// that went out before a stars tap and answers after it must not store
+    /// the old stars over the tap, or refuse the tap's own refresh by doing so.
+    static func reviewsReads(
+        uuid: String, fetch: @escaping @Sendable () async throws -> BookReviews
+    ) -> AsyncThrowingStream<CacheRead<BookReviews>, Error> {
+        Cache.live(CacheKey.reviews(uuid), guardsWrites: true, fetch: fetch)
     }
 
     /// Change your review field by field, offline or not, answering with what
