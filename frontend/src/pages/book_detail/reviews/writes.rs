@@ -407,10 +407,15 @@ async fn refresh_household(ctx: ReviewsCtx, uuid: &str, server_url: &str) {
 /// or a revalidation landed), on the owner scope. The book shown stays put.
 /// Skipped while the server can't answer for the book yet (offline, or one of
 /// your writes to it queued): the drain that changes that moves the replica
-/// again, which comes back here.
+/// again, which comes back here. Skipped too while another re-read is out: it
+/// answers for the same moment or later, and replacing it would drop its
+/// result, and the stale note with it if it fails.
 pub(super) fn refresh_after_sync(ctx: ReviewsCtx, uuid: String, server_url: String) {
     spawn_owned(ctx, async move {
         if !data::can_refresh_book_reviews(&uuid).await {
+            return;
+        }
+        if ctx.refreshing.try_peek().is_ok_and(|busy| *busy) {
             return;
         }
         let Some(start) = begin_refresh(ctx) else {
