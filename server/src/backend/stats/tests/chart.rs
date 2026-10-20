@@ -8,9 +8,10 @@ use axum::{
 use omnibus_shared::{ChartBucket, ChartResult, ChartUnit};
 use tower::ServiceExt;
 
-use super::seed_reading_session;
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::*;
+
+use super::seed_reading_session;
 
 fn post_chart_req(uri: &str, token: &str, body: serde_json::Value) -> Request<Body> {
     Request::builder()
