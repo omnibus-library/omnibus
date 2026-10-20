@@ -97,12 +97,13 @@ function Where() {
 }
 
 let listGate = deferred();
+let gatedReads = 0;
 
 // The sessions list answers `first` at once and every later read only once `listGate` opens.
 function gatedSessionReads(first: () => Response) {
-  let reads = 0;
+  gatedReads = 0;
   return http.get("/api/admin/users/:id/sessions", async () => {
-    if (++reads === 1) return first();
+    if (++gatedReads === 1) return first();
     await listGate.promise;
     return HttpResponse.json([aWireSession()]);
   });
@@ -952,7 +953,9 @@ export const SessionsHoldsTheRevokeUntilBothListsAreReadAgain: Story = {
     });
     await userEvent.click(revoke);
 
-    await waitFor(() => expect(revoked.sessions).toEqual([3]));
+    // The second read starts only once the revoke has been answered.
+    await waitFor(() => expect(gatedReads).toBe(2));
+    await expect(revoked.sessions).toEqual([3]);
     await expect(revoke).toHaveAttribute("aria-busy", "true");
     await expect(revoke).toBeDisabled();
     listGate.release();
