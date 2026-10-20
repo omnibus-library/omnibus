@@ -95,7 +95,6 @@ describe("routes", () => {
       ["/stats?user=2", "Stats", "2"],
       ["/stats/chart", "Chart builder", null],
       ["/settings?section=smtp", "Settings", "smtp"],
-      ["/admin/cleanup/duplicates", "Cleanup review", "duplicates"],
       ["/account", "Account", null],
     ])("renders %s as %s with its parameters", async (path, title, param) => {
       renderRoute(path);
@@ -160,6 +159,24 @@ describe("routes", () => {
       ).toBeInTheDocument();
     });
 
+    it("renders the cleanup review at /admin/cleanup/tag, not a stub", async () => {
+      renderRoute("/admin/cleanup/tag");
+
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "Review tags" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+
+    it("renders an unknown cleanup kind as a notice, not a stub", async () => {
+      renderRoute("/admin/cleanup/duplicates");
+
+      expect(
+        await screen.findByText("Unknown cleanup kind."),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+
     it("renders the administration shell at /admin?section=people, not a stub", async () => {
       renderRoute("/admin?section=people");
 
@@ -195,6 +212,23 @@ describe("routes", () => {
         ).not.toBeInTheDocument();
       },
     );
+
+    it("refuses a reader at /admin/cleanup/tag without the admin chrome", async () => {
+      renderRoute("/admin/cleanup/tag", READER);
+
+      expect(
+        await screen.findByTestId("cleanup-review-forbidden"),
+      ).toHaveTextContent(
+        "Administrator access is required to review library cleanup.",
+      );
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Review tags" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("navigation", { name: "breadcrumb" }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId("cleanup-kindline")).not.toBeInTheDocument();
+    });
 
     it("waits on the session loader, not the shell, while the session is pending", async () => {
       const client = new QueryClient();

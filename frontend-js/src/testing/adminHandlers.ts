@@ -5,6 +5,8 @@ import {
   AdminSetUserPasswordBody,
   type AdminUserRow,
   type BackgroundTaskRecord,
+  CleanupDecisionRequest,
+  type CleanupKind,
   type CleanupKindCounts,
   CreateUserRequest,
   type DeviceView,
@@ -23,6 +25,7 @@ import {
   Settings,
   type SmtpConfigStatus,
   SmtpConfigUpdate,
+  type SuggestionCard,
   type TaskProgress,
   UserPermissions,
   type WorkerStatus,
@@ -222,6 +225,61 @@ export function cleanupDetectHandler(onDetect: () => void = () => {}) {
     onDetect();
     return new HttpResponse(null, { status: 202 });
   });
+}
+
+/** A pending cleanup suggestion as `GET /api/admin/cleanup/{kind}/queue` lists it: two tags merging. */
+export function aWireSuggestion(
+  overrides: Partial<SuggestionCard> = {},
+): SuggestionCard {
+  return {
+    id: 1,
+    kind: "tag",
+    action: "merge",
+    decision: "pending",
+    primary_name: "Science Fiction",
+    secondary_name: "Sci-Fi",
+    source_names: ["Sci-Fi"],
+    proposed_parts: [],
+    book_count: 3,
+    photo_url: null,
+    created_at: 1_700_000_000,
+    ...overrides,
+  };
+}
+
+/** `GET /api/admin/cleanup/{kind}/queue`; `queue` is read on every request. */
+export function cleanupQueueHandler(
+  kind: CleanupKind,
+  queue: () => SuggestionCard[],
+) {
+  return http.get(`/api/admin/cleanup/${kind}/queue`, () =>
+    HttpResponse.json(queue()),
+  );
+}
+
+/** A decision as `cleanupDecisionHandler` received it. */
+export type Decided = { id: number; request: CleanupDecisionRequest };
+
+/**
+ * `POST /api/admin/cleanup/suggestions/{id}/decision`: an accept answers the log id
+ * `100 + id`, a reject answers null. Every decision lands in `decided`.
+ */
+export function cleanupDecisionHandler({
+  decided = [],
+}: {
+  decided?: Decided[];
+} = {}) {
+  return http.post(
+    "/api/admin/cleanup/suggestions/:id/decision",
+    async ({ params, request }) => {
+      const id = Number(params.id);
+      const body = CleanupDecisionRequest.parse(await request.json());
+      decided.push({ id, request: body });
+      return HttpResponse.json({
+        log_id: body.decision === "accepted" ? 100 + id : null,
+      });
+    },
+  );
 }
 
 /** An account as `GET /api/admin/users` lists it: a reader with two permissions. */
