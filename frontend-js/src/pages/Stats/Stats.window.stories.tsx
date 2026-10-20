@@ -376,20 +376,22 @@ export const StandoutsAreAbsentWhenNothingStandsOut: Story = {
   },
 };
 
-const FINISHED_TILE = { name: "Expand Finished details" };
+/** A tile's button by its title; the accessible name goes on to state the figure, so it is matched by prefix. */
+const tileOf = (title: string) => ({ name: new RegExp(`^${title}: `) });
+const FINISHED_TILE = tileOf("Finished");
 
 export const TilesShowTheFourHeadlineFigures: Story = {
   play: async ({ canvas }) => {
     await canvas.findByRole("button", FINISHED_TILE);
     await expect(
       canvas
-        .getAllByRole("button", { name: /^Expand .* details$/ })
+        .getAllByRole("button", { name: /\. Expand details$/ })
         .map((tile) => tile.getAttribute("aria-label")),
     ).toEqual([
-      "Expand Finished details",
-      "Expand Pages read details",
-      "Expand Listening details",
-      "Expand How you rated details",
+      "Finished: 3 books, +1 vs last month. Expand details",
+      "Pages read: 1,240 pages, +38% vs last month. Expand details",
+      "Listening: 5.0 hours, +100% vs last month. Expand details",
+      "How you rated: 4.3 ★ avg, +0.2 vs last month. Expand details",
     ]);
     const finished = canvas.getByRole("button", FINISHED_TILE);
     await expect(finished).toHaveClass("accent");
@@ -398,13 +400,13 @@ export const TilesShowTheFourHeadlineFigures: Story = {
       "up",
     );
     await expect(
-      canvas.getByRole("button", { name: "Expand Pages read details" }),
+      canvas.getByRole("button", tileOf("Pages read")),
     ).toHaveTextContent("1,240pages+38%Pages read");
     await expect(
-      canvas.getByRole("button", { name: "Expand Listening details" }),
+      canvas.getByRole("button", tileOf("Listening")),
     ).toHaveTextContent("5.0hours+100%Listening");
     await expect(
-      canvas.getByRole("button", { name: "Expand How you rated details" }),
+      canvas.getByRole("button", tileOf("How you rated")),
     ).toHaveTextContent("4.3★ avg+0.2How you rated");
     await expect(
       finished.querySelector(".st-tile-fill")?.getAttribute("style"),
@@ -444,9 +446,8 @@ export const UnratedTileDrawsADashWithNoUnitOrDelta: Story = {
     msw.use(...inWindow({ avg_stars: null }));
   },
   play: async ({ canvas }) => {
-    const tile = await canvas.findByRole("button", {
-      name: "Expand How you rated details",
-    });
+    const tile = await canvas.findByRole("button", tileOf("How you rated"));
+    await expect(tile).toHaveAccessibleName("How you rated: —. Expand details");
     await expect(tile).toHaveTextContent(/^—How you rated$/);
     await expect(
       canvas.queryByTestId("stats-tile-avg-rating-delta"),
@@ -474,6 +475,9 @@ export const LifetimeDropsEveryTileComparison: Story = {
     await expect(canvas.getByRole("button", FINISHED_TILE)).toHaveTextContent(
       "3booksFinished",
     );
+    await expect(
+      canvas.getByRole("button", FINISHED_TILE),
+    ).toHaveAccessibleName("Finished: 3 books. Expand details");
   },
 };
 
@@ -483,7 +487,7 @@ async function openSheet(
   tile: string,
   sheet: string,
 ) {
-  await userEvent.click(await canvas.findByRole("button", { name: tile }));
+  await userEvent.click(await canvas.findByRole("button", tileOf(tile)));
   return canvas.findByRole("dialog", { name: sheet });
 }
 
@@ -492,7 +496,7 @@ export const FinishedSheetStatesTheTilesComparisonAndTheBooks: Story = {
     const sheet = await openSheet(
       canvas,
       userEvent,
-      "Expand Finished details",
+      "Finished",
       "Finished detail",
     );
     await waitFor(() => expect(sheet).toHaveFocus());
@@ -541,7 +545,7 @@ export const FinishedSheetWithNothingFinishedSaysSo: Story = {
     const sheet = await openSheet(
       canvas,
       userEvent,
-      "Expand Finished details",
+      "Finished",
       "Finished detail",
     );
     await expect(
@@ -599,7 +603,7 @@ export const SheetKeepsTheWindowItWasOpenedOn: Story = {
     const sheet = await openSheet(
       canvas,
       userEvent,
-      "Expand Finished details",
+      "Finished",
       "Finished detail",
     );
 
@@ -630,7 +634,7 @@ export const LifetimeSheetHasNothingToCompare: Story = {
     const sheet = await openSheet(
       canvas,
       userEvent,
-      "Expand Finished details",
+      "Finished",
       "Finished detail",
     );
 
@@ -642,12 +646,7 @@ export const LifetimeSheetHasNothingToCompare: Story = {
 
 export const SwitchingReaderClosesTheSheet: Story = {
   play: async ({ canvas, userEvent }) => {
-    await openSheet(
-      canvas,
-      userEvent,
-      "Expand Finished details",
-      "Finished detail",
-    );
+    await openSheet(canvas, userEvent, "Finished", "Finished detail");
 
     await userEvent.click(
       canvas.getByRole("button", { name: "Stats for You" }),
@@ -664,7 +663,7 @@ export const RatingSheetShowsTheTrendAndTheHistogram: Story = {
     const sheet = await openSheet(
       canvas,
       userEvent,
-      "Expand How you rated details",
+      "How you rated",
       "Avg rating detail",
     );
     await expect(
@@ -717,7 +716,7 @@ export const RatingSheetWithNothingRatedSaysSo: Story = {
     const sheet = await openSheet(
       canvas,
       userEvent,
-      "Expand How you rated details",
+      "How you rated",
       "Avg rating detail",
     );
     await expect(
@@ -740,7 +739,7 @@ export const ListeningSheetTrendsMinutesADay: Story = {
     const sheet = await openSheet(
       canvas,
       userEvent,
-      "Expand Listening details",
+      "Listening",
       "Listening detail",
     );
     await expect(
@@ -760,7 +759,7 @@ export const PagesSheetStatesTheRateAndWhatItCouldNotMeasure: Story = {
     const sheet = await openSheet(
       canvas,
       userEvent,
-      "Expand Pages read details",
+      "Pages read",
       "Pages read detail",
     );
     await expect(
@@ -786,7 +785,7 @@ export const PagesSheetWithoutARateExplainsWhy: Story = {
     const sheet = await openSheet(
       canvas,
       userEvent,
-      "Expand Pages read details",
+      "Pages read",
       "Pages read detail",
     );
     await expect(
@@ -819,11 +818,11 @@ export const PagesSheetOfAnAudioOnlyWindowReadsZero: Story = {
     const sheet = await openSheet(
       canvas,
       userEvent,
-      "Expand Pages read details",
+      "Pages read",
       "Pages read detail",
     );
     await expect(
-      canvas.getByRole("button", { name: "Expand Pages read details" }),
+      canvas.getByRole("button", tileOf("Pages read")),
     ).toHaveTextContent("0pages−100%Pages read");
     await expect(
       within(sheet).getByTestId("stats-drill-pages-note"),
@@ -855,7 +854,7 @@ export const PagesSheetWarnsWhenTheWindowPredatesTracking: Story = {
     const sheet = await openSheet(
       canvas,
       userEvent,
-      "Expand Pages read details",
+      "Pages read",
       "Pages read detail",
     );
     await expect(

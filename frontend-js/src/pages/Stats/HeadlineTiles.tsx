@@ -1,5 +1,6 @@
 import type { StatsSummary } from "../../api";
-import { buildTiles, type Direction, type Metric } from "./tiles";
+import { VS_LABELS } from "./drillIn";
+import { buildTiles, type Direction, type Metric, type Tile } from "./tiles";
 
 // Spelled out so tools/extract-atrium.cjs sees each class.
 const DELTA_CLASS = {
@@ -7,6 +8,13 @@ const DELTA_CLASS = {
   down: "st-tile-delta down",
   flat: "st-tile-delta flat",
 } as const satisfies Record<Direction, string>;
+
+/** What the tile shows, then the action, since an `aria-label` replaces the visible text a screen reader would read. */
+function tileName(tile: Tile, vs: string) {
+  const figure = tile.unit === "" ? tile.value : `${tile.value} ${tile.unit}`;
+  const against = tile.comparison ? `, ${tile.comparison.label} ${vs}` : "";
+  return `${tile.label}: ${figure}${against}. Expand details`;
+}
 
 /**
  * The four-tile headline row. Each tile is a button that opens its metric's drill-in.
@@ -27,7 +35,7 @@ export function HeadlineTiles({
           type="button"
           className={tile.accent ? "st-tile accent" : "st-tile"}
           data-testid={tile.testid}
-          aria-label={`Expand ${tile.label} details`}
+          aria-label={tileName(tile, VS_LABELS[summary.range])}
           onClick={() => onOpen(tile.metric)}
         >
           <div className="st-tile-top">
