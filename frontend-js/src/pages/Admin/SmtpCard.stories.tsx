@@ -305,6 +305,32 @@ export const HoldsTheActionsWhileSaving: Story = {
   },
 };
 
+let testGate = deferred();
+
+export const HoldsSaveButNotBusyWhileATestEmailIsOut: Story = {
+  beforeEach({ msw }) {
+    testGate = deferred();
+    msw.use(
+      http.post("/api/smtp/test", async () => {
+        await testGate.promise;
+        return new HttpResponse(null, { status: 200 });
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Send test email" }),
+    );
+
+    const save = canvas.getByTestId("smtp-save");
+    await waitFor(() => expect(save).toBeDisabled());
+    await expect(save).toHaveTextContent(SAVE);
+    await expect(save).toHaveAttribute("aria-busy", "false");
+    testGate.release();
+    await waitFor(() => expect(save).toBeEnabled());
+  },
+};
+
 export const ClearsTheRelayAfterConfirming: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(

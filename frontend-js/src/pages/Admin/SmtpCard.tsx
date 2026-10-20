@@ -265,11 +265,11 @@ export function SmtpCard() {
             type="submit"
             variant="primary"
             disabled={busy || saved === null}
-            aria-busy={busy}
+            aria-busy={save.isPending}
             data-testid="smtp-save"
           >
             <BusyLabel
-              busy={busy}
+              busy={save.isPending}
               label="Save SMTP settings"
               busyLabel="Saving…"
             />

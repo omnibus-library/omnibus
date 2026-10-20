@@ -30,6 +30,9 @@ export function EbookConvertCard() {
     },
   });
 
+  // The clear button shares the mutation, with a null path.
+  const saving = write.isPending && write.variables !== null;
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (write.isPending) return;
@@ -132,11 +135,11 @@ export function EbookConvertCard() {
             type="submit"
             variant="primary"
             disabled={write.isPending}
-            aria-busy={write.isPending}
+            aria-busy={saving}
             data-testid="ebook-convert-save"
           >
             <BusyLabel
-              busy={write.isPending}
+              busy={saving}
               label="Save ebook-convert path"
               busyLabel="Saving…"
             />

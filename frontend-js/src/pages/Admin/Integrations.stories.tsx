@@ -753,6 +753,38 @@ export const CalibreHoldsSaveWhileSaving: Story = {
   },
 };
 
+export const CalibreHoldsSaveButNotBusyWhileClearingTheOverride: Story = {
+  beforeEach({ msw }) {
+    writeGate = deferred();
+    msw.use(
+      http.post(EBOOK_CONVERT, async () => {
+        await writeGate.promise;
+        return HttpResponse.json(aWireEbookConvert());
+      }),
+      ...ebookConvertHandlers(
+        aWireEbookConvert({
+          path: "/opt/calibre/ebook-convert",
+          source: "settings",
+        }),
+        { saved: paths },
+      ),
+    );
+  },
+  render: () => <EbookConvertCard />,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Use auto-detection" }),
+    );
+
+    const save = canvas.getByTestId("ebook-convert-save");
+    await waitFor(() => expect(save).toBeDisabled());
+    await expect(save).toHaveTextContent("Save ebook-convert path");
+    await expect(save).toHaveAttribute("aria-busy", "false");
+    writeGate.release();
+    await waitFor(() => expect(save).toBeEnabled());
+  },
+};
+
 export const McpLoading: Story = {
   beforeEach({ msw }) {
     msw.use(hanging(MCP));
