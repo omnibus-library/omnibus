@@ -13,6 +13,7 @@ import { MaintenanceCard } from "./MaintenanceCard";
 import { MetadataOrderCard } from "./MetadataOrderCard";
 import { RecentTasksCard } from "./RecentTasksCard";
 import { RegistrationCard } from "./RegistrationCard";
+import { SmtpCard } from "./SmtpCard";
 import { SourcesCard } from "./SourcesCard";
 import {
   ADMIN_SECTIONS,
@@ -50,6 +51,7 @@ function sectionContent(slug: AdminSection["slug"]): ReactNode {
         </>
       );
     case "integrations":
+      return <SmtpCard />;
     case "health":
     case "logs":
       return null;

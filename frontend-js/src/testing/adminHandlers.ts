@@ -13,6 +13,8 @@ import {
   RegistrationStatus,
   type SessionView,
   Settings,
+  type SmtpConfigStatus,
+  SmtpConfigUpdate,
   type TaskProgress,
   UserPermissions,
   type WorkerStatus,
@@ -408,6 +410,79 @@ export function sessionsHandlers(
   ];
 }
 
+/** A relay saved through the API, the way `GET /api/smtp` reports it. */
+export function aWireSmtpStatus(
+  overrides: Partial<SmtpConfigStatus> = {},
+): SmtpConfigStatus {
+  return {
+    configured: true,
+    host: "smtp.example.com",
+    port: 465,
+    username: "mailer",
+    from_email: "library@example.com",
+    password_masked: "••••",
+    security: "tls",
+    source: "settings",
+    ...overrides,
+  };
+}
+
+/** What `GET /api/smtp` reports before any relay is set up. */
+export function anUnconfiguredSmtp(): SmtpConfigStatus {
+  return {
+    configured: false,
+    host: null,
+    port: null,
+    username: null,
+    from_email: null,
+    password_masked: null,
+    security: "starttls",
+    source: "none",
+  };
+}
+
+/** What `smtpHandlers` records of the writes it answers: each posted update, and each clear or test in order. */
+export type SmtpWrites = {
+  saved: SmtpConfigUpdate[];
+  actions: ("clear" | "test")[];
+};
+
+/**
+ * The `/api/smtp` routes over one relay: a save replaces it, a clear empties it,
+ * a test sends nothing. Every write lands in `SmtpWrites`.
+ */
+export function smtpHandlers(
+  initial: SmtpConfigStatus,
+  { saved = [], actions = [] }: Partial<SmtpWrites> = {},
+) {
+  let current = initial;
+  return [
+    http.get("/api/smtp", () => HttpResponse.json(current)),
+    http.post("/api/smtp", async ({ request }) => {
+      const update = SmtpConfigUpdate.parse(await request.json());
+      saved.push(update);
+      current = aWireSmtpStatus({
+        host: update.host,
+        port: update.port,
+        username: update.username,
+        from_email: update.from_email,
+        security: update.security ?? "starttls",
+        password_masked: update.password ? "••••" : current.password_masked,
+      });
+      return HttpResponse.json(current);
+    }),
+    http.post("/api/smtp/clear", () => {
+      actions.push("clear");
+      current = anUnconfiguredSmtp();
+      return HttpResponse.json(current);
+    }),
+    http.post("/api/smtp/test", () => {
+      actions.push("test");
+      return new HttpResponse(null, { status: 200 });
+    }),
+  ];
+}
+
 /** The happy-path fakes for every admin section ported so far; a story's own handlers replace them. */
 export function adminHandlers() {
   return [
@@ -425,5 +500,6 @@ export function adminHandlers() {
       sessions: [aWireSession()],
       devices: [aWireDevice()],
     }),
+    ...smtpHandlers(aWireSmtpStatus()),
   ];
 }

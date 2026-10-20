@@ -162,6 +162,18 @@ export const ShowsThePeopleCards: Story = {
   },
 };
 
+export const ShowsTheSmtpCard: Story = {
+  args: { path: "/admin?section=integrations" },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("heading", {
+        level: 3,
+        name: "Email delivery (SMTP)",
+      }),
+    ).toBeInTheDocument();
+  },
+};
+
 export const AsksBeforeLeavingEditedSources: Story = {
   args: { path: "/admin?section=sources" },
   play: async ({ canvas, userEvent }) => {
@@ -183,6 +195,22 @@ export const AsksBeforeLeavingEditedSources: Story = {
       "aria-current",
       "page",
     );
+  },
+};
+
+export const AsksBeforeLeavingAnEditedSmtpForm: Story = {
+  args: { path: "/admin?section=integrations" },
+  play: async ({ canvas, userEvent }) => {
+    const host = canvas.getByLabelText("SMTP host");
+    await waitFor(() => expect(host).toHaveValue("smtp.example.com"));
+    await userEvent.type(host, "x");
+    await userEvent.click(canvas.getByTestId("admin-nav-people"));
+
+    await expect(
+      await canvas.findByRole("dialog", { name: "Discard unsaved changes" }),
+    ).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: "Keep editing" }));
+    await expect(host).toHaveValue("smtp.example.comx");
   },
 };
 

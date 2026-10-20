@@ -315,6 +315,9 @@
 .settings-layout .settings-actions .settings-action-status {
   margin-right: auto;
 }
+.settings-layout .settings-actions .api-key-status {
+  margin: 0 auto 0 0;
+}
 .settings-field input[aria-invalid="true"] {
   border-color: var(--bad);
 }

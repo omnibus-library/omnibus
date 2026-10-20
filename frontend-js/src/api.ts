@@ -10,6 +10,7 @@ export * from "./api/books";
 export * from "./api/cleanup";
 export * from "./api/core";
 export * from "./api/discovery";
+export * from "./api/integrations";
 export * from "./api/journal";
 export * from "./api/library";
 export * from "./api/metadata";
