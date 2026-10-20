@@ -13,6 +13,7 @@ import {
   formatInstantShort,
   formatLongDate,
   formatMonthYear,
+  formatUtcDay,
   formatUtcTimestamp,
   formatYear,
   homeKicker,
@@ -363,6 +364,28 @@ describe("formatUtcTimestamp", () => {
     [-1, "1969-12-31 23:59:59 UTC"],
   ])("writes %i unix seconds as %s", (secs, text) => {
     expect(formatUtcTimestamp(secs)).toBe(text);
+  });
+});
+
+describe("formatUtcDay", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    [1_700_000_000, "Nov 14, 2023"],
+    [0, "Jan 1, 1970"],
+    [1_704_067_200, "Jan 1, 2024"],
+    [1_704_067_199, "Dec 31, 2023"],
+    [-1, "Dec 31, 1969"],
+  ])("writes %i unix seconds as %s", (secs, text) => {
+    expect(formatUtcDay(secs)).toBe(text);
+  });
+
+  it("names the UTC day however far the runner's zone is ahead", () => {
+    vi.stubEnv("TZ", "Pacific/Kiritimati");
+
+    expect(formatUtcDay(1_704_067_199)).toBe("Dec 31, 2023");
   });
 });
 

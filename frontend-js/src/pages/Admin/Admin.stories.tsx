@@ -144,6 +144,18 @@ export const ShowsTheCleanupCard: Story = {
   },
 };
 
+export const ShowsThePeopleCards: Story = {
+  args: { path: "/admin?section=people" },
+  play: async ({ canvas }) => {
+    const headings = await canvas.findAllByRole("heading", { level: 3 });
+    await expect(headings.map((h) => h.textContent)).toEqual([
+      "Self-registration",
+      "Accounts",
+    ]);
+    await expect(await canvas.findByTestId("users-table")).toBeInTheDocument();
+  },
+};
+
 export const AsksBeforeLeavingEditedSources: Story = {
   args: { path: "/admin?section=sources" },
   play: async ({ canvas, userEvent }) => {

@@ -19,3 +19,4 @@ export * from "./api/scan";
 export * from "./api/settings";
 export * from "./api/shelves";
 export * from "./api/uploads";
+export * from "./api/users";

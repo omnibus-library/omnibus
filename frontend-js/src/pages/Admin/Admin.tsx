@@ -12,6 +12,7 @@ import { CleanupCard } from "./CleanupCard";
 import { MaintenanceCard } from "./MaintenanceCard";
 import { MetadataOrderCard } from "./MetadataOrderCard";
 import { RecentTasksCard } from "./RecentTasksCard";
+import { RegistrationCard } from "./RegistrationCard";
 import { SourcesCard } from "./SourcesCard";
 import {
   ADMIN_SECTIONS,
@@ -19,6 +20,7 @@ import {
   adminTitle,
   parseSection,
 } from "./sections";
+import { UsersCard } from "./UsersCard";
 import "./Admin.css";
 
 const sectionOf = (search: string) =>
@@ -41,6 +43,12 @@ function sectionContent(slug: AdminSection["slug"]): ReactNode {
     case "cleanup":
       return <CleanupCard />;
     case "people":
+      return (
+        <>
+          <RegistrationCard />
+          <UsersCard />
+        </>
+      );
     case "integrations":
     case "health":
     case "logs":

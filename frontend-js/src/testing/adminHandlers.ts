@@ -1,11 +1,13 @@
 import { HttpResponse, http } from "msw";
 import type { MetadataLibrary } from "../api";
 import {
+  type AdminUserRow,
   type BackgroundTaskRecord,
   type CleanupKindCounts,
   type LibraryContents,
   type LibrarySection,
   MetadataSource,
+  RegistrationStatus,
   Settings,
   type TaskProgress,
   type WorkerStatus,
@@ -207,6 +209,86 @@ export function cleanupDetectHandler(onDetect: () => void = () => {}) {
   });
 }
 
+/** An account as `GET /api/admin/users` lists it: a reader with two permissions. */
+export function aWireAdminUser(
+  overrides: Partial<AdminUserRow> = {},
+): AdminUserRow {
+  return {
+    id: 7,
+    username: "alice",
+    is_admin: false,
+    can_upload: true,
+    can_edit: false,
+    can_download: true,
+    kindle_email: null,
+    display_name: null,
+    created_at: 1_700_000_000,
+    locked: false,
+    ...overrides,
+  };
+}
+
+/** The accounts the People section lists: the signed-in admin, a locked reader and one with no permission. */
+export function aWireAdminUsers(): AdminUserRow[] {
+  return [
+    aWireAdminUser({
+      id: 1,
+      username: "ada",
+      is_admin: true,
+      can_edit: true,
+    }),
+    aWireAdminUser({ locked: true, kindle_email: "alice@kindle.example" }),
+    aWireAdminUser({
+      id: 9,
+      username: "bob",
+      can_upload: false,
+      can_download: false,
+      created_at: 1_704_067_200,
+    }),
+  ];
+}
+
+/**
+ * `GET /api/auth/registration` and `POST /api/settings/registration`: whether
+ * sign-up is open, which a POST replaces. Each posted value lands in `saved`.
+ */
+export function registrationHandlers(
+  initial: boolean,
+  { saved = [] }: { saved?: boolean[] } = {},
+) {
+  let enabled = initial;
+  return [
+    http.get("/api/auth/registration", () => HttpResponse.json({ enabled })),
+    http.post("/api/settings/registration", async ({ request }) => {
+      enabled = RegistrationStatus.parse(await request.json()).enabled;
+      saved.push(enabled);
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+}
+
+/**
+ * `GET /api/admin/users` and `POST /api/admin/users/{id}/unlock`: the accounts,
+ * where an unlock clears that account's lock. Each unlocked id lands in `unlocked`.
+ */
+export function usersHandlers(
+  initial: AdminUserRow[],
+  { unlocked = [] }: { unlocked?: number[] } = {},
+) {
+  let rows = initial;
+  return [
+    http.get("/api/admin/users", () => HttpResponse.json(rows)),
+    http.post("/api/admin/users/:id/unlock", ({ params }) => {
+      const id = Number(params.id);
+      unlocked.push(id);
+      rows = rows.map((row) =>
+        row.id === id ? { ...row, locked: false } : row,
+      );
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+}
+
 /** The happy-path fakes for every admin section ported so far; a story's own handlers replace them. */
 export function adminHandlers() {
   return [
@@ -218,5 +300,7 @@ export function adminHandlers() {
     ...metadataOrderHandlers(),
     cleanupCountsHandler(aWireCleanupCounts),
     cleanupDetectHandler(),
+    ...registrationHandlers(true),
+    ...usersHandlers(aWireAdminUsers()),
   ];
 }
