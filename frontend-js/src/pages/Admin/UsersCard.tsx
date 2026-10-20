@@ -5,7 +5,7 @@ import { type AdminUserRow, adminUsersQuery, unlockUser } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel, RowSkeletons } from "../../components/Loading/Loading";
 import { formatUtcDay } from "../../format";
-import { endSession, meQuery, useCurrentUser } from "../../session";
+import { endSession, useCurrentUser } from "../../session";
 import {
   DeleteUserModal,
   EditUserModal,
@@ -138,22 +138,8 @@ export function UsersCard() {
         return (
           <EditUserModal
             user={open.user}
+            isSelf={open.user.id === me.id}
             onClose={close}
-            // Changing your own permissions changes what you may see, unless the reset below ends your session.
-            onChanged={(passwordReset) => {
-              void users.refetch();
-              if (open.user.id === me.id && !passwordReset) {
-                void queryClient.invalidateQueries({
-                  queryKey: meQuery.queryKey,
-                });
-              }
-            }}
-            // Your own password reset ends your own session, so there is nothing left to reload.
-            onSaved={(passwordReset) =>
-              open.user.id === me.id && passwordReset
-                ? endSession(queryClient, navigate)
-                : close()
-            }
           />
         );
       case "delete":

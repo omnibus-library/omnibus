@@ -4,9 +4,9 @@ import { HttpResponse, http } from "msw";
 import type { ReactNode } from "react";
 import { useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
-import { userSessionsQuery } from "../../api";
+import { adminUsersQuery, userSessionsQuery } from "../../api";
 import { meQuery } from "../../session";
-import { storyClient } from "../../testing/AppHarness";
+import { seedQueries, storyClient } from "../../testing/AppHarness";
 import {
   aWireAdminUser,
   aWireAdminUsers,
@@ -37,7 +37,7 @@ const writes: UserWrites = {
   deleted: [],
 };
 const revoked: Revoked = { sessions: [], devices: [] };
-const calls = { closed: 0, done: 0, changed: 0 };
+const calls = { closed: 0, done: 0 };
 const reads = { users: 0, me: 0 };
 
 const meta = {
@@ -49,7 +49,6 @@ const meta = {
     revoked.devices.length = 0;
     calls.closed = 0;
     calls.done = 0;
-    calls.changed = 0;
     reads.users = 0;
     reads.me = 0;
     msw.use(
@@ -77,9 +76,6 @@ const close = () => {
 const done = () => {
   calls.done += 1;
 };
-const changed = () => {
-  calls.changed += 1;
-};
 
 const checkbox = (scope: HTMLElement, name: string) =>
   within(scope).getByRole("checkbox", { name });
@@ -105,13 +101,13 @@ const signedInUsers = () => (
 );
 
 const editAlice = () => (
-  <EditUserModal
-    user={ALICE}
-    onClose={close}
-    onChanged={changed}
-    onSaved={done}
-  />
+  <EditUserModal user={ALICE} isSelf={false} onClose={close} />
 );
+
+/** Puts the accounts list in the cache, so a story can see whether the modal marks it stale. */
+const seedUsersList = () => seedQueries([[...adminUsersQuery.queryKey]]);
+const usersListInvalidated = () =>
+  storyClient().getQueryState(adminUsersQuery.queryKey)?.isInvalidated;
 
 let listGate = deferred();
 let gatedReads = 0;
@@ -402,7 +398,7 @@ export const EditUserSavesPermissionsWithoutAPassword: Story = {
       within(dialog).getByRole("button", { name: "Save changes" }),
     );
 
-    await waitFor(() => expect(calls.done).toBe(1));
+    await waitFor(() => expect(calls.closed).toBe(1));
     await expect(writes.permissions).toEqual([
       {
         id: 7,
@@ -430,7 +426,7 @@ export const EditUserSavesAPasswordTypedWithThePermissions: Story = {
       within(dialog).getByRole("button", { name: "Save changes" }),
     );
 
-    await waitFor(() => expect(calls.done).toBe(1));
+    await waitFor(() => expect(calls.closed).toBe(1));
     await expect(writes.passwords).toEqual([
       { id: 7, password: "new-password-1" },
     ]);
@@ -445,6 +441,7 @@ export const EditUserStopsAtTheFirstFailure: Story = {
   render: editAlice,
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
+    seedUsersList();
     await userEvent.type(
       within(dialog).getByLabelText("Reset password"),
       "new-password-1",
@@ -457,8 +454,8 @@ export const EditUserStopsAtTheFirstFailure: Story = {
       "failed with 403",
     );
     await expect(writes.passwords).toEqual([]);
-    await expect(calls.changed).toBe(0);
-    await expect(calls.done).toBe(0);
+    await expect(usersListInvalidated()).toBe(false);
+    await expect(calls.closed).toBe(0);
   },
 };
 
@@ -474,6 +471,7 @@ export const EditUserShowsAPasswordRefusal: Story = {
   render: editAlice,
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
+    seedUsersList();
     await userEvent.type(within(dialog).getByLabelText("Reset password"), "x");
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Save changes" }),
@@ -482,8 +480,8 @@ export const EditUserShowsAPasswordRefusal: Story = {
     await expect(await within(dialog).findByRole("alert")).toHaveTextContent(
       "password is too weak",
     );
-    await expect(calls.changed).toBe(1);
-    await expect(calls.done).toBe(0);
+    await expect(usersListInvalidated()).toBe(true);
+    await expect(calls.closed).toBe(0);
   },
 };
 

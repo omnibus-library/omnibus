@@ -2,9 +2,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
+import { useNavigate } from "react-router";
 import type { z } from "zod";
 import {
   type AdminUserRow,
+  adminUsersQuery,
   createUser,
   deleteUser,
   revokeUserDevice,
@@ -25,6 +27,7 @@ import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { StrengthMeter } from "../../components/StrengthMeter/StrengthMeter";
 import { formatUtcDay } from "../../format";
 import { scorePassword } from "../../password";
+import { endSession, meQuery } from "../../session";
 import { EditUserSchema, NewUserSchema, permissionsOf } from "./users";
 
 const NEW_USER_PERMISSIONS: UserPermissions = {
@@ -259,21 +262,21 @@ export function NewUserModal({
 
 /**
  * Changes an account's permissions, and resets its password when one is typed.
- * `onChanged` runs after the permission change and the password step have both
- * finished, even if the password step failed, and says whether the password was
- * reset. `onSaved` runs once everything asked for is saved.
+ * Once the permissions land the accounts list reads again, even if the
+ * password step then fails; on your own row the session reads again too, or
+ * ends when your own password was reset.
  */
 export function EditUserModal({
   user,
+  isSelf,
   onClose,
-  onChanged,
-  onSaved,
 }: {
   user: AdminUserRow;
+  isSelf: boolean;
   onClose: () => void;
-  onChanged: (passwordReset: boolean) => void;
-  onSaved: (passwordReset: boolean) => void;
 }) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const form = useForm({
     resolver: zodResolver(EditUserSchema),
     defaultValues: { permissions: permissionsOf(user), new_password: "" },
@@ -292,11 +295,19 @@ export function EditUserModal({
           passwordReset = true;
         }
       } finally {
-        onChanged(passwordReset);
+        void queryClient.invalidateQueries({
+          queryKey: adminUsersQuery.queryKey,
+        });
+        // Changing your own permissions changes what you may see, unless the reset ends your session.
+        if (isSelf && !passwordReset) {
+          void queryClient.invalidateQueries({ queryKey: meQuery.queryKey });
+        }
       }
       return passwordReset;
     },
-    onSuccess: onSaved,
+    // Your own password reset ends your own session, so there is nothing left to show.
+    onSuccess: (passwordReset) =>
+      isSelf && passwordReset ? endSession(queryClient, navigate) : onClose(),
     onError: (e) => form.setError("root", { message: e.message }),
   });
   const password = form.watch("new_password");
