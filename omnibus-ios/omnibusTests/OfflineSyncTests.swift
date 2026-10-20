@@ -693,6 +693,59 @@ struct GuardedRevalidationTests {
         #expect(stored == rendered)
     }
 
+    @Test("a recheck that answers what the caller already sees shows nothing twice")
+    func recheckMatchingTheShownReplicaIsNotRepeated() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+        let seed = try JSONEncoder().encode(page(stars: 2))
+        await store.cachePut(key, seed)
+
+        let log = RequestLog()
+        let key = self.key
+        // A one-key page: `JSONEncoder` orders a multi-key object differently
+        // from one encode to the next, and this test needs the answer's bytes
+        // to equal the replica's.
+        let newer = BookReviews.empty
+        let newerData = try JSONEncoder().encode(newer)
+        let stale = page(stars: 2)
+        let shown = try await reads(store: store, cached: seed) {
+            if await log.next() == 1 {
+                await store.cachePut(key, newerData)
+                return stale
+            }
+            return newer
+        }
+
+        // The answer equals the replica already shown, not the seed: one read.
+        #expect(await log.count == 2)
+        #expect(shown.map(\.value) == [newer])
+        #expect(shown.map(\.isFresh) == [false])
+    }
+
+    @Test("a replica that moves to bytes already shown is not shown again")
+    func replicaRewrittenUnchangedIsNotRepeated() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+        let seed = try JSONEncoder().encode(page(stars: 2))
+        await store.cachePut(key, seed)
+
+        let log = RequestLog()
+        let key = self.key
+        let newerData = try JSONEncoder().encode(page(stars: 5))
+        let stale = page(stars: 2)
+        let shown = try await reads(store: store, cached: seed) {
+            _ = await log.next()
+            // Both requests are overtaken; the second rewrite is byte-for-byte
+            // what the first one already put on screen.
+            await store.cachePut(key, newerData)
+            return stale
+        }
+
+        #expect(await log.count == 2)
+        #expect(shown.map(\.value) == [page(stars: 5)])
+        #expect(shown.map(\.isFresh) == [false])
+    }
+
     @Test("asking again happens once, the replica shown each time it moves")
     func askingAgainIsBounded() async throws {
         let (store, file) = await scratchStore(filePrefix: "guarded-read")
