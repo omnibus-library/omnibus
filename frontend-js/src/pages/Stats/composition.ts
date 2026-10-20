@@ -1,5 +1,5 @@
 import type { LibraryComposition } from "../../api";
-import { plural } from "../../format";
+import { bookCount } from "../../format";
 import { sliceVar } from "./donut";
 import { groupThousands } from "./summary";
 
@@ -28,14 +28,14 @@ export function overlapNote(dim: Dimension): string | null {
   const overlap = Math.max(dim.coverage.total - dim.coverage.books, 0);
   return overlap === 0
     ? null
-    : `+${overlap} book${plural(overlap)} held in more than one format`;
+    : `+${bookCount(overlap)} held in more than one format`;
 }
 
 /** Books with no file on disk carry no format, so they'd vanish from the format bars and leave the counts not reconciling; worded for rows that never had files too. */
 export const ghostedNote = (ghosted: number) =>
   ghosted === 0
     ? null
-    : `${ghosted} book${plural(ghosted)} excluded — no files on disk (paper copies, wishlist entries, removed files)`;
+    : `${bookCount(ghosted)} excluded — no files on disk (paper copies, wishlist entries, removed files)`;
 
 /** The five panels in the order they read: what the files are, then what the books are. */
 export function buildPanels(c: LibraryComposition): Panel[] {

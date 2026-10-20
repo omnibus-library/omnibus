@@ -1,5 +1,5 @@
 import type { StatsRange, StatsSummary } from "../../api";
-import { fixed, plural } from "../../format";
+import { bookCount, fixed, plural } from "../../format";
 import { monthAbbr } from "./calendar";
 import { avgStarsValue, clampPct, type Direction, type Metric } from "./tiles";
 
@@ -111,7 +111,7 @@ export function buildHistogramBars(
     const empty = bucket.books <= 0;
     return {
       label,
-      title: `${label} ★ · ${bucket.books} book${plural(bucket.books)}`,
+      title: `${label} ★ · ${bookCount(bucket.books)}`,
       heightPct: barHeight(bucket.books, max),
       value: empty ? null : String(bucket.books),
       empty,
@@ -210,7 +210,7 @@ export function rateValue(rate: number): string {
 
 /** "Across N books this period.": the population behind the headline. */
 export const measuredLine = (books: number) =>
-  `Across ${books} book${plural(books)} this period.`;
+  `Across ${bookCount(books)} this period.`;
 
 /** The books whose length nothing resolves, named rather than absorbed: they were read, and the total leaves them out. */
 export function unmeasuredLine(books: number, anyMeasured: boolean): string {

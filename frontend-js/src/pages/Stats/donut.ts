@@ -1,4 +1,5 @@
 import type { StatsSummary } from "../../api";
+import { bookCount } from "../../format";
 
 type GenreShare = StatsSummary["genre_share"][number];
 
@@ -56,4 +57,4 @@ export function donutGradient(percents: readonly number[]): string {
 
 /** The disclosure line for active books the ring can't describe. */
 export const untaggedNote = (untagged: number) =>
-  `+${untagged} ${untagged === 1 ? "book" : "books"} without a genre`;
+  `+${bookCount(untagged)} without a genre`;
