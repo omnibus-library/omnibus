@@ -693,6 +693,29 @@ export const RegroupingDropsAZoomWhoseKeysAreGone: Story = {
   },
 };
 
+export const AZoomDroppedByARegroupStaysGoneWhenTheKeysReturn: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...api({
+        chart: ({ bucket }) => (bucket === "week" ? BY_WEEK : TALL_LAST),
+      }),
+    );
+  },
+  play: async (ctx) => {
+    const plot = await drawn(ctx);
+    drag(plot, 0, 3);
+    await ctx.canvas.findByText("Zoomed to 4 of 8 periods");
+    const groupBy = ctx.canvas.getByLabelText("Group by");
+    await ctx.userEvent.selectOptions(groupBy, "Weekly");
+    await waitFor(() => expect(xLabels(plot)).toHaveLength(4));
+
+    await ctx.userEvent.selectOptions(groupBy, "Monthly");
+
+    await waitFor(() => expect(xLabels(plot)).toHaveLength(8));
+    await expect(ctx.canvas.queryByText(/^Zoomed to/)).toBeNull();
+  },
+};
+
 const barHeights = (plot: Element) =>
   [...plot.querySelectorAll(".cb-bar")].map((bar) =>
     bar.getAttribute("height"),

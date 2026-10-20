@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChartBucket,
   ChartMeasure,
@@ -160,6 +160,15 @@ function ChartCanvas({ spec }: { spec: ChartSpec }) {
     ...chartQuery(spec),
     placeholderData: keepPreviousData,
   });
+  // Dropped once the keys leave the axis, or a later spec that brings them back would silently re-apply it.
+  useEffect(() => {
+    if (
+      chart.data &&
+      zoomed &&
+      resolveZoom(chart.data.buckets, zoomed) === null
+    )
+      setZoomed(null);
+  }, [chart.data, zoomed]);
   // Zoomed before tweened: narrowing the window is itself worth animating, and each surviving bucket keeps its key.
   const view = useMemo(
     () => (chart.data ? applyZoom(chart.data, zoomed) : null),

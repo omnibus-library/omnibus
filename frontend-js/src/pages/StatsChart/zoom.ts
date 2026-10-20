@@ -2,7 +2,7 @@ import type { ChartResult } from "../../api";
 import { fitAxes } from "./chart";
 
 // A zoom is held as bucket keys, never indices: regroup monthly to weekly and index 3 is another week, where
-// a key that has left the axis stops resolving and the zoom drops itself. It only narrows the buckets already fetched.
+// a key that has left the axis stops resolving, and the page drops the zoom. It only narrows the buckets already fetched.
 
 /** The fewest buckets a brush may select: one is a click, and zooming to it would leave a single bar filling the frame. */
 const MIN_BRUSH_BUCKETS = 2;
