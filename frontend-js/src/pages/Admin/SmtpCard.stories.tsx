@@ -347,6 +347,50 @@ export const ClearsTheRelayAfterConfirming: Story = {
   },
 };
 
+export const ShowsTheRelayTheServerFallsBackToAfterAClear: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      http.post("/api/smtp/clear", () =>
+        HttpResponse.json(
+          aWireSmtpStatus({
+            host: "env-relay.example.com",
+            port: 25,
+            username: "env-mailer",
+            from_email: "env@example.com",
+            security: "starttls",
+            source: "env",
+          }),
+        ),
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Clear…" }),
+    );
+    const dialog = await canvas.findByTestId("smtp-clear-dialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Clear SMTP settings" }),
+    );
+
+    await expect(
+      await canvas.findByText("SMTP settings cleared."),
+    ).toBeVisible();
+    await expect(canvas.getByTestId("smtp-status")).toHaveTextContent(
+      "Configured · env",
+    );
+    await expect(canvas.getByLabelText("SMTP host")).toHaveValue(
+      "env-relay.example.com",
+    );
+    await expect(canvas.getByLabelText("Port")).toHaveValue(25);
+    await expect(canvas.getByLabelText("Security")).toHaveValue("starttls");
+    await expect(canvas.getByLabelText("Username")).toHaveValue("env-mailer");
+    await expect(canvas.getByLabelText("From address")).toHaveValue(
+      "env@example.com",
+    );
+  },
+};
+
 export const CancellingTheClearKeepsTheRelay: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(

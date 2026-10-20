@@ -88,9 +88,10 @@ export function SmtpCard() {
   const confirmClear = () => {
     if (busy) return;
     clear.mutate(undefined, {
-      onSuccess: () => {
-        setDraft(BLANK_SMTP_DRAFT);
-        setSaved(BLANK_SMTP_DRAFT);
+      onSuccess: (answer) => {
+        // What is left may be a relay from the server's environment.
+        setDraft(smtpDraftOf(answer));
+        setSaved(smtpDraftOf(answer));
         setStatus({ text: "SMTP settings cleared.", isError: false });
       },
       onError: (error) =>
