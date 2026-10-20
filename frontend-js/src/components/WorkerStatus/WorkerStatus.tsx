@@ -1,6 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { type TaskProgress, workerStatusQuery } from "../../api";
+import {
+  type TaskProgress,
+  type WorkerFeed,
+  workerStatusQuery,
+} from "../../api";
 import { Ring } from "../Loading/Loading";
 import {
   activeTalliesLine,
@@ -11,10 +15,7 @@ import {
 } from "./workerLines";
 import "./WorkerStatus.css";
 
-const IDLE: { active: TaskProgress[]; recent_complete: TaskProgress[] } = {
-  active: [],
-  recent_complete: [],
-};
+const IDLE: WorkerFeed = { active: [], recent_complete: [] };
 
 const TONES = {
   done: { className: "worker-status-row worker-status-done", icon: "✓" },

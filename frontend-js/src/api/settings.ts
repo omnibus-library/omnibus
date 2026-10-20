@@ -25,6 +25,7 @@ export type {
   Settings,
   TaskKind,
   TaskProgress,
+  WorkerStatus as WorkerFeed,
 } from "./generated/schemas";
 
 export type MetadataLibrary = "ebook" | "audiobook";
