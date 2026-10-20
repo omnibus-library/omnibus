@@ -61,18 +61,12 @@
   font-size: 14px;
   border-radius: 12px;
 }
-.btn.ghost.users-danger {
-  color: var(--bad);
-}
-@media (hover: hover) {
-  .btn.ghost.users-danger:hover {
-    background: color-mix(in oklch, var(--bad) 12%, transparent);
-  }
-}
+.btn.ghost.users-danger,
 .btn.ghost.danger {
   color: var(--bad);
 }
 @media (hover: hover) {
+  .btn.ghost.users-danger:hover,
   .btn.ghost.danger:hover {
     background: color-mix(in oklch, var(--bad) 12%, transparent);
   }
