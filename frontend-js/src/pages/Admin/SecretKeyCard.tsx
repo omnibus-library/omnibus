@@ -40,6 +40,9 @@ export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
     onSettled: () => setConfirmingClear(false),
   });
 
+  // The clear button shares the mutation, with a null key.
+  const saving = write.isPending && write.variables !== null;
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const key = typed.trim();
@@ -149,11 +152,11 @@ export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
             type="submit"
             variant="primary"
             disabled={write.isPending || current.data === undefined}
-            aria-busy={write.isPending}
+            aria-busy={saving}
             data-testid={`${copy.testId}-save`}
           >
             <BusyLabel
-              busy={write.isPending}
+              busy={saving}
               label={`Save ${copy.noun} key`}
               busyLabel="Saving…"
             />

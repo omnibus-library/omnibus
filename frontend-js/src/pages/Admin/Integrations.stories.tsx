@@ -298,6 +298,34 @@ export const HoldsTheKeySaveWhileSaving: Story = {
   },
 };
 
+export const HoldsSaveButNotBusyWhileClearingTheKey: Story = {
+  beforeEach({ msw }) {
+    writeGate = deferred();
+    msw.use(
+      http.post(HARDCOVER, async () => {
+        await writeGate.promise;
+        return HttpResponse.json(NO_KEY);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Clear…" }),
+    );
+    const dialog = await canvas.findByTestId("hardcover-clear-dialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Remove Hardcover key" }),
+    );
+
+    const save = canvas.getByTestId("hardcover-save");
+    await waitFor(() => expect(save).toBeDisabled());
+    await expect(save).toHaveTextContent("Save Hardcover key");
+    await expect(save).toHaveAttribute("aria-busy", "false");
+    writeGate.release();
+    await waitFor(() => expect(save).toBeEnabled());
+  },
+};
+
 export const RemovesTheKeyAfterConfirming: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
