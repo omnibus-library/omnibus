@@ -11,7 +11,12 @@ import { Button } from "../../components/Button/Button";
 import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
 import { BusyLabel } from "../../components/Loading/Loading";
 import { useUnsavedForm } from "../../components/SettingsShell/SettingsShell";
-import { CredentialStatus, LiveStatus, type Status } from "./StatusLine";
+import {
+  CredentialStatus,
+  LiveStatus,
+  readFailure,
+  type Status,
+} from "./StatusLine";
 import {
   BLANK_SMTP_DRAFT,
   isSmtpEdited,
@@ -116,16 +121,9 @@ export function SmtpCard() {
     });
 
   const configured = config.data?.configured === true;
-  const readFailed =
-    config.isError && !config.isFetching && config.data === undefined;
-  const shown: Status | null =
-    status ??
-    (readFailed
-      ? {
-          text: `Couldn’t read the current settings: ${config.error?.message}`,
-          isError: true,
-        }
-      : null);
+  const failedRead = readFailure(config, "settings");
+  const readFailed = failedRead !== null;
+  const shown = status ?? failedRead;
 
   return (
     <section className="card" data-testid="smtp-card">

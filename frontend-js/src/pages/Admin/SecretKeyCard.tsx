@@ -11,7 +11,12 @@ import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
 import { BusyLabel } from "../../components/Loading/Loading";
 import { useUnsavedForm } from "../../components/SettingsShell/SettingsShell";
 import { clearWarning, SECRET_KEYS } from "./integrations";
-import { CredentialStatus, LiveStatus, type Status } from "./StatusLine";
+import {
+  CredentialStatus,
+  LiveStatus,
+  readFailure,
+  type Status,
+} from "./StatusLine";
 
 /** A server-wide key the admin sets: its masked state, a field to replace it, and a way to remove it. */
 export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
@@ -80,16 +85,9 @@ export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
     });
   };
 
-  const readFailed =
-    current.isError && !current.isFetching && current.data === undefined;
-  const shown: Status | null =
-    status ??
-    (readFailed
-      ? {
-          text: `Couldn’t read the current status: ${current.error?.message}`,
-          isError: true,
-        }
-      : null);
+  const failedRead = readFailure(current, "status");
+  const readFailed = failedRead !== null;
+  const shown = status ?? failedRead;
   const masked = current.data?.masked;
 
   return (

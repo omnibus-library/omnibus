@@ -10,7 +10,12 @@ import {
   isOverridden,
   saveOutcomeMessage,
 } from "./integrations";
-import { CredentialStatus, LiveStatus, type Status } from "./StatusLine";
+import {
+  CredentialStatus,
+  LiveStatus,
+  readFailure,
+  type Status,
+} from "./StatusLine";
 
 /** The Calibre `ebook-convert` the server found, with a field to pin its path instead. */
 export function EbookConvertCard() {
@@ -74,16 +79,9 @@ export function EbookConvertCard() {
         }),
     });
 
-  const readFailed =
-    current.isError && !current.isFetching && current.data === undefined;
-  const shown: Status | null =
-    status ??
-    (readFailed
-      ? {
-          text: `Couldn’t read the current status: ${current.error?.message}`,
-          isError: true,
-        }
-      : null);
+  const failedRead = readFailure(current, "status");
+  const readFailed = failedRead !== null;
+  const shown = status ?? failedRead;
 
   return (
     <section className="card" data-testid="ebook-convert-card">

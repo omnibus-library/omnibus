@@ -1,3 +1,5 @@
+import type { UseQueryResult } from "@tanstack/react-query";
+
 /** A card's result line: its words and whether it reports a failure. */
 export type Status = { text: string; isError: boolean };
 
@@ -20,6 +22,23 @@ export function LiveStatus({
       {status?.text}
     </p>
   );
+}
+
+/** The line for a read that failed with nothing cached to show, else null. */
+export function readFailure(
+  query: Pick<
+    UseQueryResult<unknown, Error>,
+    "isError" | "isFetching" | "data" | "error"
+  >,
+  noun: "status" | "settings",
+): Status | null {
+  if (!query.isError || query.isFetching || query.data !== undefined) {
+    return null;
+  }
+  return {
+    text: `Couldn’t read the current ${noun}: ${query.error?.message}`,
+    isError: true,
+  };
 }
 
 function CredentialDot({
