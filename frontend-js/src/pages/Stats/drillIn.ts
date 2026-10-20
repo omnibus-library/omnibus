@@ -26,31 +26,19 @@ export const METRIC_TITLES = {
 } as const satisfies Record<Metric, string>;
 
 /** "vs last month" and so on; empty for Lifetime, which has no previous window. */
-export function vsLabel(range: StatsRange): string {
-  switch (range) {
-    case "week":
-      return "vs last week";
-    case "month":
-      return "vs last month";
-    case "year":
-      return "vs last year";
-    case "all_time":
-      return "";
-    default: {
-      const _exhaustive: never = range;
-      return _exhaustive;
-    }
-  }
-}
+export const VS_LABELS = {
+  week: "vs last week",
+  month: "vs last month",
+  year: "vs last year",
+  all_time: "",
+} as const satisfies Record<StatsRange, string>;
 
-const GLYPHS = {
+/** The arrow beside a comparison's label: the tile tints its delta, the sheet draws a glyph. */
+export const GLYPHS = {
   up: "▲",
   down: "▼",
   flat: "●",
 } as const satisfies Record<Direction, string>;
-
-/** The arrow beside a comparison's label: the tile tints its delta, the sheet draws a glyph. */
-export const glyph = (direction: Direction) => GLYPHS[direction];
 
 /** `(year, month)` of a `YYYY-MM` month, `null` when malformed. */
 function yearMonth(month: string): [number, number] | null {
@@ -99,7 +87,7 @@ export function buildTrendBars(
 
 /** A rating bucket's axis label in stars, "0.5" to "5": the buckets are half-stars, which would read as a ten-point scale. */
 export const starLabel = ({ half_stars }: RatingBucket) =>
-  half_stars % 2 === 0 ? fixed(half_stars / 2, 0) : fixed(half_stars / 2, 1);
+  String(half_stars / 2);
 
 /** One bar per half-star bucket carrying its book count; an empty bucket keeps its column but draws no bar a reader could take for a small one. */
 export function buildHistogramBars(
@@ -185,22 +173,12 @@ export function ratingTrendCaption(points: readonly TrendPoint[]): string {
 }
 
 /** The period the rating histogram covers: the one the switcher selected. */
-export function histogramCaption(range: StatsRange): string {
-  switch (range) {
-    case "week":
-      return "Rated this week";
-    case "month":
-      return "Rated this month";
-    case "year":
-      return "Rated this year";
-    case "all_time":
-      return "Rated at any time";
-    default: {
-      const _exhaustive: never = range;
-      return _exhaustive;
-    }
-  }
-}
+export const HISTOGRAM_CAPTIONS = {
+  week: "Rated this week",
+  month: "Rated this month",
+  year: "Rated this year",
+  all_time: "Rated at any time",
+} as const satisfies Record<StatsRange, string>;
 
 /** A reading rate: one decimal under ten pages an hour, whole pages above, since a decimal would dress an estimate as a measurement. The branch tests the rounded figure, as 9.96 at one decimal is "10.0". */
 export function rateValue(rate: number): string {

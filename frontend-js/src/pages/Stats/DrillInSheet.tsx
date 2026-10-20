@@ -4,8 +4,8 @@ import { fixed } from "../../format";
 import {
   buildHistogramBars,
   cutoverLine,
-  glyph,
-  histogramCaption,
+  GLYPHS,
+  HISTOGRAM_CAPTIONS,
   METRIC_TITLES,
   measuredLine,
   predatesLedger,
@@ -15,7 +15,7 @@ import {
   trendBars,
   trendTitle,
   unmeasuredLine,
-  vsLabel,
+  VS_LABELS,
 } from "./drillIn";
 import { type FinishedBook, FinishedCover } from "./FinishedCover";
 import { LengthRows } from "./GenreDonut";
@@ -42,7 +42,7 @@ function Delta({ delta, vs }: { delta: Comparison | null; vs: string }) {
       className={DELTA_CLASS[delta.direction]}
       data-testid="stats-drill-delta"
     >
-      <span aria-hidden="true">{glyph(delta.direction)}</span> {delta.label}{" "}
+      <span aria-hidden="true">{GLYPHS[delta.direction]}</span> {delta.label}{" "}
       {vs !== "" && <span className="mono st-drill-delta-vs">{vs}</span>}
     </div>
   );
@@ -143,7 +143,7 @@ function Histogram({ summary }: { summary: StatsSummary }) {
     <>
       <SectionHead
         title="Books at each rating"
-        caption={histogramCaption(summary.range)}
+        caption={HISTOGRAM_CAPTIONS[summary.range]}
         testId="stats-drill-histogram-caption"
       />
       <BarStrip
@@ -296,7 +296,7 @@ export function DrillInSheet({
       <div className="st-drill-body">
         <Delta
           delta={comparison(metric, summary)}
-          vs={vsLabel(summary.range)}
+          vs={VS_LABELS[summary.range]}
         />
         {trendHeading !== null && bars.length > 0 && (
           <SectionHead
