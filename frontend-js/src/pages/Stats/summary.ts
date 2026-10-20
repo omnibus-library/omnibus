@@ -27,8 +27,9 @@ export const isEmpty = (
 export const hasTimePatterns = (s: Pick<StatsSummary, "hour_of_day">) =>
   s.hour_of_day.some((h) => h.seconds > 0);
 
-/** A count with its digits grouped in threes: "1,234,567". */
-export const groupThousands = (n: number) => n.toLocaleString("en-US");
+/** A count with its digits grouped in threes: "1,234,567"; a negative is left plain, as on Dioxus. */
+export const groupThousands = (n: number) =>
+  n < 0 ? String(n) : n.toLocaleString("en-US");
 
 /** A duration for tooltips and the standouts: "42 m", "3 h", "3 h 20 m". */
 export function formatActiveTime(secs: number): string {

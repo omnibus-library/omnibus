@@ -67,6 +67,7 @@ describe("groupThousands", () => {
     [1000, "1,000"],
     [1_234_567, "1,234,567"],
     [-42, "-42"],
+    [-1234, "-1234"],
   ])("writes %i as %s", (n, written) => {
     expect(groupThousands(n)).toBe(written);
   });
