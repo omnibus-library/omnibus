@@ -273,11 +273,6 @@
   padding: 0;
   margin: 22px 0 0;
 }
-.bd-rating-meta {
-  font-size: 11px;
-  color: var(--ink-3);
-  margin-top: 6px;
-}
 .bd-stars-interactive {
   display: inline-flex;
   gap: 2px;
@@ -632,6 +627,7 @@
   display: grid;
   place-items: center;
   border-radius: 50%;
+  overflow: hidden;
   background: var(--accent-soft, var(--bg-2));
   color: var(--accent-ink, var(--ink-0));
   font-family: var(--sans);
@@ -1523,9 +1519,6 @@ button.spoiler.revealed {
   border-radius: 50%;
   object-fit: cover;
   display: block;
-}
-.bd-journal-avatar {
-  overflow: hidden;
 }
 .bd-sync-panel {
   margin: 26px 0 0;
