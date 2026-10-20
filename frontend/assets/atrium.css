@@ -1657,6 +1657,121 @@ html, body { overscroll-behavior: none; }
 .spoiler.revealed { cursor: auto; background: transparent; }
 .spoiler.revealed .spoiler-text, button.spoiler.revealed { filter: none; }
 
+/* Reviews (pages/book_detail/reviews): your card, the household summary, the
+   other readers. Host-agnostic; the marquee adds only its spacing below. */
+.bd-reviews { display: flex; flex-direction: column; gap: 24px; max-width: 620px; }
+.bd-review-mine {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 16px 18px; border: 1px solid var(--line-2); border-radius: 12px;
+  background: color-mix(in oklch, var(--bg-1) 72%, transparent);
+}
+.bd-review-mine-k { color: var(--ink-2); }
+.bd-review-starsline { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.bd-review-starsmeta { font-size: 11px; color: var(--ink-3); }
+.bd-review-mine-body { display: flex; flex-direction: column; gap: 12px; }
+.bd-review-spoilerrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bd-review-spoiler {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--ink-2); cursor: pointer;
+}
+/* Your notes never leave your account, so they read as set apart: dashed,
+   tinted, and labelled private above the text. */
+.bd-review-notes {
+  padding: 10px 12px; border-radius: 8px;
+  border: 1px dashed color-mix(in oklch, var(--accent) 45%, transparent);
+  background: color-mix(in oklch, var(--accent) 6%, transparent);
+}
+.bd-review-notes-k {
+  margin-bottom: 6px; font-size: 10px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--accent);
+}
+.bd-review-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.bd-review-composer { display: flex; flex-direction: column; gap: 16px; }
+.bd-review-field-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.bd-review-field-private { padding-top: 14px; border-top: 1px dashed var(--line-2); }
+.bd-review-private-tag { font-size: 10.5px; color: var(--accent); }
+.bd-review-composer .bd-journal-editor { min-height: 96px; }
+
+.bd-review-household { display: flex; flex-direction: column; gap: 22px; }
+.bd-review-summary { display: flex; align-items: flex-end; gap: 28px; flex-wrap: wrap; }
+.bd-review-avg { display: flex; align-items: center; gap: 12px; }
+.bd-review-avg-v { font-family: var(--serif); font-size: 44px; line-height: 1; color: var(--ink-0); }
+.bd-review-avg-side { display: flex; flex-direction: column; gap: 5px; }
+.bd-review-avg-stars { font-size: 15px; }
+.bd-review-avg-n { font-size: 10.5px; color: var(--ink-3); }
+/* The spread borrows the stats page's rating histogram: accent bars on a
+   shared baseline, and an outlined slot where nobody gave that value. */
+.bd-review-spread {
+  display: grid; grid-template-columns: repeat(10, minmax(14px, 1fr)); gap: 4px;
+  flex: 1 1 220px; max-width: 300px; height: 64px;
+}
+.bd-review-spread-col { display: flex; flex-direction: column; align-items: center; height: 100%; }
+.bd-review-spread-track { flex: 1 1 auto; width: 100%; display: flex; align-items: flex-end; justify-content: center; }
+.bd-review-spread-bar { width: 70%; min-height: 2px; border-radius: 3px 3px 0 0; background: var(--accent); }
+.bd-review-spread-slot {
+  width: 70%; height: 100%;
+  border: 1px dashed var(--line-2); border-bottom: 0; border-radius: 3px 3px 0 0;
+}
+.bd-review-spread-label { margin-top: 4px; min-height: 1em; font-size: 9.5px; line-height: 1; color: var(--ink-3); }
+
+.bd-review-list { display: flex; flex-direction: column; }
+.bd-review-card {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 14px 0; border-bottom: 1px solid var(--line-2);
+}
+.bd-review-card:first-child { padding-top: 0; }
+.bd-review-card-head { display: flex; align-items: center; gap: 10px; }
+.bd-review-avatar,
+.bd-review-chip-avatar {
+  display: inline-grid; place-items: center; overflow: hidden; border-radius: 50%;
+  background: var(--bg-3); color: var(--ink-1);
+  font-family: var(--mono); font-weight: 700;
+}
+.bd-review-avatar { width: 28px; height: 28px; flex: 0 0 28px; font-size: 10px; }
+.bd-review-chip-avatar { width: 22px; height: 22px; flex: 0 0 22px; font-size: 9px; }
+.bd-review-byline { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; min-width: 0; }
+.bd-review-name { font-size: 13.5px; font-weight: 600; color: var(--ink-0); }
+.bd-review-card-stars { align-self: center; gap: 1px; font-size: 12px; }
+.bd-review-date { font-size: 10px; color: var(--ink-3); }
+.bd-review-spoilertag {
+  padding: 1px 5px; border: 1px solid var(--line-2); border-radius: 3px;
+  font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2);
+}
+/* Clipped by a mask rather than a fade to a colour, so it reads the same on
+   a card and on the marquee's translucent panel. */
+.bd-review-text.is-clamped {
+  max-height: 9.6em; overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent);
+  mask-image: linear-gradient(180deg, #000 55%, transparent);
+}
+.bd-review-more { align-self: flex-start; }
+.bd-review-veil {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 12px; border-radius: 8px; background: var(--bg-2);
+  font-size: 12px; color: var(--ink-2);
+}
+.bd-review-starsrow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.bd-review-starsrow-k { color: var(--ink-3); }
+.bd-review-starsrow-list { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 0; list-style: none; }
+.bd-review-starchip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px 3px 3px; border-radius: 999px; background: var(--bg-2);
+}
+.bd-review-chip-stars { gap: 1px; font-size: 11px; }
+.bd-review-quiet { font-size: 11px; color: var(--ink-3); }
+.bd-review-stale-note { font-size: 11px; color: var(--ink-2); }
+
+/* The title area's household rating: a quiet mono line that reads as a link. */
+.bd-reviews-jump {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 0; border: 0; background: none; cursor: pointer;
+  font-family: var(--mono); font-size: 12px; letter-spacing: .04em; color: var(--ink-1);
+}
+.bd-reviews-jump:hover { color: var(--accent); }
+.bd-reviews-jump:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bd-reviews-jump-star { color: var(--accent); }
+
 /* "From the same hand" — the author-lead card + spreading cover stack live in
    the F3.3 suggestions block below (they reuse `.suggest-stack` / `.sug-cap`). */
 
@@ -10877,6 +10992,8 @@ html {
 .um-initials-photo,
 .bd-journal-avatar-photo,
 .bd-other-rating-avatar-photo,
+.bd-review-avatar-photo,
+.bd-review-chip-avatar-photo,
 .m-account-initials-photo,
 .profile-initials-photo,
 .st-reader-avatar-photo {
@@ -11814,7 +11931,6 @@ html {
   display: flex; justify-content: space-between; margin-top: 6px; max-width: 560px;
   font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; color: var(--ink-3);
 }
-.bdmq-ratingrow { margin-top: 30px; }
 .bdmq-bigquiet {
   font-family: var(--serif); font-style: italic; font-size: 24px;
   color: var(--ink-2); line-height: 1.4; max-width: 480px;
@@ -12181,6 +12297,8 @@ html {
 .bdmq .bd-hl-act:disabled { color: var(--ink-3); cursor: default; }
 .bdmq .bd-hl-act.bd-hl-delete:hover { color: var(--bad); }
 
+/* Home stop: the household rating sits under the byline, before the chips. */
+.bdmq .bd-reviews-jump { margin-top: 10px; }
 /* Journal stop: the "✎ New entry" header button + the composer modal. */
 .bdmq-headspacer { flex: 1; }
 .bdmq-overlay-static { cursor: default; }

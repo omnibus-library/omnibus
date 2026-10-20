@@ -1,24 +1,33 @@
-//! The running order is a cross-client contract. iOS pins the same six
-//! sections in the same order (`detailStopsRunHomeToMoreInSixSections` in
-//! `omnibus-ios/omnibusTests/`), so a reorder on this side has to fail this
-//! build too — a guard on one client notices drift, it doesn't stop it.
+//! The running order is a cross-client contract. iOS pins the same order
+//! (`detailStopsRunHomeToMoreInSixSections` in `omnibus-ios/omnibusTests/`)
+//! less Reviews, which takes the rating block's place there instead of a stop
+//! of its own, so a reorder on this side has to fail this build too — a guard
+//! on one client notices drift, it doesn't stop it.
 
-use super::MARQUEE_SECTIONS;
+use super::{MARQUEE_SECTIONS, REVIEWS_STOP};
 
 #[test]
-fn marquee_sections_run_home_to_more_in_six_sections() {
+fn marquee_sections_run_home_to_more_in_seven_sections() {
     let names: Vec<&str> = MARQUEE_SECTIONS.iter().map(|(_, name)| *name).collect();
     assert_eq!(
         names,
         [
             "Home",
             "Stats",
+            "Reviews",
             "Highlights",
             "Journals",
             "The files",
             "More"
         ]
     );
+}
+
+// The title area's household rating jumps by this index; a reorder that left
+// it behind would land the reader on the wrong stop.
+#[test]
+fn reviews_stop_index_names_the_reviews_section() {
+    assert_eq!(MARQUEE_SECTIONS[REVIEWS_STOP].1, "Reviews");
 }
 
 #[test]
@@ -100,9 +109,9 @@ mod scroll_stops_toggle {
 // own. Anything sharing it widens the box over the panel and takes its clicks.
 #[cfg(feature = "server")]
 #[test]
-fn dot_rail_is_the_six_dots_alone() {
+fn dot_rail_is_the_seven_dots_alone() {
     let html = crate::test_support::render_in_vdom(super::DotRail);
     assert!(html.starts_with("<nav class=\"bdmq-dots\""), "{html}");
     assert!(html.ends_with("</nav>"), "{html}");
-    assert_eq!(html.matches("<button").count(), 6, "{html}");
+    assert_eq!(html.matches("<button").count(), 7, "{html}");
 }
