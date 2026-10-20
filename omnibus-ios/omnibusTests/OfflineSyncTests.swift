@@ -530,11 +530,11 @@ struct ReviewReplicaTests {
         }
         let sentAfterB = await store.cacheGeneration(key)
         let answerB = try JSONEncoder().encode(page(stars: 4, body: "x"))
-        #expect(await store.cachePut(key, answerB, ifGeneration: sentAfterB))
+        #expect(await store.cachePut(key, answerB, ifGeneration: sentAfterB) == .stored)
 
         // A's answer, from before B, comes in last.
         let answerA = try JSONEncoder().encode(page(stars: 4, body: nil))
-        #expect(!(await store.cachePut(key, answerA, ifGeneration: sentBeforeB)))
+        #expect(await store.cachePut(key, answerA, ifGeneration: sentBeforeB) == .moved)
         #expect(try await held(store).mine?.bodyMd == "x")
     }
 
@@ -545,7 +545,7 @@ struct ReviewReplicaTests {
 
         let sent = await store.cacheGeneration(key)
         let answer = try JSONEncoder().encode(page(stars: 5, body: "rendered"))
-        #expect(await store.cachePut(key, answer, ifGeneration: sent))
+        #expect(await store.cachePut(key, answer, ifGeneration: sent) == .stored)
         #expect(try await held(store).mine?.stars == 5)
     }
 
@@ -598,6 +598,145 @@ struct ReviewReplicaTests {
         }
 
         #expect(Set(try await held(store).others.map(\.userId)) == Set(1...40))
+    }
+}
+
+// MARK: - Guarded revalidation
+
+/// Counts the requests a read makes, and lets each one act while "out".
+private actor RequestLog {
+    private(set) var count = 0
+    func next() -> Int {
+        count += 1
+        return count
+    }
+}
+
+@Suite("Guarded revalidation")
+struct GuardedRevalidationTests {
+    private let book = "22222222-3333-4444-5555-666666666666"
+    private var key: String { CacheKey.reviews(book) }
+
+    private func page(stars: Double, html: String? = nil) -> BookReviews {
+        BookReviews(
+            mine: Review(
+                bookUUID: book, stars: stars, bodyMd: html == nil ? nil : "x", bodyHtml: html,
+                notesMd: nil, notesHtml: nil, spoiler: false, ratedAt: 1, createdAt: 1, updatedAt: 1
+            ),
+            others: [], summary: nil
+        )
+    }
+
+    /// Run one guarded revalidation and collect what it shows.
+    private func reads(
+        store: OfflineStore, cached: Data?,
+        fetch: @escaping @Sendable () async throws -> BookReviews
+    ) async throws -> [CacheRead<BookReviews>] {
+        let key = self.key
+        let stream = AsyncThrowingStream<CacheRead<BookReviews>, Error> { continuation in
+            Task {
+                do {
+                    try await Cache.revalidateGuarded(
+                        key, cachedData: cached, store: store, fetch: fetch, into: continuation
+                    )
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+        var out: [CacheRead<BookReviews>] = []
+        for try await read in stream { out.append(read) }
+        return out
+    }
+
+    @Test("an online-only session, whose store never opened, still shows the answer")
+    func closedStoreShowsTheAnswer() async throws {
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("never-opened-\(UUID().uuidString).sqlite").path
+        let store = OfflineStore(path: path)
+        #expect(await store.cachePut(key, Data("{}".utf8), ifGeneration: 0) == .storeClosed)
+
+        let answer = page(stars: 4)
+        let shown = try await reads(store: store, cached: nil) { answer }
+        #expect(shown.map(\.value.mine?.stars) == [4])
+        #expect(shown.map(\.isFresh) == [true])
+    }
+
+    @Test("an answer refused for a write that has since landed asks once more")
+    func refusalAfterALandedWriteAsksAgain() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+        let seed = try JSONEncoder().encode(page(stars: 2))
+        await store.cachePut(key, seed)
+
+        let log = RequestLog()
+        let book = self.book
+        let stale = page(stars: 2)
+        let rendered = page(stars: 5, html: "<p>x</p>")
+        let shown = try await reads(store: store, cached: seed) {
+            if await log.next() == 1 {
+                // The tap lands while this first request is out.
+                await UserDataService.mutateLocalReviews(book, in: store) {
+                    $0 = $0.applying(.stars(5), uuid: book, now: 2)
+                }
+                return stale
+            }
+            return rendered
+        }
+
+        #expect(await log.count == 2)
+        #expect(shown.map(\.value) == [rendered])
+        let stored = try JSONDecoder().decode(BookReviews.self, from: try #require(await store.cacheGet(key)))
+        #expect(stored == rendered)
+    }
+
+    @Test("asking again happens once, then the replica is shown")
+    func askingAgainIsBounded() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+        let seed = try JSONEncoder().encode(page(stars: 2))
+        await store.cachePut(key, seed)
+
+        let log = RequestLog()
+        let book = self.book
+        let stale = page(stars: 2)
+        let shown = try await reads(store: store, cached: seed) {
+            let n = await log.next()
+            await UserDataService.mutateLocalReviews(book, in: store) {
+                $0 = $0.applying(.stars(Double(n + 2)), uuid: book, now: Int64(n))
+            }
+            return stale
+        }
+
+        #expect(await log.count == 2)
+        #expect(shown.map(\.value.mine?.stars) == [4])
+        #expect(shown.map(\.isFresh) == [false])
+    }
+
+    @Test("a write still queued is not asked about again: the replica is shown")
+    func queuedWriteShowsTheReplica() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+        let seed = try JSONEncoder().encode(page(stars: 2))
+        await store.cachePut(key, seed)
+
+        let log = RequestLog()
+        let book = self.book
+        let stale = page(stars: 2)
+        let shown = try await reads(store: store, cached: seed) {
+            _ = await log.next()
+            await UserDataService.mutateLocalReviews(book, in: store) {
+                $0 = $0.applying(.stars(5), uuid: book, now: 2)
+            }
+            await store.enqueue(
+                kind: OpKind.review(book), path: "/api/reviews/\(book)", method: "PATCH",
+                body: Data(#"{"stars":5}"#.utf8), coalesce: false
+            )
+            return stale
+        }
+
+        #expect(await log.count == 1)
+        #expect(shown.map(\.value.mine?.stars) == [5])
     }
 }
 

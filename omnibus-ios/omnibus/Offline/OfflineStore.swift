@@ -243,6 +243,15 @@ struct DownloadRecord: Sendable, Identifiable {
     }
 }
 
+/// What `OfflineStore.cachePut(_:_:ifGeneration:)` did.
+enum GuardedPut: Equatable, Sendable {
+    case stored
+    /// Something wrote the key after the generation was captured.
+    case moved
+    /// The store never opened; nothing was stored, and nothing needed to be.
+    case storeClosed
+}
+
 actor OfflineStore {
     static let shared = OfflineStore()
 
@@ -550,13 +559,16 @@ actor OfflineStore {
     }
 
     /// Store `value` only if nothing has written `key` since `generation` was
-    /// captured, answering whether it did. One actor step, so no write can
-    /// land between the check and the store.
+    /// captured. One actor step, so no write can land between the check and
+    /// the store. A closed store is told apart from a moved key: an
+    /// online-only session has no replica to protect, and must not read as
+    /// one that lost a race.
     @discardableResult
-    func cachePut(_ key: String, _ value: Data, ifGeneration generation: Int) -> Bool {
-        guard isOpen, generations[key, default: 0] == generation else { return false }
+    func cachePut(_ key: String, _ value: Data, ifGeneration generation: Int) -> GuardedPut {
+        guard isOpen else { return .storeClosed }
+        guard generations[key, default: 0] == generation else { return .moved }
         cachePut(key, value)
-        return true
+        return .stored
     }
 
     /// Read, change and write `key` in one actor step, so two changes made at

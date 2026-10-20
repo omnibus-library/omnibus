@@ -233,9 +233,12 @@ enum Cache {
                 }
 
                 do {
-                    var generation: Int?
                     if guardsWrites {
-                        generation = await OfflineStore.shared.cacheGeneration(key)
+                        try await revalidateGuarded(
+                            key, cachedData: cachedData, storing: storing,
+                            store: .shared, fetch: fetch, into: continuation
+                        )
+                        return
                     }
                     let fresh = try await fetch()
 
@@ -262,21 +265,7 @@ enum Cache {
                     // replica is written either way.
                     let freshData = try? encoder.encode(fresh)
                     let storedData = storing.map { try? encoder.encode($0(fresh)) } ?? freshData
-                    if let storedData {
-                        if let generation {
-                            guard await OfflineStore.shared.cachePut(
-                                key, storedData, ifGeneration: generation
-                            ) else {
-                                // Something wrote the key while this was out, so
-                                // the replica is newer than this answer.
-                                await yieldReplica(key, since: cachedData, to: continuation)
-                                continuation.finish()
-                                return
-                            }
-                        } else {
-                            await OfflineStore.shared.cachePut(key, storedData)
-                        }
-                    }
+                    if let storedData { await OfflineStore.shared.cachePut(key, storedData) }
                     guard !Task.isCancelled else {
                         continuation.finish()
                         return
@@ -306,6 +295,57 @@ enum Cache {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// `live`'s revalidation for a `guardsWrites` key: the answer is stored
+    /// only if nothing wrote the key while the request was out.
+    ///
+    /// When something did, the replica is newer than this answer and is shown
+    /// instead — but that write's own refresh may never come, so if the write
+    /// has already left the queue the server is asked once more. A store that
+    /// never opened (online-only) has nothing to protect, and the answer goes
+    /// out as it would without the guard; so does one the replica has nothing
+    /// to replace with. `store` is injectable for the suite.
+    static func revalidateGuarded<T: Codable & Sendable>(
+        _ key: String,
+        cachedData: Data?,
+        storing: (@Sendable (T) -> T)? = nil,
+        store: OfflineStore,
+        fetch: @Sendable () async throws -> T,
+        into continuation: AsyncThrowingStream<CacheRead<T>, Error>.Continuation
+    ) async throws {
+        for attempt in 0..<2 {
+            let generation = await store.cacheGeneration(key)
+            let fresh = try await fetch()
+            let queued = OutboxScope.isBlocked(key, by: await store.pendingKinds())
+            let freshData = try? encoder.encode(fresh)
+            let storedData = storing.map { try? encoder.encode($0(fresh)) } ?? freshData
+            var outcome = GuardedPut.stored
+            if !queued, let storedData {
+                outcome = await store.cachePut(key, storedData, ifGeneration: generation)
+            }
+            if queued || outcome == .moved {
+                // Ask again only once the write that moved it has landed: a
+                // queued one is still ahead of the server.
+                let landed = !OutboxScope.isBlocked(key, by: await store.pendingKinds())
+                if !queued, attempt == 0, landed { continue }
+                if let current = await store.cacheGet(key) {
+                    guard !Task.isCancelled else { break }
+                    if current != cachedData, let value = try? decoder.decode(T.self, from: current) {
+                        continuation.yield(CacheRead(value: value, isFresh: false))
+                    }
+                    break
+                }
+                if cachedData != nil { break }
+                // Nothing held at all: this answer is still the best there is.
+            }
+            guard !Task.isCancelled else { break }
+            if freshData == nil || freshData != cachedData {
+                continuation.yield(CacheRead(value: fresh, isFresh: true))
+            }
+            break
+        }
+        continuation.finish()
     }
 
     /// Whether the server's answer can be trusted to replace the replica.
