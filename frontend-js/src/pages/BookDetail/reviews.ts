@@ -13,13 +13,10 @@ import { fmtStars } from "../../components/StarRating/stars";
 /** A write to your review: a change to some of its fields, or deleting all of it. */
 export type ReviewWrite = ReviewChange | "delete";
 
-/**
- * Your review once `change` lands, for the fields the card can draw itself: stars and the
- * spoiler flag. Text waits for the server, which renders it. `null` once nothing is left.
- */
+/** Your review once a stars tap lands, drawn before the server answers; `null` once nothing is left. Text and the spoiler flag wait for the server. */
 export function applyLocally(
   mine: MyReview | null,
-  change: ReviewChange,
+  stars: number | null,
   now: number,
 ): MyReview | null {
   const next: MyReview = mine
@@ -35,15 +32,9 @@ export function applyLocally(
         createdAt: now,
         updatedAt: now,
       };
-  if (change.stars !== undefined) {
-    next.stars = change.stars;
-    next.ratedAt = change.stars === null ? null : now;
-    next.updatedAt = now;
-  }
-  if (change.spoiler !== undefined) {
-    next.spoiler = change.spoiler;
-    next.updatedAt = now;
-  }
+  next.stars = stars;
+  next.ratedAt = stars === null ? null : now;
+  next.updatedAt = now;
   const empty =
     next.stars === null && next.bodyMd === null && next.notesMd === null;
   return empty ? null : next;
@@ -58,7 +49,7 @@ export function optimisticReviews(
   if (write === "delete" || write.stars === undefined) return reviews;
   return {
     ...reviews,
-    mine: applyLocally(reviews.mine, { stars: write.stars }, now),
+    mine: applyLocally(reviews.mine, write.stars, now),
   };
 }
 

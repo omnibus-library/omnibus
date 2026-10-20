@@ -646,6 +646,31 @@ async fn unreferenced_image_names_keeps_a_name_a_review_still_embeds() {
 }
 
 #[tokio::test]
+async fn unreferenced_image_names_keeps_a_name_a_reviews_public_text_still_embeds() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let uuid = seed(&pool, "/lib", "Book A").await;
+    let name = "44444444-4444-4444-8444-444444444444.png";
+    let body = format!("![img]({}{name})", markdown::IMAGE_URL_PREFIX);
+    let patch = omnibus_shared::ReviewPatch {
+        body_md: Some(Some(body)),
+        ..Default::default()
+    };
+    crate::reviews::update_review(&pool, user, &uuid, &patch)
+        .await
+        .unwrap();
+
+    let unreferenced = unreferenced_image_names(&pool, vec![name.to_string()])
+        .await
+        .unwrap();
+
+    assert!(
+        unreferenced.is_empty(),
+        "review text shares the image store"
+    );
+}
+
+#[tokio::test]
 async fn unreferenced_image_names_skips_the_query_when_candidates_is_empty() {
     let pool = init_db("sqlite::memory:").await.unwrap();
 

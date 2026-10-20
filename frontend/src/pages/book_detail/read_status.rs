@@ -2,7 +2,8 @@
 //! finished without a journal entry. A three-segment control whose first paint
 //! matches SSR (`Unread`, "Not started"); a post-mount effect loads saved state
 //! and reconciles (rule 07), and clicks write optimistically with an op-sequence
-//! guard, reverting on error — mirroring the rating widget.
+//! guard, reverting on error — the shape of the review card's stars
+//! (`reviews/writes.rs`).
 
 use dioxus::prelude::*;
 use omnibus_shared::{ReadStatus, ReadStatusRecord, SetReadStatus};

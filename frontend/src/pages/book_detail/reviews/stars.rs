@@ -61,7 +61,7 @@ fn fill_percent(shown: f32, slot: f32) -> u32 {
 }
 
 /// Accessible label and tooltip for one half star. The current rating's own
-/// half clears it, so it says so rather than "Rate N stars" (#2352).
+/// half clears it, so it says so rather than "Rate N stars".
 pub(super) fn half_star_label(value: f32, current: Option<f32>) -> String {
     if current == Some(value) {
         format!("Clear your {}-star rating", fmt_stars(value))

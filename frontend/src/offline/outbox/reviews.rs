@@ -86,12 +86,12 @@ async fn review_ops_queued(uuid: &str, except: Option<&Op>) -> usize {
         .await
         .iter()
         .filter_map(|row| serde_json::from_str::<Op>(&row.payload).ok())
-        .filter(|op| writes_review_of(op) == Some(uuid) && Some(op) != except)
+        .filter(|op| review_target(op) == Some(uuid) && Some(op) != except)
         .count()
 }
 
 /// The book whose review `op` writes, if it writes one.
-fn writes_review_of(op: &Op) -> Option<&str> {
+pub(crate) fn review_target(op: &Op) -> Option<&str> {
     match op {
         Op::UpdateReview { uuid, .. } | Op::DeleteReview { uuid } | Op::ClearRating { uuid } => {
             Some(uuid)
@@ -107,7 +107,7 @@ fn writes_review_of(op: &Op) -> Option<&str> {
 /// while it was in flight), whose optimistic copy it would undo. Either way
 /// the book's reviews are re-read on their next view, for the household.
 pub(crate) async fn review_replayed(replayed: &Op, mine: Option<&Review>) {
-    let Some(uuid) = writes_review_of(replayed) else {
+    let Some(uuid) = review_target(replayed) else {
         return;
     };
     // A delete may have taken stars with it.

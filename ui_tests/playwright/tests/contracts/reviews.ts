@@ -3,6 +3,8 @@ import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The review endpoints the book page's Reviews section posts to. */
 export const reviewsUrls = {
+  /** The section's read, which a stars change or a delete re-runs. */
+  get: /\/api\/rpc\/reviews\/get(?:\?|$)/,
   update: /\/api\/rpc\/reviews\/update(?:\?|$)/,
   delete: /\/api\/rpc\/reviews\/delete(?:\?|$)/,
 };

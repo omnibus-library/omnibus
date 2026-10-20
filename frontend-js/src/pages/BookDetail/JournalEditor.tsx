@@ -275,10 +275,16 @@ const CAPTION = "Add a caption";
 type JournalToolbarProps = {
   editor: { current: EditorHandle | null };
   onError: (message: string | null) => void;
+  /** Told when an image upload starts and ends, so a host can hold its Save until the image is in. */
+  onUploadingChange?: (uploading: boolean) => void;
 };
 
 /** Formatting buttons plus an image upload, acting on `editor`'s selection. */
-export function JournalToolbar({ editor, onError }: JournalToolbarProps) {
+export function JournalToolbar({
+  editor,
+  onError,
+  onUploadingChange,
+}: JournalToolbarProps) {
   const picker = useRef<HTMLInputElement>(null);
   const upload = useMutation({
     mutationFn: uploadJournalImage,
@@ -290,6 +296,10 @@ export function JournalToolbar({ editor, onError }: JournalToolbarProps) {
     },
     onError: (error) => onError(error.message),
   });
+  const uploading = upload.isPending;
+  useEffect(() => {
+    onUploadingChange?.(uploading);
+  }, [uploading, onUploadingChange]);
   // A mousedown would move focus out of the editor and collapse the selection being formatted.
   const keepFocus = (event: { preventDefault: () => void }) =>
     event.preventDefault();

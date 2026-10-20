@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, fn, waitFor, within } from "storybook/test";
 import { parseBookUuid, toReview } from "../../api";
-import { highlightsHandlers } from "../../testing/handlers";
+import { deferred, highlightsHandlers } from "../../testing/handlers";
 import { aWireHighlight, aWireReview } from "../../testing/wire";
 import { ReviewComposer } from "./ReviewComposer";
 // The page brings the composer's styles.
@@ -239,5 +239,86 @@ export const CancelClosesWithoutSaving: Story = {
 
     await expect(args.onClose).toHaveBeenCalled();
     await expect(args.onSave).not.toHaveBeenCalled();
+  },
+};
+
+// Released by a story once it has checked what a pending save or upload blocks.
+const gate = { release: () => {} };
+
+export const EditingIsLockedWhileSaving: Story = {
+  args: {
+    mine: WRITTEN,
+    onSave: fn(async () => {
+      const held = deferred();
+      gate.release = held.release;
+      await held.promise;
+    }),
+  },
+  play: async ({ args, canvas, userEvent }) => {
+    const body = canvas.getByRole("textbox", { name: "Review text" });
+    await userEvent.type(body, " Mostly.");
+    await userEvent.click(canvas.getByTestId("review-save"));
+
+    // What Save carries is fixed until it answers.
+    await expect(canvas.getByTestId("review-body-field")).toHaveAttribute(
+      "inert",
+    );
+    await expect(canvas.getByTestId("review-notes-field")).toHaveAttribute(
+      "inert",
+    );
+    await expect(
+      canvas.getByRole("checkbox", { name: "Contains spoilers" }),
+    ).toBeDisabled();
+    await userEvent.type(body, " Lost?");
+    await expect(body).toHaveTextContent("A slow burn that pays off. Mostly.");
+    await expect(body).not.toHaveTextContent("Lost?");
+
+    gate.release();
+
+    await waitFor(() => expect(args.onClose).toHaveBeenCalled());
+    await expect(args.onSave).toHaveBeenCalledWith({
+      bodyMd: "A slow burn that pays off. Mostly.",
+    });
+  },
+};
+
+export const SaveWaitsForAnImageStillUploading: Story = {
+  beforeEach({ msw }) {
+    const held = deferred();
+    gate.release = held.release;
+    msw.use(
+      http.post("/api/journals/images", async () => {
+        await held.promise;
+        return HttpResponse.json({ url: "/api/journals/images/map.png" });
+      }),
+    );
+  },
+  play: async ({ args, canvas, userEvent }) => {
+    const notes = canvas.getByTestId("review-notes-field");
+    const editor = within(notes).getByRole("textbox", {
+      name: "Private notes",
+    });
+    await userEvent.type(editor, "The map");
+    await userEvent.upload(
+      within(notes).getByTestId("journal-image-input"),
+      new File(["png"], "map.png", { type: "image/png" }),
+    );
+
+    // The image has nowhere to land once Save has closed the composer.
+    const save = canvas.getByTestId("review-save");
+    await waitFor(() => expect(save).toBeDisabled());
+
+    gate.release();
+
+    await waitFor(() => expect(save).toBeEnabled());
+    await expect(editor.textContent).toContain(
+      "![Add a caption](/api/journals/images/map.png)",
+    );
+    await userEvent.click(save);
+    await waitFor(() =>
+      expect(args.onSave).toHaveBeenCalledWith({
+        notesMd: expect.stringContaining("/api/journals/images/map.png"),
+      }),
+    );
   },
 };

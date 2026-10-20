@@ -357,3 +357,63 @@ async fn kv_expire_and_kv_expire_prefix_zero_fetched_at_and_keep_the_payload() {
         );
     }
 }
+
+#[tokio::test]
+async fn ops_appends_roll_their_delete_back_when_the_insert_fails() {
+    let (_dir, store) = open_temp();
+    store.ops_append(
+        "UpdateReview",
+        "queued".to_string(),
+        Some("review:u".to_string()),
+    );
+    store
+        .run(|conn| {
+            conn.execute_batch(
+                "CREATE TEMP TRIGGER refuse_ops BEFORE INSERT ON ops
+                 BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+            )
+        })
+        .await
+        .expect("worker")
+        .expect("trigger");
+
+    store.ops_append_merging(
+        "UpdateReview",
+        "review:u".to_string(),
+        "newer".to_string(),
+        |older| Some(format!("{older}+newer")),
+    );
+    store.ops_append(
+        "DeleteReview",
+        "delete".to_string(),
+        Some("review:u".to_string()),
+    );
+
+    let payloads: Vec<String> = store
+        .ops_list()
+        .await
+        .into_iter()
+        .map(|o| o.payload)
+        .collect();
+    assert_eq!(
+        payloads,
+        vec!["queued"],
+        "a failed write must not cost the queued op"
+    );
+}
+
+#[tokio::test]
+async fn kv_update_writes_what_the_closure_returns_and_hands_back_its_value() {
+    let (_dir, store) = open_temp();
+    store.kv_put("k", "1".to_string());
+
+    let seen = store
+        .kv_update("k", |payload| (payload.map(|p| format!("{p}+1")), "read"))
+        .await;
+    let untouched = store.kv_update("missing", |payload| (None, payload)).await;
+
+    assert_eq!(seen, Some("read"));
+    assert_eq!(store.kv_get("k").await.expect("row").payload, "1+1");
+    assert_eq!(untouched, Some(None));
+    assert!(store.kv_get("missing").await.is_none());
+}

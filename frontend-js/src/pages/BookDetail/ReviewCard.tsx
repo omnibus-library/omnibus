@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   type BookReviews,
   type BookUuid,
@@ -30,7 +30,10 @@ const STATS_KEYS = [["stats"], ["stats-chart"]] as const;
  * spoiler flag) and a delete wait for the server. Once the last write settles the reviews are
  * read again, which refreshes the summary and the other readers.
  */
-function useReviewWrites(uuid: BookUuid) {
+function useReviewWrites(
+  uuid: BookUuid,
+  onFailure: (write: ReviewWrite) => void,
+) {
   const client = useQueryClient();
   const { queryKey } = reviewsQuery(uuid);
   const cached = (): BookReviews =>
@@ -49,6 +52,7 @@ function useReviewWrites(uuid: BookUuid) {
       // A smart shelf may match on rating, and the stats pages sum the stars.
       alsoInvalidate: (write) =>
         movesStars(write) ? [...STATS_KEYS, shelvesQuery(uuid).queryKey] : [],
+      onFailure,
     },
   );
 }
@@ -83,9 +87,12 @@ function MyReviewWriting({ mine }: { mine: MyReview }) {
 /** The trash can's confirm modal: the delete lands only on success, and a refusal keeps the modal open with the reason. */
 function DeleteReviewModal({
   save,
+  onDeleted,
   onClose,
 }: {
   save: Writes;
+  /** Called once the server has taken the delete, before the modal closes. */
+  onDeleted: () => void;
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -97,6 +104,7 @@ function DeleteReviewModal({
     setError(null);
     try {
       await save.mutateAsync("delete");
+      onDeleted();
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -158,14 +166,34 @@ export function ReviewCard({
   uuid: BookUuid;
   mine: MyReview | null;
 }) {
-  const save = useReviewWrites(uuid);
-  // Only the newest tap's outcome is told, which is the one the stars now show.
+  // The last tap made: its refusal is told even when a later Save has taken the
+  // mutation, whose answer then puts the server's stars back. A delete that lands
+  // after it empties the card, and clears the message with it.
+  const lastTap = useRef<ReviewWrite | null>(null);
   const [starsFailed, setStarsFailed] = useState(false);
+  const save = useReviewWrites(uuid, (write) => {
+    if (write === lastTap.current) setStarsFailed(true);
+  });
   const [composing, setComposing] = useState(false);
+  // The pencil unmounts while the editor is open, so the editor's own close can't
+  // hand focus back to it; the card does, once it is mounted again.
+  const pencil = useRef<HTMLButtonElement>(null);
+  const refocusPencil = useRef(false);
+  const closeComposer = () => {
+    refocusPencil.current = true;
+    setComposing(false);
+  };
+  useEffect(() => {
+    if (composing || !refocusPencil.current) return;
+    refocusPencil.current = false;
+    pencil.current?.focus();
+  }, [composing]);
   const [confirming, setConfirming] = useState(false);
   const pick = (stars: number | null) => {
+    const write = { stars };
+    lastTap.current = write;
     setStarsFailed(false);
-    save.mutate({ stars }, { onError: () => setStarsFailed(true) });
+    save.mutate(write);
   };
   const hasWriting = mine?.bodyMd != null || mine?.notesMd != null;
   const writeLabel = hasWriting ? "Edit review" : "Write review";
@@ -182,6 +210,7 @@ export function ReviewCard({
           {!composing && (
             <button
               type="button"
+              ref={pencil}
               className="bd-review-tool"
               data-testid="review-write"
               aria-label={writeLabel}
@@ -226,19 +255,26 @@ export function ReviewCard({
           backdropClass="bdmq-overlay bdmq-overlay-static"
           dialogClass="bdmq-ocard bdmq-ocard-composer"
           busy
-          onDismiss={() => setComposing(false)}
+          onDismiss={closeComposer}
           focusOnOpen
         >
           <ReviewComposer
             uuid={uuid}
             mine={mine}
             onSave={(change) => save.mutateAsync(change)}
-            onClose={() => setComposing(false)}
+            onClose={closeComposer}
           />
         </ConfirmModal>
       )}
       {confirming && (
-        <DeleteReviewModal save={save} onClose={() => setConfirming(false)} />
+        <DeleteReviewModal
+          save={save}
+          onDeleted={() => {
+            lastTap.current = null;
+            setStarsFailed(false);
+          }}
+          onClose={() => setConfirming(false)}
+        />
       )}
     </section>
   );

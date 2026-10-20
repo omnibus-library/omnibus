@@ -1,6 +1,6 @@
-//! Tests for the curation snapshot and its replay: the pure planner, then
-//! merge-then-undo end to end for read status, reviews and the identifier
-//! tuples that travel with them.
+//! Merge then undo, end to end: read status and reviews back on the book they
+//! came from with every column intact, the refusals, older snapshots, and the
+//! identifier tuples that travel with them.
 
 use super::*;
 use crate::merge::{merge_books, undo_merge, MergeError};
@@ -10,282 +10,12 @@ use crate::test_support::{
     seed_user,
 };
 
-// --- the planner, in isolation ---
-
-fn rating(user_id: i64, half_stars: i64, updated_at: i64) -> ReviewRow {
-    ReviewRow {
-        user_id,
-        half_stars: Some(half_stars),
-        body_md: None,
-        notes_md: None,
-        spoiler: false,
-        rated_at: Some(updated_at),
-        created_at: Some(updated_at),
-        updated_at,
-    }
-}
-
-/// Owns the two id sets a [`PlanContext`] borrows, so a test can keep them
-/// alive across the call.
-struct Ctx {
-    live: HashSet<i64>,
-    claimed: HashSet<i64>,
-}
-
-impl Ctx {
-    fn new(live: &[i64], claimed: &[i64]) -> Self {
-        Ctx {
-            live: live.iter().copied().collect(),
-            claimed: claimed.iter().copied().collect(),
-        }
-    }
-
-    fn plan(&self) -> PlanContext<'_> {
-        PlanContext {
-            live_users: &self.live,
-            claimed_by_later_merges: &self.claimed,
-        }
-    }
-}
-
-#[test]
-fn plan_restore_sends_each_row_back_to_the_book_it_came_from() {
-    let source_pre = vec![rating(1, 5, 2_000)];
-    let target_pre = vec![rating(1, 8, 1_000)];
-    // The source's row was the newer one, so the merge left it on the target.
-    let merged = vec![rating(1, 5, 2_000)];
-    let plan = plan_restore(
-        &source_pre,
-        &target_pre,
-        &merged,
-        &merged,
-        &Ctx::new(&[1], &[]).plan(),
-    )
-    .unwrap();
-    assert_eq!(plan.to_source, vec![&source_pre[0]]);
-    assert_eq!(plan.to_target, vec![&target_pre[0]]);
-    assert!(plan.clear_target.is_empty());
-}
-
-#[test]
-fn plan_restore_clears_the_target_row_when_the_target_had_none() {
-    let source_pre = vec![rating(1, 5, 2_000)];
-    let merged = vec![rating(1, 5, 2_000)];
-    let plan = plan_restore(
-        &source_pre,
-        &[],
-        &merged,
-        &merged,
-        &Ctx::new(&[1], &[]).plan(),
-    )
-    .unwrap();
-    assert_eq!(plan.to_source, vec![&source_pre[0]]);
-    assert!(plan.to_target.is_empty());
-    assert_eq!(plan.clear_target, vec![1]);
-}
-
-#[test]
-fn plan_restore_ignores_readers_the_merge_never_moved_a_row_for() {
-    // User 2 rated only the target, so the merge left them alone — and undo
-    // must too, even though their row has changed since.
-    let target_pre = vec![rating(2, 4, 1_000)];
-    let merged = vec![rating(2, 4, 1_000)];
-    let current = vec![rating(2, 9, 5_000)];
-    let plan = plan_restore(
-        &[],
-        &target_pre,
-        &merged,
-        &current,
-        &Ctx::new(&[2], &[]).plan(),
-    )
-    .unwrap();
-    assert!(plan.to_source.is_empty());
-    assert!(plan.to_target.is_empty());
-    assert!(plan.clear_target.is_empty());
-}
-
-#[test]
-fn plan_restore_refuses_when_the_survivor_was_recurated_after_the_merge() {
-    let source_pre = vec![rating(1, 5, 2_000)];
-    let merged = vec![rating(1, 5, 2_000)];
-    let current = vec![rating(1, 9, 5_000)];
-    assert_eq!(
-        plan_restore(
-            &source_pre,
-            &[],
-            &merged,
-            &current,
-            &Ctx::new(&[1], &[]).plan()
-        )
-        .unwrap_err(),
-        Unresolvable::Recurated(1)
-    );
-}
-
-#[test]
-fn plan_restore_refuses_when_the_survivors_row_was_deleted_after_the_merge() {
-    let source_pre = vec![rating(1, 5, 2_000)];
-    let merged = vec![rating(1, 5, 2_000)];
-    assert_eq!(
-        plan_restore(&source_pre, &[], &merged, &[], &Ctx::new(&[1], &[]).plan()).unwrap_err(),
-        Unresolvable::Recurated(1)
-    );
-}
-
-#[test]
-fn plan_restore_allows_a_timestamp_only_touch_of_the_same_value() {
-    // Both writers bump `updated_at` on a re-affirmation, and every reading
-    // surface auto-writes `reading` on open — so comparing whole rows would
-    // let merely opening the merged book block its undo.
-    let source_pre = vec![rating(1, 5, 2_000)];
-    let merged = vec![rating(1, 5, 2_000)];
-    let current = vec![rating(1, 5, 9_000)];
-    let plan = plan_restore(
-        &source_pre,
-        &[],
-        &merged,
-        &current,
-        &Ctx::new(&[1], &[]).plan(),
-    )
-    .unwrap();
-    assert_eq!(plan.clear_target, vec![1]);
-}
-
-#[test]
-fn plan_restore_skips_a_reader_whose_account_is_gone() {
-    // Both tables cascade on `users(id)`, so a deleted account took its rows
-    // off both books. There is nothing to restore and nothing to conflict
-    // about — and re-inserting would violate the foreign key.
-    let source_pre = vec![rating(1, 5, 2_000)];
-    let merged = vec![rating(1, 5, 2_000)];
-    let ctx = Ctx::new(&[], &[]);
-    let plan = plan_restore(&source_pre, &[], &merged, &[], &ctx.plan()).unwrap();
-    assert!(plan.to_source.is_empty());
-    assert!(plan.clear_target.is_empty());
-}
-
-#[test]
-fn plan_restore_refuses_a_reader_a_later_open_merge_also_moved() {
-    let source_pre = vec![rating(1, 5, 2_000)];
-    let merged = vec![rating(1, 5, 2_000)];
-    let ctx = Ctx::new(&[1], &[1]);
-    assert_eq!(
-        plan_restore(&source_pre, &[], &merged, &merged, &ctx.plan()).unwrap_err(),
-        Unresolvable::ClaimedByLaterMerge(1)
-    );
-}
-
-#[test]
-fn read_status_says_the_same_ignores_updated_at_but_not_finished_at() {
-    let row = |status: &str, updated_at, finished_at| ReadStatusRow {
-        user_id: 1,
-        status: status.into(),
-        updated_at,
-        finished_at,
-    };
-    assert!(row("reading", 1, None).same_value(&row("reading", 9, None)));
-    assert!(!row("reading", 1, None).same_value(&row("finished", 1, Some(5))));
-    // When the reader finished is part of the statement, not bookkeeping.
-    assert!(!row("finished", 1, Some(5)).same_value(&row("finished", 1, Some(9))));
-}
-
-// --- merge then undo, end to end ---
-
-/// Stamp the two fields a merge settles per reader — read status and rating —
-/// on `book_uuid`, both carrying `ts` as their `updated_at` so a test can say
-/// which side the merge's latest-wins dedupe should keep.
-async fn seed_curation(
-    pool: &sqlx::SqlitePool,
-    user: i64,
-    book_uuid: &str,
-    status: &str,
-    half_stars: i64,
-    ts: i64,
-) {
-    sqlx::query(
-        "INSERT INTO book_read_status (user_id, book_uuid, status, updated_at, finished_at)
-         VALUES (?, ?, ?, ?, ?)",
-    )
-    .bind(user)
-    .bind(book_uuid)
-    .bind(status)
-    .bind(ts)
-    .bind((status == "finished").then_some(ts))
-    .execute(pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?4)",
-    )
-    .bind(user)
-    .bind(book_uuid)
-    .bind(half_stars)
-    .bind(ts)
-    .execute(pool)
-    .await
-    .unwrap();
-}
-
-/// One reader's whole curation on a book — `(status, finished_at, status
-/// updated_at, half_stars, rating updated_at)`, each `None` where the row is
-/// absent. Every field is compared, so a restore that recovers the status but
-/// loses when the reader finished still fails the assertion.
-type Curation = (
-    Option<String>,
-    Option<i64>,
-    Option<i64>,
-    Option<i64>,
-    Option<i64>,
-);
-
-async fn curation_of(pool: &sqlx::SqlitePool, user: i64, book_uuid: &str) -> Curation {
-    let status: Option<(String, Option<i64>, i64)> = sqlx::query_as(
-        "SELECT status, finished_at, updated_at FROM book_read_status
-          WHERE user_id = ? AND book_uuid = ?",
-    )
-    .bind(user)
-    .bind(book_uuid)
-    .fetch_optional(pool)
-    .await
-    .unwrap();
-    let rating: Option<(i64, i64)> = sqlx::query_as(
-        "SELECT half_stars, updated_at FROM reviews WHERE user_id = ? AND book_uuid = ?",
-    )
-    .bind(user)
-    .bind(book_uuid)
-    .fetch_optional(pool)
-    .await
-    .unwrap();
-    (
-        status.as_ref().map(|s| s.0.clone()),
-        status.as_ref().and_then(|s| s.1),
-        status.as_ref().map(|s| s.2),
-        rating.map(|r| r.0),
-        rating.map(|r| r.1),
-    )
-}
-
-/// The curation `seed_curation(_, _, _, status, half_stars, ts)` produced.
-fn curated(status: &str, half_stars: i64, ts: i64) -> Curation {
-    (
-        Some(status.to_string()),
-        (status == "finished").then_some(ts),
-        Some(ts),
-        Some(half_stars),
-        Some(ts),
-    )
-}
-
-const NONE: Curation = (None, None, None, None, None);
-
 #[tokio::test]
 async fn undo_merge_returns_curation_to_each_book_when_the_absorbed_side_won() {
     // #2234: undo left curation wherever the merge had put it, so the survivor
     // kept the absorbed book's read status and the absorbed book came back
-    // carrying none. Both sides hold a *different* non-null status and rating
-    // here — the case that exposed it — with the absorbed book's the newer, so
-    // the merge's dedupe deletes the survivor's own rows.
+    // carrying none. Both sides hold a *different* status and a full review
+    // here, with the absorbed book's the newer.
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "reader").await;
     let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
@@ -297,22 +27,30 @@ async fn undo_merge_returns_curation_to_each_book_when_the_absorbed_side_won() {
     let out = merge_books(&pool, &source, &target, Some(user))
         .await
         .unwrap();
-    // The merge is unchanged: the newer side wins on the survivor.
+    // The newer side's status wins; the two reviews fold into one.
+    let absorbed = review(user, 5, 2_000);
     assert_eq!(
         curation_of(&pool, user, &target).await,
-        curated("finished", 5, 2_000)
+        (
+            Some(status(user, "finished", 2_000)),
+            Some(ReviewRow {
+                notes_md: Some("notes 2000\n\nnotes 1000".into()),
+                created_at: Some(980),
+                ..absorbed
+            })
+        )
     );
 
     undo_merge(&pool, out.merge_log_id).await.unwrap();
 
     assert_eq!(
         curation_of(&pool, user, &target).await,
-        curated("reading", 8, 1_000),
-        "the survivor must get its own pre-merge curation back, timestamps included"
+        curated(user, "reading", 8, 1_000),
+        "the survivor must get its own pre-merge curation back, every column included"
     );
     assert_eq!(
         curation_of(&pool, user, &source).await,
-        curated("finished", 5, 2_000),
+        curated(user, "finished", 5, 2_000),
         "the restored book must come back with its own, not with nothing"
     );
 }
@@ -334,20 +72,28 @@ async fn undo_merge_recreates_curation_the_merge_deleted_when_the_survivor_won()
     let out = merge_books(&pool, &source, &target, Some(user))
         .await
         .unwrap();
+    let survivor = review(user, 8, 3_000);
     assert_eq!(
         curation_of(&pool, user, &target).await,
-        curated("reading", 8, 3_000)
+        (
+            Some(status(user, "reading", 3_000)),
+            Some(ReviewRow {
+                notes_md: Some("notes 3000\n\nnotes 2000".into()),
+                created_at: Some(1_980),
+                ..survivor
+            })
+        )
     );
 
     undo_merge(&pool, out.merge_log_id).await.unwrap();
 
     assert_eq!(
         curation_of(&pool, user, &target).await,
-        curated("reading", 8, 3_000)
+        curated(user, "reading", 8, 3_000)
     );
     assert_eq!(
         curation_of(&pool, user, &source).await,
-        curated("finished", 5, 2_000)
+        curated(user, "finished", 5, 2_000)
     );
 }
 
@@ -371,7 +117,7 @@ async fn undo_merge_clears_the_survivors_curation_when_only_the_absorbed_book_ha
     assert_eq!(curation_of(&pool, user, &target).await, NONE);
     assert_eq!(
         curation_of(&pool, user, &source).await,
-        curated("finished", 5, 2_000)
+        curated(user, "finished", 5, 2_000)
     );
 }
 
@@ -403,11 +149,11 @@ async fn undo_merge_leaves_a_reader_the_merge_never_moved_a_row_for_alone() {
     assert_eq!(
         curation_of(&pool, bystander, &target).await,
         (
-            Some("reading".to_string()),
-            None,
-            Some(1_000),
-            Some(10),
-            Some(1_000)
+            Some(status(bystander, "reading", 1_000)),
+            Some(ReviewRow {
+                half_stars: Some(10),
+                ..review(bystander, 3, 1_000)
+            })
         )
     );
     assert_eq!(curation_of(&pool, mover, &target).await, NONE);
@@ -460,26 +206,25 @@ async fn undo_merge_allows_a_timestamp_only_touch_of_the_survivor() {
     let out = merge_books(&pool, &source, &target, Some(user))
         .await
         .unwrap();
-    sqlx::query("UPDATE book_read_status SET updated_at = 9000 WHERE book_uuid = ?")
+    for table in ["book_read_status", "reviews"] {
+        sqlx::query(&format!(
+            "UPDATE {table} SET updated_at = 9000 WHERE book_uuid = ?"
+        ))
         .bind(&target)
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE reviews SET updated_at = 9000 WHERE book_uuid = ?")
-        .bind(&target)
-        .execute(&pool)
-        .await
-        .unwrap();
+    }
 
     undo_merge(&pool, out.merge_log_id).await.unwrap();
 
     assert_eq!(
         curation_of(&pool, user, &target).await,
-        curated("reading", 8, 1_000)
+        curated(user, "reading", 8, 1_000)
     );
     assert_eq!(
         curation_of(&pool, user, &source).await,
-        curated("reading", 5, 2_000)
+        curated(user, "reading", 5, 2_000)
     );
 }
 
@@ -569,16 +314,155 @@ async fn undo_merge_refuses_when_a_later_open_merge_moved_the_same_readers_row()
     merge_books(&pool, &second, &target, Some(user))
         .await
         .unwrap();
+    let merged = curation_of(&pool, user, &target).await;
 
     let err = undo_merge(&pool, one.merge_log_id).await.unwrap_err();
     assert!(matches!(err, MergeError::UndoConflict(_)), "got {err:?}");
     assert!(err.to_string().contains("later merge"), "got {err}");
 
-    // Nothing was destroyed: the survivor still carries the winning row, and
-    // the second merge's own undo is still available to recover the other.
+    // Nothing was destroyed: the survivor still carries what both merges left,
+    // and the second merge's own undo is still available to recover the rest.
+    assert_eq!(curation_of(&pool, user, &target).await, merged);
+}
+
+#[tokio::test]
+async fn undo_merge_allows_it_when_a_later_merge_moved_only_the_other_curation_table() {
+    // The two tables collide independently. A later merge that moved only this
+    // reader's *rating* says nothing about their read status, so folding both
+    // into one claimed-reader set would refuse an undo that was never
+    // ambiguous.
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
+    let first = seed_audiobook(&pool, "B/Drakula.m4b", "Drakula", "Bram Stoker").await;
+    let second = seed_ebook(&pool, "C/Dracula rev.epub", "Draculla", "Bram Stoker").await;
+
+    // Read status only on the first book, rating only on the second.
+    seed_status(&pool, &first, &status(user, "finished", 2_000)).await;
+    seed_review(&pool, &second, &rating(user, 7, 2_000)).await;
+
+    let one = merge_books(&pool, &first, &target, Some(user))
+        .await
+        .unwrap();
+    merge_books(&pool, &second, &target, Some(user))
+        .await
+        .unwrap();
+
+    undo_merge(&pool, one.merge_log_id).await.unwrap();
+
+    assert_eq!(
+        curation_of(&pool, user, &first).await,
+        (Some(status(user, "finished", 2_000)), None),
+        "the restored book gets its read status back"
+    );
     assert_eq!(
         curation_of(&pool, user, &target).await,
-        curated("finished", 10, 3_000)
+        (None, Some(rating(user, 7, 2_000))),
+        "and the survivor keeps the rating the still-open second merge moved"
+    );
+}
+
+/// Rewrite merge `id`'s snapshot through `edit`, standing in for a `merge_log`
+/// row an older build wrote.
+async fn rewrite_snapshot(
+    pool: &sqlx::SqlitePool,
+    id: i64,
+    edit: impl FnOnce(&mut serde_json::Map<String, serde_json::Value>),
+) {
+    let json: String = sqlx::query_scalar("SELECT source_metadata FROM merge_log WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    edit(value.as_object_mut().unwrap());
+    sqlx::query("UPDATE merge_log SET source_metadata = ? WHERE id = ?")
+        .bind(value.to_string())
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn undo_merge_leaves_curation_and_identifiers_alone_for_an_older_merge_log() {
+    // `curation` / `identifiers_added_to_target` are `#[serde(default)]`, so a
+    // merge recorded before they existed still replays — undoing it leaves both
+    // where the old undo left them rather than failing to decode.
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
+    let source = seed_audiobook(&pool, "B/Drakula.m4b", "Drakula", "Bram Stoker").await;
+    seed_curation(&pool, user, &source, "finished", 5, 2_000).await;
+    seed_identifier(&pool, &source, "isbn", "999").await;
+
+    let out = merge_books(&pool, &source, &target, Some(user))
+        .await
+        .unwrap();
+    rewrite_snapshot(&pool, out.merge_log_id, |obj| {
+        assert!(obj.remove("curation").is_some());
+        assert!(obj.remove("identifiers_added_to_target").is_some());
+    })
+    .await;
+
+    undo_merge(&pool, out.merge_log_id).await.unwrap();
+
+    assert_eq!(count(&pool, "SELECT COUNT(*) FROM books").await, 2);
+    assert_eq!(
+        curation_of(&pool, user, &target).await,
+        curated(user, "finished", 5, 2_000),
+        "an old snapshot carries no curation to restore, so it stays put"
+    );
+    assert_eq!(
+        identifiers_of(&pool, &target).await,
+        vec![ident("isbn", "999")],
+        "and no record of what it added, so the survivor keeps the tuple"
+    );
+}
+
+#[tokio::test]
+async fn undo_merge_dates_a_rating_from_a_snapshot_written_before_reviews_existed() {
+    // A merge recorded while ratings were their own table snapshotted each as
+    // `{user_id, half_stars, updated_at}`. Undo must still restore it, setting
+    // `rated_at` with the stars — the table's CHECK demands both or neither —
+    // and both missing dates from the one it has.
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
+    let source = seed_audiobook(&pool, "B/Drakula.m4b", "Drakula", "Bram Stoker").await;
+    seed_review(&pool, &target, &rating(user, 8, 1_000)).await;
+    seed_review(&pool, &source, &rating(user, 5, 2_000)).await;
+
+    let out = merge_books(&pool, &source, &target, Some(user))
+        .await
+        .unwrap();
+    rewrite_snapshot(&pool, out.merge_log_id, |obj| {
+        let curation = obj["curation"].as_object_mut().unwrap();
+        for side in ["source_ratings", "target_ratings", "merged_ratings"] {
+            for row in curation[side].as_array_mut().unwrap() {
+                row.as_object_mut()
+                    .unwrap()
+                    .retain(|k, _| ["user_id", "half_stars", "updated_at"].contains(&k.as_str()));
+            }
+        }
+    })
+    .await;
+    // The two dates the old shape lacks, moved off `updated_at` on the live
+    // rows, so only a restore that derives them can land on `updated_at`.
+    sqlx::query("UPDATE reviews SET rated_at = 1, created_at = 1")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    undo_merge(&pool, out.merge_log_id).await.unwrap();
+
+    assert_eq!(
+        review_of(&pool, user, &target).await,
+        Some(rating(user, 8, 1_000))
+    );
+    assert_eq!(
+        review_of(&pool, user, &source).await,
+        Some(rating(user, 5, 2_000))
     );
 }
 
@@ -694,110 +578,4 @@ async fn undo_merge_refuses_out_of_order_when_a_later_merge_supplies_the_same_id
             vec![ident("isbn", "9780000000001")]
         );
     }
-}
-
-#[tokio::test]
-async fn undo_merge_allows_it_when_a_later_merge_moved_only_the_other_curation_table() {
-    // The two tables collide independently. A later merge that moved only this
-    // reader's *rating* says nothing about their read status, so folding both
-    // into one claimed-reader set would refuse an undo that was never
-    // ambiguous.
-    let pool = init_db("sqlite::memory:").await.unwrap();
-    let user = seed_user(&pool, "reader").await;
-    let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
-    let first = seed_audiobook(&pool, "B/Drakula.m4b", "Drakula", "Bram Stoker").await;
-    let second = seed_ebook(&pool, "C/Dracula rev.epub", "Draculla", "Bram Stoker").await;
-
-    // Read status only on the first book, rating only on the second.
-    sqlx::query(
-        "INSERT INTO book_read_status (user_id, book_uuid, status, updated_at, finished_at)
-         VALUES (?, ?, 'finished', 2000, 2000)",
-    )
-    .bind(user)
-    .bind(&first)
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at, updated_at)
-         VALUES (?1, ?2, 7, 2000, 2000)",
-    )
-    .bind(user)
-    .bind(&second)
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let one = merge_books(&pool, &first, &target, Some(user))
-        .await
-        .unwrap();
-    merge_books(&pool, &second, &target, Some(user))
-        .await
-        .unwrap();
-
-    undo_merge(&pool, one.merge_log_id).await.unwrap();
-
-    assert_eq!(
-        curation_of(&pool, user, &first).await,
-        (
-            Some("finished".to_string()),
-            Some(2_000),
-            Some(2_000),
-            None,
-            None
-        ),
-        "the restored book gets its read status back"
-    );
-    assert_eq!(
-        curation_of(&pool, user, &target).await,
-        (None, None, None, Some(7), Some(2_000)),
-        "and the survivor keeps the rating the still-open second merge moved"
-    );
-}
-
-#[tokio::test]
-async fn undo_merge_leaves_curation_and_identifiers_alone_for_an_older_merge_log() {
-    // `curation` / `identifiers_added_to_target` are `#[serde(default)]`, so a
-    // merge recorded before they existed still replays — undoing it leaves both
-    // where the old undo left them rather than failing to decode.
-    let pool = init_db("sqlite::memory:").await.unwrap();
-    let user = seed_user(&pool, "reader").await;
-    let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
-    let source = seed_audiobook(&pool, "B/Drakula.m4b", "Drakula", "Bram Stoker").await;
-    seed_curation(&pool, user, &source, "finished", 5, 2_000).await;
-    seed_identifier(&pool, &source, "isbn", "999").await;
-
-    let out = merge_books(&pool, &source, &target, Some(user))
-        .await
-        .unwrap();
-
-    let json: String = sqlx::query_scalar("SELECT source_metadata FROM merge_log WHERE id = ?")
-        .bind(out.merge_log_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
-    let obj = value.as_object_mut().unwrap();
-    assert!(obj.remove("curation").is_some());
-    assert!(obj.remove("identifiers_added_to_target").is_some());
-    sqlx::query("UPDATE merge_log SET source_metadata = ? WHERE id = ?")
-        .bind(value.to_string())
-        .bind(out.merge_log_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-    undo_merge(&pool, out.merge_log_id).await.unwrap();
-
-    assert_eq!(count(&pool, "SELECT COUNT(*) FROM books").await, 2);
-    assert_eq!(
-        curation_of(&pool, user, &target).await,
-        curated("finished", 5, 2_000),
-        "an old snapshot carries no curation to restore, so it stays put"
-    );
-    assert_eq!(
-        identifiers_of(&pool, &target).await,
-        vec![ident("isbn", "999")],
-        "and no record of what it added, so the survivor keeps the tuple"
-    );
 }

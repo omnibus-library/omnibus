@@ -4722,7 +4722,7 @@
           "Journals"
         ],
         "summary": "Upload a journal image",
-        "description": "Stores an image to embed in a journal entry and returns its URL. Put the URL in the\nentry's markdown as `![caption](url)`.",
+        "description": "Stores an image to embed in a journal entry or review and returns its URL. Put the URL\nin the markdown as `![caption](url)`.",
         "operationId": "post_journal_image",
         "requestBody": {
           "content": {
@@ -4771,7 +4771,7 @@
           "Journals"
         ],
         "summary": "Get a journal image",
-        "description": "An image uploaded for a journal entry, by the name at the end of its URL. A name never\npoints at different bytes, so the response may be cached for a year.",
+        "description": "An image uploaded for a journal entry or review, by the name at the end of its URL. A\nname never points at different bytes, so the response may be cached for a year.",
         "operationId": "get_journal_image",
         "parameters": [
           {
@@ -4854,7 +4854,7 @@
           "Journals"
         ],
         "summary": "Delete a journal entry",
-        "description": "Deletes one of your entries, and any uploaded image it showed that no other entry\nshows.",
+        "description": "Deletes one of your entries. An uploaded image it showed, and no other journal entry or\nreview still shows, is deleted.",
         "operationId": "delete_journal",
         "parameters": [
           {
@@ -4881,7 +4881,7 @@
           "Journals"
         ],
         "summary": "Edit a journal entry",
-        "description": "Replaces the body and progress of one of your entries. Send `status` to publish a draft\nor turn an entry back into one; leave it out to keep the status. An uploaded image the\nold body showed and no entry shows any more is deleted.",
+        "description": "Replaces the body and progress of one of your entries. Send `status` to publish a draft\nor turn an entry back into one; leave it out to keep the status. An uploaded image the\nchange drops, and no journal entry or review still shows, is deleted.",
         "operationId": "patch_journal",
         "parameters": [
           {
@@ -5706,7 +5706,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Other users' ratings, newest first.",
+            "description": "Other users' ratings, most recently rated first.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5927,7 +5927,7 @@
           "Reviews"
         ],
         "summary": "Delete your review of a book",
-        "description": "Removes your stars, text and private notes together. Succeeds whether or not you had\nreviewed the book.",
+        "description": "Removes your stars, text and private notes together. An uploaded image they showed,\nand no journal entry or review still shows, is deleted. Succeeds whether or not you had\nreviewed the book.",
         "operationId": "delete_review",
         "parameters": [
           {
@@ -5951,7 +5951,7 @@
           "Reviews"
         ],
         "summary": "Change your review of a book",
-        "description": "Creates the review on first write. Only the fields you send change: leave a field out\nto keep it, send it as null to clear it. Stars, text and notes are independent, so\nclearing the stars keeps your text. The body is `null` when the change left the review\nwith no stars, text or notes, which deletes it.",
+        "description": "Creates the review on first write. Only the fields you send change: leave a field out\nto keep it. Send `stars`, `body_md` or `notes_md` as null to clear it. `spoiler` takes\ntrue or false; a null counts as leaving it out, so it keeps the flag rather than\nclearing it. Stars, text and notes are independent, so clearing the stars keeps your\ntext. The body is `null` when the change left the review with no stars, text or notes,\nwhich deletes it.\n\nText and notes can embed images uploaded with `POST /api/journals/images`. An uploaded\nimage the change drops, and no journal entry or review still shows, is deleted.",
         "operationId": "patch_review",
         "parameters": [
           {
@@ -8747,7 +8747,7 @@
           "created_at": {
             "type": "integer",
             "format": "int64",
-            "description": "When the review first had stars or text, in Unix seconds."
+            "description": "When the review first had stars or text, in Unix seconds. Adding text to a review that\nhad none restarts it, so a text review dates from its text."
           },
           "created_at_iso": {
             "type": [
@@ -9636,7 +9636,7 @@
             "items": {
               "$ref": "#/components/schemas/AttributedReview"
             },
-            "description": "Other readers' reviews: those with text first, newest first, then ratings with no\ntext, most recently rated first. A review holding only private notes isn't listed."
+            "description": "Other readers' reviews: those with text first, newest first by when the text was\nfirst written, then ratings with no text, most recently rated first. A review\nholding only private notes isn't listed."
           },
           "summary": {
             "oneOf": [
@@ -14408,7 +14408,7 @@
           "created_at": {
             "type": "integer",
             "format": "int64",
-            "description": "When the review first had stars or text, in Unix seconds. For a review holding only\nnotes, when you wrote them."
+            "description": "When the review first had stars or text, in Unix seconds. Adding text to a review that\nhad none restarts it, so a text review dates from its text. For a review holding only\nnotes, when you wrote them."
           },
           "created_at_iso": {
             "type": [
@@ -14493,7 +14493,7 @@
       },
       "ReviewPatch": {
         "type": "object",
-        "description": "The changes `PATCH /api/reviews/{uuid}` makes to your review of a book. A field left\nout stays as it is; a field sent as null is cleared. Blank text counts as null. A\nreview left with no stars, text or notes is deleted.",
+        "description": "The changes `PATCH /api/reviews/{uuid}` makes to your review of a book. A field left\nout stays as it is; `stars`, `body_md` or `notes_md` sent as null is cleared. Blank\ntext counts as null. A review left with no stars, text or notes is deleted.",
         "properties": {
           "body_md": {
             "type": [
@@ -14510,11 +14510,8 @@
             "description": "Private notes only you see, as Markdown, up to 65,536 bytes."
           },
           "spoiler": {
-            "type": [
-              "boolean",
-              "null"
-            ],
-            "description": "Whether the review contains spoilers."
+            "type": "boolean",
+            "description": "Whether the review contains spoilers: true or false. Leave it out to keep it; a null\ncounts as leaving it out and doesn't clear the flag."
           },
           "stars": {
             "type": [

@@ -30,12 +30,23 @@ type FieldProps = {
   uuid: BookUuid;
   field: keyof typeof FIELDS;
   initial: string;
+  /** While a Save is in flight: what it carries is fixed, so nothing here takes input. */
+  locked: boolean;
   onChange: (md: string) => void;
   onError: (message: string | null) => void;
+  onUploadingChange: (uploading: boolean) => void;
 };
 
 /** One labelled Markdown field: its head, the journal's toolbar row with "From highlights", the editor. */
-function ReviewField({ uuid, field, initial, onChange, onError }: FieldProps) {
+function ReviewField({
+  uuid,
+  field,
+  initial,
+  locked,
+  onChange,
+  onError,
+  onUploadingChange,
+}: FieldProps) {
   const editor = useRef<EditorHandle>(null);
   const { stem, label, placeholder } = FIELDS[field];
   const isPrivate = field === "notes";
@@ -47,6 +58,7 @@ function ReviewField({ uuid, field, initial, onChange, onError }: FieldProps) {
           : "bd-review-field"
       }
       data-testid={`${stem}-field`}
+      inert={locked}
     >
       <div className="bd-review-field-head">
         <span className="label">{label}</span>
@@ -66,7 +78,11 @@ function ReviewField({ uuid, field, initial, onChange, onError }: FieldProps) {
         )}
       </div>
       <div className="bd-journal-toolbar-row">
-        <JournalToolbar editor={editor} onError={onError} />
+        <JournalToolbar
+          editor={editor}
+          onError={onError}
+          onUploadingChange={onUploadingChange}
+        />
         <HighlightsPopover
           uuid={uuid}
           onPick={(text) =>
@@ -109,13 +125,20 @@ export function ReviewComposer({
   const [notesMd, setNotesMd] = useState(seed.notesMd);
   const [spoiler, setSpoiler] = useState(seed.spoiler);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // An image still uploading has nowhere to land once Save has closed the composer.
+  const [bodyUploading, setBodyUploading] = useState(false);
+  const [notesUploading, setNotesUploading] = useState(false);
+  const uploading = bodyUploading || notesUploading;
   // Not optimistic: the rendered text comes from the server, so the editor holds the draft until then.
   const save = useMutation({
     mutationFn: (change: ReviewChange) => onSave(change),
     onSuccess: onClose,
   });
   const error = save.error?.message ?? uploadError;
+  // A Save carries the draft as it stood; an edit made while it runs would be lost when it closes.
+  const locked = save.isPending;
   const submit = () => {
+    if (uploading) return;
     const change = saveChange(seed, { bodyMd, notesMd, spoiler });
     if (isNoChange(change)) {
       onClose();
@@ -133,13 +156,16 @@ export function ReviewComposer({
         uuid={uuid}
         field="body"
         initial={seed.bodyMd}
+        locked={locked}
         onChange={setBodyMd}
         onError={setUploadError}
+        onUploadingChange={setBodyUploading}
       />
       <label className="bd-review-spoiler" data-testid="review-spoiler">
         <input
           type="checkbox"
           checked={spoiler}
+          disabled={locked}
           onChange={(event) => setSpoiler(event.target.checked)}
         />
         Contains spoilers
@@ -148,8 +174,10 @@ export function ReviewComposer({
         uuid={uuid}
         field="notes"
         initial={seed.notesMd}
+        locked={locked}
         onChange={setNotesMd}
         onError={setUploadError}
+        onUploadingChange={setNotesUploading}
       />
       <div className="bd-journal-composer-foot">
         {error && (
@@ -171,7 +199,8 @@ export function ReviewComposer({
           variant="primary"
           size="sm"
           data-testid="review-save"
-          disabled={save.isPending}
+          disabled={save.isPending || uploading}
+          title={uploading ? "Waiting for the image to upload" : undefined}
           aria-busy={save.isPending}
           onClick={submit}
         >

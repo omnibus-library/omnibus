@@ -28,12 +28,22 @@ use super::identifiers::bd_identifier_rows;
 use super::immersive::BdImmersiveButton;
 use super::journal::BdJournalSection;
 use super::read_status::BdReadStatusControl;
-use super::reviews::{use_book_reviews, BdReviewsJumpLink, BdReviewsSection, ReviewsCtx};
+use super::reviews::{
+    use_book_reviews, BdReviewsJumpLink, BdReviewsKicker, BdReviewsSection, ReviewsCtx,
+};
 use super::rule_facts::RuleFactsSaved;
 use super::{derive_loaded_view, BdFormatBadge, BdMetaRow, DescriptionSignals, LoadedBookView};
 
+/// The Reviews section's id, which the household rating scrolls to.
+const REVIEWS_ANCHOR: &str = "m-bd-reviews";
+
 /// Bring the Reviews section into view, from the household rating.
-const SCROLL_TO_REVIEWS_JS: &str = "const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches; document.getElementById('m-bd-reviews')?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });";
+fn scroll_to_reviews_js() -> String {
+    format!(
+        "const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches; \
+         document.getElementById('{REVIEWS_ANCHOR}')?.scrollIntoView({{ behavior: still ? 'auto' : 'smooth', block: 'start' }});"
+    )
+}
 
 /// The loaded-book data the mobile layout reflows into its single column,
 /// including the discovery blocks (author cluster + Hardcover suggestions).
@@ -277,7 +287,7 @@ fn title_section(title: &str, meta_line: &str, formats: &[String], reviews: Revi
             BdReviewsJumpLink {
                 summary: reviews.summary(),
                 on_jump: move |_| {
-                    let _ = dioxus::document::eval(SCROLL_TO_REVIEWS_JS);
+                    let _ = dioxus::document::eval(&scroll_to_reviews_js());
                 },
             }
             if !formats.is_empty() {
@@ -409,15 +419,10 @@ fn info_sections(
 
         // Your review's composer opens in place of its text: the phone has
         // no stage to lay an overlay over.
-        section { class: "m-section m-bd-reviews", id: "m-bd-reviews", "data-testid": "mobile-reviews",
+        section { class: "m-section m-bd-reviews", id: REVIEWS_ANCHOR, "data-testid": "mobile-reviews",
             div { class: "m-section-head",
                 div { class: "label", "Reviews" }
-                span { class: "mono m-section-meta", "data-testid": "reviews-kicker",
-                    match reviews.kicker() {
-                        Some(kicker) => rsx! { "{kicker}" },
-                        None => rsx! { span { class: "ld-sheen", "Counting reviews" } },
-                    }
-                }
+                BdReviewsKicker { ctx: reviews, class: "mono m-section-meta" }
             }
             BdReviewsSection { uuid: uuid.to_string(), ctx: reviews }
         }
@@ -652,49 +657,4 @@ fn thumb_srcs(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn file(format: &str, ordinal: i64) -> BookFileInfo {
-        BookFileInfo {
-            id: ordinal,
-            format: format.to_string(),
-            filename: format!("part-{ordinal}.{}", format.to_lowercase()),
-            ordinal,
-            label: None,
-            size_bytes: 0,
-            path: None,
-            etag: None,
-            duration_seconds: None,
-        }
-    }
-
-    #[test]
-    fn has_multi_file_format_is_false_for_an_empty_file_list() {
-        assert!(!has_multi_file_format(&[]));
-    }
-
-    #[test]
-    fn has_multi_file_format_is_false_when_every_format_has_one_file() {
-        assert!(!has_multi_file_format(&[file("EPUB", 0), file("M4B", 1)]));
-    }
-
-    #[test]
-    fn has_multi_file_format_is_true_when_a_format_has_two_files() {
-        assert!(has_multi_file_format(&[file("M4B", 0), file("M4B", 1)]));
-    }
-
-    #[test]
-    fn has_multi_file_format_is_true_when_only_one_of_several_formats_has_duplicates() {
-        assert!(has_multi_file_format(&[
-            file("EPUB", 0),
-            file("M4B", 1),
-            file("M4B", 2),
-        ]));
-    }
-
-    #[test]
-    fn has_multi_file_format_matches_formats_that_differ_only_by_ascii_case() {
-        assert!(has_multi_file_format(&[file("M4B", 0), file("m4b", 1)]));
-    }
-}
+mod tests;

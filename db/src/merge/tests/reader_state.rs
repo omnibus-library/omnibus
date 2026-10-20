@@ -1,7 +1,7 @@
 //! Per-reader state across a merge: progress and playback rate with
 //! latest-wins on collision, highlights, the Kobo annotation sync state
-//! preferring the target's row, and read status / ratings / journals with
-//! the newer row kept.
+//! preferring the target's row, read status with the newer row kept, the
+//! stars of a review from the later rating, and journals.
 
 use super::super::*;
 use super::seed_user;

@@ -950,10 +950,10 @@ export const NoHouseholdRatingUntilTheServerSumsOne: Story = {
     msw.use(
       http.get("/api/reviews/:uuid", () => {
         reviewsRead = true;
-        // One reader is no household rating, and the server sends none.
+        // Two raters, but the threshold is the server's: no summary sent, none drawn.
         return HttpResponse.json({
           mine: aWireReview({ stars: 5 }),
-          others: [],
+          others: [aWireOtherReview({ user_id: 7, stars: 4 })],
           summary: null,
         });
       }),
