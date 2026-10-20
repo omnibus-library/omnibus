@@ -10,9 +10,10 @@ import { BusyLabel } from "../../components/Loading/Loading";
 import {
   type Status,
   StatusLine,
+  statusOrLoadError,
   useUnsavedGuard,
 } from "../../components/SettingsShell/SettingsShell";
-import { CredentialStatus, readFailure } from "./CredentialStatus";
+import { CredentialStatus } from "./CredentialStatus";
 import {
   ebookConvertDetail,
   ebookConvertPlaceholder,
@@ -82,9 +83,13 @@ export function EbookConvertCard() {
         }),
     });
 
-  const failedRead = readFailure(current, "status");
+  const failedRead = current.data === undefined ? current.error : null;
   const readFailed = failedRead !== null;
-  const shown = status ?? failedRead;
+  const shown = statusOrLoadError(
+    status,
+    failedRead,
+    "Couldn’t read the current status: ",
+  );
 
   return (
     <section className="card" data-testid="ebook-convert-card">

@@ -13,9 +13,10 @@ import { BusyLabel } from "../../components/Loading/Loading";
 import {
   type Status,
   StatusLine,
+  statusOrLoadError,
   useUnsavedGuard,
 } from "../../components/SettingsShell/SettingsShell";
-import { CredentialStatus, readFailure } from "./CredentialStatus";
+import { CredentialStatus } from "./CredentialStatus";
 import { clearWarning, SECRET_KEYS } from "./integrations";
 
 /** A server-wide key the admin sets: its masked state, a field to replace it, and a way to remove it. */
@@ -87,9 +88,13 @@ export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
     });
   };
 
-  const failedRead = readFailure(current, "status");
+  const failedRead = current.data === undefined ? current.error : null;
   const readFailed = failedRead !== null;
-  const shown = status ?? failedRead;
+  const shown = statusOrLoadError(
+    status,
+    failedRead,
+    "Couldn’t read the current status: ",
+  );
   const masked = current.data?.masked;
 
   return (

@@ -129,6 +129,44 @@ export const HardcoverTryAgainReadsTheStatusAgain: Story = {
   },
 };
 
+let readGate = deferred();
+
+export const HardcoverShowsCheckingWhileTryAgainReads: Story = {
+  beforeEach({ msw }) {
+    let reads = 0;
+    readGate = deferred();
+    msw.use(
+      http.get(HARDCOVER, async () => {
+        if (++reads === 1) {
+          return new HttpResponse("failed with 500", { status: 500 });
+        }
+        await readGate.promise;
+        return HttpResponse.json(aWireKeyStatus());
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Try again" }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("hardcover-status")).toHaveTextContent(
+        "Checking…",
+      ),
+    );
+    await expect(
+      canvas.queryByText(STATUS_READ_FAILED),
+    ).not.toBeInTheDocument();
+    readGate.release();
+    await waitFor(() =>
+      expect(canvas.getByTestId("hardcover-status")).toHaveTextContent(
+        "Connected",
+      ),
+    );
+  },
+};
+
 export const HardcoverShowsAConnectedKey: Story = {
   play: async ({ canvas }) => {
     await waitFor(() =>

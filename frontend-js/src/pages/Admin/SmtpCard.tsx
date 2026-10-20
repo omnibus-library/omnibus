@@ -14,9 +14,10 @@ import { BusyLabel } from "../../components/Loading/Loading";
 import {
   type Status,
   StatusLine,
+  statusOrLoadError,
   useUnsavedGuard,
 } from "../../components/SettingsShell/SettingsShell";
-import { CredentialStatus, readFailure } from "./CredentialStatus";
+import { CredentialStatus } from "./CredentialStatus";
 import {
   BLANK_SMTP_DRAFT,
   isSmtpEdited,
@@ -120,9 +121,13 @@ export function SmtpCard() {
     });
 
   const configured = config.data?.configured === true;
-  const failedRead = readFailure(config, "settings");
+  const failedRead = config.data === undefined ? config.error : null;
   const readFailed = failedRead !== null;
-  const shown = status ?? failedRead;
+  const shown = statusOrLoadError(
+    status,
+    failedRead,
+    "Couldn’t read the current settings: ",
+  );
 
   return (
     <section className="card" data-testid="smtp-card">

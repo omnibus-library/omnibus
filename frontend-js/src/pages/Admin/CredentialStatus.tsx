@@ -1,23 +1,3 @@
-import type { UseQueryResult } from "@tanstack/react-query";
-import type { Status } from "../../components/SettingsShell/SettingsShell";
-
-/** The line for a read that failed with nothing cached to show, else null. */
-export function readFailure(
-  query: Pick<
-    UseQueryResult<unknown, Error>,
-    "isError" | "isFetching" | "data" | "error"
-  >,
-  noun: "status" | "settings",
-): Status | null {
-  if (!query.isError || query.isFetching || query.data !== undefined) {
-    return null;
-  }
-  return {
-    message: `Couldn’t read the current ${noun}: ${query.error?.message}`,
-    error: true,
-  };
-}
-
 function CredentialDot({
   configured,
   readFailed,
