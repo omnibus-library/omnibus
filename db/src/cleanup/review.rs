@@ -3,7 +3,9 @@
 //! runs the matching [`super::apply`] primitive before stamping a decision.
 //! Detection writes these rows; this module reads and retires them.
 
-use omnibus_shared::{CleanupAction, CleanupCounts, CleanupKind, Decision, SuggestionCard};
+use omnibus_shared::{
+    CleanupAction, CleanupCounts, CleanupKind, Decision, MetadataOverrides, SuggestionCard,
+};
 use sqlx::SqlitePool;
 
 use crate::helpers::ids_json;
@@ -163,8 +165,9 @@ pub async fn decide_suggestion(
 }
 
 /// The title an accepted rename writes: the reviewer's wording when they typed
-/// over the proposal, the detector's otherwise. Trimmed, and empty is refused
-/// — a blank field is a slip, and adopting it would leave the book untitled.
+/// over the proposal, the detector's otherwise. Trimmed; empty is refused (a
+/// blank field is a slip, and adopting it would leave the book untitled) and so
+/// is one over the length cap a manual title edit is held to.
 fn resolved_title<'a>(
     proposed: &'a str,
     edited_value: Option<&'a str>,
@@ -177,6 +180,12 @@ fn resolved_title<'a>(
         return Err(CleanupStoreError::Refused(
             "the title cannot be empty".to_string(),
         ));
+    }
+    if trimmed.chars().count() > MetadataOverrides::TITLE_MAX_LEN {
+        return Err(CleanupStoreError::Refused(format!(
+            "title exceeds {} characters",
+            MetadataOverrides::TITLE_MAX_LEN
+        )));
     }
     Ok(trimmed)
 }

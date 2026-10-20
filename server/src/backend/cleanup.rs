@@ -118,7 +118,7 @@ pub(super) async fn get_cleanup_queue(
     responses(
         (status = 200, description = "The decision is recorded.", body = CleanupDecisionOutcome),
         (status = 403, description = "You aren't an admin."),
-        (status = 409, description = "No suggestion has that id, it was already reviewed, `decision` is `pending`, `value` isn't accepted for it, or the change can't be applied."),
+        (status = 409, description = "No suggestion has that id, it was already reviewed, `decision` is `pending`, `value` isn't accepted for it, is blank, or is over 500 characters, or the change can't be applied."),
     ),
 )]
 pub(super) async fn post_cleanup_decision(

@@ -380,7 +380,7 @@
             "description": "You aren't an admin."
           },
           "409": {
-            "description": "No suggestion has that id, it was already reviewed, `decision` is `pending`, `value` isn't accepted for it, or the change can't be applied."
+            "description": "No suggestion has that id, it was already reviewed, `decision` is `pending`, `value` isn't accepted for it, is blank, or is over 500 characters, or the change can't be applied."
           }
         }
       }
