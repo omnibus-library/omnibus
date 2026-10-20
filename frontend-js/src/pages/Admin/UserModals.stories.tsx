@@ -96,6 +96,24 @@ function Where() {
   return <output data-testid="where">{useLocation().pathname}</output>;
 }
 
+const signedInUsers = () => (
+  <>
+    <WhileSignedIn>
+      <UsersCard />
+    </WhileSignedIn>
+    <Where />
+  </>
+);
+
+const editAlice = () => (
+  <EditUserModal
+    user={ALICE}
+    onClose={close}
+    onChanged={changed}
+    onSaved={done}
+  />
+);
+
 let listGate = deferred();
 let gatedReads = 0;
 
@@ -329,14 +347,7 @@ export const NewUserClosesOnEscapeWhileEmpty: Story = {
 };
 
 export const EditUserStartsFromTheRowsPermissions: Story = {
-  render: () => (
-    <EditUserModal
-      user={ALICE}
-      onClose={close}
-      onChanged={changed}
-      onSaved={done}
-    />
-  ),
+  render: editAlice,
   play: async ({ canvas }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await expect(checkbox(dialog, "Administrator")).not.toBeChecked();
@@ -353,14 +364,7 @@ export const EditUserStartsFromTheRowsPermissions: Story = {
 };
 
 export const EditUserShowsTheMeterOnceAPasswordIsTyped: Story = {
-  render: () => (
-    <EditUserModal
-      user={ALICE}
-      onClose={close}
-      onChanged={changed}
-      onSaved={done}
-    />
-  ),
+  render: editAlice,
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await userEvent.type(
@@ -375,14 +379,7 @@ export const EditUserShowsTheMeterOnceAPasswordIsTyped: Story = {
 };
 
 export const EditUserSavesPermissionsWithoutAPassword: Story = {
-  render: () => (
-    <EditUserModal
-      user={ALICE}
-      onClose={close}
-      onChanged={changed}
-      onSaved={done}
-    />
-  ),
+  render: editAlice,
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await userEvent.click(checkbox(dialog, "Edit metadata"));
@@ -407,14 +404,7 @@ export const EditUserSavesPermissionsWithoutAPassword: Story = {
 };
 
 export const EditUserSavesAPasswordTypedWithThePermissions: Story = {
-  render: () => (
-    <EditUserModal
-      user={ALICE}
-      onClose={close}
-      onChanged={changed}
-      onSaved={done}
-    />
-  ),
+  render: editAlice,
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await userEvent.type(
@@ -437,14 +427,7 @@ export const EditUserStopsAtTheFirstFailure: Story = {
   beforeEach({ msw }) {
     msw.use(failing("patch", "/api/admin/users/:id/permissions", 403));
   },
-  render: () => (
-    <EditUserModal
-      user={ALICE}
-      onClose={close}
-      onChanged={changed}
-      onSaved={done}
-    />
-  ),
+  render: editAlice,
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await userEvent.type(
@@ -473,14 +456,7 @@ export const EditUserShowsAPasswordRefusal: Story = {
       ),
     );
   },
-  render: () => (
-    <EditUserModal
-      user={ALICE}
-      onClose={close}
-      onChanged={changed}
-      onSaved={done}
-    />
-  ),
+  render: editAlice,
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await userEvent.type(within(dialog).getByLabelText("Reset password"), "x");
@@ -497,14 +473,7 @@ export const EditUserShowsAPasswordRefusal: Story = {
 };
 
 export const EditUserHoldsTheScrimOnceEdited: Story = {
-  render: () => (
-    <EditUserModal
-      user={ALICE}
-      onClose={close}
-      onChanged={changed}
-      onSaved={done}
-    />
-  ),
+  render: editAlice,
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await userEvent.click(checkbox(dialog, "Edit metadata"));
@@ -521,14 +490,7 @@ export const EditUserHoldsTheScrimOnceEdited: Story = {
 };
 
 export const EditUserClosesOnEscapeUntilEdited: Story = {
-  render: () => (
-    <EditUserModal
-      user={ALICE}
-      onClose={close}
-      onChanged={changed}
-      onSaved={done}
-    />
-  ),
+  render: editAlice,
   play: async ({ canvas, userEvent }) => {
     await waitFor(async () =>
       expect(
@@ -569,7 +531,6 @@ export const DeleteUserAsksBeforeDeleting: Story = {
 };
 
 export const DeleteUserRemovesTheRow: Story = {
-  render: () => <UsersCard />,
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       await canvas.findByRole("button", { name: "Delete alice" }),
@@ -588,7 +549,6 @@ export const DeleteUserRemovesTheRow: Story = {
 };
 
 export const DeleteUserCancelsWithoutDeleting: Story = {
-  render: () => <UsersCard />,
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       await canvas.findByRole("button", { name: "Delete alice" }),
@@ -607,14 +567,7 @@ export const DeleteUserCancelsWithoutDeleting: Story = {
 };
 
 export const DeleteUserOnYourOwnRowSignsYouOut: Story = {
-  render: () => (
-    <>
-      <WhileSignedIn>
-        <UsersCard />
-      </WhileSignedIn>
-      <Where />
-    </>
-  ),
+  render: signedInUsers,
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       await canvas.findByRole("button", { name: "Delete ada" }),
@@ -1079,7 +1032,6 @@ export const SessionsCloseButtonsClose: Story = {
 };
 
 export const NewUserButtonCreatesAnAccountAndReadsTheListAgain: Story = {
-  render: () => <UsersCard />,
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       await canvas.findByRole("button", { name: "New user" }),
@@ -1104,7 +1056,6 @@ export const NewUserButtonCreatesAnAccountAndReadsTheListAgain: Story = {
 };
 
 export const EditButtonSavesAndReadsTheListAgain: Story = {
-  render: () => <UsersCard />,
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       await canvas.findByRole("button", { name: "Edit alice" }),
@@ -1136,7 +1087,6 @@ export const EditButtonReadsTheListAndTheSessionWhenOnlyThePermissionsLand: Stor
         failing("post", "/api/admin/users/:id/password", 403),
       );
     },
-    render: () => <UsersCard />,
     play: async ({ canvas, userEvent }) => {
       await userEvent.click(
         await canvas.findByRole("button", { name: "Edit ada" }),
@@ -1178,7 +1128,6 @@ export const EditButtonReadsTheSessionOnlyOnceBothStepsHaveSettled: Story = {
       }),
     );
   },
-  render: () => <UsersCard />,
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       await canvas.findByRole("button", { name: "Edit ada" }),
@@ -1213,14 +1162,7 @@ export const EditUserOnYourOwnRowWithAPasswordSignsYouOut: Story = {
   beforeEach({ msw }) {
     msw.use(...readsOfUsersAndMe);
   },
-  render: () => (
-    <>
-      <WhileSignedIn>
-        <UsersCard />
-      </WhileSignedIn>
-      <Where />
-    </>
-  ),
+  render: signedInUsers,
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       await canvas.findByRole("button", { name: "Edit ada" }),
@@ -1247,14 +1189,7 @@ export const EditUserOnYourOwnRowWithAPasswordSignsYouOut: Story = {
 };
 
 export const EditUserOnYourOwnRowWithoutAPasswordStaysSignedIn: Story = {
-  render: () => (
-    <>
-      <WhileSignedIn>
-        <UsersCard />
-      </WhileSignedIn>
-      <Where />
-    </>
-  ),
+  render: signedInUsers,
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       await canvas.findByRole("button", { name: "Edit ada" }),
@@ -1273,7 +1208,6 @@ export const EditUserOnYourOwnRowWithoutAPasswordStaysSignedIn: Story = {
 };
 
 export const SessionsButtonOpensTheUsersSessions: Story = {
-  render: () => <UsersCard />,
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       await canvas.findByRole("button", { name: "Sessions for alice" }),
