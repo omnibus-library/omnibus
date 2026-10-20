@@ -49,6 +49,11 @@ enum DetailReviews {
         review.bodyMd?.nilIfBlank != nil || review.notesMd?.nilIfBlank != nil
     }
 
+    /// The pencil's name: it starts a review as well as editing one.
+    static func composeLabel(_ review: Review?) -> String {
+        review.map(hasWriting) == true ? "Edit review" : "Write review"
+    }
+
     /// The note beside your stars.
     static func starsNote(_ stars: Double?) -> String {
         guard let stars, stars > 0 else { return "tap a star to rate" }
@@ -172,7 +177,6 @@ struct ReviewsBlock: View {
                 review: reviews.mine,
                 uncapped: uncapped,
                 onStars: { stars in write(.stars(stars)) },
-                onSpoiler: { spoiler in write(ReviewPatch(spoiler: spoiler)) },
                 onCompose: { composing = ReviewComposerTarget(original: reviews.mine) },
                 onDelete: { Task { await model.deleteReview(uuid: book.uuid) } }
             )
@@ -239,13 +243,13 @@ struct ReviewComposerTarget: Identifiable {
 
 // MARK: - Your card
 
-/// Your review: stars that save on tap, your text and private notes, the
-/// spoiler flag once there is text, and Write / Edit / Delete.
+/// Your review: stars that save on tap, your text and private notes, and a
+/// pencil and a trash can in the header. Nothing else is a control — the
+/// spoiler flag is set in the editor, alongside the text it describes.
 struct MyReviewCard: View {
     let review: Review?
     var uncapped = true
     var onStars: (Double) -> Void
-    var onSpoiler: (Bool) -> Void
     var onCompose: () -> Void
     var onDelete: () -> Void
 
@@ -258,7 +262,7 @@ struct MyReviewCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            RowLabel("Your review")
+            header
 
             HStack(spacing: 12) {
                 StarRating(stars: review?.stars ?? 0, size: 22, interactive: true) { stars in
@@ -272,23 +276,11 @@ struct MyReviewCard: View {
             if let body_ {
                 text(body_)
                     .accessibilityIdentifier("review-text")
-                Toggle(isOn: Binding(
-                    get: { review?.spoiler ?? false },
-                    set: { onSpoiler($0) }
-                )) {
-                    Text("Contains spoilers")
-                        .font(.ui(12.5))
-                        .foregroundStyle(palette.ink1Color)
-                }
-                .toggleStyle(CheckboxToggleStyle())
-                .accessibilityIdentifier("review-spoiler")
             }
 
             if let notes {
                 privateNotes(notes)
             }
-
-            actions
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -353,50 +345,53 @@ struct MyReviewCard: View {
         .accessibilityIdentifier("review-notes")
     }
 
-    private var actions: some View {
-        HStack(spacing: 10) {
-            Button {
+    /// The label, then the pencil and — once there is a review to remove —
+    /// the trash at the far edge. Each target is 44pt; the negative padding
+    /// keeps that from pushing the row taller than its label.
+    private var header: some View {
+        HStack(spacing: 0) {
+            RowLabel("Your review")
+            Spacer(minLength: Spacing.sm)
+            iconButton(
+                "pencil", label: DetailReviews.composeLabel(review),
+                identifier: "review-compose", tint: palette.ink1Color
+            ) {
                 Haptics.tap()
                 onCompose()
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 10, weight: .semibold))
-                    Text(body_ == nil && notes == nil ? "WRITE REVIEW" : "EDIT")
-                        .font(.monoUI(9.5))
-                        .tracking(1.3)
-                }
-                .foregroundStyle(palette.accentColor)
-                .padding(.horizontal, 13)
-                .frame(height: 30)
-                .background(Capsule().fill(palette.accentColor.opacity(0.14)))
-                .overlay(
-                    Capsule().strokeBorder(palette.accentColor.opacity(0.45), lineWidth: 0.5)
-                )
             }
-            .buttonStyle(PressableStyle())
-            .accessibilityIdentifier("review-compose")
-
-            Spacer(minLength: 0)
-
             if review != nil {
-                Button {
+                iconButton(
+                    "trash", label: "Delete review",
+                    identifier: "review-delete", tint: palette.badColor
+                ) {
                     confirmDelete = true
-                } label: {
-                    Text("Delete review")
-                        .font(.ui(12.5, weight: .medium))
-                        .foregroundStyle(palette.badColor)
-                        .padding(.vertical, 6)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("review-delete")
             }
         }
+        .padding(.vertical, -12)
+        .padding(.trailing, -12)
+    }
+
+    private func iconButton(
+        _ symbol: String, label: String, identifier: String, tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(tint)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityLabel(label)
+        .help(label)
+        .accessibilityIdentifier(identifier)
     }
 }
 
-/// A checkbox, for the one yes/no on the card — a switch reads as a setting.
+/// A checkbox, for the editor's one yes/no about the text — a switch reads as
+/// a setting.
 struct CheckboxToggleStyle: ToggleStyle {
     @Environment(\.palette) private var palette
 
@@ -650,10 +645,10 @@ struct AllReviewsSheet: View {
     }
 }
 
-/// Write or edit your review: the public text and your private notes, each
-/// in the journal's editor, and the spoiler flag once there is text. Saves
-/// on Save, never per keystroke; the stars stay on the card, where a tap
-/// saves them.
+/// Write or edit your review: the public text with its spoiler flag under it,
+/// and your private notes, each in the journal's editor. Saves on Save, never
+/// per keystroke, in one patch of what changed; the stars stay on the card,
+/// where a tap saves them.
 struct ReviewComposer: View {
     let original: Review?
     var onSave: (ReviewPatch) -> Void
@@ -688,6 +683,19 @@ struct ReviewComposer: View {
                     .frame(maxHeight: focus == .notes ? 110 : .infinity)
                     .accessibilityIdentifier("review-composer-body")
 
+                // Under the text it describes, and nowhere else: the card in
+                // read mode carries no spoiler control.
+                Toggle(isOn: $spoiler) {
+                    Text("Contains spoilers")
+                        .font(.ui(13.5))
+                        .foregroundStyle(palette.ink1Color)
+                }
+                .toggleStyle(CheckboxToggleStyle())
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Spacing.screen)
+                .padding(.vertical, 10)
+                .accessibilityIdentifier("review-composer-spoiler")
+
                 Hairline()
 
                 fieldHeader("Private notes", note: "only you can see these", locked: true)
@@ -695,25 +703,8 @@ struct ReviewComposer: View {
                     .focused($focus, equals: .notes)
                     .frame(maxHeight: focus == .notes ? .infinity : 110)
                     .accessibilityIdentifier("review-composer-notes")
-
-                if body_.nilIfBlank != nil {
-                    VStack(spacing: 0) {
-                        Hairline()
-                        Toggle(isOn: $spoiler) {
-                            Text("Contains spoilers")
-                                .font(.ui(14.5))
-                                .foregroundStyle(palette.ink1Color)
-                        }
-                        .tint(palette.accentColor)
-                        .padding(.horizontal, Spacing.screen)
-                        .padding(.vertical, 11)
-                    }
-                    .background(palette.bg1Color)
-                    .transition(.opacity)
-                }
             }
             .animation(Motion.settle, value: focus)
-            .animation(Motion.snap, value: body_.nilIfBlank == nil)
             .background(ScreenBackground())
             .navigationTitle(isEditing ? "Edit review" : "Write a review")
             .navigationBarTitleDisplayMode(.inline)

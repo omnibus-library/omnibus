@@ -162,7 +162,7 @@ struct ReviewComposerEditTests {
         #expect(patch == ReviewPatch(bodyMd: .set("Twist!"), notesMd: .set("n"), spoiler: true))
     }
 
-    @Test("the spoiler flag is sent only when it moved")
+    @Test("the spoiler flag is sent only when it moved, and moving it alone is a change")
     func spoilerOnlyWhenChanged() {
         let original = review(body: "x", spoiler: true)
         #expect(ReviewPatch.edits(from: original, body: "x", notes: "", spoiler: true).isEmpty)
@@ -319,6 +319,15 @@ struct DetailReviewsTests {
         #expect(DetailReviews.allLabel(othersCount: 3) == "All reviews · 3 other readers")
         #expect(DetailReviews.hasWriting(review(notes: "n")))
         #expect(!DetailReviews.hasWriting(review(stars: 4, body: " ")))
+    }
+
+    @Test("the pencil writes a review until there is text or notes, then edits it")
+    func composeLabel() {
+        #expect(DetailReviews.composeLabel(nil) == "Write review")
+        // Stars alone are not something the editor holds.
+        #expect(DetailReviews.composeLabel(review(stars: 4)) == "Write review")
+        #expect(DetailReviews.composeLabel(review(body: "ok")) == "Edit review")
+        #expect(DetailReviews.composeLabel(review(notes: "n")) == "Edit review")
     }
 
     @Test("the note beside your stars says whether you have rated")
