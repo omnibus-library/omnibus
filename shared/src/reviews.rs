@@ -189,7 +189,8 @@ pub struct ReviewPatch {
     )]
     #[cfg_attr(feature = "openapi", schema(value_type = Option<String>))]
     pub notes_md: Option<Option<String>>,
-    /// Whether the review contains spoilers: true or false; leave it out to keep it.
+    /// Whether the review contains spoilers: true or false. Leave it out to keep it; a null
+    /// counts as leaving it out and doesn't clear the flag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "openapi", schema(value_type = bool))]
     pub spoiler: Option<bool>,

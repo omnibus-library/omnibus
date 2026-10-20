@@ -101,7 +101,7 @@ async fn resolve_id(state: &AppState, user_id: i64, raw: &str) -> Result<i64, Jo
 ///
 /// Replaces the body and progress of one of your entries. Send `status` to publish a draft
 /// or turn an entry back into one; leave it out to keep the status. An uploaded image the
-/// old body showed and no entry shows any more is deleted.
+/// change drops, and no journal entry or review still shows, is deleted.
 #[utoipa::path(
     patch,
     path = "/api/journals/{id}",
@@ -248,8 +248,8 @@ pub(super) async fn get_journal_image(_user: MediaAuthUser, Path(name): Path<Str
 
 /// Delete a journal entry
 ///
-/// Deletes one of your entries, and any uploaded image it showed that no other entry
-/// shows.
+/// Deletes one of your entries. An uploaded image it showed, and no other journal entry or
+/// review still shows, is deleted.
 #[utoipa::path(
     delete,
     path = "/api/journals/{id}",

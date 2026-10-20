@@ -107,6 +107,30 @@ async fn api_patch_review_creates_then_changes_only_the_fields_sent() {
 }
 
 #[tokio::test]
+async fn api_patch_review_keeps_the_spoiler_flag_when_it_is_sent_as_null() {
+    let (app, _state, pool) = fixture().await;
+    let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
+    let (_, token) = reader(&pool, "alice").await;
+    app.clone()
+        .oneshot(patch(
+            &uuid,
+            &token,
+            serde_json::json!({ "body_md": "Twist", "spoiler": true }),
+        ))
+        .await
+        .unwrap();
+
+    let res = app
+        .oneshot(patch(&uuid, &token, serde_json::json!({ "spoiler": null })))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let review: Option<Review> = body_json(res).await;
+    assert!(review.unwrap().spoiler);
+}
+
+#[tokio::test]
 async fn api_patch_review_returns_null_when_the_patch_empties_the_review() {
     let (app, _state, pool) = fixture().await;
     let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;

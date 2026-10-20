@@ -47,10 +47,11 @@ pub(super) async fn get_book_reviews(
 /// Change your review of a book
 ///
 /// Creates the review on first write. Only the fields you send change: leave a field out
-/// to keep it. Send `stars`, `body_md` or `notes_md` as null to clear it; `spoiler` is
-/// true or false, so leave it out to keep it. Stars, text and notes are independent, so
-/// clearing the stars keeps your text. The body is `null` when the change left the review
-/// with no stars, text or notes, which deletes it.
+/// to keep it. Send `stars`, `body_md` or `notes_md` as null to clear it. `spoiler` takes
+/// true or false; a null counts as leaving it out, so it keeps the flag rather than
+/// clearing it. Stars, text and notes are independent, so clearing the stars keeps your
+/// text. The body is `null` when the change left the review with no stars, text or notes,
+/// which deletes it.
 ///
 /// Text and notes can embed images uploaded with `POST /api/journals/images`. An uploaded
 /// image the change drops, and no journal entry or review still shows, is deleted.
