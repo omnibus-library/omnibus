@@ -8,12 +8,24 @@ const LABELS: Record<Theme, string> = {
   sepia: "Sepia",
 };
 
+type ThemePickerProps = {
+  /** Lets a setting row's label point at the group. */
+  id?: string;
+  describedBy?: string;
+};
+
 /** The four Atrium themes as one segmented group, the current one pressed. */
-export function ThemePicker() {
+export function ThemePicker({ id, describedBy }: ThemePickerProps) {
   const { theme, setTheme } = useTheme();
   return (
     // biome-ignore lint/a11y/useSemanticElements: a fieldset brings default border and min-width that Atrium's .theme-seg never resets
-    <div className="theme-seg" role="group" aria-label="Theme">
+    <div
+      id={id}
+      className="theme-seg"
+      role="group"
+      aria-label="Theme"
+      aria-describedby={describedBy}
+    >
       {THEMES.map((t) => (
         <button
           key={t}

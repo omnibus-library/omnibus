@@ -307,6 +307,7 @@ mod server {
                 "/api/auth/login",
                 "/api/auth/register",
                 "/api/auth/logout",
+                "/api/auth/password",
             ]),
             search: Arc::new(
                 rate_limit::RateLimiter::with_policy(

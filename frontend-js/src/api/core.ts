@@ -131,8 +131,29 @@ const coverBusts = new Map<BookUuid, number>();
 export const bumpCoverBust = (uuid: BookUuid) =>
   coverBusts.set(uuid, (coverBusts.get(uuid) ?? 0) + 1);
 
-/** Forgets every bump; a story starts from the cover the server first sent. */
-export const resetCoverBusts = () => coverBusts.clear();
+// The same for an avatar, which a reader replaces under the same URL.
+const avatarBusts = new Map<UserId, number>();
+
+const avatarWatchers = new Set<() => void>();
+
+/** Calls `onChange` after any bump, so a mounted avatar redraws with the new URL. */
+export const watchAvatarBusts = (onChange: () => void) => {
+  avatarWatchers.add(onChange);
+  return () => {
+    avatarWatchers.delete(onChange);
+  };
+};
+
+export const bumpAvatarBust = (id: UserId) => {
+  avatarBusts.set(id, (avatarBusts.get(id) ?? 0) + 1);
+  for (const onChange of avatarWatchers) onChange();
+};
+
+/** Forgets every bump, covers and avatars; a story starts from the image the server first sent. */
+export const resetImageBusts = () => {
+  coverBusts.clear();
+  avatarBusts.clear();
+};
 
 /** `url` with the book's cover generation appended, once a write has bumped it. */
 export const bustCover = (url: string, uuid: BookUuid) => {
@@ -149,4 +170,7 @@ export const thumbSrcSet = (uuid: BookUuid) =>
 export const coverUrl = (uuid: BookUuid) =>
   bustCover(`/api/covers/${uuid}`, uuid);
 
-export const avatarUrl = (id: UserId) => `/api/users/${id}/avatar`;
+export const avatarUrl = (id: UserId) => {
+  const n = avatarBusts.get(id);
+  return n ? `/api/users/${id}/avatar?v=${n}` : `/api/users/${id}/avatar`;
+};

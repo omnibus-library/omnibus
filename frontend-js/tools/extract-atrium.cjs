@@ -38,7 +38,9 @@ const OWNERS = [
   ["components/StarRating/StarRating.css", (c) => c.startsWith("star-")],
   ["components/SessionLog/SessionLog.css", (c) => c.startsWith("st-log") || c.startsWith("session-log")],
   ["components/FetchSummary/FetchSummary.css", (c) => c.startsWith("fs-")],
-  ["components/FormatSwitcher/FormatSwitcher.css", (c) => c.startsWith("format-") || c.startsWith("kindle-") || c.startsWith("kobo-")],
+  ["components/FormatSwitcher/FormatSwitcher.css", (c) => c.startsWith("format-") || c.startsWith("kindle-toast") || c.startsWith("kobo-toast")],
+  ["components/CopyButton/CopyButton.css", (c) => c.startsWith("copy-feedback")],
+  ["pages/Settings/Settings.css", (c) => c.startsWith("profile-") || c.startsWith("setting-row") || c.startsWith("pref-") || c.startsWith("hidden-format") || c === "kindle-delivery" || (c.startsWith("kobo-") && !c.startsWith("kobo-toast")) || c.startsWith("tkx-")],
   ["pages/Authors/Authors.css", (c) => c.startsWith("au-")],
   ["components/AuthorPhotoEdit/AuthorPhotoEdit.css", (c) => c.startsWith("author-photo-edit") || c.startsWith("author-delete-modal")],
   ["pages/Series/Series.css", (c) => c.startsWith("idx-")],
@@ -63,7 +65,7 @@ const OWNERS = [
   ["pages/PdfReader/PdfReader.css", (c) => c.startsWith("pr-")],
   // After the QuoteCard row, so the `rd-` classes it owns stay there.
   ["pages/Reader/Reader.css", (c) => c.startsWith("rd-"), true],
-  ["styles/settings.css", (c) => c.startsWith("settings-")],
+  ["styles/settings.css", (c) => c.startsWith("settings-") || c.startsWith("users-") || c === "table-scroll"],
   ["styles/base.css", (c) => ["card", "divider", "label", "mono", "sr-only", "subtitle"].includes(c)],
 ];
 const CONTEXT = new Set(["atrium", "theme-snap"]);

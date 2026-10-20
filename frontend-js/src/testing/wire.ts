@@ -1,5 +1,8 @@
+import type { GoalTargets } from "../api";
+import { getGetStatsResponseMock } from "../api/generated/omnibus.msw";
 import type {
   AlignmentView,
+  ApiTokenView,
   AttributedRating,
   AudiobookManifest,
   AuthorDetail,
@@ -16,6 +19,7 @@ import type {
   EbookMetadata,
   Highlight,
   JournalEntry,
+  KoboDeviceView,
   PaletteBookHit,
   PaletteResults,
   PhysicalCopy,
@@ -28,8 +32,10 @@ import type {
   SeriesStack,
   SeriesSummary,
   SessionLogEntry,
+  SessionView,
   Shelf,
   ShelfSummary,
+  StatsSummary,
   UserSummary,
   WishlistEntry,
 } from "../api/generated/schemas";
@@ -535,6 +541,75 @@ export function aWireRulePreview(
     matched: 2,
     total: 10,
     sample: aWireLibrary(2),
+    ...overrides,
+  };
+}
+
+/** `GET /api/stats` carrying the given targets (`null` is none); the rest is generated filler. */
+export function aWireStatsGoals({
+  books,
+  pages,
+  minutes,
+}: GoalTargets): StatsSummary {
+  const progress = { current: 0, day: "2026-10-19" };
+  return getGetStatsResponseMock({
+    // The generated mock draws this from the enum's keys, which the schema refuses.
+    range: "all_time",
+    goal:
+      books === null
+        ? null
+        : { ...progress, kind: "books", target: books, year: 2026 },
+    daily_goals: {
+      pages:
+        pages === null ? null : { ...progress, kind: "pages", target: pages },
+      minutes:
+        minutes === null
+          ? null
+          : { ...progress, kind: "minutes", target: minutes },
+    },
+  });
+}
+
+/** A Kobo as `GET /api/account/kobo-devices` sends it; override what a case needs. */
+export function aWireKoboDevice(
+  overrides: Partial<KoboDeviceView> = {},
+): KoboDeviceView {
+  return {
+    id: 1,
+    name: "Clara",
+    token: "tok-clara",
+    created_at: 1_760_000_000,
+    last_seen_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** A sign-in as `GET /api/auth/sessions` sends it; override what a case needs. */
+export function aWireAuthSession(
+  overrides: Partial<SessionView> = {},
+): SessionView {
+  return {
+    id: 1,
+    kind: "cookie",
+    client: "Firefox on Linux",
+    created_at: 1_760_000_000,
+    last_used_at: 1_760_086_400,
+    expires_at: 1_762_000_000,
+    is_current: false,
+    ...overrides,
+  };
+}
+
+/** An API token as `GET /api/auth/api-tokens` lists it; override what a case needs. */
+export function aWireApiToken(
+  overrides: Partial<ApiTokenView> = {},
+): ApiTokenView {
+  return {
+    id: 1,
+    name: "MCP on my laptop",
+    suffix: "k3Zq",
+    created_at: 1_750_000_000,
+    last_used_at: null,
     ...overrides,
   };
 }

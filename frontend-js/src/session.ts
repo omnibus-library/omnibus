@@ -10,6 +10,9 @@ import {
   fetchMe,
   fetchRegistrationOpen,
   logout,
+  setBookDetailScrollStops,
+  setHiddenFormats,
+  setShareStats,
   setStackSeries,
   type User,
 } from "./api";
@@ -21,6 +24,14 @@ export const registrationQuery = queryOptions({
   queryKey: ["registration"],
   queryFn: () => fetchRegistrationOpen().catch(() => true),
 });
+
+/** Re-reads the session user, so the menu, bylines and settings repaint with a write. */
+export const refreshMe = (client: QueryClient) =>
+  client.invalidateQueries({ queryKey: meQuery.queryKey });
+
+/** Shows an accepted write on the session at once, so a reread that fails leaves the screens right. */
+export const patchMe = (client: QueryClient, change: (user: User) => User) =>
+  client.setQueryData(meQuery.queryKey, (user) => user && change(user));
 
 /** Makes `user` the session, dropping every answer cached for whoever came before. */
 export function startSession(client: QueryClient, user: User) {
@@ -61,24 +72,63 @@ export function useSignOut(beforeLogout: () => Promise<void>) {
   });
 }
 
-/** Saves the Stack series preference straight away; a refusal puts the switch back. */
-export function useStackSeries() {
+/** Saves a preference straight away, showing it on the session first; a refusal puts the session back. */
+function useSavedPreference<V>(
+  key: string,
+  save: (value: V) => Promise<void>,
+  apply: (user: User, value: V) => User,
+) {
   const queryClient = useQueryClient();
+  // The last save of any preference rereads the session, so none drops another's pending value.
+  const lastSaving = () =>
+    queryClient.isMutating({ mutationKey: ["preference"] }) <= 1;
   return useMutation({
-    mutationFn: setStackSeries,
-    onMutate: async (enabled) => {
+    mutationKey: ["preference", key],
+    mutationFn: save,
+    onMutate: async (value) => {
       // A refetch already in flight would land over the optimistic value.
       await queryClient.cancelQueries({ queryKey: meQuery.queryKey });
       const previous = queryClient.getQueryData(meQuery.queryKey);
-      queryClient.setQueryData(
-        meQuery.queryKey,
-        (user) => user && { ...user, stackSeries: enabled },
-      );
+      patchMe(queryClient, (user) => apply(user, value));
       return { previous };
     },
-    onError: (_error, _enabled, context) =>
+    // With other saves pending, the snapshot is stale; the last one's reread corrects it.
+    onError: (_error, _value, context) =>
+      lastSaving() &&
       queryClient.setQueryData(meQuery.queryKey, context?.previous),
     onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: meQuery.queryKey }),
+      lastSaving()
+        ? queryClient.invalidateQueries({ queryKey: meQuery.queryKey })
+        : undefined,
   });
+}
+
+/** The preference switches `POST /api/account/*` saves, each as the session names it. */
+export type UserSwitch = "stackSeries" | "bookDetailScrollStops" | "shareStats";
+
+const SWITCH_SAVES = {
+  stackSeries: setStackSeries,
+  bookDetailScrollStops: setBookDetailScrollStops,
+  shareStats: setShareStats,
+} satisfies Record<UserSwitch, (enabled: boolean) => Promise<void>>;
+
+/** Saves one switch straight away; a refusal puts it back. */
+export function useUserSwitch(setting: UserSwitch) {
+  return useSavedPreference(
+    setting,
+    SWITCH_SAVES[setting],
+    (user, enabled) => ({
+      ...user,
+      [setting]: enabled,
+    }),
+  );
+}
+
+/** Saves the whole hidden-formats set; the boxes wait for the save, as the switches do. */
+export function useHiddenFormats() {
+  return useSavedPreference<string[]>(
+    "hiddenFormats",
+    setHiddenFormats,
+    (user, formats) => ({ ...user, hiddenFormats: formats }),
+  );
 }

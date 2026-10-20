@@ -39,11 +39,16 @@ add books (`/add-books`), check-in (`/check-in`), search results
 (`/search/:query`), the authors, series and shelves indexes with their detail
 pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), the three readers
 (`/read`, `/comic`, `/pdf`), the audiobook player (`/listen/:uuid`, `?file_id`
-picks one of a book's files) and Not Found are ported, and the top bar carries
+picks one of a book's files), personal settings (`/settings`) and Not Found are
+ported, and the top bar carries
 the user menu and the ⌘K search palette. The phone layouts (the bottom tab bar
 and the native shell's shelves screens) are left out. As on Dioxus web, a bare
 `/search` and the native shell's `/connect`
-redirect to the library. Every other route renders `Unported`, which shows its
+redirect to the library. `/settings` has its five sections (Profile,
+Preferences, Goals, Devices, Sign-in & security) picked by `?section=`; an old
+slug redirects to its new home and `/account` redirects to it. Its frame,
+`SettingsShell`, takes its navigation as data so `/admin` can reuse it. Every
+other route renders `Unported`, which shows its
 parsed parameters and names its Dioxus source.
 Book detail carries all six stops (home, stats, highlights, journals, files,
 more) with the rating, quote cards, journal editor, copies and wishlist, shelf
@@ -171,7 +176,8 @@ shell provides it.
   sign-in page), so a form's rules live in the same schema style as the API's.
 - **Unit tests** (`pnpm run test:unit`, jsdom) cover the API parsers,
   formatting, `safeNext`, the theme root, the session, and the pure helpers
-  behind the screens (`resume`, `password`, `settingsIndex`, `viewPrefs`,
+  behind the screens (`resume`, `password`, `settingsIndex`, `hiddenFormats`, `goals`,
+  `apiTokens`, `viewPrefs`,
   `focusTrap`, book detail's `readout`, `identifiers`, `shelves`,
   `journalEditor` and delete copy, the palette's `selection`, the results
   page's `results`, Register's `refusal`, the library's `filters`,
@@ -185,7 +191,7 @@ shell provides it.
   `epubGlue`, `pdfGlue`, `readingSession` and `autoReadStatus`, the player's
   `PlaybackProvider`, `engine`, `boot`, `sleep`, `loadHls` and
   `listen`, plus the vendored files' parity test), plus the
-  real route table in `src/router.test.tsx`: every unported page, the layout
+  real route table in `src/router.test.tsx`: every unported page, the settings redirects, the layout
   split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI
   uploads each one's lcov to Codecov under the `frontend-js` flag.

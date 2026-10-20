@@ -68,6 +68,14 @@
 .btn.bad:hover {
   background: color-mix(in oklch, var(--bad) 12%, transparent);
 }
+.btn.ghost.danger {
+  color: var(--bad);
+}
+@media (hover: hover) {
+  .btn.ghost.danger:hover {
+    background: color-mix(in oklch, var(--bad) 12%, transparent);
+  }
+}
 @media (hover: none) {
   .btn:active:not(:disabled) {
     background: var(--bg-3);
