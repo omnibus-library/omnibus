@@ -6,9 +6,9 @@ import {
   SettingsShell,
   useUnsavedGuard,
 } from "../../components/SettingsShell/SettingsShell";
+import { sameSection } from "../../settingsIndex";
 import { SettingsRoutes } from "../../testing/SettingsRoutes";
 import { WIRE_ADA } from "../../testing/wire";
-import { sameSection } from "./Settings";
 
 const meta = {
   title: "Pages/Settings",

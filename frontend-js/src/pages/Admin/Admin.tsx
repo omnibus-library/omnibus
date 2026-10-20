@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { Link, type Location, useSearchParams } from "react-router";
+import type { ComponentType } from "react";
+import { Link, useSearchParams } from "react-router";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import {
   type NavGroup,
@@ -7,6 +7,14 @@ import {
   SettingsShell,
 } from "../../components/SettingsShell/SettingsShell";
 import { useCurrentUser } from "../../session";
+import {
+  ADMIN_SECTIONS,
+  type AdminSection,
+  type AdminSlug,
+  parseAdminSection,
+  sameSection,
+  sectionHref,
+} from "../../settingsIndex";
 import { CleanupCard } from "./CleanupCard";
 import { EbookConvertCard } from "./EbookConvertCard";
 import { HealthSection } from "./HealthSection";
@@ -19,64 +27,50 @@ import { RegistrationCard } from "./RegistrationCard";
 import { SecretKeyCard } from "./SecretKeyCard";
 import { SmtpCard } from "./SmtpCard";
 import { SourcesCard } from "./SourcesCard";
-import {
-  ADMIN_SECTIONS,
-  type AdminSection,
-  adminTitle,
-  parseSection,
-} from "./sections";
 import { UsersCard } from "./UsersCard";
 import "./Admin.css";
 
-const sectionOf = (location: Location) =>
-  parseSection(new URLSearchParams(location.search).get("section")).slug;
-
-/** Moving between two places that open the same section drops no edits. */
-const sameSection = (a: Location, b: Location) =>
-  a.pathname === b.pathname && sectionOf(a) === sectionOf(b);
-
-function sectionContent(slug: AdminSection["slug"]): ReactNode {
-  switch (slug) {
-    case "sources":
-      return <SourcesCard />;
-    case "maintenance":
-      return (
-        <>
-          <MaintenanceCard />
-          <RecentTasksCard />
-        </>
-      );
-    case "metadata":
-      return <MetadataOrderCard />;
-    case "cleanup":
-      return <CleanupCard />;
-    case "people":
-      return (
-        <>
-          <RegistrationCard />
-          <UsersCard />
-        </>
-      );
-    case "integrations":
-      return (
-        <>
-          <SmtpCard />
-          <SecretKeyCard kind="hardcover" />
-          <SecretKeyCard kind="google-books" />
-          <EbookConvertCard />
-          <McpCard />
-        </>
-      );
-    case "health":
-      return <HealthSection />;
-    case "logs":
-      return <LogsSection />;
-    default: {
-      const _exhaustive: never = slug;
-      return _exhaustive;
-    }
-  }
+function Maintenance() {
+  return (
+    <>
+      <MaintenanceCard />
+      <RecentTasksCard />
+    </>
+  );
 }
+
+function People() {
+  return (
+    <>
+      <RegistrationCard />
+      <UsersCard />
+    </>
+  );
+}
+
+function Integrations() {
+  return (
+    <>
+      <SmtpCard />
+      <SecretKeyCard kind="hardcover" />
+      <SecretKeyCard kind="google-books" />
+      <EbookConvertCard />
+      <McpCard />
+    </>
+  );
+}
+
+// A Record, so a section added to the slugs cannot be left without a body.
+const BODIES: Record<AdminSlug, ComponentType> = {
+  sources: SourcesCard,
+  maintenance: Maintenance,
+  metadata: MetadataOrderCard,
+  cleanup: CleanupCard,
+  people: People,
+  integrations: Integrations,
+  health: HealthSection,
+  logs: LogsSection,
+};
 
 /** Library and Server groups, plus the way back to personal settings. */
 function adminNav(active: AdminSection): NavGroup[] {
@@ -84,7 +78,7 @@ function adminNav(active: AdminSection): NavGroup[] {
     ...(["Library", "Server"] as const).map((group) => ({
       label: group,
       items: ADMIN_SECTIONS.filter((s) => s.group === group).map((s) => ({
-        to: `/admin?section=${s.slug}`,
+        to: sectionHref(s),
         label: s.label,
         testId: `admin-nav-${s.slug}`,
         active: s.slug === active.slug,
@@ -109,11 +103,12 @@ export function Admin() {
   const { isAdmin } = useCurrentUser();
   const [search] = useSearchParams();
   const raw = search.get("section");
-  const active = parseSection(raw);
+  const active = parseAdminSection(raw);
+  const title = `${active.label} · Administration`;
   if (!isAdmin) {
     return (
       <>
-        <PageTitle page={adminTitle(raw)} />
+        <PageTitle page={title} />
         <div className="admin-forbidden" data-testid="admin-forbidden">
           <h1>Administration</h1>
           <p>Administration is only open to server administrators.</p>
@@ -122,9 +117,10 @@ export function Admin() {
       </>
     );
   }
+  const Body = BODIES[active.slug];
   return (
     <>
-      <PageTitle page={adminTitle(raw)} />
+      <PageTitle page={title} />
       <SettingsShell
         title="Administration"
         testId="admin-layout"
@@ -135,7 +131,7 @@ export function Admin() {
         samePlace={sameSection}
       >
         <SectionHeader title={active.label} />
-        {sectionContent(active.slug)}
+        <Body />
       </SettingsShell>
     </>
   );

@@ -221,7 +221,7 @@ shell provides it.
   `summary`, `picker`, `hero`, `goal`, `clock`, `donut`, `superlatives`,
   `tiles`, `drillIn`, `heatmap`, `readingNow`, `monthly`, `library` and
   `composition`, the chart builder's `chart`, `plot`, `notes`, `zoom` and
-  `tween`, the admin screens' `sections`, `sources`, `recentTasks`,
+  `tween`, the admin screens' `sources`, `recentTasks`,
   `workerLines`, `metadataOrder`, `users`, `smtp`, `integrations`, `health`
   and `logs`, and the cleanup review's `review`, plus the vendored files'
   parity test), the two stats pages' refusal to refetch on window focus
