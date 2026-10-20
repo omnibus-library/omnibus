@@ -217,7 +217,7 @@ shell provides it.
   `picker`, the shelf page's `shelfAccess` and `narrow`, the readers' `pager`,
   `pdfAnchors`, `start`, `relocate`, `typography`, `epubGlue`, `pdfGlue`,
   `readingSession` and `autoReadStatus`, the player's `PlaybackProvider`,
-  `engine`, `boot`, `sleep`, `loadHls` and `listen`, stats' `calendar`,
+  `engine`, `boot`, `sleep`, `loadHls` and `listenView`, stats' `calendar`,
   `summary`, `picker`, `hero`, `goal`, `clock`, `donut`, `superlatives`,
   `tiles`, `drillIn`, `heatmap`, `readingNow`, `monthly`, `library` and
   `composition`, the chart builder's `chart`, `plot`, `notes`, `zoom` and

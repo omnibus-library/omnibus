@@ -19,7 +19,7 @@ import {
   ChaptersDrawer,
   useBookmarks,
 } from "./Drawers";
-import type { Pane } from "./listen";
+import type { Pane } from "./listenView";
 import { SleepPanelBody, SpeedPanelBody } from "./Panels";
 import { Stage } from "./Stage";
 import "./Listen.css";
