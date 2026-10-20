@@ -292,7 +292,9 @@ export const SplitPercentRemountsOnlyWhenItsShareChanges: Story = {
         "Everything you have tracked",
       ),
     );
-    await expect(shares()).toEqual(first);
+    for (const [i, node] of shares().entries()) {
+      await expect(node).toBe(first[i]);
+    }
 
     await userEvent.click(canvas.getByRole("button", { name: "Year" }));
     await waitFor(() =>
