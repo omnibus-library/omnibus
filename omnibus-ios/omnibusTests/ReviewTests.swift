@@ -475,6 +475,41 @@ struct ReviewDraftTests {
         #expect(draft.patch == ReviewPatch(bodyMd: .set("mine")))
     }
 
+    @Test("edited text keeps the spoiler flag it was written under, and a moved flag is named")
+    func editedTextKeepsItsFlag() {
+        var draft = ReviewDraft(review(body: "old", spoiler: true))
+        draft.body = "mine"
+        let conflicts = draft.rebase(onto: review(body: "theirs", spoiler: false))
+        #expect(conflicts == [.body, .spoiler])
+        #expect(draft.spoiler)
+        // Sent explicitly: the server's flag would otherwise publish this
+        // text as spoiler-free.
+        #expect(draft.patch == ReviewPatch(bodyMd: .set("mine"), spoiler: true))
+    }
+
+    @Test("a flag moved under edited text is named even when the text itself didn't move")
+    func flagMovedUnderEditedText() {
+        var draft = ReviewDraft(review(body: "old", spoiler: false))
+        draft.body = "mine"
+        let conflicts = draft.rebase(onto: review(body: "old", spoiler: true))
+        #expect(conflicts == [.spoiler])
+        #expect(!draft.spoiler)
+        #expect(draft.patch == ReviewPatch(bodyMd: .set("mine"), spoiler: false))
+    }
+
+    @Test("blank text over no text is no edit, so a fresher review fills it and nothing is cleared")
+    func blankOverNothingIsUntouched() {
+        var draft = ReviewDraft(nil)
+        draft.body = "   "
+        draft.notes = "\n"
+        #expect(draft.touched.isEmpty)
+        let conflicts = draft.rebase(onto: review(body: "theirs", notes: "their notes"))
+        #expect(conflicts.isEmpty)
+        #expect(draft.body == "theirs")
+        #expect(draft.notes == "their notes")
+        #expect(draft.patch.isEmpty)
+    }
+
     @Test("opening on no review, then learning there is one, adopts it")
     func unknownToKnownAdopts() {
         var draft = ReviewDraft(nil)

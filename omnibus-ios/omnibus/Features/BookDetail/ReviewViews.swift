@@ -827,18 +827,22 @@ struct ReviewDraft: Equatable {
         .edits(from: baseline, body: body, notes: notes, spoiler: spoiler)
     }
 
-    /// The fields typed over since the baseline.
+    /// The fields typed over since the baseline — exactly the ones Save would
+    /// send, so blank text over no text is no edit here either.
     var touched: Set<Field> {
+        let edits = patch
         var out: Set<Field> = []
-        if body != (baseline?.bodyMd ?? "") { out.insert(.body) }
-        if notes != (baseline?.notesMd ?? "") { out.insert(.notes) }
-        if spoiler != (baseline?.spoiler ?? false) { out.insert(.spoiler) }
+        if edits.bodyMd != .unchanged { out.insert(.body) }
+        if edits.notesMd != .unchanged { out.insert(.notes) }
+        if edits.spoiler != nil { out.insert(.spoiler) }
         return out
     }
 
     /// Move onto `latest`. A field you haven't touched follows it; one you
     /// have keeps what you typed, and comes back as a conflict when `latest`
     /// moved it too — so the composer can say so before a save replaces it.
+    /// The spoiler flag describes the text, so edited text keeps the flag it
+    /// was written under, and a flag moved underneath it is a conflict.
     mutating func rebase(onto latest: Review?) -> Set<Field> {
         let typed = touched
         var conflicts: Set<Field> = []
@@ -849,7 +853,7 @@ struct ReviewDraft: Equatable {
             if typed.contains(.notes) { conflicts.insert(.notes) } else { notes = latest?.notesMd ?? "" }
         }
         if (baseline?.spoiler ?? false) != (latest?.spoiler ?? false) {
-            if typed.contains(.spoiler) {
+            if typed.contains(.spoiler) || typed.contains(.body) {
                 conflicts.insert(.spoiler)
             } else {
                 spoiler = latest?.spoiler ?? false
