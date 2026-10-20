@@ -603,7 +603,7 @@ export const TheLastWriteToSettleRefetchesWhenTheNewestFailed: Story = {
   },
 };
 
-// Released by the story once its Save has been clicked.
+// Released by a story once the write queued behind the held tap has been sent.
 const heldTap = { release: () => {} };
 
 export const ARefusedTapIsToldEvenWhenASaveFollowsIt: Story = {
