@@ -21,6 +21,7 @@ export * from "./api/library";
 export * from "./api/metadata";
 export * from "./api/physical";
 export * from "./api/reading";
+export * from "./api/reviews";
 export * from "./api/scan";
 export * from "./api/settings";
 export * from "./api/shelves";

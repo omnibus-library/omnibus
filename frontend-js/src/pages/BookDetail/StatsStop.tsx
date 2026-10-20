@@ -4,7 +4,6 @@ import { Loading } from "../../components/Loading/Loading";
 import { SessionLog } from "../../components/SessionLog/SessionLog";
 import { durationLabel, nowSecs } from "../../format";
 import { insightsQuery, progressQuery, useWish } from "./queries";
-import { RatingWidget } from "./RatingWidget";
 import { newestPercent } from "./readout";
 import {
   avgSitSeconds,
@@ -106,7 +105,7 @@ function Record({ book, insights }: { book: BookDetail; insights: Insights }) {
   );
 }
 
-/** Stop 02: the reader's record in the book, their sittings, and their rating of it. */
+/** Stop 02: the reader's record in the book and their sittings. */
 export function StatsStop({ book }: { book: BookDetail }) {
   const wish = useWish(book);
   // A wish has no reading to tally.
@@ -154,9 +153,6 @@ export function StatsStop({ book }: { book: BookDetail }) {
           all land here.
         </NoStats>
       )}
-      <div className="bdmq-ratingrow" data-testid="bdmq-rating">
-        <RatingWidget uuid={book.uuid} />
-      </div>
     </>
   );
 }

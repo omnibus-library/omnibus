@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { type KeyboardEvent, type MouseEvent, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   type BookUuid,
   deleteJournalEntry,
@@ -19,46 +19,7 @@ import {
   JournalToolbar,
 } from "./JournalEditor";
 import { journalQuery } from "./queries";
-
-const SPOILER = "spoiler";
-const SPOILER_TEXT = "spoiler-text";
-
-// The sanitiser emits a spoiler as an inline `role="button"` span, which has no native
-// activation. Revealing it also hands its text to assistive tech, which it hid until now.
-function toggleSpoiler(spoiler: Element) {
-  const revealed = spoiler.classList.toggle("revealed");
-  spoiler.setAttribute("aria-expanded", String(revealed));
-  const text = spoiler.querySelector(`:scope > .${SPOILER_TEXT}`);
-  if (!text) return;
-  if (revealed) {
-    spoiler.removeAttribute("aria-label");
-    text.removeAttribute("aria-hidden");
-  } else {
-    spoiler.setAttribute("aria-label", "Reveal spoiler");
-    text.setAttribute("aria-hidden", "true");
-  }
-}
-
-const spoilerOf = (event: { target: EventTarget }) =>
-  event.target instanceof Element ? event.target.closest(`.${SPOILER}`) : null;
-
-// One handler per body, delegated: the spoilers are inside server-rendered HTML.
-const revealOnClick = (event: MouseEvent) => {
-  const spoiler = spoilerOf(event);
-  if (spoiler) toggleSpoiler(spoiler);
-};
-
-const revealOnKey = (event: KeyboardEvent) => {
-  const spoiler = spoilerOf(event);
-  if (
-    (event.key !== "Enter" && event.key !== " ") ||
-    !spoiler?.matches('[role="button"]')
-  )
-    return;
-  // Space would scroll the page.
-  event.preventDefault();
-  toggleSpoiler(spoiler);
-};
+import { RenderedMarkdown } from "./RenderedMarkdown";
 
 /** An entry's body in the live editor; Save keeps its status and progress. */
 function EditForm({
@@ -228,16 +189,7 @@ export function JournalEntryCard({
       {editing ? (
         <EditForm uuid={uuid} entry={entry} onDone={() => edit(false)} />
       ) : (
-        <>
-          {/* biome-ignore lint/a11y/noStaticElementInteractions: delegates to the spoilers inside the server-rendered body */}
-          <div
-            onClick={revealOnClick}
-            onKeyDown={revealOnKey}
-            className="bd-journal-entry-body"
-            // biome-ignore lint/security/noDangerouslySetInnerHtml: the server renders and sanitises journal markdown, as the Dioxus page relies on
-            dangerouslySetInnerHTML={{ __html: entry.bodyHtml }}
-          />
-        </>
+        <RenderedMarkdown html={entry.bodyHtml} md={entry.bodyMd} />
       )}
       {publish.isError && (
         <span className="mono bd-journal-error" role="alert">

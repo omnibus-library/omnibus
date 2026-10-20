@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { delay, HttpResponse, http } from "msw";
-import { expect, waitFor, within } from "storybook/test";
+import { expect, fn, waitFor, within } from "storybook/test";
 import { toBookDetail } from "../../api";
 import {
   getGetAlignmentMockHandler200,
@@ -15,15 +15,18 @@ import {
   hanging,
   physicalHandlers,
   readStatusHandlers,
+  reviewHandlers,
 } from "../../testing/handlers";
 import {
   aWireAlignment,
   aWireBook,
   aWireFile,
   aWireInsights,
+  aWireOtherReview,
   aWirePosition,
   aWireProgress,
   aWireReadStatus,
+  aWireReview,
   aWireWishlist,
 } from "../../testing/wire";
 import { HomeStop } from "./HomeStop";
@@ -910,6 +913,57 @@ export const RulerPrefersTheAudioTimelineToThePace: Story = {
     ).toBeInTheDocument();
     await expect(
       within(ruler).queryByText(/at your pace/),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const HouseholdRatingJumpsToTheReviews: Story = {
+  args: { onShowReviews: fn() },
+  beforeEach({ msw }) {
+    msw.use(
+      ...reviewHandlers({
+        mine: aWireReview({ stars: 4 }),
+        others: [
+          aWireOtherReview({ user_id: 7, stars: 4.5 }),
+          aWireOtherReview({ user_id: 8, stars: 4.5 }),
+        ],
+      }),
+    );
+  },
+  play: async ({ args, canvas, userEvent }) => {
+    const link = await canvas.findByRole("button", {
+      name: "Rated 4.3 out of 5 on average by 3 readers. Go to the reviews",
+    });
+    await expect(link).toHaveTextContent("★ 4.3 · 3 readers");
+
+    await userEvent.click(link);
+
+    await expect(args.onShowReviews).toHaveBeenCalled();
+  },
+};
+
+let reviewsRead = false;
+
+export const NoHouseholdRatingUntilTheServerSumsOne: Story = {
+  beforeEach({ msw }) {
+    reviewsRead = false;
+    msw.use(
+      http.get("/api/reviews/:uuid", () => {
+        reviewsRead = true;
+        // One reader is no household rating, and the server sends none.
+        return HttpResponse.json({
+          mine: aWireReview({ stars: 5 }),
+          others: [],
+          summary: null,
+        });
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await waitFor(() => expect(reviewsRead).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await expect(
+      canvas.queryByTestId("household-rating"),
     ).not.toBeInTheDocument();
   },
 };

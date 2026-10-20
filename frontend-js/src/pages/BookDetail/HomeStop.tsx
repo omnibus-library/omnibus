@@ -28,10 +28,12 @@ import {
   bookQuery,
   insightsQuery,
   progressQuery,
+  reviewsQuery,
   useWish,
 } from "./queries";
 import { ReadStatus } from "./ReadStatus";
 import { type HomeReadout, homeReadout, newestPercent } from "./readout";
+import { householdLabel, householdLine } from "./reviews";
 import { SyncLine } from "./SyncLine";
 import { pacedSecondsLeft } from "./stats";
 
@@ -286,8 +288,38 @@ function Ruler({ pct, readout, insights, lastOpened }: RulerProps) {
   );
 }
 
+/** The household's rating beside the title, `★ 4.3 · 3 readers`, once the server sums one up; a tap goes to the reviews. */
+function HouseholdRating({
+  book,
+  onShowReviews,
+}: {
+  book: Detail;
+  onShowReviews?: () => void;
+}) {
+  const reviews = useQuery(reviewsQuery(book.uuid));
+  const summary = reviews.data?.summary;
+  if (!summary) return null;
+  return (
+    <button
+      type="button"
+      className="mono bdmq-household"
+      data-testid="household-rating"
+      aria-label={`${householdLabel(summary)}. Go to the reviews`}
+      onClick={onShowReviews}
+    >
+      {householdLine(summary)}
+    </button>
+  );
+}
+
+type HomeStopProps = {
+  book: Detail;
+  /** Scrolls the page to the Reviews stop, for the household rating under the title. */
+  onShowReviews?: () => void;
+};
+
 /** Stop 01: the hero, with the kicker, title, authors, chips, description, the read and listen buttons, and where the reader stands. */
-export function HomeStop({ book }: { book: Detail }) {
+export function HomeStop({ book, onShowReviews }: HomeStopProps) {
   const client = useQueryClient();
   const wish = useWish(book);
   const hasFiles =
@@ -324,6 +356,7 @@ export function HomeStop({ book }: { book: Detail }) {
         ✎ Edit
       </ButtonLink>
       <Authors book={book} />
+      <HouseholdRating book={book} onShowReviews={onShowReviews} />
       <div className="bdmq-chips">
         <ChipRow
           label="Genres"

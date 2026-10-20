@@ -15,7 +15,11 @@ export function useOptimisticSave<TData, TVars>(
   {
     optimistic,
     alsoInvalidate = [],
-  }: { optimistic: (vars: TVars) => TData; alsoInvalidate?: QueryKey[] },
+  }: {
+    optimistic: (vars: TVars) => TData;
+    /** The other answers a save makes stale, or a function picking them for a save. */
+    alsoInvalidate?: QueryKey[] | ((vars: TVars) => QueryKey[]);
+  },
 ) {
   const client = useQueryClient();
   const newest = useRef(0);
@@ -44,12 +48,17 @@ export function useOptimisticSave<TData, TVars>(
       // `previous` may itself have been an older write's guess.
       void client.invalidateQueries({ queryKey });
     },
-    onSuccess: (saved, _vars, context) => {
-      if (context.id !== newest.current) return;
-      client.setQueryData(queryKey, saved);
-      for (const key of alsoInvalidate) {
+    onSuccess: (saved, vars, context) => {
+      // Whatever write is newest, one the server took has changed what it touches.
+      const stale =
+        typeof alsoInvalidate === "function"
+          ? alsoInvalidate(vars)
+          : alsoInvalidate;
+      for (const key of stale) {
         void client.invalidateQueries({ queryKey: key });
       }
+      if (context.id !== newest.current) return;
+      client.setQueryData(queryKey, saved);
     },
     // The last write to settle refetches, so a failed newest one never leaves an older guess.
     onSettled: () => {

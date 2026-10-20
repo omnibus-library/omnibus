@@ -8,13 +8,10 @@ import {
   getCrossFormatResume,
   getDeleteBookmarkUrl,
   getDeleteHighlightUrl,
-  getDeleteRatingUrl,
   getGetBookInsightsUrl,
   getGetProgressUrl,
-  getGetRatingUrl,
   getGetReadStatusUrl,
   getHighlights,
-  getOtherRatings,
   getPatchHighlightColorUrl,
   getPatchHighlightNoteUrl,
   getPostCrossFormatFollowUrl,
@@ -24,7 +21,6 @@ import {
   postBookmark,
   postHighlight,
   postProgress,
-  postRating,
   putReadStatus,
   postSessions as sendSessions,
 } from "./generated/omnibus";
@@ -35,9 +31,7 @@ import type {
   BookProgress as BookProgressWire,
   CrossFormatResumeOutput as CrossFormatResume,
   Highlight as HighlightWire,
-  AttributedRating as OtherRatingWire,
   ProgressRecord as PositionWire,
-  RatingRecord as RatingWire,
   ReadStatus as ReadState,
   ReadStatusRecord as ReadStatusWire,
   ResumePoint as ResumePointWire,
@@ -47,7 +41,6 @@ import type {
 import {
   BookInsights as BookInsightsSchema,
   BookProgress as BookProgressSchema,
-  RatingRecord as RatingRecordSchema,
   ReadStatusRecord as ReadStatusRecordSchema,
 } from "./generated/schemas";
 
@@ -228,56 +221,6 @@ export async function setFollow(
   await send(getPostCrossFormatFollowUrl(encodeURIComponent(uuid)), "POST", {
     enabled,
   });
-}
-
-function toRating(wire: RatingWire) {
-  return { stars: wire.stars, updatedAt: wire.updated_at };
-}
-
-export type RatingRecord = ReturnType<typeof toRating>;
-
-/** The reader's star rating for a book, or `null` when they never gave one. */
-export async function fetchRating(
-  uuid: BookUuid,
-): Promise<RatingRecord | null> {
-  const data = await fetchJson(
-    getGetRatingUrl(encodeURIComponent(uuid)),
-    RatingRecordSchema.nullable(),
-  );
-  return data && toRating(data);
-}
-
-/** Sets the reader's rating, 0.5 to 5 in half steps. */
-export async function saveRating(
-  uuid: BookUuid,
-  stars: number,
-): Promise<RatingRecord> {
-  return toRating(ok(await postRating({ book_uuid: uuid, stars })));
-}
-
-export async function clearRating(uuid: BookUuid): Promise<void> {
-  await send(getDeleteRatingUrl(encodeURIComponent(uuid)), "DELETE");
-}
-
-function toOtherRating(wire: OtherRatingWire) {
-  return {
-    reader: {
-      id: wire.user_id as UserId,
-      name: wire.username,
-      hasAvatar: wire.has_avatar ?? false,
-    },
-    stars: wire.stars,
-    updatedAt: wire.updated_at,
-  };
-}
-
-export type OtherRating = ReturnType<typeof toOtherRating>;
-
-/** What other readers on this server rated the book. */
-export async function fetchOtherRatings(
-  uuid: BookUuid,
-): Promise<OtherRating[]> {
-  return ok(await getOtherRatings(encodeURIComponent(uuid))).map(toOtherRating);
 }
 
 function toSessionLogPage(wire: SessionLogPageOutput) {
