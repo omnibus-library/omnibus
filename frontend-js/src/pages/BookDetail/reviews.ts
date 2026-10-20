@@ -2,165 +2,182 @@ import type {
   BookReviews,
   MyReview,
   OtherReview,
-  ReadStatusValue,
   ReviewChange,
   ReviewSummary,
 } from "../../api";
 import { fmtStars } from "../../components/StarRating/stars";
-import { fixed, plural } from "../../format";
+
+// Ports of the Dioxus page's helpers (`pages/book_detail/reviews/`), so both clients
+// count, clip and word the section alike.
 
 /** A write to your review: a change to some of its fields, or deleting all of it. */
 export type ReviewWrite = ReviewChange | "delete";
 
-const textOrNull = (md: string | null) => (md?.trim() ? md : null);
-
-const NO_REVIEW: Omit<MyReview, "createdAt" | "updatedAt"> = {
-  stars: null,
-  bodyMd: null,
-  bodyHtml: null,
-  notesMd: null,
-  notesHtml: null,
-  spoiler: false,
-  ratedAt: null,
-};
-
 /**
- * Your review as it stands once `change` lands, for the card to show before the server answers;
- * `null` once nothing is left. Changed text has no rendering yet, so it shows as written.
+ * Your review once `change` lands, for the fields the card can draw itself: stars and the
+ * spoiler flag. Text waits for the server, which renders it. `null` once nothing is left.
  */
-export function withChange(
+export function applyLocally(
   mine: MyReview | null,
   change: ReviewChange,
   now: number,
 ): MyReview | null {
-  const next = mine
+  const next: MyReview = mine
     ? { ...mine }
-    : { ...NO_REVIEW, createdAt: now, updatedAt: now };
+    : {
+        stars: null,
+        bodyMd: null,
+        bodyHtml: null,
+        notesMd: null,
+        notesHtml: null,
+        spoiler: false,
+        ratedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
   if (change.stars !== undefined) {
     next.stars = change.stars;
     next.ratedAt = change.stars === null ? null : now;
+    next.updatedAt = now;
   }
-  if (change.bodyMd !== undefined) {
-    const md = textOrNull(change.bodyMd);
-    if (md !== next.bodyMd) next.bodyHtml = null;
-    next.bodyMd = md;
+  if (change.spoiler !== undefined) {
+    next.spoiler = change.spoiler;
+    next.updatedAt = now;
   }
-  if (change.notesMd !== undefined) {
-    const md = textOrNull(change.notesMd);
-    if (md !== next.notesMd) next.notesHtml = null;
-    next.notesMd = md;
-  }
-  if (change.spoiler !== undefined) next.spoiler = change.spoiler;
   const empty =
     next.stars === null && next.bodyMd === null && next.notesMd === null;
   return empty ? null : next;
 }
 
-/** The cached reviews after `write`, as shown while it is in flight; a delete waits for the server. */
+/** The cached reviews while `write` is in flight: stars and the spoiler flag drawn at once, the rest left to the server. */
 export function optimisticReviews(
   reviews: BookReviews,
   write: ReviewWrite,
   now: number,
 ): BookReviews {
   if (write === "delete") return reviews;
-  return { ...reviews, mine: withChange(reviews.mine, write, now) };
+  return { ...reviews, mine: applyLocally(reviews.mine, write, now) };
 }
 
 /** Whether `write` can move the household's numbers: the stars, which stats and smart shelves read too. */
 export const movesStars = (write: ReviewWrite) =>
   write === "delete" || write.stars !== undefined;
 
-export type ReviewDraft = { bodyMd: string; notesMd: string; spoiler: boolean };
+const fieldChange = (seed: string, now: string) => {
+  const blank = now.trim() === "";
+  if (seed === now || (blank && seed.trim() === "")) return undefined;
+  return blank ? null : now;
+};
 
 /**
- * The fields the editor changed against the saved review, and nothing else, so a Save never
- * rewrites what it didn't touch. The spoiler flag only means something beside text, so
- * clearing the text clears it too.
+ * What the composer's Save sends: only the fields that changed since it opened, so a stars
+ * change made meanwhile survives. Blank text clears its field.
  */
-export function draftChange(
-  mine: MyReview | null,
-  draft: ReviewDraft,
+export function textChange(
+  seed: { bodyMd: string; notesMd: string },
+  draft: { bodyMd: string; notesMd: string },
 ): ReviewChange {
-  const body = textOrNull(draft.bodyMd);
-  const notes = textOrNull(draft.notesMd);
-  const spoiler = body !== null && draft.spoiler;
+  const bodyMd = fieldChange(seed.bodyMd, draft.bodyMd);
+  const notesMd = fieldChange(seed.notesMd, draft.notesMd);
   return {
-    ...(body !== (mine?.bodyMd ?? null) && { bodyMd: body }),
-    ...(notes !== (mine?.notesMd ?? null) && { notesMd: notes }),
-    ...(spoiler !== (mine?.spoiler ?? false) && { spoiler }),
+    ...(bodyMd !== undefined && { bodyMd }),
+    ...(notesMd !== undefined && { notesMd }),
   };
 }
 
 export const isNoChange = (change: ReviewChange) =>
   Object.keys(change).length === 0;
 
-/** Other readers split as the stop draws them: reviews with text, then one row of bare ratings. */
+/** Other readers split as the stop draws them: reviews with text, then the ratings without, each in the server's order. */
 export function splitOthers(others: readonly OtherReview[]) {
   return {
-    written: others.filter((r) => r.bodyMd !== null),
-    ratedOnly: others.filter((r) => r.bodyMd === null && r.stars !== null),
+    texts: others.filter((r) => r.bodyMd !== null),
+    ratings: others.filter((r) => r.bodyMd === null),
   };
 }
 
-/** Whether a review's text starts behind the spoiler cover: it is marked, and the viewer hasn't finished the book. */
-export const startsCovered = (
-  review: Pick<OtherReview, "spoiler">,
-  viewerStatus: ReadStatusValue | null | undefined,
-) => review.spoiler && viewerStatus !== "finished";
+/** Whether a review's text stays behind its spoiler veil: marked, you haven't finished the book, and not yet revealed. */
+export const spoilerVeiled = (
+  spoiler: boolean,
+  viewerFinished: boolean,
+  revealed: boolean,
+) => spoiler && !viewerFinished && !revealed;
 
-const readers = (n: number) => `${n} reader${plural(n)}`;
+const CLAMP_CHARS = 420;
+const CLAMP_LINES = 6;
 
-/** The household's rating in a line, "★ 4.3 · 3 readers". */
-export const householdLine = (summary: ReviewSummary) =>
-  `★ ${fixed(summary.average, 1)} · ${readers(summary.ratings)}`;
+/** Whether a review's text is long enough, in characters or lines, to open clipped behind Read more. */
+export function needsReadMore(md: string): boolean {
+  const text = md.trim();
+  return (
+    [...text].length > CLAMP_CHARS || text.split(/\r?\n/).length > CLAMP_LINES
+  );
+}
 
-/** The same, for a screen reader: "Rated 4.3 out of 5 on average by 3 readers". */
-export const householdLabel = (summary: ReviewSummary) =>
-  `Rated ${fixed(summary.average, 1)} out of 5 on average by ${readers(summary.ratings)}`;
+/** `1 review`, `3 ratings`. */
+export const countLabel = (n: number, noun: string) =>
+  `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+/** The stop's kicker, `2 reviews · 3 ratings`, counting yours: reviews have text, ratings have stars, notes count for neither. */
+export function reviewsKicker({ mine, others }: BookReviews): string {
+  const texts =
+    others.filter((r) => r.bodyMd !== null).length +
+    (mine?.bodyMd != null ? 1 : 0);
+  const rated =
+    others.filter((r) => r.stars !== null).length +
+    (mine?.stars != null ? 1 : 0);
+  if (texts + rated === 0) return "No reviews yet";
+  return `${countLabel(texts, "review")} · ${countLabel(rated, "rating")}`;
+}
+
+/** An average in stars to one decimal, a half rounding up: `4.3`, `4.0`. */
+export const averageLabel = (stars: number) =>
+  (Math.round(stars * 10) / 10).toFixed(1);
+
+/** The title area's household rating, for a screen reader: "Rated 4.3 by 3 readers — go to the reviews". */
+export const jumpLabel = (summary: ReviewSummary) =>
+  `Rated ${averageLabel(summary.average)} by ${countLabel(summary.ratings, "reader")} — go to the reviews`;
+
+/** Half stars as stars: 9 is `4.5`, 8 is `4`. */
+const starsOf = (halfStars: number) => fmtStars(halfStars / 2);
 
 /** One column of the household's spread. */
 export type SpreadBar = {
-  label: string;
+  halfStars: number;
   readers: number;
+  /** Height against the fullest bucket, 0 to 100. */
   heightPct: number;
+  /** Whole stars only; the half columns between them go unlabelled. */
+  label: string;
   title: string;
 };
 
-/** The ten half-star buckets as columns scaled to the fullest; an empty one stays a slot. */
+/** The ten buckets as bars scaled to the fullest one, a half percent rounding up. */
 export function spreadBars(buckets: ReviewSummary["buckets"]): SpreadBar[] {
-  const max = Math.max(0, ...buckets.map((b) => b.readers));
-  return buckets.map(({ halfStars, readers: n }) => {
-    const label = fmtStars(halfStars / 2);
+  const max = Math.max(1, ...buckets.map((b) => b.readers));
+  return buckets.map(({ halfStars, readers }) => {
+    const n = Math.max(readers, 0);
     return {
-      label,
+      halfStars,
       readers: n,
-      heightPct: max > 0 ? Math.round((Math.max(n, 0) / max) * 100) : 0,
-      title: `${label} ★ · ${readers(n)}`,
+      heightPct: Math.min(
+        100,
+        Math.floor((n * 100 + Math.floor(max / 2)) / max),
+      ),
+      label: halfStars % 2 === 0 ? String(halfStars / 2) : "",
+      title: `${starsOf(halfStars)} ★ · ${countLabel(readers, "reader")}`,
     };
   });
 }
 
-/** The spread as a sentence, "1 reader gave 3.5 stars, 2 gave 5 stars", for the chart's label. */
-export function spreadLabel(buckets: ReviewSummary["buckets"]): string {
-  const given = buckets.filter((b) => b.readers > 0);
-  if (given.length === 0) return "No star ratings yet";
-  return given
-    .map(({ halfStars, readers: n }, i) => {
-      const who = i === 0 ? readers(n) : String(n);
-      const stars = halfStars / 2;
-      return `${who} gave ${fmtStars(stars)} star${plural(stars)}`;
-    })
-    .join(", ");
-}
-
-/** The stop's kicker: how many readers have rated or reviewed the book, yourself included. */
-export function reviewsKicker({ mine, others }: BookReviews): string {
-  const yours = mine && (mine.stars !== null || mine.bodyMd !== null) ? 1 : 0;
-  const voices = others.length + yours;
-  if (voices === 0) return "No reviews yet";
-  const written =
-    others.filter((r) => r.bodyMd !== null).length +
-    (mine?.bodyMd != null ? 1 : 0);
-  const tail = written > 0 ? ` · ${written} with a review` : "";
-  return `${readers(voices)}${tail}`;
+/** The spread's text alternative, each value someone gave, lowest first. */
+export function spreadSummary(buckets: ReviewSummary["buckets"]): string {
+  const given = buckets
+    .filter((b) => b.readers > 0)
+    .map(
+      (b) => `${countLabel(b.readers, "reader")} at ${starsOf(b.halfStars)}`,
+    );
+  return given.length === 0
+    ? "Ratings by stars: none."
+    : `Ratings by stars: ${given.join(", ")}.`;
 }

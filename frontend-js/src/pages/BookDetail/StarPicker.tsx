@@ -17,6 +17,7 @@ type StarPickerProps = {
 /** Five stars, each with a button per half: one tap rates, a tap on the current value clears. */
 export function StarPicker({ stars, onPick }: StarPickerProps) {
   const [hover, setHover] = useState<number | null>(null);
+  // A hover preview wins over the saved value.
   const shown = hover ?? stars ?? 0;
   return (
     // biome-ignore lint/a11y/useSemanticElements: a fieldset brings a border and min-width Atrium never resets
@@ -24,14 +25,17 @@ export function StarPicker({ stars, onPick }: StarPickerProps) {
       className="bd-stars bd-stars-interactive"
       role="group"
       aria-label="Your rating"
-      data-testid="rating-stars"
+      data-testid="review-stars"
       onMouseLeave={() => setHover(null)}
     >
       {SLOTS.map((slot) => (
         <span key={slot} className="bd-star-slot">
-          <span className="bd-star-bg">★</span>
+          <span className="bd-star-bg" aria-hidden="true">
+            ★
+          </span>
           <span
             className="bd-star-fg"
+            aria-hidden="true"
             style={{ width: `${fillPercent(shown, slot)}%` }}
           >
             ★
@@ -47,7 +51,11 @@ export function StarPicker({ stars, onPick }: StarPickerProps) {
                 aria-label={label}
                 title={label}
                 onMouseEnter={() => setHover(value)}
-                onClick={() => onPick(ratingAfterClick(value, stars))}
+                onClick={() => {
+                  // The fill should show the answer, not the pointer.
+                  setHover(null);
+                  onPick(ratingAfterClick(value, stars));
+                }}
               />
             );
           })}

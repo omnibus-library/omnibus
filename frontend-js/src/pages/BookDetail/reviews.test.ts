@@ -7,18 +7,19 @@ import {
   aWireReviewSummary,
 } from "../../testing/wire";
 import {
-  draftChange,
-  householdLabel,
-  householdLine,
+  applyLocally,
+  averageLabel,
   isNoChange,
+  jumpLabel,
   movesStars,
+  needsReadMore,
   optimisticReviews,
   reviewsKicker,
   splitOthers,
+  spoilerVeiled,
   spreadBars,
-  spreadLabel,
-  startsCovered,
-  withChange,
+  spreadSummary,
+  textChange,
 } from "./reviews";
 
 const NOW = 2_000_000_000;
@@ -32,10 +33,14 @@ const mine = (overrides: Parameters<typeof aWireReview>[0] = {}) =>
 const others = (...wire: Parameters<typeof aWireOtherReview>[0][]) =>
   reviewsOf({ others: wire.map((w) => aWireOtherReview(w)) }).others;
 
-describe("withChange", () => {
+/** Ten buckets from a reader count per half star, lowest first. */
+const buckets = (readers: number[]) =>
+  readers.map((n, i) => ({ halfStars: i + 1, readers: n }));
+
+describe("applyLocally", () => {
   it("starts a review from nothing on the first tap", () => {
-    expect(withChange(null, { stars: 3.5 }, NOW)).toMatchObject({
-      stars: 3.5,
+    expect(applyLocally(null, { stars: 4 }, NOW)).toMatchObject({
+      stars: 4,
       ratedAt: NOW,
       bodyMd: null,
       spoiler: false,
@@ -44,7 +49,7 @@ describe("withChange", () => {
 
   it("clears only the stars, keeping the text", () => {
     const written = mine({ body_md: "Good.", body_html: "<p>Good.</p>" });
-    expect(withChange(written, { stars: null }, NOW)).toMatchObject({
+    expect(applyLocally(written, { stars: null }, NOW)).toMatchObject({
       stars: null,
       ratedAt: null,
       bodyMd: "Good.",
@@ -52,28 +57,21 @@ describe("withChange", () => {
     });
   });
 
-  it("drops the rendering of changed text, so it shows as written until the server renders it", () => {
+  it("flags the spoiler", () => {
+    const written = mine({ body_md: "Rosebud.", body_html: "<p>x</p>" });
+    expect(applyLocally(written, { spoiler: true }, NOW)?.spoiler).toBe(true);
+  });
+
+  it("leaves text to the server, which renders it", () => {
     const written = mine({ body_md: "Good.", body_html: "<p>Good.</p>" });
-    expect(withChange(written, { bodyMd: "Great." }, NOW)).toMatchObject({
-      bodyMd: "Great.",
-      bodyHtml: null,
+    expect(applyLocally(written, { bodyMd: "Great." }, NOW)).toMatchObject({
+      bodyMd: "Good.",
+      bodyHtml: "<p>Good.</p>",
     });
   });
 
-  it("keeps the rendering of text sent back unchanged", () => {
-    const written = mine({ notes_md: "n", notes_html: "<p>n</p>" });
-    expect(withChange(written, { notesMd: "n" }, NOW)?.notesHtml).toBe(
-      "<p>n</p>",
-    );
-  });
-
-  it("reads blank text as cleared", () => {
-    const written = mine({ stars: 2, body_md: "x", body_html: "<p>x</p>" });
-    expect(withChange(written, { bodyMd: "   " }, NOW)?.bodyMd).toBeNull();
-  });
-
-  it("leaves nothing once stars, text and notes are all gone", () => {
-    expect(withChange(mine({ stars: 2 }), { stars: null }, NOW)).toBeNull();
+  it("empties a review left with nothing", () => {
+    expect(applyLocally(mine({ stars: 2 }), { stars: null }, NOW)).toBeNull();
   });
 });
 
@@ -84,7 +82,7 @@ describe("optimisticReviews", () => {
     summary: aWireReviewSummary(2, 3.5),
   });
 
-  it("changes only your review, leaving the others and the summary to the refetch", () => {
+  it("changes only your review, leaving the others and the summary to the re-read", () => {
     const next = optimisticReviews(reviews, { stars: 5 }, NOW);
     expect(next.mine?.stars).toBe(5);
     expect(next.others).toBe(reviews.others);
@@ -110,159 +108,156 @@ describe("movesStars", () => {
   });
 });
 
-describe("draftChange", () => {
-  const draft = { bodyMd: "", notesMd: "", spoiler: false };
-
-  it("is no change when nothing was written and there is no review", () => {
-    expect(isNoChange(draftChange(null, draft))).toBe(true);
-  });
-
-  it("sends only the field that changed", () => {
-    const saved = mine({ body_md: "Good.", notes_md: "for me" });
+describe("textChange", () => {
+  it("sends only the fields that changed", () => {
     expect(
-      draftChange(saved, { ...draft, bodyMd: "Good.", notesMd: "for later" }),
-    ).toEqual({ notesMd: "for later" });
+      textChange(
+        { bodyMd: "Loved it", notesMd: "" },
+        { bodyMd: "Loved it", notesMd: "Check chapter 3" },
+      ),
+    ).toEqual({ notesMd: "Check chapter 3" });
   });
 
-  it("sends blank text as cleared, and only when there was text", () => {
-    const saved = mine({ body_md: "Good." });
-    expect(draftChange(saved, { ...draft, bodyMd: "  " })).toEqual({
-      bodyMd: null,
-    });
-    expect(isNoChange(draftChange(mine(), { ...draft, notesMd: "\n" }))).toBe(
-      true,
-    );
-  });
-
-  it("sends the spoiler flag with new text", () => {
+  it("clears a field emptied to whitespace", () => {
     expect(
-      draftChange(null, { ...draft, bodyMd: "Rosebud.", spoiler: true }),
-    ).toEqual({ bodyMd: "Rosebud.", spoiler: true });
+      textChange({ bodyMd: "x", notesMd: "" }, { bodyMd: "  ", notesMd: "" }),
+    ).toEqual({ bodyMd: null });
   });
 
-  it("drops the spoiler flag along with the text it marked", () => {
-    const saved = mine({ body_md: "Rosebud.", spoiler: true });
-    expect(draftChange(saved, { ...draft, spoiler: true })).toEqual({
-      bodyMd: null,
-      spoiler: false,
-    });
+  it("is no change when nothing changed", () => {
+    expect(
+      isNoChange(
+        textChange(
+          { bodyMd: "a", notesMd: "b" },
+          { bodyMd: "a", notesMd: "b" },
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      isNoChange(
+        textChange({ bodyMd: "", notesMd: "" }, { bodyMd: " ", notesMd: "" }),
+      ),
+    ).toBe(true);
   });
 
-  it("ignores a spoiler tick with no text to mark", () => {
-    expect(isNoChange(draftChange(null, { ...draft, spoiler: true }))).toBe(
-      true,
+  it("never touches the stars or the spoiler flag", () => {
+    const change = textChange(
+      { bodyMd: "", notesMd: "" },
+      { bodyMd: "New.", notesMd: "" },
     );
+    expect(change).toEqual({ bodyMd: "New." });
   });
 });
 
 describe("splitOthers", () => {
-  it("keeps the server's order and puts text reviews apart from bare ratings", () => {
+  it("keeps the server's order within each group", () => {
     const list = others(
-      { user_id: 2, body_md: "b", body_html: "<p>b</p>", stars: null },
-      { user_id: 3, body_md: "c", body_html: "<p>c</p>" },
-      { user_id: 4 },
-      { user_id: 5, stars: 5 },
+      { user_id: 1, body_md: "a", body_html: "<p>a</p>", stars: null },
+      { user_id: 2, body_md: "b", body_html: "<p>b</p>" },
+      { user_id: 3 },
+      { user_id: 4, stars: 5 },
     );
-    const { written, ratedOnly } = splitOthers(list);
-    expect(written.map((r: OtherReview) => r.reader.id)).toEqual([2, 3]);
-    expect(ratedOnly.map((r: OtherReview) => r.reader.id)).toEqual([4, 5]);
-  });
-
-  it("is empty for a book nobody else reviewed", () => {
-    expect(splitOthers([])).toEqual({ written: [], ratedOnly: [] });
+    const { texts, ratings } = splitOthers(list);
+    expect(texts.map((r: OtherReview) => r.reader.id)).toEqual([1, 2]);
+    expect(ratings.map((r: OtherReview) => r.reader.id)).toEqual([3, 4]);
   });
 });
 
-describe("startsCovered", () => {
-  it.each([
-    [true, "reading", true],
-    [true, "unread", true],
-    [true, null, true],
-    [true, undefined, true],
-    [true, "finished", false],
-    [false, "reading", false],
-  ] as const)(
-    "spoiler %s, viewer %s: covered %s",
-    (spoiler, status, covered) => {
-      expect(startsCovered({ spoiler }, status)).toBe(covered);
-    },
-  );
-});
-
-describe("householdLine", () => {
-  it("rounds the average to one place and counts the readers", () => {
-    const summary = reviewsOf({
-      summary: aWireReviewSummary(4, 4.5, 4.5),
-    }).summary;
-    expect(summary && householdLine(summary)).toBe("★ 4.3 · 3 readers");
-    expect(summary && householdLabel(summary)).toBe(
-      "Rated 4.3 out of 5 on average by 3 readers",
-    );
-  });
-
-  it("keeps the decimal on a whole average", () => {
-    const summary = reviewsOf({ summary: aWireReviewSummary(4, 4) }).summary;
-    expect(summary && householdLine(summary)).toBe("★ 4.0 · 2 readers");
+describe("spoilerVeiled", () => {
+  it("holds until revealed or the book is finished", () => {
+    expect(spoilerVeiled(true, false, false)).toBe(true);
+    expect(spoilerVeiled(true, false, true)).toBe(false);
+    expect(spoilerVeiled(true, true, false)).toBe(false);
+    expect(spoilerVeiled(false, false, false)).toBe(false);
   });
 });
 
-describe("spreadBars", () => {
-  const { summary } = reviewsOf({ summary: aWireReviewSummary(3.5, 5, 5) });
-  const bars = summary ? spreadBars(summary.buckets) : [];
-
-  it("draws one column per half star, labelled in stars", () => {
-    expect(bars.map((b) => b.label)).toEqual([
-      "0.5",
-      "1",
-      "1.5",
-      "2",
-      "2.5",
-      "3",
-      "3.5",
-      "4",
-      "4.5",
-      "5",
-    ]);
+describe("needsReadMore", () => {
+  it("clips long or many-lined text", () => {
+    expect(needsReadMore("short")).toBe(false);
+    expect(needsReadMore("x".repeat(421))).toBe(true);
+    expect(needsReadMore("x".repeat(420))).toBe(false);
+    expect(needsReadMore("1\n2\n3\n4\n5\n6\n7")).toBe(true);
+    expect(needsReadMore("1\n2\n3\n4\n5\n6")).toBe(false);
   });
 
-  it("scales each column to the fullest bucket", () => {
-    expect(bars[6]).toMatchObject({ readers: 1, heightPct: 50 });
-    expect(bars[9]).toMatchObject({
-      readers: 2,
-      heightPct: 100,
-      title: "5 ★ · 2 readers",
-    });
-    expect(bars[0]).toMatchObject({ readers: 0, heightPct: 0 });
-  });
-
-  it("says who gave what, for the chart's label", () => {
-    expect(summary && spreadLabel(summary.buckets)).toBe(
-      "1 reader gave 3.5 stars, 2 gave 5 stars",
-    );
-    expect(spreadLabel([])).toBe("No star ratings yet");
+  it("ignores surrounding whitespace", () => {
+    expect(needsReadMore(`\n\n${"x".repeat(420)}\n\n\n\n\n\n`)).toBe(false);
   });
 });
 
 describe("reviewsKicker", () => {
-  it("says so when nobody has rated or reviewed the book", () => {
-    expect(reviewsKicker(reviewsOf({}))).toBe("No reviews yet");
-  });
-
-  it("counts every reader with stars or text, yourself included, and those who wrote", () => {
+  it("counts texts and ratings, yours included", () => {
     const reviews = reviewsOf({
-      mine: aWireReview({ body_md: "Mine.", body_html: "<p>Mine.</p>" }),
+      mine: aWireReview({ stars: 4, body_md: "Mine.", body_html: "<p>m</p>" }),
       others: [
         aWireOtherReview({ user_id: 2, body_md: "b", body_html: "<p>b</p>" }),
-        aWireOtherReview({ user_id: 3 }),
+        aWireOtherReview({ user_id: 3, stars: 2 }),
       ],
     });
-    expect(reviewsKicker(reviews)).toBe("3 readers · 2 with a review");
+    expect(reviewsKicker(reviews)).toBe("2 reviews · 3 ratings");
   });
 
-  it("leaves out your private notes, which no one else sees", () => {
-    const reviews = reviewsOf({
+  it("ignores notes and says when there is nothing", () => {
+    expect(reviewsKicker(reviewsOf({}))).toBe("No reviews yet");
+    const notesOnly = reviewsOf({
       mine: aWireReview({ stars: null, notes_md: "n", notes_html: "<p>n</p>" }),
     });
-    expect(reviewsKicker(reviews)).toBe("No reviews yet");
+    expect(reviewsKicker(notesOnly)).toBe("No reviews yet");
+  });
+
+  it("counts a lone rating in the singular", () => {
+    expect(reviewsKicker(reviewsOf({ mine: aWireReview({ stars: 3 }) }))).toBe(
+      "0 reviews · 1 rating",
+    );
+  });
+});
+
+describe("averageLabel", () => {
+  it("rounds to one decimal, a half up", () => {
+    expect(averageLabel(4.333)).toBe("4.3");
+    expect(averageLabel(4.0)).toBe("4.0");
+    expect(averageLabel(3.96)).toBe("4.0");
+    expect(averageLabel(4.25)).toBe("4.3");
+  });
+
+  it("labels the jump link for a screen reader", () => {
+    const { summary } = reviewsOf({ summary: aWireReviewSummary(4, 4.5, 4.5) });
+    expect(summary && jumpLabel(summary)).toBe(
+      "Rated 4.3 by 3 readers — go to the reviews",
+    );
+  });
+});
+
+describe("spreadBars", () => {
+  const bars = spreadBars(buckets([0, 1, 0, 0, 0, 1, 0, 2, 0, 1]));
+
+  it("scales each bar to the fullest bucket and labels whole stars only", () => {
+    expect(bars).toHaveLength(10);
+    expect(bars[7]?.heightPct).toBe(100);
+    expect(bars[5]?.heightPct).toBe(50);
+    expect(bars[0]?.heightPct).toBe(0);
+    expect(bars[0]?.label).toBe("");
+    expect(bars[1]?.label).toBe("1");
+    expect(bars[9]?.label).toBe("5");
+    expect(bars[8]?.title).toBe("4.5 ★ · 0 readers");
+  });
+
+  it("rounds a half percent up", () => {
+    const thirds = spreadBars(buckets([1, 0, 0, 0, 0, 0, 0, 0, 0, 3]));
+    expect(thirds[0]?.heightPct).toBe(33);
+    const halves = spreadBars(buckets([1, 0, 0, 0, 0, 0, 0, 0, 0, 8]));
+    expect(halves[0]?.heightPct).toBe(13);
+  });
+});
+
+describe("spreadSummary", () => {
+  it("names each value given, lowest first", () => {
+    expect(spreadSummary(buckets([0, 0, 0, 0, 0, 0, 1, 0, 2, 0]))).toBe(
+      "Ratings by stars: 1 reader at 3.5, 2 readers at 4.5.",
+    );
+    expect(spreadSummary(buckets(Array(10).fill(0)))).toBe(
+      "Ratings by stars: none.",
+    );
   });
 });

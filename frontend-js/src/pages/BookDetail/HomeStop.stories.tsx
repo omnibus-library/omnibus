@@ -932,7 +932,7 @@ export const HouseholdRatingJumpsToTheReviews: Story = {
   },
   play: async ({ args, canvas, userEvent }) => {
     const link = await canvas.findByRole("button", {
-      name: "Rated 4.3 out of 5 on average by 3 readers. Go to the reviews",
+      name: "Rated 4.3 by 3 readers — go to the reviews",
     });
     await expect(link).toHaveTextContent("★ 4.3 · 3 readers");
 
@@ -962,8 +962,6 @@ export const NoHouseholdRatingUntilTheServerSumsOne: Story = {
   play: async ({ canvas }) => {
     await waitFor(() => expect(reviewsRead).toBe(true));
     await new Promise((resolve) => setTimeout(resolve, 100));
-    await expect(
-      canvas.queryByTestId("household-rating"),
-    ).not.toBeInTheDocument();
+    await expect(canvas.queryByTestId("reviews-jump")).not.toBeInTheDocument();
   },
 };

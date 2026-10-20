@@ -33,7 +33,7 @@ import {
 } from "./queries";
 import { ReadStatus } from "./ReadStatus";
 import { type HomeReadout, homeReadout, newestPercent } from "./readout";
-import { householdLabel, householdLine } from "./reviews";
+import { averageLabel, countLabel, jumpLabel } from "./reviews";
 import { SyncLine } from "./SyncLine";
 import { pacedSecondsLeft } from "./stats";
 
@@ -288,8 +288,8 @@ function Ruler({ pct, readout, insights, lastOpened }: RulerProps) {
   );
 }
 
-/** The household's rating beside the title, `★ 4.3 · 3 readers`, once the server sums one up; a tap goes to the reviews. */
-function HouseholdRating({
+/** The title area's read-only household rating, `★ 4.3 · 3 readers`, a jump to the Reviews stop; nothing until the server sums one up. */
+function ReviewsJumpLink({
   book,
   onShowReviews,
 }: {
@@ -302,12 +302,15 @@ function HouseholdRating({
   return (
     <button
       type="button"
-      className="mono bdmq-household"
-      data-testid="household-rating"
-      aria-label={`${householdLabel(summary)}. Go to the reviews`}
+      className="bd-reviews-jump"
+      data-testid="reviews-jump"
+      aria-label={jumpLabel(summary)}
       onClick={onShowReviews}
     >
-      {householdLine(summary)}
+      <span className="bd-reviews-jump-star" aria-hidden="true">
+        ★
+      </span>{" "}
+      {averageLabel(summary.average)} · {countLabel(summary.ratings, "reader")}
     </button>
   );
 }
@@ -356,7 +359,7 @@ export function HomeStop({ book, onShowReviews }: HomeStopProps) {
         ✎ Edit
       </ButtonLink>
       <Authors book={book} />
-      <HouseholdRating book={book} onShowReviews={onShowReviews} />
+      <ReviewsJumpLink book={book} onShowReviews={onShowReviews} />
       <div className="bdmq-chips">
         <ChipRow
           label="Genres"

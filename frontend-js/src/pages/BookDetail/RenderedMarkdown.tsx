@@ -57,10 +57,10 @@ export function RenderedMarkdown({
   testId,
 }: RenderedMarkdownProps) {
   if (html === null) {
-    // Shown as written until the server's rendering lands.
+    // Shown as written, escaped, until the server's rendering lands.
     return (
       <div
-        className={classes("bd-journal-entry-body bd-md-raw", className)}
+        className={classes("bd-journal-entry-body", className)}
         data-testid={testId}
       >
         {md}

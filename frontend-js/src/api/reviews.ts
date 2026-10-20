@@ -45,6 +45,7 @@ function toOtherReview(wire: AttributedReviewWire) {
     spoiler: wire.spoiler,
     ratedAt: wire.rated_at ?? null,
     createdAt: wire.created_at,
+    updatedAt: wire.updated_at,
   };
 }
 

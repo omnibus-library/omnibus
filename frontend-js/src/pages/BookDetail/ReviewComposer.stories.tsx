@@ -47,41 +47,36 @@ export const NewReview: Story = {
     await expect(
       canvas.getByRole("textbox", { name: "Review text" }),
     ).toHaveTextContent("");
-    await expect(
-      canvas.getByRole("region", { name: "Private notes" }),
-    ).toHaveTextContent("only you can see these");
-    await expect(
-      canvas.getByRole("region", { name: "Your review" }),
-    ).toHaveTextContent("every reader on this server can see it");
-    // Nothing to save, and no text for a spoiler flag to mark.
-    await expect(canvas.getByTestId("review-composer-save")).toBeDisabled();
+    await expect(canvas.getByTestId("review-body-field")).toHaveTextContent(
+      "Spoilers? Wrap text in ||double pipes||",
+    );
+    await expect(canvas.getByTestId("review-notes-field")).toHaveTextContent(
+      "only you can see these",
+    );
+    // The spoiler flag lives on your card, beside the saved text.
     await expect(
       canvas.queryByRole("checkbox", { name: "Contains spoilers" }),
     ).not.toBeInTheDocument();
   },
 };
 
-export const SavesTextNotesAndTheSpoilerFlagTogether: Story = {
+export const SavesTextAndNotesTogether: Story = {
   play: async ({ args, canvas, userEvent }) => {
     await userEvent.type(
       canvas.getByRole("textbox", { name: "Review text" }),
       "Rosebud was the sled.",
-    );
-    await userEvent.click(
-      canvas.getByRole("checkbox", { name: "Contains spoilers" }),
     );
     await userEvent.type(
       canvas.getByRole("textbox", { name: "Private notes" }),
       "Reread in spring.",
     );
 
-    await userEvent.click(canvas.getByTestId("review-composer-save"));
+    await userEvent.click(canvas.getByTestId("review-save"));
 
     await waitFor(() =>
       expect(args.onSave).toHaveBeenCalledWith({
         bodyMd: "Rosebud was the sled.",
         notesMd: "Reread in spring.",
-        spoiler: true,
       }),
     );
     await waitFor(() => expect(args.onClose).toHaveBeenCalled());
@@ -94,16 +89,12 @@ export const EditingSendsOnlyWhatChanged: Story = {
     await expect(
       canvas.getByRole("textbox", { name: "Review text" }),
     ).toHaveTextContent("A slow burn that pays off.");
-    await expect(
-      canvas.getByRole("checkbox", { name: "Contains spoilers" }),
-    ).toBeChecked();
-    await expect(canvas.getByTestId("review-composer-save")).toBeDisabled();
 
     await userEvent.type(
       canvas.getByRole("textbox", { name: "Private notes" }),
       " Or Jo.",
     );
-    await userEvent.click(canvas.getByTestId("review-composer-save"));
+    await userEvent.click(canvas.getByTestId("review-save"));
 
     await waitFor(() =>
       expect(args.onSave).toHaveBeenCalledWith({
@@ -113,21 +104,24 @@ export const EditingSendsOnlyWhatChanged: Story = {
   },
 };
 
-export const ClearingTheTextDropsTheSpoilerFlag: Story = {
+export const SavingNothingChangedJustCloses: Story = {
+  args: { mine: WRITTEN },
+  play: async ({ args, canvas, userEvent }) => {
+    await userEvent.click(canvas.getByTestId("review-save"));
+
+    await expect(args.onClose).toHaveBeenCalled();
+    await expect(args.onSave).not.toHaveBeenCalled();
+  },
+};
+
+export const ClearingTheTextClearsIt: Story = {
   args: { mine: WRITTEN },
   play: async ({ args, canvas, userEvent }) => {
     await userEvent.clear(canvas.getByRole("textbox", { name: "Review text" }));
-
-    await expect(
-      canvas.queryByRole("checkbox", { name: "Contains spoilers" }),
-    ).not.toBeInTheDocument();
-    await userEvent.click(canvas.getByTestId("review-composer-save"));
+    await userEvent.click(canvas.getByTestId("review-save"));
 
     await waitFor(() =>
-      expect(args.onSave).toHaveBeenCalledWith({
-        bodyMd: null,
-        spoiler: false,
-      }),
+      expect(args.onSave).toHaveBeenCalledWith({ bodyMd: null }),
     );
   },
 };
@@ -141,20 +135,20 @@ export const ARefusedSaveKeepsTheDraft: Story = {
   play: async ({ args, canvas, userEvent }) => {
     const editor = canvas.getByRole("textbox", { name: "Review text" });
     await userEvent.type(editor, "Keep me.");
-    await userEvent.click(canvas.getByTestId("review-composer-save"));
+    await userEvent.click(canvas.getByTestId("review-save"));
 
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
       "failed with 500",
     );
     await expect(args.onClose).not.toHaveBeenCalled();
     await expect(editor).toHaveTextContent("Keep me.");
-    await expect(canvas.getByTestId("review-composer-save")).toBeEnabled();
+    await expect(canvas.getByTestId("review-save")).toBeEnabled();
   },
 };
 
 export const InsertsAHighlightIntoTheFieldItBelongsTo: Story = {
   play: async ({ canvas, userEvent }) => {
-    const notes = canvas.getByRole("region", { name: "Private notes" });
+    const notes = canvas.getByTestId("review-notes-field");
     await userEvent.click(
       within(notes).getByTestId("journal-insert-highlight"),
     );
@@ -180,7 +174,7 @@ export const ImageUploadGoesIntoTheReview: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    const review = canvas.getByRole("region", { name: "Your review" });
+    const review = canvas.getByTestId("review-body-field");
     const editor = within(review).getByRole("textbox", { name: "Review text" });
     await userEvent.type(editor, "See the map");
 
@@ -203,7 +197,7 @@ export const CancelClosesWithoutSaving: Story = {
       canvas.getByRole("textbox", { name: "Review text" }),
       "Never mind",
     );
-    await userEvent.click(canvas.getByTestId("review-composer-cancel"));
+    await userEvent.click(canvas.getByTestId("review-cancel"));
 
     await expect(args.onClose).toHaveBeenCalled();
     await expect(args.onSave).not.toHaveBeenCalled();

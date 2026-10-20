@@ -147,7 +147,7 @@ export const HouseholdRatingJumpsToTheReviewsStop: Story = {
       name: "03 · Reviews",
     });
 
-    await userEvent.click(await canvas.findByTestId("household-rating"));
+    await userEvent.click(await canvas.findByTestId("reviews-jump"));
 
     await waitFor(() => expect(reviewsDot).toHaveClass("on"), {
       timeout: 5000,

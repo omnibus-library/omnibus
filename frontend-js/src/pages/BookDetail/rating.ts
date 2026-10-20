@@ -11,18 +11,19 @@ export function halfStarLabel(value: number, current: number | null): string {
 export const ratingAfterClick = (value: number, current: number | null) =>
   value === current ? null : value;
 
-type Rated = { stars: number | null; ratedAt: number | null };
+type Rated = {
+  stars: number | null;
+  ratedAt: number | null;
+  updatedAt: number;
+};
 
-/** The line under the stars: an error, when the stars were given and how many, or the unrated placeholder. */
-export function ratingMeta(
+/** The line beside your stars: a refused save first, then the rating and its age, else an invitation. */
+export function starsMeta(
+  now: number,
   failed: boolean,
   review: Rated | null | undefined,
-  now: number,
 ): string {
-  if (failed) return "Couldn't save — try again";
+  if (failed) return "Couldn’t save your rating — try again";
   if (review?.stars == null) return "Not rated yet";
-  const value = `${fmtStars(review.stars)} of 5`;
-  return review.ratedAt === null
-    ? value
-    : `rated ${ago(now, review.ratedAt)} · ${value}`;
+  return `rated ${ago(now, review.ratedAt ?? review.updatedAt)} · ${fmtStars(review.stars)} of 5`;
 }

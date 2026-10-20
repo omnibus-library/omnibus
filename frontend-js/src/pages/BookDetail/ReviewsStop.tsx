@@ -1,76 +1,75 @@
 import { useQuery } from "@tanstack/react-query";
 import type { BookDetail, ReviewSummary } from "../../api";
-import { Loading } from "../../components/Loading/Loading";
+import { Loading, Stale } from "../../components/Loading/Loading";
 import { StarRating } from "../../components/StarRating/StarRating";
-import { fixed, plural } from "../../format";
 import { OtherReviews } from "./OtherReviews";
-import { reviewsQuery } from "./queries";
+import { readStatusQuery, reviewsQuery } from "./queries";
 import { ReviewCard } from "./ReviewCard";
-import { reviewsKicker, spreadBars, spreadLabel } from "./reviews";
+import {
+  averageLabel,
+  countLabel,
+  reviewsKicker,
+  spreadBars,
+  spreadSummary,
+} from "./reviews";
 
-/** The household's stars: the average, how many rated, and the spread over the ten half stars. */
-function HouseholdSummary({ summary }: { summary: ReviewSummary }) {
+/** The household's stars: the average, how many rated, and the spread over the ten half stars, drawn like the stats page's histogram. */
+function ReviewSummaryBlock({ summary }: { summary: ReviewSummary }) {
   return (
-    <section
-      className="bd-review-summary"
-      aria-label="Household rating"
-      data-testid="review-summary"
-    >
-      <div className="bd-review-summary-figure">
-        <span className="bd-review-summary-avg" data-testid="review-average">
-          {fixed(summary.average, 1)}
+    <div className="bd-review-summary" data-testid="review-summary">
+      <div className="bd-review-avg">
+        <span className="bd-review-avg-v" data-testid="review-summary-average">
+          {averageLabel(summary.average)}
         </span>
-        <div className="bd-review-summary-side">
-          <StarRating
-            stars={summary.average}
-            className="bd-review-summary-stars"
-          />
-          <span className="mono bd-review-summary-count">
-            {summary.ratings} reader{plural(summary.ratings)} rated it
+        <div className="bd-review-avg-side">
+          <StarRating stars={summary.average} className="bd-review-avg-stars" />
+          <span
+            className="mono bd-review-avg-n"
+            data-testid="review-summary-count"
+          >
+            {countLabel(summary.ratings, "reader")} in the household
           </span>
         </div>
       </div>
       <div
         className="bd-review-spread"
         role="img"
-        aria-label={spreadLabel(summary.buckets)}
+        aria-label={spreadSummary(summary.buckets)}
         data-testid="review-spread"
       >
         {spreadBars(summary.buckets).map((bar) => (
           <div
-            key={bar.label}
+            key={bar.halfStars}
             className="bd-review-spread-col"
             title={bar.title}
           >
             <div className="bd-review-spread-track">
-              {bar.readers > 0 ? (
+              {bar.readers === 0 ? (
+                <div className="bd-review-spread-slot" />
+              ) : (
                 <div
                   className="bd-review-spread-bar"
-                  data-testid="review-spread-bar"
                   style={{ height: `${bar.heightPct}%` }}
-                >
-                  <span className="mono bd-review-spread-value">
-                    {bar.readers}
-                  </span>
-                </div>
-              ) : (
-                <div className="bd-review-spread-slot" />
+                />
               )}
             </div>
             <div className="mono bd-review-spread-label">{bar.label}</div>
           </div>
         ))}
       </div>
-    </section>
+    </div>
   );
 }
 
-/** Stop 03: your review first, then the household's rating and every other reader's review. */
+/** Stop 03: the counts kicker over your review, the household summary and every other reader's review. */
 export function ReviewsStop({ book }: { book: BookDetail }) {
   const reviews = useQuery(reviewsQuery(book.uuid));
+  // Unknown reads as not finished, so spoilers stay shut.
+  const status = useQuery(readStatusQuery(book.uuid));
+  const finished = status.data?.status === "finished";
   const data = reviews.data;
   return (
-    <div id="reviews" className="bdmq-reviews" data-testid="reviews-section">
+    <>
       <div className="bdmq-k" data-testid="reviews-kicker">
         {data ? (
           reviewsKicker(data)
@@ -78,30 +77,41 @@ export function ReviewsStop({ book }: { book: BookDetail }) {
           <span className="ld-sheen">Counting reviews</span>
         )}
       </div>
-      {data ? (
-        <>
-          <ReviewCard uuid={book.uuid} mine={data.mine} />
-          {data.summary && <HouseholdSummary summary={data.summary} />}
-          <OtherReviews uuid={book.uuid} others={data.others} />
-        </>
-      ) : reviews.isError ? (
-        <p className="bdmq-quiet-body" role="alert">
-          Couldn't load the reviews
-          <button
-            type="button"
-            className="bdmq-synclink"
-            onClick={() => reviews.refetch()}
-          >
-            Retry
-          </button>
-        </p>
-      ) : (
-        <Loading
-          kind="section"
-          className="start"
-          label="Gathering the reviews"
-        />
-      )}
-    </div>
+      <div id="reviews" className="bd-reviews" data-testid="reviews-section">
+        {data ? (
+          <>
+            <ReviewCard uuid={book.uuid} mine={data.mine} />
+            {/* A write's follow-up read moves the summary and the others, so they dim while it runs. */}
+            <Stale stale={reviews.isFetching} className="bd-review-household">
+              {data.summary && <ReviewSummaryBlock summary={data.summary} />}
+              <OtherReviews others={data.others} finished={finished} />
+            </Stale>
+            {reviews.isRefetchError && (
+              <p
+                className="mono bd-review-stale-note"
+                role="status"
+                data-testid="reviews-refresh-failed"
+              >
+                Couldn’t refresh the other readers’ ratings — reopen the book to
+                see them.
+              </p>
+            )}
+          </>
+        ) : reviews.isError ? (
+          <div className="bd-journal-empty card" data-testid="reviews-error">
+            <p className="mono">
+              The reviews didn’t load — try reopening the book.
+            </p>
+          </div>
+        ) : (
+          <Loading
+            kind="section"
+            className="start"
+            testId="reviews-loading"
+            label="Gathering the reviews"
+          />
+        )}
+      </div>
+    </>
   );
 }

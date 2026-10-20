@@ -19,23 +19,26 @@ import {
 import { aWireStatsSummary } from "../../testing/statsHandlers";
 import {
   aWireBook,
+  aWireBookReviews,
   aWireOtherReview,
   aWireReadStatus,
   aWireReview,
 } from "../../testing/wire";
 import { shelvesQuery } from "./queries";
 import { ReviewsStop } from "./ReviewsStop";
-// The page brings the stop's styles; the clamp behind Read more needs them.
+// The page brings the stop's styles.
 import "./BookDetail.css";
 
 const SPOILER_HTML =
   '<p>The captain <span class="spoiler" role="button" tabindex="0" aria-expanded="false" aria-label="Reveal spoiler"><span class="spoiler-text" aria-hidden="true">was the signal</span></span> all along.</p>';
 
-const LONG_HTML = Array.from(
+const PARAGRAPHS = Array.from(
   { length: 6 },
   (_, i) =>
-    `<p>Paragraph ${i + 1}: the station creaks, the crew argues, and the answer from the dark keeps arriving a little earlier each night.</p>`,
-).join("");
+    `Paragraph ${i + 1}: the station creaks, the crew argues, and the answer from the dark keeps arriving a little earlier each night.`,
+);
+const LONG_MD = PARAGRAPHS.join("\n\n");
+const LONG_HTML = PARAGRAPHS.map((p) => `<p>${p}</p>`).join("");
 
 const GRACE = aWireOtherReview({
   user_id: 7,
@@ -61,7 +64,7 @@ const TOVE = aWireOtherReview({
   user_id: 9,
   username: "tove",
   stars: null,
-  body_md: "long",
+  body_md: LONG_MD,
   body_html: LONG_HTML,
   created_at: 1_760_200_000,
 });
@@ -114,51 +117,43 @@ export const Loading: Story = {
     await expect(canvas.getByTestId("reviews-kicker")).toHaveTextContent(
       "Counting reviews",
     );
-    await expect(canvas.getByText("Gathering the reviews")).toBeInTheDocument();
-    await expect(canvas.queryByTestId("review-mine")).not.toBeInTheDocument();
+    await expect(canvas.getByTestId("reviews-loading")).toHaveTextContent(
+      "Gathering the reviews",
+    );
+    await expect(canvas.queryByTestId("my-review")).not.toBeInTheDocument();
   },
 };
 
-export const UnreadableReviewsOfferRetry: Story = {
+export const UnreadableReviewsSaySo: Story = {
   beforeEach({ msw }) {
-    let reads = 0;
-    msw.use(
-      http.get("/api/reviews/:uuid", () =>
-        reads++ === 0
-          ? new HttpResponse("failed with 500", { status: 500 })
-          : HttpResponse.json({ mine: null, others: [], summary: null }),
-      ),
-    );
+    msw.use(failing("get", "/api/reviews/:uuid", 500));
   },
-  play: async ({ canvas, userEvent }) => {
-    await expect(await canvas.findByRole("alert")).toHaveTextContent(
-      "Couldn't load the reviews",
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("reviews-error")).toHaveTextContent(
+      "The reviews didn’t load — try reopening the book.",
     );
-
-    await userEvent.click(canvas.getByRole("button", { name: "Retry" }));
-
-    await expect(await canvas.findByTestId("review-mine")).toBeInTheDocument();
+    await expect(canvas.queryByTestId("my-review")).not.toBeInTheDocument();
   },
 };
 
 export const NobodyHasReviewedIt: Story = {
   play: async ({ canvas }) => {
-    await canvas.findByTestId("review-mine");
+    await canvas.findByTestId("my-review");
     await expect(canvas.getByTestId("reviews-kicker")).toHaveTextContent(
       "No reviews yet",
     );
-    await expect(canvas.getByTestId("rating-meta")).toHaveTextContent(
+    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
       "Not rated yet",
     );
     await expect(canvas.getByTestId("review-write")).toHaveTextContent(
-      "Write a review",
+      "✎ Write review",
     );
     await expect(canvas.queryByTestId("review-delete")).not.toBeInTheDocument();
     await expect(
       canvas.queryByTestId("review-summary"),
     ).not.toBeInTheDocument();
-    await expect(canvas.getByTestId("reviews-others-empty")).toHaveTextContent(
-      "No other reader has rated or reviewed it yet.",
+    await expect(canvas.getByTestId("other-reviews-empty")).toHaveTextContent(
+      "No one else has rated or reviewed this book yet.",
     );
   },
 };
@@ -166,46 +161,48 @@ export const NobodyHasReviewedIt: Story = {
 export const EveryoneHasHadTheirSay: Story = {
   beforeEach: withReviews(MINE, [GRACE, LINUS, TOVE, MARGARET, ALAN]),
   play: async ({ canvas }) => {
-    const mine = await canvas.findByTestId("review-mine");
+    const mine = await canvas.findByRole("region", { name: "Your review" });
     await expect(canvas.getByTestId("reviews-kicker")).toHaveTextContent(
-      "6 readers · 4 with a review",
-    );
-    await expect(within(mine).getByTestId("rating-meta")).toHaveTextContent(
-      "rated 2 hours ago · 4 of 5",
+      "4 reviews · 5 ratings",
     );
     await expect(
-      within(mine).getByTestId("review-mine-text"),
-    ).toHaveTextContent("Better on the second read.");
-    await expect(within(mine).getByTestId("review-notes")).toHaveTextContent(
-      "only you can see these",
+      within(mine).getByTestId("review-stars-meta"),
+    ).toHaveTextContent("rated 2 hours ago · 4 of 5");
+    await expect(within(mine).getByTestId("my-review-text")).toHaveTextContent(
+      "Better on the second read.",
+    );
+    await expect(within(mine).getByTestId("my-review-notes")).toHaveTextContent(
+      "Private notes · only you can see these",
     );
     await expect(within(mine).getByTestId("review-write")).toHaveTextContent(
-      "Edit review",
+      "✎ Edit review",
     );
 
     const summary = canvas.getByTestId("review-summary");
     await expect(
-      within(summary).getByTestId("review-average"),
+      within(summary).getByTestId("review-summary-average"),
     ).toHaveTextContent("3.8");
-    await expect(summary).toHaveTextContent("5 readers rated it");
+    await expect(
+      within(summary).getByTestId("review-summary-count"),
+    ).toHaveTextContent("5 readers in the household");
     await expect(
       within(summary).getByTestId("review-spread"),
     ).toHaveAccessibleName(
-      "1 reader gave 2.5 stars, 1 gave 3 stars, 1 gave 4 stars, 1 gave 4.5 stars, 1 gave 5 stars",
+      "Ratings by stars: 1 reader at 2.5, 1 reader at 3, 1 reader at 4, 1 reader at 4.5, 1 reader at 5.",
     );
 
-    const written = within(canvas.getByTestId("reviews-others")).getAllByTestId(
-      "review",
+    const cards = within(canvas.getByTestId("other-reviews")).getAllByTestId(
+      "review-card",
     );
-    await expect(written).toHaveLength(3);
-    await expect(written[0]).toHaveTextContent("grace");
+    await expect(cards).toHaveLength(3);
+    await expect(cards[0]).toHaveTextContent("grace");
     await expect(
-      within(written[0] as HTMLElement).getByRole("img", {
+      within(cards[0] as HTMLElement).getByRole("img", {
         name: "4.5 out of 5 stars",
       }),
     ).toBeInTheDocument();
 
-    const row = canvas.getByRole("list", { name: "Rated without a review" });
+    const row = canvas.getByRole("list", { name: "Ratings without a review" });
     const items = within(row).getAllByRole("listitem");
     await expect(items).toHaveLength(2);
     await expect(items[0]).toHaveTextContent("margaret");
@@ -222,26 +219,25 @@ export const EveryoneHasHadTheirSayInLight: Story = {
   globals: { theme: "light" },
 };
 
-export const ASpoilerStaysFoldedUntilShown: Story = {
+export const ASpoilerStaysVeiledUntilShown: Story = {
   beforeEach: withReviews(null, [LINUS]),
   play: async ({ canvas, userEvent }) => {
-    const review = await canvas.findByTestId("review");
+    const card = await canvas.findByTestId("review-card");
     // The stars are never a spoiler.
     await expect(
-      within(review).getByRole("img", { name: "3 out of 5 stars" }),
+      within(card).getByRole("img", { name: "3 out of 5 stars" }),
     ).toBeInTheDocument();
+    await expect(card).toHaveTextContent("spoilers");
     await expect(
-      within(review).getByTestId("review-spoiler-cover"),
-    ).toHaveTextContent("Contains spoilers");
+      within(card).getByTestId("review-spoiler-veil"),
+    ).toHaveTextContent("This review gives away the story.");
     await expect(
-      within(review).queryByTestId("review-text"),
+      within(card).queryByTestId("review-text"),
     ).not.toBeInTheDocument();
 
-    await userEvent.click(
-      within(review).getByRole("button", { name: "Show review" }),
-    );
+    await userEvent.click(within(card).getByTestId("review-spoiler-reveal"));
 
-    await expect(within(review).getByTestId("review-text")).toHaveTextContent(
+    await expect(within(card).getByTestId("review-text")).toHaveTextContent(
       "all along",
     );
   },
@@ -255,43 +251,48 @@ export const ASpoilerOpensForAReaderWhoFinished: Story = {
     );
   },
   play: async ({ canvas }) => {
-    const review = await canvas.findByTestId("review");
+    const card = await canvas.findByTestId("review-card");
     await waitFor(() =>
-      expect(within(review).getByTestId("review-text")).toHaveTextContent(
+      expect(within(card).getByTestId("review-text")).toHaveTextContent(
         "all along",
       ),
     );
     await expect(
-      within(review).queryByTestId("review-spoiler-cover"),
+      within(card).queryByTestId("review-spoiler-veil"),
     ).not.toBeInTheDocument();
   },
 };
 
-export const ALongReviewFoldsBehindReadMore: Story = {
+export const ALongReviewOpensClippedBehindReadMore: Story = {
   beforeEach: withReviews(null, [TOVE]),
   play: async ({ canvas, userEvent }) => {
-    const review = await canvas.findByTestId("review");
-    const more = await within(review).findByRole("button", {
-      name: "Read more",
-    });
-    await expect(more).toHaveAttribute("aria-expanded", "false");
+    const card = await canvas.findByTestId("review-card");
+    await expect(within(card).getByTestId("review-text")).toHaveClass(
+      "is-clamped",
+    );
     // Rated nothing, so the byline carries no stars.
-    await expect(within(review).queryByRole("img")).not.toBeInTheDocument();
+    await expect(within(card).queryByRole("img")).not.toBeInTheDocument();
 
-    await userEvent.click(more);
+    await userEvent.click(within(card).getByTestId("review-read-more"));
 
-    await expect(more).toHaveAttribute("aria-expanded", "true");
-    await expect(more).toHaveTextContent("Show less");
+    await expect(within(card).getByTestId("review-text")).not.toHaveClass(
+      "is-clamped",
+    );
+    await expect(
+      within(card).queryByTestId("review-read-more"),
+    ).not.toBeInTheDocument();
   },
 };
 
 export const AShortReviewHasNoReadMore: Story = {
   beforeEach: withReviews(null, [GRACE]),
   play: async ({ canvas }) => {
-    const review = await canvas.findByTestId("review");
-    await expect(within(review).getByTestId("review-text")).toBeVisible();
+    const card = await canvas.findByTestId("review-card");
+    await expect(within(card).getByTestId("review-text")).not.toHaveClass(
+      "is-clamped",
+    );
     await expect(
-      within(review).queryByRole("button", { name: "Read more" }),
+      within(card).queryByTestId("review-read-more"),
     ).not.toBeInTheDocument();
   },
 };
@@ -328,9 +329,9 @@ export const ATapSavesTheStarsAndRefreshesWhatSumsThem: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    await expect(await canvas.findByTestId("rating-meta")).toHaveTextContent(
-      "Not rated yet",
-    );
+    await expect(
+      await canvas.findByTestId("review-stars-meta"),
+    ).toHaveTextContent("Not rated yet");
     await expect(
       canvas.queryByTestId("review-summary"),
     ).not.toBeInTheDocument();
@@ -340,13 +341,13 @@ export const ATapSavesTheStarsAndRefreshesWhatSumsThem: Story = {
     );
 
     await waitFor(() => expect(writes).toEqual([{ stars: 3.5 }]));
-    await expect(canvas.getByTestId("rating-meta")).toHaveTextContent(
+    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
       "rated just now · 3.5 of 5",
     );
-    // Two readers have now rated it, so the reread brings the summary.
-    await expect(await canvas.findByTestId("review-average")).toHaveTextContent(
-      "4.2",
-    );
+    // Two readers have now rated it, so the re-read brings the summary.
+    await expect(
+      await canvas.findByTestId("review-summary-average"),
+    ).toHaveTextContent("4.3");
     await waitFor(() => expect(shelfReads).toBe(2));
     await waitFor(() => expect(statsReads).toBe(2));
   },
@@ -360,13 +361,13 @@ export const TappingTheCurrentValueClearsOnlyTheStars: Story = {
     );
 
     await waitFor(() => expect(writes).toEqual([{ stars: null }]));
-    await expect(canvas.getByTestId("rating-meta")).toHaveTextContent(
+    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
       "Not rated yet",
     );
-    await expect(canvas.getByTestId("review-mine-text")).toHaveTextContent(
+    await expect(canvas.getByTestId("my-review-text")).toHaveTextContent(
       "Better on the second read.",
     );
-    await expect(canvas.getByTestId("review-notes")).toBeInTheDocument();
+    await expect(canvas.getByTestId("my-review-notes")).toBeInTheDocument();
   },
 };
 
@@ -383,9 +384,11 @@ export const ARefusedTapPutsTheStarsBack: Story = {
       await canvas.findByRole("button", { name: "Rate 5 stars" }),
     );
 
-    await expect(
-      await canvas.findByText("Couldn't save — try again"),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
+        "Couldn’t save your rating — try again",
+      ),
+    );
     await expect(
       canvas.getByRole("button", { name: "Clear your 2-star rating" }),
     ).toBeInTheDocument();
@@ -417,7 +420,41 @@ export const TheNewestTapWinsWhenAnOlderOneLandsLate: Story = {
 
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    await expect(canvas.getByTestId("rating-meta")).toHaveTextContent("5 of 5");
+    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
+      "5 of 5",
+    );
+  },
+};
+
+export const AFailedReReadSaysTheFiguresAreOld: Story = {
+  beforeEach({ msw }) {
+    let reads = 0;
+    msw.use(
+      http.get("/api/reviews/:uuid", () =>
+        reads++ === 0
+          ? HttpResponse.json(aWireBookReviews({ others: [MARGARET, ALAN] }))
+          : new HttpResponse("failed with 500", { status: 500 }),
+      ),
+      http.patch("/api/reviews/:uuid", () =>
+        HttpResponse.json(aWireReview({ stars: 4, rated_at: nowSecs() })),
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Rate 4 stars" }),
+    );
+
+    await expect(
+      await canvas.findByTestId("reviews-refresh-failed"),
+    ).toHaveTextContent(
+      "Couldn’t refresh the other readers’ ratings — reopen the book to see them.",
+    );
+    // Your saved stars and the figures from before stay on screen.
+    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
+      "4 of 5",
+    );
+    await expect(canvas.getByTestId("review-stars-only")).toBeInTheDocument();
   },
 };
 
@@ -437,7 +474,7 @@ export const WritingAReviewSavesOnSave: Story = {
     // Nothing is sent while typing.
     await expect(writes).toEqual([]);
 
-    await userEvent.click(within(composer).getByTestId("review-composer-save"));
+    await userEvent.click(within(composer).getByTestId("review-save"));
 
     await waitFor(() =>
       expect(writes).toEqual([
@@ -447,14 +484,31 @@ export const WritingAReviewSavesOnSave: Story = {
     await waitFor(() =>
       expect(canvas.queryByTestId("review-composer")).not.toBeInTheDocument(),
     );
-    await expect(canvas.getByTestId("review-mine-text")).toHaveTextContent(
+    await expect(canvas.getByTestId("my-review-text")).toHaveTextContent(
       "Worth it.",
     );
-    await expect(canvas.getByTestId("review-notes")).toHaveTextContent(
+    await expect(canvas.getByTestId("my-review-notes")).toHaveTextContent(
       "Buy the hardback.",
     );
     // The stars were left alone.
-    await expect(canvas.getByTestId("rating-meta")).toHaveTextContent("4 of 5");
+    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
+      "4 of 5",
+    );
+  },
+};
+
+export const SavingWithNothingChangedJustCloses: Story = {
+  beforeEach: withReviews(MINE),
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("review-write"));
+    const composer = await canvas.findByTestId("review-composer");
+
+    await userEvent.click(within(composer).getByTestId("review-save"));
+
+    await waitFor(() =>
+      expect(canvas.queryByTestId("review-composer")).not.toBeInTheDocument(),
+    );
+    await expect(writes).toEqual([]);
   },
 };
 
@@ -469,7 +523,7 @@ export const ARefusedSaveKeepsTheComposerOpen: Story = {
       within(composer).getByRole("textbox", { name: "Review text" }),
       "Don't lose me.",
     );
-    await userEvent.click(within(composer).getByTestId("review-composer-save"));
+    await userEvent.click(within(composer).getByTestId("review-save"));
 
     await waitFor(async () =>
       expect(await within(composer).findByRole("alert")).toHaveTextContent(
@@ -479,9 +533,9 @@ export const ARefusedSaveKeepsTheComposerOpen: Story = {
     await expect(
       within(composer).getByRole("textbox", { name: "Review text" }),
     ).toHaveTextContent("Don't lose me.");
-    // The card went back to what the server holds.
+    // Text is never drawn before the server has it.
     await expect(
-      canvas.queryByTestId("review-mine-text"),
+      canvas.queryByTestId("my-review-text"),
     ).not.toBeInTheDocument();
   },
 };
@@ -501,6 +555,31 @@ export const TheSpoilerBoxSavesAtOnce: Story = {
   },
 };
 
+export const ARefusedSpoilerFlagIsPutBack: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      failing("patch", "/api/reviews/:uuid", 500),
+      ...reviewHandlers({ mine: MINE }, writes),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const box = await canvas.findByRole("checkbox", {
+      name: "Contains spoilers",
+    });
+
+    await userEvent.click(box);
+
+    await expect(
+      await canvas.findByTestId("review-spoiler-error"),
+    ).toHaveTextContent("Couldn’t save — try again");
+    await expect(box).not.toBeChecked();
+    // The stars line speaks only for the stars.
+    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
+      "4 of 5",
+    );
+  },
+};
+
 export const NoSpoilerBoxWithoutText: Story = {
   beforeEach: withReviews(aWireReview({ stars: 3 })),
   play: async ({ canvas }) => {
@@ -517,12 +596,10 @@ export const DeleteAsksThenRemovesEverything: Story = {
     await userEvent.click(await canvas.findByTestId("review-delete"));
     const dialog = await canvas.findByTestId("review-delete-modal");
     await expect(dialog).toHaveTextContent(
-      "Your stars, your review and your private notes are removed for good.",
+      "This removes your stars, your review and your private notes for good.",
     );
 
-    await userEvent.click(
-      within(dialog).getByTestId("review-delete-modal-confirm"),
-    );
+    await userEvent.click(within(dialog).getByTestId("review-delete-confirm"));
 
     await waitFor(() => expect(writes).toEqual(["delete"]));
     await waitFor(() =>
@@ -530,12 +607,14 @@ export const DeleteAsksThenRemovesEverything: Story = {
         canvas.queryByTestId("review-delete-modal"),
       ).not.toBeInTheDocument(),
     );
-    await expect(canvas.getByTestId("rating-meta")).toHaveTextContent(
+    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
       "Not rated yet",
     );
-    await expect(canvas.queryByTestId("review-notes")).not.toBeInTheDocument();
+    await expect(
+      canvas.queryByTestId("my-review-notes"),
+    ).not.toBeInTheDocument();
     await expect(canvas.getByTestId("review-write")).toHaveTextContent(
-      "Write a review",
+      "✎ Write review",
     );
   },
 };
@@ -550,14 +629,12 @@ export const ARefusedDeleteKeepsTheReview: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByTestId("review-delete"));
     const dialog = await canvas.findByTestId("review-delete-modal");
-    await userEvent.click(
-      within(dialog).getByTestId("review-delete-modal-confirm"),
-    );
+    await userEvent.click(within(dialog).getByTestId("review-delete-confirm"));
 
-    await expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "failed with 500",
-    );
-    await expect(canvas.getByTestId("review-mine-text")).toHaveTextContent(
+    await expect(
+      await within(dialog).findByTestId("review-delete-error"),
+    ).toHaveTextContent("failed with 500");
+    await expect(canvas.getByTestId("my-review-text")).toHaveTextContent(
       "Better on the second read.",
     );
   },

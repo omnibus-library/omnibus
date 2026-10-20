@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { halfStarLabel, ratingAfterClick, ratingMeta } from "./rating";
+import { halfStarLabel, ratingAfterClick, starsMeta } from "./rating";
 
 describe("halfStarLabel", () => {
   it.each([
@@ -24,33 +24,39 @@ describe("ratingAfterClick", () => {
   });
 });
 
-describe("ratingMeta", () => {
-  const review = { stars: 4, ratedAt: 1_000 };
+describe("starsMeta", () => {
+  const review = { stars: 4, ratedAt: 1_000, updatedAt: 1_500 };
 
   it("says Not rated yet without a review, or with a review that has no stars", () => {
-    expect(ratingMeta(false, null, 2_000)).toBe("Not rated yet");
-    expect(ratingMeta(false, undefined, 2_000)).toBe("Not rated yet");
-    expect(ratingMeta(false, { stars: null, ratedAt: null }, 2_000)).toBe(
-      "Not rated yet",
-    );
+    expect(starsMeta(2_000, false, null)).toBe("Not rated yet");
+    expect(starsMeta(2_000, false, undefined)).toBe("Not rated yet");
+    expect(
+      starsMeta(2_000, false, { stars: null, ratedAt: null, updatedAt: 1 }),
+    ).toBe("Not rated yet");
   });
 
   it("gives the age and value of the stars", () => {
-    expect(ratingMeta(false, review, 1_000 + 3 * 3600)).toBe(
+    expect(starsMeta(1_000 + 3 * 3600, false, review)).toBe(
       "rated 3 hours ago · 4 of 5",
     );
-    expect(ratingMeta(false, { ...review, stars: 4.5 }, 1_010)).toBe(
+    expect(starsMeta(1_010, false, { ...review, stars: 4.5 })).toBe(
       "rated just now · 4.5 of 5",
     );
   });
 
-  it("gives the value alone when the stars carry no time", () => {
-    expect(ratingMeta(false, { stars: 2, ratedAt: null }, 1_000)).toBe(
-      "2 of 5",
-    );
+  it("dates the stars by the last change when they carry no time of their own", () => {
+    expect(
+      starsMeta(1_500 + 120, false, {
+        stars: 2,
+        ratedAt: null,
+        updatedAt: 1_500,
+      }),
+    ).toBe("rated 2 minutes ago · 2 of 5");
   });
 
-  it("puts a failure before everything else", () => {
-    expect(ratingMeta(true, review, 2_000)).toBe("Couldn't save — try again");
+  it("puts a refused save before everything else", () => {
+    expect(starsMeta(2_000, true, review)).toBe(
+      "Couldn’t save your rating — try again",
+    );
   });
 });
