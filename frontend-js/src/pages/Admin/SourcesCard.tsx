@@ -124,9 +124,10 @@ export function SourcesCard() {
   const edit = (field: keyof Fields) => (value: string) =>
     setFields((current) => ({ ...current, [field]: value }));
 
+  const loadFailed = settings.isError && settings.data === undefined;
   const shown: Status | null =
     status ??
-    (settings.isError
+    (loadFailed
       ? {
           text: `Couldn’t load the saved settings: ${settings.error.message}`,
           isError: true,
@@ -213,7 +214,7 @@ export function SourcesCard() {
           )}
         </div>
         <div className="settings-actions">
-          {settings.isError && (
+          {loadFailed && (
             <Button
               variant="ghost"
               data-testid="library-retry"

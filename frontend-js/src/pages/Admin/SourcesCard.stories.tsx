@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor } from "storybook/test";
-import type { Settings } from "../../api";
+import { type Settings, settingsQuery } from "../../api";
+import { storyClient } from "../../testing/AppHarness";
 import {
   aWireLibraryContents,
   aWireLibrarySection,
@@ -97,6 +98,35 @@ export const TryAgainReadsTheSettingsAgain: Story = {
     await expect(
       canvas.getByRole("button", { name: "Save library settings" }),
     ).toBeEnabled();
+  },
+};
+
+export const KeepsTheLoadedSettingsWhenALaterReadFails: Story = {
+  beforeEach({ msw }) {
+    let reads = 0;
+    msw.use(
+      http.get("/api/settings", () =>
+        ++reads === 1
+          ? HttpResponse.json(aWireSettings())
+          : new HttpResponse("failed with 500", { status: 500 }),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    const ebook = canvas.getByLabelText("Ebook library path");
+    await waitFor(() => expect(ebook).toHaveValue("/library/ebooks"));
+    await storyClient().refetchQueries({ queryKey: settingsQuery.queryKey });
+
+    await waitFor(() =>
+      expect(storyClient().getQueryState(settingsQuery.queryKey)?.status).toBe(
+        "error",
+      ),
+    );
+    await expect(canvas.getByTestId("settings-status")).toBeEmptyDOMElement();
+    await expect(
+      canvas.queryByRole("button", { name: "Try again" }),
+    ).not.toBeInTheDocument();
+    await expect(ebook).toHaveValue("/library/ebooks");
   },
 };
 
