@@ -156,7 +156,7 @@ struct HouseholdRatingLine: View {
 
 /// Everything under the Reviews kicker. `uncapped` is the flow and the
 /// all-reviews sheet; capped is the marquee's Stats stop, one screenful that
-/// keeps your card and hands everyone else's to the sheet.
+/// keeps your card and hands everyone else's to the sheet from the kicker row.
 struct ReviewsBlock: View {
     let book: Book
     let model: BookDetailModel
@@ -164,14 +164,23 @@ struct ReviewsBlock: View {
     /// Opens the all-reviews sheet; only the capped block offers it.
     var onAll: (() -> Void)?
 
+    @Environment(\.palette) private var palette
     @State private var composing: ReviewComposerTarget?
 
     private var reviews: BookReviews { model.reviews ?? .empty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            DetailKicker(text: DetailReviews.kicker(othersCount: reviews.others.count))
-                .id(DetailReviews.anchorID)
+            HStack(alignment: .firstTextBaseline) {
+                DetailKicker(text: DetailReviews.kicker(othersCount: reviews.others.count))
+                Spacer(minLength: Spacing.sm)
+                // Up here rather than at the foot: the stop is one screen, and
+                // on a small one its foot is what fades away.
+                if !uncapped, let onAll, handsOff {
+                    allPill(onAll)
+                }
+            }
+            .id(DetailReviews.anchorID)
 
             MyReviewCard(
                 review: reviews.mine,
@@ -189,11 +198,6 @@ struct ReviewsBlock: View {
 
             if uncapped {
                 others
-            } else if let onAll, handsOff {
-                MoreRowButton(
-                    label: DetailReviews.allLabel(othersCount: reviews.others.count),
-                    identifier: "reviews-all"
-                ) { onAll() }
             }
         }
         .sheet(item: $composing) { target in
@@ -220,6 +224,34 @@ struct ReviewsBlock: View {
             StarsOnlyRow(reviews: starsOnly)
                 .padding(.top, written.isEmpty ? 22 : 16)
         }
+    }
+
+    /// The capped stop's hand-off to the sheet, styled as the Journals stop's
+    /// Write pill; its touch target runs past the pill to 44pt.
+    private func allPill(_ onAll: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            onAll()
+        } label: {
+            HStack(spacing: 5) {
+                Text("ALL")
+                    .font(.monoUI(9.5))
+                    .tracking(1.3)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .foregroundStyle(palette.accentColor)
+            .padding(.horizontal, 13)
+            .frame(height: 30)
+            .background(Capsule().fill(palette.accentColor.opacity(0.14)))
+            .overlay(Capsule().strokeBorder(palette.accentColor.opacity(0.45), lineWidth: 0.5))
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .padding(.vertical, -7)
+        .accessibilityLabel(DetailReviews.allLabel(othersCount: reviews.others.count))
+        .accessibilityIdentifier("reviews-all")
     }
 
     /// Whether the capped stop leaves anything for the sheet: other readers,
@@ -261,6 +293,31 @@ struct MyReviewCard: View {
     private var notes: String? { review?.notesMd.flatMap { $0.nilIfBlank == nil ? nil : $0 } }
 
     var body: some View {
+        Group {
+            if uncapped {
+                card(text: true, notes: true)
+            } else {
+                // The marquee's Stats stop is one screen. On a short one the
+                // card gives up its notes, then its text, rather than running
+                // under the swipe hint — the sheet behind ALL keeps both.
+                ViewThatFits(in: .vertical) {
+                    card(text: true, notes: true)
+                    card(text: true, notes: false)
+                    card(text: false, notes: false)
+                }
+            }
+        }
+        .confirmationDialog(
+            "Delete your review?", isPresented: $confirmDelete, titleVisibility: .visible
+        ) {
+            Button("Delete review", role: .destructive) { onDelete() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your stars, review and private notes are all removed.")
+        }
+    }
+
+    private func card(text showsText: Bool, notes showsNotes: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             header
 
@@ -273,12 +330,12 @@ struct MyReviewCard: View {
             }
             .animation(Motion.snap, value: review?.stars)
 
-            if let body_ {
+            if showsText, let body_ {
                 text(body_)
                     .accessibilityIdentifier("review-text")
             }
 
-            if let notes {
+            if showsNotes, let notes {
                 privateNotes(notes)
             }
         }
@@ -292,14 +349,6 @@ struct MyReviewCard: View {
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .strokeBorder(palette.line2.color, lineWidth: 0.5)
         )
-        .confirmationDialog(
-            "Delete your review?", isPresented: $confirmDelete, titleVisibility: .visible
-        ) {
-            Button("Delete review", role: .destructive) { onDelete() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Your stars, review and private notes are all removed.")
-        }
     }
 
     /// Full in the flow; a few lines on the marquee's one-screen stop, where

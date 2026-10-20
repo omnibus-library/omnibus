@@ -196,6 +196,21 @@ enum DetailRead {
         scrollStops ? lifted : true
     }
 
+    /// Whether the marquee shows its swipe hint over `stop`: Home speaks for
+    /// itself, and the last stop has nowhere to go.
+    static func showsNextHint(_ stop: DetailStop) -> Bool {
+        stop != .home && stop.rawValue < DetailStop.allCases.count - 1
+    }
+
+    /// How far above the screen's foot a marquee stop's content must end: clear
+    /// of the action bar always, and of the swipe hint — whose top is `hintTop`
+    /// up from the foot, gap included — on a stop that shows one.
+    static func stopBottomInset(
+        barClearance: CGFloat, hintTop: CGFloat, showsHint: Bool
+    ) -> CGFloat {
+        showsHint ? max(barClearance, hintTop) : barClearance
+    }
+
     /// A row shows for its chips, or for the "+" that would add the first.
     static func showsChipRow(values: [String], canEdit: Bool) -> Bool {
         !values.isEmpty || canEdit

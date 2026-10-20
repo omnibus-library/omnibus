@@ -289,6 +289,10 @@ struct BookDetailView: View {
     static let artHeight: CGFloat = 470
     /// Clearance the panel keeps for the action bar.
     static let barClearance: CGFloat = 108
+    /// Where the marquee's swipe hint sits, above the safe-area bottom.
+    static let nextHintLift: CGFloat = barClearance - 24
+    /// The hint's line and the gap a stop's content keeps above it.
+    static let nextHintClearance: CGFloat = 20
     /// Scroll id of the rest run above the Home stop — the pre-Home snap
     /// target the two-position panel rests at.
     static let restMarkerID = -1
@@ -650,8 +654,10 @@ struct BookDetailView: View {
                 DetailArtLayer(book: book, page: page, lift: lift)
                     .ignoresSafeArea()
                 if usesScrollStops {
-                    snapScroller(book, restTop: restTop)
-                        .ignoresSafeArea()
+                    snapScroller(
+                        book, restTop: restTop, safeBottom: geometry.safeAreaInsets.bottom
+                    )
+                    .ignoresSafeArea()
                 } else {
                     flowScroller(book, restTop: restTop)
                         .ignoresSafeArea()
@@ -676,7 +682,9 @@ struct BookDetailView: View {
         }
     }
 
-    private func snapScroller(_ book: Book, restTop: CGFloat) -> some View {
+    private func snapScroller(
+        _ book: Book, restTop: CGFloat, safeBottom: CGFloat
+    ) -> some View {
         ScrollView(.vertical) {
             VStack(spacing: 0) {
                 // The rest run: scrolling it away is what lifts the panel,
@@ -685,7 +693,7 @@ struct BookDetailView: View {
                     .frame(height: restTop)
                     .id(Self.restMarkerID)
                 ForEach(DetailStop.allCases) { stop in
-                    stopSection(stop, book)
+                    stopSection(stop, book, safeBottom: safeBottom)
                         .id(stop.rawValue)
                 }
             }
@@ -719,13 +727,18 @@ struct BookDetailView: View {
         }
     }
 
-    private func stopSection(_ stop: DetailStop, _ book: Book) -> some View {
-        stopPanel(stop, book)
+    private func stopSection(
+        _ stop: DetailStop, _ book: Book, safeBottom: CGFloat
+    ) -> some View {
+        stopPanel(stop, book, safeBottom: safeBottom)
             .containerRelativeFrame(.vertical)
     }
 
-    private func stopPanel(_ stop: DetailStop, _ book: Book) -> some View {
+    private func stopPanel(
+        _ stop: DetailStop, _ book: Book, safeBottom: CGFloat
+    ) -> some View {
         let isHome = stop == .home
+        let showsHint = DetailRead.showsNextHint(stop)
 
         return VStack(alignment: .leading, spacing: 0) {
             if isHome {
@@ -733,10 +746,18 @@ struct BookDetailView: View {
             } else {
                 StopLabel(stop: stop)
             }
+            // Offered the whole height before the spacer takes any, so a stop
+            // that adapts to its room (the capped Reviews card) sees all of it.
             stopContent(stop, book)
+                .layoutPriority(1)
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // `minHeight: 0` holds the frame to the stop's area even when the
+        // content needs more, so the fade below cuts it there.
+        .frame(
+            maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading
+        )
+        .modifier(StopOverflowFade(active: showsHint))
         .padding(EdgeInsets(
             // A full stop's label must clear the chrome discs, which end
             // ~105pt below the top edge on current devices. Home earns that
@@ -744,7 +765,13 @@ struct BookDetailView: View {
             // discs.
             top: isHome ? 14 + 114 * lift : 128,
             leading: 22,
-            bottom: Self.barClearance,
+            // Under the swipe hint, not just the bar: on a device with a home
+            // indicator the hint sits inside the bar's clearance.
+            bottom: DetailRead.stopBottomInset(
+                barClearance: Self.barClearance,
+                hintTop: safeBottom + Self.nextHintLift + Self.nextHintClearance,
+                showsHint: showsHint
+            ),
             trailing: 30
         ))
         .background {
@@ -1121,7 +1148,7 @@ struct BookDetailView: View {
     /// itself and the last stop has nowhere to go.
     @ViewBuilder
     private var nextHint: some View {
-        if at > 0, at < DetailStop.allCases.count - 1,
+        if let current = DetailStop(rawValue: at), DetailRead.showsNextHint(current),
            let next = DetailStop(rawValue: at + 1)
         {
             Text("swipe up — next: \(next.name)".uppercased())
@@ -1129,7 +1156,7 @@ struct BookDetailView: View {
                 .tracking(1.4)
                 .foregroundStyle(palette.ink3Color)
                 .padding(.trailing, 34)
-                .padding(.bottom, Self.barClearance - 24)
+                .padding(.bottom, Self.nextHintLift)
                 .allowsHitTesting(false)
                 .transition(.opacity)
         }
@@ -1309,6 +1336,31 @@ struct BookDetailView: View {
         }
         guard let url else { return }
         ShareSheet.present(items: [url])
+    }
+}
+
+/// A stop's content stops where its area does — a stop that holds more than a
+/// screen fades out at its foot rather than running on under the swipe hint
+/// and the action bar. Masks vertically only: the mask runs wide, so nothing
+/// that bleeds sideways is cut.
+private struct StopOverflowFade: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        if active {
+            content.mask {
+                VStack(spacing: 0) {
+                    Rectangle()
+                    LinearGradient(
+                        colors: [.black, .clear], startPoint: .top, endPoint: .bottom
+                    )
+                    .frame(height: 16)
+                }
+                .padding(.horizontal, -60)
+            }
+        } else {
+            content
+        }
     }
 }
 
