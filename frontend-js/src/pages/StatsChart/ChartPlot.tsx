@@ -358,9 +358,11 @@ export function ChartPlot({
             onMouseEnter={() => setHovered(i)}
             onMouseDown={() => setDragStart(i)}
             onMouseUp={() => {
-              if (dragStart !== null) onBrush(dragStart, i);
-              // A drag across buckets zooms and re-lays the plot, so the hovered index would name a bucket the pointer isn't over.
-              if (dragStart !== null && dragStart !== i) setHovered(null);
+              if (dragStart !== null) {
+                onBrush(dragStart, i);
+                // A drag across buckets zooms and re-lays the plot, so the hovered index would name a bucket the pointer isn't over.
+                if (dragStart !== i) setHovered(null);
+              }
               setDragStart(null);
             }}
           />
