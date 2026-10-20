@@ -181,12 +181,13 @@ fn resolved_title<'a>(
             "the title cannot be empty".to_string(),
         ));
     }
-    if trimmed.chars().count() > MetadataOverrides::TITLE_MAX_LEN {
-        return Err(CleanupStoreError::Refused(format!(
-            "title exceeds {} characters",
-            MetadataOverrides::TITLE_MAX_LEN
-        )));
+    // The overrides validator owns the cap and its sentence, so the two cannot drift.
+    MetadataOverrides {
+        title: Some(trimmed.to_string()),
+        ..Default::default()
     }
+    .validate()
+    .map_err(CleanupStoreError::Refused)?;
     Ok(trimmed)
 }
 
