@@ -833,7 +833,8 @@ export const McpShowsADisabledEndpoint: Story = {
     });
     await expect(toggle).toHaveAttribute("aria-checked", "false");
     await expect(toggle).toBeEnabled();
-    await expect(toggle).not.toHaveClass("on", "ld-toggle-unknown");
+    await expect(toggle).not.toHaveClass("on");
+    await expect(toggle).not.toHaveClass("ld-toggle-unknown");
     await expect(canvas.getByTestId("mcp-toggle-state")).toHaveTextContent(
       "disabled",
     );

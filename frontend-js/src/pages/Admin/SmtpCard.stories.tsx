@@ -150,9 +150,9 @@ export const ShowsAnUnconfiguredRelay: Story = {
       "placeholder",
       "",
     );
-    await expect(
-      canvas.getByTestId("smtp-status").querySelector(".api-key-dot"),
-    ).not.toHaveClass("connected", "pending");
+    const dot = canvas.getByTestId("smtp-status").querySelector(".api-key-dot");
+    await expect(dot).not.toHaveClass("connected");
+    await expect(dot).not.toHaveClass("pending");
     await expect(canvas.queryByTestId("smtp-clear")).not.toBeInTheDocument();
     await expect(canvas.queryByTestId("smtp-test")).not.toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: SAVE })).toBeEnabled();
