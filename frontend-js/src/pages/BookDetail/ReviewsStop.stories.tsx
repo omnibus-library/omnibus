@@ -838,6 +838,34 @@ export const TheCardsToolsAreAPencilAndATrashCan: Story = {
   },
 };
 
+export const ClosingTheEditorHandsFocusBackToThePencil: Story = {
+  beforeEach: withReviews(MINE),
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("review-write"));
+    let composer = await canvas.findByTestId("review-composer");
+    await userEvent.click(within(composer).getByTestId("review-cancel"));
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("review-write")).toHaveFocus(),
+    );
+
+    await userEvent.click(canvas.getByTestId("review-write"));
+    composer = await canvas.findByTestId("review-composer");
+    await userEvent.type(
+      within(composer).getByRole("textbox", { name: "Private notes" }),
+      " Soon.",
+    );
+    await userEvent.click(within(composer).getByTestId("review-save"));
+
+    await waitFor(() =>
+      expect(canvas.queryByTestId("review-composer")).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(canvas.getByTestId("review-write")).toHaveFocus(),
+    );
+  },
+};
+
 export const NotesAloneMakeThePencilEdit: Story = {
   beforeEach: withReviews(
     aWireReview({

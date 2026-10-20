@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   type BookReviews,
   type BookUuid,
@@ -175,6 +175,19 @@ export function ReviewCard({
     if (write === lastTap.current) setStarsFailed(true);
   });
   const [composing, setComposing] = useState(false);
+  // The pencil unmounts while the editor is open, so the editor's own close can't
+  // hand focus back to it; the card does, once it is mounted again.
+  const pencil = useRef<HTMLButtonElement>(null);
+  const refocusPencil = useRef(false);
+  const closeComposer = () => {
+    refocusPencil.current = true;
+    setComposing(false);
+  };
+  useEffect(() => {
+    if (composing || !refocusPencil.current) return;
+    refocusPencil.current = false;
+    pencil.current?.focus();
+  }, [composing]);
   const [confirming, setConfirming] = useState(false);
   const pick = (stars: number | null) => {
     const write = { stars };
@@ -197,6 +210,7 @@ export function ReviewCard({
           {!composing && (
             <button
               type="button"
+              ref={pencil}
               className="bd-review-tool"
               data-testid="review-write"
               aria-label={writeLabel}
@@ -241,14 +255,14 @@ export function ReviewCard({
           backdropClass="bdmq-overlay bdmq-overlay-static"
           dialogClass="bdmq-ocard bdmq-ocard-composer"
           busy
-          onDismiss={() => setComposing(false)}
+          onDismiss={closeComposer}
           focusOnOpen
         >
           <ReviewComposer
             uuid={uuid}
             mine={mine}
             onSave={(change) => save.mutateAsync(change)}
-            onClose={() => setComposing(false)}
+            onClose={closeComposer}
           />
         </ConfirmModal>
       )}

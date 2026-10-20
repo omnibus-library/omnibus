@@ -4,10 +4,13 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useRef } from "react";
+import { sessionGeneration } from "../../session";
 
 /**
  * A save that shows its answer at once, then takes the server's. Only the newest write
- * settles the cache: an older one finishing late must not put its value back.
+ * settles the cache: an older one finishing late must not put its value back. A write is
+ * bound to the session that made it: once another starts, one still queued is never sent,
+ * and an answer that lands late touches no cache.
  */
 export function useOptimisticSave<TData, TVars>(
   queryKey: QueryKey,
@@ -31,28 +34,37 @@ export function useOptimisticSave<TData, TVars>(
     mutationKey: queryKey,
     // The server applies writes in arrival order, so an older write must not land after a newer one.
     mutationFn: (vars: TVars) => {
-      const run = queue.current.then(
-        () => mutationFn(vars),
-        () => mutationFn(vars),
-      );
+      const made = sessionGeneration();
+      // Not under the next account's cookie.
+      const dispatch = () => {
+        if (made !== sessionGeneration()) {
+          throw new Error("The session ended before this was saved.");
+        }
+        return mutationFn(vars);
+      };
+      const run = queue.current.then(dispatch, dispatch);
       queue.current = run.catch(() => {});
       return run;
     },
     onMutate: async (vars: TVars) => {
+      const session = sessionGeneration();
       const id = ++newest.current;
       await client.cancelQueries({ queryKey });
       const previous = client.getQueryData<TData>(queryKey) ?? null;
       client.setQueryData(queryKey, optimistic(vars));
-      return { previous, id };
+      return { previous, id, session };
     },
     onError: (_error, vars, context) => {
+      if (context?.session !== sessionGeneration()) return;
       onFailure?.(vars);
-      if (context?.id !== newest.current) return;
+      if (context.id !== newest.current) return;
       client.setQueryData(queryKey, context.previous);
       // `previous` may itself have been an older write's guess.
       void client.invalidateQueries({ queryKey });
     },
     onSuccess: (saved, vars, context) => {
+      // The previous reader's answer has no place in this session's cache.
+      if (context.session !== sessionGeneration()) return;
       // Whatever write is newest, one the server took has changed what it touches.
       const stale =
         typeof alsoInvalidate === "function"
@@ -65,7 +77,8 @@ export function useOptimisticSave<TData, TVars>(
       client.setQueryData(queryKey, saved);
     },
     // The last write to settle refetches, so a failed newest one never leaves an older guess.
-    onSettled: () => {
+    onSettled: (_data, _error, _vars, context) => {
+      if (context?.session !== sessionGeneration()) return;
       if (client.isMutating({ mutationKey: queryKey }) <= 1) {
         void client.invalidateQueries({ queryKey });
       }

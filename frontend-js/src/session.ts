@@ -33,8 +33,15 @@ export const refreshMe = (client: QueryClient) =>
 export const patchMe = (client: QueryClient, change: (user: User) => User) =>
   client.setQueryData(meQuery.queryKey, (user) => user && change(user));
 
+// Bumped whenever a session starts or ends, so a write made under an earlier one can tell.
+let generation = 0;
+
+/** Which session is current; a write that recorded an earlier one must not be sent or cached. */
+export const sessionGeneration = () => generation;
+
 /** Makes `user` the session, dropping every answer and typed write cached for whoever came before. */
 export function startSession(client: QueryClient, user: User) {
+  generation += 1;
   client.getMutationCache().clear();
   client.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
   client.setQueryData(meQuery.queryKey, user);
@@ -52,6 +59,7 @@ export function endSession(
   client: QueryClient,
   navigate: (to: string, options: { replace: true }) => void,
 ) {
+  generation += 1;
   navigate("/login", { replace: true });
   // A read still in flight would sign you back in.
   void client.cancelQueries({ queryKey: meQuery.queryKey });
