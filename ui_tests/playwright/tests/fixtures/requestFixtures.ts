@@ -14,6 +14,7 @@ import { PhysicalRequests } from "../apiRequests/PhysicalRequests";
 import { ProgressRequests } from "../apiRequests/ProgressRequests";
 import { RatingsRequests } from "../apiRequests/RatingsRequests";
 import { ReadStatusRequests } from "../apiRequests/ReadStatusRequests";
+import { ReviewsRequests } from "../apiRequests/ReviewsRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { SettingsRequests } from "../apiRequests/SettingsRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
@@ -40,6 +41,7 @@ type RequestFixtures = {
   usersRequests: UsersRequests;
   metadataKeysRequests: MetadataKeysRequests;
   ratingsRequests: RatingsRequests;
+  reviewsRequests: ReviewsRequests;
   ebooksRequests: EbooksRequests;
   journalsRequests: JournalsRequests;
   uploadsRequests: UploadsRequests;
@@ -116,6 +118,10 @@ export const test = base.extend<RequestFixtures>({
 
   ratingsRequests: async ({ request }, use) => {
     await use(new RatingsRequests(request));
+  },
+
+  reviewsRequests: async ({ request }, use) => {
+    await use(new ReviewsRequests(request));
   },
 
   ebooksRequests: async ({ request }, use) => {
