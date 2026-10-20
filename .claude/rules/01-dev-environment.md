@@ -47,7 +47,7 @@ just fixtures    # one-time download; instant no-op thereafter
 
 ## CSS structural lint
 
-`stylelint` lives in the slim shell so `just lint` (which runs `just lint-css`) and the `css-lint.yml` CI job both guard `frontend/assets/**.css` against structural errors — chiefly an unclosed `}`, which under CSS nesting silently reparents every following rule as a descendant of the unclosed selector and breaks layouts the Rust/web build never exercises. The ruleset ([`.stylelintrc.json`](../../.stylelintrc.json)) is parse/structural-only, so it errors on broken CSS but never nags about pre-existing style. Run `just lint-css` to check just the CSS.
+`stylelint` lives in the slim shell so `just lint` (which runs `just lint-css`) and the `css-lint.yml` CI job both guard `frontend/assets/**.css` against structural errors — chiefly an unclosed `}`, which under CSS nesting silently reparents every following rule as a descendant of the unclosed selector and breaks layouts the Rust/web build never exercises. The ruleset ([`.stylelintrc.json`](../../.stylelintrc.json)) is parse/structural-only, so it errors on broken CSS but never nags about pre-existing style. Its one check beyond parsing is `no-duplicate-selectors`: a selector declared twice in one stylesheet (within one at-rule context) is an error, because the later block overrides the earlier one from out of sight. Fold the two into one block only where nothing between them can change the cascade for the declarations that move; where something can, or the split is deliberate, keep it behind `/* stylelint-disable-next-line no-duplicate-selectors -- <reason> */`. Run `just lint-css` to check just the CSS.
 
 ## Code coverage
 

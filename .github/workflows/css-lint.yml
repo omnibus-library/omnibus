@@ -6,7 +6,10 @@ name: CSS Lint
 # matching — a class of bug the web build never exercises and Rust CI can't
 # see. stylelint's parser turns that into an "Unclosed block" error. The
 # ruleset is deliberately parse/structural-only (see .stylelintrc.json), so
-# this never nags about pre-existing stylistic choices.
+# this never nags about pre-existing stylistic choices. Beyond parsing it
+# checks `@import` placement and rejects duplicate selectors: a selector
+# declared twice in one stylesheet lets the later block override the earlier
+# one out of sight.
 
 on:
   # No workflow-level `paths:` filter: this workflow must run on EVERY PR so

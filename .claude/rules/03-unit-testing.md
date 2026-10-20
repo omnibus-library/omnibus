@@ -118,7 +118,8 @@ async fn get_book_propagates_db_error_when_pool_is_closed() { ... }
 ## Running
 
 ```bash
-just test                                          # full matrix (db + server + frontend(server + mobile) + shared + mcp + mock-kobo)
+just test                                          # full matrix (db + server + frontend(server + mobile) + shared + mcp + mock-kobo), then the script suites
+just test-rust                                     # the Rust matrix alone
 cargo test -p omnibus                              # /api/* REST integration tests
 cargo test -p omnibus-db                           # db + scanner + sync tests
 cargo test -p omnibus-frontend --features server   # rpc + page tests
