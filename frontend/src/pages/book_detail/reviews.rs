@@ -110,17 +110,20 @@ pub(super) fn use_book_reviews(uuid: String) -> ReviewsCtx {
         failure: use_signal(|| None),
         saved: use_rule_facts_saved(),
     };
-    use_reviews_load(uuid.clone(), server_url.clone(), ctx);
+    let reload = use_signal(|| 0u64);
+    use_reviews_load(uuid.clone(), server_url.clone(), ctx, reload);
     use_finished_load(uuid.clone(), server_url.clone(), ctx);
-    use_household_resync(uuid, server_url, ctx);
+    use_household_resync(uuid, server_url, ctx, reload);
     ctx
 }
 
-/// Load the reviews for `uuid`. A new book starts the state over and outdates
-/// every write still in flight for the last one.
-fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx) {
+/// Load the reviews for `uuid`, again on every `reload` bump. A new book
+/// starts the state over and outdates every write still in flight for the
+/// last one.
+fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx, reload: Signal<u64>) {
     let mut loaded_for = use_signal(String::new);
     use_effect(use_reactive!(|uuid| {
+        let _ = reload();
         if uuid.is_empty() {
             return;
         }
@@ -154,10 +157,11 @@ fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx) {
     }));
 }
 
-/// Re-read the household whenever the replica moves under a loaded section:
-/// on mobile a drain replayed a queued write, or a revalidation landed. The
-/// cache generation never moves on web, so there this does nothing.
-fn use_household_resync(uuid: String, server_url: String, ctx: ReviewsCtx) {
+/// Re-read whenever the replica moves under the section (on mobile a drain
+/// replayed a queued write, or a revalidation landed): the household once
+/// the reviews have loaded, the whole load again if the first read failed.
+/// The cache generation never moves on web, so there this does nothing.
+fn use_household_resync(uuid: String, server_url: String, ctx: ReviewsCtx, reload: Signal<u64>) {
     let generation = crate::use_cache_generation();
     let mut seen = use_signal(|| *generation.peek());
     use_effect(use_reactive!(|uuid| {
@@ -166,8 +170,17 @@ fn use_household_resync(uuid: String, server_url: String, ctx: ReviewsCtx) {
             return;
         }
         seen.set(now);
-        if !uuid.is_empty() && *ctx.feed.peek() == FeedState::Loaded {
-            writes::refresh_after_sync(ctx, uuid.clone(), server_url.clone());
+        if uuid.is_empty() {
+            return;
+        }
+        match *ctx.feed.peek() {
+            FeedState::Loaded => {
+                writes::refresh_after_sync(ctx, uuid.clone(), server_url.clone());
+            }
+            FeedState::Failed => {
+                writes::bump(reload);
+            }
+            FeedState::Pending => {}
         }
     }));
 }

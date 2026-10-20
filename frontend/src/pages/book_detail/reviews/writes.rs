@@ -405,8 +405,28 @@ async fn refresh_household(ctx: ReviewsCtx, uuid: &str, server_url: &str) {
 
 /// Re-read the household when the replica moved under the section (a drain
 /// or a revalidation landed), on the owner scope. The book shown stays put.
+/// Skipped while the server can't answer for the book yet (offline, or one of
+/// your writes to it queued): the drain that changes that moves the replica
+/// again, which comes back here.
 pub(super) fn refresh_after_sync(ctx: ReviewsCtx, uuid: String, server_url: String) {
     spawn_owned(ctx, async move {
-        refresh_household(ctx, &uuid, &server_url).await;
+        if !data::can_refresh_book_reviews(&uuid).await {
+            return;
+        }
+        let Some(start) = begin_refresh(ctx) else {
+            return;
+        };
+        let result = data::refresh_book_reviews(&server_url, &uuid).await;
+        settle_resync(ctx, start, result);
     });
+}
+
+/// [`settle_refresh`] for a re-read you didn't ask for: a failure leaves the
+/// figures, and any note about them, as they were.
+fn settle_resync(mut ctx: ReviewsCtx, start: RefreshStart, result: Result<BookReviews, DataError>) {
+    if result.is_ok() {
+        settle_refresh(ctx, start, result);
+    } else if still_showing(ctx, start.epoch) && *ctx.refresh_seq.peek() == start.refresh {
+        ctx.refreshing.set(false);
+    }
 }

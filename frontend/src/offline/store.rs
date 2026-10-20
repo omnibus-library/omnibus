@@ -628,9 +628,6 @@ impl Store {
     }
 }
 
-/// Log-and-continue for best-effort writes: the offline layer must never
-/// take the app down over a cache write. `pub(super)` so sibling `offline`
-/// modules (e.g. `downloads`) share this instead of swallowing the error.
 /// [`Store::ops_append`]'s job as one transaction: a failed insert rolls the
 /// delete back, so the op it would have replaced stays queued.
 fn append_replacing(
@@ -689,6 +686,9 @@ fn insert_op(
     )
 }
 
+/// Log-and-continue for best-effort writes: the offline layer must never
+/// take the app down over a cache write. `pub(super)` so sibling `offline`
+/// modules (e.g. `downloads`) share this instead of swallowing the error.
 pub(super) fn log_err<T>(r: Result<T, rusqlite::Error>) {
     if let Err(e) = r {
         tracing::warn!(error = %e, "offline store write failed");

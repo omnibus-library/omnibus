@@ -293,14 +293,23 @@ async fn refresh_book_reviews_answers_offline_without_asking_while_a_write_for_t
 }
 
 #[tokio::test]
-async fn refresh_book_reviews_returns_and_keeps_the_servers_answer() {
+async fn refresh_book_reviews_returns_the_servers_answer_and_caches_only_the_household() {
     store::init_global_for_tests();
     let _guard = test_state_lock().lock().unwrap();
     clear_ops().await;
     sync::note_online();
     let uuid = "reviews-refresh-fresh";
-    cache::put_json(&cache::keys::reviews(uuid), &reviews(None));
-    let fresh = reviews(Some(review(uuid, Some(3.5))));
+    // The replica's own review: a write landed after the server answered.
+    let kept = review(uuid, Some(2.0));
+    cache::put_json(&cache::keys::reviews(uuid), &reviews(Some(kept.clone())));
+    let fresh = BookReviews {
+        summary: Some(omnibus_shared::ReviewSummary {
+            average_stars: 3.5,
+            ratings: 2,
+            buckets: Vec::new(),
+        }),
+        ..reviews(Some(review(uuid, Some(1.0))))
+    };
     let served = fresh.clone();
     let app = axum::Router::new().route(
         "/api/reviews/reviews-refresh-fresh",
@@ -316,9 +325,14 @@ async fn refresh_book_reviews_returns_and_keeps_the_servers_answer() {
         .expect("read from the server");
 
     assert_eq!(got, fresh);
+    let cached: BookReviews = cache::get_json(&cache::keys::reviews(uuid))
+        .await
+        .expect("cached");
+    assert_eq!(cached.summary, fresh.summary, "the household is taken");
     assert_eq!(
-        cache::get_json::<BookReviews>(&cache::keys::reviews(uuid)).await,
-        Some(fresh)
+        cached.mine,
+        Some(kept),
+        "your review is the write paths' to keep"
     );
 }
 

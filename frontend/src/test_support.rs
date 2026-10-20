@@ -1,17 +1,17 @@
 //! Shared helpers for frontend tests. [`render`] wraps
 //! `dioxus::ssr::render_element` for components that render without a live
 //! runtime at the call site; [`render_in_vdom`] drives a throwaway `VirtualDom`
-//! for cases that must construct a `Signal` first. Both exist only under the
-//! `server` feature, where `dioxus::ssr` is available; the handler helpers
-//! ([`in_root_scope`] and the blank events) run on every target.
+//! for cases that must construct a `Signal` first. `dioxus::ssr` comes with the
+//! `server` feature, and native test builds also get it as a dev-dependency
+//! feature, so [`render_in_vdom`] serves mobile-only markup too; the handler
+//! helpers ([`in_root_scope`] and the blank events) run on every target.
 
 use dioxus::prelude::*;
 
 /// SSR-render an rsx `Element` to an HTML string: the workhorse for
 /// render-smoke tests (pass `rsx! { SomeComponent { ..props } }`, assert on
-/// substrings). For `mobile`-only markup, call `dioxus::ssr` directly: native
-/// test builds enable it as a dev-dependency feature, so such a test runs
-/// under `--features mobile` alone (`pages/book_detail/mobile/tests.rs`).
+/// substrings). For `mobile`-only markup use [`render_in_vdom`], which a
+/// native test build has under `--features mobile` alone.
 #[cfg(feature = "server")]
 pub fn render(element: Element) -> String {
     dioxus::ssr::render_element(element)
@@ -70,7 +70,7 @@ pub fn provide_current_user(user: Option<Option<omnibus_shared::UserSummary>>) {
 /// SSR-render a zero-prop component inside a real `VirtualDom`, for the
 /// components whose body constructs a `Signal` (`Signal::new`) or otherwise
 /// needs a live runtime at mount. Returns the rendered HTML after one rebuild.
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", all(test, not(target_arch = "wasm32"))))]
 pub fn render_in_vdom(app: fn() -> Element) -> String {
     let mut dom = VirtualDom::new(app);
     dom.rebuild_in_place();
