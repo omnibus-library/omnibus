@@ -298,6 +298,32 @@ export const HoldsTheKeySaveWhileSaving: Story = {
   },
 };
 
+export const HardcoverKeepsAKeyTypedWhileSaving: Story = {
+  beforeEach({ msw }) {
+    writeGate = deferred();
+    msw.use(
+      http.post(HARDCOVER, async () => {
+        await writeGate.promise;
+        return HttpResponse.json(aWireKeyStatus());
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const input = canvas.getByLabelText("Hardcover API key");
+    const save = canvas.getByRole("button", { name: "Save Hardcover key" });
+    await waitFor(() => expect(save).toBeEnabled());
+    await userEvent.type(input, "hc_live_first");
+    await userEvent.click(save);
+    await waitFor(() => expect(save).toHaveTextContent("Saving…"));
+
+    await userEvent.type(input, "_second");
+    writeGate.release();
+
+    await expect(await canvas.findByText("Hardcover key saved.")).toBeVisible();
+    await expect(input).toHaveValue("hc_live_first_second");
+  },
+};
+
 export const HoldsSaveButNotBusyWhileClearingTheKey: Story = {
   beforeEach({ msw }) {
     writeGate = deferred();
@@ -781,6 +807,71 @@ export const CalibreHoldsSaveWhileSaving: Story = {
     await expect(save).toHaveAttribute("aria-busy", "true");
     writeGate.release();
     await waitFor(() => expect(save).toBeEnabled());
+  },
+};
+
+export const CalibreKeepsAPathTypedWhileSaving: Story = {
+  beforeEach({ msw }) {
+    writeGate = deferred();
+    msw.use(
+      http.post(EBOOK_CONVERT, async () => {
+        await writeGate.promise;
+        return HttpResponse.json(aWireEbookConvert());
+      }),
+    );
+  },
+  render: () => <EbookConvertCard />,
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByText(/Detected/);
+    const input = canvas.getByLabelText("ebook-convert path");
+    const save = canvas.getByRole("button", {
+      name: "Save ebook-convert path",
+    });
+    await userEvent.type(input, "/opt/first");
+    await userEvent.click(save);
+    await waitFor(() => expect(save).toHaveTextContent("Saving…"));
+
+    await userEvent.type(input, "/second");
+    writeGate.release();
+
+    await waitFor(() => expect(save).toBeEnabled());
+    await expect(input).toHaveValue("/opt/first/second");
+  },
+};
+
+export const CalibreKeepsAPathTypedWhileClearingTheOverride: Story = {
+  beforeEach({ msw }) {
+    writeGate = deferred();
+    msw.use(
+      http.post(EBOOK_CONVERT, async () => {
+        await writeGate.promise;
+        return HttpResponse.json(aWireEbookConvert());
+      }),
+      ...ebookConvertHandlers(
+        aWireEbookConvert({
+          path: "/opt/calibre/ebook-convert",
+          source: "settings",
+        }),
+        { saved: paths },
+      ),
+    );
+  },
+  render: () => <EbookConvertCard />,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Use auto-detection" }),
+    );
+    const save = canvas.getByTestId("ebook-convert-save");
+    await waitFor(() => expect(save).toBeDisabled());
+
+    const input = canvas.getByLabelText("ebook-convert path");
+    await userEvent.type(input, "/opt/typed");
+    writeGate.release();
+
+    await expect(
+      await canvas.findByText("Override cleared — using auto-detection."),
+    ).toBeVisible();
+    await expect(input).toHaveValue("/opt/typed");
   },
 };
 

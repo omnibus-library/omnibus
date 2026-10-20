@@ -37,6 +37,10 @@ export function EbookConvertCard() {
   // The clear button shares the mutation, with a null path.
   const saving = write.isPending && write.variables !== null;
 
+  // Only what was sent goes: text typed while the request was out stays, unsaved guard and all.
+  const clearTyped = (sent: string) =>
+    setTyped((now) => (now === sent ? "" : now));
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const path = typed.trim();
@@ -51,7 +55,7 @@ export function EbookConvertCard() {
     setStatus(null);
     write.mutate(path, {
       onSuccess: (answer) => {
-        setTyped("");
+        clearTyped(typed);
         setStatus(saveOutcomeMessage(answer.available));
       },
       onError: (error) =>
@@ -65,7 +69,7 @@ export function EbookConvertCard() {
   const useAutoDetection = () =>
     write.mutate(null, {
       onSuccess: () => {
-        setTyped("");
+        clearTyped(typed);
         setStatus({
           message: "Override cleared — using auto-detection.",
           error: false,

@@ -6,9 +6,11 @@ import { expect, waitFor, within } from "storybook/test";
 import {
   adminHandlers,
   aWireAdminUsers,
+  aWireKeyStatus,
   type UserWrites,
   usersHandlers,
 } from "../../testing/adminHandlers";
+import { deferred } from "../../testing/handlers";
 import { WIRE_ADA } from "../../testing/wire";
 import { Admin } from "./Admin";
 
@@ -267,6 +269,38 @@ export const AsksBeforeLeavingATypedKeyOrCalibrePath: Story = {
 
     await expect(
       await canvas.findByRole("heading", { level: 2, name: "People" }),
+    ).toBeInTheDocument();
+  },
+};
+
+let keyGate = deferred();
+
+export const AsksBeforeLeavingAKeyTypedWhileItSaves: Story = {
+  args: { path: "/admin?section=integrations" },
+  beforeEach({ msw }) {
+    keyGate = deferred();
+    msw.use(
+      http.post("/api/hardcover-key", async () => {
+        await keyGate.promise;
+        return HttpResponse.json(aWireKeyStatus());
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const field = await canvas.findByLabelText("Hardcover API key");
+    const save = canvas.getByRole("button", { name: "Save Hardcover key" });
+    await waitFor(() => expect(save).toBeEnabled());
+    await userEvent.type(field, "first");
+    await userEvent.click(save);
+    await waitFor(() => expect(save).toHaveTextContent("Saving…"));
+    await userEvent.type(field, "second");
+    keyGate.release();
+    await canvas.findByText("Hardcover key saved.");
+
+    await userEvent.click(canvas.getByTestId("admin-nav-people"));
+
+    await expect(
+      await canvas.findByRole("dialog", { name: "Discard unsaved changes" }),
     ).toBeInTheDocument();
   },
 };

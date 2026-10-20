@@ -60,7 +60,8 @@ export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
     setStatus(null);
     write.mutate(key, {
       onSuccess: () => {
-        setTyped("");
+        // Text typed while the save was out stays, unsaved guard and all.
+        setTyped((now) => (now === typed ? "" : now));
         setStatus({ message: `${copy.noun} key saved.`, error: false });
       },
       onError: (error) =>
