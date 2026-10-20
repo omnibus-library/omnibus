@@ -1,0 +1,149 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type FormEvent, useState } from "react";
+import { ebookConvertQuery, saveEbookConvert } from "../../api";
+import { Button } from "../../components/Button/Button";
+import { BusyLabel } from "../../components/Loading/Loading";
+import { useUnsavedForm } from "../../components/SettingsShell/SettingsShell";
+import {
+  ebookConvertDetail,
+  ebookConvertPlaceholder,
+  isOverridden,
+  saveOutcomeMessage,
+} from "./integrations";
+import { CredentialStatus, LiveStatus, type Status } from "./StatusLine";
+
+/** The Calibre `ebook-convert` the server found, with a field to pin its path instead. */
+export function EbookConvertCard() {
+  const queryClient = useQueryClient();
+  const current = useQuery(ebookConvertQuery);
+  const [typed, setTyped] = useState("");
+  const [status, setStatus] = useState<Status | null>(null);
+  useUnsavedForm("ebook-convert", typed.trim() !== "");
+
+  const write = useMutation({
+    mutationFn: saveEbookConvert,
+    onSuccess: (answer) =>
+      queryClient.setQueryData(ebookConvertQuery.queryKey, answer),
+  });
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (write.isPending) return;
+    const path = typed.trim();
+    // Going back to auto-detection is the "Use auto-detection" button's job.
+    if (path === "") {
+      setStatus({
+        text: "Enter a path to ebook-convert to save.",
+        isError: true,
+      });
+      return;
+    }
+    setStatus(null);
+    write.mutate(path, {
+      onSuccess: (answer) => {
+        setTyped("");
+        setStatus(saveOutcomeMessage(answer.available));
+      },
+      onError: (error) =>
+        setStatus({
+          text: `Couldn’t save the ebook-convert path: ${error.message}`,
+          isError: true,
+        }),
+    });
+  };
+
+  const useAutoDetection = () =>
+    write.mutate(null, {
+      onSuccess: () => {
+        setTyped("");
+        setStatus({
+          text: "Override cleared — using auto-detection.",
+          isError: false,
+        });
+      },
+      onError: (error) =>
+        setStatus({
+          text: `Couldn’t clear the ebook-convert path: ${error.message}`,
+          isError: true,
+        }),
+    });
+
+  const readFailed =
+    current.isError && !current.isFetching && current.data === undefined;
+  const shown: Status | null =
+    status ??
+    (readFailed
+      ? {
+          text: `Couldn’t read the current status: ${current.error?.message}`,
+          isError: true,
+        }
+      : null);
+
+  return (
+    <section className="card" data-testid="ebook-convert-card">
+      <h3>Calibre format conversion</h3>
+      <p className="subtitle">
+        Omnibus converts between ebook formats with Calibre’s ebook-convert.
+        Calibre is optional — without it, conversion stays disabled and
+        everything else works as usual.
+      </p>
+      <form className="settings-form" onSubmit={submit}>
+        <div className="settings-field">
+          <label htmlFor="ebook-convert-path" translate="no">
+            ebook-convert path
+          </label>
+          <input
+            type="text"
+            id="ebook-convert-path"
+            name="ebook_convert_path"
+            autoComplete="off"
+            translate="no"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder={ebookConvertPlaceholder(current.data)}
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+          />
+        </div>
+        <div className="settings-actions">
+          <CredentialStatus
+            testId="ebook-convert-status"
+            configured={current.data?.available ?? null}
+            readFailed={readFailed}
+            detail={ebookConvertDetail(current.data)}
+            unconfigured="Not detected"
+          />
+          {isOverridden(current.data) && (
+            <Button
+              variant="ghost"
+              disabled={write.isPending}
+              data-testid="ebook-convert-clear"
+              onClick={useAutoDetection}
+            >
+              Use auto-detection
+            </Button>
+          )}
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={write.isPending}
+            aria-busy={write.isPending}
+            data-testid="ebook-convert-save"
+          >
+            <BusyLabel
+              busy={write.isPending}
+              label="Save ebook-convert path"
+              busyLabel="Saving…"
+            />
+          </Button>
+        </div>
+        <LiveStatus
+          testId="ebook-convert-save-status"
+          message={shown?.text ?? null}
+          isError={shown?.isError ?? false}
+        />
+      </form>
+    </section>
+  );
+}

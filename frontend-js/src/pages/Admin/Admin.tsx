@@ -9,10 +9,13 @@ import {
 } from "../../components/SettingsShell/SettingsShell";
 import { useCurrentUser } from "../../session";
 import { CleanupCard } from "./CleanupCard";
+import { EbookConvertCard } from "./EbookConvertCard";
 import { MaintenanceCard } from "./MaintenanceCard";
+import { McpCard } from "./McpCard";
 import { MetadataOrderCard } from "./MetadataOrderCard";
 import { RecentTasksCard } from "./RecentTasksCard";
 import { RegistrationCard } from "./RegistrationCard";
+import { SecretKeyCard } from "./SecretKeyCard";
 import { SmtpCard } from "./SmtpCard";
 import { SourcesCard } from "./SourcesCard";
 import {
@@ -51,7 +54,15 @@ function sectionContent(slug: AdminSection["slug"]): ReactNode {
         </>
       );
     case "integrations":
-      return <SmtpCard />;
+      return (
+        <>
+          <SmtpCard />
+          <SecretKeyCard kind="hardcover" />
+          <SecretKeyCard kind="google-books" />
+          <EbookConvertCard />
+          <McpCard />
+        </>
+      );
     case "health":
     case "logs":
       return null;

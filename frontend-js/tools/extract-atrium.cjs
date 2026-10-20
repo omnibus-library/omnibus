@@ -60,7 +60,7 @@ const OWNERS = [
   ["pages/PdfReader/PdfReader.css", (c) => c.startsWith("pr-")],
   // After the QuoteCard row, so the `rd-` classes it owns stay there.
   ["pages/Reader/Reader.css", (c) => c.startsWith("rd-"), true],
-  ["pages/Admin/Admin.css", (c) => c.startsWith("admin-") || c.startsWith("maint-") || c.startsWith("metadata-precedence") || c.startsWith("api-key-") || c.startsWith("cleanup-kind") || c === "cleanup-actions" || c.startsWith("users-") || c === "table-scroll" || c.startsWith("setting-row") || c.startsWith("tkx-") || c.startsWith("logs-") || c.startsWith("ah-")],
+  ["pages/Admin/Admin.css", (c) => c.startsWith("admin-") || c.startsWith("maint-") || c.startsWith("metadata-precedence") || c.startsWith("api-key-") || c.startsWith("cleanup-kind") || c === "cleanup-actions" || c.startsWith("users-") || c === "table-scroll" || c.startsWith("setting-row") || c.startsWith("tkx-") || c.startsWith("copy-feedback") || c.startsWith("logs-") || c.startsWith("ah-")],
   ["components/WorkerStatus/WorkerStatus.css", (c) => c.startsWith("worker-status")],
   ["styles/settings.css", (c) => c.startsWith("settings-")],
   ["styles/base.css", (c) => ["card", "divider", "label", "mono", "sr-only", "subtitle"].includes(c)],

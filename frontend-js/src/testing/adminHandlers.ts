@@ -7,11 +7,16 @@ import {
   type CleanupKindCounts,
   CreateUserRequest,
   type DeviceView,
+  type EbookConvertStatus,
+  EbookConvertUpdate,
+  type HardcoverKeyStatus,
   type LibraryContents,
   type LibrarySection,
+  McpStatus,
   MetadataSource,
   RegistrationStatus,
   type SessionView,
+  SetHardcoverKey,
   Settings,
   type SmtpConfigStatus,
   SmtpConfigUpdate,
@@ -483,6 +488,102 @@ export function smtpHandlers(
   ];
 }
 
+/** A server-wide key saved through the API, masked as `GET /api/hardcover-key` reports it. */
+export function aWireKeyStatus(
+  overrides: Partial<HardcoverKeyStatus> = {},
+): HardcoverKeyStatus {
+  return {
+    configured: true,
+    masked: "hc_l…3f9a",
+    source: "settings",
+    ...overrides,
+  };
+}
+
+/** What a key route reports while no key is set. */
+export const NO_KEY: HardcoverKeyStatus = {
+  configured: false,
+  masked: null,
+  source: "none",
+};
+
+/**
+ * `GET` and `POST` on one key route (`/api/hardcover-key` or
+ * `/api/google-books-key`): a save sets the key, a null key removes it. Each
+ * posted key, or null, lands in `saved`.
+ */
+export function secretKeyHandlers(
+  path: "/api/hardcover-key" | "/api/google-books-key",
+  initial: HardcoverKeyStatus,
+  { saved = [] }: { saved?: (string | null)[] } = {},
+) {
+  let current = initial;
+  return [
+    http.get(path, () => HttpResponse.json(current)),
+    http.post(path, async ({ request }) => {
+      const key = SetHardcoverKey.parse(await request.json()).key ?? null;
+      saved.push(key);
+      current = key
+        ? aWireKeyStatus({ masked: `${key.slice(0, 4)}…${key.slice(-4)}` })
+        : NO_KEY;
+      return HttpResponse.json(current);
+    }),
+  ];
+}
+
+/** `ebook-convert` found on the server's `PATH`, runnable. */
+export function aWireEbookConvert(
+  overrides: Partial<EbookConvertStatus> = {},
+): EbookConvertStatus {
+  return {
+    available: true,
+    path: "ebook-convert",
+    source: "path",
+    ...overrides,
+  };
+}
+
+/**
+ * `GET` and `POST /api/settings/ebook-convert`: a save pins the path, a null path
+ * goes back to the `PATH` lookup. Each posted path, or null, lands in `saved`.
+ */
+export function ebookConvertHandlers(
+  initial: EbookConvertStatus,
+  { saved = [] }: { saved?: (string | null)[] } = {},
+) {
+  let current = initial;
+  return [
+    http.get("/api/settings/ebook-convert", () => HttpResponse.json(current)),
+    http.post("/api/settings/ebook-convert", async ({ request }) => {
+      const path = EbookConvertUpdate.parse(await request.json()).path ?? null;
+      saved.push(path);
+      current = path
+        ? aWireEbookConvert({ path, source: "settings" })
+        : aWireEbookConvert();
+      return HttpResponse.json(current);
+    }),
+  ];
+}
+
+/**
+ * `GET` and `POST /api/settings/mcp`: whether the endpoint is on, which a POST
+ * replaces. Each posted value lands in `saved`.
+ */
+export function mcpHandlers(
+  initial: boolean,
+  { saved = [] }: { saved?: boolean[] } = {},
+) {
+  let enabled = initial;
+  return [
+    http.get("/api/settings/mcp", () => HttpResponse.json({ enabled })),
+    http.post("/api/settings/mcp", async ({ request }) => {
+      enabled = McpStatus.parse(await request.json()).enabled;
+      saved.push(enabled);
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+}
+
 /** The happy-path fakes for every admin section ported so far; a story's own handlers replace them. */
 export function adminHandlers() {
   return [
@@ -501,5 +602,9 @@ export function adminHandlers() {
       devices: [aWireDevice()],
     }),
     ...smtpHandlers(aWireSmtpStatus()),
+    ...secretKeyHandlers("/api/hardcover-key", aWireKeyStatus()),
+    ...secretKeyHandlers("/api/google-books-key", NO_KEY),
+    ...ebookConvertHandlers(aWireEbookConvert()),
+    ...mcpHandlers(false),
   ];
 }

@@ -502,6 +502,42 @@
 .ld-busy-face > .ld-ring {
   animation: ld-pop 0.28s var(--ld-ease-out);
 }
+.ld-toggle-unknown {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--ink-3) 22%, var(--bg-2));
+  border: 1px solid var(--line-2);
+  overflow: hidden;
+}
+.ld-toggle-unknown::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: var(--ink-2);
+  animation: ld-knob 1.6s var(--ld-ease) infinite;
+}
+.ld-toggle-unknown::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklch, var(--accent) 30%, transparent),
+    transparent
+  );
+  animation: ld-glint 1.6s var(--ld-ease) infinite;
+}
 .ld-cover-glint {
   position: relative;
   overflow: hidden;
@@ -562,6 +598,7 @@
   }
   .ld-skel::after,
   .ld-cover-glint::before,
+  .ld-toggle-unknown::after,
   .ld-stale.is-stale::before {
     animation: none;
     display: none;
@@ -573,7 +610,8 @@
   .ld-ring,
   .ld-line,
   .ld-riffle,
-  .ld-sheen {
+  .ld-sheen,
+  .ld-toggle-unknown {
     animation: ld-breathe 2.4s ease-in-out infinite;
   }
   .ld-line > i {
@@ -584,6 +622,9 @@
   .ld-sheen {
     background: none;
     -webkit-text-fill-color: currentColor;
+  }
+  .ld-toggle-unknown::before {
+    animation: none;
   }
   .ld-rf-leaf {
     animation: none;
@@ -678,6 +719,17 @@
   }
   50% {
     opacity: 1;
+  }
+}
+@keyframes ld-knob {
+  0%,
+  100% {
+    transform: translateX(-3px);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateX(3px);
+    opacity: 0.9;
   }
 }
 @keyframes ld-pop {

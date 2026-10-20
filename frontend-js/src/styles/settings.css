@@ -337,17 +337,6 @@
     animation: none;
   }
 }
-@keyframes ld-knob {
-  0%,
-  100% {
-    transform: translateX(-3px);
-    opacity: 0.55;
-  }
-  50% {
-    transform: translateX(3px);
-    opacity: 0.9;
-  }
-}
 /* A refusal draws no sidebar, so its content takes the whole row. */
 .settings-layout:not(:has(.settings-sidebar)) {
   grid-template-columns: minmax(0, 1fr);

@@ -162,15 +162,22 @@ export const ShowsThePeopleCards: Story = {
   },
 };
 
-export const ShowsTheSmtpCard: Story = {
+export const ShowsTheIntegrationCardsInOrder: Story = {
   args: { path: "/admin?section=integrations" },
   play: async ({ canvas }) => {
+    await canvas.findByRole("heading", {
+      level: 3,
+      name: "Hosted MCP endpoint",
+    });
     await expect(
-      await canvas.findByRole("heading", {
-        level: 3,
-        name: "Email delivery (SMTP)",
-      }),
-    ).toBeInTheDocument();
+      canvas.getAllByRole("heading", { level: 3 }).map((h) => h.textContent),
+    ).toEqual([
+      "Email delivery (SMTP)",
+      "Hardcover suggestions",
+      "Google Books lookup",
+      "Calibre format conversion",
+      "Hosted MCP endpoint",
+    ]);
   },
 };
 
@@ -211,6 +218,34 @@ export const AsksBeforeLeavingAnEditedSmtpForm: Story = {
     ).toBeInTheDocument();
     await userEvent.click(canvas.getByRole("button", { name: "Keep editing" }));
     await expect(host).toHaveValue("smtp.example.comx");
+  },
+};
+
+export const AsksBeforeLeavingATypedKeyOrCalibrePath: Story = {
+  args: { path: "/admin?section=integrations" },
+  play: async ({ canvas, userEvent }) => {
+    for (const label of [
+      "Hardcover API key",
+      "Google Books API key",
+      "ebook-convert path",
+    ]) {
+      const field = await canvas.findByLabelText(label);
+      await userEvent.type(field, "x");
+      await userEvent.click(canvas.getByTestId("admin-nav-people"));
+
+      await expect(
+        await canvas.findByRole("dialog", { name: "Discard unsaved changes" }),
+      ).toBeInTheDocument();
+      await userEvent.click(
+        canvas.getByRole("button", { name: "Keep editing" }),
+      );
+      await userEvent.clear(field);
+    }
+    await userEvent.click(canvas.getByTestId("admin-nav-people"));
+
+    await expect(
+      await canvas.findByRole("heading", { level: 2, name: "People" }),
+    ).toBeInTheDocument();
   },
 };
 

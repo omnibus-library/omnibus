@@ -209,6 +209,117 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+.tkx-copyrow {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.tkx-copyfield {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border: 1px dashed var(--line-2);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-2) 70%, transparent);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: default;
+  user-select: all;
+}
+.tkx-mcp {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tkx-mcp-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.tkx-mcp-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-0);
+}
+.tkx-admin-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.tkx-switch {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tkx-switch-state {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.tkx-track {
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  position: relative;
+  cursor: pointer;
+  flex: none;
+  padding: 0;
+}
+.tkx-track.on {
+  background: color-mix(in oklch, var(--accent) 45%, transparent);
+  border-color: transparent;
+}
+.tkx-track:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.tkx-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--ink-1);
+  transition: left 0.15s;
+}
+.tkx-track.on .tkx-knob {
+  left: 20px;
+  background: var(--accent-ink);
+}
+.tkx-track.ld-toggle-unknown {
+  width: 40px;
+  height: 22px;
+}
+.tkx-track.ld-toggle-unknown:disabled {
+  opacity: 1;
+  cursor: progress;
+}
+.tkx-track.ld-toggle-unknown .tkx-knob {
+  display: none;
+}
+.tkx-mcp-note {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  line-height: 1.6;
+}
 .metadata-precedence-list {
   display: flex;
   flex-direction: column;
@@ -345,6 +456,16 @@
   display: flex;
   gap: 10px;
   margin-top: 14px;
+}
+.copy-feedback {
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+.copy-feedback:not(:empty) {
+  margin-left: 0.5rem;
+}
+.copy-feedback.error {
+  color: var(--bad);
 }
 .maint-list {
   list-style: none;
