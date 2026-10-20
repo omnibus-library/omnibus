@@ -375,6 +375,14 @@ pub(crate) struct HighlightsInsertState {
     loaded: Signal<bool>,
 }
 
+impl HighlightsInsertState {
+    /// Close the popover, keeping the list it loaded.
+    pub(crate) fn close(self) {
+        let mut open = self.open;
+        open.set(false);
+    }
+}
+
 /// Declare a closed, unloaded [`HighlightsInsertState`]. A hook: call it
 /// unconditionally.
 pub(crate) fn use_highlights_insert_state() -> HighlightsInsertState {
@@ -428,7 +436,9 @@ pub(crate) fn BdHighlightsInsert(
                 },
                 "From highlights"
             }
-            if highlights_open() {
+            // Held with the toggle: an insert now would land in an editor
+            // whose text is already on its way to the server.
+            if highlights_open() && !disabled {
                 div {
                     class: "card bd-journal-hl-pop",
                     "data-testid": "{testid_prefix}-highlights-pop",

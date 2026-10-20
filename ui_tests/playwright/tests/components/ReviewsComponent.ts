@@ -35,6 +35,8 @@ export class ReviewsComponent extends BaseComponent {
   /** The hidden textarea the review text's live editor mirrors its Markdown into. */
   readonly textMarkdown: Locator;
   readonly textBoldButton: Locator;
+  private readonly textHighlightsButton: Locator;
+  readonly textHighlightsPopover: Locator;
   private readonly textImageInput: Locator;
   readonly notesEditor: Locator;
   readonly spoilerCheckbox: Locator;
@@ -82,6 +84,12 @@ export class ReviewsComponent extends BaseComponent {
     const textField = this.composer.getByTestId("review-body-field");
     this.textMarkdown = textField.getByTestId("review-body-markdown");
     this.textBoldButton = textField.getByRole("button", { name: "Bold" });
+    this.textHighlightsButton = textField.getByRole("button", {
+      name: "From highlights",
+    });
+    this.textHighlightsPopover = textField.getByTestId(
+      "review-body-highlights-pop",
+    );
     this.textImageInput = textField.getByTestId("journal-image-input");
     this.textEditor = this.composer.getByRole("textbox", {
       name: "Review text",
@@ -173,6 +181,10 @@ export class ReviewsComponent extends BaseComponent {
     });
   }
 
+  async openTextHighlights(): Promise<void> {
+    await this.textHighlightsButton.click();
+  }
+
   async pressEscape(): Promise<void> {
     await this.page.keyboard.press("Escape");
   }
@@ -200,6 +212,31 @@ export class ReviewsComponent extends BaseComponent {
   /** Holds every later review save until the returned release runs. */
   async holdReviewSaves(): Promise<() => void> {
     return holdRequests(this.page, reviewsUrls.update);
+  }
+
+  /**
+   * Holds every later review save until the returned release runs, then
+   * refuses it with a 500: a refusal timed after something else happens.
+   */
+  async holdThenRefuseReviewSaves(): Promise<() => void> {
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await this.page.route(reviewsUrls.update, async (route) => {
+      await gate;
+      await route.fulfill({
+        status: 500,
+        contentType: "text/plain",
+        body: "forced failure",
+      });
+    });
+    return release;
+  }
+
+  /** Lets review saves through again after a hold or a forced refusal. */
+  async stopHoldingReviewSaves(): Promise<void> {
+    await this.page.unroute(reviewsUrls.update);
   }
 
   /** Holds every later image upload until the returned release runs. */
