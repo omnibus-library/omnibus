@@ -278,24 +278,36 @@ enum UserDataService {
         return await Cache.cachedOnly(CacheKey.reviews(uuid))
     }
 
+    /// Read the book's reviews back after a write. Stored only if nothing has
+    /// written the replica since the request went out: two writes in a row
+    /// each refresh, and the first one's answer can arrive last, describing
+    /// the server before the second landed.
     private static func refreshReviews(_ uuid: String) async {
         let key = CacheKey.reviews(uuid)
+        let generation = await OfflineStore.shared.cacheGeneration(key)
         guard await canAdoptServerState(for: key),
               let fresh: BookReviews = try? await APIClient.shared.get("/api/reviews/\(uuid)"),
-              await canAdoptServerState(for: key)
+              await canAdoptServerState(for: key),
+              let data = try? JSONEncoder().encode(fresh)
         else { return }
-        await Cache.write(key, fresh)
+        await OfflineStore.shared.cachePut(key, data, ifGeneration: generation)
     }
 
-    /// Starts from `.empty` when nothing is cached yet, as the journal and
-    /// highlight lists start from `[]`: a write made before the first read must
-    /// still be in the replica after a relaunch.
-    private static func mutateLocalReviews(
-        _ uuid: String, _ mutate: (inout BookReviews) -> Void
+    /// Apply a change to the cached reviews in one store step, so a stars tap
+    /// and a text save made together can't each start from the same read and
+    /// drop the other's field. Starts from `.empty` when nothing is cached
+    /// yet, as the journal and highlight lists start from `[]`: a write made
+    /// before the first read must still be in the replica after a relaunch.
+    static func mutateLocalReviews(
+        _ uuid: String, in store: OfflineStore = .shared,
+        _ mutate: @escaping @Sendable (inout BookReviews) -> Void
     ) async {
-        var reviews: BookReviews = await Cache.cachedOnly(CacheKey.reviews(uuid)) ?? .empty
-        mutate(&reviews)
-        await Cache.write(CacheKey.reviews(uuid), reviews)
+        await store.cacheUpdate(CacheKey.reviews(uuid)) { data in
+            var reviews = data.flatMap { try? JSONDecoder().decode(BookReviews.self, from: $0) }
+                ?? .empty
+            mutate(&reviews)
+            return try? JSONEncoder().encode(reviews)
+        }
     }
 
     // MARK: - Read status

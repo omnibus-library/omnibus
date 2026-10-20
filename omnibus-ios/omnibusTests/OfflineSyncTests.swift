@@ -488,6 +488,119 @@ struct ReviewOutboxTests {
     }
 }
 
+// MARK: - Review replica writes
+
+/// A global, so the `@Sendable` changes below can name it.
+private let replicaBook = "11111111-2222-3333-4444-555555555555"
+
+@Suite("Review replica writes")
+struct ReviewReplicaTests {
+    private var key: String { CacheKey.reviews(replicaBook) }
+
+    private func held(_ store: OfflineStore) async throws -> BookReviews {
+        let data = try #require(await store.cacheGet(key))
+        return try JSONDecoder().decode(BookReviews.self, from: data)
+    }
+
+    private func page(stars: Double?, body: String?) -> BookReviews {
+        BookReviews(
+            mine: Review(
+                bookUUID: replicaBook, stars: stars, bodyMd: body, bodyHtml: nil, notesMd: nil,
+                notesHtml: nil, spoiler: false, ratedAt: nil, createdAt: 1, updatedAt: 1
+            ),
+            others: [], summary: nil
+        )
+    }
+
+    @Test("a refresh answer that arrives after a newer write's is not stored")
+    func delayedOldRefreshIsRefused() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-replica")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        // Write A, then its refresh goes out.
+        await UserDataService.mutateLocalReviews(replicaBook, in: store) {
+            $0 = $0.applying(.stars(4), uuid: replicaBook, now: 1)
+        }
+        let sentBeforeB = await store.cacheGeneration(key)
+        // Write B lands and its refresh answers first.
+        await UserDataService.mutateLocalReviews(replicaBook, in: store) {
+            $0 = $0.applying(
+                ReviewPatch(bodyMd: .set("x")), uuid: replicaBook, now: 2
+            )
+        }
+        let sentAfterB = await store.cacheGeneration(key)
+        let answerB = try JSONEncoder().encode(page(stars: 4, body: "x"))
+        #expect(await store.cachePut(key, answerB, ifGeneration: sentAfterB))
+
+        // A's answer, from before B, comes in last.
+        let answerA = try JSONEncoder().encode(page(stars: 4, body: nil))
+        #expect(!(await store.cachePut(key, answerA, ifGeneration: sentBeforeB)))
+        #expect(try await held(store).mine?.bodyMd == "x")
+    }
+
+    @Test("an answer is stored when nothing wrote the replica since it was asked for")
+    func undisturbedRefreshIsStored() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-replica")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        let sent = await store.cacheGeneration(key)
+        let answer = try JSONEncoder().encode(page(stars: 5, body: "rendered"))
+        #expect(await store.cachePut(key, answer, ifGeneration: sent))
+        #expect(try await held(store).mine?.stars == 5)
+    }
+
+    @Test("a stars tap and a text save made together both land in the replica")
+    func overlappingPatchesKeepBothFields() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-replica")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                await UserDataService.mutateLocalReviews(
+                    replicaBook, in: store
+                ) { $0 = $0.applying(.stars(3.5), uuid: replicaBook, now: 1) }
+            }
+            group.addTask {
+                await UserDataService.mutateLocalReviews(
+                    replicaBook, in: store
+                ) {
+                    $0 = $0.applying(
+                        ReviewPatch(bodyMd: .set("Loved it")),
+                        uuid: replicaBook, now: 1
+                    )
+                }
+            }
+        }
+
+        let mine = try #require(try await held(store).mine)
+        #expect(mine.stars == 3.5)
+        #expect(mine.bodyMd == "Loved it")
+    }
+
+    @Test("many changes made at once are each applied to the result of the last")
+    func concurrentChangesNeverLoseOne() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-replica")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await withTaskGroup(of: Void.self) { group in
+            for id in 1...40 {
+                group.addTask {
+                    await UserDataService.mutateLocalReviews(
+                        replicaBook, in: store
+                    ) { reviews in
+                        reviews.others.append(AttributedReview(
+                            userId: Int64(id), username: "r\(id)", stars: 3, bodyMd: nil,
+                            bodyHtml: nil, spoiler: false, ratedAt: nil, createdAt: 1, updatedAt: 1
+                        ))
+                    }
+                }
+            }
+        }
+
+        #expect(Set(try await held(store).others.map(\.userId)) == Set(1...40))
+    }
+}
+
 // MARK: - Reachability signals
 
 @Suite("Cancellation is not a reachability signal")

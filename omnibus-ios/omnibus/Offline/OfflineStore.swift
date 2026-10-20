@@ -248,6 +248,11 @@ actor OfflineStore {
 
     private var db: OpaquePointer?
     private(set) var isOpen = false
+    /// How many times each replica key has been written this session. A
+    /// server answer fetched before a write must not be stored after it; the
+    /// count is what lets `cachePut(_:_:ifGeneration:)` tell. In memory only:
+    /// no request outlives the process.
+    private var generations: [String: Int] = [:]
     /// The database file; `nil` is the app's own under `dataDirectory`.
     private let path: String?
 
@@ -514,6 +519,7 @@ actor OfflineStore {
 
     func cachePut(_ key: String, _ value: Data) {
         guard isOpen else { return }
+        generations[key, default: 0] &+= 1
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         let sql = """
@@ -529,11 +535,39 @@ actor OfflineStore {
 
     func cacheDelete(_ key: String) {
         guard isOpen else { return }
+        generations[key, default: 0] &+= 1
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(db, "DELETE FROM kv WHERE key = ?", -1, &stmt, nil) == SQLITE_OK else { return }
         bind(stmt, 1, key)
         sqlite3_step(stmt)
+    }
+
+    /// The count of writes to `key` so far — captured before a fetch whose
+    /// answer is to be stored with `cachePut(_:_:ifGeneration:)`.
+    func cacheGeneration(_ key: String) -> Int {
+        generations[key, default: 0]
+    }
+
+    /// Store `value` only if nothing has written `key` since `generation` was
+    /// captured, answering whether it did. One actor step, so no write can
+    /// land between the check and the store.
+    @discardableResult
+    func cachePut(_ key: String, _ value: Data, ifGeneration generation: Int) -> Bool {
+        guard isOpen, generations[key, default: 0] == generation else { return false }
+        cachePut(key, value)
+        return true
+    }
+
+    /// Read, change and write `key` in one actor step, so two changes made at
+    /// once each see the other's result rather than both starting from the
+    /// same read. `change` gets the stored bytes, `nil` when there are none,
+    /// and answers what to store; `nil` leaves the key as it was.
+    @discardableResult
+    func cacheUpdate(_ key: String, _ change: @Sendable (Data?) -> Data?) -> Data? {
+        guard isOpen, let next = change(cacheGet(key)) else { return nil }
+        cachePut(key, next)
+        return next
     }
 
     func cacheDeletePrefix(_ prefix: String) {
