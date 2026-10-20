@@ -159,8 +159,7 @@ export function ChartPlot({
   onBrush: (first: number, last: number) => void;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
-  // Where a drag started, while one is in progress.
-  const [anchor, setAnchor] = useState<number | null>(null);
+  const [dragStart, setDragStart] = useState<number | null>(null);
   const plot = plotGeometry(result);
   // A series' position is its identity: a split repeats the measure, and a genre may be called "Other".
   const placed = result.series.map((series, idx) => ({ series, idx }));
@@ -199,9 +198,9 @@ export function ChartPlot({
         onMouseLeave={() => {
           setHovered(null);
           // A drag that leaves the plot is abandoned, not committed to wherever the pointer exited.
-          setAnchor(null);
+          setDragStart(null);
         }}
-        onMouseUp={() => setAnchor(null)}
+        onMouseUp={() => setDragStart(null)}
       >
         {[...Array(divisions + 1).keys()].map((step) => {
           const frac = step / divisions;
@@ -247,15 +246,15 @@ export function ChartPlot({
           />
         )}
 
-        {anchor !== null && hovered !== null && (
+        {dragStart !== null && hovered !== null && (
           <rect
             className="cb-brush"
             x={fixed(
-              plot.bandCentre(Math.min(anchor, hovered)) - plot.bandW / 2,
+              plot.bandCentre(Math.min(dragStart, hovered)) - plot.bandW / 2,
               1,
             )}
             y={PAD_T}
-            width={fixed(plot.bandW * (Math.abs(hovered - anchor) + 1), 1)}
+            width={fixed(plot.bandW * (Math.abs(hovered - dragStart) + 1), 1)}
             height={fixed(plot.plotH, 1)}
           />
         )}
@@ -357,12 +356,12 @@ export function ChartPlot({
             width={fixed(plot.bandW, 1)}
             height={fixed(plot.plotH, 1)}
             onMouseEnter={() => setHovered(i)}
-            onMouseDown={() => setAnchor(i)}
+            onMouseDown={() => setDragStart(i)}
             onMouseUp={() => {
-              if (anchor !== null) onBrush(anchor, i);
+              if (dragStart !== null) onBrush(dragStart, i);
               // A drag across buckets zooms and re-lays the plot, so the hovered index would name a bucket the pointer isn't over.
-              if (anchor !== null && anchor !== i) setHovered(null);
-              setAnchor(null);
+              if (dragStart !== null && dragStart !== i) setHovered(null);
+              setDragStart(null);
             }}
           />
         ))}

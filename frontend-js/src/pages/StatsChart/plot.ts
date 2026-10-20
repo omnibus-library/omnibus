@@ -91,7 +91,6 @@ export function plotGeometry(result: Pick<ChartResult, "axes" | "buckets">) {
     plotH,
     bandW,
     baseline: PAD_T + plotH,
-    /** The centre of bucket `i`'s band. */
     bandCentre: (i: number) => PAD_L + bandW * (i + 0.5),
     /** `value` on an axis of `max`, clamped so one overshooting its axis still lands in the frame. */
     y: (value: number, max: number) =>
