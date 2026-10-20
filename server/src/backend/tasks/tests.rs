@@ -4,7 +4,7 @@
 
 use axum::{body::to_bytes, http::StatusCode};
 use omnibus_db::{
-    background_tasks::{finish_task, start_task, RECENT_TASKS_LIMIT},
+    background_tasks::{finish_task, start_task},
     worker::Task,
 };
 use omnibus_shared::{BackgroundTaskRecord, BackgroundTaskStatus, TaskKind, WorkerStatus};
@@ -12,15 +12,6 @@ use tower::ServiceExt;
 
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::*;
-
-/// The id of the one scan the worker ran, so a test can look for it in the feed.
-async fn run_scan_nobody_set_up(state: &crate::backend::AppState) -> u64 {
-    let task_id = state.worker().post(Task::Scan {
-        library_path: "/no/such/library".to_string(),
-    });
-    state.worker().await_completion(task_id).await;
-    task_id
-}
 
 fn feed_ids(status: &WorkerStatus) -> Vec<u64> {
     status.recent_complete.iter().map(|t| t.task_id).collect()
@@ -44,7 +35,10 @@ mod get_worker_status {
         let (app, state, pool) = fixture().await;
         let reader = auth_test_support::create_user(&pool, "reader").await;
         let token = auth_test_support::bearer_token(&pool, reader.id).await;
-        let scan = run_scan_nobody_set_up(&state).await;
+        let scan = state.worker().post(Task::Scan {
+            library_path: "/no/such/library".to_string(),
+        });
+        state.worker().await_completion(scan).await;
 
         let res = app
             .oneshot(get_with_bearer("/api/worker/status", &token))
@@ -158,7 +152,7 @@ mod get_background_tasks {
         let admin = auth_test_support::create_admin(&pool, "admin").await;
         let token = auth_test_support::bearer_token(&pool, admin.id).await;
         let mut newest = 0;
-        for n in 0..=RECENT_TASKS_LIMIT {
+        for n in 0..101 {
             newest = record(&pool, "scan", n).await;
         }
 
@@ -169,7 +163,7 @@ mod get_background_tasks {
 
         let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
         let rows: Vec<BackgroundTaskRecord> = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(rows.len(), RECENT_TASKS_LIMIT as usize);
+        assert_eq!(rows.len(), 100);
         assert_eq!(rows[0].id, newest);
     }
 
