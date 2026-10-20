@@ -60,23 +60,26 @@ export function SourcesCard() {
   const [status, setStatus] = useState<Status | null>(null);
   const intervalInput = useRef<HTMLInputElement>(null);
 
-  // Cached settings wait out their re-read, so the form starts from what the server holds now.
-  if (settings.data && !settings.isFetching && saved === null) {
-    const loaded = {
-      ebook: settings.data.ebook_library_path ?? "",
-      audiobook: settings.data.audiobook_library_path ?? "",
-      interval: settings.data.scan_interval_hours?.toString() ?? "",
-    };
-    setSaved(loaded);
-    setFields(loaded);
-  }
-  useUnsavedForm(
-    "library-sources",
+  // The form shows cached settings at once and takes each later read, but never over a typed edit.
+  const [readAt, setReadAt] = useState(0);
+  const dirty =
     saved !== null &&
-      (saved.ebook !== fields.ebook ||
-        saved.audiobook !== fields.audiobook ||
-        saved.interval !== fields.interval),
-  );
+    (saved.ebook !== fields.ebook ||
+      saved.audiobook !== fields.audiobook ||
+      saved.interval !== fields.interval);
+  if (settings.data && settings.dataUpdatedAt !== readAt) {
+    setReadAt(settings.dataUpdatedAt);
+    if (!dirty) {
+      const loaded = {
+        ebook: settings.data.ebook_library_path ?? "",
+        audiobook: settings.data.audiobook_library_path ?? "",
+        interval: settings.data.scan_interval_hours?.toString() ?? "",
+      };
+      setSaved(loaded);
+      setFields(loaded);
+    }
+  }
+  useUnsavedForm("library-sources", dirty);
 
   const save = useMutation({
     mutationFn: saveSettings,
@@ -117,6 +120,10 @@ export function SourcesCard() {
     save.mutate(payload.settings, {
       onSuccess: () => {
         setSaved(submitted);
+        // The saved answer is already on screen as typed.
+        setReadAt(
+          queryClient.getQueryState(settingsQuery.queryKey)?.dataUpdatedAt ?? 0,
+        );
         setStatus({ text: "Library settings saved.", isError: false });
       },
       onError: (error) =>

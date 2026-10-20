@@ -37,6 +37,8 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 // The app's client, unlike the harness's, reads a cached answer again when a screen opens on it.
+let openedOn: QueryClient | undefined;
+
 function OpensOnCachedSettings() {
   const [client] = useState(() => {
     const appClient = new QueryClient({
@@ -46,6 +48,7 @@ function OpensOnCachedSettings() {
       settingsQuery.queryKey,
       aWireSettings({ ebook_library_path: "/old/ebooks" }),
     );
+    openedOn = appClient;
     return appClient;
   });
   return (
@@ -137,6 +140,67 @@ export const FillsTheFormFromTheFreshReadWhenOpenedOnCachedSettings: Story = {
     await expect(
       canvas.getByRole("button", { name: "Save library settings" }),
     ).toBeEnabled();
+  },
+};
+
+let readGate = deferred();
+
+const heldRead = http.get("/api/settings", async () => {
+  await readGate.promise;
+  return HttpResponse.json(aWireSettings());
+});
+
+export const ShowsTheCachedSettingsWhileTheyAreReadAgain: Story = {
+  beforeEach({ msw }) {
+    readGate = deferred();
+    msw.use(heldRead);
+  },
+  render: () => <OpensOnCachedSettings />,
+  play: async ({ canvas }) => {
+    const ebook = canvas.getByLabelText("Ebook library path");
+    await waitFor(() => expect(ebook).toHaveValue("/old/ebooks"));
+    await expect(
+      canvas.getByRole("button", { name: "Save library settings" }),
+    ).toBeEnabled();
+    readGate.release();
+
+    await waitFor(() => expect(ebook).toHaveValue("/library/ebooks"));
+  },
+};
+
+export const KeepsTextTypedBeforeTheFreshReadLands: Story = {
+  beforeEach({ msw }) {
+    readGate = deferred();
+    msw.use(heldRead);
+  },
+  render: () => <OpensOnCachedSettings />,
+  play: async ({ canvas, userEvent }) => {
+    const ebook = canvas.getByLabelText("Ebook library path");
+    await waitFor(() => expect(ebook).toHaveValue("/old/ebooks"));
+    await userEvent.clear(ebook);
+    await userEvent.type(ebook, "/typed/ebooks");
+    readGate.release();
+    await waitFor(() =>
+      expect(
+        openedOn?.getQueryData(settingsQuery.queryKey)?.ebook_library_path,
+      ).toBe("/library/ebooks"),
+    );
+    // The read has landed; a save sends what is typed, not what the read held.
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Save library settings" }),
+    );
+
+    await expect(
+      await canvas.findByText("Library settings saved."),
+    ).toBeVisible();
+    await expect(saved).toEqual([
+      {
+        ebook_library_path: "/typed/ebooks",
+        audiobook_library_path: "/library/audiobooks",
+        scan_interval_hours: 24,
+      },
+    ]);
+    await expect(ebook).toHaveValue("/typed/ebooks");
   },
 };
 
