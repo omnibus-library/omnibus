@@ -312,7 +312,7 @@ pub(super) async fn get_ebook_convert(
     request_body = EbookConvertUpdate,
     responses(
         (status = 200, description = "The path is saved; the body is the command now in effect.", body = EbookConvertStatus),
-        (status = 400, description = "`path` is over 4096 bytes."),
+        (status = 422, description = "`path` is over 4096 bytes."),
         (status = 403, description = "You aren't an admin."),
     ),
 )]
@@ -327,7 +327,7 @@ pub(super) async fn post_ebook_convert(
             Err(error) => internal("read ebook-convert status", error),
         },
         Err(db::SettingsError::Validation(message)) => {
-            (axum::http::StatusCode::BAD_REQUEST, message).into_response()
+            (axum::http::StatusCode::UNPROCESSABLE_ENTITY, message).into_response()
         }
         Err(error) => internal("save ebook-convert path", error),
     }

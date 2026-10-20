@@ -189,7 +189,7 @@ mod post_ebook_convert {
     }
 
     #[tokio::test]
-    async fn returns_400_with_the_reason_when_the_path_is_too_long() {
+    async fn returns_422_with_the_reason_when_the_path_is_too_long() {
         let (app, _, pool) = fixture().await;
         let token = admin_token(&pool).await;
 
@@ -198,7 +198,7 @@ mod post_ebook_convert {
             .await
             .expect("request should succeed");
 
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(
             body_text(response).await,
             "ebook convert path exceeds 4096 bytes"

@@ -6306,11 +6306,11 @@
               }
             }
           },
-          "400": {
-            "description": "`path` is over 4096 bytes."
-          },
           "403": {
             "description": "You aren't an admin."
+          },
+          "422": {
+            "description": "`path` is over 4096 bytes."
           }
         }
       }
