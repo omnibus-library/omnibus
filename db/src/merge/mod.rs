@@ -19,6 +19,7 @@ mod undo;
 mod tests;
 
 pub use candidates::{merge_candidates, MERGE_CANDIDATE_CAP};
+pub(crate) use curation::undoable_review_markdown;
 pub use transaction::merge_books;
 pub use undo::undo_merge;
 

@@ -3,14 +3,7 @@ use axum::http::StatusCode;
 use omnibus_shared::{BookReviews, Review};
 use tower::ServiceExt;
 
-use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::*;
-
-async fn reader(pool: &sqlx::SqlitePool, name: &str) -> (i64, String) {
-    let user = auth_test_support::create_user(pool, name).await;
-    let token = auth_test_support::bearer_token(pool, user.id).await;
-    (user.id, token)
-}
 
 fn patch(
     uuid: &str,
@@ -41,6 +34,49 @@ async fn api_patch_review_requires_auth() {
 }
 
 #[tokio::test]
+async fn api_get_book_reviews_requires_auth() {
+    let (app, _state, pool) = fixture().await;
+    let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
+
+    let res = app
+        .oneshot(request("GET", &format!("/api/reviews/{uuid}"), None, None))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn api_delete_review_requires_auth_and_leaves_the_review_intact() {
+    let (app, _state, pool) = fixture().await;
+    let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
+    let (_, token) = reader(&pool, "alice").await;
+    app.clone()
+        .oneshot(patch(&uuid, &token, serde_json::json!({ "stars": 4 })))
+        .await
+        .unwrap();
+
+    let res = app
+        .clone()
+        .oneshot(request(
+            "DELETE",
+            &format!("/api/reviews/{uuid}"),
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    let res = app
+        .oneshot(get_with_bearer(&format!("/api/reviews/{uuid}"), &token))
+        .await
+        .unwrap();
+    let reviews: BookReviews = body_json(res).await;
+    assert_eq!(reviews.mine.unwrap().stars, Some(4.0));
+}
+
+#[tokio::test]
 async fn api_patch_review_creates_then_changes_only_the_fields_sent() {
     let (app, _state, pool) = fixture().await;
     let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
@@ -68,6 +104,30 @@ async fn api_patch_review_creates_then_changes_only_the_fields_sent() {
     assert_eq!(review.notes_md.as_deref(), Some("mine"));
     assert!(review.spoiler);
     assert!(review.body_html.unwrap().contains("<em>Great</em>"));
+}
+
+#[tokio::test]
+async fn api_patch_review_keeps_the_spoiler_flag_when_it_is_sent_as_null() {
+    let (app, _state, pool) = fixture().await;
+    let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
+    let (_, token) = reader(&pool, "alice").await;
+    app.clone()
+        .oneshot(patch(
+            &uuid,
+            &token,
+            serde_json::json!({ "body_md": "Twist", "spoiler": true }),
+        ))
+        .await
+        .unwrap();
+
+    let res = app
+        .oneshot(patch(&uuid, &token, serde_json::json!({ "spoiler": null })))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let review: Option<Review> = body_json(res).await;
+    assert!(review.unwrap().spoiler);
 }
 
 #[tokio::test]

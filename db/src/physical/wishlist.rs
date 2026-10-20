@@ -102,12 +102,13 @@ pub async fn remove_wishlist_entry(
         return Ok(WishlistRemoval::default());
     };
 
-    crate::deletion::purge::purge_book(&mut tx, book_id, &canonical)
+    let images = crate::deletion::purge::purge_book(&mut tx, book_id, &canonical)
         .await
         .map_err(super::remove::map_delete_error)?;
     tx.commit().await?;
 
     super::remove::discard_cover_files(canonical).await;
+    crate::journals::cleanup_orphaned_images(pool, images.into_iter().collect()).await;
     Ok(WishlistRemoval { book_deleted: true })
 }
 

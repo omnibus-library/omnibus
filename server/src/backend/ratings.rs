@@ -1,8 +1,9 @@
 //! Star-rating REST handlers (`/api/ratings*`), the stars-only view of a
-//! review that installed iOS builds still call: set, get, and clear a
-//! half-star rating (`0.5..=5.0`) per `(user, book)`, with the range and
-//! half-step validated at the boundary so an invalid value returns 400. Each is
-//! `#[deprecated]`, which marks it so in the spec; `/api/reviews` replaces them.
+//! review: set, get, and clear a half-star rating (`0.5..=5.0`) per
+//! `(user, book)`, with the range and half-step validated at the boundary so an
+//! invalid value returns 400. Installed iOS and Android builds still call them,
+//! including when they replay writes queued offline, so the routes stay. Each
+//! is `#[deprecated]`, which marks it so in the spec; `/api/reviews` replaces them.
 
 use axum::{
     extract::{Path, State},
@@ -81,7 +82,7 @@ pub(super) async fn get_rating(
     path = "/api/ratings/others/{uuid}",
     tag = "Ratings",
     params(("uuid" = String, Path, description = "The book's uuid.")),
-    responses((status = 200, description = "Other users' ratings, newest first.", body = Vec<AttributedRating>)),
+    responses((status = 200, description = "Other users' ratings, most recently rated first.", body = Vec<AttributedRating>)),
 )]
 #[deprecated = "use the /api/reviews routes"]
 pub(super) async fn get_other_ratings(

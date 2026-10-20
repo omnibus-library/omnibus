@@ -1,7 +1,8 @@
 //! Unit tests for `reviews`: field-level patching (absent vs cleared), the
-//! `rated_at` rule, the empty-review delete, notes staying with their author,
-//! the others ordering, the two-rating summary threshold, image sweeping, and
-//! the `BookNotFound` / pool-closed failures.
+//! three timestamps' rules, the empty-review delete, overlapping writers,
+//! notes staying with their author, the others ordering, the two-rating
+//! summary threshold, image sweeping, the stats cache drop, and the
+//! `BookNotFound` / pool-closed failures.
 
 use omnibus_shared::ReviewPatch;
 
@@ -242,6 +243,35 @@ async fn update_review_propagates_db_error_when_pool_is_closed() {
 }
 
 #[tokio::test]
+async fn update_review_lands_both_of_two_overlapping_patches_on_a_file_backed_pool() {
+    // WAL needs a real file: there a deferred read-then-write fails with a
+    // stale-snapshot 517 when the other writer commits in between (#1862).
+    let dir = tempfile::tempdir().unwrap();
+    let url = format!(
+        "sqlite://{}?mode=rwc",
+        dir.path().join("omnibus.db").display()
+    );
+    let pool = init_db(&url).await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let uuid = seed_synced_ebook(&pool, "a.epub", "Book A", "Author").await;
+
+    for round in 1..=10u8 {
+        let rating = stars(f32::from(round) / 2.0);
+        let words = text(&format!("round {round}"));
+        let (a, b) = tokio::join!(
+            update_review(&pool, user, &uuid, &rating),
+            update_review(&pool, user, &uuid, &words),
+        );
+        a.expect("the stars patch must not surface a database error");
+        b.expect("the text patch must not surface a database error");
+
+        let review = get_review(&pool, user, &uuid).await.unwrap().unwrap();
+        assert_eq!(review.stars, Some(f32::from(round) / 2.0));
+        assert_eq!(review.body_md, Some(format!("round {round}")));
+    }
+}
+
+#[tokio::test]
 async fn update_review_sweeps_an_image_dropped_from_the_notes() {
     let tmp = tempfile::tempdir().unwrap();
     let _env = EnvVarGuard::set_os("OMNIBUS_JOURNAL_IMAGES_DIR", Some(tmp.path().as_os_str()));
@@ -283,31 +313,54 @@ async fn get_book_reviews_shows_notes_to_their_author_and_never_lists_a_notes_on
 async fn get_book_reviews_lists_text_reviews_newest_first_then_bare_ratings() {
     let (pool, viewer, uuid) = setup().await;
     let mut readers = Vec::new();
-    for name in ["old_text", "new_text", "bare"] {
+    for name in ["new_text", "old_text", "new_bare", "old_bare"] {
         readers.push(seed_user(&pool, name).await);
     }
-    update_review(&pool, readers[0], &uuid, &text("first"))
+    for (reader, patch) in
+        readers
+            .iter()
+            .zip([text("second"), text("first"), stars(4.0), stars(2.0)])
+    {
+        update_review(&pool, *reader, &uuid, &patch).await.unwrap();
+    }
+    // Each group's dates run against id order, so the `user_id DESC` tiebreak
+    // alone would reverse it, and the bare ratings are the newest of all, so
+    // dates without the grouping would lead with them. Their `created_at`
+    // runs the other way again: a bare rating sorts on `rated_at`.
+    let dates: [(i64, Option<i64>); 4] =
+        [(200, None), (100, None), (310, Some(400)), (320, Some(300))];
+    for (reader, (created, rated)) in readers.iter().zip(dates) {
+        sqlx::query(
+            "UPDATE reviews SET created_at = ?, rated_at = COALESCE(?, rated_at) WHERE user_id = ?",
+        )
+        .bind(created)
+        .bind(rated)
+        .bind(reader)
+        .execute(&pool)
         .await
         .unwrap();
-    update_review(&pool, readers[1], &uuid, &text("second"))
-        .await
-        .unwrap();
-    update_review(&pool, readers[2], &uuid, &stars(4.0))
-        .await
-        .unwrap();
-    for (reader, created) in readers.iter().zip([100, 200, 300]) {
-        sqlx::query("UPDATE reviews SET created_at = ? WHERE user_id = ?")
-            .bind(created)
-            .bind(reader)
-            .execute(&pool)
-            .await
-            .unwrap();
     }
 
     let reviews = get_book_reviews(&pool, viewer, &uuid).await.unwrap();
 
     let order: Vec<i64> = reviews.others.iter().map(|r| r.user_id).collect();
-    assert_eq!(order, vec![readers[1], readers[0], readers[2]]);
+    assert_eq!(order, readers);
+}
+
+#[tokio::test]
+async fn get_book_reviews_leaves_the_viewers_own_rating_out_of_others() {
+    let (pool, viewer, uuid) = setup().await;
+    let bob = seed_user(&pool, "bob").await;
+    update_review(&pool, viewer, &uuid, &stars(5.0))
+        .await
+        .unwrap();
+    update_review(&pool, bob, &uuid, &stars(3.0)).await.unwrap();
+
+    let reviews = get_book_reviews(&pool, viewer, &uuid).await.unwrap();
+
+    let others: Vec<i64> = reviews.others.iter().map(|r| r.user_id).collect();
+    assert_eq!(others, vec![bob]);
+    assert_eq!(reviews.mine.unwrap().stars, Some(5.0));
 }
 
 #[tokio::test]
@@ -364,6 +417,33 @@ async fn get_book_reviews_propagates_db_error_when_pool_is_closed() {
 }
 
 #[tokio::test]
+async fn get_review_returns_the_authors_review_with_their_notes() {
+    let (pool, user, uuid) = setup().await;
+    let patch = ReviewPatch {
+        stars: Some(Some(3.5)),
+        notes_md: Some(Some("only *mine*".into())),
+        ..Default::default()
+    };
+    update_review(&pool, user, &uuid, &patch).await.unwrap();
+
+    let review = get_review(&pool, user, &uuid).await.unwrap().unwrap();
+
+    assert_eq!(review.stars, Some(3.5));
+    assert_eq!(review.notes_md.as_deref(), Some("only *mine*"));
+    assert!(review.notes_html.unwrap().contains("<em>mine</em>"));
+}
+
+#[tokio::test]
+async fn get_review_propagates_db_error_when_pool_is_closed() {
+    let (pool, user, uuid) = setup().await;
+    pool.close().await;
+
+    let err = get_review(&pool, user, &uuid).await.unwrap_err();
+
+    assert!(matches!(err, ReviewError::Sqlx(_)));
+}
+
+#[tokio::test]
 async fn get_review_returns_none_for_an_unknown_or_unreviewed_book() {
     let (pool, user, uuid) = setup().await;
 
@@ -385,6 +465,35 @@ async fn delete_review_removes_stars_text_and_notes_together() {
     delete_review(&pool, user, &uuid).await.unwrap();
 
     assert_eq!(get_review(&pool, user, &uuid).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn delete_review_sweeps_the_images_its_text_and_notes_embedded() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _env = EnvVarGuard::set_os("OMNIBUS_JOURNAL_IMAGES_DIR", Some(tmp.path().as_os_str()));
+    let (pool, user, uuid) = setup().await;
+    let names = [
+        journal_images::write_journal_image("image/png", b"text").unwrap(),
+        journal_images::write_journal_image("image/png", b"notes").unwrap(),
+    ];
+    let [in_text, in_notes] = names.each_ref().map(|name| {
+        Some(Some(format!(
+            "![img]({}{name})",
+            markdown::IMAGE_URL_PREFIX
+        )))
+    });
+    let patch = ReviewPatch {
+        body_md: in_text,
+        notes_md: in_notes,
+        ..Default::default()
+    };
+    update_review(&pool, user, &uuid, &patch).await.unwrap();
+
+    delete_review(&pool, user, &uuid).await.unwrap();
+
+    for name in &names {
+        assert!(!journal_images_dir().join(name).exists(), "{name} survived");
+    }
 }
 
 #[tokio::test]
@@ -477,4 +586,115 @@ async fn update_review_restarts_created_at_when_a_notes_only_review_gains_text()
 
     assert!(review.created_at > 100, "the public review starts now");
     assert!(review.updated_at > 100);
+}
+
+#[tokio::test]
+async fn update_review_restarts_created_at_when_a_rating_first_gains_text() {
+    // Every rating migration 0104 carried over is such a row: without the
+    // restart, a review written today would date and sort as the old rating.
+    let (pool, user, uuid) = setup().await;
+    update_review(&pool, user, &uuid, &stars(4.0))
+        .await
+        .unwrap();
+    set_rated_at(&pool, user, 100).await;
+    sqlx::query("UPDATE reviews SET created_at = 100")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let written = update_review(&pool, user, &uuid, &text("finally wrote it up"))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(written.created_at > 100, "the text review starts now");
+    assert_eq!(written.rated_at, Some(100), "the rating itself didn't move");
+
+    sqlx::query("UPDATE reviews SET created_at = 200")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let reworded = update_review(&pool, user, &uuid, &text("reworded"))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        reworded.created_at, 200,
+        "rewording keeps the review's date"
+    );
+}
+
+#[tokio::test]
+async fn update_review_moves_updated_at_for_a_spoiler_only_change() {
+    // Other readers see the flag, so flipping it is a public edit.
+    let (pool, user, uuid) = setup().await;
+    update_review(&pool, user, &uuid, &text("Snape's a good guy"))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE reviews SET created_at = 100, updated_at = 100")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let flag = ReviewPatch {
+        spoiler: Some(true),
+        ..Default::default()
+    };
+
+    let review = update_review(&pool, user, &uuid, &flag)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(review.spoiler);
+    assert!(review.updated_at > 100);
+    assert_eq!(review.created_at, 100);
+}
+
+/// A reader with a fixed id: the stats cache is process-wide and keyed on it,
+/// so each cache test takes an id no sibling test uses.
+async fn seed_user_with_id(pool: &SqlitePool, id: i64, name: &str) -> i64 {
+    sqlx::query_scalar(
+        "INSERT INTO users (id, username, password_hash) VALUES (?, ?, '!x') RETURNING id",
+    )
+    .bind(id)
+    .bind(name)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn avg_stars(pool: &SqlitePool, user: i64) -> Option<f64> {
+    crate::stats::user_stats(pool, user, omnibus_shared::StatsRange::AllTime, None)
+        .await
+        .unwrap()
+        .avg_stars
+}
+
+#[tokio::test]
+async fn update_review_drops_the_cached_stats_summary() {
+    let (pool, _, uuid) = setup().await;
+    let user = seed_user_with_id(&pool, 9933, "review-cache").await;
+    update_review(&pool, user, &uuid, &stars(2.0))
+        .await
+        .unwrap();
+    assert_eq!(avg_stars(&pool, user).await, Some(2.0));
+
+    update_review(&pool, user, &uuid, &stars(4.0))
+        .await
+        .unwrap();
+
+    assert_eq!(avg_stars(&pool, user).await, Some(4.0));
+}
+
+#[tokio::test]
+async fn delete_review_drops_the_cached_stats_summary() {
+    let (pool, _, uuid) = setup().await;
+    let user = seed_user_with_id(&pool, 9934, "review-delete-cache").await;
+    update_review(&pool, user, &uuid, &stars(3.0))
+        .await
+        .unwrap();
+    assert_eq!(avg_stars(&pool, user).await, Some(3.0));
+
+    delete_review(&pool, user, &uuid).await.unwrap();
+
+    assert_eq!(avg_stars(&pool, user).await, None);
 }

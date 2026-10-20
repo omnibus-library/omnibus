@@ -16,8 +16,8 @@ use rmcp::model::ErrorCode;
 use omnibus_shared::{
     AttributedReview, BookProgress, BookReviews, Bookmark, Contributor, EbookMetadata, Highlight,
     HighlightColor, HouseholdReader, PhysicalCopy, ProgressFormat, ProgressRecord, ReadStatus,
-    ReadStatusRecord, ResumePoint, Review, SessionFormat, SessionLogEntry, SessionLogPage,
-    StatsSummary,
+    ReadStatusRecord, ResumePoint, Review, ReviewBucket, ReviewSummary, SessionFormat,
+    SessionLogEntry, SessionLogPage, StatsSummary,
 };
 
 use super::views::iso;
@@ -257,8 +257,11 @@ async fn copies(Path(_): Path<String>) -> AxumJson<Vec<PhysicalCopy>> {
     }])
 }
 
-async fn reviews(Path(_): Path<String>) -> AxumJson<BookReviews> {
-    AxumJson(BookReviews {
+async fn reviews(Path(uuid): Path<String>) -> Result<AxumJson<BookReviews>, StatusCode> {
+    if uuid != BOOK {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    Ok(AxumJson(BookReviews {
         mine: Some(Review {
             book_uuid: BOOK.into(),
             stars: Some(4.5),
@@ -289,8 +292,20 @@ async fn reviews(Path(_): Path<String>) -> AxumJson<BookReviews> {
             created_at_iso: None,
             updated_at_iso: None,
         }],
-        summary: None,
-    })
+        summary: Some(review_summary()),
+    }))
+}
+
+fn review_summary() -> ReviewSummary {
+    let bucket = |half_stars| ReviewBucket {
+        half_stars,
+        readers: 1,
+    };
+    ReviewSummary {
+        average_stars: 4.25,
+        ratings: 2,
+        buckets: vec![bucket(8), bucket(9)],
+    }
 }
 
 /// Boot a stub instance serving every route these tools reach.
@@ -745,7 +760,7 @@ fn the_two_format_vocabularies_are_documented_wherever_they_disagree() {
 // MARK: - Reviews
 
 #[tokio::test]
-async fn book_reviews_stamps_each_review_and_leaves_absent_fields_out() {
+async fn book_reviews_stamps_each_review_and_passes_the_summary_through() {
     let service = stub_service().await;
 
     let answer = service
@@ -766,4 +781,19 @@ async fn book_reviews_stamps_each_review_and_leaves_absent_fields_out() {
     );
     assert_eq!(other["spoiler"], true);
     assert_eq!(other["created_at"], "2026-03-04T00:00:00Z");
+    assert_eq!(answer.summary, Some(review_summary()));
+}
+
+#[tokio::test]
+async fn book_reviews_reports_not_found_for_an_unknown_uuid() {
+    let service = stub_service().await;
+    let err = expect_err(
+        service
+            .book_reviews(Parameters(BookRef {
+                uuid: "uuid-missing".into(),
+            }))
+            .await,
+    );
+    assert_eq!(err.code, ErrorCode::INVALID_PARAMS);
+    assert!(err.message.contains("book not found"));
 }
