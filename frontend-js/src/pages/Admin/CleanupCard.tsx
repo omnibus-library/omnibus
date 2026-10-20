@@ -63,32 +63,31 @@ export function CleanupCard() {
         Near-duplicate authors, series, and tags, plus book titles carrying
         filename cruft.
       </p>
-      {counts.data === undefined ? (
-        counts.isError ? (
-          <div className="settings-actions">
-            <p
-              className="settings-status settings-action-status error"
-              role="status"
-              data-testid="cleanup-counts-error"
-            >
-              Couldn’t load the cleanup counts.
-            </p>
-            <Button
-              variant="ghost"
-              data-testid="cleanup-counts-retry"
-              onClick={() => counts.refetch()}
-            >
-              Try again
-            </Button>
-          </div>
-        ) : (
-          <Loading
-            kind="section"
-            className="start"
-            testId="cleanup-counts-loading"
-            label="Counting what needs tidying…"
-          />
-        )
+      {counts.isError && !counts.isFetching ? (
+        // A failed read wins over the counts it replaces, which may be stale.
+        <div className="settings-actions">
+          <p
+            className="settings-status settings-action-status error"
+            role="status"
+            data-testid="cleanup-counts-error"
+          >
+            Couldn’t load the cleanup counts.
+          </p>
+          <Button
+            variant="ghost"
+            data-testid="cleanup-counts-retry"
+            onClick={() => counts.refetch()}
+          >
+            Try again
+          </Button>
+        </div>
+      ) : counts.data === undefined ? (
+        <Loading
+          kind="section"
+          className="start"
+          testId="cleanup-counts-loading"
+          label="Counting what needs tidying…"
+        />
       ) : (
         <ul className="cleanup-kinds" data-testid="cleanup-kinds">
           {counts.data.map((row) => (

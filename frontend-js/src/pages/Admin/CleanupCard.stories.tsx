@@ -85,6 +85,31 @@ export const TryAgainReadsTheCountsAgain: Story = {
   },
 };
 
+export const ShowsTheErrorWhenTheReadAfterDetectionFails: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      http.get(COUNTS, () =>
+        detections === 0
+          ? HttpResponse.json(aWireCleanupCounts())
+          : new HttpResponse("failed with 500", { status: 500 }),
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByTestId("cleanup-kinds");
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Run detection now" }),
+    );
+
+    const status = await canvas.findByTestId("cleanup-counts-error");
+    await expect(status).toHaveTextContent("Couldn’t load the cleanup counts.");
+    await expect(
+      canvas.getByRole("button", { name: "Try again" }),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByTestId("cleanup-kinds")).not.toBeInTheDocument();
+  },
+};
+
 export const ListsEachKindWithItsPendingCount: Story = {
   play: async ({ canvas }) => {
     const list = await canvas.findByTestId("cleanup-kinds");
