@@ -9,8 +9,9 @@ use axum::{
 use omnibus_db as db;
 use omnibus_shared::logs::{LogPage, LogQuery};
 
-use super::internal;
 use crate::auth::AdminUser;
+
+use super::internal;
 
 /// Read the server logs
 ///

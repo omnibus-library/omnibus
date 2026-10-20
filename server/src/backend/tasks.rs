@@ -11,8 +11,9 @@ use axum::{
 use omnibus_db::{self as db, background_tasks::RECENT_TASKS_LIMIT};
 use omnibus_shared::{BackgroundTaskRecord, WorkerStatus};
 
-use super::{internal, AppState};
 use crate::auth::{AdminUser, AuthUser};
+
+use super::{internal, AppState};
 
 /// Get the background task feed
 ///

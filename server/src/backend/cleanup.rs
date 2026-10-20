@@ -21,8 +21,9 @@ use omnibus_shared::{
     CleanupDecisionOutcome, CleanupDecisionRequest, CleanupKind, CleanupKindCounts, SuggestionCard,
 };
 
-use super::{internal, AppState};
 use crate::auth::AdminUser;
+
+use super::{internal, AppState};
 
 /// A store failure as a response: the refusals safe to show are 409, the rest 500.
 fn store_error(context: &'static str, error: CleanupStoreError) -> Response {
