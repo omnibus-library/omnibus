@@ -1,7 +1,3 @@
-.bd-root {
-  width: 100vw;
-  margin-left: calc(-50vw + 50%);
-}
 .bd-physical-panel {
   max-width: var(--content-w, 1120px);
   margin: 0 auto;

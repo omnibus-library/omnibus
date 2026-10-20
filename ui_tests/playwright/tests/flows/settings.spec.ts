@@ -170,7 +170,7 @@ test.describe("on a phone", () => {
     await test.step("check only the list shows", async () => {
       await expect(settingsPage.sectionLink("devices")).toBeVisible();
       await expect(settingsPage.backLink).toBeHidden();
-      expect(await settingsPage.scrollsSideways()).toBe(false);
+      expect(await settingsPage.scroll.scrollsSideways()).toBe(false);
     });
 
     await test.step("pick the devices section", async () => {
@@ -181,7 +181,7 @@ test.describe("on a phone", () => {
       await settingsPage.assertDisplayedFor("devices");
       await expect(settingsPage.kindle.card).toBeVisible();
       await expect(settingsPage.sectionLink("devices")).toBeHidden();
-      expect(await settingsPage.scrollsSideways()).toBe(false);
+      expect(await settingsPage.scroll.scrollsSideways()).toBe(false);
     });
   });
 
@@ -216,7 +216,7 @@ test.describe("on a phone", () => {
     await test.step("check the section shows without a sideways scroll", async () => {
       await adminPage.assertDisplayedFor("people");
       await expect(adminPage.users.table).toBeVisible();
-      expect(await adminPage.scrollsSideways()).toBe(false);
+      expect(await adminPage.scroll.scrollsSideways()).toBe(false);
     });
   });
 });

@@ -282,8 +282,6 @@ html, body { overscroll-behavior: none; }
   position: sticky; top: 0;
   background: color-mix(in oklch, var(--bg-0) 92%, transparent);
   backdrop-filter: blur(10px); z-index: 5;
-  width: 100vw;
-  margin-left: calc(-50vw + 50%);
 }
 .atrium-brand {
   display: flex; align-items: center; gap: 10px;
@@ -775,11 +773,6 @@ html, body { overscroll-behavior: none; }
  * `EbookMetadata.accent`. Falls back to the theme default when the
  * book has no extracted accent.
  */
-
-.bd-root {
-  width: 100vw;
-  margin-left: calc(-50vw + 50%);
-}
 
 /* Hero */
 .bd-hero {
@@ -3175,11 +3168,12 @@ a.idx-letter-on:focus-visible {
    containing block for `position: fixed` descendants, and the scrim lives
    inside it (the panel anchors to `.um-root`, so it can't move to the app
    root the way the search palette's overlay does). The topbar is
-   `sticky; top: 0` and full-bleed, so its padding-box origin is the
-   viewport origin and explicit viewport sizing covers the page. */
+   `sticky; top: 0` and spans the page, so its padding-box origin is the
+   viewport origin and its width plus the viewport's height cover the page;
+   `100vw` would also count a classic scrollbar and overflow sideways. */
 .um-scrim {
   position: fixed; top: 0; left: 0;
-  width: 100vw; height: 100dvh; z-index: 60;
+  width: 100%; height: 100dvh; z-index: 60;
   background: transparent; cursor: default;
 }
 
