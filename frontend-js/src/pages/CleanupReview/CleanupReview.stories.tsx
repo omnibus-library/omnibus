@@ -765,15 +765,39 @@ export const SpaceOnTheFocusedUndoButtonUndoesTheChange: Story = {
   },
 };
 
-export const HotkeysOnAFocusedLinkDoNothing: Story = {
+export const YOnAFocusedButtonAcceptsTheCard: Story = {
   play: async ({ canvas, userEvent }) => {
     await canvas.findByTestId("cleanup-card");
-    canvas.getByTestId("cleanup-kindchip-author").focus();
+    await userEvent.click(canvas.getByRole("button", { name: "Skip (Space)" }));
+    await canvas.findByText("Split this tag into its parts.");
+    await expect(
+      canvas.getByRole("button", { name: "Skip (Space)" }),
+    ).toHaveFocus();
 
-    await userEvent.keyboard("yn ");
+    await userEvent.keyboard("y");
 
-    await expect(decided).toEqual([]);
-    await expect(progressText(canvas)).toContain("1 of 3");
+    await expect(
+      await canvas.findByText("Merge these tags into one."),
+    ).toBeInTheDocument();
+    await expect(decided).toEqual([
+      { id: 2, request: { decision: "accepted" } },
+    ]);
+  },
+};
+
+export const EnterOnAFocusedButtonPressesIt: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByTestId("cleanup-card");
+    canvas.getByRole("button", { name: "Reject (N)" }).focus();
+
+    await userEvent.keyboard("{Enter}");
+
+    await expect(
+      await canvas.findByText("Split this tag into its parts."),
+    ).toBeInTheDocument();
+    await expect(decided).toEqual([
+      { id: 1, request: { decision: "rejected" } },
+    ]);
   },
 };
 

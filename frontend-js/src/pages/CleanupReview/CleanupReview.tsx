@@ -214,10 +214,12 @@ function ReviewQueue({ kind }: { kind: CleanupKind }) {
     undoLast.mutate(undo.logId);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    // A control keeps its own keys (Space presses a button), and a chord belongs to the browser.
+    // A field keeps every key, a button or link the Space and Enter that press it, and a chord belongs to the browser.
+    const target = event.target instanceof Element ? event.target : null;
     if (
-      (event.target instanceof Element &&
-        event.target.closest("a, button, input, select, textarea")) ||
+      target?.closest("input, select, textarea") ||
+      ((event.key === " " || event.key === "Enter") &&
+        target?.closest("a, button")) ||
       event.ctrlKey ||
       event.metaKey ||
       event.altKey
