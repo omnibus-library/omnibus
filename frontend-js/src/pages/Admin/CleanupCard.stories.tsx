@@ -2,10 +2,10 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 import {
-  aWireCleanupCounts,
-  cleanupCountsHandler,
-  cleanupDetectHandler,
-} from "../../testing/adminHandlers";
+  getGetCleanupCountsMockHandler200,
+  getPostCleanupDetectMockHandler202,
+} from "../../api/generated/omnibus.msw";
+import { aWireCleanupCounts } from "../../testing/adminHandlers";
 import { deferred, failing, hanging } from "../../testing/handlers";
 import { CleanupCard } from "./CleanupCard";
 
@@ -20,8 +20,8 @@ const meta = {
   beforeEach({ msw }) {
     detections = 0;
     msw.use(
-      cleanupCountsHandler(aWireCleanupCounts),
-      cleanupDetectHandler(() => {
+      getGetCleanupCountsMockHandler200(aWireCleanupCounts),
+      getPostCleanupDetectMockHandler202(() => {
         detections += 1;
       }),
     );
@@ -146,7 +146,7 @@ export const ShowsNoDetectStatusBeforeDetectionRuns: Story = {
 export const RunsDetectionAndReadsTheCountsAgain: Story = {
   beforeEach({ msw }) {
     msw.use(
-      cleanupCountsHandler(() =>
+      getGetCleanupCountsMockHandler200(() =>
         detections === 0
           ? aWireCleanupCounts()
           : [

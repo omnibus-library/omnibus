@@ -1,10 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor } from "storybook/test";
+import { getGetWorkerStatusMockHandler200 } from "../../api/generated/omnibus.msw";
 import {
   aWireTaskProgress,
   aWireWorkerStatus,
-  workerStatusHandler,
 } from "../../testing/adminHandlers";
 import { WorkerStatus } from "./WorkerStatus";
 
@@ -35,7 +35,7 @@ const meta = {
     feed = aWireWorkerStatus();
     polls = 0;
     msw.use(
-      workerStatusHandler(() => {
+      getGetWorkerStatusMockHandler200(() => {
         polls += 1;
         return feed;
       }),

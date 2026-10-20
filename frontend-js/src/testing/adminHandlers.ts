@@ -104,11 +104,6 @@ export function settingsHandlers(
   ];
 }
 
-/** `GET /api/library`; `contents` is read on every request, so a story can change it between reads. */
-export function libraryContentsHandler(contents: () => LibraryContents) {
-  return getGetLibraryMockHandler200(contents);
-}
-
 /** A task in the worker feed: a scan that has not counted its files yet. */
 export function aWireTaskProgress(
   overrides: Partial<TaskProgress> = {},
@@ -130,11 +125,6 @@ export function aWireWorkerStatus(
   return { active: [], recent_complete: [], ...overrides };
 }
 
-/** `GET /api/worker/status`; `status` is read on every poll, so a story can change the feed between polls. */
-export function workerStatusHandler(status: () => WorkerStatus) {
-  return getGetWorkerStatusMockHandler200(status);
-}
-
 /** One recorded run of a background task, finished 45 s after it started. */
 export function aWireBackgroundTask(
   overrides: Partial<BackgroundTaskRecord> = {},
@@ -148,11 +138,6 @@ export function aWireBackgroundTask(
     error: null,
     ...overrides,
   };
-}
-
-/** `GET /api/admin/background-tasks`; `tasks` is read on every request. */
-export function backgroundTasksHandler(tasks: () => BackgroundTaskRecord[]) {
-  return getGetBackgroundTasksMockHandler200(tasks);
 }
 
 export const JOB_ROUTES = {
@@ -220,16 +205,6 @@ export function aWireCleanupCounts(): CleanupKindCounts[] {
   ];
 }
 
-/** `GET /api/admin/cleanup/counts`; `counts` is read on every request, so a story can change it between reads. */
-export function cleanupCountsHandler(counts: () => CleanupKindCounts[]) {
-  return getGetCleanupCountsMockHandler200(counts);
-}
-
-/** `POST /api/admin/cleanup/detect`, answering as queued; `onDetect` runs on every POST. */
-export function cleanupDetectHandler(onDetect?: () => void) {
-  return getPostCleanupDetectMockHandler202(onDetect);
-}
-
 /** A pending cleanup suggestion as `GET /api/admin/cleanup/{kind}/queue` lists it: two tags merging. */
 export function aWireSuggestion(
   overrides: Partial<SuggestionCard> = {},
@@ -248,11 +223,6 @@ export function aWireSuggestion(
     created_at: 1_700_000_000,
     ...overrides,
   };
-}
-
-/** `GET /api/admin/cleanup/{kind}/queue` for any kind; `queue` is read on every request. */
-export function cleanupQueueHandler(queue: () => SuggestionCard[]) {
-  return getGetCleanupQueueMockHandler200(queue);
 }
 
 /** A decision as `cleanupDecisionHandler` received it. */
@@ -672,11 +642,6 @@ export function aWireAdminHealth(
   };
 }
 
-/** `GET /api/admin/health`; `report` is read on every poll, so a story can change it between polls. */
-export function adminHealthHandler(report: () => AdminHealthReport) {
-  return getGetAdminHealthMockHandler200(report);
-}
-
 /** One log record as `GET /api/admin/logs` lists it. */
 export function aWireLogRecord(overrides: Partial<LogRecord> = {}): LogRecord {
   return {
@@ -719,13 +684,13 @@ export function logsHandler(
 export function adminHandlers() {
   return [
     ...settingsHandlers(aWireSettings()),
-    libraryContentsHandler(aWireLibraryContents),
-    workerStatusHandler(aWireWorkerStatus),
+    getGetLibraryMockHandler200(() => aWireLibraryContents()),
+    getGetWorkerStatusMockHandler200(() => aWireWorkerStatus()),
     ...maintenanceJobHandlers(),
-    backgroundTasksHandler(() => [aWireBackgroundTask()]),
+    getGetBackgroundTasksMockHandler200(() => [aWireBackgroundTask()]),
     ...metadataOrderHandlers(),
-    cleanupCountsHandler(aWireCleanupCounts),
-    cleanupDetectHandler(),
+    getGetCleanupCountsMockHandler200(aWireCleanupCounts),
+    getPostCleanupDetectMockHandler202(),
     ...registrationHandlers(),
     ...usersHandlers(aWireAdminUsers()),
     ...sessionsHandlers({
@@ -737,7 +702,7 @@ export function adminHandlers() {
     ...secretKeyHandlers("/api/google-books-key", NO_KEY),
     ...ebookConvertHandlers(aWireEbookConvert()),
     ...mcpHandlers(false),
-    adminHealthHandler(aWireAdminHealth),
+    getGetAdminHealthMockHandler200(() => aWireAdminHealth()),
     logsHandler(() => aWireLogPage()),
   ];
 }

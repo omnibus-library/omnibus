@@ -186,12 +186,15 @@ shell provides it.
   adds the ones that need behaviour: paging headers, a password check, a journal
   that keeps what is posted, a Kindle send that answers `pending` and then
   `sent`. `src/testing/adminHandlers.ts` does the same for the admin screens.
-  Its one-route handlers (the library folders, the worker feed, the task list,
-  the cleanup counts, queue, detect and undo, the health report) call the
-  generated ones. Each write handler records what it received (the cleanup
-  detect handler calls back instead), and those over a setting or a list (the
-  settings, accounts, sessions, the relay, the keys) serve the new state on the
-  next read; a cleanup decision, an undo and a job are only recorded.
+  A story uses the generated handler itself for a one-route read (the library
+  folders, the worker feed, the task list, the cleanup counts and queue, the
+  health report) and for the cleanup detect route: it takes a function that is
+  read on every request, so a story can change the answer between reads, and
+  the detect one calls back instead of recording. The cleanup undo handler wraps
+  the generated one to record the log ids. Each other write handler records
+  what it received, and those over a setting or a list (the settings, accounts,
+  sessions, the relay, the keys) serve the new state on the next read; a cleanup
+  decision, an undo and a job are only recorded.
   `adminHandlers()` is the default set for the sections. Stories for the ported
   screens run against them, so their `play` tests cover loading, empty, failing
   and success states, and the fixtures are typed by the spec.

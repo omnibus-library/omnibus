@@ -2,11 +2,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 import { adminHealthQuery } from "../../api";
+import { getGetAdminHealthMockHandler200 } from "../../api/generated/omnibus.msw";
 import { storyClient } from "../../testing/AppHarness";
-import {
-  adminHealthHandler,
-  aWireAdminHealth,
-} from "../../testing/adminHandlers";
+import { aWireAdminHealth } from "../../testing/adminHandlers";
 import { failing, hanging } from "../../testing/handlers";
 import { HealthSection } from "./HealthSection";
 
@@ -30,7 +28,7 @@ const meta = {
   title: "Pages/Admin/HealthSection",
   component: HealthSection,
   beforeEach({ msw }) {
-    msw.use(adminHealthHandler(aWireAdminHealth));
+    msw.use(getGetAdminHealthMockHandler200(() => aWireAdminHealth()));
   },
 } satisfies Meta<typeof HealthSection>;
 
@@ -106,7 +104,7 @@ export const ReadsAnUnsetLibraryFolderAsNotConfigured: Story = {
   beforeEach({ msw }) {
     const base = aWireAdminHealth();
     msw.use(
-      adminHealthHandler(() => ({
+      getGetAdminHealthMockHandler200(() => ({
         ...base,
         index: {
           ...base.index,
@@ -129,7 +127,7 @@ export const WarnsAboutGhostedBooks: Story = {
   beforeEach({ msw }) {
     const base = aWireAdminHealth();
     msw.use(
-      adminHealthHandler(() => ({
+      getGetAdminHealthMockHandler200(() => ({
         ...base,
         index: { ...base.index, ghosted_book_count: 2 },
       })),
@@ -161,7 +159,7 @@ export const ShowsAnEmptyWorkerQueue: Story = {
 export const ListsTheWorkerQueue: Story = {
   beforeEach({ msw }) {
     msw.use(
-      adminHealthHandler(() =>
+      getGetAdminHealthMockHandler200(() =>
         aWireAdminHealth({
           worker_queue: [
             { kind: "scan", queue_depth: 1, recent_completions_ms: [120, 340] },
@@ -218,7 +216,7 @@ export const ReportsAnInSyncSearchIndex: Story = {
 export const ReportsAnOutOfSyncSearchIndex: Story = {
   beforeEach({ msw }) {
     msw.use(
-      adminHealthHandler(() =>
+      getGetAdminHealthMockHandler200(() =>
         aWireAdminHealth({
           fts: { books_rows: 10, fts_rows: 4, in_sync: false },
         }),
@@ -269,7 +267,7 @@ export const ShowsAnEmptyErrorLog: Story = {
 export const ListsTheLastErrors: Story = {
   beforeEach({ msw }) {
     msw.use(
-      adminHealthHandler(() =>
+      getGetAdminHealthMockHandler200(() =>
         aWireAdminHealth({
           last_errors: [
             {

@@ -2,13 +2,15 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
 import { expect, fireEvent, waitFor, within } from "storybook/test";
+import {
+  getGetCleanupCountsMockHandler200,
+  getGetCleanupQueueMockHandler200,
+} from "../../api/generated/omnibus.msw";
 import { storyClient } from "../../testing/AppHarness";
 import {
   aWireCleanupCounts,
   aWireSuggestion,
-  cleanupCountsHandler,
   cleanupDecisionHandler,
-  cleanupQueueHandler,
   cleanupUndoHandler,
   type Decided,
 } from "../../testing/adminHandlers";
@@ -66,11 +68,11 @@ const meta = {
     queueReads = 0;
     countsReads = 0;
     msw.use(
-      cleanupQueueHandler(() => {
+      getGetCleanupQueueMockHandler200(() => {
         queueReads += 1;
         return QUEUE;
       }),
-      cleanupCountsHandler(() => {
+      getGetCleanupCountsMockHandler200(() => {
         countsReads += 1;
         return aWireCleanupCounts();
       }),
@@ -283,7 +285,11 @@ export const ShowsAMergeWithEverySourceStruckThrough: Story = {
 
 export const CountsOneBookInTheSingular: Story = {
   beforeEach({ msw }) {
-    msw.use(cleanupQueueHandler(() => [aWireSuggestion({ book_count: 1 })]));
+    msw.use(
+      getGetCleanupQueueMockHandler200(() => [
+        aWireSuggestion({ book_count: 1 }),
+      ]),
+    );
   },
   play: async ({ canvas }) => {
     await expect(
@@ -296,7 +302,7 @@ export const ShowsABookTitleRenameAsAnInput: Story = {
   parameters: { path: "/admin/cleanup/book_title" },
   beforeEach({ msw }) {
     msw.use(
-      cleanupQueueHandler(() => [
+      getGetCleanupQueueMockHandler200(() => [
         aWireSuggestion({
           kind: "book_title",
           action: "rename",
@@ -328,7 +334,7 @@ export const ShowsABookTitleRenameAsAnInput: Story = {
 
 export const ShowsASplitAsItsParts: Story = {
   beforeEach({ msw }) {
-    msw.use(cleanupQueueHandler(() => [SPLIT]));
+    msw.use(getGetCleanupQueueMockHandler200(() => [SPLIT]));
   },
   play: async ({ canvas }) => {
     await expect(
@@ -353,7 +359,7 @@ export const ShowsADeleteAsTheRecordAlone: Story = {
   parameters: { path: "/admin/cleanup/author" },
   beforeEach({ msw }) {
     msw.use(
-      cleanupQueueHandler(() => [
+      getGetCleanupQueueMockHandler200(() => [
         aWireSuggestion({
           kind: "author",
           action: "delete",
@@ -392,7 +398,7 @@ export const ShowsADeleteAsTheRecordAlone: Story = {
 export const ShowsThePhotoAndTheHotkeyHint: Story = {
   beforeEach({ msw }) {
     msw.use(
-      cleanupQueueHandler(() => [
+      getGetCleanupQueueMockHandler200(() => [
         aWireSuggestion({ photo_url: "/api/covers/author-1" }),
       ]),
     );
@@ -532,7 +538,7 @@ export const ShowsTheEndOfThePassPastTheLastCard: Story = {
 
 export const ShowsTheEndOfThePassForAnEmptyQueue: Story = {
   beforeEach({ msw }) {
-    msw.use(cleanupQueueHandler(() => []));
+    msw.use(getGetCleanupQueueMockHandler200(() => []));
   },
   play: async ({ canvas }) => {
     await expect(
@@ -570,7 +576,7 @@ const RENAMES = [
 const renaming = (play: Story["play"]): Story => ({
   parameters: { path: "/admin/cleanup/book_title" },
   beforeEach({ msw }) {
-    msw.use(cleanupQueueHandler(() => RENAMES));
+    msw.use(getGetCleanupQueueMockHandler200(() => RENAMES));
   },
   play,
 });

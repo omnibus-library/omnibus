@@ -2,13 +2,15 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, within } from "storybook/test";
 import {
+  getGetBackgroundTasksMockHandler200,
+  getGetWorkerStatusMockHandler200,
+} from "../../api/generated/omnibus.msw";
+import {
   aWireBackgroundTask,
   aWireTaskProgress,
   aWireWorkerStatus,
-  backgroundTasksHandler,
   JOB_ROUTES,
   maintenanceJobHandlers,
-  workerStatusHandler,
 } from "../../testing/adminHandlers";
 import { deferred, failing, hanging } from "../../testing/handlers";
 import { MaintenanceCard } from "./MaintenanceCard";
@@ -22,9 +24,9 @@ const meta = {
   beforeEach({ msw }) {
     queued.length = 0;
     msw.use(
-      workerStatusHandler(aWireWorkerStatus),
+      getGetWorkerStatusMockHandler200(() => aWireWorkerStatus()),
       ...maintenanceJobHandlers(queued),
-      backgroundTasksHandler(() => [aWireBackgroundTask()]),
+      getGetBackgroundTasksMockHandler200(() => [aWireBackgroundTask()]),
     );
   },
 } satisfies Meta<typeof MaintenanceCard>;
@@ -156,7 +158,7 @@ export const ShowsTheServersSentenceWhenAJobIsRefused: Story = {
 export const ShowsWorkRunningOnTheServer: Story = {
   beforeEach({ msw }) {
     msw.use(
-      workerStatusHandler(() =>
+      getGetWorkerStatusMockHandler200(() =>
         aWireWorkerStatus({ active: [aWireTaskProgress()] }),
       ),
     );
@@ -230,7 +232,7 @@ export const RecentTasksTryAgainReadsTheHistoryAgain: Story = {
 
 export const RecentTasksEmpty: Story = {
   beforeEach({ msw }) {
-    msw.use(backgroundTasksHandler(() => []));
+    msw.use(getGetBackgroundTasksMockHandler200(() => []));
   },
   render: () => <RecentTasksCard />,
   play: async ({ canvas }) => {
@@ -245,7 +247,7 @@ export const RecentTasksEmpty: Story = {
 export const RecentTasksRows: Story = {
   beforeEach({ msw }) {
     msw.use(
-      backgroundTasksHandler(() => [
+      getGetBackgroundTasksMockHandler200(() => [
         aWireBackgroundTask({ id: 4 }),
         aWireBackgroundTask({
           id: 3,

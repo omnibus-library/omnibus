@@ -4,6 +4,7 @@ import { HttpResponse, http } from "msw";
 import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import { type Settings, settingsQuery } from "../../api";
+import { getGetLibraryMockHandler200 } from "../../api/generated/omnibus.msw";
 import {
   expectInvalidated,
   seedQueries,
@@ -13,7 +14,6 @@ import {
   aWireLibraryContents,
   aWireLibrarySection,
   aWireSettings,
-  libraryContentsHandler,
   settingsHandlers,
 } from "../../testing/adminHandlers";
 import { deferred, failing, hanging } from "../../testing/handlers";
@@ -28,7 +28,7 @@ const meta = {
     saved.length = 0;
     msw.use(
       ...settingsHandlers(aWireSettings(), { saved }),
-      libraryContentsHandler(aWireLibraryContents),
+      getGetLibraryMockHandler200(() => aWireLibraryContents()),
     );
   },
 } satisfies Meta<typeof SourcesCard>;
@@ -261,7 +261,7 @@ export const Loaded: Story = {
 export const FolderSummaries: Story = {
   beforeEach({ msw }) {
     msw.use(
-      libraryContentsHandler(() =>
+      getGetLibraryMockHandler200(() =>
         aWireLibraryContents({
           ebooks: aWireLibrarySection({ path: null, total_files: 0 }),
           audiobooks: aWireLibrarySection({
@@ -286,7 +286,7 @@ export const FolderSummaries: Story = {
 export const SavesTheSettings: Story = {
   beforeEach({ msw }) {
     msw.use(
-      libraryContentsHandler(() =>
+      getGetLibraryMockHandler200(() =>
         saved.length
           ? aWireLibraryContents({
               ebooks: aWireLibrarySection({
