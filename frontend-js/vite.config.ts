@@ -71,7 +71,13 @@ export default defineConfig({
           browser: {
             enabled: true,
             headless: true,
-            provider: playwright({}),
+            // A PNG toBlob otherwise waits on main-thread idle time, up to 6.7 s
+            // on a busy runner; Chromium turns that off for its own web tests too.
+            provider: playwright({
+              launchOptions: {
+                args: ["--enable-blink-features=NoIdleEncodingForWebTests"],
+              },
+            }),
             instances: [{ browser: "chromium" }],
           },
         },
