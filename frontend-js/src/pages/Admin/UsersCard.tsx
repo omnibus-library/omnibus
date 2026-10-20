@@ -130,6 +130,13 @@ export function UsersCard() {
     close();
     void users.refetch();
   };
+  // Changing your own permissions changes what you may see.
+  const refreshed = (user: AdminUserRow) => {
+    void users.refetch();
+    if (user.id === me.id) {
+      void queryClient.invalidateQueries({ queryKey: meQuery.queryKey });
+    }
+  };
   const modalFor = (open: NonNullable<OpenModal>) => {
     switch (open.kind) {
       case "new":
@@ -139,15 +146,13 @@ export function UsersCard() {
           <EditUserModal
             user={open.user}
             onClose={close}
-            onSaved={() => {
-              reloaded();
-              // Changing your own permissions changes what you may see.
-              if (open.user.id === me.id) {
-                void queryClient.invalidateQueries({
-                  queryKey: meQuery.queryKey,
-                });
-              }
-            }}
+            onChanged={() => refreshed(open.user)}
+            // Your own password reset ends your own session, so there is nothing left to reload.
+            onSaved={(passwordReset) =>
+              open.user.id === me.id && passwordReset
+                ? endSession(queryClient, navigate)
+                : close()
+            }
           />
         );
       case "delete":

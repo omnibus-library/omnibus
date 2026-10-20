@@ -18,6 +18,7 @@ import {
   usersHandlers,
 } from "../../testing/adminHandlers";
 import { deferred, failing, hanging } from "../../testing/handlers";
+import { WIRE_ADA } from "../../testing/wire";
 import {
   DeleteUserModal,
   EditUserModal,
@@ -37,7 +38,8 @@ const writes: UserWrites = {
   deleted: [],
 };
 const revoked: Revoked = { sessions: [], devices: [] };
-const calls = { closed: 0, done: 0 };
+const calls = { closed: 0, done: 0, changed: 0 };
+const reads = { users: 0, me: 0 };
 
 const meta = {
   title: "Pages/Admin/UserModals",
@@ -48,6 +50,9 @@ const meta = {
     revoked.devices.length = 0;
     calls.closed = 0;
     calls.done = 0;
+    calls.changed = 0;
+    reads.users = 0;
+    reads.me = 0;
     msw.use(
       ...usersHandlers(aWireAdminUsers(), writes),
       ...sessionsHandlers(
@@ -72,6 +77,9 @@ const close = () => {
 };
 const done = () => {
   calls.done += 1;
+};
+const changed = () => {
+  calls.changed += 1;
 };
 
 const checkbox = (scope: HTMLElement, name: string) =>
@@ -297,7 +305,14 @@ export const NewUserClosesOnEscapeWhileEmpty: Story = {
 };
 
 export const EditUserStartsFromTheRowsPermissions: Story = {
-  render: () => <EditUserModal user={ALICE} onClose={close} onSaved={done} />,
+  render: () => (
+    <EditUserModal
+      user={ALICE}
+      onClose={close}
+      onChanged={changed}
+      onSaved={done}
+    />
+  ),
   play: async ({ canvas }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await expect(checkbox(dialog, "Administrator")).not.toBeChecked();
@@ -314,7 +329,14 @@ export const EditUserStartsFromTheRowsPermissions: Story = {
 };
 
 export const EditUserShowsTheMeterOnceAPasswordIsTyped: Story = {
-  render: () => <EditUserModal user={ALICE} onClose={close} onSaved={done} />,
+  render: () => (
+    <EditUserModal
+      user={ALICE}
+      onClose={close}
+      onChanged={changed}
+      onSaved={done}
+    />
+  ),
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await userEvent.type(
@@ -329,7 +351,14 @@ export const EditUserShowsTheMeterOnceAPasswordIsTyped: Story = {
 };
 
 export const EditUserSavesPermissionsWithoutAPassword: Story = {
-  render: () => <EditUserModal user={ALICE} onClose={close} onSaved={done} />,
+  render: () => (
+    <EditUserModal
+      user={ALICE}
+      onClose={close}
+      onChanged={changed}
+      onSaved={done}
+    />
+  ),
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await userEvent.click(checkbox(dialog, "Edit metadata"));
@@ -354,7 +383,14 @@ export const EditUserSavesPermissionsWithoutAPassword: Story = {
 };
 
 export const EditUserSavesAPasswordTypedWithThePermissions: Story = {
-  render: () => <EditUserModal user={ALICE} onClose={close} onSaved={done} />,
+  render: () => (
+    <EditUserModal
+      user={ALICE}
+      onClose={close}
+      onChanged={changed}
+      onSaved={done}
+    />
+  ),
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await userEvent.type(
@@ -377,7 +413,14 @@ export const EditUserStopsAtTheFirstFailure: Story = {
   beforeEach({ msw }) {
     msw.use(failing("patch", "/api/admin/users/:id/permissions", 403));
   },
-  render: () => <EditUserModal user={ALICE} onClose={close} onSaved={done} />,
+  render: () => (
+    <EditUserModal
+      user={ALICE}
+      onClose={close}
+      onChanged={changed}
+      onSaved={done}
+    />
+  ),
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await userEvent.type(
@@ -392,6 +435,7 @@ export const EditUserStopsAtTheFirstFailure: Story = {
       "failed with 403",
     );
     await expect(writes.passwords).toEqual([]);
+    await expect(calls.changed).toBe(0);
     await expect(calls.done).toBe(0);
   },
 };
@@ -405,7 +449,14 @@ export const EditUserShowsAPasswordRefusal: Story = {
       ),
     );
   },
-  render: () => <EditUserModal user={ALICE} onClose={close} onSaved={done} />,
+  render: () => (
+    <EditUserModal
+      user={ALICE}
+      onClose={close}
+      onChanged={changed}
+      onSaved={done}
+    />
+  ),
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await userEvent.type(within(dialog).getByLabelText("Reset password"), "x");
@@ -416,12 +467,20 @@ export const EditUserShowsAPasswordRefusal: Story = {
     await expect(await within(dialog).findByRole("alert")).toHaveTextContent(
       "password is too weak",
     );
+    await expect(calls.changed).toBe(1);
     await expect(calls.done).toBe(0);
   },
 };
 
 export const EditUserHoldsTheScrimOnceEdited: Story = {
-  render: () => <EditUserModal user={ALICE} onClose={close} onSaved={done} />,
+  render: () => (
+    <EditUserModal
+      user={ALICE}
+      onClose={close}
+      onChanged={changed}
+      onSaved={done}
+    />
+  ),
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await userEvent.click(checkbox(dialog, "Edit metadata"));
@@ -438,7 +497,14 @@ export const EditUserHoldsTheScrimOnceEdited: Story = {
 };
 
 export const EditUserClosesOnEscapeUntilEdited: Story = {
-  render: () => <EditUserModal user={ALICE} onClose={close} onSaved={done} />,
+  render: () => (
+    <EditUserModal
+      user={ALICE}
+      onClose={close}
+      onChanged={changed}
+      onSaved={done}
+    />
+  ),
   play: async ({ canvas, userEvent }) => {
     await waitFor(async () =>
       expect(
@@ -910,6 +976,104 @@ export const EditButtonSavesAndReadsTheListAgain: Story = {
         ].map((chip) => chip.textContent),
       ).toEqual(["Upload", "Edit", "Download"]),
     );
+  },
+};
+
+const readsOfUsersAndMe = [
+  http.get("/api/admin/users", () => {
+    reads.users += 1;
+    return HttpResponse.json(aWireAdminUsers());
+  }),
+  http.get("/api/auth/me", () => {
+    reads.me += 1;
+    return HttpResponse.json(WIRE_ADA);
+  }),
+];
+
+export const EditButtonReadsTheListAndTheSessionWhenOnlyThePermissionsLand: Story =
+  {
+    beforeEach({ msw }) {
+      msw.use(
+        ...readsOfUsersAndMe,
+        failing("post", "/api/admin/users/:id/password", 403),
+      );
+    },
+    render: () => <UsersCard />,
+    play: async ({ canvas, userEvent }) => {
+      await userEvent.click(
+        await canvas.findByRole("button", { name: "Edit ada" }),
+      );
+      const dialog = await canvas.findByRole("dialog", { name: "Edit ada" });
+      await userEvent.type(
+        within(dialog).getByLabelText("Reset password"),
+        "new-password-1",
+      );
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Save changes" }),
+      );
+
+      await expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+        "failed with 403",
+      );
+      await waitFor(() => expect(reads).toEqual({ users: 2, me: 1 }));
+    },
+  };
+
+export const EditUserOnYourOwnRowWithAPasswordSignsYouOut: Story = {
+  render: () => (
+    <>
+      <WhileSignedIn>
+        <UsersCard />
+      </WhileSignedIn>
+      <Where />
+    </>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Edit ada" }),
+    );
+    const dialog = await canvas.findByRole("dialog", { name: "Edit ada" });
+    await userEvent.type(
+      within(dialog).getByLabelText("Reset password"),
+      "new-password-1",
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent("/login"),
+    );
+    await expect(writes.passwords).toEqual([
+      { id: 1, password: "new-password-1" },
+    ]);
+    await expect(storyClient().getQueryData(meQuery.queryKey)).toBeNull();
+  },
+};
+
+export const EditUserOnYourOwnRowWithoutAPasswordStaysSignedIn: Story = {
+  render: () => (
+    <>
+      <WhileSignedIn>
+        <UsersCard />
+      </WhileSignedIn>
+      <Where />
+    </>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Edit ada" }),
+    );
+    const dialog = await canvas.findByRole("dialog", { name: "Edit ada" });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await expect(canvas.getByTestId("where")).not.toHaveTextContent("/login");
+    await expect(writes.permissions).toHaveLength(1);
   },
 };
 

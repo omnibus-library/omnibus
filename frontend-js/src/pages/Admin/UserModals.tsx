@@ -255,15 +255,21 @@ export function NewUserModal({
   );
 }
 
-/** Changes an account's permissions, and resets its password when one is typed. */
+/**
+ * Changes an account's permissions, and resets its password when one is typed.
+ * `onChanged` runs once the permissions land, even if the password step then
+ * fails; `onSaved` runs after everything asked for is saved.
+ */
 export function EditUserModal({
   user,
   onClose,
+  onChanged,
   onSaved,
 }: {
   user: AdminUserRow;
   onClose: () => void;
-  onSaved: () => void;
+  onChanged: () => void;
+  onSaved: (passwordReset: boolean) => void;
 }) {
   const [perms, setPerms] = useState(() => permissionsOf(user));
   const [password, setPassword] = useState("");
@@ -272,8 +278,11 @@ export function EditUserModal({
     // The first refusal stops the save, so a rejected permission change never resets the password.
     mutationFn: async () => {
       await setUserPermissions(user.id, perms);
+      onChanged();
       const reset = password.trim();
-      if (reset !== "") await setUserPassword(user.id, reset);
+      if (reset === "") return false;
+      await setUserPassword(user.id, reset);
+      return true;
     },
     onSuccess: onSaved,
     onError: (e) => setError(e.message),
