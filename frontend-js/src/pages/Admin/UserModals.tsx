@@ -1,11 +1,8 @@
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  type FormEvent,
-  type ReactNode,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
+import type { z } from "zod";
 import {
   type AdminUserRow,
   createUser,
@@ -28,7 +25,7 @@ import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { StrengthMeter } from "../../components/StrengthMeter/StrengthMeter";
 import { formatUtcDay } from "../../format";
 import { scorePassword } from "../../password";
-import { editIsDirty, permissionsOf } from "./users";
+import { EditUserSchema, NewUserSchema, permissionsOf } from "./users";
 
 const NEW_USER_PERMISSIONS: UserPermissions = {
   is_admin: false,
@@ -174,51 +171,50 @@ export function NewUserModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
   const [perms, setPerms] = useState(NEW_USER_PERMISSIONS);
-  const [error, setError] = useState<string | null>(null);
+  const form = useForm({
+    resolver: zodResolver(NewUserSchema),
+    defaultValues: { username: "", new_password: "" },
+    // Typing clears a refusal, and only the next submit brings it back.
+    reValidateMode: "onSubmit",
+    shouldFocusError: false,
+  });
   const create = useMutation({
     mutationFn: createUser,
     onSuccess: onCreated,
-    onError: (e) => setError(e.message),
+    onError: (e) => form.setError("root", { message: e.message }),
   });
-
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (create.isPending) return;
-    const name = username.trim();
-    if (name === "" || password === "") {
-      setError("Enter a username and password.");
-      return;
-    }
-    setError(null);
-    create.mutate({ username: name, password, permissions: perms });
-  };
+  const { errors } = form.formState;
+  const clearError = { onChange: () => form.clearErrors() };
 
   return (
     <ModalShell
       title="New user"
       testId="users-new-modal"
-      busy={create.isPending || username !== "" || password !== ""}
+      busy={create.isPending || form.formState.isDirty}
       onClose={onClose}
     >
-      <form className="settings-form" onSubmit={submit}>
+      <form
+        className="settings-form"
+        onSubmit={form.handleSubmit(({ username, new_password }) => {
+          if (create.isPending) return;
+          create.mutate({
+            username,
+            password: new_password,
+            permissions: perms,
+          });
+        })}
+      >
         <div className="settings-field">
           <label htmlFor="new-user-username">Username</label>
           <input
             type="text"
             id="new-user-username"
-            name="username"
             data-testid="new-user-username"
             autoComplete="off"
             autoCapitalize="none"
             spellCheck={false}
-            value={username}
-            onChange={(e) => {
-              setUsername(e.target.value);
-              setError(null);
-            }}
+            {...form.register("username", clearError)}
           />
         </div>
         <div className="settings-field">
@@ -226,19 +222,19 @@ export function NewUserModal({
           <input
             type="password"
             id="new-user-password"
-            name="new_password"
             data-testid="new-user-password"
             autoComplete="new-password"
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              setError(null);
-            }}
+            {...form.register("new_password", clearError)}
           />
         </div>
-        <StrengthMeter strength={scorePassword(password)} />
+        <StrengthMeter strength={scorePassword(form.watch("new_password"))} />
         <PermissionToggles perms={perms} onChange={setPerms} />
-        <ModalError error={error} />
+        <ModalError
+          error={
+            (errors.username ?? errors.new_password ?? errors.root)?.message ??
+            null
+          }
+        />
         <div className="settings-actions">
           <Button
             type="submit"
@@ -278,18 +274,21 @@ export function EditUserModal({
   onChanged: (passwordReset: boolean) => void;
   onSaved: (passwordReset: boolean) => void;
 }) {
-  const [perms, setPerms] = useState(() => permissionsOf(user));
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const form = useForm({
+    resolver: zodResolver(EditUserSchema),
+    defaultValues: { permissions: permissionsOf(user), new_password: "" },
+  });
   const save = useMutation({
     // The first refusal stops the save, so a rejected permission change never resets the password.
-    mutationFn: async () => {
-      await setUserPermissions(user.id, perms);
-      const reset = password.trim();
+    mutationFn: async ({
+      permissions,
+      new_password,
+    }: z.output<typeof EditUserSchema>) => {
+      await setUserPermissions(user.id, permissions);
       let passwordReset = false;
       try {
-        if (reset !== "") {
-          await setUserPassword(user.id, reset);
+        if (new_password !== "") {
+          await setUserPassword(user.id, new_password);
           passwordReset = true;
         }
       } finally {
@@ -298,39 +297,40 @@ export function EditUserModal({
       return passwordReset;
     },
     onSuccess: onSaved,
-    onError: (e) => setError(e.message),
+    onError: (e) => form.setError("root", { message: e.message }),
   });
-
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (save.isPending) return;
-    setError(null);
-    save.mutate();
-  };
+  const password = form.watch("new_password");
 
   return (
     <ModalShell
       title={`Edit ${user.username}`}
       testId="users-edit-modal"
-      busy={save.isPending || editIsDirty(user, perms, password)}
+      busy={save.isPending || form.formState.isDirty}
       onClose={onClose}
     >
-      <form className="settings-form" onSubmit={submit}>
-        <PermissionToggles perms={perms} onChange={setPerms} />
+      <form
+        className="settings-form"
+        onSubmit={form.handleSubmit((values) => {
+          if (!save.isPending) save.mutate(values);
+        })}
+      >
+        <PermissionToggles
+          perms={form.watch("permissions")}
+          onChange={(perms) =>
+            form.setValue("permissions", perms, { shouldDirty: true })
+          }
+        />
         <div className="settings-field">
           <label htmlFor="edit-user-password">Reset password</label>
           <input
             type="password"
             id="edit-user-password"
-            name="new_password"
             data-testid="edit-user-password"
             autoComplete="new-password"
             aria-describedby="edit-user-password-hint"
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              setError(null);
-            }}
+            {...form.register("new_password", {
+              onChange: () => form.clearErrors(),
+            })}
           />
           <p className="settings-hint" id="edit-user-password-hint">
             Leave blank to keep the current password.
@@ -339,7 +339,7 @@ export function EditUserModal({
         {password !== "" && (
           <StrengthMeter strength={scorePassword(password)} />
         )}
-        <ModalError error={error} />
+        <ModalError error={form.formState.errors.root?.message ?? null} />
         <div className="settings-actions">
           <Button
             type="submit"

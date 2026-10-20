@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { editIsDirty, permissionChips, registrationStatusLine } from "./users";
+import {
+  EditUserSchema,
+  NewUserSchema,
+  permissionChips,
+  registrationStatusLine,
+} from "./users";
 
 const NONE = {
   is_admin: false,
@@ -48,29 +53,52 @@ describe("permissionChips", () => {
   });
 });
 
-describe("editIsDirty", () => {
-  const user = {
-    is_admin: false,
-    can_upload: true,
-    can_edit: false,
-    can_download: true,
-  };
+const CREDENTIALS = "Enter a username and password.";
 
-  it("returns false while the permissions and password are untouched", () => {
-    expect(editIsDirty(user, { ...user }, "")).toBe(false);
+describe("NewUserSchema", () => {
+  describe("validation", () => {
+    it.each([
+      [
+        "a blank username",
+        { username: "", new_password: "secret" },
+        "username",
+      ],
+      [
+        "a username of spaces",
+        { username: "  ", new_password: "secret" },
+        "username",
+      ],
+      [
+        "a blank password",
+        { username: "carol", new_password: "" },
+        "new_password",
+      ],
+    ])("refuses %s", (_condition, fields, field) => {
+      expect(NewUserSchema.safeParse(fields).error?.issues).toEqual([
+        expect.objectContaining({ path: [field], message: CREDENTIALS }),
+      ]);
+    });
   });
 
-  it("returns true once a password is typed", () => {
-    expect(editIsDirty(user, { ...user }, "hunter2hunter2")).toBe(true);
+  it("trims the username but sends the password as typed", () => {
+    expect(
+      NewUserSchema.parse({ username: " carol ", new_password: " pass " }),
+    ).toEqual({ username: "carol", new_password: " pass " });
+  });
+});
+
+describe("EditUserSchema", () => {
+  it("trims the reset password", () => {
+    expect(
+      EditUserSchema.parse({ permissions: NONE, new_password: " pass " }),
+    ).toEqual({ permissions: NONE, new_password: "pass" });
   });
 
-  it.each([
-    ["is_admin"],
-    ["can_upload"],
-    ["can_edit"],
-    ["can_download"],
-  ] as const)("returns true once %s is flipped", (flag) => {
-    expect(editIsDirty(user, { ...user, [flag]: !user[flag] }, "")).toBe(true);
+  it("reads a password of spaces as none", () => {
+    expect(
+      EditUserSchema.parse({ permissions: NONE, new_password: "   " })
+        .new_password,
+    ).toBe("");
   });
 });
 

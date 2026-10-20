@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LibrarySection } from "../../api";
-import { librarySummaryLine, sourcesPayload } from "./sources";
+import { librarySummaryLine, SourcesSchema } from "./sources";
 
 function section(
   totalFiles: number,
@@ -13,15 +13,13 @@ function section(
   };
 }
 
-describe("sourcesPayload", () => {
-  describe("loading", () => {
-    it("refuses before the saved settings have loaded", () => {
-      expect(sourcesPayload(false, "/books", "", "")).toEqual({
-        refused: "not-loaded",
-      });
-    });
-  });
+const FORM = {
+  ebook_library_path: "/books",
+  audiobook_library_path: "",
+  scan_interval_hours: "",
+};
 
+describe("SourcesSchema", () => {
   describe("interval", () => {
     it.each([
       ["a non-numeric entry", "soon"],
@@ -30,9 +28,17 @@ describe("sourcesPayload", () => {
       ["an exponent", "1e3"],
       ["one past the largest whole number the server reads", "4294967296"],
     ])("refuses %s", (_condition, interval) => {
-      expect(sourcesPayload(true, "/books", "", interval)).toEqual({
-        refused: "bad-interval",
+      const result = SourcesSchema.safeParse({
+        ...FORM,
+        scan_interval_hours: interval,
       });
+
+      expect(result.error?.issues).toEqual([
+        expect.objectContaining({
+          path: ["scan_interval_hours"],
+          message: "Enter a whole number of hours, or leave it blank.",
+        }),
+      ]);
     });
 
     it.each([
@@ -43,38 +49,35 @@ describe("sourcesPayload", () => {
       ["a padded interval", " 24 ", 24],
       ["the largest whole number the server reads", "4294967295", 4294967295],
     ])("sends %s", (_condition, interval, hours) => {
-      expect(sourcesPayload(true, "/books", "", interval)).toEqual({
-        refused: null,
-        settings: {
-          ebook_library_path: "/books",
-          audiobook_library_path: null,
-          scan_interval_hours: hours,
-        },
+      expect(
+        SourcesSchema.parse({ ...FORM, scan_interval_hours: interval }),
+      ).toEqual({
+        ebook_library_path: "/books",
+        audiobook_library_path: null,
+        scan_interval_hours: hours,
       });
     });
   });
 
   describe("paths", () => {
     it("trims each path", () => {
-      expect(sourcesPayload(true, " /books ", " /audio ", "24")).toEqual({
-        refused: null,
-        settings: {
-          ebook_library_path: "/books",
-          audiobook_library_path: "/audio",
-          scan_interval_hours: 24,
-        },
+      expect(
+        SourcesSchema.parse({
+          ebook_library_path: " /books ",
+          audiobook_library_path: " /audio ",
+          scan_interval_hours: "24",
+        }),
+      ).toEqual({
+        ebook_library_path: "/books",
+        audiobook_library_path: "/audio",
+        scan_interval_hours: 24,
       });
     });
 
     it("sends a blank path as null", () => {
-      expect(sourcesPayload(true, "/books", "  ", "24")).toEqual({
-        refused: null,
-        settings: {
-          ebook_library_path: "/books",
-          audiobook_library_path: null,
-          scan_interval_hours: 24,
-        },
-      });
+      expect(
+        SourcesSchema.parse({ ...FORM, audiobook_library_path: "  " }),
+      ).toMatchObject({ audiobook_library_path: null });
     });
   });
 });

@@ -363,6 +363,50 @@ export const LeavesFreelyOnceTheSettingsAreSaved: Story = {
   },
 };
 
+export const LeavesFreelyOnceAPaddedPathIsSaved: Story = {
+  args: { path: "/admin?section=sources" },
+  play: async ({ canvas, userEvent }) => {
+    const ebook = canvas.getByLabelText("Ebook library path");
+    await waitFor(() => expect(ebook).toHaveValue("/library/ebooks"));
+    await userEvent.clear(ebook);
+    await userEvent.type(ebook, " /new/ebooks ");
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Save library settings" }),
+    );
+
+    await expect(
+      await canvas.findByText("Library settings saved."),
+    ).toBeVisible();
+    await waitFor(() => expect(window.onbeforeunload).toBeNull());
+    await expect(ebook).toHaveValue(" /new/ebooks ");
+    await userEvent.click(canvas.getByTestId("admin-nav-people"));
+    await expect(
+      await canvas.findByRole("heading", { level: 2, name: "People" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const LeavesFreelyOnceAPaddedRelayAndItsPasswordAreSaved: Story = {
+  args: { path: "/admin?section=integrations" },
+  play: async ({ canvas, userEvent }) => {
+    const host = canvas.getByLabelText("SMTP host");
+    await waitFor(() => expect(host).toHaveValue("smtp.example.com"));
+    await userEvent.clear(host);
+    await userEvent.type(host, " smtp.other.test ");
+    await userEvent.type(canvas.getByLabelText("Password"), "relay secret");
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Save SMTP settings" }),
+    );
+
+    await expect(await canvas.findByText("SMTP settings saved.")).toBeVisible();
+    await waitFor(() => expect(window.onbeforeunload).toBeNull());
+    await userEvent.click(canvas.getByTestId("admin-nav-people"));
+    await expect(
+      await canvas.findByRole("heading", { level: 2, name: "People" }),
+    ).toBeInTheDocument();
+  },
+};
+
 export const StaysOnTheOpenSectionsOwnLinkWithoutAsking: Story = {
   args: { path: "/admin?section=sources" },
   play: async ({ canvas, userEvent }) => {

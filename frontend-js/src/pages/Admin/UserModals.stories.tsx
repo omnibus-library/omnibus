@@ -221,6 +221,22 @@ export const NewUserRefusesAMissingPassword: Story = {
   },
 };
 
+export const NewUserClearsTheRefusalOnceTypingStarts: Story = {
+  render: () => <NewUserModal onClose={close} onCreated={done} />,
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await canvas.findByRole("dialog", { name: "New user" });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Create user" }),
+    );
+    await within(dialog).findByRole("alert");
+
+    // Even a keystroke that leaves the username blank, as a space does.
+    await userEvent.type(within(dialog).getByLabelText("Username"), " ");
+
+    await expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
+  },
+};
+
 export const NewUserSendsWhatWasEntered: Story = {
   render: () => <NewUserModal onClose={close} onCreated={done} />,
   play: async ({ canvas, userEvent }) => {

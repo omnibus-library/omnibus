@@ -1,31 +1,37 @@
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useForm } from "react-hook-form";
+import type { z } from "zod";
 import {
   type LibrarySection,
   libraryContentsQuery,
   replaceQueryData,
+  type Settings,
   saveSettings,
   settingsQuery,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel } from "../../components/Loading/Loading";
 import {
+  heldTrimmed,
   type Status,
   StatusLine,
   statusOrLoadError,
   useUnsavedGuard,
 } from "../../components/SettingsShell/SettingsShell";
 import {
+  INTERVAL_MESSAGE,
   librarySummaryLine,
   SCAN_INTERVAL_MIN_HOURS,
-  sourcesPayload,
+  SourcesSchema,
 } from "./sources";
 
-type Fields = { ebook: string; audiobook: string; interval: string };
-
-const BLANK: Fields = { ebook: "", audiobook: "", interval: "" };
-
-const INTERVAL_MESSAGE = "Enter a whole number of hours, or leave it blank.";
+const BLANK = {
+  ebook_library_path: "",
+  audiobook_library_path: "",
+  scan_interval_hours: "",
+};
 
 function LibrarySummary({
   testId,
@@ -53,38 +59,30 @@ function LibrarySummary({
   );
 }
 
+const toFields = (settings: Settings): z.input<typeof SourcesSchema> => ({
+  ebook_library_path: settings.ebook_library_path ?? "",
+  audiobook_library_path: settings.audiobook_library_path ?? "",
+  scan_interval_hours: settings.scan_interval_hours?.toString() ?? "",
+});
+
 /** The library folders and rescan interval, with what the scanner finds in each folder. */
 export function SourcesCard() {
   const queryClient = useQueryClient();
   const settings = useQuery(settingsQuery);
   const library = useQuery(libraryContentsQuery);
-  const [fields, setFields] = useState(BLANK);
-  // What the server holds, as the form last showed it; null until the settings load.
-  const [saved, setSaved] = useState<Fields | null>(null);
-  const [intervalInvalid, setIntervalInvalid] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
   const intervalInput = useRef<HTMLInputElement>(null);
-
-  // The form shows cached settings at once and takes each later read, but never over a typed edit.
-  const [readAt, setReadAt] = useState(0);
-  const dirty =
-    saved !== null &&
-    (saved.ebook !== fields.ebook ||
-      saved.audiobook !== fields.audiobook ||
-      saved.interval !== fields.interval);
-  if (settings.data && settings.dataUpdatedAt !== readAt) {
-    setReadAt(settings.dataUpdatedAt);
-    if (!dirty) {
-      const loaded = {
-        ebook: settings.data.ebook_library_path ?? "",
-        audiobook: settings.data.audiobook_library_path ?? "",
-        interval: settings.data.scan_interval_hours?.toString() ?? "",
-      };
-      setSaved(loaded);
-      setFields(loaded);
-    }
-  }
-  useUnsavedGuard("library-sources", dirty);
+  const form = useForm({
+    resolver: zodResolver(SourcesSchema),
+    defaultValues: BLANK,
+    // The form shows cached settings at once and takes each later read, but never over a typed edit.
+    values: settings.data ? toFields(settings.data) : undefined,
+    resetOptions: { keepDirtyValues: true },
+    // A refused interval stays marked until the next submit.
+    reValidateMode: "onSubmit",
+    shouldFocusError: false,
+  });
+  useUnsavedGuard("library-sources", form.formState.isDirty);
 
   const save = useMutation({
     mutationFn: saveSettings,
@@ -100,45 +98,27 @@ export function SourcesCard() {
     },
   });
 
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    setIntervalInvalid(false);
-    const payload = sourcesPayload(
-      saved !== null,
-      fields.ebook,
-      fields.audiobook,
-      fields.interval,
-    );
+  const submit = form.handleSubmit((update) => {
     // A number field reads half-typed text as blank, which would save as "no interval".
-    if (
-      payload.refused === "bad-interval" ||
-      intervalInput.current?.validity.badInput
-    ) {
-      setIntervalInvalid(true);
+    if (intervalInput.current?.validity.badInput) {
+      form.setError("scan_interval_hours", { message: INTERVAL_MESSAGE });
       return;
     }
-    // The other refusal is "not-loaded", and Save stays disabled until the settings load.
-    if (payload.refused !== null) return;
+    // Save writes every field, so it waits for the loaded settings: blanks saved over a failed read would clear both paths.
+    if (settings.data === undefined) return;
     setStatus(null);
-    save.mutate(payload.settings, {
-      onSuccess: () => {
-        setSaved(fields);
-        // The saved answer is already on screen as typed.
-        setReadAt(
-          queryClient.getQueryState(settingsQuery.queryKey)?.dataUpdatedAt ?? 0,
-        );
-        setStatus({ message: "Library settings saved.", error: false });
-      },
+    save.mutate(update, {
+      onSuccess: () =>
+        setStatus({ message: "Library settings saved.", error: false }),
       onError: (error) =>
         setStatus({
           message: `Couldn’t save the library settings: ${error.message}`,
           error: true,
         }),
     });
-  };
-
-  const edit = (field: keyof Fields) => (value: string) =>
-    setFields((current) => ({ ...current, [field]: value }));
+  });
+  const interval = form.register("scan_interval_hours", heldTrimmed);
+  const intervalError = form.formState.errors.scan_interval_hours;
 
   const loadFailed = settings.isError && settings.data === undefined;
   const shown = statusOrLoadError(
@@ -164,14 +144,12 @@ export function SourcesCard() {
           <input
             type="text"
             id="ebook-library-path"
-            name="ebook_library_path"
             autoComplete="off"
             autoCapitalize="none"
             spellCheck={false}
             translate="no"
-            value={fields.ebook}
             placeholder="/path/to/ebooks…"
-            onChange={(e) => edit("ebook")(e.target.value)}
+            {...form.register("ebook_library_path", heldTrimmed)}
           />
           <LibrarySummary
             testId="ebook-library-summary"
@@ -183,14 +161,12 @@ export function SourcesCard() {
           <input
             type="text"
             id="audiobook-library-path"
-            name="audiobook_library_path"
             autoComplete="off"
             autoCapitalize="none"
             spellCheck={false}
             translate="no"
-            value={fields.audiobook}
             placeholder="/path/to/audiobooks…"
-            onChange={(e) => edit("audiobook")(e.target.value)}
+            {...form.register("audiobook_library_path", heldTrimmed)}
           />
           <LibrarySummary
             testId="audiobook-library-summary"
@@ -202,28 +178,29 @@ export function SourcesCard() {
             Automatic rescan interval (hours)
           </label>
           <input
-            ref={intervalInput}
             type="number"
             min={SCAN_INTERVAL_MIN_HOURS}
             inputMode="numeric"
             id="scan-interval-hours"
-            name="scan_interval_hours"
             data-testid="scan-interval-hours"
             aria-describedby="scan-interval-hint"
-            aria-invalid={intervalInvalid}
-            value={fields.interval}
-            onChange={(e) => edit("interval")(e.target.value)}
+            aria-invalid={intervalError !== undefined}
+            {...interval}
+            ref={(input) => {
+              interval.ref(input);
+              intervalInput.current = input;
+            }}
           />
           <p className="settings-hint" id="scan-interval-hint">
             Leave blank to rescan only when you ask.
           </p>
-          {intervalInvalid && (
+          {intervalError && (
             <p
               className="settings-status error"
               role="alert"
               data-testid="scan-interval-error"
             >
-              {INTERVAL_MESSAGE}
+              {intervalError.message}
             </p>
           )}
         </div>
@@ -241,7 +218,7 @@ export function SourcesCard() {
             type="submit"
             variant="primary"
             data-testid="library-save"
-            disabled={saved === null || save.isPending}
+            disabled={settings.data === undefined || save.isPending}
             aria-busy={save.isPending}
           >
             <BusyLabel

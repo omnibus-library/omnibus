@@ -1,6 +1,24 @@
+import { z } from "zod";
 import type { UserPermissions } from "../../api";
 
-const FLAGS = ["is_admin", "can_upload", "can_edit", "can_download"] as const;
+const CREDENTIALS = "Enter a username and password.";
+
+/** The new-user form's credentials, as the inputs name them; the username is sent trimmed, the password as typed. */
+export const NewUserSchema = z.object({
+  username: z.string().trim().min(1, CREDENTIALS),
+  new_password: z.string().min(1, CREDENTIALS),
+});
+
+/** The edit form: the row's permissions, and a reset password where blank keeps the current one. */
+export const EditUserSchema = z.object({
+  permissions: z.object({
+    is_admin: z.boolean(),
+    can_upload: z.boolean(),
+    can_edit: z.boolean(),
+    can_download: z.boolean(),
+  }) satisfies z.ZodType<UserPermissions>,
+  new_password: z.string().trim(),
+});
 
 /** A row's permission flags, as the edit form starts them. */
 export const permissionsOf = (user: UserPermissions): UserPermissions => ({
@@ -25,13 +43,6 @@ export function permissionChips(user: UserPermissions): string[] {
   ].filter((chip) => chip !== false);
   return chips.length > 0 ? chips : [NO_PERMISSIONS];
 }
-
-/** Whether the edit form holds a change that a stray click on the scrim would throw away. */
-export const editIsDirty = (
-  user: UserPermissions,
-  permissions: UserPermissions,
-  password: string,
-) => password !== "" || FLAGS.some((flag) => permissions[flag] !== user[flag]);
 
 /** What the self-registration setting means, in terms of who can create an account; `null` while it loads. */
 export function registrationStatusLine(enabled: boolean | null): string {

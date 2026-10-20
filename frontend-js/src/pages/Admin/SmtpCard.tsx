@@ -1,5 +1,7 @@
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
 import {
   replaceQueryData,
   resetSmtpConfig,
@@ -12,6 +14,7 @@ import { Button } from "../../components/Button/Button";
 import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
 import { BusyLabel } from "../../components/Loading/Loading";
 import {
+  heldTrimmed,
   type Status,
   StatusLine,
   statusOrLoadError,
@@ -19,30 +22,23 @@ import {
 } from "../../components/SettingsShell/SettingsShell";
 import { CredentialStatus } from "./CredentialStatus";
 import { credentialState } from "./integrations";
-import {
-  BLANK_SMTP_DRAFT,
-  isSmtpEdited,
-  type SmtpDraft,
-  smtpDraftOf,
-  smtpUpdate,
-} from "./smtp";
+import { BLANK_SMTP_DRAFT, SmtpSchema, smtpDraftOf } from "./smtp";
 
 /** The relay Send to Kindle emails through: connection fields, the saved state, and clear and test actions. */
 export function SmtpCard() {
   const queryClient = useQueryClient();
   const config = useQuery(smtpConfigQuery);
-  const [draft, setDraft] = useState(BLANK_SMTP_DRAFT);
-  // What the form held when it was last loaded, saved or cleared; null until the relay loads.
-  const [saved, setSaved] = useState<SmtpDraft | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
-
-  if (config.data && saved === null) {
-    const loaded = smtpDraftOf(config.data);
-    setSaved(loaded);
-    setDraft(loaded);
-  }
-  useUnsavedGuard("smtp", saved !== null && isSmtpEdited(saved, draft));
+  const form = useForm({
+    resolver: zodResolver(SmtpSchema),
+    defaultValues: BLANK_SMTP_DRAFT,
+    // Each read fills the form, but never over a typed edit.
+    values: config.data ? smtpDraftOf(config.data) : undefined,
+    resetOptions: { keepDirtyValues: true },
+    shouldFocusError: false,
+  });
+  useUnsavedGuard("smtp", form.formState.isDirty);
 
   const keepAnswer = (answer: SmtpConfigStatus) =>
     replaceQueryData(queryClient, smtpConfigQuery.queryKey, answer);
@@ -58,44 +54,43 @@ export function SmtpCard() {
   const test = useMutation({ mutationFn: sendSmtpTest });
   const busy = save.isPending || clear.isPending || test.isPending;
 
-  const edit = <F extends keyof SmtpDraft>(field: F, value: SmtpDraft[F]) =>
-    setDraft((current) => ({ ...current, [field]: value }));
-
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    const result = smtpUpdate(saved !== null, draft);
-    if (result.refused !== null) {
-      setStatus({ message: result.refused, error: true });
-      return;
-    }
-    setStatus(null);
-    const submitted = draft;
-    save.mutate(result.update, {
-      onSuccess: () => {
-        // An edit typed meanwhile must still read as unsaved.
-        setDraft((current) =>
-          current.password === submitted.password
-            ? { ...current, password: "" }
-            : current,
-        );
-        setSaved({ ...submitted, password: "" });
-        setStatus({ message: "SMTP settings saved.", error: false });
-      },
-      onError: (error) =>
+  const submit = form.handleSubmit(
+    (update) => {
+      // Save writes every field, so it waits for the loaded relay: blanks saved over a failed read would wipe it.
+      if (config.data === undefined) {
         setStatus({
-          message: `Couldn’t save the SMTP settings: ${error.message}`,
+          message:
+            "The current SMTP settings haven’t loaded, so saving now would overwrite them.",
           error: true,
-        }),
-    });
-  };
+        });
+        return;
+      }
+      setStatus(null);
+      save.mutate(update, {
+        onSuccess: () => {
+          // A password typed meanwhile must still read as unsaved.
+          if (form.getValues("smtp_password") === update.password) {
+            form.resetField("smtp_password");
+          }
+          setStatus({ message: "SMTP settings saved.", error: false });
+        },
+        onError: (error) =>
+          setStatus({
+            message: `Couldn’t save the SMTP settings: ${error.message}`,
+            error: true,
+          }),
+      });
+    },
+    (errors) =>
+      setStatus({ message: errors.smtp_port?.message ?? "", error: true }),
+  );
 
   const confirmClear = () => {
     if (busy) return;
     clear.mutate(undefined, {
       onSuccess: (answer) => {
         // What is left may be a relay from the server's environment.
-        setDraft(smtpDraftOf(answer));
-        setSaved(smtpDraftOf(answer));
+        form.reset(smtpDraftOf(answer), { keepDirtyValues: false });
         setStatus({ message: "SMTP settings cleared.", error: false });
       },
       onError: (error) =>
@@ -143,14 +138,12 @@ export function SmtpCard() {
           <input
             type="text"
             id="smtp-host"
-            name="smtp_host"
             autoComplete="off"
             autoCapitalize="none"
             spellCheck={false}
             translate="no"
             placeholder="smtp.example.com…"
-            value={draft.host}
-            onChange={(e) => edit("host", e.target.value)}
+            {...form.register("smtp_host", heldTrimmed)}
           />
         </div>
         <div className="settings-field">
@@ -158,24 +151,18 @@ export function SmtpCard() {
           <input
             type="number"
             id="smtp-port"
-            name="smtp_port"
             inputMode="numeric"
             min={1}
             max={65535}
-            value={draft.port}
-            onChange={(e) => edit("port", e.target.value)}
+            {...form.register("smtp_port", heldTrimmed)}
           />
         </div>
         <div className="settings-field">
           <label htmlFor="smtp-security">Security</label>
           <select
             id="smtp-security"
-            name="smtp_security"
             data-testid="smtp-security"
-            value={draft.security}
-            onChange={(e) =>
-              edit("security", e.target.value === "tls" ? "tls" : "starttls")
-            }
+            {...form.register("smtp_security")}
           >
             <option value="starttls">STARTTLS (587)</option>
             <option value="tls">TLS (465)</option>
@@ -186,12 +173,10 @@ export function SmtpCard() {
           <input
             type="text"
             id="smtp-username"
-            name="smtp_username"
             autoComplete="off"
             autoCapitalize="none"
             spellCheck={false}
-            value={draft.username}
-            onChange={(e) => edit("username", e.target.value)}
+            {...form.register("smtp_username", heldTrimmed)}
           />
         </div>
         <div className="settings-field">
@@ -199,14 +184,12 @@ export function SmtpCard() {
           <input
             type="password"
             id="smtp-password"
-            name="smtp_password"
             autoComplete="off"
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
             placeholder={configured ? "•••• (unchanged)" : ""}
-            value={draft.password}
-            onChange={(e) => edit("password", e.target.value)}
+            {...form.register("smtp_password")}
           />
         </div>
         <div className="settings-field">
@@ -214,12 +197,10 @@ export function SmtpCard() {
           <input
             type="email"
             id="smtp-from"
-            name="smtp_from_email"
             autoComplete="off"
             spellCheck={false}
             placeholder="library@example.com…"
-            value={draft.fromEmail}
-            onChange={(e) => edit("fromEmail", e.target.value)}
+            {...form.register("smtp_from_email", heldTrimmed)}
           />
         </div>
         <div className="settings-actions">
@@ -265,7 +246,7 @@ export function SmtpCard() {
           <Button
             type="submit"
             variant="primary"
-            disabled={busy || saved === null}
+            disabled={busy || config.data === undefined}
             aria-busy={save.isPending}
             data-testid="smtp-save"
           >
