@@ -1,5 +1,5 @@
 import { Route, Routes } from "react-router";
-import { noStatsCalls, statsHandlers } from "../../testing/statsHandlers";
+import { storyApi } from "../../testing/statsHandlers";
 import { StatsChart } from "./StatsChart";
 
 // Shared by the StatsChart story files; the name keeps it out of the `*.stories.tsx` glob.
@@ -14,13 +14,5 @@ export function Page() {
   );
 }
 
-/** What the fake API saw since the story began. */
-export const calls = noStatsCalls();
-
-/** The fake API with `calls` cleared; `options` choose its answers. */
-export function api(
-  options: Omit<NonNullable<Parameters<typeof statsHandlers>[0]>, "calls"> = {},
-) {
-  Object.assign(calls, noStatsCalls());
-  return statsHandlers({ ...options, calls });
-}
+/** The fake API with `calls` cleared; `calls` is what it saw since the story began. */
+export const { calls, api } = storyApi();

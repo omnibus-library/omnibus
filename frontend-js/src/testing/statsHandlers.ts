@@ -236,8 +236,7 @@ export type StatsCalls = Record<StatsRoute, URLSearchParams[]> & {
   specs: ChartSpec[];
 };
 
-/** An empty record of calls, for a story to start from. */
-export const noStatsCalls = (): StatsCalls => ({
+const noStatsCalls = (): StatsCalls => ({
   stats: [],
   readers: [],
   recent: [],
@@ -339,4 +338,22 @@ export function statsHandlers({
       return answer(await chart(spec));
     }),
   ];
+}
+
+type StatsHandlerOptions = Omit<
+  NonNullable<Parameters<typeof statsHandlers>[0]>,
+  "calls"
+>;
+
+/**
+ * A story file's fake API: `api(options)` clears `calls` and serves every stats route, with
+ * `defaults` under whatever `options` choose; `calls` is what it saw since.
+ */
+export function storyApi(defaults: StatsHandlerOptions = {}) {
+  const calls = noStatsCalls();
+  const api = (options: StatsHandlerOptions = {}) => {
+    Object.assign(calls, noStatsCalls());
+    return statsHandlers({ ...defaults, ...options, calls });
+  };
+  return { calls, api };
 }

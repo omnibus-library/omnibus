@@ -1,9 +1,5 @@
 import { Route, Routes } from "react-router";
-import {
-  aWireReader,
-  noStatsCalls,
-  statsHandlers,
-} from "../../testing/statsHandlers";
+import { aWireReader, storyApi } from "../../testing/statsHandlers";
 import { Stats } from "./Stats";
 
 // Shared by the Stats story files; the name keeps it out of the `*.stories.tsx` glob.
@@ -25,13 +21,5 @@ export function Page() {
   );
 }
 
-/** What the fake API saw since the story began. */
-export const calls = noStatsCalls();
-
-/** The fake API with `calls` cleared; `options` choose its answers. */
-export function api(
-  options: Omit<NonNullable<Parameters<typeof statsHandlers>[0]>, "calls"> = {},
-) {
-  Object.assign(calls, noStatsCalls());
-  return statsHandlers({ readers: READERS, ...options, calls });
-}
+/** The fake API with `calls` cleared, serving `READERS` unless a story says otherwise. */
+export const { calls, api } = storyApi({ readers: READERS });
