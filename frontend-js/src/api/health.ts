@@ -1,6 +1,7 @@
 import { keepPreviousData, queryOptions } from "@tanstack/react-query";
 import { ok } from "./core";
 import { getAdminHealth, getLogs } from "./generated/omnibus";
+import type { GetLogsParams } from "./generated/schemas";
 
 export type {
   AdminHealthReport,
@@ -19,12 +20,10 @@ export const adminHealthQuery = queryOptions({
 
 /** What the log viewer asks for: a null filter is left off. */
 export type LogQuery = {
-  level: string | null;
-  module: string | null;
-  from: string | null;
-  to: string | null;
-  page: number;
-};
+  [K in "level" | "module" | "from" | "to"]: NonNullable<
+    GetLogsParams[K]
+  > | null;
+} & { page: NonNullable<GetLogsParams["page"]> };
 
 /** One page of the server's log records, newest first; the page on screen stays until the next lands. */
 export const logsQuery = (query: LogQuery) =>
