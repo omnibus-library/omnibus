@@ -727,6 +727,50 @@ export const IgnoresAHeldSpaceButStillStopsTheScroll: Story = {
   },
 };
 
+export const SpaceOnTheFocusedRejectButtonRejectsTheCard: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByTestId("cleanup-card");
+    canvas.getByRole("button", { name: "Reject (N)" }).focus();
+
+    await userEvent.keyboard(" ");
+
+    await expect(
+      await canvas.findByText("Split this tag into its parts."),
+    ).toBeInTheDocument();
+    await expect(decided).toEqual([
+      { id: 1, request: { decision: "rejected" } },
+    ]);
+    await expect(progressText(canvas)).toContain("2 of 3");
+  },
+};
+
+export const SpaceOnTheFocusedUndoButtonUndoesTheChange: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByTestId("cleanup-card");
+    await userEvent.click(canvas.getByRole("button", { name: "Accept (Y)" }));
+    const undo = await canvas.findByRole("button", { name: "Undo" });
+    await waitFor(() => expect(undo).toBeEnabled());
+    undo.focus();
+
+    await userEvent.keyboard(" ");
+
+    await expect(await canvas.findByTestId("cleanup-undone")).toBeVisible();
+    await expect(undone).toEqual([101]);
+  },
+};
+
+export const HotkeysOnAFocusedLinkDoNothing: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByTestId("cleanup-card");
+    canvas.getByTestId("cleanup-kindchip-author").focus();
+
+    await userEvent.keyboard("yn ");
+
+    await expect(decided).toEqual([]);
+    await expect(progressText(canvas)).toContain("1 of 3");
+  },
+};
+
 export const IgnoresAnEnterHeldDownInTheProposal: Story = renaming(
   async ({ canvas, userEvent }) => {
     const input = await canvas.findByRole("textbox", {
