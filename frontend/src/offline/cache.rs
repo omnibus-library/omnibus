@@ -69,13 +69,9 @@ pub mod keys {
     pub fn journals(uuid: &str) -> String {
         format!("journals:{uuid}")
     }
-    /// `GET /api/ratings/{uuid}`.
-    pub fn rating(uuid: &str) -> String {
-        format!("rating:{uuid}")
-    }
-    /// `GET /api/ratings/others/{uuid}`.
-    pub fn ratings_others(uuid: &str) -> String {
-        format!("ratings_others:{uuid}")
+    /// `GET /api/reviews/{uuid}`.
+    pub fn reviews(uuid: &str) -> String {
+        format!("reviews:{uuid}")
     }
     /// `GET /api/shelves`.
     pub fn shelves() -> String {
@@ -121,6 +117,10 @@ pub mod keys {
     /// `GET /api/stats?range=`.
     pub fn stats(range: &str) -> String {
         format!("stats:{range}")
+    }
+    /// The prefix every [`stats`] row shares, one row per range.
+    pub fn stats_prefix() -> &'static str {
+        "stats:"
     }
     /// `GET /api/library-size`. Unkeyed: the answer is library-wide, so
     /// there is nothing to scope it by.
@@ -185,6 +185,20 @@ where
     };
     f(&mut value);
     put_json(key, &value);
+}
+
+/// Mark one cached row stale, so its next read revalidates (best-effort).
+pub(crate) fn expire(key: &str) {
+    if let Some(store) = store::store() {
+        store.kv_expire(key);
+    }
+}
+
+/// [`expire`] every cached row under a key prefix.
+pub(crate) fn expire_prefix(prefix: &str) {
+    if let Some(store) = store::store() {
+        store.kv_expire_prefix(prefix);
+    }
 }
 
 /// Serve-from-cache freshness window: a row younger than this is returned

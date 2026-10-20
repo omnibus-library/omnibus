@@ -1,8 +1,9 @@
 //! Mobile layout for the book-detail page — re-flows the same loaded-book data
 //! ([`super::LoadedBookView`]) into the native design's single-column surface:
-//! an accent-tinted hero over About / rating / info / files / journal sections.
+//! an accent-tinted hero over About / reviews / info / files / journal sections.
 //! Read opens the reader, Listen the player, and (for dual-format books)
-//! Immersive Read opens the reader with the audiobook docked.
+//! Immersive Read opens the reader with the audiobook docked. The household
+//! rating under the title and the Reviews section share one reviews fetch.
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
@@ -26,12 +27,17 @@ use super::file_picker::{
 use super::identifiers::bd_identifier_rows;
 use super::immersive::BdImmersiveButton;
 use super::journal::BdJournalSection;
-use super::rating::BdRatingWidget;
 use super::read_status::BdReadStatusControl;
+use super::reviews::{use_book_reviews, BdReviewsJumpLink, BdReviewsSection, ReviewsCtx};
+use super::rule_facts::RuleFactsSaved;
 use super::{derive_loaded_view, BdFormatBadge, BdMetaRow, DescriptionSignals, LoadedBookView};
+
+/// Bring the Reviews section into view, from the household rating.
+const SCROLL_TO_REVIEWS_JS: &str = "const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches; document.getElementById('m-bd-reviews')?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });";
 
 /// The loaded-book data the mobile layout reflows into its single column,
 /// including the discovery blocks (author cluster + Hardcover suggestions).
+#[derive(Clone, PartialEq)]
 pub(super) struct MobileBookView {
     pub b: EbookMetadata,
     pub author_books: Option<Vec<EbookMetadata>>,
@@ -74,11 +80,21 @@ fn build_on_fetched_handler(
     }
 }
 
-/// Render the fully-loaded book detail for the mobile shell. A plain fn with no
-/// hooks: it is reached only past [`super::BookDetailPage`]'s loading/error/
-/// not-found early returns, so a hook here would break hook order. `description`
-/// is owned by `BookDetailPage` and arrives as [`DescriptionSignals`].
+/// Render the fully-loaded book detail for the mobile shell. Reached only past
+/// [`super::BookDetailPage`]'s loading/error/not-found early returns, so the
+/// page's hooks live in [`MobileBookDetail`]'s own scope, not the caller's.
 pub(super) fn render_loaded_mobile(view: MobileBookView) -> Element {
+    rsx! { MobileBookDetail { view } }
+}
+
+/// The loaded page. Provides the save counter Reading status bumps, so a
+/// Finished picked there opens the reviews' spoilers, and owns the reviews
+/// state. `description` is owned by `BookDetailPage` ([`DescriptionSignals`]).
+#[component]
+fn MobileBookDetail(view: MobileBookView) -> Element {
+    use_context_provider(RuleFactsSaved::new);
+    let uuid = view.b.unique_identifier.clone().unwrap_or_default();
+    let reviews = use_book_reviews(uuid.clone());
     let MobileBookView {
         b,
         author_books,
@@ -105,7 +121,6 @@ pub(super) fn render_loaded_mobile(view: MobileBookView) -> Element {
         ..
     } = derive_loaded_view(&b);
 
-    let uuid = b.unique_identifier.clone().unwrap_or_default();
     let on_fetched = build_on_fetched_handler(&server_url, &uuid, description, description_epoch);
     let (cover_src, cover_srcset) = thumb_srcs(&b, &uuid, &server_url);
     let (meta_line, epub_files, audio_files) = split_meta_and_files(&b, &authors_line);
@@ -113,11 +128,9 @@ pub(super) fn render_loaded_mobile(view: MobileBookView) -> Element {
     rsx! {
         div { class: "m-bd", style: "{accent_style}", "data-testid": "mobile-book-detail",
             {hero_section(&b, &uuid, cover_src, cover_srcset)}
-            {title_and_cta_section(
+            {title_section(&title, &meta_line, &b.formats, reviews)}
+            {cta_section(
                 &uuid,
-                &title,
-                &meta_line,
-                &b.formats,
                 FormatAvailability {
                     has_ebook,
                     has_comic,
@@ -128,7 +141,7 @@ pub(super) fn render_loaded_mobile(view: MobileBookView) -> Element {
                 &audio_files,
             )}
             {about_section(&uuid, description, &b.subjects, &b.genres, on_fetched)}
-            {info_sections(&uuid, &b, &series)}
+            {info_sections(&uuid, &b, &series, reviews)}
 
             // Offline downloads (Kindle-style local copies).
             super::offline::BdOfflineSection {
@@ -241,9 +254,9 @@ fn hero_section(
     }
 }
 
-/// Which formats a book has, bundled so [`title_and_cta_section`] doesn't
-/// thread three adjacent same-typed `bool`s with no compiler-enforced
-/// ordering — see the `derive_loaded_view` fields this is built from.
+/// Which formats a book has, bundled so [`cta_section`] doesn't thread four
+/// adjacent same-typed `bool`s with no compiler-enforced ordering — see the
+/// `derive_loaded_view` fields this is built from.
 #[derive(Copy, Clone)]
 struct FormatAvailability {
     has_ebook: bool,
@@ -252,13 +265,35 @@ struct FormatAvailability {
     has_pdf: bool,
 }
 
-/// Title column (title / meta line / format badges) plus the multi-file
-/// action row — a picker for a multi-file format, a direct link otherwise.
-fn title_and_cta_section(
+/// Title column: title, meta line, the household rating (only once the
+/// server sends a summary) jumping to the Reviews section, format badges.
+fn title_section(title: &str, meta_line: &str, formats: &[String], reviews: ReviewsCtx) -> Element {
+    rsx! {
+        div { class: "m-bd-titlecol",
+            h2 { class: "m-bd-title", span { class: "m-em", "{title}" } }
+            if !meta_line.is_empty() {
+                div { class: "m-bd-meta", "{meta_line}" }
+            }
+            BdReviewsJumpLink {
+                summary: reviews.summary(),
+                on_jump: move |_| {
+                    let _ = dioxus::document::eval(SCROLL_TO_REVIEWS_JS);
+                },
+            }
+            if !formats.is_empty() {
+                div { class: "m-bd-badges",
+                    for f in formats.iter() {
+                        BdFormatBadge { key: "{f}", fmt: f.clone() }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The action row — a picker for a multi-file format, a direct link otherwise.
+fn cta_section(
     uuid: &str,
-    title: &str,
-    meta_line: &str,
-    formats: &[String],
     availability: FormatAvailability,
     epub_files: &[BookFileInfo],
     audio_files: &[BookFileInfo],
@@ -270,20 +305,6 @@ fn title_and_cta_section(
         has_pdf,
     } = availability;
     rsx! {
-        div { class: "m-bd-titlecol",
-            h2 { class: "m-bd-title", span { class: "m-em", "{title}" } }
-            if !meta_line.is_empty() {
-                div { class: "m-bd-meta", "{meta_line}" }
-            }
-            if !formats.is_empty() {
-                div { class: "m-bd-badges",
-                    for f in formats.iter() {
-                        BdFormatBadge { key: "{f}", fmt: f.clone() }
-                    }
-                }
-            }
-        }
-
         // Multi-file actions open a picker; single-file actions navigate directly.
         div { class: "m-bd-cta",
             if has_ebook {
@@ -372,18 +393,33 @@ fn about_section(
     }
 }
 
-/// Reading status, rating, and the book-info table — three small `m-section`
+/// Reading status, reviews, and the book-info table — three `m-section`
 /// blocks grouped into one helper since none is independently reusable.
-fn info_sections(uuid: &str, b: &EbookMetadata, series: &Option<String>) -> Element {
+fn info_sections(
+    uuid: &str,
+    b: &EbookMetadata,
+    series: &Option<String>,
+    reviews: ReviewsCtx,
+) -> Element {
     rsx! {
         section { class: "m-section",
             div { class: "label", "Reading status" }
             BdReadStatusControl { uuid: uuid.to_string() }
         }
 
-        section { class: "m-section",
-            div { class: "label", "Your rating" }
-            BdRatingWidget { uuid: uuid.to_string() }
+        // Your review's composer opens in place of its text: the phone has
+        // no stage to lay an overlay over.
+        section { class: "m-section m-bd-reviews", id: "m-bd-reviews", "data-testid": "mobile-reviews",
+            div { class: "m-section-head",
+                div { class: "label", "Reviews" }
+                span { class: "mono m-section-meta", "data-testid": "reviews-kicker",
+                    match reviews.kicker() {
+                        Some(kicker) => rsx! { "{kicker}" },
+                        None => rsx! { span { class: "ld-sheen", "Counting reviews" } },
+                    }
+                }
+            }
+            BdReviewsSection { uuid: uuid.to_string(), ctx: reviews }
         }
 
         section { class: "m-section",

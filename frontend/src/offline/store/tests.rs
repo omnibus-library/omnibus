@@ -288,3 +288,72 @@ async fn downloads_delete_removes_only_the_named_format() {
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].format, "audio");
 }
+
+#[tokio::test]
+async fn ops_append_merging_folds_into_the_newest_same_key_op_and_moves_it_to_the_tail() {
+    let (_dir, store) = open_temp();
+    let key = || "review:u".to_string();
+    store.ops_append("UpdateReview", "a".to_string(), Some(key()));
+    store.ops_append("Other", "x".to_string(), None);
+    store.ops_append_merging("UpdateReview", key(), "b".to_string(), |older| {
+        Some(format!("{older}+b"))
+    });
+
+    let ops = store.ops_list().await;
+    assert_eq!(ops.len(), 2);
+    assert_eq!(ops[0].kind, "Other");
+    assert_eq!(ops[1].payload, "a+b");
+}
+
+#[tokio::test]
+async fn ops_append_merging_queues_alongside_when_the_merge_declines() {
+    let (_dir, store) = open_temp();
+    store.ops_append(
+        "DeleteReview",
+        "d".to_string(),
+        Some("review:u".to_string()),
+    );
+    store.ops_append_merging(
+        "UpdateReview",
+        "review:u".to_string(),
+        "p".to_string(),
+        |_| None,
+    );
+
+    let payloads: Vec<String> = store
+        .ops_list()
+        .await
+        .into_iter()
+        .map(|o| o.payload)
+        .collect();
+    assert_eq!(payloads, vec!["d", "p"]);
+}
+
+#[tokio::test]
+async fn kv_expire_and_kv_expire_prefix_zero_fetched_at_and_keep_the_payload() {
+    let (_dir, store) = open_temp();
+    store.kv_put("reviews:a", "1".to_string());
+    store.kv_put("reviews:ab", "2".to_string());
+    store.kv_put("stats:month", "3".to_string());
+    store.kv_put("stats:year", "4".to_string());
+    store.kv_put("shelves", "5".to_string());
+
+    store.kv_expire("reviews:a");
+    store.kv_expire_prefix("stats:");
+
+    for (key, payload) in [
+        ("reviews:a", "1"),
+        ("stats:month", "3"),
+        ("stats:year", "4"),
+    ] {
+        let row = store.kv_get(key).await.expect("row kept");
+        assert_eq!(row.payload, payload);
+        assert_eq!(row.fetched_at, 0, "{key} must read as stale");
+    }
+    for key in ["reviews:ab", "shelves"] {
+        assert!(
+            store.kv_get(key).await.expect("row").fetched_at > 0,
+            "{key} must stay fresh"
+        );
+    }
+}

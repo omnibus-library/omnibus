@@ -9,7 +9,7 @@ use std::sync::{OnceLock, RwLock};
 
 use omnibus_shared::{
     AudiobookPlaybackRateUpdate, CreateBookmark, CreateHighlight, CreateJournalEntry,
-    CreateShelfRequest, ProgressUpdate, RatingUpdate, UpdateJournalEntry,
+    CreateShelfRequest, ProgressUpdate, RatingUpdate, ReviewPatch, UpdateJournalEntry,
 };
 use tokio::sync::watch;
 
@@ -437,7 +437,9 @@ async fn execute_op(url: &str, op: Op) -> Outcome {
             ok_or(data::record_sessions_online(url, reports).await, false).1
         }
         Op::SetRating { update } => exec_set_rating(url, update).await,
-        Op::ClearRating { uuid } => ok_or(data::clear_rating_online(url, &uuid).await, true).1,
+        Op::ClearRating { uuid } => exec_clear_rating(url, uuid).await,
+        Op::UpdateReview { uuid, patch } => exec_update_review(url, uuid, patch).await,
+        Op::DeleteReview { uuid } => exec_delete_review(url, uuid).await,
         Op::CreateHighlight { temp_id, input } => exec_create_highlight(url, temp_id, input).await,
         Op::UpdateHighlightColor { id, .. } if id < 0 => Outcome::Done,
         Op::UpdateHighlightColor { id, color, .. } => {
@@ -541,12 +543,44 @@ async fn exec_set_playback_rate(
     outcome
 }
 
-/// Replay a queued rating write, refreshing the cached rating on success.
+/// Replay a rating write queued before the book page moved to reviews.
 async fn exec_set_rating(url: &str, update: RatingUpdate) -> Outcome {
     let uuid = update.book_uuid.clone();
     let (record, outcome) = ok_or(data::set_rating_online(url, update).await, false);
-    if let Some(record) = record {
-        super::cache::put_json(&super::cache::keys::rating(&uuid), &Some(record));
+    if record.is_some() {
+        outbox::rating_replayed(&uuid);
+    }
+    outcome
+}
+
+/// Replay a rating clear queued before the book page moved to reviews.
+async fn exec_clear_rating(url: &str, uuid: String) -> Outcome {
+    let (cleared, outcome) = ok_or(data::clear_rating_online(url, &uuid).await, true);
+    if cleared.is_some() {
+        outbox::rating_replayed(&uuid);
+    }
+    outcome
+}
+
+/// Replay a queued patch of your review, settling the replica on its answer.
+async fn exec_update_review(url: &str, uuid: String, patch: ReviewPatch) -> Outcome {
+    let replayed = Op::UpdateReview {
+        uuid: uuid.clone(),
+        patch: patch.clone(),
+    };
+    let (mine, outcome) = ok_or(data::update_review_online(url, &uuid, patch).await, false);
+    if let Some(mine) = mine {
+        outbox::review_replayed(&replayed, mine.as_ref()).await;
+    }
+    outcome
+}
+
+/// Replay a queued delete of your review. A 404 means the book itself is
+/// gone, which leaves nothing to delete.
+async fn exec_delete_review(url: &str, uuid: String) -> Outcome {
+    let (deleted, outcome) = ok_or(data::delete_review_online(url, &uuid).await, true);
+    if deleted.is_some() {
+        outbox::review_replayed(&Op::DeleteReview { uuid }, None).await;
     }
     outcome
 }

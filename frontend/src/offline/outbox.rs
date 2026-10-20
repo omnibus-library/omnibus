@@ -7,13 +7,18 @@
 use omnibus_shared::{
     AudiobookPlaybackRateRecord, AudiobookPlaybackRateUpdate, Bookmark, CreateBookmark,
     CreateHighlight, CreateJournalEntry, CreateShelfRequest, Highlight, HighlightColor,
-    JournalEntry, ProgressRecord, ProgressUpdate, RatingRecord, RatingUpdate, SessionReport, Shelf,
+    JournalEntry, ProgressRecord, ProgressUpdate, RatingUpdate, ReviewPatch, SessionReport, Shelf,
     UpdateJournalEntry, UpdateShelfRequest, UserSummary,
 };
 
 use super::{cache, store, sync};
 
 pub(crate) mod apply;
+mod reviews;
+
+pub(crate) use reviews::{
+    queue_delete_review, queue_update_review, rating_replayed, review_queued, review_replayed,
+};
 
 /// One queued mutation, serialized as tagged JSON in the `ops` table.
 /// `book_uuid` fields on by-id edits exist purely so the optimistic cache
@@ -33,10 +38,22 @@ pub(crate) enum Op {
     RecordSessions {
         reports: Vec<SessionReport>,
     },
+    /// Retired: the book page writes reviews now. Still replayed for a device
+    /// that upgraded with one queued.
     SetRating {
         update: RatingUpdate,
     },
+    /// Retired with [`Op::SetRating`].
     ClearRating {
+        uuid: String,
+    },
+    /// A field-level patch of your review; queued copies merge field by field.
+    UpdateReview {
+        uuid: String,
+        patch: ReviewPatch,
+    },
+    /// Your whole review gone, superseding any queued patch of it.
+    DeleteReview {
         uuid: String,
     },
     CreateHighlight {
@@ -117,6 +134,8 @@ impl Op {
             Op::RecordSessions { .. } => "RecordSessions",
             Op::SetRating { .. } => "SetRating",
             Op::ClearRating { .. } => "ClearRating",
+            Op::UpdateReview { .. } => "UpdateReview",
+            Op::DeleteReview { .. } => "DeleteReview",
             Op::CreateHighlight { .. } => "CreateHighlight",
             Op::UpdateHighlightColor { .. } => "UpdateHighlightColor",
             Op::UpdateHighlightNote { .. } => "UpdateHighlightNote",
@@ -138,7 +157,8 @@ impl Op {
 
     /// Local coalesce key: a queued op with the same key is replaced by a
     /// newer one (idempotent upserts and whole-value edits only — partial
-    /// patches like `UpdateShelf` must retain every queued step).
+    /// patches like `UpdateShelf` must retain every queued step). A review
+    /// patch is the exception: it merges into the queued one ([`enqueue`]).
     pub(crate) fn coalesce_key(&self) -> Option<String> {
         match self {
             Op::SaveProgress { update, .. } => Some(format!(
@@ -149,6 +169,9 @@ impl Op {
             Op::SetPlaybackRate { uuid, .. } => Some(format!("rate:{uuid}")),
             Op::SetRating { update } => Some(format!("rating:{}", update.book_uuid)),
             Op::ClearRating { uuid } => Some(format!("rating:{uuid}")),
+            Op::UpdateReview { uuid, .. } | Op::DeleteReview { uuid } => {
+                Some(format!("review:{uuid}"))
+            }
             Op::UpdateHighlightColor { id, .. } => Some(format!("hl:{id}:color")),
             Op::UpdateHighlightNote { id, .. } => Some(format!("hl:{id}:note")),
             Op::UpdateBookmark { id, .. } => Some(format!("bm:{id}:title")),
@@ -233,7 +256,16 @@ pub(crate) async fn enqueue(op: Op) -> bool {
     let Ok(payload) = serde_json::to_string(&op) else {
         return false;
     };
-    st.ops_append(op.kind(), payload, op.coalesce_key());
+    match op.coalesce_key() {
+        // Replacing would lose a queued field the newer patch leaves out.
+        Some(key) if matches!(op, Op::UpdateReview { .. }) => {
+            let kind = op.kind();
+            st.ops_append_merging(kind, key, payload, move |older| {
+                reviews::merge_queued(older, &op)
+            });
+        }
+        key => st.ops_append(op.kind(), payload, key),
+    }
     sync::refresh_pending().await;
     true
 }
@@ -351,39 +383,6 @@ pub(crate) async fn queue_record_sessions(reports: &[SessionReport]) -> Option<u
     })
     .await
     .then_some(count)
-}
-
-/// Queue a rating upsert.
-pub(crate) async fn queue_set_rating(update: &RatingUpdate) -> Option<RatingRecord> {
-    let record = RatingRecord {
-        book_uuid: update.book_uuid.clone(),
-        stars: update.stars,
-        updated_at: store::now_secs(),
-    };
-    let queued = enqueue(Op::SetRating {
-        update: update.clone(),
-    })
-    .await;
-    if !queued {
-        return None;
-    }
-    cache::put_json(
-        &cache::keys::rating(&update.book_uuid),
-        &Some(record.clone()),
-    );
-    Some(record)
-}
-
-/// Queue a rating clear.
-pub(crate) async fn queue_clear_rating(uuid: &str) -> bool {
-    let queued = enqueue(Op::ClearRating {
-        uuid: uuid.to_string(),
-    })
-    .await;
-    if queued {
-        cache::put_json(&cache::keys::rating(uuid), &None::<RatingRecord>);
-    }
-    queued
 }
 
 /// Queue a highlight creation; the synthesized record carries a temp id.

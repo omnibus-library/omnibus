@@ -284,6 +284,29 @@ impl Store {
         });
     }
 
+    /// Mark one cache row stale: kept, so it still serves offline, but the
+    /// next read revalidates it.
+    pub fn kv_expire(&self, key: &str) {
+        let key = key.to_string();
+        self.run_detached(move |conn| {
+            log_err(conn.execute(
+                "UPDATE cache SET fetched_at = 0 WHERE key = ?1",
+                params![key],
+            ));
+        });
+    }
+
+    /// [`Store::kv_expire`] for every cache row whose key starts with `prefix`.
+    pub fn kv_expire_prefix(&self, prefix: &str) {
+        let pattern = like_prefix(prefix);
+        self.run_detached(move |conn| {
+            log_err(conn.execute(
+                "UPDATE cache SET fetched_at = 0 WHERE key LIKE ?1 ESCAPE '\\'",
+                params![pattern],
+            ));
+        });
+    }
+
     /// Delete every cache row whose key starts with `prefix` and contains
     /// `needle` — the filter runs in SQL so no payload is read back.
     pub fn kv_delete_prefix_containing(&self, prefix: &str, needle: &str) {
@@ -320,6 +343,39 @@ impl Store {
             if let Some(ck) = &coalesce_key {
                 log_err(conn.execute("DELETE FROM ops WHERE coalesce_key = ?1", params![ck]));
             }
+            log_err(conn.execute(
+                "INSERT INTO ops (kind, coalesce_key, payload, created_at, attempts)
+                 VALUES (?1, ?2, ?3, ?4, 0)",
+                params![kind, coalesce_key, payload, now_secs()],
+            ));
+        });
+    }
+
+    /// Append a mutation that folds into the newest queued op sharing its
+    /// coalesce key: `merge` gets that op's payload and returns the combined
+    /// one, which replaces it at the tail, or `None` to queue alongside it.
+    pub fn ops_append_merging<F>(&self, kind: &str, coalesce_key: String, payload: String, merge: F)
+    where
+        F: FnOnce(&str) -> Option<String> + Send + 'static,
+    {
+        let kind = kind.to_string();
+        self.run_detached(move |conn| {
+            let newest = conn
+                .query_row(
+                    "SELECT id, payload FROM ops WHERE coalesce_key = ?1 ORDER BY id DESC LIMIT 1",
+                    params![coalesce_key],
+                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+                )
+                .ok();
+            let payload = match newest.and_then(|(id, older)| merge(&older).map(|m| (id, m))) {
+                // Re-inserted rather than rewritten in place: a drain replaying
+                // the old row deletes it on success, merged-in fields and all.
+                Some((id, merged)) => {
+                    log_err(conn.execute("DELETE FROM ops WHERE id = ?1", params![id]));
+                    merged
+                }
+                None => payload,
+            };
             log_err(conn.execute(
                 "INSERT INTO ops (kind, coalesce_key, payload, created_at, attempts)
                  VALUES (?1, ?2, ?3, ?4, 0)",

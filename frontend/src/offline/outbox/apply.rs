@@ -5,8 +5,9 @@
 //! coherent without a refetch, and by the drain's temp-to-real id remap.
 
 use omnibus_shared::{
-    Bookmark, Highlight, HighlightColor, JournalEntry, ProgressRecord, Shelf, ShelfPage,
-    ShelfSummary, UpdateJournalEntry, UpdateShelfRequest, UserSummary,
+    BookReviews, Bookmark, Highlight, HighlightColor, JournalEntry, ProgressRecord, Review,
+    ReviewPatch, Shelf, ShelfPage, ShelfSummary, UpdateJournalEntry, UpdateShelfRequest,
+    UserSummary,
 };
 
 use crate::offline::{cache, store};
@@ -323,6 +324,111 @@ pub(crate) async fn journal_remapped(temp_id: i64, real: &JournalEntry) {
         }
     })
     .await;
+}
+
+// ── reviews ─────────────────────────────────────────────────────────
+
+/// Apply a queued patch to your review in the book's cached reviews, and
+/// return it as patched (`None` once nothing is left). The summary is left
+/// alone: whether there is one is the server's call, so it waits for a read.
+pub(crate) async fn review_patched(uuid: &str, patch: &ReviewPatch, now: i64) -> Option<Review> {
+    let key = cache::keys::reviews(uuid);
+    let mut cached: Option<BookReviews> = cache::get_json(&key).await;
+    let mine = patch_review(
+        cached.as_ref().and_then(|r| r.mine.clone()),
+        patch,
+        uuid,
+        now,
+    );
+    if let Some(reviews) = cached.as_mut() {
+        reviews.mine = mine.clone();
+        cache::put_json(&key, reviews);
+    }
+    mine
+}
+
+/// Drop your review from the book's cached reviews.
+pub(crate) async fn review_deleted(uuid: &str) {
+    cache::mutate_json::<BookReviews, _>(&cache::keys::reviews(uuid), |reviews| {
+        reviews.mine = None;
+    })
+    .await;
+}
+
+/// Store the server's answer once a write to your review landed. `stars`
+/// says the write moved your rating, which the stats figures count.
+pub(crate) async fn review_landed(uuid: &str, mine: Option<&Review>, stars: bool) {
+    let mine = mine.cloned();
+    cache::mutate_json::<BookReviews, _>(&cache::keys::reviews(uuid), |reviews| {
+        reviews.mine = mine;
+    })
+    .await;
+    if stars {
+        ratings_moved();
+    }
+}
+
+/// Your rating changed on the server, so every cached stats range is stale.
+/// Expired rather than dropped: offline, the old figures still beat none.
+pub(crate) fn ratings_moved() {
+    cache::expire_prefix(cache::keys::stats_prefix());
+}
+
+/// Your review once `patch` applies, as the server would store it: `None`
+/// when no stars, text or notes are left. Written text renders as its
+/// escaped source until the server's own render replaces it.
+pub(crate) fn patch_review(
+    mine: Option<Review>,
+    patch: &ReviewPatch,
+    uuid: &str,
+    now: i64,
+) -> Option<Review> {
+    let mut review = mine.unwrap_or_else(|| empty_review(uuid, now));
+    if let Some(stars) = patch.stars {
+        review.stars = stars;
+        review.rated_at = stars.map(|_| now);
+        review.updated_at = now;
+    }
+    if let Some(body) = &patch.body_md {
+        (review.body_md, review.body_html) = written(body.as_deref());
+        review.updated_at = now;
+    }
+    // Notes are yours alone, so editing them doesn't move `updated_at`.
+    if let Some(notes) = &patch.notes_md {
+        (review.notes_md, review.notes_html) = written(notes.as_deref());
+    }
+    if let Some(spoiler) = patch.spoiler {
+        review.spoiler = spoiler;
+        review.updated_at = now;
+    }
+    let empty = review.stars.is_none() && review.body_md.is_none() && review.notes_md.is_none();
+    (!empty).then_some(review)
+}
+
+/// A text field and its stand-in render; blank text clears it, as on the server.
+fn written(text: Option<&str>) -> (Option<String>, Option<String>) {
+    match text.filter(|t| !t.trim().is_empty()) {
+        Some(md) => (Some(md.to_string()), Some(super::fallback_html(md))),
+        None => (None, None),
+    }
+}
+
+fn empty_review(uuid: &str, now: i64) -> Review {
+    Review {
+        book_uuid: uuid.to_string(),
+        stars: None,
+        body_md: None,
+        body_html: None,
+        notes_md: None,
+        notes_html: None,
+        spoiler: false,
+        rated_at: None,
+        created_at: now,
+        updated_at: now,
+        rated_at_iso: None,
+        created_at_iso: None,
+        updated_at_iso: None,
+    }
 }
 
 // ── account ─────────────────────────────────────────────────────────

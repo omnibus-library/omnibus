@@ -1111,7 +1111,6 @@ html, body { overscroll-behavior: none; }
   display: flex; flex-direction: column;
 }
 .bd-rating-card .divider { margin: 14px -18px; }
-.bd-rating-meta { font-size: 11px; color: var(--ink-3); margin-top: 6px; }
 .bd-stars-row { display: inline-flex; gap: 2px; font-size: 26px; line-height: 1; }
 .bd-star { color: var(--bg-3); }
 .bd-star-on { color: var(--accent); }
@@ -1138,31 +1137,6 @@ html, body { overscroll-behavior: none; }
 .bd-star-half-left { left: 0; }
 .bd-star-half-right { right: 0; }
 .bd-star-half:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.bd-other-ratings {
-  display: flex; flex-direction: column; gap: 8px;
-  margin-top: 14px; padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-.bd-other-rating-row {
-  display: flex; align-items: center; gap: 6px;
-  min-width: 0; font-size: 13px; color: var(--ink-2);
-}
-.bd-other-rating-avatar {
-  width: 24px; height: 24px; flex: 0 0 24px;
-  display: grid; place-items: center;
-  border-radius: 50%;
-  background: var(--accent-soft, var(--bg-2));
-  color: var(--accent); font-size: 11px; font-weight: 700;
-}
-.bd-other-rating-content {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
-  min-width: 0;
-}
-.bd-other-rating-byline { color: var(--ink-2); font-size: 13px; }
-.bd-other-rating-name {
-  color: var(--ink); font-weight: 600;
-}
-.bd-other-rating-stars { gap: 1px; flex: 0 0 auto; font-size: 13px; }
 .bd-readstatus-head, .bd-wishlist-head, .bd-shelves-head { margin-bottom: 8px; }
 .bd-shelves { display: flex; gap: 6px; flex-wrap: wrap; }
 
@@ -1499,7 +1473,7 @@ html, body { overscroll-behavior: none; }
 .bd-journal-avatar {
   width: 34px; height: 34px; flex-shrink: 0;
   display: grid; place-items: center;
-  border-radius: 50%;
+  border-radius: 50%; overflow: hidden;
   background: var(--accent-soft, var(--bg-2));
   color: var(--accent-ink, var(--ink-0));
   font-family: var(--sans);
@@ -5332,6 +5306,16 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .m-bd-file-name { font-size: 13px; color: var(--ink-0); }
 .m-bd-file-path { font-size: 10px; color: var(--ink-3); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .m-bd-footer { padding: 22px 0 8px; }
+/* Reviews in the single column: the shared section (pages/book_detail/reviews)
+   under a label + counts head, and the household rating under the title that
+   scrolls to it. */
+.m-bd-titlecol .bd-reviews-jump { margin-top: 8px; }
+.m-bd-reviews { scroll-margin-top: 12px; }
+.m-section-meta { font-size: 10.5px; letter-spacing: .04em; color: var(--ink-3); }
+/* The composer opens inside your review card, which already draws the card,
+   and the formatting tools take the full width before the highlights button. */
+.m-bd-reviews .bd-review-composer { margin-top: 0; padding: 0; border: 0; background: none; }
+.m-bd-reviews .bd-journal-toolbar { flex-basis: 100%; }
 
 /* Mobile discovery strips — from-the-same-hand + Hardcover suggestions.
    Horizontal cover strips suited to a narrow viewport (vs the desktop
@@ -11014,7 +10998,6 @@ html {
    it, so the image just fills the circle the site already defined. */
 .um-initials-photo,
 .bd-journal-avatar-photo,
-.bd-other-rating-avatar-photo,
 .bd-review-avatar-photo,
 .bd-review-chip-avatar-photo,
 .m-account-initials-photo,
@@ -11032,8 +11015,8 @@ html {
 }
 
 /* Every site's monogram span fills the circle its parent draws, so a photo
-   inside it has a box to fill. The two book-detail spans draw their own
-   circle already and only need to clip. */
+   inside it has a box to fill. The journal's span draws its own circle and
+   clips it (`.bd-journal-avatar`). */
 .um-initials,
 .m-account-initials,
 .profile-initials {
@@ -11042,8 +11025,6 @@ html {
 }
 .m-account-initials,
 .profile-initials { font-weight: 700; }
-.bd-journal-avatar,
-.bd-other-rating-avatar { overflow: hidden; }
 
 /* ── Settings → Account profile card ────────────────────────────── */
 .profile-identity {

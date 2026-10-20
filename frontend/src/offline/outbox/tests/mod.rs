@@ -17,6 +17,7 @@ mod bookmarks;
 mod highlights;
 mod journals;
 mod ops;
+mod reviews;
 mod shelf_filters;
 mod shelves;
 

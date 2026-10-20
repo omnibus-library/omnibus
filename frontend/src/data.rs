@@ -53,6 +53,8 @@ mod metadata_search;
 mod physical;
 mod profile;
 mod progress;
+// Mobile only: what the outbox needs to replay a rating queued before reviews.
+#[cfg(feature = "mobile")]
 mod ratings;
 mod read_status;
 mod reviews;
@@ -111,7 +113,8 @@ pub use metadata_search::*;
 pub use physical::*;
 pub use profile::*;
 pub use progress::*;
-pub use ratings::*;
+#[cfg(feature = "mobile")]
+pub(crate) use ratings::*;
 pub use read_status::*;
 pub use reviews::*;
 pub use scan::*;

@@ -8,9 +8,9 @@
 //!   the server; the composer holds the draft until then.
 //! - **Delete** ([`delete`]): confirmed first, applied on success only.
 //!
-//! No client cache holds reviews (web reads through server functions, mobile
-//! calls REST directly), so the household re-read is the only follow-up. If it
-//! fails, the old figures stay on screen with a note saying they are stale.
+//! The household re-read is the only follow-up here; `data::reviews` keeps
+//! mobile's replica and outbox in step with each write. If it fails, the old
+//! figures stay on screen with a note saying they are stale.
 
 use dioxus::prelude::*;
 use omnibus_shared::{BookReviews, Review, ReviewPatch};
@@ -206,7 +206,7 @@ async fn refresh_household(mut ctx: ReviewsCtx, uuid: &str, server_url: &str) {
     let my_refresh = bump(ctx.refresh_seq);
     let my_op = *ctx.op_seq.peek();
     ctx.refreshing.set(true);
-    let result = data::get_book_reviews(server_url, uuid).await;
+    let result = data::refresh_book_reviews(server_url, uuid).await;
     if *ctx.refresh_seq.peek() != my_refresh {
         return;
     }

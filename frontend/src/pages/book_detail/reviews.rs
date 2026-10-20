@@ -7,9 +7,6 @@
 //! read live in [`writes`]. Host-agnostic: the marquee stop and the mobile
 //! layout each wrap [`BdReviewsSection`] in their own chrome.
 
-// Compiled on mobile too, ahead of the mobile layout adopting it.
-#![cfg_attr(feature = "mobile", allow(dead_code, unused_imports))]
-
 use dioxus::prelude::*;
 use omnibus_shared::{BookReviews, ReadStatus, ReviewSummary};
 
