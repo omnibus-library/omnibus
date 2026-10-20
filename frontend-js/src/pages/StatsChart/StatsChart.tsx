@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ChartBucket,
   ChartMeasure,
@@ -161,14 +161,8 @@ function ChartCanvas({ spec }: { spec: ChartSpec }) {
     placeholderData: keepPreviousData,
   });
   // Dropped once the keys leave the axis, or a later spec that brings them back would silently re-apply it.
-  useEffect(() => {
-    if (
-      chart.data &&
-      zoomed &&
-      resolveZoom(chart.data.buckets, zoomed) === null
-    )
-      setZoomed(null);
-  }, [chart.data, zoomed]);
+  if (chart.data && zoomed && resolveZoom(chart.data.buckets, zoomed) === null)
+    setZoomed(null);
   // Zoomed before tweened: narrowing the window is itself worth animating, and each surviving bucket keeps its key.
   const view = useMemo(
     () => (chart.data ? applyZoom(chart.data, zoomed) : null),
@@ -188,9 +182,6 @@ function ChartCanvas({ spec }: { spec: ChartSpec }) {
     return <Loading kind="page" label="Drawing the chart" />;
   }
   const busy = chart.isFetching;
-  // Measured against the unzoomed result, so a zoom the axis can no longer resolve reports itself inactive.
-  const zoomActive =
-    zoomed !== null && resolveZoom(chart.data.buckets, zoomed) !== null;
   return (
     <section
       className={
@@ -206,7 +197,7 @@ function ChartCanvas({ spec }: { spec: ChartSpec }) {
         </p>
       ) : (
         <>
-          {zoomActive && (
+          {zoomed !== null && (
             <div className="cb-zoombar" data-testid="chart-zoom">
               <span className="cb-zoom-label">
                 Zoomed to {frame.buckets.length} of {chart.data.buckets.length}{" "}
