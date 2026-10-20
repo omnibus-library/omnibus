@@ -42,6 +42,8 @@ export function endSession(
   navigate: (to: string, options: { replace: true }) => void,
 ) {
   navigate("/login", { replace: true });
+  // A read still in flight would sign you back in.
+  void client.cancelQueries({ queryKey: meQuery.queryKey });
   // Null, not cleared: the gate unmounts the signed-in screens before
   // anything under it can read a missing user.
   client.setQueryData(meQuery.queryKey, null);

@@ -1,6 +1,6 @@
 import { MutationObserver, QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
-import { toUser } from "./api";
+import { toUser, type User } from "./api";
 import { endSession, meQuery, startSession } from "./session";
 import { WIRE_ADA } from "./testing/wire";
 
@@ -57,6 +57,22 @@ describe("endSession", () => {
     client.setQueryData(meQuery.queryKey, grace);
 
     endSession(client, () => {});
+
+    expect(client.getQueryData(meQuery.queryKey)).toBeNull();
+  });
+
+  it("is not undone by a session read still in flight", async () => {
+    const client = new QueryClient();
+    client.setQueryData(meQuery.queryKey, grace);
+    let answer: (user: User) => void = () => {};
+    const inFlight = client.fetchQuery({
+      queryKey: meQuery.queryKey,
+      queryFn: () => new Promise<User>((resolve) => (answer = resolve)),
+    });
+
+    endSession(client, () => {});
+    answer(grace);
+    await inFlight.catch(() => {});
 
     expect(client.getQueryData(meQuery.queryKey)).toBeNull();
   });

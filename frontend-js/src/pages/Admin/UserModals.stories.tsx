@@ -1117,7 +1117,62 @@ export const EditButtonReadsTheListAndTheSessionWhenOnlyThePermissionsLand: Stor
     },
   };
 
+let passwordGate = deferred();
+let passwordArrived = deferred();
+let meGate = deferred();
+
+export const EditButtonReadsTheSessionOnlyOnceBothStepsHaveSettled: Story = {
+  beforeEach({ msw }) {
+    passwordGate = deferred();
+    passwordArrived = deferred();
+    meGate = deferred();
+    msw.use(
+      http.get("/api/auth/me", async () => {
+        await meGate.promise;
+        return HttpResponse.json(WIRE_ADA);
+      }),
+      http.post("/api/admin/users/:id/password", async () => {
+        passwordArrived.release();
+        await passwordGate.promise;
+        return new HttpResponse("password is too weak", { status: 422 });
+      }),
+    );
+  },
+  render: () => <UsersCard />,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Edit ada" }),
+    );
+    const dialog = await canvas.findByRole("dialog", { name: "Edit ada" });
+    await userEvent.type(within(dialog).getByLabelText("Reset password"), "x");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
+
+    // Demoting yourself would unmount this modal before the password refusal showed.
+    await passwordArrived.promise;
+    await expect(writes.permissions).toHaveLength(1);
+    await expect(
+      storyClient().getQueryState(meQuery.queryKey)?.isInvalidated,
+    ).toBe(false);
+    passwordGate.release();
+
+    await expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "password is too weak",
+    );
+    await waitFor(() =>
+      expect(storyClient().getQueryState(meQuery.queryKey)?.isInvalidated).toBe(
+        true,
+      ),
+    );
+    meGate.release();
+  },
+};
+
 export const EditUserOnYourOwnRowWithAPasswordSignsYouOut: Story = {
+  beforeEach({ msw }) {
+    msw.use(...readsOfUsersAndMe);
+  },
   render: () => (
     <>
       <WhileSignedIn>
@@ -1146,6 +1201,8 @@ export const EditUserOnYourOwnRowWithAPasswordSignsYouOut: Story = {
       { id: 1, password: "new-password-1" },
     ]);
     await expect(storyClient().getQueryData(meQuery.queryKey)).toBeNull();
+    // The session is over, so nothing reads it again.
+    await expect(reads.me).toBe(0);
   },
 };
 
