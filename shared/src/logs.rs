@@ -39,7 +39,8 @@ pub struct LogRecord {
 /// Filter + pagination parameters for a log-viewer query. Every filter is
 /// optional; an absent or empty filter does not narrow the results.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema, utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct LogQuery {
     /// Exact level match (case-insensitive), e.g. `ERROR`. `None`/empty keeps
     /// every level.
@@ -61,8 +62,7 @@ pub struct LogQuery {
     /// Zero-based page index.
     #[serde(default)]
     pub page: u32,
-    /// Requested page size; 0 means [`LOG_PER_PAGE_DEFAULT`], and any value is
-    /// clamped to [`LOG_PER_PAGE_MAX`].
+    /// Requested page size. 0 means 50, and a size over 200 is cut to 200.
     #[serde(default)]
     pub per_page: u32,
 }

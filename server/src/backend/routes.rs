@@ -11,10 +11,10 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use crate::rate_limit::{rate_limit_by_ip, RateLimiter, RateLimits};
 
 use super::{
-    account, admin_health, admin_sessions, audiobooks, author_photos, authors, bookmarks, covers,
-    cross_format, deletion, ebooks, genres, highlights, journals, kindle, merge, metadata,
-    overrides, physical, profile, progress, ratings, read_status, scan, search, series, settings,
-    shelves, stats, suggestions, summary, tags, tasks, uploads, users, AppState,
+    account, admin_health, admin_sessions, audiobooks, author_photos, authors, bookmarks, cleanup,
+    covers, cross_format, deletion, ebooks, genres, highlights, journals, kindle, logs, merge,
+    metadata, overrides, physical, profile, progress, ratings, read_status, scan, search, series,
+    settings, shelves, stats, suggestions, summary, tags, tasks, uploads, users, AppState,
 };
 
 /// Health check, settings, ebooks, and audiobook playback routes.
@@ -49,6 +49,12 @@ pub(super) fn content_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(admin_health::get_admin_health))
         .routes(routes!(tasks::get_worker_status))
         .routes(routes!(tasks::get_background_tasks))
+        .routes(routes!(cleanup::get_cleanup_counts))
+        .routes(routes!(cleanup::get_cleanup_queue))
+        .routes(routes!(cleanup::post_cleanup_decision))
+        .routes(routes!(cleanup::post_cleanup_detect))
+        .routes(routes!(cleanup::post_cleanup_undo))
+        .routes(routes!(logs::get_logs))
         .routes(routes!(ebooks::get_library))
         .routes(routes!(ebooks::post_download_validators))
         .routes(routes!(ebooks::get_ebooks))

@@ -139,6 +139,37 @@ pub struct CleanupCounts {
     pub rejected: i64,
 }
 
+/// One kind's review counts, as the cleanup dashboard lists them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CleanupKindCounts {
+    /// The kind of record the suggestions are about.
+    pub kind: CleanupKind,
+    /// How many of that kind's suggestions are in each review state.
+    pub counts: CleanupCounts,
+}
+
+/// A reviewer's decision on one cleanup suggestion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CleanupDecisionRequest {
+    /// `accepted` applies the suggestion and `rejected` dismisses it. `pending` is refused.
+    pub decision: Decision,
+    /// The reviewer's own wording, used in place of the proposed one. Only a book-title
+    /// rename takes it; for any other suggestion it is refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+}
+
+/// What a cleanup decision did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CleanupDecisionOutcome {
+    /// The change an accept applied, which `POST /api/admin/cleanup/undo/{log_id}` reverses.
+    /// Null for a reject, which changes nothing.
+    pub log_id: Option<i64>,
+}
+
 /// A hydrated preview of one suggestion, for rendering a card in the review
 /// UI. `secondary_name` and `photo_url` are optional because they don't
 /// universally apply — a tag split has no single "other" name, and only
