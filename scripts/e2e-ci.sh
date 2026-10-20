@@ -6,9 +6,8 @@
 # Usage: scripts/e2e-ci.sh [playwright args...]   (normally `just e2e-ci`)
 #          e.g. scripts/e2e-ci.sh tests/flows/browse_indices.spec.ts
 #
-# Why not the dev server: its DB accumulates state between runs (a restart
-# re-seeds the .env library paths over the fixtures a spec saved), and
-# `dx serve`'s hot-reload client reloads pages mid-test. Both read as spec failures CI never sees.
+# Why not the dev server: its DB carries state between runs that CI's fresh
+# one never has, and `dx serve`'s hot-reload client reloads pages mid-test. Both read as spec failures CI never sees.
 #
 # What it does:
 #   1. `dx bundle` the fullstack web app. A debug build by default, sharing the
@@ -46,8 +45,10 @@ dx bundle --platform web --package omnibus --fullstack --debug-symbols=false \
 
 # Not under $TMPDIR: the nix shell points that at a fresh dir per invocation.
 # Canonical (/tmp is /private/tmp on macOS) because the health wait compares
-# it with the cwd the server reports.
-scratch="$(cd "$(mktemp -d /tmp/omnibus-e2e-ci.XXXXXX)" && pwd -P)"
+# it with the cwd the server reports. Two steps, so a failed mktemp aborts
+# under set -e rather than leaving `cd ""` to make the worktree the scratch dir.
+scratch="$(mktemp -d /tmp/omnibus-e2e-ci.XXXXXX)"
+scratch="$(cd "$scratch" && pwd -P)"
 server_pid=""
 status=1
 
