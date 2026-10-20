@@ -376,12 +376,13 @@ pub(crate) async fn review_landed(uuid: &str, mine: Option<&Review>, stars: bool
 
 /// Take a household re-read into the book's cached reviews: the others and
 /// the summary. Your review stays as the write paths left it, since a write
-/// may have landed after the server answered; with nothing cached yet, the
-/// whole answer goes in.
+/// may have landed after the server answered, and so does the row's age: the
+/// review in it wasn't re-read, so it must not pass for fresh. With nothing
+/// cached yet, the whole answer goes in.
 pub(crate) async fn household_refreshed(uuid: &str, fresh: &BookReviews) {
     let Some(st) = store::store() else { return };
     let fresh = fresh.clone();
-    st.kv_update(&cache::keys::reviews(uuid), move |payload| {
+    st.kv_update_keeping_age(&cache::keys::reviews(uuid), move |payload| {
         let next = match payload.and_then(|p| serde_json::from_str::<BookReviews>(&p).ok()) {
             Some(mut cached) => {
                 cached.others = fresh.others;

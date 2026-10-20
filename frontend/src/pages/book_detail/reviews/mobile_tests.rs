@@ -1,7 +1,9 @@
 //! The section on mobile, driven in a live `VirtualDom` against a stub server:
 //! a stars tap re-reads the household from the server rather than the replica
 //! the tap just refreshed; the section re-reads it once when the replica moves,
-//! never while a write to the review is queued, and reloads a failed first read.
+//! never while a write to the review is queued or over a re-read already out,
+//! keeps its figures and note when that re-read fails, and reloads a failed
+//! first read.
 
 // The state-lock guard is deliberately held across awaits: it serializes
 // whole async test bodies against process-global state, and each test owns
@@ -21,6 +23,7 @@ use dioxus::dioxus_core::NoOpMutations;
 use dioxus::prelude::*;
 use omnibus_shared::{BookReviews, Review, ReviewBucket, ReviewPatch, ReviewSummary};
 
+use crate::data::DataError;
 use crate::data::ServerUrl;
 use crate::offline::sync::test_state_lock;
 use crate::offline::test_support::spawn_router;
@@ -62,10 +65,18 @@ fn household(average_stars: f32, ratings: i64) -> BookReviews {
     }
 }
 
-/// A server whose first read answers a 3.0 household (or fails, with
-/// `fail_first`) and every later one a 4.5 household, counting the reads; a
-/// stars patch lands.
-async fn household_server(fail_first: bool) -> (String, Arc<AtomicUsize>) {
+/// Which of the household server's reads fail.
+#[derive(Clone, Copy, PartialEq)]
+enum Fails {
+    Never,
+    First,
+    Later,
+}
+
+/// A server whose first read answers a 3.0 household and every later one a
+/// 4.5 household, but for the reads `fails` names, counting them all; a stars
+/// patch lands.
+async fn household_server(fails: Fails) -> (String, Arc<AtomicUsize>) {
     let reads = Arc::new(AtomicUsize::new(0));
     let counted = reads.clone();
     let path = format!("/api/reviews/{BOOK}");
@@ -75,9 +86,11 @@ async fn household_server(fail_first: bool) -> (String, Arc<AtomicUsize>) {
             let counted = counted.clone();
             async move {
                 let first = counted.fetch_add(1, Ordering::SeqCst) == 0;
-                match (first, fail_first) {
-                    (true, true) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-                    (true, false) => Json(household(3.0, 2)).into_response(),
+                match (first, fails) {
+                    (true, Fails::First) | (false, Fails::Later) => {
+                        StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                    }
+                    (true, _) => Json(household(3.0, 2)).into_response(),
                     (false, _) => Json(household(4.5, 3)).into_response(),
                 }
             }
@@ -131,6 +144,17 @@ fn feed(dom: &VirtualDom, ctx: ReviewsCtx) -> FeedState {
     dom.in_runtime(|| *ctx.feed.peek())
 }
 
+/// The household's dimming, its stale note, and how many re-reads began.
+fn household_flags(dom: &VirtualDom, ctx: ReviewsCtx) -> (bool, bool, u64) {
+    dom.in_runtime(|| {
+        (
+            *ctx.refreshing.peek(),
+            *ctx.refresh_failed.peek(),
+            *ctx.refresh_seq.peek(),
+        )
+    })
+}
+
 fn my_stars(dom: &VirtualDom, ctx: ReviewsCtx) -> Option<f32> {
     dom.in_runtime(|| {
         ctx.reviews
@@ -172,7 +196,7 @@ async fn fresh_start() {
 async fn a_stars_tap_re_reads_the_household_from_the_server_not_the_replica() {
     let _guard = test_state_lock().lock().unwrap();
     fresh_start().await;
-    let (url, reads) = household_server(false).await;
+    let (url, reads) = household_server(Fails::Never).await;
     let (mut dom, ctx) = mount(&url).await;
     assert_eq!(average(&dom, ctx), Some(3.0));
 
@@ -191,7 +215,7 @@ async fn a_stars_tap_re_reads_the_household_from_the_server_not_the_replica() {
 async fn the_section_re_reads_the_household_when_the_replica_moves_under_it() {
     let _guard = test_state_lock().lock().unwrap();
     fresh_start().await;
-    let (url, reads) = household_server(false).await;
+    let (url, reads) = household_server(Fails::Never).await;
     let (mut dom, ctx) = mount(&url).await;
     let epoch = dom.in_runtime(|| *ctx.epoch.peek());
 
@@ -211,8 +235,9 @@ async fn the_section_re_reads_the_household_when_the_replica_moves_under_it() {
 async fn a_queued_write_for_the_book_keeps_a_resync_off_the_server_and_the_card() {
     let _guard = test_state_lock().lock().unwrap();
     fresh_start().await;
-    let (url, reads) = household_server(false).await;
+    let (url, reads) = household_server(Fails::Never).await;
     let (mut dom, ctx) = mount(&url).await;
+    let (_, _, began) = household_flags(&dom, ctx);
     let rerated = ReviewPatch {
         stars: Some(Some(1.0)),
         ..Default::default()
@@ -230,9 +255,10 @@ async fn a_queued_write_for_the_book_keeps_a_resync_off_the_server_and_the_card(
         "the server's answer would predate the queued write"
     );
     assert_eq!(my_stars(&dom, ctx), None, "the card is left alone");
-    assert!(
-        !dom.in_runtime(|| *ctx.refresh_failed.peek()),
-        "a skipped re-read is not a failed one"
+    assert_eq!(
+        household_flags(&dom, ctx),
+        (false, false, began),
+        "skipped before it began: never dimmed, never a failure"
     );
     fresh_start().await;
 }
@@ -241,7 +267,7 @@ async fn a_queued_write_for_the_book_keeps_a_resync_off_the_server_and_the_card(
 async fn a_section_whose_first_read_failed_loads_again_when_the_replica_moves() {
     let _guard = test_state_lock().lock().unwrap();
     fresh_start().await;
-    let (url, reads) = household_server(true).await;
+    let (url, reads) = household_server(Fails::First).await;
     let (mut dom, ctx) = mount(&url).await;
     assert_eq!(feed(&dom, ctx), FeedState::Failed);
 
@@ -250,4 +276,52 @@ async fn a_section_whose_first_read_failed_loads_again_when_the_replica_moves() 
 
     assert_eq!(feed(&dom, ctx), FeedState::Loaded);
     assert_eq!(reads.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn a_background_re_read_never_replaces_one_already_out() {
+    let _guard = test_state_lock().lock().unwrap();
+    fresh_start().await;
+    let (url, reads) = household_server(Fails::Never).await;
+    let (mut dom, ctx) = mount(&url).await;
+    // A re-read a write started, not yet answered.
+    let start = dom
+        .in_runtime(|| writes::begin_refresh(ctx))
+        .expect("begun");
+    let (_, _, began) = household_flags(&dom, ctx);
+
+    cache::notify_changed();
+    settle(&mut dom).await;
+
+    assert_eq!(reads.load(Ordering::SeqCst), 1, "no second re-read");
+    assert_eq!(household_flags(&dom, ctx), (true, false, began));
+    // The write's own re-read still lands, failure note and all.
+    dom.in_runtime(|| writes::settle_refresh(ctx, start, Err(DataError::Offline)));
+    assert_eq!(household_flags(&dom, ctx), (false, true, began));
+}
+
+#[tokio::test]
+async fn a_background_re_read_that_fails_leaves_the_figures_and_the_note() {
+    let _guard = test_state_lock().lock().unwrap();
+    fresh_start().await;
+    let (url, reads) = household_server(Fails::Later).await;
+    let (mut dom, ctx) = mount(&url).await;
+    // A note left by an earlier re-read of yours.
+    dom.in_runtime(|| {
+        let mut note = ctx.refresh_failed;
+        note.set(true);
+    });
+
+    cache::notify_changed();
+    let counted = reads.clone();
+    run_until(&mut dom, |dom| {
+        counted.load(Ordering::SeqCst) == 2 && !household_flags(dom, ctx).0
+    })
+    .await;
+    settle(&mut dom).await;
+
+    assert_eq!(average(&dom, ctx), Some(3.0), "the figures stay");
+    let (refreshing, note, _) = household_flags(&dom, ctx);
+    assert!(!refreshing, "no longer dimmed");
+    assert!(note, "the note stays as it was");
 }
