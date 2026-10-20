@@ -167,8 +167,9 @@ shell provides it.
   picker's `picker`, the shelf page's `shelfAccess` and `narrow`, stats'
   `calendar`, `summary`, `picker`, `hero`, `goal`, `clock`, `donut`,
   `superlatives`, `tiles`, `drillIn`, `heatmap`, `readingNow`, `monthly`,
-  `library` and `composition`, and the chart builder's `chart`, `plot`, `notes`,
-  `zoom` and `tween`), plus the real route table in `src/router.test.tsx`:
+  `library` and `composition`, the reader picker's menu, and the chart builder's
+  `chart`, `plot`, `notes`, `zoom` and `tween`; both pages' refusal to refetch on
+  window focus runs against `msw/node`), plus the real route table in `src/router.test.tsx`:
   every unported page, the layout split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI
   uploads each one's lcov to Codecov under the `frontend-js` flag.
