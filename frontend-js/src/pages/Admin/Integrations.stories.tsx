@@ -674,7 +674,10 @@ export const CalibreShowsASaveRefusal: Story = {
     msw.use(
       http.post(
         EBOOK_CONVERT,
-        () => new HttpResponse("the path is too long", { status: 400 }),
+        () =>
+          new HttpResponse("ebook convert path exceeds 4096 bytes", {
+            status: 422,
+          }),
       ),
     );
   },
@@ -689,7 +692,7 @@ export const CalibreShowsASaveRefusal: Story = {
 
     await expect(
       await canvas.findByText(
-        "Couldn’t save the ebook-convert path: the path is too long",
+        "Couldn’t save the ebook-convert path: ebook convert path exceeds 4096 bytes",
       ),
     ).toHaveClass("settings-status", "error");
     await expect(input).toHaveValue("/opt/x");
