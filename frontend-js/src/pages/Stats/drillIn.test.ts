@@ -4,7 +4,6 @@ import {
   buildRatingTrendBars,
   buildTrendBars,
   cutoverLine,
-  HISTOGRAM_CAPTIONS,
   measuredLine,
   predatesLedger,
   rateValue,
@@ -15,7 +14,6 @@ import {
   trendBars,
   trendTitle,
   unmeasuredLine,
-  VS_LABELS,
 } from "./drillIn";
 
 const bucket = (half_stars: number, books: number) => ({ half_stars, books });
@@ -113,32 +111,12 @@ describe("ratingTrendCaption", () => {
   });
 });
 
-describe("HISTOGRAM_CAPTIONS", () => {
-  it.each([
-    ["week", "Rated this week"],
-    ["month", "Rated this month"],
-    ["year", "Rated this year"],
-    ["all_time", "Rated at any time"],
-  ] as const)("follows the %s period", (range, caption) => {
-    expect(HISTOGRAM_CAPTIONS[range]).toBe(caption);
-  });
-});
-
 describe("trendTitle", () => {
   it("is carried by the rating trend alone", () => {
     expect(trendTitle("avg_rating")).toBe("Average rating by month");
     for (const metric of ["finished", "listening", "pages"] as const) {
       expect(trendTitle(metric)).toBeNull();
     }
-  });
-});
-
-describe("VS_LABELS", () => {
-  it("is empty only for Lifetime", () => {
-    expect(VS_LABELS.week).toBe("vs last week");
-    expect(VS_LABELS.month).toBe("vs last month");
-    expect(VS_LABELS.year).toBe("vs last year");
-    expect(VS_LABELS.all_time).toBe("");
   });
 });
 
