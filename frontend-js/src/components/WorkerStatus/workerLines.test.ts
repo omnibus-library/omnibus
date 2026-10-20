@@ -3,6 +3,7 @@ import type { ScanTallies, TaskKind } from "../../api";
 import {
   activeTalliesLine,
   bakeErrorsMessage,
+  finishedKindLabel,
   ghostWarningMessage,
   talliesChanges,
   workerKindLabel,
@@ -46,6 +47,17 @@ describe("workerKindLabel", () => {
 
   it.each(labels)("names %s once finished", (kind, _running, finished) => {
     expect(workerKindLabel(kind, false)).toBe(finished);
+  });
+
+  it.each(labels)(
+    "looks up %s by name once finished",
+    (kind, _running, finished) => {
+      expect(finishedKindLabel(kind)).toBe(finished);
+    },
+  );
+
+  it("has no label for a kind the worker line never shows", () => {
+    expect(finishedKindLabel("send_to_kindle")).toBeUndefined();
   });
 });
 

@@ -1,13 +1,10 @@
+import { finishedKindLabel } from "../../components/WorkerStatus/workerLines";
 import { capitalize } from "../../format";
 
+// Kinds the worker line names come from `finishedKindLabel`, so each label is written once.
 const KIND_LABELS = new Map([
-  ["scan", "Library scan"],
   ["scan_audiobooks", "Audiobook library scan"],
-  ["generate_thumbs", "Thumbnail generation"],
-  ["resolve_author_photo", "Author photo lookup"],
   ["hls_transcode", "Audio transcode for streaming"],
-  ["refetch_author_photos", "Author photo refetch"],
-  ["backfill_chapters", "Audiobook chapter extraction"],
   ["backfill_word_counts", "Word count backfill"],
   ["backfill_page_counts", "Page count backfill"],
   ["backfill_epub_structure", "EPUB structure backfill"],
@@ -15,7 +12,6 @@ const KIND_LABELS = new Map([
   ["backfill_thumbs", "Thumbnail backfill"],
   ["backfill_content_fts", "Book text indexing"],
   ["rebuild_fts_index", "Search index rebuild"],
-  ["resolve_suggestions", "Suggestion lookup"],
   ["kepub_convert", "Kobo conversion"],
   ["convert_format", "Format conversion"],
   ["send_to_kindle", "Send to Kindle"],
@@ -25,7 +21,11 @@ const KIND_LABELS = new Map([
 
 /** A recorded run's kind in words; a kind this build doesn't know is spelled out from its name. */
 export function recordKindLabel(kind: string): string {
-  return KIND_LABELS.get(kind) ?? capitalize(kind.replaceAll("_", " "));
+  return (
+    finishedKindLabel(kind) ??
+    KIND_LABELS.get(kind) ??
+    capitalize(kind.replaceAll("_", " "))
+  );
 }
 
 /** Time between a run's start and finish in its two largest units ("45s", "3m 20s", "1h 2m"), or "running…". */

@@ -29,6 +29,13 @@ export function workerKindLabel(kind: TaskKind, running: boolean): string {
   return KIND_LABELS[kind][running ? "running" : "finished"];
 }
 
+const FINISHED_LABELS: ReadonlyMap<string, string> = new Map(
+  Object.entries(KIND_LABELS).map(([kind, label]) => [kind, label.finished]),
+);
+
+/** A kind's finished-tense label by its wire name, or undefined for a kind the worker line never shows. */
+export const finishedKindLabel = (kind: string) => FINISHED_LABELS.get(kind);
+
 /** The scan's change buckets without the zero ones, or "no changes". */
 export function talliesChanges(tallies: ScanTallies): string {
   const parts = (
