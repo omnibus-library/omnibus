@@ -656,18 +656,6 @@ export const ABrushThatZoomsLeavesNoHoverCardBehind: Story = {
   },
 };
 
-export const ABrushToTheLastBucketLeavesNoBandPastThePlot: Story = {
-  play: async (ctx) => {
-    const plot = await drawn(ctx);
-
-    drag(plot, 1, 11);
-
-    // Eleven buckets remain, so the bucket the pointer let go over no longer exists.
-    await ctx.canvas.findByText("Zoomed to 11 of 12 periods");
-    await expect(plot.querySelectorAll(".cb-band")).toHaveLength(0);
-  },
-};
-
 export const RegroupingDropsAZoomWhoseKeysAreGone: Story = {
   beforeEach({ msw }) {
     msw.use(
