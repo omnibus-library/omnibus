@@ -233,11 +233,7 @@ export function MetadataOrderCard() {
           />
         </Button>
       </div>
-      <LiveStatus
-        testId="metadata-precedence-status"
-        message={line?.text ?? null}
-        isError={line?.isError ?? false}
-      />
+      <LiveStatus testId="metadata-precedence-status" status={line} />
     </section>
   );
 }

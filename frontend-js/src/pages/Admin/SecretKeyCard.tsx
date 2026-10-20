@@ -162,11 +162,7 @@ export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
             />
           </Button>
         </div>
-        <LiveStatus
-          testId={`${copy.testId}-key-status`}
-          message={shown?.text ?? null}
-          isError={shown?.isError ?? false}
-        />
+        <LiveStatus testId={`${copy.testId}-key-status`} status={shown} />
       </form>
       {confirmingClear && (
         <ConfirmDialog

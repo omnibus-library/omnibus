@@ -4,20 +4,20 @@ export type Status = { text: string; isError: boolean };
 /** A card's result line. It stays mounted while empty, so its first message is announced. */
 export function LiveStatus({
   testId,
-  message,
-  isError,
+  status,
 }: {
   testId: string;
-  message: string | null;
-  isError: boolean;
+  status: Status | null;
 }) {
   let className = "settings-status";
-  if (message !== null) {
-    className = isError ? "settings-status error" : "settings-status success";
+  if (status) {
+    className = status.isError
+      ? "settings-status error"
+      : "settings-status success";
   }
   return (
     <p role="status" className={className} data-testid={testId}>
-      {message}
+      {status?.text}
     </p>
   );
 }

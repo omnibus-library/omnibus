@@ -252,11 +252,7 @@ export function SourcesCard() {
           </Button>
         </div>
       </form>
-      <LiveStatus
-        testId="settings-status"
-        message={shown?.text ?? null}
-        isError={shown?.isError ?? false}
-      />
+      <LiveStatus testId="settings-status" status={shown} />
     </section>
   );
 }

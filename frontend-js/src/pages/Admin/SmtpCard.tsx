@@ -274,11 +274,7 @@ export function SmtpCard() {
             />
           </Button>
         </div>
-        <LiveStatus
-          testId="smtp-config-status"
-          message={shown?.text ?? null}
-          isError={shown?.isError ?? false}
-        />
+        <LiveStatus testId="smtp-config-status" status={shown} />
       </form>
       {confirmingClear && (
         <ConfirmDialog

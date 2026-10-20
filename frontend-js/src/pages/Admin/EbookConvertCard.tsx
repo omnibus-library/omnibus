@@ -144,11 +144,7 @@ export function EbookConvertCard() {
             />
           </Button>
         </div>
-        <LiveStatus
-          testId="ebook-convert-save-status"
-          message={shown?.text ?? null}
-          isError={shown?.isError ?? false}
-        />
+        <LiveStatus testId="ebook-convert-save-status" status={shown} />
       </form>
     </section>
   );

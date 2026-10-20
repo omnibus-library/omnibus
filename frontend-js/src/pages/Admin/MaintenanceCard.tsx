@@ -103,11 +103,7 @@ export function MaintenanceCard() {
           <Job key={job.id} job={job} onStatus={setStatus} />
         ))}
       </ul>
-      <LiveStatus
-        testId="maintenance-status"
-        message={status?.text ?? null}
-        isError={status?.isError ?? false}
-      />
+      <LiveStatus testId="maintenance-status" status={status} />
     </section>
   );
 }
