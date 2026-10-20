@@ -1,10 +1,12 @@
-//! Live markdown editor glue for the journal composer. Ships the co-located
-//! `journal_editor.js` over Dioxus's eval channel and exposes
-//! `enhance` / `command` / `insert` actions plus the formatting toolbar.
+//! Live markdown editor glue shared by the journal and review composers. Ships
+//! the co-located `journal_editor.js` over Dioxus's eval channel and exposes
+//! `enhance` / `command` / `insert` actions, the formatting toolbar, the
+//! textarea/live-editor pair and the insert-from-highlights popover.
 //! Web-only — non-web targets keep the plain SSR textarea (rule 07) and every
 //! eval helper is a no-op.
 
 use dioxus::prelude::*;
+use omnibus_shared::Highlight;
 
 use crate::components::image_upload::use_file_upload;
 use crate::components::{MarkSize, Ring};
@@ -304,4 +306,141 @@ pub(crate) fn highlight_blockquote(text: &str) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!("\n{quoted}\n>\n> \u{2014} saved from highlights\n")
+}
+
+/// The write surface: a plain `<textarea>` (the SSR / first-paint source of
+/// truth, and the mirror the live editor writes its markdown back into) beside
+/// the contenteditable that [`editor_enhance`] swaps in after mount.
+#[component]
+pub(crate) fn BdMarkdownSurface(
+    source_id: String,
+    editor_id: String,
+    body: Signal<String>,
+    /// The live editor's accessible name.
+    label: String,
+    #[props(default)] placeholder: Option<String>,
+    #[props(default)] source_testid: Option<String>,
+    #[props(default)] editor_testid: Option<String>,
+) -> Element {
+    let mut body = body;
+    let mount_ids = (source_id.clone(), editor_id.clone());
+    rsx! {
+        div { class: "bd-journal-editor-wrap",
+            textarea {
+                id: "{source_id}",
+                class: "me-textarea bd-journal-textarea",
+                "data-testid": source_testid,
+                rows: "5",
+                placeholder: placeholder.clone(),
+                value: "{body}",
+                oninput: move |e| body.set(e.value()),
+                onmounted: move |_| editor_enhance(&mount_ids.0, &mount_ids.1),
+            }
+            div {
+                id: "{editor_id}",
+                class: "me-textarea bd-journal-editor",
+                "data-testid": editor_testid,
+                contenteditable: "true",
+                role: "textbox",
+                "aria-multiline": "true",
+                "aria-label": "{label}",
+                "data-placeholder": placeholder,
+            }
+        }
+    }
+}
+
+/// The insert-from-highlights popover's state, owned by the composer that
+/// hosts it so hiding the toolbar (Preview) keeps the loaded-once list.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) struct HighlightsInsertState {
+    highlights: Signal<Vec<Highlight>>,
+    open: Signal<bool>,
+    loaded: Signal<bool>,
+}
+
+/// Declare a closed, unloaded [`HighlightsInsertState`]. A hook: call it
+/// unconditionally.
+pub(crate) fn use_highlights_insert_state() -> HighlightsInsertState {
+    HighlightsInsertState {
+        highlights: use_signal(Vec::<Highlight>::new),
+        open: use_signal(|| false),
+        loaded: use_signal(|| false),
+    }
+}
+
+/// "From highlights" toggle + popover: inserts a saved highlight of `uuid` as
+/// a blockquote at `target_id`'s caret. The list loads the first time the
+/// popover opens. Testids read `{testid_prefix}-insert-highlight`,
+/// `-highlights-pop` and `-highlight-item`.
+#[component]
+pub(crate) fn BdHighlightsInsert(
+    uuid: String,
+    server_url: String,
+    target_id: String,
+    testid_prefix: String,
+    state: HighlightsInsertState,
+) -> Element {
+    let HighlightsInsertState {
+        mut highlights,
+        open: mut highlights_open,
+        loaded: mut highlights_loaded,
+    } = state;
+
+    rsx! {
+        div { class: "bd-journal-hl-wrap",
+            button {
+                r#type: "button",
+                class: if highlights_open() { "btn ghost sm bd-tab-active" } else { "btn ghost sm" },
+                "data-testid": "{testid_prefix}-insert-highlight",
+                onclick: move |_| {
+                    let opening = !highlights_open();
+                    highlights_open.set(opening);
+                    if opening && !highlights_loaded() {
+                        highlights_loaded.set(true);
+                        let url = server_url.clone();
+                        let uuid = uuid.clone();
+                        spawn(async move {
+                            if let Ok(list) = data::list_highlights(&url, &uuid).await {
+                                highlights
+                                    .set(list.into_iter().filter(|h| h.text.is_some()).collect());
+                            }
+                        });
+                    }
+                },
+                "From highlights"
+            }
+            if highlights_open() {
+                div {
+                    class: "card bd-journal-hl-pop",
+                    "data-testid": "{testid_prefix}-highlights-pop",
+                    div { class: "label bd-journal-hl-head", "From your highlights" }
+                    if highlights().is_empty() {
+                        p { class: "mono bd-journal-hl-empty",
+                            "No saved highlights for this book yet."
+                        }
+                    } else {
+                        for h in highlights().iter() {
+                            button {
+                                key: "{h.id}",
+                                r#type: "button",
+                                class: "bd-journal-hl-item",
+                                "data-testid": "{testid_prefix}-highlight-item",
+                                onmousedown: move |e| e.prevent_default(),
+                                onclick: {
+                                    let text = h.text.clone().unwrap_or_default();
+                                    let target_id = target_id.clone();
+                                    move |_| {
+                                        editor_insert(&target_id, &highlight_blockquote(&text));
+                                        highlights_open.set(false);
+                                    }
+                                },
+                                "{h.text.clone().unwrap_or_default()}"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
