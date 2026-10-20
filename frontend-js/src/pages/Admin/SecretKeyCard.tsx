@@ -25,7 +25,10 @@ export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
 
   const write = useMutation({
     mutationFn: (key: string | null) => saveSecretKey(kind, key),
-    onSuccess: (answer) => {
+    onSuccess: async (answer) => {
+      await queryClient.cancelQueries({
+        queryKey: secretKeyQuery(kind).queryKey,
+      });
       queryClient.setQueryData(secretKeyQuery(kind).queryKey, answer);
       if (kind === "google-books") {
         // Check-in reads whether a key is set to decide how it warns about the quota.

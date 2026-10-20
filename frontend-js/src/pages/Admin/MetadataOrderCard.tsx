@@ -142,6 +142,9 @@ export function MetadataOrderCard() {
       for (const { library, order } of pending) {
         try {
           const answer = await saveMetadataOrder(library, order);
+          await queryClient.cancelQueries({
+            queryKey: metadataOrderQuery(library).queryKey,
+          });
           queryClient.setQueryData(
             metadataOrderQuery(library).queryKey,
             answer,

@@ -1,7 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
-import { expectInvalidated, seedQueries } from "../../testing/AppHarness";
+import { registrationStatusQuery } from "../../api";
+import {
+  expectInvalidated,
+  seedQueries,
+  storyClient,
+} from "../../testing/AppHarness";
 import {
   aWireAdminUsers,
   registrationHandlers,
@@ -366,5 +371,42 @@ export const InvalidatesTheSignInPagesRead: Story = {
 
     await waitFor(() => expect(toggle).toHaveAccessibleDescription(CLOSED));
     await expectInvalidated([["registration"]]);
+  },
+};
+
+let readGate = deferred();
+
+export const KeepsTheSavedValueOverAReadStillInFlight: Story = {
+  beforeEach({ msw }) {
+    readGate = deferred();
+    let reads = 0;
+    msw.use(
+      http.get(REGISTRATION, async () => {
+        const answer = HttpResponse.json({ enabled: true });
+        if (++reads > 1) await readGate.promise;
+        return answer;
+      }),
+    );
+  },
+  render: () => <RegistrationCard />,
+  play: async ({ canvas, userEvent }) => {
+    const toggle = await canvas.findByRole("switch", {
+      name: "Allow new users to register",
+    });
+    await waitFor(() => expect(toggle).toBeEnabled());
+    void storyClient().refetchQueries({
+      queryKey: registrationStatusQuery.queryKey,
+    });
+    await userEvent.click(toggle);
+    await waitFor(() => expect(toggle).toHaveAccessibleDescription(CLOSED));
+
+    readGate.release();
+    await waitFor(() =>
+      expect(
+        storyClient().getQueryState(registrationStatusQuery.queryKey)
+          ?.fetchStatus,
+      ).toBe("idle"),
+    );
+    await expect(toggle).toHaveAccessibleDescription(CLOSED);
   },
 };

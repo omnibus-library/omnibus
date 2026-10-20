@@ -22,8 +22,12 @@ export function EbookConvertCard() {
 
   const write = useMutation({
     mutationFn: saveEbookConvert,
-    onSuccess: (answer) =>
-      queryClient.setQueryData(ebookConvertQuery.queryKey, answer),
+    onSuccess: async (answer) => {
+      await queryClient.cancelQueries({
+        queryKey: ebookConvertQuery.queryKey,
+      });
+      queryClient.setQueryData(ebookConvertQuery.queryKey, answer);
+    },
   });
 
   const submit = (e: FormEvent) => {

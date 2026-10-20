@@ -10,7 +10,10 @@ export function RegistrationCard() {
   const confirmed = status.data ?? null;
   const toggle = useMutation({
     mutationFn: setRegistrationOpen,
-    onSuccess: (_, enabled) => {
+    onSuccess: async (_, enabled) => {
+      await queryClient.cancelQueries({
+        queryKey: registrationStatusQuery.queryKey,
+      });
       queryClient.setQueryData(registrationStatusQuery.queryKey, enabled);
       // The sign-in and register pages read the same setting under their own key.
       void queryClient.invalidateQueries({ queryKey: ["registration"] });

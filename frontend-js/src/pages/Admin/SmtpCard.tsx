@@ -37,8 +37,10 @@ export function SmtpCard() {
   }
   useUnsavedForm("smtp", saved !== null && isSmtpEdited(saved, draft));
 
-  const keepAnswer = (answer: SmtpConfigStatus) =>
+  const keepAnswer = async (answer: SmtpConfigStatus) => {
+    await queryClient.cancelQueries({ queryKey: smtpConfigQuery.queryKey });
     queryClient.setQueryData(smtpConfigQuery.queryKey, answer);
+  };
   const save = useMutation({
     mutationFn: saveSmtpConfig,
     onSuccess: keepAnswer,

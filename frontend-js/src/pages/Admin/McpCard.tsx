@@ -17,7 +17,8 @@ export function McpCard() {
   const [status, setStatus] = useState<Status | null>(null);
   const toggle = useMutation({
     mutationFn: setMcpEnabled,
-    onSuccess: (_, enabled) => {
+    onSuccess: async (_, enabled) => {
+      await queryClient.cancelQueries({ queryKey: mcpQuery.queryKey });
       queryClient.setQueryData(mcpQuery.queryKey, { enabled });
       setStatus({
         text: enabled
