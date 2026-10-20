@@ -13,6 +13,8 @@ import {
   type HardcoverKeyStatus,
   type LibraryContents,
   type LibrarySection,
+  type LogPage,
+  type LogRecord,
   McpStatus,
   MetadataSource,
   RegistrationStatus,
@@ -620,6 +622,44 @@ export function adminHealthHandler(report: () => AdminHealthReport) {
   return http.get("/api/admin/health", () => HttpResponse.json(report()));
 }
 
+/** One log record as `GET /api/admin/logs` lists it. */
+export function aWireLogRecord(overrides: Partial<LogRecord> = {}): LogRecord {
+  return {
+    timestamp: "2026-07-19T10:30:12.345678Z",
+    level: "INFO",
+    target: "omnibus::backend",
+    message: "request handled",
+    fields: null,
+    ...overrides,
+  };
+}
+
+/** One page of log records, with nothing after it. */
+export function aWireLogPage(overrides: Partial<LogPage> = {}): LogPage {
+  return {
+    records: [aWireLogRecord()],
+    page: 0,
+    per_page: 50,
+    has_more: false,
+    ...overrides,
+  };
+}
+
+/** The query parameters of one `GET /api/admin/logs`, as received. */
+export type LogRequest = Record<string, string>;
+
+/** `GET /api/admin/logs`: `page` answers each request, and every request's query lands in `received`. */
+export function logsHandler(
+  page: (request: LogRequest) => LogPage | Promise<LogPage>,
+  { received = [] }: { received?: LogRequest[] } = {},
+) {
+  return http.get("/api/admin/logs", async ({ request }) => {
+    const query = Object.fromEntries(new URL(request.url).searchParams);
+    received.push(query);
+    return HttpResponse.json(await page(query));
+  });
+}
+
 /** The happy-path fakes for every admin section ported so far; a story's own handlers replace them. */
 export function adminHandlers() {
   return [
@@ -643,5 +683,6 @@ export function adminHandlers() {
     ...ebookConvertHandlers(aWireEbookConvert()),
     ...mcpHandlers(false),
     adminHealthHandler(aWireAdminHealth),
+    logsHandler(() => aWireLogPage()),
   ];
 }

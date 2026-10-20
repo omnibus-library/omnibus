@@ -193,6 +193,16 @@ export const ShowsTheHealthReport: Story = {
   },
 };
 
+export const ShowsTheLogViewer: Story = {
+  args: { path: "/admin?section=logs" },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("heading", { level: 3, name: "Server logs" }),
+    ).toBeInTheDocument();
+    await expect(await canvas.findByTestId("logs-table")).toBeInTheDocument();
+  },
+};
+
 export const AsksBeforeLeavingEditedSources: Story = {
   args: { path: "/admin?section=sources" },
   play: async ({ canvas, userEvent }) => {

@@ -348,6 +348,16 @@
   color: var(--bad);
   font-size: 0.85rem;
 }
+.logs-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem 1rem;
+  align-items: end;
+  margin: 1.25rem 0;
+}
+.logs-filters .settings-actions.logs-apply {
+  margin: 0;
+}
 .logs-stream {
   max-height: 70vh;
   overflow: auto;
@@ -400,14 +410,29 @@
   background: color-mix(in oklch, var(--bad) 16%, transparent);
   color: var(--bad);
 }
+.logs-level-warn {
+  background: color-mix(in oklch, var(--warn) 16%, transparent);
+  color: var(--warn);
+}
 .logs-level-info {
   background: var(--accent-soft);
   color: var(--accent);
+}
+.logs-level-debug,
+.logs-level-trace {
+  color: var(--ink-2);
 }
 .logs-ref-link {
   color: var(--accent);
   text-decoration: underline;
   font-weight: 600;
+}
+.logs-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1rem;
 }
 .ah-grid {
   display: grid;
