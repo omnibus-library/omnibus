@@ -160,7 +160,8 @@
 }
 .settings-content > .card h2,
 .settings-content > .card h3,
-.settings-content .logs-page > .card h3 {
+.settings-content .logs-page > .card h3,
+.settings-content .tkx-title {
   --lh: 1.3;
   font-family: var(--sans);
   font-size: 1.125rem;
@@ -172,6 +173,10 @@
   font-size: 0.875rem;
   margin: 0.3rem 0 0;
   max-width: 62ch;
+}
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
 }
 @media (max-width: 720px) {
   .settings-layout {
@@ -232,6 +237,56 @@
 .settings-nav-group-label,
 .settings-content .settings-hint {
   color: var(--ink-2);
+}
+.settings-content .users-table .mono {
+  font-size: 11px;
+}
+@media (max-width: 720px) {
+  [data-testid="users-table"] td.users-col-actions {
+    padding-top: 0.5rem;
+    text-align: left;
+  }
+  [data-testid="users-table"] .users-col-actions .btn {
+    margin: 0 0.35rem 0.35rem 0;
+  }
+}
+.users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+.users-table th,
+.users-table td {
+  text-align: left;
+  padding: 0.55rem 0.6rem;
+  border-bottom: 1px solid var(--line-2);
+  vertical-align: middle;
+}
+.users-table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.users-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.users-name {
+  font-weight: 600;
+  color: var(--ink-0);
+}
+.users-self-tag {
+  color: var(--ink-2);
+  font-weight: 400;
+}
+.users-col-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+.users-col-actions .btn {
+  margin-left: 0.35rem;
 }
 
 .settings-form {
@@ -324,14 +379,24 @@
 .settings-layout .settings-actions .settings-status {
   margin: 0;
 }
+.settings-layout .settings-actions .settings-action-start,
 .settings-layout .settings-actions .settings-action-status {
   margin-right: auto;
 }
 .settings-layout .settings-actions .api-key-status {
   margin: 0 auto 0 0;
 }
+.settings-field-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--bad);
+}
 .settings-field input[aria-invalid="true"] {
   border-color: var(--bad);
+}
+.settings-field input.ld-unknown:not([type="checkbox"]) {
+  cursor: progress;
+  background: color-mix(in oklch, var(--ink-3) 14%, var(--bg-2));
 }
 .settings-switch input[type="checkbox"].ld-unknown:disabled {
   opacity: 1;
@@ -349,7 +414,14 @@
     animation: none;
   }
 }
-/* A refusal draws no sidebar, so its content takes the whole row. */
-.settings-layout:not(:has(.settings-sidebar)) {
-  grid-template-columns: minmax(0, 1fr);
+@keyframes ld-knob {
+  0%,
+  100% {
+    transform: translateX(-3px);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateX(3px);
+    opacity: 0.9;
+  }
 }

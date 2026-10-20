@@ -1,5 +1,5 @@
 import type { MetadataLibrary, MetadataSource } from "../../api";
-import type { Status } from "./StatusLine";
+import type { Status } from "../../components/SettingsShell/SettingsShell";
 
 export type Direction = "up" | "down";
 
@@ -78,10 +78,10 @@ export function saveSummary(outcomes: readonly SaveOutcome[]): Status {
     failure === null ? [] : [`Couldn’t save the ${library} order: ${failure}`],
   );
   if (failures.length === 0) {
-    return { text: "Metadata order saved.", isError: false };
+    return { message: "Metadata order saved.", error: false };
   }
   const saved = outcomes
     .filter(({ failure }) => failure === null)
     .map(({ library }) => `Saved the ${library} order.`);
-  return { text: [...saved, ...failures].join(" "), isError: true };
+  return { message: [...saved, ...failures].join(" "), error: true };
 }

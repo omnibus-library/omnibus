@@ -1,5 +1,5 @@
 import type { EbookConvertStatus, SecretKeyKind } from "../../api";
-import type { Status } from "./StatusLine";
+import type { Status } from "../../components/SettingsShell/SettingsShell";
 
 /** What a server-wide key card says, and the ids and test ids its controls carry. */
 export const SECRET_KEYS = {
@@ -53,9 +53,9 @@ export const ebookConvertDetail = (status: EbookConvertStatus | undefined) =>
 /** The result of a save the server accepted: a path it cannot run is a warning, not a success. */
 export function saveOutcomeMessage(available: boolean): Status {
   return available
-    ? { text: "ebook-convert path saved.", isError: false }
+    ? { message: "ebook-convert path saved.", error: false }
     : {
-        text: "Path saved, but ebook-convert is not runnable there.",
-        isError: true,
+        message: "Path saved, but ebook-convert is not runnable there.",
+        error: true,
       };
 }

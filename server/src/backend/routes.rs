@@ -12,9 +12,10 @@ use crate::rate_limit::{rate_limit_by_ip, RateLimiter, RateLimits};
 
 use super::{
     account, admin_health, admin_sessions, audiobooks, author_photos, authors, bookmarks, cleanup,
-    covers, cross_format, deletion, ebooks, genres, highlights, journals, kindle, logs, merge,
-    metadata, overrides, physical, profile, progress, ratings, read_status, scan, search, series,
-    settings, shelves, stats, suggestions, summary, tags, tasks, uploads, users, AppState,
+    covers, cross_format, deletion, ebooks, genres, highlights, journals, kindle, kobo_devices,
+    logs, merge, metadata, overrides, physical, profile, progress, ratings, read_status, scan,
+    search, series, settings, shelves, stats, suggestions, summary, tags, tasks, uploads, users,
+    AppState,
 };
 
 /// Health check, settings, ebooks, and audiobook playback routes.
@@ -108,6 +109,7 @@ pub(super) fn data_routes(
         .merge(summary_routes())
         .merge(metadata_routes())
         .merge(kindle_routes())
+        .merge(kobo_device_routes())
 }
 
 /// Metadata override read/write + cover-only revert.
@@ -201,6 +203,7 @@ fn engagement_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(stats::put_stats_daily_goal))
         .routes(routes!(stats::get_library_size))
         .routes(routes!(stats::get_library_composition))
+        .routes(routes!(stats::post_stats_chart))
         .routes(routes!(ratings::post_rating))
         .routes(routes!(ratings::get_other_ratings))
         .routes(routes!(ratings::get_rating, ratings::delete_rating))
@@ -340,6 +343,7 @@ fn kindle_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(kindle::post_send))
         .routes(routes!(kindle::get_send_status))
         .routes(routes!(kindle::post_kindle_email))
+        .routes(routes!(kindle::get_delivery))
         .routes(routes!(account::post_hidden_formats))
         .routes(routes!(account::post_book_detail_scroll_stops))
         .routes(routes!(account::post_stack_series))
@@ -351,6 +355,17 @@ fn kindle_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(kindle::get_smtp, kindle::post_smtp))
         .routes(routes!(kindle::post_smtp_clear))
         .routes(routes!(kindle::post_smtp_test))
+}
+
+/// The signed-in reader's Kobo devices.
+fn kobo_device_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(
+            kobo_devices::list_kobo_devices,
+            kobo_devices::create_kobo_device
+        ))
+        .routes(routes!(kobo_devices::regenerate_kobo_device))
+        .routes(routes!(kobo_devices::delete_kobo_device))
 }
 
 /// Sub-router for `/api/search/*` carrying its own per-IP rate-limit layer, capping each

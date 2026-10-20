@@ -45,6 +45,7 @@ Auto-discoverable skills in [.claude/skills/](.claude/skills/) — Claude Code l
 - [add-playwright-flow](.claude/skills/add-playwright-flow/SKILL.md) — adding a new E2E spec.
 - [create-github-issue](.claude/skills/create-github-issue/SKILL.md) — filing GitHub issues in the omnibus house style: bracketed `[Scope]` title prefixes, a standard body template, consistent labels, and native sub-issue linking.
 - [ui-validate](.claude/skills/ui-validate/SKILL.md) — bring up a port-walking dev server, log in as the seeded admin, drive the browser, poll `/api/_health` for rebuild signal.
+- [ios-validate](.claude/skills/ios-validate/SKILL.md) — screenshot tours of the native iOS app: a scratch server, a simulator per worktree, screens opened by DEBUG deep link.
 
 ### Browser tools
 
@@ -103,9 +104,10 @@ dx serve --platform web -p omnibus
 cargo run -p omnibus                                        # start at http://0.0.0.0:3000
 
 # Tests & lint — aggregate targets cover the full crate matrix in one go
-just test                                                   # db + server + frontend(server + mobile features) + shared + mcp + mock-kobo
+just test                                                   # Rust matrix (db + server + frontend(server + mobile features) + shared + mcp + mock-kobo), then the Python script suites
+just test-rust                                              # the Rust matrix alone
 just lint                                                   # cargo fmt --check + clippy -D warnings (incl. mobile + mcp + mock-kobo + frontend-server + frontend-web wasm32) + stylelint
-just lint-css                                               # structural CSS lint only (stylelint; catches unclosed rules in frontend/assets)
+just lint-css                                               # structural CSS lint only (stylelint; catches unclosed rules and duplicate selectors in frontend/assets)
 just lint-ts                                                # Playwright TS: biome check + tsc --noEmit (TypeScript 7), in .#e2e
 just check                                                  # lint then test
 just modules db/src                                         # module map for any directory, from each file's //! doc
@@ -125,7 +127,10 @@ cargo test -p omnibus-mock-kobo                             # fake Kobo firmware
 cargo clippy                                                # lint default-members (server, shared, frontend)
 cargo fmt                                                   # format all crates
 
-# Playwright E2E (server must be running; baseURL = $PLAYWRIGHT_BASE_URL or :3000)
+# Playwright E2E. `just e2e-ci` runs specs the way CI does: its own bundle,
+# standalone server and scratch DB, torn down afterwards (no server needed).
+just e2e-ci                                                 # whole suite; or `just e2e-ci tests/flows/<flow>.spec.ts`
+# Against a running dev server instead (baseURL = $PLAYWRIGHT_BASE_URL or :3000).
 # The Playwright project uses pnpm (not npm) and TypeScript 7; Biome is its
 # linter/formatter. `just lint-ts` runs biome check + tsc --noEmit.
 cd ui_tests/playwright && pnpm install                      # first time

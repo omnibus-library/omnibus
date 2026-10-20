@@ -133,6 +133,9 @@ describe("formatHmsShort", () => {
     [3725, "1:02:05"],
     [95, "1:35"],
     [Number.NaN, "0:00"],
+    [-1, "0:00"],
+    [Number.POSITIVE_INFINITY, "0:00"],
+    [75.9, "1:15"],
   ])("writes %s seconds as %s", (seconds, text) => {
     expect(formatHmsShort(seconds)).toBe(text);
   });

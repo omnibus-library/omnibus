@@ -40,6 +40,7 @@ mod image_upload;
 mod journals;
 mod kindle;
 mod kobo;
+mod kobo_devices;
 mod logs;
 mod merge;
 mod metadata;

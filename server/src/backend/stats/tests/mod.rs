@@ -4,9 +4,10 @@
 //! restarts user ids at 1, so each content-asserting test picks a distinct
 //! range or offset to keep its cache key unique across the binary.
 //! `household` covers `GET /api/users` and the `user_id` reads; `book_insights`
-//! covers `GET /api/books/{uuid}/insights`.
+//! covers `GET /api/books/{uuid}/insights`; `chart` covers `POST /api/stats/chart`.
 
 mod book_insights;
+mod chart;
 mod goals;
 mod household;
 mod session_log;

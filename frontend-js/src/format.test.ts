@@ -8,6 +8,7 @@ import {
   durationLabel,
   facetQuery,
   fileSize,
+  fixed,
   formatDateShort,
   formatHm,
   formatInstantShort,
@@ -396,5 +397,29 @@ describe("capitalize", () => {
 
   it("leaves an empty string empty", () => {
     expect(capitalize("")).toBe("");
+  });
+});
+
+describe("fixed", () => {
+  // Each expectation is what `rustc` prints for `{:.N}` of the same value.
+  it.each([
+    [0.25, 1, "0.2"],
+    [0.35, 1, "0.3"],
+    [0.75, 1, "0.8"],
+    [1.25, 1, "1.2"],
+    [2.5, 0, "2"],
+    [1.5, 0, "2"],
+    [8.5, 0, "8"],
+    [0.125, 2, "0.12"],
+    [0.375, 2, "0.38"],
+    [-2.5, 0, "-2"],
+    [-1.5, 0, "-2"],
+    [0.05, 1, "0.1"],
+    [0.15, 1, "0.1"],
+    [3, 1, "3.0"],
+    [0.2500001, 1, "0.3"],
+    [-0.2500001, 1, "-0.3"],
+  ])("writes %d to %d places as %s", (value, digits, written) => {
+    expect(fixed(value, digits)).toBe(written);
   });
 });

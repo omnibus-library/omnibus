@@ -184,6 +184,10 @@ async fn rename_of_another_users_token_is_404() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(&body[..], b"api token not found");
 }
 
 #[tokio::test]
@@ -277,6 +281,10 @@ async fn revoke_of_another_users_token_is_404() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(&body[..], b"api token not found");
 }
 
 #[tokio::test]

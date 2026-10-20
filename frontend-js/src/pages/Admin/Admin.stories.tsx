@@ -329,6 +329,36 @@ export const LeavesFreelyOnceTheSettingsAreSaved: Story = {
   },
 };
 
+export const StaysOnTheOpenSectionsOwnLinkWithoutAsking: Story = {
+  args: { path: "/admin?section=sources" },
+  play: async ({ canvas, userEvent }) => {
+    const ebook = canvas.getByLabelText("Ebook library path");
+    await waitFor(() => expect(ebook).toHaveValue("/library/ebooks"));
+    await userEvent.type(ebook, "2");
+    await userEvent.click(canvas.getByTestId("admin-nav-sources"));
+
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
+    await expect(ebook).toHaveValue("/library/ebooks2");
+  },
+};
+
+export const FollowsTheBackLinkToTheOpenSectionWithoutAsking: Story = {
+  args: { path: "/admin?section=sources" },
+  play: async ({ canvas, userEvent }) => {
+    const ebook = canvas.getByLabelText("Ebook library path");
+    await waitFor(() => expect(ebook).toHaveValue("/library/ebooks"));
+    await userEvent.type(ebook, "2");
+    // A bare `/admin` opens Sources, the section already open.
+    await userEvent.click(canvas.getByTestId("settings-back"));
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("admin-layout")).not.toHaveClass("has-section"),
+    );
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
+    await expect(ebook).toHaveValue("/library/ebooks2");
+  },
+};
+
 export const OpensTheSectionInTheUrl: Story = {
   args: { path: "/admin?section=people" },
   play: async ({ canvas }) => {
@@ -408,7 +438,7 @@ export const RefusesAReader: Story = {
     await expect(
       canvas.getByRole("link", { name: "Go to your settings" }),
     ).toHaveAttribute("href", "/settings");
-    await expect(canvas.getByTestId("admin-layout")).toHaveClass("has-section");
+    await expect(canvas.queryByTestId("admin-layout")).toBeNull();
     await expect(canvas.queryByRole("navigation")).not.toBeInTheDocument();
     await expect(canvas.queryByTestId("admin-nav-people")).toBeNull();
     await expect(

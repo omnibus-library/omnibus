@@ -262,6 +262,16 @@ ios-release-guard`) asserts it and the other `--uitest-*` hooks are absent from
 a Release build; the lane's contract is
 [`docs/qa/agentic_exploration/ios_lane.md`](qa/agentic_exploration/ios_lane.md).
 
+**Screen links.** `App/DebugScreenLink.swift` is a DEBUG-only
+`omnibus://debug/screen/<tab>/<screen>…` link that selects a tab and pushes a
+stack on it, so a scripted screenshot tour reaches any screen without tapping
+its way there. `MainTabView` applies it once it is on screen, so a link that
+arrives during launch waits. Tours run through
+[`scripts/ios-validate.sh`](../scripts/ios-validate.sh) on a simulator of each
+worktree's own; the recipe is the
+[ios-validate skill](../.claude/skills/ios-validate/SKILL.md). The release guard
+covers this hook too.
+
 **Offline writes** follow [rule 08](../.claude/rules/08-offline-writes.md): the
 `OpKind` outbox in `Offline/SyncEngine.swift` carries per-user content state
 only, never configuration and never commands. `OutboxScope` in `Offline/Cache.swift`

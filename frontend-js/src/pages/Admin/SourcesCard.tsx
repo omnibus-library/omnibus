@@ -9,8 +9,12 @@ import {
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel } from "../../components/Loading/Loading";
-import { useUnsavedForm } from "../../components/SettingsShell/SettingsShell";
-import { LiveStatus, type Status } from "./StatusLine";
+import {
+  type Status,
+  StatusLine,
+  statusOrLoadError,
+  useUnsavedGuard,
+} from "../../components/SettingsShell/SettingsShell";
 import {
   librarySummaryLine,
   SCAN_INTERVAL_MIN_HOURS,
@@ -80,7 +84,7 @@ export function SourcesCard() {
       setFields(loaded);
     }
   }
-  useUnsavedForm("library-sources", dirty);
+  useUnsavedGuard("library-sources", dirty);
 
   const save = useMutation({
     mutationFn: saveSettings,
@@ -123,12 +127,12 @@ export function SourcesCard() {
         setReadAt(
           queryClient.getQueryState(settingsQuery.queryKey)?.dataUpdatedAt ?? 0,
         );
-        setStatus({ text: "Library settings saved.", isError: false });
+        setStatus({ message: "Library settings saved.", error: false });
       },
       onError: (error) =>
         setStatus({
-          text: `Couldn’t save the library settings: ${error.message}`,
-          isError: true,
+          message: `Couldn’t save the library settings: ${error.message}`,
+          error: true,
         }),
     });
   };
@@ -137,14 +141,11 @@ export function SourcesCard() {
     setFields((current) => ({ ...current, [field]: value }));
 
   const loadFailed = settings.isError && settings.data === undefined;
-  const shown: Status | null =
-    status ??
-    (loadFailed
-      ? {
-          text: `Couldn’t load the saved settings: ${settings.error.message}`,
-          isError: true,
-        }
-      : null);
+  const shown = statusOrLoadError(
+    status,
+    loadFailed ? settings.error : null,
+    "Couldn’t load the saved settings: ",
+  );
 
   return (
     <section className="card" data-testid="library-location-card">
@@ -251,7 +252,7 @@ export function SourcesCard() {
           </Button>
         </div>
       </form>
-      <LiveStatus testId="settings-status" status={shown} />
+      <StatusLine testId="settings-status" status={shown} />
     </section>
   );
 }

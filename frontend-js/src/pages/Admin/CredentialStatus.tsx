@@ -1,27 +1,5 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-
-export type Status = { text: string; isError: boolean };
-
-/** A card's result line. It stays mounted while empty, so its first message is announced. */
-export function LiveStatus({
-  testId,
-  status,
-}: {
-  testId: string;
-  status: Status | null;
-}) {
-  let className = "settings-status";
-  if (status) {
-    className = status.isError
-      ? "settings-status error"
-      : "settings-status success";
-  }
-  return (
-    <p role="status" className={className} data-testid={testId}>
-      {status?.text}
-    </p>
-  );
-}
+import type { Status } from "../../components/SettingsShell/SettingsShell";
 
 /** The line for a read that failed with nothing cached to show, else null. */
 export function readFailure(
@@ -35,8 +13,8 @@ export function readFailure(
     return null;
   }
   return {
-    text: `Couldn’t read the current ${noun}: ${query.error?.message}`,
-    isError: true,
+    message: `Couldn’t read the current ${noun}: ${query.error?.message}`,
+    error: true,
   };
 }
 

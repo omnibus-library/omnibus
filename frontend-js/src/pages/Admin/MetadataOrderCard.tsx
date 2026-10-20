@@ -9,7 +9,12 @@ import {
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
-import { useUnsavedForm } from "../../components/SettingsShell/SettingsShell";
+import {
+  type Status,
+  StatusLine,
+  statusOrLoadError,
+  useUnsavedGuard,
+} from "../../components/SettingsShell/SettingsShell";
 import {
   changedOrder,
   type Direction,
@@ -20,7 +25,6 @@ import {
   saveSummary,
   sourceLabel,
 } from "./metadataOrder";
-import { LiveStatus, type Status } from "./StatusLine";
 
 const LIBRARIES = [
   { library: "ebook", label: "Ebook library" },
@@ -118,7 +122,7 @@ export function MetadataOrderCard() {
     const order = changedOrder(shown(library), queries[library].data ?? null);
     return order ? [{ library, order }] : [];
   });
-  useUnsavedForm("metadata-order", changed.length > 0);
+  useUnsavedGuard("metadata-order", changed.length > 0);
 
   const move = (
     library: MetadataLibrary,
@@ -163,14 +167,11 @@ export function MetadataOrderCard() {
   const [loadError] = Object.values(queries).flatMap((query) =>
     query.data === undefined && query.error ? [query.error] : [],
   );
-  const line: Status | null =
-    status ??
-    (loadError
-      ? {
-          text: `Couldn’t load the saved order: ${loadError.message}`,
-          isError: true,
-        }
-      : null);
+  const line = statusOrLoadError(
+    status,
+    loadError ?? null,
+    "Couldn’t load the saved order: ",
+  );
 
   return (
     <section className="card" data-testid="metadata-precedence-card" ref={card}>
@@ -229,7 +230,7 @@ export function MetadataOrderCard() {
           />
         </Button>
       </div>
-      <LiveStatus testId="metadata-precedence-status" status={line} />
+      <StatusLine testId="metadata-precedence-status" status={line} />
     </section>
   );
 }

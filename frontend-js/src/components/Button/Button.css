@@ -61,6 +61,13 @@
   font-size: 14px;
   border-radius: 12px;
 }
+.btn.bad {
+  color: var(--bad);
+  border-color: color-mix(in oklch, var(--bad) 45%, transparent);
+}
+.btn.bad:hover {
+  background: color-mix(in oklch, var(--bad) 12%, transparent);
+}
 .btn.ghost.users-danger,
 .btn.ghost.danger {
   color: var(--bad);
@@ -70,13 +77,6 @@
   .btn.ghost.danger:hover {
     background: color-mix(in oklch, var(--bad) 12%, transparent);
   }
-}
-.btn.bad {
-  color: var(--bad);
-  border-color: color-mix(in oklch, var(--bad) 45%, transparent);
-}
-.btn.bad:hover {
-  background: color-mix(in oklch, var(--bad) 12%, transparent);
 }
 @media (hover: none) {
   .btn:active:not(:disabled) {

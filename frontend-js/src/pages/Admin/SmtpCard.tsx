@@ -11,13 +11,12 @@ import {
 import { Button } from "../../components/Button/Button";
 import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
 import { BusyLabel } from "../../components/Loading/Loading";
-import { useUnsavedForm } from "../../components/SettingsShell/SettingsShell";
 import {
-  CredentialStatus,
-  LiveStatus,
-  readFailure,
   type Status,
-} from "./StatusLine";
+  StatusLine,
+  useUnsavedGuard,
+} from "../../components/SettingsShell/SettingsShell";
+import { CredentialStatus, readFailure } from "./CredentialStatus";
 import {
   BLANK_SMTP_DRAFT,
   isSmtpEdited,
@@ -41,7 +40,7 @@ export function SmtpCard() {
     setSaved(loaded);
     setDraft(loaded);
   }
-  useUnsavedForm("smtp", saved !== null && isSmtpEdited(saved, draft));
+  useUnsavedGuard("smtp", saved !== null && isSmtpEdited(saved, draft));
 
   const keepAnswer = (answer: SmtpConfigStatus) =>
     replaceQueryData(queryClient, smtpConfigQuery.queryKey, answer);
@@ -64,7 +63,7 @@ export function SmtpCard() {
     e.preventDefault();
     const result = smtpUpdate(saved !== null, draft);
     if (result.refused !== null) {
-      setStatus({ text: result.refused, isError: true });
+      setStatus({ message: result.refused, error: true });
       return;
     }
     setStatus(null);
@@ -78,12 +77,12 @@ export function SmtpCard() {
             : current,
         );
         setSaved({ ...submitted, password: "" });
-        setStatus({ text: "SMTP settings saved.", isError: false });
+        setStatus({ message: "SMTP settings saved.", error: false });
       },
       onError: (error) =>
         setStatus({
-          text: `Couldn’t save the SMTP settings: ${error.message}`,
-          isError: true,
+          message: `Couldn’t save the SMTP settings: ${error.message}`,
+          error: true,
         }),
     });
   };
@@ -95,12 +94,12 @@ export function SmtpCard() {
         // What is left may be a relay from the server's environment.
         setDraft(smtpDraftOf(answer));
         setSaved(smtpDraftOf(answer));
-        setStatus({ text: "SMTP settings cleared.", isError: false });
+        setStatus({ message: "SMTP settings cleared.", error: false });
       },
       onError: (error) =>
         setStatus({
-          text: `Couldn’t clear the SMTP settings: ${error.message}`,
-          isError: true,
+          message: `Couldn’t clear the SMTP settings: ${error.message}`,
+          error: true,
         }),
     });
   };
@@ -109,13 +108,14 @@ export function SmtpCard() {
     test.mutate(undefined, {
       onSuccess: () =>
         setStatus({
-          text: "Test email sent to your Kindle address.",
-          isError: false,
+          message: "Test email sent to your Kindle address.",
+          error: false,
         }),
       onError: () =>
         setStatus({
-          text: "Test email failed — check the SMTP settings and your account's Kindle email.",
-          isError: true,
+          message:
+            "Test email failed — check the SMTP settings and your account's Kindle email.",
+          error: true,
         }),
     });
 
@@ -271,7 +271,7 @@ export function SmtpCard() {
             />
           </Button>
         </div>
-        <LiveStatus testId="smtp-config-status" status={shown} />
+        <StatusLine testId="smtp-config-status" status={shown} />
       </form>
       {confirmingClear && (
         <ConfirmDialog

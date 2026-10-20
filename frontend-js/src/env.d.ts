@@ -12,6 +12,8 @@ interface Window {
   __omnibusOnScanStatus?: (state: string) => void;
   __omnibusOnScanTorch?: (flag: string) => void;
   __omnibusOnScanResult?: (text: string) => void;
+  /** hls.js (`src/vendor/hls/`): the global its script adds. */
+  Hls?: import("./playback/loadHls").HlsConstructor;
 }
 
 /** The EPUB and PDF reader glues (`src/vendor/reader/`): what they add to `window`, and the callbacks they call with a JSON string. */

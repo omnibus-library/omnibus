@@ -2,19 +2,17 @@ import { useEffect, useRef } from "react";
 import { type Blocker, type Location, useBlocker } from "react-router";
 import { ConfirmBody, ConfirmModal } from "../ConfirmModal/ConfirmModal";
 
-/**
- * Holds in-app navigation and arms the browser's leave prompt while `dirty`.
- * `leaves` says whether a move abandons the page; by default a new pathname does.
- */
+const samePathname = (a: Location, b: Location) => a.pathname === b.pathname;
+
+/** Holds in-app navigation and arms the browser's leave prompt while `dirty`; `samePlace` says which moves stay on the page. */
 export function useLeaveGuard(
   dirty: boolean,
-  leaves: (from: Location, to: Location) => boolean = (from, to) =>
-    from.pathname !== to.pathname,
+  samePlace: (a: Location, b: Location) => boolean = samePathname,
 ) {
   const allowed = useRef(false);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      dirty && !allowed.current && leaves(currentLocation, nextLocation),
+      dirty && !allowed.current && !samePlace(currentLocation, nextLocation),
   );
   useEffect(() => {
     if (!dirty) return;

@@ -10,14 +10,13 @@ import {
 import { Button } from "../../components/Button/Button";
 import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
 import { BusyLabel } from "../../components/Loading/Loading";
-import { useUnsavedForm } from "../../components/SettingsShell/SettingsShell";
-import { clearWarning, SECRET_KEYS } from "./integrations";
 import {
-  CredentialStatus,
-  LiveStatus,
-  readFailure,
   type Status,
-} from "./StatusLine";
+  StatusLine,
+  useUnsavedGuard,
+} from "../../components/SettingsShell/SettingsShell";
+import { CredentialStatus, readFailure } from "./CredentialStatus";
+import { clearWarning, SECRET_KEYS } from "./integrations";
 
 /** A server-wide key the admin sets: its masked state, a field to replace it, and a way to remove it. */
 export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
@@ -27,7 +26,7 @@ export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
   const [typed, setTyped] = useState("");
   const [status, setStatus] = useState<Status | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
-  useUnsavedForm(copy.testId, typed.trim() !== "");
+  useUnsavedGuard(copy.testId, typed.trim() !== "");
 
   const write = useMutation({
     mutationFn: (key: string | null) => saveSecretKey(kind, key),
@@ -55,19 +54,19 @@ export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
     const key = typed.trim();
     // Removing a key is the Clear button's job, so a blank save never wipes it.
     if (key === "") {
-      setStatus({ text: `Enter a ${copy.noun} key to save.`, isError: true });
+      setStatus({ message: `Enter a ${copy.noun} key to save.`, error: true });
       return;
     }
     setStatus(null);
     write.mutate(key, {
       onSuccess: () => {
         setTyped("");
-        setStatus({ text: `${copy.noun} key saved.`, isError: false });
+        setStatus({ message: `${copy.noun} key saved.`, error: false });
       },
       onError: (error) =>
         setStatus({
-          text: `Couldn’t save the ${copy.noun} key: ${error.message}`,
-          isError: true,
+          message: `Couldn’t save the ${copy.noun} key: ${error.message}`,
+          error: true,
         }),
     });
   };
@@ -77,12 +76,12 @@ export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
     write.mutate(null, {
       onSuccess: () => {
         setTyped("");
-        setStatus({ text: `${copy.noun} key cleared.`, isError: false });
+        setStatus({ message: `${copy.noun} key cleared.`, error: false });
       },
       onError: (error) =>
         setStatus({
-          text: `Couldn’t clear the ${copy.noun} key: ${error.message}`,
-          isError: true,
+          message: `Couldn’t clear the ${copy.noun} key: ${error.message}`,
+          error: true,
         }),
     });
   };
@@ -162,7 +161,7 @@ export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
             />
           </Button>
         </div>
-        <LiveStatus testId={`${copy.testId}-key-status`} status={shown} />
+        <StatusLine testId={`${copy.testId}-key-status`} status={shown} />
       </form>
       {confirmingClear && (
         <ConfirmDialog

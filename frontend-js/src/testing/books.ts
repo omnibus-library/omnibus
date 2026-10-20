@@ -97,7 +97,9 @@ export function aResumePoint(
     playbackRate: null,
     linked: false,
     chapter: null,
+    chaptersTotal: null,
     part: null,
+    partCount: null,
     ...overrides,
   };
 }

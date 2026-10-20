@@ -144,6 +144,15 @@ locator half: see [04d](../../rules/04d-playwright-page-objects.md#lint).
 
 ## 7. Run
 
+Run the spec the way CI does — its own bundle, server and scratch DB:
+
+```bash
+just e2e-ci tests/flows/<flow>.spec.ts   # args pass through to `playwright test`
+```
+
+A red there is worth chasing; a red against the dev server may be its DB or
+hot-reload instead. To iterate against the dev server anyway:
+
 ```bash
 just dev-up                            # idempotent, identity-checked, fast on reuse
 source .claude/runtime/env.sh          # picks up PLAYWRIGHT_BASE_URL for the chosen port

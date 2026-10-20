@@ -3,9 +3,19 @@
 
 type Area = "settings" | "admin";
 
-type Section = { area: Area; slug: string; label: string };
+export type Section = { area: Area; slug: string; label: string };
 
-const personal = (slug: string, label: string): Section => ({
+/** The `?section=` slugs of `/settings`. */
+export type PersonalSlug =
+  | "profile"
+  | "preferences"
+  | "goals"
+  | "devices"
+  | "security";
+
+export type PersonalSection = Section & { slug: PersonalSlug };
+
+const personal = (slug: PersonalSlug, label: string): PersonalSection => ({
   area: "settings",
   slug,
   label,
@@ -21,6 +31,15 @@ const PREFERENCES = personal("preferences", "Preferences");
 const GOALS = personal("goals", "Goals");
 const DEVICES = personal("devices", "Devices");
 const SECURITY = personal("security", "Sign-in & security");
+/** The five personal sections, in sidebar order. */
+export const PERSONAL_SECTIONS: readonly PersonalSection[] = [
+  PROFILE,
+  PREFERENCES,
+  GOALS,
+  DEVICES,
+  SECURITY,
+];
+
 const SOURCES = admin("sources", "Sources");
 const MAINTENANCE = admin("maintenance", "Maintenance");
 const METADATA = admin("metadata", "Metadata");
@@ -141,10 +160,39 @@ export function matchingSettings(
     .slice(0, MAX_SETTINGS_MATCHES);
 }
 
-/** Where a setting opens: its section of `/settings` or `/admin`. */
-export const settingsHref = ({ section }: SettingsEntry) =>
+/** Where a section opens: `/settings` or `/admin` at its slug. */
+export const sectionHref = (section: Section) =>
   `/${section.area}?section=${section.slug}`;
 
 /** Where a setting sits, as copy names it: "Settings › Goals". */
 export const settingsPlace = ({ section }: SettingsEntry) =>
   `${section.area === "settings" ? "Settings" : "Administration"} › ${section.label}`;
+
+/** The personal section a `?section=` slug names; Profile when it is missing or unknown. */
+export function parseSettingsSection(raw: string | null): PersonalSection {
+  return PERSONAL_SECTIONS.find((s) => s.slug === raw) ?? PROFILE;
+}
+
+// Slugs from before server administration moved to /admin, as legacy_settings_target maps them.
+const LEGACY_SECTIONS: Record<string, Section> = {
+  account: PROFILE,
+  kindle: DEVICES,
+  kobo: DEVICES,
+  "api-tokens": SECURITY,
+  library: SOURCES,
+  metadata: METADATA,
+  email: INTEGRATIONS,
+  cleanup: CLEANUP,
+  users: PEOPLE,
+  health: HEALTH,
+  "background-tasks": MAINTENANCE,
+  logs: LOGS,
+};
+
+/** Where an old `?section=` slug lives now, or `null` when the slug is current or unknown. */
+export function legacySettingsHref(slug: string): string | null {
+  const section = Object.hasOwn(LEGACY_SECTIONS, slug)
+    ? LEGACY_SECTIONS[slug]
+    : undefined;
+  return section ? sectionHref(section) : null;
+}

@@ -7,19 +7,18 @@ import {
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel } from "../../components/Loading/Loading";
-import { useUnsavedForm } from "../../components/SettingsShell/SettingsShell";
+import {
+  type Status,
+  StatusLine,
+  useUnsavedGuard,
+} from "../../components/SettingsShell/SettingsShell";
+import { CredentialStatus, readFailure } from "./CredentialStatus";
 import {
   ebookConvertDetail,
   ebookConvertPlaceholder,
   isOverridden,
   saveOutcomeMessage,
 } from "./integrations";
-import {
-  CredentialStatus,
-  LiveStatus,
-  readFailure,
-  type Status,
-} from "./StatusLine";
 
 /** The Calibre `ebook-convert` the server found, with a field to pin its path instead. */
 export function EbookConvertCard() {
@@ -27,7 +26,7 @@ export function EbookConvertCard() {
   const current = useQuery(ebookConvertQuery);
   const [typed, setTyped] = useState("");
   const [status, setStatus] = useState<Status | null>(null);
-  useUnsavedForm("ebook-convert", typed.trim() !== "");
+  useUnsavedGuard("ebook-convert", typed.trim() !== "");
 
   const write = useMutation({
     mutationFn: saveEbookConvert,
@@ -44,8 +43,8 @@ export function EbookConvertCard() {
     // Going back to auto-detection is the "Use auto-detection" button's job.
     if (path === "") {
       setStatus({
-        text: "Enter a path to ebook-convert to save.",
-        isError: true,
+        message: "Enter a path to ebook-convert to save.",
+        error: true,
       });
       return;
     }
@@ -57,8 +56,8 @@ export function EbookConvertCard() {
       },
       onError: (error) =>
         setStatus({
-          text: `Couldn’t save the ebook-convert path: ${error.message}`,
-          isError: true,
+          message: `Couldn’t save the ebook-convert path: ${error.message}`,
+          error: true,
         }),
     });
   };
@@ -68,14 +67,14 @@ export function EbookConvertCard() {
       onSuccess: () => {
         setTyped("");
         setStatus({
-          text: "Override cleared — using auto-detection.",
-          isError: false,
+          message: "Override cleared — using auto-detection.",
+          error: false,
         });
       },
       onError: (error) =>
         setStatus({
-          text: `Couldn’t clear the ebook-convert path: ${error.message}`,
-          isError: true,
+          message: `Couldn’t clear the ebook-convert path: ${error.message}`,
+          error: true,
         }),
     });
 
@@ -142,7 +141,7 @@ export function EbookConvertCard() {
             />
           </Button>
         </div>
-        <LiveStatus testId="ebook-convert-save-status" status={shown} />
+        <StatusLine testId="ebook-convert-save-status" status={shown} />
       </form>
     </section>
   );

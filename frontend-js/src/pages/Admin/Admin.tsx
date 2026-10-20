@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, type Location, useSearchParams } from "react-router";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import {
-  NavGroup,
-  NavItem,
+  type NavGroup,
   SectionHeader,
   SettingsShell,
 } from "../../components/SettingsShell/SettingsShell";
@@ -29,8 +28,12 @@ import {
 import { UsersCard } from "./UsersCard";
 import "./Admin.css";
 
-const sectionOf = (search: string) =>
-  parseSection(new URLSearchParams(search).get("section")).slug;
+const sectionOf = (location: Location) =>
+  parseSection(new URLSearchParams(location.search).get("section")).slug;
+
+/** Moving between two places that open the same section drops no edits. */
+const sameSection = (a: Location, b: Location) =>
+  a.pathname === b.pathname && sectionOf(a) === sectionOf(b);
 
 function sectionContent(slug: AdminSection["slug"]): ReactNode {
   switch (slug) {
@@ -76,32 +79,29 @@ function sectionContent(slug: AdminSection["slug"]): ReactNode {
 }
 
 /** Library and Server groups, plus the way back to personal settings. */
-function AdminNav({ active }: { active: AdminSection }) {
-  return (
-    <>
-      {(["Library", "Server"] as const).map((group) => (
-        <NavGroup key={group} label={group}>
-          {ADMIN_SECTIONS.filter((s) => s.group === group).map((s) => (
-            <NavItem
-              key={s.slug}
-              to={`/admin?section=${s.slug}`}
-              label={s.label}
-              testId={`admin-nav-${s.slug}`}
-              active={s.slug === active.slug}
-            />
-          ))}
-        </NavGroup>
-      ))}
-      <NavGroup divided>
-        <NavItem
-          to="/settings"
-          label="Your settings"
-          testId="admin-nav-settings"
-          active={false}
-        />
-      </NavGroup>
-    </>
-  );
+function adminNav(active: AdminSection): NavGroup[] {
+  return [
+    ...(["Library", "Server"] as const).map((group) => ({
+      label: group,
+      items: ADMIN_SECTIONS.filter((s) => s.group === group).map((s) => ({
+        to: `/admin?section=${s.slug}`,
+        label: s.label,
+        testId: `admin-nav-${s.slug}`,
+        active: s.slug === active.slug,
+      })),
+    })),
+    {
+      divided: true,
+      items: [
+        {
+          to: "/settings",
+          label: "Your settings",
+          testId: "admin-nav-settings",
+          active: false,
+        },
+      ],
+    },
+  ];
 }
 
 /** Server administration: the settings shell over the sections an admin owns. */
@@ -110,6 +110,18 @@ export function Admin() {
   const [search] = useSearchParams();
   const raw = search.get("section");
   const active = parseSection(raw);
+  if (!isAdmin) {
+    return (
+      <>
+        <PageTitle page={adminTitle(raw)} />
+        <div className="admin-forbidden" data-testid="admin-forbidden">
+          <h1>Administration</h1>
+          <p>Administration is only open to server administrators.</p>
+          <Link to="/settings">Go to your settings</Link>
+        </div>
+      </>
+    );
+  }
   return (
     <>
       <PageTitle page={adminTitle(raw)} />
@@ -117,23 +129,13 @@ export function Admin() {
         title="Administration"
         testId="admin-layout"
         navLabel="Administration sections"
-        backTo={isAdmin ? "/admin" : null}
-        hasSection={raw !== null || !isAdmin}
-        openSection={sectionOf}
-        nav={isAdmin ? <AdminNav active={active} /> : null}
+        nav={adminNav(active)}
+        hasSection={raw !== null}
+        backTo="/admin"
+        samePlace={sameSection}
       >
-        {isAdmin ? (
-          <>
-            <SectionHeader title={active.label} />
-            {sectionContent(active.slug)}
-          </>
-        ) : (
-          <div className="admin-forbidden" data-testid="admin-forbidden">
-            <h1>Administration</h1>
-            <p>Administration is only open to server administrators.</p>
-            <Link to="/settings">Go to your settings</Link>
-          </div>
-        )}
+        <SectionHeader title={active.label} />
+        {sectionContent(active.slug)}
       </SettingsShell>
     </>
   );

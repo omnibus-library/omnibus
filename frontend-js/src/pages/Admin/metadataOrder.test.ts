@@ -104,7 +104,7 @@ describe("saveSummary", () => {
         { library: "ebook", failure: null },
         { library: "audiobook", failure: null },
       ]),
-    ).toEqual({ text: "Metadata order saved.", isError: false });
+    ).toEqual({ message: "Metadata order saved.", error: false });
   });
 
   it("names the saved order beside the one the server refused", () => {
@@ -114,8 +114,9 @@ describe("saveSummary", () => {
         { library: "audiobook", failure: "configure the library path first" },
       ]),
     ).toEqual({
-      text: "Saved the ebook order. Couldn’t save the audiobook order: configure the library path first",
-      isError: true,
+      message:
+        "Saved the ebook order. Couldn’t save the audiobook order: configure the library path first",
+      error: true,
     });
   });
 
@@ -126,8 +127,9 @@ describe("saveSummary", () => {
         { library: "audiobook", failure: "nope" },
       ]),
     ).toEqual({
-      text: "Couldn’t save the ebook order: no Couldn’t save the audiobook order: nope",
-      isError: true,
+      message:
+        "Couldn’t save the ebook order: no Couldn’t save the audiobook order: nope",
+      error: true,
     });
   });
 });

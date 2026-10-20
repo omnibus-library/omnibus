@@ -8,9 +8,12 @@ import {
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel } from "../../components/Loading/Loading";
+import {
+  type Status,
+  StatusLine,
+} from "../../components/SettingsShell/SettingsShell";
 import { WorkerStatus } from "../../components/WorkerStatus/WorkerStatus";
 import { capitalize } from "../../format";
-import { LiveStatus, type Status } from "./StatusLine";
 
 const JOBS = [
   {
@@ -57,11 +60,11 @@ function Job({
   const run = useMutation({
     mutationFn: job.queue,
     onSuccess: () =>
-      onStatus({ text: `${capitalize(job.noun)} queued.`, isError: false }),
+      onStatus({ message: `${capitalize(job.noun)} queued.`, error: false }),
     onError: (error) =>
       onStatus({
-        text: `Failed to start ${job.noun}: ${error.message}`,
-        isError: true,
+        message: `Failed to start ${job.noun}: ${error.message}`,
+        error: true,
       }),
   });
   return (
@@ -103,7 +106,7 @@ export function MaintenanceCard() {
           <Job key={job.id} job={job} onStatus={setStatus} />
         ))}
       </ul>
-      <LiveStatus testId="maintenance-status" status={status} />
+      <StatusLine testId="maintenance-status" status={status} />
     </section>
   );
 }

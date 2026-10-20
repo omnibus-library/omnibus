@@ -167,7 +167,8 @@ export function shelfOptions(
     }));
 }
 
-const FORMATS = ["epub", "pdf", "cbz", "m4b", "m4a", "mp3"];
+/** The formats a library can hold, as the server names them. */
+export const FORMATS = ["epub", "pdf", "cbz", "m4b", "m4a", "mp3"];
 
 export const formatOptions = (): FilterOption[] =>
   FORMATS.map((f) => ({ value: f, label: f.toUpperCase(), count: null }));

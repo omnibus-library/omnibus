@@ -1,7 +1,7 @@
 import type { Preview } from "@storybook/react-vite";
 import { mswLoader } from "msw-storybook-addon/csf3";
 import { configure } from "storybook/test";
-import { resetCoverBusts, toUser, type User } from "../src/api";
+import { resetImageBusts, toUser, type User } from "../src/api";
 import { UserSummary } from "../src/api/generated/schemas";
 import {
   AtriumRoot,
@@ -35,7 +35,7 @@ const preview = {
   loaders: [mswLoader()],
   // Every story starts on the fake API; a story's own `beforeEach` overrides it.
   beforeEach({ msw }) {
-    resetCoverBusts();
+    resetImageBusts();
     msw.use(sessionHandler(), registrationHandler(true), ...coverHandlers);
   },
   globalTypes: {

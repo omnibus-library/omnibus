@@ -1,8 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { mcpQuery, replaceQueryData, setMcpEnabled } from "../../api";
+import {
+  refusal,
+  type Status,
+  statusOrLoadError,
+} from "../../components/SettingsShell/SettingsShell";
 import { CopyButton } from "./CopyButton";
-import type { Status } from "./StatusLine";
 
 const NOTES = {
   unknown: "Checking the endpoint's current state…",
@@ -20,21 +24,20 @@ export function McpCard() {
     onSuccess: async (_, enabled) => {
       await replaceQueryData(queryClient, mcpQuery.queryKey, { enabled });
       setStatus({
-        text: enabled
+        message: enabled
           ? "MCP endpoint enabled at /mcp."
           : "MCP endpoint disabled. /mcp now answers 404.",
-        isError: false,
+        error: false,
       });
     },
-    onError: (error) => setStatus({ text: error.message, isError: true }),
+    onError: (error) => setStatus(refusal(error)),
   });
 
   const enabled = current.data?.enabled ?? null;
-  const shown: Status | null =
-    status ??
-    (current.isError && current.data === undefined
-      ? { text: current.error.message, isError: true }
-      : null);
+  const shown = statusOrLoadError(
+    status,
+    current.data === undefined ? current.error : null,
+  );
   const endpoint = `${window.location.origin}/mcp`;
   // Unknown is its own look, with the knob at centre, never "off".
   let trackClass = "tkx-track ld-toggle-unknown";
@@ -94,10 +97,10 @@ export function McpCard() {
           role="status"
           data-testid="mcp-toggle-status"
           className={
-            shown.isError ? "settings-status error" : "settings-status success"
+            shown.error ? "settings-status error" : "settings-status success"
           }
         >
-          {shown.text}
+          {shown.message}
         </p>
       )}
     </section>

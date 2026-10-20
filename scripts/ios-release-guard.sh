@@ -5,7 +5,9 @@
 # takes the app off the network on an `omnibus://debug/offline` URL, which the
 # agentic-exploration iOS lane drives with `simctl openurl`. That is fine in a
 # debug build and unacceptable in a shipped one, so "it's inside #if DEBUG" is
-# not a claim to take on trust — this checks the built binary.
+# not a claim to take on trust — this checks the built binary. The
+# `omnibus://debug/screen/…` links screenshot tours open screens with
+# (omnibus-ios/omnibus/App/DebugScreenLink.swift) are held to the same bar.
 #
 # What it can and cannot see: it looks for the string literals those hooks are
 # addressed by, so a `#if DEBUG` block that leaked into Release is caught as
@@ -35,6 +37,7 @@ markers=(
   "--uitest-online"
   "--uitest-reset"
   "--uitest-shell"
+  "omnibus.debug.screen"
 )
 
 # A guard that cannot fail is not a guard. If a marker has been renamed in the

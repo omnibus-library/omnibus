@@ -38,6 +38,20 @@ fn placeholders(n: usize) -> String {
     std::iter::repeat_n("(?)", n).collect::<Vec<_>>().join(", ")
 }
 
+/// [`placeholders`] numbered from `?start`, for a query that also binds a `?N`.
+/// Never mix bare `?` with `?N`: sqlx's SQLite driver counts bare slots apart
+/// from numbered ones, so the first bare `?` silently binds argument 1, not the
+/// argument after the highest `?N`. `n == 0` yields `(NULL)`, as above.
+fn numbered_placeholders(start: usize, n: usize) -> String {
+    if n == 0 {
+        return placeholders(0);
+    }
+    (start..start + n)
+        .map(|i| format!("(?{i})"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// "In the library" for the browse indexes: under a configured scan root, or
 /// holding a physical copy. Deliberately *not* the landing read path's rule:
 /// browse also counts a ghosted (fileless) book, and a pure wishlist entry

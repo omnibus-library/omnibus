@@ -189,9 +189,10 @@ export const PreviewShowsTheServersHtml: Story = {
     );
     await userEvent.click(canvas.getByTestId("journal-preview-toggle"));
 
-    await expect(
-      await canvas.findByTestId("journal-preview"),
-    ).toHaveTextContent("hello");
+    // The preview pane mounts empty and fills in when the server's HTML arrives.
+    await waitFor(() =>
+      expect(canvas.getByTestId("journal-preview")).toHaveTextContent("hello"),
+    );
     await expect(canvas.queryByRole("textbox")).not.toBeInTheDocument();
 
     await userEvent.click(canvas.getByRole("button", { name: "Write" }));

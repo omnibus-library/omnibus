@@ -8,7 +8,7 @@ import {
 } from "../../api";
 import { Button, ButtonLink } from "../../components/Button/Button";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
-import type { Status } from "./StatusLine";
+import type { Status } from "../../components/SettingsShell/SettingsShell";
 
 function KindRow({ kind, counts }: CleanupKindCounts) {
   const label = cleanupKindLabel(kind);
@@ -42,8 +42,8 @@ export function CleanupCard() {
     onMutate: () => setStatus(null),
     onSuccess: () => {
       setStatus({
-        text: "Detection started. Counts update as it finishes.",
-        isError: false,
+        message: "Detection started. Counts update as it finishes.",
+        error: false,
       });
       void queryClient.invalidateQueries({
         queryKey: cleanupCountsQuery.queryKey,
@@ -51,8 +51,8 @@ export function CleanupCard() {
     },
     onError: (error) =>
       setStatus({
-        text: `Couldn’t start detection: ${error.message}`,
-        isError: true,
+        message: `Couldn’t start detection: ${error.message}`,
+        error: true,
       }),
   });
 
@@ -111,13 +111,11 @@ export function CleanupCard() {
       </div>
       {status !== null && (
         <p
-          className={
-            status.isError ? "settings-status error" : "settings-status"
-          }
+          className={status.error ? "settings-status error" : "settings-status"}
           role="status"
           data-testid="cleanup-detect-status"
         >
-          {status.text}
+          {status.message}
         </p>
       )}
     </section>

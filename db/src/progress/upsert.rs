@@ -2,6 +2,11 @@
 //! resolution by client event time, the audio multi-file guard, and the two
 //! WARN-only checks that flag a rejected write or a large backward
 //! jump without changing what gets stored.
+//!
+//! A position also starts its book: a book with no read status gets `reading`
+//! in the same transaction, so "no status" means untouched on every surface.
+//! The server does it because clients write status as a separate request, which
+//! a lost request or an offline open skips.
 
 use omnibus_shared::{ProgressFormat, ProgressRecord, ProgressUpdate};
 use sqlx::{Row, Sqlite, SqlitePool, Transaction};
@@ -64,8 +69,8 @@ async fn read_progress_row(
 /// Upsert a position row for `(user, book, format)` and return the **surviving**
 /// record, keyed on the **canonical** `books.uuid` (`BookNotFound` if never indexed).
 /// A write wins only if its `client_updated_at` (clamped to now; absent = now) is `>=`
-/// the stored one, and replaces the whole position. A fileless audio write over a row
-/// naming a file of a multi-file book is also rejected; a rejected write returns the winner.
+/// the stored one, replacing the whole position; a fileless audio write over a multi-file
+/// book's file loses too and returns the winner. A book with no status becomes `reading`.
 pub async fn upsert_progress(
     pool: &SqlitePool,
     user_id: i64,
@@ -112,6 +117,7 @@ pub async fn upsert_progress_tx(
 
     execute_upsert_query(tx, user_id, &book_uuid, fmt, update).await?;
     let record = read_progress_row(tx, user_id, book_uuid, update.format, fmt).await?;
+    mark_started(tx, user_id, &record).await?;
 
     // Ledger the *surviving* position, not the offered one: a write the
     // timestamp guard rejected leaves the row — and so the mark — where it was,
@@ -136,6 +142,28 @@ pub async fn upsert_progress_tx(
     }
 
     Ok(record)
+}
+
+/// Give `(user, book)` the `reading` status unless it already has one, dated by
+/// the surviving position's clock rather than receipt: Kobo sync-out stamps its
+/// state with the newer clock, and a replayed offline write must not read as today.
+async fn mark_started(
+    tx: &mut Transaction<'_, Sqlite>,
+    user_id: i64,
+    surviving: &ProgressRecord,
+) -> Result<(), ProgressError> {
+    // `DO NOTHING`: a status the reader chose, `unread` included, outranks a position.
+    sqlx::query(
+        "INSERT INTO book_read_status (user_id, book_uuid, status, updated_at)
+         VALUES (?, ?, 'reading', ?)
+         ON CONFLICT(user_id, book_uuid) DO NOTHING",
+    )
+    .bind(user_id)
+    .bind(&surviving.book_uuid)
+    .bind(surviving.client_updated_at)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 /// Teardown signature, last line of defense: a dying page's media element

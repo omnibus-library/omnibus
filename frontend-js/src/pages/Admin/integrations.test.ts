@@ -66,15 +66,15 @@ describe("ebookConvertDetail", () => {
 describe("saveOutcomeMessage", () => {
   it("reports a runnable path as saved", () => {
     expect(saveOutcomeMessage(true)).toEqual({
-      text: "ebook-convert path saved.",
-      isError: false,
+      message: "ebook-convert path saved.",
+      error: false,
     });
   });
 
   it("flags a saved path the server cannot run as an error", () => {
     expect(saveOutcomeMessage(false)).toEqual({
-      text: "Path saved, but ebook-convert is not runnable there.",
-      isError: true,
+      message: "Path saved, but ebook-convert is not runnable there.",
+      error: true,
     });
   });
 });
