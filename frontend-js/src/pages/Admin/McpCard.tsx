@@ -7,6 +7,7 @@ import {
   type Status,
   statusOrLoadError,
 } from "../../components/SettingsShell/SettingsShell";
+import "../../styles/tokens.css";
 
 const NOTES = {
   unknown: "Checking the endpoint's current state…",

@@ -4,75 +4,34 @@ import { HttpResponse, http } from "msw";
 import type { ReactNode } from "react";
 import { useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
-import { adminUsersQuery, userSessionsQuery } from "../../api";
+import { adminUsersQuery } from "../../api";
 import { meQuery } from "../../session";
 import { seedQueries, storyClient } from "../../testing/AppHarness";
+import { aWireAdminUser, aWireAdminUsers } from "../../testing/adminHandlers";
+import { deferred, failing } from "../../testing/handlers";
+import { WIRE_ADA } from "../../testing/wire";
+import { DeleteUserModal, EditUserModal, NewUserModal } from "./UserModals";
 import {
-  aWireAdminUser,
-  aWireAdminUsers,
-  aWireDevice,
-  type Revoked,
-  sessionsHandlers,
-  type UserWrites,
-  usersHandlers,
-} from "../../testing/adminHandlers";
-import { deferred, failing, hanging } from "../../testing/handlers";
-import { aWireAuthSession, WIRE_ADA } from "../../testing/wire";
-import {
-  DeleteUserModal,
-  EditUserModal,
-  NewUserModal,
-  SessionsModal,
-} from "./UserModals";
+  ALICE,
+  calls,
+  close,
+  reads,
+  resetUserModals,
+  writes,
+} from "./UserModals.stories.shared";
 import { UsersCard } from "./UsersCard";
 
 const USERS = "/api/admin/users";
-const ALICE = aWireAdminUser({ locked: true });
-
-const writes: UserWrites = {
-  unlocked: [],
-  created: [],
-  permissions: [],
-  passwords: [],
-  deleted: [],
-};
-const revoked: Revoked = { sessions: [], devices: [] };
-const calls = { closed: 0, done: 0 };
-const reads = { users: 0, me: 0 };
 
 const meta = {
   title: "Pages/Admin/UserModals",
   component: UsersCard,
-  beforeEach({ msw }) {
-    for (const list of Object.values(writes)) list.length = 0;
-    revoked.sessions.length = 0;
-    revoked.devices.length = 0;
-    calls.closed = 0;
-    calls.done = 0;
-    reads.users = 0;
-    reads.me = 0;
-    msw.use(
-      ...usersHandlers(aWireAdminUsers(), writes),
-      ...sessionsHandlers(
-        {
-          sessions: [
-            aWireAuthSession(),
-            aWireAuthSession({ id: 5, client: "Kobo Clara", device_id: 4 }),
-          ],
-          devices: [aWireDevice()],
-        },
-        { revoked },
-      ),
-    );
-  },
+  beforeEach: resetUserModals,
 } satisfies Meta<typeof UsersCard>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-const close = () => {
-  calls.closed += 1;
-};
 const done = () => {
   calls.done += 1;
 };
@@ -106,21 +65,9 @@ const editAlice = () => (
 
 /** Puts the accounts list in the cache, so a story can see whether the modal marks it stale. */
 const seedUsersList = () => seedQueries([[...adminUsersQuery.queryKey]]);
+
 const usersListInvalidated = () =>
   storyClient().getQueryState(adminUsersQuery.queryKey)?.isInvalidated;
-
-let listGate = deferred();
-let gatedReads = 0;
-
-// The sessions list answers `first` at once and every later read only once `listGate` opens.
-function gatedSessionReads(first: () => Response) {
-  gatedReads = 0;
-  return http.get("/api/admin/users/:id/sessions", async () => {
-    if (++gatedReads === 1) return first();
-    await listGate.promise;
-    return HttpResponse.json([aWireAuthSession()]);
-  });
-}
 
 const readsOfUsersAndMe = [
   http.get("/api/admin/users", () => {
@@ -676,374 +623,6 @@ export const DeleteUserHoldsTheDialogWhileDeleting: Story = {
   },
 };
 
-export const SessionsWaitsForBothLists: Story = {
-  beforeEach({ msw }) {
-    msw.use(hanging("/api/admin/users/:id/devices"));
-  },
-  render: () => <SessionsModal user={ALICE} onClose={close} />,
-  play: async ({ canvas }) => {
-    const dialog = await canvas.findByRole("dialog", {
-      name: "Sessions & devices — alice",
-    });
-    await waitFor(() =>
-      expect(
-        storyClient().getQueryData(userSessionsQuery(ALICE.id).queryKey),
-      ).toBeDefined(),
-    );
-    await expect(
-      within(dialog).getByTestId("user-sessions-loading"),
-    ).toHaveTextContent("Reading sessions and devices…");
-    await expect(
-      within(dialog).queryByRole("heading", { level: 4 }),
-    ).not.toBeInTheDocument();
-    await expect(
-      within(dialog).queryByText("No registered devices."),
-    ).not.toBeInTheDocument();
-  },
-};
-
-export const SessionsListsSessionsAndDevices: Story = {
-  render: () => <SessionsModal user={ALICE} onClose={close} />,
-  play: async ({ canvas }) => {
-    const dialog = await canvas.findByRole("dialog", {
-      name: "Sessions & devices — alice",
-    });
-    await expect(
-      await within(dialog).findByRole("heading", {
-        level: 4,
-        name: "Sessions",
-      }),
-    ).toBeInTheDocument();
-    await expect(
-      within(dialog).getByRole("heading", { level: 4, name: "Devices" }),
-    ).toBeInTheDocument();
-    await expect(
-      within(dialog)
-        .getAllByTestId("user-session-row")
-        .map((row) => row.firstElementChild?.textContent),
-    ).toEqual([
-      "Firefox on Linux · last used Oct 10, 2025",
-      "Kobo Clara · last used Oct 10, 2025",
-    ]);
-    await expect(
-      within(dialog)
-        .getAllByTestId("user-device-row")
-        .map((row) => row.firstElementChild?.textContent),
-    ).toEqual(["Kobo Clara · kobo · last seen Jan 1, 2024"]);
-    await expect(
-      within(dialog).getByRole("button", {
-        name: "Revoke the session on Firefox on Linux",
-      }),
-    ).toBeInTheDocument();
-    await expect(
-      within(dialog).getByRole("button", {
-        name: "Revoke the device Kobo Clara",
-      }),
-    ).toBeInTheDocument();
-  },
-};
-
-export const SessionsNamesAnUnnamedClient: Story = {
-  beforeEach({ msw }) {
-    msw.use(
-      ...sessionsHandlers({
-        sessions: [aWireAuthSession({ client: undefined })],
-        devices: [],
-      }),
-    );
-  },
-  render: () => <SessionsModal user={ALICE} onClose={close} />,
-  play: async ({ canvas }) => {
-    const dialog = await canvas.findByRole("dialog", {
-      name: "Sessions & devices — alice",
-    });
-    await expect(
-      await within(dialog).findByRole("button", {
-        name: "Revoke the session on Unknown client",
-      }),
-    ).toBeInTheDocument();
-  },
-};
-
-export const SessionsShowsTheEmptyLines: Story = {
-  beforeEach({ msw }) {
-    msw.use(...sessionsHandlers({ sessions: [], devices: [] }));
-  },
-  render: () => <SessionsModal user={ALICE} onClose={close} />,
-  play: async ({ canvas }) => {
-    const dialog = await canvas.findByRole("dialog", {
-      name: "Sessions & devices — alice",
-    });
-    await expect(
-      await within(dialog).findByText("No live sessions."),
-    ).toBeInTheDocument();
-    await expect(
-      within(dialog).getByText("No registered devices."),
-    ).toBeInTheDocument();
-  },
-};
-
-export const SessionsRevokesASessionAndReadsBothListsAgain: Story = {
-  render: () => <SessionsModal user={ALICE} onClose={close} />,
-  play: async ({ canvas, userEvent }) => {
-    const dialog = await canvas.findByRole("dialog", {
-      name: "Sessions & devices — alice",
-    });
-    await userEvent.click(
-      await within(dialog).findByRole("button", {
-        name: "Revoke the device Kobo Clara",
-      }),
-    );
-
-    // The server ends the sessions tied to a revoked device, so both lists must be read again.
-    await expect(
-      await within(dialog).findByText("No registered devices."),
-    ).toBeInTheDocument();
-    await waitFor(() =>
-      expect(within(dialog).getAllByTestId("user-session-row")).toHaveLength(1),
-    );
-    await expect(revoked.devices).toEqual([4]);
-    await userEvent.click(
-      within(dialog).getByRole("button", {
-        name: "Revoke the session on Firefox on Linux",
-      }),
-    );
-    await expect(
-      await within(dialog).findByText("No live sessions."),
-    ).toBeInTheDocument();
-    await expect(revoked.sessions).toEqual([1]);
-  },
-};
-
-let revokeGate = deferred();
-
-export const SessionsHoldsTheClickedRevokeWhileRevoking: Story = {
-  beforeEach({ msw }) {
-    revokeGate = deferred();
-    msw.use(
-      http.delete("/api/admin/sessions/:id", async () => {
-        await revokeGate.promise;
-        return new HttpResponse(null, { status: 204 });
-      }),
-    );
-  },
-  render: () => <SessionsModal user={ALICE} onClose={close} />,
-  play: async ({ canvas, userEvent }) => {
-    const dialog = await canvas.findByRole("dialog", {
-      name: "Sessions & devices — alice",
-    });
-    const revoke = await within(dialog).findByRole("button", {
-      name: "Revoke the session on Firefox on Linux",
-    });
-    await userEvent.click(revoke);
-
-    await waitFor(() => expect(revoke).toHaveTextContent("Revoking…"));
-    await expect(revoke).toBeDisabled();
-    await expect(revoke).toHaveAttribute("aria-busy", "true");
-    await expect(
-      within(dialog).getByRole("button", {
-        name: "Revoke the device Kobo Clara",
-      }),
-    ).not.toHaveTextContent("Revoking…");
-    revokeGate.release();
-    await waitFor(() => expect(revoke).toBeEnabled());
-  },
-};
-
-export const SessionsShowsARevokeRefusalUntilTheNextRevoke: Story = {
-  beforeEach({ msw }) {
-    let attempts = 0;
-    msw.use(
-      http.delete("/api/admin/sessions/:id", () => {
-        attempts += 1;
-        return attempts === 1
-          ? new HttpResponse("session not found", { status: 404 })
-          : new HttpResponse(null, { status: 204 });
-      }),
-    );
-  },
-  render: () => <SessionsModal user={ALICE} onClose={close} />,
-  play: async ({ canvas, userEvent }) => {
-    const dialog = await canvas.findByRole("dialog", {
-      name: "Sessions & devices — alice",
-    });
-    const revoke = await within(dialog).findByRole("button", {
-      name: "Revoke the session on Firefox on Linux",
-    });
-    await userEvent.click(revoke);
-
-    await expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "session not found",
-    );
-    await userEvent.click(revoke);
-
-    await waitFor(() =>
-      expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument(),
-    );
-  },
-};
-
-export const SessionsShowsALoadFailure: Story = {
-  beforeEach({ msw }) {
-    msw.use(failing("get", "/api/admin/users/:id/sessions", 500));
-  },
-  render: () => <SessionsModal user={ALICE} onClose={close} />,
-  play: async ({ canvas }) => {
-    const dialog = await canvas.findByRole("dialog", {
-      name: "Sessions & devices — alice",
-    });
-    await expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "failed with 500",
-    );
-    await expect(
-      within(dialog).queryByTestId("user-sessions-loading"),
-    ).not.toBeInTheDocument();
-    await expect(
-      within(dialog).queryByText("No registered devices."),
-    ).not.toBeInTheDocument();
-  },
-};
-
-export const SessionsHoldsTheRevokeUntilBothListsAreReadAgain: Story = {
-  beforeEach({ msw }) {
-    listGate = deferred();
-    msw.use(gatedSessionReads(() => HttpResponse.json([aWireAuthSession()])));
-  },
-  render: () => <SessionsModal user={ALICE} onClose={close} />,
-  play: async ({ canvas, userEvent }) => {
-    const dialog = await canvas.findByRole("dialog", {
-      name: "Sessions & devices — alice",
-    });
-    const revoke = await within(dialog).findByRole("button", {
-      name: "Revoke the session on Firefox on Linux",
-    });
-    await userEvent.click(revoke);
-
-    // The second read starts only once the revoke has been answered.
-    await waitFor(() => expect(gatedReads).toBe(2));
-    await expect(revoked.sessions).toEqual([1]);
-    await expect(revoke).toHaveAttribute("aria-busy", "true");
-    await expect(revoke).toBeDisabled();
-    listGate.release();
-    await waitFor(() => expect(revoke).toBeEnabled());
-  },
-};
-
-export const SessionsClearsARevokeRefusalOnceTheListsAreReadAgain: Story = {
-  beforeEach({ msw }) {
-    msw.use(failing("delete", "/api/admin/sessions/:id", 404));
-  },
-  render: () => <SessionsModal user={ALICE} onClose={close} />,
-  play: async ({ canvas, userEvent }) => {
-    const dialog = await canvas.findByRole("dialog", {
-      name: "Sessions & devices — alice",
-    });
-    await userEvent.click(
-      await within(dialog).findByRole("button", {
-        name: "Revoke the session on Firefox on Linux",
-      }),
-    );
-    await expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "failed with 404",
-    );
-
-    await storyClient().refetchQueries({
-      queryKey: userSessionsQuery(ALICE.id).queryKey,
-    });
-
-    await waitFor(() =>
-      expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument(),
-    );
-  },
-};
-
-export const SessionsKeepsARevokeRefusalThatArrivesWhileTheListsAreRead: Story =
-  {
-    beforeEach({ msw }) {
-      listGate = deferred();
-      msw.use(
-        gatedSessionReads(() => HttpResponse.json([aWireAuthSession()])),
-        failing("delete", "/api/admin/sessions/:id", 404),
-      );
-    },
-    render: () => <SessionsModal user={ALICE} onClose={close} />,
-    play: async ({ canvas, userEvent }) => {
-      const dialog = await canvas.findByRole("dialog", {
-        name: "Sessions & devices — alice",
-      });
-      const revoke = await within(dialog).findByRole("button", {
-        name: "Revoke the session on Firefox on Linux",
-      });
-      const sessionsKey = userSessionsQuery(ALICE.id).queryKey;
-      const reread = storyClient().refetchQueries({ queryKey: sessionsKey });
-      await waitFor(() =>
-        expect(storyClient().getQueryState(sessionsKey)?.fetchStatus).toBe(
-          "fetching",
-        ),
-      );
-      await userEvent.click(revoke);
-
-      await expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-        "failed with 404",
-      );
-      listGate.release();
-      await reread;
-      await expect(within(dialog).getByRole("alert")).toHaveTextContent(
-        "failed with 404",
-      );
-    },
-  };
-
-export const SessionsHidesALoadFailureWhileTheListsAreReadAgain: Story = {
-  beforeEach({ msw }) {
-    listGate = deferred();
-    msw.use(
-      gatedSessionReads(
-        () => new HttpResponse("failed with 500", { status: 500 }),
-      ),
-    );
-  },
-  render: () => <SessionsModal user={ALICE} onClose={close} />,
-  play: async ({ canvas }) => {
-    const dialog = await canvas.findByRole("dialog", {
-      name: "Sessions & devices — alice",
-    });
-    await expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "failed with 500",
-    );
-
-    void storyClient().refetchQueries({
-      queryKey: userSessionsQuery(ALICE.id).queryKey,
-    });
-
-    await waitFor(() =>
-      expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument(),
-    );
-    await expect(
-      within(dialog).getByTestId("user-sessions-loading"),
-    ).toBeInTheDocument();
-    listGate.release();
-    await expect(
-      await within(dialog).findByTestId("user-sessions-list"),
-    ).toBeInTheDocument();
-  },
-};
-
-export const SessionsCloseButtonsClose: Story = {
-  render: () => <SessionsModal user={ALICE} onClose={close} />,
-  play: async ({ canvas, userEvent }) => {
-    const dialog = await canvas.findByRole("dialog", {
-      name: "Sessions & devices — alice",
-    });
-    const buttons = within(dialog).getAllByRole("button", { name: "Close" });
-    await expect(buttons).toHaveLength(2);
-
-    for (const button of buttons) await userEvent.click(button);
-
-    await expect(calls.closed).toBe(2);
-  },
-};
-
 export const NewUserButtonCreatesAnAccountAndReadsTheListAgain: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
@@ -1121,7 +700,9 @@ export const EditButtonReadsTheListAndTheSessionWhenOnlyThePermissionsLand: Stor
   };
 
 let passwordGate = deferred();
+
 let passwordArrived = deferred();
+
 let meGate = deferred();
 
 export const EditButtonReadsTheSessionOnlyOnceBothStepsHaveSettled: Story = {
@@ -1217,17 +798,5 @@ export const EditUserOnYourOwnRowWithoutAPasswordStaysSignedIn: Story = {
     );
     await expect(canvas.getByTestId("where")).not.toHaveTextContent("/login");
     await expect(writes.permissions).toHaveLength(1);
-  },
-};
-
-export const SessionsButtonOpensTheUsersSessions: Story = {
-  play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      await canvas.findByRole("button", { name: "Sessions for alice" }),
-    );
-
-    await expect(
-      await canvas.findByRole("dialog", { name: "Sessions & devices — alice" }),
-    ).toBeInTheDocument();
   },
 };
