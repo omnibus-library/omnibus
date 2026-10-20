@@ -7,14 +7,12 @@
 //! several, so [`settle_reviews`] first folds the source's into the target's
 //! field by field: stars from the later rating, text and its spoiler flag from
 //! the side that has text (the newer review's when both do), and both sides'
-//! private notes, the newer's first — unless together they would pass
-//! [`REVIEW_TEXT_MAX_LEN`], when the newer's stand alone and the other's stay
-//! in the snapshot for undo. No date another reader sees is taken from a side
-//! holding only notes.
+//! private notes, the newer's first. Notes are never dropped, even when joined
+//! they pass `REVIEW_TEXT_MAX_LEN`. No date another reader sees is taken from
+//! a side holding only notes.
 
 use std::collections::HashSet;
 
-use omnibus_shared::REVIEW_TEXT_MAX_LEN;
 use serde::{Deserialize, Serialize};
 use sqlx::Transaction;
 
@@ -91,14 +89,11 @@ impl ReviewRow {
             (Some(_), None) => target,
             (None, None) => rated,
         };
-        // Past the cap, every later save that resends the notes would be
-        // refused, so the newer side's stand alone rather than block the editor.
+        // Joined even past the length cap: it binds only a save that changes
+        // the notes (clients send just changed fields), which then asks the
+        // reader to trim them — better than silently losing either side's.
         let notes_md = match (&newer.notes_md, &older.notes_md) {
-            (Some(first), Some(second))
-                if first != second && first.len() + 2 + second.len() <= REVIEW_TEXT_MAX_LEN =>
-            {
-                Some(format!("{first}\n\n{second}"))
-            }
+            (Some(first), Some(second)) if first != second => Some(format!("{first}\n\n{second}")),
             (first, second) => first.clone().or_else(|| second.clone()),
         };
         // Dated as `reviews::upsert` dates a review — a text review from its

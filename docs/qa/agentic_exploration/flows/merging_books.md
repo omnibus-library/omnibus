@@ -82,9 +82,9 @@ detectable.
   notes, the newer review's first with a blank line between. The older text,
   when both had some, is expected to go — an undo brings it back. Stars, text
   or notes belonging to neither side fail, as does losing the only text or
-  either side's notes — unless the two sets of notes together would pass the
-  64 KiB text limit, when only the newer's are kept and an undo brings back
-  the other.
+  either side's notes. Both sides' notes are kept even when together they pass
+  the 64 KiB text limit; saving a change to them is then refused until you
+  trim them under it, which is expected, not a failure.
 - An undo, if taken, restores both books with **their own** data — each book
   carrying the review (stars, text, spoiler flag, notes), read status and
   identifiers it had before the merge, not the other's and not the merged

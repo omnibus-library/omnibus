@@ -3,7 +3,7 @@
 //! image sweep that must not run past a review only an open snapshot holds —
 //! nor keep one a cascaded snapshot no longer can.
 
-use omnibus_shared::ReviewPatch;
+use omnibus_shared::{ReviewPatch, REVIEW_TEXT_MAX_LEN};
 
 use super::*;
 use crate::journal_images::{self, journal_images_dir};
@@ -113,9 +113,9 @@ fn settle_dates_a_text_review_from_its_text_and_never_from_a_notes_only_side() {
 }
 
 #[test]
-fn settle_keeps_only_the_newer_notes_when_both_together_would_pass_the_text_cap() {
-    // Joined past the cap, every later save resending the notes would be
-    // refused. Each side fits on its own, so the newer one always does.
+fn settle_keeps_both_sides_notes_even_past_the_text_cap() {
+    // Private notes are never silently dropped. The cap binds only a save that
+    // changes the notes, which then asks the reader to trim them.
     let half = REVIEW_TEXT_MAX_LEN / 2;
     let older = ReviewRow {
         notes_md: Some("a".repeat(half)),
@@ -126,25 +126,25 @@ fn settle_keeps_only_the_newer_notes_when_both_together_would_pass_the_text_cap(
         ..rating(1, 4, 2_000)
     };
 
-    let merged = ReviewRow::settle(&older, &newer);
+    let notes = ReviewRow::settle(&older, &newer).notes_md.unwrap();
 
-    assert_eq!(merged.notes_md, newer.notes_md);
-    let resent = ReviewPatch {
-        notes_md: Some(merged.notes_md),
+    assert_eq!(
+        notes,
+        format!("{}\n\n{}", "b".repeat(half), "a".repeat(half))
+    );
+    let stars_only = ReviewPatch {
+        stars: Some(Some(4.0)),
         ..Default::default()
     };
-    assert!(resent.validate().is_ok());
-
-    let fits = ReviewRow {
-        notes_md: Some("b".repeat(half - 2)),
-        ..newer
-    };
-    let joined = ReviewRow::settle(&older, &fits).notes_md.unwrap();
-    assert_eq!(
-        joined.len(),
-        REVIEW_TEXT_MAX_LEN,
-        "exactly at the cap still joins"
+    assert!(
+        stars_only.validate().is_ok(),
+        "a save leaving the notes alone"
     );
+    let notes_edit = ReviewPatch {
+        notes_md: Some(Some(notes)),
+        ..Default::default()
+    };
+    assert!(notes_edit.validate().unwrap_err().contains("notes_md"));
 }
 
 #[tokio::test]

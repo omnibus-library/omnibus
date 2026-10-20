@@ -503,7 +503,8 @@ pub(super) const COLLISION_TABLES: [Collision; 9] = [
 /// content index) with `UPDATE ... SET book_uuid = <target>`. Tables with a
 /// `UNIQUE` key the retarget would violate are deduped first; see
 /// [`COLLISION_TABLES`] and [`dedupe_collisions`]. A reader's two reviews are
-/// merged into one before that, so the dedupe drops no text or notes.
+/// folded into one before that, so the dedupe drops neither side's notes; of
+/// two texts the older goes, and undo brings it back.
 async fn move_progress_and_history(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     source_id: i64,
