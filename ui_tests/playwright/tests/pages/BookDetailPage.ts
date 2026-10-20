@@ -385,6 +385,21 @@ export class BookDetailPage extends BasePage {
     });
   }
 
+  /**
+   * Records every panic the app reports from now on: a Rust panic in the
+   * wasm client logs "panicked at" to the console, and the page stops
+   * answering.
+   */
+  recordPanics(): string[] {
+    const panics: string[] = [];
+    const note = (text: string) => {
+      if (/panicked/i.test(text)) panics.push(text);
+    };
+    this.page.on("console", (message) => note(message.text()));
+    this.page.on("pageerror", (error) => note(error.message));
+    return panics;
+  }
+
   /** Records the file name of every download the page starts from now on. */
   recordDownloads(): string[] {
     const names: string[] = [];

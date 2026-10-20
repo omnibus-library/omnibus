@@ -1,4 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
+import { journalsUrls } from "../contracts/journals";
 import { reviewsUrls } from "../contracts/reviews";
 import { holdRequests } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
@@ -28,11 +29,18 @@ export class ReviewsComponent extends BaseComponent {
   private readonly confirmDeleteButton: Locator;
 
   readonly composer: Locator;
+  /** The dialog the marquee opens the composer in, "Write" or "Edit your review". */
+  readonly composerDialog: Locator;
   readonly textEditor: Locator;
+  /** The hidden textarea the review text's live editor mirrors its Markdown into. */
+  readonly textMarkdown: Locator;
+  readonly textBoldButton: Locator;
+  private readonly textImageInput: Locator;
   readonly notesEditor: Locator;
   readonly spoilerCheckbox: Locator;
   readonly composerError: Locator;
-  private readonly saveButton: Locator;
+  readonly cancelButton: Locator;
+  readonly saveButton: Locator;
 
   readonly summary: Locator;
   readonly summaryAverage: Locator;
@@ -70,6 +78,11 @@ export class ReviewsComponent extends BaseComponent {
     });
 
     this.composer = page.getByTestId("review-composer");
+    this.composerDialog = page.getByRole("dialog", { name: /your review$/ });
+    const textField = this.composer.getByTestId("review-body-field");
+    this.textMarkdown = textField.getByTestId("review-body-markdown");
+    this.textBoldButton = textField.getByRole("button", { name: "Bold" });
+    this.textImageInput = textField.getByTestId("journal-image-input");
     this.textEditor = this.composer.getByRole("textbox", {
       name: "Review text",
     });
@@ -80,9 +93,9 @@ export class ReviewsComponent extends BaseComponent {
       name: "Contains spoilers",
     });
     this.composerError = this.composer.getByRole("alert");
-    this.saveButton = this.composer.getByRole("button", {
-      name: "Save review",
-    });
+    this.cancelButton = this.composer.getByRole("button", { name: "Cancel" });
+    // Its label turns to "Saving…" while a save is out.
+    this.saveButton = this.composer.getByTestId("review-save");
 
     this.summary = page.getByTestId("review-summary");
     this.summaryAverage = page.getByTestId("review-summary-average");
@@ -147,6 +160,23 @@ export class ReviewsComponent extends BaseComponent {
     await this.saveButton.click();
   }
 
+  async cancel(): Promise<void> {
+    await this.cancelButton.click();
+  }
+
+  /** Picks `png` in the review text's image tool, which uploads it. */
+  async uploadTextImage(png: Buffer): Promise<void> {
+    await this.textImageInput.setInputFiles({
+      name: "figure.png",
+      mimeType: "image/png",
+      buffer: png,
+    });
+  }
+
+  async pressEscape(): Promise<void> {
+    await this.page.keyboard.press("Escape");
+  }
+
   async toggleSpoiler(): Promise<void> {
     await this.spoilerCheckbox.click();
   }
@@ -165,6 +195,16 @@ export class ReviewsComponent extends BaseComponent {
 
   async jumpToReviews(): Promise<void> {
     await this.jumpLink.click();
+  }
+
+  /** Holds every later review save until the returned release runs. */
+  async holdReviewSaves(): Promise<() => void> {
+    return holdRequests(this.page, reviewsUrls.update);
+  }
+
+  /** Holds every later image upload until the returned release runs. */
+  async holdImageUploads(): Promise<() => void> {
+    return holdRequests(this.page, journalsUrls.images);
   }
 
   /** Holds every later read of the book's reviews until the returned release runs. */
