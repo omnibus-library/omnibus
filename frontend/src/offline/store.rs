@@ -252,7 +252,33 @@ impl Store {
         T: Send + 'static,
         F: FnOnce(Option<String>) -> (Option<String>, T) + Send + 'static,
     {
+        self.kv_update_stamped(key, true, f).await
+    }
+
+    /// [`Store::kv_update`] that keeps an existing row's `fetched_at`, for a
+    /// write that refreshes only part of the payload: the rest must not pass
+    /// for fresh. A row it creates is stamped now.
+    pub async fn kv_update_keeping_age<T, F>(&self, key: &str, f: F) -> Option<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(Option<String>) -> (Option<String>, T) + Send + 'static,
+    {
+        self.kv_update_stamped(key, false, f).await
+    }
+
+    async fn kv_update_stamped<T, F>(&self, key: &str, restamp: bool, f: F) -> Option<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(Option<String>) -> (Option<String>, T) + Send + 'static,
+    {
         let key = key.to_string();
+        let upsert = if restamp {
+            "INSERT INTO cache (key, payload, fetched_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET payload = ?2, fetched_at = ?3"
+        } else {
+            "INSERT INTO cache (key, payload, fetched_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET payload = ?2"
+        };
         self.run(move |conn| {
             let payload = conn
                 .query_row(
@@ -263,11 +289,7 @@ impl Store {
                 .ok();
             let (next, out) = f(payload);
             if let Some(next) = next {
-                log_err(conn.execute(
-                    "INSERT INTO cache (key, payload, fetched_at) VALUES (?1, ?2, ?3)
-                     ON CONFLICT(key) DO UPDATE SET payload = ?2, fetched_at = ?3",
-                    params![key, next, now_secs()],
-                ));
+                log_err(conn.execute(upsert, params![key, next, now_secs()]));
             }
             out
         })

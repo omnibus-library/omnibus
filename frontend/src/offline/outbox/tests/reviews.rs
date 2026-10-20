@@ -332,3 +332,60 @@ async fn overlapping_offline_text_and_stars_edits_both_reach_the_cached_review()
     assert_eq!(mine.body_md.as_deref(), Some("Both survive"));
     clear_ops().await;
 }
+
+#[tokio::test]
+async fn household_refreshed_stores_the_whole_answer_when_nothing_is_cached() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    let uuid = "review-household-new";
+    let key = cache::keys::reviews(uuid);
+    let st = store::store().expect("store");
+    st.kv_delete(&key);
+    let fresh = BookReviews {
+        mine: Some(review(uuid)),
+        others: Vec::new(),
+        summary: Some(summary()),
+    };
+
+    apply::household_refreshed(uuid, &fresh).await;
+
+    let row = st.kv_get(&key).await.expect("stored");
+    assert_eq!(
+        serde_json::from_str::<BookReviews>(&row.payload).ok(),
+        Some(fresh)
+    );
+    assert!(row.fetched_at > 0, "a read of the whole book is fresh");
+}
+
+#[tokio::test]
+async fn household_refreshed_keeps_your_review_and_the_rows_age() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    let uuid = "review-household-kept";
+    let key = cache::keys::reviews(uuid);
+    let kept = review(uuid);
+    let cached = BookReviews {
+        mine: Some(kept.clone()),
+        others: Vec::new(),
+        summary: None,
+    };
+    cache::put_json(&key, &cached);
+    let st = store::store().expect("store");
+    st.kv_expire(&key);
+    let fresh = BookReviews {
+        mine: None,
+        others: Vec::new(),
+        summary: Some(summary()),
+    };
+
+    apply::household_refreshed(uuid, &fresh).await;
+
+    let row = st.kv_get(&key).await.expect("kept");
+    let stored: BookReviews = serde_json::from_str(&row.payload).expect("decodes");
+    assert_eq!(stored.summary, Some(summary()), "the household is taken");
+    assert_eq!(stored.mine, Some(kept), "your review isn't");
+    assert_eq!(
+        row.fetched_at, 0,
+        "your review wasn't re-read, so the row mustn't pass for fresh"
+    );
+}
