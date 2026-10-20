@@ -55,7 +55,10 @@ export const NoSessions: Story = {
       canvas.getByText(/Open the book and the record starts itself/),
     ).toBeInTheDocument();
     // The rating moved to the Reviews stop.
-    await expect(canvas.queryByTestId("rating-stars")).not.toBeInTheDocument();
+    await expect(canvas.queryByTestId("review-stars")).not.toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("group", { name: "Your rating" }),
+    ).not.toBeInTheDocument();
   },
 };
 

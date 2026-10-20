@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   type BookReviews,
   type BookUuid,
@@ -30,7 +30,10 @@ const STATS_KEYS = [["stats"], ["stats-chart"]] as const;
  * spoiler flag) and a delete wait for the server. Once the last write settles the reviews are
  * read again, which refreshes the summary and the other readers.
  */
-function useReviewWrites(uuid: BookUuid) {
+function useReviewWrites(
+  uuid: BookUuid,
+  onFailure: (write: ReviewWrite) => void,
+) {
   const client = useQueryClient();
   const { queryKey } = reviewsQuery(uuid);
   const cached = (): BookReviews =>
@@ -49,6 +52,7 @@ function useReviewWrites(uuid: BookUuid) {
       // A smart shelf may match on rating, and the stats pages sum the stars.
       alsoInvalidate: (write) =>
         movesStars(write) ? [...STATS_KEYS, shelvesQuery(uuid).queryKey] : [],
+      onFailure,
     },
   );
 }
@@ -158,14 +162,20 @@ export function ReviewCard({
   uuid: BookUuid;
   mine: MyReview | null;
 }) {
-  const save = useReviewWrites(uuid);
-  // Only the newest tap's outcome is told, which is the one the stars now show.
+  // The last tap made: a refusal of it is told even when a later Save or delete
+  // has taken the queue, whose own answer then puts the old stars back.
+  const lastTap = useRef<ReviewWrite | null>(null);
   const [starsFailed, setStarsFailed] = useState(false);
+  const save = useReviewWrites(uuid, (write) => {
+    if (write === lastTap.current) setStarsFailed(true);
+  });
   const [composing, setComposing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const pick = (stars: number | null) => {
+    const write = { stars };
+    lastTap.current = write;
     setStarsFailed(false);
-    save.mutate({ stars }, { onError: () => setStarsFailed(true) });
+    save.mutate(write);
   };
   const hasWriting = mine?.bodyMd != null || mine?.notesMd != null;
   const writeLabel = hasWriting ? "Edit review" : "Write review";

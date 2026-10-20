@@ -41,7 +41,7 @@ const buckets = (readers: number[]) =>
 
 describe("applyLocally", () => {
   it("starts a review from nothing on the first tap", () => {
-    expect(applyLocally(null, { stars: 4 }, NOW)).toMatchObject({
+    expect(applyLocally(null, 4, NOW)).toMatchObject({
       stars: 4,
       ratedAt: NOW,
       bodyMd: null,
@@ -51,7 +51,7 @@ describe("applyLocally", () => {
 
   it("clears only the stars, keeping the text", () => {
     const written = mine({ body_md: "Good.", body_html: "<p>Good.</p>" });
-    expect(applyLocally(written, { stars: null }, NOW)).toMatchObject({
+    expect(applyLocally(written, null, NOW)).toMatchObject({
       stars: null,
       ratedAt: null,
       bodyMd: "Good.",
@@ -59,21 +59,8 @@ describe("applyLocally", () => {
     });
   });
 
-  it("flags the spoiler", () => {
-    const written = mine({ body_md: "Rosebud.", body_html: "<p>x</p>" });
-    expect(applyLocally(written, { spoiler: true }, NOW)?.spoiler).toBe(true);
-  });
-
-  it("leaves text to the server, which renders it", () => {
-    const written = mine({ body_md: "Good.", body_html: "<p>Good.</p>" });
-    expect(applyLocally(written, { bodyMd: "Great." }, NOW)).toMatchObject({
-      bodyMd: "Good.",
-      bodyHtml: "<p>Good.</p>",
-    });
-  });
-
   it("empties a review left with nothing", () => {
-    expect(applyLocally(mine({ stars: 2 }), { stars: null }, NOW)).toBeNull();
+    expect(applyLocally(mine({ stars: 2 }), null, NOW)).toBeNull();
   });
 });
 

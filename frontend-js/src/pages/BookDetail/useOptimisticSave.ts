@@ -15,10 +15,13 @@ export function useOptimisticSave<TData, TVars>(
   {
     optimistic,
     alsoInvalidate = [],
+    onFailure,
   }: {
     optimistic: (vars: TVars) => TData;
     /** The other answers a save makes stale, or a function picking them for a save. */
     alsoInvalidate?: QueryKey[] | ((vars: TVars) => QueryKey[]);
+    /** Told of every write the server refused, newest or not; `mutate`'s own callbacks hear only the last call. */
+    onFailure?: (vars: TVars) => void;
   },
 ) {
   const client = useQueryClient();
@@ -42,7 +45,8 @@ export function useOptimisticSave<TData, TVars>(
       client.setQueryData(queryKey, optimistic(vars));
       return { previous, id };
     },
-    onError: (_error, _vars, context) => {
+    onError: (_error, vars, context) => {
+      onFailure?.(vars);
       if (context?.id !== newest.current) return;
       client.setQueryData(queryKey, context.previous);
       // `previous` may itself have been an older write's guess.

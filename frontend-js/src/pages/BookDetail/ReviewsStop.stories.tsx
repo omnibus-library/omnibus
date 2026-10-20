@@ -11,6 +11,7 @@ import {
 import { nowSecs } from "../../format";
 import {
   bookDetailHandlers,
+  deferred,
   failing,
   hanging,
   readStatusHandlers,
@@ -75,6 +76,7 @@ const MARGARET = aWireOtherReview({
   stars: 5,
 });
 const ALAN = aWireOtherReview({ user_id: 11, username: "alan", stars: 2.5 });
+const MARGARET_AT_4 = { ...MARGARET, stars: 4 };
 
 const MINE: Review = aWireReview({
   stars: 4,
@@ -108,6 +110,14 @@ const withReviews = (
   function use({ msw }) {
     msw.use(...reviewHandlers({ mine, others }, writes));
   };
+
+/** The width each of your five stars is filled to, as drawn. */
+const fills = (canvasElement: HTMLElement) =>
+  [
+    ...canvasElement.querySelectorAll<HTMLElement>(
+      '[data-testid="review-stars"] .bd-star-fg',
+    ),
+  ].map((fg) => fg.style.width);
 
 export const Loading: Story = {
   beforeEach({ msw }) {
@@ -196,6 +206,14 @@ export const EveryoneHasHadTheirSay: Story = {
       "review-card",
     );
     await expect(cards).toHaveLength(3);
+    // Only your own card carries edit controls.
+    for (const card of cards) {
+      await expect(
+        within(card).queryByRole("button", {
+          name: /^(Edit review|Write review|Delete review)$/,
+        }),
+      ).not.toBeInTheDocument();
+    }
     await expect(cards[0]).toHaveTextContent("grace");
     await expect(
       within(cards[0] as HTMLElement).getByRole("img", {
@@ -218,6 +236,32 @@ export const EveryoneHasHadTheirSay: Story = {
 export const EveryoneHasHadTheirSayInLight: Story = {
   ...EveryoneHasHadTheirSay,
   globals: { theme: "light" },
+};
+
+export const NoSummaryUntilTheServerSendsOne: Story = {
+  beforeEach({ msw }) {
+    // Two raters, but the threshold is the server's: no summary sent, none drawn.
+    msw.use(
+      http.get("/api/reviews/:uuid", () =>
+        HttpResponse.json(
+          aWireBookReviews({
+            mine: aWireReview({ stars: 5 }),
+            others: [MARGARET_AT_4],
+            summary: null,
+          }),
+        ),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("review-stars-only");
+    await expect(canvas.getByTestId("reviews-kicker")).toHaveTextContent(
+      "0 reviews · 2 ratings",
+    );
+    await expect(
+      canvas.queryByTestId("review-summary"),
+    ).not.toBeInTheDocument();
+  },
 };
 
 export const ASpoilerStaysVeiledUntilShown: Story = {
@@ -375,8 +419,11 @@ export const TappingTheCurrentValueClearsOnlyTheStars: Story = {
 export const ARefusedTapPutsTheStarsBack: Story = {
   beforeEach({ msw }) {
     msw.use(
-      // Ahead of the kept reviews' own PATCH, so it answers first.
-      failing("patch", "/api/reviews/:uuid", 500),
+      // Ahead of the kept reviews' own PATCH, so it answers first, and late enough to see the guess.
+      http.patch("/api/reviews/:uuid", async () => {
+        await delay(400);
+        return new HttpResponse("failed with 500", { status: 500 });
+      }),
       ...reviewHandlers({ mine: aWireReview({ stars: 2 }) }, writes),
     );
   },
@@ -385,6 +432,10 @@ export const ARefusedTapPutsTheStarsBack: Story = {
       await canvas.findByRole("button", { name: "Rate 5 stars" }),
     );
 
+    // Drawn at once, before the server has answered.
+    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
+      "rated just now · 5 of 5",
+    );
     await waitFor(() =>
       expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
         "Couldn’t save your rating — try again",
@@ -424,6 +475,184 @@ export const TheNewestTapWinsWhenAnOlderOneLandsLate: Story = {
     await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
       "5 of 5",
     );
+  },
+};
+
+export const ATapIsDrawnBeforeTheServerAnswers: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      hanging("/api/reviews/:uuid", "patch"),
+      ...reviewHandlers({ mine: aWireReview({ stars: 2 }) }, writes),
+    );
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Rate 5 stars" }),
+    );
+
+    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
+      "rated just now · 5 of 5",
+    );
+    await expect(
+      canvas.getByRole("button", { name: "Clear your 5-star rating" }),
+    ).toBeInTheDocument();
+    await expect(fills(canvasElement)).toEqual([
+      "100%",
+      "100%",
+      "100%",
+      "100%",
+      "100%",
+    ]);
+  },
+};
+
+export const StarsFillToTheRatingAndPreviewTheHover: Story = {
+  beforeEach: withReviews(aWireReview({ stars: 4.5 })),
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const group = await canvas.findByRole("group", { name: "Your rating" });
+    await expect(fills(canvasElement)).toEqual([
+      "100%",
+      "100%",
+      "100%",
+      "100%",
+      "50%",
+    ]);
+
+    await userEvent.hover(
+      canvas.getByRole("button", { name: "Rate 3.5 stars" }),
+    );
+    await expect(fills(canvasElement)).toEqual([
+      "100%",
+      "100%",
+      "100%",
+      "50%",
+      "0%",
+    ]);
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Rate 3.5 stars" }),
+    );
+    await userEvent.unhover(group);
+
+    // The fill shows the answer, not the pointer.
+    await waitFor(() => expect(writes).toEqual([{ stars: 3.5 }]));
+    await expect(fills(canvasElement)).toEqual([
+      "100%",
+      "100%",
+      "100%",
+      "50%",
+      "0%",
+    ]);
+  },
+};
+
+export const TheLastWriteToSettleRefetchesWhenTheNewestFailed: Story = {
+  render: (args) => (
+    <>
+      <Observers uuid={args.book.uuid} />
+      <ReviewsStop {...args} />
+    </>
+  ),
+  beforeEach({ msw }) {
+    let stored: Review | null = null;
+    let calls = 0;
+    shelfReads = 0;
+    statsReads = 0;
+    msw.use(
+      http.get("/api/reviews/:uuid", () =>
+        HttpResponse.json(aWireBookReviews({ mine: stored })),
+      ),
+      http.patch("/api/reviews/:uuid", async ({ request }) => {
+        const patch = ReviewPatch.parse(await request.json());
+        // The slow first write is stored when it lands; the second is refused.
+        if (calls++ > 0)
+          return new HttpResponse("failed with 500", { status: 500 });
+        await delay(400);
+        stored = aWireReview({ stars: patch.stars, rated_at: nowSecs() });
+        return HttpResponse.json(stored);
+      }),
+      http.get("/api/shelves", () => {
+        shelfReads++;
+      }),
+      http.get("/api/stats", () => {
+        statsReads++;
+        return HttpResponse.json(aWireStatsSummary());
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Rate 3 stars" }),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Rate 5 stars" }));
+
+    await new Promise((resolve) => setTimeout(resolve, 800));
+
+    await expect(
+      canvas.getByRole("button", { name: "Clear your 3-star rating" }),
+    ).toBeInTheDocument();
+    // The stars the server took still moved what sums them.
+    await waitFor(() => expect(shelfReads).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(statsReads).toBeGreaterThanOrEqual(2));
+  },
+};
+
+// Released by the story once its Save has been clicked.
+const heldTap = { release: () => {} };
+
+export const ARefusedTapIsToldEvenWhenASaveFollowsIt: Story = {
+  beforeEach({ msw }) {
+    const held = deferred();
+    heldTap.release = held.release;
+    let stored: Review = aWireReview({ stars: 2 });
+    msw.use(
+      http.get("/api/reviews/:uuid", () =>
+        HttpResponse.json(aWireBookReviews({ mine: stored })),
+      ),
+      http.patch("/api/reviews/:uuid", async ({ request }) => {
+        const patch = ReviewPatch.parse(await request.json());
+        if (patch.stars !== undefined) {
+          await held.promise;
+          return new HttpResponse("failed with 500", { status: 500 });
+        }
+        const body = patch.body_md ?? null;
+        stored = {
+          ...stored,
+          body_md: body,
+          body_html: body && `<p>${body}</p>`,
+        };
+        return HttpResponse.json(stored);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Rate 5 stars" }),
+    );
+    await userEvent.click(canvas.getByTestId("review-write"));
+    const composer = await canvas.findByTestId("review-composer");
+    await userEvent.type(
+      within(composer).getByRole("textbox", { name: "Review text" }),
+      "Worth it.",
+    );
+    await userEvent.click(within(composer).getByTestId("review-save"));
+    // The tap is refused only now, behind the Save in the queue.
+    heldTap.release();
+
+    await waitFor(() =>
+      expect(canvas.queryByTestId("review-composer")).not.toBeInTheDocument(),
+    );
+    await expect(canvas.getByTestId("my-review-text")).toHaveTextContent(
+      "Worth it.",
+    );
+    await waitFor(() =>
+      expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
+        "Couldn’t save your rating — try again",
+      ),
+    );
+    await expect(
+      canvas.getByRole("button", { name: "Clear your 2-star rating" }),
+    ).toBeInTheDocument();
   },
 };
 
@@ -558,6 +787,29 @@ export const TheCardsToolsAreAPencilAndATrashCan: Story = {
     await canvas.findByTestId("review-composer");
     // An open editor already is what the pencil would open.
     await expect(canvas.queryByTestId("review-write")).not.toBeInTheDocument();
+  },
+};
+
+export const NotesAloneMakeThePencilEdit: Story = {
+  beforeEach: withReviews(
+    aWireReview({
+      stars: null,
+      rated_at: null,
+      notes_md: "For me only.",
+      notes_html: "<p>For me only.</p>",
+    }),
+  ),
+  play: async ({ canvas }) => {
+    const mine = await canvas.findByRole("region", { name: "Your review" });
+    await expect(within(mine).getByTestId("review-write")).toHaveAccessibleName(
+      "Edit review",
+    );
+    await expect(
+      within(mine).getByTestId("review-stars-meta"),
+    ).toHaveTextContent("Not rated yet");
+    await expect(within(mine).getByTestId("my-review-notes")).toHaveTextContent(
+      "For me only.",
+    );
   },
 };
 
