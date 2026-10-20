@@ -1,12 +1,21 @@
 import { HttpResponse, http } from "msw";
 import type { MetadataLibrary } from "../api";
 import {
+  getGetAdminHealthMockHandler200,
+  getGetBackgroundTasksMockHandler200,
+  getGetCleanupCountsMockHandler200,
+  getGetCleanupQueueMockHandler200,
+  getGetLibraryMockHandler200,
+  getGetWorkerStatusMockHandler200,
+  getPostCleanupDetectMockHandler202,
+  getPostCleanupUndoMockHandler204,
+} from "../api/generated/omnibus.msw";
+import {
   type AdminHealthReport,
   AdminSetUserPasswordBody,
   type AdminUserRow,
   type BackgroundTaskRecord,
   CleanupDecisionRequest,
-  type CleanupKind,
   type CleanupKindCounts,
   CreateUserRequest,
   type DeviceView,
@@ -96,7 +105,7 @@ export function settingsHandlers(
 
 /** `GET /api/library`; `contents` is read on every request, so a story can change it between reads. */
 export function libraryContentsHandler(contents: () => LibraryContents) {
-  return http.get("/api/library", () => HttpResponse.json(contents()));
+  return getGetLibraryMockHandler200(contents);
 }
 
 /** A task in the worker feed: a scan that has not counted its files yet. */
@@ -122,7 +131,7 @@ export function aWireWorkerStatus(
 
 /** `GET /api/worker/status`; `status` is read on every poll, so a story can change the feed between polls. */
 export function workerStatusHandler(status: () => WorkerStatus) {
-  return http.get("/api/worker/status", () => HttpResponse.json(status()));
+  return getGetWorkerStatusMockHandler200(status);
 }
 
 /** One recorded run of a background task, finished 45 s after it started. */
@@ -142,9 +151,7 @@ export function aWireBackgroundTask(
 
 /** `GET /api/admin/background-tasks`; `tasks` is read on every request. */
 export function backgroundTasksHandler(tasks: () => BackgroundTaskRecord[]) {
-  return http.get("/api/admin/background-tasks", () =>
-    HttpResponse.json(tasks()),
-  );
+  return getGetBackgroundTasksMockHandler200(tasks);
 }
 
 export const JOB_ROUTES = {
@@ -214,17 +221,12 @@ export function aWireCleanupCounts(): CleanupKindCounts[] {
 
 /** `GET /api/admin/cleanup/counts`; `counts` is read on every request, so a story can change it between reads. */
 export function cleanupCountsHandler(counts: () => CleanupKindCounts[]) {
-  return http.get("/api/admin/cleanup/counts", () =>
-    HttpResponse.json(counts()),
-  );
+  return getGetCleanupCountsMockHandler200(counts);
 }
 
 /** `POST /api/admin/cleanup/detect`, answering as queued; `onDetect` runs on every POST. */
-export function cleanupDetectHandler(onDetect: () => void = () => {}) {
-  return http.post("/api/admin/cleanup/detect", () => {
-    onDetect();
-    return new HttpResponse(null, { status: 202 });
-  });
+export function cleanupDetectHandler(onDetect?: () => void) {
+  return getPostCleanupDetectMockHandler202(onDetect);
 }
 
 /** A pending cleanup suggestion as `GET /api/admin/cleanup/{kind}/queue` lists it: two tags merging. */
@@ -247,14 +249,9 @@ export function aWireSuggestion(
   };
 }
 
-/** `GET /api/admin/cleanup/{kind}/queue`; `queue` is read on every request. */
-export function cleanupQueueHandler(
-  kind: CleanupKind,
-  queue: () => SuggestionCard[],
-) {
-  return http.get(`/api/admin/cleanup/${kind}/queue`, () =>
-    HttpResponse.json(queue()),
-  );
+/** `GET /api/admin/cleanup/{kind}/queue` for any kind; `queue` is read on every request. */
+export function cleanupQueueHandler(queue: () => SuggestionCard[]) {
+  return getGetCleanupQueueMockHandler200(queue);
 }
 
 /** A decision as `cleanupDecisionHandler` received it. */
@@ -292,9 +289,8 @@ export function cleanupUndoHandler({
 }: {
   undone?: number[];
 } = {}) {
-  return http.post("/api/admin/cleanup/undo/:logId", ({ params }) => {
+  return getPostCleanupUndoMockHandler204(({ params }) => {
     undone.push(Number(params.logId));
-    return new HttpResponse(null, { status: 204 });
   });
 }
 
@@ -694,7 +690,7 @@ export function aWireAdminHealth(
 
 /** `GET /api/admin/health`; `report` is read on every poll, so a story can change it between polls. */
 export function adminHealthHandler(report: () => AdminHealthReport) {
-  return http.get("/api/admin/health", () => HttpResponse.json(report()));
+  return getGetAdminHealthMockHandler200(report);
 }
 
 /** One log record as `GET /api/admin/logs` lists it. */

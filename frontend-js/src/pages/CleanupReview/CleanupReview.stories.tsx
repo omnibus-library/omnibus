@@ -66,7 +66,7 @@ const meta = {
     queueReads = 0;
     countsReads = 0;
     msw.use(
-      cleanupQueueHandler("tag", () => {
+      cleanupQueueHandler(() => {
         queueReads += 1;
         return QUEUE;
       }),
@@ -283,9 +283,7 @@ export const ShowsAMergeWithEverySourceStruckThrough: Story = {
 
 export const CountsOneBookInTheSingular: Story = {
   beforeEach({ msw }) {
-    msw.use(
-      cleanupQueueHandler("tag", () => [aWireSuggestion({ book_count: 1 })]),
-    );
+    msw.use(cleanupQueueHandler(() => [aWireSuggestion({ book_count: 1 })]));
   },
   play: async ({ canvas }) => {
     await expect(
@@ -298,7 +296,7 @@ export const ShowsABookTitleRenameAsAnInput: Story = {
   parameters: { path: "/admin/cleanup/book_title" },
   beforeEach({ msw }) {
     msw.use(
-      cleanupQueueHandler("book_title", () => [
+      cleanupQueueHandler(() => [
         aWireSuggestion({
           kind: "book_title",
           action: "rename",
@@ -330,7 +328,7 @@ export const ShowsABookTitleRenameAsAnInput: Story = {
 
 export const ShowsASplitAsItsParts: Story = {
   beforeEach({ msw }) {
-    msw.use(cleanupQueueHandler("tag", () => [SPLIT]));
+    msw.use(cleanupQueueHandler(() => [SPLIT]));
   },
   play: async ({ canvas }) => {
     await expect(
@@ -355,7 +353,7 @@ export const ShowsADeleteAsTheRecordAlone: Story = {
   parameters: { path: "/admin/cleanup/author" },
   beforeEach({ msw }) {
     msw.use(
-      cleanupQueueHandler("author", () => [
+      cleanupQueueHandler(() => [
         aWireSuggestion({
           kind: "author",
           action: "delete",
@@ -394,7 +392,7 @@ export const ShowsADeleteAsTheRecordAlone: Story = {
 export const ShowsThePhotoAndTheHotkeyHint: Story = {
   beforeEach({ msw }) {
     msw.use(
-      cleanupQueueHandler("tag", () => [
+      cleanupQueueHandler(() => [
         aWireSuggestion({ photo_url: "/api/covers/author-1" }),
       ]),
     );
@@ -534,7 +532,7 @@ export const ShowsTheEndOfThePassPastTheLastCard: Story = {
 
 export const ShowsTheEndOfThePassForAnEmptyQueue: Story = {
   beforeEach({ msw }) {
-    msw.use(cleanupQueueHandler("tag", () => []));
+    msw.use(cleanupQueueHandler(() => []));
   },
   play: async ({ canvas }) => {
     await expect(
@@ -572,7 +570,7 @@ const RENAMES = [
 const renaming = (play: Story["play"]): Story => ({
   parameters: { path: "/admin/cleanup/book_title" },
   beforeEach({ msw }) {
-    msw.use(cleanupQueueHandler("book_title", () => RENAMES));
+    msw.use(cleanupQueueHandler(() => RENAMES));
   },
   play,
 });

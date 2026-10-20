@@ -165,13 +165,16 @@ shell provides it.
   status (`src/api/generated/omnibus.msw.ts`), and `src/testing/handlers.ts`
   adds the ones that need behaviour: paging headers, a password check, a journal
   that keeps what is posted, a Kindle send that answers `pending` and then
-  `sent`. `src/testing/adminHandlers.ts` does the same for the admin screens:
-  each write handler records what it received (the cleanup detect handler calls
-  back instead), and those over a setting or a list (the settings, accounts,
-  sessions, the relay, the keys) serve the new state on the next read; a
-  cleanup decision, an undo and a job are only recorded. `adminHandlers()` is the default set for the sections. Stories for
-  the ported screens run against them, so their `play` tests cover loading,
-  empty, failing and success states, and the fixtures are typed by the spec.
+  `sent`. `src/testing/adminHandlers.ts` does the same for the admin screens.
+  Its one-route handlers (the library folders, the worker feed, the task list,
+  the cleanup counts, queue, detect and undo, the health report) call the
+  generated ones. Each write handler records what it received (the cleanup
+  detect handler calls back instead), and those over a setting or a list (the
+  settings, accounts, sessions, the relay, the keys) serve the new state on the
+  next read; a cleanup decision, an undo and a job are only recorded.
+  `adminHandlers()` is the default set for the sections. Stories for the ported
+  screens run against them, so their `play` tests cover loading, empty, failing
+  and success states, and the fixtures are typed by the spec.
 - **Docs:** every component gets a Docs page in Storybook, built from its
   stories, its TypeScript props and its doc comment.
 - **Forms** use react-hook-form with a zod resolver (`CredentialsSchema` on the
