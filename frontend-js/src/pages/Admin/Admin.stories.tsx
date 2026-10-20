@@ -147,6 +147,9 @@ export const ShowsTheCleanupCard: Story = {
     await expect(
       await canvas.findByTestId("cleanup-kinds"),
     ).toBeInTheDocument();
+    await expect(
+      canvas.queryByTestId("cleanup-detect-status"),
+    ).not.toBeInTheDocument();
   },
 };
 

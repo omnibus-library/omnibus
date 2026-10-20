@@ -109,6 +109,15 @@ export const ListsEachKindWithItsPendingCount: Story = {
   },
 };
 
+export const ShowsNoDetectStatusBeforeDetectionRuns: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("cleanup-kinds");
+    await expect(
+      canvas.queryByTestId("cleanup-detect-status"),
+    ).not.toBeInTheDocument();
+  },
+};
+
 export const RunsDetectionAndReadsTheCountsAgain: Story = {
   beforeEach({ msw }) {
     msw.use(
@@ -135,6 +144,7 @@ export const RunsDetectionAndReadsTheCountsAgain: Story = {
       "Detection started. Counts update as it finishes.",
     );
     await expect(status).toHaveClass("settings-status");
+    await expect(status).not.toHaveClass("success");
     await expect(detections).toBe(1);
     await waitFor(() =>
       expect(canvas.getByTestId("cleanup-count-author")).toHaveTextContent(

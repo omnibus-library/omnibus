@@ -8,7 +8,7 @@ import {
 } from "../../api";
 import { Button, ButtonLink } from "../../components/Button/Button";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
-import { LiveStatus, type Status } from "./StatusLine";
+import type { Status } from "./StatusLine";
 
 function KindRow({ kind, counts }: CleanupKindCounts) {
   const label = cleanupKindLabel(kind);
@@ -110,11 +110,17 @@ export function CleanupCard() {
           />
         </Button>
       </div>
-      <LiveStatus
-        testId="cleanup-detect-status"
-        message={status?.text ?? null}
-        isError={status?.isError ?? false}
-      />
+      {status !== null && (
+        <p
+          className={
+            status.isError ? "settings-status error" : "settings-status"
+          }
+          role="status"
+          data-testid="cleanup-detect-status"
+        >
+          {status.text}
+        </p>
+      )}
     </section>
   );
 }
