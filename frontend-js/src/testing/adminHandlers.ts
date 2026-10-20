@@ -1,6 +1,7 @@
 import { HttpResponse, http } from "msw";
 import type { MetadataLibrary } from "../api";
 import {
+  type AdminHealthReport,
   AdminSetUserPasswordBody,
   type AdminUserRow,
   type BackgroundTaskRecord,
@@ -584,6 +585,41 @@ export function mcpHandlers(
   ];
 }
 
+/** A healthy server: both folders set, the search index in step, an idle worker and a quiet error ring. */
+export function aWireAdminHealth(
+  overrides: Partial<AdminHealthReport> = {},
+): AdminHealthReport {
+  return {
+    index: {
+      ebook_library_path: "/library/ebooks",
+      audiobook_library_path: "/library/audiobooks",
+      book_count: 42,
+      author_count: 7,
+      series_count: 3,
+      ghosted_book_count: 0,
+    },
+    worker_queue: [],
+    fts: { books_rows: 42, fts_rows: 42, in_sync: true },
+    storage: {
+      library_bytes: 3_100_000,
+      covers_bytes: 512,
+      thumbs_bytes: 1_000,
+      thumbs_cap_bytes: 5_000_000_000,
+      hls_bytes: 0,
+      hls_cap_bytes: 5_000_000_000,
+      export_epub_bytes: 2_000,
+      export_epub_cap_bytes: 5_000_000_000,
+    },
+    last_errors: [],
+    ...overrides,
+  };
+}
+
+/** `GET /api/admin/health`; `report` is read on every poll, so a story can change it between polls. */
+export function adminHealthHandler(report: () => AdminHealthReport) {
+  return http.get("/api/admin/health", () => HttpResponse.json(report()));
+}
+
 /** The happy-path fakes for every admin section ported so far; a story's own handlers replace them. */
 export function adminHandlers() {
   return [
@@ -606,5 +642,6 @@ export function adminHandlers() {
     ...secretKeyHandlers("/api/google-books-key", NO_KEY),
     ...ebookConvertHandlers(aWireEbookConvert()),
     ...mcpHandlers(false),
+    adminHealthHandler(aWireAdminHealth),
   ];
 }

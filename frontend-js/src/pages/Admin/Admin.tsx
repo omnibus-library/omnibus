@@ -10,6 +10,7 @@ import {
 import { useCurrentUser } from "../../session";
 import { CleanupCard } from "./CleanupCard";
 import { EbookConvertCard } from "./EbookConvertCard";
+import { HealthSection } from "./HealthSection";
 import { MaintenanceCard } from "./MaintenanceCard";
 import { McpCard } from "./McpCard";
 import { MetadataOrderCard } from "./MetadataOrderCard";
@@ -64,6 +65,7 @@ function sectionContent(slug: AdminSection["slug"]): ReactNode {
         </>
       );
     case "health":
+      return <HealthSection />;
     case "logs":
       return null;
     default: {

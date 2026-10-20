@@ -141,7 +141,8 @@
   --lh: 1.1;
   font-size: 32px;
 }
-.settings-content > .card {
+.settings-content > .card,
+.settings-content .ah-card {
   background: none;
   border: 0;
   border-top: 1px solid var(--line-2);

@@ -181,6 +181,18 @@ export const ShowsTheIntegrationCardsInOrder: Story = {
   },
 };
 
+export const ShowsTheHealthReport: Story = {
+  args: { path: "/admin?section=health" },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("heading", { level: 3, name: "Index status" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("heading", { level: 3, name: "Last errors" }),
+    ).toBeInTheDocument();
+  },
+};
+
 export const AsksBeforeLeavingEditedSources: Story = {
   args: { path: "/admin?section=sources" },
   play: async ({ canvas, userEvent }) => {
