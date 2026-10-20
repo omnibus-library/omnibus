@@ -39,17 +39,16 @@ add books (`/add-books`), check-in (`/check-in`), search results
 (`/search/:query`), the authors, series and shelves indexes with their detail
 pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), the three readers
 (`/read`, `/comic`, `/pdf`), the audiobook player (`/listen/:uuid`, `?file_id`
-picks one of a book's files), personal settings (`/settings`) and Not Found are
-ported, and the top bar carries
-the user menu and the ⌘K search palette. The phone layouts (the bottom tab bar
-and the native shell's shelves screens) are left out. As on Dioxus web, a bare
-`/search` and the native shell's `/connect`
-redirect to the library. `/settings` has its five sections (Profile,
-Preferences, Goals, Devices, Sign-in & security) picked by `?section=`; an old
-slug redirects to its new home and `/account` redirects to it. Its frame,
-`SettingsShell`, takes its navigation as data so `/admin` can reuse it. Every
-other route renders `Unported`, which shows its
-parsed parameters and names its Dioxus source.
+picks one of a book's files), personal settings (`/settings`), stats
+(`/stats`), the chart builder (`/stats/chart`) and Not Found are ported, and
+the top bar carries the user menu and the ⌘K search palette. The phone layouts
+(the bottom tab bar and the native shell's shelves screens) are left out. As on
+Dioxus web, a bare `/search` and the native shell's `/connect` redirect to the
+library. `/settings` has its five sections (Profile, Preferences, Goals,
+Devices, Sign-in & security) picked by `?section=`; an old slug redirects to
+its new home and `/account` redirects to it. Its frame, `SettingsShell`, takes
+its navigation as data so `/admin` can reuse it. Every other route renders
+`Unported`, which shows its parsed parameters and names its Dioxus source.
 Book detail carries all six stops (home, stats, highlights, journals, files,
 more) with the rating, quote cards, journal editor, copies and wishlist, shelf
 picker, Send to Kindle, merge and delete. It leaves the alignment modal, the
@@ -73,6 +72,17 @@ React effect; each saves its position as pages turn and records reading
 sessions and read status. The EPUB and PDF readers carry highlights, notes,
 quotes and bookmarks, and the EPUB reader adds contents, search, the Aa panel and
 cross-format follow. The audiobook mini dock on `/read` waits for the player.
+Stats has the streak hero with its goals, the period pills over the window band
+(tiles and their drill-in, reading clock, genre donut, standouts), the standing
+band (heatmap, books open and finished, monthly chart), the User / Library
+scope, the household reader picker (`?user=`) and the sharing switch. Its
+figures format as Rust does (`fixed`, ties to even), so a half rounds as it does
+on Dioxus. Its charts are CSS and SVG with no chart library, and goal editing
+stays in Settings. The chart builder composes a spec from the closed measure
+list and draws it in SVG, with a hover card, a drag-to-zoom brush and a value
+tween. Nothing links to it, as on Dioxus. Dioxus reads the chart through a
+server function with no REST route, so the React chart builder calls
+`POST /api/stats/chart`, which was added for it.
 A page that throws renders `RouteError` inside the top bar; anything else that
 throws (the session gate, the shell, a reader) renders it full-screen.
 
@@ -175,24 +185,28 @@ shell provides it.
 - **Forms** use react-hook-form with a zod resolver (`CredentialsSchema` on the
   sign-in page), so a form's rules live in the same schema style as the API's.
 - **Unit tests** (`pnpm run test:unit`, jsdom) cover the API parsers,
-  formatting, `safeNext`, the theme root, the session, and the pure helpers
-  behind the screens (`resume`, `password`, `settingsIndex`, `hiddenFormats`, `goals`,
-  `apiTokens`, `viewPrefs`,
-  `focusTrap`, book detail's `readout`, `identifiers`, `shelves`,
-  `journalEditor` and delete copy, the palette's `selection`, the results
-  page's `results`, Register's `refusal`, the library's `filters`,
-  `libraryView`, `seriesStacks`, `shelfGallery`, `sorting` and `bulkEdit`, the
-  editor's `metadata` (form schema and override diff), `dirty` and
-  `editionFields`, `uploads`, check-in's `checkIn` and `scan`, the scanner's
-  `scanStatus` and `loadScanner`, the discovery pages' `authorsOrder`,
-  `authorPane`, `seriesIndex`, `shelvesIndex`, the shelf rules' `rules`, the
-  picker's `picker`, the shelf page's `shelfAccess` and `narrow`, and the
-  readers' `pager`, `pdfAnchors`, `start`, `relocate`, `typography`,
-  `epubGlue`, `pdfGlue`, `readingSession` and `autoReadStatus`, the player's
-  `PlaybackProvider`, `engine`, `boot`, `sleep`, `loadHls` and
-  `listen`, plus the vendored files' parity test), plus the
-  real route table in `src/router.test.tsx`: every unported page, the settings redirects, the layout
-  split, the guest redirect and the redirects.
+  formatting (`fixed` included), `safeNext`, the theme root, the session, and
+  the pure helpers behind the screens (`resume`, `password`, `settingsIndex`,
+  `hiddenFormats`, `goals`, `apiTokens`, `viewPrefs`, `focusTrap`, book
+  detail's `readout`, `identifiers`, `shelves`, `journalEditor` and delete
+  copy, the palette's `selection`, the results page's `results`, Register's
+  `refusal`, the library's `filters`, `libraryView`, `seriesStacks`,
+  `shelfGallery`, `sorting` and `bulkEdit`, the editor's `metadata` (form
+  schema and override diff), `dirty` and `editionFields`, `uploads`,
+  check-in's `checkIn` and `scan`, the scanner's `scanStatus` and
+  `loadScanner`, the discovery pages' `authorsOrder`, `authorPane`,
+  `seriesIndex`, `shelvesIndex`, the shelf rules' `rules`, the picker's
+  `picker`, the shelf page's `shelfAccess` and `narrow`, the readers' `pager`,
+  `pdfAnchors`, `start`, `relocate`, `typography`, `epubGlue`, `pdfGlue`,
+  `readingSession` and `autoReadStatus`, the player's `PlaybackProvider`,
+  `engine`, `boot`, `sleep`, `loadHls` and `listen`, stats' `calendar`,
+  `summary`, `picker`, `hero`, `goal`, `clock`, `donut`, `superlatives`,
+  `tiles`, `drillIn`, `heatmap`, `readingNow`, `monthly`, `library` and
+  `composition`, and the chart builder's `chart`, `plot`, `notes`, `zoom` and
+  `tween`, plus the vendored files' parity test), the two stats pages'
+  refusal to refetch on window focus (against `msw/node`), plus the real route
+  table in `src/router.test.tsx`: every unported page, the settings redirects,
+  the layout split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI
   uploads each one's lcov to Codecov under the `frontend-js` flag.
 

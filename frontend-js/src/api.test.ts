@@ -204,6 +204,43 @@ describe("toResumePoint", () => {
 
     expect(toResumePoint(wire).chapter).toBeNull();
   });
+
+  it("carries the chapter and part totals the open-books list reads", () => {
+    const wire = {
+      ...aWireResumePoint({
+        format: "audio",
+        resolved: {
+          confidence: "high",
+          chapter_ordinal: 3,
+          chapters_total: 12,
+        },
+      }),
+      audio_part: 2,
+      audio_part_count: 5,
+    };
+
+    expect(toResumePoint(wire)).toMatchObject({
+      chapter: 3,
+      chaptersTotal: 12,
+      part: 2,
+      partCount: 5,
+    });
+  });
+
+  it("reads a low-confidence chapter total as none, like its chapter", () => {
+    const wire = aWireResumePoint({
+      resolved: { confidence: "low", chapter_ordinal: 3, chapters_total: 12 },
+    });
+
+    expect(toResumePoint(wire).chaptersTotal).toBeNull();
+  });
+
+  it("reports no totals when the server sends none", () => {
+    expect(toResumePoint(aWireResumePoint())).toMatchObject({
+      chaptersTotal: null,
+      partCount: null,
+    });
+  });
 });
 
 describe("toShelf", () => {

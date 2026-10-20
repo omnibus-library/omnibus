@@ -5,7 +5,7 @@
 //! (`PUT /api/stats/goal`) and the daily ones (`PUT /api/stats/goal/daily`),
 //! one book's insights (`GET /api/books/{uuid}/insights`), and the collection's
 //! own scale and mix (`GET /api/library-size`, `GET /api/library-composition` —
-//! the same for every reader).
+//! the same for every reader), and the chart builder (`POST /api/stats/chart`).
 
 use axum::{
     extract::{Path, Query, State},
@@ -13,11 +13,14 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use omnibus_db::{self as db, stats::GoalError};
+use omnibus_db::{
+    self as db,
+    stats::{ChartError, GoalError},
+};
 use omnibus_shared::{
-    BookInsights, BookInsightsQuery, DailyGoalUpdate, DailyGoals, GoalQuery, HouseholdReader,
-    LibraryComposition, LibrarySize, ReadingGoal, ReadingGoalUpdate, SessionCursor, SessionLogPage,
-    SessionLogQuery, StatsQuery, StatsSummary,
+    BookInsights, BookInsightsQuery, ChartQuery, ChartResult, ChartSpec, DailyGoalUpdate,
+    DailyGoals, GoalQuery, HouseholdReader, LibraryComposition, LibrarySize, ReadingGoal,
+    ReadingGoalUpdate, SessionCursor, SessionLogPage, SessionLogQuery, StatsQuery, StatsSummary,
 };
 
 use super::{internal, AppState};
@@ -200,6 +203,38 @@ pub(super) async fn get_library_composition(
     match db::stats::library_composition(&state.pool).await {
         Ok(composition) => Json(composition).into_response(),
         Err(e) => internal("get_library_composition", e),
+    }
+}
+
+/// Chart your reading
+///
+/// Runs a chart you composed: measures on at most two scales over a period, bucketed by
+/// day, week, month or year, optionally split by genre. Measures that share a unit share a
+/// scale. Each series lines up with `buckets`, and a null value means no data, which for an
+/// average is not zero. Days are cut on your `utc_offset_minutes`. Nothing is saved.
+#[utoipa::path(
+    post,
+    path = "/api/stats/chart",
+    tag = "Stats",
+    params(ChartQuery),
+    request_body = ChartSpec,
+    responses(
+        (status = 200, description = "The chart's series, aligned on its buckets.", body = ChartResult),
+        (status = 422, description = "The spec describes a chart that can't be drawn: a measure twice, a third scale, or a split of anything but one per-book measure. The body says which."),
+    ),
+)]
+pub(super) async fn post_stats_chart(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Query(query): Query<ChartQuery>,
+    Json(spec): Json<ChartSpec>,
+) -> Response {
+    match db::stats::chart_series(&state.pool, user.id, &spec, query.utc_offset_minutes).await {
+        Ok(chart) => Json(chart).into_response(),
+        Err(ChartError::Spec(e)) => {
+            (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()).into_response()
+        }
+        Err(ChartError::Stats(e)) => internal("post_stats_chart", e),
     }
 }
 

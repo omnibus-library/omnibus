@@ -103,8 +103,6 @@ describe("routes", () => {
 
   describe("unported pages", () => {
     it.each([
-      ["/stats?user=2", "Stats", "2"],
-      ["/stats/chart", "Chart builder", null],
       ["/settings/cleanup/duplicates", "Cleanup review", "duplicates"],
       ["/admin?section=logs", "Administration", "logs"],
       ["/admin/cleanup/duplicates", "Cleanup review", "duplicates"],
@@ -134,10 +132,22 @@ describe("routes", () => {
       ["/series/4", "Gathering the series"],
       ["/shelves", "Gathering your shelves"],
       ["/shelves/9", "Opening the shelf"],
+      ["/stats?user=2", "Tallying your reading"],
     ])("renders %s as its loading page, not a stub", async (path, label) => {
       renderRoute(path);
 
       expect(await screen.findByText(label)).toBeInTheDocument();
+      expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+
+    it("renders /stats/chart as the chart builder, not a stub", async () => {
+      renderRoute("/stats/chart");
+
+      expect(
+        await screen.findByText(
+          "Nothing plotted yet — tick a measure above and it'll appear here.",
+        ),
+      ).toBeInTheDocument();
       expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
     });
 

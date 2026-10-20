@@ -6839,6 +6839,53 @@
         }
       }
     },
+    "/api/stats/chart": {
+      "post": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Chart your reading",
+        "description": "Runs a chart you composed: measures on at most two scales over a period, bucketed by\nday, week, month or year, optionally split by genre. Measures that share a unit share a\nscale. Each series lines up with `buckets`, and a null value means no data, which for an\naverage is not zero. Days are cut on your `utc_offset_minutes`. Nothing is saved.",
+        "operationId": "post_stats_chart",
+        "parameters": [
+          {
+            "name": "utc_offset_minutes",
+            "in": "query",
+            "description": "Your device's offset from UTC in minutes, east positive, which decides which bucket\neach day falls in and where the period starts. Absent, unreadable, or outside -720\nto 840, the server uses the offset of your most recent reading session, then UTC.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChartSpec"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The chart's series, aligned on its buckets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChartResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The spec describes a chart that can't be drawn: a measure twice, a third scale, or a split of anything but one per-book measure. The body says which."
+          }
+        }
+      }
+    },
     "/api/stats/goal": {
       "put": {
         "tags": [
@@ -9224,6 +9271,207 @@
             "description": "Whether the slice stops at your furthest reading position, as `stop_at_progress`\nasks. `truncated` is then false and `next_offset` null, since there is nothing to\ncontinue to. Absent when false."
           }
         }
+      },
+      "ChartAxis": {
+        "type": "object",
+        "description": "One axis of the rendered chart.",
+        "required": [
+          "unit",
+          "max"
+        ],
+        "properties": {
+          "max": {
+            "type": "number",
+            "format": "double",
+            "description": "Upper bound of the axis. Always > 0 — a flat-zero axis is nudged to 1\nso the renderer never divides by zero."
+          },
+          "unit": {
+            "$ref": "#/components/schemas/ChartUnit"
+          }
+        }
+      },
+      "ChartBreakdown": {
+        "type": "string",
+        "description": "An optional split of a single measure into several series.",
+        "enum": [
+          "none",
+          "genre"
+        ]
+      },
+      "ChartBucket": {
+        "type": "string",
+        "description": "How wide each bucket on the x-axis is: a day, a week (starting Monday), a month or a\nyear. The x-axis is always time.",
+        "enum": [
+          "day",
+          "week",
+          "month",
+          "year"
+        ]
+      },
+      "ChartMark": {
+        "type": "string",
+        "description": "How a series is drawn. Derived from the measure, never picked by the\nreader — a pie chart of minutes-over-time is a question the builder should\nnot be able to ask.",
+        "enum": [
+          "bar",
+          "line"
+        ]
+      },
+      "ChartMeasure": {
+        "type": "string",
+        "description": "What a chart can plot: one number per bucket, in a unit of its own. Measures sharing a\nunit share a scale, and a chart holds at most two scales.",
+        "enum": [
+          "books_finished",
+          "avg_page_length",
+          "avg_rating",
+          "reading_minutes",
+          "listening_minutes",
+          "session_count",
+          "avg_session_minutes",
+          "pages_read"
+        ]
+      },
+      "ChartResult": {
+        "type": "object",
+        "description": "The series a chart spec asks for, aligned on one shared set of buckets.",
+        "required": [
+          "bucket",
+          "buckets",
+          "series",
+          "axes",
+          "divisions",
+          "stacked",
+          "truncated",
+          "caveats"
+        ],
+        "properties": {
+          "axes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChartAxis"
+            },
+            "description": "Left axis, then optionally the right."
+          },
+          "bucket": {
+            "$ref": "#/components/schemas/ChartBucket",
+            "description": "The granularity `buckets` are keyed at. Carried on the answer so a\nrenderer can label the axis without being handed the spec separately —\nand so a result can never be labelled at a granularity it wasn't\nbucketed at."
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The shared x-axis: bucket keys ascending. `YYYY-MM-DD` for Day and\nWeek (the week's Monday), `YYYY-MM` for Month, `YYYY` for Year."
+          },
+          "caveats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Caveats carried by the selected measures."
+          },
+          "divisions": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Gridlines dividing the plot, shared by both axes. Two different counts\nwould put the right axis's labels between the lines they belong to.",
+            "minimum": 0
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChartSeries"
+            }
+          },
+          "stacked": {
+            "type": "boolean",
+            "description": "Whether the bar series stack into one column per bucket.\n\nOnly true for a **breakdown of one additive measure**, where the slices are\nparts of a whole. Different measures never stack, nor does a split average,\nsince means do not add."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "Set when `buckets` was clipped to the most recent 366."
+          }
+        }
+      },
+      "ChartSeries": {
+        "type": "object",
+        "description": "One plotted series: a measure (optionally narrowed to a breakdown slice) and\nits value in every bucket of the shared axis. `values` is positionally\naligned with `buckets`; null means *no data*, which for an average is a real\nstate and not a zero.",
+        "required": [
+          "measure",
+          "axis",
+          "mark",
+          "values"
+        ],
+        "properties": {
+          "axis": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Which axis this series is scaled against — `0` left, `1` right.",
+            "minimum": 0
+          },
+          "mark": {
+            "$ref": "#/components/schemas/ChartMark"
+          },
+          "measure": {
+            "$ref": "#/components/schemas/ChartMeasure"
+          },
+          "slice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The breakdown slice this series describes, when the spec asked for one."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            }
+          }
+        }
+      },
+      "ChartSpec": {
+        "type": "object",
+        "description": "What a reader composed in the builder.",
+        "required": [
+          "measures",
+          "bucket",
+          "range"
+        ],
+        "properties": {
+          "breakdown": {
+            "$ref": "#/components/schemas/ChartBreakdown",
+            "description": "Optional split. Allowed only with exactly one measure, and only one that\nsupports a split (a per-book measure); any other combination is rejected."
+          },
+          "bucket": {
+            "$ref": "#/components/schemas/ChartBucket",
+            "description": "The shared x-axis granularity."
+          },
+          "measures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChartMeasure"
+            },
+            "description": "The measures to plot, each at most once. Measures that share a unit share a\nscale, and a second unit opens the right-hand axis. A third unit is rejected."
+          },
+          "range": {
+            "$ref": "#/components/schemas/StatsRange",
+            "description": "The window, reusing the stats page's own range vocabulary."
+          }
+        }
+      },
+      "ChartUnit": {
+        "type": "string",
+        "description": "The unit a measure is expressed in. Two measures sharing a unit share an\naxis; a second distinct unit opens the right-hand axis.",
+        "enum": [
+          "books",
+          "pages",
+          "minutes",
+          "sessions",
+          "stars"
+        ]
       },
       "CheckInRequest": {
         "type": "object",

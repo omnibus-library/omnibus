@@ -40,10 +40,18 @@ export function parseSeriesId(raw: string | null | undefined): SeriesId | null {
   return positiveInt(raw) as SeriesId | null;
 }
 
+/** Brands a route parameter as a user id, or `null` unless it is a positive integer. */
+export function parseUserId(raw: string | null | undefined): UserId | null {
+  return positiveInt(raw) as UserId | null;
+}
+
 /** A route parameter as a shelf id, or `null` unless it is a positive integer. */
 export function parseShelfId(raw: string | null | undefined): number | null {
   return positiveInt(raw);
 }
+
+/** The device's UTC offset in minutes, east positive. The server cuts each day on it. */
+export const utcOffsetMinutes = () => -new Date().getTimezoneOffset();
 
 /** A non-2xx answer, carrying the status and the server's plain-text body. */
 export class ApiError extends Error {

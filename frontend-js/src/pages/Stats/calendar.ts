@@ -1,0 +1,114 @@
+import type { StatsRange } from "../../api";
+import { RANGE_LABELS } from "./summary";
+
+// Day math runs on epoch-day numbers over the stats' `YYYY-MM-DD` strings, with no date
+// library, as the Rust page does, so every figure falls on the same day.
+
+export const remEuclid = (a: number, b: number) => ((a % b) + b) % b;
+
+const MS_PER_DAY = 86_400_000;
+
+/** Days since 1970-01-01 for a civil date. It uses `setUTCFullYear` because `Date.UTC` reads years 0 to 99 as 19xx. */
+function daysFromCivil(y: number, m: number, d: number): number {
+  const t = new Date(0);
+  t.setUTCFullYear(y, m - 1, d);
+  return t.getTime() / MS_PER_DAY;
+}
+
+/** Inverse of `daysFromCivil`: `[year, month, day]` for an epoch day. */
+export function civilFromDays(days: number): [number, number, number] {
+  const t = new Date(days * MS_PER_DAY);
+  return [t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate()];
+}
+
+/** The epoch-day number of a `YYYY-MM-DD` string, or `null` when it isn't one. */
+export function dayNumber(day: string): number | null {
+  const parts = /^(\d+)-(\d+)-(\d+)$/.exec(day);
+  if (!parts) return null;
+  const [y, m, d] = [Number(parts[1]), Number(parts[2]), Number(parts[3])];
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  // `Date` holds only ±275760 years; past that `setUTCFullYear` yields NaN.
+  const days = daysFromCivil(y, m, d);
+  return Number.isFinite(days) ? days : null;
+}
+
+/** `YYYY-MM-DD` for an epoch-day number. */
+export function dayString(days: number): string {
+  const [y, m, d] = civilFromDays(days);
+  return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+/** The full name of a 1-based month. */
+export const monthName = (m: number) => MONTH_NAMES[m - 1] ?? "December";
+
+/** The three-letter name of a 1-based month. */
+export const monthAbbr = (m: number) => monthName(m).slice(0, 3);
+
+/**
+ * What the switcher's window covers, off the server's `as_of_day` rather than the device
+ * clock: "August 2026 · month to date". Without a server day it is the range's own label.
+ */
+export function windowLabel(range: StatsRange, asOfDay: string): string {
+  const today = dayNumber(asOfDay);
+  if (today === null) return RANGE_LABELS[range];
+  const [year, month] = civilFromDays(today);
+  switch (range) {
+    case "week": {
+      // Unix day 0 is a Thursday, so Monday-aligning subtracts (n + 3) % 7, as `db::stats` buckets weeks.
+      const [y, m, d] = civilFromDays(today - remEuclid(today + 3, 7));
+      return `Week of ${d} ${monthAbbr(m)} ${y} · to date`;
+    }
+    case "month":
+      return `${monthName(month)} ${year} · month to date`;
+    case "year":
+      return `${year} · year to date`;
+    case "all_time":
+      return "Everything you have tracked";
+    default: {
+      const _exhaustive: never = range;
+      return _exhaustive;
+    }
+  }
+}
+
+/**
+ * The live streak's inclusive day range, anchored on the last active day rather than
+ * `anchor`, since a run that ended yesterday still counts while today isn't over. `null` without a live run.
+ */
+export function streakSpan(
+  anchor: number,
+  active: readonly number[],
+  streakDays: number,
+): [number, number] | null {
+  const behind = active.filter((n) => n <= anchor);
+  if (streakDays <= 0 || behind.length === 0) return null;
+  const last = Math.max(...behind);
+  return [last - (streakDays - 1), last];
+}
+
+/**
+ * How far through its year `asOfDay` is, 0 to 1, which an annual target's pace is read
+ * against. `null` for a day the server never sent.
+ */
+export function yearFraction(asOfDay: string): number | null {
+  const today = dayNumber(asOfDay);
+  if (today === null) return null;
+  const [year] = civilFromDays(today);
+  const start = daysFromCivil(year, 1, 1);
+  return (today - start + 1) / (daysFromCivil(year + 1, 1, 1) - start);
+}
