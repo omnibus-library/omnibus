@@ -568,6 +568,15 @@ struct ReviewOutboxOpTests {
 
 // MARK: - The page read
 
+/// Counts a fake fetch's calls.
+private actor CallCount {
+    private(set) var count = 0
+    func next() -> Int {
+        count += 1
+        return count
+    }
+}
+
 /// `.serialized`: these read and write the shared replica, under keys of
 /// their own.
 @Suite("Review page read", .serialized)
@@ -582,16 +591,19 @@ struct ReviewPageReadTests {
         )
     }
 
-    @Test("a page read that answers after a tap landed never puts the old stars back")
-    func stalePageReadYieldsTheReplica() async throws {
+    @Test("a page read overtaken by a landed tap shows the tap, then asks the server again")
+    func overtakenPageReadShowsTheTapThenAsksAgain() async throws {
         await OfflineStore.shared.open()
-        let uuid = "stale-read-\(UUID().uuidString)"
+        let uuid = "overtaken-read-\(UUID().uuidString)"
         let key = CacheKey.reviews(uuid)
         await Cache.write(key, stars(2, for: uuid))
 
+        let calls = CallCount()
         let stale = stars(2, for: uuid)
+        let landed = stars(5, for: uuid)
         let reads = UserDataService.reviewsReads(uuid: uuid) {
-            // The tap, made while this request was out.
+            guard await calls.next() == 1 else { return landed }
+            // The tap, made while the first request was out.
             await UserDataService.mutateLocalReviews(uuid) {
                 $0 = $0.applying(.stars(5), uuid: uuid, now: 2)
             }
@@ -602,8 +614,10 @@ struct ReviewPageReadTests {
 
         let stored: BookReviews? = await Cache.read(key)
         await OfflineStore.shared.cacheDelete(key)
-        #expect(shown == [2, 5])
-        #expect(stored?.mine?.stars == 5)
+        // Replica, the tap, then the server's answer — never the old stars again.
+        #expect(await calls.count == 2)
+        #expect(shown == [2, 5, 5])
+        #expect(stored == landed)
     }
 
     @Test("a page read nothing raced is stored and shown")

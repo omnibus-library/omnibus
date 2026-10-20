@@ -662,7 +662,7 @@ struct GuardedRevalidationTests {
         #expect(shown.map(\.isFresh) == [true])
     }
 
-    @Test("an answer refused for a write that has since landed asks once more")
+    @Test("an answer refused for a write that has since landed shows the replica, then asks once more")
     func refusalAfterALandedWriteAsksAgain() async throws {
         let (store, file) = await scratchStore(filePrefix: "guarded-read")
         defer { try? FileManager.default.removeItem(atPath: file) }
@@ -685,12 +685,15 @@ struct GuardedRevalidationTests {
         }
 
         #expect(await log.count == 2)
-        #expect(shown.map(\.value) == [rendered])
+        // The tap's replica at once, then the server's answer once asked again.
+        #expect(shown.map(\.value.mine?.stars) == [5, 5])
+        #expect(shown.map(\.isFresh) == [false, true])
+        #expect(shown.last?.value == rendered)
         let stored = try JSONDecoder().decode(BookReviews.self, from: try #require(await store.cacheGet(key)))
         #expect(stored == rendered)
     }
 
-    @Test("asking again happens once, then the replica is shown")
+    @Test("asking again happens once, the replica shown each time it moves")
     func askingAgainIsBounded() async throws {
         let (store, file) = await scratchStore(filePrefix: "guarded-read")
         defer { try? FileManager.default.removeItem(atPath: file) }
@@ -709,8 +712,75 @@ struct GuardedRevalidationTests {
         }
 
         #expect(await log.count == 2)
-        #expect(shown.map(\.value.mine?.stars) == [4])
+        #expect(shown.map(\.value.mine?.stars) == [3, 4])
+        #expect(shown.map(\.isFresh) == [false, false])
+    }
+
+    @Test("a retry that fails offline leaves the replica shown, not an error")
+    func failedRetryKeepsTheReplica() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        // Nothing was cached when the read began; a download's prefetch then
+        // fills the replica while the request is out.
+        let log = RequestLog()
+        let key = self.key
+        let prefetched = page(stars: 3, html: "<p>x</p>")
+        let prefetchedData = try JSONEncoder().encode(prefetched)
+        let stale = page(stars: 2)
+        let shown = try await reads(store: store, cached: nil) {
+            if await log.next() == 1 {
+                await store.cachePut(key, prefetchedData)
+                return stale
+            }
+            throw APIError.offline
+        }
+
+        #expect(await log.count == 2)
+        #expect(shown.map(\.value) == [prefetched])
         #expect(shown.map(\.isFresh) == [false])
+    }
+
+    @Test("with nothing held at all after a refusal, the answer itself is shown")
+    func emptyReplicaShowsTheAnswer() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        let log = RequestLog()
+        let key = self.key
+        let answer = page(stars: 4)
+        let shown = try await reads(store: store, cached: nil) {
+            _ = await log.next()
+            // Something writes the key and then removes it while this is out.
+            await store.cachePut(key, Data("{}".utf8))
+            await store.cacheDelete(key)
+            return answer
+        }
+
+        #expect(await log.count == 2)
+        #expect(shown.map(\.value) == [answer])
+        #expect(shown.map(\.isFresh) == [true])
+    }
+
+    @Test("an unknown queued write with nothing held shows the answer rather than nothing")
+    func unknownQueuedWriteWithEmptyReplica() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        let log = RequestLog()
+        let answer = page(stars: 4)
+        let shown = try await reads(store: store, cached: nil) {
+            _ = await log.next()
+            // A kind `OutboxScope` doesn't know holds off every key.
+            await store.enqueue(
+                kind: "something_new", path: "/x", method: "POST", body: nil, coalesce: false
+            )
+            return answer
+        }
+
+        #expect(await log.count == 1)
+        #expect(shown.map(\.value) == [answer])
+        #expect(shown.map(\.isFresh) == [true])
     }
 
     @Test("a write still queued is not asked about again: the replica is shown")

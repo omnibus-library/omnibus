@@ -301,11 +301,13 @@ enum Cache {
     /// only if nothing wrote the key while the request was out.
     ///
     /// When something did, the replica is newer than this answer and is shown
-    /// instead — but that write's own refresh may never come, so if the write
-    /// has already left the queue the server is asked once more. A store that
-    /// never opened (online-only) has nothing to protect, and the answer goes
-    /// out as it would without the guard; so does one the replica has nothing
-    /// to replace with. `store` is injectable for the suite.
+    /// at once — and since that write's own refresh may never come, the
+    /// server is asked once more if the write has already left the queue. A
+    /// retry that fails after the replica went out ends quietly when offline,
+    /// as `live` does. A store that never opened (online-only) has nothing to
+    /// protect, and the answer goes out as it would without the guard; so does
+    /// one the replica has nothing to replace with. `store` is injectable for
+    /// the suite.
     static func revalidateGuarded<T: Codable & Sendable>(
         _ key: String,
         cachedData: Data?,
@@ -314,9 +316,18 @@ enum Cache {
         fetch: @Sendable () async throws -> T,
         into continuation: AsyncThrowingStream<CacheRead<T>, Error>.Continuation
     ) async throws {
+        // The bytes the caller last saw, so nothing is shown to it twice.
+        var shown = cachedData
         for attempt in 0..<2 {
             let generation = await store.cacheGeneration(key)
-            let fresh = try await fetch()
+            let fresh: T
+            do {
+                fresh = try await fetch()
+            } catch {
+                let offline = (error as? APIError)?.isRecoverableOffline ?? false
+                if attempt > 0, shown != nil, offline { break }
+                throw error
+            }
             let queued = OutboxScope.isBlocked(key, by: await store.pendingKinds())
             let freshData = try? encoder.encode(fresh)
             let storedData = storing.map { try? encoder.encode($0(fresh)) } ?? freshData
@@ -325,22 +336,23 @@ enum Cache {
                 outcome = await store.cachePut(key, storedData, ifGeneration: generation)
             }
             if queued || outcome == .moved {
+                guard !Task.isCancelled else { break }
+                if let current = await store.cacheGet(key), current != shown,
+                   let value = try? decoder.decode(T.self, from: current)
+                {
+                    continuation.yield(CacheRead(value: value, isFresh: false))
+                    shown = current
+                }
                 // Ask again only once the write that moved it has landed: a
                 // queued one is still ahead of the server.
-                let landed = !OutboxScope.isBlocked(key, by: await store.pendingKinds())
-                if !queued, attempt == 0, landed { continue }
-                if let current = await store.cacheGet(key) {
-                    guard !Task.isCancelled else { break }
-                    if current != cachedData, let value = try? decoder.decode(T.self, from: current) {
-                        continuation.yield(CacheRead(value: value, isFresh: false))
-                    }
-                    break
-                }
-                if cachedData != nil { break }
+                let pending = await store.pendingKinds()
+                let landed = !queued && !OutboxScope.isBlocked(key, by: pending)
+                if attempt == 0, landed { continue }
+                if shown != nil { break }
                 // Nothing held at all: this answer is still the best there is.
             }
             guard !Task.isCancelled else { break }
-            if freshData == nil || freshData != cachedData {
+            if freshData == nil || freshData != shown {
                 continuation.yield(CacheRead(value: fresh, isFresh: true))
             }
             break
