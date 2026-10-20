@@ -40,7 +40,7 @@ function PrecedenceList({
   label: string;
   order: Order;
   busy: boolean;
-  onMove: (index: number, source: MetadataSource, direction: Direction) => void;
+  onMove: (index: number, direction: Direction) => void;
 }) {
   const testId = `${library}-metadata-precedence`;
   return (
@@ -70,7 +70,7 @@ function PrecedenceList({
                 }
                 data-testid={`${testId}-${direction}-${i}`}
                 aria-label={`Move ${sourceLabel(source)} ${direction}`}
-                onClick={() => onMove(i, source, direction)}
+                onClick={() => onMove(i, direction)}
               >
                 {direction === "up" ? "Up" : "Down"}
               </Button>
@@ -122,18 +122,17 @@ export function MetadataOrderCard() {
   const move = (
     library: MetadataLibrary,
     index: number,
-    source: MetadataSource,
     direction: Direction,
   ) => {
     const order = shown(library);
     const moved = order && moveSource(order, index, direction);
     if (!moved) return;
     setEdits((current) => ({ ...current, [library]: moved.order }));
-    setAnnouncement(
-      positionAnnouncement(source, moved.landed, moved.order.length),
-    );
-    const focus = focusAfterMove(moved.landed, moved.order.length, direction);
-    pendingFocus.current = `${library}-metadata-precedence-${focus}-${moved.landed}`;
+    const { landed, source } = moved;
+    const len = moved.order.length;
+    setAnnouncement(positionAnnouncement({ source, index: landed, len }));
+    const focus = focusAfterMove({ index: landed, len, pressed: direction });
+    pendingFocus.current = `${library}-metadata-precedence-${focus}-${landed}`;
   };
 
   const save = useMutation({
@@ -189,9 +188,7 @@ export function MetadataOrderCard() {
               label={label}
               order={shown(library) ?? []}
               busy={save.isPending}
-              onMove={(index, source, direction) =>
-                move(library, index, source, direction)
-              }
+              onMove={(index, direction) => move(library, index, direction)}
             />
           ))
         : !loadError && (

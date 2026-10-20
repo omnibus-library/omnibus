@@ -16,17 +16,19 @@ const ORDER: MetadataSource[] = [
 ];
 
 describe("moveSource", () => {
-  it("swaps a source up and reports where it landed", () => {
+  it("swaps a source up and reports it and where it landed", () => {
     expect(moveSource(ORDER, 1, "up")).toEqual({
       order: ["embedded_tags", "folder_structure", "opf_sidecar"],
       landed: 0,
+      source: "embedded_tags",
     });
   });
 
-  it("swaps a source down and reports where it landed", () => {
+  it("swaps a source down and reports it and where it landed", () => {
     expect(moveSource(ORDER, 1, "down")).toEqual({
       order: ["folder_structure", "opf_sidecar", "embedded_tags"],
       landed: 2,
+      source: "embedded_tags",
     });
   });
 
@@ -46,24 +48,24 @@ describe("moveSource", () => {
 
 describe("focusAfterMove", () => {
   it("keeps the pressed button while the source can still move that way", () => {
-    expect(focusAfterMove(2, 5, "up")).toBe("up");
-    expect(focusAfterMove(2, 5, "down")).toBe("down");
+    expect(focusAfterMove({ index: 2, len: 5, pressed: "up" })).toBe("up");
+    expect(focusAfterMove({ index: 2, len: 5, pressed: "down" })).toBe("down");
   });
 
   it("takes the other button once the source reaches the top", () => {
-    expect(focusAfterMove(0, 5, "up")).toBe("down");
+    expect(focusAfterMove({ index: 0, len: 5, pressed: "up" })).toBe("down");
   });
 
   it("takes the other button once the source reaches the bottom", () => {
-    expect(focusAfterMove(4, 5, "down")).toBe("up");
+    expect(focusAfterMove({ index: 4, len: 5, pressed: "down" })).toBe("up");
   });
 });
 
 describe("positionAnnouncement", () => {
   it("names the source and its new place", () => {
-    expect(positionAnnouncement("opf_sidecar", 1, 5)).toBe(
-      "OPF sidecar moved to position 2 of 5.",
-    );
+    expect(
+      positionAnnouncement({ source: "opf_sidecar", index: 1, len: 5 }),
+    ).toBe("OPF sidecar moved to position 2 of 5.");
   });
 });
 

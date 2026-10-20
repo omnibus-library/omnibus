@@ -13,12 +13,12 @@ const LABELS = {
 
 export const sourceLabel = (source: MetadataSource) => LABELS[source];
 
-/** `order` with the source at `from` swapped one place, and where it landed; null at either end. */
+/** `order` with the source at `from` swapped one place, that source and where it landed; null at either end. */
 export function moveSource(
   order: readonly MetadataSource[],
   from: number,
   direction: Direction,
-): { order: MetadataSource[]; landed: number } | null {
+): { order: MetadataSource[]; landed: number; source: MetadataSource } | null {
   const landed = direction === "up" ? from - 1 : from + 1;
   const moved = order[from];
   const displaced = order[landed];
@@ -26,26 +26,34 @@ export function moveSource(
   const next = [...order];
   next[landed] = moved;
   next[from] = displaced;
-  return { order: next, landed };
+  return { order: next, landed, source: moved };
 }
 
 /** The button that keeps focus after a move: the one pressed, unless the source reached the end that disables it. */
-export function focusAfterMove(
-  index: number,
-  len: number,
-  pressed: Direction,
-): Direction {
+export function focusAfterMove({
+  index,
+  len,
+  pressed,
+}: {
+  index: number;
+  len: number;
+  pressed: Direction;
+}): Direction {
   if (pressed === "up" && index === 0) return "down";
   if (pressed === "down" && index === len - 1) return "up";
   return pressed;
 }
 
 /** What the live region says after a move. */
-export function positionAnnouncement(
-  source: MetadataSource,
-  index: number,
-  len: number,
-): string {
+export function positionAnnouncement({
+  source,
+  index,
+  len,
+}: {
+  source: MetadataSource;
+  index: number;
+  len: number;
+}): string {
   return `${sourceLabel(source)} moved to position ${index + 1} of ${len}.`;
 }
 
