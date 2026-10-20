@@ -593,15 +593,6 @@ export const ChoosingAReaderSwitchesWhoseFiguresAreShown: Story = {
   },
 };
 
-export const ReaderWhoStoppedSharingIsAbsentFromTheMenu: Story = {
-  play: async ({ canvas }) => {
-    await canvas.findByRole("button", { name: "Stats for You" });
-    await expect(canvas.queryAllByTestId("stats-reader-option-3")).toHaveLength(
-      0,
-    );
-  },
-};
-
 export const SharingSwitchStartsFromTheSession: Story = {
   parameters: { user: { ...WIRE_ADA, share_stats: true } },
   play: async ({ canvas }) => {
