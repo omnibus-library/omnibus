@@ -65,6 +65,10 @@ pub(super) async fn get_ebook_by_uuid(/* … */) -> Response {
   on duplicates.
 - **A type only a query parameter references** isn't collected by utoipa. Add it to
   `components(schemas(...))` in `openapi.rs`; a test fails on a dangling `$ref`.
+- **Deprecating a route:** put `#[deprecated = "use …"]` on the handler, which sets the
+  operation's `deprecated` flag in the spec, and say what replaces it in the description.
+  Keep serving it while installed clients call it: `#[allow(deprecated)]` on the
+  `routes.rs` builder that registers it (`backend/ratings.rs` is the example).
 
 ## Writing the docs
 

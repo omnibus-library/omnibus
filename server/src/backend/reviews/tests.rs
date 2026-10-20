@@ -3,14 +3,7 @@ use axum::http::StatusCode;
 use omnibus_shared::{BookReviews, Review};
 use tower::ServiceExt;
 
-use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::*;
-
-async fn reader(pool: &sqlx::SqlitePool, name: &str) -> (i64, String) {
-    let user = auth_test_support::create_user(pool, name).await;
-    let token = auth_test_support::bearer_token(pool, user.id).await;
-    (user.id, token)
-}
 
 fn patch(
     uuid: &str,
@@ -38,6 +31,49 @@ async fn api_patch_review_requires_auth() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn api_get_book_reviews_requires_auth() {
+    let (app, _state, pool) = fixture().await;
+    let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
+
+    let res = app
+        .oneshot(request("GET", &format!("/api/reviews/{uuid}"), None, None))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn api_delete_review_requires_auth_and_leaves_the_review_intact() {
+    let (app, _state, pool) = fixture().await;
+    let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
+    let (_, token) = reader(&pool, "alice").await;
+    app.clone()
+        .oneshot(patch(&uuid, &token, serde_json::json!({ "stars": 4 })))
+        .await
+        .unwrap();
+
+    let res = app
+        .clone()
+        .oneshot(request(
+            "DELETE",
+            &format!("/api/reviews/{uuid}"),
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    let res = app
+        .oneshot(get_with_bearer(&format!("/api/reviews/{uuid}"), &token))
+        .await
+        .unwrap();
+    let reviews: BookReviews = body_json(res).await;
+    assert_eq!(reviews.mine.unwrap().stars, Some(4.0));
 }
 
 #[tokio::test]

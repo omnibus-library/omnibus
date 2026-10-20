@@ -13,8 +13,9 @@ use axum::{
 use omnibus_db::{self as db, reviews::ReviewError};
 use omnibus_shared::{BookReviews, Review, ReviewPatch};
 
-use super::{internal, AppState};
 use crate::auth::AuthUser;
+
+use super::{internal, AppState};
 
 /// Get a book's reviews
 ///
@@ -46,9 +47,13 @@ pub(super) async fn get_book_reviews(
 /// Change your review of a book
 ///
 /// Creates the review on first write. Only the fields you send change: leave a field out
-/// to keep it, send it as null to clear it. Stars, text and notes are independent, so
+/// to keep it. Send `stars`, `body_md` or `notes_md` as null to clear it; `spoiler` is
+/// true or false, so leave it out to keep it. Stars, text and notes are independent, so
 /// clearing the stars keeps your text. The body is `null` when the change left the review
 /// with no stars, text or notes, which deletes it.
+///
+/// Text and notes can embed images uploaded with `POST /api/journals/images`. An uploaded
+/// image the change drops, and no journal entry or review still shows, is deleted.
 #[utoipa::path(
     patch,
     path = "/api/reviews/{uuid}",
@@ -79,7 +84,8 @@ pub(super) async fn patch_review(
 
 /// Delete your review of a book
 ///
-/// Removes your stars, text and private notes together. Succeeds whether or not you had
+/// Removes your stars, text and private notes together. An uploaded image they showed,
+/// and no journal entry or review still shows, is deleted. Succeeds whether or not you had
 /// reviewed the book.
 #[utoipa::path(
     delete,

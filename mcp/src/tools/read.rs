@@ -269,7 +269,8 @@ pub struct BookmarkList {
 pub struct BookReviewsAnswer {
     /// The signed-in user's review; null when they haven't reviewed the book.
     pub mine: Option<OwnReviewView>,
-    /// Other readers' reviews: with text first, newest first, then bare ratings.
+    /// Other readers' reviews: with text first, newest first by when the text was first
+    /// written, then bare ratings, most recently rated first.
     pub others: Vec<ReviewView>,
     /// Every reader's stars summed up; null until two readers have rated the book.
     pub summary: Option<ReviewSummary>,
@@ -662,7 +663,8 @@ impl OmnibusMcp {
         Parameters(p): Parameters<BookRef>,
     ) -> Result<Json<BookReviewsAnswer>, ErrorData> {
         let path = format!("/api/reviews/{}", p.uuid);
-        let reviews: BookReviews = self.client.get_json(&path, &[]).await?;
+        let reviews: Option<BookReviews> = self.client.get_json_opt(&path, &[]).await?;
+        let reviews = reviews.ok_or_else(|| not_found("book"))?;
         Ok(Json(BookReviewsAnswer {
             mine: reviews.mine.map(Into::into),
             others: reviews.others.into_iter().map(Into::into).collect(),
