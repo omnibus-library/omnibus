@@ -33,18 +33,18 @@ fn resolve_log_dir(log_dir: Option<String>, data_dir: Option<String>) -> PathBuf
     PathBuf::from(base).join("logs")
 }
 
-/// Read one filtered, newest-first page of log records from `dir`. Reading
-/// stops once the requested page (plus one lookahead record for `has_more`) is
-/// satisfied, bounding the work to roughly `offset + per_page` matches. A
-/// missing directory is an empty page, not an error: logging may be disabled.
+/// Read one filtered, newest-first page of log records from `dir`. Matches before
+/// the page are counted, not kept, and reading stops once the page plus one
+/// lookahead record (for `has_more`) is full. A missing directory is an empty
+/// page, not an error: logging may be disabled.
 pub async fn read_logs(dir: &Path, query: &LogQuery) -> anyhow::Result<LogPage> {
     let per_page = query.effective_per_page() as usize;
     let offset = query.page as usize * per_page;
-    // One extra beyond the page tells us whether a further match exists.
-    let want = offset + per_page + 1;
 
     let files = log_files_newest_first(dir).await?;
-    let mut matched: Vec<LogRecord> = Vec::new();
+    let mut skipped = 0;
+    // One extra beyond the page tells us whether a further match exists.
+    let mut window: Vec<LogRecord> = Vec::new();
     'files: for file in files {
         let content = match tokio::fs::read_to_string(&file).await {
             Ok(c) => c,
@@ -58,21 +58,23 @@ pub async fn read_logs(dir: &Path, query: &LogQuery) -> anyhow::Result<LogPage> 
             if line.is_empty() {
                 continue;
             }
-            if let Some(record) = parse_record(line) {
-                if matches(&record, query) {
-                    matched.push(record);
-                    if matched.len() >= want {
-                        break 'files;
-                    }
+            if let Some(record) = parse_record(line).filter(|r| matches(r, query)) {
+                if skipped < offset {
+                    skipped += 1;
+                    continue;
+                }
+                window.push(record);
+                if window.len() > per_page {
+                    break 'files;
                 }
             }
         }
     }
 
-    let has_more = matched.len() > offset + per_page;
-    let records = matched.into_iter().skip(offset).take(per_page).collect();
+    let has_more = window.len() > per_page;
+    window.truncate(per_page);
     Ok(LogPage {
-        records,
+        records: window,
         page: query.page,
         per_page: query.effective_per_page(),
         has_more,
