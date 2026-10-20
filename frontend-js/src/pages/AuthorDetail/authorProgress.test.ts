@@ -11,7 +11,7 @@ import {
   shelfMeta,
   tally,
   tileBar,
-} from "./authorPane";
+} from "./authorProgress";
 
 const DAY = 86_400;
 

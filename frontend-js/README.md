@@ -206,28 +206,28 @@ shell provides it.
   formatting (`fixed` included), `safeNext`, the theme root, the session, and
   the pure helpers behind the screens (`resume`, `password`, `settingsIndex`,
   `hiddenFormats`, `goals`, `apiTokens`, `viewPrefs`, `focusTrap`, book
-  detail's `readout`, `identifiers`, `shelves`, `journalEditor` and delete
+  detail's `readout`, `identifiers`, `shelves`, `journalMarkdown` and delete
   copy, the palette's `selection`, the results page's `results`, Register's
   `refusal`, the library's `filters`, `libraryView`, `seriesStacks`,
-  `shelfGallery`, `sorting` and `bulkEdit`, the editor's `metadata` (form
+  `shelfLens`, `sorting` and `bulkMetadata`, the editor's `metadata` (form
   schema and override diff), `dirty` and `editionFields`, `uploads`,
-  check-in's `checkIn` and `scan`, the scanner's `scanStatus` and
-  `loadScanner`, the discovery pages' `authorsOrder`, `authorPane`,
+  check-in's `checkInFlow` and `scan`, the scanner's `scanStatus` and
+  `loadScanner`, the discovery pages' `authorsOrder`, `authorProgress`,
   `seriesIndex`, `shelvesIndex`, the shelf rules' `rules`, the picker's
   `picker`, the shelf page's `shelfAccess` and `narrow`, the readers' `pager`,
   `pdfAnchors`, `start`, `relocate`, `typography`, `epubGlue`, `pdfGlue`,
   `readingSession` and `autoReadStatus`, the player's `PlaybackProvider`,
-  `engine`, `boot`, `sleep`, `loadHls` and `listen`, stats' `calendar`,
+  `engine`, `boot`, `sleep`, `loadHls` and `listenView`, stats' `calendar`,
   `summary`, `picker`, `hero`, `goal`, `clock`, `donut`, `superlatives`,
   `tiles`, `drillIn`, `heatmap`, `readingNow`, `monthly`, `library` and
   `composition`, the chart builder's `chart`, `plot`, `notes`, `zoom` and
   `tween`, the admin screens' `sources`, `recentTasks`,
   `workerLines`, `metadataOrder`, `users`, `smtp`, `integrations`, `health`
   and `logs`, and the cleanup review's `review`, plus the vendored files'
-  parity test), the two stats pages' refusal to refetch on window focus
-  (against `msw/node`), plus the real route table in `src/router.test.tsx`:
-  the settings redirects, the layout split, the guest redirect, the admin
-  refusals and the redirects.
+  parity test and the `fileNames` case check), the two stats pages' refusal to
+  refetch on window focus (against `msw/node`), plus the real route table in
+  `src/router.test.tsx`: the settings redirects, the layout split, the guest
+  redirect, the admin refusals and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI
   uploads each one's lcov to Codecov under the `frontend-js` flag.
 

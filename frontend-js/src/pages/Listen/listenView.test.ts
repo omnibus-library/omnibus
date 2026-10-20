@@ -18,7 +18,7 @@ import {
   syncLabel,
   thumbPct,
   timeLeftText,
-} from "./listen";
+} from "./listenView";
 
 const chapters = [
   { title: "One", start: 0, seconds: 300 },

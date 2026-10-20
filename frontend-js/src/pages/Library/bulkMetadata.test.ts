@@ -6,7 +6,7 @@ import {
   isEmptyEdit,
   NO_EDIT,
   removable,
-} from "./bulkEdit";
+} from "./bulkMetadata";
 
 const edit = (changes: Partial<BulkEdit>): BulkEdit => ({
   ...NO_EDIT,

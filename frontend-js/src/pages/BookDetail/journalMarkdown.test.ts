@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyEdit, highlightBlockquote, renderLines } from "./journalEditor";
+import { applyEdit, highlightBlockquote, renderLines } from "./journalMarkdown";
 
 const textOf = (html: string) => {
   const host = document.createElement("div");

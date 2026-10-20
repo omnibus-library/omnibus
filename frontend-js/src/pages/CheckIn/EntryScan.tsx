@@ -1,6 +1,6 @@
 import { BarcodeScanner } from "../../components/BarcodeScanner/BarcodeScanner";
 import { Button } from "../../components/Button/Button";
-import { applyKey, cleanIsbn, ISBN_SLOTS, isbnRejection } from "./checkIn";
+import { applyKey, cleanIsbn, ISBN_SLOTS, isbnRejection } from "./checkInFlow";
 import { ProviderNote } from "./Lookup";
 import { IsbnField } from "./Screens";
 

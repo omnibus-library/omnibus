@@ -6,7 +6,7 @@ import {
   railShelves,
   shelfAriaLabel,
   shelfTabMeta,
-} from "./shelfGallery";
+} from "./shelfLens";
 
 const ME = userId(1);
 const THEM = userId(2);

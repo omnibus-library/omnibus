@@ -22,8 +22,8 @@ import {
   isEmptyEdit,
   NO_EDIT,
   removable,
-} from "./bulkEdit";
-import { addTargets } from "./shelfGallery";
+} from "./bulkMetadata";
+import { addTargets } from "./shelfLens";
 
 /** Where focus lands when the opener is gone: the select-all checkbox, as a saved edit drops the selection. */
 type FallbackFocus = RefObject<HTMLElement | null>;
