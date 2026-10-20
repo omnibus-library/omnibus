@@ -3,6 +3,7 @@ import {
   type ReactNode,
   type RefObject,
   useEffect,
+  useRef,
 } from "react";
 import { Link } from "react-router";
 import {
@@ -96,17 +97,19 @@ export function ReviewFrame({
   kind,
   counts,
   progress,
-  columnRef: column,
+  columnRef,
   onKeyDown,
   children,
 }: {
   kind: CleanupKind | null;
   counts: CleanupKindCounts[] | undefined;
   progress: { index: number; total: number } | null;
-  columnRef: RefObject<HTMLDivElement | null>;
+  columnRef?: RefObject<HTMLDivElement | null>;
   onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
   children: ReactNode;
 }) {
+  const ownColumn = useRef<HTMLDivElement>(null);
+  const column = columnRef ?? ownColumn;
   useEffect(() => {
     column.current?.focus();
   }, [column]);

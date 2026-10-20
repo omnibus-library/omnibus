@@ -305,14 +305,8 @@ function ReviewQueue({ kind }: { kind: CleanupKind }) {
 
 /** A slug that names no kind: the frame and a line saying so, with nothing fetched. */
 function UnknownKind() {
-  const column = useRef<HTMLDivElement>(null);
   return (
-    <ReviewFrame
-      kind={null}
-      counts={undefined}
-      progress={null}
-      columnRef={column}
-    >
+    <ReviewFrame kind={null} counts={undefined} progress={null}>
       <p
         className="settings-status error"
         role="status"
