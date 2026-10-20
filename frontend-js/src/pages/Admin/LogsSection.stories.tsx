@@ -94,6 +94,32 @@ export const TryAgainReadsTheLogsAgain: Story = {
   },
 };
 
+export const ShowsTheErrorWhenAReReadFailsOverALoadedPage: Story = {
+  beforeEach({ msw }) {
+    let reads = 0;
+    msw.use(
+      http.get(LOGS, () =>
+        ++reads === 1
+          ? HttpResponse.json(aWireLogPage())
+          : new HttpResponse("failed with 500", { status: 500 }),
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByTestId("logs-table");
+
+    await userEvent.click(canvas.getByRole("button", { name: "Apply" }));
+
+    await expect(await canvas.findByTestId("logs-error")).toHaveTextContent(
+      "Couldn’t load the logs.",
+    );
+    await expect(
+      canvas.getByRole("button", { name: "Try again" }),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByTestId("logs-table")).not.toBeInTheDocument();
+  },
+};
+
 export const ShowsAnEmptyLine: Story = {
   beforeEach({ msw }) {
     msw.use(logsHandler(() => aWireLogPage({ records: [] })));

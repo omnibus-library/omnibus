@@ -210,30 +210,29 @@ export function LogsSection() {
           onChange={(change) => setFilters({ ...filters, ...change })}
           onApply={apply}
         />
-        {page === undefined ? (
-          logs.isError ? (
-            <div className="settings-actions">
-              <p
-                className="settings-status error"
-                role="status"
-                data-testid="logs-error"
-              >
-                Couldn’t load the logs.
-              </p>
-              <Button
-                variant="ghost"
-                data-testid="logs-retry"
-                onClick={() => logs.refetch()}
-              >
-                Try again
-              </Button>
-            </div>
-          ) : (
-            <div role="status" aria-live="polite" data-testid="logs-loading">
-              <span className="ld-sr">Reading the logs</span>
-              <RowSkeletons count={6} avatar={false} />
-            </div>
-          )
+        {logs.isError && !loading ? (
+          // A failed read wins over the page it replaces, which may be stale.
+          <div className="settings-actions">
+            <p
+              className="settings-status error"
+              role="status"
+              data-testid="logs-error"
+            >
+              Couldn’t load the logs.
+            </p>
+            <Button
+              variant="ghost"
+              data-testid="logs-retry"
+              onClick={() => logs.refetch()}
+            >
+              Try again
+            </Button>
+          </div>
+        ) : page === undefined ? (
+          <div role="status" aria-live="polite" data-testid="logs-loading">
+            <span className="ld-sr">Reading the logs</span>
+            <RowSkeletons count={6} avatar={false} />
+          </div>
         ) : page.records.length === 0 ? (
           <p className="settings-status" role="status" data-testid="logs-empty">
             No log records match these filters.
