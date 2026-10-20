@@ -183,6 +183,131 @@
         }
       }
     },
+    "/api/account/kobo-devices": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "List your Kobo devices",
+        "description": "The Kobo e-readers registered to your account, with the secret each one syncs with.",
+        "operationId": "list_kobo_devices",
+        "responses": {
+          "200": {
+            "description": "Your Kobo devices.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KoboDeviceView"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Register a Kobo device",
+        "description": "Adds a Kobo under the given label and mints the token its sync address\n`/kobo/{token}/…` carries.",
+        "operationId": "create_kobo_device",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateKoboDevice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The new device, with its token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KoboDeviceView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The name is empty or longer than 100 characters once trimmed."
+          }
+        }
+      }
+    },
+    "/api/account/kobo-devices/{id}": {
+      "delete": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Remove a Kobo device",
+        "description": "Deletes the registration, so the Kobo's sync address stops working.",
+        "operationId": "delete_kobo_device",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The device's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The device is removed."
+          },
+          "404": {
+            "description": "None of your devices has that id."
+          }
+        }
+      }
+    },
+    "/api/account/kobo-devices/{id}/regenerate": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Regenerate a Kobo's token",
+        "description": "Replaces the device's token, so its old sync address stops working at once. The\ndevice keeps its name and its sync progress; point the Kobo at the new address.",
+        "operationId": "regenerate_kobo_device",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The device's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The device, with its new token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KoboDeviceView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "None of your devices has that id."
+          }
+        }
+      }
+    },
     "/api/account/profile": {
       "post": {
         "tags": [
@@ -1365,6 +1490,37 @@
           },
           "401": {
             "description": "The request has no live session."
+          }
+        }
+      }
+    },
+    "/api/auth/password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Change your password",
+        "description": "Switches your password and signs out every other session, keeping the one making this\nrequest. Sign in with your password to call it: an API token can't, so a leaked token\ncan't take the account.",
+        "operationId": "change_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The password is changed and your other sessions are signed out."
+          },
+          "400": {
+            "description": "`new_password` fails the password rules; the body says which."
+          },
+          "403": {
+            "description": "`current_password` is wrong, or the request is authenticated by an API token or HTTP Basic rather than a session."
           }
         }
       }
@@ -3393,7 +3549,18 @@
           "422": {
             "description": "The book has no EPUB."
           }
-        }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session_cookie": []
+          },
+          {
+            "media_token": []
+          }
+        ]
       }
     },
     "/api/ebooks/{uuid}/images/link": {
@@ -4449,6 +4616,28 @@
         }
       }
     },
+    "/api/kindle/delivery": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Check Send to Kindle delivery",
+        "description": "Whether the server can email books, and the sender address you must approve at Amazon\nbefore a Kindle accepts them. Never carries the mail server or its credentials.",
+        "operationId": "get_kindle_delivery",
+        "responses": {
+          "200": {
+            "description": "The sender address, or null when the server has no email delivery set up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KindleDelivery"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/kindle/send": {
       "post": {
         "tags": [
@@ -4971,7 +5160,7 @@
           "Progress"
         ],
         "summary": "Save a position",
-        "description": "Records where you are in a book in one format: `epub` with an `epub_cfi`, a\n`progress_percent` or both, or `audio` with `audio_position_seconds`. The latest\nposition wins, judged by `client_updated_at` (the server's clock when absent), so a\nwrite older than the stored position changes nothing. An `audio` position without\n`book_file_id` also loses to a stored one that names a file of a multi-file audiobook.\nThe response is the position the server kept, yours or the stored one.",
+        "description": "Records where you are in a book in one format: `epub` with an `epub_cfi`, a\n`progress_percent` or both, or `audio` with `audio_position_seconds`. The latest\nposition wins, judged by `client_updated_at` (the server's clock when absent), so a\nwrite older than the stored position changes nothing. An `audio` position without\n`book_file_id` also loses to a stored one that names a file of a multi-file audiobook.\nThe response is the position the server kept, yours or the stored one. A book you\nhaven't given a read status becomes `reading`; one you have keeps its status.",
         "operationId": "post_progress",
         "requestBody": {
           "content": {
@@ -5331,7 +5520,7 @@
           "Read status"
         ],
         "summary": "Get a book's read status",
-        "description": "Your read status for the book. The body is `null` when you have never set one, or no\nbook has the uuid; treat that as `unread`.",
+        "description": "Your read status for the book. Saving a position sets `reading` when you have no\nstatus. The body is `null` when you have neither set one nor saved a position, or no\nbook has the uuid; treat that as `unread`.",
         "operationId": "get_read_status",
         "parameters": [
           {
@@ -8884,6 +9073,24 @@
           }
         }
       },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "description": "The passwords `POST /api/auth/password` takes.",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "description": "Your password now, to prove it is you."
+          },
+          "new_password": {
+            "type": "string",
+            "description": "The password to switch to. It must meet the same rules as at sign-up."
+          }
+        }
+      },
       "ChapterInfo": {
         "type": "object",
         "description": "A chapter on an audiobook file's timeline.",
@@ -9523,6 +9730,19 @@
           "status": {
             "$ref": "#/components/schemas/JournalStatus",
             "description": "May be left out, which publishes the entry."
+          }
+        }
+      },
+      "CreateKoboDevice": {
+        "type": "object",
+        "description": "The label for a new Kobo.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "A label of 1 to 100 characters once trimmed, such as \"Clara HD\"."
           }
         }
       },
@@ -11022,6 +11242,19 @@
           "published"
         ]
       },
+      "KindleDelivery": {
+        "type": "object",
+        "description": "Whether Send to Kindle can deliver. It never carries the relay's host or\ncredentials.",
+        "properties": {
+          "sender_address": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The address books are sent from, which readers must add to their approved\nsenders at Amazon. Null when no SMTP relay is set up, so nothing can be sent."
+          }
+        }
+      },
       "KindleSendQueued": {
         "type": "object",
         "description": "A Send to Kindle that is queued to go out.",
@@ -11108,6 +11341,42 @@
           }
         ],
         "description": "Where a Send to Kindle stands. `GET /api/kindle/send/status` returns it for the\n`task_id` that `POST /api/kindle/send` gave back. Poll until `status` is no longer\n`pending`. A `failed` status carries a `message` that says why."
+      },
+      "KoboDeviceView": {
+        "type": "object",
+        "description": "A Kobo e-reader registered to your account. Its `token` is the secret in the sync\naddress the Kobo is pointed at, `/kobo/{token}/…`.",
+        "required": [
+          "id",
+          "name",
+          "token",
+          "created_at",
+          "last_seen_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When it was registered, in Unix seconds."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The device's id, which the regenerate and delete routes take."
+          },
+          "last_seen_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the Kobo last synced, in Unix seconds."
+          },
+          "name": {
+            "type": "string",
+            "description": "The label you gave it."
+          },
+          "token": {
+            "type": "string",
+            "description": "The secret path segment of the sync address. Treat it like a password: anyone\nholding it can sync as you."
+          }
+        }
       },
       "LengthBucket": {
         "type": "object",
@@ -14924,7 +15193,7 @@
     },
     {
       "name": "Account",
-      "description": "Your profile, avatar and preferences, and Send to Kindle."
+      "description": "Your profile, avatar and preferences, Kobo devices, and Send to Kindle."
     },
     {
       "name": "Admin",

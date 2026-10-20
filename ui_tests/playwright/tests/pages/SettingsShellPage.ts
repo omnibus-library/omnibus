@@ -1,4 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
+import { PageScrollComponent } from "../components/PageScrollComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { BasePage } from "./BasePage";
 
@@ -21,6 +22,7 @@ export abstract class SettingsShellPage<
   protected readonly urlPattern: RegExp;
 
   readonly topNav: TopNavComponent;
+  readonly scroll: PageScrollComponent;
   readonly layout: Locator;
   readonly heading: Locator;
   readonly backLink: Locator;
@@ -35,6 +37,7 @@ export abstract class SettingsShellPage<
     super(page);
     this.urlPattern = new RegExp(`${shell.path}(?:\\?|$)`);
     this.topNav = new TopNavComponent(page);
+    this.scroll = new PageScrollComponent(page);
     this.layout = page.getByTestId(shell.layoutTestId);
     this.heading = page.getByRole("heading", { level: 1, name: shell.title });
     this.backLink = page.getByTestId("settings-back");
@@ -75,13 +78,6 @@ export abstract class SettingsShellPage<
 
   async discardEdits(): Promise<void> {
     await this.discardButton.click();
-  }
-
-  /** Whether the page scrolls sideways, which a narrow screen must never do. */
-  scrollsSideways(): Promise<boolean> {
-    return this.page.evaluate(
-      () => document.documentElement.scrollWidth > window.innerWidth,
-    );
   }
 
   /** Checks the address names `section`, or the default one with no bare `?`. */

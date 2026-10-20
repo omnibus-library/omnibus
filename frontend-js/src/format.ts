@@ -129,7 +129,7 @@ export function formatYear(raw: string): string | null {
   return year > SENTINEL_YEAR_MAX ? String(year) : null;
 }
 
-const MONTHS = [
+export const MONTHS = [
   "Jan",
   "Feb",
   "Mar",
@@ -272,3 +272,8 @@ export function formatStarted(unixSecs: number, timeZone?: string): string {
   const part = (type: string) => parts.find((p) => p.type === type)?.value;
   return `${part("month")} ${part("day")}, ${part("year")} · ${part("hour")}:${part("minute")}`;
 }
+
+// shortcut: the UTC day, as the Dioxus tables cut it; switch to the reader's offset (rule 10) when both clients move.
+/** A Unix-seconds timestamp as `YYYY-MM-DD`, UTC. */
+export const utcDay = (unixSecs: number) =>
+  new Date(unixSecs * 1000).toISOString().slice(0, 10);

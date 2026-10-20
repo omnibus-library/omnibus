@@ -406,6 +406,12 @@
   padding: 24px;
   background: var(--ld-stage-bg, var(--rd-page, var(--bg-0)));
 }
+.ld-stage.in-flow {
+  position: relative;
+  inset: auto;
+  flex: 1;
+  min-height: 60vh;
+}
 .ld-stage .ld-label {
   color: var(--ink-2);
 }

@@ -11,6 +11,7 @@ import {
   thumbUrl,
   type User,
 } from "../../api";
+import { usePlayback } from "../../playback/PlaybackProvider";
 import { resumeHref } from "../../resume";
 import { useCurrentUser, useSignOut } from "../../session";
 import { Cover } from "../Cover/Cover";
@@ -256,7 +257,8 @@ function AccountRows({ user, onNavigate }: SectionProps) {
 
 // "Switch user" has nowhere to go yet, so it renders inert rather than as a dead link.
 function SessionRows() {
-  const signOut = useSignOut();
+  const { flush } = usePlayback();
+  const signOut = useSignOut(flush);
   return (
     <div className="um-rows">
       <div className="um-row" aria-disabled="true">

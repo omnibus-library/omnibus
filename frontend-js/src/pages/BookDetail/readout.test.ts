@@ -31,6 +31,7 @@ function position(overrides: Partial<Position> = {}): Position {
   return {
     cfi: null,
     percent: null,
+    derivedCfi: null,
     audioSeconds: null,
     updatedAt: 1000,
     ...overrides,

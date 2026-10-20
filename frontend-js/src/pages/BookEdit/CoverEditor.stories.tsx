@@ -6,6 +6,7 @@ import {
   anEditableWireBook,
   coverWriteHandlers,
 } from "../../testing/metadataHandlers";
+import { PREVIEW } from "../../testing/uploadHandlers";
 import { CoverEditor, type StagedCover } from "./CoverEditor";
 
 const wire = anEditableWireBook();
@@ -19,7 +20,12 @@ const FILE_COVER =
 
 const UPLOADED: string[] = [];
 const FETCHED: string[] = [];
-const PICK = () => new File(["png"], "new-cover.png", { type: "image/png" });
+// Real PNG bytes: a staged preview that fails to decode drops its <img>.
+const PNG = Uint8Array.from(
+  atob(PREVIEW.slice(PREVIEW.indexOf(",") + 1)),
+  (c) => c.charCodeAt(0),
+);
+const PICK = () => new File([PNG], "new-cover.png", { type: "image/png" });
 
 /** The page's part: it holds the book a write returns. */
 function Live({ book }: { book: EditableBook }) {

@@ -1,6 +1,6 @@
 import type { PaletteResults } from "../../api";
 import { facetHref, SECTION_LABELS } from "../../search";
-import { type SettingsEntry, settingsHref } from "../../settingsIndex";
+import { type SettingsEntry, sectionHref } from "../../settingsIndex";
 
 /** One selectable palette row, carrying the hit it shows. */
 export type PaletteItem =
@@ -109,7 +109,7 @@ export function itemHref(item: PaletteItem): string {
     case "genre":
       return facetHref(item.kind, item.hit.name);
     case "setting":
-      return settingsHref(item.hit);
+      return sectionHref(item.hit.section);
     default: {
       const _exhaustive: never = item;
       return _exhaustive;

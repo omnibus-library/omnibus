@@ -1,18 +1,21 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  avatarUrl,
   type BookUuid,
+  bumpAvatarBust,
   bumpCoverBust,
   coverUrl,
-  resetCoverBusts,
+  resetImageBusts,
   thumbSrcSet,
   thumbUrl,
+  type UserId,
 } from "./core";
 
 const uuid = (id: string) => id as BookUuid;
 
 describe("cover cache-busting", () => {
   // The bust store is module state, so each test starts from the cover first sent.
-  beforeEach(resetCoverBusts);
+  beforeEach(resetImageBusts);
 
   it("keeps the plain URLs until a write bumps the book", () => {
     const book = uuid("plain");
@@ -46,5 +49,20 @@ describe("cover cache-busting", () => {
     bumpCoverBust(uuid("other"));
 
     expect(coverUrl(uuid("untouched"))).toBe("/api/covers/untouched");
+  });
+});
+
+describe("avatar cache-busting", () => {
+  beforeEach(resetImageBusts);
+
+  it("keeps the plain URL until a write bumps the reader", () => {
+    expect(avatarUrl(7 as UserId)).toBe("/api/users/7/avatar");
+  });
+
+  it("appends the generation after a bump, for that reader only", () => {
+    bumpAvatarBust(8 as UserId);
+
+    expect(avatarUrl(8 as UserId)).toBe("/api/users/8/avatar?v=1");
+    expect(avatarUrl(9 as UserId)).toBe("/api/users/9/avatar");
   });
 });

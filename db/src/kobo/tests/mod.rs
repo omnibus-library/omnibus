@@ -12,7 +12,7 @@ use omnibus_shared::{
 use super::*;
 use crate::init_db;
 use crate::shelves::{create_shelf, update_shelf};
-use crate::test_support::{seed_synced_audiobook, seed_synced_ebook};
+use crate::test_support::{forget_read_status, seed_synced_audiobook, seed_synced_ebook};
 use crate::upsert_metadata_overrides;
 
 async fn make_user(pool: &SqlitePool, username: &str) -> i64 {
@@ -494,6 +494,7 @@ async fn reading_state_for_returns_status_and_position_per_book() {
     )
     .await
     .unwrap();
+    forget_read_status(&pool, user, &positioned).await;
 
     let states = reading_state_for(
         &pool,
@@ -601,6 +602,7 @@ async fn reading_state_for_reports_a_zero_status_clock_for_a_position_only_book(
     )
     .await
     .unwrap();
+    forget_read_status(&pool, user, &uuid).await;
 
     let states = reading_state_for(&pool, user, std::slice::from_ref(&uuid))
         .await

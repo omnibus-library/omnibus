@@ -239,7 +239,8 @@ prints a directory's map from them. The rules contributors follow live under
 
 | Topic | Rule |
 |---|---|
-| Dev environment, env vars | [01-dev-environment.md](../.claude/rules/01-dev-environment.md) |
+| Dev environment | [01-dev-environment.md](../.claude/rules/01-dev-environment.md) |
+| Environment variables | [environment.md](environment.md) |
 | Error handling | [02-error-handling.md](../.claude/rules/02-error-handling.md) |
 | Unit & integration testing | [03-unit-testing.md](../.claude/rules/03-unit-testing.md) |
 | Playwright E2E conventions | [04-playwright.md](../.claude/rules/04-playwright.md) |
