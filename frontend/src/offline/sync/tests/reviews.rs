@@ -1,7 +1,7 @@
 //! Replaying review writes: a merged patch reaches the server whole and its
 //! answer settles the replica, a later queued write keeps the replica, a
-//! failed one holds the book's later writes, a refused one re-reads, and a
-//! retired rating op still replays. Each marks the stats figures stale.
+//! failed one holds the book's later writes, a refused one is read afresh,
+//! and a retired rating op still replays. Each marks the stats figures stale.
 
 #![allow(clippy::await_holding_lock)]
 
@@ -255,15 +255,24 @@ async fn drain_holds_a_books_later_review_writes_behind_one_the_server_failed() 
 }
 
 #[tokio::test]
-async fn drain_marks_the_books_reviews_stale_when_the_server_refuses_a_queued_patch() {
+async fn after_the_server_refuses_a_queued_patch_the_next_read_asks_the_server() {
     store::init_global_for_tests();
     let _guard = test_state_lock().lock().unwrap();
     clear_ops().await;
+    let reads = Arc::new(AtomicUsize::new(0));
+    let counted = reads.clone();
     let app = Router::new().route(
         "/api/reviews/{uuid}",
-        patch(|| async { (StatusCode::BAD_REQUEST, "no") }),
+        patch(|| async { (StatusCode::BAD_REQUEST, "no") }).get(move || {
+            let counted = counted.clone();
+            async move {
+                counted.fetch_add(1, Ordering::SeqCst);
+                Json(no_reviews())
+            }
+        }),
     );
-    set_server_url(&spawn_router(app).await);
+    let base = spawn_router(app).await;
+    set_server_url(&base);
     let uuid = "drain-refused-review";
     let reviews_key = cache::keys::reviews(uuid);
     cache::put_json(&reviews_key, &no_reviews());
@@ -272,14 +281,16 @@ async fn drain_marks_the_books_reviews_stale_when_the_server_refuses_a_queued_pa
         .expect("queued");
 
     drain().await;
+    refresh_pending().await;
 
     let st = store::store().expect("store");
     assert_eq!(st.ops_count().await, 0, "a refused write is dropped");
-    assert_eq!(
-        fetched_at(&reviews_key).await,
-        0,
-        "the replica still draws the refused stars until it re-reads"
-    );
+    // The replica drew the refused stars; the next view must not.
+    let read = data::get_book_reviews(&base, uuid)
+        .await
+        .expect("read from the server");
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
+    assert_eq!(read.mine, None);
     note_online();
 }
 

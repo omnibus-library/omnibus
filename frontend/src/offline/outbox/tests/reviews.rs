@@ -307,3 +307,28 @@ async fn review_replayed_stores_the_answer_only_when_no_other_write_to_the_revie
     let st = store::store().expect("store");
     assert_eq!(st.kv_get(&key).await.expect("row").fetched_at, 0);
 }
+
+#[tokio::test]
+async fn overlapping_offline_text_and_stars_edits_both_reach_the_cached_review() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    clear_ops().await;
+    let uuid = "review-overlap";
+    cache_reviews(uuid, None);
+
+    let (body, rating) = (text("Both survive"), stars(2.5));
+    let (saved, rated) = tokio::join!(
+        queue_update_review(uuid, &body),
+        queue_update_review(uuid, &rating),
+    );
+    saved.expect("queued");
+    rated.expect("queued");
+
+    let cached: BookReviews = cache::get_json(&cache::keys::reviews(uuid))
+        .await
+        .expect("cached");
+    let mine = cached.mine.expect("a review");
+    assert_eq!(mine.stars, Some(2.5));
+    assert_eq!(mine.body_md.as_deref(), Some("Both survive"));
+    clear_ops().await;
+}

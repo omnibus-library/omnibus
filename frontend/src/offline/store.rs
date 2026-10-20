@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use tokio::sync::{mpsc, oneshot};
 
 /// One cached JSON payload — the local replica of a server response.
@@ -243,6 +243,37 @@ impl Store {
         });
     }
 
+    /// Read, change and write back one cached payload as a single worker job,
+    /// so no other write to the row lands between the read and the write. `f`
+    /// gets the payload (if any) and returns the one to store (`None` leaves
+    /// the row as it is) and a value for the caller. `None` without a worker.
+    pub async fn kv_update<T, F>(&self, key: &str, f: F) -> Option<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(Option<String>) -> (Option<String>, T) + Send + 'static,
+    {
+        let key = key.to_string();
+        self.run(move |conn| {
+            let payload = conn
+                .query_row(
+                    "SELECT payload FROM cache WHERE key = ?1",
+                    params![key],
+                    |row| row.get::<_, String>(0),
+                )
+                .ok();
+            let (next, out) = f(payload);
+            if let Some(next) = next {
+                log_err(conn.execute(
+                    "INSERT INTO cache (key, payload, fetched_at) VALUES (?1, ?2, ?3)
+                     ON CONFLICT(key) DO UPDATE SET payload = ?2, fetched_at = ?3",
+                    params![key, next, now_secs()],
+                ));
+            }
+            out
+        })
+        .await
+    }
+
     /// Delete one cached payload.
     pub fn kv_delete(&self, key: &str) {
         let key = key.to_string();
@@ -340,13 +371,11 @@ impl Store {
     pub fn ops_append(&self, kind: &str, payload: String, coalesce_key: Option<String>) {
         let kind = kind.to_string();
         self.run_detached(move |conn| {
-            if let Some(ck) = &coalesce_key {
-                log_err(conn.execute("DELETE FROM ops WHERE coalesce_key = ?1", params![ck]));
-            }
-            log_err(conn.execute(
-                "INSERT INTO ops (kind, coalesce_key, payload, created_at, attempts)
-                 VALUES (?1, ?2, ?3, ?4, 0)",
-                params![kind, coalesce_key, payload, now_secs()],
+            log_err(append_replacing(
+                conn,
+                &kind,
+                coalesce_key.as_deref(),
+                payload,
             ));
         });
     }
@@ -360,27 +389,7 @@ impl Store {
     {
         let kind = kind.to_string();
         self.run_detached(move |conn| {
-            let newest = conn
-                .query_row(
-                    "SELECT id, payload FROM ops WHERE coalesce_key = ?1 ORDER BY id DESC LIMIT 1",
-                    params![coalesce_key],
-                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
-                )
-                .ok();
-            let payload = match newest.and_then(|(id, older)| merge(&older).map(|m| (id, m))) {
-                // Re-inserted rather than rewritten in place: a drain replaying
-                // the old row deletes it on success, merged-in fields and all.
-                Some((id, merged)) => {
-                    log_err(conn.execute("DELETE FROM ops WHERE id = ?1", params![id]));
-                    merged
-                }
-                None => payload,
-            };
-            log_err(conn.execute(
-                "INSERT INTO ops (kind, coalesce_key, payload, created_at, attempts)
-                 VALUES (?1, ?2, ?3, ?4, 0)",
-                params![kind, coalesce_key, payload, now_secs()],
-            ));
+            log_err(append_merged(conn, &kind, &coalesce_key, payload, merge));
         });
     }
 
@@ -622,7 +631,65 @@ impl Store {
 /// Log-and-continue for best-effort writes: the offline layer must never
 /// take the app down over a cache write. `pub(super)` so sibling `offline`
 /// modules (e.g. `downloads`) share this instead of swallowing the error.
-pub(super) fn log_err(r: Result<usize, rusqlite::Error>) {
+/// [`Store::ops_append`]'s job as one transaction: a failed insert rolls the
+/// delete back, so the op it would have replaced stays queued.
+fn append_replacing(
+    conn: &Connection,
+    kind: &str,
+    coalesce_key: Option<&str>,
+    payload: String,
+) -> Result<(), rusqlite::Error> {
+    let tx = conn.unchecked_transaction()?;
+    if let Some(ck) = coalesce_key {
+        tx.execute("DELETE FROM ops WHERE coalesce_key = ?1", params![ck])?;
+    }
+    insert_op(&tx, kind, coalesce_key, &payload)?;
+    tx.commit()
+}
+
+/// [`Store::ops_append_merging`]'s job as one transaction, for the same reason.
+fn append_merged(
+    conn: &Connection,
+    kind: &str,
+    coalesce_key: &str,
+    payload: String,
+    merge: impl FnOnce(&str) -> Option<String>,
+) -> Result<(), rusqlite::Error> {
+    let tx = conn.unchecked_transaction()?;
+    let newest = tx
+        .query_row(
+            "SELECT id, payload FROM ops WHERE coalesce_key = ?1 ORDER BY id DESC LIMIT 1",
+            params![coalesce_key],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    let payload = match newest.and_then(|(id, older)| merge(&older).map(|m| (id, m))) {
+        // Re-inserted rather than rewritten in place: a drain replaying the
+        // old row deletes it on success, merged-in fields and all.
+        Some((id, merged)) => {
+            tx.execute("DELETE FROM ops WHERE id = ?1", params![id])?;
+            merged
+        }
+        None => payload,
+    };
+    insert_op(&tx, kind, Some(coalesce_key), &payload)?;
+    tx.commit()
+}
+
+fn insert_op(
+    conn: &Connection,
+    kind: &str,
+    coalesce_key: Option<&str>,
+    payload: &str,
+) -> Result<usize, rusqlite::Error> {
+    conn.execute(
+        "INSERT INTO ops (kind, coalesce_key, payload, created_at, attempts)
+         VALUES (?1, ?2, ?3, ?4, 0)",
+        params![kind, coalesce_key, payload, now_secs()],
+    )
+}
+
+pub(super) fn log_err<T>(r: Result<T, rusqlite::Error>) {
     if let Err(e) = r {
         tracing::warn!(error = %e, "offline store write failed");
     }

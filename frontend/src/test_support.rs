@@ -9,9 +9,9 @@ use dioxus::prelude::*;
 
 /// SSR-render an rsx `Element` to an HTML string: the workhorse for
 /// render-smoke tests (pass `rsx! { SomeComponent { ..props } }`, assert on
-/// substrings). Testing `mobile`-only markup needs `--features mobile,server`
-/// together (no single CI leg runs that): gate the test module
-/// `#[cfg(all(test, feature = "mobile", feature = "server"))]`.
+/// substrings). For `mobile`-only markup, call `dioxus::ssr` directly: native
+/// test builds enable it as a dev-dependency feature, so such a test runs
+/// under `--features mobile` alone (`pages/book_detail/mobile/tests.rs`).
 #[cfg(feature = "server")]
 pub fn render(element: Element) -> String {
     dioxus::ssr::render_element(element)

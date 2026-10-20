@@ -378,9 +378,19 @@ pub(super) fn settle_refresh(
     }
 }
 
-/// Re-read the summary and the other readers after a write moved them.
+/// Re-read the summary and the other readers after a write moved them, from
+/// the server: `refresh_book_reviews`, not the cache-first `get_book_reviews`,
+/// which on mobile answers with the replica the write just refreshed.
 async fn refresh_household(ctx: ReviewsCtx, uuid: &str, server_url: &str) {
     let start = begin_refresh(ctx);
-    let result = data::get_book_reviews(server_url, uuid).await;
+    let result = data::refresh_book_reviews(server_url, uuid).await;
     settle_refresh(ctx, start, result);
+}
+
+/// Re-read the household when the replica moved under the section (a drain
+/// or a revalidation landed), on the owner scope. The book shown stays put.
+pub(super) fn refresh_after_sync(ctx: ReviewsCtx, uuid: String, server_url: String) {
+    spawn_owned(ctx, async move {
+        refresh_household(ctx, &uuid, &server_url).await;
+    });
 }

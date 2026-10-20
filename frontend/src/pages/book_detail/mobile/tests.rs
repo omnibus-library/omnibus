@@ -45,16 +45,20 @@ fn has_multi_file_format_matches_formats_that_differ_only_by_ascii_case() {
     assert!(has_multi_file_format(&[file("M4B", 0), file("m4b", 1)]));
 }
 
-// Markup of the whole mobile page: needs `--features mobile,server` together,
-// for `dioxus::ssr` alongside the mobile layout.
-#[cfg(feature = "server")]
+// Markup of the whole mobile page. `dioxus::ssr` comes from a dev-dependency
+// feature, so this runs under `--features mobile` alone.
 mod render {
     use dioxus::prelude::*;
 
     use super::*;
     use crate::data::ServerUrl;
     use crate::pages::book_detail::DescriptionSignals;
-    use crate::test_support::render_in_vdom;
+
+    fn render_in_vdom(app: fn() -> Element) -> String {
+        let mut dom = VirtualDom::new(app);
+        dom.rebuild_in_place();
+        dioxus::ssr::render(&dom)
+    }
 
     fn page() -> Element {
         use_context_provider(|| ServerUrl(Signal::new("http://library.test".to_string())));

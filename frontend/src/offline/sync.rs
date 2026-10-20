@@ -431,14 +431,17 @@ async fn drain() {
 /// Bookkeeping after a write to your review of `book` replayed. One the server
 /// failed holds the book's later review writes until the next pass, which
 /// replays it first: landing them now would let it undo them. One dropped
-/// leaves the replica drawing a write that never landed, so it re-reads.
+/// leaves the replica drawing a write that never landed, so the row goes and
+/// the next view reads the server (a stale row would still be served first).
 fn after_review_replay(outcome: &Outcome, book: String, held: &mut HashSet<String>) {
     match outcome {
         Outcome::ServerError => {
             held.insert(book);
         }
         Outcome::Rejected | Outcome::Stuck => {
-            super::cache::expire(&super::cache::keys::reviews(&book));
+            if let Some(st) = store::store() {
+                st.kv_delete(&super::cache::keys::reviews(&book));
+            }
         }
         _ => {}
     }

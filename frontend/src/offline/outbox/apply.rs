@@ -332,25 +332,29 @@ pub(crate) async fn journal_remapped(temp_id: i64, real: &JournalEntry) {
 /// return it as patched (`None` once nothing is left). The summary is left
 /// alone: whether there is one is the server's call, so it waits for a read.
 pub(crate) async fn review_patched(uuid: &str, patch: &ReviewPatch, now: i64) -> Option<Review> {
-    let key = cache::keys::reviews(uuid);
-    let mut cached: Option<BookReviews> = cache::get_json(&key).await;
-    let mine = patch_review(
-        cached.as_ref().and_then(|r| r.mine.clone()),
-        patch,
-        uuid,
-        now,
-    );
-    if let Some(reviews) = cached.as_mut() {
-        reviews.mine = mine.clone();
-        cache::put_json(&key, reviews);
-    }
-    mine
+    let (book, change) = (uuid.to_string(), patch.clone());
+    let patched = with_cached_reviews(uuid, move |cached| {
+        let mine = patch_review(
+            cached.as_ref().and_then(|r| r.mine.clone()),
+            &change,
+            &book,
+            now,
+        );
+        if let Some(reviews) = cached {
+            reviews.mine = mine.clone();
+        }
+        mine
+    })
+    .await;
+    patched.unwrap_or_else(|| patch_review(None, patch, uuid, now))
 }
 
 /// Drop your review from the book's cached reviews.
 pub(crate) async fn review_deleted(uuid: &str) {
-    cache::mutate_json::<BookReviews, _>(&cache::keys::reviews(uuid), |reviews| {
-        reviews.mine = None;
+    with_cached_reviews(uuid, |cached| {
+        if let Some(reviews) = cached {
+            reviews.mine = None;
+        }
     })
     .await;
 }
@@ -359,13 +363,32 @@ pub(crate) async fn review_deleted(uuid: &str) {
 /// says the write moved your rating, which the stats figures count.
 pub(crate) async fn review_landed(uuid: &str, mine: Option<&Review>, stars: bool) {
     let mine = mine.cloned();
-    cache::mutate_json::<BookReviews, _>(&cache::keys::reviews(uuid), |reviews| {
-        reviews.mine = mine;
+    with_cached_reviews(uuid, move |cached| {
+        if let Some(reviews) = cached {
+            reviews.mine = mine;
+        }
     })
     .await;
     if stars {
         ratings_moved();
     }
+}
+
+/// Run `f` on the book's cached reviews as one store-worker job, so two
+/// writes (a Save and a star tap) can't both read the row before either
+/// writes it back and drop the other's field. `f` sees `None` when nothing
+/// is cached, and nothing is written then. `None` without a store.
+async fn with_cached_reviews<T: Send + 'static>(
+    uuid: &str,
+    f: impl FnOnce(Option<&mut BookReviews>) -> T + Send + 'static,
+) -> Option<T> {
+    let st = store::store()?;
+    st.kv_update(&cache::keys::reviews(uuid), move |payload| {
+        let mut cached = payload.and_then(|p| serde_json::from_str::<BookReviews>(&p).ok());
+        let out = f(cached.as_mut());
+        (cached.and_then(|r| serde_json::to_string(&r).ok()), out)
+    })
+    .await
 }
 
 /// Your rating changed on the server, so every cached stats range is stale.

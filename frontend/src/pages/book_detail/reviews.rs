@@ -31,6 +31,9 @@ mod writes;
 #[cfg(test)]
 mod tests;
 
+#[cfg(all(test, feature = "mobile"))]
+mod mobile_tests;
+
 pub(super) use summary::BdReviewsJumpLink;
 
 /// Which of your quick writes last failed, so its own line can say so. The
@@ -108,7 +111,8 @@ pub(super) fn use_book_reviews(uuid: String) -> ReviewsCtx {
         saved: use_rule_facts_saved(),
     };
     use_reviews_load(uuid.clone(), server_url.clone(), ctx);
-    use_finished_load(uuid, server_url, ctx);
+    use_finished_load(uuid.clone(), server_url.clone(), ctx);
+    use_household_resync(uuid, server_url, ctx);
     ctx
 }
 
@@ -147,6 +151,24 @@ fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx) {
             let next = ctx.feed.peek().after(ok);
             ctx.feed.set(next);
         });
+    }));
+}
+
+/// Re-read the household whenever the replica moves under a loaded section:
+/// on mobile a drain replayed a queued write, or a revalidation landed. The
+/// cache generation never moves on web, so there this does nothing.
+fn use_household_resync(uuid: String, server_url: String, ctx: ReviewsCtx) {
+    let generation = crate::use_cache_generation();
+    let mut seen = use_signal(|| *generation.peek());
+    use_effect(use_reactive!(|uuid| {
+        let now = generation();
+        if now == *seen.peek() {
+            return;
+        }
+        seen.set(now);
+        if !uuid.is_empty() && *ctx.feed.peek() == FeedState::Loaded {
+            writes::refresh_after_sync(ctx, uuid.clone(), server_url.clone());
+        }
     }));
 }
 
