@@ -31,6 +31,13 @@ const result = (
 const twoBuckets = (values: (number | null)[], max = 20) =>
   result(["2026-01", "2026-02"], [[null, values]], max);
 
+// jsdom has no matchMedia, so the system's motion setting is whatever a test says it is.
+const stubReducedMotion = (reduce: boolean) =>
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: reduce,
+    media: query,
+  }));
+
 describe("blend", () => {
   it("starts at the old values and ends at the new", () => {
     const a = twoBuckets([0, 10]);
@@ -165,9 +172,11 @@ describe("useTweened", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    stubReducedMotion(false);
   });
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   const tweened = (target: ChartResult | null) =>
@@ -207,6 +216,16 @@ describe("useTweened", () => {
 
     advance(FRAMES - 1);
     expect(result.current?.series[0]?.values).toEqual([10, 10]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("shows a new result at once when the reader asks for less motion", () => {
+    stubReducedMotion(true);
+    const { result, rerender } = tweened(first);
+
+    rerender({ target: next });
+
+    expect(result.current).toBe(next);
     expect(vi.getTimerCount()).toBe(0);
   });
 

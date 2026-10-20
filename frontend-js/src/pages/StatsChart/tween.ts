@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChartResult, ChartSeries } from "../../api";
+import { prefersReducedMotion } from "../../motion";
 
 // Values are interpolated, never geometry, so bars, dots and the line move from one mechanism. Axes snap,
 // as a lerped maximum moves its tick labels through 3.7 and 7.4. Marks match by identity (a series by
@@ -48,9 +49,9 @@ export function blend(
 }
 
 /**
- * A view of `target` that animates to each new value. The first result and any over 120 buckets show
- * at once; until a tween's first frame renders the previous frame stays, and a newer result takes over
- * a running tween from the frame it had reached.
+ * A view of `target` that animates to each new value. The first result, any over 120 buckets, and every
+ * result under reduced motion show at once; until a tween's first frame renders the previous frame
+ * stays, and a newer result takes over a running tween from the frame it had reached.
  */
 export function useTweened(target: ChartResult | null): ChartResult | null {
   const [shown, setShown] = useState<ChartResult | null>(null);
@@ -66,7 +67,8 @@ export function useTweened(target: ChartResult | null): ChartResult | null {
     if (
       target === null ||
       from === null ||
-      target.buckets.length > MAX_TWEEN_BUCKETS
+      target.buckets.length > MAX_TWEEN_BUCKETS ||
+      prefersReducedMotion()
     ) {
       show(target);
       return;
