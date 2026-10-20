@@ -265,6 +265,45 @@ export const DonutBodyRemountsOnlyWhenTheMixChanges: Story = {
   },
 };
 
+export const SplitPercentRemountsOnlyWhenItsShareChanges: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...api({
+        stats: ({ range }) =>
+          aWireStatsSummary({
+            range,
+            ...(range === "year"
+              ? { reading_seconds: 36_000, listening_seconds: 36_000 }
+              : {}),
+          }),
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const split = await canvas.findByTestId("stats-format-split");
+    const shares = () => [...split.querySelectorAll(".st-split-pct")];
+    const first = shares();
+    await expect(first.map((node) => node.textContent)).toEqual(["75%", "25%"]);
+
+    // Lifetime reports the same split as the month: each number keeps its node and its fade.
+    await userEvent.click(canvas.getByRole("button", { name: "Lifetime" }));
+    await waitFor(() =>
+      expect(canvas.getByTestId("stats-window-label")).toHaveTextContent(
+        "Everything you have tracked",
+      ),
+    );
+    await expect(shares()).toEqual(first);
+
+    await userEvent.click(canvas.getByRole("button", { name: "Year" }));
+    await waitFor(() =>
+      expect(shares().map((node) => node.textContent)).toEqual(["50%", "50%"]),
+    );
+    for (const [i, node] of shares().entries()) {
+      await expect(node).not.toBe(first[i]);
+    }
+  },
+};
+
 export const StandoutsListEachRecordInOrder: Story = {
   play: async ({ canvas }) => {
     const grid = await canvas.findByTestId("stats-superlatives");

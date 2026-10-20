@@ -626,7 +626,14 @@ export const MonthlyChartHoldsItsSpaceWithoutMonths: Story = {
     msw.use(...standing({ books_per_month: [] }));
   },
   play: async ({ canvas }) => {
-    await canvas.findByTestId("stats-alltime-section");
+    const section = await canvas.findByTestId("stats-alltime-section");
     await expect(canvas.queryByTestId("stats-monthly-chart")).toBeNull();
+    // The heatmap is drawn, so the one placeholder in the band can only be the chart's.
+    await expect(
+      within(section).getByTestId("stats-heatmap"),
+    ).toBeInTheDocument();
+    await expect(
+      section.querySelectorAll(".st-card-placeholder[aria-hidden='true']"),
+    ).toHaveLength(1);
   },
 };
