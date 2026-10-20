@@ -1,11 +1,11 @@
-//! The "Recently Interacted" axis: that each signal moves a book, that a
-//! private journal draft does not, and that keyset paging over the derived
-//! expression stays consistent with an unpaged read.
+//! The "Recently Interacted" axis: that each signal moves a book (a review by
+//! its stars or by its text alone), that a private journal draft or a review
+//! holding only private notes does not, and that keyset paging over the
+//! derived expression stays consistent with an unpaged read.
 //!
-//! Six cases cover the seven signals: metadata edits and cover replacements
-//! share one clock (both land on `books.last_modified` via
-//! `touch_book_last_modified`), so one test covers the pair rather than
-//! pretending they are independently observable here.
+//! Metadata edits and cover replacements share one clock (both land on
+//! `books.last_modified` via `touch_book_last_modified`), so one test covers
+//! the pair rather than pretending they are independently observable here.
 
 use omnibus_shared::{SortDir, SortKey, ViewFilters};
 use sqlx::SqlitePool;
@@ -142,6 +142,23 @@ async fn interacted_at_ignores_a_review_holding_only_private_notes() {
     .await
     .unwrap();
     assert_eq!(interacted_at(&pool, &uuid(1)).await, Some(1000));
+}
+
+#[tokio::test]
+async fn interacted_at_tracks_a_review_holding_only_text() {
+    let pool = seeded_pool(1).await;
+    let user = seed_user(&pool, "alice").await;
+    sqlx::query(
+        "INSERT INTO reviews (user_id, book_uuid, body_md, updated_at)
+         VALUES (?1, ?2, 'Loved it', 4400)",
+    )
+    .bind(user)
+    .bind(uuid(1))
+    .execute(&pool)
+    .await
+    .unwrap();
+    // No stars, but public words are an interaction anyone can see.
+    assert_eq!(interacted_at(&pool, &uuid(1)).await, Some(4400));
 }
 
 #[tokio::test]
