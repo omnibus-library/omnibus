@@ -145,9 +145,10 @@ export const NobodyHasReviewedIt: Story = {
     await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
       "Not rated yet",
     );
-    await expect(canvas.getByTestId("review-write")).toHaveTextContent(
-      "✎ Write review",
+    await expect(canvas.getByTestId("review-write")).toHaveAccessibleName(
+      "Write review",
     );
+    // Nothing to delete yet, so no trash can.
     await expect(canvas.queryByTestId("review-delete")).not.toBeInTheDocument();
     await expect(
       canvas.queryByTestId("review-summary"),
@@ -174,8 +175,8 @@ export const EveryoneHasHadTheirSay: Story = {
     await expect(within(mine).getByTestId("my-review-notes")).toHaveTextContent(
       "Private notes · only you can see these",
     );
-    await expect(within(mine).getByTestId("review-write")).toHaveTextContent(
-      "✎ Edit review",
+    await expect(within(mine).getByTestId("review-write")).toHaveAccessibleName(
+      "Edit review",
     );
 
     const summary = canvas.getByTestId("review-summary");
@@ -540,53 +541,58 @@ export const ARefusedSaveKeepsTheComposerOpen: Story = {
   },
 };
 
-export const TheSpoilerBoxSavesAtOnce: Story = {
+export const TheCardsToolsAreAPencilAndATrashCan: Story = {
+  beforeEach: withReviews(aWireReview({ stars: 3 })),
+  play: async ({ canvas, userEvent }) => {
+    const mine = await canvas.findByRole("region", { name: "Your review" });
+    // Stars alone are no writing yet, so the pencil still offers to write.
+    const pencil = within(mine).getByRole("button", { name: "Write review" });
+    await expect(pencil).toHaveAttribute("title", "Write review");
+    await expect(
+      within(mine).getByRole("button", { name: "Delete review" }),
+    ).toHaveAttribute("title", "Delete review");
+    await expect(within(mine).queryByText("Write review")).toBeNull();
+
+    await userEvent.click(pencil);
+
+    await canvas.findByTestId("review-composer");
+    // An open editor already is what the pencil would open.
+    await expect(canvas.queryByTestId("review-write")).not.toBeInTheDocument();
+  },
+};
+
+export const ReadModeCarriesNoSpoilerControl: Story = {
+  beforeEach: withReviews({ ...MINE, spoiler: true }),
+  play: async ({ canvas }) => {
+    const mine = await canvas.findByRole("region", { name: "Your review" });
+    await expect(within(mine).getByTestId("my-review-text")).toBeVisible();
+    await expect(
+      within(mine).queryByRole("checkbox", { name: "Contains spoilers" }),
+    ).not.toBeInTheDocument();
+    await expect(mine).not.toHaveTextContent(/spoiler/i);
+  },
+};
+
+export const TheSpoilerFlagSavesWithTheComposer: Story = {
   beforeEach: withReviews(MINE),
   play: async ({ canvas, userEvent }) => {
-    const box = await canvas.findByRole("checkbox", {
+    await userEvent.click(await canvas.findByTestId("review-write"));
+    const composer = await canvas.findByTestId("review-composer");
+    const box = within(composer).getByRole("checkbox", {
       name: "Contains spoilers",
     });
     await expect(box).not.toBeChecked();
 
     await userEvent.click(box);
+    // Nothing is sent until Save.
+    await expect(writes).toEqual([]);
+    await userEvent.click(within(composer).getByTestId("review-save"));
 
-    await expect(box).toBeChecked();
+    // The flag alone is a change worth saving, and travels without the text.
     await waitFor(() => expect(writes).toEqual([{ spoiler: true }]));
-  },
-};
-
-export const ARefusedSpoilerFlagIsPutBack: Story = {
-  beforeEach({ msw }) {
-    msw.use(
-      failing("patch", "/api/reviews/:uuid", 500),
-      ...reviewHandlers({ mine: MINE }, writes),
+    await waitFor(() =>
+      expect(canvas.queryByTestId("review-composer")).not.toBeInTheDocument(),
     );
-  },
-  play: async ({ canvas, userEvent }) => {
-    const box = await canvas.findByRole("checkbox", {
-      name: "Contains spoilers",
-    });
-
-    await userEvent.click(box);
-
-    await expect(
-      await canvas.findByTestId("review-spoiler-error"),
-    ).toHaveTextContent("Couldn’t save — try again");
-    await expect(box).not.toBeChecked();
-    // The stars line speaks only for the stars.
-    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
-      "4 of 5",
-    );
-  },
-};
-
-export const NoSpoilerBoxWithoutText: Story = {
-  beforeEach: withReviews(aWireReview({ stars: 3 })),
-  play: async ({ canvas }) => {
-    await canvas.findByTestId("review-delete");
-    await expect(
-      canvas.queryByRole("checkbox", { name: "Contains spoilers" }),
-    ).not.toBeInTheDocument();
   },
 };
 
@@ -613,9 +619,10 @@ export const DeleteAsksThenRemovesEverything: Story = {
     await expect(
       canvas.queryByTestId("my-review-notes"),
     ).not.toBeInTheDocument();
-    await expect(canvas.getByTestId("review-write")).toHaveTextContent(
-      "✎ Write review",
+    await expect(canvas.getByTestId("review-write")).toHaveAccessibleName(
+      "Write review",
     );
+    await expect(canvas.queryByTestId("review-delete")).not.toBeInTheDocument();
   },
 };
 

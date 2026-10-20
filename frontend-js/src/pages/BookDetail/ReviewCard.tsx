@@ -7,11 +7,11 @@ import {
   type MyReview,
   saveReview,
 } from "../../api";
-import { Button } from "../../components/Button/Button";
 import {
   ConfirmBody,
   ConfirmModal,
 } from "../../components/ConfirmModal/ConfirmModal";
+import { PencilGlyph, TrashGlyph } from "../../components/Glyphs/Glyphs";
 import { nowSecs } from "../../format";
 import { reviewsQuery, shelvesQuery } from "./queries";
 import { RenderedMarkdown } from "./RenderedMarkdown";
@@ -24,14 +24,11 @@ import { useOptimisticSave } from "./useOptimisticSave";
 // The stats page and the chart builder sum the stars; their queries are keyed under these.
 const STATS_KEYS = [["stats"], ["stats-chart"]] as const;
 
-/** Which of your quick writes the server last refused, so its own line can say so. */
-type QuickWrite = "stars" | "spoiler";
-
 /**
  * Every write to your review, through one queue so the server applies them in the order made.
- * Stars and the spoiler flag show at once and revert if refused; text and a delete wait for
- * the server. Once the last write settles the reviews are read again, which refreshes the
- * summary and the other readers.
+ * A stars tap shows at once and reverts if refused; the composer's Save (text, notes and the
+ * spoiler flag) and a delete wait for the server. Once the last write settles the reviews are
+ * read again, which refreshes the summary and the other readers.
  */
 function useReviewWrites(uuid: BookUuid) {
   const client = useQueryClient();
@@ -58,46 +55,17 @@ function useReviewWrites(uuid: BookUuid) {
 
 type Writes = ReturnType<typeof useReviewWrites>;
 
-/** Your rendered text with its spoiler checkbox, then your private notes, marked as private. */
-function MyReviewWriting({
-  mine,
-  failed,
-  onSpoiler,
-}: {
-  mine: MyReview;
-  failed: boolean;
-  onSpoiler: (spoiler: boolean) => void;
-}) {
+/** Your rendered text, then your private notes, marked as private; the spoiler flag is set in the composer, so read mode carries no marker of it. */
+function MyReviewWriting({ mine }: { mine: MyReview }) {
   return (
     <>
       {mine.bodyMd !== null && (
-        <>
-          <RenderedMarkdown
-            html={mine.bodyHtml}
-            md={mine.bodyMd}
-            className="bd-review-text"
-            testId="my-review-text"
-          />
-          <div className="bd-review-spoilerrow">
-            <label className="bd-review-spoiler" data-testid="review-spoiler">
-              <input
-                type="checkbox"
-                checked={mine.spoiler}
-                onChange={(event) => onSpoiler(event.target.checked)}
-              />
-              Contains spoilers
-            </label>
-            {failed && (
-              <span
-                className="mono bd-journal-error"
-                role="alert"
-                data-testid="review-spoiler-error"
-              >
-                Couldn’t save — try again
-              </span>
-            )}
-          </div>
-        </>
+        <RenderedMarkdown
+          html={mine.bodyHtml}
+          md={mine.bodyMd}
+          className="bd-review-text"
+          testId="my-review-text"
+        />
       )}
       {mine.notesMd !== null && (
         <div className="bd-review-notes" data-testid="my-review-notes">
@@ -112,7 +80,7 @@ function MyReviewWriting({
   );
 }
 
-/** Delete review's confirm modal: the delete lands only on success, and a refusal keeps the modal open with the reason. */
+/** The trash can's confirm modal: the delete lands only on success, and a refusal keeps the modal open with the reason. */
 function DeleteReviewModal({
   save,
   onClose,
@@ -182,7 +150,7 @@ function DeleteReviewModal({
   );
 }
 
-/** Your review card, always first: one-tap stars, your text and private notes, Write / Edit and Delete review. */
+/** Your review card, always first: a head row with the pencil (write or edit) and the trash can (delete), the one-tap stars, then your text and private notes. */
 export function ReviewCard({
   uuid,
   mine,
@@ -191,63 +159,64 @@ export function ReviewCard({
   mine: MyReview | null;
 }) {
   const save = useReviewWrites(uuid);
-  // Only the newest quick write's outcome is told, which is the one the card now shows.
-  const [failure, setFailure] = useState<QuickWrite | null>(null);
+  // Only the newest tap's outcome is told, which is the one the stars now show.
+  const [starsFailed, setStarsFailed] = useState(false);
   const [composing, setComposing] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const quick = (kind: QuickWrite, write: ReviewWrite) => {
-    setFailure(null);
-    save.mutate(write, { onError: () => setFailure(kind) });
+  const pick = (stars: number | null) => {
+    setStarsFailed(false);
+    save.mutate({ stars }, { onError: () => setStarsFailed(true) });
   };
   const hasWriting = mine?.bodyMd != null || mine?.notesMd != null;
+  const writeLabel = hasWriting ? "Edit review" : "Write review";
   return (
     <section
       className="bd-review-mine"
       data-testid="my-review"
       aria-label="Your review"
     >
-      <div className="label bd-review-mine-k">Your review</div>
+      <div className="bd-review-mine-head">
+        <div className="label bd-review-mine-k">Your review</div>
+        <div className="bd-review-tools">
+          {/* An open editor already is what the pencil would open. */}
+          {!composing && (
+            <button
+              type="button"
+              className="bd-review-tool"
+              data-testid="review-write"
+              aria-label={writeLabel}
+              title={writeLabel}
+              onClick={() => setComposing(true)}
+            >
+              <PencilGlyph />
+            </button>
+          )}
+          {mine && (
+            <button
+              type="button"
+              className="bd-review-tool bd-review-tool-danger"
+              data-testid="review-delete"
+              aria-label="Delete review"
+              title="Delete review"
+              onClick={() => setConfirming(true)}
+            >
+              <TrashGlyph />
+            </button>
+          )}
+        </div>
+      </div>
       <div className="bd-review-starsline">
-        <StarPicker
-          stars={mine?.stars ?? null}
-          onPick={(stars) => quick("stars", { stars })}
-        />
+        <StarPicker stars={mine?.stars ?? null} onPick={pick} />
         <div
           className="mono bd-review-starsmeta"
           role="status"
           data-testid="review-stars-meta"
         >
-          {starsMeta(nowSecs(), failure === "stars", mine)}
+          {starsMeta(nowSecs(), starsFailed, mine)}
         </div>
       </div>
       <div className="bd-review-mine-body">
-        {mine && (
-          <MyReviewWriting
-            mine={mine}
-            failed={failure === "spoiler"}
-            onSpoiler={(spoiler) => quick("spoiler", { spoiler })}
-          />
-        )}
-        <div className="bd-review-actions">
-          <Button
-            size="sm"
-            data-testid="review-write"
-            onClick={() => setComposing(true)}
-          >
-            {hasWriting ? "✎ Edit review" : "✎ Write review"}
-          </Button>
-          {mine && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="bd-journal-delete"
-              data-testid="review-delete"
-              onClick={() => setConfirming(true)}
-            >
-              Delete review
-            </Button>
-          )}
-        </div>
+        {mine && <MyReviewWriting mine={mine} />}
       </div>
       {composing && (
         // Not dismissable by a click outside: a stray one must not throw away the draft.

@@ -49,14 +49,17 @@ export function applyLocally(
   return empty ? null : next;
 }
 
-/** The cached reviews while `write` is in flight: stars and the spoiler flag drawn at once, the rest left to the server. */
+/** The cached reviews while `write` is in flight: a stars tap drawn at once; the composer's Save and a delete wait for the server. */
 export function optimisticReviews(
   reviews: BookReviews,
   write: ReviewWrite,
   now: number,
 ): BookReviews {
-  if (write === "delete") return reviews;
-  return { ...reviews, mine: applyLocally(reviews.mine, write, now) };
+  if (write === "delete" || write.stars === undefined) return reviews;
+  return {
+    ...reviews,
+    mine: applyLocally(reviews.mine, { stars: write.stars }, now),
+  };
 }
 
 /** Whether `write` can move the household's numbers: the stars, which stats and smart shelves read too. */
@@ -82,6 +85,31 @@ export function textChange(
   return {
     ...(bodyMd !== undefined && { bodyMd }),
     ...(notesMd !== undefined && { notesMd }),
+  };
+}
+
+/** What the composer opens with: your saved text and notes, as Markdown, and your spoiler flag. */
+export type ComposerSeed = {
+  bodyMd: string;
+  notesMd: string;
+  spoiler: boolean;
+};
+
+/** The seed for `mine`, empty where nothing is written. */
+export const composerSeed = (mine: MyReview | null): ComposerSeed => ({
+  bodyMd: mine?.bodyMd ?? "",
+  notesMd: mine?.notesMd ?? "",
+  spoiler: mine?.spoiler ?? false,
+});
+
+/** What Save sends: the changed text fields, plus the spoiler flag only when it moved; empty when nothing changed. */
+export function saveChange(
+  seed: ComposerSeed,
+  draft: ComposerSeed,
+): ReviewChange {
+  return {
+    ...textChange(seed, draft),
+    ...(draft.spoiler !== seed.spoiler && { spoiler: draft.spoiler }),
   };
 }
 

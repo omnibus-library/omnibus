@@ -9,12 +9,14 @@ import {
 import {
   applyLocally,
   averageLabel,
+  composerSeed,
   isNoChange,
   jumpLabel,
   movesStars,
   needsReadMore,
   optimisticReviews,
   reviewsKicker,
+  saveChange,
   splitOthers,
   spoilerVeiled,
   spreadBars,
@@ -91,6 +93,50 @@ describe("optimisticReviews", () => {
 
   it("keeps everything while a delete waits for the server", () => {
     expect(optimisticReviews(reviews, "delete", NOW)).toBe(reviews);
+  });
+
+  it("leaves the composer's Save to the server, the spoiler flag included", () => {
+    expect(
+      optimisticReviews(reviews, { bodyMd: "New.", spoiler: true }, NOW),
+    ).toBe(reviews);
+  });
+});
+
+describe("saveChange", () => {
+  const seed = composerSeed(
+    mine({ body_md: "Rosebud.", body_html: "<p>x</p>", spoiler: true }),
+  );
+
+  it("seeds from the saved review, and from nothing for a new one", () => {
+    expect(seed).toEqual({ bodyMd: "Rosebud.", notesMd: "", spoiler: true });
+    expect(composerSeed(null)).toEqual({
+      bodyMd: "",
+      notesMd: "",
+      spoiler: false,
+    });
+  });
+
+  it("counts a flag-only change as one worth saving", () => {
+    expect(saveChange(seed, { ...seed, spoiler: false })).toEqual({
+      spoiler: false,
+    });
+  });
+
+  it("sends the flag with the text only when it moved", () => {
+    expect(saveChange(seed, { ...seed, bodyMd: "Rosebud, again." })).toEqual({
+      bodyMd: "Rosebud, again.",
+    });
+    expect(
+      saveChange(composerSeed(null), {
+        bodyMd: "Spoiled.",
+        notesMd: "",
+        spoiler: true,
+      }),
+    ).toEqual({ bodyMd: "Spoiled.", spoiler: true });
+  });
+
+  it("is no change when nothing moved", () => {
+    expect(isNoChange(saveChange(seed, seed))).toBe(true);
   });
 });
 

@@ -811,8 +811,52 @@ button.spoiler.revealed {
   border-radius: 12px;
   background: color-mix(in oklch, var(--bg-1) 72%, transparent);
 }
+.bd-review-mine-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -8px -10px -6px 0;
+}
 .bd-review-mine-k {
   color: var(--ink-2);
+}
+.bd-review-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.bd-review-tool {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background-color 0.15s;
+}
+.bd-review-tool svg {
+  display: block;
+}
+.bd-review-tool:hover {
+  color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+}
+.bd-review-tool-danger:hover {
+  color: var(--bad);
+  background: color-mix(in oklch, var(--bad) 12%, transparent);
+}
+.bd-review-tool:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  color: var(--ink-0);
 }
 .bd-review-starsline {
   display: flex;
@@ -829,20 +873,6 @@ button.spoiler.revealed {
   flex-direction: column;
   gap: 12px;
 }
-.bd-review-spoilerrow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.bd-review-spoiler {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  color: var(--ink-2);
-  cursor: pointer;
-}
 .bd-review-notes {
   padding: 10px 12px;
   border-radius: 8px;
@@ -856,16 +886,20 @@ button.spoiler.revealed {
   text-transform: uppercase;
   color: var(--accent);
 }
-.bd-review-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 .bd-review-composer {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+.bd-review-spoiler {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  margin-top: -6px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  cursor: pointer;
 }
 .bd-review-field-head {
   display: flex;

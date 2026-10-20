@@ -10,7 +10,7 @@ import {
   JournalToolbar,
 } from "./JournalEditor";
 import { highlightBlockquote } from "./journalMarkdown";
-import { isNoChange, textChange } from "./reviews";
+import { composerSeed, isNoChange, saveChange } from "./reviews";
 
 const FIELDS = {
   body: {
@@ -97,19 +97,17 @@ type ReviewComposerProps = {
   onClose: () => void;
 };
 
-/** Your review's public text and private notes in the journal's editor, saved together on Save as one patch of what changed. */
+/** Your review's public text (with the Contains spoilers flag under it) and private notes in the journal's editor, saved together on Save as one patch of what changed. */
 export function ReviewComposer({
   uuid,
   mine,
   onSave,
   onClose,
 }: ReviewComposerProps) {
-  const [seed] = useState(() => ({
-    bodyMd: mine?.bodyMd ?? "",
-    notesMd: mine?.notesMd ?? "",
-  }));
+  const [seed] = useState(() => composerSeed(mine));
   const [bodyMd, setBodyMd] = useState(seed.bodyMd);
   const [notesMd, setNotesMd] = useState(seed.notesMd);
+  const [spoiler, setSpoiler] = useState(seed.spoiler);
   const [uploadError, setUploadError] = useState<string | null>(null);
   // Not optimistic: the rendered text comes from the server, so the editor holds the draft until then.
   const save = useMutation({
@@ -118,7 +116,7 @@ export function ReviewComposer({
   });
   const error = save.error?.message ?? uploadError;
   const submit = () => {
-    const change = textChange(seed, { bodyMd, notesMd });
+    const change = saveChange(seed, { bodyMd, notesMd, spoiler });
     if (isNoChange(change)) {
       onClose();
       return;
@@ -138,6 +136,14 @@ export function ReviewComposer({
         onChange={setBodyMd}
         onError={setUploadError}
       />
+      <label className="bd-review-spoiler" data-testid="review-spoiler">
+        <input
+          type="checkbox"
+          checked={spoiler}
+          onChange={(event) => setSpoiler(event.target.checked)}
+        />
+        Contains spoilers
+      </label>
       <ReviewField
         uuid={uuid}
         field="notes"

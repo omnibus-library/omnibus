@@ -53,10 +53,48 @@ export const NewReview: Story = {
     await expect(canvas.getByTestId("review-notes-field")).toHaveTextContent(
       "only you can see these",
     );
-    // The spoiler flag lives on your card, beside the saved text.
+    // The spoiler flag sits under the public field, unticked for a new review.
     await expect(
-      canvas.queryByRole("checkbox", { name: "Contains spoilers" }),
-    ).not.toBeInTheDocument();
+      canvas.getByRole("checkbox", { name: "Contains spoilers" }),
+    ).not.toBeChecked();
+  },
+};
+
+export const SavesTheSpoilerFlagWithTheText: Story = {
+  play: async ({ args, canvas, userEvent }) => {
+    await userEvent.type(
+      canvas.getByRole("textbox", { name: "Review text" }),
+      "Rosebud was the sled.",
+    );
+    await userEvent.click(
+      canvas.getByRole("checkbox", { name: "Contains spoilers" }),
+    );
+
+    await userEvent.click(canvas.getByTestId("review-save"));
+
+    await waitFor(() =>
+      expect(args.onSave).toHaveBeenCalledWith({
+        bodyMd: "Rosebud was the sled.",
+        spoiler: true,
+      }),
+    );
+  },
+};
+
+export const AFlagOnlyChangeIsSaved: Story = {
+  args: { mine: WRITTEN },
+  play: async ({ args, canvas, userEvent }) => {
+    const box = canvas.getByRole("checkbox", { name: "Contains spoilers" });
+    // Seeded from the saved review.
+    await expect(box).toBeChecked();
+
+    await userEvent.click(box);
+    await userEvent.click(canvas.getByTestId("review-save"));
+
+    await waitFor(() =>
+      expect(args.onSave).toHaveBeenCalledWith({ spoiler: false }),
+    );
+    await waitFor(() => expect(args.onClose).toHaveBeenCalled());
   },
 };
 
