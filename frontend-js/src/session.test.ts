@@ -1,10 +1,17 @@
-import { QueryClient } from "@tanstack/react-query";
+import { MutationObserver, QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { toUser } from "./api";
 import { endSession, meQuery, startSession } from "./session";
 import { WIRE_ADA } from "./testing/wire";
 
 const grace = toUser({ ...WIRE_ADA, id: 2, username: "grace" });
+
+// A write's variables, such as a typed password, stay in the cache after it settles.
+async function typedSecret(client: QueryClient) {
+  await new MutationObserver(client, {
+    mutationFn: async (secret: string) => secret,
+  }).mutate("typed-secret");
+}
 
 describe("startSession", () => {
   it("drops the answers cached for whoever was signed in before", () => {
@@ -14,6 +21,15 @@ describe("startSession", () => {
     startSession(client, grace);
 
     expect(client.getQueryData(["progress", "recent", 1])).toBeUndefined();
+  });
+
+  it("forgets what the previous user typed into a write", async () => {
+    const client = new QueryClient();
+    await typedSecret(client);
+
+    startSession(client, grace);
+
+    expect(client.getMutationCache().getAll()).toEqual([]);
   });
 
   it("makes the new user the session", () => {
@@ -43,6 +59,15 @@ describe("endSession", () => {
     endSession(client, () => {});
 
     expect(client.getQueryData(meQuery.queryKey)).toBeNull();
+  });
+
+  it("forgets what was typed into a write", async () => {
+    const client = new QueryClient();
+    await typedSecret(client);
+
+    endSession(client, () => {});
+
+    expect(client.getMutationCache().getAll()).toEqual([]);
   });
 
   it("drops every other cached answer", () => {

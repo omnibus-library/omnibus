@@ -22,8 +22,9 @@ export const registrationQuery = queryOptions({
   queryFn: () => fetchRegistrationOpen().catch(() => true),
 });
 
-/** Makes `user` the session, dropping every answer cached for whoever came before. */
+/** Makes `user` the session, dropping every answer and typed write cached for whoever came before. */
 export function startSession(client: QueryClient, user: User) {
+  client.getMutationCache().clear();
   client.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
   client.setQueryData(meQuery.queryKey, user);
 }
@@ -35,7 +36,7 @@ export function useCurrentUser(): User {
   return data;
 }
 
-/** Leaves the session: to /login, with every cached answer dropped. */
+/** Leaves the session: to /login, with every cached answer and typed write dropped. */
 export function endSession(
   client: QueryClient,
   navigate: (to: string, options: { replace: true }) => void,
@@ -45,6 +46,7 @@ export function endSession(
   // anything under it can read a missing user.
   client.setQueryData(meQuery.queryKey, null);
   client.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
+  client.getMutationCache().clear();
 }
 
 /** Ends the session, drops every cached answer, and returns to /login. */
