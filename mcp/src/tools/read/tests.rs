@@ -14,9 +14,10 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::ErrorCode;
 
 use omnibus_shared::{
-    BookProgress, Bookmark, Contributor, EbookMetadata, Highlight, HighlightColor, HouseholdReader,
-    PhysicalCopy, ProgressFormat, ProgressRecord, ReadStatus, ReadStatusRecord, ResumePoint,
-    SessionFormat, SessionLogEntry, SessionLogPage, StatsSummary,
+    AttributedReview, BookProgress, BookReviews, Bookmark, Contributor, EbookMetadata, Highlight,
+    HighlightColor, HouseholdReader, PhysicalCopy, ProgressFormat, ProgressRecord, ReadStatus,
+    ReadStatusRecord, ResumePoint, Review, SessionFormat, SessionLogEntry, SessionLogPage,
+    StatsSummary,
 };
 
 use super::views::iso;
@@ -256,6 +257,42 @@ async fn copies(Path(_): Path<String>) -> AxumJson<Vec<PhysicalCopy>> {
     }])
 }
 
+async fn reviews(Path(_): Path<String>) -> AxumJson<BookReviews> {
+    AxumJson(BookReviews {
+        mine: Some(Review {
+            book_uuid: BOOK.into(),
+            stars: Some(4.5),
+            body_md: None,
+            body_html: None,
+            notes_md: Some("lend to Sam".into()),
+            notes_html: None,
+            spoiler: false,
+            rated_at: Some(WHEN),
+            created_at: WHEN,
+            updated_at: WHEN,
+            rated_at_iso: None,
+            created_at_iso: None,
+            updated_at_iso: None,
+        }),
+        others: vec![AttributedReview {
+            user_id: 2,
+            username: "sam".into(),
+            has_avatar: false,
+            stars: None,
+            body_md: Some("The house is the hero.".into()),
+            body_html: None,
+            spoiler: true,
+            rated_at: None,
+            created_at: WHEN,
+            updated_at: WHEN,
+            rated_at_iso: None,
+            created_at_iso: None,
+            updated_at_iso: None,
+        }],
+        summary: None,
+    })
+}
+
 /// Boot a stub instance serving every route these tools reach.
 async fn stub_service() -> OmnibusMcp {
     let app = Router::new()
@@ -266,6 +303,7 @@ async fn stub_service() -> OmnibusMcp {
         .route("/api/read-status/{uuid}", get(read_status))
         .route("/api/highlights/book/{uuid}", get(highlights))
         .route("/api/bookmarks/book/{uuid}", get(bookmarks))
+        .route("/api/reviews/{uuid}", get(reviews))
         .route("/api/stats", get(stats))
         .route("/api/stats/sessions", get(sessions))
         .route("/api/physical/{uuid}/copies", get(copies))
@@ -702,4 +740,30 @@ fn the_two_format_vocabularies_are_documented_wherever_they_disagree() {
             "{name} must map the progress and session format vocabularies"
         );
     }
+}
+
+// MARK: - Reviews
+
+#[tokio::test]
+async fn book_reviews_stamps_each_review_and_leaves_absent_fields_out() {
+    let service = stub_service().await;
+
+    let answer = service
+        .book_reviews(Parameters(BookRef { uuid: BOOK.into() }))
+        .await
+        .unwrap()
+        .0;
+
+    let mine = json_of(&answer.mine);
+    assert_eq!(mine["notes_md"], "lend to Sam");
+    assert_eq!(mine["rated_at"], "2026-03-04T00:00:00Z");
+    assert_eq!(mine["rated_at_epoch"], WHEN);
+    assert!(mine.get("body_md").is_none(), "absent text is left out");
+    let other = json_of(&answer.others[0]);
+    assert!(
+        other.get("stars").is_none(),
+        "a text-only review has no stars"
+    );
+    assert_eq!(other["spoiler"], true);
+    assert_eq!(other["created_at"], "2026-03-04T00:00:00Z");
 }

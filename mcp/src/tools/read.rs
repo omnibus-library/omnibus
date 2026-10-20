@@ -9,10 +9,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use omnibus_shared::{
-    AuthorDetail, AuthorSummary, BookProgress, Bookmark, EbookLibrary, EbookMetadata, GenreWeight,
-    Highlight, HouseholdReader, JournalEntry, LibraryContents, PhysicalCopy, ProgressFormat,
-    ReadStatusRecord, ResumePoint, SeriesDetail, SeriesSummary, SessionLogPage, Shelf,
-    ShelfSummary, SortDir, SortKey, StatsRange, StatsSummary, TagWeight,
+    AuthorDetail, AuthorSummary, BookProgress, BookReviews, Bookmark, EbookLibrary, EbookMetadata,
+    GenreWeight, Highlight, HouseholdReader, JournalEntry, LibraryContents, PhysicalCopy,
+    ProgressFormat, ReadStatusRecord, ResumePoint, ReviewSummary, SeriesDetail, SeriesSummary,
+    SessionLogPage, Shelf, ShelfSummary, SortDir, SortKey, StatsRange, StatsSummary, TagWeight,
 };
 
 use crate::client::ClientError;
@@ -24,8 +24,9 @@ pub mod views;
 mod tests;
 
 use views::{
-    BookProgressView, BookmarkView, HighlightView, JournalEntryView, PhysicalCopyView,
-    ProgressRecordView, ReadStatusView, ResumePointView, SessionLogEntryView, SessionLogPageView,
+    BookProgressView, BookmarkView, HighlightView, JournalEntryView, OwnReviewView,
+    PhysicalCopyView, ProgressRecordView, ReadStatusView, ResumePointView, ReviewView,
+    SessionLogEntryView, SessionLogPageView,
 };
 
 /// A single book handle, as returned in `unique_identifier` by the listing
@@ -43,7 +44,7 @@ pub struct BookRef {
 pub enum BookInclude {
     /// Saved positions, one per format the reader has opened.
     Progress,
-    /// want_to_read / reading / finished.
+    /// unread / reading / finished.
     ReadStatus,
     /// Kept lines with their notes.
     Highlights,
@@ -261,6 +262,17 @@ pub struct HighlightList {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct BookmarkList {
     pub bookmarks: Vec<BookmarkView>,
+}
+
+/// `book_reviews`' answer.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct BookReviewsAnswer {
+    /// The signed-in user's review; null when they haven't reviewed the book.
+    pub mine: Option<OwnReviewView>,
+    /// Other readers' reviews: with text first, newest first, then bare ratings.
+    pub others: Vec<ReviewView>,
+    /// Every reader's stars summed up; null until two readers have rated the book.
+    pub summary: Option<ReviewSummary>,
 }
 
 /// `book_journal_entries`' answer, newest first.
@@ -603,7 +615,7 @@ impl OmnibusMcp {
     }
 
     #[tool(
-        description = "The signed-in user's read state for one book (want_to_read / reading / finished, with rating context). `read_status` is null when the book has no state yet — treat that as unread. updated_at and finished_at are ISO 8601, with unix seconds alongside under the same name plus _epoch."
+        description = "The signed-in user's read state for one book: unread, reading or finished. `read_status` is null when the book has no state yet — treat that as unread. Ratings and reviews come from book_reviews. updated_at and finished_at are ISO 8601, with unix seconds alongside under the same name plus _epoch."
     )]
     pub async fn book_read_status(
         &self,
@@ -640,6 +652,22 @@ impl OmnibusMcp {
         let rows: Vec<Bookmark> = self.client.get_json(&path, &[]).await?;
         let bookmarks = rows.into_iter().map(Into::into).collect();
         Ok(Json(BookmarkList { bookmarks }))
+    }
+
+    #[tool(
+        description = "Reviews of one book: the signed-in user's own (stars from 0.5 to 5 in half steps, Markdown text, private notes only they see, spoiler flag), every other reader's stars and text, and a summary (average, count, half-star buckets) once two readers have rated it. A review flagged as a spoiler gives away the plot in its text, never in its stars. Timestamps are ISO 8601, with unix seconds alongside under the same name plus _epoch."
+    )]
+    pub async fn book_reviews(
+        &self,
+        Parameters(p): Parameters<BookRef>,
+    ) -> Result<Json<BookReviewsAnswer>, ErrorData> {
+        let path = format!("/api/reviews/{}", p.uuid);
+        let reviews: BookReviews = self.client.get_json(&path, &[]).await?;
+        Ok(Json(BookReviewsAnswer {
+            mine: reviews.mine.map(Into::into),
+            others: reviews.others.into_iter().map(Into::into).collect(),
+            summary: reviews.summary,
+        }))
     }
 
     #[tool(
