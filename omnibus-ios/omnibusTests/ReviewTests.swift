@@ -345,8 +345,10 @@ struct DetailReviewsTests {
 
     @Test("the stars note says why an unknown review can't be written yet")
     func unknownNote() {
-        #expect(DetailReviews.unknownNote(unavailable: false) == "loading your review")
-        #expect(DetailReviews.unknownNote(unavailable: true) == "loads when you're back online")
+        #expect(DetailReviews.unknownNote(.loading) == "loading your review")
+        #expect(DetailReviews.unknownNote(.unavailable(.offline)) == "loads when you're back online")
+        // A refusal or a fault is not an outage, and waiting won't fix it.
+        #expect(DetailReviews.unknownNote(.unavailable(.failed)) == "couldn't load · pull down to retry")
     }
 
     @Test("the note beside your stars says whether you have rated")
@@ -362,19 +364,20 @@ struct DetailReviewsTests {
 struct UnknownReviewTests {
     @Test("no read yet is loading, a settled read with nothing is unavailable, an answer is ready")
     func cardStateResolves() {
-        #expect(ReviewCardState.resolve(nil, unavailable: false) == .loading)
-        #expect(ReviewCardState.resolve(nil, unavailable: true) == .unavailable)
+        #expect(ReviewCardState.resolve(nil, failure: nil) == .loading)
+        #expect(ReviewCardState.resolve(nil, failure: .offline) == .unavailable(.offline))
+        #expect(ReviewCardState.resolve(nil, failure: .failed) == .unavailable(.failed))
         // An answer wins over a stale failure flag, and "no review" is known.
-        #expect(ReviewCardState.resolve(.empty, unavailable: true) == .ready(nil))
+        #expect(ReviewCardState.resolve(.empty, failure: .offline) == .ready(nil))
         let mine = review(stars: 4)
         let page = BookReviews(mine: mine, others: [], summary: nil)
-        #expect(ReviewCardState.resolve(page, unavailable: false) == .ready(mine))
+        #expect(ReviewCardState.resolve(page, failure: nil) == .ready(mine))
     }
 
     @Test("only a known review is writable")
     func onlyKnownIsInteractive() {
         #expect(!ReviewCardState.loading.isInteractive)
-        #expect(!ReviewCardState.unavailable.isInteractive)
+        #expect(!ReviewCardState.unavailable(.offline).isInteractive)
         #expect(ReviewCardState.ready(nil).isInteractive)
         #expect(ReviewCardState.loading.review == nil)
     }
@@ -382,12 +385,47 @@ struct UnknownReviewTests {
     @Test("the composer opens only on a known review, seeded from it")
     func composerNeedsAKnownBaseline() throws {
         #expect(ReviewComposerTarget.make(for: .loading) == nil)
-        #expect(ReviewComposerTarget.make(for: .unavailable) == nil)
+        #expect(ReviewComposerTarget.make(for: .unavailable(.failed)) == nil)
         let blank = try #require(ReviewComposerTarget.make(for: .ready(nil)))
         #expect(blank.original == nil)
         let mine = review(body: "kept")
         let seeded = try #require(ReviewComposerTarget.make(for: .ready(mine)))
         #expect(seeded.original == mine)
+    }
+
+    @Test("a read that answered, or was only cancelled, leaves no failure behind")
+    func classifyLeavesNothingWithoutAFailure() {
+        #expect(ReviewsReadFailure.classify(APIError.offline, answered: true, cancelled: false) == nil)
+        #expect(ReviewsReadFailure.classify(APIError.offline, answered: false, cancelled: true) == nil)
+        #expect(ReviewsReadFailure.classify(CancellationError(), answered: false, cancelled: false) == nil)
+        // Finished with no answer and no error: the stream was torn down.
+        #expect(ReviewsReadFailure.classify(nil, answered: false, cancelled: false) == nil)
+    }
+
+    @Test("no connection reads as offline; anything else the server did reads as failed")
+    func classifySeparatesOfflineFromFailed() {
+        #expect(ReviewsReadFailure.classify(APIError.offline, answered: false, cancelled: false) == .offline)
+        #expect(
+            ReviewsReadFailure.classify(APIError.transport("reset"), answered: false, cancelled: false)
+                == .offline
+        )
+        #expect(
+            ReviewsReadFailure.classify(
+                APIError.http(status: 500, message: ""), answered: false, cancelled: false
+            ) == .failed
+        )
+        #expect(ReviewsReadFailure.classify(APIError.unauthorized, answered: false, cancelled: false) == .failed)
+        #expect(
+            ReviewsReadFailure.classify(APIError.decoding("x"), answered: false, cancelled: false) == .failed
+        )
+    }
+
+    @Test("coming back online rereads only a review that is still unknown")
+    func rereadOnReconnect() {
+        #expect(DetailReviews.rereadsOnReconnect(wasOnline: false, isOnline: true, known: false))
+        #expect(!DetailReviews.rereadsOnReconnect(wasOnline: false, isOnline: true, known: true))
+        #expect(!DetailReviews.rereadsOnReconnect(wasOnline: true, isOnline: false, known: false))
+        #expect(!DetailReviews.rereadsOnReconnect(wasOnline: true, isOnline: true, known: false))
     }
 
     @MainActor
@@ -398,5 +436,87 @@ struct UnknownReviewTests {
         #expect(model.reviews == nil)
         await model.deleteReview(uuid: uuid)
         #expect(model.reviews == nil)
+    }
+}
+
+// MARK: - The composer's draft
+
+@Suite("Review draft")
+struct ReviewDraftTests {
+    @Test("a field you haven't touched follows a fresher review, and Save sends nothing for it")
+    func untouchedFieldsFollow() {
+        var draft = ReviewDraft(review(body: "replica", notes: "n"))
+        let conflicts = draft.rebase(onto: review(body: "fresh", notes: "n", spoiler: true))
+        #expect(conflicts.isEmpty)
+        #expect(draft.body == "fresh")
+        #expect(draft.spoiler)
+        #expect(draft.patch.isEmpty)
+    }
+
+    @Test("a field you typed in is kept, and diffed against the fresher review")
+    func typedFieldIsKept() {
+        var draft = ReviewDraft(review(body: "old", notes: "n"))
+        draft.body = "mine"
+        // Only the notes moved underneath: no conflict over the text.
+        let conflicts = draft.rebase(onto: review(body: "old", notes: "moved"))
+        #expect(conflicts.isEmpty)
+        #expect(draft.body == "mine")
+        #expect(draft.notes == "moved")
+        #expect(draft.patch == ReviewPatch(bodyMd: .set("mine")))
+    }
+
+    @Test("a field you typed in that also changed elsewhere is kept and reported")
+    func typedFieldThatMovedConflicts() {
+        var draft = ReviewDraft(review(body: "old"))
+        draft.body = "mine"
+        let conflicts = draft.rebase(onto: review(body: "theirs"))
+        #expect(conflicts == [.body])
+        #expect(draft.body == "mine")
+        #expect(draft.patch == ReviewPatch(bodyMd: .set("mine")))
+    }
+
+    @Test("opening on no review, then learning there is one, adopts it")
+    func unknownToKnownAdopts() {
+        var draft = ReviewDraft(nil)
+        let conflicts = draft.rebase(onto: review(body: "there all along"))
+        #expect(conflicts.isEmpty)
+        #expect(draft.body == "there all along")
+        #expect(draft.patch.isEmpty)
+    }
+
+    @Test("the conflict note names what changed, or is absent")
+    func conflictNote() {
+        #expect(DetailReviews.conflictNote([]) == nil)
+        #expect(
+            DetailReviews.conflictNote([.body])
+                == "Your review text changed elsewhere while this was open — Save keeps yours."
+        )
+        #expect(
+            DetailReviews.conflictNote([.spoiler, .body, .notes])
+                == "Your review text, private notes and spoiler flag changed elsewhere while this was open — Save keeps yours."
+        )
+    }
+}
+
+// MARK: - How review writes queue
+
+@Suite("Review outbox ops")
+struct ReviewOutboxOpTests {
+    @Test("a review patch absorbs the book's pre-review rating op")
+    func patchAbsorbsLegacy() {
+        let op = ReviewOutbox.patch(uuid: uuid)
+        #expect(op.kind == OpKind.review(uuid))
+        #expect(op.path == "/api/reviews/\(uuid)")
+        #expect(op.method == "PATCH")
+        #expect(op.legacyStars == OpKind.rating(uuid))
+    }
+
+    @Test("a review delete supersedes the book's pre-review rating op")
+    func deleteSupersedesLegacy() {
+        let op = ReviewOutbox.delete(uuid: uuid)
+        #expect(op.kind == OpKind.review(uuid))
+        #expect(op.method == "DELETE")
+        #expect(op.superseding == [OpKind.rating(uuid)])
+        #expect(op.legacyStars == nil)
     }
 }

@@ -254,11 +254,9 @@ enum UserDataService {
         if !patch.isEmpty {
             let now = Int64(Date().timeIntervalSince1970)
             await mutateLocalReviews(uuid) { $0 = $0.applying(patch, uuid: uuid, now: now) }
-            // A pre-upgrade stars write for the book folds in here rather than
-            // replaying later over this one.
+            let op = ReviewOutbox.patch(uuid: uuid)
             await SyncEngine.shared.writeFieldPatch(
-                kind: OpKind.review(uuid), path: "/api/reviews/\(uuid)", body: patch,
-                legacyStars: OpKind.rating(uuid)
+                kind: op.kind, path: op.path, body: patch, legacyStars: op.legacyStars
             )
             await refreshReviews(uuid)
         }
@@ -271,10 +269,10 @@ enum UserDataService {
     @discardableResult
     static func deleteReview(uuid: String) async -> BookReviews? {
         await mutateLocalReviews(uuid) { $0 = $0.deletingMine() }
+        let op = ReviewOutbox.delete(uuid: uuid)
         await SyncEngine.shared.write(
-            kind: OpKind.review(uuid), path: "/api/reviews/\(uuid)",
-            method: "DELETE", body: nil, coalesce: true,
-            superseding: [OpKind.rating(uuid)]
+            kind: op.kind, path: op.path, method: op.method, body: nil, coalesce: true,
+            superseding: op.superseding
         )
         await refreshReviews(uuid)
         return await Cache.cachedOnly(CacheKey.reviews(uuid))
@@ -1173,6 +1171,34 @@ enum UserDataService {
             group.addTask { for await _ in reviews(uuid: uuid).values() {} }
             group.addTask { for await _ in readStatus(uuid: uuid).values() {} }
         }
+    }
+}
+
+/// How a book's review writes queue, named in one place so the suite can pin
+/// that both absorb the book's pre-review `rating:` op rather than race it.
+enum ReviewOutbox {
+    struct Write: Equatable {
+        let kind: String
+        let path: String
+        let method: String
+        /// A stars write a patch folds in as its oldest value.
+        let legacyStars: String?
+        /// Kinds whose pending ops this write drops.
+        let superseding: [String]
+    }
+
+    static func patch(uuid: String) -> Write {
+        Write(
+            kind: OpKind.review(uuid), path: "/api/reviews/\(uuid)", method: "PATCH",
+            legacyStars: OpKind.rating(uuid), superseding: []
+        )
+    }
+
+    static func delete(uuid: String) -> Write {
+        Write(
+            kind: OpKind.review(uuid), path: "/api/reviews/\(uuid)", method: "DELETE",
+            legacyStars: nil, superseding: [OpKind.rating(uuid)]
+        )
     }
 }
 

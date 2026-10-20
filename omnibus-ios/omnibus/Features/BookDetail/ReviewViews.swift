@@ -55,9 +55,34 @@ enum DetailReviews {
         review.map(hasWriting) == true ? "Edit review" : "Write review"
     }
 
-    /// The note beside the stars while your review is unknown.
-    static func unknownNote(unavailable: Bool) -> String {
-        unavailable ? "loads when you're back online" : "loading your review"
+    /// The note beside the stars while your review is unknown — true to why.
+    static func unknownNote(_ state: ReviewCardState) -> String {
+        switch state {
+        case .unavailable(.offline): "loads when you're back online"
+        case .unavailable(.failed): "couldn't load · pull down to retry"
+        default: "loading your review"
+        }
+    }
+
+    /// The composer's warning when fields you were editing also changed
+    /// elsewhere; `nil` when none did.
+    static func conflictNote(_ fields: Set<ReviewDraft.Field>) -> String? {
+        let names = [
+            (ReviewDraft.Field.body, "review text"),
+            (.notes, "private notes"),
+            (.spoiler, "spoiler flag"),
+        ].filter { fields.contains($0.0) }.map(\.1)
+        guard !names.isEmpty else { return nil }
+        let list = names.count == 1
+            ? names[0]
+            : names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
+        return "Your \(list) changed elsewhere while this was open — Save keeps yours."
+    }
+
+    /// Whether a change in connectivity should read the reviews again: only
+    /// coming back online, and only while there is still nothing known.
+    static func rereadsOnReconnect(wasOnline: Bool, isOnline: Bool, known: Bool) -> Bool {
+        !wasOnline && isOnline && !known
     }
 
     /// The note beside your stars.
@@ -180,7 +205,7 @@ struct ReviewsBlock: View {
     private var reviews: BookReviews { model.reviews ?? .empty }
 
     private var cardState: ReviewCardState {
-        .resolve(model.reviews, unavailable: model.reviewsUnavailable)
+        .resolve(model.reviews, failure: model.reviewsFailure)
     }
 
     var body: some View {
@@ -215,7 +240,9 @@ struct ReviewsBlock: View {
             }
         }
         .sheet(item: $composing) { target in
-            ReviewComposer(original: target.original) { patch in
+            // `latest` follows the model, so an answer that lands while the
+            // composer is open rebases it rather than going unseen.
+            ReviewComposer(original: target.original, latest: cardState.review) { patch in
                 write(patch)
             }
         }
@@ -294,16 +321,33 @@ struct ReviewComposerTarget: Identifiable {
     }
 }
 
+/// Why a reviews read settled with nothing to show.
+enum ReviewsReadFailure: Equatable {
+    /// No connection, and no replica to fall back on.
+    case offline
+    /// The server answered with something unusable — a refusal, a fault, a
+    /// payload that did not decode.
+    case failed
+
+    /// The failure a finished read leaves behind, if any. A read that answered
+    /// left none, and a cancelled one — the screen went away, or a reload
+    /// replaced it — says nothing about the server either.
+    static func classify(_ error: Error?, answered: Bool, cancelled: Bool) -> ReviewsReadFailure? {
+        guard !answered, !cancelled, let error, !isCancellation(error) else { return nil }
+        return (error as? APIError)?.isRecoverableOffline == true ? .offline : .failed
+    }
+}
+
 /// Where your card stands. `nil` reviews are unknown — not yet read, or not
-/// readable offline — which is not the same as having none.
+/// readable — which is not the same as having none.
 enum ReviewCardState: Equatable {
     case loading
-    case unavailable
+    case unavailable(ReviewsReadFailure)
     case ready(Review?)
 
-    static func resolve(_ reviews: BookReviews?, unavailable: Bool) -> ReviewCardState {
+    static func resolve(_ reviews: BookReviews?, failure: ReviewsReadFailure?) -> ReviewCardState {
         if let reviews { return .ready(reviews.mine) }
-        return unavailable ? .unavailable : .loading
+        return failure.map(ReviewCardState.unavailable) ?? .loading
     }
 
     /// Whether the stars and the pencil may write.
@@ -411,7 +455,7 @@ struct MyReviewCard: View {
         HStack(spacing: 12) {
             StarRating(stars: 0, size: 22)
                 .opacity(0.35)
-            MonoNote(text: DetailReviews.unknownNote(unavailable: state == .unavailable))
+            MonoNote(text: DetailReviews.unknownNote(state))
         }
         .opacity(state == .loading && dim ? 0.55 : 1)
         .onAppear {
@@ -757,6 +801,65 @@ struct StarsOnlyRow: View {
     }
 }
 
+// MARK: - The draft
+
+/// What the composer holds: the three fields as typed, and the review they
+/// are a change to. A save diffs against `baseline`, so the baseline has to
+/// follow the server while the composer is open — a draft seeded from a stale
+/// replica would otherwise send text over a review the writer never saw.
+struct ReviewDraft: Equatable {
+    enum Field: Hashable { case body, notes, spoiler }
+
+    var body: String
+    var notes: String
+    var spoiler: Bool
+    private(set) var baseline: Review?
+
+    init(_ review: Review?) {
+        body = review?.bodyMd ?? ""
+        notes = review?.notesMd ?? ""
+        spoiler = review?.spoiler ?? false
+        baseline = review
+    }
+
+    /// What Save sends: the fields that differ from the baseline.
+    var patch: ReviewPatch {
+        .edits(from: baseline, body: body, notes: notes, spoiler: spoiler)
+    }
+
+    /// The fields typed over since the baseline.
+    var touched: Set<Field> {
+        var out: Set<Field> = []
+        if body != (baseline?.bodyMd ?? "") { out.insert(.body) }
+        if notes != (baseline?.notesMd ?? "") { out.insert(.notes) }
+        if spoiler != (baseline?.spoiler ?? false) { out.insert(.spoiler) }
+        return out
+    }
+
+    /// Move onto `latest`. A field you haven't touched follows it; one you
+    /// have keeps what you typed, and comes back as a conflict when `latest`
+    /// moved it too — so the composer can say so before a save replaces it.
+    mutating func rebase(onto latest: Review?) -> Set<Field> {
+        let typed = touched
+        var conflicts: Set<Field> = []
+        if (baseline?.bodyMd ?? "") != (latest?.bodyMd ?? "") {
+            if typed.contains(.body) { conflicts.insert(.body) } else { body = latest?.bodyMd ?? "" }
+        }
+        if (baseline?.notesMd ?? "") != (latest?.notesMd ?? "") {
+            if typed.contains(.notes) { conflicts.insert(.notes) } else { notes = latest?.notesMd ?? "" }
+        }
+        if (baseline?.spoiler ?? false) != (latest?.spoiler ?? false) {
+            if typed.contains(.spoiler) {
+                conflicts.insert(.spoiler)
+            } else {
+                spoiler = latest?.spoiler ?? false
+            }
+        }
+        baseline = latest
+        return conflicts
+    }
+}
+
 // MARK: - Sheets
 
 /// The whole block, uncapped — where the marquee's Stats stop hands off.
@@ -798,6 +901,9 @@ struct AllReviewsSheet: View {
 /// where a tap saves them.
 struct ReviewComposer: View {
     let original: Review?
+    /// Your review as it stands now. The composer can open on the replica's
+    /// first answer; a fresher one landing underneath it rebases the draft.
+    var latest: Review?
     var onSave: (ReviewPatch) -> Void
 
     private enum Field { case body, notes }
@@ -805,15 +911,13 @@ struct ReviewComposer: View {
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
 
-    @State private var body_ = ""
-    @State private var notes = ""
-    @State private var spoiler = false
+    @State private var draft = ReviewDraft(nil)
+    /// Fields you had typed over that also changed elsewhere since.
+    @State private var conflicts: Set<ReviewDraft.Field> = []
     @State private var didLoad = false
     @FocusState private var focus: Field?
 
-    private var patch: ReviewPatch {
-        .edits(from: original, body: body_, notes: notes, spoiler: spoiler)
-    }
+    private var patch: ReviewPatch { draft.patch }
 
     private var isEditing: Bool {
         original.map(DetailReviews.hasWriting) ?? false
@@ -824,15 +928,22 @@ struct ReviewComposer: View {
             // Whichever field has focus takes the room; the other keeps a few
             // lines in view, so both stay one tap away.
             VStack(spacing: 0) {
+                if let note = DetailReviews.conflictNote(conflicts) {
+                    MonoNote(text: note, color: palette.warnColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, Spacing.screen)
+                        .padding(.top, Spacing.sm)
+                        .accessibilityIdentifier("review-composer-conflict")
+                }
                 fieldHeader("Review", note: "every reader of this book can see it")
-                MarkdownEditorField(text: $body_, placeholder: "What did you think?")
+                MarkdownEditorField(text: $draft.body, placeholder: "What did you think?")
                     .focused($focus, equals: .body)
                     .frame(maxHeight: focus == .notes ? 110 : .infinity)
                     .accessibilityIdentifier("review-composer-body")
 
                 // Under the text it describes, and nowhere else: the card in
                 // read mode carries no spoiler control.
-                Toggle(isOn: $spoiler) {
+                Toggle(isOn: $draft.spoiler) {
                     Text("Contains spoilers")
                         .font(.ui(13.5))
                         .foregroundStyle(palette.ink1Color)
@@ -846,7 +957,7 @@ struct ReviewComposer: View {
                 Hairline()
 
                 fieldHeader("Private notes", note: "only you can see these", locked: true)
-                MarkdownEditorField(text: $notes, placeholder: "Notes for yourself")
+                MarkdownEditorField(text: $draft.notes, placeholder: "Notes for yourself")
                     .focused($focus, equals: .notes)
                     .frame(maxHeight: focus == .notes ? .infinity : 110)
                     .accessibilityIdentifier("review-composer-notes")
@@ -874,10 +985,12 @@ struct ReviewComposer: View {
             // discard what has been typed.
             guard !didLoad else { return }
             didLoad = true
-            body_ = original?.bodyMd ?? ""
-            notes = original?.notesMd ?? ""
-            spoiler = original?.spoiler ?? false
+            draft = ReviewDraft(original)
+            if latest != original { conflicts.formUnion(draft.rebase(onto: latest)) }
             focus = .body
+        }
+        .onChange(of: latest) { _, now in
+            conflicts.formUnion(draft.rebase(onto: now))
         }
     }
 

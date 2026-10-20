@@ -19,9 +19,9 @@ final class BookDetailModel {
     /// Yours, everyone else's, and the household summary; `nil` until the
     /// first read answers — unknown, which is not the same as "no review".
     var reviews: BookReviews?
-    /// Set when a reviews read settled with nothing to show — offline with no
-    /// replica, or a failed fetch — so the card says so instead of loading on.
-    var reviewsUnavailable = false
+    /// Why the last reviews read settled with nothing to show, if it did —
+    /// so the card says so instead of loading on. Cleared when a read starts.
+    var reviewsFailure: ReviewsReadFailure?
     var readStatus: ReadStatus = .unread
     var journals: [JournalEntry] = []
     var highlights: [Highlight] = []
@@ -103,12 +103,7 @@ final class BookDetailModel {
                 await self.loadSessions(uuid: uuid)
             }
             group.addTask { @MainActor in
-                var answered = false
-                for await reviews in UserDataService.reviews(uuid: uuid).values() {
-                    self.reviews = reviews
-                    answered = true
-                }
-                self.reviewsUnavailable = !answered && self.reviews == nil
+                await self.loadReviews(uuid: uuid)
             }
             group.addTask { @MainActor in
                 for await record in UserDataService.readStatus(uuid: uuid).values() {
@@ -154,6 +149,27 @@ final class BookDetailModel {
                 }
             }
         }
+    }
+
+    /// Read the book's reviews, replica first. A read that ends with nothing
+    /// says why — offline or failed — unless it was only cancelled, which says
+    /// nothing about the server.
+    func loadReviews(uuid: String) async {
+        reviewsFailure = nil
+        var answered = false
+        var failure: Error?
+        do {
+            for try await read in UserDataService.reviews(uuid: uuid) {
+                reviews = read.value
+                answered = true
+            }
+        } catch {
+            failure = error
+        }
+        guard reviews == nil else { return }
+        reviewsFailure = ReviewsReadFailure.classify(
+            failure, answered: answered, cancelled: Task.isCancelled
+        )
     }
 
     /// Fetches keyed on facts only the book record carries — the series, the
@@ -451,6 +467,14 @@ struct BookDetailView: View {
         // the write it is meant to pick up.
         .onChange(of: presentation.progressToken) { _, _ in
             Task { await model.load(uuid: uuid) }
+        }
+        // A review read that could not answer offline gets another go the
+        // moment the connection is back, rather than waiting for a refresh.
+        .onChange(of: connectivity.isOnline) { wasOnline, isOnline in
+            guard DetailReviews.rereadsOnReconnect(
+                wasOnline: wasOnline, isOnline: isOnline, known: model.reviews != nil
+            ) else { return }
+            Task { await model.loadReviews(uuid: uuid) }
         }
         .sheet(isPresented: $showAlignment) {
             if let book = model.book {
