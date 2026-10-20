@@ -13,6 +13,13 @@ fn review_patch_reads_an_absent_field_as_unchanged_and_null_as_cleared() {
 }
 
 #[test]
+fn review_patch_reads_a_null_spoiler_as_left_out() {
+    let patch: ReviewPatch = serde_json::from_str(r#"{"spoiler": null}"#).unwrap();
+    assert_eq!(patch.spoiler, None);
+    assert_eq!(patch, ReviewPatch::default());
+}
+
+#[test]
 fn review_patch_serializes_back_to_the_same_absent_and_null_fields() {
     let patch = ReviewPatch {
         stars: Some(None),

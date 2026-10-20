@@ -1606,6 +1606,9 @@ html, body { overscroll-behavior: none; }
    captioned figures `wrap_figures` emits (alt text doubles as the caption). */
 .bd-journal-image-input { display: none; }
 .bd-journal-image-tool { cursor: pointer; }
+/* Held while the composer saves: the label can't be disabled natively. */
+.bd-journal-image-tool[aria-disabled="true"] { opacity: .45; pointer-events: none; }
+.bd-journal-editor[aria-disabled="true"] { opacity: .7; cursor: default; }
 .journal-figure { margin: 12px 0; }
 .journal-figure img { max-width: 100%; border-radius: 6px; display: block; }
 .journal-figure figcaption {

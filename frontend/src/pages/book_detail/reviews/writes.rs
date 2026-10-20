@@ -119,8 +119,20 @@ fn set_mine(mut reviews: Signal<Option<BookReviews>>, mine: Option<Review>) {
 
 /// Run `fut` on the scope owning `ctx`, not the component that started it:
 /// a stop that remounts must not drop a write or a re-read half-way.
+// `spawn` under `in_scope` files the task in the owner's own task list, which
+// is what drops it with the owner; `Runtime::spawn` would only tag it, and
+// leave it running against state the owner has already dropped.
 fn spawn_owned(ctx: ReviewsCtx, fut: impl Future<Output = ()> + 'static) {
-    Runtime::current().spawn(ctx.owner, fut);
+    Runtime::current().in_scope(ctx.owner, || {
+        spawn(fut);
+    });
+}
+
+/// Whether `ctx` still belongs to the book `epoch` was numbered for. Read
+/// with `try_peek`: every signal in `ctx` lives and dies with the owner, so
+/// one live check covers the rest even if a task outlives it.
+fn still_showing(ctx: ReviewsCtx, epoch: u64) -> bool {
+    ctx.epoch.try_peek().is_ok_and(|e| *e == epoch)
 }
 
 /// A write sent and not yet answered, counted in [`ReviewsCtx::in_flight`]
@@ -143,7 +155,7 @@ impl WriteTicket {
     // `try_*`: a drop can run while the state itself is being torn down.
     fn uncount(&self) -> bool {
         let mut ctx = self.ctx;
-        let current = ctx.epoch.try_peek().is_ok_and(|e| *e == self.epoch);
+        let current = still_showing(ctx, self.epoch);
         if current {
             if let Ok(mut n) = ctx.in_flight.try_write() {
                 *n = n.saturating_sub(1);
@@ -335,16 +347,18 @@ pub(super) struct RefreshStart {
     pending: u32,
 }
 
-/// Number a re-read and dim the household while it runs.
-pub(super) fn begin_refresh(mut ctx: ReviewsCtx) -> RefreshStart {
+/// Number a re-read and dim the household while it runs; `None` once the
+/// state is gone.
+pub(super) fn begin_refresh(mut ctx: ReviewsCtx) -> Option<RefreshStart> {
+    let epoch = *ctx.epoch.try_peek().ok()?;
     let refresh = bump(ctx.refresh_seq);
     ctx.refreshing.set(true);
-    RefreshStart {
+    Some(RefreshStart {
         refresh,
-        epoch: *ctx.epoch.peek(),
+        epoch,
         op: *ctx.op_seq.peek(),
         pending: *ctx.in_flight.peek(),
-    }
+    })
 }
 
 /// Take a re-read's answer, unless a newer re-read or another book replaced
@@ -355,7 +369,7 @@ pub(super) fn settle_refresh(
     start: RefreshStart,
     result: Result<BookReviews, DataError>,
 ) {
-    if *ctx.epoch.peek() != start.epoch || *ctx.refresh_seq.peek() != start.refresh {
+    if !still_showing(ctx, start.epoch) || *ctx.refresh_seq.peek() != start.refresh {
         return;
     }
     ctx.refreshing.set(false);
@@ -382,7 +396,9 @@ pub(super) fn settle_refresh(
 /// the server: `refresh_book_reviews`, not the cache-first `get_book_reviews`,
 /// which on mobile answers with the replica the write just refreshed.
 async fn refresh_household(ctx: ReviewsCtx, uuid: &str, server_url: &str) {
-    let start = begin_refresh(ctx);
+    let Some(start) = begin_refresh(ctx) else {
+        return;
+    };
     let result = data::refresh_book_reviews(server_url, uuid).await;
     settle_refresh(ctx, start, result);
 }

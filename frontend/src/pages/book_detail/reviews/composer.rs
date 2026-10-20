@@ -52,7 +52,8 @@ pub(super) fn save_patch(
 
 /// The two-field composer. Cancel drops the draft; Save sends the changed
 /// fields and flag, closes on success, and keeps the draft with the reason on
-/// failure.
+/// failure. While a save is out the whole composer is held read-only, since
+/// an edit made then would be lost when the success closes it.
 #[component]
 pub(super) fn BdReviewComposer(
     uuid: String,
@@ -63,17 +64,27 @@ pub(super) fn BdReviewComposer(
     let server_url = use_server_url();
     let body = use_signal(|| seed.body.clone());
     let notes = use_signal(|| seed.notes.clone());
-    let mut spoiler = use_signal(|| seed.spoiler);
+    let spoiler = use_signal(|| seed.spoiler);
     let mut saving = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
-    let body_highlights = use_highlights_insert_state();
-    let notes_highlights = use_highlights_insert_state();
+    let body_field = FieldState {
+        body,
+        highlights: use_highlights_insert_state(),
+        uploading: use_signal(|| false),
+    };
+    let notes_field = FieldState {
+        body: notes,
+        highlights: use_highlights_insert_state(),
+        uploading: use_signal(|| false),
+    };
+    // An image still uploading would land after the save, in no editor.
+    let uploading = (body_field.uploading)() || (notes_field.uploading)();
     let mut open = open;
 
     let save_url = server_url.clone();
     let save_uuid = uuid.clone();
     let on_save = move |_| {
-        if saving() {
+        if saving() || (body_field.uploading)() || (notes_field.uploading)() {
             return;
         }
         let patch = save_patch(&seed, &body(), &notes(), spoiler());
@@ -100,28 +111,22 @@ pub(super) fn BdReviewComposer(
                 field: ReviewFieldKind::Body,
                 uuid: uuid.clone(),
                 server_url: server_url.clone(),
-                body,
+                state: body_field,
                 error,
-                highlights: body_highlights,
+                disabled: saving(),
             }
-            label { class: "bd-review-spoiler", "data-testid": "review-spoiler",
-                input {
-                    r#type: "checkbox",
-                    checked: spoiler(),
-                    oninput: move |e| spoiler.set(e.value() == "true"),
-                }
-                "Contains spoilers"
-            }
+            SpoilerFlag { spoiler, disabled: saving() }
             ReviewField {
                 field: ReviewFieldKind::Notes,
                 uuid: uuid.clone(),
                 server_url: server_url.clone(),
-                body: notes,
+                state: notes_field,
                 error,
-                highlights: notes_highlights,
+                disabled: saving(),
             }
             ComposerFoot {
                 saving: saving(),
+                uploading,
                 error: error(),
                 on_cancel: move |_| open.set(false),
                 on_save,
@@ -130,11 +135,38 @@ pub(super) fn BdReviewComposer(
     }
 }
 
+/// What one field of the composer holds: its Markdown, its highlights
+/// popover, and whether an image is uploading into it.
+#[derive(Clone, Copy, PartialEq)]
+struct FieldState {
+    body: Signal<String>,
+    highlights: HighlightsInsertState,
+    uploading: Signal<bool>,
+}
+
+/// The Contains spoilers flag, under the public field it qualifies.
+#[component]
+fn SpoilerFlag(spoiler: Signal<bool>, disabled: bool) -> Element {
+    let mut spoiler = spoiler;
+    rsx! {
+        label { class: "bd-review-spoiler", "data-testid": "review-spoiler",
+            input {
+                r#type: "checkbox",
+                checked: spoiler(),
+                disabled,
+                oninput: move |e| spoiler.set(e.value() == "true"),
+            }
+            "Contains spoilers"
+        }
+    }
+}
+
 /// The composer's foot: a refusal's reason, then Cancel and Save, both held
-/// while a save is out.
+/// while a save is out. Save also waits for an image still uploading.
 #[component]
 fn ComposerFoot(
     saving: bool,
+    uploading: bool,
     error: Option<String>,
     on_cancel: EventHandler<()>,
     on_save: EventHandler<()>,
@@ -157,7 +189,8 @@ fn ComposerFoot(
                 r#type: "button",
                 class: "btn primary sm",
                 "data-testid": "review-save",
-                disabled: saving,
+                disabled: saving || uploading,
+                title: uploading.then_some("Waiting for the image to upload"),
                 "aria-busy": if saving { "true" } else { "false" },
                 onclick: move |_| on_save.call(()),
                 BusyLabel { busy: saving, label: "Save review", busy_label: "Saving\u{2026}" }
@@ -203,9 +236,10 @@ fn ReviewField(
     field: ReviewFieldKind,
     uuid: String,
     server_url: String,
-    body: Signal<String>,
+    state: FieldState,
     error: Signal<Option<String>>,
-    highlights: HighlightsInsertState,
+    /// Held read-only while the composer saves.
+    disabled: bool,
 ) -> Element {
     let stem = field.stem();
     let editor_id = format!("{stem}-editor");
@@ -231,23 +265,31 @@ fn ReviewField(
                 }
             }
             div { class: "bd-journal-toolbar-row",
-                BdJournalToolbar { target_id: editor_id.clone(), server_url: server_url.clone(), error }
+                BdJournalToolbar {
+                    target_id: editor_id.clone(),
+                    server_url: server_url.clone(),
+                    error,
+                    disabled,
+                    uploading: state.uploading,
+                }
                 BdHighlightsInsert {
                     uuid,
                     server_url,
                     target_id: editor_id.clone(),
                     testid_prefix: stem.to_string(),
-                    state: highlights,
+                    state: state.highlights,
+                    disabled,
                 }
             }
             BdMarkdownSurface {
                 source_id: format!("{stem}-src"),
                 editor_id,
-                body,
+                body: state.body,
                 label: field.label().to_string(),
                 placeholder: field.placeholder().to_string(),
                 source_testid: format!("{stem}-markdown"),
                 editor_testid: format!("{stem}-editor"),
+                disabled,
             }
         }
     }

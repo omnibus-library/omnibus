@@ -41,6 +41,13 @@ pub(crate) async fn reader_token(pool: &sqlx::SqlitePool) -> String {
     auth_test_support::bearer_token(pool, reader.id).await
 }
 
+/// Create a non-admin user named `name` and return its id and a bearer token for it.
+pub(crate) async fn reader(pool: &sqlx::SqlitePool, name: &str) -> (i64, String) {
+    let user = auth_test_support::create_user(pool, name).await;
+    let token = auth_test_support::bearer_token(pool, user.id).await;
+    (user.id, token)
+}
+
 /// Whether the worker holds a task `wanted` accepts, queued, running or just finished.
 pub(crate) fn worker_holds_task(
     state: &AppState,

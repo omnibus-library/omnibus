@@ -313,7 +313,7 @@ fn settle_stars_write_drops_an_answer_for_another_book() {
 fn settle_refresh_keeps_a_tap_drawn_after_the_re_read_began() {
     in_root_scope(|| {
         let ctx = ctx(Some(rated(2.0)), FeedState::Loaded, false);
-        let start = begin_refresh(ctx);
+        let start = begin_refresh(ctx).expect("the state is live");
         let _tap = begin_stars_write(ctx, &stars_patch(Some(2.0), 4.0), "book-1", 2_000);
         let mut fresh = rated(2.0);
         fresh.others = vec![other(9, Some(5.0), None)];
@@ -336,13 +336,13 @@ fn settle_refresh_keeps_the_card_while_a_write_is_in_flight() {
     in_root_scope(|| {
         let ctx = ctx(Some(rated(2.0)), FeedState::Loaded, false);
         let _save = begin_write(ctx);
-        let start = begin_refresh(ctx);
+        let start = begin_refresh(ctx).expect("the state is live");
         settle_refresh(ctx, start, Ok(rated(1.0)));
         assert_eq!(card_stars(ctx), Some(2.0));
 
-        let start = begin_refresh(ctx);
+        let start = begin_refresh(ctx).expect("the state is live");
         drop(_save);
-        let quiet = begin_refresh(ctx);
+        let quiet = begin_refresh(ctx).expect("the state is live");
         settle_refresh(ctx, start, Ok(rated(1.0)));
         assert_eq!(
             card_stars(ctx),
@@ -380,6 +380,22 @@ fn save_and_delete_count_themselves_in_flight_until_settled() {
         assert_eq!(in_flight(ctx), 0);
         assert_eq!(card_stars(ctx), None);
         assert!(ctx.confirmed.peek().is_none());
+    });
+}
+
+// Each settle uncounts its own write once: a second, overlapping write
+// stays counted until it settles too.
+#[test]
+fn settling_one_write_leaves_the_other_counted() {
+    in_root_scope(|| {
+        let ctx = ctx(Some(rated(2.0)), FeedState::Loaded, false);
+        let first = begin_write(ctx);
+        let second = begin_write(ctx);
+        assert_eq!(in_flight(ctx), 2);
+        settle_save(ctx, first, Ok(Some(review(Some(2.0), None, None)))).expect("landed");
+        assert_eq!(in_flight(ctx), 1);
+        settle_save(ctx, second, Err(refused())).expect_err("refused");
+        assert_eq!(in_flight(ctx), 0);
     });
 }
 

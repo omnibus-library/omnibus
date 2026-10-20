@@ -32,8 +32,10 @@ another name, and the same ownership rule applies to both books.
 
 1. Open the detail page of the book you want to keep.
 2. Journal the full state of **both** books first: uuids, titles, authors,
-   formats, and any progress, highlights, ratings, or read status on either.
-   You cannot check what survived a merge without knowing what went in.
+   formats, and any progress, highlights, read status or review on either —
+   for a review, its stars, text, spoiler flag and private notes, and when you
+   last rated it and last changed its stars, text or spoiler flag. You cannot
+   check what survived a merge without knowing what went in.
 3. Start the merge and choose the other book. Read which one the dialog says
    is **kept** — the app's model is that everything folds into the entry you
    are viewing — and journal it, so a renamed survivor can be told from a
@@ -47,7 +49,7 @@ another name, and the same ownership rule applies to both books.
    **The undo is a toast on the page you merged from, and it does not survive
    a reload** — so take it before the one reload pitfalls.md allows, and check
    every field of your before-state on both books afterwards: title, authors,
-   series and number, tags, genres, description, ISBN, rating, read status,
+   series and number, tags, genres, description, ISBN, review, read status,
    position, highlights, journal entries. Check whose journal entries sit on
    each book; an entry that belongs to another reader landing on the survivor
    and staying there after the undo is high severity.
@@ -67,14 +69,26 @@ detectable.
 - The other book is gone from the library, search, author pages, and shelves.
 - Highlights and bookmarks from both sides are present on the survivor — these
   accumulate, so "both" is literal.
-- For the **scalar** values that cannot merge — rating, read status, reading
+- For the **scalar** values that cannot merge — read status, reading
   position — the survivor keeps a coherent single value, and you journal which
   side it came from. There is no documented conflict rule, so either side
   winning is acceptable; what is not acceptable is a value belonging to neither,
   or one side's value landing on the wrong book.
+- Your review, when both books had one, is merged **field by field**. The
+  *newer* review is the one whose stars, text or spoiler flag you changed
+  more recently (a notes edit doesn't count). The survivor gets the stars you
+  gave more recently; the text and its spoiler flag of the only side with
+  text, or the newer review's when both had text; and both sides' private
+  notes, the newer review's first with a blank line between. The older text,
+  when both had some, is expected to go — an undo brings it back. Stars, text
+  or notes belonging to neither side fail, as does losing the only text or
+  either side's notes. Both sides' notes are kept even when together they pass
+  the 64 KiB text limit; saving a change to them is then refused until you
+  trim them under it, which is expected, not a failure.
 - An undo, if taken, restores both books with **their own** data — each book
-  carrying the rating, read status and identifiers it had before the merge, not
-  the other's. Check both books, not just the survivor.
+  carrying the review (stars, text, spoiler flag, notes), read status and
+  identifiers it had before the merge, not the other's and not the merged
+  review. Check both books, not just the survivor.
 
 ## Fail
 

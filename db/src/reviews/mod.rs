@@ -141,7 +141,8 @@ pub async fn update_review(
     let canonical = resolve_canonical_book_uuid(pool, book_uuid)
         .await?
         .ok_or(ReviewError::BookNotFound)?;
-    let mut tx = pool.begin().await?;
+    // BEGIN IMMEDIATE avoids a stale-snapshot 517 on concurrent writes (#1862).
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let old = load_content(&mut tx, user_id, &canonical).await?;
     let new = old.clone().unwrap_or_default().apply(patch);
     if old.as_ref() == Some(&new) || (old.is_none() && new.is_empty()) {
@@ -198,9 +199,9 @@ pub async fn delete_review(
 /// Write `content` over the reader's row. Every timestamp others can see
 /// follows only the public part — stars, text, spoiler flag — so an edit to
 /// private notes can't be read off the review or the shared sort:
-/// `created_at` restarts when a notes-only row first gains stars or text,
-/// `updated_at` holds through a notes-only edit, and `rated_at` holds while
-/// the stars do. SQLite evaluates every `SET` expression against the
+/// `created_at` restarts when text first arrives or a notes-only row gains
+/// stars, `updated_at` holds through a notes-only edit, and `rated_at` holds
+/// while the stars do. SQLite evaluates every `SET` expression against the
 /// pre-update row, so each comparison sees the old values.
 async fn upsert(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
@@ -219,8 +220,12 @@ async fn upsert(
                  ELSE strftime('%s','now')
              END,
              created_at = CASE
+                 -- A text review dates and sorts from its text, never from an
+                 -- older rating the text was added to.
+                 WHEN reviews.body_md IS NULL AND excluded.body_md IS NOT NULL
+                 THEN strftime('%s','now')
                  WHEN reviews.half_stars IS NULL AND reviews.body_md IS NULL
-                  AND (excluded.half_stars IS NOT NULL OR excluded.body_md IS NOT NULL)
+                  AND excluded.half_stars IS NOT NULL
                  THEN strftime('%s','now')
                  ELSE reviews.created_at
              END,
