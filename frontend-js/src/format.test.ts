@@ -372,6 +372,8 @@ describe("fixed", () => {
     [0.05, 1, "0.1"],
     [0.15, 1, "0.1"],
     [3, 1, "3.0"],
+    [0.2500001, 1, "0.3"],
+    [-0.2500001, 1, "-0.3"],
   ])("writes %d to %d places as %s", (value, digits, written) => {
     expect(fixed(value, digits)).toBe(written);
   });
