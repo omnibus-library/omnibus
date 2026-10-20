@@ -1,16 +1,25 @@
 //! A reader's two reviews folded into one across a merge: the per-field rules
-//! in isolation, then end to end with the undo that splits them again and the
-//! image sweep that must not run past a review only the snapshot holds.
+//! in isolation, then end to end with the undo that splits them again, and the
+//! image sweep that must not run past a review only an open snapshot holds —
+//! nor keep one a cascaded snapshot no longer can.
+
+use omnibus_shared::ReviewPatch;
 
 use super::*;
 use crate::journal_images::{self, journal_images_dir};
-use crate::journals::markdown::IMAGE_URL_PREFIX;
 use crate::merge::{merge_books, undo_merge};
 use crate::pool::init_db;
 use crate::test_support::{
-    seed_synced_audiobook as seed_audiobook, seed_synced_ebook as seed_ebook, seed_user,
-    EnvVarGuard,
+    count_rows as count, seed_synced_audiobook as seed_audiobook, seed_synced_ebook as seed_ebook,
+    seed_user, EnvVarGuard,
 };
+
+/// A fresh journal image, and the Markdown that embeds it.
+fn embedded_image() -> (String, String) {
+    let name = journal_images::write_journal_image("image/png", b"bytes").unwrap();
+    let embed = format!("![map]({IMAGE_URL_PREFIX}{name})");
+    (name, embed)
+}
 
 fn notes_only(user_id: i64, notes: &str, ts: i64) -> ReviewRow {
     ReviewRow {
@@ -103,6 +112,41 @@ fn settle_dates_a_text_review_from_its_text_and_never_from_a_notes_only_side() {
     }
 }
 
+#[test]
+fn settle_keeps_only_the_newer_notes_when_both_together_would_pass_the_text_cap() {
+    // Joined past the cap, every later save resending the notes would be
+    // refused. Each side fits on its own, so the newer one always does.
+    let half = REVIEW_TEXT_MAX_LEN / 2;
+    let older = ReviewRow {
+        notes_md: Some("a".repeat(half)),
+        ..rating(1, 8, 1_000)
+    };
+    let newer = ReviewRow {
+        notes_md: Some("b".repeat(half)),
+        ..rating(1, 4, 2_000)
+    };
+
+    let merged = ReviewRow::settle(&older, &newer);
+
+    assert_eq!(merged.notes_md, newer.notes_md);
+    let resent = ReviewPatch {
+        notes_md: Some(merged.notes_md),
+        ..Default::default()
+    };
+    assert!(resent.validate().is_ok());
+
+    let fits = ReviewRow {
+        notes_md: Some("b".repeat(half - 2)),
+        ..newer
+    };
+    let joined = ReviewRow::settle(&older, &fits).notes_md.unwrap();
+    assert_eq!(
+        joined.len(),
+        REVIEW_TEXT_MAX_LEN,
+        "exactly at the cap still joins"
+    );
+}
+
 #[tokio::test]
 async fn merge_books_keeps_the_absorbed_reviews_text_when_only_the_losing_side_has_any() {
     let pool = init_db("sqlite::memory:").await.unwrap();
@@ -172,6 +216,41 @@ async fn merge_books_keeps_both_sides_private_notes_and_undo_splits_them_again()
     assert_eq!(review_of(&pool, user, &source).await, Some(audio));
 }
 
+/// Merge `source` into `target` where both reviews have text and the
+/// `image_side` one embeds an image but is the older, so its text lives on
+/// only in the merge's snapshot. Returns the merge log id and the image name.
+async fn merge_dropping_the_text_with_an_image(
+    pool: &sqlx::SqlitePool,
+    user: i64,
+    target: &str,
+    source: &str,
+    image_side: &str,
+) -> (i64, String, ReviewRow) {
+    let (name, embed) = embedded_image();
+    let pictured = ReviewRow {
+        body_md: Some(embed),
+        ..rating(user, 5, 2_000)
+    };
+    let plain = ReviewRow {
+        body_md: Some("plain words".into()),
+        ..rating(user, 8, 3_000)
+    };
+    let other_side = if image_side == target { source } else { target };
+    seed_review(pool, image_side, &pictured).await;
+    seed_review(pool, other_side, &plain).await;
+    let out = merge_books(pool, source, target, Some(user)).await.unwrap();
+    assert_eq!(
+        review_of(pool, user, target)
+            .await
+            .unwrap()
+            .body_md
+            .as_deref(),
+        Some("plain words"),
+        "the newer text wins, so the image survives only in the snapshot"
+    );
+    (out.merge_log_id, name, pictured)
+}
+
 #[tokio::test]
 async fn undo_merge_brings_back_a_review_image_an_unrelated_sweep_ran_past() {
     let tmp = tempfile::tempdir().unwrap();
@@ -180,32 +259,91 @@ async fn undo_merge_brings_back_a_review_image_an_unrelated_sweep_ran_past() {
     let user = seed_user(&pool, "reader").await;
     let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
     let source = seed_audiobook(&pool, "B/Drakula.m4b", "Drakula", "Bram Stoker").await;
-    let name = journal_images::write_journal_image("image/png", b"bytes").unwrap();
-    let embed = format!("![map]({IMAGE_URL_PREFIX}{name})");
-    // Both sides have text and the target's is newer, so the source's — the
-    // only one embedding the image — lives on only in the merge's snapshot.
-    let survivor = ReviewRow {
-        body_md: Some("the ebook".into()),
-        ..rating(user, 8, 3_000)
-    };
-    let absorbed = ReviewRow {
-        body_md: Some(embed),
-        ..rating(user, 5, 2_000)
-    };
-    seed_review(&pool, &target, &survivor).await;
-    seed_review(&pool, &source, &absorbed).await;
-    let out = merge_books(&pool, &source, &target, Some(user))
+    // Once with the image on the absorbed side (`source_ratings`), once on the
+    // survivor's own older review (`target_ratings`).
+    for image_side in [&source, &target] {
+        let (log, name, pictured) =
+            merge_dropping_the_text_with_an_image(&pool, user, &target, &source, image_side).await;
+
+        // Any other write that drops the same name asks the sweep about it.
+        crate::journals::cleanup_orphaned_images(&pool, HashSet::from([name.clone()])).await;
+        assert!(
+            journal_images_dir().join(&name).exists(),
+            "a merge that can still be undone holds the image"
+        );
+
+        undo_merge(&pool, log).await.unwrap();
+        assert_eq!(review_of(&pool, user, image_side).await, Some(pictured));
+        assert!(journal_images_dir().join(&name).exists());
+        sqlx::query("DELETE FROM reviews")
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn merge_books_sweeps_an_image_only_a_merge_into_the_absorbed_book_held() {
+    // Absorbing B deletes it, and its `merge_log` rows cascade with it: the
+    // earlier A-into-B merge can never be undone, so an image only its
+    // snapshot kept is garbage the moment the second merge commits.
+    let tmp = tempfile::tempdir().unwrap();
+    let _env = EnvVarGuard::set_os("OMNIBUS_JOURNAL_IMAGES_DIR", Some(tmp.path().as_os_str()));
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    let a = seed_audiobook(&pool, "A/Drakula.m4b", "Drakula", "Bram Stoker").await;
+    let b = seed_ebook(&pool, "B/Dracula.epub", "Dracula", "Bram Stoker").await;
+    let c = seed_ebook(&pool, "C/Dracula rev.epub", "Draculla", "Bram Stoker").await;
+    let (_, name, _) = merge_dropping_the_text_with_an_image(&pool, user, &b, &a, &a).await;
+
+    merge_books(&pool, &b, &c, Some(user)).await.unwrap();
+
+    assert_eq!(
+        count(&pool, "SELECT COUNT(*) FROM merge_log").await,
+        1,
+        "only the B-into-C log is left"
+    );
+    assert!(!journal_images_dir().join(&name).exists());
+}
+
+#[tokio::test]
+async fn undoable_review_markdown_reads_both_sides_of_open_merges_that_embed_an_image() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
+    let target_id: i64 = sqlx::query_scalar("SELECT id FROM books WHERE uuid = ?")
+        .bind(&target)
+        .fetch_one(&pool)
         .await
         .unwrap();
+    let pictured = format!("![m]({IMAGE_URL_PREFIX}x.png)");
+    let snapshot = |body: &str, notes: &str| {
+        serde_json::json!({ "curation": {
+            "source_ratings": [{ "user_id": 1, "half_stars": null, "body_md": body, "updated_at": 1 }],
+            "target_ratings": [{ "user_id": 2, "half_stars": null, "notes_md": notes, "updated_at": 1 }],
+        }})
+        .to_string()
+    };
+    for (json, undone) in [
+        (snapshot(&pictured, "beside it"), None),
+        (snapshot("no picture", "none here"), None),
+        (snapshot(&pictured, "undone"), Some(5)),
+    ] {
+        sqlx::query(
+            "INSERT INTO merge_log (target_book_id, source_uuid, source_metadata, undone_at)
+             VALUES (?, 'gone', ?, ?)",
+        )
+        .bind(target_id)
+        .bind(json)
+        .bind(undone)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
 
-    // Any other write that drops the same name asks the sweep about it.
-    crate::journals::cleanup_orphaned_images(&pool, HashSet::from([name.clone()])).await;
-    assert!(
-        journal_images_dir().join(&name).exists(),
-        "a merge that can still be undone holds the image"
-    );
+    let mut held = crate::merge::undoable_review_markdown(&pool, None)
+        .await
+        .unwrap();
+    held.sort();
 
-    undo_merge(&pool, out.merge_log_id).await.unwrap();
-    assert_eq!(review_of(&pool, user, &source).await, Some(absorbed));
-    assert!(journal_images_dir().join(&name).exists());
+    assert_eq!(held, vec![pictured, "beside it".to_string()]);
 }

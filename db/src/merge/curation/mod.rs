@@ -7,13 +7,18 @@
 //! several, so [`settle_reviews`] first folds the source's into the target's
 //! field by field: stars from the later rating, text and its spoiler flag from
 //! the side that has text (the newer review's when both do), and both sides'
-//! private notes, the newer's first. No date another reader sees is taken from
-//! a side holding only notes.
+//! private notes, the newer's first — unless together they would pass
+//! [`REVIEW_TEXT_MAX_LEN`], when the newer's stand alone and the other's stay
+//! in the snapshot for undo. No date another reader sees is taken from a side
+//! holding only notes.
 
 use std::collections::HashSet;
 
+use omnibus_shared::REVIEW_TEXT_MAX_LEN;
 use serde::{Deserialize, Serialize};
 use sqlx::Transaction;
+
+use crate::journals::markdown::IMAGE_URL_PREFIX;
 
 use super::MergeError;
 
@@ -86,8 +91,14 @@ impl ReviewRow {
             (Some(_), None) => target,
             (None, None) => rated,
         };
+        // Past the cap, every later save that resends the notes would be
+        // refused, so the newer side's stand alone rather than block the editor.
         let notes_md = match (&newer.notes_md, &older.notes_md) {
-            (Some(first), Some(second)) if first != second => Some(format!("{first}\n\n{second}")),
+            (Some(first), Some(second))
+                if first != second && first.len() + 2 + second.len() <= REVIEW_TEXT_MAX_LEN =>
+            {
+                Some(format!("{first}\n\n{second}"))
+            }
             (first, second) => first.clone().or_else(|| second.clone()),
         };
         // Dated as `reviews::upsert` dates a review — a text review from its
@@ -225,26 +236,27 @@ pub(crate) async fn undoable_review_markdown<'e>(
     exec: impl sqlx::SqliteExecutor<'e>,
     target_book_id: Option<i64>,
 ) -> Result<Vec<String>, sqlx::Error> {
-    // A snapshot from before curation was recorded has no such path, which
-    // `json_each` reads as no rows.
-    sqlx::query_scalar(
-        "WITH held AS (
-             SELECT r.value AS review
-               FROM merge_log m, json_each(m.source_metadata, '$.curation.source_ratings') r
-              WHERE m.undone_at IS NULL AND (?1 IS NULL OR m.target_book_id = ?1)
-             UNION ALL
-             SELECT r.value
-               FROM merge_log m, json_each(m.source_metadata, '$.curation.target_ratings') r
-              WHERE m.undone_at IS NULL AND (?1 IS NULL OR m.target_book_id = ?1)
-         )
-         SELECT md FROM (
-             SELECT json_extract(review, '$.body_md') AS md FROM held
-             UNION ALL SELECT json_extract(review, '$.notes_md') FROM held
-         ) WHERE md IS NOT NULL",
+    // `instr` skips parsing a snapshot that embeds no image at all, the usual
+    // case; a snapshot from before curation was recorded has no `$.curation`,
+    // which `json_each` reads as no rows.
+    let rows: Vec<(Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT json_extract(r.value, '$.body_md'), json_extract(r.value, '$.notes_md')
+           FROM merge_log m,
+                json_each(m.source_metadata, '$.curation') side,
+                json_each(side.value) r
+          WHERE m.undone_at IS NULL AND (?1 IS NULL OR m.target_book_id = ?1)
+            AND instr(m.source_metadata, ?2) > 0
+            AND side.key IN ('source_ratings', 'target_ratings')",
     )
     .bind(target_book_id)
+    .bind(IMAGE_URL_PREFIX)
     .fetch_all(exec)
-    .await
+    .await?;
+    Ok(rows
+        .into_iter()
+        .flat_map(|(body_md, notes_md)| [body_md, notes_md])
+        .flatten()
+        .collect())
 }
 
 /// Fold each reader's review of the source into their review of the target

@@ -3,6 +3,8 @@
 //! dropping either — snapshot the source into `merge_log`, and delete the
 //! source row — all-or-nothing.
 
+use std::collections::HashSet;
+
 use sqlx::{SqlitePool, Transaction};
 
 use crate::covers::{find_cover_file, write_cover_file};
@@ -53,11 +55,13 @@ pub async fn merge_books(
 
     rewire_merged_uuid_refs(&mut tx, source_id, target_id, source_uuid, &snapshot).await?;
 
-    let merge_log_id = finalize_merge(&mut tx, target_id, source_id, &snapshot, merged_by).await?;
+    let (merge_log_id, released_images) =
+        finalize_merge(&mut tx, target_id, source_id, &snapshot, merged_by).await?;
 
     tx.commit().await?;
 
-    run_post_commit_side_effects(pool, source_uuid, target_uuid, adopt_cover).await;
+    run_post_commit_side_effects(pool, source_uuid, target_uuid, adopt_cover, released_images)
+        .await;
 
     Ok(MergeOutcome {
         merge_log_id,
@@ -107,12 +111,14 @@ async fn rewire_merged_uuid_refs(
     Ok(())
 }
 
-/// Best-effort post-commit fixups: cover adopt + target FTS rebuild; failures are logged, not propagated.
+/// Best-effort post-commit fixups: cover adopt, target FTS rebuild and the sweep of
+/// `released_images`; failures are logged, not propagated.
 async fn run_post_commit_side_effects(
     pool: &SqlitePool,
     source_uuid: &str,
     target_uuid: &str,
     adopt_cover: bool,
+    released_images: HashSet<String>,
 ) {
     if adopt_cover {
         let src = source_uuid.to_owned();
@@ -132,6 +138,7 @@ async fn run_post_commit_side_effects(
     {
         tracing::warn!(error = %e, uuid = %target_uuid, "merge: target FTS rebuild failed");
     }
+    crate::journals::cleanup_orphaned_images(pool, released_images).await;
 }
 
 /// Resolve both uuids to row ids, re-check same-book, then freeze the
@@ -170,15 +177,16 @@ async fn migrate_book_files(
     Ok(())
 }
 
-/// Append the merge-log entry and delete the source book row. Returns
-/// the new `merge_log.id` (the undo handle).
+/// Append the merge-log entry and delete the source book row. Returns the new
+/// `merge_log.id` (the undo handle) and the journal-image names only the
+/// source's own merges still held — candidates to sweep once committed.
 async fn finalize_merge(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     target_id: i64,
     source_id: i64,
     snapshot: &SourceSnapshot,
     merged_by: Option<i64>,
-) -> Result<i64, MergeError> {
+) -> Result<(i64, HashSet<String>), MergeError> {
     let merge_log_id: i64 = sqlx::query_scalar(
         "INSERT INTO merge_log (target_book_id, source_uuid, source_metadata, merged_by)
          VALUES (?, ?, ?, ?) RETURNING id",
@@ -190,6 +198,13 @@ async fn finalize_merge(
     .fetch_one(&mut **tx)
     .await?;
 
+    // The delete cascades away the logs of merges *into* the source, which
+    // can never be undone after it, along with the reviews only they held.
+    let released_images = curation::undoable_review_markdown(&mut **tx, Some(source_id))
+        .await?
+        .iter()
+        .flat_map(|md| crate::journal_images::referenced_image_names(md))
+        .collect();
     sqlx::query("DELETE FROM books WHERE id = ?")
         .bind(source_id)
         .execute(&mut **tx)
@@ -199,7 +214,7 @@ async fn finalize_merge(
     // any taxonomy the source delete left referencing zero books.
     crate::taxonomy::delete_orphan_taxonomy(tx).await?;
 
-    Ok(merge_log_id)
+    Ok((merge_log_id, released_images))
 }
 
 /// Resolve a uuid to its `books.id` — real rows only, no `merged_uuids`
