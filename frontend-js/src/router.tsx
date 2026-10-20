@@ -11,13 +11,11 @@ import { AppShell } from "./layouts/AppShell";
 import { ReaderDock } from "./layouts/ReaderDock";
 import { RequireAuth } from "./layouts/RequireAuth";
 import { AddBooks } from "./pages/AddBooks/AddBooks";
-import { Admin } from "./pages/Admin/Admin";
 import { AuthorDetail } from "./pages/AuthorDetail/AuthorDetail";
 import { Authors, AuthorsIndexPane } from "./pages/Authors/Authors";
 import { BookDetail } from "./pages/BookDetail/BookDetail";
 import { BookEdit } from "./pages/BookEdit/BookEdit";
 import { CheckIn } from "./pages/CheckIn/CheckIn";
-import { CleanupReview } from "./pages/CleanupReview/CleanupReview";
 import { Library } from "./pages/Library/Library";
 import { Listen } from "./pages/Listen/Listen";
 import { Login } from "./pages/Login/Login";
@@ -31,7 +29,7 @@ import { Shelves } from "./pages/Shelves/Shelves";
 import { Stats } from "./pages/Stats/Stats";
 import { StatsChart } from "./pages/StatsChart/StatsChart";
 
-// Each reader and the settings page is its own chunk, so the library never downloads one.
+// Each reader, the settings page, Administration and the cleanup review is its own chunk, so the library never downloads one.
 const Reader = lazy(() =>
   import("./pages/Reader/Reader").then((m) => ({ default: m.Reader })),
 );
@@ -46,6 +44,16 @@ const PdfReader = lazy(() =>
 
 const Settings = lazy(() =>
   import("./pages/Settings/Settings").then((m) => ({ default: m.Settings })),
+);
+
+const Admin = lazy(() =>
+  import("./pages/Admin/Admin").then((m) => ({ default: m.Admin })),
+);
+
+const CleanupReview = lazy(() =>
+  import("./pages/CleanupReview/CleanupReview").then((m) => ({
+    default: m.CleanupReview,
+  })),
 );
 
 const chunk = (element: ReactNode, kind: "stage" | "page" = "stage") => (
@@ -117,10 +125,10 @@ export const routes: RouteObject[] = [
                     path: "/settings/cleanup/:kind",
                     element: <LegacyCleanupReview />,
                   },
-                  { path: "/admin", element: <Admin /> },
+                  { path: "/admin", element: chunk(<Admin />, "page") },
                   {
                     path: "/admin/cleanup/:kind",
-                    element: <CleanupReview />,
+                    element: chunk(<CleanupReview />, "page"),
                   },
                   {
                     path: "/admin/health",
