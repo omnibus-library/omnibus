@@ -3,6 +3,7 @@ import { type BookDetail, toBookDetail } from "./api";
 import {
   ago,
   bookCount,
+  capitalize,
   descriptionOverflows,
   durationLabel,
   facetQuery,
@@ -12,6 +13,7 @@ import {
   formatInstantShort,
   formatLongDate,
   formatMonthYear,
+  formatUtcTimestamp,
   formatYear,
   homeKicker,
   initialOf,
@@ -351,5 +353,25 @@ describe("summaryIsSparse", () => {
     expect(summaryIsSparse(words(9))).toBe(true);
     expect(summaryIsSparse(words(10))).toBe(false);
     expect(summaryIsSparse("")).toBe(true);
+  });
+});
+
+describe("formatUtcTimestamp", () => {
+  it.each([
+    [1_700_000_000, "2023-11-14 22:13:20 UTC"],
+    [0, "1970-01-01 00:00:00 UTC"],
+    [-1, "1969-12-31 23:59:59 UTC"],
+  ])("writes %i unix seconds as %s", (secs, text) => {
+    expect(formatUtcTimestamp(secs)).toBe(text);
+  });
+});
+
+describe("capitalize", () => {
+  it("upper-cases the first letter only", () => {
+    expect(capitalize("library scan")).toBe("Library scan");
+  });
+
+  it("leaves an empty string empty", () => {
+    expect(capitalize("")).toBe("");
   });
 });

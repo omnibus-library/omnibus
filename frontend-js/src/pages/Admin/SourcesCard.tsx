@@ -9,7 +9,7 @@ import {
 import { Button } from "../../components/Button/Button";
 import { BusyLabel } from "../../components/Loading/Loading";
 import { useUnsavedForm } from "../../components/SettingsShell/SettingsShell";
-import { LiveStatus } from "./StatusLine";
+import { LiveStatus, type Status } from "./StatusLine";
 import {
   librarySummaryLine,
   SCAN_INTERVAL_MIN_HOURS,
@@ -17,8 +17,6 @@ import {
 } from "./sources";
 
 type Fields = { ebook: string; audiobook: string; interval: string };
-
-type Status = { text: string; isError: boolean };
 
 const BLANK: Fields = { ebook: "", audiobook: "", interval: "" };
 

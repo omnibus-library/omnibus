@@ -8,6 +8,8 @@ import {
   SettingsShell,
 } from "../../components/SettingsShell/SettingsShell";
 import { useCurrentUser } from "../../session";
+import { MaintenanceCard } from "./MaintenanceCard";
+import { RecentTasksCard } from "./RecentTasksCard";
 import { SourcesCard } from "./SourcesCard";
 import {
   ADMIN_SECTIONS,
@@ -26,6 +28,12 @@ function sectionContent(slug: AdminSection["slug"]): ReactNode {
     case "sources":
       return <SourcesCard />;
     case "maintenance":
+      return (
+        <>
+          <MaintenanceCard />
+          <RecentTasksCard />
+        </>
+      );
     case "metadata":
     case "cleanup":
     case "people":

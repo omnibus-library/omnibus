@@ -9,3 +9,91 @@
   color: var(--bad);
   font-size: 0.85rem;
 }
+.logs-stream {
+  max-height: 70vh;
+  overflow: auto;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+.logs-line {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1.6em;
+  /* max-content + min-width:100% makes each line grow to its own width so the
+     container's scrollWidth tracks the widest line — that's what enables the
+     horizontal scroll instead of wrapping. */
+  white-space: pre;
+  width: max-content;
+  min-width: 100%;
+  padding: 0.05rem 0;
+}
+@media (hover: hover) {
+  .logs-line:hover {
+    background: var(--bg-2);
+  }
+}
+.logs-time {
+  color: var(--ink-2);
+}
+.logs-module-cell {
+  color: var(--ink-2);
+}
+.logs-message {
+  color: var(--ink-1);
+}
+.logs-fields {
+  color: var(--ink-2);
+}
+.logs-level {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--bg-1);
+  color: var(--ink-1);
+}
+.logs-level-error {
+  background: color-mix(in oklch, var(--bad) 16%, transparent);
+  color: var(--bad);
+}
+.logs-level-info {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.maint-list {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+}
+.maint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.maint-row:last-child {
+  border-bottom: 0;
+}
+.maint-desc {
+  margin: 0;
+  max-width: 56ch;
+  color: var(--ink-1);
+  font-size: 0.875rem;
+}
+.maint-row .btn {
+  flex: none;
+}
+@media (max-width: 720px) {
+  .maint-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+}

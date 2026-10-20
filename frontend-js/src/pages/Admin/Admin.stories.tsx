@@ -115,6 +115,23 @@ export const ShowsTheSourcesCard: Story = {
   },
 };
 
+export const ShowsTheMaintenanceCardsInOrder: Story = {
+  args: { path: "/admin?section=maintenance" },
+  play: async ({ canvas }) => {
+    const run = await canvas.findByRole("heading", {
+      level: 3,
+      name: "Run a job",
+    });
+    const recent = await canvas.findByRole("heading", {
+      level: 3,
+      name: "Recent tasks",
+    });
+    await expect(
+      run.compareDocumentPosition(recent) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  },
+};
+
 export const AsksBeforeLeavingEditedSources: Story = {
   args: { path: "/admin?section=sources" },
   play: async ({ canvas, userEvent }) => {
