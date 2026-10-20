@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor } from "storybook/test";
-import { SettingsRoutes } from "../../testing/SettingsRoutes";
+import { failing } from "../../testing/handlers";
+import { SettingsRoutes, said } from "../../testing/SettingsRoutes";
 import {
   aSettingsServer,
   settingsHandlers,
@@ -217,5 +218,26 @@ export const ShowsAPictureUploadedAfterRemovingOne: Story = {
     await expect(
       await canvas.findByRole("img", { name: "Ada Lovelace" }),
     ).toBeVisible();
+  },
+};
+
+export const KeepsTheSavedNameWhenTheSessionRereadFails: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/auth/me", 500));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const input = await canvas.findByLabelText("Display name");
+    await userEvent.clear(input);
+    await userEvent.type(input, "Ada King");
+    await userEvent.click(canvas.getByTestId("display-name-save"));
+
+    await said(canvas, "profile-status", "Profile saved.");
+    // The write was accepted, so the card is settled and leaving asks nothing.
+    await expect(canvas.getByTestId("display-name-save")).toBeDisabled();
+    await userEvent.click(canvas.getByTestId("settings-nav-goals"));
+    await expect(
+      await canvas.findByRole("heading", { level: 2, name: "Goals" }),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByTestId("unsaved-confirm")).toBeNull();
   },
 };

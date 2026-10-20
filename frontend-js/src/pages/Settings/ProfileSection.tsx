@@ -19,7 +19,7 @@ import {
   useUnsavedGuard,
 } from "../../components/SettingsShell/SettingsShell";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
-import { refreshMe, useCurrentUser } from "../../session";
+import { patchMe, refreshMe, useCurrentUser } from "../../session";
 
 // The server judges the rest (control characters); the input already stops at 64.
 const NameSchema = z.object({ name: z.string().trim().max(64) });
@@ -45,6 +45,11 @@ export function ProfileSection() {
   const saveName = useMutation({
     mutationFn: async (name: string) => {
       await setDisplayName(name || null);
+      patchMe(queryClient, (u) => ({
+        ...u,
+        displayName: name || null,
+        name: name || u.username,
+      }));
       await refreshMe(queryClient);
     },
     onMutate: clear,
