@@ -4,6 +4,7 @@ import {
   getCleanupCounts,
   getCleanupQueue,
   getPostCleanupDetectUrl,
+  getPostCleanupUndoUrl,
   postCleanupDecision,
 } from "./generated/omnibus";
 import { CleanupKind } from "./generated/schemas";
@@ -56,10 +57,23 @@ export const cleanupQueueQuery = (kind: CleanupKind) =>
     gcTime: 0,
   });
 
-/** Applies or dismisses one suggestion; answers the change an accept made, or null for a reject. */
+/**
+ * Applies or dismisses one suggestion, a book-title rename under the reviewer's own `value`
+ * when given; answers the change an accept made, or null for a reject.
+ */
 export async function decideCleanup(
   id: number,
   decision: "accepted" | "rejected",
+  value: string | null,
 ): Promise<number | null> {
-  return ok(await postCleanupDecision(id, { decision })).log_id ?? null;
+  return (
+    ok(await postCleanupDecision(id, { decision, value: value ?? undefined }))
+      .log_id ?? null
+  );
+}
+
+/** Reverses an applied change by its log id. */
+export async function undoCleanup(logId: number) {
+  // The route answers with no body, so the generated fetcher would JSON-parse a refusal's plain text.
+  await send(getPostCleanupUndoUrl(logId), "POST");
 }

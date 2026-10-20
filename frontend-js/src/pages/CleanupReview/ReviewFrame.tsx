@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useRef } from "react";
 import { Link } from "react-router";
 import {
   CLEANUP_KINDS,
@@ -91,11 +91,13 @@ export function ReviewFrame({
   kind,
   counts,
   progress,
+  onKeyDown,
   children,
 }: {
   kind: CleanupKind | null;
   counts: CleanupKindCounts[] | undefined;
   progress: { index: number; total: number } | null;
+  onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
   children: ReactNode;
 }) {
   const column = useRef<HTMLDivElement>(null);
@@ -106,10 +108,12 @@ export function ReviewFrame({
     <div className="crx-root">
       <Crumb kind={kind} />
       <div className="crx-stage">
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: the review keys are heard here, where focus lands */}
         <div
           ref={column}
           className="crx-column cleanup-review"
           data-testid="cleanup-review"
+          onKeyDown={onKeyDown}
           // biome-ignore lint/a11y/noNoninteractiveTabindex: focus lands here on mount, so the review keys work at once
           tabIndex={0}
         >

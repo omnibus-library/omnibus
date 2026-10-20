@@ -66,3 +66,63 @@ export function decideNote(edited: boolean, editable: boolean): string {
     ? "accepting applies at once · you can undo it"
     : "accepting applies at once";
 }
+
+export type ReviewKey = "accept" | "reject" | "skip";
+
+/** What a keypress on the review surface means: Y accepts, N rejects, Space skips; anything else is not a hotkey. */
+export function reviewKeyAction(key: string): ReviewKey | null {
+  switch (key) {
+    case "y":
+    case "Y":
+      return "accept";
+    case "n":
+    case "N":
+      return "reject";
+    case " ":
+      return "skip";
+    default:
+      return null;
+  }
+}
+
+/** The reviewer's wording, when it differs from the proposal and the kind can carry one; null applies the proposal as detected. */
+export const editedValue = (card: SuggestionCard, draft: string) =>
+  isEditable(card) && draft !== initialValue(card) ? draft : null;
+
+/** What an applied card changed, for the undo bar. */
+export function appliedSummary(card: SuggestionCard, value: string): string {
+  switch (card.action) {
+    case "merge":
+      return `Merged into “${value}”.`;
+    case "rename":
+      return `Renamed to “${value}”.`;
+    case "split":
+      return `Split “${card.primary_name}”.`;
+    case "delete":
+      return `Deleted “${card.primary_name}”.`;
+    default: {
+      const _exhaustive: never = card.action;
+      return _exhaustive;
+    }
+  }
+}
+
+/** What a pass did, counted as it goes. */
+export type Tally = {
+  accepted: number;
+  acceptedEdited: number;
+  rejected: number;
+  skipped: number;
+  undone: number;
+};
+
+/** The pass's rows that happened: a row for something that never did is noise. */
+export function tallyRows(tally: Tally): { count: number; label: string }[] {
+  return [
+    { count: tally.accepted, label: "accepted as proposed" },
+    { count: tally.acceptedEdited, label: "accepted with your wording" },
+    { count: tally.rejected, label: "rejected" },
+    { count: tally.skipped, label: "skipped — comes back next pass" },
+    { count: tally.undone, label: "undone" },
+  ].filter((row) => row.count > 0);
+}

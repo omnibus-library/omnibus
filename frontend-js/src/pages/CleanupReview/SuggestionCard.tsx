@@ -4,7 +4,7 @@ import { bookCount } from "../../format";
 import {
   actionSentence,
   decideNote,
-  initialValue,
+  editedValue,
   isEditable,
   proposedLabel,
   scannedLabel,
@@ -32,8 +32,18 @@ function ScannedValue({ card }: { card: SuggestionCard }) {
   );
 }
 
-/** The proposed value: an input for a book-title rename, a static box for every other kind. */
-function ProposedValue({ card }: { card: SuggestionCard }) {
+/** The proposed value: an input the reviewer owns for a book-title rename, a static box for every other kind. */
+function ProposedValue({
+  card,
+  draft,
+  onDraft,
+  onCommit,
+}: {
+  card: SuggestionCard;
+  draft: string;
+  onDraft: (value: string) => void;
+  onCommit: () => void;
+}) {
   if (card.action === "split") {
     return (
       <div className="crx-parts" data-testid="cleanup-card-proposed">
@@ -51,7 +61,7 @@ function ProposedValue({ card }: { card: SuggestionCard }) {
         className="crx-proposed crx-proposed-static"
         data-testid="cleanup-card-proposed"
       >
-        {initialValue(card)}
+        {draft}
       </div>
     );
   }
@@ -63,7 +73,14 @@ function ProposedValue({ card }: { card: SuggestionCard }) {
       autoCapitalize="off"
       autoCorrect="off"
       spellCheck={false}
-      defaultValue={initialValue(card)}
+      value={draft}
+      onChange={(e) => onDraft(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          onCommit();
+        }
+      }}
     />
   );
 }
@@ -78,7 +95,17 @@ function hintLead(card: SuggestionCard): string {
 }
 
 /** One suggestion: the action sentence, the scanned value struck through, and what would replace it. */
-export function SuggestionCardView({ card }: { card: SuggestionCard }) {
+export function SuggestionCardView({
+  card,
+  draft,
+  onDraft,
+  onCommit,
+}: {
+  card: SuggestionCard;
+  draft: string;
+  onDraft: (value: string) => void;
+  onCommit: () => void;
+}) {
   return (
     <section className="card crx-card" data-testid="cleanup-card">
       <p className="crx-action-line" data-testid="cleanup-card-action">
@@ -115,8 +142,23 @@ export function SuggestionCardView({ card }: { card: SuggestionCard }) {
             </svg>
           </div>
           <div className="crx-proposed-wrap">
-            <span className="crx-side-label">{proposedLabel(card.action)}</span>
-            <ProposedValue card={card} />
+            <span className="crx-side-label">
+              {proposedLabel(card.action)}
+              {editedValue(card, draft) !== null && (
+                <span
+                  className="crx-edited-tag"
+                  data-testid="cleanup-edited-tag"
+                >
+                  edited
+                </span>
+              )}
+            </span>
+            <ProposedValue
+              card={card}
+              draft={draft}
+              onDraft={onDraft}
+              onCommit={onCommit}
+            />
           </div>
         </div>
       )}
@@ -144,12 +186,14 @@ export function SuggestionCardView({ card }: { card: SuggestionCard }) {
 
 /** Accept, Reject and Skip, with a note on what accepting writes. */
 export function DecideBar({
+  edited,
   editable,
   inFlight,
   onAccept,
   onReject,
   onSkip,
 }: {
+  edited: boolean;
   editable: boolean;
   inFlight: boolean;
   onAccept: () => void;
@@ -164,7 +208,7 @@ export function DecideBar({
         disabled={inFlight}
         onClick={onAccept}
       >
-        Accept (Y)
+        {edited ? "Accept edited title (Y)" : "Accept (Y)"}
       </Button>
       <Button
         data-testid="cleanup-reject"
@@ -183,7 +227,7 @@ export function DecideBar({
       </Button>
       <span className="crx-decide-spacer" />
       <span className="crx-decide-note mono" data-testid="cleanup-decide-note">
-        {decideNote(false, editable)}
+        {decideNote(edited, editable)}
       </span>
     </div>
   );

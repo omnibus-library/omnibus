@@ -262,12 +262,15 @@ export type Decided = { id: number; request: CleanupDecisionRequest };
 
 /**
  * `POST /api/admin/cleanup/suggestions/{id}/decision`: an accept answers the log id
- * `100 + id`, a reject answers null. Every decision lands in `decided`.
+ * `100 + id`, a reject answers null. Every decision lands in `decided`, and the answer
+ * waits for `until` when a story holds it.
  */
 export function cleanupDecisionHandler({
   decided = [],
+  until = Promise.resolve(),
 }: {
   decided?: Decided[];
+  until?: Promise<void>;
 } = {}) {
   return http.post(
     "/api/admin/cleanup/suggestions/:id/decision",
@@ -275,11 +278,24 @@ export function cleanupDecisionHandler({
       const id = Number(params.id);
       const body = CleanupDecisionRequest.parse(await request.json());
       decided.push({ id, request: body });
+      await until;
       return HttpResponse.json({
         log_id: body.decision === "accepted" ? 100 + id : null,
       });
     },
   );
+}
+
+/** `POST /api/admin/cleanup/undo/{log_id}`, answering as undone; every log id lands in `undone`. */
+export function cleanupUndoHandler({
+  undone = [],
+}: {
+  undone?: number[];
+} = {}) {
+  return http.post("/api/admin/cleanup/undo/:logId", ({ params }) => {
+    undone.push(Number(params.logId));
+    return new HttpResponse(null, { status: 204 });
+  });
 }
 
 /** An account as `GET /api/admin/users` lists it: a reader with two permissions. */

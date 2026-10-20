@@ -2,13 +2,17 @@ import { describe, expect, it } from "vitest";
 import type { CleanupAction, CleanupKind, SuggestionCard } from "../../api";
 import {
   actionSentence,
+  appliedSummary,
   decideNote,
   dotState,
+  editedValue,
   initialValue,
   isEditable,
   kindTitle,
   proposedLabel,
+  reviewKeyAction,
   scannedLabel,
+  tallyRows,
 } from "./review";
 
 function card(
@@ -143,5 +147,116 @@ describe("decideNote", () => {
     ["a card with nothing to edit", false, false, "accepting applies at once"],
   ])("reads %s", (_condition, edited, editable, note) => {
     expect(decideNote(edited, editable)).toBe(note);
+  });
+});
+
+describe("reviewKeyAction", () => {
+  it.each([
+    ["y", "accept"],
+    ["Y", "accept"],
+    ["n", "reject"],
+    ["N", "reject"],
+    [" ", "skip"],
+  ] as const)("maps %j to %s", (key, action) => {
+    expect(reviewKeyAction(key)).toBe(action);
+  });
+
+  it.each(["q", "Enter", "Escape", "Tab", "ArrowRight", "yy"])(
+    "maps %j to nothing",
+    (key) => {
+      expect(reviewKeyAction(key)).toBeNull();
+    },
+  );
+});
+
+describe("editedValue", () => {
+  const rename = () =>
+    card("book_title", "rename", { secondary_name: "Frankenstein" });
+
+  it("is null while the draft still reads as detected", () => {
+    expect(editedValue(rename(), "Frankenstein")).toBeNull();
+  });
+
+  it("carries the reviewer's wording once it differs", () => {
+    expect(
+      editedValue(rename(), "Frankenstein; or, The Modern Prometheus"),
+    ).toBe("Frankenstein; or, The Modern Prometheus");
+  });
+
+  it("is null for a kind that cannot carry one, whatever the draft says", () => {
+    expect(editedValue(card("author", "merge"), "Someone Else")).toBeNull();
+  });
+});
+
+describe("appliedSummary", () => {
+  it.each([
+    [
+      "a merge",
+      card("author", "merge"),
+      "Mary Shelley",
+      "Merged into \u201cMary Shelley\u201d.",
+    ],
+    [
+      "a rename",
+      card("book_title", "rename"),
+      "Frankenstein; or, The Modern Prometheus",
+      "Renamed to \u201cFrankenstein; or, The Modern Prometheus\u201d.",
+    ],
+    [
+      "a split",
+      card("tag", "split", { primary_name: "Fiction; Poland" }),
+      "",
+      "Split \u201cFiction; Poland\u201d.",
+    ],
+    [
+      "a delete",
+      card("author", "delete", { primary_name: "calibre (0.7.23)" }),
+      "",
+      "Deleted \u201ccalibre (0.7.23)\u201d.",
+    ],
+  ])("names what %s changed", (_condition, suggestion, value, summary) => {
+    expect(appliedSummary(suggestion, value)).toBe(summary);
+  });
+});
+
+describe("tallyRows", () => {
+  const NOTHING = {
+    accepted: 0,
+    acceptedEdited: 0,
+    rejected: 0,
+    skipped: 0,
+    undone: 0,
+  };
+
+  it("lists nothing for a pass that did nothing", () => {
+    expect(tallyRows(NOTHING)).toEqual([]);
+  });
+
+  it("lists only the rows that happened, in the page's order", () => {
+    expect(
+      tallyRows({ ...NOTHING, undone: 1, accepted: 2, skipped: 4 }),
+    ).toEqual([
+      { count: 2, label: "accepted as proposed" },
+      { count: 4, label: "skipped \u2014 comes back next pass" },
+      { count: 1, label: "undone" },
+    ]);
+  });
+
+  it("names every row", () => {
+    expect(
+      tallyRows({
+        accepted: 1,
+        acceptedEdited: 1,
+        rejected: 1,
+        skipped: 1,
+        undone: 1,
+      }).map((row) => row.label),
+    ).toEqual([
+      "accepted as proposed",
+      "accepted with your wording",
+      "rejected",
+      "skipped \u2014 comes back next pass",
+      "undone",
+    ]);
   });
 });
