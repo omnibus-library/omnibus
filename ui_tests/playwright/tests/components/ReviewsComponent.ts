@@ -1,4 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
+import { reviewsUrls } from "../contracts/reviews";
+import { holdRequests } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
 /**
@@ -163,5 +165,10 @@ export class ReviewsComponent extends BaseComponent {
 
   async jumpToReviews(): Promise<void> {
     await this.jumpLink.click();
+  }
+
+  /** Holds every later read of the book's reviews until the returned release runs. */
+  async holdReviewsRead(): Promise<() => void> {
+    return holdRequests(this.page, reviewsUrls.get);
   }
 }
