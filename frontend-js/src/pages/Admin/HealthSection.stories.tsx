@@ -12,8 +12,11 @@ import { HealthSection } from "./HealthSection";
 
 const HEALTH = "/api/admin/health";
 
-// The poll stories wait out one real 5 s interval.
+// Only the interval story waits out one real 5 s poll; the rest ask for the next read.
 const NEXT_POLL = { timeout: 8_000 };
+
+const readAgain = () =>
+  storyClient().refetchQueries({ queryKey: adminHealthQuery.queryKey });
 
 /** A card's label and value rows, as "label: value". */
 const kvRows = (card: HTMLElement) =>
@@ -353,14 +356,11 @@ export const KeepsTheLastReportWhenALaterPollFails: Story = {
   play: async ({ canvas }) => {
     await canvas.findByTestId("admin-health-grid");
 
-    // The failed poll has landed once the query records the error.
-    await waitFor(
-      () =>
-        expect(
-          storyClient().getQueryState(adminHealthQuery.queryKey)?.status,
-        ).toBe("error"),
-      NEXT_POLL,
-    );
+    await readAgain();
+
+    await expect(
+      storyClient().getQueryState(adminHealthQuery.queryKey)?.status,
+    ).toBe("error");
     await expect(canvas.getByTestId("admin-health-grid")).toBeInTheDocument();
     await expect(
       canvas.queryByTestId("admin-health-error"),
@@ -382,8 +382,10 @@ export const RecoversWhenALaterPollSucceeds: Story = {
   play: async ({ canvas }) => {
     await canvas.findByTestId("admin-health-error");
 
+    await readAgain();
+
     await expect(
-      await canvas.findByTestId("admin-health-grid", {}, NEXT_POLL),
+      await canvas.findByTestId("admin-health-grid"),
     ).toBeInTheDocument();
     await expect(
       canvas.queryByTestId("admin-health-error"),
