@@ -1,9 +1,12 @@
 import "@testing-library/jest-dom/vitest";
+import { focusManager, onlineManager } from "@tanstack/react-query";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 
 afterEach(() => {
   cleanup();
+  focusManager.setFocused(undefined);
+  onlineManager.setOnline(true);
   localStorage.clear();
 });
 

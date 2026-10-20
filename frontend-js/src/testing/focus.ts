@@ -23,6 +23,3 @@ export async function reconnect(client: QueryClient) {
   });
   await waitFor(() => expect(client.isFetching()).toBe(0));
 }
-
-/** Hands focus back to the document, as a test that called `returnToTab` must. */
-export const resetFocus = () => focusManager.setFocused(undefined);
