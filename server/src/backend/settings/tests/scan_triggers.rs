@@ -510,8 +510,7 @@ async fn backfill_chapters_returns_401_when_anonymous() {
 #[tokio::test]
 async fn backfill_chapters_returns_403_when_not_admin() {
     let (app, _state, pool) = fixture().await;
-    let user = auth_test_support::create_user(&pool, "reader").await;
-    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let token = reader_token(&pool).await;
     let response = app
         .oneshot(backfill_chapters_request(Some(&token)))
         .await
@@ -522,17 +521,9 @@ async fn backfill_chapters_returns_403_when_not_admin() {
 #[tokio::test]
 async fn backfill_chapters_returns_409_when_no_audiobook_library_path_configured() {
     let (app, state, pool) = fixture().await;
-    let admin = auth_test_support::create_admin(&pool, "admin").await;
-    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+    let token = admin_token(&pool).await;
     // An ebook folder alone doesn't count: the job reads audiobooks.
-    let settings = omnibus_shared::Settings {
-        ebook_library_path: Some("/some/ebooks".to_string()),
-        audiobook_library_path: None,
-        scan_interval_hours: None,
-    };
-    db::set_settings(&pool, &settings)
-        .await
-        .expect("set_settings should persist the path");
+    set_library_paths(&pool, Some("/some/ebooks"), None).await;
 
     let response = app
         .oneshot(backfill_chapters_request(Some(&token)))
@@ -547,16 +538,8 @@ async fn backfill_chapters_returns_409_when_no_audiobook_library_path_configured
 #[tokio::test]
 async fn backfill_chapters_returns_200_and_queues_the_job_when_an_audiobook_path_is_configured() {
     let (app, state, pool) = fixture().await;
-    let admin = auth_test_support::create_admin(&pool, "admin").await;
-    let token = auth_test_support::bearer_token(&pool, admin.id).await;
-    let settings = omnibus_shared::Settings {
-        ebook_library_path: None,
-        audiobook_library_path: Some("/some/audiobooks".to_string()),
-        scan_interval_hours: None,
-    };
-    db::set_settings(&pool, &settings)
-        .await
-        .expect("set_settings should persist the path");
+    let token = admin_token(&pool).await;
+    set_library_paths(&pool, None, Some("/some/audiobooks")).await;
 
     let response = app
         .oneshot(backfill_chapters_request(Some(&token)))
@@ -570,8 +553,7 @@ async fn backfill_chapters_returns_200_and_queues_the_job_when_an_audiobook_path
 #[tokio::test]
 async fn backfill_chapters_returns_500_when_the_settings_cannot_be_read() {
     let (app, _state, pool) = fixture().await;
-    let admin = auth_test_support::create_admin(&pool, "admin").await;
-    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+    let token = admin_token(&pool).await;
     sqlx::query("DROP TABLE settings")
         .execute(&pool)
         .await

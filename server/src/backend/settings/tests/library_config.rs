@@ -4,15 +4,13 @@
 //! Administration screens show.
 
 use axum::{
-    body::{to_bytes, Body},
+    body::Body,
     http::{header::AUTHORIZATION, Request, StatusCode},
 };
 use omnibus_db::test_support::EnvVarGuard;
 use omnibus_shared::{EbookConvertStatus, MetadataSource, DEFAULT_METADATA_PRECEDENCE};
 use tower::ServiceExt;
 
-use super::super::*;
-use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::*;
 
 fn json_request(
@@ -31,21 +29,6 @@ fn json_request(
     }
     .body(Body::from(body.to_string()))
     .unwrap()
-}
-
-async fn admin_token(pool: &sqlx::SqlitePool) -> String {
-    let admin = auth_test_support::create_admin(pool, "admin").await;
-    auth_test_support::bearer_token(pool, admin.id).await
-}
-
-async fn reader_token(pool: &sqlx::SqlitePool) -> String {
-    let reader = auth_test_support::create_user(pool, "reader").await;
-    auth_test_support::bearer_token(pool, reader.id).await
-}
-
-async fn body_json<T: serde::de::DeserializeOwned>(response: Response) -> T {
-    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    serde_json::from_slice(&bytes).unwrap()
 }
 
 async fn drop_settings_table(pool: &sqlx::SqlitePool) {
@@ -218,17 +201,6 @@ mod post_ebook_convert {
 
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
-}
-
-async fn set_library_paths(pool: &sqlx::SqlitePool, ebook: Option<&str>, audiobook: Option<&str>) {
-    let settings = omnibus_shared::Settings {
-        ebook_library_path: ebook.map(str::to_string),
-        audiobook_library_path: audiobook.map(str::to_string),
-        scan_interval_hours: None,
-    };
-    db::set_settings(pool, &settings)
-        .await
-        .expect("set_settings should persist the paths");
 }
 
 fn flipped_order() -> Vec<MetadataSource> {

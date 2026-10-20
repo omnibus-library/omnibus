@@ -8,6 +8,8 @@ use axum::{
     http::{header::AUTHORIZATION, Request},
 };
 
+use crate::auth::test_support as auth_test_support;
+
 use super::*;
 
 /// The household share gate's one contract message — a missing and a
@@ -19,6 +21,40 @@ pub(crate) const NOT_SHARING_BODY: &str = "this reader isn't sharing their stats
 pub(crate) async fn body_text(res: Response) -> String {
     let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
     String::from_utf8(bytes.to_vec()).unwrap()
+}
+
+/// Decode a JSON response body into `T`.
+pub(crate) async fn body_json<T: serde::de::DeserializeOwned>(res: Response) -> T {
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+/// Create an admin named `admin` and return a bearer token for it.
+pub(crate) async fn admin_token(pool: &sqlx::SqlitePool) -> String {
+    let admin = auth_test_support::create_admin(pool, "admin").await;
+    auth_test_support::bearer_token(pool, admin.id).await
+}
+
+/// Create a non-admin user named `reader` and return a bearer token for it.
+pub(crate) async fn reader_token(pool: &sqlx::SqlitePool) -> String {
+    let reader = auth_test_support::create_user(pool, "reader").await;
+    auth_test_support::bearer_token(pool, reader.id).await
+}
+
+/// Save the ebook and audiobook library folders, leaving the scan interval unset.
+pub(crate) async fn set_library_paths(
+    pool: &sqlx::SqlitePool,
+    ebook: Option<&str>,
+    audiobook: Option<&str>,
+) {
+    let settings = omnibus_shared::Settings {
+        ebook_library_path: ebook.map(str::to_string),
+        audiobook_library_path: audiobook.map(str::to_string),
+        scan_interval_hours: None,
+    };
+    db::set_settings(pool, &settings)
+        .await
+        .expect("set_settings should persist the paths");
 }
 
 /// Asserts the calling test runs on tokio's current-thread flavor, the invariant every

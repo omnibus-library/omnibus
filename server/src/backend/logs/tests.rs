@@ -2,23 +2,12 @@
 //! filters reach the on-disk reader, a missing log directory is an empty page,
 //! and an unreadable one is a generic 500.
 
-use axum::{body::to_bytes, http::StatusCode, response::Response};
+use axum::http::StatusCode;
 use omnibus_db::test_support::EnvVarGuard;
 use omnibus_shared::logs::LogPage;
 use tower::ServiceExt;
 
-use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::*;
-
-async fn admin_token(pool: &sqlx::SqlitePool) -> String {
-    let admin = auth_test_support::create_admin(pool, "admin").await;
-    auth_test_support::bearer_token(pool, admin.id).await
-}
-
-async fn body_json<T: serde::de::DeserializeOwned>(response: Response) -> T {
-    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    serde_json::from_slice(&bytes).unwrap()
-}
 
 fn record(timestamp: &str, level: &str, message: &str) -> String {
     serde_json::json!({
@@ -46,8 +35,7 @@ mod get_logs {
     #[tokio::test]
     async fn returns_403_when_not_admin() {
         let (app, _, pool) = fixture().await;
-        let reader = auth_test_support::create_user(&pool, "reader").await;
-        let token = auth_test_support::bearer_token(&pool, reader.id).await;
+        let token = reader_token(&pool).await;
         let res = app
             .oneshot(get_with_bearer("/api/admin/logs", &token))
             .await
