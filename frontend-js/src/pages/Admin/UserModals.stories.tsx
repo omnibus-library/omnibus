@@ -78,7 +78,9 @@ const checkbox = (scope: HTMLElement, name: string) =>
   within(scope).getByRole("checkbox", { name });
 
 // What `RequireAuth` does in the app: nothing signed-in renders once the session is gone.
+// It reads the location as well, so it re-renders with the screens under it when a sign-out navigates.
 function WhileSignedIn({ children }: { children: ReactNode }) {
+  useLocation();
   return useQuery(meQuery).data ? children : null;
 }
 
@@ -610,6 +612,7 @@ export const DeleteUserHoldsTheDialogWhileDeleting: Story = {
     });
     await expect(busy).toBeDisabled();
     await expect(busy).toHaveAttribute("aria-busy", "true");
+    await waitFor(() => expect(dialog).toHaveFocus());
     await userEvent.keyboard("{Escape}");
     await expect(calls.closed).toBe(0);
     deleteGate.release();
@@ -851,12 +854,10 @@ export const SessionsCloseButtonsClose: Story = {
     const dialog = await canvas.findByRole("dialog", {
       name: "Sessions & devices — alice",
     });
-    const [cross, footer] = within(dialog).getAllByRole("button", {
-      name: "Close",
-    });
+    const buttons = within(dialog).getAllByRole("button", { name: "Close" });
+    await expect(buttons).toHaveLength(2);
 
-    await userEvent.click(cross as HTMLElement);
-    await userEvent.click(footer as HTMLElement);
+    for (const button of buttons) await userEvent.click(button);
 
     await expect(calls.closed).toBe(2);
   },
