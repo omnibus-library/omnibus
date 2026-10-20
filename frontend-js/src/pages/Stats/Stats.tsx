@@ -5,6 +5,7 @@ import {
   fetchRecentProgress,
   type HouseholdReader,
   householdReadersQuery,
+  keepOwnOnly,
   type LibraryComposition,
   type LibrarySize,
   libraryCompositionQuery,
@@ -279,6 +280,7 @@ function ReaderStats({
     queryKey: ["stats-open-books", userId],
     queryFn: () =>
       fetchRecentProgress(IN_PROGRESS_SHOWN + 1, userId).catch(() => []),
+    ...keepOwnOnly(userId),
     ...NO_AMBIENT_REFETCH,
   });
   const period = useQuery({

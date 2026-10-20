@@ -171,10 +171,16 @@ export const NO_AMBIENT_REFETCH = {
   refetchOnReconnect: false,
 } as const;
 
+// A reader who stopped sharing answers 404, so another reader's figures are dropped on unmount
+// rather than shown on a return visit until that 404 lands.
+export const keepOwnOnly = (userId: UserId | null) =>
+  userId === null ? {} : ({ gcTime: 0 } as const);
+
 export const statsQuery = (range: StatsRange, userId: UserId | null) =>
   queryOptions({
     queryKey: ["stats", userId, range],
     queryFn: () => fetchStats(range, userId),
+    ...keepOwnOnly(userId),
     ...NO_AMBIENT_REFETCH,
   });
 

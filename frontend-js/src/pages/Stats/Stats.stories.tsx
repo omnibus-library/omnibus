@@ -602,6 +602,52 @@ export const ChoosingAReaderSwitchesWhoseFiguresAreShown: Story = {
   },
 };
 
+let graceSharing = true;
+
+export const ReturningToAReaderWhoStoppedSharingShowsNoOldFigures: Story = {
+  parameters: { path: "/stats?user=2" },
+  beforeEach({ msw }) {
+    held = deferred();
+    graceSharing = true;
+    msw.use(
+      ...api({
+        stats: async ({ range, userId }) => {
+          if (userId !== 2 || graceSharing) return aWireStatsSummary({ range });
+          await held.promise;
+          return 404;
+        },
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(await canvas.findByText("Grace's stats")).toBeInTheDocument();
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Stats for Grace" }),
+    );
+    await userEvent.click(canvas.getByTestId("stats-reader-option-you"));
+    await expect(
+      await canvas.findByRole("heading", { level: 1, name: "12 days." }),
+    ).toBeInTheDocument();
+    graceSharing = false;
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Stats for You" }),
+    );
+    await userEvent.click(canvas.getByTestId("stats-reader-option-2"));
+
+    // Her answer is held, so what is on screen now is what the page kept from her last visit.
+    await expect(
+      await canvas.findByText("Tallying your reading"),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByTestId("stats-hero-who")).toBeNull();
+    held.release();
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "This reader isn't sharing their stats",
+    );
+    await expect(canvas.queryByTestId("stats-hero-who")).toBeNull();
+  },
+};
+
 export const SharingSwitchStartsFromTheSession: Story = {
   parameters: { user: { ...WIRE_ADA, share_stats: true } },
   play: async ({ canvas }) => {

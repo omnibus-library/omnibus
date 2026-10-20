@@ -363,6 +363,30 @@ export const OpenBooksFollowTheReaderBeingViewed: Story = {
   },
 };
 
+export const OpenBooksAreAskedAgainOnReturningToAReader: Story = {
+  parameters: { path: "/stats?user=2" },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByText("Grace's stats");
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Stats for Grace" }),
+    );
+    await userEvent.click(canvas.getByTestId("stats-reader-option-you"));
+    await canvas.findByRole("heading", { level: 1, name: "12 days." });
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Stats for You" }),
+    );
+    await userEvent.click(canvas.getByTestId("stats-reader-option-2"));
+
+    await canvas.findByText("Grace's stats");
+    await expect(calls.recent.map((p) => p.get("user_id"))).toEqual([
+      "2",
+      null,
+      "2",
+    ]);
+  },
+};
+
 const withReadout = (
   n: number,
   record: Parameters<typeof aWireResumePoint>[0],
