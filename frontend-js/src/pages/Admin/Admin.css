@@ -557,16 +557,6 @@
   gap: 10px;
   margin-top: 14px;
 }
-.copy-feedback {
-  font-size: 0.8rem;
-  color: var(--ink-2);
-}
-.copy-feedback:not(:empty) {
-  margin-left: 0.5rem;
-}
-.copy-feedback.error {
-  color: var(--bad);
-}
 .maint-list {
   list-style: none;
   margin: 1rem 0 0;

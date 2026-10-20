@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { mcpQuery, replaceQueryData, setMcpEnabled } from "../../api";
+import { CopyButton } from "../../components/CopyButton/CopyButton";
 import {
   refusal,
   type Status,
   statusOrLoadError,
 } from "../../components/SettingsShell/SettingsShell";
-import { CopyButton } from "./CopyButton";
 
 const NOTES = {
   unknown: "Checking the endpoint's current state…",
@@ -90,6 +90,7 @@ export function McpCard() {
           text={endpoint}
           label="Copy URL"
           testId="mcp-endpoint-copy"
+          size="md"
         />
       </div>
       {shown && (

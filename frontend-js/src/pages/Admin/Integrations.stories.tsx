@@ -983,6 +983,15 @@ export const McpHoldsTheSwitchWhileSaving: Story = {
   },
 };
 
+export const McpDrawsAFullSizeCopyButton: Story = {
+  render: () => <McpCard />,
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("mcp-endpoint-copy"),
+    ).toHaveAttribute("class", "btn ghost");
+  },
+};
+
 export const McpCopiesTheEndpointUrl: Story = {
   beforeEach: () => fakeClipboard(copied),
   render: () => <McpCard />,
