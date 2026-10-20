@@ -43,8 +43,9 @@ pub struct BookDeletionImpact {
 
 impl BookDeletionImpact {
     /// Human-readable phrases for each non-zero count, in the order the dialog
-    /// lists them (`["3 highlights", "1 rating"]`). Empty when the book
-    /// carries no user data at all.
+    /// lists them (`["3 highlights", "1 review"]`). Empty when the book
+    /// carries no user data at all. `ratings` counts reviews: the wire name
+    /// predates them.
     pub fn losses(&self) -> Vec<String> {
         [
             (self.highlights, "highlight", "highlights"),
@@ -56,7 +57,7 @@ impl BookDeletionImpact {
                 "listening session",
                 "listening sessions",
             ),
-            (self.ratings, "rating", "ratings"),
+            (self.ratings, "review", "reviews"),
             (self.shelves, "shelf placement", "shelf placements"),
         ]
         .iter()
@@ -102,7 +103,17 @@ mod tests {
             ..Default::default()
         };
 
-        assert_eq!(impact.losses(), vec!["3 highlights", "1 rating"]);
+        assert_eq!(impact.losses(), vec!["3 highlights", "1 review"]);
+    }
+
+    #[test]
+    fn losses_names_the_ratings_count_as_reviews() {
+        let impact = BookDeletionImpact {
+            ratings: 2,
+            ..Default::default()
+        };
+
+        assert_eq!(impact.losses(), vec!["2 reviews"]);
     }
 
     #[test]
