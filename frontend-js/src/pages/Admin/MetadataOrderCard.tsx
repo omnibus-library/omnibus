@@ -33,6 +33,13 @@ const LIBRARIES = [
 
 type Order = readonly MetadataSource[];
 
+/** The id of one row's move button, which the card focuses after a move. */
+const moveButtonId = (
+  library: MetadataLibrary,
+  direction: Direction,
+  index: number,
+) => `${library}-metadata-precedence-${direction}-${index}`;
+
 // Items are keyed by source, so a move carries the row rather than relabelling rows in place.
 function PrecedenceList({
   library,
@@ -73,6 +80,7 @@ function PrecedenceList({
                   busy ||
                   (direction === "up" ? i === 0 : i === order.length - 1)
                 }
+                id={moveButtonId(library, direction, i)}
                 data-testid={`${testId}-${direction}-${i}`}
                 aria-label={`Move ${sourceLabel(source)} ${direction}`}
                 onClick={() => onMove(i, direction)}
@@ -101,18 +109,13 @@ export function MetadataOrderCard() {
   });
   const [announcement, setAnnouncement] = useState("");
   const [status, setStatus] = useState<Status | null>(null);
-  const card = useRef<HTMLElement>(null);
   const pendingFocus = useRef<string | null>(null);
 
   // The moved row has rendered by now, so its button exists at the new index.
   useEffect(() => {
     const target = pendingFocus.current;
     pendingFocus.current = null;
-    if (target) {
-      card.current
-        ?.querySelector<HTMLElement>(`[data-testid="${target}"]`)
-        ?.focus();
-    }
+    if (target) document.getElementById(target)?.focus();
   });
 
   const shown = (library: MetadataLibrary) =>
@@ -137,7 +140,7 @@ export function MetadataOrderCard() {
     const len = moved.order.length;
     setAnnouncement(positionAnnouncement({ source, index: landed, len }));
     const focus = focusAfterMove({ index: landed, len, pressed: direction });
-    pendingFocus.current = `${library}-metadata-precedence-${focus}-${landed}`;
+    pendingFocus.current = moveButtonId(library, focus, landed);
   };
 
   const save = useMutation({
@@ -174,7 +177,7 @@ export function MetadataOrderCard() {
   );
 
   return (
-    <section className="card" data-testid="metadata-precedence-card" ref={card}>
+    <section className="card" data-testid="metadata-precedence-card">
       <h3>Source order</h3>
       <p className="subtitle">
         Order the sources Omnibus resolves each field from. Lower items win. The
