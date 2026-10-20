@@ -32,6 +32,17 @@ describe("dayNumber", () => {
     expect(dayNumber("2026-12-31")).toBe(20_818);
   });
 
+  it("reads a year Date can't hold as no day", () => {
+    expect(dayNumber("999999-01-01")).toBeNull();
+  });
+
+  it("keeps a year below 100 in that year", () => {
+    const n = dayNumber("0026-01-05");
+    if (n === null) throw new Error("no such day");
+
+    expect(dayString(n)).toBe("0026-01-05");
+  });
+
   it.each([
     ["month zero", "2026-00-10"],
     ["a month past December", "2026-13-01"],

@@ -26,7 +26,10 @@ export function dayNumber(day: string): number | null {
   const parts = /^(\d+)-(\d+)-(\d+)$/.exec(day);
   if (!parts) return null;
   const [y, m, d] = [Number(parts[1]), Number(parts[2]), Number(parts[3])];
-  return m >= 1 && m <= 12 && d >= 1 && d <= 31 ? daysFromCivil(y, m, d) : null;
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  // `Date` holds only ±275760 years; past that `setUTCFullYear` yields NaN.
+  const days = daysFromCivil(y, m, d);
+  return Number.isFinite(days) ? days : null;
 }
 
 /** `YYYY-MM-DD` for an epoch-day number. */
