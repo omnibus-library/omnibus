@@ -7,6 +7,7 @@
 //! read live in [`writes`]. Host-agnostic: the marquee stop and the mobile
 //! layout each wrap [`BdReviewsSection`] in their own chrome.
 
+use dioxus::core::current_scope_id;
 use dioxus::prelude::*;
 use omnibus_shared::{BookReviews, ReadStatus, Review, ReviewSummary};
 
@@ -56,6 +57,16 @@ pub(super) struct ReviewsCtx {
     /// Your review as the server last confirmed it, which a refused write
     /// goes back to: the card may hold an earlier tap that never landed.
     confirmed: Signal<Option<Review>>,
+    /// The op whose answer set `confirmed`, so an older answer arriving late
+    /// can't move it backwards.
+    confirmed_op: Signal<u64>,
+    /// Bumped per book shown, so an answer for the last book never lands on
+    /// this one.
+    epoch: Signal<u64>,
+    /// The scope that owns this state. Writes and re-reads run on it, so a
+    /// stop remounting under them (the scroll-stops switch) can't drop one
+    /// half-way.
+    owner: ScopeId,
     /// Bumped by every household re-read, for the same guard.
     refresh_seq: Signal<u64>,
     /// The summary and the others are being re-read after a stars change.
@@ -87,6 +98,9 @@ pub(super) fn use_book_reviews(uuid: String) -> ReviewsCtx {
         op_seq: use_signal(|| 0),
         in_flight: use_signal(|| 0),
         confirmed: use_signal(|| None),
+        confirmed_op: use_signal(|| 0),
+        epoch: use_signal(|| 0),
+        owner: current_scope_id(),
         refresh_seq: use_signal(|| 0),
         refreshing: use_signal(|| false),
         refresh_failed: use_signal(|| false),
@@ -108,10 +122,12 @@ fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx) {
         }
         let mut ctx = ctx;
         loaded_for.set(uuid.clone());
-        writes::bump(ctx.op_seq);
+        writes::bump(ctx.epoch);
+        let op = writes::bump(ctx.op_seq);
         writes::bump(ctx.refresh_seq);
         ctx.reviews.set(None);
         ctx.confirmed.set(None);
+        ctx.confirmed_op.set(op);
         ctx.in_flight.set(0);
         ctx.feed.set(FeedState::Pending);
         ctx.refreshing.set(false);

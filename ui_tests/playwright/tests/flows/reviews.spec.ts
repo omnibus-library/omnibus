@@ -393,6 +393,46 @@ test.describe("book reviews", () => {
     });
   });
 
+  test("close the delete dialog before the household re-read answers", async ({
+    bookDetailPage,
+    request,
+    presetReview,
+    expectMutation,
+  }) => {
+    const { reviews: section } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, REVIEW_BOOK.title);
+
+    await test.step("rate the book as two readers through the api", async () => {
+      await presetReview(uuid, { stars: 4, body_md: REVIEW_TEXT });
+      await presetReview(uuid, { stars: 3 }, "reader");
+    });
+
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(uuid);
+      await expect(section.summary).toBeVisible();
+    });
+
+    const release = await test.step("hold the household re-read", async () =>
+      section.holdReviewsRead());
+
+    await test.step("delete the review", async () => {
+      await section.openDeleteDialog();
+      await expectMutation(reviews.delete(uuid), () => section.confirmDelete());
+    });
+
+    // Your stars leaving moves the household, but that read is no reason to
+    // hold the dialog: it closed when the delete landed.
+    await test.step("check the dialog closed while the re-read waits", async () => {
+      await expect(section.deleteDialog).toHaveCount(0);
+      await expect(section.myText).toHaveCount(0);
+    });
+
+    await test.step("let the re-read land", async () => {
+      release();
+      await expect(section.summary).toHaveCount(0);
+    });
+  });
+
   test("show an error when a review fails to delete", async ({
     bookDetailPage,
     request,

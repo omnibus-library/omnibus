@@ -1,6 +1,7 @@
 //! Reviews section tests: the patches each write sends, what the card draws
 //! before the server answers, and the section's markup in each load state.
 
+use dioxus::core::current_scope_id;
 use dioxus::prelude::*;
 use omnibus_shared::{AttributedReview, BookReviews, Review, ReviewBucket, ReviewPatch};
 
@@ -15,7 +16,8 @@ use super::others::{needs_read_more, split_others, spoiler_veiled};
 use super::stars::half_star_label;
 use super::summary::{average_label, spread_bars, spread_summary};
 use super::writes::{
-    apply_locally, begin_stars_write, settle_stars_write, stars_patch, takes_fresh_mine, text_patch,
+    apply_locally, begin_refresh, begin_stars_write, begin_write, settle_delete, settle_refresh,
+    settle_save, settle_stars_write, stars_patch, takes_fresh_mine, text_patch,
 };
 use super::{reviews_kicker, QuickWrite, ReviewsCtx};
 
@@ -30,6 +32,9 @@ fn ctx(reviews: Option<BookReviews>, feed: FeedState, finished: bool) -> Reviews
         op_seq: Signal::new(0),
         in_flight: Signal::new(0),
         confirmed: Signal::new(confirmed),
+        confirmed_op: Signal::new(0),
+        epoch: Signal::new(0),
+        owner: current_scope_id(),
         refresh_seq: Signal::new(0),
         refreshing: Signal::new(false),
         refresh_failed: Signal::new(false),
@@ -44,6 +49,14 @@ fn card_stars(ctx: ReviewsCtx) -> Option<f32> {
         .as_ref()
         .and_then(|r| r.mine.as_ref())
         .and_then(|r| r.stars)
+}
+
+fn confirmed_stars(ctx: ReviewsCtx) -> Option<f32> {
+    ctx.confirmed.peek().as_ref().and_then(|r| r.stars)
+}
+
+fn in_flight(ctx: ReviewsCtx) -> u32 {
+    *ctx.in_flight.peek()
 }
 
 fn refused() -> DataError {
@@ -253,6 +266,132 @@ fn settle_stars_write_confirms_a_superseded_tap_that_landed() {
 
         assert!(!settle_stars_write(ctx, second, Err(refused())));
         assert_eq!(card_stars(ctx), Some(3.0));
+    });
+}
+
+// Tap 3 then 4, answered 4 then 3: the server holds 4, so a late answer to
+// the 3 must not become what a later refusal goes back to.
+#[test]
+fn settle_stars_write_never_moves_the_confirmed_review_backwards() {
+    in_root_scope(|| {
+        let ctx = ctx(Some(rated(2.0)), FeedState::Loaded, false);
+        let three = begin_stars_write(ctx, &stars_patch(Some(2.0), 3.0), "book-1", 2_000);
+        let four = begin_stars_write(ctx, &stars_patch(Some(3.0), 4.0), "book-1", 2_001);
+        settle_stars_write(ctx, four, Ok(Some(review(Some(4.0), None, None))));
+        settle_stars_write(ctx, three, Ok(Some(review(Some(3.0), None, None))));
+        assert_eq!(confirmed_stars(ctx), Some(4.0));
+
+        let five = begin_stars_write(ctx, &stars_patch(Some(4.0), 5.0), "book-1", 2_002);
+        settle_stars_write(ctx, five, Err(refused()));
+        assert_eq!(card_stars(ctx), Some(4.0));
+    });
+}
+
+// An answer for a book no longer shown must not land on the one that is.
+#[test]
+fn settle_stars_write_drops_an_answer_for_another_book() {
+    in_root_scope(|| {
+        let ctx = ctx(Some(rated(2.0)), FeedState::Loaded, false);
+        let tap = begin_stars_write(ctx, &stars_patch(Some(2.0), 3.0), "book-1", 2_000);
+        let mut epoch = ctx.epoch;
+        epoch.set(1);
+        let mut drawn = ctx.reviews;
+        drawn.set(Some(rated(1.0)));
+
+        assert!(!settle_stars_write(
+            ctx,
+            tap,
+            Ok(Some(review(Some(3.0), None, None)))
+        ));
+        assert_eq!(card_stars(ctx), Some(1.0));
+        assert_eq!(confirmed_stars(ctx), Some(2.0));
+    });
+}
+
+// A re-read that a drawn tap overlapped takes the household, not the card.
+#[test]
+fn settle_refresh_keeps_a_tap_drawn_after_the_re_read_began() {
+    in_root_scope(|| {
+        let ctx = ctx(Some(rated(2.0)), FeedState::Loaded, false);
+        let start = begin_refresh(ctx);
+        let _tap = begin_stars_write(ctx, &stars_patch(Some(2.0), 4.0), "book-1", 2_000);
+        let mut fresh = rated(2.0);
+        fresh.others = vec![other(9, Some(5.0), None)];
+
+        settle_refresh(ctx, start, Ok(fresh));
+        assert_eq!(card_stars(ctx), Some(4.0));
+        assert_eq!(confirmed_stars(ctx), Some(2.0));
+        let others = ctx.reviews.peek().as_ref().map(|r| r.others.len());
+        assert_eq!(
+            others,
+            Some(1),
+            "the household still comes from the re-read"
+        );
+        assert!(!*ctx.refreshing.peek());
+    });
+}
+
+#[test]
+fn settle_refresh_keeps_the_card_while_a_write_is_in_flight() {
+    in_root_scope(|| {
+        let ctx = ctx(Some(rated(2.0)), FeedState::Loaded, false);
+        let _save = begin_write(ctx);
+        let start = begin_refresh(ctx);
+        settle_refresh(ctx, start, Ok(rated(1.0)));
+        assert_eq!(card_stars(ctx), Some(2.0));
+
+        let start = begin_refresh(ctx);
+        drop(_save);
+        let quiet = begin_refresh(ctx);
+        settle_refresh(ctx, start, Ok(rated(1.0)));
+        assert_eq!(
+            card_stars(ctx),
+            Some(2.0),
+            "a superseded re-read is dropped"
+        );
+        settle_refresh(ctx, quiet, Ok(rated(1.0)));
+        assert_eq!(
+            card_stars(ctx),
+            Some(1.0),
+            "with nothing out, the card follows"
+        );
+    });
+}
+
+#[test]
+fn save_and_delete_count_themselves_in_flight_until_settled() {
+    in_root_scope(|| {
+        let ctx = ctx(Some(rated(2.0)), FeedState::Loaded, false);
+        let save = begin_write(ctx);
+        assert_eq!(in_flight(ctx), 1);
+        let written = review(Some(2.0), Some("Loved it"), None);
+        settle_save(ctx, save, Ok(Some(written))).expect("the save landed");
+        assert_eq!(in_flight(ctx), 0);
+        let body = ctx
+            .confirmed
+            .peek()
+            .as_ref()
+            .and_then(|r| r.body_md.clone());
+        assert_eq!(body.as_deref(), Some("Loved it"));
+
+        let delete = begin_write(ctx);
+        assert_eq!(in_flight(ctx), 1);
+        assert!(settle_delete(ctx, delete, Ok(())).expect("the delete landed"));
+        assert_eq!(in_flight(ctx), 0);
+        assert_eq!(card_stars(ctx), None);
+        assert!(ctx.confirmed.peek().is_none());
+    });
+}
+
+// A write whose task is torn down mid-flight must not stay counted.
+#[test]
+fn a_dropped_write_uncounts_itself() {
+    in_root_scope(|| {
+        let ctx = ctx(Some(rated(2.0)), FeedState::Loaded, false);
+        let ticket = begin_write(ctx);
+        assert_eq!(in_flight(ctx), 1);
+        drop(ticket);
+        assert_eq!(in_flight(ctx), 0);
     });
 }
 
