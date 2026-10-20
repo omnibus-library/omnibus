@@ -133,5 +133,6 @@ pub async fn rpc_set_follow_mode(uuid: String, body: SetFollowMode) -> Result<()
     }
 }
 
-#[cfg(all(test, feature = "server"))]
+// The decode it round-trips through is the web client's, absent on mobile.
+#[cfg(all(test, feature = "server", not(feature = "mobile")))]
 mod tests;

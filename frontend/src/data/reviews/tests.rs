@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use axum::http::StatusCode;
-use axum::routing::{get, patch};
+use axum::routing::{delete, get, patch};
 use axum::Json;
 
 use crate::offline::sync::test_state_lock;
@@ -271,24 +271,131 @@ async fn delete_review_queues_offline_and_drops_your_review_from_the_replica() {
 }
 
 #[tokio::test]
-async fn refresh_book_reviews_draws_from_the_replica_while_a_write_for_the_book_is_queued() {
+async fn refresh_book_reviews_answers_offline_without_asking_while_a_write_for_the_book_is_queued()
+{
     store::init_global_for_tests();
     let _guard = test_state_lock().lock().unwrap();
     clear_ops().await;
     sync::note_online();
     let uuid = "reviews-refresh-queued";
     cache::put_json(&cache::keys::reviews(uuid), &reviews(None));
-    let queued_mine = outbox::queue_update_review(uuid, &stars(1.5))
+    outbox::queue_update_review(uuid, &stars(1.5))
         .await
         .expect("queued");
     let (base_url, hits) = counting_server().await;
 
+    let got = refresh_book_reviews(&base_url, uuid).await;
+
+    // The server's household would predate the queued stars.
+    assert!(matches!(got, Err(DataError::Offline)), "got {got:?}");
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+    clear_ops().await;
+}
+
+#[tokio::test]
+async fn refresh_book_reviews_returns_and_keeps_the_servers_answer() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    clear_ops().await;
+    sync::note_online();
+    let uuid = "reviews-refresh-fresh";
+    cache::put_json(&cache::keys::reviews(uuid), &reviews(None));
+    let fresh = reviews(Some(review(uuid, Some(3.5))));
+    let served = fresh.clone();
+    let app = axum::Router::new().route(
+        "/api/reviews/reviews-refresh-fresh",
+        get(move || {
+            let served = served.clone();
+            async move { Json(served) }
+        }),
+    );
+    let base_url = spawn_router(app).await;
+
     let got = refresh_book_reviews(&base_url, uuid)
         .await
-        .expect("the replica answers");
+        .expect("read from the server");
 
-    assert_eq!(got.mine, queued_mine);
-    assert_eq!(hits.load(Ordering::SeqCst), 0);
+    assert_eq!(got, fresh);
+    assert_eq!(
+        cache::get_json::<BookReviews>(&cache::keys::reviews(uuid)).await,
+        Some(fresh)
+    );
+}
+
+#[tokio::test]
+async fn update_review_refuses_a_patch_the_server_would_and_queues_nothing() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    clear_ops().await;
+    sync::note_offline();
+    let uuid = "reviews-invalid-patch";
+    let oversized = ReviewPatch {
+        body_md: Some(Some("x".repeat(omnibus_shared::REVIEW_TEXT_MAX_LEN + 1))),
+        ..Default::default()
+    };
+
+    let got = update_review(UNREACHABLE, uuid, oversized).await;
+
+    sync::note_online();
+    assert!(matches!(got, Err(DataError::Other(_))), "got {got:?}");
+    assert!(!outbox::review_queued(uuid).await);
+}
+
+#[tokio::test]
+async fn delete_review_drops_your_review_from_the_replica_and_marks_the_stats_stale_once_it_lands()
+{
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    clear_ops().await;
+    sync::note_online();
+    let uuid = "reviews-delete-landed";
+    let app = axum::Router::new().route(
+        "/api/reviews/reviews-delete-landed",
+        delete(|| async { StatusCode::NO_CONTENT }),
+    );
+    let base_url = spawn_router(app).await;
+    let stats_key = cache::keys::stats("reviews-delete-landed-range");
+    cache::put_json(
+        &cache::keys::reviews(uuid),
+        &reviews(Some(review(uuid, Some(4.0)))),
+    );
+    cache::put_json(&stats_key, &1);
+
+    delete_review(&base_url, uuid).await.expect("landed");
+
+    let cached: BookReviews = cache::get_json(&cache::keys::reviews(uuid))
+        .await
+        .expect("cached");
+    assert_eq!(cached.mine, None);
+    assert_eq!(fetched_at(&stats_key).await, 0);
+    assert!(!outbox::review_queued(uuid).await);
+}
+
+#[tokio::test]
+async fn delete_review_queues_behind_a_queued_write_for_the_book_without_reaching_the_server() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    clear_ops().await;
+    sync::note_online();
+    let uuid = "reviews-delete-behind";
+    outbox::queue_update_review(uuid, &stars(2.0))
+        .await
+        .expect("an earlier write is queued");
+    let (base_url, hits) = counting_server().await;
+
+    delete_review(&base_url, uuid)
+        .await
+        .expect("queued behind the earlier write");
+
+    assert_eq!(hits.load(Ordering::SeqCst), 0, "it must not land first");
+    let st = store::store().expect("store");
+    let ops: Vec<outbox::Op> = st
+        .ops_list()
+        .await
+        .iter()
+        .map(|row| serde_json::from_str(&row.payload).expect("op"))
+        .collect();
+    assert_eq!(ops, vec![outbox::Op::DeleteReview { uuid: uuid.into() }]);
     clear_ops().await;
 }
 

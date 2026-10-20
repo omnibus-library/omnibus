@@ -42,13 +42,14 @@ pub(crate) async fn get_book_reviews_online(
     Ok(response.json::<BookReviews>().await?)
 }
 
-/// Re-read a book's reviews after a write moved the household. From the
-/// server, a failure staying an error; from the replica while offline or
-/// while a write to your review of it is queued, which the server lacks.
+/// Re-read a book's reviews from the server after a write moved the household,
+/// a failure staying an error. While offline, or while a write to your review
+/// of it is queued, the server's figures would predate that write: it answers
+/// [`DataError::Offline`] without asking, so the section marks them stale.
 #[cfg(feature = "mobile")]
 pub async fn refresh_book_reviews(server_url: &str, uuid: &str) -> Result<BookReviews, DataError> {
     if sync::is_offline() || outbox::review_queued(uuid).await {
-        return get_book_reviews(server_url, uuid).await;
+        return Err(DataError::Offline);
     }
     let result = get_book_reviews_online(server_url, uuid).await;
     match &result {
@@ -63,13 +64,15 @@ pub async fn refresh_book_reviews(server_url: &str, uuid: &str) -> Result<BookRe
 }
 
 /// PATCH `/api/reviews/{uuid}` — `Ok(None)` when the patch emptied the
-/// review. Queued offline, merging field by field with the book's queued patch.
+/// review. Queued offline, merging field by field with the book's queued patch;
+/// one the server would refuse is refused here instead, never queued.
 #[cfg(feature = "mobile")]
 pub async fn update_review(
     server_url: &str,
     uuid: &str,
     patch: ReviewPatch,
 ) -> Result<Option<Review>, DataError> {
+    patch.validate().map_err(DataError::Other)?;
     if outbox::review_queued(uuid).await {
         if let Some(mine) = outbox::queue_update_review(uuid, &patch).await {
             drain_soon();
