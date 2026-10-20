@@ -6,7 +6,7 @@ import { MemoryRouter } from "react-router";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { meQuery } from "../../session";
 import { ADA } from "../../testing/AppHarness";
-import { resetFocus, returnToTab } from "../../testing/focus";
+import { reconnect, resetFocus, returnToTab } from "../../testing/focus";
 import { aWireReader, statsHandlers } from "../../testing/statsHandlers";
 import { aWireResumePoint } from "../../testing/wire";
 import { Stats } from "./Stats";
@@ -101,6 +101,20 @@ describe("Stats", () => {
       expect(
         screen.getByTestId("stats-library-composition"),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe("reconnecting", () => {
+    it("keeps the page when the stats refetch fails", async () => {
+      server.use(...statsHandlers({ readers: READERS }));
+      const client = renderPage();
+      await screen.findByTestId("stats-scope-user");
+
+      server.use(...statsHandlers({ stats: () => 500 }));
+      await reconnect(client);
+
+      expect(screen.getByTestId("stats-scope-user")).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).toBeNull();
     });
   });
 });

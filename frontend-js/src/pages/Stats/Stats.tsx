@@ -9,6 +9,7 @@ import {
   type LibrarySize,
   libraryCompositionQuery,
   librarySizeQuery,
+  NO_AMBIENT_REFETCH,
   parseUserId,
   type ResumePoint,
   type StatsRange,
@@ -272,7 +273,7 @@ function ReaderStats({
     queryKey: ["stats-open-books", userId],
     queryFn: () =>
       fetchRecentProgress(IN_PROGRESS_SHOWN + 1, userId).catch(() => []),
-    refetchOnWindowFocus: false,
+    ...NO_AMBIENT_REFETCH,
   });
   const period = useQuery({
     ...statsQuery(range, userId),
