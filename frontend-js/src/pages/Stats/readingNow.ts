@@ -12,11 +12,9 @@ export const booksThisYear = (
   months: StatsSummary["books_per_month"],
   year: string,
 ) =>
-  year === ""
-    ? 0
-    : months
-        .filter((m) => m.month.startsWith(year))
-        .reduce((total, m) => total + m.books, 0);
+  months
+    .filter((m) => m.month.startsWith(year))
+    .reduce((total, m) => total + m.books, 0);
 
 /** Where this year's pace lands by 31 December, or `null` when it is too early for the extrapolation to mean anything. */
 export function yearProjection(

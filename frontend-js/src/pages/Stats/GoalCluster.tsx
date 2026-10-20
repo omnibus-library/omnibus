@@ -27,19 +27,18 @@ export function GoalsLink({ anySet }: { anySet: boolean }) {
 /**
  * The annual books goal: a ring carrying the ratio, with the figure and pace beside it.
  * Without a target it drops the ring, which only a target can support, and reports the
- * year's real count. `year` and `asOfDay` are the server's.
+ * year's real count. `asOfDay` is the server's, and the year is cut from it.
  */
 export function AnnualGoalRing({
   goal,
   finished,
-  year,
   asOfDay,
 }: {
   goal: StatsSummary["goal"];
   finished: number | null;
-  year: string;
   asOfDay: string;
 }) {
+  const year = asOfDay.slice(0, 4);
   const pace = goal && paceNote(goal, asOfDay);
   return (
     <div className="st-year" data-testid="stats-goal">

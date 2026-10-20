@@ -52,10 +52,10 @@ export function useSignOut() {
   });
 }
 
-/** Saves an account switch straight away, patching the session optimistically; a refusal puts it back. */
+/** Saves an account switch straight away, patching the session's `key` optimistically; a refusal puts it back. */
 function useAccountSwitch(
   save: (enabled: boolean) => Promise<void>,
-  patch: (user: User, enabled: boolean) => User,
+  key: "stackSeries" | "shareStats",
 ) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -66,7 +66,7 @@ function useAccountSwitch(
       const previous = queryClient.getQueryData(meQuery.queryKey);
       queryClient.setQueryData(
         meQuery.queryKey,
-        (user) => user && patch(user, enabled),
+        (user) => user && { ...user, [key]: enabled },
       );
       return { previous };
     },
@@ -79,14 +79,8 @@ function useAccountSwitch(
 
 /** Saves the Stack series preference. */
 export const useStackSeries = () =>
-  useAccountSwitch(setStackSeries, (user, stackSeries) => ({
-    ...user,
-    stackSeries,
-  }));
+  useAccountSwitch(setStackSeries, "stackSeries");
 
 /** Saves whether other readers can see the reader's stats. */
 export const useShareStats = () =>
-  useAccountSwitch(setShareStats, (user, shareStats) => ({
-    ...user,
-    shareStats,
-  }));
+  useAccountSwitch(setShareStats, "shareStats");

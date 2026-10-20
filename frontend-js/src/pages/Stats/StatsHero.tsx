@@ -82,7 +82,6 @@ export function StatsHero({
           <AnnualGoalRing
             goal={goal}
             finished={summary.books_this_year}
-            year={summary.as_of_day.slice(0, 4)}
             asOfDay={summary.as_of_day}
           />
           <DailyGoalsCard daily={daily} />

@@ -32,10 +32,6 @@ describe("booksThisYear", () => {
     expect(booksThisYear(series, "2025")).toBe(7);
     expect(booksThisYear(series, "2024")).toBe(0);
   });
-
-  it("is zero without a year to filter on", () => {
-    expect(booksThisYear(months([["2026-07", 4]]), "")).toBe(0);
-  });
 });
 
 describe("yearProjection", () => {
