@@ -23,7 +23,7 @@ function tallies(overrides: Partial<ScanTallies>): ScanTallies {
 const uuids = (n: number) => Array.from({ length: n }, (_, i) => `uuid-${i}`);
 
 describe("workerKindLabel", () => {
-  it.each<[TaskKind, string, string]>([
+  const labels: [TaskKind, string, string][] = [
     ["scan", "Scanning library", "Library scan"],
     ["generate_thumbs", "Generating thumbnail", "Thumbnail generation"],
     ["resolve_author_photo", "Resolving author photo", "Author photo lookup"],
@@ -38,8 +38,13 @@ describe("workerKindLabel", () => {
       "Audiobook chapter extraction",
     ],
     ["resolve_suggestions", "Finding suggestions", "Suggestion lookup"],
-  ])("names %s while running and once finished", (kind, running, finished) => {
+  ];
+
+  it.each(labels)("names %s while running", (kind, running) => {
     expect(workerKindLabel(kind, true)).toBe(running);
+  });
+
+  it.each(labels)("names %s once finished", (kind, _running, finished) => {
     expect(workerKindLabel(kind, false)).toBe(finished);
   });
 });

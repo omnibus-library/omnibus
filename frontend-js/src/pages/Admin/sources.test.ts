@@ -55,8 +55,19 @@ describe("sourcesPayload", () => {
   });
 
   describe("paths", () => {
-    it("trims each path and sends a blank one as null", () => {
-      expect(sourcesPayload(true, " /books ", "  ", "24")).toEqual({
+    it("trims each path", () => {
+      expect(sourcesPayload(true, " /books ", " /audio ", "24")).toEqual({
+        refused: null,
+        settings: {
+          ebook_library_path: "/books",
+          audiobook_library_path: "/audio",
+          scan_interval_hours: 24,
+        },
+      });
+    });
+
+    it("sends a blank path as null", () => {
+      expect(sourcesPayload(true, "/books", "  ", "24")).toEqual({
         refused: null,
         settings: {
           ebook_library_path: "/books",
