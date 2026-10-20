@@ -39,6 +39,7 @@ import {
   UserPermissions,
   type WorkerStatus,
 } from "../api/generated/schemas";
+import { aWireAuthSession } from "./wire";
 
 // MSW fakes and fixtures for the server-administration screens, typed by the
 // generated schemas so a fixture that drifts from the spec fails to compile.
@@ -425,23 +426,6 @@ export function usersHandlers(
   ];
 }
 
-/** A live session as `GET /api/admin/users/{id}/sessions` lists it. */
-export function aWireSession(
-  overrides: Partial<SessionView> = {},
-): SessionView {
-  return {
-    id: 3,
-    kind: "cookie",
-    client: "Firefox on macOS",
-    device_id: null,
-    created_at: 1_700_000_000,
-    last_used_at: 1_704_067_200,
-    expires_at: 1_706_659_200,
-    is_current: false,
-    ...overrides,
-  };
-}
-
 /** A registered device as `GET /api/admin/users/{id}/devices` lists it. */
 export function aWireDevice(overrides: Partial<DeviceView> = {}): DeviceView {
   return {
@@ -745,7 +729,7 @@ export function adminHandlers() {
     ...registrationHandlers(),
     ...usersHandlers(aWireAdminUsers()),
     ...sessionsHandlers({
-      sessions: [aWireSession()],
+      sessions: [aWireAuthSession()],
       devices: [aWireDevice()],
     }),
     ...smtpHandlers(aWireSmtpStatus()),

@@ -11,14 +11,13 @@ import {
   aWireAdminUser,
   aWireAdminUsers,
   aWireDevice,
-  aWireSession,
   type Revoked,
   sessionsHandlers,
   type UserWrites,
   usersHandlers,
 } from "../../testing/adminHandlers";
 import { deferred, failing, hanging } from "../../testing/handlers";
-import { WIRE_ADA } from "../../testing/wire";
+import { aWireAuthSession, WIRE_ADA } from "../../testing/wire";
 import {
   DeleteUserModal,
   EditUserModal,
@@ -58,8 +57,8 @@ const meta = {
       ...sessionsHandlers(
         {
           sessions: [
-            aWireSession(),
-            aWireSession({ id: 5, client: "Kobo Clara", device_id: 4 }),
+            aWireAuthSession(),
+            aWireAuthSession({ id: 5, client: "Kobo Clara", device_id: 4 }),
           ],
           devices: [aWireDevice()],
         },
@@ -123,7 +122,7 @@ function gatedSessionReads(first: () => Response) {
   return http.get("/api/admin/users/:id/sessions", async () => {
     if (++gatedReads === 1) return first();
     await listGate.promise;
-    return HttpResponse.json([aWireSession()]);
+    return HttpResponse.json([aWireAuthSession()]);
   });
 }
 
@@ -709,8 +708,8 @@ export const SessionsListsSessionsAndDevices: Story = {
         .getAllByTestId("user-session-row")
         .map((row) => row.firstElementChild?.textContent),
     ).toEqual([
-      "Firefox on macOS · last used Jan 1, 2024",
-      "Kobo Clara · last used Jan 1, 2024",
+      "Firefox on Linux · last used Oct 10, 2025",
+      "Kobo Clara · last used Oct 10, 2025",
     ]);
     await expect(
       within(dialog)
@@ -719,7 +718,7 @@ export const SessionsListsSessionsAndDevices: Story = {
     ).toEqual(["Kobo Clara · kobo · last seen Jan 1, 2024"]);
     await expect(
       within(dialog).getByRole("button", {
-        name: "Revoke the session on Firefox on macOS",
+        name: "Revoke the session on Firefox on Linux",
       }),
     ).toBeInTheDocument();
     await expect(
@@ -734,7 +733,7 @@ export const SessionsNamesAnUnnamedClient: Story = {
   beforeEach({ msw }) {
     msw.use(
       ...sessionsHandlers({
-        sessions: [aWireSession({ client: undefined })],
+        sessions: [aWireAuthSession({ client: undefined })],
         devices: [],
       }),
     );
@@ -792,13 +791,13 @@ export const SessionsRevokesASessionAndReadsBothListsAgain: Story = {
     await expect(revoked.devices).toEqual([4]);
     await userEvent.click(
       within(dialog).getByRole("button", {
-        name: "Revoke the session on Firefox on macOS",
+        name: "Revoke the session on Firefox on Linux",
       }),
     );
     await expect(
       await within(dialog).findByText("No live sessions."),
     ).toBeInTheDocument();
-    await expect(revoked.sessions).toEqual([3]);
+    await expect(revoked.sessions).toEqual([1]);
   },
 };
 
@@ -820,7 +819,7 @@ export const SessionsHoldsTheClickedRevokeWhileRevoking: Story = {
       name: "Sessions & devices — alice",
     });
     const revoke = await within(dialog).findByRole("button", {
-      name: "Revoke the session on Firefox on macOS",
+      name: "Revoke the session on Firefox on Linux",
     });
     await userEvent.click(revoke);
 
@@ -855,7 +854,7 @@ export const SessionsShowsARevokeRefusalUntilTheNextRevoke: Story = {
       name: "Sessions & devices — alice",
     });
     const revoke = await within(dialog).findByRole("button", {
-      name: "Revoke the session on Firefox on macOS",
+      name: "Revoke the session on Firefox on Linux",
     });
     await userEvent.click(revoke);
 
@@ -894,7 +893,7 @@ export const SessionsShowsALoadFailure: Story = {
 export const SessionsHoldsTheRevokeUntilBothListsAreReadAgain: Story = {
   beforeEach({ msw }) {
     listGate = deferred();
-    msw.use(gatedSessionReads(() => HttpResponse.json([aWireSession()])));
+    msw.use(gatedSessionReads(() => HttpResponse.json([aWireAuthSession()])));
   },
   render: () => <SessionsModal user={ALICE} onClose={close} />,
   play: async ({ canvas, userEvent }) => {
@@ -902,13 +901,13 @@ export const SessionsHoldsTheRevokeUntilBothListsAreReadAgain: Story = {
       name: "Sessions & devices — alice",
     });
     const revoke = await within(dialog).findByRole("button", {
-      name: "Revoke the session on Firefox on macOS",
+      name: "Revoke the session on Firefox on Linux",
     });
     await userEvent.click(revoke);
 
     // The second read starts only once the revoke has been answered.
     await waitFor(() => expect(gatedReads).toBe(2));
-    await expect(revoked.sessions).toEqual([3]);
+    await expect(revoked.sessions).toEqual([1]);
     await expect(revoke).toHaveAttribute("aria-busy", "true");
     await expect(revoke).toBeDisabled();
     listGate.release();
@@ -927,7 +926,7 @@ export const SessionsClearsARevokeRefusalOnceTheListsAreReadAgain: Story = {
     });
     await userEvent.click(
       await within(dialog).findByRole("button", {
-        name: "Revoke the session on Firefox on macOS",
+        name: "Revoke the session on Firefox on Linux",
       }),
     );
     await expect(await within(dialog).findByRole("alert")).toHaveTextContent(
@@ -949,7 +948,7 @@ export const SessionsKeepsARevokeRefusalThatArrivesWhileTheListsAreRead: Story =
     beforeEach({ msw }) {
       listGate = deferred();
       msw.use(
-        gatedSessionReads(() => HttpResponse.json([aWireSession()])),
+        gatedSessionReads(() => HttpResponse.json([aWireAuthSession()])),
         failing("delete", "/api/admin/sessions/:id", 404),
       );
     },
@@ -959,7 +958,7 @@ export const SessionsKeepsARevokeRefusalThatArrivesWhileTheListsAreRead: Story =
         name: "Sessions & devices — alice",
       });
       const revoke = await within(dialog).findByRole("button", {
-        name: "Revoke the session on Firefox on macOS",
+        name: "Revoke the session on Firefox on Linux",
       });
       const sessionsKey = userSessionsQuery(ALICE.id).queryKey;
       const reread = storyClient().refetchQueries({ queryKey: sessionsKey });
