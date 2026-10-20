@@ -1,12 +1,22 @@
 //! Per-reader curation — read status and review — across a merge and its
-//! undo. The merge settles a per-reader collision by *deleting* the losing
-//! row, so undo can only put each book back if the merge recorded both sides
-//! first; this module is that record and its replay.
+//! undo. The merge settles a per-reader collision by *deleting* a row, so undo
+//! can only put each book back if the merge recorded both sides first; this
+//! module is that record and its replay.
+//!
+//! A read status is one value, so the newer row simply wins. A review holds
+//! several, so [`settle_reviews`] first folds the source's into the target's
+//! field by field: stars from the later rating, text and its spoiler flag from
+//! the side that has text (the newer review's when both do), and both sides'
+//! private notes, the newer's first. Notes are never dropped, even when joined
+//! they pass `REVIEW_TEXT_MAX_LEN`. No date another reader sees is taken from
+//! a side holding only notes.
 
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 use sqlx::Transaction;
+
+use crate::journals::markdown::IMAGE_URL_PREFIX;
 
 use super::MergeError;
 
@@ -48,6 +58,72 @@ impl ReviewRow {
     fn restored_dates(&self) -> (Option<i64>, i64) {
         let rated_at = self.half_stars.and(self.rated_at.or(Some(self.updated_at)));
         (rated_at, self.created_at.unwrap_or(self.updated_at))
+    }
+
+    /// Whether other readers see any of the row: its stars or its text.
+    fn is_public(&self) -> bool {
+        self.half_stars.is_some() || self.body_md.is_some()
+    }
+
+    /// One reader's reviews of the two merged books as one that keeps
+    /// everything either said, by the rules in the module doc.
+    fn settle(target: &Self, source: &Self) -> Self {
+        // `Keep::Max("updated_at")`'s rule picks the newer review where both
+        // say something; ties go to the target.
+        let (newer, older) = if source.updated_at > target.updated_at {
+            (source, target)
+        } else {
+            (target, source)
+        };
+        // A side without stars never wins them; ties go to the target.
+        let rated = match (target.half_stars, source.half_stars) {
+            (Some(_), Some(_)) if source.rated_at > target.rated_at => source,
+            (None, Some(_)) => source,
+            _ => target,
+        };
+        // The spoiler flag marks the text, so it travels with it; with no text
+        // on either side it marks nothing and stays with the stars.
+        let written = match (&target.body_md, &source.body_md) {
+            (Some(_), Some(_)) => newer,
+            (None, Some(_)) => source,
+            (Some(_), None) => target,
+            (None, None) => rated,
+        };
+        // Joined even past the length cap: it binds only a save that changes
+        // the notes (clients send just changed fields), which then asks the
+        // reader to trim them — better than silently losing either side's.
+        let notes_md = match (&newer.notes_md, &older.notes_md) {
+            (Some(first), Some(second)) if first != second => Some(format!("{first}\n\n{second}")),
+            (first, second) => first.clone().or_else(|| second.clone()),
+        };
+        // Dated as `reviews::upsert` dates a review — a text review from its
+        // text — and never from a side holding only notes: those are private.
+        let sides = [target, source];
+        let public: Vec<&Self> = sides.into_iter().filter(|r| r.is_public()).collect();
+        let seen = if public.is_empty() {
+            sides.to_vec()
+        } else {
+            public
+        };
+        let begun: Vec<&Self> = if written.body_md.is_some() {
+            sides.into_iter().filter(|r| r.body_md.is_some()).collect()
+        } else {
+            seen.clone()
+        };
+        Self {
+            user_id: target.user_id,
+            half_stars: rated.half_stars,
+            body_md: written.body_md.clone(),
+            notes_md,
+            spoiler: written.spoiler,
+            rated_at: rated.restored_dates().0,
+            created_at: begun.iter().map(|r| r.restored_dates().1).min(),
+            updated_at: seen
+                .iter()
+                .map(|r| r.updated_at)
+                .max()
+                .unwrap_or(target.updated_at),
+        }
     }
 }
 
@@ -144,6 +220,55 @@ pub(super) async fn capture_post(
 ) -> Result<(), sqlx::Error> {
     snap.merged_status = load_status(tx, target_uuid).await?;
     snap.merged_ratings = load_ratings(tx, target_uuid).await?;
+    Ok(())
+}
+
+/// The review text and notes held in the snapshot of every merge not yet
+/// undone — rows its undo writes back, which may exist nowhere else — so the
+/// journal-image sweep counts them as references. `target_book_id` narrows
+/// it to the merges into one book.
+pub(crate) async fn undoable_review_markdown<'e>(
+    exec: impl sqlx::SqliteExecutor<'e>,
+    target_book_id: Option<i64>,
+) -> Result<Vec<String>, sqlx::Error> {
+    // `instr` skips parsing a snapshot that embeds no image at all, the usual
+    // case; a snapshot from before curation was recorded has no `$.curation`,
+    // which `json_each` reads as no rows.
+    let rows: Vec<(Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT json_extract(r.value, '$.body_md'), json_extract(r.value, '$.notes_md')
+           FROM merge_log m,
+                json_each(m.source_metadata, '$.curation') side,
+                json_each(side.value) r
+          WHERE m.undone_at IS NULL AND (?1 IS NULL OR m.target_book_id = ?1)
+            AND instr(m.source_metadata, ?2) > 0
+            AND side.key IN ('source_ratings', 'target_ratings')",
+    )
+    .bind(target_book_id)
+    .bind(IMAGE_URL_PREFIX)
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .flat_map(|(body_md, notes_md)| [body_md, notes_md])
+        .flatten()
+        .collect())
+}
+
+/// Fold each reader's review of the source into their review of the target
+/// ([`ReviewRow::settle`]), so the dedupe that follows drops only the source's
+/// now-redundant row. Undo still restores both originals: [`capture_pre`] read
+/// them before anything moved.
+pub(super) async fn settle_reviews(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    source_uuid: &str,
+    target_uuid: &str,
+) -> Result<(), sqlx::Error> {
+    let targets = load_ratings(tx, target_uuid).await?;
+    for source in load_ratings(tx, source_uuid).await? {
+        if let Some(target) = targets.iter().find(|t| t.user_id == source.user_id) {
+            write_review(tx, target_uuid, &ReviewRow::settle(target, &source)).await?;
+        }
+    }
     Ok(())
 }
 
@@ -380,33 +505,43 @@ async fn restore_ratings(
     }
     for (book_uuid, rows) in [(target_uuid, plan.to_target), (source_uuid, plan.to_source)] {
         for row in rows {
-            let (rated_at, created_at) = row.restored_dates();
-            sqlx::query(
-                "INSERT INTO reviews (user_id, book_uuid, half_stars, body_md, notes_md, spoiler,
-                                      rated_at, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                 ON CONFLICT(user_id, book_uuid) DO UPDATE SET
-                   half_stars = excluded.half_stars,
-                   body_md = excluded.body_md,
-                   notes_md = excluded.notes_md,
-                   spoiler = excluded.spoiler,
-                   rated_at = excluded.rated_at,
-                   created_at = excluded.created_at,
-                   updated_at = excluded.updated_at",
-            )
-            .bind(row.user_id)
-            .bind(book_uuid)
-            .bind(row.half_stars)
-            .bind(&row.body_md)
-            .bind(&row.notes_md)
-            .bind(row.spoiler)
-            .bind(rated_at)
-            .bind(created_at)
-            .bind(row.updated_at)
-            .execute(&mut **tx)
-            .await?;
+            write_review(tx, book_uuid, row).await?;
         }
     }
+    Ok(())
+}
+
+/// Write `row` as the reader's review of `book_uuid`, every column verbatim.
+async fn write_review(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    book_uuid: &str,
+    row: &ReviewRow,
+) -> Result<(), sqlx::Error> {
+    let (rated_at, created_at) = row.restored_dates();
+    sqlx::query(
+        "INSERT INTO reviews (user_id, book_uuid, half_stars, body_md, notes_md, spoiler,
+                              rated_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(user_id, book_uuid) DO UPDATE SET
+           half_stars = excluded.half_stars,
+           body_md = excluded.body_md,
+           notes_md = excluded.notes_md,
+           spoiler = excluded.spoiler,
+           rated_at = excluded.rated_at,
+           created_at = excluded.created_at,
+           updated_at = excluded.updated_at",
+    )
+    .bind(row.user_id)
+    .bind(book_uuid)
+    .bind(row.half_stars)
+    .bind(&row.body_md)
+    .bind(&row.notes_md)
+    .bind(row.spoiler)
+    .bind(rated_at)
+    .bind(created_at)
+    .bind(row.updated_at)
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }
 

@@ -105,6 +105,16 @@ this list.
   disk). `deny.toml` ignores all three with a matching comment, and the
   cargo-audit step in `rust.yml` passes `--ignore` for each. Revisit when
   `epub` moves to zip >= 9.
+- `webpki-roots 0.26.11`, RUSTSEC-2026-0381 (bundled roots trust distrusted
+  emSign intermediates). Fixed in webpki-roots >= 1.0.10, which Cargo.lock
+  holds, alongside the patched `rustls-webpki 0.103.16` (RUSTSEC-2026-0382)
+  and `webpki-root-certs 1.0.10` (RUSTSEC-2026-0383). The 0.26.11 copy comes
+  from `sqlx-core 0.8.6` and is a semver-trick shim that only re-exports
+  webpki-roots 1.x, so it serves the patched roots; sqlx opens SQLite files
+  only and makes no TLS connection. No 0.26.x release carries the fix.
+  Accepted: `deny.toml` ignores it and the cargo-audit step in `rust.yml`
+  passes `--ignore RUSTSEC-2026-0381`. Revisit when sqlx moves to
+  webpki-roots 1.
 
 ## Yanked crates
 

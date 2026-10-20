@@ -55,5 +55,6 @@ pub(super) fn ShareStatsToggle() -> Element {
     rsx! {}
 }
 
-#[cfg(all(test, feature = "server"))]
+// Seeds the web-only `CurrentUser` context.
+#[cfg(all(test, feature = "server", not(feature = "mobile")))]
 mod tests;

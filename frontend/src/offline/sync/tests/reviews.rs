@@ -1,9 +1,11 @@
 //! Replaying review writes: a merged patch reaches the server whole and its
-//! answer settles the replica, a later queued write keeps the replica, and a
-//! retired rating op still replays. Each marks the stats figures stale.
+//! answer settles the replica, a later queued write keeps the replica, a
+//! failed one holds the book's later writes, a refused one is read afresh,
+//! and a retired rating op still replays. Each marks the stats figures stale.
 
 #![allow(clippy::await_holding_lock)]
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use axum::extract::Path;
@@ -17,6 +19,13 @@ use crate::offline::cache;
 use crate::offline::test_support::spawn_router;
 
 use super::{clear_ops, enqueue_raw};
+
+fn stars(value: f32) -> ReviewPatch {
+    ReviewPatch {
+        stars: Some(Some(value)),
+        ..Default::default()
+    }
+}
 
 fn rendered_review(uuid: &str) -> Review {
     Review {
@@ -179,6 +188,146 @@ async fn drain_replays_a_retired_set_rating_and_marks_the_books_reviews_and_stat
     assert_eq!(
         fetched_at(&cache::keys::stats("replay-legacy-range")).await,
         0
+    );
+    note_online();
+}
+
+#[tokio::test]
+async fn drain_holds_a_books_later_review_writes_behind_one_the_server_failed() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    clear_ops().await;
+    let patches = Arc::new(AtomicUsize::new(0));
+    let counted = patches.clone();
+    let app = Router::new()
+        .route(
+            "/api/reviews/{uuid}",
+            patch(move |Path(uuid): Path<String>| {
+                let counted = counted.clone();
+                async move {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                    Json(Some(rendered_review(&uuid)))
+                }
+            })
+            .delete(|| async { StatusCode::INTERNAL_SERVER_ERROR }),
+        )
+        .route(
+            "/api/ratings",
+            post(|| async { StatusCode::INTERNAL_SERVER_ERROR }),
+        );
+    set_server_url(&spawn_router(app).await);
+    let deleted = "drain-hold-deleted";
+    let rated = "drain-hold-rated";
+    let other = "drain-hold-other";
+    assert!(outbox::queue_delete_review(deleted).await);
+    outbox::queue_update_review(deleted, &stars(4.0))
+        .await
+        .expect("queued behind the delete");
+    enqueue_raw(&Op::SetRating {
+        update: RatingUpdate {
+            book_uuid: rated.into(),
+            stars: 2.0,
+        },
+    });
+    outbox::queue_update_review(rated, &stars(4.5))
+        .await
+        .expect("queued behind the retired rating");
+    outbox::queue_update_review(other, &stars(3.0))
+        .await
+        .expect("another book's write");
+
+    drain().await;
+
+    assert_eq!(
+        patches.load(Ordering::SeqCst),
+        1,
+        "only the other book's patch may land"
+    );
+    let st = store::store().expect("store");
+    let left: Vec<String> = st.ops_list().await.into_iter().map(|o| o.kind).collect();
+    assert_eq!(
+        left,
+        vec!["DeleteReview", "UpdateReview", "SetRating", "UpdateReview"],
+        "both books keep their writes, in order, for the next pass"
+    );
+    clear_ops().await;
+    note_online();
+}
+
+#[tokio::test]
+async fn after_the_server_refuses_a_queued_patch_the_next_read_asks_the_server() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    clear_ops().await;
+    let reads = Arc::new(AtomicUsize::new(0));
+    let counted = reads.clone();
+    let app = Router::new().route(
+        "/api/reviews/{uuid}",
+        patch(|| async { (StatusCode::BAD_REQUEST, "no") }).get(move || {
+            let counted = counted.clone();
+            async move {
+                counted.fetch_add(1, Ordering::SeqCst);
+                Json(no_reviews())
+            }
+        }),
+    );
+    let base = spawn_router(app).await;
+    set_server_url(&base);
+    let uuid = "drain-refused-review";
+    let reviews_key = cache::keys::reviews(uuid);
+    cache::put_json(&reviews_key, &no_reviews());
+    outbox::queue_update_review(uuid, &stars(1.0))
+        .await
+        .expect("queued");
+
+    drain().await;
+    refresh_pending().await;
+
+    let st = store::store().expect("store");
+    assert_eq!(st.ops_count().await, 0, "a refused write is dropped");
+    // The replica drew the refused stars; the next view must not.
+    let read = data::get_book_reviews(&base, uuid)
+        .await
+        .expect("read from the server");
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
+    assert_eq!(read.mine, None);
+    note_online();
+}
+
+#[tokio::test]
+async fn a_drain_asked_for_during_a_pass_runs_another_pass() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    clear_ops().await;
+    let app = Router::new().route(
+        "/api/reviews/{uuid}",
+        patch(|Path(uuid): Path<String>| async move {
+            // A write queued mid-pass, and the drain it asks for.
+            if uuid == "drain-again-first" {
+                outbox::queue_update_review("drain-again-second", &stars(2.0))
+                    .await
+                    .expect("queued mid-pass");
+                request_drain();
+            }
+            Json(Some(rendered_review(&uuid)))
+        }),
+    );
+    set_server_url(&spawn_router(app).await);
+    outbox::queue_update_review("drain-again-first", &stars(1.0))
+        .await
+        .expect("queued");
+    // The pass below stands in for a running drain.
+    DRAIN_ACTIVE.store(true, Ordering::SeqCst);
+    DRAIN_AGAIN.store(true, Ordering::SeqCst);
+
+    drain_while_asked().await;
+
+    DRAIN_ACTIVE.store(false, Ordering::SeqCst);
+    let st = store::store().expect("store");
+    assert_eq!(
+        st.ops_count().await,
+        0,
+        "the write queued mid-pass must not wait for the next sync tick"
     );
     note_online();
 }

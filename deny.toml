@@ -124,6 +124,16 @@ ignore = [
     { id = "RUSTSEC-2026-0367", reason = "zip 3.0.0 extract() SUID/SGID bits, pinned by epub 2.1.5 (fixed in zip >= 9.0.0); only ZipArchive::extract()/ZipStreamReader::extract() are affected and nothing here or in epub calls them" },
     { id = "RUSTSEC-2026-0368", reason = "zip 3.0.0 extract() symlink targets, pinned by epub 2.1.5 (fixed in zip >= 9.0.0); only ZipArchive::extract()/ZipStreamReader::extract() are affected and nothing here or in epub calls them" },
     { id = "RUSTSEC-2026-0369", reason = "zip 3.0.0 extract() permissions applied through symlinks, pinned by epub 2.1.5 (fixed in zip >= 9.0.0); only ZipArchive::extract()/ZipStreamReader::extract() are affected and nothing here or in epub calls them" },
+
+    # ---- webpki-roots distrusted emSign roots (RUSTSEC-2026-0381), fixed in
+    # webpki-roots >= 1.0.10, which Cargo.lock now holds. The match left is
+    # `webpki-roots 0.26.11` via sqlx-core 0.8.6: a semver-trick shim whose
+    # only content re-exports webpki-roots 1.x, so it serves the patched
+    # roots. sqlx opens SQLite files only and makes no TLS connection.
+    # No 0.26.x release carries the fix. Triaged 2026-10-20 (issue #2841).
+    # Revisit when sqlx moves to webpki-roots 1. Listed here and on the
+    # cargo-audit step in rust.yml.
+    { id = "RUSTSEC-2026-0381", reason = "webpki-roots 0.26.11 via sqlx-core 0.8.6 is a shim re-exporting webpki-roots 1.x, locked at the patched 1.0.10; sqlx makes no TLS connection here (SQLite only)" },
 ]
 
 # NB: RUSTSEC-2026-0221 (event-listener unsoundness, reachable via sqlx-core)

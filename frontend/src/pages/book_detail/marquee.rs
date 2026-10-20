@@ -18,7 +18,7 @@ use crate::data;
 use super::body::BdPageCtx;
 use super::highlights::{BdHighlightsSection, BdQuoteMeta};
 use super::journal::MarqueeJournalStop;
-use super::reviews::{use_book_reviews, BdReviewsSection, ReviewsCtx};
+use super::reviews::{use_book_reviews, BdReviewsKicker, BdReviewsSection, ReviewsCtx};
 use super::rule_facts::RuleFactsSaved;
 use super::view::LoadedBookView;
 use super::PhysSignals;
@@ -356,12 +356,7 @@ pub(super) fn MarqueeStage(
 #[component]
 fn MarqueeReviewsStop(uuid: String, reviews: ReviewsCtx) -> Element {
     rsx! {
-        div { class: "bdmq-k", "data-testid": "reviews-kicker",
-            match reviews.kicker() {
-                Some(kicker) => rsx! { "{kicker}" },
-                None => rsx! { span { class: "ld-sheen", "Counting reviews" } },
-            }
-        }
+        BdReviewsKicker { ctx: reviews, class: "bdmq-k" }
         BdReviewsSection { uuid, ctx: reviews, overlay_composer: true }
     }
 }

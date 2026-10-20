@@ -18,6 +18,7 @@ mod reviews;
 
 pub(crate) use reviews::{
     queue_delete_review, queue_update_review, rating_replayed, review_queued, review_replayed,
+    review_target,
 };
 
 /// One queued mutation, serialized as tagged JSON in the `ops` table.

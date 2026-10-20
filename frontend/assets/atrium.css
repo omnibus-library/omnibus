@@ -1606,6 +1606,9 @@ html, body { overscroll-behavior: none; }
    captioned figures `wrap_figures` emits (alt text doubles as the caption). */
 .bd-journal-image-input { display: none; }
 .bd-journal-image-tool { cursor: pointer; }
+/* Held while the composer saves: the label can't be disabled natively. */
+.bd-journal-image-tool[aria-disabled="true"] { opacity: .45; pointer-events: none; }
+.bd-journal-editor[aria-disabled="true"] { opacity: .7; cursor: default; }
 .journal-figure { margin: 12px 0; }
 .journal-figure img { max-width: 100%; border-radius: 6px; display: block; }
 .journal-figure figcaption {
@@ -11694,7 +11697,7 @@ html {
 
 /* ── Flow container (Option B — the marquee unrolled) ──────────────
    The default reading of this page: the panel is one continuous scroller
-   instead of six snapped screens. Everything the stops render is unchanged —
+   instead of seven snapped screens. Everything the stops render is unchanged —
    only the scroll mechanics and the section headers differ, which is why this
    block styles the container and the rules and nothing inside them. Mechanics
    in `frontend/src/pages/book_detail/flow.js`. */

@@ -42,19 +42,28 @@ pub(crate) async fn get_book_reviews_online(
     Ok(response.json::<BookReviews>().await?)
 }
 
-/// Re-read a book's reviews after a write moved the household. From the
-/// server, a failure staying an error; from the replica while offline or
-/// while a write to your review of it is queued, which the server lacks.
+/// Whether [`refresh_book_reviews`] would ask the server now: online, and
+/// no write to your review of `uuid` queued that its answer would predate.
+#[cfg(feature = "mobile")]
+pub async fn can_refresh_book_reviews(uuid: &str) -> bool {
+    !sync::is_offline() && !outbox::review_queued(uuid).await
+}
+
+/// Re-read a book's reviews from the server after a write moved the household,
+/// a failure staying an error. When [`can_refresh_book_reviews`] says no, it
+/// answers [`DataError::Offline`] without asking, so the section marks its
+/// figures stale. The replica takes only the household from the answer: your
+/// review there is the write paths' to keep, and one may have landed since.
 #[cfg(feature = "mobile")]
 pub async fn refresh_book_reviews(server_url: &str, uuid: &str) -> Result<BookReviews, DataError> {
-    if sync::is_offline() || outbox::review_queued(uuid).await {
-        return get_book_reviews(server_url, uuid).await;
+    if !can_refresh_book_reviews(uuid).await {
+        return Err(DataError::Offline);
     }
     let result = get_book_reviews_online(server_url, uuid).await;
     match &result {
         Ok(reviews) => {
             sync::note_online();
-            cache::put_json(&cache::keys::reviews(uuid), reviews);
+            outbox::apply::household_refreshed(uuid, reviews).await;
         }
         Err(e) if sync::is_offline_error(e) => sync::note_offline(),
         Err(_) => sync::note_online(),
@@ -63,13 +72,15 @@ pub async fn refresh_book_reviews(server_url: &str, uuid: &str) -> Result<BookRe
 }
 
 /// PATCH `/api/reviews/{uuid}` — `Ok(None)` when the patch emptied the
-/// review. Queued offline, merging field by field with the book's queued patch.
+/// review. Queued offline, merging field by field with the book's queued patch;
+/// one the server would refuse is refused here instead, never queued.
 #[cfg(feature = "mobile")]
 pub async fn update_review(
     server_url: &str,
     uuid: &str,
     patch: ReviewPatch,
 ) -> Result<Option<Review>, DataError> {
+    patch.validate().map_err(DataError::Other)?;
     if outbox::review_queued(uuid).await {
         if let Some(mine) = outbox::queue_update_review(uuid, &patch).await {
             drain_soon();
@@ -165,6 +176,12 @@ pub async fn get_book_reviews(_server_url: &str, uuid: &str) -> Result<BookRevie
     crate::rpc::rpc_get_book_reviews(uuid.to_string())
         .await
         .map_err(note_server_fn_err)
+}
+
+/// Web/SSR [`can_refresh_book_reviews`]: nothing is ever queued here.
+#[cfg(not(feature = "mobile"))]
+pub async fn can_refresh_book_reviews(_uuid: &str) -> bool {
+    true
 }
 
 /// Web/SSR [`refresh_book_reviews`]: every read already goes to the server.

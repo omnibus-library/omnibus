@@ -7,8 +7,9 @@
 //! read live in [`writes`]. Host-agnostic: the marquee stop and the mobile
 //! layout each wrap [`BdReviewsSection`] in their own chrome.
 
+use dioxus::core::current_scope_id;
 use dioxus::prelude::*;
-use omnibus_shared::{BookReviews, ReadStatus, ReviewSummary};
+use omnibus_shared::{BookReviews, ReadStatus, Review, ReviewSummary};
 
 use crate::components::loading::Stale;
 use crate::components::{Loading, LoadingKind};
@@ -30,6 +31,9 @@ mod writes;
 #[cfg(test)]
 mod tests;
 
+#[cfg(all(test, feature = "mobile"))]
+mod mobile_tests;
+
 pub(super) use summary::BdReviewsJumpLink;
 
 /// Which of your quick writes last failed, so its own line can say so. The
@@ -50,6 +54,22 @@ pub(super) struct ReviewsCtx {
     finished: Signal<bool>,
     /// Bumped by every write; an answer applies only while it is the latest.
     op_seq: Signal<u64>,
+    /// Writes sent and not yet answered, so a re-read that overlapped one
+    /// leaves your card alone.
+    in_flight: Signal<u32>,
+    /// Your review as the server last confirmed it, which a refused write
+    /// goes back to: the card may hold an earlier tap that never landed.
+    confirmed: Signal<Option<Review>>,
+    /// The op whose answer set `confirmed`, so an older answer arriving late
+    /// can't move it backwards.
+    confirmed_op: Signal<u64>,
+    /// Bumped per book shown, so an answer for the last book never lands on
+    /// this one.
+    epoch: Signal<u64>,
+    /// The scope that owns this state. Writes and re-reads run on it, so a
+    /// stop remounting under them (the scroll-stops switch) can't drop one
+    /// half-way.
+    owner: ScopeId,
     /// Bumped by every household re-read, for the same guard.
     refresh_seq: Signal<u64>,
     /// The summary and the others are being re-read after a stars change.
@@ -67,11 +87,6 @@ impl ReviewsCtx {
     pub(super) fn summary(&self) -> Option<ReviewSummary> {
         self.reviews.read().as_ref().and_then(|r| r.summary.clone())
     }
-
-    /// The section kicker's counts, or `None` while the reviews load.
-    pub(super) fn kicker(&self) -> Option<String> {
-        self.reviews.read().as_ref().map(reviews_kicker)
-    }
 }
 
 /// Declare the section's state and start its loads: the reviews on mount and
@@ -84,30 +99,43 @@ pub(super) fn use_book_reviews(uuid: String) -> ReviewsCtx {
         feed: use_signal(|| FeedState::Pending),
         finished: use_signal(|| false),
         op_seq: use_signal(|| 0),
+        in_flight: use_signal(|| 0),
+        confirmed: use_signal(|| None),
+        confirmed_op: use_signal(|| 0),
+        epoch: use_signal(|| 0),
+        owner: current_scope_id(),
         refresh_seq: use_signal(|| 0),
         refreshing: use_signal(|| false),
         refresh_failed: use_signal(|| false),
         failure: use_signal(|| None),
         saved: use_rule_facts_saved(),
     };
-    use_reviews_load(uuid.clone(), server_url.clone(), ctx);
-    use_finished_load(uuid, server_url, ctx);
+    let reload = use_signal(|| 0u64);
+    use_reviews_load(uuid.clone(), server_url.clone(), ctx, reload);
+    use_finished_load(uuid.clone(), server_url.clone(), ctx);
+    use_household_resync(uuid, server_url, ctx, reload);
     ctx
 }
 
-/// Load the reviews for `uuid`. A new book starts the state over and outdates
-/// every write still in flight for the last one.
-fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx) {
+/// Load the reviews for `uuid`, again on every `reload` bump. A new book
+/// starts the state over and outdates every write still in flight for the
+/// last one.
+fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx, reload: Signal<u64>) {
     let mut loaded_for = use_signal(String::new);
     use_effect(use_reactive!(|uuid| {
+        let _ = reload();
         if uuid.is_empty() {
             return;
         }
         let mut ctx = ctx;
         loaded_for.set(uuid.clone());
-        writes::bump(ctx.op_seq);
+        writes::bump(ctx.epoch);
+        let op = writes::bump(ctx.op_seq);
         writes::bump(ctx.refresh_seq);
         ctx.reviews.set(None);
+        ctx.confirmed.set(None);
+        ctx.confirmed_op.set(op);
+        ctx.in_flight.set(0);
         ctx.feed.set(FeedState::Pending);
         ctx.refreshing.set(false);
         ctx.refresh_failed.set(false);
@@ -120,11 +148,40 @@ fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx) {
             }
             let ok = result.is_ok();
             if let Ok(reviews) = result {
+                ctx.confirmed.set(reviews.mine.clone());
                 ctx.reviews.set(Some(reviews));
             }
             let next = ctx.feed.peek().after(ok);
             ctx.feed.set(next);
         });
+    }));
+}
+
+/// Re-read whenever the replica moves under the section (on mobile a drain
+/// replayed a queued write, or a revalidation landed): the household once
+/// the reviews have loaded, the whole load again if the first read failed.
+/// The cache generation never moves on web, so there this does nothing.
+fn use_household_resync(uuid: String, server_url: String, ctx: ReviewsCtx, reload: Signal<u64>) {
+    let generation = crate::use_cache_generation();
+    let mut seen = use_signal(|| *generation.peek());
+    use_effect(use_reactive!(|uuid| {
+        let now = generation();
+        if now == *seen.peek() {
+            return;
+        }
+        seen.set(now);
+        if uuid.is_empty() {
+            return;
+        }
+        match *ctx.feed.peek() {
+            FeedState::Loaded => {
+                writes::refresh_after_sync(ctx, uuid.clone(), server_url.clone());
+            }
+            FeedState::Failed => {
+                writes::bump(reload);
+            }
+            FeedState::Pending => {}
+        }
     }));
 }
 
@@ -206,6 +263,24 @@ pub(super) fn BdReviewsSection(
                         label: "Gathering the reviews",
                     }
                 },
+            }
+        }
+    }
+}
+
+/// The section's counts line, in a `div.{class}`: the loading word while the
+/// first read is out, the counts once it answered, a neutral dash if it
+/// failed (the section says why), never a load that never ends (rule 12).
+#[component]
+pub(super) fn BdReviewsKicker(ctx: ReviewsCtx, #[props(into)] class: String) -> Element {
+    let counts = ctx.reviews.read().as_ref().map(reviews_kicker);
+    let feed = (ctx.feed)();
+    rsx! {
+        div { class: "{class}", "data-testid": "reviews-kicker",
+            match (counts, feed) {
+                (Some(counts), _) => rsx! { "{counts}" },
+                (None, FeedState::Failed) => rsx! { span { aria_hidden: "true", "\u{2014}" } },
+                (None, _) => rsx! { span { class: "ld-sheen", "Counting reviews" } },
             }
         }
     }

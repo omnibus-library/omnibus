@@ -4,6 +4,7 @@
 //! the outbox in enqueue order with last-write-wins semantics, plus a stale
 //! guard so a queued position can't clobber a newer one from another device.
 
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{OnceLock, RwLock};
 
@@ -280,21 +281,37 @@ where
 /// successful request, the probe, boot) but only one drain runs at a time.
 static DRAIN_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-/// Ask for an outbox drain on the offline runtime. No-op while one is
-/// already running or when the runtime/store is unavailable.
+/// A drain was asked for, and not yet started: one asked for while a pass
+/// runs gets a pass of its own, since that pass already listed its ops.
+static DRAIN_AGAIN: AtomicBool = AtomicBool::new(false);
+
+/// Ask for an outbox drain on the offline runtime. While one is running, it
+/// runs another pass when it ends. No-op when the runtime/store is unavailable.
 pub(crate) fn request_drain() {
     if store::store().is_none() {
         return;
     }
+    DRAIN_AGAIN.store(true, Ordering::SeqCst);
     if DRAIN_ACTIVE.swap(true, Ordering::SeqCst) {
         return;
     }
     let spawned = super::media::spawn_on_runtime(async {
-        drain().await;
+        drain_while_asked().await;
         DRAIN_ACTIVE.store(false, Ordering::SeqCst);
+        // Asked between the last pass and the release above.
+        if DRAIN_AGAIN.load(Ordering::SeqCst) {
+            request_drain();
+        }
     });
     if !spawned {
         DRAIN_ACTIVE.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Run drain passes until none was asked for during the last.
+async fn drain_while_asked() {
+    while DRAIN_AGAIN.swap(false, Ordering::SeqCst) {
+        drain().await;
     }
 }
 
@@ -338,6 +355,7 @@ async fn drain() {
     let mut dropped = 0usize;
     let mut stuck = 0usize;
     let mut resolved = 0usize;
+    let mut held_reviews = HashSet::new();
     for row in st.ops_list().await {
         let Ok(op) = serde_json::from_str::<Op>(&row.payload) else {
             // Undecodable payload (schema drift) — drop rather than wedge
@@ -347,6 +365,13 @@ async fn drain() {
             continue;
         };
         let id = row.id;
+        let review = outbox::review_target(&op).map(str::to_string);
+        if review
+            .as_ref()
+            .is_some_and(|book| held_reviews.contains(book))
+        {
+            continue;
+        }
         // A ServerError that has exhausted its retry budget is promoted to
         // Stuck here (rather than inside `classify`), since only the drain
         // loop knows the op's attempt history.
@@ -354,6 +379,9 @@ async fn drain() {
             Outcome::ServerError if row.attempts + 1 >= MAX_SERVER_ERROR_ATTEMPTS => Outcome::Stuck,
             other => other,
         };
+        if let Some(book) = review {
+            after_review_replay(&outcome, book, &mut held_reviews);
+        }
         match outcome {
             Outcome::Done => {
                 st.ops_delete_many(vec![id]).await;
@@ -397,6 +425,25 @@ async fn drain() {
         // — nudge open pages to re-read, and, with the queue now shorter,
         // let their refetches revalidate against the server again.
         super::cache::notify_changed();
+    }
+}
+
+/// Bookkeeping after a write to your review of `book` replayed. One the server
+/// failed holds the book's later review writes until the next pass, which
+/// replays it first: landing them now would let it undo them. One dropped
+/// leaves the replica drawing a write that never landed, so the row goes and
+/// the next view reads the server (a stale row would still be served first).
+fn after_review_replay(outcome: &Outcome, book: String, held: &mut HashSet<String>) {
+    match outcome {
+        Outcome::ServerError => {
+            held.insert(book);
+        }
+        Outcome::Rejected | Outcome::Stuck => {
+            if let Some(st) = store::store() {
+                st.kv_delete(&super::cache::keys::reviews(&book));
+            }
+        }
+        _ => {}
     }
 }
 

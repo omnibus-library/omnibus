@@ -1,5 +1,8 @@
+import { account } from "../contracts/account";
+import { journals } from "../contracts/journals";
 import { readStatus } from "../contracts/readStatus";
 import { reviews } from "../contracts/reviews";
+import { TINY_PNG } from "../data/covers";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
@@ -9,6 +12,10 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 // Only this spec writes reviews on `code-quartet-1`: the household summary
 // counts every reader's stars on the book, so another writer would move it.
 const REVIEW_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "code-quartet-1")!;
+
+// Another Wirth book, reached from the review book's "From the same hand"
+// row. Only opened here, never reviewed.
+const SIBLING_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "code-quartet-2")!;
 
 const REVIEW_TEXT = "A clockwork of a book, wound tight to the last page.";
 const NOTES_TEXT = "Reread the recursion chapter before book club.";
@@ -223,16 +230,33 @@ test.describe("book reviews", () => {
       await expect(section.summaryCount).toContainText("2 readers");
       await expect(section.jumpLink).toContainText("3.8 · 2 readers");
     });
+  });
 
-    await test.step("jump to the reviews from the title", async () => {
-      await readerBookDetailPage.jumpToSection("Home");
-      await expect(readerBookDetailPage.sectionDot("Home")).toHaveClass(
-        ON_CLASS,
-      );
+  test("jump to the reviews from the title", async ({
+    bookDetailPage,
+    request,
+    presetReview,
+  }) => {
+    const { reviews: section } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, REVIEW_BOOK.title);
+
+    await test.step("rate the book as two readers through the api", async () => {
+      await presetReview(uuid, { stars: 4 });
+      await presetReview(uuid, { stars: 3 }, "reader");
+    });
+
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(uuid);
+      await expect(bookDetailPage.sectionDot("Home")).toHaveClass(ON_CLASS);
+    });
+
+    await test.step("check the title shows the household rating", async () => {
+      await expect(section.jumpLink).toContainText("3.5 · 2 readers");
+    });
+
+    await test.step("jump to the reviews", async () => {
       await section.jumpToReviews();
-      await expect(readerBookDetailPage.sectionDot("Reviews")).toHaveClass(
-        ON_CLASS,
-      );
+      await expect(bookDetailPage.sectionDot("Reviews")).toHaveClass(ON_CLASS);
     });
   });
 
@@ -373,6 +397,351 @@ test.describe("book reviews", () => {
       await expect
         .poll(() => storedReview(uuid), { message: "stored review" })
         .toBeNull();
+    });
+  });
+
+  test("finish the household re-read after a delete across a scroll stops flip", async ({
+    readerBookDetailPage,
+    request,
+    presetReview,
+    presetScrollStops,
+    readerExpectMutation,
+  }) => {
+    const { reviews: section } = readerBookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, REVIEW_BOOK.title);
+
+    await test.step("rate the book as two readers through the api", async () => {
+      await presetReview(uuid, { stars: 4 });
+      await presetReview(uuid, { stars: 3, body_md: REVIEW_TEXT }, "reader");
+      await presetScrollStops(false, "reader");
+    });
+
+    await test.step("open the book as the reader", async () => {
+      await readerBookDetailPage.goto(uuid);
+      await expect(section.summary).toBeVisible();
+    });
+
+    const release = await test.step("hold the household re-read", async () =>
+      section.holdReviewsRead());
+
+    await test.step("delete the review", async () => {
+      await section.openDeleteDialog();
+      await readerExpectMutation(reviews.delete(uuid), () =>
+        section.confirmDelete(),
+      );
+    });
+
+    // The delete doesn't wait on the re-read: the dialog is gone already.
+    await test.step("check the dialog closed while the re-read waits", async () => {
+      await expect(section.deleteDialog).toHaveCount(0);
+      await expect(section.myText).toHaveCount(0);
+    });
+
+    // The flip remounts every stop; the re-read belongs to the page, not the
+    // card, so it must survive it.
+    await test.step("flip scroll stops on", async () => {
+      await readerExpectMutation(account.scrollStops(true), () =>
+        readerBookDetailPage.toggleScrollStops(),
+      );
+      await expect(readerBookDetailPage.snapScroller).toBeAttached();
+    });
+
+    await test.step("let the re-read land", async () => {
+      release();
+      await expect(section.summary).toHaveCount(0);
+    });
+  });
+
+  test("keep the page working when you leave a book mid re-read", async ({
+    bookDetailPage,
+    request,
+    presetReview,
+    expectMutation,
+  }) => {
+    const { reviews: section } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, REVIEW_BOOK.title);
+    const panics = bookDetailPage.recordPanics();
+
+    await test.step("delete your review through the api", async () => {
+      await presetReview(uuid, null);
+    });
+
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(uuid);
+    });
+
+    const release = await test.step("hold the household re-read", async () =>
+      section.holdReviewsRead());
+
+    await test.step("rate it 4 stars", async () => {
+      await expectMutation(reviews.update(uuid, { stars: 4 }), () =>
+        section.rate(4),
+      );
+    });
+
+    await test.step("open another book while the re-read waits", async () => {
+      await bookDetailPage.openSameHandBook(SIBLING_BOOK.title);
+      await expect(bookDetailPage.titleHeading).toHaveText(SIBLING_BOOK.title);
+    });
+
+    // The last book's re-read went with its page; its answer must land on
+    // nothing, rather than on state that page took with it.
+    await test.step("let the held reads through", async () => {
+      release();
+      await expect(section.starsMeta).toBeVisible();
+    });
+
+    await test.step("check the page still answers", async () => {
+      await section.openComposer();
+      await expect(section.composer).toBeVisible();
+      expect(panics).toEqual([]);
+    });
+  });
+
+  test("show an error when a review fails to delete", async ({
+    bookDetailPage,
+    request,
+    presetReview,
+    storedReview,
+    expectMutation,
+  }) => {
+    const { reviews: section } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, REVIEW_BOOK.title);
+
+    await test.step("rate and review the book through the api", async () => {
+      await presetReview(uuid, { stars: 4, body_md: REVIEW_TEXT });
+    });
+
+    await test.step("open the book while deletes fail", async () => {
+      await bookDetailPage.goto(uuid);
+      await bookDetailPage.forceServerError(reviews.delete(uuid));
+    });
+
+    await test.step("delete the review", async () => {
+      await section.openDeleteDialog();
+      await expectMutation(failing(reviews.delete(uuid)), () =>
+        section.confirmDelete(),
+      );
+    });
+
+    // Nothing applies before the server confirms, so nothing comes back either.
+    await test.step("check the dialog stays with the reason", async () => {
+      await expect(section.deleteDialog).toBeVisible();
+      await expect(section.deleteError).toBeVisible();
+    });
+
+    await test.step("check the review is untouched", async () => {
+      await expect(section.myText).toHaveText(REVIEW_TEXT);
+      await expect(section.starsMeta).toContainText("4 of 5");
+      await expect
+        .poll(() => storedReview(uuid), { message: "stored review" })
+        .toMatchObject({ stars: 4, body_md: REVIEW_TEXT });
+    });
+  });
+
+  test("open the review editor as a dialog and give focus back on cancel", async ({
+    bookDetailPage,
+    request,
+    presetReview,
+  }) => {
+    const { reviews: section } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, REVIEW_BOOK.title);
+
+    await test.step("delete your review through the api", async () => {
+      await presetReview(uuid, null);
+    });
+
+    await test.step("open the editor", async () => {
+      await bookDetailPage.goto(uuid);
+      await section.openComposer();
+    });
+
+    await test.step("check it is a dialog holding the focus", async () => {
+      await expect(section.composerDialog).toBeVisible();
+      await expect(section.composerDialog).toBeFocused();
+    });
+
+    // A stray Escape must not throw away a draft.
+    await test.step("press Escape", async () => {
+      await section.pressEscape();
+      await expect(section.composerDialog).toBeVisible();
+    });
+
+    await test.step("cancel the editor", async () => {
+      await section.cancel();
+      await expect(section.composerDialog).toHaveCount(0);
+      await expect(section.writeButton).toBeFocused();
+    });
+  });
+
+  test("hold the editor while a review saves", async ({
+    bookDetailPage,
+    request,
+    presetReview,
+    expectMutation,
+  }) => {
+    const { reviews: section } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, REVIEW_BOOK.title);
+
+    await test.step("delete your review through the api", async () => {
+      await presetReview(uuid, null);
+    });
+
+    await test.step("write a review with the highlights open", async () => {
+      await bookDetailPage.goto(uuid);
+      await section.openComposer();
+      await section.writeText(REVIEW_TEXT);
+      await section.openTextHighlights();
+      await expect(section.textHighlightsPopover).toBeVisible();
+    });
+
+    const release = await test.step("hold the save", async () =>
+      section.holdReviewSaves());
+
+    const saved = expectMutation(
+      reviews.update(uuid, { body_md: REVIEW_TEXT }),
+      () => section.save(),
+    );
+
+    // An edit made now would be lost when the save closes the editor.
+    await test.step("check nothing can be edited while it saves", async () => {
+      await expect(section.textEditor).toHaveAttribute(
+        "contenteditable",
+        "false",
+      );
+      await expect(section.textBoldButton).toBeDisabled();
+      await expect(section.textHighlightsPopover).toHaveCount(0);
+      await expect(section.spoilerCheckbox).toBeDisabled();
+      await expect(section.cancelButton).toBeDisabled();
+      await expect(section.saveButton).toBeDisabled();
+    });
+
+    await test.step("let the save land", async () => {
+      release();
+      await saved;
+      await expect(section.composer).toHaveCount(0);
+      await expect(section.myText).toHaveText(REVIEW_TEXT);
+    });
+  });
+
+  test("hold Save while an image uploads into the review", async ({
+    bookDetailPage,
+    request,
+    presetReview,
+    expectMutation,
+  }) => {
+    const { reviews: section } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, REVIEW_BOOK.title);
+
+    await test.step("delete your review through the api", async () => {
+      await presetReview(uuid, null);
+    });
+
+    await test.step("write a review", async () => {
+      await bookDetailPage.goto(uuid);
+      await section.openComposer();
+      await section.writeText(REVIEW_TEXT);
+    });
+
+    const release = await test.step("hold the upload", async () =>
+      section.holdImageUploads());
+
+    const uploaded = expectMutation(journals.uploadImage(), () =>
+      section.uploadTextImage(TINY_PNG),
+    );
+
+    // Saved now, the text would land without the image, which would then
+    // arrive in an editor that is gone.
+    await test.step("check Save waits for the image", async () => {
+      await expect(section.saveButton).toBeDisabled();
+    });
+
+    await test.step("let the upload land", async () => {
+      release();
+      await uploaded;
+      await expect(section.saveButton).toBeEnabled();
+      await expect(section.textMarkdown).toHaveValue(
+        /!\[Add a caption\]\(\/api\/journals\/images\//,
+      );
+    });
+
+    await test.step("cancel the editor", async () => {
+      await section.cancel();
+    });
+  });
+
+  test("open no delete dialog on a rating after a refused one", async ({
+    bookDetailPage,
+    request,
+    presetReview,
+    expectMutation,
+  }) => {
+    const { reviews: section } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, REVIEW_BOOK.title);
+
+    await test.step("delete your review through the api", async () => {
+      await presetReview(uuid, null);
+    });
+
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(uuid);
+    });
+
+    const refuse =
+      await test.step("hold the next save to refuse it", async () =>
+        section.holdThenRefuseReviewSaves());
+
+    // The drawn rating brings the trash before the server has answered.
+    const refused = expectMutation(
+      failing(reviews.update(uuid, { stars: 3 })),
+      () => section.rate(3),
+    );
+
+    await test.step("open the delete dialog on the drawn rating", async () => {
+      await section.openDeleteDialog();
+      await expect(section.deleteDialog).toBeVisible();
+    });
+
+    await test.step("let the save be refused", async () => {
+      refuse();
+      await refused;
+      await expect(section.deleteButton).toHaveCount(0);
+      await expect(section.deleteDialog).toHaveCount(0);
+      await section.stopHoldingReviewSaves();
+    });
+
+    // The dialog went with the trash; it must not come back with the next one.
+    await test.step("rate it again", async () => {
+      await expectMutation(reviews.update(uuid, { stars: 4 }), () =>
+        section.rate(4),
+      );
+      await expect(section.deleteButton).toBeVisible();
+      await expect(section.deleteDialog).toHaveCount(0);
+    });
+  });
+
+  test("close the delete dialog with Escape", async ({
+    bookDetailPage,
+    request,
+    presetReview,
+  }) => {
+    const { reviews: section } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, REVIEW_BOOK.title);
+
+    await test.step("review the book through the api", async () => {
+      await presetReview(uuid, { stars: 4, body_md: REVIEW_TEXT });
+    });
+
+    await test.step("open the delete dialog", async () => {
+      await bookDetailPage.goto(uuid);
+      await section.openDeleteDialog();
+      await expect(section.deleteDialog).toBeFocused();
+    });
+
+    await test.step("press Escape", async () => {
+      await section.pressEscape();
+      await expect(section.deleteDialog).toHaveCount(0);
+      await expect(section.myText).toHaveText(REVIEW_TEXT);
     });
   });
 

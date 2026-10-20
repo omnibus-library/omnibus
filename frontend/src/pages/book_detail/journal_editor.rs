@@ -178,12 +178,16 @@ const TOOLBAR_BUTTONS: &[ToolbarButton] = &[
 /// editor's selection with the matching markdown so the persisted body stays
 /// plain markdown. `target_id` is the id of the contenteditable the buttons act
 /// on. Buttons `prevent_default` on mousedown so clicking one doesn't move
-/// focus out of the editor and collapse the selection.
+/// focus out of the editor and collapse the selection. `disabled` holds every
+/// tool; `uploading`, when the host passes one, reports an image upload in
+/// flight so the host can hold its save until the image is in.
 #[component]
 pub(crate) fn BdJournalToolbar(
     target_id: String,
     server_url: String,
     error: Signal<Option<String>>,
+    #[props(default)] disabled: bool,
+    #[props(default)] uploading: Option<Signal<bool>>,
 ) -> Element {
     rsx! {
         div { class: "bd-journal-toolbar", "data-testid": "journal-toolbar", role: "toolbar",
@@ -194,6 +198,7 @@ pub(crate) fn BdJournalToolbar(
                     class: "btn ghost sm bd-journal-tool",
                     title: "{btn.title}",
                     "aria-label": "{btn.title}",
+                    disabled,
                     onmousedown: move |e| e.prevent_default(),
                     onclick: {
                         let id = target_id.clone();
@@ -202,7 +207,7 @@ pub(crate) fn BdJournalToolbar(
                     "{btn.label}"
                 }
             }
-            BdJournalImageButton { target_id, server_url, error }
+            BdJournalImageButton { target_id, server_url, error, disabled, uploading }
         }
     }
 }
@@ -220,8 +225,11 @@ fn BdJournalImageButton(
     target_id: String,
     server_url: String,
     error: Signal<Option<String>>,
+    disabled: bool,
+    uploading: Option<Signal<bool>>,
 ) -> Element {
-    let uploading = use_signal(|| false);
+    let own_uploading = use_signal(|| false);
+    let uploading = uploading.unwrap_or(own_uploading);
     let input_id = format!("{target_id}-image-input");
 
     let onchange = use_file_upload(
@@ -252,6 +260,7 @@ fn BdJournalImageButton(
             tabindex: "0",
             "aria-label": "Insert image",
             "aria-busy": if uploading() { "true" } else { "false" },
+            "aria-disabled": disabled.then_some("true"),
             // Labels aren't keyboard-activatable by default — forward
             // Enter/Space to the hidden input's file picker.
             onkeydown: {
@@ -260,7 +269,9 @@ fn BdJournalImageButton(
                     let key = e.key();
                     if key == Key::Enter || key == Key::Character(" ".to_string()) {
                         e.prevent_default();
-                        open_file_picker(&input_id);
+                        if !disabled {
+                            open_file_picker(&input_id);
+                        }
                     }
                 }
             },
@@ -280,7 +291,7 @@ fn BdJournalImageButton(
             class: "bd-journal-image-input",
             accept: "image/jpeg,image/png,image/webp,image/gif",
             "data-testid": "journal-image-input",
-            disabled: uploading(),
+            disabled: disabled || uploading(),
             onchange,
         }
     }
@@ -321,6 +332,9 @@ pub(crate) fn BdMarkdownSurface(
     #[props(default)] placeholder: Option<String>,
     #[props(default)] source_testid: Option<String>,
     #[props(default)] editor_testid: Option<String>,
+    /// Read-only, e.g. while the text it holds is being saved.
+    #[props(default)]
+    disabled: bool,
 ) -> Element {
     let mut body = body;
     let mount_ids = (source_id.clone(), editor_id.clone());
@@ -331,6 +345,7 @@ pub(crate) fn BdMarkdownSurface(
                 class: "me-textarea bd-journal-textarea",
                 "data-testid": source_testid,
                 rows: "5",
+                disabled,
                 placeholder: placeholder.clone(),
                 value: "{body}",
                 oninput: move |e| body.set(e.value()),
@@ -340,10 +355,11 @@ pub(crate) fn BdMarkdownSurface(
                 id: "{editor_id}",
                 class: "me-textarea bd-journal-editor",
                 "data-testid": editor_testid,
-                contenteditable: "true",
+                contenteditable: if disabled { "false" } else { "true" },
                 role: "textbox",
                 "aria-multiline": "true",
                 "aria-label": "{label}",
+                "aria-disabled": disabled.then_some("true"),
                 "data-placeholder": placeholder,
             }
         }
@@ -357,6 +373,14 @@ pub(crate) struct HighlightsInsertState {
     highlights: Signal<Vec<Highlight>>,
     open: Signal<bool>,
     loaded: Signal<bool>,
+}
+
+impl HighlightsInsertState {
+    /// Close the popover, keeping the list it loaded.
+    pub(crate) fn close(self) {
+        let mut open = self.open;
+        open.set(false);
+    }
 }
 
 /// Declare a closed, unloaded [`HighlightsInsertState`]. A hook: call it
@@ -380,6 +404,7 @@ pub(crate) fn BdHighlightsInsert(
     target_id: String,
     testid_prefix: String,
     state: HighlightsInsertState,
+    #[props(default)] disabled: bool,
 ) -> Element {
     let HighlightsInsertState {
         mut highlights,
@@ -393,6 +418,7 @@ pub(crate) fn BdHighlightsInsert(
                 r#type: "button",
                 class: if highlights_open() { "btn ghost sm bd-tab-active" } else { "btn ghost sm" },
                 "data-testid": "{testid_prefix}-insert-highlight",
+                disabled,
                 onclick: move |_| {
                     let opening = !highlights_open();
                     highlights_open.set(opening);
@@ -410,7 +436,9 @@ pub(crate) fn BdHighlightsInsert(
                 },
                 "From highlights"
             }
-            if highlights_open() {
+            // Held with the toggle: an insert now would land in an editor
+            // whose text is already on its way to the server.
+            if highlights_open() && !disabled {
                 div {
                     class: "card bd-journal-hl-pop",
                     "data-testid": "{testid_prefix}-highlights-pop",
