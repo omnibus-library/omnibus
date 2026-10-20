@@ -8,9 +8,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 mod tests;
 
-/// What domain entity a dedup suggestion is about. Serializes as the same
-/// lowercase/snake_case token stored in `dedup_suggestions.kind` /
-/// `entity_aliases.kind`.
+/// What a cleanup suggestion is about: an author, a series, a tag or a book's title.
+// The same token is stored in `dedup_suggestions.kind` and `entity_aliases.kind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
@@ -50,8 +49,8 @@ impl CleanupKind {
     }
 }
 
-/// What a dedup suggestion proposes doing. Serializes as the same
-/// lowercase/snake_case token stored in `dedup_suggestions.action`.
+/// What a cleanup suggestion proposes doing.
+// The same token is stored in `dedup_suggestions.action`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
@@ -90,20 +89,18 @@ impl CleanupAction {
     }
 }
 
-/// A suggestion's review state, matching the `dedup_suggestions.decision`
-/// CHECK constraint.
+/// Where a cleanup suggestion stands in review.
+// Mirrors the CHECK constraint on `dedup_suggestions.decision`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Decision {
-    /// Not yet reviewed — the initial state every detected suggestion starts in.
+    /// Not reviewed yet. Every new suggestion starts here.
     #[default]
     Pending,
-    /// Reviewed and approved; a follow-up apply step acts on it.
+    /// Reviewed and approved. The change has been applied.
     Accepted,
-    /// Reviewed and dismissed; left in place as a record so detection
-    /// doesn't re-suggest it (the UNIQUE constraint keys on the payload,
-    /// not the decision).
+    /// Reviewed and dismissed. The same suggestion isn't offered again.
     Rejected,
 }
 
@@ -129,8 +126,7 @@ impl Decision {
     }
 }
 
-/// Summary counts for the Library Cleanup dashboard badge — how many
-/// suggestions are in each review state.
+/// How many cleanup suggestions are in each review state.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CleanupCounts {
@@ -139,7 +135,7 @@ pub struct CleanupCounts {
     pub rejected: i64,
 }
 
-/// One kind's review counts, as the cleanup dashboard lists them.
+/// One kind's suggestions counted by review state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CleanupKindCounts {
@@ -170,10 +166,9 @@ pub struct CleanupDecisionOutcome {
     pub log_id: Option<i64>,
 }
 
-/// A hydrated preview of one suggestion, for rendering a card in the review
-/// UI. `secondary_name` and `photo_url` are optional because they don't
-/// universally apply — a tag split has no single "other" name, and only
-/// author/series merges have a photo to show.
+/// One cleanup suggestion with the names and counts to show it for review.
+/// `secondary_name` and `photo_url` are null when they don't apply: a tag split has no
+/// single other name, and only author suggestions can have a photo.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SuggestionCard {
@@ -181,29 +176,24 @@ pub struct SuggestionCard {
     pub kind: CleanupKind,
     pub action: CleanupAction,
     pub decision: Decision,
-    /// The primary entity's display name (e.g. the merge target, or the
-    /// tag being split).
+    /// The name the suggestion centres on: the record a merge keeps, the tag being
+    /// split, the record being deleted, or a book's current title.
     pub primary_name: String,
-    /// The suggestion's second name, where it has one: the proposed title on
-    /// a rename, or the single record folding away in a *two-way* merge.
-    /// `None` for a split, for a delete, and for a merge group of three or
-    /// more — which has no one name that can stand in for the rest, and is
-    /// what `source_names` is for.
+    /// The suggestion's second name, where it has one: the proposed title on a rename,
+    /// or the record folding away in a two-way merge. Null for a split, a delete, and
+    /// a merge of three or more records, which `source_names` lists instead.
     pub secondary_name: Option<String>,
-    /// Every name a merge would fold into `primary_name`. Empty for the
-    /// actions that fold nothing. `secondary_name` is the two-way special
-    /// case of this list and stays for the callers that only ever wanted
-    /// "the other one".
+    /// Every name a merge would fold into `primary_name`. Empty for the other actions.
     #[serde(default)]
     pub source_names: Vec<String>,
-    /// What a split would produce, in the order the atoms were parsed. Empty
-    /// for every other action. Without it a split card can only show the
-    /// scanned tag twice, which reads as a rename that changes nothing.
+    /// The tags a split would produce, in the order they appear in the original. Empty
+    /// for every other action.
     #[serde(default)]
     pub proposed_parts: Vec<String>,
     /// How many library books are affected if the suggestion is applied.
     pub book_count: i64,
-    /// Relative URL to a cached author/series photo, when `kind` has one.
+    /// Relative URL of the author's cached photo. Null for other kinds and for an
+    /// author without one.
     pub photo_url: Option<String>,
     /// Unix seconds the suggestion was detected.
     pub created_at: i64,

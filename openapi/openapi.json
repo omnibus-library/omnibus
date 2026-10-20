@@ -530,7 +530,7 @@
           {
             "name": "level",
             "in": "query",
-            "description": "Exact level match (case-insensitive), e.g. `ERROR`. `None`/empty keeps\nevery level.",
+            "description": "Only records at this level, ignoring case, e.g. `ERROR`. Leave it out or empty to\nkeep every level.",
             "required": false,
             "schema": {
               "type": "string"
@@ -539,7 +539,7 @@
           {
             "name": "module",
             "in": "query",
-            "description": "Case-insensitive substring the `target` must contain, e.g.\n`omnibus::backend`. `None`/empty keeps every module.",
+            "description": "Only records whose module contains this text, ignoring case, e.g.\n`omnibus::backend`. Leave it out or empty to keep every module.",
             "required": false,
             "schema": {
               "type": "string"
@@ -548,7 +548,7 @@
           {
             "name": "from",
             "in": "query",
-            "description": "Inclusive lower bound on `timestamp`, an ISO-8601 prefix\n(e.g. `2026-07-19T00:00`). Compared lexicographically.",
+            "description": "Earliest time to include, as an ISO-8601 prefix such as `2026-07-19T00:00`.",
             "required": false,
             "schema": {
               "type": "string"
@@ -557,7 +557,7 @@
           {
             "name": "to",
             "in": "query",
-            "description": "Inclusive upper bound on `timestamp`, an ISO-8601 prefix. A record\nwhose timestamp starts with `to` still matches, so a to-the-minute\nbound includes that whole minute.",
+            "description": "Latest time to include, as an ISO-8601 prefix. A bound to the minute includes that\nwhole minute.",
             "required": false,
             "schema": {
               "type": "string"
@@ -9584,7 +9584,7 @@
       },
       "CleanupAction": {
         "type": "string",
-        "description": "What a dedup suggestion proposes doing. Serializes as the same\nlowercase/snake_case token stored in `dedup_suggestions.action`.",
+        "description": "What a cleanup suggestion proposes doing.",
         "enum": [
           "merge",
           "split",
@@ -9594,7 +9594,7 @@
       },
       "CleanupCounts": {
         "type": "object",
-        "description": "Summary counts for the Library Cleanup dashboard badge — how many\nsuggestions are in each review state.",
+        "description": "How many cleanup suggestions are in each review state.",
         "required": [
           "pending",
           "accepted",
@@ -9651,7 +9651,7 @@
       },
       "CleanupKind": {
         "type": "string",
-        "description": "What domain entity a dedup suggestion is about. Serializes as the same\nlowercase/snake_case token stored in `dedup_suggestions.kind` /\n`entity_aliases.kind`.",
+        "description": "What a cleanup suggestion is about: an author, a series, a tag or a book's title.",
         "enum": [
           "author",
           "series",
@@ -9661,7 +9661,7 @@
       },
       "CleanupKindCounts": {
         "type": "object",
-        "description": "One kind's review counts, as the cleanup dashboard lists them.",
+        "description": "One kind's suggestions counted by review state.",
         "required": [
           "kind",
           "counts"
@@ -10484,7 +10484,7 @@
       },
       "Decision": {
         "type": "string",
-        "description": "A suggestion's review state, matching the `dedup_suggestions.decision`\nCHECK constraint.",
+        "description": "Where a cleanup suggestion stands in review.",
         "enum": [
           "pending",
           "accepted",
@@ -11965,18 +11965,18 @@
         "properties": {
           "has_more": {
             "type": "boolean",
-            "description": "Whether at least one further record matched beyond this page."
+            "description": "Whether more matching records follow this page."
           },
           "page": {
             "type": "integer",
             "format": "int32",
-            "description": "Echo of the resolved zero-based page index.",
+            "description": "The zero-based page index that was read.",
             "minimum": 0
           },
           "per_page": {
             "type": "integer",
             "format": "int32",
-            "description": "Echo of the resolved (clamped) page size.",
+            "description": "The page size that was used, after the default and the cap.",
             "minimum": 0
           },
           "records": {
@@ -12003,7 +12003,7 @@
               "string",
               "null"
             ],
-            "description": "Compact JSON of the event's remaining fields plus request span context\n(method/path), for an expandable detail row. `None` when there was\nnothing beyond the message."
+            "description": "The event's other fields and its request's method and path, as compact JSON.\nAbsent when there was nothing beyond the message."
           },
           "level": {
             "type": "string",
@@ -12015,11 +12015,11 @@
           },
           "target": {
             "type": "string",
-            "description": "Event target — the emitting module path (the \"module\" filter matches\nagainst this)."
+            "description": "The module that logged the event, which the `module` filter matches against."
           },
           "timestamp": {
             "type": "string",
-            "description": "ISO-8601 UTC timestamp exactly as the subscriber wrote it. Fixed-width\nand lexicographically ordered, so string comparison is chronological."
+            "description": "ISO-8601 UTC timestamp as logged. Fixed-width, so sorting the strings sorts by time."
           }
         }
       },
@@ -15063,7 +15063,7 @@
       },
       "SuggestionCard": {
         "type": "object",
-        "description": "A hydrated preview of one suggestion, for rendering a card in the review\nUI. `secondary_name` and `photo_url` are optional because they don't\nuniversally apply — a tag split has no single \"other\" name, and only\nauthor/series merges have a photo to show.",
+        "description": "One cleanup suggestion with the names and counts to show it for review.\n`secondary_name` and `photo_url` are null when they don't apply: a tag split has no\nsingle other name, and only author suggestions can have a photo.",
         "required": [
           "id",
           "kind",
@@ -15102,32 +15102,32 @@
               "string",
               "null"
             ],
-            "description": "Relative URL to a cached author/series photo, when `kind` has one."
+            "description": "Relative URL of the author's cached photo. Null for other kinds and for an\nauthor without one."
           },
           "primary_name": {
             "type": "string",
-            "description": "The primary entity's display name (e.g. the merge target, or the\ntag being split)."
+            "description": "The name the suggestion centres on: the record a merge keeps, the tag being\nsplit, the record being deleted, or a book's current title."
           },
           "proposed_parts": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "What a split would produce, in the order the atoms were parsed. Empty\nfor every other action. Without it a split card can only show the\nscanned tag twice, which reads as a rename that changes nothing."
+            "description": "The tags a split would produce, in the order they appear in the original. Empty\nfor every other action."
           },
           "secondary_name": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The suggestion's second name, where it has one: the proposed title on\na rename, or the single record folding away in a *two-way* merge.\n`None` for a split, for a delete, and for a merge group of three or\nmore — which has no one name that can stand in for the rest, and is\nwhat `source_names` is for."
+            "description": "The suggestion's second name, where it has one: the proposed title on a rename,\nor the record folding away in a two-way merge. Null for a split, a delete, and\na merge of three or more records, which `source_names` lists instead."
           },
           "source_names": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "Every name a merge would fold into `primary_name`. Empty for the\nactions that fold nothing. `secondary_name` is the two-way special\ncase of this list and stays for the callers that only ever wanted\n\"the other one\"."
+            "description": "Every name a merge would fold into `primary_name`. Empty for the other actions."
           }
         }
       },
@@ -15352,7 +15352,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "What the task works on, such as a library folder or a book. Tasks with the same\nkey run one after another. Absent when the task claims nothing."
           },
           "started_at_ms": {
             "type": "integer",
