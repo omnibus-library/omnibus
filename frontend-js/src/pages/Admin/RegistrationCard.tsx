@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { registrationStatusQuery, setRegistrationOpen } from "../../api";
+import {
+  registrationStatusQuery,
+  replaceQueryData,
+  setRegistrationOpen,
+} from "../../api";
 import { Button } from "../../components/Button/Button";
 import { registrationStatusLine } from "./users";
 
@@ -11,10 +15,11 @@ export function RegistrationCard() {
   const toggle = useMutation({
     mutationFn: setRegistrationOpen,
     onSuccess: async (_, enabled) => {
-      await queryClient.cancelQueries({
-        queryKey: registrationStatusQuery.queryKey,
-      });
-      queryClient.setQueryData(registrationStatusQuery.queryKey, enabled);
+      await replaceQueryData(
+        queryClient,
+        registrationStatusQuery.queryKey,
+        enabled,
+      );
       // The sign-in and register pages read the same setting under their own key.
       void queryClient.invalidateQueries({ queryKey: ["registration"] });
     },

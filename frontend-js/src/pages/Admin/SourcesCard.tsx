@@ -3,6 +3,7 @@ import { type FormEvent, useRef, useState } from "react";
 import {
   type LibrarySection,
   libraryContentsQuery,
+  replaceQueryData,
   saveSettings,
   settingsQuery,
 } from "../../api";
@@ -84,8 +85,7 @@ export function SourcesCard() {
   const save = useMutation({
     mutationFn: saveSettings,
     onSuccess: async (answer) => {
-      await queryClient.cancelQueries({ queryKey: settingsQuery.queryKey });
-      queryClient.setQueryData(settingsQuery.queryKey, answer);
+      await replaceQueryData(queryClient, settingsQuery.queryKey, answer);
       void queryClient.invalidateQueries({
         queryKey: libraryContentsQuery.queryKey,
       });

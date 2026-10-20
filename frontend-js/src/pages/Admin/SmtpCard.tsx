@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import {
+  replaceQueryData,
   resetSmtpConfig,
   type SmtpConfigStatus,
   saveSmtpConfig,
@@ -42,10 +43,8 @@ export function SmtpCard() {
   }
   useUnsavedForm("smtp", saved !== null && isSmtpEdited(saved, draft));
 
-  const keepAnswer = async (answer: SmtpConfigStatus) => {
-    await queryClient.cancelQueries({ queryKey: smtpConfigQuery.queryKey });
-    queryClient.setQueryData(smtpConfigQuery.queryKey, answer);
-  };
+  const keepAnswer = (answer: SmtpConfigStatus) =>
+    replaceQueryData(queryClient, smtpConfigQuery.queryKey, answer);
   const save = useMutation({
     mutationFn: saveSmtpConfig,
     onSuccess: keepAnswer,

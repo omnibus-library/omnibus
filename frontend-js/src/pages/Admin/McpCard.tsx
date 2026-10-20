@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { mcpQuery, setMcpEnabled } from "../../api";
+import { mcpQuery, replaceQueryData, setMcpEnabled } from "../../api";
 import { CopyButton } from "./CopyButton";
 import type { Status } from "./StatusLine";
 
@@ -18,8 +18,7 @@ export function McpCard() {
   const toggle = useMutation({
     mutationFn: setMcpEnabled,
     onSuccess: async (_, enabled) => {
-      await queryClient.cancelQueries({ queryKey: mcpQuery.queryKey });
-      queryClient.setQueryData(mcpQuery.queryKey, { enabled });
+      await replaceQueryData(queryClient, mcpQuery.queryKey, { enabled });
       setStatus({
         text: enabled
           ? "MCP endpoint enabled at /mcp."

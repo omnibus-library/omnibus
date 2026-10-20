@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
-import { ebookConvertQuery, saveEbookConvert } from "../../api";
+import {
+  ebookConvertQuery,
+  replaceQueryData,
+  saveEbookConvert,
+} from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel } from "../../components/Loading/Loading";
 import { useUnsavedForm } from "../../components/SettingsShell/SettingsShell";
@@ -28,10 +32,7 @@ export function EbookConvertCard() {
   const write = useMutation({
     mutationFn: saveEbookConvert,
     onSuccess: async (answer) => {
-      await queryClient.cancelQueries({
-        queryKey: ebookConvertQuery.queryKey,
-      });
-      queryClient.setQueryData(ebookConvertQuery.queryKey, answer);
+      await replaceQueryData(queryClient, ebookConvertQuery.queryKey, answer);
     },
   });
 

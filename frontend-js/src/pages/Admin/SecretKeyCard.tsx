@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import {
   googleBooksConfiguredQuery,
+  replaceQueryData,
   type SecretKeyKind,
   saveSecretKey,
   secretKeyQuery,
@@ -31,10 +32,11 @@ export function SecretKeyCard({ kind }: { kind: SecretKeyKind }) {
   const write = useMutation({
     mutationFn: (key: string | null) => saveSecretKey(kind, key),
     onSuccess: async (answer) => {
-      await queryClient.cancelQueries({
-        queryKey: secretKeyQuery(kind).queryKey,
-      });
-      queryClient.setQueryData(secretKeyQuery(kind).queryKey, answer);
+      await replaceQueryData(
+        queryClient,
+        secretKeyQuery(kind).queryKey,
+        answer,
+      );
       if (kind === "google-books") {
         // Check-in reads whether a key is set to decide how it warns about the quota.
         void queryClient.invalidateQueries({

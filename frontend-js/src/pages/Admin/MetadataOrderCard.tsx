@@ -4,6 +4,7 @@ import {
   type MetadataLibrary,
   type MetadataSource,
   metadataOrderQuery,
+  replaceQueryData,
   saveMetadataOrder,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
@@ -141,10 +142,8 @@ export function MetadataOrderCard() {
       for (const { library, order } of pending) {
         try {
           const answer = await saveMetadataOrder(library, order);
-          await queryClient.cancelQueries({
-            queryKey: metadataOrderQuery(library).queryKey,
-          });
-          queryClient.setQueryData(
+          await replaceQueryData(
+            queryClient,
             metadataOrderQuery(library).queryKey,
             answer,
           );
