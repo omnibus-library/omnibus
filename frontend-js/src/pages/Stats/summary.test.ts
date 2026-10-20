@@ -3,7 +3,6 @@ import { ApiError } from "../../api";
 import {
   failureOf,
   formatActiveTime,
-  freshnessNote,
   groupThousands,
   hasTimePatterns,
   isEmpty,
@@ -80,12 +79,6 @@ describe("formatActiveTime", () => {
     [3 * 3600 + 20 * 60, "3 h 20 m"],
   ])("writes %i seconds as %s", (secs, written) => {
     expect(formatActiveTime(secs)).toBe(written);
-  });
-});
-
-describe("freshnessNote", () => {
-  it("states the server's cache lifetime in seconds", () => {
-    expect(freshnessNote()).toBe("Stats are accurate to the last ~60 seconds.");
   });
 });
 

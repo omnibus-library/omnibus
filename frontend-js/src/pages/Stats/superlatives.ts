@@ -3,9 +3,6 @@ import { plural } from "../../format";
 import { civilFromDays, dayNumber, monthAbbr } from "./calendar";
 import { formatActiveTime } from "./summary";
 
-// The recorded time a book needs to qualify for the fastest read; mirrors `FASTEST_READ_MIN_SECS` in shared/src/stats.rs.
-const FASTEST_READ_MIN_SECS = 1800;
-
 export type Row = { label: string; headline: string; detail: string };
 
 type Book = NonNullable<StatsSummary["superlatives"]["longest_book"]>;
@@ -84,6 +81,5 @@ export function buildRows(
   ];
 }
 
-/** The fastest-read caveat, in whatever unit the floor is set to so the copy can't drift from it. */
-export const fastestReadNote = () =>
-  `Fastest read counts days from your first tracked session, over books with at least ${formatActiveTime(FASTEST_READ_MIN_SECS)} of recorded time — reading done before tracking, or on a device that reports nothing, can only make a book look faster than it was.`;
+// 1800 mirrors `FASTEST_READ_MIN_SECS` in shared/src/stats.rs.
+export const FASTEST_READ_NOTE = `Fastest read counts days from your first tracked session, over books with at least ${formatActiveTime(1800)} of recorded time — reading done before tracking, or on a device that reports nothing, can only make a book look faster than it was.`;

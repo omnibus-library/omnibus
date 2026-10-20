@@ -39,12 +39,8 @@ export function formatActiveTime(secs: number): string {
   return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} m`;
 }
 
-// The server's per-user stats cache lifetime.
-const STATS_TTL_SECS = 60;
-
-/** The footer note that reads a just-made change not yet in the figures as expected staleness. */
-export const freshnessNote = () =>
-  `Stats are accurate to the last ~${STATS_TTL_SECS} seconds.`;
+/** The footer note that reads a just-made change not yet in the figures as expected staleness; 60 is the server's per-user stats cache lifetime. */
+export const FRESHNESS_NOTE = "Stats are accurate to the last ~60 seconds.";
 
 /** Why the page can't show a reader's figures. */
 export type Failure =

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildRows,
   daysDetail,
-  fastestReadNote,
+  FASTEST_READ_NOTE,
   pagesDetail,
   prettyDay,
 } from "./superlatives";
@@ -127,8 +127,8 @@ describe("buildRows", () => {
   });
 });
 
-describe("fastestReadNote", () => {
-  it("states the floor in minutes rather than a hardcoded sentence", () => {
-    expect(fastestReadNote()).toContain("at least 30 m of recorded time");
+describe("FASTEST_READ_NOTE", () => {
+  it("states the floor in minutes", () => {
+    expect(FASTEST_READ_NOTE).toContain("at least 30 m of recorded time");
   });
 });

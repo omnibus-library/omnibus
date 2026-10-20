@@ -37,8 +37,8 @@ import { StandoutsGrid } from "./Standouts";
 import { StatsHero } from "./StatsHero";
 import {
   type Failure,
+  FRESHNESS_NOTE,
   failureOf,
-  freshnessNote,
   isEmpty,
   RANGE_LABELS,
   RANGES,
@@ -327,7 +327,7 @@ function ReaderStats({
           </div>
         )}
         <p className="st-footnote" data-testid="stats-freshness-note">
-          {freshnessNote()}
+          {FRESHNESS_NOTE}
         </p>
       </div>
       {open && (

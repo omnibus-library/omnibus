@@ -1,5 +1,5 @@
 import type { StatsSummary } from "../../api";
-import { buildRows, fastestReadNote } from "./superlatives";
+import { buildRows, FASTEST_READ_NOTE } from "./superlatives";
 
 /** "The standouts": the window's single most-X figures as a card grid, or nothing, since the page already has an empty state one level up. */
 export function StandoutsGrid({ summary }: { summary: StatsSummary }) {
@@ -21,7 +21,7 @@ export function StandoutsGrid({ summary }: { summary: StatsSummary }) {
       ))}
       {summary.superlatives.fastest_read !== null && (
         <p className="st-standouts-note" data-testid="stats-superlatives-note">
-          {fastestReadNote()}
+          {FASTEST_READ_NOTE}
         </p>
       )}
     </div>
