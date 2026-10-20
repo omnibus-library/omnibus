@@ -16,3 +16,10 @@ globalThis.ResizeObserver ??= class {
   unobserve() {}
   disconnect() {}
 };
+
+// jsdom plays no media; the player's calls on its <audio> do nothing here.
+Object.assign(HTMLMediaElement.prototype, {
+  load() {},
+  pause() {},
+  play: () => Promise.resolve(),
+});

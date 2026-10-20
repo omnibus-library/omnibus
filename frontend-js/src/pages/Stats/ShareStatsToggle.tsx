@@ -1,10 +1,10 @@
-import { useCurrentUser, useShareStats } from "../../session";
+import { useCurrentUser, useUserSwitch } from "../../session";
 import "../../styles/settings.css";
 
 /** "Visible to your household": the sharing preference, offered where its effect is felt and saved straight away. */
 export function ShareStatsToggle() {
   const user = useCurrentUser();
-  const save = useShareStats();
+  const save = useUserSwitch("shareStats");
   return (
     <div className="st-share">
       <label className="settings-switch st-share-switch">

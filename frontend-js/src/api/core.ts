@@ -27,7 +27,7 @@ export type UserId = number & { readonly __brand: "UserId" };
 export type AuthorId = number & { readonly __brand: "AuthorId" };
 export type SeriesId = number & { readonly __brand: "SeriesId" };
 
-const positiveInt = (raw: string | null | undefined) =>
+export const positiveInt = (raw: string | null | undefined) =>
   raw && /^[1-9]\d*$/.test(raw) ? Number(raw) : null;
 
 /** Brands a route parameter as an author id, or `null` unless it is a positive integer. */
@@ -87,6 +87,25 @@ export const CredentialsSchema = z.object({
 
 export type Credentials = z.infer<typeof CredentialsSchema>;
 
+/** Runs `run` after the earlier task under `key` settles, so writes reach the server in the order made; a failure stalls nothing. */
+export function inOrder<T>(
+  chains: Map<string, Promise<void>>,
+  key: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const result = (chains.get(key) ?? Promise.resolve()).then(run);
+  const tail = result.then(
+    () => {},
+    () => {},
+  );
+  chains.set(key, tail);
+  // Dropped once idle, so the map holds only books with a write in flight.
+  void tail.then(() => {
+    if (chains.get(key) === tail) chains.delete(key);
+  });
+  return result;
+}
+
 // The generated fetcher JSON-parses every body, and an error's is plain text.
 export async function send(
   url: string,
@@ -120,8 +139,29 @@ const coverBusts = new Map<BookUuid, number>();
 export const bumpCoverBust = (uuid: BookUuid) =>
   coverBusts.set(uuid, (coverBusts.get(uuid) ?? 0) + 1);
 
-/** Forgets every bump; a story starts from the cover the server first sent. */
-export const resetCoverBusts = () => coverBusts.clear();
+// The same for an avatar, which a reader replaces under the same URL.
+const avatarBusts = new Map<UserId, number>();
+
+const avatarWatchers = new Set<() => void>();
+
+/** Calls `onChange` after any bump, so a mounted avatar redraws with the new URL. */
+export const watchAvatarBusts = (onChange: () => void) => {
+  avatarWatchers.add(onChange);
+  return () => {
+    avatarWatchers.delete(onChange);
+  };
+};
+
+export const bumpAvatarBust = (id: UserId) => {
+  avatarBusts.set(id, (avatarBusts.get(id) ?? 0) + 1);
+  for (const onChange of avatarWatchers) onChange();
+};
+
+/** Forgets every bump, covers and avatars; a story starts from the image the server first sent. */
+export const resetImageBusts = () => {
+  coverBusts.clear();
+  avatarBusts.clear();
+};
 
 /** `url` with the book's cover generation appended, once a write has bumped it. */
 export const bustCover = (url: string, uuid: BookUuid) => {
@@ -138,4 +178,7 @@ export const thumbSrcSet = (uuid: BookUuid) =>
 export const coverUrl = (uuid: BookUuid) =>
   bustCover(`/api/covers/${uuid}`, uuid);
 
-export const avatarUrl = (id: UserId) => `/api/users/${id}/avatar`;
+export const avatarUrl = (id: UserId) => {
+  const n = avatarBusts.get(id);
+  return n ? `/api/users/${id}/avatar?v=${n}` : `/api/users/${id}/avatar`;
+};

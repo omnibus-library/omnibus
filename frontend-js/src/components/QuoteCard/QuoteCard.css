@@ -65,6 +65,10 @@
   border-color: var(--accent);
   color: var(--ink-0);
 }
+/* Doubled: the reader's lazy `.rd-drawer` loads after this file and would win the width. */
+.rd-drawer.rd-quote-drawer {
+  width: 432px;
+}
 .rd-quote-kicker {
   font-family: var(--mono);
   font-size: 10px;
@@ -175,6 +179,19 @@
   margin-top: 22px;
 }
 @media (max-width: 480px) {
+  .rd-drawer.rd-quote-drawer {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 78vh;
+    border-left: 0;
+    border-top: 1px solid var(--line-2);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, 0.5);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
   .rd-drawer-head {
     padding: 4px 20px 10px;
     border-bottom: 0;
@@ -187,6 +204,9 @@
   }
   .rd-desktop-only {
     display: none;
+  }
+  .rd-drawer.rd-quote-drawer {
+    max-height: 92vh;
   }
   .rd-quote-actions > .btn {
     flex: 1;

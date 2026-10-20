@@ -4,6 +4,8 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
+use crate::auth::gate::is_media_read_path;
+
 use super::*;
 
 const METHODS: [&str; 5] = ["get", "post", "put", "patch", "delete"];
@@ -93,6 +95,31 @@ fn spec_marks_public_routes_as_needing_no_session() {
             "{method} {path} should need no session"
         );
     }
+}
+
+#[test]
+fn spec_lists_media_token_on_exactly_the_routes_the_gate_opens_to_it() {
+    let doc = spec_value();
+    let triple = serde_json::json!([{"bearer": []}, {"session_cookie": []}, {"media_token": []}]);
+    let token = serde_json::json!({"media_token": []});
+    let wrong: Vec<String> = operations(&doc)
+        .into_iter()
+        .filter(|(path, method, op)| {
+            // Templates stand in for request paths: the gate only matches fixed segments.
+            if *method == "get" && is_media_read_path(path) {
+                op["security"] != triple
+            } else {
+                op["security"]
+                    .as_array()
+                    .is_some_and(|s| s.contains(&token))
+            }
+        })
+        .map(|(path, method, _)| format!("{method} {path}"))
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "media_token disagrees with the auth gate on: {wrong:?}"
+    );
 }
 
 #[test]

@@ -1,15 +1,28 @@
+import { queryOptions } from "@tanstack/react-query";
+import { z } from "zod";
 import type { Credentials, UserId } from "./core";
-import { failure, ok } from "./core";
+import { failure, fetchJson, ok, send } from "./core";
 import {
+  getCreateApiTokenUrl,
+  getDeleteSessionUrl,
+  getListApiTokensUrl,
+  getListSessionsUrl,
   getLogoutUrl,
   getMe,
   getRegistration,
+  getRenameApiTokenUrl,
+  getRevokeApiTokenUrl,
   login as postLogin,
   register as postRegister,
-  postShareStats,
-  postStackSeries,
 } from "./generated/omnibus";
-import type { UserSummary } from "./generated/schemas";
+import {
+  ApiTokenView,
+  CreateApiTokenResponse,
+  SessionView,
+  type UserSummary,
+} from "./generated/schemas";
+
+export type { ApiTokenView, SessionView } from "./generated/schemas";
 
 /** The screen's shape of the user `GET /api/auth/me` and sign-in answer with. */
 export function toUser(user: UserSummary) {
@@ -17,12 +30,17 @@ export function toUser(user: UserSummary) {
     id: user.id as UserId,
     username: user.username,
     name: user.display_name ?? user.username,
+    displayName: user.display_name ?? null,
+    kindleEmail: user.kindle_email ?? null,
     isAdmin: user.is_admin,
     canUpload: user.can_upload,
     canEdit: user.can_edit,
+    canDownload: user.can_download,
     hasAvatar: user.has_avatar ?? false,
     hiddenFormats: user.hidden_formats ?? [],
     stackSeries: user.stack_series ?? false,
+    bookDetailScrollStops: user.book_detail_scroll_stops ?? false,
+    // Matches the wire default: stats are shared until a reader opts out.
     shareStats: user.share_stats ?? true,
   };
 }
@@ -60,12 +78,34 @@ export async function logout(): Promise<void> {
   }
 }
 
-/** Saves the reader's Stack series preference. */
-export async function setStackSeries(enabled: boolean): Promise<void> {
-  ok(await postStackSeries({ enabled }));
+/** The reader's live sessions, the one making the request flagged `is_current`. */
+export const sessionsQuery = queryOptions({
+  queryKey: ["sessions"],
+  queryFn: () => fetchJson(getListSessionsUrl(), z.array(SessionView)),
+});
+
+/** Signs one of the reader's other sessions out. */
+export async function revokeSession(id: number): Promise<void> {
+  await send(getDeleteSessionUrl(id), "DELETE");
 }
 
-/** Saves whether other readers on this server can see the reader's stats. */
-export async function setShareStats(enabled: boolean): Promise<void> {
-  ok(await postShareStats({ enabled }));
+/** The reader's API tokens, newest first. They never carry the secret. */
+export const apiTokensQuery = queryOptions({
+  queryKey: ["api-tokens"],
+  queryFn: () => fetchJson(getListApiTokensUrl(), z.array(ApiTokenView)),
+});
+
+/** Mints a token named `name`; the answer holds its only readable copy of the secret. */
+export async function createApiToken(name: string) {
+  const res = await send(getCreateApiTokenUrl(), "POST", { name });
+  return CreateApiTokenResponse.parse(await res.json());
+}
+
+export async function renameApiToken(id: number, name: string): Promise<void> {
+  await send(getRenameApiTokenUrl(id), "PATCH", { name });
+}
+
+/** Cuts the token's client off at its next request. */
+export async function revokeApiToken(id: number): Promise<void> {
+  await send(getRevokeApiTokenUrl(id), "DELETE");
 }

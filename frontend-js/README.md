@@ -13,11 +13,15 @@ The screens it has ported are listed under [Routes](#routes).
 |---|---|
 | `src/styles/` | `theme.css` (tokens, the four themes, the `.atrium` root) and `base.css` |
 | `src/components/<Name>/` | shared building blocks: `<Name>.tsx` beside its `.css` and `.stories.tsx` |
-| `src/layouts/` | `RequireAuth` (the session gate) and `AppShell` (top bar + page) |
+| `src/layouts/` | `RequireAuth` (the session gate), `AppShell` (top bar + page + dock) and `ReaderDock` (the readers' frame, with the dock beneath) |
+| `src/playback/` | the audiobook player behind `/listen` and the dock: `PlaybackProvider` (the one `<audio>`, mounted in `RequireAuth` so playback survives navigation), `engine` (a port of the Dioxus `OmnibusAudio`), `boot` (resume rules and the position saver), `sleep` and `loadHls`; sessions and read status go through the readers' `readingSession` and `autoReadStatus` |
 | `src/pages/<Name>/` | one folder per route, its CSS beside it |
 | `src/api.ts` | a barrel over `src/api/*.ts`, one file per resource: every REST call the screens make, mapping wire shapes to the ones they render, and the form schemas; an api module re-exports a wire type verbatim when the screen uses it unchanged, so pages never import `api/generated/schemas` |
 | `src/api/generated/` | zod schemas, fetchers, TanStack Query hooks and MSW handlers that orval generates from `../openapi/openapi.json`; gitignored, rebuilt by `pnpm run generate` (`pnpm install` runs it too) |
+| `src/vendor/hls/` | hls.js, a byte copy of `frontend/assets/vendor/hls.min.js`, loaded by `<script>` from a Vite `?url` import when a transcoded book plays, so it stays out of the main bundle |
 | `src/vendor/barcode/` | the camera scanner's zxing decoder, its wasm and the glue: byte copies of `frontend/assets/vendor/`, loaded by `<script>` from Vite `?url` imports (the zxing IIFE declares a global that bundling would scope away) |
+| `src/vendor/reader/` | the EPUB and PDF reader runtimes (epub.js, PDF.js and the two glue files): byte copies of `frontend/assets/vendor/`, loaded from Vite `?url` imports; `parity.test.ts` fails when a copy drifts |
+| `public/` | `vendor/pdfjs-wasm/` and `reader-fonts/`, copied verbatim and kept by name because PDF.js and `reader-fonts.css` build URLs onto their directories |
 | `src/testing/` | `AppHarness`, parsed and wire-format fixtures, the MSW handlers orval can't generate (`handlers.ts`), the Vitest setup |
 | `.storybook/` | Storybook's config, the preview every story renders inside, and MSW's worker |
 | `tools/extract-atrium.cjs` | copies Atrium rules into component CSS when a screen is ported |
@@ -33,19 +37,28 @@ under the top bar, and a guest goes to `/login?next=…` and comes back. Login,
 Register, the library, book detail, the metadata editor (`/books/:uuid/edit`),
 add books (`/add-books`), check-in (`/check-in`), search results
 (`/search/:query`), the authors, series and shelves indexes with their detail
-pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), stats (`/stats`), the
-chart builder (`/stats/chart`) and Not Found are ported, and the top bar carries
-the user menu and the ⌘K search palette. The phone layouts (the bottom tab bar
-and the native shell's shelves screens) are left out. As on Dioxus web, a bare
-`/search` and the native shell's `/connect` redirect to the library. Every other
-route renders `Unported`, which shows its parsed parameters and names its Dioxus
-source.
+pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), the three readers
+(`/read`, `/comic`, `/pdf`), the audiobook player (`/listen/:uuid`, `?file_id`
+picks one of a book's files), personal settings (`/settings`), stats
+(`/stats`), the chart builder (`/stats/chart`) and Not Found are ported, and
+the top bar carries the user menu and the ⌘K search palette. The phone layouts
+(the bottom tab bar and the native shell's shelves screens) are left out. As on
+Dioxus web, a bare `/search` and the native shell's `/connect` redirect to the
+library. `/settings` has its five sections (Profile, Preferences, Goals,
+Devices, Sign-in & security) picked by `?section=`; an old slug redirects to
+its new home and `/account` redirects to it. Its frame, `SettingsShell`, takes
+its navigation as data so `/admin` can reuse it. Every other route renders
+`Unported`, which shows its parsed parameters and names its Dioxus source.
 Book detail carries all six stops (home, stats, highlights, journals, files,
 more) with the rating, quote cards, journal editor, copies and wishlist, shelf
 picker, Send to Kindle, merge and delete. It leaves the alignment modal, the
-snapped scroll mode, the genre and tag chip editor, the playback dock and the
+snapped scroll mode, the genre and tag chip editor, the Immersive Read button and the
 check-in overlay (the top bar links to the `/check-in` page instead) to the
 screens that own them.
+The mini dock sits after the page in the shell and beneath `/read`, `/comic` and
+`/pdf` (the `ReaderDock` layout route), never on `/listen`; the `<audio>` lives
+above the routes, so playback continues as the reader moves between pages. The
+mobile shell's native player is left out.
 The metadata editor saves overrides, replaces the cover, and copies a provider
 edition's fields and cover into the form; add books inspects an EPUB, PDF or
 audiobook with upload progress, reviews it on the same form, and files it. A
@@ -54,6 +67,11 @@ server accepts": the cap is the server's `OMNIBUS_MAX_UPLOAD_BYTES`, which no
 route reports, so the page cannot refuse a big file before sending it. Check-in
 takes an ISBN typed, scanned or found by title, and files a copy or a wishlist
 entry; the camera never opens until "Scan a barcode" is pressed.
+The readers are lazy chunks that mount the vendored epub.js and PDF.js glue from a
+React effect; each saves its position as pages turn and records reading
+sessions and read status. The EPUB and PDF readers carry highlights, notes,
+quotes and bookmarks, and the EPUB reader adds contents, search, the Aa panel and
+cross-format follow. The audiobook mini dock on `/read` waits for the player.
 Stats has the streak hero with its goals, the period pills over the window band
 (tiles and their drill-in, reading clock, genre donut, standouts), the standing
 band (heatmap, books open and finished, monthly chart), the User / Library
@@ -86,6 +104,18 @@ already exists goes in by hand, as does one whose modifier class (`ok`, `error`)
 is on the script's stop list; `--write --force` regenerates every file
 unformatted and drops their hand edits. `.add-books-progress` in `AddBooks.css` is
 hand-written and React-only: the Dioxus page has no such element.
+
+A screen driven by a vendored glue (the readers) is ported differently. The
+glue is a byte copy in `src/vendor/reader/`, loaded by `loadScript` from a
+`?url` import; it talks back through `window.__omnibusOn*` hooks declared in
+`src/env.d.ts`, listed in the page's `HOOKS` array and installed and removed in
+its mount effect. Stories swap in a stand-in from `src/testing/readerGlue.ts`.
+A new vendored file goes in `src/vendor/reader/parity.test.ts`; editing
+`frontend/assets/vendor/` or `reader-fonts/` runs this project's CI and fails
+parity until the copy here changes in the same PR. The audiobook dock mounts in
+the EPUB footer's `pill` slot (`Footer` in `ReaderChrome.tsx`). Readers are lazy
+chunks, so a tab left open across a redeploy asks for an old chunk hash, which
+404s into `RouteError` until a reload.
 
 A CSS file that is pure script output (`Library.css`) can be regenerated after
 its markup changes by emptying it (`: > src/pages/Library/Library.css`) and
@@ -157,21 +187,26 @@ shell provides it.
 - **Unit tests** (`pnpm run test:unit`, jsdom) cover the API parsers,
   formatting (`fixed` included), `safeNext`, the theme root, the session, and
   the pure helpers behind the screens (`resume`, `password`, `settingsIndex`,
-  `viewPrefs`, `focusTrap`, book detail's `readout`, `identifiers`, `shelves`,
-  `journalEditor` and delete copy, the palette's `selection`, the results page's
-  `results`, Register's `refusal`, the library's `filters`, `libraryView`,
-  `seriesStacks`, `shelfGallery`, `sorting` and `bulkEdit`, the editor's
-  `metadata` (form schema and override diff), `dirty` and `editionFields`,
-  `uploads`, check-in's `checkIn` and `scan`, the scanner's `scanStatus` and
+  `hiddenFormats`, `goals`, `apiTokens`, `viewPrefs`, `focusTrap`, book
+  detail's `readout`, `identifiers`, `shelves`, `journalEditor` and delete
+  copy, the palette's `selection`, the results page's `results`, Register's
+  `refusal`, the library's `filters`, `libraryView`, `seriesStacks`,
+  `shelfGallery`, `sorting` and `bulkEdit`, the editor's `metadata` (form
+  schema and override diff), `dirty` and `editionFields`, `uploads`,
+  check-in's `checkIn` and `scan`, the scanner's `scanStatus` and
   `loadScanner`, the discovery pages' `authorsOrder`, `authorPane`,
   `seriesIndex`, `shelvesIndex`, the shelf rules' `rules`, the picker's
-  `picker`, the shelf page's `shelfAccess` and `narrow`, stats' `calendar`,
+  `picker`, the shelf page's `shelfAccess` and `narrow`, the readers' `pager`,
+  `pdfAnchors`, `start`, `relocate`, `typography`, `epubGlue`, `pdfGlue`,
+  `readingSession` and `autoReadStatus`, the player's `PlaybackProvider`,
+  `engine`, `boot`, `sleep`, `loadHls` and `listen`, stats' `calendar`,
   `summary`, `picker`, `hero`, `goal`, `clock`, `donut`, `superlatives`,
   `tiles`, `drillIn`, `heatmap`, `readingNow`, `monthly`, `library` and
   `composition`, and the chart builder's `chart`, `plot`, `notes`, `zoom` and
-  `tween`), the two pages' refusal to refetch on window focus (against
-  `msw/node`), plus the real route table in `src/router.test.tsx`: every
-  unported page, the layout split, the guest redirect and the redirects.
+  `tween`, plus the vendored files' parity test), the two stats pages'
+  refusal to refetch on window focus (against `msw/node`), plus the real route
+  table in `src/router.test.tsx`: every unported page, the settings redirects,
+  the layout split, the guest redirect and the redirects.
 - **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI
   uploads each one's lcov to Codecov under the `frontend-js` flag.
 

@@ -3,12 +3,15 @@
 # available iPhone simulator. Shared by CI (.github/workflows/ios-tests.yml)
 # and the local `just ios-test*` recipes so both run the identical invocation.
 #
-# Usage: ios-test.sh <unit|ui|all> [extra xcodebuild args...]
+# Usage: ios-test.sh <unit|ui|ui/<TestClass>|all> [extra xcodebuild args...]
+#        `ui/<TestClass>` runs one omnibusUITests class (a screenshot tour).
 # Env:   OMNIBUS_IOS_RESULTS_DIR  where <suite>.xcresult lands
 #                                 (default .claude/runtime/ios-tests)
 #        OMNIBUS_IOS_SIM_NAME     name of the dedicated test device, created
 #                                 on the newest iPhone runtime when missing
-#                                 (default omnibus-tests)
+#                                 (default: this worktree's, from
+#                                 scripts/lib/ios-sim.sh — omnibus-tests in
+#                                 the main checkout and CI)
 #        OMNIBUS_IOS_TEST_SIM_UDID
 #                                 pin a specific simulator instead. Not
 #                                 OMNIBUS_IOS_SIM_UDID on purpose: that pins
@@ -22,9 +25,10 @@ shift
 case "$suite" in
   unit) only=("-only-testing:omnibusTests") ;;
   ui) only=("-only-testing:omnibusUITests") ;;
+  ui/?*) only=("-only-testing:omnibusUITests/${suite#ui/}") ;;
   all) only=() ;;
   *)
-    echo "ios-test.sh: unknown suite '$suite' (want unit|ui|all)" >&2
+    echo "ios-test.sh: unknown suite '$suite' (want unit|ui|ui/<TestClass>|all)" >&2
     exit 2
     ;;
 esac
@@ -43,48 +47,26 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/ios-sim.sh
+source "$repo_root/scripts/lib/ios-sim.sh"
 results_dir="${OMNIBUS_IOS_RESULTS_DIR:-$repo_root/.claude/runtime/ios-tests}"
 mkdir -p "$results_dir"
+# `ui/<TestClass>` names its bundle `ui-<TestClass>`.
+bundle="$results_dir/${suite//\//-}.xcresult"
 # xcodebuild refuses to write over an existing result bundle.
-rm -rf "$results_dir/$suite.xcresult"
+rm -rf "$bundle"
 
-sim_name="${OMNIBUS_IOS_SIM_NAME:-omnibus-tests}"
+sim_name="${OMNIBUS_IOS_SIM_NAME:-$(ios_sim_name "$repo_root")}"
 if [ -n "${OMNIBUS_IOS_TEST_SIM_UDID:-}" ]; then
   udid="$OMNIBUS_IOS_TEST_SIM_UDID"
 else
-  # Newest installed iOS runtime that has an iPhone device, and that iPhone's
-  # device type. xcodebuild's destination matcher silently omits simulators
-  # whose runtime is older than the project's IPHONEOS_DEPLOYMENT_TARGET (they
-  # don't even show up as ineligible), so resolve the runtime ourselves and
-  # fail with a message that points at the real cause.
-  read -r runtime devtype < <(xcrun simctl list --json devices available | jq -r '
-    .devices | to_entries
-    | map(select(.key | test("SimRuntime\\.iOS")))
-    | map({key,
-           ver: (.key | sub(".*iOS-"; "") | gsub("-"; ".")),
-           devs: [.value[] | select(.name | startswith("iPhone"))]})
-    | map(select(.devs | length > 0))
-    | sort_by(.ver | split(".") | map(tonumber))
-    | if length == 0 then empty
-      else last | "\(.key)\t\(.devs[0].deviceTypeIdentifier)" end') || true
-  if [ -z "${runtime:-}" ]; then
-    echo "ios-test.sh: no available iPhone simulator; if 'xcrun simctl list devices' shows iPhones, their iOS runtime is older than the project's IPHONEOS_DEPLOYMENT_TARGET" >&2
-    exit 1
-  fi
-
-  # The suites run on a simulator of their own, created on first use and kept
-  # for the next run, never on the iPhone a developer keeps signed in: the UI
-  # suite launches every test with --uitest-reset, which wipes the stored
-  # server and token on whatever device it runs against. That used to be
-  # harmless because a parallelizable testable ran on a throwaway clone —
-  # and the clone's cold boot is exactly what the scheme now avoids (below).
-  udid="$(xcrun simctl list --json devices available | jq -r \
-    --arg rt "$runtime" --arg name "$sim_name" \
-    '.devices[$rt][]? | select(.name == $name) | .udid' | head -n 1)"
-  if [ -z "$udid" ]; then
-    udid="$(xcrun simctl create "$sim_name" "$devtype" "$runtime")"
-    echo "ios-test.sh: created simulator '$sim_name' ($devtype on $runtime)" >&2
-  fi
+  # The suites run on a simulator of their own, never on the iPhone a
+  # developer keeps signed in: the UI suite launches every test with
+  # --uitest-reset, which wipes the stored server, token and preferences on
+  # whatever device it runs against. That used to be harmless because a
+  # parallelizable testable ran on a throwaway clone — and the clone's cold
+  # boot is exactly what the scheme now avoids (below).
+  udid="$(ios_sim_ensure "$sim_name")"
 fi
 
 # Boot the destination ourselves and block until SpringBoard is up, so a
@@ -104,6 +86,6 @@ exec xcodebuild test \
   -scheme omnibus \
   -destination "platform=iOS Simulator,id=$udid" \
   -enableCodeCoverage YES \
-  -resultBundlePath "$results_dir/$suite.xcresult" \
+  -resultBundlePath "$bundle" \
   ${only[@]+"${only[@]}"} \
   "$@"

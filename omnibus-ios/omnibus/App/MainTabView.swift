@@ -65,11 +65,21 @@ struct TabPaths: Equatable {
     var you: [Destination] = []
 
     subscript(tab: AppTab) -> [Destination] {
-        switch tab {
-        case .library: library
-        case .search: search
-        case .stats: stats
-        case .you: you
+        get {
+            switch tab {
+            case .library: library
+            case .search: search
+            case .stats: stats
+            case .you: you
+            }
+        }
+        set {
+            switch tab {
+            case .library: library = newValue
+            case .search: search = newValue
+            case .stats: stats = newValue
+            case .you: you = newValue
+            }
         }
     }
 }
@@ -172,6 +182,15 @@ struct MainTabView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
+        #if DEBUG
+        // `initial`: a link that arrived during launch is waiting when this mounts.
+        .onChange(of: DebugScreenLink.shared.pending, initial: true) { _, route in
+            guard let route else { return }
+            DebugScreenLink.shared.pending = nil
+            selection = route.tab
+            paths[route.tab] = route.path
+        }
+        #endif
     }
 
     private var unavailableBinding: Binding<UnavailableBook?> {

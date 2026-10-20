@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { BookDetail } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { SendToKobo } from "../../components/FormatSwitcher/FormatSwitcher";
@@ -16,14 +16,19 @@ export function ExportMenu({ book }: { book: BookDetail }) {
     if (!open) return;
     // After paint, or the focus ring never shows.
     const frame = requestAnimationFrame(() => panel.current?.focus());
-    return () => cancelAnimationFrame(frame);
+    // On the window, since a send button disabling itself drops focus out of the panel.
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [open]);
   const close = () => setOpen(false);
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    close();
-  };
   const { uuid, hasEbook, hasAudio, hasPdf } = book;
   // Amazon takes an EPUB or a PDF as it is.
   const kindle = hasEbook || hasPdf;
@@ -61,7 +66,6 @@ export function ExportMenu({ book }: { book: BookDetail }) {
         aria-label="Export options"
         data-testid="hero-export-panel"
         tabIndex={-1}
-        onKeyDown={onKeyDown}
       >
         {(hasEbook || hasPdf) && (
           // A plain anchor, so the browser downloads; /download serves the EPUB, else the PDF.

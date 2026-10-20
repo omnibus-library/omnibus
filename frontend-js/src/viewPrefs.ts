@@ -50,7 +50,7 @@ const PREFS_PREFIX = "omnibus.view_prefs::";
 const LAST_LIBRARY_KEY = "omnibus.view_prefs.last_library";
 const SHELF_KEY = "omnibus.landing_shelf";
 
-function read(key: string): string | null {
+export function read(key: string): string | null {
   try {
     return localStorage.getItem(key);
   } catch {
@@ -58,7 +58,7 @@ function read(key: string): string | null {
   }
 }
 
-function write(key: string, value: string) {
+export function write(key: string, value: string) {
   try {
     localStorage.setItem(key, value);
   } catch {

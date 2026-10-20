@@ -4,12 +4,16 @@
 // `src/api/*.ts` turns the wire shapes into the ones the screens render, one file per
 // resource; this barrel keeps the screens' imports stable.
 
+export * from "./api/account";
 export * from "./api/admin";
+export * from "./api/audio";
 export * from "./api/auth";
 export * from "./api/books";
 export * from "./api/core";
 export * from "./api/discovery";
+export * from "./api/goals";
 export * from "./api/journal";
+export * from "./api/kobo";
 export * from "./api/library";
 export * from "./api/metadata";
 export * from "./api/physical";

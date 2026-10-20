@@ -279,38 +279,43 @@ describe("toUser", () => {
       id: 1,
       username: "ada",
       name: "Ada Lovelace",
+      displayName: "Ada Lovelace",
+      kindleEmail: null,
       isAdmin: true,
       canUpload: true,
       canEdit: true,
+      canDownload: true,
       hasAvatar: true,
       hiddenFormats: [],
       stackSeries: false,
+      bookDetailScrollStops: false,
       shareStats: true,
     });
   });
 
-  it("defaults sharing to on when the server omits it", () => {
-    expect(toUser(WIRE_ADA).shareStats).toBe(true);
-  });
-
-  it("carries the sharing preference the server sends", () => {
-    expect(toUser({ ...WIRE_ADA, share_stats: true }).shareStats).toBe(true);
-    expect(toUser({ ...WIRE_ADA, share_stats: false }).shareStats).toBe(false);
-  });
-
-  it("carries the library preferences the server sends", () => {
-    const wire = { ...WIRE_ADA, hidden_formats: ["m4b"], stack_series: true };
+  it("carries the preferences and Kindle address the server sends", () => {
+    const wire = {
+      ...WIRE_ADA,
+      hidden_formats: ["m4b"],
+      stack_series: true,
+      book_detail_scroll_stops: true,
+      share_stats: false,
+      kindle_email: "ada@kindle.com",
+    };
 
     expect(toUser(wire)).toMatchObject({
       hiddenFormats: ["m4b"],
       stackSeries: true,
+      bookDetailScrollStops: true,
+      shareStats: false,
+      kindleEmail: "ada@kindle.com",
     });
   });
 
   it("falls back to the username when there is no display name", () => {
     const wire = { ...WIRE_ADA, display_name: null };
 
-    expect(toUser(wire).name).toBe("ada");
+    expect(toUser(wire)).toMatchObject({ name: "ada", displayName: null });
   });
 });
 

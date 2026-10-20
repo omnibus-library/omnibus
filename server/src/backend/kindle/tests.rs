@@ -364,3 +364,68 @@ async fn send_status_returns_401_when_anonymous() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
+
+// ── Delivery readiness ───────────────────────────────────────────
+
+#[tokio::test]
+async fn delivery_reports_the_sender_address_once_smtp_is_saved() {
+    let _env =
+        db::test_support::EnvVarGuard::set("SMTP_HOST", None).also_set("SMTP_FROM_EMAIL", None);
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "reader").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    configure_smtp(&pool).await;
+
+    let response = app
+        .oneshot(get_with_bearer("/api/kindle/delivery", &token))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let raw = std::str::from_utf8(&bytes).unwrap();
+    let delivery: omnibus_shared::KindleDelivery = serde_json::from_str(raw).unwrap();
+    assert_eq!(
+        delivery.sender_address.as_deref(),
+        Some("library@example.com")
+    );
+    // Only the sender leaves the server: no relay host or password.
+    assert!(!raw.contains("smtp.example.com") && !raw.contains("s3cret-pass"));
+}
+
+#[tokio::test]
+async fn delivery_reports_no_sender_when_smtp_is_unset() {
+    let _env =
+        db::test_support::EnvVarGuard::set("SMTP_HOST", None).also_set("SMTP_FROM_EMAIL", None);
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "reader").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let response = app
+        .oneshot(get_with_bearer("/api/kindle/delivery", &token))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let delivery: omnibus_shared::KindleDelivery = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(delivery.sender_address, None);
+}
+
+#[tokio::test]
+async fn delivery_returns_401_when_anonymous() {
+    let (app, _, _) = fixture().await;
+    let response = app.oneshot(get_anon("/api/kindle/delivery")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+// Called directly: closing the pool first would fail the `AuthUser` extractor itself.
+#[tokio::test]
+async fn delivery_returns_500_when_pool_closed() {
+    let (_app, state, pool) = fixture().await;
+    pool.close().await;
+
+    let res = get_delivery(auth_test_support::fake_auth_user(1, 1), State(state)).await;
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}

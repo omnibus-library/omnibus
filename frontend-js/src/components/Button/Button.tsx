@@ -3,7 +3,7 @@ import { Link, type LinkProps } from "react-router";
 import { classes } from "../../classes";
 import "./Button.css";
 
-export type ButtonVariant = "default" | "primary" | "ghost" | "bad";
+export type ButtonVariant = "default" | "primary" | "ghost" | "danger" | "bad";
 export type ButtonSize = "sm" | "md" | "lg";
 
 type Look = { variant?: ButtonVariant; size?: ButtonSize; className?: string };
@@ -12,6 +12,7 @@ const VARIANT_CLASS = {
   default: null,
   primary: "primary",
   ghost: "ghost",
+  danger: "ghost danger",
   bad: "bad",
 } satisfies Record<ButtonVariant, string | null>;
 

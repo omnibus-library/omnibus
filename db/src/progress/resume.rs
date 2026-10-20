@@ -18,8 +18,8 @@ pub async fn recent_progress(
     user_id: i64,
     limit: i64,
 ) -> Result<Vec<ProgressRecord>, ProgressError> {
-    // Absence keeps its position: status writes are best-effort, so hiding on a
-    // missing row would drop a book whenever one of those requests was lost.
+    // Absence keeps its position: a position write creates its book's status, so a
+    // missing row is an edge (a merge undo clears one) that shouldn't hide the book.
     let rows = sqlx::query(
         "SELECT rp.book_uuid, rp.format, rp.epub_cfi, rp.audio_position_seconds,
                 rp.progress_percent, rp.kobo_location, rp.book_file_id,

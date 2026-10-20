@@ -53,6 +53,11 @@ final class AppState {
         if ProcessInfo.processInfo.arguments.contains("--uitest-reset") {
             ServerURLStore.clear()
             TokenStore.clear()
+            // Saved preferences too (sort, filters, theme), so a run never
+            // starts from the choices the previous run left behind.
+            if let domain = Bundle.main.bundleIdentifier {
+                UserDefaults.standard.removePersistentDomain(forName: domain)
+            }
         }
         // Second hermetic hook: seed a server and token so the suite reaches
         // the signed-in shell without one. The address is a closed port, so
