@@ -3,26 +3,31 @@ import { ok, send } from "./core";
 import {
   getBackgroundTasks,
   getLibrary,
+  getMetadataPrecedence,
   getPostBackfillChaptersUrl,
   getPostRefetchAuthorPhotosUrl,
   getPostRewriteAllEpubsUrl,
   getPostScanLibraryUrl,
   getSettings,
   getWorkerStatus,
+  postMetadataPrecedence,
   postSettings,
 } from "./generated/omnibus";
-import type { Settings } from "./generated/schemas";
+import type { MetadataSource, Settings } from "./generated/schemas";
 
 export type {
   BackgroundTaskRecord,
   GhostFilesWarning,
   LibraryContents,
   LibrarySection,
+  MetadataSource,
   ScanTallies,
   Settings,
   TaskKind,
   TaskProgress,
 } from "./generated/schemas";
+
+export type MetadataLibrary = "ebook" | "audiobook";
 
 // The server-administration reads and writes. Every answer stays wire-shaped,
 // and every query key starts with "admin" so one prefix covers the section.
@@ -73,3 +78,18 @@ export const backgroundTasksQuery = queryOptions({
   queryKey: ["admin", "background-tasks"],
   queryFn: async () => ok(await getBackgroundTasks()),
 });
+
+/** A library's metadata sources, lowest priority first; the default order until its folder is set. */
+export const metadataOrderQuery = (library: MetadataLibrary) =>
+  queryOptions({
+    queryKey: ["admin", "metadata-order", library],
+    queryFn: async () => ok(await getMetadataPrecedence(library)),
+  });
+
+/** Saves a library's order; answers what the server now holds. */
+export async function saveMetadataOrder(
+  library: MetadataLibrary,
+  order: readonly MetadataSource[],
+): Promise<MetadataSource[]> {
+  return ok(await postMetadataPrecedence(library, [...order]));
+}

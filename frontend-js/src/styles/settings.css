@@ -169,7 +169,8 @@
   flex-direction: column;
   gap: 0.4rem;
 }
-.settings-field label {
+.settings-field label,
+.settings-label {
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--ink-2);

@@ -9,6 +9,7 @@ import {
 } from "../../components/SettingsShell/SettingsShell";
 import { useCurrentUser } from "../../session";
 import { MaintenanceCard } from "./MaintenanceCard";
+import { MetadataOrderCard } from "./MetadataOrderCard";
 import { RecentTasksCard } from "./RecentTasksCard";
 import { SourcesCard } from "./SourcesCard";
 import {
@@ -35,6 +36,7 @@ function sectionContent(slug: AdminSection["slug"]): ReactNode {
         </>
       );
     case "metadata":
+      return <MetadataOrderCard />;
     case "cleanup":
     case "people":
     case "integrations":

@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { expect, waitFor } from "storybook/test";
+import { expect, waitFor, within } from "storybook/test";
 import { adminHandlers } from "../../testing/adminHandlers";
 import { WIRE_ADA } from "../../testing/wire";
 import { Admin } from "./Admin";
@@ -153,6 +153,24 @@ export const AsksBeforeLeavingEditedSources: Story = {
       "aria-current",
       "page",
     );
+  },
+};
+
+export const AsksBeforeLeavingAnEditedMetadataOrder: Story = {
+  args: { path: "/admin?section=metadata" },
+  play: async ({ canvas, userEvent }) => {
+    const ebook = await canvas.findByRole("list", { name: "Ebook library" });
+    await userEvent.click(
+      within(ebook).getByRole("button", { name: "Move Embedded tags up" }),
+    );
+    await userEvent.click(canvas.getByTestId("admin-nav-people"));
+
+    await expect(
+      await canvas.findByRole("dialog", { name: "Discard unsaved changes" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("heading", { level: 2, name: "Metadata" }),
+    ).toBeInTheDocument();
   },
 };
 

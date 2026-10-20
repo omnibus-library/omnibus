@@ -1,8 +1,10 @@
 import { HttpResponse, http } from "msw";
+import type { MetadataLibrary } from "../api";
 import {
   type BackgroundTaskRecord,
   type LibraryContents,
   type LibrarySection,
+  MetadataSource,
   Settings,
   type TaskProgress,
   type WorkerStatus,
@@ -141,6 +143,44 @@ export function maintenanceJobHandlers(queued: string[] = []) {
   );
 }
 
+/** The order a library holds until it is saved, lowest priority first. */
+export const DEFAULT_METADATA_ORDER: MetadataSource[] = [
+  "folder_structure",
+  "embedded_tags",
+  "opf_sidecar",
+  "omnibus_overrides",
+  "provider_match",
+];
+
+export type SavedOrder = { library: MetadataLibrary; order: MetadataSource[] };
+
+/**
+ * `GET` and `POST /api/settings/metadata-precedence/{library}`: each library's
+ * saved order, which a POST replaces. Each posted body lands in `saved`.
+ */
+export function metadataOrderHandlers({
+  saved = [],
+}: {
+  saved?: SavedOrder[];
+} = {}) {
+  const orders = {
+    ebook: DEFAULT_METADATA_ORDER,
+    audiobook: DEFAULT_METADATA_ORDER,
+  };
+  return (["ebook", "audiobook"] as const).flatMap((library) => {
+    const path = `/api/settings/metadata-precedence/${library}`;
+    return [
+      http.get(path, () => HttpResponse.json(orders[library])),
+      http.post(path, async ({ request }) => {
+        const order = MetadataSource.array().parse(await request.json());
+        orders[library] = order;
+        saved.push({ library, order });
+        return HttpResponse.json(order);
+      }),
+    ];
+  });
+}
+
 /** The happy-path fakes for every admin section ported so far; a story's own handlers replace them. */
 export function adminHandlers() {
   return [
@@ -149,5 +189,6 @@ export function adminHandlers() {
     workerStatusHandler(aWireWorkerStatus),
     ...maintenanceJobHandlers(),
     backgroundTasksHandler(() => [aWireBackgroundTask()]),
+    ...metadataOrderHandlers(),
   ];
 }

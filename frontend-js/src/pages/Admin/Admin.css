@@ -5,6 +5,30 @@
   padding-top: 0.5rem;
   color: var(--ink-1);
 }
+.metadata-precedence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+}
+.metadata-precedence-item {
+  align-items: center;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+}
+.metadata-precedence-item span {
+  flex: 1;
+  font-size: 0.9rem;
+}
+.metadata-precedence-item button {
+  padding: 0.2rem 0.55rem;
+}
 .library-summary.error {
   color: var(--bad);
   font-size: 0.85rem;
