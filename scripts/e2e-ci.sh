@@ -7,7 +7,8 @@
 #          e.g. scripts/e2e-ci.sh tests/flows/browse_indices.spec.ts
 #
 # Why not the dev server: its DB carries state between runs that CI's fresh
-# one never has, and `dx serve`'s hot-reload client reloads pages mid-test. Both read as spec failures CI never sees.
+# one never has, and `dx serve`'s hot-reload client reloads pages mid-test.
+# Both read as spec failures CI never sees.
 #
 # What it does:
 #   1. `dx bundle` the fullstack web app. A debug build by default, sharing the
