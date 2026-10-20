@@ -15,7 +15,7 @@ use omnibus_db::{
     self as db,
     cleanup::{CleanupStoreError, REVIEW_QUEUE_MAX},
     worker::Task,
-    CleanupApplyError,
+    CleanupApplyError, MetadataOverridesError,
 };
 use omnibus_shared::{
     CleanupDecisionOutcome, CleanupDecisionRequest, CleanupKind, CleanupKindCounts, SuggestionCard,
@@ -41,6 +41,11 @@ fn apply_error(context: &'static str, error: CleanupApplyError) -> Response {
     match error {
         CleanupApplyError::Db(inner) => internal(context, inner),
         CleanupApplyError::Snapshot(inner) => internal(context, inner),
+        CleanupApplyError::Overrides(
+            inner @ (MetadataOverridesError::BookNotFound(_)
+            | MetadataOverridesError::TooManyValues { .. }),
+        ) => (StatusCode::CONFLICT, inner.to_string()).into_response(),
+        CleanupApplyError::Overrides(inner) => internal(context, inner),
         other => (StatusCode::CONFLICT, other.to_string()).into_response(),
     }
 }

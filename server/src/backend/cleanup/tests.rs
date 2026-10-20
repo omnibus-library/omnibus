@@ -68,6 +68,31 @@ async fn seed_author_merge(pool: &sqlx::SqlitePool) -> i64 {
     .expect("seed suggestion")
 }
 
+/// A pending title rename whose book carries a stored override blob that no longer parses.
+async fn seed_rename_over_corrupt_overrides(pool: &sqlx::SqlitePool) -> i64 {
+    let (book_id, uuid) = seed_book_with_uuid(pool, "/lib", "Shelley, Mary - Frankenstein").await;
+    sqlx::query("INSERT INTO metadata_overrides (book_uuid, overrides) VALUES (?, 'not json')")
+        .bind(&uuid)
+        .execute(pool)
+        .await
+        .expect("seed corrupt overrides");
+    let payload = serde_json::json!({
+        "type": "rename",
+        "book_id": book_id,
+        "book_uuid": uuid,
+        "current_title": "Shelley, Mary - Frankenstein",
+        "proposed_title": "Frankenstein",
+    });
+    sqlx::query_scalar(
+        "INSERT INTO dedup_suggestions (kind, action, payload_json, decision)
+         VALUES ('book_title', 'rename', ?, 'pending') RETURNING id",
+    )
+    .bind(payload.to_string())
+    .fetch_one(pool)
+    .await
+    .expect("seed suggestion")
+}
+
 fn decision_uri(suggestion: i64) -> String {
     format!("/api/admin/cleanup/suggestions/{suggestion}/decision")
 }
@@ -414,6 +439,25 @@ mod post_cleanup_decision {
             .oneshot(decide(
                 &token,
                 1,
+                serde_json::json!({ "decision": "accepted" }),
+            ))
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body_text(res).await, "internal server error");
+    }
+
+    #[tokio::test]
+    async fn returns_500_when_the_books_stored_overrides_cannot_be_read() {
+        let (app, _, pool) = fixture().await;
+        let token = admin_token(&pool).await;
+        let id = seed_rename_over_corrupt_overrides(&pool).await;
+
+        let res = app
+            .oneshot(decide(
+                &token,
+                id,
                 serde_json::json!({ "decision": "accepted" }),
             ))
             .await
