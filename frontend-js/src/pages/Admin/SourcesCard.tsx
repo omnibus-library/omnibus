@@ -61,7 +61,8 @@ export function SourcesCard() {
   const [intervalInvalid, setIntervalInvalid] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
 
-  if (settings.data && saved === null) {
+  // Cached settings wait out their re-read, so the form starts from what the server holds now.
+  if (settings.data && !settings.isFetching && saved === null) {
     const loaded = {
       ebook: settings.data.ebook_library_path ?? "",
       audiobook: settings.data.audiobook_library_path ?? "",

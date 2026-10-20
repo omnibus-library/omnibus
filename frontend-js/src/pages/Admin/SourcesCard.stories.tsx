@@ -1,5 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HttpResponse, http } from "msw";
+import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import { type Settings, settingsQuery } from "../../api";
 import { storyClient } from "../../testing/AppHarness";
@@ -95,6 +97,39 @@ export const TryAgainReadsTheSettingsAgain: Story = {
     await expect(
       canvas.queryByRole("button", { name: "Try again" }),
     ).not.toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", { name: "Save library settings" }),
+    ).toBeEnabled();
+  },
+};
+
+// The app's client, unlike the harness's, reads a cached answer again when a screen opens on it.
+function OpensOnCachedSettings() {
+  const [client] = useState(() => {
+    const appClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    appClient.setQueryData(
+      settingsQuery.queryKey,
+      aWireSettings({ ebook_library_path: "/old/ebooks" }),
+    );
+    return appClient;
+  });
+  return (
+    <QueryClientProvider client={client}>
+      <SourcesCard />
+    </QueryClientProvider>
+  );
+}
+
+export const FillsTheFormFromTheFreshReadWhenOpenedOnCachedSettings: Story = {
+  render: () => <OpensOnCachedSettings />,
+  play: async ({ canvas }) => {
+    await waitFor(() =>
+      expect(canvas.getByLabelText("Ebook library path")).toHaveValue(
+        "/library/ebooks",
+      ),
+    );
     await expect(
       canvas.getByRole("button", { name: "Save library settings" }),
     ).toBeEnabled();
