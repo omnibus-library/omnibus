@@ -261,8 +261,9 @@ pub(crate) async fn cleanup_orphaned_images(pool: &SqlitePool, candidates: HashS
 }
 
 /// Narrow `candidates` to the names no journal entry and no review (text or
-/// notes) still embeds — both share the one image store — matched on the full
-/// embed path so a bare-name substring can't false-positive.
+/// notes) still embeds — both share the one image store — counting a review a
+/// merge not yet undone holds only in its snapshot, since undo restores it.
+/// Matched on the full embed path so a bare-name substring can't false-positive.
 /// Returns the raw `sqlx::Error` for each caller to handle: [`cleanup_orphaned_images`]
 /// swallows and logs, `deletion::purge::orphaned_images` propagates.
 pub(crate) async fn unreferenced_image_names(
@@ -275,13 +276,14 @@ pub(crate) async fn unreferenced_image_names(
     }
     // One fetch matched in memory beats a per-candidate `instr()` scan while the
     // table stays small.
-    let bodies: Vec<String> = sqlx::query_scalar(
+    let mut bodies: Vec<String> = sqlx::query_scalar(
         "SELECT body_md FROM journal_entries
          UNION ALL SELECT body_md FROM reviews WHERE body_md IS NOT NULL
          UNION ALL SELECT notes_md FROM reviews WHERE notes_md IS NOT NULL",
     )
     .fetch_all(pool)
     .await?;
+    bodies.extend(crate::merge::undoable_review_markdown(pool, None).await?);
     Ok(candidates
         .into_iter()
         .filter(|name| {

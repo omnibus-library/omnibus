@@ -1,5 +1,6 @@
 //! The merge transaction: move every satellite row from the source book
-//! to the target, snapshot the source into `merge_log`, and delete the
+//! to the target — folding a reader's two reviews into one rather than
+//! dropping either — snapshot the source into `merge_log`, and delete the
 //! source row — all-or-nothing.
 
 use sqlx::{SqlitePool, Transaction};
@@ -416,8 +417,8 @@ pub(super) struct Collision {
 }
 
 /// The subset of [`RETARGET_TABLES`] with a `UNIQUE` key to settle, resolved by
-/// [`dedupe_collisions`] before the retarget runs. How each deleted row stays
-/// undoable is in `.claude/rules/06-migrations.md`.
+/// [`dedupe_collisions`] before the retarget runs. Which rule fits which row,
+/// and how each deleted row stays undoable, is in `.claude/rules/06-migrations.md`.
 pub(super) const COLLISION_TABLES: [Collision; 9] = [
     Collision {
         table: "reading_progress",
@@ -442,10 +443,13 @@ pub(super) const COLLISION_TABLES: [Collision; 9] = [
         keys: &["user_id"],
         keep: Keep::Max("updated_at"),
     },
+    // A review holds several values, not one: `curation::settle_reviews` has
+    // already folded the source's into the target's, field by field, so the
+    // source's row is what's left to drop.
     Collision {
         table: "reviews",
         keys: &["user_id"],
-        keep: Keep::Max("updated_at"),
+        keep: Keep::Target,
     },
     // Both editions on one shelf: the book keeps the earlier slot, so a shelf
     // someone ordered by hand doesn't reshuffle under them.
@@ -483,7 +487,8 @@ pub(super) const COLLISION_TABLES: [Collision; 9] = [
 /// state, shelf memberships, copies, wishlist entries, cross-format links, the
 /// content index) with `UPDATE ... SET book_uuid = <target>`. Tables with a
 /// `UNIQUE` key the retarget would violate are deduped first; see
-/// [`COLLISION_TABLES`] and [`dedupe_collisions`].
+/// [`COLLISION_TABLES`] and [`dedupe_collisions`]. A reader's two reviews are
+/// merged into one before that, so the dedupe drops no text or notes.
 async fn move_progress_and_history(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     source_id: i64,
@@ -503,6 +508,7 @@ async fn move_progress_and_history(
     // Before the dedupe, which is what makes the readers it applies to
     // identifiable — afterwards the losing row is gone.
     clear_sitting_clock(tx, &source_uuid, &target_uuid).await?;
+    curation::settle_reviews(tx, &source_uuid, &target_uuid).await?;
     for collision in &COLLISION_TABLES {
         dedupe_collisions(tx, collision, &source_uuid, &target_uuid).await?;
     }

@@ -171,6 +171,61 @@ async fn delete_book_items_purges_the_book_and_its_user_data_when_every_item_goe
     std::fs::remove_dir_all(&dir).ok();
 }
 
+#[tokio::test]
+async fn delete_book_items_sweeps_the_images_its_reviews_and_open_merges_embedded() {
+    let dir = temp_dir("review_images");
+    let _env = cache_env(&dir);
+    let pool = pool().await;
+    let lib = seed_root(&pool, "/lib").await;
+    let book = seed_book(&pool, lib, "uuid-a", "Doomed").await;
+    let file = seed_file(&pool, book, "/lib", "a", "a", "EPUB").await;
+    let user = seed_user(&pool, "reader").await;
+    let names: Vec<String> = (0..3)
+        .map(|_| crate::journal_images::write_journal_image("image/png", b"x").unwrap())
+        .collect();
+    let embed = |name: &str| {
+        format!(
+            "![img]({}{name})",
+            crate::journals::markdown::IMAGE_URL_PREFIX
+        )
+    };
+    sqlx::query(
+        "INSERT INTO reviews (user_id, book_uuid, body_md, notes_md) VALUES (?, 'uuid-a', ?, ?)",
+    )
+    .bind(user)
+    .bind(embed(&names[0]))
+    .bind(embed(&names[1]))
+    .execute(&pool)
+    .await
+    .unwrap();
+    // A merge into the book not yet undone, whose snapshot alone holds a
+    // review; the log cascades away with the book, and its image with it.
+    let snapshot = serde_json::json!({ "curation": {
+        "source_ratings": [{ "user_id": user, "half_stars": null,
+                             "notes_md": embed(&names[2]), "updated_at": 1 }],
+        "target_ratings": [],
+    }});
+    sqlx::query(
+        "INSERT INTO merge_log (target_book_id, source_uuid, source_metadata)
+         VALUES (?, 'uuid-absorbed', ?)",
+    )
+    .bind(book)
+    .bind(snapshot.to_string())
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    delete_book_items(&pool, "uuid-a", &[file], &[])
+        .await
+        .unwrap();
+
+    for name in &names {
+        let path = crate::journal_images::journal_images_dir().join(name);
+        assert!(!path.exists(), "{name} outlived the book");
+    }
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// #1395: a total delete must also remove the book's cached rewritten
 /// export EPUB, alongside the thumbnail / HLS / KEPUB caches it already
 /// cleans up — otherwise the file lingers on disk unreferenced forever.

@@ -192,7 +192,7 @@ async fn run_deletion_tx(
     }
     let library_roots = library_roots(&mut tx).await?;
     let journal_images = if total_delete {
-        purge::journal_image_names(&mut tx, uuid).await?
+        purge::journal_image_names(&mut tx, book_id, uuid).await?
     } else {
         Vec::new()
     };

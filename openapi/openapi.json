@@ -8747,7 +8747,7 @@
           "created_at": {
             "type": "integer",
             "format": "int64",
-            "description": "When the review first had stars or text, in Unix seconds."
+            "description": "When the review first had stars or text, in Unix seconds. Adding text to a review that\nhad none restarts it, so a text review dates from its text."
           },
           "created_at_iso": {
             "type": [
@@ -14408,7 +14408,7 @@
           "created_at": {
             "type": "integer",
             "format": "int64",
-            "description": "When the review first had stars or text, in Unix seconds. For a review holding only\nnotes, when you wrote them."
+            "description": "When the review first had stars or text, in Unix seconds. Adding text to a review that\nhad none restarts it, so a text review dates from its text. For a review holding only\nnotes, when you wrote them."
           },
           "created_at_iso": {
             "type": [

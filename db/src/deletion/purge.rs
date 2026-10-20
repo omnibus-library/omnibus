@@ -132,14 +132,16 @@ pub(crate) async fn purge_book(
 }
 
 /// Journal-image file names embedded in this book's journal entries and
-/// reviews, collected before the purge drops the text that references them.
-/// Candidates only — run [`orphaned_images`] after the commit to drop any
-/// another book still uses.
+/// reviews, and in the reviews its open merges' snapshots hold (those cascade
+/// away with it), collected before the purge drops the text that references
+/// them. Candidates only — run [`orphaned_images`] after the commit to drop
+/// any another book still uses.
 pub(super) async fn journal_image_names(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
+    book_id: i64,
     uuid: &str,
 ) -> Result<Vec<String>, DeleteError> {
-    let bodies: Vec<String> = sqlx::query_scalar(
+    let mut bodies: Vec<String> = sqlx::query_scalar(
         "SELECT body_md FROM journal_entries WHERE book_uuid = ?1
          UNION ALL SELECT body_md FROM reviews WHERE book_uuid = ?1 AND body_md IS NOT NULL
          UNION ALL SELECT notes_md FROM reviews WHERE book_uuid = ?1 AND notes_md IS NOT NULL",
@@ -147,6 +149,7 @@ pub(super) async fn journal_image_names(
     .bind(uuid)
     .fetch_all(&mut **tx)
     .await?;
+    bodies.extend(crate::merge::undoable_review_markdown(&mut **tx, Some(book_id)).await?);
     let mut names: Vec<String> = bodies
         .iter()
         .flat_map(|body| crate::journal_images::referenced_image_names(body))

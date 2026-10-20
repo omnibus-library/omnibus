@@ -36,7 +36,8 @@ pub struct Review {
     pub spoiler: bool,
     /// When you last changed the stars, in Unix seconds. Null when there are none.
     pub rated_at: Option<i64>,
-    /// When the review first had stars or text, in Unix seconds. For a review holding only
+    /// When the review first had stars or text, in Unix seconds. Adding text to a review that
+    /// had none restarts it, so a text review dates from its text. For a review holding only
     /// notes, when you wrote them.
     pub created_at: i64,
     /// When you last changed the stars, text or spoiler flag, in Unix seconds. Editing
@@ -89,7 +90,8 @@ pub struct AttributedReview {
     pub spoiler: bool,
     /// When they last changed the stars, in Unix seconds. Null when there are none.
     pub rated_at: Option<i64>,
-    /// When the review first had stars or text, in Unix seconds.
+    /// When the review first had stars or text, in Unix seconds. Adding text to a review that
+    /// had none restarts it, so a text review dates from its text.
     pub created_at: i64,
     /// When they last changed the stars, text or spoiler flag, in Unix seconds.
     pub updated_at: i64,
