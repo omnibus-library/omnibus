@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CleanupAction, CleanupKind, SuggestionCard } from "../../api";
+import { aWireSuggestion } from "../../testing/adminHandlers";
 import {
   actionSentence,
   appliedSummary,
@@ -15,26 +16,11 @@ import {
   tallyRows,
 } from "./review";
 
-function card(
+const card = (
   kind: CleanupKind,
   action: CleanupAction,
   overrides: Partial<SuggestionCard> = {},
-): SuggestionCard {
-  return {
-    id: 1,
-    kind,
-    action,
-    decision: "pending",
-    primary_name: "Mary Shelley",
-    secondary_name: "Shelley, Mary W.",
-    source_names: ["Shelley, Mary W."],
-    proposed_parts: [],
-    book_count: 3,
-    photo_url: null,
-    created_at: 0,
-    ...overrides,
-  };
-}
+) => aWireSuggestion({ kind, action, ...overrides });
 
 describe("kindTitle", () => {
   it.each([
@@ -83,7 +69,9 @@ describe("initialValue", () => {
   });
 
   it("is the surviving name for any other action", () => {
-    expect(initialValue(card("author", "merge"))).toBe("Mary Shelley");
+    expect(
+      initialValue(card("author", "merge", { primary_name: "Mary Shelley" })),
+    ).toBe("Mary Shelley");
   });
 });
 
