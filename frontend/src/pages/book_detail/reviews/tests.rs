@@ -1,15 +1,57 @@
 //! Reviews section tests: the patches each write sends, what the card draws
 //! before the server answers, and the section's markup in each load state.
 
+use dioxus::prelude::*;
 use omnibus_shared::{AttributedReview, BookReviews, Review, ReviewBucket, ReviewPatch};
+
+use crate::data::DataError;
+use crate::pages::book_detail::rule_facts::RuleFactsSaved;
+use crate::pages::book_detail::FeedState;
+use crate::test_support::in_root_scope;
 
 use super::composer::{save_patch, ComposerSeed};
 use super::mine::{rated_ago, rendered, stars_meta};
 use super::others::{needs_read_more, split_others, spoiler_veiled};
-use super::reviews_kicker;
 use super::stars::half_star_label;
 use super::summary::{average_label, spread_bars, spread_summary};
-use super::writes::{apply_locally, stars_patch, text_patch};
+use super::writes::{
+    apply_locally, begin_stars_write, settle_stars_write, stars_patch, takes_fresh_mine, text_patch,
+};
+use super::{reviews_kicker, QuickWrite, ReviewsCtx};
+
+/// A section state holding `reviews`, its own review taken as confirmed.
+/// Needs a live runtime: call it in a component or [`in_root_scope`].
+fn ctx(reviews: Option<BookReviews>, feed: FeedState, finished: bool) -> ReviewsCtx {
+    let confirmed = reviews.as_ref().and_then(|r| r.mine.clone());
+    ReviewsCtx {
+        reviews: Signal::new(reviews),
+        feed: Signal::new(feed),
+        finished: Signal::new(finished),
+        op_seq: Signal::new(0),
+        in_flight: Signal::new(0),
+        confirmed: Signal::new(confirmed),
+        refresh_seq: Signal::new(0),
+        refreshing: Signal::new(false),
+        refresh_failed: Signal::new(false),
+        failure: Signal::new(None),
+        saved: RuleFactsSaved::new(),
+    }
+}
+
+fn card_stars(ctx: ReviewsCtx) -> Option<f32> {
+    ctx.reviews
+        .peek()
+        .as_ref()
+        .and_then(|r| r.mine.as_ref())
+        .and_then(|r| r.stars)
+}
+
+fn refused() -> DataError {
+    DataError::Http {
+        status: 500,
+        body: String::new(),
+    }
+}
 
 fn review(stars: Option<f32>, body: Option<&str>, notes: Option<&str>) -> Review {
     Review {
@@ -158,15 +200,70 @@ fn apply_locally_empties_a_review_left_with_nothing() {
     );
 }
 
+fn rated(stars: f32) -> BookReviews {
+    BookReviews {
+        mine: Some(review(Some(stars), None, None)),
+        others: vec![],
+        summary: None,
+    }
+}
+
+// Tap 3 then 4 against a failing server: the 3 never landed, so the refusal
+// of the 4 must not leave it on the card.
 #[test]
-fn apply_locally_flags_the_spoiler() {
-    let mine = review(None, Some("The butler did it"), None);
-    let patch = ReviewPatch {
-        spoiler: Some(true),
-        ..Default::default()
-    };
-    let drawn = apply_locally(Some(mine), &patch, "book-1", 2_000).expect("still a review");
-    assert!(drawn.spoiler);
+fn settle_stars_write_puts_a_refused_tap_back_to_the_confirmed_review() {
+    in_root_scope(|| {
+        let ctx = ctx(Some(rated(2.0)), FeedState::Loaded, false);
+        let first = begin_stars_write(ctx, &stars_patch(Some(2.0), 3.0), "book-1", 2_000);
+        let second = begin_stars_write(ctx, &stars_patch(Some(3.0), 4.0), "book-1", 2_001);
+        assert_eq!(card_stars(ctx), Some(4.0));
+
+        assert!(!settle_stars_write(ctx, first, Err(refused())));
+        assert_eq!(
+            card_stars(ctx),
+            Some(4.0),
+            "the newer tap still owns the card"
+        );
+        assert_eq!(*ctx.failure.peek(), None);
+
+        assert!(!settle_stars_write(ctx, second, Err(refused())));
+        assert_eq!(card_stars(ctx), Some(2.0));
+        assert_eq!(*ctx.failure.peek(), Some(QuickWrite::Stars));
+        assert_eq!(*ctx.in_flight.peek(), 0);
+    });
+}
+
+#[test]
+fn settle_stars_write_confirms_a_superseded_tap_that_landed() {
+    in_root_scope(|| {
+        let ctx = ctx(Some(rated(2.0)), FeedState::Loaded, false);
+        let first = begin_stars_write(ctx, &stars_patch(Some(2.0), 3.0), "book-1", 2_000);
+        let second = begin_stars_write(ctx, &stars_patch(Some(3.0), 4.0), "book-1", 2_001);
+
+        let landed = review(Some(3.0), None, None);
+        assert!(
+            settle_stars_write(ctx, first, Ok(Some(landed))),
+            "stars that landed ask for a household re-read"
+        );
+        assert_eq!(
+            card_stars(ctx),
+            Some(4.0),
+            "the newer tap still owns the card"
+        );
+
+        assert!(!settle_stars_write(ctx, second, Err(refused())));
+        assert_eq!(card_stars(ctx), Some(3.0));
+    });
+}
+
+#[test]
+fn takes_fresh_mine_only_when_no_write_overlapped_the_re_read() {
+    assert!(takes_fresh_mine(0, 5, 5));
+    assert!(
+        !takes_fresh_mine(1, 5, 5),
+        "a write was in flight at the start"
+    );
+    assert!(!takes_fresh_mine(0, 5, 6), "a write started since");
 }
 
 #[test]
@@ -309,28 +406,23 @@ fn spread_summary_names_each_value_given() {
 // Markup in each load state. SSR (`dioxus::ssr`) needs the `server` feature.
 #[cfg(feature = "server")]
 mod render {
-    use dioxus::prelude::*;
     use omnibus_shared::ReviewSummary;
 
-    use super::*;
     use crate::pages::book_detail::reviews::composer::BdReviewComposer;
-    use crate::pages::book_detail::reviews::{BdReviewsJumpLink, BdReviewsSection, ReviewsCtx};
-    use crate::pages::book_detail::rule_facts::RuleFactsSaved;
-    use crate::pages::book_detail::FeedState;
+    use crate::pages::book_detail::reviews::{
+        BdReviewsJumpLink, BdReviewsKicker, BdReviewsSection,
+    };
     use crate::test_support::render_in_vdom;
 
-    fn ctx(reviews: Option<BookReviews>, feed: FeedState, finished: bool) -> ReviewsCtx {
-        ReviewsCtx {
-            reviews: Signal::new(reviews),
-            feed: Signal::new(feed),
-            finished: Signal::new(finished),
-            op_seq: Signal::new(0),
-            refresh_seq: Signal::new(0),
-            refreshing: Signal::new(false),
-            refresh_failed: Signal::new(false),
-            failure: Signal::new(None),
-            saved: RuleFactsSaved::new(),
-        }
+    use super::*;
+
+    /// The text inside the element carrying `testid`.
+    fn text_of<'a>(html: &'a str, testid: &str) -> &'a str {
+        let (_, after) = html
+            .split_once(&format!("data-testid=\"{testid}\""))
+            .unwrap_or_else(|| panic!("no {testid} in {html}"));
+        let (_, inner) = after.split_once('>').expect("the tag closes");
+        inner.split('<').next().unwrap_or_default()
     }
 
     fn section(reviews: Option<BookReviews>, feed: FeedState, finished: bool) -> Element {
@@ -439,7 +531,9 @@ mod render {
         // The flag is set in the editor; read mode marks nothing.
         assert!(!html.contains("data-testid=\"review-spoiler\""), "{html}");
         assert!(!html.contains("type=\"checkbox\""), "{html}");
-        assert!(!html.contains("bd-review-actions"), "{html}");
+        // The tools are icons: their names ride aria-label, never a text node.
+        assert!(!html.contains("Edit review<"), "{html}");
+        assert!(!html.contains("Delete review<"), "{html}");
     }
 
     #[test]
@@ -486,7 +580,7 @@ mod render {
             section(Some(reviews), FeedState::Loaded, false)
         });
         assert!(html.contains("data-testid=\"review-summary\""), "{html}");
-        assert!(html.contains("4.3"), "{html}");
+        assert_eq!(text_of(&html, "review-summary-average"), "4.3", "{html}");
         assert!(html.contains("3 readers in the household"), "{html}");
         assert_eq!(html.matches("bd-review-spread-col").count(), 10, "{html}");
     }
@@ -535,5 +629,72 @@ mod render {
             "{html}"
         );
         assert!(before_notes.contains("checked"), "{html}");
+    }
+
+    #[test]
+    fn other_review_clips_long_text_behind_read_more() {
+        let long = "word ".repeat(100);
+        let html = render_in_vdom(|| {
+            let long = "word ".repeat(100);
+            let reviews = BookReviews {
+                mine: None,
+                others: vec![other(2, Some(4.0), Some(&long))],
+                summary: None,
+            };
+            section(Some(reviews), FeedState::Loaded, false)
+        });
+        assert!(long.len() > 420);
+        assert!(html.contains("bd-review-text is-clamped"), "{html}");
+        assert!(html.contains("data-testid=\"review-read-more\""), "{html}");
+
+        let short = render_in_vdom(|| section(Some(mixed()), FeedState::Loaded, false));
+        assert!(!short.contains("is-clamped"), "{short}");
+        assert!(!short.contains("review-read-more"), "{short}");
+    }
+
+    // A failed re-read keeps the figures on screen, still in their dimmable
+    // wrapper, and says they may be out of date.
+    #[test]
+    fn reviews_section_flags_a_failed_household_re_read_and_keeps_the_figures() {
+        let html = render_in_vdom(|| {
+            let mut reviews = written();
+            reviews.summary = Some(summary());
+            let mut state = ctx(Some(reviews), FeedState::Loaded, false);
+            state.refresh_failed = Signal::new(true);
+            rsx! { BdReviewsSection { uuid: "book-1".to_string(), ctx: state } }
+        });
+        assert!(
+            html.contains("data-testid=\"reviews-refresh-failed\""),
+            "{html}"
+        );
+        let (_, stale) = html
+            .split_once("ld-stale")
+            .expect("the stale wrapper renders");
+        assert!(stale.contains("data-testid=\"review-summary\""), "{html}");
+    }
+
+    fn kicker(reviews: Option<BookReviews>, feed: FeedState) -> Element {
+        rsx! { BdReviewsKicker { ctx: ctx(reviews, feed, false), class: "bdmq-k" } }
+    }
+
+    // Rule 12: a read that failed is not one still loading.
+    #[test]
+    fn kicker_stops_counting_once_the_first_read_failed() {
+        let failed = render_in_vdom(|| kicker(None, FeedState::Failed));
+        assert!(!failed.contains("ld-sheen"), "{failed}");
+        assert!(!failed.contains("Counting reviews"), "{failed}");
+        assert!(
+            failed.contains("data-testid=\"reviews-kicker\""),
+            "{failed}"
+        );
+
+        let pending = render_in_vdom(|| kicker(None, FeedState::Pending));
+        assert!(pending.contains("Counting reviews"), "{pending}");
+
+        let loaded = render_in_vdom(|| kicker(Some(written()), FeedState::Loaded));
+        assert_eq!(
+            text_of(&loaded, "reviews-kicker"),
+            "1 review \u{b7} 1 rating"
+        );
     }
 }

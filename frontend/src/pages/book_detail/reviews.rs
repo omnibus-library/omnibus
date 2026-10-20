@@ -11,7 +11,7 @@
 #![cfg_attr(feature = "mobile", allow(dead_code, unused_imports))]
 
 use dioxus::prelude::*;
-use omnibus_shared::{BookReviews, ReadStatus, ReviewSummary};
+use omnibus_shared::{BookReviews, ReadStatus, Review, ReviewSummary};
 
 use crate::components::loading::Stale;
 use crate::components::{Loading, LoadingKind};
@@ -53,6 +53,12 @@ pub(super) struct ReviewsCtx {
     finished: Signal<bool>,
     /// Bumped by every write; an answer applies only while it is the latest.
     op_seq: Signal<u64>,
+    /// Writes sent and not yet answered, so a re-read that overlapped one
+    /// leaves your card alone.
+    in_flight: Signal<u32>,
+    /// Your review as the server last confirmed it, which a refused write
+    /// goes back to: the card may hold an earlier tap that never landed.
+    confirmed: Signal<Option<Review>>,
     /// Bumped by every household re-read, for the same guard.
     refresh_seq: Signal<u64>,
     /// The summary and the others are being re-read after a stars change.
@@ -70,11 +76,6 @@ impl ReviewsCtx {
     pub(super) fn summary(&self) -> Option<ReviewSummary> {
         self.reviews.read().as_ref().and_then(|r| r.summary.clone())
     }
-
-    /// The section kicker's counts, or `None` while the reviews load.
-    pub(super) fn kicker(&self) -> Option<String> {
-        self.reviews.read().as_ref().map(reviews_kicker)
-    }
 }
 
 /// Declare the section's state and start its loads: the reviews on mount and
@@ -87,6 +88,8 @@ pub(super) fn use_book_reviews(uuid: String) -> ReviewsCtx {
         feed: use_signal(|| FeedState::Pending),
         finished: use_signal(|| false),
         op_seq: use_signal(|| 0),
+        in_flight: use_signal(|| 0),
+        confirmed: use_signal(|| None),
         refresh_seq: use_signal(|| 0),
         refreshing: use_signal(|| false),
         refresh_failed: use_signal(|| false),
@@ -111,6 +114,8 @@ fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx) {
         writes::bump(ctx.op_seq);
         writes::bump(ctx.refresh_seq);
         ctx.reviews.set(None);
+        ctx.confirmed.set(None);
+        ctx.in_flight.set(0);
         ctx.feed.set(FeedState::Pending);
         ctx.refreshing.set(false);
         ctx.refresh_failed.set(false);
@@ -123,6 +128,7 @@ fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx) {
             }
             let ok = result.is_ok();
             if let Ok(reviews) = result {
+                ctx.confirmed.set(reviews.mine.clone());
                 ctx.reviews.set(Some(reviews));
             }
             let next = ctx.feed.peek().after(ok);
@@ -209,6 +215,24 @@ pub(super) fn BdReviewsSection(
                         label: "Gathering the reviews",
                     }
                 },
+            }
+        }
+    }
+}
+
+/// The section's counts line, in a `div.{class}`: the loading word while the
+/// first read is out, the counts once it answered, a neutral dash if it
+/// failed (the section says why), never a load that never ends (rule 12).
+#[component]
+pub(super) fn BdReviewsKicker(ctx: ReviewsCtx, #[props(into)] class: String) -> Element {
+    let counts = ctx.reviews.read().as_ref().map(reviews_kicker);
+    let feed = (ctx.feed)();
+    rsx! {
+        div { class: "{class}", "data-testid": "reviews-kicker",
+            match (counts, feed) {
+                (Some(counts), _) => rsx! { "{counts}" },
+                (None, FeedState::Failed) => rsx! { span { aria_hidden: "true", "\u{2014}" } },
+                (None, _) => rsx! { span { class: "ld-sheen", "Counting reviews" } },
             }
         }
     }

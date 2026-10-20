@@ -11713,7 +11713,7 @@ html {
 
 /* ── Flow container (Option B — the marquee unrolled) ──────────────
    The default reading of this page: the panel is one continuous scroller
-   instead of six snapped screens. Everything the stops render is unchanged —
+   instead of seven snapped screens. Everything the stops render is unchanged —
    only the scroll mechanics and the section headers differ, which is why this
    block styles the container and the rules and nothing inside them. Mechanics
    in `frontend/src/pages/book_detail/flow.js`. */
