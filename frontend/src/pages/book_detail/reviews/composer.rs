@@ -94,6 +94,8 @@ pub(super) fn BdReviewComposer(
         }
         let url = save_url.clone();
         let uuid = save_uuid.clone();
+        body_field.highlights.close();
+        notes_field.highlights.close();
         saving.set(true);
         error.set(None);
         spawn(async move {

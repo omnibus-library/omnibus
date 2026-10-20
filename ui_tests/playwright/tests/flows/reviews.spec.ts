@@ -587,10 +587,12 @@ test.describe("book reviews", () => {
       await presetReview(uuid, null);
     });
 
-    await test.step("write a review", async () => {
+    await test.step("write a review with the highlights open", async () => {
       await bookDetailPage.goto(uuid);
       await section.openComposer();
       await section.writeText(REVIEW_TEXT);
+      await section.openTextHighlights();
+      await expect(section.textHighlightsPopover).toBeVisible();
     });
 
     const release = await test.step("hold the save", async () =>
@@ -608,6 +610,7 @@ test.describe("book reviews", () => {
         "false",
       );
       await expect(section.textBoldButton).toBeDisabled();
+      await expect(section.textHighlightsPopover).toHaveCount(0);
       await expect(section.spoilerCheckbox).toBeDisabled();
       await expect(section.cancelButton).toBeDisabled();
       await expect(section.saveButton).toBeDisabled();
@@ -664,6 +667,56 @@ test.describe("book reviews", () => {
 
     await test.step("cancel the editor", async () => {
       await section.cancel();
+    });
+  });
+
+  test("open no delete dialog on a rating after a refused one", async ({
+    bookDetailPage,
+    request,
+    presetReview,
+    expectMutation,
+  }) => {
+    const { reviews: section } = bookDetailPage;
+    const uuid = await fetchBookUuidByTitle(request, REVIEW_BOOK.title);
+
+    await test.step("delete your review through the api", async () => {
+      await presetReview(uuid, null);
+    });
+
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(uuid);
+    });
+
+    const refuse =
+      await test.step("hold the next save to refuse it", async () =>
+        section.holdThenRefuseReviewSaves());
+
+    // The drawn rating brings the trash before the server has answered.
+    const refused = expectMutation(
+      failing(reviews.update(uuid, { stars: 3 })),
+      () => section.rate(3),
+    );
+
+    await test.step("open the delete dialog on the drawn rating", async () => {
+      await section.openDeleteDialog();
+      await expect(section.deleteDialog).toBeVisible();
+    });
+
+    await test.step("let the save be refused", async () => {
+      refuse();
+      await refused;
+      await expect(section.deleteButton).toHaveCount(0);
+      await expect(section.deleteDialog).toHaveCount(0);
+      await section.stopHoldingReviewSaves();
+    });
+
+    // The dialog went with the trash; it must not come back with the next one.
+    await test.step("rate it again", async () => {
+      await expectMutation(reviews.update(uuid, { stars: 4 }), () =>
+        section.rate(4),
+      );
+      await expect(section.deleteButton).toBeVisible();
+      await expect(section.deleteDialog).toHaveCount(0);
     });
   });
 

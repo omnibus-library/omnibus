@@ -127,7 +127,6 @@ fn MyReviewHead(
     composer_open: Signal<bool>,
 ) -> Element {
     let mut composer_open = composer_open;
-    let delete_confirm = use_signal(|| false);
     // Set when the pencil opens the editor, so focus comes back to it when
     // the editor closes rather than falling to the page.
     let mut refocus = use_signal(|| false);
@@ -161,7 +160,7 @@ fn MyReviewHead(
                     }
                 }
                 if has_review {
-                    DeleteReviewButton { uuid, ctx, confirm: delete_confirm }
+                    DeleteReviewButton { uuid, ctx }
                 }
             }
         }
@@ -241,9 +240,11 @@ pub(super) fn rated_ago(now: i64, at: i64) -> String {
 /// modal's own button and lands only on success; a refusal keeps the modal
 /// open with the reason, and your review stays as it was.
 #[component]
-fn DeleteReviewButton(uuid: String, ctx: ReviewsCtx, confirm: Signal<bool>) -> Element {
+fn DeleteReviewButton(uuid: String, ctx: ReviewsCtx) -> Element {
     let server_url = use_server_url();
-    let mut confirm = confirm;
+    // Owned here so it goes with the button: a refused first rating unmounts
+    // the trash, and a dialog left open must not greet the next rating.
+    let mut confirm = use_signal(|| false);
     let mut busy = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
     let do_delete = move |_| {
