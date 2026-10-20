@@ -266,14 +266,10 @@ pub(super) async fn post_backfill_chapters(
         Err(error) => return internal("read settings", error),
     };
     let Some(library_path) = settings.audiobook_library_path else {
-        return (
-            axum::http::StatusCode::CONFLICT,
-            "no audiobook library configured",
-        )
-            .into_response();
+        return (StatusCode::CONFLICT, "no audiobook library configured").into_response();
     };
     state.worker.post(Task::BackfillChapters { library_path });
-    axum::http::StatusCode::OK.into_response()
+    StatusCode::OK.into_response()
 }
 
 /// Get the Calibre setting
@@ -327,7 +323,7 @@ pub(super) async fn post_ebook_convert(
             Err(error) => internal("read ebook-convert status", error),
         },
         Err(db::SettingsError::Validation(message)) => {
-            (axum::http::StatusCode::UNPROCESSABLE_ENTITY, message).into_response()
+            (StatusCode::UNPROCESSABLE_ENTITY, message).into_response()
         }
         Err(error) => internal("save ebook-convert path", error),
     }

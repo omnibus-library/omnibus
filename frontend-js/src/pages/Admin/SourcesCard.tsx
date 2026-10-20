@@ -116,10 +116,9 @@ export function SourcesCard() {
     // The other refusal is "not-loaded", and Save stays disabled until the settings load.
     if (payload.refused !== null) return;
     setStatus(null);
-    const submitted = fields;
     save.mutate(payload.settings, {
       onSuccess: () => {
-        setSaved(submitted);
+        setSaved(fields);
         // The saved answer is already on screen as typed.
         setReadAt(
           queryClient.getQueryState(settingsQuery.queryKey)?.dataUpdatedAt ?? 0,

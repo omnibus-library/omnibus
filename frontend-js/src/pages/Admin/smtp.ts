@@ -44,7 +44,7 @@ export const smtpDraftOf = (config: SmtpConfigStatus): SmtpDraft => ({
 });
 
 /** The update a Save would send, or the sentence saying why it must not go out. */
-export type SmtpUpdate =
+type SmtpUpdate =
   | { refused: string }
   | { refused: null; update: SmtpConfigUpdate };
 

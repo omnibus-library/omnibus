@@ -9,7 +9,7 @@ export const SCAN_INTERVAL_MIN_HOURS = 1;
 const U32_MAX = 4294967295;
 
 /** The settings a Save would write, or why it must not go out. */
-export type SourcesPayload =
+type SourcesPayload =
   | { refused: "not-loaded" }
   | { refused: "bad-interval" }
   | { refused: null; settings: Settings };

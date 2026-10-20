@@ -73,7 +73,7 @@ export function decideNote({
     : "accepting applies at once";
 }
 
-export type ReviewKey = "accept" | "reject" | "skip";
+type ReviewKey = "accept" | "reject" | "skip";
 
 /** What a keypress on the review surface means: Y accepts, N rejects, Space skips; anything else is not a hotkey. */
 export function reviewKeyAction(key: string): ReviewKey | null {

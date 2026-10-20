@@ -31,9 +31,8 @@ export function EbookConvertCard() {
 
   const write = useMutation({
     mutationFn: saveEbookConvert,
-    onSuccess: async (answer) => {
-      await replaceQueryData(queryClient, ebookConvertQuery.queryKey, answer);
-    },
+    onSuccess: (answer) =>
+      replaceQueryData(queryClient, ebookConvertQuery.queryKey, answer),
   });
 
   // The clear button shares the mutation, with a null path.
