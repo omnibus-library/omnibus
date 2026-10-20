@@ -96,6 +96,29 @@ function Where() {
   return <output data-testid="where">{useLocation().pathname}</output>;
 }
 
+let listGate = deferred();
+
+// The sessions list answers `first` at once and every later read only once `listGate` opens.
+function gatedSessionReads(first: () => Response) {
+  let reads = 0;
+  return http.get("/api/admin/users/:id/sessions", async () => {
+    if (++reads === 1) return first();
+    await listGate.promise;
+    return HttpResponse.json([aWireSession()]);
+  });
+}
+
+const readsOfUsersAndMe = [
+  http.get("/api/admin/users", () => {
+    reads.users += 1;
+    return HttpResponse.json(aWireAdminUsers());
+  }),
+  http.get("/api/auth/me", () => {
+    reads.me += 1;
+    return HttpResponse.json(WIRE_ADA);
+  }),
+];
+
 export const NewUserStartsWithDownloadOnly: Story = {
   render: () => <NewUserModal onClose={close} onCreated={done} />,
   play: async ({ canvas }) => {
@@ -914,18 +937,6 @@ export const SessionsShowsALoadFailure: Story = {
   },
 };
 
-let listGate = deferred();
-
-// The sessions list answers `first` at once and every later read only once `listGate` opens.
-function gatedSessionReads(first: () => Response) {
-  let reads = 0;
-  return http.get("/api/admin/users/:id/sessions", async () => {
-    if (++reads === 1) return first();
-    await listGate.promise;
-    return HttpResponse.json([aWireSession()]);
-  });
-}
-
 export const SessionsHoldsTheRevokeUntilBothListsAreReadAgain: Story = {
   beforeEach({ msw }) {
     listGate = deferred();
@@ -1076,17 +1087,6 @@ export const EditButtonSavesAndReadsTheListAgain: Story = {
     );
   },
 };
-
-const readsOfUsersAndMe = [
-  http.get("/api/admin/users", () => {
-    reads.users += 1;
-    return HttpResponse.json(aWireAdminUsers());
-  }),
-  http.get("/api/auth/me", () => {
-    reads.me += 1;
-    return HttpResponse.json(WIRE_ADA);
-  }),
-];
 
 export const EditButtonReadsTheListAndTheSessionWhenOnlyThePermissionsLand: Story =
   {

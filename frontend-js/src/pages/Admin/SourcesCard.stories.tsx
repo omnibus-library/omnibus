@@ -36,6 +36,25 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+// The app's client, unlike the harness's, reads a cached answer again when a screen opens on it.
+function OpensOnCachedSettings() {
+  const [client] = useState(() => {
+    const appClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    appClient.setQueryData(
+      settingsQuery.queryKey,
+      aWireSettings({ ebook_library_path: "/old/ebooks" }),
+    );
+    return appClient;
+  });
+  return (
+    <QueryClientProvider client={client}>
+      <SourcesCard />
+    </QueryClientProvider>
+  );
+}
+
 export const Loading: Story = {
   beforeEach({ msw }) {
     msw.use(hanging("/api/settings"));
@@ -106,25 +125,6 @@ export const TryAgainReadsTheSettingsAgain: Story = {
     ).toBeEnabled();
   },
 };
-
-// The app's client, unlike the harness's, reads a cached answer again when a screen opens on it.
-function OpensOnCachedSettings() {
-  const [client] = useState(() => {
-    const appClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    appClient.setQueryData(
-      settingsQuery.queryKey,
-      aWireSettings({ ebook_library_path: "/old/ebooks" }),
-    );
-    return appClient;
-  });
-  return (
-    <QueryClientProvider client={client}>
-      <SourcesCard />
-    </QueryClientProvider>
-  );
-}
 
 export const FillsTheFormFromTheFreshReadWhenOpenedOnCachedSettings: Story = {
   render: () => <OpensOnCachedSettings />,
