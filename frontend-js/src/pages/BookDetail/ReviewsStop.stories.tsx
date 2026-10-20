@@ -509,7 +509,7 @@ export const ATapIsDrawnBeforeTheServerAnswers: Story = {
 export const StarsFillToTheRatingAndPreviewTheHover: Story = {
   beforeEach: withReviews(aWireReview({ stars: 4.5 })),
   play: async ({ canvas, canvasElement, userEvent }) => {
-    const group = await canvas.findByRole("group", { name: "Your rating" });
+    await canvas.findByRole("group", { name: "Your rating" });
     await expect(fills(canvasElement)).toEqual([
       "100%",
       "100%",
@@ -529,20 +529,16 @@ export const StarsFillToTheRatingAndPreviewTheHover: Story = {
       "0%",
     ]);
 
-    await userEvent.click(
-      canvas.getByRole("button", { name: "Rate 3.5 stars" }),
-    );
-    await userEvent.unhover(group);
+    // The current value's own half clears it; the pointer stays on it.
+    const clear = canvas.getByRole("button", {
+      name: "Clear your 4.5-star rating",
+    });
+    await userEvent.hover(clear);
+    await userEvent.click(clear);
 
-    // The fill shows the answer, not the pointer.
-    await waitFor(() => expect(writes).toEqual([{ stars: 3.5 }]));
-    await expect(fills(canvasElement)).toEqual([
-      "100%",
-      "100%",
-      "100%",
-      "50%",
-      "0%",
-    ]);
+    // The fill shows the answer, not the pointer still resting on 4.5.
+    await expect(fills(canvasElement)).toEqual(["0%", "0%", "0%", "0%", "0%"]);
+    await waitFor(() => expect(writes).toEqual([{ stars: null }]));
   },
 };
 
@@ -564,11 +560,17 @@ export const TheLastWriteToSettleRefetchesWhenTheNewestFailed: Story = {
       ),
       http.patch("/api/reviews/:uuid", async ({ request }) => {
         const patch = ReviewPatch.parse(await request.json());
-        // The slow first write is stored when it lands; the second is refused.
+        // The slow first write is stored when it lands, with text no guess of
+        // the client's holds; the second is refused.
         if (calls++ > 0)
           return new HttpResponse("failed with 500", { status: 500 });
         await delay(400);
-        stored = aWireReview({ stars: patch.stars, rated_at: nowSecs() });
+        stored = aWireReview({
+          stars: patch.stars,
+          rated_at: nowSecs(),
+          body_md: "From the server",
+          body_html: "<p>From the server</p>",
+        });
         return HttpResponse.json(stored);
       }),
       http.get("/api/shelves", () => {
@@ -586,8 +588,12 @@ export const TheLastWriteToSettleRefetchesWhenTheNewestFailed: Story = {
     );
     await userEvent.click(canvas.getByRole("button", { name: "Rate 5 stars" }));
 
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
+    // Only the re-read after the refusal can bring the stored text.
+    await waitFor(() =>
+      expect(canvas.getByTestId("my-review-text")).toHaveTextContent(
+        "From the server",
+      ),
+    );
     await expect(
       canvas.getByRole("button", { name: "Clear your 3-star rating" }),
     ).toBeInTheDocument();
@@ -653,6 +659,48 @@ export const ARefusedTapIsToldEvenWhenASaveFollowsIt: Story = {
     await expect(
       canvas.getByRole("button", { name: "Clear your 2-star rating" }),
     ).toBeInTheDocument();
+  },
+};
+
+export const ADeleteAfterARefusedTapLeavesNoError: Story = {
+  beforeEach({ msw }) {
+    const held = deferred();
+    heldTap.release = held.release;
+    let stored: Review | null = MINE;
+    msw.use(
+      http.get("/api/reviews/:uuid", () =>
+        HttpResponse.json(aWireBookReviews({ mine: stored })),
+      ),
+      http.patch("/api/reviews/:uuid", async () => {
+        await held.promise;
+        return new HttpResponse("failed with 500", { status: 500 });
+      }),
+      http.delete("/api/reviews/:uuid", () => {
+        stored = null;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Rate 5 stars" }),
+    );
+    await userEvent.click(canvas.getByTestId("review-delete"));
+    const dialog = await canvas.findByTestId("review-delete-modal");
+    await userEvent.click(within(dialog).getByTestId("review-delete-confirm"));
+    // The tap is refused only now, ahead of the delete in the queue.
+    heldTap.release();
+
+    await waitFor(() =>
+      expect(
+        canvas.queryByTestId("review-delete-modal"),
+      ).not.toBeInTheDocument(),
+    );
+    // The review is gone, and so is the tap's refusal: the empty card has nothing to retry.
+    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
+      "Not rated yet",
+    );
+    await expect(canvas.queryByTestId("review-delete")).not.toBeInTheDocument();
   },
 };
 

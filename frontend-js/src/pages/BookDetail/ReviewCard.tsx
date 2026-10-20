@@ -87,9 +87,12 @@ function MyReviewWriting({ mine }: { mine: MyReview }) {
 /** The trash can's confirm modal: the delete lands only on success, and a refusal keeps the modal open with the reason. */
 function DeleteReviewModal({
   save,
+  onDeleted,
   onClose,
 }: {
   save: Writes;
+  /** Called once the server has taken the delete, before the modal closes. */
+  onDeleted: () => void;
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -101,6 +104,7 @@ function DeleteReviewModal({
     setError(null);
     try {
       await save.mutateAsync("delete");
+      onDeleted();
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -162,8 +166,9 @@ export function ReviewCard({
   uuid: BookUuid;
   mine: MyReview | null;
 }) {
-  // The last tap made: a refusal of it is told even when a later Save or delete
-  // has taken the queue, whose own answer then puts the old stars back.
+  // The last tap made: its refusal is told even when a later Save has taken the
+  // mutation, whose answer then puts the server's stars back. A delete that lands
+  // after it empties the card, and clears the message with it.
   const lastTap = useRef<ReviewWrite | null>(null);
   const [starsFailed, setStarsFailed] = useState(false);
   const save = useReviewWrites(uuid, (write) => {
@@ -248,7 +253,14 @@ export function ReviewCard({
         </ConfirmModal>
       )}
       {confirming && (
-        <DeleteReviewModal save={save} onClose={() => setConfirming(false)} />
+        <DeleteReviewModal
+          save={save}
+          onDeleted={() => {
+            lastTap.current = null;
+            setStarsFailed(false);
+          }}
+          onClose={() => setConfirming(false)}
+        />
       )}
     </section>
   );
