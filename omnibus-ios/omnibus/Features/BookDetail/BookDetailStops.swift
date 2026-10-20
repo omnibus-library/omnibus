@@ -202,6 +202,12 @@ enum DetailRead {
         stop != .home && stop.rawValue < DetailStop.allCases.count - 1
     }
 
+    /// Whether a stop's content, laid out at `content` tall, runs past the
+    /// `area` it has — the only case its foot fades.
+    static func overflows(content: CGFloat, area: CGFloat) -> Bool {
+        content > area + 0.5
+    }
+
     /// How far above the screen's foot a marquee stop's content must end: clear
     /// of the action bar always, and of the swipe hint — whose top is `hintTop`
     /// up from the foot, gap included — on a stop that shows one.

@@ -254,8 +254,11 @@ enum UserDataService {
         if !patch.isEmpty {
             let now = Int64(Date().timeIntervalSince1970)
             await mutateLocalReviews(uuid) { $0 = $0.applying(patch, uuid: uuid, now: now) }
+            // A pre-upgrade stars write for the book folds in here rather than
+            // replaying later over this one.
             await SyncEngine.shared.writeFieldPatch(
-                kind: OpKind.review(uuid), path: "/api/reviews/\(uuid)", body: patch
+                kind: OpKind.review(uuid), path: "/api/reviews/\(uuid)", body: patch,
+                legacyStars: OpKind.rating(uuid)
             )
             await refreshReviews(uuid)
         }
@@ -263,13 +266,15 @@ enum UserDataService {
     }
 
     /// Delete your stars, text and notes together. Coalesced, so it replaces
-    /// every patch still queued for the book — it would clear them anyway.
+    /// every patch still queued for the book — and any pre-upgrade stars write
+    /// for it — since it would clear them anyway.
     @discardableResult
     static func deleteReview(uuid: String) async -> BookReviews? {
         await mutateLocalReviews(uuid) { $0 = $0.deletingMine() }
         await SyncEngine.shared.write(
             kind: OpKind.review(uuid), path: "/api/reviews/\(uuid)",
-            method: "DELETE", body: nil, coalesce: true
+            method: "DELETE", body: nil, coalesce: true,
+            superseding: [OpKind.rating(uuid)]
         )
         await refreshReviews(uuid)
         return await Cache.cachedOnly(CacheKey.reviews(uuid))

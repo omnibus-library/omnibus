@@ -149,9 +149,13 @@ is the shape: direct call, `throws`, control disabled offline.
    error — do not reach for `SyncEngine`.
 2. If it passes, add the kind to `OpKind`, declare its keys in `OutboxScope`,
    and write the optimistic replica patch.
-3. Choose `coalesce` by whether the write is a repeated statement of one value
-   (a position, a rate) or a discrete event (a highlight, a session report).
-   Discrete events must not coalesce.
+3. Choose how it queues by its shape. A repeated statement of one value (a
+   position, a rate) coalesces, the newest replacing the rest. A discrete event
+   (a highlight, a session report) must not coalesce. A write that names only
+   the fields it changes (a review patch) merges into the patch still queued for
+   the same target, later fields winning — never `coalesce`, which would drop
+   the fields only the earlier patch named. iOS queues it with
+   `writeFieldPatch` / `enqueueFieldPatch`.
 4. Cover it per [03-unit-testing.md](03-unit-testing.md) — the iOS suite's
    equivalent is `omnibus-ios/omnibusTests/OfflineSyncTests.swift`.
 

@@ -40,8 +40,10 @@ enum CacheKey {
     static func highlights(_ uuid: String) -> String { "highlights:\(uuid)" }
     static func bookmarks(_ uuid: String) -> String { "bookmarks:\(uuid)" }
     static func journals(_ uuid: String) -> String { "journals:\(uuid)" }
-    /// The stars-only reads the book page used before reviews. Nothing reads
-    /// them now; kept so an account switch still wipes what they cached.
+    /// The stars-only reads the book page used before reviews; nothing reads
+    /// them now. `rating` is still what a replayed legacy `rating:` op moves,
+    /// and the wipe-coverage test names both so an upgraded device's leftover
+    /// blobs stay covered by the `rating:` / `ratings_others:` prefixes.
     static func rating(_ uuid: String) -> String { "rating:\(uuid)" }
     static func ratingsOthers(_ uuid: String) -> String { "ratings_others:\(uuid)" }
     /// `GET /api/reviews/{uuid}`: your review, notes included, and everyone else's.
@@ -106,7 +108,8 @@ enum OutboxScope {
         }
 
         // The rest are book-scoped and carry their uuid — and, for a position,
-        // its format — in the kind itself, so each names exactly one key.
+        // its format — in the kind itself, so each names only its own book's
+        // keys, plus any book-independent summaries the write moves.
         if let uuid = suffix(of: kind, after: "playback_rate:") {
             return key == CacheKey.playbackRate(uuid)
         }

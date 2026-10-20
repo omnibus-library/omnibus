@@ -17,8 +17,11 @@ import SwiftUI
 final class BookDetailModel {
     var book: Book?
     /// Yours, everyone else's, and the household summary; `nil` until the
-    /// first read answers.
+    /// first read answers — unknown, which is not the same as "no review".
     var reviews: BookReviews?
+    /// Set when a reviews read settled with nothing to show — offline with no
+    /// replica, or a failed fetch — so the card says so instead of loading on.
+    var reviewsUnavailable = false
     var readStatus: ReadStatus = .unread
     var journals: [JournalEntry] = []
     var highlights: [Highlight] = []
@@ -100,9 +103,12 @@ final class BookDetailModel {
                 await self.loadSessions(uuid: uuid)
             }
             group.addTask { @MainActor in
+                var answered = false
                 for await reviews in UserDataService.reviews(uuid: uuid).values() {
                     self.reviews = reviews
+                    answered = true
                 }
+                self.reviewsUnavailable = !answered && self.reviews == nil
             }
             group.addTask { @MainActor in
                 for await record in UserDataService.readStatus(uuid: uuid).values() {
@@ -214,15 +220,18 @@ final class BookDetailModel {
     /// once the write is made — the server's rendering when it landed, what it
     /// kept when it refused, the optimistic row while it is queued.
     func patchReview(_ patch: ReviewPatch, uuid: String) async {
-        guard !patch.isEmpty else { return }
+        // Against an unknown review a patch would be computed from nothing,
+        // and its text would replace whatever the server holds.
+        guard !patch.isEmpty, reviews != nil else { return }
         let now = Int64(Date().timeIntervalSince1970)
-        reviews = (reviews ?? .empty).applying(patch, uuid: uuid, now: now)
+        reviews = reviews?.applying(patch, uuid: uuid, now: now)
         await settleReviewWrite { await UserDataService.patchReview(uuid: uuid, patch) }
     }
 
     /// Delete your stars, text and notes, with the same settle as a patch.
     func deleteReview(uuid: String) async {
-        reviews = (reviews ?? .empty).deletingMine()
+        guard let known = reviews else { return }
+        reviews = known.deletingMine()
         await settleReviewWrite { await UserDataService.deleteReview(uuid: uuid) }
     }
 
@@ -752,12 +761,7 @@ struct BookDetailView: View {
                 .layoutPriority(1)
             Spacer(minLength: 0)
         }
-        // `minHeight: 0` holds the frame to the stop's area even when the
-        // content needs more, so the fade below cuts it there.
-        .frame(
-            maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading
-        )
-        .modifier(StopOverflowFade(active: showsHint))
+        .modifier(StopArea(isHome: isHome, fadesOverflow: showsHint))
         .padding(EdgeInsets(
             // A full stop's label must clear the chrome discs, which end
             // ~105pt below the top edge on current devices. Home earns that
@@ -1339,27 +1343,51 @@ struct BookDetailView: View {
     }
 }
 
-/// A stop's content stops where its area does — a stop that holds more than a
-/// screen fades out at its foot rather than running on under the swipe hint
-/// and the action bar. Masks vertically only: the mask runs wide, so nothing
-/// that bleeds sideways is cut.
-private struct StopOverflowFade: ViewModifier {
-    let active: Bool
+/// A stop's content stops where its area does. A stop that holds more than
+/// its screen fades out at its foot rather than running on under the swipe
+/// hint and the action bar; one that fits is drawn whole, its last row as
+/// opaque as its first. Home keeps its own geometry — it rests as a strip.
+private struct StopArea: ViewModifier {
+    let isHome: Bool
+    let fadesOverflow: Bool
+
+    @State private var contentHeight: CGFloat = 0
+    @State private var areaHeight: CGFloat = 0
 
     func body(content: Content) -> some View {
-        if active {
-            content.mask {
-                VStack(spacing: 0) {
-                    Rectangle()
-                    LinearGradient(
-                        colors: [.black, .clear], startPoint: .top, endPoint: .bottom
-                    )
-                    .frame(height: 16)
-                }
-                .padding(.horizontal, -60)
-            }
-        } else {
+        if isHome {
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            let fades = fadesOverflow
+                && DetailRead.overflows(content: contentHeight, area: areaHeight)
+            content
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                    contentHeight = $0
+                }
+                // `minHeight: 0` holds the frame to the stop's area even when
+                // the content needs more, so the mask cuts it there.
+                .frame(
+                    maxWidth: .infinity, minHeight: 0, maxHeight: .infinity,
+                    alignment: .topLeading
+                )
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                    areaHeight = $0
+                }
+                .mask {
+                    // One shape either way, so the content keeps its identity
+                    // when it starts or stops overflowing. Wide, so nothing
+                    // that bleeds sideways is cut.
+                    VStack(spacing: 0) {
+                        Rectangle()
+                        LinearGradient(
+                            colors: [.black, fades ? .clear : .black],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                        .frame(height: 16)
+                    }
+                    .padding(.horizontal, -60)
+                }
         }
     }
 }

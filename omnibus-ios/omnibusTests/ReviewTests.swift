@@ -216,6 +216,14 @@ struct ReviewOptimisticTests {
         #expect(next.updatedAt == 100)
     }
 
+    @Test("raising the spoiler flag lands and moves the public clock")
+    func spoilerFlagIsPublic() throws {
+        let next = try #require(review(body: "x").applying(ReviewPatch(spoiler: true), now: 200))
+        #expect(next.spoiler)
+        #expect(next.updatedAt == 200)
+        #expect(next.bodyMd == "x")
+    }
+
     @Test("a patch that empties the review deletes it, as the server does")
     func emptiedReviewIsGone() {
         let only = review(stars: 4)
@@ -303,13 +311,18 @@ struct DetailReviewsTests {
         #expect(DetailReviews.excerpt(md) == "Verdict\nThe ending — \u{2588}\u{2588}\u{2588} — got me.")
     }
 
-    @Test("Read more is offered only for text the excerpt would cut")
-    func readMoreForLongText() {
-        #expect(!DetailReviews.isLong("A short line."))
-        #expect(!DetailReviews.isLong("one\ntwo\nthree\nfour"))
-        #expect(DetailReviews.isLong("one\ntwo\nthree\nfour\nfive"))
-        // One paragraph that wraps past the excerpt's lines.
-        #expect(DetailReviews.isLong(String(repeating: "word ", count: 60)))
+    @Test("Read more is offered exactly when the set text runs past the collapsed height")
+    func readMoreWhenTruncated() {
+        #expect(!DetailReviews.isTruncated(fullHeight: 0))
+        #expect(!DetailReviews.isTruncated(fullHeight: DetailReviews.collapsedTextHeight))
+        #expect(DetailReviews.isTruncated(fullHeight: DetailReviews.collapsedTextHeight + 20))
+    }
+
+    @Test("an image-only review has no text to set, and one with words does")
+    func imageOnlyReviewHasNoText() {
+        #expect(!DetailReviews.hasVisibleText("![](/api/journals/images/a.png)"))
+        #expect(DetailReviews.hasVisibleText("Look: ![](/api/journals/images/a.png) the map"))
+        #expect(DetailReviews.excerpt("![](/x.png)\nwords") == "words")
     }
 
     @Test("the marquee's hand-off names the other readers, or your own review")
@@ -330,9 +343,60 @@ struct DetailReviewsTests {
         #expect(DetailReviews.composeLabel(review(notes: "n")) == "Edit review")
     }
 
+    @Test("the stars note says why an unknown review can't be written yet")
+    func unknownNote() {
+        #expect(DetailReviews.unknownNote(unavailable: false) == "loading your review")
+        #expect(DetailReviews.unknownNote(unavailable: true) == "loads when you're back online")
+    }
+
     @Test("the note beside your stars says whether you have rated")
     func starsNote() {
         #expect(DetailReviews.starsNote(nil) == "tap a star to rate")
         #expect(DetailReviews.starsNote(4.5) == "rated 4.5 of 5")
+    }
+}
+
+// MARK: - An unknown review
+
+@Suite("Unknown review")
+struct UnknownReviewTests {
+    @Test("no read yet is loading, a settled read with nothing is unavailable, an answer is ready")
+    func cardStateResolves() {
+        #expect(ReviewCardState.resolve(nil, unavailable: false) == .loading)
+        #expect(ReviewCardState.resolve(nil, unavailable: true) == .unavailable)
+        // An answer wins over a stale failure flag, and "no review" is known.
+        #expect(ReviewCardState.resolve(.empty, unavailable: true) == .ready(nil))
+        let mine = review(stars: 4)
+        let page = BookReviews(mine: mine, others: [], summary: nil)
+        #expect(ReviewCardState.resolve(page, unavailable: false) == .ready(mine))
+    }
+
+    @Test("only a known review is writable")
+    func onlyKnownIsInteractive() {
+        #expect(!ReviewCardState.loading.isInteractive)
+        #expect(!ReviewCardState.unavailable.isInteractive)
+        #expect(ReviewCardState.ready(nil).isInteractive)
+        #expect(ReviewCardState.loading.review == nil)
+    }
+
+    @Test("the composer opens only on a known review, seeded from it")
+    func composerNeedsAKnownBaseline() throws {
+        #expect(ReviewComposerTarget.make(for: .loading) == nil)
+        #expect(ReviewComposerTarget.make(for: .unavailable) == nil)
+        let blank = try #require(ReviewComposerTarget.make(for: .ready(nil)))
+        #expect(blank.original == nil)
+        let mine = review(body: "kept")
+        let seeded = try #require(ReviewComposerTarget.make(for: .ready(mine)))
+        #expect(seeded.original == mine)
+    }
+
+    @MainActor
+    @Test("the page writes nothing against an unknown review")
+    func modelRefusesWritesWhileUnknown() async {
+        let model = BookDetailModel()
+        await model.patchReview(ReviewPatch(bodyMd: .set("typed")), uuid: uuid)
+        #expect(model.reviews == nil)
+        await model.deleteReview(uuid: uuid)
+        #expect(model.reviews == nil)
     }
 }

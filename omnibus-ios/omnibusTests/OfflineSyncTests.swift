@@ -126,7 +126,7 @@ struct OutboxScopeTests {
         #expect(!OutboxScope.isBlocked(CacheKey.bookmarks(uuid), by: kinds))
     }
 
-    @Test("book-scoped kinds name exactly one key each")
+    @Test("book-scoped kinds name only their own book's keys")
     func bookScopedKindsAreExact() {
         #expect(OutboxScope.isBlocked(CacheKey.rating(uuid), by: [OpKind.rating(uuid)]))
         #expect(!OutboxScope.isBlocked(CacheKey.rating("other"), by: [OpKind.rating(uuid)]))
@@ -229,7 +229,9 @@ struct PatchCoalescingTests {
         let body = try object(folded)
         #expect((body["stars"] as? NSNumber)?.doubleValue == 4)
         #expect(body["body_md"] as? String == "final")
-        #expect(body["spoiler"] as? Bool == true)
+        let spoiler = try #require(body["spoiler"] as? NSNumber)
+        #expect(CFGetTypeID(spoiler) == CFBooleanGetTypeID())
+        #expect(spoiler.boolValue)
     }
 
     @Test("a later clear wins over an earlier value, as an explicit null")
@@ -250,6 +252,17 @@ struct PatchCoalescingTests {
         #expect((try object(folded)["stars"] as? NSNumber)?.doubleValue == 3.5)
     }
 
+    @Test("a pre-review rating reads as the stars it asserts")
+    func legacyStarsBody() throws {
+        let set = PatchCoalescing.legacyStars(
+            method: "POST", body: Data(#"{"book_uuid":"b","stars":3.5}"#.utf8)
+        )
+        #expect((try object(set)["stars"] as? NSNumber)?.doubleValue == 3.5)
+        #expect(try object(PatchCoalescing.legacyStars(method: "DELETE", body: nil))["stars"] is NSNull)
+        #expect(PatchCoalescing.legacyStars(method: "PATCH", body: nil) == nil)
+        #expect(PatchCoalescing.legacyStars(method: "POST", body: Data("{}".utf8)) == nil)
+    }
+
     @Test("a body that is not an object is never folded, so nothing is lost")
     func nonObjectsDoNotFold() {
         #expect(PatchCoalescing.folded(nil, under: Data(#"{"stars":4}"#.utf8)) == nil)
@@ -263,12 +276,21 @@ struct ReviewOutboxTests {
     private var kind: String { OpKind.review(uuid) }
     private var path: String { "/api/reviews/\(uuid)" }
 
-    private func scratchStore() async -> (OfflineStore, String) {
-        let path = FileManager.default.temporaryDirectory
-            .appendingPathComponent("review-outbox-\(UUID().uuidString).sqlite").path
-        let store = OfflineStore(path: path)
-        await store.open()
-        return (store, path)
+    private var legacyKind: String { OpKind.rating(uuid) }
+
+    /// A pre-review stars write, as an upgraded device's outbox holds one.
+    private func queueLegacyRating(_ store: OfflineStore, stars: Double?) async {
+        if let stars {
+            await store.enqueue(
+                kind: legacyKind, path: "/api/ratings", method: "POST",
+                body: Data(#"{"book_uuid":"\#(uuid)","stars":\#(stars)}"#.utf8), coalesce: true
+            )
+        } else {
+            await store.enqueue(
+                kind: legacyKind, path: "/api/ratings/\(uuid)", method: "DELETE",
+                body: nil, coalesce: true
+            )
+        }
     }
 
     private func patch(_ patch: ReviewPatch) throws -> Data {
@@ -277,7 +299,7 @@ struct ReviewOutboxTests {
 
     @Test("a text edit queued after a star tap keeps the stars")
     func patchesMergeFieldByField() async throws {
-        let (store, file) = await scratchStore()
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
         defer { try? FileManager.default.removeItem(atPath: file) }
 
         await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(4)))
@@ -295,7 +317,7 @@ struct ReviewOutboxTests {
 
     @Test("a later star tap replaces an earlier one, and a clear stays a clear")
     func laterStarsWin() async throws {
-        let (store, file) = await scratchStore()
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
         defer { try? FileManager.default.removeItem(atPath: file) }
 
         await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(4)))
@@ -308,7 +330,7 @@ struct ReviewOutboxTests {
 
     @Test("a delete supersedes every patch queued before it")
     func deleteSupersedesPatches() async throws {
-        let (store, file) = await scratchStore()
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
         defer { try? FileManager.default.removeItem(atPath: file) }
 
         await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(4)))
@@ -320,7 +342,7 @@ struct ReviewOutboxTests {
 
     @Test("a patch after a delete queues behind it rather than folding past it")
     func patchAfterDeleteStaysBehind() async throws {
-        let (store, file) = await scratchStore()
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
         defer { try? FileManager.default.removeItem(atPath: file) }
 
         await store.enqueue(kind: kind, path: path, method: "DELETE", body: nil, coalesce: true)
@@ -338,7 +360,7 @@ struct ReviewOutboxTests {
 
     @Test("a patch the server refused is never folded into a new one")
     func rejectedPatchIsLeftAlone() async throws {
-        let (store, file) = await scratchStore()
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
         defer { try? FileManager.default.removeItem(atPath: file) }
 
         let refused = await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(4)))
@@ -353,9 +375,108 @@ struct ReviewOutboxTests {
         #expect(await store.rejectedCount() == 1)
     }
 
+    @Test("a queued pre-review rating folds into the review patch instead of racing it")
+    func legacyRatingFoldsIntoPatch() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await queueLegacyRating(store, stars: 4)
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(ReviewPatch(bodyMd: .set("x"))),
+            legacyStars: legacyKind
+        )
+
+        let ops = await store.listOps()
+        #expect(ops.map(\.kind) == [kind])
+        let body = try object(ops.first?.body)
+        #expect((body["stars"] as? NSNumber)?.doubleValue == 4)
+        #expect(body["body_md"] as? String == "x")
+    }
+
+    @Test("the patch's own stars win over a queued pre-review rating")
+    func patchStarsBeatLegacy() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await queueLegacyRating(store, stars: 4)
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(.stars(2)), legacyStars: legacyKind
+        )
+
+        let ops = await store.listOps()
+        #expect(ops.count == 1)
+        #expect((try object(ops.first?.body)["stars"] as? NSNumber)?.doubleValue == 2)
+    }
+
+    @Test("a queued pre-review clear folds in as a null")
+    func legacyClearFoldsAsNull() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await queueLegacyRating(store, stars: nil)
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(ReviewPatch(notesMd: .set("n"))),
+            legacyStars: legacyKind
+        )
+
+        let ops = await store.listOps()
+        #expect(ops.map(\.kind) == [kind])
+        #expect(try object(ops.first?.body)["stars"] is NSNull)
+    }
+
+    @Test("a review delete supersedes a queued pre-review rating")
+    func deleteSupersedesLegacy() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await queueLegacyRating(store, stars: 4)
+        await store.enqueue(
+            kind: kind, path: path, method: "DELETE", body: nil, coalesce: true,
+            superseding: [legacyKind]
+        )
+
+        let ops = await store.listOps()
+        #expect(ops.map(\.method) == ["DELETE"])
+        #expect(ops.map(\.kind) == [kind])
+    }
+
+    @Test("a pre-review rating behind a queued review delete is dropped, not revived")
+    func legacyBehindDeleteIsDropped() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await queueLegacyRating(store, stars: 4)
+        await store.enqueue(kind: kind, path: path, method: "DELETE", body: nil, coalesce: true)
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(ReviewPatch(bodyMd: .set("x"))),
+            legacyStars: legacyKind
+        )
+
+        let ops = await store.listOps()
+        #expect(ops.map(\.method) == ["DELETE", "PATCH"])
+        #expect(try object(ops.last?.body)["stars"] == nil)
+    }
+
+    @Test("a pre-review rating the server refused is left on record")
+    func refusedLegacyIsLeftAlone() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await queueLegacyRating(store, stars: 4)
+        let refused = try #require(await store.listOps().first)
+        await store.noteOpFailure(refused.id, message: "Rejected (400)")
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(ReviewPatch(bodyMd: .set("x"))),
+            legacyStars: legacyKind
+        )
+
+        #expect(try object(await store.listOps().first?.body)["stars"] == nil)
+        #expect(await store.rejectedCount() == 1)
+    }
+
     @Test("two books' patches never fold into each other")
     func otherBooksStayApart() async throws {
-        let (store, file) = await scratchStore()
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
         defer { try? FileManager.default.removeItem(atPath: file) }
 
         await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(4)))

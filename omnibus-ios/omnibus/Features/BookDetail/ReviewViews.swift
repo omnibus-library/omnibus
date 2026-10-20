@@ -18,8 +18,9 @@ enum DetailReviews {
     /// Scroll id of the block's top edge, which the title line jumps to.
     static let anchorID = "detail-reviews"
 
-    /// Lines an excerpt shows before Read more takes over.
-    static let excerptLines = 4
+    /// How tall another reader's text stands before Read more takes over —
+    /// four lines of the reading face.
+    static let collapsedTextHeight: CGFloat = 116
 
     /// `4.3 · 3 readers` — the household line by the title.
     static func titleLine(_ summary: ReviewSummary) -> String {
@@ -54,6 +55,11 @@ enum DetailReviews {
         review.map(hasWriting) == true ? "Edit review" : "Write review"
     }
 
+    /// The note beside the stars while your review is unknown.
+    static func unknownNote(unavailable: Bool) -> String {
+        unavailable ? "loads when you're back online" : "loading your review"
+    }
+
     /// The note beside your stars.
     static func starsNote(_ stars: Double?) -> String {
         guard let stars, stars > 0 else { return "tap a star to rate" }
@@ -83,21 +89,25 @@ enum DetailReviews {
     static func excerpt(_ md: String) -> String {
         md.replacingOccurrences(of: "\r\n", with: "\n")
             .split(separator: "\n")
-            .map { JournalRow.preview(String($0)) }
+            // An image parses to an attachment character the reading face
+            // has nothing to draw for.
+            .map { JournalRow.preview(String($0)).replacingOccurrences(of: "\u{FFFC}", with: "") }
+            .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
     }
 
-    /// Characters a line of the excerpt holds on a phone, for estimating wraps.
-    static let excerptLineChars = 44
+    /// Whether a body has any text to set at all — an image-only review has
+    /// none the app can draw, and says so rather than showing a blank row.
+    static func hasVisibleText(_ md: String) -> Bool {
+        !excerpt(md).isEmpty
+    }
 
-    /// Whether the collapsed excerpt is likely to cut the text short — the
-    /// cue for Read more. An estimate, counting each line's wraps.
-    static func isLong(_ md: String) -> Bool {
-        let lines = excerpt(md).split(separator: "\n").reduce(0) { total, line in
-            total + max(1, (line.count + excerptLineChars - 1) / excerptLineChars)
-        }
-        return lines > excerptLines
+    /// Whether text measured at `fullHeight` runs past the collapsed height —
+    /// the cue for Read more. Measured, not estimated, so a narrow phone that
+    /// wraps more still gets it.
+    static func isTruncated(fullHeight: CGFloat) -> Bool {
+        fullHeight > collapsedTextHeight + 1
     }
 
     /// The ten half-star buckets as bars, styled as the stats page's rating
@@ -169,6 +179,10 @@ struct ReviewsBlock: View {
 
     private var reviews: BookReviews { model.reviews ?? .empty }
 
+    private var cardState: ReviewCardState {
+        .resolve(model.reviews, unavailable: model.reviewsUnavailable)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
@@ -183,10 +197,10 @@ struct ReviewsBlock: View {
             .id(DetailReviews.anchorID)
 
             MyReviewCard(
-                review: reviews.mine,
+                state: cardState,
                 uncapped: uncapped,
                 onStars: { stars in write(.stars(stars)) },
-                onCompose: { composing = ReviewComposerTarget(original: reviews.mine) },
+                onCompose: { composing = ReviewComposerTarget.make(for: cardState) },
                 onDelete: { Task { await model.deleteReview(uuid: book.uuid) } }
             )
             .padding(.top, 12)
@@ -271,6 +285,38 @@ struct ReviewsBlock: View {
 struct ReviewComposerTarget: Identifiable {
     let id = UUID()
     let original: Review?
+
+    /// A target only once your review is known: a composer seeded from an
+    /// unknown one would send typed text over whatever the server holds.
+    static func make(for state: ReviewCardState) -> ReviewComposerTarget? {
+        guard case .ready(let review) = state else { return nil }
+        return ReviewComposerTarget(original: review)
+    }
+}
+
+/// Where your card stands. `nil` reviews are unknown — not yet read, or not
+/// readable offline — which is not the same as having none.
+enum ReviewCardState: Equatable {
+    case loading
+    case unavailable
+    case ready(Review?)
+
+    static func resolve(_ reviews: BookReviews?, unavailable: Bool) -> ReviewCardState {
+        if let reviews { return .ready(reviews.mine) }
+        return unavailable ? .unavailable : .loading
+    }
+
+    /// Whether the stars and the pencil may write.
+    var isInteractive: Bool {
+        if case .ready = self { return true }
+        return false
+    }
+
+    /// Your review when known; `nil` both for none and for unknown.
+    var review: Review? {
+        if case .ready(let review) = self { return review }
+        return nil
+    }
 }
 
 // MARK: - Your card
@@ -279,14 +325,18 @@ struct ReviewComposerTarget: Identifiable {
 /// pencil and a trash can in the header. Nothing else is a control — the
 /// spoiler flag is set in the editor, alongside the text it describes.
 struct MyReviewCard: View {
-    let review: Review?
+    let state: ReviewCardState
     var uncapped = true
     var onStars: (Double) -> Void
     var onCompose: () -> Void
     var onDelete: () -> Void
 
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmDelete = false
+    @State private var dim = false
+
+    private var review: Review? { state.review }
 
     /// Your text and notes as written, or `nil` when absent or blank.
     private var body_: String? { review?.bodyMd.flatMap { $0.nilIfBlank == nil ? nil : $0 } }
@@ -321,14 +371,18 @@ struct MyReviewCard: View {
         VStack(alignment: .leading, spacing: 12) {
             header
 
-            HStack(spacing: 12) {
-                StarRating(stars: review?.stars ?? 0, size: 22, interactive: true) { stars in
-                    onStars(stars)
+            if state.isInteractive {
+                HStack(spacing: 12) {
+                    StarRating(stars: review?.stars ?? 0, size: 22, interactive: true) { stars in
+                        onStars(stars)
+                    }
+                    .accessibilityIdentifier("review-stars")
+                    MonoNote(text: DetailReviews.starsNote(review?.stars))
                 }
-                .accessibilityIdentifier("review-stars")
-                MonoNote(text: DetailReviews.starsNote(review?.stars))
+                .animation(Motion.snap, value: review?.stars)
+            } else {
+                unknownStars
             }
-            .animation(Motion.snap, value: review?.stars)
 
             if showsText, let body_ {
                 text(body_)
@@ -349,6 +403,25 @@ struct MyReviewCard: View {
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .strokeBorder(palette.line2.color, lineWidth: 0.5)
         )
+    }
+
+    /// The stars row while your review is unknown: drawn, not live, and
+    /// pulsing while a read is out — the app's placeholder, in the row's shape.
+    private var unknownStars: some View {
+        HStack(spacing: 12) {
+            StarRating(stars: 0, size: 22)
+                .opacity(0.35)
+            MonoNote(text: DetailReviews.unknownNote(unavailable: state == .unavailable))
+        }
+        .opacity(state == .loading && dim ? 0.55 : 1)
+        .onAppear {
+            guard state == .loading, !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                dim = true
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("review-unknown")
     }
 
     /// Full in the flow; a few lines on the marquee's one-screen stop, where
@@ -408,6 +481,8 @@ struct MyReviewCard: View {
                 Haptics.tap()
                 onCompose()
             }
+            .disabled(!state.isInteractive)
+            .opacity(state.isInteractive ? 1 : 0.35)
             if review != nil {
                 iconButton(
                     "trash", label: "Delete review",
@@ -520,6 +595,9 @@ struct OtherReviewRow: View {
     @Environment(\.palette) private var palette
     @State private var revealed = false
     @State private var expanded = false
+    /// The text's whole height, measured as set, so Read more appears exactly
+    /// when the collapsed view would cut it — whatever the phone's width.
+    @State private var fullHeight: CGFloat = 0
 
     private var hidden: Bool {
         !revealed && DetailReviews.hidesText(spoiler: review.spoiler, viewerStatus: viewerStatus)
@@ -533,17 +611,12 @@ struct OtherReviewRow: View {
                 byline
                 if hidden {
                     spoilerCover
-                } else if expanded {
-                    JournalBody(md: md)
+                } else if !DetailReviews.hasVisibleText(md) {
+                    MonoNote(text: "an image — the app can't show review images yet")
                 } else {
-                    Text(DetailReviews.excerpt(md))
-                        .font(.display(17))
-                        .foregroundStyle(palette.ink1Color)
-                        .lineSpacing(4)
-                        .lineLimit(DetailReviews.excerptLines)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    text(md)
                 }
-                if !hidden, DetailReviews.isLong(md) {
+                if !hidden, DetailReviews.isTruncated(fullHeight: fullHeight) {
                     Button {
                         Haptics.tap()
                         withAnimation(Motion.snap) { expanded.toggle() }
@@ -562,6 +635,31 @@ struct OtherReviewRow: View {
 
             Hairline()
         }
+    }
+
+    /// The text set in full through the journal pipeline — formatting, lists,
+    /// tappable `||spoilers||` — and, collapsed, cut at a fixed height with a
+    /// fade rather than flattened into a summary.
+    private func text(_ md: String) -> some View {
+        let truncated = !expanded && DetailReviews.isTruncated(fullHeight: fullHeight)
+        return JournalBody(md: md)
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
+            .frame(
+                maxHeight: expanded ? nil : DetailReviews.collapsedTextHeight,
+                alignment: .top
+            )
+            .clipped()
+            .mask {
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: 0),
+                        .init(color: .black, location: truncated ? 0.7 : 1),
+                        .init(color: truncated ? .clear : .black, location: 1),
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                )
+            }
     }
 
     private var byline: some View {

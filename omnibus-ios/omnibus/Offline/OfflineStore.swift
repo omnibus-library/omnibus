@@ -600,12 +600,18 @@ actor OfflineStore {
     /// Queue a mutation, answering with its row id so a caller can ask later
     /// whether this particular write ever landed. `coalesce` replaces any
     /// pending op with the same kind — the reader writes a position every few
-    /// seconds, and only the newest one is worth replaying.
+    /// seconds, and only the newest one is worth replaying. `superseding`
+    /// names other kinds whose still-pending ops this write makes moot.
     @discardableResult
     func enqueue(
-        kind: String, path: String, method: String, body: Data?, coalesce: Bool
+        kind: String, path: String, method: String, body: Data?, coalesce: Bool,
+        superseding: [String] = []
     ) -> Int64 {
         guard isOpen else { return 0 }
+        guard coalesce || !superseding.isEmpty else {
+            return insertOp(kind: kind, path: path, method: method, body: body)
+        }
+        exec("BEGIN IMMEDIATE")
         if coalesce {
             var del: OpaquePointer?
             if sqlite3_prepare_v2(db, "DELETE FROM ops WHERE kind = ?", -1, &del, nil) == SQLITE_OK {
@@ -614,7 +620,10 @@ actor OfflineStore {
             }
             sqlite3_finalize(del)
         }
-        return insertOp(kind: kind, path: path, method: method, body: body)
+        for other in superseding { deletePendingOps(kind: other) }
+        let id = insertOp(kind: kind, path: path, method: method, body: body)
+        exec(id == 0 ? "ROLLBACK" : "COMMIT")
+        return id
     }
 
     /// Queue a field-level PATCH, folded into the newest still-pending PATCH
@@ -624,11 +633,18 @@ actor OfflineStore {
     /// ahead of this clears every field, so a patch behind it must stay behind
     /// it rather than be folded into anything older. A held-aside rejection is
     /// never folded into either — it is a record of what the server refused.
+    ///
+    /// `legacyStars` names a kind of stars-only write that predates this one
+    /// (a review's pre-upgrade `rating:` op). It replays on its own lane, so
+    /// left queued it could land after this and undo it; it is folded in as
+    /// the oldest stars instead — or dropped, when a queued delete moots it.
     @discardableResult
-    func enqueueFieldPatch(kind: String, path: String, body: Data) -> Int64 {
+    func enqueueFieldPatch(
+        kind: String, path: String, body: Data, legacyStars: String? = nil
+    ) -> Int64 {
         guard isOpen else { return 0 }
-        // One transaction: the folded-away op holds fields the new row now
-        // carries, so losing it without the insert would lose them outright.
+        // One transaction: the folded-away ops hold fields the new row now
+        // carries, so losing them without the insert would lose them outright.
         exec("BEGIN IMMEDIATE")
         var merged = body
         if let pending = newestPendingOp(kind: kind),
@@ -638,9 +654,38 @@ actor OfflineStore {
             merged = folded
             deleteOps([pending.id])
         }
+        if let legacyStars, let legacy = newestPendingOp(kind: legacyStars) {
+            deletePendingOps(kind: legacyStars)
+            if !hasPendingOp(kind: kind, method: "DELETE"),
+               let stars = PatchCoalescing.legacyStars(method: legacy.method, body: legacy.body),
+               let folded = PatchCoalescing.folded(stars, under: merged)
+            {
+                merged = folded
+            }
+        }
         let id = insertOp(kind: kind, path: path, method: "PATCH", body: merged)
         exec(id == 0 ? "ROLLBACK" : "COMMIT")
         return id
+    }
+
+    /// Drop every op of `kind` still waiting to replay; held-aside rejections stay.
+    private func deletePendingOps(kind: String) {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let sql = "DELETE FROM ops WHERE kind = ? AND last_error IS NULL"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        bind(stmt, 1, kind)
+        sqlite3_step(stmt)
+    }
+
+    private func hasPendingOp(kind: String, method: String) -> Bool {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let sql = "SELECT 1 FROM ops WHERE kind = ? AND method = ? AND last_error IS NULL LIMIT 1"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        bind(stmt, 1, kind)
+        bind(stmt, 2, method)
+        return sqlite3_step(stmt) == SQLITE_ROW
     }
 
     /// The newest op of `kind` still waiting to replay.
@@ -1369,8 +1414,7 @@ actor OfflineStore {
     /// `read_status:`, `shelves_with:`, and `shelf_previews` exist only here;
     /// `reader_cfi:` and `audio_pos:` only there. The overlap is kept in the
     /// same order so the two can still be read side by side. `reviews:` holds
-    /// the reader's private notes, so it is the one key here whose leak would
-    /// expose something no other account could ever have read.
+    /// the reader's private notes beside what every reader can see.
     static let userScopedPrefixes = [
         "me", "progress:", "recent_progress", "rate:", "highlights:", "bookmarks:",
         "journals:", "rating:", "ratings_others:", "shelves", "shelf:", "shelf_page:",

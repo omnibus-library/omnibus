@@ -6,7 +6,8 @@
 //  so replacing a queued `{"stars":4}` with a later `{"body_md":"…"}` would drop
 //  the stars. Folding keeps every field either body names, the later body
 //  winning wherever both name the same field — an explicit `null` included,
-//  since that is a clear, not an absence.
+//  since that is a clear, not an absence. A pre-review stars write folds in the
+//  same way, as the oldest body.
 
 import Foundation
 
@@ -18,6 +19,20 @@ enum PatchCoalescing {
         let merged = older.merging(newer) { _, later in later }
         // Sorted so the stored body is stable for a given set of fields.
         return try? JSONSerialization.data(withJSONObject: merged, options: [.sortedKeys])
+    }
+
+    /// The stars a pre-review `rating:` op asserts, as a patch body: its POST
+    /// body's `stars`, or `null` for its DELETE. `nil` for anything else.
+    static func legacyStars(method: String, body: Data?) -> Data? {
+        let stars: Any
+        switch method {
+        case "DELETE": stars = NSNull()
+        case "POST":
+            guard let value = object(body)?["stars"] as? NSNumber else { return nil }
+            stars = value
+        default: return nil
+        }
+        return try? JSONSerialization.data(withJSONObject: ["stars": stars])
     }
 
     private static func object(_ data: Data?) -> [String: Any]? {

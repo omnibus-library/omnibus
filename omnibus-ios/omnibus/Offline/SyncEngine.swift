@@ -40,7 +40,8 @@ enum OpKind {
         "progress:\(uuid):\(format.rawValue)"
     }
     /// The pre-review stars write. The app no longer queues it, but a device
-    /// that did before upgrading still replays it against `/api/ratings`.
+    /// that did before upgrading still replays it against `/api/ratings` —
+    /// until a review write for the same book absorbs it.
     static func rating(_ uuid: String) -> String { "rating:\(uuid)" }
     /// A review's field-level patches and its delete. Patches fold into one
     /// another field by field (`SyncEngine.writeFieldPatch`); a delete
@@ -125,10 +126,12 @@ actor SyncEngine {
         path: String,
         method: String = "POST",
         body: Encodable?,
-        coalesce: Bool
+        coalesce: Bool,
+        superseding: [String] = []
     ) async -> Bool {
         let id = await enqueue(
-            kind: kind, path: path, method: method, body: body, coalesce: coalesce
+            kind: kind, path: path, method: method, body: body, coalesce: coalesce,
+            superseding: superseding
         )
         // Here and not in `enqueue`: `record`'s coalesced positions would
         // otherwise make every mounted rail re-read, and each re-read drain.
@@ -143,10 +146,16 @@ actor SyncEngine {
     /// `coalesce` replaces the whole body, which loses fields when each write
     /// names only the ones it changes: a stars tap queued offline, then a text
     /// edit, would replay the text alone. Answers as `write` does.
+    /// `legacyStars` is `OfflineStore.enqueueFieldPatch`'s: an older stars
+    /// write this one absorbs rather than races.
     @discardableResult
-    func writeFieldPatch(kind: String, path: String, body: Encodable) async -> Bool {
+    func writeFieldPatch(
+        kind: String, path: String, body: Encodable, legacyStars: String? = nil
+    ) async -> Bool {
         guard let data = try? JSONEncoder().encode(AnyEncodable(body)) else { return false }
-        let id = await OfflineStore.shared.enqueueFieldPatch(kind: kind, path: path, body: data)
+        let id = await OfflineStore.shared.enqueueFieldPatch(
+            kind: kind, path: path, body: data, legacyStars: legacyStars
+        )
         await MainActor.run {
             Connectivity.shared.notePendingChanged()
             ReplicaInvalidations.shared.note(kind: kind)
@@ -189,14 +198,16 @@ actor SyncEngine {
         path: String,
         method: String = "POST",
         body: Encodable?,
-        coalesce: Bool
+        coalesce: Bool,
+        superseding: [String] = []
     ) async -> Int64 {
         var data: Data?
         if let body {
             data = try? JSONEncoder().encode(AnyEncodable(body))
         }
         let id = await OfflineStore.shared.enqueue(
-            kind: kind, path: path, method: method, body: data, coalesce: coalesce
+            kind: kind, path: path, method: method, body: data, coalesce: coalesce,
+            superseding: superseding
         )
         await MainActor.run { Connectivity.shared.notePendingChanged() }
         return id

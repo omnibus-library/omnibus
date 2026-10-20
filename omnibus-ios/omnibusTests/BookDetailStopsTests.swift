@@ -419,6 +419,12 @@ private func journalEntry(
     #expect(DetailRead.stopBottomInset(barClearance: 108, hintTop: 138, showsHint: false) == 108)
 }
 
+@Test func aStopFadesItsFootOnlyWhenItsContentOverflows() {
+    #expect(!DetailRead.overflows(content: 500, area: 500))
+    #expect(!DetailRead.overflows(content: 420, area: 500))
+    #expect(DetailRead.overflows(content: 540, area: 500))
+}
+
 // MARK: - Rating
 
 @Test func tappingTheRatingAlreadySetClearsIt() {
