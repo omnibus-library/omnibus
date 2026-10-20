@@ -89,10 +89,10 @@ Then reload via `mcp__Claude_Preview__preview_eval` with `location.reload()`.
 
 ```bash
 source .claude/runtime/env.sh   # if not already sourced
-cd ui_tests/playwright && pnpm exec playwright test --output=/tmp/pw-out
+cd ui_tests/playwright && pnpm exec playwright test
 ```
 
-`PLAYWRIGHT_BASE_URL` makes the suite hit the walked-up port — both `baseURL` and the `Origin` header are derived from it, so the CSRF `origin_check` middleware stays happy. `--output` keeps traces out of the tree `dx serve` watches, where a new file triggers a rebuild that reloads the page mid-test.
+`PLAYWRIGHT_BASE_URL` makes the suite hit the walked-up port — both `baseURL` and the `Origin` header are derived from it, so the CSRF `origin_check` middleware stays happy.
 
 That is for iterating. The dev DB accumulates state between runs, so a red here is not proof: confirm it with `just e2e-ci <spec>`, which runs the spec as CI does — its own bundle, standalone server and scratch DB (see [04-playwright](../../rules/04-playwright.md#running-specs--just-e2e-ci)).
 
