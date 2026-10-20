@@ -7,6 +7,7 @@
 export * from "./api/admin";
 export * from "./api/auth";
 export * from "./api/books";
+export * from "./api/cleanup";
 export * from "./api/core";
 export * from "./api/discovery";
 export * from "./api/journal";

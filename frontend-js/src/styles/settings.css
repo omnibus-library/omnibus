@@ -248,6 +248,9 @@
 .settings-layout .settings-actions .settings-status {
   margin: 0;
 }
+.settings-layout .settings-actions .settings-action-status {
+  margin-right: auto;
+}
 .settings-field input[aria-invalid="true"] {
   border-color: var(--bad);
 }

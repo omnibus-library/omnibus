@@ -132,6 +132,18 @@ export const ShowsTheMaintenanceCardsInOrder: Story = {
   },
 };
 
+export const ShowsTheCleanupCard: Story = {
+  args: { path: "/admin?section=cleanup" },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("heading", { level: 3, name: "Suggested fixes" }),
+    ).toBeInTheDocument();
+    await expect(
+      await canvas.findByTestId("cleanup-kinds"),
+    ).toBeInTheDocument();
+  },
+};
+
 export const AsksBeforeLeavingEditedSources: Story = {
   args: { path: "/admin?section=sources" },
   play: async ({ canvas, userEvent }) => {

@@ -2,6 +2,7 @@ import { HttpResponse, http } from "msw";
 import type { MetadataLibrary } from "../api";
 import {
   type BackgroundTaskRecord,
+  type CleanupKindCounts,
   type LibraryContents,
   type LibrarySection,
   MetadataSource,
@@ -181,6 +182,31 @@ export function metadataOrderHandlers({
   });
 }
 
+/** The counts `GET /api/admin/cleanup/counts` sends: every kind, in the server's order. */
+export function aWireCleanupCounts(): CleanupKindCounts[] {
+  return [
+    { kind: "author", counts: { pending: 3, accepted: 1, rejected: 0 } },
+    { kind: "series", counts: { pending: 0, accepted: 0, rejected: 0 } },
+    { kind: "tag", counts: { pending: 4, accepted: 2, rejected: 1 } },
+    { kind: "book_title", counts: { pending: 7, accepted: 0, rejected: 2 } },
+  ];
+}
+
+/** `GET /api/admin/cleanup/counts`; `counts` is read on every request, so a story can change it between reads. */
+export function cleanupCountsHandler(counts: () => CleanupKindCounts[]) {
+  return http.get("/api/admin/cleanup/counts", () =>
+    HttpResponse.json(counts()),
+  );
+}
+
+/** `POST /api/admin/cleanup/detect`, answering as queued; `onDetect` runs on every POST. */
+export function cleanupDetectHandler(onDetect: () => void = () => {}) {
+  return http.post("/api/admin/cleanup/detect", () => {
+    onDetect();
+    return new HttpResponse(null, { status: 202 });
+  });
+}
+
 /** The happy-path fakes for every admin section ported so far; a story's own handlers replace them. */
 export function adminHandlers() {
   return [
@@ -190,5 +216,7 @@ export function adminHandlers() {
     ...maintenanceJobHandlers(),
     backgroundTasksHandler(() => [aWireBackgroundTask()]),
     ...metadataOrderHandlers(),
+    cleanupCountsHandler(aWireCleanupCounts),
+    cleanupDetectHandler(),
   ];
 }

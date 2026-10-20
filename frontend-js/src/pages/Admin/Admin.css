@@ -89,6 +89,34 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
+.cleanup-kinds {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.cleanup-kind-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.cleanup-kind-row:last-child {
+  border-bottom: none;
+}
+.cleanup-kind-label {
+  flex: 1;
+  font-weight: 500;
+}
+.cleanup-kind-count {
+  font-size: 12px;
+  color: var(--ink-1);
+}
+.cleanup-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
 .maint-list {
   list-style: none;
   margin: 1rem 0 0;
