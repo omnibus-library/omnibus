@@ -1,11 +1,12 @@
 //  OfflineSyncTests.swift
 //  The pure parts of the offline layer: how a queued body is re-encoded for
-//  replay, which replica keys a pending write holds off, and what counts as a
-//  reachability signal.
+//  replay, which replica keys a pending write holds off, how queued review
+//  patches fold together, and what counts as a reachability signal.
 //
-//  All three are pure functions with no store or network behind them, which is
-//  the whole reason they're worth pinning here — each has already been wrong
-//  once in a way no screen made obvious.
+//  Almost all of it is pure functions with no store or network behind them,
+//  which is the whole reason they're worth pinning here — each has already
+//  been wrong once in a way no screen made obvious. The review queue is the
+//  exception: its folding happens in the store, so it runs against a scratch one.
 
 import Foundation
 import Testing
@@ -171,6 +172,29 @@ struct OutboxScopeTests {
         #expect(OutboxScope.isBlocked(CacheKey.stats(.year), by: [OpKind.journal]))
     }
 
+    @Test("a queued review holds off that book's reviews and the stats its stars feed")
+    func reviewBlocksItsReviewsAndStats() {
+        let kinds: Set<String> = [OpKind.review(uuid)]
+        #expect(OutboxScope.isBlocked(CacheKey.reviews(uuid), by: kinds))
+        #expect(OutboxScope.isBlocked(CacheKey.stats(.year), by: kinds))
+        #expect(!OutboxScope.isBlocked(CacheKey.reviews("other"), by: kinds))
+        #expect(!OutboxScope.isBlocked(CacheKey.journals(uuid), by: kinds))
+        #expect(!OutboxScope.isBlocked(CacheKey.shelves, by: kinds))
+    }
+
+    @Test("a rating queued before the upgrade still holds off the reviews it changes")
+    func legacyRatingBlocksReviews() {
+        // The book page no longer writes `rating:`, but a device that queued
+        // one still replays it — and the stars it sets are a review's stars.
+        let kinds: Set<String> = [OpKind.rating(uuid)]
+        #expect(OutboxScope.isBlocked(CacheKey.reviews(uuid), by: kinds))
+        #expect(OutboxScope.isBlocked(CacheKey.rating(uuid), by: kinds))
+        #expect(OutboxScope.isBlocked(CacheKey.stats(.week), by: kinds))
+        #expect(!OutboxScope.isBlocked(CacheKey.reviews("other"), by: kinds))
+        // Declared, so not the unknown kind that blocks everything.
+        #expect(!OutboxScope.isBlocked(CacheKey.shelves, by: kinds))
+    }
+
     @Test("an empty queue blocks nothing")
     func emptyQueueBlocksNothing() {
         #expect(!OutboxScope.isBlocked(CacheKey.shelves, by: []))
@@ -183,6 +207,163 @@ struct OutboxScopeTests {
         // over-cautious rather than let a stale answer overwrite what it queued.
         #expect(OutboxScope.isBlocked(CacheKey.shelves, by: ["something_new"]))
         #expect(OutboxScope.isBlocked(CacheKey.me, by: ["something_new"]))
+    }
+}
+
+// MARK: - Field-level patch coalescing
+
+/// The keys and values of a stored body.
+private func object(_ data: Data?) throws -> [String: Any] {
+    let data = try #require(data)
+    return try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+}
+
+@Suite("Folding queued patches")
+struct PatchCoalescingTests {
+    @Test("fields from both bodies survive, the later one winning where both speak")
+    func laterWinsPerField() throws {
+        let folded = PatchCoalescing.folded(
+            Data(#"{"stars":4,"body_md":"draft"}"#.utf8),
+            under: Data(#"{"body_md":"final","spoiler":true}"#.utf8)
+        )
+        let body = try object(folded)
+        #expect((body["stars"] as? NSNumber)?.doubleValue == 4)
+        #expect(body["body_md"] as? String == "final")
+        #expect(body["spoiler"] as? Bool == true)
+    }
+
+    @Test("a later clear wins over an earlier value, as an explicit null")
+    func laterNullClears() throws {
+        let folded = PatchCoalescing.folded(
+            Data(#"{"stars":4,"notes_md":"n"}"#.utf8), under: Data(#"{"stars":null}"#.utf8)
+        )
+        let body = try object(folded)
+        #expect(body["stars"] is NSNull)
+        #expect(body["notes_md"] as? String == "n")
+    }
+
+    @Test("a later value wins over an earlier clear")
+    func laterValueOverridesNull() throws {
+        let folded = PatchCoalescing.folded(
+            Data(#"{"stars":null}"#.utf8), under: Data(#"{"stars":3.5}"#.utf8)
+        )
+        #expect((try object(folded)["stars"] as? NSNumber)?.doubleValue == 3.5)
+    }
+
+    @Test("a body that is not an object is never folded, so nothing is lost")
+    func nonObjectsDoNotFold() {
+        #expect(PatchCoalescing.folded(nil, under: Data(#"{"stars":4}"#.utf8)) == nil)
+        #expect(PatchCoalescing.folded(Data("null".utf8), under: Data(#"{"stars":4}"#.utf8)) == nil)
+    }
+}
+
+@Suite("Queued review writes")
+struct ReviewOutboxTests {
+    private let uuid = "11111111-2222-3333-4444-555555555555"
+    private var kind: String { OpKind.review(uuid) }
+    private var path: String { "/api/reviews/\(uuid)" }
+
+    private func scratchStore() async -> (OfflineStore, String) {
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("review-outbox-\(UUID().uuidString).sqlite").path
+        let store = OfflineStore(path: path)
+        await store.open()
+        return (store, path)
+    }
+
+    private func patch(_ patch: ReviewPatch) throws -> Data {
+        try JSONEncoder().encode(patch)
+    }
+
+    @Test("a text edit queued after a star tap keeps the stars")
+    func patchesMergeFieldByField() async throws {
+        let (store, file) = await scratchStore()
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(4)))
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(ReviewPatch(bodyMd: .set("Loved it")))
+        )
+
+        let ops = await store.listOps()
+        #expect(ops.count == 1)
+        let body = try object(ops.first?.body)
+        #expect((body["stars"] as? NSNumber)?.doubleValue == 4)
+        #expect(body["body_md"] as? String == "Loved it")
+        #expect(ops.first?.method == "PATCH")
+    }
+
+    @Test("a later star tap replaces an earlier one, and a clear stays a clear")
+    func laterStarsWin() async throws {
+        let (store, file) = await scratchStore()
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(4)))
+        await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(0)))
+
+        let ops = await store.listOps()
+        #expect(ops.count == 1)
+        #expect(try object(ops.first?.body)["stars"] is NSNull)
+    }
+
+    @Test("a delete supersedes every patch queued before it")
+    func deleteSupersedesPatches() async throws {
+        let (store, file) = await scratchStore()
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(4)))
+        await store.enqueue(kind: kind, path: path, method: "DELETE", body: nil, coalesce: true)
+
+        let ops = await store.listOps()
+        #expect(ops.map(\.method) == ["DELETE"])
+    }
+
+    @Test("a patch after a delete queues behind it rather than folding past it")
+    func patchAfterDeleteStaysBehind() async throws {
+        let (store, file) = await scratchStore()
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await store.enqueue(kind: kind, path: path, method: "DELETE", body: nil, coalesce: true)
+        await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(2)))
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(ReviewPatch(notesMd: .set("n")))
+        )
+
+        let ops = await store.listOps()
+        #expect(ops.map(\.method) == ["DELETE", "PATCH"])
+        let body = try object(ops.last?.body)
+        #expect((body["stars"] as? NSNumber)?.doubleValue == 2)
+        #expect(body["notes_md"] as? String == "n")
+    }
+
+    @Test("a patch the server refused is never folded into a new one")
+    func rejectedPatchIsLeftAlone() async throws {
+        let (store, file) = await scratchStore()
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        let refused = await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(4)))
+        await store.noteOpFailure(refused, message: "Rejected (400)")
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(ReviewPatch(bodyMd: .set("x")))
+        )
+
+        let pending = await store.listOps()
+        #expect(pending.count == 1)
+        #expect(try object(pending.first?.body)["stars"] == nil)
+        #expect(await store.rejectedCount() == 1)
+    }
+
+    @Test("two books' patches never fold into each other")
+    func otherBooksStayApart() async throws {
+        let (store, file) = await scratchStore()
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(4)))
+        await store.enqueueFieldPatch(
+            kind: OpKind.review("other"), path: "/api/reviews/other", body: try patch(.stars(1))
+        )
+
+        #expect(await store.listOps().count == 2)
     }
 }
 
@@ -764,6 +945,8 @@ struct UserScopedPrefixTests {
             CacheKey.journals(uuid),
             CacheKey.rating(uuid),
             CacheKey.ratingsOthers(uuid),
+            // Holds the reader's private notes.
+            CacheKey.reviews(uuid),
             CacheKey.readStatus(uuid),
             CacheKey.playbackRate(uuid),
             CacheKey.stats(.week),

@@ -95,8 +95,9 @@ Queued (iOS `OpKind`):
 |---|---|---|
 | `progress:<uuid>:<format>` | reading / listening position | yes |
 | `playback_rate:<uuid>` | audiobook speed | yes |
-| `rating:<uuid>` | set / clear rating | yes |
-| `read_status:<uuid>` | want / reading / finished | yes |
+| `rating:<uuid>` | set / clear rating — replay only, queued before reviews | yes |
+| `review:<uuid>` | review stars, text, notes, spoiler flag; delete | patches merge per field; a delete replaces them |
+| `read_status:<uuid>` | unread / reading / finished | yes |
 | `session` | session reports | no |
 | `highlight` | create, colour, note, delete | no |
 | `bookmark` | create, delete | no |

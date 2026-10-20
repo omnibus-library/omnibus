@@ -40,8 +40,12 @@ enum CacheKey {
     static func highlights(_ uuid: String) -> String { "highlights:\(uuid)" }
     static func bookmarks(_ uuid: String) -> String { "bookmarks:\(uuid)" }
     static func journals(_ uuid: String) -> String { "journals:\(uuid)" }
+    /// The stars-only reads the book page used before reviews. Nothing reads
+    /// them now; kept so an account switch still wipes what they cached.
     static func rating(_ uuid: String) -> String { "rating:\(uuid)" }
     static func ratingsOthers(_ uuid: String) -> String { "ratings_others:\(uuid)" }
+    /// `GET /api/reviews/{uuid}`: your review, notes included, and everyone else's.
+    static func reviews(_ uuid: String) -> String { "reviews:\(uuid)" }
     static func readStatus(_ uuid: String) -> String { "read_status:\(uuid)" }
     static func stats(_ range: StatsRange) -> String { "stats:\(range.rawValue)" }
     /// `GET /api/library-size`. Unkeyed: the answer is library-wide, so there
@@ -106,8 +110,18 @@ enum OutboxScope {
         if let uuid = suffix(of: kind, after: "playback_rate:") {
             return key == CacheKey.playbackRate(uuid)
         }
+        if let uuid = suffix(of: kind, after: "review:") {
+            // Stars feed the stats summary's average and histogram, and a
+            // book's reviews carry the household summary the stars move.
+            return key == CacheKey.reviews(uuid) || key.hasPrefix("stats:")
+        }
         if let uuid = suffix(of: kind, after: "rating:") {
+            // The pre-review stars write, still replayed for a device that
+            // queued one before upgrading. It moves the same rows a review's
+            // stars do.
             return key == CacheKey.rating(uuid)
+                || key == CacheKey.reviews(uuid)
+                || key.hasPrefix("stats:")
         }
         if let uuid = suffix(of: kind, after: "read_status:") {
             // Marking a book finished is one of the two events the stats

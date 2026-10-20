@@ -78,7 +78,8 @@ struct AdminBookActionsTests {
         #expect(copy.heading == "Delete all 2 files?")
         #expect(copy.body.contains("removed from your library entirely"))
         #expect(copy.action == "Delete book")
-        #expect(copy.losses == ["3 highlights", "1 rating"])
+        // The wire still calls them `ratings`; the confirm names what goes.
+        #expect(copy.losses == ["3 highlights", "1 review"])
     }
 
     @Test("a single-item book names the book rather than reading \"all 1 file\"")
@@ -169,6 +170,7 @@ struct AdminBookActionsTests {
     func losses() {
         #expect(BookDeletionImpact().losses.isEmpty)
         #expect(BookDeletionImpact(journalEntries: 1, shelves: 2).losses == ["1 journal entry", "2 shelf placements"])
+        #expect(BookDeletionImpact(ratings: 2).losses == ["2 reviews"])
     }
 
     // MARK: - Downloads a delete strands

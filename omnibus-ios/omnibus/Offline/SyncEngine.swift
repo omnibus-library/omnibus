@@ -39,7 +39,13 @@ enum OpKind {
     static func progress(_ uuid: String, _ format: ProgressFormat) -> String {
         "progress:\(uuid):\(format.rawValue)"
     }
+    /// The pre-review stars write. The app no longer queues it, but a device
+    /// that did before upgrading still replays it against `/api/ratings`.
     static func rating(_ uuid: String) -> String { "rating:\(uuid)" }
+    /// A review's field-level patches and its delete. Patches fold into one
+    /// another field by field (`SyncEngine.writeFieldPatch`); a delete
+    /// replaces everything queued before it.
+    static func review(_ uuid: String) -> String { "review:\(uuid)" }
     static func readStatus(_ uuid: String) -> String { "read_status:\(uuid)" }
     static func playbackRate(_ uuid: String) -> String { "playback_rate:\(uuid)" }
     static let highlight = "highlight"
@@ -127,6 +133,24 @@ actor SyncEngine {
         // Here and not in `enqueue`: `record`'s coalesced positions would
         // otherwise make every mounted rail re-read, and each re-read drain.
         await MainActor.run { ReplicaInvalidations.shared.note(kind: kind) }
+        await drain()
+        return !(await OfflineStore.shared.hasOp(id))
+    }
+
+    /// Record a field-level PATCH and push it, folding it into a PATCH of the
+    /// same kind still waiting in the queue rather than replacing it.
+    ///
+    /// `coalesce` replaces the whole body, which loses fields when each write
+    /// names only the ones it changes: a stars tap queued offline, then a text
+    /// edit, would replay the text alone. Answers as `write` does.
+    @discardableResult
+    func writeFieldPatch(kind: String, path: String, body: Encodable) async -> Bool {
+        guard let data = try? JSONEncoder().encode(AnyEncodable(body)) else { return false }
+        let id = await OfflineStore.shared.enqueueFieldPatch(kind: kind, path: path, body: data)
+        await MainActor.run {
+            Connectivity.shared.notePendingChanged()
+            ReplicaInvalidations.shared.note(kind: kind)
+        }
         await drain()
         return !(await OfflineStore.shared.hasOp(id))
     }

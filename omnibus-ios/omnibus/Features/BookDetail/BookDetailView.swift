@@ -16,8 +16,9 @@ import SwiftUI
 @MainActor
 final class BookDetailModel {
     var book: Book?
-    var rating: Double = 0
-    var otherRatings: [AttributedRating] = []
+    /// Yours, everyone else's, and the household summary; `nil` until the
+    /// first read answers.
+    var reviews: BookReviews?
     var readStatus: ReadStatus = .unread
     var journals: [JournalEntry] = []
     var highlights: [Highlight] = []
@@ -46,6 +47,11 @@ final class BookDetailModel {
     var suggestions: [SuggestedBook] = []
     var isLoading = true
     var error: String?
+
+    /// Counts review writes, so only the newest one's answer is painted — an
+    /// earlier write finishing late would otherwise put back what a later
+    /// tap had already replaced.
+    private var reviewWrites = 0
 
     /// Guards the related fetches (series, author, manifest) against running
     /// concurrently; a fetch that came back empty is retried on the next book
@@ -94,13 +100,8 @@ final class BookDetailModel {
                 await self.loadSessions(uuid: uuid)
             }
             group.addTask { @MainActor in
-                for await record in UserDataService.rating(uuid: uuid).values() {
-                    self.rating = record.stars
-                }
-            }
-            group.addTask { @MainActor in
-                for await others in UserDataService.otherRatings(uuid: uuid).values() {
-                    self.otherRatings = others
+                for await reviews in UserDataService.reviews(uuid: uuid).values() {
+                    self.reviews = reviews
                 }
             }
             group.addTask { @MainActor in
@@ -209,14 +210,28 @@ final class BookDetailModel {
         sessions = entries
     }
 
-    func setRating(_ stars: Double, uuid: String) async {
-        rating = stars
-        await UserDataService.setRating(uuid: uuid, stars: stars)
+    /// Patch your review: on screen at once, then whatever the replica holds
+    /// once the write is made — the server's rendering when it landed, what it
+    /// kept when it refused, the optimistic row while it is queued.
+    func patchReview(_ patch: ReviewPatch, uuid: String) async {
+        guard !patch.isEmpty else { return }
+        let now = Int64(Date().timeIntervalSince1970)
+        reviews = (reviews ?? .empty).applying(patch, uuid: uuid, now: now)
+        await settleReviewWrite { await UserDataService.patchReview(uuid: uuid, patch) }
     }
 
-    func clearRating(uuid: String) async {
-        rating = 0
-        await UserDataService.clearRating(uuid: uuid)
+    /// Delete your stars, text and notes, with the same settle as a patch.
+    func deleteReview(uuid: String) async {
+        reviews = (reviews ?? .empty).deletingMine()
+        await settleReviewWrite { await UserDataService.deleteReview(uuid: uuid) }
+    }
+
+    private func settleReviewWrite(_ write: () async -> BookReviews?) async {
+        reviewWrites += 1
+        let ticket = reviewWrites
+        let settled = await write()
+        guard ticket == reviewWrites, let settled else { return }
+        reviews = settled
     }
 
     func setStatus(_ status: ReadStatus, uuid: String) async {
@@ -319,6 +334,11 @@ struct BookDetailView: View {
     @State private var chipEditing: ChipEditKind?
     @State private var showAllHighlights = false
     @State private var showAllJournals = false
+    /// The marquee's hand-off from the one-screen Stats stop to every review.
+    @State private var showAllReviews = false
+    /// Bumped by the household rating line; the flow scrolls its Reviews
+    /// block into view on each change.
+    @State private var reviewsJump = 0
     /// The entry open in the journal drawer.
     @State private var openJournal: JournalEntry?
     /// An entry picked inside the all-entries sheet; opened in the drawer
@@ -501,6 +521,11 @@ struct BookDetailView: View {
                     pendingQuote = highlight
                     showAllHighlights = false
                 }
+            }
+        }
+        .sheet(isPresented: $showAllReviews) {
+            if let book = model.book {
+                AllReviewsSheet(book: book, model: model)
             }
         }
         .sheet(item: $quoteTarget) { request in
@@ -742,6 +767,16 @@ struct BookDetailView: View {
         .clipped()
     }
 
+    /// The household rating line's tap. The marquee keeps Reviews on the
+    /// Stats stop, so it snaps there; the flow scrolls to the block itself.
+    private func jumpToReviews() {
+        if usesScrollStops {
+            withAnimation(Motion.settle) { scrollTarget = DetailStop.stats.rawValue }
+        } else {
+            reviewsJump &+= 1
+        }
+    }
+
     /// The handle's tap: jump the scroller to the other Home position.
     private func toggleLift() {
         withAnimation(Motion.settle) {
@@ -755,6 +790,20 @@ struct BookDetailView: View {
     /// every section runs on in a single continuous list. Only the hero
     /// region snaps (`FlowSnapBehavior`); the list itself scrolls free.
     private func flowScroller(_ book: Book, restTop: CGFloat) -> some View {
+        // A reader rather than `scrollPosition`: that binding only reaches the
+        // layout's direct children, and the Reviews block sits deep in the body.
+        ScrollViewReader { proxy in
+            flowScrollView(book, restTop: restTop)
+                .onChange(of: reviewsJump) { _, _ in
+                    withAnimation(Motion.settle) {
+                        // Below the nav strip and the discs, not under them.
+                        proxy.scrollTo(DetailReviews.anchorID, anchor: UnitPoint(x: 0.5, y: 0.16))
+                    }
+                }
+        }
+    }
+
+    private func flowScrollView(_ book: Book, restTop: CGFloat) -> some View {
         ScrollView(.vertical) {
             VStack(spacing: 0) {
                 Color.clear
@@ -871,10 +920,16 @@ struct BookDetailView: View {
                     ) {
                         dismiss()
                     }
-                }
+                },
+                onReviews: jumpToReviews
             )
         case .stats:
-            StopStats(book: book, model: model)
+            StopStats(
+                book: book,
+                model: model,
+                uncapped: uncapped,
+                onAllReviews: { showAllReviews = true }
+            )
         case .highlights:
             StopHighlights(
                 book: book,

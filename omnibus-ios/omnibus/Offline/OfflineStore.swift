@@ -614,6 +614,50 @@ actor OfflineStore {
             }
             sqlite3_finalize(del)
         }
+        return insertOp(kind: kind, path: path, method: method, body: body)
+    }
+
+    /// Queue a field-level PATCH, folded into the newest still-pending PATCH
+    /// of the same kind and path when there is one (`PatchCoalescing`).
+    ///
+    /// Only the newest op is a candidate, and only a PATCH: a DELETE queued
+    /// ahead of this clears every field, so a patch behind it must stay behind
+    /// it rather than be folded into anything older. A held-aside rejection is
+    /// never folded into either — it is a record of what the server refused.
+    @discardableResult
+    func enqueueFieldPatch(kind: String, path: String, body: Data) -> Int64 {
+        guard isOpen else { return 0 }
+        // One transaction: the folded-away op holds fields the new row now
+        // carries, so losing it without the insert would lose them outright.
+        exec("BEGIN IMMEDIATE")
+        var merged = body
+        if let pending = newestPendingOp(kind: kind),
+           pending.method == "PATCH", pending.path == path,
+           let folded = PatchCoalescing.folded(pending.body, under: body)
+        {
+            merged = folded
+            deleteOps([pending.id])
+        }
+        let id = insertOp(kind: kind, path: path, method: "PATCH", body: merged)
+        exec(id == 0 ? "ROLLBACK" : "COMMIT")
+        return id
+    }
+
+    /// The newest op of `kind` still waiting to replay.
+    private func newestPendingOp(kind: String) -> PendingOp? {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let sql = """
+            SELECT id, kind, path, method, body, created_at, attempts, last_error
+            FROM ops WHERE kind = ? AND last_error IS NULL ORDER BY id DESC LIMIT 1
+            """
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        bind(stmt, 1, kind)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+        return readOp(stmt)
+    }
+
+    private func insertOp(kind: String, path: String, method: String, body: Data?) -> Int64 {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         let sql = """
@@ -1324,12 +1368,14 @@ actor OfflineStore {
     /// deliberately not identical — the two clients mint different keys.
     /// `read_status:`, `shelves_with:`, and `shelf_previews` exist only here;
     /// `reader_cfi:` and `audio_pos:` only there. The overlap is kept in the
-    /// same order so the two can still be read side by side.
+    /// same order so the two can still be read side by side. `reviews:` holds
+    /// the reader's private notes, so it is the one key here whose leak would
+    /// expose something no other account could ever have read.
     static let userScopedPrefixes = [
         "me", "progress:", "recent_progress", "rate:", "highlights:", "bookmarks:",
         "journals:", "rating:", "ratings_others:", "shelves", "shelf:", "shelf_page:",
         "shelf_previews", "stats:", "reader_cfi:", "audio_pos:", "audio_rate:",
-        "read_status:", "shelves_with:", "syncprompt:",
+        "read_status:", "shelves_with:", "syncprompt:", "reviews:",
     ]
 
     /// Whether the account-switch wipe removes `key`: a user-scoped prefix, or

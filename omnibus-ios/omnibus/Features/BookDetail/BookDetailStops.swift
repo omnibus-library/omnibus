@@ -1,8 +1,9 @@
 //  BookDetailStops.swift
-//  The section panels of the book detail — six in either layout, with the
-//  trailing More holding the shelf block and the recommendations — the small
-//  pieces they share (kicker, ruler, stat tiles, cover strips, inset lists),
-//  and the pure derivations behind them (`DetailRead`, `DetailStats`).
+//  The section panels of the book detail — six in either layout, with Stats
+//  carrying the Reviews block and the trailing More holding the shelf block
+//  and the recommendations — the small pieces they share (kicker, ruler, stat
+//  tiles, cover strips, inset lists), and the pure derivations behind them
+//  (`DetailRead`, `DetailStats`).
 
 import SwiftUI
 
@@ -928,6 +929,8 @@ struct StopHome: View {
     var onMore: () -> Void
     var onAlignment: () -> Void
     var onRemovedWishlist: (Bool) -> Void
+    /// The household rating line's tap: bring the Reviews block into view.
+    var onReviews: () -> Void = {}
 
     @Environment(\.palette) private var palette
 
@@ -972,6 +975,13 @@ struct StopHome: View {
                 .foregroundStyle(palette.ink1Color)
                 .lineLimit(1)
                 .padding(.top, 7)
+
+            // Present only once the server sends a summary — the client never
+            // decides how many ratings are enough to show one.
+            if let summary = model.reviews?.summary {
+                HouseholdRatingLine(summary: summary, onTap: onReviews)
+                    .padding(.top, 4)
+            }
 
             if showsGenres {
                 ChipStrip {
@@ -1261,6 +1271,10 @@ struct StopShelf: View {
 struct StopStats: View {
     let book: Book
     let model: BookDetailModel
+    /// The flow lists every review inline; the marquee's one-screen stop
+    /// keeps your card and hands the rest to `onAllReviews`.
+    var uncapped = false
+    var onAllReviews: () -> Void = {}
 
     @Environment(\.palette) private var palette
 
@@ -1294,13 +1308,8 @@ struct StopStats: View {
                     .padding(.top, 20)
             }
 
-            ratingBlock
-                .padding(.top, 20)
-
-            if !model.otherRatings.isEmpty {
-                otherReaders
-                    .padding(.top, 16)
-            }
+            ReviewsBlock(book: book, model: model, uncapped: uncapped, onAll: onAllReviews)
+                .padding(.top, 26)
         }
     }
 
@@ -1357,59 +1366,6 @@ struct StopStats: View {
                     value: Format.humanDuration(record.longestSeconds),
                     sub: Format.date(unix: record.longestAt)
                 )
-            }
-        }
-    }
-
-    private var ratingBlock: some View {
-        HStack(spacing: 12) {
-            StarRating(stars: model.rating, size: 19, interactive: true) { stars in
-                Task {
-                    if stars > 0 {
-                        await model.setRating(stars, uuid: book.uuid)
-                    } else {
-                        await model.clearRating(uuid: book.uuid)
-                    }
-                }
-            }
-            MonoNote(
-                text: model.rating > 0
-                    ? "rated \(model.rating.formatted()) of 5"
-                    : "not rated yet"
-            )
-            if model.rating > 0 {
-                Button {
-                    Haptics.tap()
-                    Task { await model.clearRating(uuid: book.uuid) }
-                } label: {
-                    MonoNote(text: "clear", color: palette.accentColor)
-                        .padding(.vertical, 8)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear your \(model.rating.formatted())-star rating")
-                .accessibilityIdentifier("rating-clear")
-            }
-        }
-        .animation(Motion.snap, value: model.rating)
-    }
-
-    private var otherReaders: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            ForEach(model.otherRatings.prefix(3)) { rating in
-                HStack(spacing: 9) {
-                    UserAvatar(
-                        id: rating.userId,
-                        name: rating.username,
-                        hasAvatar: rating.hasAvatar,
-                        size: 20
-                    )
-                    Text(rating.username)
-                        .font(.ui(12.5))
-                        .foregroundStyle(palette.ink1Color)
-                    Spacer(minLength: Spacing.sm)
-                    StarRating(stars: rating.stars, size: 11)
-                }
             }
         }
     }

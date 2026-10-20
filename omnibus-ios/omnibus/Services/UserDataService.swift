@@ -1,5 +1,5 @@
 //  UserDataService.swift
-//  Per-user reads and writes: progress, ratings, read status, annotations,
+//  Per-user reads and writes: progress, reviews, read status, annotations,
 //  journals, shelves, and stats.
 //
 //  Every write is offline-tolerant: it hits the server when reachable, and
@@ -231,39 +231,68 @@ enum UserDataService {
         )
     }
 
-    // MARK: - Ratings
+    // MARK: - Reviews
 
-    static func rating(uuid: String) -> AsyncThrowingStream<CacheRead<RatingRecord>, Error> {
-        Cache.live(CacheKey.rating(uuid)) {
-            try await APIClient.shared.get("/api/ratings/\(uuid)")
+    /// A book's reviews, replica first: yours with its private notes, every
+    /// other reader's, and the household summary when the server sends one.
+    static func reviews(uuid: String) -> AsyncThrowingStream<CacheRead<BookReviews>, Error> {
+        Cache.live(CacheKey.reviews(uuid)) {
+            try await APIClient.shared.get("/api/reviews/\(uuid)")
         }
     }
 
-    static func otherRatings(
-        uuid: String
-    ) -> AsyncThrowingStream<CacheRead<[AttributedRating]>, Error> {
-        Cache.live(CacheKey.ratingsOthers(uuid)) {
-            try await APIClient.shared.get("/api/ratings/others/\(uuid)")
+    /// Change your review field by field, offline or not, answering with what
+    /// the replica holds once the write has been made.
+    ///
+    /// The patch reaches the replica before it is queued, so it shows at once
+    /// and survives a relaunch; queued patches for one book fold field by
+    /// field (`SyncEngine.writeFieldPatch`). The refresh runs whether or not
+    /// the write landed: held off while it is still queued, it reads back the
+    /// rendered text once it lands, and what the server kept if it was refused.
+    @discardableResult
+    static func patchReview(uuid: String, _ patch: ReviewPatch) async -> BookReviews? {
+        if !patch.isEmpty {
+            let now = Int64(Date().timeIntervalSince1970)
+            await mutateLocalReviews(uuid) { $0 = $0.applying(patch, uuid: uuid, now: now) }
+            await SyncEngine.shared.writeFieldPatch(
+                kind: OpKind.review(uuid), path: "/api/reviews/\(uuid)", body: patch
+            )
+            await refreshReviews(uuid)
         }
+        return await Cache.cachedOnly(CacheKey.reviews(uuid))
     }
 
-    static func setRating(uuid: String, stars: Double) async {
-        let update = RatingUpdate(bookUUID: uuid, stars: stars)
-        await Cache.write(
-            CacheKey.rating(uuid),
-            RatingRecord(bookUUID: uuid, stars: stars, updatedAt: Int64(Date().timeIntervalSince1970))
-        )
+    /// Delete your stars, text and notes together. Coalesced, so it replaces
+    /// every patch still queued for the book — it would clear them anyway.
+    @discardableResult
+    static func deleteReview(uuid: String) async -> BookReviews? {
+        await mutateLocalReviews(uuid) { $0 = $0.deletingMine() }
         await SyncEngine.shared.write(
-            kind: OpKind.rating(uuid), path: "/api/ratings", body: update, coalesce: true
-        )
-    }
-
-    static func clearRating(uuid: String) async {
-        await OfflineStore.shared.cacheDelete(CacheKey.rating(uuid))
-        await SyncEngine.shared.write(
-            kind: OpKind.rating(uuid), path: "/api/ratings/\(uuid)",
+            kind: OpKind.review(uuid), path: "/api/reviews/\(uuid)",
             method: "DELETE", body: nil, coalesce: true
         )
+        await refreshReviews(uuid)
+        return await Cache.cachedOnly(CacheKey.reviews(uuid))
+    }
+
+    private static func refreshReviews(_ uuid: String) async {
+        let key = CacheKey.reviews(uuid)
+        guard await canAdoptServerState(for: key),
+              let fresh: BookReviews = try? await APIClient.shared.get("/api/reviews/\(uuid)"),
+              await canAdoptServerState(for: key)
+        else { return }
+        await Cache.write(key, fresh)
+    }
+
+    /// Starts from `.empty` when nothing is cached yet, as the journal and
+    /// highlight lists start from `[]`: a write made before the first read must
+    /// still be in the replica after a relaunch.
+    private static func mutateLocalReviews(
+        _ uuid: String, _ mutate: (inout BookReviews) -> Void
+    ) async {
+        var reviews: BookReviews = await Cache.cachedOnly(CacheKey.reviews(uuid)) ?? .empty
+        mutate(&reviews)
+        await Cache.write(CacheKey.reviews(uuid), reviews)
     }
 
     // MARK: - Read status
@@ -1136,6 +1165,7 @@ enum UserDataService {
             group.addTask { for await _ in highlights(uuid: uuid).values() {} }
             group.addTask { for await _ in bookmarks(uuid: uuid).values() {} }
             group.addTask { for await _ in journals(uuid: uuid).values() {} }
+            group.addTask { for await _ in reviews(uuid: uuid).values() {} }
             group.addTask { for await _ in readStatus(uuid: uuid).values() {} }
         }
     }
