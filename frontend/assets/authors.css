@@ -1,7 +1,9 @@
 /* Authors browser: the surname list (`.au-list`) beside the chosen author's
    pane (`.au-detail`). Two panes on a desktop width; one at a time below
    `--au-split`, picked by `.au-page[data-pane]`. No keyframes here — the only
-   motion is a colour/opacity transition, cut under reduced motion. */
+   motion is a colour/opacity transition, cut under reduced motion. The
+   list, its rows and the pane's parts come from `pages/browse/`, so any
+   browser built from it wears these classes too. */
 
 .au-page {
   --au-top: 65px; /* the sticky top bar */
@@ -14,16 +16,16 @@
 
 /* An author's accent, held at one lightness so a dark cover never makes a
    dark button or an invisible bar. The pure-black theme stays achromatic. */
-.au-row, .au-author { --au-tint: var(--accent); }
+.au-row, .au-pane { --au-tint: var(--accent); }
 @supports (color: oklch(from red l c h)) {
-  .au-row, .au-author {
+  .au-row, .au-pane {
     --au-tint: oklch(from var(--au-accent, var(--accent)) 0.79 clamp(0.05, c, 0.15) h);
   }
-  [data-theme="light"] .au-row, [data-theme="light"] .au-author,
-  [data-theme="sepia"] .au-row, [data-theme="sepia"] .au-author {
+  [data-theme="light"] .au-row, [data-theme="light"] .au-pane,
+  [data-theme="sepia"] .au-row, [data-theme="sepia"] .au-pane {
     --au-tint: oklch(from var(--au-accent, var(--accent)) 0.62 clamp(0.05, c, 0.15) h);
   }
-  [data-theme="black"] .au-row, [data-theme="black"] .au-author { --au-tint: var(--accent); }
+  [data-theme="black"] .au-row, [data-theme="black"] .au-pane { --au-tint: var(--accent); }
 }
 
 /* ── List pane ─────────────────────────────────────────────────── */
@@ -153,11 +155,11 @@
 .au-rail-letter.is-empty { color: var(--ink-3); opacity: .45; }
 .au-rail-letter:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
 
-/* ── Author pane ───────────────────────────────────────────────── */
+/* ── Pane ──────────────────────────────────────────────────────── */
 
 .au-detail { min-width: 0; position: relative; }
-.au-detail > .ld-stale, .au-author { min-height: 100%; }
-.au-author {
+.au-detail > .ld-stale, .au-pane { min-height: 100%; }
+.au-pane {
   padding: 52px clamp(28px, 4.5vw, 76px) 72px;
   background: radial-gradient(70% 38% at 85% 0%, color-mix(in oklch, var(--au-tint) 7%, transparent), transparent 72%);
 }
@@ -170,7 +172,7 @@
 }
 .au-avatar.disc-avatar { width: 150px; height: 150px; font-size: 64px; }
 .au-hero-body { min-width: 0; }
-.au-author .au-name {
+.au-pane .au-name {
   --lh: 1; font-size: clamp(42px, 4.6vw, 80px); line-height: var(--lh);
   text-wrap: balance;
 }
@@ -232,7 +234,7 @@
 .au-shelf-head {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 20px;
 }
-.au-author .au-shelf-title { --lh: 1; font-size: 36px; line-height: var(--lh); }
+.au-pane .au-shelf-title { --lh: 1; font-size: 36px; line-height: var(--lh); }
 .au-shelf-meta, .au-shelf-link {
   font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
 }
@@ -270,7 +272,7 @@
   .au-group-head { top: var(--au-top); }
   .au-rail { position: sticky; top: var(--au-top); height: calc(100dvh - var(--au-top) - 80px); }
   .au-list-head { padding-inline: 20px; }
-  .au-author { padding: 28px 20px 48px; }
+  .au-pane { padding: 28px 20px 48px; }
   .au-hero { grid-template-columns: auto minmax(0, 1fr); row-gap: 20px; column-gap: 20px; }
   .au-avatar.disc-avatar { width: 84px; height: 84px; font-size: 38px; }
   .au-hero-actions { grid-column: 1 / -1; }

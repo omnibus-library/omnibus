@@ -5,24 +5,22 @@
 use std::collections::HashMap;
 
 use omnibus_shared::sort_order::{creator_sort_key, dictionary_cmp};
-use omnibus_shared::{text_fold::fold_for_match, AuthorReading, AuthorSort, AuthorSummary};
+use omnibus_shared::{text_fold::fold_for_match, AuthorReading, AuthorSummary, BrowseSort};
+
+use crate::pages::browse::{is_non_alpha_key, letter_for_key, Groups};
 
 /// The reader's progress per author id, once it has loaded.
 pub type ReadingMap = HashMap<i64, AuthorReading>;
 
 /// Output of [`compute_author_groups`]: the visible rows in order, and the same
 /// rows bucketed by surname letter when the sort is by surname (else empty).
-#[derive(Clone, PartialEq)]
-pub struct AuthorGroups {
-    pub filtered: Vec<AuthorSummary>,
-    pub letters: Vec<(char, Vec<AuthorSummary>)>,
-}
+pub type AuthorGroups = Groups<AuthorSummary>;
 
 /// The list's inputs besides the rows themselves.
 #[derive(Clone, Copy)]
 pub struct ListQuery<'a> {
     pub text: &'a str,
-    pub sort: AuthorSort,
+    pub sort: BrowseSort,
     /// `None` until the reader's progress loads (or if it fails to).
     pub reading: Option<&'a ReadingMap>,
     /// Keep only authors with a book in progress; ignored without `reading`.
@@ -38,7 +36,7 @@ pub fn compute_author_groups(all: &[AuthorSummary], query: ListQuery<'_>) -> Aut
     }
     sort_authors(&mut filtered, query.sort, query.reading);
     let filtered: Vec<AuthorSummary> = filtered.into_iter().cloned().collect();
-    let letters = group_by_letter(&filtered, query.sort == AuthorSort::Name);
+    let letters = group_by_letter(&filtered, query.sort == BrowseSort::Name);
     AuthorGroups { filtered, letters }
 }
 
@@ -57,7 +55,7 @@ pub fn filter_authors<'a>(all: &'a [AuthorSummary], query: &str) -> Vec<&'a Auth
 /// most recently first and the never-read after them, by surname.
 pub fn sort_authors(
     filtered: &mut [&AuthorSummary],
-    sort: AuthorSort,
+    sort: BrowseSort,
     reading: Option<&ReadingMap>,
 ) {
     let by_name = |a: &AuthorSummary, b: &AuthorSummary| {
@@ -68,11 +66,11 @@ pub fn sort_authors(
             .then_with(|| dictionary_cmp(&ka, &kb))
     };
     match sort {
-        AuthorSort::Name => filtered.sort_by(|a, b| by_name(a, b)),
-        AuthorSort::BookCount => {
+        BrowseSort::Name => filtered.sort_by(|a, b| by_name(a, b)),
+        BrowseSort::BookCount => {
             filtered.sort_by(|a, b| b.book_count.cmp(&a.book_count).then_with(|| by_name(a, b)))
         }
-        AuthorSort::Recent => {
+        BrowseSort::Recent => {
             let last = |a: &AuthorSummary| reading.and_then(|m| m.get(&a.id)?.last_read_at);
             filtered.sort_by(|a, b| last(b).cmp(&last(a)).then_with(|| by_name(a, b)));
         }
@@ -85,17 +83,11 @@ pub fn group_by_letter(
     filtered: &[AuthorSummary],
     show_letters: bool,
 ) -> Vec<(char, Vec<AuthorSummary>)> {
-    let mut letters: Vec<(char, Vec<AuthorSummary>)> = Vec::new();
     if show_letters {
-        for a in filtered {
-            let l = first_letter(a);
-            match letters.last_mut() {
-                Some((existing, group)) if *existing == l => group.push(a.clone()),
-                _ => letters.push((l, vec![a.clone()])),
-            }
-        }
+        crate::pages::browse::group_by_letter(filtered, first_letter)
+    } else {
+        Vec::new()
     }
-    letters
 }
 
 /// The author `/authors` shows before the reader picks one: whoever they
@@ -109,7 +101,7 @@ pub fn default_author(all: &[AuthorSummary], reading: Option<&ReadingMap>) -> Op
     });
     recent.or_else(|| {
         let mut rows: Vec<&AuthorSummary> = all.iter().collect();
-        sort_authors(&mut rows, AuthorSort::Name, None);
+        sort_authors(&mut rows, BrowseSort::Name, None);
         rows.first().map(|a| a.id)
     })
 }
@@ -124,36 +116,9 @@ pub fn name_parts(a: &AuthorSummary) -> (String, String) {
     }
 }
 
-/// URL-fragment-safe slug for a letter glyph: `#` would start a second
-/// fragment, so the non-alpha bucket is `letter-hash`.
-pub fn letter_frag(c: char) -> String {
-    if c == '#' {
-        "hash".to_string()
-    } else {
-        c.to_string()
-    }
-}
-
-/// The letter an author files under: the folded initial of their surname
-/// key, or `#` for anything outside A–Z (digits, punctuation, CJK, …). An
-/// accented initial files under its letter (`Éluard` under E).
+/// The letter an author files under: [`letter_for_key`] of their surname key.
 pub fn first_letter(a: &AuthorSummary) -> char {
-    match folded_initial(&sort_key(a)) {
-        Some(c) if c.is_ascii_alphabetic() => c.to_ascii_uppercase(),
-        _ => '#',
-    }
-}
-
-/// Whether `key` files under `#` rather than A–Z.
-pub fn is_non_alpha_key(key: &str) -> bool {
-    !folded_initial(key).is_some_and(|c| c.is_ascii_alphabetic())
-}
-
-/// The key's first character with accents and case folded away.
-fn folded_initial(key: &str) -> Option<char> {
-    fold_for_match(key.chars().next()?.encode_utf8(&mut [0; 4]))
-        .chars()
-        .next()
+    letter_for_key(&sort_key(a))
 }
 
 /// Surname-first key driving order and letter: `creator_sort_key`, the rule

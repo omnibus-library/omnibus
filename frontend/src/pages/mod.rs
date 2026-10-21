@@ -13,6 +13,7 @@ mod auth;
 mod author;
 mod authors_index;
 mod book_detail;
+mod browse;
 mod check_in;
 // Web/server only: the review page drives the admin-gated `cleanup/*` server
 // functions; no mobile cleanup surface ships, same shape as `admin_health`.
