@@ -129,9 +129,9 @@ fn journal_feed_notice(feed: FeedState) -> Option<Element> {
 
 /// Binds click- and key-to-reveal spoilers, delegated on `document` so entries
 /// rendered after mount are covered; bound once via a window guard. Web-only
-/// (the eval is a no-op on SSR / native). Called unconditionally from
-/// [`BdJournalSection`].
-fn use_spoiler_reveal_binding() {
+/// (the eval is a no-op on SSR / native). A hook: the journal and the reviews
+/// both render inline spoilers, and each calls it unconditionally.
+pub(super) fn use_spoiler_reveal_binding() {
     // Enter/Space are handled in the JS because the sanitizer emits the spoiler as
     // an inline `role="button"` span, which has no native activation.
     use_effect(move || {

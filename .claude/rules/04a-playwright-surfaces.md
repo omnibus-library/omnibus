@@ -66,7 +66,7 @@ pill, and no `.bdmq-next` cue — and the snapped marquee, `#bdmq-snap` with
 either must set the preference first with the `presetScrollStops(enabled, owner?)`
 fixture, which turns it back off afterwards. Pass `"reader"` when the test then
 flips the worker reader's own Settings switch. Two controls are common to both:
-the dot rail (`bdmq-dots`, six rows, nothing else in its box) and the
+the dot rail (`bdmq-dots`, seven rows, nothing else in its box) and the
 `bdmq-mode-toggle` switch in the stage's top-right corner, which flips the
 preference in place and has no `aria-pressed` until the viewer resolves.
 

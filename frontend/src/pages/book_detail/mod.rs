@@ -26,8 +26,12 @@ mod immersive;
 mod journal;
 mod journal_editor;
 mod merge;
+// The star widget the mobile layout still shows; the web stage moved to the
+// Reviews section.
+#[cfg(feature = "mobile")]
 mod rating;
 mod read_status;
+mod reviews;
 mod rule_facts;
 #[cfg(not(feature = "mobile"))]
 mod sync_link;

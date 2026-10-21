@@ -436,10 +436,8 @@ fn BdJournalEntryBody(
     }
 }
 
-/// Markdown toolbar + textarea/contenteditable pair for editing an existing
-/// entry (same progressive-enhancement pattern as the composer — see
-/// `BdJournalEditorBody` in [`super::composer`]), keyed per entry id so
-/// multiple open editors don't collide.
+/// Markdown toolbar + the shared [`BdMarkdownSurface`] for editing an existing
+/// entry, keyed per entry id so multiple open editors don't collide.
 #[component]
 fn BdJournalEntryEditor(
     entry_id: i64,
@@ -447,7 +445,6 @@ fn BdJournalEntryEditor(
     server_url: String,
     error: Signal<Option<String>>,
 ) -> Element {
-    let mut edit_body = edit_body;
     rsx! {
         div { class: "bd-journal-toolbar-row",
             BdJournalToolbar {
@@ -456,28 +453,13 @@ fn BdJournalEntryEditor(
                 error,
             }
         }
-        div { class: "bd-journal-editor-wrap",
-            textarea {
-                id: "journal-edit-body-{entry_id}",
-                class: "me-textarea bd-journal-textarea",
-                "data-testid": "journal-edit-body",
-                rows: "5",
-                value: "{edit_body}",
-                oninput: move |e| edit_body.set(e.value()),
-                onmounted: move |_| editor_enhance(
-                    &format!("journal-edit-body-{entry_id}"),
-                    &format!("journal-edit-editor-{entry_id}"),
-                ),
-            }
-            div {
-                id: "journal-edit-editor-{entry_id}",
-                class: "me-textarea bd-journal-editor",
-                "data-testid": "journal-edit-editor",
-                contenteditable: "true",
-                role: "textbox",
-                "aria-multiline": "true",
-                "aria-label": "Edit journal entry",
-            }
+        BdMarkdownSurface {
+            source_id: format!("journal-edit-body-{entry_id}"),
+            editor_id: format!("journal-edit-editor-{entry_id}"),
+            body: edit_body,
+            label: "Edit journal entry".to_string(),
+            source_testid: "journal-edit-body".to_string(),
+            editor_testid: "journal-edit-editor".to_string(),
         }
     }
 }

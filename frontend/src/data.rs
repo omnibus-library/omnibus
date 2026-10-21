@@ -55,6 +55,7 @@ mod profile;
 mod progress;
 mod ratings;
 mod read_status;
+mod reviews;
 mod scan;
 mod series;
 // Self-service session management (F5.4, #910) — web (gloo REST) + SSR
@@ -112,6 +113,7 @@ pub use profile::*;
 pub use progress::*;
 pub use ratings::*;
 pub use read_status::*;
+pub use reviews::*;
 pub use scan::*;
 pub use series::*;
 #[cfg(not(feature = "mobile"))]
