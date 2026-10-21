@@ -444,6 +444,20 @@ pub fn use_cache_generation() -> Signal<u64> {
     generation
 }
 
+/// The cache generation this moment (mobile), read straight from the channel
+/// rather than [`use_cache_generation`]'s signal, which catches up only after
+/// mount: for telling whether the cache moved across an await.
+#[cfg(feature = "mobile")]
+pub fn cache_generation_now() -> u64 {
+    offline::cache::generation()
+}
+
+/// Non-mobile stub: the cache generation never moves.
+#[cfg(not(feature = "mobile"))]
+pub fn cache_generation_now() -> u64 {
+    0
+}
+
 /// Capture-phase left-edge back-swipe listener for the mobile WebView. The
 /// native edge gesture can't drive navigation (the WebView's history is fed
 /// only by `history.pushState`, which the in-memory router never calls), so

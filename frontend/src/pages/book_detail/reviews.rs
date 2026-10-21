@@ -119,7 +119,9 @@ pub(super) fn use_book_reviews(uuid: String) -> ReviewsCtx {
 
 /// Load the reviews for `uuid`, again on every `reload` bump. A new book
 /// starts the state over and outdates every write still in flight for the
-/// last one.
+/// last one. If the replica moved while the read was out (a drain landed a
+/// queued write), the household it answered may predate that, so it is
+/// re-read once.
 fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx, reload: Signal<u64>) {
     let mut loaded_for = use_signal(String::new);
     use_effect(use_reactive!(|uuid| {
@@ -141,6 +143,7 @@ fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx, reload: S
         ctx.refresh_failed.set(false);
         ctx.failure.set(None);
         let url = server_url.clone();
+        let generation_at_start = crate::cache_generation_now();
         spawn(async move {
             let result = data::get_book_reviews(&url, &uuid).await;
             if *loaded_for.peek() != uuid {
@@ -153,6 +156,9 @@ fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx, reload: S
             }
             let next = ctx.feed.peek().after(ok);
             ctx.feed.set(next);
+            if ok && crate::cache_generation_now() != generation_at_start {
+                writes::refresh_after_sync(ctx, uuid, url);
+            }
         });
     }));
 }

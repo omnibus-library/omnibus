@@ -404,7 +404,8 @@ async fn refresh_household(ctx: ReviewsCtx, uuid: &str, server_url: &str) {
 }
 
 /// Re-read the household when the replica moved under the section (a drain
-/// or a revalidation landed), on the owner scope. The book shown stays put.
+/// or a revalidation landed), on the owner scope, and only while the book it
+/// was asked for is still the one shown.
 /// Skipped while the server can't answer for the book yet (offline, or one of
 /// your writes to it queued): the drain that changes that moves the replica
 /// again, which comes back here. Skipped too if a re-read began since the
@@ -412,8 +413,11 @@ async fn refresh_household(ctx: ReviewsCtx, uuid: &str, server_url: &str) {
 /// server after the move, and replacing it would drop its result, and the
 /// stale note with it if it fails.
 pub(super) fn refresh_after_sync(ctx: ReviewsCtx, uuid: String, server_url: String) {
+    let Ok(epoch) = ctx.epoch.try_peek().map(|e| *e) else {
+        return;
+    };
     spawn_owned(ctx, async move {
-        if !data::can_refresh_book_reviews(&uuid).await {
+        if !data::can_refresh_book_reviews(&uuid).await || !still_showing(ctx, epoch) {
             return;
         }
         if ctx.refreshing.try_peek().is_ok_and(|busy| *busy) {
