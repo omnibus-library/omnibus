@@ -9,11 +9,11 @@
 //! - **Delete** ([`delete`]): confirmed first, applied on success only; its
 //!   household re-read runs on its own, after the dialog has closed.
 //!
-//! No client cache holds reviews (web reads through server functions, mobile
-//! calls REST directly), so the household re-read is the only follow-up. If it
-//! fails, the old figures stay on screen with a note saying they are stale. A
-//! re-read that overlapped one of your writes takes only the household, never
-//! your card, since the write may be newer than what the server answered.
+//! The household re-read is the only follow-up here; `data::reviews` keeps
+//! mobile's replica and outbox in step with each write. If it fails, the old
+//! figures stay on screen with a note saying they are stale. A re-read that
+//! overlapped one of your writes takes only the household, never your card,
+//! since the write may be newer than what the server answered.
 //!
 //! Each step is a sync `begin_*` / `settle_*` pair around one await, so the
 //! bookkeeping is testable without a server. Tasks run on the scope owning
@@ -392,11 +392,51 @@ pub(super) fn settle_refresh(
     }
 }
 
-/// Re-read the summary and the other readers after a write moved them.
+/// Re-read the summary and the other readers after a write moved them, from
+/// the server: `refresh_book_reviews`, not the cache-first `get_book_reviews`,
+/// which on mobile answers with the replica the write just refreshed.
 async fn refresh_household(ctx: ReviewsCtx, uuid: &str, server_url: &str) {
     let Some(start) = begin_refresh(ctx) else {
         return;
     };
-    let result = data::get_book_reviews(server_url, uuid).await;
+    let result = data::refresh_book_reviews(server_url, uuid).await;
     settle_refresh(ctx, start, result);
+}
+
+/// Re-read the household when the replica moved under the section (a drain
+/// or a revalidation landed), on the owner scope, and only while the book it
+/// was asked for is still the one shown.
+/// Skipped while the server can't answer for the book yet (offline, or one of
+/// your writes to it queued): the drain that changes that moves the replica
+/// again, which comes back here. Skipped too if a re-read began since the
+/// section asked (it waits out one already running): that one asked the
+/// server after the move, and replacing it would drop its result, and the
+/// stale note with it if it fails.
+pub(super) fn refresh_after_sync(ctx: ReviewsCtx, uuid: String, server_url: String) {
+    let Ok(epoch) = ctx.epoch.try_peek().map(|e| *e) else {
+        return;
+    };
+    spawn_owned(ctx, async move {
+        if !data::can_refresh_book_reviews(&uuid).await || !still_showing(ctx, epoch) {
+            return;
+        }
+        if ctx.refreshing.try_peek().is_ok_and(|busy| *busy) {
+            return;
+        }
+        let Some(start) = begin_refresh(ctx) else {
+            return;
+        };
+        let result = data::refresh_book_reviews(&server_url, &uuid).await;
+        settle_resync(ctx, start, result);
+    });
+}
+
+/// [`settle_refresh`] for a re-read you didn't ask for: a failure leaves the
+/// figures, and any note about them, as they were.
+fn settle_resync(mut ctx: ReviewsCtx, start: RefreshStart, result: Result<BookReviews, DataError>) {
+    if result.is_ok() {
+        settle_refresh(ctx, start, result);
+    } else if still_showing(ctx, start.epoch) && *ctx.refresh_seq.peek() == start.refresh {
+        ctx.refreshing.set(false);
+    }
 }

@@ -143,6 +143,9 @@ dioxus-html = { workspace = true, features = ["serialize"] }
 # for wasm).
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 omnibus-db = { path = "../db", features = ["test-support"] }
+# `dioxus::ssr` in every native test build, so a render test of mobile-only
+# markup runs under `--features mobile` alone (the `server` feature has it).
+dioxus = { workspace = true, features = ["ssr"] }
 # #[tokio::test] for the mobile `offline` module's store/media/loopback tests.
 tokio = { workspace = true, features = ["macros", "rt"] }
 

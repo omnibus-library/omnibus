@@ -26,10 +26,6 @@ mod immersive;
 mod journal;
 mod journal_editor;
 mod merge;
-// The star widget the mobile layout still shows; the web stage moved to the
-// Reviews section.
-#[cfg(feature = "mobile")]
-mod rating;
 mod read_status;
 mod reviews;
 mod rule_facts;
@@ -190,7 +186,7 @@ fn use_book_detail_signals() -> BookDetailSignals {
 /// plus the epoch that guards a pending fetch-and-save against resolving
 /// onto a different, later-navigated book. `Copy` (Dioxus signals) and
 /// grouped so call sites stay under the function-argument cap.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 struct DescriptionSignals {
     value: Signal<String>,
     epoch: Signal<u64>,
