@@ -6,7 +6,7 @@
     flake-utils.url = "github:numtide/flake-utils";
     # Pinned to a rev so `nix flake update` can't move dioxus-cli off the
     # `dioxus` crate pin; bump the two together (CONTRIBUTING.md).
-    nixpkgs-unstable.url = "github:NixOS/nixpkgs/29916453413845e54a65b8a1cf996842300cd299";
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/5adc50831c259f87faeb09ddf930d43597197473";
     # Pinned solely for `playwright-driver.browsers`. Kept separate from
     # nixpkgs-unstable so moving the Chromium bundle does not also move the
     # Rust toolchain, dioxus-cli and node — the browser version has to track
@@ -167,7 +167,8 @@
           # component in rustCore. In slim because it runs the same native test
           # matrix as `just test`. From unstable because the stable-pinned
           # nixpkgs marks cargo-llvm-cov broken.
-          pkgs-unstable.cargo-llvm-cov
+          # shortcut: 0.9.0's own test suite fails in the Nix sandbox, so skip it; drop once cache.nixos.org serves a build.
+          (pkgs-unstable.cargo-llvm-cov.overrideAttrs { doCheck = false; })
           # Test runner for `just test` / `just coverage` and the CI `test` job.
           # Drives coverage via `cargo llvm-cov nextest` and emits JUnit (the
           # `.config/nextest.toml` `ci` profile) for Codecov Test Analytics —

@@ -44,9 +44,9 @@ tempfile = "3"
 # own as incompatible, and the CLI comes from flake.nix (and the Dockerfile's
 # `cargo binstall`), so bump these with it. Only Cargo.lock holds the rest of
 # the dioxus-* family at the same version — a bare `cargo update` moves them on.
-dioxus = "=0.7.9"
-dioxus-html = "=0.7.9"
-dioxus-router = "=0.7.9"
+dioxus = "=0.7.10"
+dioxus-html = "=0.7.10"
+dioxus-router = "=0.7.10"
 
 # `dx` builds the WASM client under these profiles. Declaring one replaces the
 # profile dx would otherwise inject, so each states its whole intent.
