@@ -30,7 +30,7 @@ pub fn init() {
 /// Cache-key prefixes holding *user-scoped* replicated data. Library-wide
 /// rows (books, authors, series, manifests, the replica) survive an account
 /// switch; these do not.
-const USER_SCOPED_PREFIXES: [&str; 17] = [
+const USER_SCOPED_PREFIXES: [&str; 18] = [
     "me",
     "progress:",
     "recent_progress",
@@ -38,6 +38,9 @@ const USER_SCOPED_PREFIXES: [&str; 17] = [
     "highlights:",
     "bookmarks:",
     "journals:",
+    // Your review carries your private notes.
+    "reviews:",
+    // Written by the retired rating widget; an upgraded device may still hold them.
     "rating:",
     "ratings_others:",
     "shelves",

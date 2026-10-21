@@ -1,7 +1,7 @@
 //! Every branch of `decide_suggestion`: accept applies the primitive and
 //! stamps the row, reject stamps without applying, the reviewer's edited
-//! wording (trimmed, refused when empty or for a kind that cannot carry
-//! one), and the pending, not-found, already-reviewed, unsupported,
+//! wording (trimmed, refused when empty, over the title cap, or for a kind
+//! that cannot carry one), and the pending, not-found, already-reviewed, unsupported,
 //! apply-failure and unrecognized-token errors.
 
 use omnibus_shared::{CleanupAction, CleanupKind, Decision};
@@ -274,6 +274,44 @@ async fn decide_suggestion_refuses_an_empty_edited_title_without_stamping_the_ro
     assert!(matches!(err, CleanupStoreError::Refused(m) if m.contains("cannot be empty")));
     assert_eq!(stored_decision(&pool, id).await, "pending");
     assert_eq!(stored_title_override(&pool, &uuid).await, None);
+}
+
+#[tokio::test]
+async fn decide_suggestion_refuses_an_edited_title_over_the_override_cap_without_stamping_the_row()
+{
+    let pool = new_pool().await;
+    let admin_id = seed_reviewer(&pool).await;
+    let (uuid, id) = seed_rename(&pool).await;
+    let too_long = "x".repeat(501);
+
+    let err = decide_suggestion(&pool, id, Decision::Accepted, admin_id, Some(&too_long))
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(err, CleanupStoreError::Refused(ref m) if m == "title exceeds 500 characters"),
+        "unexpected error: {err}"
+    );
+    assert_eq!(stored_decision(&pool, id).await, "pending");
+    assert_eq!(stored_title_override(&pool, &uuid).await, None);
+}
+
+#[tokio::test]
+async fn decide_suggestion_accepts_an_edited_title_of_exactly_the_cap_counted_in_chars() {
+    let pool = new_pool().await;
+    let admin_id = seed_reviewer(&pool).await;
+    let (uuid, id) = seed_rename(&pool).await;
+    // 500 chars but 1,000 bytes: the cap counts characters, as the overrides validator does.
+    let at_cap = "\u{e9}".repeat(500);
+
+    decide_suggestion(&pool, id, Decision::Accepted, admin_id, Some(&at_cap))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        stored_title_override(&pool, &uuid).await.as_deref(),
+        Some(at_cap.as_str())
+    );
 }
 
 #[tokio::test]

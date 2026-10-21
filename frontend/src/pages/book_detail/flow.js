@@ -1,6 +1,6 @@
 // Flow scroll glue for the book-detail stage — the marquee unrolled (Option
 // B, the default). Same job as `marquee.js` and the same teardown contract,
-// but the panel is one continuous scroller instead of six snapped screens:
+// but the panel is one continuous scroller instead of seven snapped screens:
 // the cover drifts with the scroll rather than panning stop to stop, the dot
 // rail jumps to a section's offset instead of a screen index, the active dot
 // follows whichever section the reading line has passed, and a "back to the

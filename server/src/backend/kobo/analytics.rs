@@ -166,7 +166,7 @@ async fn ingest_session(
     }
 }
 
-/// `RateBook` → `user_ratings`. Kobo sends whole stars 0–5; 0 clears.
+/// `RateBook` → the review's stars. Kobo sends whole stars 0–5; 0 clears.
 async fn ingest_rating(
     state: &AppState,
     user_id: i64,

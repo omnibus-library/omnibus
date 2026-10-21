@@ -80,7 +80,7 @@ fn condition_sql(rule: &ShelfRule, owner_id: i64) -> Result<(String, Vec<Bind>),
             };
             Ok((
                 format!(
-                    "EXISTS (SELECT 1 FROM user_ratings ur \
+                    "EXISTS (SELECT 1 FROM reviews ur \
                      WHERE ur.book_uuid = b.uuid AND ur.user_id = ? AND ur.half_stars {cmp} ?)"
                 ),
                 vec![Bind::Int(owner_id), Bind::Int(parse_half_stars(v)?)],

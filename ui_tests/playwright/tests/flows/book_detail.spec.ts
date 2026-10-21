@@ -1,9 +1,7 @@
 import { account } from "../contracts/account";
 import { highlights } from "../contracts/highlights";
 import { kindle } from "../contracts/kindle";
-import { ratings } from "../contracts/ratings";
 import { readStatus } from "../contracts/readStatus";
-import type { AttributedRating } from "../data/ratings";
 import {
   AUDIOBOOK_BOOK_COUNT,
   AUDIOBOOK_BOOKS,
@@ -93,7 +91,6 @@ test.describe("book detail page", () => {
       await expect(bookDetailPage.authorsLine).toContainText(author);
       await expect(bookDetailPage.authorLink(author)).toBeVisible();
       await expect(bookDetailPage.heroCover).toBeVisible();
-      await expect(bookDetailPage.rating.starsGroup).toBeVisible();
     });
 
     // Alpha is EPUB-only, so the primary action reads the book.
@@ -107,7 +104,7 @@ test.describe("book detail page", () => {
 
     await test.step("check the dot rail shows", async () => {
       await expect(bookDetailPage.sectionsNav).toBeVisible();
-      await expect(bookDetailPage.sectionDots).toHaveCount(6);
+      await expect(bookDetailPage.sectionDots).toHaveCount(7);
       await expect(bookDetailPage.sectionDot("Home")).toHaveClass(ON_CLASS);
     });
 
@@ -123,6 +120,7 @@ test.describe("book detail page", () => {
     // empty state fills it depends on `journal.spec.ts`, so only the stop is
     // checked here.
     await test.step("check the stops show", async () => {
+      await expect(bookDetailPage.reviews.starsGroup).toBeVisible();
       await expect(bookDetailPage.savedPassagesHeading).toBeVisible();
       await expect(bookDetailPage.savedPassagesSection).toBeVisible();
       await expect(bookDetailPage.moreStop).toBeAttached();
@@ -157,17 +155,18 @@ test.describe("book detail page", () => {
       await test.step("check the flow replaces the marquee", async () => {
         await expect(bookDetailPage.flowScroller).toBeAttached();
         await expect(bookDetailPage.snapScroller).toHaveCount(0);
-        await expect(bookDetailPage.flowSections).toHaveCount(6);
+        await expect(bookDetailPage.flowSections).toHaveCount(7);
       });
 
       // The first section is the book itself, headed by its own title, so only
-      // the five after it are introduced by a rule.
+      // the six after it are introduced by a rule.
       await test.step("check each later section has a rule", async () => {
         await expect(bookDetailPage.leadFlowSection).toHaveCount(1);
         await expect(bookDetailPage.leadFlowSectionLabels).toHaveCount(0);
-        await expect(bookDetailPage.flowSectionLabels).toHaveCount(5);
+        await expect(bookDetailPage.flowSectionLabels).toHaveCount(6);
         await expect(bookDetailPage.flowSectionLabels).toContainText([
           "Stats",
+          "Reviews",
           "Highlights",
           "Journals",
           "The files",
@@ -483,12 +482,12 @@ test.describe("book detail page", () => {
       await test.step("check the marquee replaces the flow", async () => {
         await expect(bookDetailPage.snapScroller).toBeAttached();
         await expect(bookDetailPage.flowScroller).toHaveCount(0);
-        await expect(bookDetailPage.snapSections).toHaveCount(6);
+        await expect(bookDetailPage.snapSections).toHaveCount(7);
         await expect(bookDetailPage.backToBookButton).toHaveCount(0);
       });
 
       await test.step("check the dot rail is the same", async () => {
-        await expect(bookDetailPage.sectionDots).toHaveCount(6);
+        await expect(bookDetailPage.sectionDots).toHaveCount(7);
       });
     });
   });
@@ -1045,185 +1044,6 @@ test.describe("book detail page", () => {
       await test.step("check the row replaces the note", async () => {
         await expect(bookDetailPage.fromSameHandRow).toBeVisible();
         await expect(bookDetailPage.fromSameHandLoadingMessage).toHaveCount(0);
-      });
-    });
-  });
-
-  // Writing tests park the book first, since a rating outlives a test.
-  test.describe("rating", () => {
-    test("hide other ratings when nobody else rated the book", async ({
-      bookDetailPage,
-      request,
-    }) => {
-      const { rating } = bookDetailPage;
-      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-
-      await test.step("open the book with no other ratings", async () => {
-        await rating.stubOtherRatings([]);
-        await bookDetailPage.goto(uuid);
-      });
-
-      await test.step("check no other ratings show", async () => {
-        await expect(rating.otherRatingsList).toHaveCount(0);
-      });
-    });
-
-    test("show another reader's rating with its byline", async ({
-      bookDetailPage,
-      request,
-    }) => {
-      const { rating } = bookDetailPage;
-      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-      const twoDaysAgo = Math.floor(Date.now() / 1000) - 2 * 86_400;
-      const other: AttributedRating = {
-        user_id: 42,
-        username: "reader",
-        has_avatar: false,
-        stars: 4.5,
-        updated_at: twoDaysAgo,
-      };
-
-      await test.step("open the book with another reader's rating", async () => {
-        await rating.stubOtherRatings([other]);
-        await bookDetailPage.goto(uuid);
-      });
-
-      await test.step("check the rating shows", async () => {
-        await expect(rating.otherRatingRow).toBeVisible();
-        await expect(rating.otherRatingRow).toContainText("R");
-        await expect(rating.otherRatingByline).toHaveText(
-          "reader rated 2 days ago",
-        );
-        await expect(rating.otherRatingContent).toHaveCSS(
-          "flex-direction",
-          "column",
-        );
-        await expect(
-          rating.otherRatingStars("4.5 out of 5 stars"),
-        ).toBeVisible();
-      });
-    });
-
-    test("rate a book four and a half stars", async ({
-      bookDetailPage,
-      request,
-      presetRating,
-      storedRating,
-      expectMutation,
-    }) => {
-      const { rating } = bookDetailPage;
-      const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
-
-      await test.step("clear the rating through the api", async () => {
-        await presetRating(uuid, null);
-      });
-
-      await test.step("open the book", async () => {
-        await bookDetailPage.goto(uuid);
-        await expect(rating.starsGroup).toBeVisible();
-        await expect(rating.metaText).toHaveText("Not rated yet");
-      });
-
-      await test.step("rate it 4.5 stars", async () => {
-        await expectMutation(ratings.set(uuid, 4.5), () => rating.rate(4.5));
-      });
-
-      await test.step("check the rating shows", async () => {
-        await expect(rating.metaText).toContainText("4.5 of 5");
-      });
-
-      await test.step("check the server stored the rating", async () => {
-        await expect
-          .poll(() => storedRating(uuid), { message: "stored rating" })
-          .toBe(4.5);
-      });
-    });
-
-    // #2352: the rated half star announces that it un-rates, not "Rate 4.5".
-    test("show the saved rating when the book opens", async ({
-      bookDetailPage,
-      request,
-      presetRating,
-    }) => {
-      const { rating } = bookDetailPage;
-      const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
-
-      await test.step("rate the book 4.5 stars through the api", async () => {
-        await presetRating(uuid, 4.5);
-      });
-
-      await test.step("open the book", async () => {
-        await bookDetailPage.goto(uuid);
-      });
-
-      await test.step("check the rating shows", async () => {
-        await expect(rating.metaText).toContainText("4.5 of 5");
-        await expect(rating.clearButton(4.5)).toBeVisible();
-      });
-    });
-
-    test("clear a rating", async ({
-      bookDetailPage,
-      request,
-      presetRating,
-      storedRating,
-      expectMutation,
-    }) => {
-      const { rating } = bookDetailPage;
-      const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
-
-      await test.step("rate the book 4.5 stars through the api", async () => {
-        await presetRating(uuid, 4.5);
-      });
-
-      await test.step("open the book", async () => {
-        await bookDetailPage.goto(uuid);
-      });
-
-      await test.step("clear the rating", async () => {
-        await expectMutation(ratings.clear(uuid), () => rating.clear(4.5));
-      });
-
-      await test.step("check the book shows unrated", async () => {
-        await expect(rating.metaText).toHaveText("Not rated yet");
-      });
-
-      await test.step("check the server cleared the rating", async () => {
-        await expect
-          .poll(() => storedRating(uuid), { message: "stored rating" })
-          .toBeNull();
-      });
-    });
-
-    test("show an error when a rating fails to save", async ({
-      bookDetailPage,
-      request,
-      presetRating,
-      expectMutation,
-    }) => {
-      const { rating } = bookDetailPage;
-      const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
-
-      await test.step("clear the rating through the api", async () => {
-        await presetRating(uuid, null);
-      });
-
-      await test.step("open the book while saves fail", async () => {
-        await bookDetailPage.goto(uuid);
-        await bookDetailPage.forceServerError(ratings.set(uuid, 3));
-      });
-
-      await test.step("rate it 3 stars", async () => {
-        await expectMutation(failing(ratings.set(uuid, 3)), () =>
-          rating.rate(3),
-        );
-      });
-
-      // The optimistic pick rolls back and the status line reports the failure.
-      await test.step("check the rating reports the failure", async () => {
-        await expect(rating.metaText).toHaveText(
-          "Couldn't save rating — try again",
-        );
       });
     });
   });

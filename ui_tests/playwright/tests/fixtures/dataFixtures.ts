@@ -24,9 +24,9 @@ import {
   EventClock,
   type ProgressRecord,
 } from "../data/progress";
-import type { RatingRecord } from "../data/ratings";
 import type { ReadStatus, ReadStatusRecord } from "../data/readStatus";
 import { buildRecentPoint, type RecentBook } from "../data/recentProgress";
+import type { BookReviews, Review, ReviewPatch } from "../data/reviews";
 import type { LibrarySettings, ServerLibrary } from "../data/settings";
 import {
   buildShelf,
@@ -119,9 +119,17 @@ type DataFixtures = {
     owner?: Owner,
   ) => Promise<ShelfRef>;
   mergeLock: MergeLock;
-  presetRating: (bookUuid: string, stars: number | null) => Promise<void>;
-  storedRating: (bookUuid: string) => Promise<number | null | undefined>;
-  presetReadStatus: (bookUuid: string, status: ReadStatus) => Promise<void>;
+  presetReview: (
+    bookUuid: string,
+    patch: ReviewPatch | null,
+    owner?: Owner,
+  ) => Promise<void>;
+  storedReview: (bookUuid: string) => Promise<Review | null | undefined>;
+  presetReadStatus: (
+    bookUuid: string,
+    status: ReadStatus,
+    owner?: Owner,
+  ) => Promise<void>;
   sweepHighlights: (bookUuid: string) => Promise<void>;
   mergedAudiobook: MergedAudiobook;
   createdJournalIds: Set<number>;
@@ -386,43 +394,61 @@ export const test = base.extend<DataFixtures>({
     });
   },
 
-  // Rates the book now, or unrates it for null, and unrates every book it
-  // touched after the test.
-  presetRating: async ({ ratingsRequests }, use) =>
-    cleanupSet(
-      (rated: Set<string>) =>
-        use(async (bookUuid, stars) => {
-          rated.add(bookUuid);
-          if (stars === null) {
-            const cleared = await ratingsRequests.deleteRating(bookUuid);
-            await expect(cleared, `clear the rating on ${bookUuid}`).toBeOK();
-            return;
-          }
-          const saved = await ratingsRequests.postRating(bookUuid, stars);
-          await expect(saved, `rate ${bookUuid} ${stars} stars`).toBeOK();
+  // Patches the owner's review now, or deletes it for null, and deletes every
+  // review it touched after the test.
+  presetReview: async ({ reviewsRequests, readerReviewsRequests }, use) => {
+    const of = (owner: Owner) =>
+      owner === "admin" ? reviewsRequests : readerReviewsRequests;
+    await cleanupSet(
+      (touched: Set<string>) =>
+        use(async (bookUuid, patch, owner = "admin") => {
+          touched.add(JSON.stringify([owner, bookUuid]));
+          const written =
+            patch === null
+              ? await of(owner).deleteReview(bookUuid)
+              : await of(owner).patchReview(bookUuid, patch);
+          await expect(written, `preset the ${owner}'s review`).toBeOK();
         }),
-      (uuid) => ratingsRequests.deleteRating(uuid),
-      (uuid) => `clear the rating on ${uuid}`,
-    ),
+      (key) => {
+        const [owner, uuid]: [Owner, string] = JSON.parse(key);
+        return of(owner).deleteReview(uuid);
+      },
+      (key) => `delete the review ${key}`,
+    );
+  },
 
-  // Undefined on a failed read, so only a real unrated answer reads as null.
-  storedRating: async ({ ratingsRequests }, use) => {
+  // Undefined on a failed read, so only a real "no review" answer reads as null.
+  storedReview: async ({ reviewsRequests }, use) => {
     await use(async (bookUuid) => {
-      const response = await ratingsRequests.getRating(bookUuid);
+      const response = await reviewsRequests.getReviews(bookUuid);
       if (!response.ok()) return undefined;
-      const record: RatingRecord | null = await response.json();
-      return record?.stars ?? null;
+      const reviews: BookReviews = await response.json();
+      return reviews.mine;
     });
   },
 
-  // Sets the status now and puts the book back to unread after the test.
-  presetReadStatus: async ({ setReadStatus }, use) => {
-    const started = new Set<string>();
-    await use(async (bookUuid, status) => {
-      started.add(bookUuid);
-      await setReadStatus(bookUuid, status);
+  // Sets the owner's status now and puts each book it touched back to unread
+  // after the test.
+  presetReadStatus: async (
+    { setReadStatus, readerReadStatusRequests },
+    use,
+  ) => {
+    const set = async (bookUuid: string, status: ReadStatus, owner: Owner) => {
+      if (owner === "admin") return setReadStatus(bookUuid, status);
+      const saved = await readerReadStatusRequests.putReadStatus(
+        bookUuid,
+        status,
+      );
+      await expect(saved, `preset the reader's status to ${status}`).toBeOK();
+    };
+    const started = new Map<string, [Owner, string]>();
+    await use(async (bookUuid, status, owner = "admin") => {
+      started.set(`${owner}:${bookUuid}`, [owner, bookUuid]);
+      await set(bookUuid, status, owner);
     });
-    for (const uuid of started) await setReadStatus(uuid, "unread");
+    for (const [owner, uuid] of started.values()) {
+      await set(uuid, "unread", owner);
+    }
   },
 
   sweepHighlights: async ({ highlightsRequests }, use) => {

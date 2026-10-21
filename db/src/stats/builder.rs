@@ -152,14 +152,14 @@ async fn series_rows(
             ),
             vec![user_id, user_id, start],
         ),
-        // Windowed on `updated_at` — when the book was rated — because that is
+        // Windowed on `rated_at` — when the book was rated — because that is
         // the key every other ratings aggregate uses. See `ratings::avg_stars`
         // for why, and the measure's own caveat for what it costs.
         ChartMeasure::AvgRating => (
             format!(
                 "SELECT {} AS k, SUM(half_stars) / 2.0 AS total, CAST(COUNT(*) AS REAL) AS n \
-                 FROM ({LIVE_RATINGS}) WHERE updated_at >= ? GROUP BY k ORDER BY k",
-                bucket_expr(bucket, &calendar::local_day("updated_at", offset_minutes))
+                 FROM ({LIVE_RATINGS}) WHERE rated_at >= ? GROUP BY k ORDER BY k",
+                bucket_expr(bucket, &calendar::local_day("rated_at", offset_minutes))
             ),
             vec![user_id, start],
         ),

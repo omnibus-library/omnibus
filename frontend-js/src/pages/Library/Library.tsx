@@ -28,7 +28,7 @@ import {
 import { BookGrid } from "./BookGrid";
 import { BookTable } from "./BookTable";
 import { BulkEditBar, BulkEditModal, BulkShelfPicker } from "./BulkEdit";
-import { useBulkSelection } from "./bulkEdit";
+import { useBulkSelection } from "./bulkMetadata";
 import { emptyState, headerCount } from "./libraryView";
 import {
   EdgeResume,
@@ -38,7 +38,7 @@ import {
   useResumeLead,
 } from "./ResumeStack";
 import { ShelfGallery } from "./ShelfGallery";
-import { useShelfLens } from "./shelfGallery";
+import { useShelfLens } from "./shelfLens";
 import { headerSort } from "./sorting";
 import { Toolbar } from "./Toolbar";
 import "./Library.css";

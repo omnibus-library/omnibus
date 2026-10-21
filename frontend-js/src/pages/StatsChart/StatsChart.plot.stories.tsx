@@ -695,7 +695,10 @@ export const AZoomDroppedByARegroupStaysGoneWhenTheKeysReturn: Story = {
     await ctx.canvas.findByText("Zoomed to 4 of 8 periods");
     const groupBy = ctx.canvas.getByLabelText("Group by");
     await ctx.userEvent.selectOptions(groupBy, "Weekly");
-    await waitFor(() => expect(xLabels(plot)).toHaveLength(4));
+    // Not a count: the zoomed months held while the weeks load are four labels too.
+    await waitFor(() =>
+      expect(xLabels(plot)).toEqual(["2 Mar", "9 Mar", "16 Mar", "23 Mar"]),
+    );
 
     await ctx.userEvent.selectOptions(groupBy, "Monthly");
 

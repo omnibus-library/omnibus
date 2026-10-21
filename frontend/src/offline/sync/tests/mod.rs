@@ -9,6 +9,7 @@
 mod classify;
 mod drain;
 mod replay;
+mod reviews;
 
 use super::*;
 

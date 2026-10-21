@@ -262,8 +262,8 @@ fn combined_router_carries_every_family_without_collisions() {
     .sum();
     let combined = offline_server().tool_router;
     assert_eq!(combined.list_all().len(), per_family);
-    // 22 read + 9 checkin + 6 shelf + 6 metadata + 2 merge + 5 content.
-    assert_eq!(per_family, 50);
+    // 23 read + 9 checkin + 6 shelf + 6 metadata + 2 merge + 5 content.
+    assert_eq!(per_family, 51);
 }
 
 #[tokio::test]

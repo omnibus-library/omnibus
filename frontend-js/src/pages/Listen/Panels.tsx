@@ -2,7 +2,7 @@ import { MAX_RATE, MIN_RATE } from "../../playback/boot";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import { SLEEP_PRESETS } from "../../playback/sleep";
 import { formatHmsShort } from "../../resume";
-import { clampRate, RATE_STEP, thumbPct } from "./listen";
+import { clampRate, RATE_STEP, thumbPct } from "./listenView";
 import "./Listen.css";
 
 const PRESETS = [0.5, 0.8, 1, 1.1, 1.2, 1.5, 1.8, 2];

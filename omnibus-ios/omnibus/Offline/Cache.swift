@@ -40,8 +40,14 @@ enum CacheKey {
     static func highlights(_ uuid: String) -> String { "highlights:\(uuid)" }
     static func bookmarks(_ uuid: String) -> String { "bookmarks:\(uuid)" }
     static func journals(_ uuid: String) -> String { "journals:\(uuid)" }
+    /// The stars-only reads the book page used before reviews; nothing reads
+    /// them now. `rating` is still what a replayed legacy `rating:` op moves,
+    /// and the wipe-coverage test names both so an upgraded device's leftover
+    /// blobs stay covered by the `rating:` / `ratings_others:` prefixes.
     static func rating(_ uuid: String) -> String { "rating:\(uuid)" }
     static func ratingsOthers(_ uuid: String) -> String { "ratings_others:\(uuid)" }
+    /// `GET /api/reviews/{uuid}`: your review, notes included, and everyone else's.
+    static func reviews(_ uuid: String) -> String { "reviews:\(uuid)" }
     static func readStatus(_ uuid: String) -> String { "read_status:\(uuid)" }
     static func stats(_ range: StatsRange) -> String { "stats:\(range.rawValue)" }
     /// `GET /api/library-size`. Unkeyed: the answer is library-wide, so there
@@ -102,12 +108,23 @@ enum OutboxScope {
         }
 
         // The rest are book-scoped and carry their uuid — and, for a position,
-        // its format — in the kind itself, so each names exactly one key.
+        // its format — in the kind itself, so each names only its own book's
+        // keys, plus any book-independent summaries the write moves.
         if let uuid = suffix(of: kind, after: "playback_rate:") {
             return key == CacheKey.playbackRate(uuid)
         }
+        if let uuid = suffix(of: kind, after: "review:") {
+            // Stars feed the stats summary's average and histogram, and a
+            // book's reviews carry the household summary the stars move.
+            return key == CacheKey.reviews(uuid) || key.hasPrefix("stats:")
+        }
         if let uuid = suffix(of: kind, after: "rating:") {
+            // The pre-review stars write, still replayed for a device that
+            // queued one before upgrading. It moves the same rows a review's
+            // stars do.
             return key == CacheKey.rating(uuid)
+                || key == CacheKey.reviews(uuid)
+                || key.hasPrefix("stats:")
         }
         if let uuid = suffix(of: kind, after: "read_status:") {
             // Marking a book finished is one of the two events the stats
@@ -183,9 +200,16 @@ enum Cache {
     /// error.
     ///
     /// `storing` shapes what the replica keeps; the caller still gets the full answer.
+    ///
+    /// `guardsWrites` stores the answer only if nothing wrote `key` while the
+    /// request was out, yielding the replica instead — for a key a local write
+    /// and its own refresh also store (a review), where an answer fetched
+    /// before the write would otherwise put the old state back. Off for keys
+    /// written constantly, such as positions, which would refuse every answer.
     static func live<T: Codable & Sendable>(
         _ key: String,
         storing: (@Sendable (T) -> T)? = nil,
+        guardsWrites: Bool = false,
         fetch: @escaping @Sendable () async throws -> T
     ) -> AsyncThrowingStream<CacheRead<T>, Error> {
         AsyncThrowingStream { continuation in
@@ -209,6 +233,13 @@ enum Cache {
                 }
 
                 do {
+                    if guardsWrites {
+                        try await revalidateGuarded(
+                            key, cachedData: cachedData, storing: storing,
+                            store: .shared, fetch: fetch, into: continuation
+                        )
+                        return
+                    }
                     let fresh = try await fetch()
 
                     // Re-checked *after* the fetch as well as before it. The
@@ -264,6 +295,69 @@ enum Cache {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// `live`'s revalidation for a `guardsWrites` key: the answer is stored
+    /// only if nothing wrote the key while the request was out.
+    ///
+    /// When something did, the replica is newer than this answer and is shown
+    /// at once — and since that write's own refresh may never come, the
+    /// server is asked once more if the write has already left the queue. A
+    /// retry that fails after the replica went out ends quietly when offline,
+    /// as `live` does. A store that never opened (online-only) has nothing to
+    /// protect, and the answer goes out as it would without the guard; so does
+    /// one the replica has nothing to replace with. `store` is injectable for
+    /// the suite.
+    static func revalidateGuarded<T: Codable & Sendable>(
+        _ key: String,
+        cachedData: Data?,
+        storing: (@Sendable (T) -> T)? = nil,
+        store: OfflineStore,
+        fetch: @Sendable () async throws -> T,
+        into continuation: AsyncThrowingStream<CacheRead<T>, Error>.Continuation
+    ) async throws {
+        // The bytes the caller last saw, so nothing is shown to it twice.
+        var shown = cachedData
+        for attempt in 0..<2 {
+            let generation = await store.cacheGeneration(key)
+            let fresh: T
+            do {
+                fresh = try await fetch()
+            } catch {
+                let offline = (error as? APIError)?.isRecoverableOffline ?? false
+                if attempt > 0, shown != nil, offline { break }
+                throw error
+            }
+            let queued = OutboxScope.isBlocked(key, by: await store.pendingKinds())
+            let freshData = try? encoder.encode(fresh)
+            let storedData = storing.map { try? encoder.encode($0(fresh)) } ?? freshData
+            var outcome = GuardedPut.stored
+            if !queued, let storedData {
+                outcome = await store.cachePut(key, storedData, ifGeneration: generation)
+            }
+            if queued || outcome == .moved {
+                guard !Task.isCancelled else { break }
+                if let current = await store.cacheGet(key), current != shown,
+                   let value = try? decoder.decode(T.self, from: current)
+                {
+                    continuation.yield(CacheRead(value: value, isFresh: false))
+                    shown = current
+                }
+                // Ask again only once the write that moved it has landed: a
+                // queued one is still ahead of the server.
+                let pending = await store.pendingKinds()
+                let landed = !queued && !OutboxScope.isBlocked(key, by: pending)
+                if attempt == 0, landed { continue }
+                if shown != nil { break }
+                // Nothing held at all: this answer is still the best there is.
+            }
+            guard !Task.isCancelled else { break }
+            if freshData == nil || freshData != shown {
+                continuation.yield(CacheRead(value: fresh, isFresh: true))
+            }
+            break
+        }
+        continuation.finish()
     }
 
     /// Whether the server's answer can be trusted to replace the replica.

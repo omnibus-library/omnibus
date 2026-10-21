@@ -190,7 +190,7 @@ Each of these is intended, and each has been mistaken for a defect before:
   in the strip above the overlay still works, which reads as randomly dead
   controls. Close the entry with **✕ Close** before touching anything else.
 - **The dot rail does not tell the two book-detail layouts apart.**
-  `bdmq-dot-0…5` render in both; the container does — `#bdmq-flow` with
+  `bdmq-dot-0…6` render in both; the container does — `#bdmq-flow` with
   `.bdmq-flowlab` rules for the continuous layout, `#bdmq-snap` with
   `.bdmq-sec` screens for the snapped one. Rule 04a already said so.
 - **The shelf name input has two different testids** — `shelf-name-input` on

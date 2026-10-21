@@ -111,7 +111,7 @@ function AdminActions({ book }: { book: BookDetail }) {
   );
 }
 
-/** Stop 05: formats and copies, the metadata table, and the edit actions. */
+/** Stop 06: formats and copies, the metadata table, and the edit actions. */
 export function FilesStop({ book }: { book: BookDetail }) {
   // A row is absent, not blank. Published is a calendar date and never shifted;
   // Added is an instant and lands on the reader's own day.

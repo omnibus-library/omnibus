@@ -40,6 +40,7 @@ const EXPECTED_TOOLS: &[&str] = &[
     "book_read_status",
     "book_highlights",
     "book_bookmarks",
+    "book_reviews",
     "book_journal_entries",
 ];
 

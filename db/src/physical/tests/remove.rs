@@ -1,12 +1,12 @@
-//! Fileless book removal: the uuid-keyed soft-reference sweep, and the two
-//! refusals (`BookHasFiles`, `BookNotFound`).
+//! Fileless book removal: the uuid-keyed soft-reference sweep, the journal
+//! images it releases, and the two refusals (`BookHasFiles`, `BookNotFound`).
 
 use omnibus_shared::physical::WishlistSource;
 
 use crate::test_support::{seed_minimal_books, CoversTempDir};
 
 use super::super::*;
-use super::{count, pool, seed_user};
+use super::{count, image_env, pool, seed_review_image, seed_user};
 
 #[tokio::test]
 async fn delete_fileless_book_removes_the_book_and_its_soft_refs() {
@@ -34,7 +34,7 @@ async fn delete_fileless_book_removes_the_book_and_its_soft_refs() {
         .unwrap();
     // A uuid-keyed row *outside* the physical/wishlist/override trio, to prove
     // the delete sweeps the full canonical set rather than a hand-picked few.
-    sqlx::query("INSERT INTO user_ratings (user_id, book_uuid, half_stars) VALUES (?1, ?2, 8)")
+    sqlx::query("INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at) VALUES (?1, ?2, 8, strftime('%s','now'))")
         .bind(user)
         .bind(&uuid)
         .execute(&pool)
@@ -53,11 +53,39 @@ async fn delete_fileless_book_removes_the_book_and_its_soft_refs() {
         0
     );
     // The wider uuid-keyed sweep: the rating must go too.
-    assert_eq!(count(&pool, "SELECT COUNT(*) FROM user_ratings").await, 0);
+    assert_eq!(count(&pool, "SELECT COUNT(*) FROM reviews").await, 0);
     // The FTS twin has no FK, so it only goes when the book is hard-deleted.
     assert_eq!(count(&pool, "SELECT COUNT(*) FROM books_fts").await, 0);
     // Its now-bookless author goes with it (orphan taxonomy sweep).
     assert_eq!(count(&pool, "SELECT COUNT(*) FROM authors").await, 0);
+}
+
+#[tokio::test]
+async fn delete_fileless_book_sweeps_the_journal_images_its_reviews_embedded() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _env = image_env(tmp.path());
+    let pool = pool().await;
+    let user = seed_user(&pool, "reader").await;
+    let uuid = create_fileless_book(
+        &pool,
+        FilelessBook {
+            title: "Paper Only".into(),
+            authors: vec!["Ada Lovelace".into()],
+            isbn: None,
+            pubdate: None,
+            description: None,
+            cover: None,
+        },
+    )
+    .await
+    .unwrap();
+    let name = seed_review_image(&pool, user, &uuid).await;
+
+    delete_fileless_book(&pool, &uuid).await.unwrap();
+
+    assert!(!crate::journal_images::journal_images_dir()
+        .join(&name)
+        .exists());
 }
 
 #[tokio::test]

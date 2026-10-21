@@ -366,6 +366,12 @@ jobs:
       #   only `ZipArchive::extract()` / `ZipStreamReader::extract()`, and
       #   neither this repo nor epub calls them (archives are read entry by
       #   entry, never extracted to disk). Revisit when epub moves to zip >= 9.
+      #   RUSTSEC-2026-0381 (webpki-roots bundles distrusted emSign roots).
+      #   The flagged `webpki-roots 0.26.11` comes from `sqlx-core 0.8.6` and is
+      #   a semver-trick shim that re-exports webpki-roots 1.x, locked at the
+      #   patched 1.0.10, so it serves the fixed roots. sqlx only opens SQLite
+      #   files here and makes no TLS connection. No 0.26.x fix exists; revisit
+      #   when sqlx moves to webpki-roots 1.
       - name: cargo audit
         id: audit
         run: |
@@ -373,7 +379,7 @@ jobs:
           # Redirect inside the nix-develop subshell so the shellHook's
           # informational echoes (`Nix dev shell ready.`, etc.) don't get
           # mixed into the JSON capture file.
-          nix develop .#audit --command bash -c 'cargo audit --json --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0367 --ignore RUSTSEC-2026-0368 --ignore RUSTSEC-2026-0369 > audit.json'
+          nix develop .#audit --command bash -c 'cargo audit --json --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0367 --ignore RUSTSEC-2026-0368 --ignore RUSTSEC-2026-0369 --ignore RUSTSEC-2026-0381 > audit.json'
           exit_code=$?
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
           # Deliberately succeed here so the report + sticky-comment steps run

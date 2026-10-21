@@ -3,7 +3,7 @@
 //! itself is covered in `db/src/cleanup/review/tests.rs`.
 
 use omnibus_db::cleanup::CleanupStoreError;
-use omnibus_db::CleanupApplyError;
+use omnibus_db::{CleanupApplyError, MetadataOverridesError};
 
 use super::{map_apply_error, map_store_error};
 
@@ -47,4 +47,23 @@ fn map_apply_error_genericizes_a_db_failure_but_keeps_a_typed_sentence() {
 
     let typed = map_apply_error("ctx", CleanupApplyError::NotFound(3));
     assert!(typed.to_string().contains("entity not found: 3"));
+}
+
+#[test]
+fn map_apply_error_genericizes_an_unreadable_overrides_blob() {
+    let corrupt = serde_json::from_str::<i32>("{").unwrap_err();
+    let e = CleanupApplyError::Overrides(MetadataOverridesError::Serialization(corrupt));
+
+    assert!(map_apply_error("ctx", e)
+        .to_string()
+        .contains("internal server error"));
+}
+
+#[test]
+fn map_apply_error_keeps_the_sentence_of_a_typed_overrides_refusal() {
+    let e = CleanupApplyError::Overrides(MetadataOverridesError::BookNotFound("abc".into()));
+
+    assert!(map_apply_error("ctx", e)
+        .to_string()
+        .contains("book not found: abc"));
 }

@@ -2,5 +2,6 @@
 //! sibling modules below.
 
 mod crud;
+mod library_config;
 mod scan_triggers;
 mod toggles;

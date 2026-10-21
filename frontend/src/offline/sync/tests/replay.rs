@@ -74,6 +74,10 @@ async fn drain_replays_clear_rating_and_clears_the_queue() {
     let base = mock_server().await;
     set_server_url(&base);
 
+    let reviews_key = cache::keys::reviews("clear-rating-book");
+    let stats_key = cache::keys::stats("clear-rating-range");
+    cache::put_json(&reviews_key, &1);
+    cache::put_json(&stats_key, &1);
     enqueue_raw(&Op::ClearRating {
         uuid: "clear-rating-book".into(),
     });
@@ -81,6 +85,14 @@ async fn drain_replays_clear_rating_and_clears_the_queue() {
 
     let st = store::store().expect("store");
     assert_eq!(st.ops_count().await, 0, "a cleared rating must be removed");
+    // The book's reviews and the stats both counted the cleared stars.
+    for key in [reviews_key, stats_key] {
+        assert_eq!(
+            st.kv_get(&key).await.expect("row kept").fetched_at,
+            0,
+            "{key}"
+        );
+    }
     note_online();
 }
 

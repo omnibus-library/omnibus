@@ -34,7 +34,7 @@ import {
   railShelves,
   shelfAriaLabel,
   shelfTabMeta,
-} from "./shelfGallery";
+} from "./shelfLens";
 
 // Three covers hint at a shelf without becoming a mosaic again.
 const PEEK_COVERS = 3;

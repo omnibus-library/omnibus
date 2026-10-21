@@ -14,7 +14,7 @@ import {
   JournalEditor,
   JournalToolbar,
 } from "./JournalEditor";
-import { highlightBlockquote } from "./journalEditor";
+import { highlightBlockquote } from "./journalMarkdown";
 import { highlightsQuery, journalQuery } from "./queries";
 
 const AUTOSAVE_DEBOUNCE_MS = 2_000;
@@ -22,7 +22,8 @@ const AUTOSAVE_TICK_MS = 5_000;
 const PLACEHOLDER =
   "What are you thinking about this book? Markdown supported.";
 
-function HighlightsPopover({
+/** "From highlights": a popover of the reader's saved passages, one of which `onPick` inserts. */
+export function HighlightsPopover({
   uuid,
   onPick,
 }: {

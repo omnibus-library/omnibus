@@ -259,7 +259,7 @@ async fn repair_multipart_audiobook_attachments(pool: &SqlitePool) -> Result<(),
             AND NOT EXISTS (SELECT 1 FROM reading_sessions   WHERE book_uuid = b.uuid)
             AND NOT EXISTS (SELECT 1 FROM listening_sessions WHERE book_uuid = b.uuid)
             AND NOT EXISTS (SELECT 1 FROM bookmarks          WHERE book_uuid = b.uuid)
-            AND NOT EXISTS (SELECT 1 FROM user_ratings       WHERE book_uuid = b.uuid)
+            AND NOT EXISTS (SELECT 1 FROM reviews            WHERE book_uuid = b.uuid)
             AND NOT EXISTS (SELECT 1 FROM journal_entries    WHERE book_uuid = b.uuid)",
     )
     .fetch_all(&mut *tx)

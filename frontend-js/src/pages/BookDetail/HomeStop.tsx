@@ -28,10 +28,12 @@ import {
   bookQuery,
   insightsQuery,
   progressQuery,
+  reviewsQuery,
   useWish,
 } from "./queries";
 import { ReadStatus } from "./ReadStatus";
 import { type HomeReadout, homeReadout, newestPercent } from "./readout";
+import { averageLabel, countLabel, jumpLabel } from "./reviews";
 import { SyncLine } from "./SyncLine";
 import { pacedSecondsLeft } from "./stats";
 
@@ -286,8 +288,41 @@ function Ruler({ pct, readout, insights, lastOpened }: RulerProps) {
   );
 }
 
+/** The title area's read-only household rating, `★ 4.3 · 3 readers`, a jump to the Reviews stop; nothing until the server sums one up. */
+function ReviewsJumpLink({
+  book,
+  onShowReviews,
+}: {
+  book: Detail;
+  onShowReviews?: () => void;
+}) {
+  const reviews = useQuery(reviewsQuery(book.uuid));
+  const summary = reviews.data?.summary;
+  if (!summary) return null;
+  return (
+    <button
+      type="button"
+      className="bd-reviews-jump"
+      data-testid="reviews-jump"
+      aria-label={jumpLabel(summary)}
+      onClick={onShowReviews}
+    >
+      <span className="bd-reviews-jump-star" aria-hidden="true">
+        ★
+      </span>{" "}
+      {averageLabel(summary.average)} · {countLabel(summary.ratings, "reader")}
+    </button>
+  );
+}
+
+type HomeStopProps = {
+  book: Detail;
+  /** Scrolls the page to the Reviews stop, for the household rating under the title. */
+  onShowReviews?: () => void;
+};
+
 /** Stop 01: the hero, with the kicker, title, authors, chips, description, the read and listen buttons, and where the reader stands. */
-export function HomeStop({ book }: { book: Detail }) {
+export function HomeStop({ book, onShowReviews }: HomeStopProps) {
   const client = useQueryClient();
   const wish = useWish(book);
   const hasFiles =
@@ -324,6 +359,7 @@ export function HomeStop({ book }: { book: Detail }) {
         ✎ Edit
       </ButtonLink>
       <Authors book={book} />
+      <ReviewsJumpLink book={book} onShowReviews={onShowReviews} />
       <div className="bdmq-chips">
         <ChipRow
           label="Genres"

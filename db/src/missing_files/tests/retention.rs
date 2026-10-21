@@ -248,7 +248,7 @@ async fn gc_keeps_book_with_user_rating() {
         .id;
     let uuid = seed_and_make_missing(&pool, "rated.epub").await;
     backdate_missing_since(&pool, &uuid, 40).await;
-    sqlx::query("INSERT INTO user_ratings (user_id, book_uuid, half_stars) VALUES (?, ?, 9)")
+    sqlx::query("INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at) VALUES (?, ?, 9, strftime('%s','now'))")
         .bind(user_id)
         .bind(&uuid)
         .execute(&pool)

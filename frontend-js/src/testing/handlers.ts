@@ -6,14 +6,13 @@ import {
   getGetAuthorReadingMockHandler200,
   getGetAuthorsMockHandler200,
   getGetBookInsightsMockHandler200,
+  getGetBookReviewsMockHandler200,
   getGetGenresMockHandler200,
   getGetHighlightsMockHandler200,
   getGetJournalEntriesMockHandler200,
   getGetMeMockHandler200,
   getGetMeMockHandler401,
-  getGetOtherRatingsMockHandler200,
   getGetProgressMockHandler200,
-  getGetRatingMockHandler200,
   getGetReadStatusMockHandler200,
   getGetRegistrationMockHandler200,
   getGetSeriesByIdMockHandler200,
@@ -30,6 +29,7 @@ import {
 import {
   AddShelfBooksBody,
   type AlignmentView,
+  type AttributedReview,
   type AuthorReading,
   type AuthorSummary,
   type BookDeletionManifest,
@@ -49,12 +49,12 @@ import {
   PostCrossFormatFollowBody,
   PostJournalBody,
   PostJournalPreviewBody,
-  PostRatingBody,
   PutAuthorPhotoUrlBody,
   PutReadStatusBody,
-  type RatingRecord,
   type ReadStatusRecord,
   type ResumePoint,
+  type Review,
+  ReviewPatch,
   type RulePreview,
   RulePreviewRequest,
   type SeriesDetail,
@@ -77,9 +77,12 @@ import { COVER_SVG } from "./books";
 import {
   aWireAlignment,
   aWireAuthor,
+  aWireBookReviews,
   aWireJournalEntry,
   aWireProgress,
   aWireReadStatus,
+  aWireReview,
+  aWireReviewSummary,
   aWireSeries,
   aWireShelfDetail,
   aWireWishlist,
@@ -547,8 +550,7 @@ export function bookDetailHandlers(book: EbookMetadata) {
     getGetReadStatusMockHandler200(null),
     getGetProgressMockHandler200(aWireProgress()),
     getGetAlignmentMockHandler200(aWireAlignment()),
-    getGetRatingMockHandler200(null),
-    getGetOtherRatingsMockHandler200([]),
+    getGetBookReviewsMockHandler200(aWireBookReviews()),
     getGetSessionLogMockHandler200({ entries: [] }),
     getGetHighlightsMockHandler200([]),
     getGetJournalEntriesMockHandler200([]),
@@ -564,25 +566,63 @@ export function bookDetailHandlers(book: EbookMetadata) {
 }
 
 /**
- * The reader's rating, kept between `GET`, `POST` and `DELETE`, starting at
- * `initial`; each write appends its stars (`null` for a delete) to `writes`.
+ * The book's reviews, kept between `GET`, `PATCH` and `DELETE` as the server keeps them:
+ * a `PATCH` merges the fields it names into the reader's review (text renders as a `<p>`)
+ * and answers `null` once nothing is left, and the summary is summed again on every read.
+ * Each write appends its body, or `"delete"`, to `writes`.
  */
-export function ratingHandlers(
-  initial: RatingRecord | null,
-  writes: (number | null)[] = [],
+export function reviewHandlers(
+  initial: { mine?: Review | null; others?: AttributedReview[] },
+  writes: (ReviewPatch | "delete")[] = [],
 ) {
-  let current = initial;
+  let mine = initial.mine ?? null;
+  const others = initial.others ?? [];
+  // Blank text clears, as on the server.
+  const text = (md: string | null | undefined) => (md?.trim() ? md : null);
+  const html = (md: string | null) => (md ? `<p>${md}</p>` : null);
   return [
-    http.get("/api/ratings/:uuid", () => HttpResponse.json(current)),
-    http.post("/api/ratings", async ({ request }) => {
-      const body = PostRatingBody.parse(await request.json());
-      writes.push(body.stars);
-      current = { ...body, updated_at: nowSecs() };
-      return HttpResponse.json(current);
+    http.get("/api/reviews/:uuid", () => {
+      const stars = [mine?.stars, ...others.map((o) => o.stars)].filter(
+        (s): s is number => typeof s === "number",
+      );
+      return HttpResponse.json(
+        aWireBookReviews({
+          mine,
+          others,
+          // None until two readers rated, as on the server.
+          summary: stars.length < 2 ? null : aWireReviewSummary(...stars),
+        }),
+      );
     }),
-    http.delete("/api/ratings/:uuid", () => {
-      writes.push(null);
-      current = null;
+    http.patch("/api/reviews/:uuid", async ({ request }) => {
+      const patch = ReviewPatch.parse(await request.json());
+      writes.push(patch);
+      const now = nowSecs();
+      const next: Review = mine
+        ? { ...mine }
+        : aWireReview({ stars: null, rated_at: null, created_at: now });
+      if (patch.stars !== undefined) {
+        next.stars = patch.stars;
+        next.rated_at = patch.stars === null ? null : now;
+      }
+      if (patch.body_md !== undefined) {
+        next.body_md = text(patch.body_md);
+        next.body_html = html(next.body_md);
+      }
+      if (patch.notes_md !== undefined) {
+        next.notes_md = text(patch.notes_md);
+        next.notes_html = html(next.notes_md);
+      }
+      if (patch.spoiler != null) next.spoiler = patch.spoiler;
+      next.updated_at = now;
+      const empty =
+        next.stars == null && next.body_md == null && next.notes_md == null;
+      mine = empty ? null : next;
+      return HttpResponse.json(mine);
+    }),
+    http.delete("/api/reviews/:uuid", () => {
+      writes.push("delete");
+      mine = null;
       return new HttpResponse(null, { status: 204 });
     }),
   ];

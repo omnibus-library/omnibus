@@ -16,8 +16,12 @@ import SwiftUI
 @MainActor
 final class BookDetailModel {
     var book: Book?
-    var rating: Double = 0
-    var otherRatings: [AttributedRating] = []
+    /// Yours, everyone else's, and the household summary; `nil` until the
+    /// first read answers — unknown, which is not the same as "no review".
+    var reviews: BookReviews?
+    /// Why the last reviews read settled with nothing to show, if it did —
+    /// so the card says so instead of loading on. Cleared when a read starts.
+    var reviewsFailure: ReviewsReadFailure?
     var readStatus: ReadStatus = .unread
     var journals: [JournalEntry] = []
     var highlights: [Highlight] = []
@@ -46,6 +50,11 @@ final class BookDetailModel {
     var suggestions: [SuggestedBook] = []
     var isLoading = true
     var error: String?
+
+    /// Counts review writes, so only the newest one's answer is painted — an
+    /// earlier write finishing late would otherwise put back what a later
+    /// tap had already replaced.
+    private var reviewWrites = 0
 
     /// Guards the related fetches (series, author, manifest) against running
     /// concurrently; a fetch that came back empty is retried on the next book
@@ -94,14 +103,7 @@ final class BookDetailModel {
                 await self.loadSessions(uuid: uuid)
             }
             group.addTask { @MainActor in
-                for await record in UserDataService.rating(uuid: uuid).values() {
-                    self.rating = record.stars
-                }
-            }
-            group.addTask { @MainActor in
-                for await others in UserDataService.otherRatings(uuid: uuid).values() {
-                    self.otherRatings = others
-                }
+                await self.loadReviews(uuid: uuid)
             }
             group.addTask { @MainActor in
                 for await record in UserDataService.readStatus(uuid: uuid).values() {
@@ -147,6 +149,27 @@ final class BookDetailModel {
                 }
             }
         }
+    }
+
+    /// Read the book's reviews, replica first. A read that ends with nothing
+    /// says why — offline or failed — unless it was only cancelled, which says
+    /// nothing about the server.
+    func loadReviews(uuid: String) async {
+        reviewsFailure = nil
+        var answered = false
+        var failure: Error?
+        do {
+            for try await read in UserDataService.reviews(uuid: uuid) {
+                reviews = read.value
+                answered = true
+            }
+        } catch {
+            failure = error
+        }
+        guard reviews == nil else { return }
+        reviewsFailure = ReviewsReadFailure.classify(
+            failure, answered: answered, cancelled: Task.isCancelled
+        )
     }
 
     /// Fetches keyed on facts only the book record carries — the series, the
@@ -209,14 +232,31 @@ final class BookDetailModel {
         sessions = entries
     }
 
-    func setRating(_ stars: Double, uuid: String) async {
-        rating = stars
-        await UserDataService.setRating(uuid: uuid, stars: stars)
+    /// Patch your review: on screen at once, then whatever the replica holds
+    /// once the write is made — the server's rendering when it landed, what it
+    /// kept when it refused, the optimistic row while it is queued.
+    func patchReview(_ patch: ReviewPatch, uuid: String) async {
+        // Against an unknown review a patch would be computed from nothing,
+        // and its text would replace whatever the server holds.
+        guard !patch.isEmpty, reviews != nil else { return }
+        let now = Int64(Date().timeIntervalSince1970)
+        reviews = reviews?.applying(patch, uuid: uuid, now: now)
+        await settleReviewWrite { await UserDataService.patchReview(uuid: uuid, patch) }
     }
 
-    func clearRating(uuid: String) async {
-        rating = 0
-        await UserDataService.clearRating(uuid: uuid)
+    /// Delete your stars, text and notes, with the same settle as a patch.
+    func deleteReview(uuid: String) async {
+        guard let known = reviews else { return }
+        reviews = known.deletingMine()
+        await settleReviewWrite { await UserDataService.deleteReview(uuid: uuid) }
+    }
+
+    private func settleReviewWrite(_ write: () async -> BookReviews?) async {
+        reviewWrites += 1
+        let ticket = reviewWrites
+        let settled = await write()
+        guard ticket == reviewWrites, let settled else { return }
+        reviews = settled
     }
 
     func setStatus(_ status: ReadStatus, uuid: String) async {
@@ -274,6 +314,10 @@ struct BookDetailView: View {
     static let artHeight: CGFloat = 470
     /// Clearance the panel keeps for the action bar.
     static let barClearance: CGFloat = 108
+    /// Where the marquee's swipe hint sits, above the safe-area bottom.
+    static let nextHintLift: CGFloat = barClearance - 24
+    /// The hint's line and the gap a stop's content keeps above it.
+    static let nextHintClearance: CGFloat = 20
     /// Scroll id of the rest run above the Home stop — the pre-Home snap
     /// target the two-position panel rests at.
     static let restMarkerID = -1
@@ -319,6 +363,11 @@ struct BookDetailView: View {
     @State private var chipEditing: ChipEditKind?
     @State private var showAllHighlights = false
     @State private var showAllJournals = false
+    /// The marquee's hand-off from the one-screen Stats stop to every review.
+    @State private var showAllReviews = false
+    /// Bumped by the household rating line; the flow scrolls its Reviews
+    /// block into view on each change.
+    @State private var reviewsJump = 0
     /// The entry open in the journal drawer.
     @State private var openJournal: JournalEntry?
     /// An entry picked inside the all-entries sheet; opened in the drawer
@@ -419,6 +468,14 @@ struct BookDetailView: View {
         .onChange(of: presentation.progressToken) { _, _ in
             Task { await model.load(uuid: uuid) }
         }
+        // A review read that could not answer offline gets another go the
+        // moment the connection is back, rather than waiting for a refresh.
+        .onChange(of: connectivity.isOnline) { wasOnline, isOnline in
+            guard DetailReviews.rereadsOnReconnect(
+                wasOnline: wasOnline, isOnline: isOnline, known: model.reviews != nil
+            ) else { return }
+            Task { await model.loadReviews(uuid: uuid) }
+        }
         .sheet(isPresented: $showAlignment) {
             if let book = model.book {
                 AlignmentSheet(book: book) {
@@ -501,6 +558,11 @@ struct BookDetailView: View {
                     pendingQuote = highlight
                     showAllHighlights = false
                 }
+            }
+        }
+        .sheet(isPresented: $showAllReviews) {
+            if let book = model.book {
+                AllReviewsSheet(book: book, model: model)
             }
         }
         .sheet(item: $quoteTarget) { request in
@@ -625,8 +687,10 @@ struct BookDetailView: View {
                 DetailArtLayer(book: book, page: page, lift: lift)
                     .ignoresSafeArea()
                 if usesScrollStops {
-                    snapScroller(book, restTop: restTop)
-                        .ignoresSafeArea()
+                    snapScroller(
+                        book, restTop: restTop, safeBottom: geometry.safeAreaInsets.bottom
+                    )
+                    .ignoresSafeArea()
                 } else {
                     flowScroller(book, restTop: restTop)
                         .ignoresSafeArea()
@@ -651,7 +715,9 @@ struct BookDetailView: View {
         }
     }
 
-    private func snapScroller(_ book: Book, restTop: CGFloat) -> some View {
+    private func snapScroller(
+        _ book: Book, restTop: CGFloat, safeBottom: CGFloat
+    ) -> some View {
         ScrollView(.vertical) {
             VStack(spacing: 0) {
                 // The rest run: scrolling it away is what lifts the panel,
@@ -660,7 +726,7 @@ struct BookDetailView: View {
                     .frame(height: restTop)
                     .id(Self.restMarkerID)
                 ForEach(DetailStop.allCases) { stop in
-                    stopSection(stop, book)
+                    stopSection(stop, book, safeBottom: safeBottom)
                         .id(stop.rawValue)
                 }
             }
@@ -694,13 +760,18 @@ struct BookDetailView: View {
         }
     }
 
-    private func stopSection(_ stop: DetailStop, _ book: Book) -> some View {
-        stopPanel(stop, book)
+    private func stopSection(
+        _ stop: DetailStop, _ book: Book, safeBottom: CGFloat
+    ) -> some View {
+        stopPanel(stop, book, safeBottom: safeBottom)
             .containerRelativeFrame(.vertical)
     }
 
-    private func stopPanel(_ stop: DetailStop, _ book: Book) -> some View {
+    private func stopPanel(
+        _ stop: DetailStop, _ book: Book, safeBottom: CGFloat
+    ) -> some View {
         let isHome = stop == .home
+        let showsHint = DetailRead.showsNextHint(stop)
 
         return VStack(alignment: .leading, spacing: 0) {
             if isHome {
@@ -708,10 +779,13 @@ struct BookDetailView: View {
             } else {
                 StopLabel(stop: stop)
             }
+            // Offered the whole height before the spacer takes any, so a stop
+            // that adapts to its room (the capped Reviews card) sees all of it.
             stopContent(stop, book)
+                .layoutPriority(1)
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .modifier(StopArea(isHome: isHome, fadesOverflow: showsHint))
         .padding(EdgeInsets(
             // A full stop's label must clear the chrome discs, which end
             // ~105pt below the top edge on current devices. Home earns that
@@ -719,7 +793,13 @@ struct BookDetailView: View {
             // discs.
             top: isHome ? 14 + 114 * lift : 128,
             leading: 22,
-            bottom: Self.barClearance,
+            // Under the swipe hint, not just the bar: on a device with a home
+            // indicator the hint sits inside the bar's clearance.
+            bottom: DetailRead.stopBottomInset(
+                barClearance: Self.barClearance,
+                hintTop: safeBottom + Self.nextHintLift + Self.nextHintClearance,
+                showsHint: showsHint
+            ),
             trailing: 30
         ))
         .background {
@@ -742,6 +822,16 @@ struct BookDetailView: View {
         .clipped()
     }
 
+    /// The household rating line's tap. The marquee keeps Reviews on the
+    /// Stats stop, so it snaps there; the flow scrolls to the block itself.
+    private func jumpToReviews() {
+        if usesScrollStops {
+            withAnimation(Motion.settle) { scrollTarget = DetailStop.stats.rawValue }
+        } else {
+            reviewsJump &+= 1
+        }
+    }
+
     /// The handle's tap: jump the scroller to the other Home position.
     private func toggleLift() {
         withAnimation(Motion.settle) {
@@ -755,6 +845,20 @@ struct BookDetailView: View {
     /// every section runs on in a single continuous list. Only the hero
     /// region snaps (`FlowSnapBehavior`); the list itself scrolls free.
     private func flowScroller(_ book: Book, restTop: CGFloat) -> some View {
+        // A reader rather than `scrollPosition`: that binding only reaches the
+        // layout's direct children, and the Reviews block sits deep in the body.
+        ScrollViewReader { proxy in
+            flowScrollView(book, restTop: restTop)
+                .onChange(of: reviewsJump) { _, _ in
+                    withAnimation(Motion.settle) {
+                        // Below the nav strip and the discs, not under them.
+                        proxy.scrollTo(DetailReviews.anchorID, anchor: UnitPoint(x: 0.5, y: 0.16))
+                    }
+                }
+        }
+    }
+
+    private func flowScrollView(_ book: Book, restTop: CGFloat) -> some View {
         ScrollView(.vertical) {
             VStack(spacing: 0) {
                 Color.clear
@@ -871,10 +975,16 @@ struct BookDetailView: View {
                     ) {
                         dismiss()
                     }
-                }
+                },
+                onReviews: jumpToReviews
             )
         case .stats:
-            StopStats(book: book, model: model)
+            StopStats(
+                book: book,
+                model: model,
+                uncapped: uncapped,
+                onAllReviews: { showAllReviews = true }
+            )
         case .highlights:
             StopHighlights(
                 book: book,
@@ -1066,7 +1176,7 @@ struct BookDetailView: View {
     /// itself and the last stop has nowhere to go.
     @ViewBuilder
     private var nextHint: some View {
-        if at > 0, at < DetailStop.allCases.count - 1,
+        if let current = DetailStop(rawValue: at), DetailRead.showsNextHint(current),
            let next = DetailStop(rawValue: at + 1)
         {
             Text("swipe up — next: \(next.name)".uppercased())
@@ -1074,7 +1184,7 @@ struct BookDetailView: View {
                 .tracking(1.4)
                 .foregroundStyle(palette.ink3Color)
                 .padding(.trailing, 34)
-                .padding(.bottom, Self.barClearance - 24)
+                .padding(.bottom, Self.nextHintLift)
                 .allowsHitTesting(false)
                 .transition(.opacity)
         }
@@ -1254,6 +1364,55 @@ struct BookDetailView: View {
         }
         guard let url else { return }
         ShareSheet.present(items: [url])
+    }
+}
+
+/// A stop's content stops where its area does. A stop that holds more than
+/// its screen fades out at its foot rather than running on under the swipe
+/// hint and the action bar; one that fits is drawn whole, its last row as
+/// opaque as its first. Home keeps its own geometry — it rests as a strip.
+private struct StopArea: ViewModifier {
+    let isHome: Bool
+    let fadesOverflow: Bool
+
+    @State private var contentHeight: CGFloat = 0
+    @State private var areaHeight: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        if isHome {
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            let fades = fadesOverflow
+                && DetailRead.overflows(content: contentHeight, area: areaHeight)
+            content
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                    contentHeight = $0
+                }
+                // `minHeight: 0` holds the frame to the stop's area even when
+                // the content needs more, so the mask cuts it there.
+                .frame(
+                    maxWidth: .infinity, minHeight: 0, maxHeight: .infinity,
+                    alignment: .topLeading
+                )
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                    areaHeight = $0
+                }
+                .mask {
+                    // One shape either way, so the content keeps its identity
+                    // when it starts or stops overflowing. Wide, so nothing
+                    // that bleeds sideways is cut.
+                    VStack(spacing: 0) {
+                        Rectangle()
+                        LinearGradient(
+                            colors: [.black, fades ? .clear : .black],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                        .frame(height: 16)
+                    }
+                    .padding(.horizontal, -60)
+                }
+        }
     }
 }
 

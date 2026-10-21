@@ -1,11 +1,12 @@
 //  OfflineSyncTests.swift
 //  The pure parts of the offline layer: how a queued body is re-encoded for
-//  replay, which replica keys a pending write holds off, and what counts as a
-//  reachability signal.
+//  replay, which replica keys a pending write holds off, how queued review
+//  patches fold together, and what counts as a reachability signal.
 //
-//  All three are pure functions with no store or network behind them, which is
-//  the whole reason they're worth pinning here — each has already been wrong
-//  once in a way no screen made obvious.
+//  Almost all of it is pure functions with no store or network behind them,
+//  which is the whole reason they're worth pinning here — each has already
+//  been wrong once in a way no screen made obvious. The review queue is the
+//  exception: its folding happens in the store, so it runs against a scratch one.
 
 import Foundation
 import Testing
@@ -125,7 +126,7 @@ struct OutboxScopeTests {
         #expect(!OutboxScope.isBlocked(CacheKey.bookmarks(uuid), by: kinds))
     }
 
-    @Test("book-scoped kinds name exactly one key each")
+    @Test("book-scoped kinds name only their own book's keys")
     func bookScopedKindsAreExact() {
         #expect(OutboxScope.isBlocked(CacheKey.rating(uuid), by: [OpKind.rating(uuid)]))
         #expect(!OutboxScope.isBlocked(CacheKey.rating("other"), by: [OpKind.rating(uuid)]))
@@ -171,6 +172,29 @@ struct OutboxScopeTests {
         #expect(OutboxScope.isBlocked(CacheKey.stats(.year), by: [OpKind.journal]))
     }
 
+    @Test("a queued review holds off that book's reviews and the stats its stars feed")
+    func reviewBlocksItsReviewsAndStats() {
+        let kinds: Set<String> = [OpKind.review(uuid)]
+        #expect(OutboxScope.isBlocked(CacheKey.reviews(uuid), by: kinds))
+        #expect(OutboxScope.isBlocked(CacheKey.stats(.year), by: kinds))
+        #expect(!OutboxScope.isBlocked(CacheKey.reviews("other"), by: kinds))
+        #expect(!OutboxScope.isBlocked(CacheKey.journals(uuid), by: kinds))
+        #expect(!OutboxScope.isBlocked(CacheKey.shelves, by: kinds))
+    }
+
+    @Test("a rating queued before the upgrade still holds off the reviews it changes")
+    func legacyRatingBlocksReviews() {
+        // The book page no longer writes `rating:`, but a device that queued
+        // one still replays it — and the stars it sets are a review's stars.
+        let kinds: Set<String> = [OpKind.rating(uuid)]
+        #expect(OutboxScope.isBlocked(CacheKey.reviews(uuid), by: kinds))
+        #expect(OutboxScope.isBlocked(CacheKey.rating(uuid), by: kinds))
+        #expect(OutboxScope.isBlocked(CacheKey.stats(.week), by: kinds))
+        #expect(!OutboxScope.isBlocked(CacheKey.reviews("other"), by: kinds))
+        // Declared, so not the unknown kind that blocks everything.
+        #expect(!OutboxScope.isBlocked(CacheKey.shelves, by: kinds))
+    }
+
     @Test("an empty queue blocks nothing")
     func emptyQueueBlocksNothing() {
         #expect(!OutboxScope.isBlocked(CacheKey.shelves, by: []))
@@ -183,6 +207,659 @@ struct OutboxScopeTests {
         // over-cautious rather than let a stale answer overwrite what it queued.
         #expect(OutboxScope.isBlocked(CacheKey.shelves, by: ["something_new"]))
         #expect(OutboxScope.isBlocked(CacheKey.me, by: ["something_new"]))
+    }
+}
+
+// MARK: - Field-level patch coalescing
+
+/// The keys and values of a stored body.
+private func object(_ data: Data?) throws -> [String: Any] {
+    let data = try #require(data)
+    return try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+}
+
+@Suite("Folding queued patches")
+struct PatchCoalescingTests {
+    @Test("fields from both bodies survive, the later one winning where both speak")
+    func laterWinsPerField() throws {
+        let folded = PatchCoalescing.folded(
+            Data(#"{"stars":4,"body_md":"draft"}"#.utf8),
+            under: Data(#"{"body_md":"final","spoiler":true}"#.utf8)
+        )
+        let body = try object(folded)
+        #expect((body["stars"] as? NSNumber)?.doubleValue == 4)
+        #expect(body["body_md"] as? String == "final")
+        let spoiler = try #require(body["spoiler"] as? NSNumber)
+        #expect(CFGetTypeID(spoiler) == CFBooleanGetTypeID())
+        #expect(spoiler.boolValue)
+    }
+
+    @Test("a later clear wins over an earlier value, as an explicit null")
+    func laterNullClears() throws {
+        let folded = PatchCoalescing.folded(
+            Data(#"{"stars":4,"notes_md":"n"}"#.utf8), under: Data(#"{"stars":null}"#.utf8)
+        )
+        let body = try object(folded)
+        #expect(body["stars"] is NSNull)
+        #expect(body["notes_md"] as? String == "n")
+    }
+
+    @Test("a later value wins over an earlier clear")
+    func laterValueOverridesNull() throws {
+        let folded = PatchCoalescing.folded(
+            Data(#"{"stars":null}"#.utf8), under: Data(#"{"stars":3.5}"#.utf8)
+        )
+        #expect((try object(folded)["stars"] as? NSNumber)?.doubleValue == 3.5)
+    }
+
+    @Test("a pre-review rating reads as the stars it asserts")
+    func legacyStarsBody() throws {
+        let set = PatchCoalescing.legacyStars(
+            method: "POST", body: Data(#"{"book_uuid":"b","stars":3.5}"#.utf8)
+        )
+        #expect((try object(set)["stars"] as? NSNumber)?.doubleValue == 3.5)
+        #expect(try object(PatchCoalescing.legacyStars(method: "DELETE", body: nil))["stars"] is NSNull)
+        #expect(PatchCoalescing.legacyStars(method: "PATCH", body: nil) == nil)
+        #expect(PatchCoalescing.legacyStars(method: "POST", body: Data("{}".utf8)) == nil)
+    }
+
+    @Test("a body that is not an object is never folded, so nothing is lost")
+    func nonObjectsDoNotFold() {
+        #expect(PatchCoalescing.folded(nil, under: Data(#"{"stars":4}"#.utf8)) == nil)
+        #expect(PatchCoalescing.folded(Data("null".utf8), under: Data(#"{"stars":4}"#.utf8)) == nil)
+    }
+}
+
+@Suite("Queued review writes")
+struct ReviewOutboxTests {
+    private let uuid = "11111111-2222-3333-4444-555555555555"
+    private var kind: String { OpKind.review(uuid) }
+    private var path: String { "/api/reviews/\(uuid)" }
+
+    private var legacyKind: String { OpKind.rating(uuid) }
+
+    /// A pre-review stars write, as an upgraded device's outbox holds one.
+    private func queueLegacyRating(_ store: OfflineStore, stars: Double?) async {
+        if let stars {
+            await store.enqueue(
+                kind: legacyKind, path: "/api/ratings", method: "POST",
+                body: Data(#"{"book_uuid":"\#(uuid)","stars":\#(stars)}"#.utf8), coalesce: true
+            )
+        } else {
+            await store.enqueue(
+                kind: legacyKind, path: "/api/ratings/\(uuid)", method: "DELETE",
+                body: nil, coalesce: true
+            )
+        }
+    }
+
+    private func patch(_ patch: ReviewPatch) throws -> Data {
+        try JSONEncoder().encode(patch)
+    }
+
+    @Test("a text edit queued after a star tap keeps the stars")
+    func patchesMergeFieldByField() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(4)))
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(ReviewPatch(bodyMd: .set("Loved it")))
+        )
+
+        let ops = await store.listOps()
+        #expect(ops.count == 1)
+        let body = try object(ops.first?.body)
+        #expect((body["stars"] as? NSNumber)?.doubleValue == 4)
+        #expect(body["body_md"] as? String == "Loved it")
+        #expect(ops.first?.method == "PATCH")
+    }
+
+    @Test("a later star tap replaces an earlier one, and a clear stays a clear")
+    func laterStarsWin() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(4)))
+        await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(0)))
+
+        let ops = await store.listOps()
+        #expect(ops.count == 1)
+        #expect(try object(ops.first?.body)["stars"] is NSNull)
+    }
+
+    @Test("a delete supersedes every patch queued before it")
+    func deleteSupersedesPatches() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(4)))
+        await store.enqueue(kind: kind, path: path, method: "DELETE", body: nil, coalesce: true)
+
+        let ops = await store.listOps()
+        #expect(ops.map(\.method) == ["DELETE"])
+    }
+
+    @Test("a patch after a delete queues behind it rather than folding past it")
+    func patchAfterDeleteStaysBehind() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await store.enqueue(kind: kind, path: path, method: "DELETE", body: nil, coalesce: true)
+        await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(2)))
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(ReviewPatch(notesMd: .set("n")))
+        )
+
+        let ops = await store.listOps()
+        #expect(ops.map(\.method) == ["DELETE", "PATCH"])
+        let body = try object(ops.last?.body)
+        #expect((body["stars"] as? NSNumber)?.doubleValue == 2)
+        #expect(body["notes_md"] as? String == "n")
+    }
+
+    @Test("a patch the server refused is never folded into a new one")
+    func rejectedPatchIsLeftAlone() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        let refused = await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(4)))
+        await store.noteOpFailure(refused, message: "Rejected (400)")
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(ReviewPatch(bodyMd: .set("x")))
+        )
+
+        let pending = await store.listOps()
+        #expect(pending.count == 1)
+        #expect(try object(pending.first?.body)["stars"] == nil)
+        #expect(await store.rejectedCount() == 1)
+    }
+
+    @Test("a queued pre-review rating folds into the review patch instead of racing it")
+    func legacyRatingFoldsIntoPatch() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await queueLegacyRating(store, stars: 4)
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(ReviewPatch(bodyMd: .set("x"))),
+            legacyStars: legacyKind
+        )
+
+        let ops = await store.listOps()
+        #expect(ops.map(\.kind) == [kind])
+        let body = try object(ops.first?.body)
+        #expect((body["stars"] as? NSNumber)?.doubleValue == 4)
+        #expect(body["body_md"] as? String == "x")
+    }
+
+    @Test("the patch's own stars win over a queued pre-review rating")
+    func patchStarsBeatLegacy() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await queueLegacyRating(store, stars: 4)
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(.stars(2)), legacyStars: legacyKind
+        )
+
+        let ops = await store.listOps()
+        #expect(ops.count == 1)
+        #expect((try object(ops.first?.body)["stars"] as? NSNumber)?.doubleValue == 2)
+    }
+
+    @Test("a queued pre-review clear folds in as a null")
+    func legacyClearFoldsAsNull() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await queueLegacyRating(store, stars: nil)
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(ReviewPatch(notesMd: .set("n"))),
+            legacyStars: legacyKind
+        )
+
+        let ops = await store.listOps()
+        #expect(ops.map(\.kind) == [kind])
+        #expect(try object(ops.first?.body)["stars"] is NSNull)
+    }
+
+    @Test("a review delete supersedes a queued pre-review rating")
+    func deleteSupersedesLegacy() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await queueLegacyRating(store, stars: 4)
+        await store.enqueue(
+            kind: kind, path: path, method: "DELETE", body: nil, coalesce: true,
+            superseding: [legacyKind]
+        )
+
+        let ops = await store.listOps()
+        #expect(ops.map(\.method) == ["DELETE"])
+        #expect(ops.map(\.kind) == [kind])
+    }
+
+    @Test("a pre-review rating behind a queued review delete is dropped, not revived")
+    func legacyBehindDeleteIsDropped() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await queueLegacyRating(store, stars: 4)
+        await store.enqueue(kind: kind, path: path, method: "DELETE", body: nil, coalesce: true)
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(ReviewPatch(bodyMd: .set("x"))),
+            legacyStars: legacyKind
+        )
+
+        let ops = await store.listOps()
+        #expect(ops.map(\.method) == ["DELETE", "PATCH"])
+        #expect(try object(ops.last?.body)["stars"] == nil)
+    }
+
+    @Test("a pre-review rating the server refused is left on record")
+    func refusedLegacyIsLeftAlone() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await queueLegacyRating(store, stars: 4)
+        let refused = try #require(await store.listOps().first)
+        await store.noteOpFailure(refused.id, message: "Rejected (400)")
+        await store.enqueueFieldPatch(
+            kind: kind, path: path, body: try patch(ReviewPatch(bodyMd: .set("x"))),
+            legacyStars: legacyKind
+        )
+
+        #expect(try object(await store.listOps().first?.body)["stars"] == nil)
+        #expect(await store.rejectedCount() == 1)
+    }
+
+    @Test("two books' patches never fold into each other")
+    func otherBooksStayApart() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-outbox")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await store.enqueueFieldPatch(kind: kind, path: path, body: try patch(.stars(4)))
+        await store.enqueueFieldPatch(
+            kind: OpKind.review("other"), path: "/api/reviews/other", body: try patch(.stars(1))
+        )
+
+        #expect(await store.listOps().count == 2)
+    }
+}
+
+// MARK: - Review replica writes
+
+/// A global, so the `@Sendable` changes below can name it.
+private let replicaBook = "11111111-2222-3333-4444-555555555555"
+
+@Suite("Review replica writes")
+struct ReviewReplicaTests {
+    private var key: String { CacheKey.reviews(replicaBook) }
+
+    private func held(_ store: OfflineStore) async throws -> BookReviews {
+        let data = try #require(await store.cacheGet(key))
+        return try JSONDecoder().decode(BookReviews.self, from: data)
+    }
+
+    private func page(stars: Double?, body: String?) -> BookReviews {
+        BookReviews(
+            mine: Review(
+                bookUUID: replicaBook, stars: stars, bodyMd: body, bodyHtml: nil, notesMd: nil,
+                notesHtml: nil, spoiler: false, ratedAt: nil, createdAt: 1, updatedAt: 1
+            ),
+            others: [], summary: nil
+        )
+    }
+
+    @Test("a refresh answer that arrives after a newer write's is not stored")
+    func delayedOldRefreshIsRefused() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-replica")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        // Write A, then its refresh goes out.
+        await UserDataService.mutateLocalReviews(replicaBook, in: store) {
+            $0 = $0.applying(.stars(4), uuid: replicaBook, now: 1)
+        }
+        let sentBeforeB = await store.cacheGeneration(key)
+        // Write B lands and its refresh answers first.
+        await UserDataService.mutateLocalReviews(replicaBook, in: store) {
+            $0 = $0.applying(
+                ReviewPatch(bodyMd: .set("x")), uuid: replicaBook, now: 2
+            )
+        }
+        let sentAfterB = await store.cacheGeneration(key)
+        let answerB = try JSONEncoder().encode(page(stars: 4, body: "x"))
+        #expect(await store.cachePut(key, answerB, ifGeneration: sentAfterB) == .stored)
+
+        // A's answer, from before B, comes in last.
+        let answerA = try JSONEncoder().encode(page(stars: 4, body: nil))
+        #expect(await store.cachePut(key, answerA, ifGeneration: sentBeforeB) == .moved)
+        #expect(try await held(store).mine?.bodyMd == "x")
+    }
+
+    @Test("an answer is stored when nothing wrote the replica since it was asked for")
+    func undisturbedRefreshIsStored() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-replica")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        let sent = await store.cacheGeneration(key)
+        let answer = try JSONEncoder().encode(page(stars: 5, body: "rendered"))
+        #expect(await store.cachePut(key, answer, ifGeneration: sent) == .stored)
+        #expect(try await held(store).mine?.stars == 5)
+    }
+
+    @Test("a stars tap and a text save made together both land in the replica")
+    func overlappingPatchesKeepBothFields() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-replica")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                await UserDataService.mutateLocalReviews(
+                    replicaBook, in: store
+                ) { $0 = $0.applying(.stars(3.5), uuid: replicaBook, now: 1) }
+            }
+            group.addTask {
+                await UserDataService.mutateLocalReviews(
+                    replicaBook, in: store
+                ) {
+                    $0 = $0.applying(
+                        ReviewPatch(bodyMd: .set("Loved it")),
+                        uuid: replicaBook, now: 1
+                    )
+                }
+            }
+        }
+
+        let mine = try #require(try await held(store).mine)
+        #expect(mine.stars == 3.5)
+        #expect(mine.bodyMd == "Loved it")
+    }
+
+    @Test("many changes made at once are each applied to the result of the last")
+    func concurrentChangesNeverLoseOne() async throws {
+        let (store, file) = await scratchStore(filePrefix: "review-replica")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        await withTaskGroup(of: Void.self) { group in
+            for id in 1...40 {
+                group.addTask {
+                    await UserDataService.mutateLocalReviews(
+                        replicaBook, in: store
+                    ) { reviews in
+                        reviews.others.append(AttributedReview(
+                            userId: Int64(id), username: "r\(id)", stars: 3, bodyMd: nil,
+                            bodyHtml: nil, spoiler: false, ratedAt: nil, createdAt: 1, updatedAt: 1
+                        ))
+                    }
+                }
+            }
+        }
+
+        #expect(Set(try await held(store).others.map(\.userId)) == Set(1...40))
+    }
+}
+
+// MARK: - Guarded revalidation
+
+/// Counts the requests a read makes, and lets each one act while "out".
+private actor RequestLog {
+    private(set) var count = 0
+    func next() -> Int {
+        count += 1
+        return count
+    }
+}
+
+@Suite("Guarded revalidation")
+struct GuardedRevalidationTests {
+    private let book = "22222222-3333-4444-5555-666666666666"
+    private var key: String { CacheKey.reviews(book) }
+
+    private func page(stars: Double, html: String? = nil) -> BookReviews {
+        BookReviews(
+            mine: Review(
+                bookUUID: book, stars: stars, bodyMd: html == nil ? nil : "x", bodyHtml: html,
+                notesMd: nil, notesHtml: nil, spoiler: false, ratedAt: 1, createdAt: 1, updatedAt: 1
+            ),
+            others: [], summary: nil
+        )
+    }
+
+    /// Run one guarded revalidation and collect what it shows.
+    private func reads(
+        store: OfflineStore, cached: Data?,
+        fetch: @escaping @Sendable () async throws -> BookReviews
+    ) async throws -> [CacheRead<BookReviews>] {
+        let key = self.key
+        let stream = AsyncThrowingStream<CacheRead<BookReviews>, Error> { continuation in
+            Task {
+                do {
+                    try await Cache.revalidateGuarded(
+                        key, cachedData: cached, store: store, fetch: fetch, into: continuation
+                    )
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+        var out: [CacheRead<BookReviews>] = []
+        for try await read in stream { out.append(read) }
+        return out
+    }
+
+    @Test("an online-only session, whose store never opened, still shows the answer")
+    func closedStoreShowsTheAnswer() async throws {
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("never-opened-\(UUID().uuidString).sqlite").path
+        let store = OfflineStore(path: path)
+        #expect(await store.cachePut(key, Data("{}".utf8), ifGeneration: 0) == .storeClosed)
+
+        let answer = page(stars: 4)
+        let shown = try await reads(store: store, cached: nil) { answer }
+        #expect(shown.map(\.value.mine?.stars) == [4])
+        #expect(shown.map(\.isFresh) == [true])
+    }
+
+    @Test("an answer refused for a write that has since landed shows the replica, then asks once more")
+    func refusalAfterALandedWriteAsksAgain() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+        let seed = try JSONEncoder().encode(page(stars: 2))
+        await store.cachePut(key, seed)
+
+        let log = RequestLog()
+        let book = self.book
+        let stale = page(stars: 2)
+        let rendered = page(stars: 5, html: "<p>x</p>")
+        let shown = try await reads(store: store, cached: seed) {
+            if await log.next() == 1 {
+                // The tap lands while this first request is out.
+                await UserDataService.mutateLocalReviews(book, in: store) {
+                    $0 = $0.applying(.stars(5), uuid: book, now: 2)
+                }
+                return stale
+            }
+            return rendered
+        }
+
+        #expect(await log.count == 2)
+        // The tap's replica at once, then the server's answer once asked again.
+        #expect(shown.map(\.value.mine?.stars) == [5, 5])
+        #expect(shown.map(\.isFresh) == [false, true])
+        #expect(shown.last?.value == rendered)
+        let stored = try JSONDecoder().decode(BookReviews.self, from: try #require(await store.cacheGet(key)))
+        #expect(stored == rendered)
+    }
+
+    @Test("a recheck that answers what the caller already sees shows nothing twice")
+    func recheckMatchingTheShownReplicaIsNotRepeated() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+        let seed = try JSONEncoder().encode(page(stars: 2))
+        await store.cachePut(key, seed)
+
+        let log = RequestLog()
+        let key = self.key
+        // A one-key page: `JSONEncoder` orders a multi-key object differently
+        // from one encode to the next, and this test needs the answer's bytes
+        // to equal the replica's.
+        let newer = BookReviews.empty
+        let newerData = try JSONEncoder().encode(newer)
+        let stale = page(stars: 2)
+        let shown = try await reads(store: store, cached: seed) {
+            if await log.next() == 1 {
+                await store.cachePut(key, newerData)
+                return stale
+            }
+            return newer
+        }
+
+        // The answer equals the replica already shown, not the seed: one read.
+        #expect(await log.count == 2)
+        #expect(shown.map(\.value) == [newer])
+        #expect(shown.map(\.isFresh) == [false])
+    }
+
+    @Test("a replica that moves to bytes already shown is not shown again")
+    func replicaRewrittenUnchangedIsNotRepeated() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+        let seed = try JSONEncoder().encode(page(stars: 2))
+        await store.cachePut(key, seed)
+
+        let log = RequestLog()
+        let key = self.key
+        let newerData = try JSONEncoder().encode(page(stars: 5))
+        let stale = page(stars: 2)
+        let shown = try await reads(store: store, cached: seed) {
+            _ = await log.next()
+            // Both requests are overtaken; the second rewrite is byte-for-byte
+            // what the first one already put on screen.
+            await store.cachePut(key, newerData)
+            return stale
+        }
+
+        #expect(await log.count == 2)
+        #expect(shown.map(\.value) == [page(stars: 5)])
+        #expect(shown.map(\.isFresh) == [false])
+    }
+
+    @Test("asking again happens once, the replica shown each time it moves")
+    func askingAgainIsBounded() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+        let seed = try JSONEncoder().encode(page(stars: 2))
+        await store.cachePut(key, seed)
+
+        let log = RequestLog()
+        let book = self.book
+        let stale = page(stars: 2)
+        let shown = try await reads(store: store, cached: seed) {
+            let n = await log.next()
+            await UserDataService.mutateLocalReviews(book, in: store) {
+                $0 = $0.applying(.stars(Double(n + 2)), uuid: book, now: Int64(n))
+            }
+            return stale
+        }
+
+        #expect(await log.count == 2)
+        #expect(shown.map(\.value.mine?.stars) == [3, 4])
+        #expect(shown.map(\.isFresh) == [false, false])
+    }
+
+    @Test("a retry that fails offline leaves the replica shown, not an error")
+    func failedRetryKeepsTheReplica() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        // Nothing was cached when the read began; a download's prefetch then
+        // fills the replica while the request is out.
+        let log = RequestLog()
+        let key = self.key
+        let prefetched = page(stars: 3, html: "<p>x</p>")
+        let prefetchedData = try JSONEncoder().encode(prefetched)
+        let stale = page(stars: 2)
+        let shown = try await reads(store: store, cached: nil) {
+            if await log.next() == 1 {
+                await store.cachePut(key, prefetchedData)
+                return stale
+            }
+            throw APIError.offline
+        }
+
+        #expect(await log.count == 2)
+        #expect(shown.map(\.value) == [prefetched])
+        #expect(shown.map(\.isFresh) == [false])
+    }
+
+    @Test("with nothing held at all after a refusal, the answer itself is shown")
+    func emptyReplicaShowsTheAnswer() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        let log = RequestLog()
+        let key = self.key
+        let answer = page(stars: 4)
+        let shown = try await reads(store: store, cached: nil) {
+            _ = await log.next()
+            // Something writes the key and then removes it while this is out.
+            await store.cachePut(key, Data("{}".utf8))
+            await store.cacheDelete(key)
+            return answer
+        }
+
+        #expect(await log.count == 2)
+        #expect(shown.map(\.value) == [answer])
+        #expect(shown.map(\.isFresh) == [true])
+    }
+
+    @Test("an unknown queued write with nothing held shows the answer rather than nothing")
+    func unknownQueuedWriteWithEmptyReplica() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        let log = RequestLog()
+        let answer = page(stars: 4)
+        let shown = try await reads(store: store, cached: nil) {
+            _ = await log.next()
+            // A kind `OutboxScope` doesn't know holds off every key.
+            await store.enqueue(
+                kind: "something_new", path: "/x", method: "POST", body: nil, coalesce: false
+            )
+            return answer
+        }
+
+        #expect(await log.count == 1)
+        #expect(shown.map(\.value) == [answer])
+        #expect(shown.map(\.isFresh) == [true])
+    }
+
+    @Test("a write still queued is not asked about again: the replica is shown")
+    func queuedWriteShowsTheReplica() async throws {
+        let (store, file) = await scratchStore(filePrefix: "guarded-read")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+        let seed = try JSONEncoder().encode(page(stars: 2))
+        await store.cachePut(key, seed)
+
+        let log = RequestLog()
+        let book = self.book
+        let stale = page(stars: 2)
+        let shown = try await reads(store: store, cached: seed) {
+            _ = await log.next()
+            await UserDataService.mutateLocalReviews(book, in: store) {
+                $0 = $0.applying(.stars(5), uuid: book, now: 2)
+            }
+            await store.enqueue(
+                kind: OpKind.review(book), path: "/api/reviews/\(book)", method: "PATCH",
+                body: Data(#"{"stars":5}"#.utf8), coalesce: false
+            )
+            return stale
+        }
+
+        #expect(await log.count == 1)
+        #expect(shown.map(\.value.mine?.stars) == [5])
     }
 }
 
@@ -764,6 +1441,8 @@ struct UserScopedPrefixTests {
             CacheKey.journals(uuid),
             CacheKey.rating(uuid),
             CacheKey.ratingsOthers(uuid),
+            // Holds the reader's private notes.
+            CacheKey.reviews(uuid),
             CacheKey.readStatus(uuid),
             CacheKey.playbackRate(uuid),
             CacheKey.stats(.week),

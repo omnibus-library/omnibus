@@ -19,7 +19,7 @@ import {
   seekChapter,
   syncLabel,
   thumbPct,
-} from "./listen";
+} from "./listenView";
 import "./Listen.css";
 
 /** The chapter bar over a transparent range that seeks: dragging previews, releasing seeks. */

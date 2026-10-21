@@ -57,6 +57,7 @@ pub mod progress;
 pub mod pubdate;
 pub mod ratings;
 pub mod read_status;
+pub mod reviews;
 pub mod scan;
 pub mod scanner;
 pub mod series_normalize;

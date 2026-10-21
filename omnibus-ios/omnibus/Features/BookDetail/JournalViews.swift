@@ -1,5 +1,6 @@
 //  JournalViews.swift
-//  Journal composer and bookmarks sheet.
+//  Journal composer, the Markdown editor it shares with the review composer,
+//  and the bookmarks sheet.
 
 import SwiftUI
 
@@ -65,36 +66,8 @@ struct JournalComposer: View {
         }
     }
 
-    /// Set in the reading face the entry will be rendered in, so what you type
-    /// is what you get rather than sans in, serif out.
-    ///
-    /// No `.lineSpacing` here, although the rendered entry has some: on the
-    /// editor it is applied as a paragraph style the caret rect does not
-    /// include, so every scroll-to-caret lands a little short and the text
-    /// view corrects it a frame later — a bounce that grows by one line's
-    /// spacing per line of text, until a long entry jitters on every few
-    /// letters. The bottom margin is what keeps the caret line clear of the
-    /// options docked under the editor.
     private var editor: some View {
-        TextEditor(text: $body_)
-            .font(.display(19))
-            .foregroundStyle(palette.ink0Color)
-            .tint(palette.accentColor)
-            .scrollContentBackground(.hidden)
-            .contentMargins(.bottom, Spacing.lg, for: .scrollContent)
-            .padding(.horizontal, Spacing.screen - 5)
-            .padding(.top, Spacing.sm)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay(alignment: .topLeading) {
-                if body_.isEmpty {
-                    Text("What did you think?")
-                        .font(.display(19))
-                        .foregroundStyle(palette.ink3Color)
-                        .padding(.horizontal, Spacing.screen)
-                        .padding(.top, Spacing.md)
-                        .allowsHitTesting(false)
-                }
-            }
+        MarkdownEditorField(text: $body_, placeholder: "What did you think?")
             .focused($focused)
     }
 
@@ -167,6 +140,46 @@ struct JournalComposer: View {
         Haptics.success()
         onSaved()
         dismiss()
+    }
+}
+
+/// The composers' writing surface, shared by journal entries and reviews: set
+/// in the reading face the text will be rendered in, so what you type is what
+/// you get rather than sans in, serif out, with a placeholder until the first
+/// keystroke.
+///
+/// No `.lineSpacing` here, although the rendered text has some: on the editor
+/// it is applied as a paragraph style the caret rect does not include, so every
+/// scroll-to-caret lands a little short and the text view corrects it a frame
+/// later — a bounce that grows by one line's spacing per line of text, until a
+/// long entry jitters on every few letters. The bottom margin is what keeps the
+/// caret line clear of whatever is docked under the editor.
+struct MarkdownEditorField: View {
+    @Binding var text: String
+    let placeholder: String
+
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        TextEditor(text: $text)
+            .font(.display(19))
+            .foregroundStyle(palette.ink0Color)
+            .tint(palette.accentColor)
+            .scrollContentBackground(.hidden)
+            .contentMargins(.bottom, Spacing.lg, for: .scrollContent)
+            .padding(.horizontal, Spacing.screen - 5)
+            .padding(.top, Spacing.sm)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topLeading) {
+                if text.isEmpty {
+                    Text(placeholder)
+                        .font(.display(19))
+                        .foregroundStyle(palette.ink3Color)
+                        .padding(.horizontal, Spacing.screen)
+                        .padding(.top, Spacing.md)
+                        .allowsHitTesting(false)
+                }
+            }
     }
 }
 

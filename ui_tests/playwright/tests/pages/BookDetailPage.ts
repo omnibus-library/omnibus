@@ -13,8 +13,8 @@ import { MergeDialogComponent } from "../components/MergeDialogComponent";
 import { MiniDockComponent } from "../components/MiniDockComponent";
 import { PhysicalCopyCardComponent } from "../components/PhysicalCopyCardComponent";
 import { QuoteCardModalComponent } from "../components/QuoteCardModalComponent";
-import { RatingComponent } from "../components/RatingComponent";
 import { ReadStatusControlComponent } from "../components/ReadStatusControlComponent";
+import { ReviewsComponent } from "../components/ReviewsComponent";
 import { SavedPassageCardComponent } from "../components/SavedPassageCardComponent";
 import { ShelfPickerComponent } from "../components/ShelfPickerComponent";
 import { SuggestionsStripComponent } from "../components/SuggestionsStripComponent";
@@ -29,10 +29,11 @@ import type { CopyRow, WishlistRow } from "../data/physical";
 import { holdRequests, isPostTo } from "../utils/api";
 import { BasePage } from "./BasePage";
 
-/** The six stops of the page in running order, as the dot rail names them. */
+/** The seven stops of the page in running order, as the dot rail names them. */
 const MARQUEE_SECTIONS = [
   "Home",
   "Stats",
+  "Reviews",
   "Highlights",
   "Journals",
   "The files",
@@ -50,7 +51,7 @@ export class BookDetailPage extends BasePage {
   readonly miniDock: MiniDockComponent;
   readonly checkInOverlay: CheckInOverlayComponent;
   readonly exportMenu: ExportMenuComponent;
-  readonly rating: RatingComponent;
+  readonly reviews: ReviewsComponent;
   readonly readStatus: ReadStatusControlComponent;
   readonly quoteCardModal: QuoteCardModalComponent;
   readonly listenFilePicker: ListenFilePickerComponent;
@@ -124,7 +125,7 @@ export class BookDetailPage extends BasePage {
     this.miniDock = new MiniDockComponent(page);
     this.checkInOverlay = new CheckInOverlayComponent(page);
     this.exportMenu = new ExportMenuComponent(page);
-    this.rating = new RatingComponent(page);
+    this.reviews = new ReviewsComponent(page);
     this.readStatus = new ReadStatusControlComponent(page);
     this.quoteCardModal = new QuoteCardModalComponent(page);
     this.listenFilePicker = new ListenFilePickerComponent(page);
@@ -382,6 +383,21 @@ export class BookDetailPage extends BasePage {
         value: undefined,
       });
     });
+  }
+
+  /**
+   * Records every panic the app reports from now on: a Rust panic in the
+   * wasm client logs "panicked at" to the console, and the page stops
+   * answering.
+   */
+  recordPanics(): string[] {
+    const panics: string[] = [];
+    const note = (text: string) => {
+      if (/panicked/i.test(text)) panics.push(text);
+    };
+    this.page.on("console", (message) => note(message.text()));
+    this.page.on("pageerror", (error) => note(error.message));
+    return panics;
   }
 
   /** Records the file name of every download the page starts from now on. */

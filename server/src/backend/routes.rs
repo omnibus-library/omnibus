@@ -11,10 +11,11 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use crate::rate_limit::{rate_limit_by_ip, RateLimiter, RateLimits};
 
 use super::{
-    account, admin_health, admin_sessions, audiobooks, author_photos, authors, bookmarks, covers,
-    cross_format, deletion, ebooks, genres, highlights, journals, kindle, kobo_devices, merge,
-    metadata, overrides, physical, profile, progress, ratings, read_status, scan, search, series,
-    settings, shelves, stats, suggestions, summary, tags, uploads, users, AppState,
+    account, admin_health, admin_sessions, audiobooks, author_photos, authors, bookmarks, cleanup,
+    covers, cross_format, deletion, ebooks, genres, highlights, journals, kindle, kobo_devices,
+    logs, merge, metadata, overrides, physical, profile, progress, ratings, read_status, reviews,
+    scan, search, series, settings, shelves, stats, suggestions, summary, tags, tasks, uploads,
+    users, AppState,
 };
 
 /// Health check, settings, ebooks, and audiobook playback routes.
@@ -24,8 +25,17 @@ pub(super) fn content_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(settings::get_settings, settings::post_settings))
         .routes(routes!(settings::post_registration))
         .routes(routes!(settings::get_mcp, settings::post_mcp))
+        .routes(routes!(
+            settings::get_ebook_convert,
+            settings::post_ebook_convert
+        ))
+        .routes(routes!(
+            settings::get_metadata_precedence,
+            settings::post_metadata_precedence
+        ))
         .routes(routes!(settings::post_reindex))
         .routes(routes!(settings::post_scan_library))
+        .routes(routes!(settings::post_backfill_chapters))
         .routes(routes!(settings::post_rebuild_fts))
         // Admin user, session and device management, all `AdminUser`-gated.
         .routes(routes!(users::get_users, users::post_user))
@@ -38,6 +48,14 @@ pub(super) fn content_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(admin_sessions::delete_session))
         .routes(routes!(admin_sessions::delete_device))
         .routes(routes!(admin_health::get_admin_health))
+        .routes(routes!(tasks::get_worker_status))
+        .routes(routes!(tasks::get_background_tasks))
+        .routes(routes!(cleanup::get_cleanup_counts))
+        .routes(routes!(cleanup::get_cleanup_queue))
+        .routes(routes!(cleanup::post_cleanup_decision))
+        .routes(routes!(cleanup::post_cleanup_detect))
+        .routes(routes!(cleanup::post_cleanup_undo))
+        .routes(routes!(logs::get_logs))
         .routes(routes!(ebooks::get_library))
         .routes(routes!(ebooks::post_download_validators))
         .routes(routes!(ebooks::get_ebooks))
@@ -172,9 +190,13 @@ fn bookmark_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(bookmarks::put_bookmark, bookmarks::delete_bookmark))
 }
 
-/// Reading stats, star ratings, and read/unread state —
-/// mobile-facing REST. Web hits the analogous `/api/rpc/stats`,
-/// `/api/rpc/ratings/*`, and `/api/rpc/read-status/*` server functions.
+/// Reading stats, reviews (and the deprecated stars-only ratings view), and
+/// read/unread state — mobile-facing REST. Web hits the analogous
+/// `/api/rpc/stats`, `/api/rpc/reviews/*`, `/api/rpc/ratings/*`, and
+/// `/api/rpc/read-status/*` server functions.
+// The ratings handlers are `#[deprecated]` so the spec marks them; serving them
+// until installed clients move to `/api/reviews` is deliberate.
+#[allow(deprecated)]
 fn engagement_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(stats::get_household_readers))
@@ -189,6 +211,11 @@ fn engagement_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(ratings::post_rating))
         .routes(routes!(ratings::get_other_ratings))
         .routes(routes!(ratings::get_rating, ratings::delete_rating))
+        .routes(routes!(
+            reviews::get_book_reviews,
+            reviews::patch_review,
+            reviews::delete_review
+        ))
         .routes(routes!(read_status::put_read_status))
         .routes(routes!(read_status::get_read_status))
 }

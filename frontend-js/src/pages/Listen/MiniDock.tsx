@@ -13,7 +13,7 @@ import {
   dockSubText,
   seekChapter,
   thumbPct,
-} from "./listen";
+} from "./listenView";
 import { SleepPanelBody, SpeedPanelBody } from "./Panels";
 import "./Listen.css";
 import "./MiniDock.css";

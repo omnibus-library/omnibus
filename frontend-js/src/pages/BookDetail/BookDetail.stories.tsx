@@ -12,11 +12,14 @@ import {
   failing,
   mergeHandlers,
   physicalHandlers,
+  reviewHandlers,
 } from "../../testing/handlers";
 import {
   aWireBook,
   aWireFile,
   aWireManifest,
+  aWireOtherReview,
+  aWireReview,
   WIRE_ADA,
 } from "../../testing/wire";
 import { BookDetail } from "./BookDetail";
@@ -97,13 +100,14 @@ export const SectionRail: Story = {
     await expect(dots.map((dot) => dot.textContent)).toEqual([
       "01 · Home",
       "02 · Stats",
-      "03 · Highlights",
-      "04 · Journals",
-      "05 · The files",
-      "06 · More",
+      "03 · Reviews",
+      "04 · Highlights",
+      "05 · Journals",
+      "06 · The files",
+      "07 · More",
     ]);
     await expect(canvasElement.querySelectorAll(".bdmq-flowsec")).toHaveLength(
-      6,
+      7,
     );
     await expect(dots[0]).toHaveClass("on");
 
@@ -120,6 +124,34 @@ export const SectionRail: Story = {
     );
 
     await waitFor(() => expect(dots[0]).toHaveClass("on"));
+  },
+};
+
+export const HouseholdRatingJumpsToTheReviewsStop: Story = {
+  decorators: SectionRail.decorators,
+  beforeEach({ msw }) {
+    msw.use(
+      // Ahead of the page's quiet answers, so the household has a rating.
+      ...reviewHandlers({
+        mine: aWireReview({ stars: 4 }),
+        others: [aWireOtherReview({ stars: 5 })],
+      }),
+      ...bookDetailHandlers(BOOK),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const rail = await canvas.findByRole("navigation", {
+      name: "Page sections",
+    });
+    const reviewsDot = within(rail).getByRole("button", {
+      name: "03 · Reviews",
+    });
+
+    await userEvent.click(await canvas.findByTestId("reviews-jump"));
+
+    await waitFor(() => expect(reviewsDot).toHaveClass("on"), {
+      timeout: 5000,
+    });
   },
 };
 

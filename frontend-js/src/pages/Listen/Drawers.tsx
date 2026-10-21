@@ -17,7 +17,7 @@ import {
   chapterIndexForElapsed,
   chapterLabelAt,
   remainingAtRate,
-} from "./listen";
+} from "./listenView";
 import "./Listen.css";
 
 type DrawerShellProps = {

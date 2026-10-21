@@ -19,7 +19,7 @@ import {
   type Stage,
   someIfFilled,
   stageFor,
-} from "./checkIn";
+} from "./checkInFlow";
 import { EntryScreen, ScanScreen } from "./EntryScan";
 import { LinkExistingScreen } from "./LinkExisting";
 import { LookupScreen } from "./Lookup";

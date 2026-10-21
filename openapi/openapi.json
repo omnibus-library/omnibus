@@ -386,6 +386,205 @@
         }
       }
     },
+    "/api/admin/background-tasks": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List recent background tasks",
+        "description": "The most recent recorded runs of background tasks, newest first, up to 100. Each has its\nkind, status and timing and, for a failed run, why it failed. Needs an admin account.",
+        "operationId": "get_background_tasks",
+        "responses": {
+          "200": {
+            "description": "The recorded runs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BackgroundTaskRecord"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/admin/cleanup/counts": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the cleanup counts",
+        "description": "How many cleanup suggestions are pending, accepted and rejected for each kind of\nrecord, in the order `author`, `series`, `tag`, `book_title`. Needs an admin account.",
+        "operationId": "get_cleanup_counts",
+        "responses": {
+          "200": {
+            "description": "The counts for each kind.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CleanupKindCounts"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/admin/cleanup/detect": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Look for cleanup suggestions",
+        "description": "Queues a pass of every detector and answers without waiting for it. The counts update\nas it finishes. Needs an admin account.",
+        "operationId": "post_cleanup_detect",
+        "responses": {
+          "202": {
+            "description": "The detection is queued."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/admin/cleanup/suggestions/{id}/decision": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Decide a cleanup suggestion",
+        "description": "Accepts or rejects one pending suggestion. An accept applies the change before the call\nanswers, and returns the id that undoes it; a reject changes nothing. Needs an admin\naccount.",
+        "operationId": "post_cleanup_decision",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The suggestion's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CleanupDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The decision is recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CleanupDecisionOutcome"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "409": {
+            "description": "No suggestion has that id, it was already reviewed, `decision` is `pending`, `value` isn't accepted for it, is blank, or is over 500 characters, or the change can't be applied."
+          }
+        }
+      }
+    },
+    "/api/admin/cleanup/undo/{log_id}": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Undo a cleanup change",
+        "description": "Reverses a change an accepted suggestion applied, by the `log_id` that decision\nreturned. Needs an admin account.",
+        "operationId": "post_cleanup_undo",
+        "parameters": [
+          {
+            "name": "log_id",
+            "in": "path",
+            "description": "The id the accepted decision returned.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The change is undone."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "409": {
+            "description": "No change has that id, or it was already undone."
+          }
+        }
+      }
+    },
+    "/api/admin/cleanup/{kind}/queue": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List a kind's cleanup suggestions",
+        "description": "The suggestions of one kind still waiting for a decision, oldest first, up to 50. Each\nhas the names involved and how many books it would touch. Needs an admin account.",
+        "operationId": "get_cleanup_queue",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "The kind of record to review.",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CleanupKind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pending suggestions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SuggestionCard"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`kind` isn't `author`, `series`, `tag` or `book_title`."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
     "/api/admin/devices/{id}": {
       "delete": {
         "tags": [
@@ -437,6 +636,94 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/admin/logs": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Read the server logs",
+        "description": "One page of the server's log records, newest first, narrowed by level, module and\ntime range. Needs an admin account.",
+        "operationId": "get_logs",
+        "parameters": [
+          {
+            "name": "level",
+            "in": "query",
+            "description": "Only records at this level, ignoring case, e.g. `ERROR`. Leave it out or empty to\nkeep every level.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "module",
+            "in": "query",
+            "description": "Only records whose module contains this text, ignoring case, e.g.\n`omnibus::backend`. Leave it out or empty to keep every module.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Earliest time to include, as an ISO-8601 prefix such as `2026-07-19T00:00`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Latest time to include, as an ISO-8601 prefix. A bound to the minute includes that\nwhole minute.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Zero-based page index.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "description": "Requested page size. 0 means 50, and a size over 200 is cut to 200.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching records.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter is malformed, such as a `page` that isn't a whole number."
           },
           "403": {
             "description": "You aren't an admin."
@@ -802,6 +1089,27 @@
           },
           "404": {
             "description": "No user has that id."
+          }
+        }
+      }
+    },
+    "/api/audiobooks/backfill-chapters": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Extract audiobook chapters",
+        "description": "Queues a job that reads chapter markers from audiobooks added before chapters were\nrecorded, and answers without waiting for it. Needs an admin account.",
+        "operationId": "post_backfill_chapters",
+        "responses": {
+          "200": {
+            "description": "The job is queued."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "409": {
+            "description": "No audiobook library path is set."
           }
         }
       }
@@ -4414,7 +4722,7 @@
           "Journals"
         ],
         "summary": "Upload a journal image",
-        "description": "Stores an image to embed in a journal entry and returns its URL. Put the URL in the\nentry's markdown as `![caption](url)`.",
+        "description": "Stores an image to embed in a journal entry or review and returns its URL. Put the URL\nin the markdown as `![caption](url)`.",
         "operationId": "post_journal_image",
         "requestBody": {
           "content": {
@@ -4463,7 +4771,7 @@
           "Journals"
         ],
         "summary": "Get a journal image",
-        "description": "An image uploaded for a journal entry, by the name at the end of its URL. A name never\npoints at different bytes, so the response may be cached for a year.",
+        "description": "An image uploaded for a journal entry or review, by the name at the end of its URL. A\nname never points at different bytes, so the response may be cached for a year.",
         "operationId": "get_journal_image",
         "parameters": [
           {
@@ -4546,7 +4854,7 @@
           "Journals"
         ],
         "summary": "Delete a journal entry",
-        "description": "Deletes one of your entries, and any uploaded image it showed that no other entry\nshows.",
+        "description": "Deletes one of your entries. An uploaded image it showed, and no other journal entry or\nreview still shows, is deleted.",
         "operationId": "delete_journal",
         "parameters": [
           {
@@ -4573,7 +4881,7 @@
           "Journals"
         ],
         "summary": "Edit a journal entry",
-        "description": "Replaces the body and progress of one of your entries. Send `status` to publish a draft\nor turn an entry back into one; leave it out to keep the status. An uploaded image the\nold body showed and no entry shows any more is deleted.",
+        "description": "Replaces the body and progress of one of your entries. Send `status` to publish a draft\nor turn an entry back into one; leave it out to keep the status. An uploaded image the\nchange drops, and no journal entry or review still shows, is deleted.",
         "operationId": "patch_journal",
         "parameters": [
           {
@@ -5344,7 +5652,7 @@
           "Ratings"
         ],
         "summary": "Rate a book",
-        "description": "Sets your star rating for a book, from 0.5 to 5 in half-star steps, replacing any rating\nyou gave it before.",
+        "description": "Sets your star rating for a book, from 0.5 to 5 in half-star steps, replacing any rating\nyou gave it before. Any review text and notes stay. Use `PATCH /api/reviews/{uuid}`.",
         "operationId": "post_rating",
         "requestBody": {
           "content": {
@@ -5373,7 +5681,8 @@
           "404": {
             "description": "No book has that `book_uuid`."
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/ratings/others/{uuid}": {
@@ -5382,7 +5691,7 @@
           "Ratings"
         ],
         "summary": "List other users' ratings of a book",
-        "description": "Every other user's rating of the book, with their name, newest first. Returns up to\n1,000, and an empty list for a uuid no book has.",
+        "description": "Every other user's rating of the book, with their name, most recently rated first.\nReturns up to 1,000, and an empty list for a uuid no book has. Use\n`GET /api/reviews/{uuid}`.",
         "operationId": "get_other_ratings",
         "parameters": [
           {
@@ -5397,7 +5706,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Other users' ratings, newest first.",
+            "description": "Other users' ratings, most recently rated first.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5409,7 +5718,8 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/ratings/{uuid}": {
@@ -5418,7 +5728,7 @@
           "Ratings"
         ],
         "summary": "Get your rating for a book",
-        "description": "The body is `null` when you haven't rated the book, or no book has the uuid.",
+        "description": "The body is `null` when you haven't rated the book, or no book has the uuid. Use\n`GET /api/reviews/{uuid}`.",
         "operationId": "get_rating",
         "parameters": [
           {
@@ -5449,14 +5759,15 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       },
       "delete": {
         "tags": [
           "Ratings"
         ],
         "summary": "Remove your rating of a book",
-        "description": "Succeeds whether or not you had rated the book.",
+        "description": "Clears only the stars: any review text and notes stay. Succeeds whether or not you had\nrated the book. Use `PATCH /api/reviews/{uuid}` with `\"stars\": null`.",
         "operationId": "delete_rating",
         "parameters": [
           {
@@ -5473,7 +5784,8 @@
           "204": {
             "description": "You have no rating for the book."
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/read-status": {
@@ -5571,6 +5883,120 @@
           },
           "409": {
             "description": "No ebook library path is set."
+          }
+        }
+      }
+    },
+    "/api/reviews/{uuid}": {
+      "get": {
+        "tags": [
+          "Reviews"
+        ],
+        "summary": "Get a book's reviews",
+        "description": "Your own review, private notes included; every other reader's review with stars or\ntext, without their notes; and a summary of every reader's stars once at least two\nhave rated the book.",
+        "operationId": "get_book_reviews",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The book's reviews.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookReviews"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No book has that uuid."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Reviews"
+        ],
+        "summary": "Delete your review of a book",
+        "description": "Removes your stars, text and private notes together. An uploaded image they showed,\nand no journal entry or review still shows, is deleted. Succeeds whether or not you had\nreviewed the book.",
+        "operationId": "delete_review",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "You have no review of the book."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Reviews"
+        ],
+        "summary": "Change your review of a book",
+        "description": "Creates the review on first write. Only the fields you send change: leave a field out\nto keep it. Send `stars`, `body_md` or `notes_md` as null to clear it. `spoiler` takes\ntrue or false; a null counts as leaving it out, so it keeps the flag rather than\nclearing it. Stars, text and notes are independent, so clearing the stars keeps your\ntext. The body is `null` when the change left the review with no stars, text or notes,\nwhich deletes it.\n\nText and notes can embed images uploaded with `POST /api/journals/images`. An uploaded\nimage the change drops, and no journal entry or review still shows, is deleted.",
+        "operationId": "patch_review",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Your review as stored, or `null` if it is now empty and deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Review"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`stars` is outside 0.5 to 5 or not a whole number of half stars, or `body_md` or `notes_md` is over 65,536 bytes."
+          },
+          "404": {
+            "description": "No book has that uuid."
           }
         }
       }
@@ -6135,6 +6561,67 @@
         }
       }
     },
+    "/api/settings/ebook-convert": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the Calibre setting",
+        "description": "Whether the server can run Calibre's `ebook-convert`, which command it runs and where\nthat command came from. Calibre is optional, so a command that can't run is a normal\nanswer, not an error. Needs an admin account.",
+        "operationId": "get_ebook_convert",
+        "responses": {
+          "200": {
+            "description": "The command in effect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EbookConvertStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Set the Calibre path",
+        "description": "Saves the path of `ebook-convert`. A null or blank `path` clears it, so the server falls\nback to the `OMNIBUS_EBOOK_CONVERT_PATH` environment variable and then to `ebook-convert`\non its `PATH`. Needs an admin account.",
+        "operationId": "post_ebook_convert",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EbookConvertUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The path is saved; the body is the command now in effect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EbookConvertStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "422": {
+            "description": "`path` is over 4096 bytes."
+          }
+        }
+      }
+    },
     "/api/settings/mcp": {
       "get": {
         "tags": [
@@ -6182,6 +6669,104 @@
           },
           "403": {
             "description": "You aren't an admin."
+          }
+        }
+      }
+    },
+    "/api/settings/metadata-precedence/{library}": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get a library's metadata order",
+        "description": "The order of metadata sources for the ebook or audiobook library, lowest priority first:\na later source wins over an earlier one. It is the default order until the library's\nfolder is set. Needs an admin account.",
+        "operationId": "get_metadata_precedence",
+        "parameters": [
+          {
+            "name": "library",
+            "in": "path",
+            "description": "`ebook` or `audiobook`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The sources, lowest priority first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MetadataSource"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`library` isn't `ebook` or `audiobook`."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Set a library's metadata order",
+        "description": "Saves the order of metadata sources for the ebook or audiobook library, lowest priority\nfirst. The list must name each of the five sources exactly once, and the library's folder\nmust already be set. Needs an admin account.",
+        "operationId": "post_metadata_precedence",
+        "parameters": [
+          {
+            "name": "library",
+            "in": "path",
+            "description": "`ebook` or `audiobook`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MetadataSource"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The order is saved; the body is what is now set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MetadataSource"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`library` isn't `ebook` or `audiobook`, or the list doesn't name each source exactly once."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "409": {
+            "description": "The library's folder isn't set."
           }
         }
       }
@@ -7621,6 +8206,28 @@
           }
         ]
       }
+    },
+    "/api/worker/status": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the background task feed",
+        "description": "The background tasks running now and those that finished in the last 10 seconds or so,\nfor a progress display to poll. A task one user started, such as a Send to Kindle,\nshows only to that user.",
+        "operationId": "get_worker_status",
+        "responses": {
+          "200": {
+            "description": "The task feed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerStatus"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8112,6 +8719,96 @@
           }
         }
       },
+      "AttributedReview": {
+        "type": "object",
+        "description": "Another reader's review of a book, with who wrote it. Never carries their private notes.",
+        "required": [
+          "user_id",
+          "username",
+          "spoiler",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "body_html": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`body_md` rendered to HTML, with unsafe markup removed."
+          },
+          "body_md": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The public review text, as Markdown. Null for a rating with no text."
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the review first had stars or text, in Unix seconds. Adding text to a review that\nhad none restarts it, so a text review dates from its text."
+          },
+          "created_at_iso": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The same moment as `created_at`, as an ISO 8601 string in UTC."
+          },
+          "has_avatar": {
+            "type": "boolean",
+            "description": "Whether the reviewer has an avatar. `GET /api/users/{user_id}/avatar` serves it."
+          },
+          "rated_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "When they last changed the stars, in Unix seconds. Null when there are none."
+          },
+          "rated_at_iso": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The same moment as `rated_at`, as an ISO 8601 string in UTC."
+          },
+          "spoiler": {
+            "type": "boolean",
+            "description": "Whether the reviewer marked the review as containing spoilers. The stars are never\na spoiler; hide only the text."
+          },
+          "stars": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "The star rating, from 0.5 to 5 in half-star steps. Null when they gave none."
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When they last changed the stars, text or spoiler flag, in Unix seconds."
+          },
+          "updated_at_iso": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The same moment as `updated_at`, as an ISO 8601 string in UTC."
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "username": {
+            "type": "string",
+            "description": "The reviewer's display name, or their username when they have none."
+          }
+        }
+      },
       "AudiobookInspection": {
         "type": "object",
         "description": "The metadata `POST /api/uploads/audiobooks/inspect` reads from an uploaded\naudiobook's tags.",
@@ -8465,6 +9162,57 @@
             ]
           }
         }
+      },
+      "BackgroundTaskRecord": {
+        "type": "object",
+        "description": "One recorded run of a background task: its kind, status and timing. Clients can read\nthese but never write them.",
+        "required": [
+          "id",
+          "task_kind",
+          "status",
+          "started_at"
+        ],
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the run failed. Null unless `status` is `failed`. The text is safe to show\nand holds no server internals."
+          },
+          "finished_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "When the run finished, in Unix seconds. Null while `status` is `running`."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the run started, in Unix seconds."
+          },
+          "status": {
+            "$ref": "#/components/schemas/BackgroundTaskStatus"
+          },
+          "task_kind": {
+            "type": "string"
+          }
+        }
+      },
+      "BackgroundTaskStatus": {
+        "type": "string",
+        "description": "Where a recorded background task run ended up. `running` also covers a run that never\nfinished because the server stopped abruptly.",
+        "enum": [
+          "running",
+          "success",
+          "failed"
+        ]
       },
       "BookDeletionImpact": {
         "type": "object",
@@ -8862,6 +9610,44 @@
         "properties": {
           "book_uuid": {
             "type": "string"
+          }
+        }
+      },
+      "BookReviews": {
+        "type": "object",
+        "description": "Everything readers have said about one book.",
+        "required": [
+          "others"
+        ],
+        "properties": {
+          "mine": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Review",
+                "description": "Your own review. Null when you haven't reviewed the book."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "others": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttributedReview"
+            },
+            "description": "Other readers' reviews: those with text first, newest first by when the text was\nfirst written, then ratings with no text, most recently rated first. A review\nholding only private notes isn't listed."
+          },
+          "summary": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ReviewSummary",
+                "description": "The book's ratings summed up. Null until at least two readers have rated it."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -9494,6 +10280,101 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "CleanupAction": {
+        "type": "string",
+        "description": "What a cleanup suggestion proposes doing.",
+        "enum": [
+          "merge",
+          "split",
+          "rename",
+          "delete"
+        ]
+      },
+      "CleanupCounts": {
+        "type": "object",
+        "description": "How many cleanup suggestions are in each review state.",
+        "required": [
+          "pending",
+          "accepted",
+          "rejected"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pending": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rejected": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CleanupDecisionOutcome": {
+        "type": "object",
+        "description": "What a cleanup decision did.",
+        "properties": {
+          "log_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The change an accept applied, which `POST /api/admin/cleanup/undo/{log_id}` reverses.\nNull for a reject, which changes nothing."
+          }
+        }
+      },
+      "CleanupDecisionRequest": {
+        "type": "object",
+        "description": "A reviewer's decision on one cleanup suggestion.",
+        "required": [
+          "decision"
+        ],
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/Decision",
+            "description": "`accepted` applies the suggestion and `rejected` dismisses it. `pending` is refused."
+          },
+          "value": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The reviewer's own wording, used in place of the proposed one. Only a book-title\nrename takes it; for any other suggestion it is refused."
+          }
+        }
+      },
+      "CleanupKind": {
+        "type": "string",
+        "description": "What a cleanup suggestion is about: an author, a series, a tag or a book's title.",
+        "enum": [
+          "author",
+          "series",
+          "tag",
+          "book_title"
+        ]
+      },
+      "CleanupKindCounts": {
+        "type": "object",
+        "description": "One kind's suggestions counted by review state.",
+        "required": [
+          "kind",
+          "counts"
+        ],
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/CleanupCounts",
+            "description": "How many of that kind's suggestions are in each review state."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CleanupKind",
+            "description": "The kind of record the suggestions are about."
           }
         }
       },
@@ -10315,6 +11196,15 @@
           }
         }
       },
+      "Decision": {
+        "type": "string",
+        "description": "Where a cleanup suggestion stands in review.",
+        "enum": [
+          "pending",
+          "accepted",
+          "rejected"
+        ]
+      },
       "DeclareSyncPoint": {
         "type": "object",
         "description": "A sync point, as `POST /api/books/{uuid}/sync-point` takes it: your position in the\nformat you're using, which the server pairs with your saved position in the other.",
@@ -10538,6 +11428,42 @@
             "items": {
               "$ref": "#/components/schemas/DownloadValidator"
             }
+          }
+        }
+      },
+      "EbookConvertStatus": {
+        "type": "object",
+        "description": "Whether the server can run Calibre's `ebook-convert` to convert book formats.\nCalibre is optional. Without it, format conversion is off and nothing else is wrong.",
+        "required": [
+          "available",
+          "path",
+          "source"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "True when `path` exists and runs."
+          },
+          "path": {
+            "type": "string",
+            "description": "The command the server runs: a saved path, the `OMNIBUS_EBOOK_CONVERT_PATH`\nenvironment variable, or plain `ebook-convert` found on the server's `PATH`."
+          },
+          "source": {
+            "type": "string",
+            "description": "Where `path` came from: `settings`, `env` or `path`."
+          }
+        }
+      },
+      "EbookConvertUpdate": {
+        "type": "object",
+        "description": "The `ebook-convert` path to save.",
+        "properties": {
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The path of Calibre's `ebook-convert`, up to 4096 bytes. Null or blank clears the\nsaved path."
           }
         }
       },
@@ -11089,6 +12015,26 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "GhostFilesWarning": {
+        "type": "object",
+        "description": "How many books lost their files in one scan. `removed` books lost theirs, out of the\n`total` that had files. The share was high enough to warn about, but below the point\nwhere the scan stops.",
+        "required": [
+          "removed",
+          "total"
+        ],
+        "properties": {
+          "removed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -11770,6 +12716,76 @@
           }
         }
       },
+      "LogPage": {
+        "type": "object",
+        "description": "One page of matching log records, newest first.",
+        "required": [
+          "records",
+          "page",
+          "per_page",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean",
+            "description": "Whether more matching records follow this page."
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The zero-based page index that was read.",
+            "minimum": 0
+          },
+          "per_page": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The page size that was used, after the default and the cap.",
+            "minimum": 0
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogRecord"
+            },
+            "description": "Matching records for this page, newest first."
+          }
+        }
+      },
+      "LogRecord": {
+        "type": "object",
+        "description": "One parsed structured-log record surfaced to the admin log viewer.",
+        "required": [
+          "timestamp",
+          "level",
+          "target",
+          "message"
+        ],
+        "properties": {
+          "fields": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The event's other fields and its request's method and path, as compact JSON.\nAbsent when there was nothing beyond the message."
+          },
+          "level": {
+            "type": "string",
+            "description": "Level string as written: `ERROR` / `WARN` / `INFO` / `DEBUG` / `TRACE`."
+          },
+          "message": {
+            "type": "string",
+            "description": "The event's `message` field, or empty when the event carried none."
+          },
+          "target": {
+            "type": "string",
+            "description": "The module that logged the event, which the `module` filter matches against."
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp as logged. Fixed-width, so sorting the strings sorts by time."
+          }
+        }
+      },
       "LoginRequest": {
         "type": "object",
         "description": "The credentials `POST /api/auth/login` checks.",
@@ -12038,6 +13054,17 @@
           "open_library",
           "google_books",
           "hardcover"
+        ]
+      },
+      "MetadataSource": {
+        "type": "string",
+        "description": "A source of book metadata, as a library's precedence list orders them. Only\n`embedded_tags`, the metadata inside the book file, and `omnibus_overrides`, the\nedits made in Omnibus, supply data today. The others are stored but change nothing.",
+        "enum": [
+          "folder_structure",
+          "embedded_tags",
+          "opf_sidecar",
+          "omnibus_overrides",
+          "provider_match"
         ]
       },
       "MonthCount": {
@@ -12548,6 +13575,98 @@
             "description": "When the server received the position, in Unix seconds."
           }
         }
+      },
+      "ProgressState": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "processed",
+              "state"
+            ],
+            "properties": {
+              "processed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "running"
+                ]
+              },
+              "total": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "processed",
+              "state"
+            ],
+            "properties": {
+              "bake_errors": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "The uuids of books whose EPUB couldn't be rebuilt with their edited metadata,\nafter a rebuild of every EPUB. Absent otherwise, and never present together\nwith `ghost_warning`."
+              },
+              "ghost_warning": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/GhostFilesWarning",
+                    "description": "Present when a scan found many books' files missing, though not so many that\nit stopped. Clients warn about it."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "processed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "done"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "state"
+            ],
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "failed"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Where a background task stands. `state` says which case it is. A `running` task\nwithout `total` hasn't counted its work yet. With `total`, `processed` out of `total`\nis its progress. `done` and `failed` tasks stay in `recent_complete` for about 10\nseconds."
       },
       "ProgressUpdate": {
         "type": "object",
@@ -13259,6 +14378,179 @@
           }
         }
       },
+      "Review": {
+        "type": "object",
+        "description": "Your review of a book, private notes included.",
+        "required": [
+          "book_uuid",
+          "spoiler",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "body_html": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`body_md` rendered to HTML, with unsafe markup removed."
+          },
+          "body_md": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Your public review text, as Markdown. Null when you wrote none."
+          },
+          "book_uuid": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the review first had stars or text, in Unix seconds. Adding text to a review that\nhad none restarts it, so a text review dates from its text. For a review holding only\nnotes, when you wrote them."
+          },
+          "created_at_iso": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The same moment as `created_at`, as an ISO 8601 string in UTC."
+          },
+          "notes_html": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`notes_md` rendered to HTML, with unsafe markup removed."
+          },
+          "notes_md": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Your private notes, as Markdown. Only you ever see them. Null when you wrote none."
+          },
+          "rated_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "When you last changed the stars, in Unix seconds. Null when there are none."
+          },
+          "rated_at_iso": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The same moment as `rated_at`, as an ISO 8601 string in UTC."
+          },
+          "spoiler": {
+            "type": "boolean",
+            "description": "Whether you marked the review as containing spoilers."
+          },
+          "stars": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "Your star rating, from 0.5 to 5 in half-star steps. Null when you gave none."
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When you last changed the stars, text or spoiler flag, in Unix seconds. Editing\nyour notes doesn't move it, because other readers see it too."
+          },
+          "updated_at_iso": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The same moment as `updated_at`, as an ISO 8601 string in UTC."
+          }
+        }
+      },
+      "ReviewBucket": {
+        "type": "object",
+        "description": "How many readers gave a book one star value.",
+        "required": [
+          "half_stars",
+          "readers"
+        ],
+        "properties": {
+          "half_stars": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The rating in half stars, from 1 to 10. Divide by 2 for stars, so 10 is 5 stars."
+          },
+          "readers": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ReviewPatch": {
+        "type": "object",
+        "description": "The changes `PATCH /api/reviews/{uuid}` makes to your review of a book. A field left\nout stays as it is; `stars`, `body_md` or `notes_md` sent as null is cleared. Blank\ntext counts as null. A review left with no stars, text or notes is deleted.",
+        "properties": {
+          "body_md": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The public review text, as Markdown, up to 65,536 bytes."
+          },
+          "notes_md": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Private notes only you see, as Markdown, up to 65,536 bytes."
+          },
+          "spoiler": {
+            "type": "boolean",
+            "description": "Whether the review contains spoilers: true or false. Leave it out to keep it; a null\ncounts as leaving it out and doesn't clear the flag."
+          },
+          "stars": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "The star rating, from 0.5 to 5 in half-star steps. Null clears the stars and keeps\nany text and notes."
+          }
+        }
+      },
+      "ReviewSummary": {
+        "type": "object",
+        "description": "Every reader's rating of a book, yours included, summed up.",
+        "required": [
+          "average_stars",
+          "ratings",
+          "buckets"
+        ],
+        "properties": {
+          "average_stars": {
+            "type": "number",
+            "format": "float",
+            "description": "The mean rating, in stars."
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewBucket"
+            },
+            "description": "All ten half-star values, lowest first, zeros included."
+          },
+          "ratings": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many readers rated the book."
+          }
+        }
+      },
       "RuleField": {
         "type": "string",
         "description": "A field a smart shelf condition can match on.",
@@ -13529,6 +14821,50 @@
             "items": {
               "$ref": "#/components/schemas/ExternalBookMeta"
             }
+          }
+        }
+      },
+      "ScanTallies": {
+        "type": "object",
+        "description": "File counts from a library scan. `found` is how many files it found on disk, and the\nother counts say how it sorted them against the index. The counts are final once the\nscan has compared every file.",
+        "required": [
+          "found",
+          "new",
+          "changed",
+          "removed",
+          "moved",
+          "unchanged"
+        ],
+        "properties": {
+          "changed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "found": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "moved": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "new": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "removed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "unchanged": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -14661,6 +15997,76 @@
           }
         }
       },
+      "SuggestionCard": {
+        "type": "object",
+        "description": "One cleanup suggestion with the names and counts to show it for review.\n`secondary_name` and `photo_url` are null when they don't apply: a tag split has no\nsingle other name, and only author suggestions can have a photo.",
+        "required": [
+          "id",
+          "kind",
+          "action",
+          "decision",
+          "primary_name",
+          "book_count",
+          "created_at"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/CleanupAction"
+          },
+          "book_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many library books are affected if the suggestion is applied."
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix seconds the suggestion was detected."
+          },
+          "decision": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CleanupKind"
+          },
+          "photo_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Relative URL of the author's cached photo. Null for other kinds and for an\nauthor without one."
+          },
+          "primary_name": {
+            "type": "string",
+            "description": "The name the suggestion centres on: the record a merge keeps, the tag being\nsplit, the record being deleted, or a book's current title."
+          },
+          "proposed_parts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The tags a split would produce, in the order they appear in the original. Empty\nfor every other action."
+          },
+          "secondary_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The suggestion's second name, where it has one: the proposed title on a rename,\nor the record folding away in a two-way merge. Null for a split, a delete, and\na merge of three or more records, which `source_names` lists instead."
+          },
+          "source_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every name a merge would fold into `primary_name`. Empty for the other actions."
+          }
+        }
+      },
       "SuggestionsResponse": {
         "oneOf": [
           {
@@ -14805,6 +16211,37 @@
           }
         }
       },
+      "TaskDetail": {
+        "type": "object",
+        "description": "Live detail about a task: its phase, the item it is on and, for a scan, its file\ncounts. Every field may be absent.",
+        "properties": {
+          "current_item": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The item the task is working on, such as \"books/Author/Title.epub\"."
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A short label for the task's current phase, such as \"Walking the library\"."
+          },
+          "tallies": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ScanTallies",
+                "description": "A scan's file counts. They stay on the finished task, so a client can sum up what\nthe scan changed."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "TaskKind": {
         "type": "string",
         "description": "The kind of a background task. `scan` also covers the jobs that follow a scan and\nother jobs without a kind of their own. More kinds may come, so clients should accept\nvalues they don't know.",
@@ -14816,6 +16253,58 @@
           "backfill_chapters",
           "resolve_suggestions"
         ]
+      },
+      "TaskProgress": {
+        "type": "object",
+        "description": "One background task in the progress feed. `task_id` identifies it until the server\nrestarts.",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "started_at_ms",
+          "last_update_ms"
+        ],
+        "properties": {
+          "detail": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TaskDetail",
+                "description": "Live detail about the task. Absent for kinds of task that don't report it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TaskKind"
+          },
+          "last_update_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the task last reported progress, in Unix milliseconds."
+          },
+          "resource_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the task works on, such as a library folder or a book. Tasks with the same\nkey run one after another. Absent when the task claims nothing."
+          },
+          "started_at_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the task started, in Unix milliseconds by the server's clock. It is for\nshowing elapsed time only."
+          },
+          "state": {
+            "$ref": "#/components/schemas/ProgressState"
+          },
+          "task_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
       },
       "TrendPoint": {
         "type": "object",
@@ -15344,6 +16833,28 @@
             "description": "How long each of the last 20 finished tasks took, in milliseconds, oldest first.\nFailed tasks count too."
           }
         }
+      },
+      "WorkerStatus": {
+        "type": "object",
+        "description": "The background task progress feed: tasks running now, and tasks that finished in the\nlast 10 seconds or so. Both lists are sorted by `task_id`.",
+        "required": [
+          "active",
+          "recent_complete"
+        ],
+        "properties": {
+          "active": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskProgress"
+            }
+          },
+          "recent_complete": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskProgress"
+            }
+          }
+        }
       }
     },
     "securitySchemes": {
@@ -15416,8 +16927,12 @@
       "description": "Journal entries about a book, and the images in them."
     },
     {
+      "name": "Reviews",
+      "description": "Book reviews: your stars, text and private notes, and what other readers wrote."
+    },
+    {
       "name": "Ratings",
-      "description": "Star ratings."
+      "description": "Star ratings alone. Superseded by Reviews, which carry the same stars."
     },
     {
       "name": "Read status",

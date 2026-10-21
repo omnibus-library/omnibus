@@ -117,6 +117,8 @@ pub struct TaskProgress {
     pub task_id: u64,
     pub kind: TaskKind,
     pub state: ProgressState,
+    /// What the task works on, such as a library folder or a book. Tasks with the same
+    /// key run one after another. Absent when the task claims nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resource_key: Option<String>,
     /// Live detail about the task. Absent for kinds of task that don't report it.

@@ -36,6 +36,15 @@ struct ReplicaInvalidationsTests {
         #expect(hub.generation(of: CacheKey.stats(.allTime)) == 1)
     }
 
+    @Test("a review write moves the summary Search's Recently finished rail reads")
+    func reviewAnnouncesTheStatsSummary() {
+        // Stars feed the summary's average and histogram.
+        let hub = ReplicaInvalidations()
+        hub.note(kind: OpKind.review("b-1"))
+        #expect(hub.generation(of: CacheKey.stats(.allTime)) == 1)
+        #expect(hub.generation(of: CacheKey.recentProgress) == 0)
+    }
+
     @Test("a shelf delete or membership write moves the Shelves rail")
     func shelfWriteAnnouncesTheShelvesRail() {
         let hub = ReplicaInvalidations()

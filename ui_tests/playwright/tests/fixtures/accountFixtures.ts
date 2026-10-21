@@ -14,6 +14,8 @@ import { AccountRequests } from "../apiRequests/AccountRequests";
 import { AuthRequests } from "../apiRequests/AuthRequests";
 import { LogViewerRequests } from "../apiRequests/LogViewerRequests";
 import { ProgressRequests } from "../apiRequests/ProgressRequests";
+import { ReadStatusRequests } from "../apiRequests/ReadStatusRequests";
+import { ReviewsRequests } from "../apiRequests/ReviewsRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
 import { StatsRequests } from "../apiRequests/StatsRequests";
@@ -125,6 +127,8 @@ type AccountFixtures = {
   readerShelvesRequests: ShelvesRequests;
   readerAccountRequests: AccountRequests;
   readerScanRequests: ScanRequests;
+  readerReviewsRequests: ReviewsRequests;
+  readerReadStatusRequests: ReadStatusRequests;
   accountFor: (owner: Owner) => AccountRequests;
   secondReaderPage: Page;
   secondReaderRequest: APIRequestContext;
@@ -195,6 +199,14 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
 
   readerScanRequests: async ({ readerRequest }, use) => {
     await use(new ScanRequests(readerRequest));
+  },
+
+  readerReviewsRequests: async ({ readerRequest }, use) => {
+    await use(new ReviewsRequests(readerRequest));
+  },
+
+  readerReadStatusRequests: async ({ readerRequest }, use) => {
+    await use(new ReadStatusRequests(readerRequest));
   },
 
   accountFor: async ({ accountRequests, readerAccountRequests }, use) => {

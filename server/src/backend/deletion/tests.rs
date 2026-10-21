@@ -95,7 +95,7 @@ async fn api_deletion_manifest_lists_the_books_files_and_copies() {
     let (uuid, file_id, copy_id) = seed_book_with_file_and_copy(&pool).await;
     // One highlight and one rating, so the manifest's hand-mapped impact
     // counters are pinned against the tables that actually back them
-    // (annotations -> highlights, user_ratings -> ratings) rather than just
+    // (annotations -> highlights, reviews -> ratings) rather than just
     // asserted zero.
     sqlx::query(
         "INSERT INTO annotations (user_id, book_uuid, epub_cfi_range, created_at)
@@ -107,8 +107,8 @@ async fn api_deletion_manifest_lists_the_books_files_and_copies() {
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO user_ratings (user_id, book_uuid, half_stars, updated_at)
-         VALUES (?1, ?2, 8, 1)",
+        "INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at, updated_at)
+         VALUES (?1, ?2, 8, 1, 1)",
     )
     .bind(admin.id)
     .bind(&uuid)

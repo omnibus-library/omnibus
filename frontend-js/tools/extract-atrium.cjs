@@ -40,7 +40,7 @@ const OWNERS = [
   ["components/FetchSummary/FetchSummary.css", (c) => c.startsWith("fs-")],
   ["components/FormatSwitcher/FormatSwitcher.css", (c) => c.startsWith("format-") || c.startsWith("kindle-toast") || c.startsWith("kobo-toast")],
   ["components/CopyButton/CopyButton.css", (c) => c.startsWith("copy-feedback")],
-  ["pages/Settings/Settings.css", (c) => c.startsWith("profile-") || c.startsWith("setting-row") || c.startsWith("pref-") || c.startsWith("hidden-format") || c === "kindle-delivery" || (c.startsWith("kobo-") && !c.startsWith("kobo-toast")) || c.startsWith("tkx-")],
+  ["pages/Settings/Settings.css", (c) => c.startsWith("profile-") || c.startsWith("pref-") || c.startsWith("hidden-format") || c === "kindle-delivery" || (c.startsWith("kobo-") && !c.startsWith("kobo-toast"))],
   ["pages/Authors/Authors.css", (c) => c.startsWith("au-")],
   ["components/AuthorPhotoEdit/AuthorPhotoEdit.css", (c) => c.startsWith("author-photo-edit") || c.startsWith("author-delete-modal")],
   ["pages/Series/Series.css", (c) => c.startsWith("idx-")],
@@ -67,7 +67,11 @@ const OWNERS = [
   ["pages/PdfReader/PdfReader.css", (c) => c.startsWith("pr-")],
   // After the QuoteCard row, so the `rd-` classes it owns stay there.
   ["pages/Reader/Reader.css", (c) => c.startsWith("rd-"), true],
-  ["styles/settings.css", (c) => c.startsWith("settings-") || c.startsWith("users-") || c === "table-scroll"],
+  ["pages/Admin/Admin.css", (c) => c.startsWith("admin-") || c.startsWith("maint-") || c.startsWith("metadata-precedence") || c.startsWith("api-key-") || c.startsWith("cleanup-kind") || c === "cleanup-actions" || c.startsWith("logs-") || c.startsWith("ah-")],
+  ["pages/CleanupReview/CleanupReview.css", (c) => c.startsWith("crx-") || c.startsWith("cleanup-review") || c.startsWith("cleanup-card")],
+  ["components/WorkerStatus/WorkerStatus.css", (c) => c.startsWith("worker-status")],
+  ["styles/tokens.css", (c) => c.startsWith("tkx-")],
+  ["styles/settings.css", (c) => c.startsWith("settings-") || c.startsWith("setting-row") || c.startsWith("users-") || c === "table-scroll"],
   ["styles/base.css", (c) => ["card", "divider", "label", "mono", "sr-only", "subtitle"].includes(c)],
 ];
 const CONTEXT = new Set(["atrium", "theme-snap"]);
