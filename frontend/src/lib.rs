@@ -231,6 +231,9 @@ const FILTER_BAR_CSS: Asset = asset!("/assets/filter_bar.css");
 /// The authors browser's stylesheet (the list, its rail, and the author pane).
 const AUTHORS_CSS: Asset = asset!("/assets/authors.css");
 
+/// What the series browser adds to the authors browser's stylesheet.
+const SERIES_CSS: Asset = asset!("/assets/series.css");
+
 /// Browser-tab favicon — the Omnibus brand mark, served as a hashed static
 /// asset via Manganis. 128² PNG; browsers downscale it to the tab size.
 const FAVICON: Asset = asset!("/assets/omnibus-stoat.png");
@@ -601,6 +604,7 @@ pub fn App() -> Element {
         document::Stylesheet { href: LOADING_CSS }
         document::Stylesheet { href: FILTER_BAR_CSS }
         document::Stylesheet { href: AUTHORS_CSS }
+        document::Stylesheet { href: SERIES_CSS }
         components::atrium::AtriumRoot {
             // First child: its pre-paint script must run before the page
             // paints, and finds the `.atrium` root around it.

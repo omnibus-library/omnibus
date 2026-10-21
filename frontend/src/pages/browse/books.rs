@@ -146,19 +146,47 @@ pub fn book_card(card: BookCard<'_>, server_url: &str) -> Element {
     }
 }
 
-/// A grid of covers.
-pub fn book_grid(books: Vec<EbookMetadata>, states: &BookStates, server_url: &str) -> Element {
+/// "6 books · 1 finished", leaving out none finished.
+pub fn books_meta(books: &[EbookMetadata], states: &BookStates) -> String {
+    let n = books.len();
+    let finished = books
+        .iter()
+        .filter(|b| status_of(b, states) == ReadStatus::Finished)
+        .count();
+    let count = if n == 1 {
+        "1 book".to_string()
+    } else {
+        format!("{n} books")
+    };
+    match finished {
+        0 => count,
+        f => format!("{count} \u{b7} {f} finished"),
+    }
+}
+
+/// A grid of covers, each over the line `caption` gives it, if any.
+pub fn book_grid(
+    books: Vec<EbookMetadata>,
+    states: &BookStates,
+    server_url: &str,
+    caption: fn(&EbookMetadata) -> Option<String>,
+) -> Element {
     rsx! {
         div { class: "au-grid", role: "list",
             for book in books.into_iter() {
-                {book_tile(book, states, server_url)}
+                {book_tile(book, states, server_url, caption)}
             }
         }
     }
 }
 
-/// One cover, the reader's bar under it, and the title.
-fn book_tile(book: EbookMetadata, states: &BookStates, server_url: &str) -> Element {
+/// One cover, the reader's bar under it, the caption, and the title.
+fn book_tile(
+    book: EbookMetadata,
+    states: &BookStates,
+    server_url: &str,
+    caption: fn(&EbookMetadata) -> Option<String>,
+) -> Element {
     let uuid = book.unique_identifier.clone().unwrap_or_default();
     let title = book.display_title();
     let (src, srcset) = thumb_srcs(&book, &uuid, server_url, 0);
@@ -173,6 +201,7 @@ fn book_tile(book: EbookMetadata, states: &BookStates, server_url: &str) -> Elem
         (ReadStatus::Unread, _) => None,
     };
     let id = book.id;
+    let caption = caption(&book);
     rsx! {
         // The list role sits on a wrapper so the tile stays a link to assistive tech.
         div { key: "{id}", class: "au-tile-item", role: "listitem",
@@ -190,6 +219,9 @@ fn book_tile(book: EbookMetadata, states: &BookStates, server_url: &str) -> Elem
                     if let Some(pct) = bar {
                         span { class: "au-tile-fill", style: "width: {pct}%" }
                     }
+                }
+                if let Some(caption) = caption {
+                    span { class: "au-tile-caption", "{caption}" }
                 }
                 span { class: "au-tile-title", "{title}" }
             }

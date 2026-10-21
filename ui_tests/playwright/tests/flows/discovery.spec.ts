@@ -149,10 +149,13 @@ test.describe("series page", () => {
       await seriesPage.goto(await seriesId("Pioneers"));
     });
 
-    await test.step("check the heading and the book count", async () => {
+    await test.step("check the name, counts and progress", async () => {
       await seriesPage.assertDisplayed();
       await seriesPage.topNav.assertDisplayed();
-      await expect(seriesPage.bookCountLabel).toBeVisible();
+      await expect(seriesPage.heading).toHaveText("Pioneers");
+      await expect(seriesPage.meta).toContainText("5 books");
+      await expect(seriesPage.readingStrip).toBeVisible();
+      await expect(seriesPage.showInLibraryButton).toBeVisible();
     });
   });
 
@@ -161,13 +164,13 @@ test.describe("series page", () => {
       await seriesPage.goto(await seriesId("Pioneers"));
     });
 
-    await test.step("check the cards and the first number", async () => {
+    await test.step("check the covers and the first number", async () => {
       await expect(seriesPage.bookCards).toHaveCount(5);
       await expect(seriesPage.firstCardNumberLabel).toBeVisible();
     });
   });
 
-  test("open the book when a non-linked area of its card is clicked", async ({
+  test("open the book from its number", async ({
     seriesPage,
     bookDetailPage,
     seriesId,
@@ -177,12 +180,32 @@ test.describe("series page", () => {
       await expect(seriesPage.firstCardNumberLabel).toBeVisible();
     });
 
-    await test.step("click the first card on its number", async () => {
+    await test.step("click the first cover's number", async () => {
       await seriesPage.openFirstBookFromItsNumber();
     });
 
     await test.step("check the book opens", async () => {
       await bookDetailPage.assertDisplayed();
+    });
+  });
+
+  test("show the series' books in the library", async ({
+    seriesPage,
+    libraryPage,
+    seriesId,
+  }) => {
+    const name = "Code Quartet";
+
+    await test.step("show the series in the library", async () => {
+      await seriesPage.goto(await seriesId(name));
+      await seriesPage.showInLibrary(name);
+    });
+
+    await test.step("check the library is narrowed to it", async () => {
+      await libraryPage.assertDisplayed();
+      await expect(libraryPage.filterBar.facet("series")).toHaveAccessibleName(
+        `Series ${name}`,
+      );
     });
   });
 });

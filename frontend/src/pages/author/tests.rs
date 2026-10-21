@@ -5,8 +5,7 @@ use omnibus_shared::{BookReading, EbookMetadata, ReadStatus};
 
 use super::hero::hero_meta;
 use super::progress::current_meta;
-use super::shelf::{group_by_series, series_count, shelf_meta};
-use super::BookStates;
+use super::shelf::{group_by_series, series_count};
 
 const DAY: i64 = 86_400;
 
@@ -73,15 +72,6 @@ fn group_by_series_keeps_first_seen_order_and_sets_standalones_apart() {
         series_count(&[book("a", Some(("X", "1"))), book("b", Some(("X", "2")))]),
         1
     );
-}
-
-#[test]
-fn shelf_meta_adds_finished_only_when_there_is_some() {
-    let books = [book("a", None), book("b", None)];
-    let none: BookStates = BookStates::new();
-    assert_eq!(shelf_meta(&books, &none), "2 books");
-    let one: BookStates = [state("a", ReadStatus::Finished, None, Some(1))].into();
-    assert_eq!(shelf_meta(&books, &one), "2 books \u{b7} 1 finished");
 }
 
 #[test]

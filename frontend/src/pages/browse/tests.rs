@@ -219,3 +219,11 @@ fn ago_counts_whole_days_when_the_zone_is_unknown() {
     assert_eq!(ago(DAY + 8 * 3_600, 23 * 3_600, None), "today");
     assert_eq!(ago(2 * DAY, 0, None), "2 days ago");
 }
+
+#[test]
+fn books_meta_adds_finished_only_when_there_is_some() {
+    let books = [book("a"), book("b")];
+    assert_eq!(books_meta(&books, &BookStates::new()), "2 books");
+    let one: BookStates = [state("a", ReadStatus::Finished, None, Some(1))].into();
+    assert_eq!(books_meta(&books, &one), "2 books \u{b7} 1 finished");
+}

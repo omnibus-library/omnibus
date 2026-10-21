@@ -1,95 +1,68 @@
-//! Tests for the series-index sort/filter helpers: `sort_key`'s leading-
-//! "The" stripping and explicit-sort-field preference, and
-//! `apply_filter_and_sort`'s name/author search and book-count ordering.
+//! Render tests for `/series`' preview pane — what it says while the list
+//! loads, when it failed, and when the library is empty — and a row's
+//! accessible name.
+
+use omnibus_shared::{SeriesReading, SeriesSummary};
 
 use super::*;
+use crate::test_support::render_in_vdom;
 
-fn summary(name: &str, sort: Option<&str>) -> SeriesSummary {
+/// Renders `/series`' pane under a layout context previewing `preview`.
+fn pane(preview: Preview) -> Element {
+    let preview = use_memo(move || preview);
+    use_context_provider(|| SeriesListContext { preview });
+    rsx! { SeriesIndexPage {} }
+}
+
+#[test]
+fn preview_pane_says_the_list_failed_rather_than_that_the_library_is_empty() {
+    let html = render_in_vdom(|| pane(Preview::Unavailable));
+    assert!(html.contains("load series"), "{html}");
+    assert!(!html.contains("library is empty"), "{html}");
+}
+
+#[test]
+fn preview_pane_says_the_library_is_empty_only_when_it_is() {
+    let html = render_in_vdom(|| pane(Preview::Empty));
+    assert!(html.contains("library is empty"), "{html}");
+}
+
+#[test]
+fn preview_pane_loads_while_the_preview_is_pending() {
+    let html = render_in_vdom(|| pane(Preview::Pending));
+    assert!(html.contains("Gathering every series"), "{html}");
+}
+
+fn dune() -> SeriesSummary {
     SeriesSummary {
-        name: name.to_string(),
-        sort: sort.map(String::from),
+        id: 1,
+        name: "Dune".into(),
+        primary_author: Some("Frank Herbert".into()),
+        book_count: 6,
         ..Default::default()
     }
 }
 
 #[test]
-fn sort_key_prefers_explicit_sort_field() {
-    let s = summary("The Expanse", Some("Expanse"));
-    assert_eq!(sort_key(&s), "Expanse");
+fn row_label_names_the_series_author_count_and_finished() {
+    let read = SeriesReading {
+        series_id: 1,
+        finished: 2,
+        reading: 1,
+        last_read_at: None,
+    };
+    assert_eq!(
+        row_label(&dune(), Some(&read)),
+        "Dune, by Frank Herbert, 6 books, 2 finished"
+    );
 }
 
 #[test]
-fn sort_key_ignores_empty_sort_field() {
-    let s = summary("Foundation", Some(""));
-    assert_eq!(sort_key(&s), "Foundation");
-}
-
-#[test]
-fn sort_key_strips_leading_the_in_both_cases() {
-    assert_eq!(sort_key(&summary("The Foo Bar", None)), "Foo Bar");
-    assert_eq!(sort_key(&summary("the foo bar", None)), "foo bar");
-}
-
-#[test]
-fn sort_key_leaves_non_the_prefix_intact() {
-    // "Theology" must not have "The" stripped — only the "The " word.
-    assert_eq!(sort_key(&summary("Theology", None)), "Theology");
-    assert_eq!(sort_key(&summary("Dune", None)), "Dune");
-}
-
-fn summary_full(name: &str, author: Option<&str>, book_count: usize) -> SeriesSummary {
-    SeriesSummary {
-        name: name.to_string(),
-        primary_author: author.map(String::from),
-        book_count,
-        ..Default::default()
-    }
-}
-
-#[test]
-fn apply_filter_and_sort_returns_all_when_query_is_empty() {
-    let items = vec![
-        summary_full("Foundation", Some("Asimov"), 7),
-        summary_full("Dune", Some("Herbert"), 6),
-    ];
-    let out = apply_filter_and_sort(&items, "", IndexSort::Name);
-    assert_eq!(out.len(), 2);
-    // IndexSort::Name orders alphabetically by sort_key.
-    assert_eq!(out[0].name, "Dune");
-    assert_eq!(out[1].name, "Foundation");
-}
-
-#[test]
-fn apply_filter_and_sort_filters_by_name_case_insensitive() {
-    let items = vec![
-        summary_full("Foundation", Some("Asimov"), 7),
-        summary_full("Dune", Some("Herbert"), 6),
-    ];
-    let out = apply_filter_and_sort(&items, "FOUND", IndexSort::Name);
-    assert_eq!(out.len(), 1);
-    assert_eq!(out[0].name, "Foundation");
-}
-
-#[test]
-fn apply_filter_and_sort_filters_by_primary_author() {
-    let items = vec![
-        summary_full("Foundation", Some("Asimov"), 7),
-        summary_full("Dune", Some("Herbert"), 6),
-    ];
-    let out = apply_filter_and_sort(&items, "herbert", IndexSort::Name);
-    assert_eq!(out.len(), 1);
-    assert_eq!(out[0].name, "Dune");
-}
-
-#[test]
-fn apply_filter_and_sort_sorts_by_book_count_descending_then_name() {
-    let items = vec![
-        summary_full("Alpha", None, 3),
-        summary_full("Bravo", None, 7),
-        summary_full("Charlie", None, 7),
-    ];
-    let out = apply_filter_and_sort(&items, "", IndexSort::BookCount);
-    assert_eq!(out[0].name, "Bravo");
-    assert_eq!(out[1].name, "Charlie");
-    assert_eq!(out[2].name, "Alpha");
+fn row_label_leaves_out_an_unknown_author_and_none_finished() {
+    let lone = SeriesSummary {
+        primary_author: None,
+        book_count: 1,
+        ..dune()
+    };
+    assert_eq!(row_label(&lone, None), "Dune, 1 book");
 }

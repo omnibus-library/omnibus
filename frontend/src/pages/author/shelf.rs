@@ -5,9 +5,9 @@
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
-use omnibus_shared::{EbookMetadata, ReadStatus};
+use omnibus_shared::EbookMetadata;
 
-use crate::pages::browse::{book_grid, status_of, BookStates};
+use crate::pages::browse::{book_grid, books_meta, BookStates};
 use crate::Route;
 
 /// One series' books, in the order the author read returned them.
@@ -48,24 +48,6 @@ pub fn series_count(books: &[EbookMetadata]) -> usize {
     names.len()
 }
 
-/// "6 books · 1 finished", leaving out none finished.
-pub fn shelf_meta(books: &[EbookMetadata], states: &BookStates) -> String {
-    let n = books.len();
-    let finished = books
-        .iter()
-        .filter(|b| status_of(b, states) == ReadStatus::Finished)
-        .count();
-    let count = if n == 1 {
-        "1 book".to_string()
-    } else {
-        format!("{n} books")
-    };
-    match finished {
-        0 => count,
-        f => format!("{count} \u{b7} {f} finished"),
-    }
-}
-
 /// Every series shelf, then "Other works".
 pub fn author_shelves(books: Vec<EbookMetadata>, states: &BookStates, server_url: &str) -> Element {
     let (shelves, standalone) = group_by_series(books);
@@ -75,7 +57,7 @@ pub fn author_shelves(books: Vec<EbookMetadata>, states: &BookStates, server_url
                 section { key: "{shelf.id}-{shelf.name}", class: "au-shelf",
                     header { class: "au-shelf-head",
                         h3 { class: "au-shelf-title", "{shelf.name}" }
-                        span { class: "au-shelf-meta", "{shelf_meta(&shelf.books, states)}" }
+                        span { class: "au-shelf-meta", "{books_meta(&shelf.books, states)}" }
                         if shelf.id > 0 {
                             Link {
                                 to: Route::SeriesDetail { id: shelf.id },
@@ -86,16 +68,16 @@ pub fn author_shelves(books: Vec<EbookMetadata>, states: &BookStates, server_url
                             }
                         }
                     }
-                    {book_grid(shelf.books, states, server_url)}
+                    {book_grid(shelf.books, states, server_url, |_| None)}
                 }
             }
             if !standalone.is_empty() {
                 section { class: "au-shelf",
                     header { class: "au-shelf-head",
                         h3 { class: "au-shelf-title", "Other works" }
-                        span { class: "au-shelf-meta", "{shelf_meta(&standalone, states)}" }
+                        span { class: "au-shelf-meta", "{books_meta(&standalone, states)}" }
                     }
-                    {book_grid(standalone, states, server_url)}
+                    {book_grid(standalone, states, server_url, |_| None)}
                 }
             }
         }

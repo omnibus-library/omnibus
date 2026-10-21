@@ -1,0 +1,49 @@
+/* Series browser: the authors browser's layout, wearing its classes from
+   `authors.css`, plus what a series has that an author doesn't — the
+   author line under a row's name, the hero's fan of covers in place of a
+   portrait, the meta line's author links and the missing-numbers note. */
+
+/* A row: the series' name over its author. */
+.se-row { min-height: 60px; }
+.se-row-text { display: grid; gap: 2px; min-width: 0; padding-block: 8px; }
+.se-row .se-row-name { color: var(--ink-0); font-weight: 500; }
+.se-row-author {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13px; color: var(--ink-3);
+}
+.se-row.is-shown .se-row-author { color: var(--ink-2); }
+
+/* The hero's fan: the first three covers, book one in front, each further
+   one shifted right and turned a little more. Fills the portrait's square. */
+.se-fan { position: relative; width: 150px; height: 150px; }
+.se-fan-cover {
+  position: absolute; left: 0; bottom: 0; width: 92px;
+  transform-origin: 50% 100%;
+}
+/* Three covers' full drop shadows pool into one smudge; one soft shadow each. */
+.se-fan .cover-wrap { filter: drop-shadow(0 6px 9px color-mix(in oklch, black 32%, transparent)); }
+.se-fan-cover:nth-child(1) { z-index: 3; }
+.se-fan-cover:nth-child(2) { z-index: 2; translate: 20px 0; rotate: 4deg; filter: brightness(.82); }
+.se-fan-cover:nth-child(3) { z-index: 1; translate: 38px 0; rotate: 8deg; filter: brightness(.66); }
+
+.se-meta-link { color: var(--ink-1); text-decoration: none; transition: color .15s; }
+@media (hover: hover) {
+  .se-meta-link:hover { color: var(--ink-0); text-decoration: underline; text-underline-offset: 3px; }
+}
+.se-meta-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+/* The numbers missing from the run sit after the count, in the tint. */
+.au-shelf-meta.se-gaps { color: color-mix(in oklch, var(--au-tint) 80%, var(--ink-2)); white-space: normal; }
+
+.se-empty { margin: 36px 0 0; }
+
+@media (max-width: 900px) {
+  .se-fan { width: 84px; height: 84px; }
+  .se-fan-cover { width: 54px; }
+  .se-fan-cover:nth-child(2) { translate: 11px 0; }
+  .se-fan-cover:nth-child(3) { translate: 20px 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .se-meta-link { transition: none; }
+}

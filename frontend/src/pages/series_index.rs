@@ -1,250 +1,245 @@
-//! Series index page. Lists every series in the library as a browsable
-//! surface, mirroring the `SeriesIndex` design comp from
-//! `screens/indices.jsx`.
-
-use std::cmp::Reverse;
+//! The series browser: every series in a name-ordered list beside the chosen
+//! series' page, laid out as the authors browser is. [`SeriesBrowser`] is
+//! drawn by the router layout both `/series` and `/series/:id` render inside,
+//! so the list — its scroll, filter and sort — stays put while the reader
+//! moves between series; the route only swaps the pane. `/series` itself
+//! previews [`order::default_series`] in that pane ([`SeriesIndexPage`]).
+//!
+//! The list's rows are library-wide; the reader's own progress through each
+//! series (the bars, the Reading filter, the Recent sort) is a second,
+//! per-reader request, and stays unknown — never zero — until it lands.
 
 use dioxus::prelude::*;
-use dioxus_router::Link;
-use omnibus_shared::{IndexSort, SeriesSummary};
+use dioxus_router::{Link, Outlet};
+use omnibus_shared::{BrowseSort, SeriesReading, SeriesSummary};
 
-use super::index_shell::{
-    index_card_stats, index_page_early_return, use_index_page_shell, IndexFilterInput,
-    IndexPageState, IndexSortToggle,
-};
+use crate::components::{Loading, LoadingKind};
 use crate::{data, index_prefs, use_server_url, Route};
 
-/// Series index page — browse all series in the library.
+use super::browse::{
+    list_body, row_bar, use_list_reading, use_preview, use_reveal_current_row, ListCopy, ListHead,
+    ListReading, ListView, Preview,
+};
+use super::index_shell::{use_index_page_shell, IndexPageState};
+use super::SeriesPage;
+
+mod order;
+
+use order::{
+    compute_series_groups, default_series, first_letter, ListQuery, ReadingMap, SeriesGroups,
+};
+
+/// The reader's progress per series, unknown until it lands.
+type ReadingState = ListReading<ReadingMap>;
+
+/// The words and test ids the series list wears.
+const COPY: ListCopy = ListCopy {
+    title: "Series",
+    noun: "series",
+    testid: "series",
+    filter_placeholder: "Filter by name or author\u{2026}",
+    filter_label: "Filter series by name or author",
+    name_sort: "A\u{2013}Z",
+};
+
+/// `/series`' [`Preview`], shared from the layout with the pane below it.
+#[derive(Clone, Copy)]
+struct SeriesListContext {
+    preview: Memo<Preview>,
+}
+
+/// List + pane for both series routes; `routed` is `/series/:id`'s id.
 #[component]
-pub fn SeriesIndexPage() -> Element {
+pub fn SeriesBrowser(routed: Option<i64>) -> Element {
     let server_url = use_server_url();
-    let shell = use_index_page_shell(
-        move || {
-            let url = server_url.clone();
-            async move { data::list_series(&url).await }
-        },
-        || index_prefs::load().series_sort,
-    );
+    let fetch_url = server_url.clone();
     let IndexPageState {
         items: series,
         loading,
         error,
         mut filter,
         mut sort,
-    } = shell;
-
-    if let Some(early) = index_page_early_return(loading, error, "Gathering every series") {
-        return early;
-    }
-
-    // Borrow the signal's contents instead of cloning — see authors_index
-    // for the same shape and rationale (up to `INDEX_LIMIT` rows, copied
-    // on every keystroke would be wasted work).
-    let all = series.read();
-    let total_series = all.len();
-    let library_empty = all.is_empty();
-    drop(all);
-
-    // Memoized separately from the filter/sort pipeline below: this total is
-    // unaffected by the filter text or sort key, so tying it to that memo
-    // would recompute it on every keystroke for no reason.
-    let total_books = use_memo(move || series.read().iter().map(|s| s.book_count).sum::<usize>());
-
-    let filter_text = filter();
-    let current_sort = sort();
-    // Memoized so filter/sort only reruns when series/filter/sort change, not on every render.
-    let filtered = use_memo(move || {
-        let all = series.read();
-        let q = filter();
-        let s = sort();
-        apply_filter_and_sort(&all, &q, s)
-            .into_iter()
-            .cloned()
-            .collect::<Vec<SeriesSummary>>()
+    } = use_index_page_shell(
+        move || {
+            let url = fetch_url.clone();
+            async move { data::list_series(&url).await }
+        },
+        || index_prefs::load().series_sort,
+    );
+    let reading = use_list_reading(
+        move || {
+            let url = server_url.clone();
+            async move { data::list_series_reading(&url).await }
+        },
+        |r: &SeriesReading| r.series_id,
+    );
+    let mut only_reading = use_signal(|| false);
+    let preview = use_preview(series, loading, error, reading, default_series);
+    use_context_provider(|| SeriesListContext { preview });
+    let shown = routed.or(match preview() {
+        Preview::Item(id) => Some(id),
+        _ => None,
     });
-    let filtered = filtered.read();
+    let groups = use_series_groups(series, filter, sort, reading, only_reading);
+    let reading_count = reading
+        .read()
+        .ready()
+        .map(|m| m.values().filter(|r| r.reading > 0).count());
+    // A failed refresh keeps its rows, so only an empty list has no count.
+    let have_rows = !series.read().is_empty();
+    let total = (!loading() && (have_rows || error.read().is_none())).then(|| series.read().len());
+    // Recent orders by progress, so it has no order to show until that lands.
+    let rows_pending = loading() || (sort() == BrowseSort::Recent && reading.read().is_pending());
+    use_reveal_current_row(shown.is_some() && have_rows && !rows_pending);
+    // The layout outlives its routes, so Back to the list (or on to another
+    // series) must restore the window itself.
+    crate::scroll_restore::use_scroll_restore_on_change(routed);
 
     rsx! {
-        div { class: "idx-page",
-            SeriesIndexHeader {
-                view: SeriesHeaderView {
-                    total_series,
-                    total_books: total_books(),
-                    filter: filter_text,
-                    sort: current_sort,
-                },
-                on_filter: move |v| filter.set(v),
-                on_sort: move |s: IndexSort| {
-                    sort.set(s);
-                    let mut prefs = index_prefs::load();
-                    prefs.series_sort = s;
-                    index_prefs::save(&prefs);
-                },
-            }
-            {render_series_body(&filtered, library_empty)}
-        }
-    }
-}
-
-/// Filter by `query` (name + primary author, case-insensitive), then sort by `sort`.
-fn apply_filter_and_sort<'a>(
-    items: &'a [SeriesSummary],
-    query: &str,
-    sort: IndexSort,
-) -> Vec<&'a SeriesSummary> {
-    let q = query.to_lowercase();
-    let mut filtered: Vec<&SeriesSummary> = if q.is_empty() {
-        items.iter().collect()
-    } else {
-        items
-            .iter()
-            .filter(|s| {
-                s.name.to_lowercase().contains(&q)
-                    || s.primary_author
-                        .as_deref()
-                        .map(|a| a.to_lowercase().contains(&q))
-                        .unwrap_or(false)
-            })
-            .collect()
-    };
-    // `sort_by_cached_key` evaluates the key once per element instead of
-    // re-running `to_lowercase()` on every comparison.
-    match sort {
-        IndexSort::Name => filtered.sort_by_cached_key(|a| sort_key(a).to_lowercase()),
-        IndexSort::BookCount => {
-            filtered.sort_by_cached_key(|a| (Reverse(a.book_count), sort_key(a).to_lowercase()))
-        }
-    }
-    filtered
-}
-
-/// Body grid: empty-state copy when `filtered` is empty, otherwise the card grid.
-fn render_series_body(filtered: &[SeriesSummary], library_empty: bool) -> Element {
-    rsx! {
-        div { class: "idx-body",
-            if filtered.is_empty() {
-                p { class: "subtitle idx-empty",
-                    if library_empty {
-                        "No series yet \u{2014} index a library to see them here."
-                    } else {
-                        "No series match that filter."
-                    }
+        div {
+            class: "au-page",
+            "data-pane": if routed.is_some() { "series" } else { "index" },
+            aside { class: "au-list", "aria-label": "Series",
+                ListHead {
+                    copy: COPY,
+                    total,
+                    filter: filter(),
+                    sort: sort(),
+                    reading_count,
+                    only_reading: only_reading(),
+                    on_filter: move |v| filter.set(v),
+                    on_sort: move |s| {
+                        sort.set(s);
+                        save_series_sort(s);
+                    },
+                    on_only_reading: move |on| only_reading.set(on),
                 }
-            } else {
-                div { class: "idx-series-grid",
-                    for s in filtered.iter() {
-                        div { key: "{s.id}", {render_series_card(s)} }
-                    }
+                {
+                    let state = reading.read();
+                    let groups = groups.read();
+                    let active = shown
+                        .and_then(|id| groups.filtered.iter().find(|s| s.id == id))
+                        .map(first_letter);
+                    let view = ListView {
+                        copy: COPY,
+                        groups: &groups,
+                        sort: sort(),
+                        waiting: rows_pending,
+                        active,
+                        error: error(),
+                        any: have_rows,
+                    };
+                    list_body(view, |s| series_row(s, RowState {
+                        shown: shown == Some(s.id),
+                        current: routed == Some(s.id),
+                        reading: &state,
+                    }))
                 }
             }
+            section { class: "au-detail", Outlet::<Route> {} }
         }
     }
 }
 
-/// Display state for [`SeriesIndexHeader`]: the two counts plus the current
-/// filter text and sort mode. Grouped to keep the header under the prop cap.
-#[derive(Clone, PartialEq)]
-struct SeriesHeaderView {
-    total_series: usize,
-    total_books: usize,
-    filter: String,
-    sort: IndexSort,
+/// The visible rows, in order and grouped, rerun only when an input moves.
+fn use_series_groups(
+    series: Signal<Vec<SeriesSummary>>,
+    filter: Signal<String>,
+    sort: Signal<BrowseSort>,
+    reading: Signal<ReadingState>,
+    only_reading: Signal<bool>,
+) -> Memo<SeriesGroups> {
+    use_memo(move || {
+        let state = reading.read();
+        compute_series_groups(
+            &series.read(),
+            ListQuery {
+                text: &filter.read(),
+                sort: sort(),
+                reading: state.ready(),
+                only_reading: only_reading(),
+            },
+        )
+    })
 }
 
-/// Header: hero heading + subtitle, filter input, sort toggles.
+/// Persists the reader's sort for the next visit.
+fn save_series_sort(sort: BrowseSort) {
+    let mut prefs = index_prefs::load();
+    prefs.series_sort = sort;
+    index_prefs::save(&prefs);
+}
+
+/// `/series`' pane: the [`Preview`] series' page, without claiming the route
+/// (no page title, no `aria-current` on its row).
 #[component]
-fn SeriesIndexHeader(
-    view: SeriesHeaderView,
-    on_filter: EventHandler<String>,
-    on_sort: EventHandler<IndexSort>,
-) -> Element {
-    let SeriesHeaderView {
-        total_series,
-        total_books,
-        filter,
-        sort,
-    } = view;
-    rsx! {
-        div { class: "idx-header",
-            div { class: "idx-head-row",
-                div {
-                    span { class: "label", "Library lens" }
-                    h1 { class: "disc-hero-title",
-                        "By "
-                        em { "series" }
-                        "."
-                    }
-                    p { class: "idx-subtitle",
-                        "{total_series} series \u{b7} {total_books} books across them."
-                    }
-                }
-            }
-            div { class: "idx-toolbar",
-                IndexFilterInput {
-                    filter,
-                    placeholder: "Filter series by name or author\u{2026}",
-                    aria_label: "Filter series",
-                    testid: "series-filter",
-                    on_filter,
-                }
-                IndexSortToggle {
-                    sort,
-                    name_label: "A\u{2013}Z",
-                    testid_prefix: "series",
-                    on_sort,
-                }
-            }
-        }
+pub fn SeriesIndexPage() -> Element {
+    let SeriesListContext { preview } = use_context::<SeriesListContext>();
+    match preview() {
+        Preview::Pending => rsx! {
+            Loading { kind: LoadingKind::Section, label: "Gathering every series" }
+        },
+        Preview::Unavailable => rsx! {
+            p { class: "au-pane-empty subtitle", "Couldn\u{2019}t load series." }
+        },
+        Preview::Empty => rsx! {
+            p { class: "au-pane-empty subtitle", "No series yet \u{2014} the library is empty." }
+        },
+        Preview::Item(id) => rsx! { SeriesPage { id, preview: true } },
     }
 }
 
-fn render_series_card(s: &SeriesSummary) -> Element {
-    let accent = s.accent.clone().unwrap_or_else(|| "var(--accent)".into());
-    let name = s.name.clone();
-    let id = s.id;
+/// How one row relates to the pane and the reader.
+#[derive(Clone, Copy)]
+struct RowState<'a> {
+    shown: bool,
+    current: bool,
+    reading: &'a ReadingState,
+}
+
+/// One series: its name over its author, the reader's progress bar, and the
+/// book count.
+fn series_row(s: &SeriesSummary, state: RowState<'_>) -> Element {
+    let accent = s.accent.as_deref().unwrap_or("var(--accent)");
+    let progress = state.reading.ready().and_then(|m| m.get(&s.id));
     let count = s.book_count;
-    let author = s.primary_author.clone().unwrap_or_default();
-
-    // Italicize the last word of the series name, matching the design.
-    let parts: Vec<&str> = name.rsplitn(2, ' ').collect();
-    let (rest, last) = if parts.len() == 2 {
-        (parts[1].to_string(), parts[0].to_string())
-    } else {
-        (String::new(), name.clone())
-    };
-
+    let label = row_label(s, progress);
     rsx! {
         Link {
-            to: Route::SeriesDetail { id },
-            class: "idx-card idx-card-series",
-            style: "--accent: {accent}",
+            key: "{s.id}",
+            to: Route::SeriesDetail { id: s.id },
+            class: if state.shown { "au-row se-row is-shown" } else { "au-row se-row" },
+            style: "--au-accent: {accent}",
+            "aria-current": state.current.then_some("page"),
+            "aria-label": "{label}",
             "data-testid": "series-card",
-            div { class: "idx-series-spine", aria_hidden: "true" }
-            div { class: "idx-card-body",
-                div { class: "idx-card-title",
-                    if !rest.is_empty() {
-                        span { class: "idx-card-name-rest", "{rest} " }
-                    }
-                    span { class: "idx-card-name-last", "{last}" }
+            span { class: "se-row-text",
+                span { class: "au-row-name se-row-name", "{s.name}" }
+                if let Some(author) = s.primary_author.as_deref() {
+                    span { class: "se-row-author", "{author}" }
                 }
-                if !author.is_empty() {
-                    div { class: "mono idx-series-author", "{author}" }
-                }
-                {index_card_stats(count)}
             }
+            {row_bar(count, progress.map(|p| (p.finished, p.reading)), state.reading, "series-row-bar")}
+            span { class: "au-row-count", "{count}" }
         }
     }
 }
 
-fn sort_key(s: &SeriesSummary) -> String {
-    if let Some(v) = s.sort.as_deref().filter(|v| !v.is_empty()) {
-        return v.to_string();
+/// The row's accessible name: "Dune, by Frank Herbert, 6 books, 2 finished",
+/// each part dropped when unknown or zero.
+fn row_label(s: &SeriesSummary, progress: Option<&SeriesReading>) -> String {
+    let count = s.book_count;
+    let books = if count == 1 { "book" } else { "books" };
+    let mut label = s.name.clone();
+    if let Some(author) = &s.primary_author {
+        label.push_str(&format!(", by {author}"));
     }
-    // Strip a leading "The " so "The Foo Bar" sorts under F.
-    let n = &s.name;
-    let stripped = n.strip_prefix("The ").or_else(|| n.strip_prefix("the "));
-    stripped.unwrap_or(n).to_string()
+    label.push_str(&format!(", {count} {books}"));
+    if let Some(p) = progress.filter(|p| p.finished > 0) {
+        label.push_str(&format!(", {} finished", p.finished));
+    }
+    label
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "server"))]
 mod tests;
