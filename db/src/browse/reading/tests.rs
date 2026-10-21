@@ -1,10 +1,14 @@
-//! Tests for the per-reader browse overlays: per-author finished/reading
-//! counts and latest read time, and per-book status, percent and time.
+//! Tests for the per-reader browse overlays: per-author and per-series
+//! finished/reading counts and latest read time, and per-book status,
+//! percent and time.
 
-use omnibus_shared::{EbookMetadata, ProgressFormat, ProgressUpdate, ReadStatus, SetReadStatus};
+use omnibus_shared::{
+    EbookMetadata, MetadataOverrides, ProgressFormat, ProgressUpdate, ReadStatus, SetReadStatus,
+};
 use sqlx::SqlitePool;
 
 use super::*;
+use crate::metadata_overrides::upsert_metadata_overrides;
 use crate::progress::upsert_progress;
 use crate::read_status::set_read_status;
 use crate::test_support::*;
@@ -316,6 +320,74 @@ async fn book_reading_takes_the_newest_position_across_formats() {
     assert_eq!(rows[0].format, Some(ProgressFormat::Epub));
     assert_eq!(rows[0].percent, Some(70));
     assert_eq!(rows[0].last_read_at, Some(2_000));
+}
+
+#[tokio::test]
+async fn series_reading_counts_finished_and_reading_per_series() {
+    let (pool, _guard) = seed_discovery_fixture().await;
+    let user = seed_user(&pool, "reader").await;
+    let one = uuid_by_title(&pool, "Saga: Book One").await;
+    let two = uuid_by_title(&pool, "Saga: Book Two").await;
+    mark(&pool, user, &one, ReadStatus::Finished).await;
+    place(&pool, user, &two, 40, 1_000).await;
+
+    let rows = series_reading(&pool, user, &["/lib"]).await.unwrap();
+
+    let saga = series_id_by_name(&pool, "Saga").await;
+    let row = rows.iter().find(|r| r.series_id == saga).unwrap();
+    assert_eq!((row.finished, row.reading), (1, 1));
+    assert!(row.last_read_at.is_some());
+    let pioneers = series_id_by_name(&pool, "Pioneers").await;
+    assert!(
+        rows.iter().all(|r| r.series_id != pioneers),
+        "untouched series is absent"
+    );
+}
+
+#[tokio::test]
+async fn series_reading_is_scoped_to_the_asking_reader() {
+    let (pool, _guard) = seed_discovery_fixture().await;
+    let reader = seed_user(&pool, "reader").await;
+    let other = seed_user(&pool, "other").await;
+    let one = uuid_by_title(&pool, "Saga: Book One").await;
+    mark(&pool, other, &one, ReadStatus::Finished).await;
+
+    assert!(series_reading(&pool, reader, &["/lib"])
+        .await
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+async fn series_reading_counts_a_book_under_the_series_its_override_names() {
+    let (pool, _guard) = seed_discovery_fixture().await;
+    let user = seed_user(&pool, "reader").await;
+    let solo = uuid_by_title(&pool, "Standalone").await;
+    let ov = MetadataOverrides {
+        series: Some("Pioneers".into()),
+        series_index: Some("2".into()),
+        ..Default::default()
+    };
+    upsert_metadata_overrides(&pool, &solo, &ov, false, user)
+        .await
+        .unwrap();
+    mark(&pool, user, &solo, ReadStatus::Finished).await;
+
+    let rows = series_reading(&pool, user, &["/lib"]).await.unwrap();
+
+    let pioneers = series_id_by_name(&pool, "Pioneers").await;
+    let row = rows.iter().find(|r| r.series_id == pioneers).unwrap();
+    assert_eq!((row.finished, row.reading), (1, 0));
+}
+
+#[tokio::test]
+async fn series_reading_propagates_db_error_when_pool_is_closed() {
+    let (pool, _guard) = seed_discovery_fixture().await;
+    pool.close().await;
+    assert!(matches!(
+        series_reading(&pool, 1, &["/lib"]).await,
+        Err(BrowseError::Db(_))
+    ));
 }
 
 #[test]

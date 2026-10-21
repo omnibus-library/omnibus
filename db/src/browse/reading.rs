@@ -1,15 +1,19 @@
 //! Per-reader overlays on the browse surfaces: how far one reader is through
-//! each author ([`author_reading`]) and where they are in each of a set of
-//! books ([`book_reading`]). Kept apart from the library-wide rows in the
+//! each author ([`author_reading`]) and each series ([`series_reading`]), and
+//! where they are in each of a set of books ([`book_reading`]). Kept apart from the library-wide rows in the
 //! parent module, which every reader shares and other surfaces reuse.
 //!
 //! A book's status is the stored one; with none stored, a saved position
 //! counts as reading, the rule the Continue rail already applies.
 
-use omnibus_shared::{AuthorReading, BookReading, EbookMetadata, ProgressFormat, ReadStatus};
+use omnibus_shared::{
+    AuthorReading, BookReading, EbookMetadata, ProgressFormat, ReadStatus, SeriesReading,
+};
 use sqlx::{Row, SqlitePool};
 
-use crate::metadata_overrides::sql::{effective_authors_sql, overrides_win_sql};
+use crate::metadata_overrides::sql::{
+    effective_authors_sql, effective_series_sql, override_present_sql, overrides_win_sql,
+};
 use crate::progress::{resolve_listening, ProgressError};
 
 use super::{numbered_placeholders, visible, BrowseError};
@@ -36,16 +40,12 @@ pub async fn author_reading(
     user_id: i64,
     library_paths: &[&str],
 ) -> Result<Vec<AuthorReading>, BrowseError> {
-    let sql = author_reading_sql(library_paths.len());
-    let mut q = sqlx::query(&sql).bind(user_id);
-    for path in library_paths {
-        q = q.bind(*path);
-    }
-    let rows = q.fetch_all(pool).await?;
+    let sql = reading_sql(library_paths.len(), effective_authors_sql!(), "author_id");
+    let rows = fetch_reading(pool, &sql, user_id, library_paths).await?;
     Ok(rows
         .iter()
         .map(|r| AuthorReading {
-            author_id: r.get("author_id"),
+            author_id: r.get("group_id"),
             finished: count(r.get("finished")),
             reading: count(r.get("reading")),
             last_read_at: r.get("last_read_at"),
@@ -53,8 +53,43 @@ pub async fn author_reading(
         .collect())
 }
 
-/// Query text for [`author_reading`]: `?1` is the reader, `?2..` the paths.
-fn author_reading_sql(n: usize) -> String {
+/// [`author_reading`] for series: the counts per series over the membership
+/// [`super::list_series`] counts.
+pub async fn series_reading(
+    pool: &SqlitePool,
+    user_id: i64,
+    library_paths: &[&str],
+) -> Result<Vec<SeriesReading>, BrowseError> {
+    let sql = reading_sql(library_paths.len(), effective_series_sql!(), "series_id");
+    let rows = fetch_reading(pool, &sql, user_id, library_paths).await?;
+    Ok(rows
+        .iter()
+        .map(|r| SeriesReading {
+            series_id: r.get("group_id"),
+            finished: count(r.get("finished")),
+            reading: count(r.get("reading")),
+            last_read_at: r.get("last_read_at"),
+        })
+        .collect())
+}
+
+/// Runs a [`reading_sql`] query: `?1` is the reader, `?2..` the paths.
+async fn fetch_reading(
+    pool: &SqlitePool,
+    sql: &str,
+    user_id: i64,
+    library_paths: &[&str],
+) -> Result<Vec<sqlx::sqlite::SqliteRow>, BrowseError> {
+    let mut q = sqlx::query(sql).bind(user_id);
+    for path in library_paths {
+        q = q.bind(*path);
+    }
+    Ok(q.fetch_all(pool).await?)
+}
+
+/// Per-group reading counts over `effective`, a membership query yielding
+/// `book_id` and the `group` id column; each row's id comes back as `group_id`.
+fn reading_sql(n: usize, effective: &str, group: &str) -> String {
     let ph = numbered_placeholders(2, n);
     let vis = visible("b", "l");
     format!(
@@ -62,7 +97,7 @@ fn author_reading_sql(n: usize) -> String {
         WITH {LATEST_POSITION_CTE},
         lib_paths(p) AS (VALUES {ph}),
         effective AS (
-            SELECT e.author_id, e.book_id
+            SELECT e.{group} AS group_id, e.book_id
               FROM ({effective}) e
               JOIN books b ON b.id = e.book_id
               JOIN scan_roots l ON l.id = b.library_id
@@ -80,15 +115,14 @@ fn author_reading_sql(n: usize) -> String {
               LEFT JOIN pos ON pos.book_uuid = b.uuid
              WHERE rs.book_uuid IS NOT NULL OR pos.book_uuid IS NOT NULL
         )
-        SELECT e.author_id,
+        SELECT e.group_id,
                SUM(s.status = 'finished') AS finished,
                SUM(s.status = 'reading') AS reading,
                MAX(CASE WHEN s.status != 'unread' THEN s.at END) AS last_read_at
           FROM effective e
           JOIN state s ON s.book_id = e.book_id
-         GROUP BY e.author_id
-        ",
-        effective = effective_authors_sql!()
+         GROUP BY e.group_id
+        "
     )
 }
 

@@ -226,6 +226,26 @@ pub struct SeriesDetail {
     pub sort: Option<String>,
     pub book_count: usize,
     pub books: Vec<EbookMetadata>,
+    /// Your state on each of `books` that you have opened or marked. A book missing
+    /// here is unread, with no position.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reading: Vec<BookReading>,
+}
+
+// Per-reader, so it rides its own request beside `SeriesSummary`, which every
+// reader shares.
+/// Your progress through one series, from `GET /api/series/reading`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct SeriesReading {
+    pub series_id: i64,
+    pub finished: usize,
+    pub reading: usize,
+    /// The latest `last_read_at` of your `BookReading` across the series' books, in
+    /// Unix seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_read_at: Option<i64>,
 }
 
 /// Most rows the tag cloud returns; a longer vocabulary is cut to its most-used tags.
