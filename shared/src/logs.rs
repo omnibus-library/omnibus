@@ -17,20 +17,18 @@ pub const LOG_PER_PAGE_MAX: u32 = 200;
 
 /// One parsed structured-log record surfaced to the admin log viewer.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LogRecord {
-    /// ISO-8601 UTC timestamp exactly as the subscriber wrote it. Fixed-width
-    /// and lexicographically ordered, so string comparison is chronological.
+    /// ISO-8601 UTC timestamp as logged. Fixed-width, so sorting the strings sorts by time.
     pub timestamp: String,
     /// Level string as written: `ERROR` / `WARN` / `INFO` / `DEBUG` / `TRACE`.
     pub level: String,
-    /// Event target — the emitting module path (the "module" filter matches
-    /// against this).
+    /// The module that logged the event, which the `module` filter matches against.
     pub target: String,
     /// The event's `message` field, or empty when the event carried none.
     pub message: String,
-    /// Compact JSON of the event's remaining fields plus request span context
-    /// (method/path), for an expandable detail row. `None` when there was
-    /// nothing beyond the message.
+    /// The event's other fields and its request's method and path, as compact JSON.
+    /// Absent when there was nothing beyond the message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fields: Option<String>,
 }
@@ -38,43 +36,43 @@ pub struct LogRecord {
 /// Filter + pagination parameters for a log-viewer query. Every filter is
 /// optional; an absent or empty filter does not narrow the results.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema, utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct LogQuery {
-    /// Exact level match (case-insensitive), e.g. `ERROR`. `None`/empty keeps
-    /// every level.
+    /// Only records at this level, ignoring case, e.g. `ERROR`. Leave it out or empty to
+    /// keep every level.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub level: Option<String>,
-    /// Case-insensitive substring the `target` must contain, e.g.
-    /// `omnibus::backend`. `None`/empty keeps every module.
+    /// Only records whose module contains this text, ignoring case, e.g.
+    /// `omnibus::backend`. Leave it out or empty to keep every module.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub module: Option<String>,
-    /// Inclusive lower bound on `timestamp`, an ISO-8601 prefix
-    /// (e.g. `2026-07-19T00:00`). Compared lexicographically.
+    /// Earliest time to include, as an ISO-8601 prefix such as `2026-07-19T00:00`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
-    /// Inclusive upper bound on `timestamp`, an ISO-8601 prefix. A record
-    /// whose timestamp starts with `to` still matches, so a to-the-minute
-    /// bound includes that whole minute.
+    /// Latest time to include, as an ISO-8601 prefix. A bound to the minute includes that
+    /// whole minute.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to: Option<String>,
     /// Zero-based page index.
     #[serde(default)]
     pub page: u32,
-    /// Requested page size; 0 means [`LOG_PER_PAGE_DEFAULT`], and any value is
-    /// clamped to [`LOG_PER_PAGE_MAX`].
+    /// Requested page size. 0 means 50, and a size over 200 is cut to 200.
     #[serde(default)]
     pub per_page: u32,
 }
 
 /// One page of matching log records, newest first.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LogPage {
     /// Matching records for this page, newest first.
     pub records: Vec<LogRecord>,
-    /// Echo of the resolved zero-based page index.
+    /// The zero-based page index that was read.
     pub page: u32,
-    /// Echo of the resolved (clamped) page size.
+    /// The page size that was used, after the default and the cap.
     pub per_page: u32,
-    /// Whether at least one further record matched beyond this page.
+    /// Whether more matching records follow this page.
     pub has_more: bool,
 }
 

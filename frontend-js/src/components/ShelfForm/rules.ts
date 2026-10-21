@@ -1,0 +1,249 @@
+import type { Book, Shelf } from "../../api";
+import type {
+  CreateShelfRequest,
+  MatchMode,
+  RuleField,
+  RuleOp,
+  ShelfRule,
+  UpdateShelfRequest,
+} from "../../api/generated/schemas";
+
+// Mirrors shared/src/shelves.rs and the Dioxus rule builder, labels and order included.
+export const FIELDS = [
+  ["tag", "Tag"],
+  ["genre", "Genre"],
+  ["author", "Author"],
+  ["series", "Series"],
+  ["rating", "Rating"],
+  ["status", "Reading status"],
+  ["format", "Format"],
+  ["year", "Year"],
+  ["date_added", "Date added"],
+  ["date_updated", "Date updated"],
+] as const satisfies readonly [RuleField, string][];
+
+export const OPS = [
+  ["is", "is"],
+  ["is_not", "is not"],
+  ["contains", "contains"],
+  ["starts_with", "starts with"],
+  ["gte", "is at least"],
+  ["includes", "includes"],
+  ["in_last", "in the last"],
+  ["between", "between"],
+  ["before", "before"],
+  ["after", "after"],
+] as const satisfies readonly [RuleOp, string][];
+
+/** The values a `status` condition can take; the first is what a newly picked Status field seeds. */
+export const STATUS_VALUES = ["finished", "reading", "unread"] as const;
+
+export const UNITS = [
+  ["d", "days"],
+  ["w", "weeks"],
+  ["m", "months"],
+  ["y", "years"],
+] as const;
+
+export type DateUnit = (typeof UNITS)[number][0];
+
+const TEXT_OPS = ["is", "is_not", "contains", "starts_with"] as const;
+const ACCEPTED: Record<RuleField, readonly RuleOp[]> = {
+  tag: TEXT_OPS,
+  genre: TEXT_OPS,
+  author: TEXT_OPS,
+  series: TEXT_OPS,
+  rating: ["is", "gte"],
+  status: ["is"],
+  format: ["includes", "contains", "starts_with"],
+  year: ["is", "gte"],
+  date_added: ["in_last", "between", "before", "after"],
+  date_updated: ["in_last", "between", "before", "after"],
+};
+
+/** Whether `op` is valid for `field`. */
+export const accepts = (field: RuleField, op: RuleOp) =>
+  ACCEPTED[field].includes(op);
+
+/** Whether `field` is one of the two acquisition dates. */
+export const isDate = (field: RuleField) =>
+  field === "date_added" || field === "date_updated";
+
+/** A rule row's working state: the raw inputs `toRule` folds into a wire rule. */
+export type RuleDraft = {
+  field: RuleField;
+  op: RuleOp;
+  value: string;
+  /** The second date of `between`. */
+  value2: string;
+  /** The window of `in_last`. */
+  unit: DateUnit;
+};
+
+export const BLANK_DRAFT: RuleDraft = {
+  field: "tag",
+  op: "is",
+  value: "",
+  value2: "",
+  unit: "d",
+};
+
+/** The wire rule for a draft, or `null` until every input its op needs is filled. */
+export function toRule({ field, op, value, value2, unit }: RuleDraft) {
+  const first = value.trim();
+  const second = value2.trim();
+  if (!first || (op === "between" && !second)) return null;
+  const encoded =
+    op === "in_last"
+      ? `${first}${unit}`
+      : op === "between"
+        ? `${first}..${second}`
+        : first;
+  return { field, op, value: encoded } satisfies ShelfRule;
+}
+
+/** The draft a saved rule edits as, reversing `toRule`. */
+export function fromRule({ field, op, value }: ShelfRule): RuleDraft {
+  if (op === "in_last") {
+    const unit = UNITS.find(([u]) => u === value.slice(-1))?.[0] ?? "d";
+    return { field, op, value: value.slice(0, -1), value2: "", unit };
+  }
+  if (op === "between") {
+    const at = value.indexOf("..");
+    const [start, end] =
+      at < 0 ? [value, ""] : [value.slice(0, at), value.slice(at + 2)];
+    return { field, op, value: start, value2: end, unit: "d" };
+  }
+  return { field, op, value, value2: "", unit: "d" };
+}
+
+export const inputKind = (field: RuleField) =>
+  field === "status"
+    ? "status"
+    : isDate(field)
+      ? "date"
+      : field === "rating" || field === "year"
+        ? "number"
+        : "text";
+
+/** The draft with `field` picked: its op snaps to the first one the field accepts, a value typed for another kind of input clears, and Status seeds a valid value. */
+export function withField(draft: RuleDraft, field: RuleField): RuleDraft {
+  const op = accepts(field, draft.op)
+    ? draft.op
+    : (OPS.find(([o]) => accepts(field, o))?.[0] ?? "is");
+  const keep =
+    field === "status" || inputKind(field) === inputKind(draft.field);
+  const value = keep ? draft.value : "";
+  const seeded =
+    field === "status" && !STATUS_VALUES.some((s) => s === value.trim());
+  return {
+    ...draft,
+    field,
+    op,
+    value: seeded ? STATUS_VALUES[0] : value,
+    value2: keep ? draft.value2 : "",
+  };
+}
+
+/** The draft with `op` picked: a value typed for the other input (a window count vs dates) clears. */
+export function withOp(draft: RuleDraft, op: RuleOp): RuleDraft {
+  if ((op === "in_last") === (draft.op === "in_last")) return { ...draft, op };
+  return { ...draft, op, value: "", value2: "" };
+}
+
+/** Where the live preview stands, whatever answer it holds. */
+export type PreviewState = "noRules" | "pending" | "failed" | "settled";
+
+export function previewState(
+  hasRules: boolean,
+  fetching: boolean,
+  failed: boolean,
+): PreviewState {
+  if (!hasRules) return "noRules";
+  if (fetching) return "pending";
+  return failed ? "failed" : "settled";
+}
+
+const FIELD_LABEL = new Map<RuleField, string>(FIELDS);
+const OP_LABEL = new Map<RuleOp, string>(OPS);
+
+/** A rule in words: "Tag is Fantasy". */
+export const ruleText = ({ field, op, value }: ShelfRule) =>
+  `${FIELD_LABEL.get(field)} ${OP_LABEL.get(op)} ${value}`;
+
+export const kindLabel = (kind: Shelf["kind"]) =>
+  ({ smart: "Smart shelf", manual: "Hand-picked shelf", wishlist: "Wishlist" })[
+    kind
+  ];
+
+export const visibilityLabel = (visibility: Shelf["visibility"]) =>
+  visibility === "private" ? "Private" : "Public";
+
+/** The body `POST /api/shelves/preview` takes: the complete rules under the match mode. */
+export function previewRequest(matchMode: MatchMode, drafts: RuleDraft[]) {
+  return {
+    match_mode: matchMode,
+    rules: drafts.flatMap((d) => toRule(d) ?? []),
+  };
+}
+
+type CreateForm = {
+  name: string;
+  visibility: Shelf["visibility"];
+} & (
+  | { kind: "smart"; matchMode: MatchMode; drafts: RuleDraft[] }
+  | { kind: "manual"; picked: readonly Book[] }
+);
+
+/** The body of `POST /api/shelves`: a smart shelf carries its complete rules and no books, a hand-picked one its books and no rules. */
+export function createRequest(form: CreateForm): CreateShelfRequest {
+  const { name, visibility } = form;
+  if (form.kind === "smart") {
+    return {
+      kind: "smart",
+      name,
+      visibility,
+      match_mode: form.matchMode,
+      rules: previewRequest(form.matchMode, form.drafts).rules,
+      book_uuids: [],
+    };
+  }
+  return {
+    kind: "manual",
+    name,
+    visibility,
+    match_mode: null,
+    rules: [],
+    book_uuids: form.picked.map((b) => b.uuid),
+  };
+}
+
+type UpdateForm = {
+  name: string;
+  visibility: Shelf["visibility"];
+  /** `null` when the shelf has no Kobo row (a Wishlist), so the field is left out. */
+  syncToKobo: boolean | null;
+  /** The rule editor's state; `null` for a shelf that isn't smart. */
+  smart: { matchMode: MatchMode; drafts: RuleDraft[] } | null;
+};
+
+/** The body of `PATCH /api/shelves/{id}`, or the message to show instead of sending a request that can't succeed. */
+export function updateRequest(
+  form: UpdateForm,
+): { request: UpdateShelfRequest } | { error: string } {
+  const name = form.name.trim();
+  if (!name) return { error: "Name is required." };
+  const request: UpdateShelfRequest = {
+    name,
+    visibility: form.visibility,
+    ...(form.syncToKobo !== null && { sync_to_kobo: form.syncToKobo }),
+  };
+  if (form.smart) {
+    const { rules } = previewRequest(form.smart.matchMode, form.smart.drafts);
+    if (rules.length === 0) return { error: "Add at least one condition." };
+    return {
+      request: { ...request, match_mode: form.smart.matchMode, rules },
+    };
+  }
+  return { request };
+}

@@ -4,7 +4,7 @@
 
 use dioxus::core::Task;
 use dioxus::prelude::*;
-use omnibus_shared::{CreateJournalEntry, Highlight, JournalStatus, UpdateJournalEntry};
+use omnibus_shared::{CreateJournalEntry, JournalStatus, UpdateJournalEntry};
 
 use crate::components::BusyLabel;
 use crate::data;
@@ -68,15 +68,13 @@ impl JournalComposerState {
 }
 
 /// Non-[`JournalComposerState`] signals the composer's child components use
-/// directly: `preview_html` (tabs, editor body) and the three `highlights_*`
-/// (highlights popover). The `highlights_*` state lives here, not in the
-/// popover, so toggling Preview and back keeps its loaded-once cache.
+/// directly: `preview_html` (tabs, editor body) and the highlights popover's
+/// state, which lives here so toggling Preview and back keeps its loaded-once
+/// cache.
 #[derive(Clone, Copy)]
 struct ComposerAuxSignals {
     preview_html: Signal<String>,
-    highlights: Signal<Vec<Highlight>>,
-    highlights_open: Signal<bool>,
-    highlights_loaded: Signal<bool>,
+    highlights: HighlightsInsertState,
 }
 
 /// Declare and bundle every composer signal. A hook (calls `use_signal`
@@ -99,9 +97,7 @@ fn use_composer_signals(open: Signal<bool>) -> (JournalComposerState, ComposerAu
     };
     let aux = ComposerAuxSignals {
         preview_html: use_signal(String::new),
-        highlights: use_signal(Vec::<Highlight>::new),
-        highlights_open: use_signal(|| false),
-        highlights_loaded: use_signal(|| false),
+        highlights: use_highlights_insert_state(),
     };
     (state, aux)
 }
@@ -140,7 +136,7 @@ fn use_composer_autosave(state: JournalComposerState, server_url: &str, uuid: &s
 /// Collapsed prompt → expanded markdown composer with a Write/Preview toggle, an
 /// optional reading-progress slider, and a spoiler-syntax hint. The open
 /// composer's markup is composed from [`BdJournalComposerTabs`],
-/// [`BdJournalHighlightsPopover`], [`BdJournalEditorBody`], and
+/// [`BdHighlightsInsert`], [`BdJournalEditorBody`], and
 /// [`BdJournalComposerFoot`].
 #[component]
 pub(super) fn BdJournalComposer(
@@ -163,8 +159,6 @@ pub(super) fn BdJournalComposer(
     let ComposerAuxSignals {
         preview_html,
         highlights,
-        highlights_open,
-        highlights_loaded,
     } = aux;
 
     use_composer_autosave(state, &server_url, &uuid);
@@ -201,12 +195,12 @@ pub(super) fn BdJournalComposer(
                         server_url: server_url.clone(),
                         error,
                     }
-                    BdJournalHighlightsPopover {
+                    BdHighlightsInsert {
                         uuid: uuid.clone(),
                         server_url: server_url.clone(),
-                        highlights,
-                        highlights_open,
-                        highlights_loaded,
+                        target_id: "journal-composer-editor".to_string(),
+                        testid_prefix: "journal".to_string(),
+                        state: highlights,
                     }
                 }
             }
@@ -276,82 +270,6 @@ fn BdJournalComposerTabs(
     }
 }
 
-/// "From highlights" toggle + popover, letting the composer insert a saved
-/// highlight as a blockquote at the caret. Highlights load lazily the first
-/// time the popover opens; the loaded-once state is owned by the composer
-/// (see `ComposerAuxSignals`).
-#[component]
-fn BdJournalHighlightsPopover(
-    uuid: String,
-    server_url: String,
-    highlights: Signal<Vec<Highlight>>,
-    highlights_open: Signal<bool>,
-    highlights_loaded: Signal<bool>,
-) -> Element {
-    let mut highlights = highlights;
-    let mut highlights_open = highlights_open;
-    let mut highlights_loaded = highlights_loaded;
-
-    rsx! {
-        div { class: "bd-journal-hl-wrap",
-            button {
-                r#type: "button",
-                class: if highlights_open() { "btn ghost sm bd-tab-active" } else { "btn ghost sm" },
-                "data-testid": "journal-insert-highlight",
-                onclick: move |_| {
-                    let opening = !highlights_open();
-                    highlights_open.set(opening);
-                    if opening && !highlights_loaded() {
-                        highlights_loaded.set(true);
-                        let url = server_url.clone();
-                        let uuid = uuid.clone();
-                        spawn(async move {
-                            if let Ok(list) = data::list_highlights(&url, &uuid).await {
-                                highlights
-                                    .set(list.into_iter().filter(|h| h.text.is_some()).collect());
-                            }
-                        });
-                    }
-                },
-                "From highlights"
-            }
-            if highlights_open() {
-                div {
-                    class: "card bd-journal-hl-pop",
-                    "data-testid": "journal-highlights-pop",
-                    div { class: "label bd-journal-hl-head", "From your highlights" }
-                    if highlights().is_empty() {
-                        p { class: "mono bd-journal-hl-empty",
-                            "No saved highlights for this book yet."
-                        }
-                    } else {
-                        for h in highlights().iter() {
-                            button {
-                                key: "{h.id}",
-                                r#type: "button",
-                                class: "bd-journal-hl-item",
-                                "data-testid": "journal-highlight-item",
-                                onmousedown: move |e| e.prevent_default(),
-                                onclick: {
-                                    let text = h.text.clone().unwrap_or_default();
-                                    move |_| {
-                                        editor_insert(
-                                            "journal-composer-editor",
-                                            &highlight_blockquote(&text),
-                                        );
-                                        highlights_open.set(false);
-                                    }
-                                },
-                                "{h.text.clone().unwrap_or_default()}"
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 /// The write/preview surface. Preview renders sanitized server HTML; write
 /// pairs a plain textarea (SSR / first-paint source of truth) with a
 /// progressively enhanced contenteditable div that post-mount JS flips on (see
@@ -363,7 +281,6 @@ fn BdJournalEditorBody(
     preview_html: Signal<String>,
     body: Signal<String>,
 ) -> Element {
-    let mut body = body;
     rsx! {
         if show_preview() {
             div {
@@ -372,34 +289,21 @@ fn BdJournalEditorBody(
                 dangerous_inner_html: "{preview_html}",
             }
         } else {
-            div { class: "bd-journal-editor-wrap",
-                textarea {
-                    id: "journal-composer-body",
-                    class: "me-textarea bd-journal-textarea",
-                    "data-testid": "journal-body",
-                    rows: "5",
-                    placeholder: "What are you thinking about this book? Markdown supported.",
-                    value: "{body}",
-                    oninput: move |e| body.set(e.value()),
-                    onmounted: move |_| editor_enhance(
-                        "journal-composer-body",
-                        "journal-composer-editor",
-                    ),
-                }
-                div {
-                    id: "journal-composer-editor",
-                    class: "me-textarea bd-journal-editor",
-                    "data-testid": "journal-editor",
-                    contenteditable: "true",
-                    role: "textbox",
-                    "aria-multiline": "true",
-                    "aria-label": "Journal entry",
-                    "data-placeholder": "What are you thinking about this book? Markdown supported.",
-                }
+            BdMarkdownSurface {
+                source_id: "journal-composer-body".to_string(),
+                editor_id: "journal-composer-editor".to_string(),
+                body,
+                label: "Journal entry".to_string(),
+                placeholder: JOURNAL_PLACEHOLDER.to_string(),
+                source_testid: "journal-body".to_string(),
+                editor_testid: "journal-editor".to_string(),
             }
         }
     }
 }
+
+/// The composer's empty-editor prompt, on the textarea and the live editor.
+const JOURNAL_PLACEHOLDER: &str = "What are you thinking about this book? Markdown supported.";
 
 /// Reading-progress checkbox + slider shown in the composer footer while an
 /// entry is being written.

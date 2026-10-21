@@ -68,12 +68,15 @@ fn crc32(bytes: &[u8]) -> u32 {
 
 /// Assemble an uncompressed (stored) ZIP from `(name, bytes)` entries.
 /// Stored entries keep the writer trivial — no deflate, just headers,
-/// CRCs, and a central directory — and `EpubDoc` reads them fine.
-pub fn build_stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+/// CRCs, and a central directory — and `EpubDoc` reads them fine. Names are
+/// written as given with the UTF-8 flag unset, so a non-UTF-8 name reads back
+/// as CP437.
+pub fn build_stored_zip<N: AsRef<[u8]>>(entries: &[(N, &[u8])]) -> Vec<u8> {
     let mut out: Vec<u8> = Vec::new();
     let mut central: Vec<u8> = Vec::new();
 
     for (name, data) in entries {
+        let name = name.as_ref();
         let offset = out.len() as u32;
         let crc = crc32(data);
         let name_len = name.len() as u16;
@@ -91,7 +94,7 @@ pub fn build_stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
         out.extend_from_slice(&size.to_le_bytes()); // uncompressed size
         out.extend_from_slice(&name_len.to_le_bytes());
         out.extend_from_slice(&0u16.to_le_bytes()); // extra len
-        out.extend_from_slice(name.as_bytes());
+        out.extend_from_slice(name);
         out.extend_from_slice(data);
 
         // Matching central-directory record, accumulated for the tail.
@@ -112,7 +115,7 @@ pub fn build_stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
         central.extend_from_slice(&0u16.to_le_bytes()); // internal attrs
         central.extend_from_slice(&0u32.to_le_bytes()); // external attrs
         central.extend_from_slice(&offset.to_le_bytes());
-        central.extend_from_slice(name.as_bytes());
+        central.extend_from_slice(name);
     }
 
     let cd_offset = out.len() as u32;
@@ -376,7 +379,31 @@ pub fn build_test_epub_with_ncx(spine: &[(&str, &str)], toc: &[(&str, &str)]) ->
     )
 }
 
-fn assemble_test_epub(
+/// [`build_test_epub`] plus one manifest image per `(href, media_type, bytes)`,
+/// stored at `href` (OPF-root-relative, as written).
+pub fn build_test_epub_with_images(
+    spine: &[(&str, &str)],
+    images: &[(&str, &str, &[u8])],
+) -> Vec<u8> {
+    let manifest: String = images
+        .iter()
+        .enumerate()
+        .map(|(i, (href, media_type, _))| {
+            format!(r#"<item id="img{i}" href="{href}" media-type="{media_type}"/>"#)
+        })
+        .collect();
+    let entries: Vec<(&str, Vec<u8>)> = images
+        .iter()
+        .map(|(href, _, bytes)| (*href, bytes.to_vec()))
+        .collect();
+    assemble_test_epub(spine, &manifest, "", &entries)
+}
+
+/// The builder behind the others: [`build_test_epub`] plus raw `extra_manifest`
+/// items, `spine_attrs` on `<spine>`, and `extra_entries` written to the archive,
+/// so a manifest item can name an entry the archive lacks. Entries are named by
+/// the percent-decoded href, as exporters write them.
+pub fn assemble_test_epub(
     spine: &[(&str, &str)],
     extra_manifest: &str,
     spine_attrs: &str,
@@ -406,18 +433,26 @@ fn assemble_test_epub(
   <spine{spine_attrs}>{spine_xml}</spine>
 </package>"#
     );
+    let decoded = |href: &str| {
+        urlencoding::decode(href)
+            .expect("test href is valid percent-encoding")
+            .into_owned()
+    };
+    let named: Vec<(String, &[u8])> = spine
+        .iter()
+        .map(|(href, xhtml)| (decoded(href), xhtml.as_bytes()))
+        .chain(
+            extra_entries
+                .iter()
+                .map(|(href, bytes)| (decoded(href), bytes.as_slice())),
+        )
+        .collect();
     let mut entries: Vec<(&str, &[u8])> = vec![
         ("mimetype", b"application/epub+zip"),
         ("META-INF/container.xml", container),
+        ("content.opf", opf.as_bytes()),
     ];
-    let opf_bytes = opf.as_bytes().to_vec();
-    entries.push(("content.opf", &opf_bytes));
-    for (href, xhtml) in spine {
-        entries.push((href, xhtml.as_bytes()));
-    }
-    for (href, bytes) in extra_entries {
-        entries.push((href, bytes.as_slice()));
-    }
+    entries.extend(named.iter().map(|(name, bytes)| (name.as_str(), *bytes)));
     build_stored_zip(&entries)
 }
 
@@ -1118,4 +1153,15 @@ pub async fn seed_epub_position(pool: &SqlitePool, user: i64, uuid: &str) {
     )
     .await
     .expect("seed position");
+}
+
+/// Drop `(user, uuid)`'s read status and leave any position without one: the
+/// state a position stored before positions marked their book `reading` is in.
+pub async fn forget_read_status(pool: &SqlitePool, user: i64, uuid: &str) {
+    sqlx::query("DELETE FROM book_read_status WHERE user_id = ? AND book_uuid = ?")
+        .bind(user)
+        .bind(uuid)
+        .execute(pool)
+        .await
+        .expect("forget read status");
 }

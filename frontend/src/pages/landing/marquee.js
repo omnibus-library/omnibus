@@ -1,6 +1,6 @@
 // Marquee glue for the library home: raises `lmq--past` once the stack has
-// scrolled away (which reveals the edge resume ribbon and retires the scroll
-// hint), and drives the shelves row's paging arrows from its scroll position.
+// scrolled away (which reveals the edge resume ribbon), and drives the shelves
+// row's paging arrows from its scroll position.
 // Pure presentation — no app state. Installed from a post-mount effect
 // (rule 07: SSR/WASM markup identical); re-running it replaces the previous
 // listeners instead of stacking them.

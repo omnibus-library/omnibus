@@ -9,8 +9,9 @@ use crate::control::Control;
 use crate::device::{mint_hardware_id, Device};
 use crate::state::{self, SavedState, StateError};
 
-/// Where a device syncs when nothing else names a server.
-pub const DEFAULT_URL: &str = "http://127.0.0.1:3000";
+/// Where a device syncs when nothing else names a server. `localhost`, because
+/// every shipped `OMNIBUS_PUBLIC_ORIGIN` list names it.
+pub const DEFAULT_URL: &str = "http://localhost:3000";
 
 /// Where the device points before any auto-wire.
 #[derive(Debug, PartialEq, Eq)]
@@ -60,8 +61,7 @@ pub fn resolve_target(
 /// A running device, and what the user should be told about how it was set up.
 pub struct Started {
     pub control: Control,
-    /// Set when a new local device (no state file) was wired to an existing server device:
-    /// its next sync sends only changes until #2743.
+    /// Set when auto-wire gives a new local device (no state file) an existing server device.
     pub notice: Option<String>,
 }
 
@@ -117,11 +117,7 @@ pub async fn start(
 
 /// What a new local device is told when auto-wire hands it a server device that already exists.
 fn reuse_notice(device_name: &str) -> String {
-    format!(
-        "wired a new local device to the existing Omnibus device \"{device_name}\": its next sync \
-         sends only changes until #2743; to get every book, remove the device in Account settings \
-         and start again"
-    )
+    format!("wired a new local device to the existing Omnibus device \"{device_name}\"")
 }
 
 /// A device with a freshly minted hardware id.

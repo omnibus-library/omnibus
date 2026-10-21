@@ -201,10 +201,10 @@ async fn reader_session_log(
 }
 
 /// Run a chart-builder spec and return its aligned series. Uncached, unlike
-/// [`rpc_stats`] (the spec space is open). Web-only, so there is no REST
-/// counterpart. A rejected spec surfaces its own message, since it describes
-/// the reader's selection; a DB failure is logged and generalized. The spec is
-/// re-validated server-side inside `db::stats::chart_series`.
+/// [`rpc_stats`] (the spec space is open). `POST /api/stats/chart` is the REST
+/// counterpart over the same `db::stats::chart_series`. A rejected spec surfaces
+/// its own message, since it describes the reader's selection; a DB failure is
+/// logged and generalized. The spec is re-validated server-side inside that call.
 #[post("/api/rpc/chart-series", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_chart_series(
     spec: ChartSpec,

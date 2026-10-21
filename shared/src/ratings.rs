@@ -18,11 +18,35 @@ pub fn stars_from_half_stars(half_stars: i64) -> f32 {
     f32::from(u16::try_from(half_stars.clamp(0, 10)).unwrap_or(0)) / 2.0
 }
 
-/// Write payload: set (or change) the current user's rating for a book.
+/// Reject a non-finite/out-of-range value or one that isn't a whole number of
+/// half-stars. Handlers translate `Err(_)` into 400.
+pub fn validate_stars(stars: f32) -> Result<(), String> {
+    if !stars.is_finite() || !(MIN_STARS..=MAX_STARS).contains(&stars) {
+        return Err(format!("stars must be between {MIN_STARS} and {MAX_STARS}"));
+    }
+    if (stars * 2.0).fract() != 0.0 {
+        return Err("stars must be in half-star (0.5) steps".into());
+    }
+    Ok(())
+}
+
+/// Storage form of a star value: a count of half-stars (`1..=10`).
+pub fn half_stars_from_stars(stars: f32) -> i64 {
+    // `validate_stars` bounds stars to 0.5..=5.0; the clamp repeats the bound so
+    // an unvalidated value still lands in-range (NaN casts to 0).
+    let scaled = (stars * 2.0).round().clamp(0.0, 10.0);
+    #[allow(clippy::cast_possible_truncation)]
+    let half = scaled as i64;
+    half
+}
+
+/// The rating `POST /api/ratings` sets for you on a book. It replaces any rating you gave
+/// the book before.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RatingUpdate {
     pub book_uuid: String,
-    /// Star rating in `0.5..=5.0`, in half-star steps.
+    /// The star rating, from 0.5 to 5 in half-star steps.
     pub stars: f32,
 }
 
@@ -33,47 +57,39 @@ impl RatingUpdate {
         if self.book_uuid.trim().is_empty() {
             return Err("book_uuid is required".into());
         }
-        if !self.stars.is_finite() || self.stars < MIN_STARS || self.stars > MAX_STARS {
-            return Err(format!("stars must be between {MIN_STARS} and {MAX_STARS}"));
-        }
-        if (self.stars * 2.0).fract() != 0.0 {
-            return Err("stars must be in half-star (0.5) steps".into());
-        }
-        Ok(())
+        validate_stars(self.stars)
     }
 
     /// Storage form: the rating expressed as a count of half-stars (`1..=10`).
     pub fn half_stars(&self) -> i64 {
-        // `validate` bounds stars to 0.5..=5.0; the clamp repeats the bound so
-        // an unvalidated value still lands in-range (NaN casts to 0).
-        let scaled = (self.stars * 2.0).round().clamp(0.0, 10.0);
-        #[allow(clippy::cast_possible_truncation)]
-        let half = scaled as i64;
-        half
+        half_stars_from_stars(self.stars)
     }
 }
 
-/// Server-authoritative rating returned by the set/get endpoints. `updated_at`
-/// is unix seconds (SQLite `strftime('%s')`).
+/// Your rating of a book, as the server stores it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RatingRecord {
     pub book_uuid: String,
-    /// Star rating in `0.5..=5.0`, in half-star steps.
+    /// The star rating, from 0.5 to 5 in half-star steps.
     pub stars: f32,
+    /// When the rating was last set, in Unix seconds.
     pub updated_at: i64,
 }
 
-/// A rating with the user identity needed for an attributed book-detail row.
+/// Another user's rating of a book, with who gave it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AttributedRating {
     pub user_id: i64,
-    /// The rater's display name, falling back to their username.
+    /// The rater's display name, or their username when they have none.
     pub username: String,
-    /// Whether the rater has an avatar to render in place of their monogram.
+    /// Whether the rater has an avatar. `GET /api/users/{user_id}/avatar` serves it.
     #[serde(default)]
     pub has_avatar: bool,
-    /// Star rating in `0.5..=5.0`, in half-star steps.
+    /// The star rating, from 0.5 to 5 in half-star steps.
     pub stars: f32,
+    /// When the rating was last set, in Unix seconds.
     pub updated_at: i64,
 }
 

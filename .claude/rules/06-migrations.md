@@ -1,3 +1,6 @@
+---
+paths: "db/migrations/**, db/src/merge/**, db/src/pool.rs, db/src/normalize.rs, db/src/normalize/**"
+---
 # 06 — SQL migrations
 
 Schema lives as numbered SQL files under
@@ -90,15 +93,21 @@ If the table carries a `UNIQUE` key the retarget would collide on, it needs an
 entry in `COLLISION_TABLES` too — and **which rule is decided by what a row
 holds, not by which list is nearer**:
 
-- **Snapshot → `Keep::Max`/`Keep::Min`/`Keep::Target`.** A position, a rating,
-  a read status: only one of the two rows can be true at once, so the helper
-  keeps the newer (or the earlier wish, the lower shelf slot, the survivor's
-  own link) and drops the other. **A dedupe deletes, so it is only reversible
+- **Snapshot → `Keep::Max`/`Keep::Min`/`Keep::Target`.** A position, a read
+  status: only one of the two rows can be true at once, so the helper keeps
+  the newer (or the earlier wish, the lower shelf slot, the survivor's own
+  link) and drops the other. **A dedupe deletes, so it is only reversible
   if the merge writes both sides down first** — `db/src/merge/curation/` is
-  that record for read status and ratings, and `db/src/merge/relocation.rs`
+  that record for read status and reviews, and `db/src/merge/relocation.rs`
   records every other entry's deleted rows generically; undo replays both.
   A table excluded from that record (the content index, regenerated from
   files) has no undo for its losing row.
+- **Several values → settle field by field, then `Keep::Target`.** A review
+  holds stars, public text and private notes, each of which either row may
+  be the only one to say, so dropping a row whole loses part of what the
+  reader wrote. `curation::settle_reviews` folds the source's row into the
+  target's first, each field by its own rule, and the dedupe then drops the
+  redundant source row; the curation record still holds both originals.
 - **Counter → `fold_ledger_counters`.** A per-reader table keyed on a time
   bucket (`reading_progress_daily`, `reading_progress_slots`) counts ground
   covered, and a reader who covered ground in both editions in the same

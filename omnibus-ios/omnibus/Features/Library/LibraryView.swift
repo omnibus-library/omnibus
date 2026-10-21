@@ -75,8 +75,6 @@ final class LibraryModel {
     var stacks: [String: SeriesStack] = [:]
     /// The lead uuid of the stack dealt out in place, if any.
     var openSeries: String?
-    /// Why the last Stack series save failed; shown under the heading.
-    var stackSeriesError: String?
 
     /// Header category strip. Format buckets are pushed to the server as a
     /// `formats` filter; `downloaded` is answered from the local library mirror,
@@ -337,16 +335,7 @@ struct LibraryView: View {
     @Namespace private var bookZoom
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var presentation = Presentation.shared
-    private var connectivity = Connectivity.shared
     private var invalidations = ReplicaInvalidations.shared
-
-    // `alignment: .top` matters here: GridItem defaults to centering each
-    // item within its row, so a row of `BookGridCell`s whose captions wrap to
-    // a different number of lines (a book with a one-line title next to one
-    // that wraps to two) gets its shorter cells pushed down to stay centered
-    // — the cover art itself renders at the same 2:3 size, but sits at a
-    // different vertical offset, which reads as "a different size" (#1481).
-    private let columns = [GridItem(.adaptive(minimum: 112, maximum: 168), spacing: 16, alignment: .top)]
 
     /// Named so a test can prove it resolves. A misspelt SF Symbol doesn't fail
     /// to compile or warn — `Image(systemName:)` just draws nothing, so the
@@ -473,7 +462,7 @@ struct LibraryView: View {
                     )
                 }
 
-                // Unconditional: the rail carries its own New-shelf tile, and
+                // Unconditional: the rail's heading carries New shelf, and
                 // hiding the section when it is empty takes that away from the
                 // one reader who has never made a shelf.
                 ShelvesRail(
@@ -489,17 +478,7 @@ struct LibraryView: View {
 
                 VStack(alignment: .leading, spacing: Spacing.md) {
                     sectionHeading
-                    LibraryFilterBar(
-                        store: model.filterStore, viewerId: app.user?.id,
-                        reservesFormatClause: !model.category.serverFormats.isEmpty
-                    )
-                    .screenPadding()
-                    if let error = model.stackSeriesError {
-                        Text(error)
-                            .font(.ui(12))
-                            .foregroundStyle(palette.badColor)
-                            .screenPadding()
-                    }
+                    LibraryFilterBar(store: model.filterStore, viewerId: app.user?.id)
                     if model.books.isEmpty {
                         FilteredResultsState(phase: model.filteredPhase) { model.filterStore.clear() }
                     } else {
@@ -513,12 +492,9 @@ struct LibraryView: View {
     }
 
     private var grid: some View {
-        LazyVGrid(columns: columns, spacing: 26) {
-            ForEach(Array(model.gridItems.enumerated()), id: \.element.id) { index, item in
-                gridCell(item)
-                    .cascadeIn(index: index)
-                    .task { await model.loadMoreIfNeeded(currentItem: item.anchor) }
-            }
+        CoverGrid(model.gridItems) { item in
+            StackedGridCell(item: item, setOpen: setOpenSeries, link: bookLink)
+                .task { await model.loadMoreIfNeeded(currentItem: item.anchor) }
         }
         .screenPadding()
         .overlay(alignment: .bottom) {
@@ -531,47 +507,8 @@ struct LibraryView: View {
         }
     }
 
-    @ViewBuilder
-    private func gridCell(_ item: LibraryGridItem) -> some View {
-        switch item {
-        case .book(let book):
-            bookLink(book) { BookGridCell(book: book) }
-        case .stack(let stack, _):
-            Button { setOpenSeries(stack.leadUuid) } label: {
-                SeriesStackCell(stack: stack)
-            }
-            .buttonStyle(BookPressStyle())
-            .accessibilityLabel("\(stack.name), \(stack.members.count) books")
-            .accessibilityHint("Opens the series in place")
-            .accessibilityIdentifier("library-stack-\(StackPresentation.slug(stack.name))")
-        case .cap(let stack, _):
-            SeriesCapCell(stack: stack) { setOpenSeries(nil) }
-        case .volume(let book, let stack, let index, _):
-            let tint = stack.palette(over: palette).accentColor
-            let state = stack.state(of: book.uuid)
-            let progress: (fraction: Double, tint: Color)? = {
-                guard let state, state.started, !state.finished, let percent = state.percent,
-                      percent > 0
-                else { return nil }
-                return (Double(percent) / 100, tint)
-            }()
-            bookLink(book) {
-                BookGridCell(
-                    book: book,
-                    caption: (
-                        StackPresentation.volumeTitle(book),
-                        StackPresentation.volumeSubtitle(book, state: state)
-                    ),
-                    progress: progress
-                )
-            }
-            .accessibilityLabel(StackPresentation.volumeLabel(book, state: state))
-            .background { SeriesBand(tint: tint, trailing: index == stack.members.count - 1) }
-        }
-    }
-
-    private func bookLink<Cell: View>(_ book: Book, @ViewBuilder cell: () -> Cell) -> some View {
-        NavigationLink(value: Destination.book(uuid: book.uuid)) { cell() }
+    private func bookLink(_ book: Book, _ cell: BookGridCell) -> some View {
+        NavigationLink(value: Destination.book(uuid: book.uuid)) { cell }
             .buttonStyle(BookPressStyle())
             .bookContextMenu(book, onEdited: { Task { await model.reload() } })
             .bookZoomSource(book.uuid, in: bookZoom)
@@ -648,16 +585,6 @@ struct LibraryView: View {
     /// the screen.
     private var filterMenu: some View {
         Menu {
-            Section("View") {
-                Toggle(isOn: Binding(
-                    get: { model.stackSeries }, set: { saveStackSeries($0) }
-                )) {
-                    Label("Stack series", systemImage: SeriesStackCell.glyph)
-                }
-                // Account configuration is never queued, so offline it can't change (rule 08).
-                .disabled(!connectivity.isOnline)
-            }
-
             Picker("Show", selection: Binding(
                 get: { model.category }, set: { model.category = $0 }
             )) {
@@ -685,55 +612,19 @@ struct LibraryView: View {
                 )
             }
         } label: {
-            HStack(spacing: -5) {
-                if model.stackSeries {
-                    stackMark.zIndex(1)
-                }
-                Image(systemName: "line.3.horizontal.decrease")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(isFiltered ? palette.accentInk.color : palette.ink1Color)
-                    .frame(width: 32, height: 32)
-                    .background(
-                        Circle().fill(isFiltered ? palette.accentColor : palette.bg2Color)
-                    )
-                    .overlay(
-                        Circle().strokeBorder(palette.line2.color, lineWidth: 0.5)
-                    )
-            }
+            Image(systemName: "line.3.horizontal.decrease")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(isFiltered ? palette.accentInk.color : palette.ink1Color)
+                .frame(width: 32, height: 32)
+                .background(
+                    Circle().fill(isFiltered ? palette.accentColor : palette.bg2Color)
+                )
+                .overlay(
+                    Circle().strokeBorder(palette.line2.color, lineWidth: 0.5)
+                )
         }
         .animation(Motion.snap, value: isFiltered)
-        .animation(reduceMotion ? nil : Motion.snap, value: model.stackSeries)
         .accessibilityLabel("Filter and sort")
-        .accessibilityValue(model.stackSeries ? "Stack series on" : "")
-    }
-
-    /// Marks the filter control while Stack series is on.
-    private var stackMark: some View {
-        Image(systemName: SeriesStackCell.glyph)
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(palette.accentColor)
-            .frame(width: 20, height: 20)
-            .background(Circle().fill(palette.accentColor.opacity(0.22)))
-            .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
-    }
-
-    /// Restacks at once and saves to the account; a failed save puts the grid back.
-    private func saveStackSeries(_ next: Bool) {
-        let previous = model.stackSeries
-        model.stackSeries = next
-        Task {
-            do {
-                try await AuthService.setStackSeries(next)
-                await app.refreshUser()
-                model.stackSeriesError = nil
-                Haptics.success()
-            } catch {
-                model.stackSeries = previous
-                model.stackSeriesError = (error as? APIError)?.errorDescription
-                    ?? error.localizedDescription
-                Haptics.warning()
-            }
-        }
     }
 
     /// Tints the control when it's actually doing something, so a filtered grid

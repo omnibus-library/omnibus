@@ -19,6 +19,13 @@ layout {
             args "develop" ".#web" "--command" "scripts/dev-serve-fg.sh"
         }
     }
+    tab name="react" {
+        // The React client (frontend-js/) on the port the server pane reserved
+        // for it, proxying /api to that server. Suspended: press Enter to start.
+        pane command="nix" start_suspended=true {
+            args "develop" ".#web" "--command" "scripts/react-dev-fg.sh"
+        }
+    }
     tab name="android" {
         pane command="nix" start_suspended=true {
             args "develop" ".#mobile" "--command" "dx" "serve" "--platform" "android" "--package" "omnibus-mobile"

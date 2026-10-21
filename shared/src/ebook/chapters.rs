@@ -11,55 +11,76 @@ use serde::{Deserialize, Serialize};
 /// slice can never split a UTF-8 sequence.
 pub const CHAPTER_TEXT_MAX_CHARS: usize = 100_000;
 
-/// One chapter in the listing: the TOC title plus the spine index the text
-/// read is addressed by.
+/// One entry of a book's table of contents, with the spine index its text is read by.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ChapterListEntry {
-    /// TOC order, 0-based.
+    /// The entry's place in the table of contents, counted from 0.
     pub ordinal: i64,
     pub title: String,
-    /// Index into the spine — the path parameter of the text read.
+    /// The spine document the entry points to. Pass it to
+    /// `GET /api/ebooks/{uuid}/chapters/{spine_index}/text`.
     pub spine_index: i64,
 }
 
-/// `GET /api/ebooks/{uuid}/chapters` response. `has_text: false` means the served
-/// format has no extractable text (comic-only, audiobook-only), distinct from the
-/// 404 for an unknown uuid. A TOC-less but readable EPUB reports `has_text: true`
-/// with empty `chapters`; its text is still addressable by spine index up to
-/// `spine_count`.
+/// A book's table of contents, from `GET /api/ebooks/{uuid}/chapters`. `has_text` is
+/// false when the book has no text to read, such as a comic or an audiobook. An EPUB
+/// without a table of contents has `has_text` true and an empty `chapters`. Its text can
+/// still be read by spine index.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ChapterListResponse {
     pub book_uuid: String,
     pub has_text: bool,
-    /// Number of spine documents; valid text-read indexes are
-    /// `0..spine_count`. Zero when `has_text` is false.
+    /// The number of spine documents. Text can be read at spine indexes from 0 to one
+    /// less than this. 0 when `has_text` is false.
     pub spine_count: i64,
     pub chapters: Vec<ChapterListEntry>,
 }
 
-/// `GET /api/ebooks/{uuid}/chapters/{spine_index}/text` response: one bounded
-/// slice of a spine document's prose. `truncated` marks a slice that ends before
-/// the document does and `next_offset` is the char offset to request next, per
-/// [`CHAPTER_TEXT_MAX_CHARS`]. `has_text: false` mirrors the listing's no-text
-/// answer, with everything else zeroed.
+/// One slice of a spine document's text as plain prose, from
+/// `GET /api/ebooks/{uuid}/chapters/{spine_index}/text`. A slice holds up to 100,000
+/// characters. When `has_text` is false, the book has no text and the other fields are
+/// empty or 0.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ChapterTextResponse {
     pub book_uuid: String,
     pub has_text: bool,
     pub spine_index: i64,
     pub text: String,
-    /// Char offset this slice starts at (the request's `?offset=`).
+    /// Where the slice starts, in characters from the start of the document. It echoes
+    /// the request's `offset`.
     pub offset: i64,
-    /// Total chars in the whole document's extracted text.
+    /// The length of the whole document's text, in characters.
     pub total_chars: i64,
+    /// Whether the document goes on past this slice.
     pub truncated: bool,
+    /// The `offset` to request for the next slice. Null when the slice reaches the end.
     pub next_offset: Option<i64>,
-    /// Set when the slice was cut at the reader's own furthest position rather than at
-    /// [`CHAPTER_TEXT_MAX_CHARS`] (the `?stop_at_progress=true` contract). `truncated`
-    /// stays `false` and `next_offset` is absent: there is no cursor to continue from.
+    /// Whether the slice stops at your furthest reading position, as `stop_at_progress`
+    /// asks. `truncated` is then false and `next_offset` null, since there is nothing to
+    /// continue to. Absent when false.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub truncated_by_progress: bool,
+}
+
+/// Query parameters of `GET /api/ebooks/{uuid}/chapters/{spine_index}/text`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct ChapterTextQuery {
+    /// Where the slice starts, in characters from the start of the chapter. Defaults to 0.
+    /// Pass the previous slice's `next_offset` to continue.
+    pub offset: Option<usize>,
+    /// The most characters to return, from 1 to 100,000. Defaults to 100,000, and a larger
+    /// value is lowered to it.
+    pub limit: Option<usize>,
+    /// Cut the text off at your own furthest reading position in this book, so you are never
+    /// handed text you haven't reached yet.
+    #[serde(default)]
+    pub stop_at_progress: bool,
 }

@@ -4,7 +4,9 @@
 //! `prefs` signal and the data pipeline.
 
 use dioxus::prelude::*;
-use omnibus_shared::{EbookMetadata, SeriesStack, Shelf, ShelfKind, SortKey, ViewMode, ViewPrefs};
+use omnibus_shared::{
+    EbookMetadata, SeriesStack, Shelf, ShelfKind, SortKey, ViewFilters, ViewMode, ViewPrefs,
+};
 
 use super::filters::EmptyFiltered;
 use super::grid::BookGrid;
@@ -16,13 +18,13 @@ use super::view::Members;
 use crate::components::loading::{CoverSkeletons, RowSkeletons};
 use crate::components::shelf_facets::pencil_glyph;
 use crate::components::shelf_glyphs::plus_icon;
-use crate::components::{BusyLabel, ShelfFacets, ShelfList};
+use crate::components::{BusyLabel, FilterBar, ShelfFacets, ShelfList};
+use crate::pages::admin::sections::AdminSection;
 use crate::shelf_selection::ShelfSelection;
 
 /// Header banner fields sourced from the page's derived view state.
 #[derive(Clone, PartialEq)]
 pub(super) struct LandingHeaderView {
-    pub path_subtitle: String,
     /// `None` until the list feeding the header has answered.
     pub book_count: Option<usize>,
     /// No count yet but one is coming; `false` with no count after a failure.
@@ -32,8 +34,6 @@ pub(super) struct LandingHeaderView {
     pub path_missing: bool,
     pub page_error: Option<String>,
     pub lib_err: Option<String>,
-    /// The gallery pick this header titles: "All Books" or the shelf's name.
-    pub section_title: String,
     /// Full detail for the gallery pick (`None` on All Books / while it
     /// loads) — drives the facet row.
     pub selected_shelf: Option<Shelf>,
@@ -47,6 +47,8 @@ pub(super) struct LandingHeaderView {
     pub stack: StackToggleView,
     /// The viewer's shelves — the filter bar names its shelf chips from them.
     pub shelves: ShelfList,
+    /// The pick is All Books, the one view hidden formats narrow.
+    pub hidden_formats_apply: bool,
 }
 
 /// The shelf lens's Add books control: absent unless the pick is a
@@ -80,10 +82,11 @@ pub(super) fn add_books_state(
     }
 }
 
-/// Sticky `data-testid="lib-header"` header; also renders page-level +
-/// library-path errors. When the gallery pick is a shelf, the title grows an
-/// edit pencil (owner/admin, non-system) and a facet row (kind / visibility /
-/// rule chips) beneath it, and a hand-picked shelf an Add books button.
+/// Sticky `data-testid="lib-header"` header: the filter bar, the receipt and
+/// the toolbar on one row, then page-level and library-path errors. When the
+/// gallery pick is a shelf it adds an edit pencil (owner/admin, non-system)
+/// and a facet row (kind / visibility / rule chips), and for a hand-picked
+/// shelf an Add books button.
 #[component]
 pub(super) fn LandingHeader(
     view: LandingHeaderView,
@@ -94,43 +97,54 @@ pub(super) fn LandingHeader(
     on_stack_toggle: EventHandler<()>,
 ) -> Element {
     let LandingHeaderView {
-        path_subtitle,
         book_count,
         count_pending,
         hidden_count,
         path_missing,
         page_error,
         lib_err,
-        section_title,
         selected_shelf,
         can_edit,
         add_books,
         sort_lock,
         stack,
         shelves,
+        hidden_formats_apply,
     } = view;
+    let filtered = !prefs.filters.is_empty();
+    let viewer_id = crate::use_current_user_summary()().map(|u| u.id);
+    let editable_shelf = selected_shelf
+        .as_ref()
+        .filter(|_| can_edit)
+        .map(|s| s.name.clone());
+    let set_filters = {
+        let prefs = prefs.clone();
+        move |filters: ViewFilters| {
+            on_prefs_change.call(ViewPrefs {
+                filters,
+                ..prefs.clone()
+            })
+        }
+    };
     rsx! {
         header { class: "lib-header", "data-testid": "lib-header",
-            div { class: "lib-header-kicker",
-                h1 { class: "label lib-header-kicker-title", "Your Library" }
-                if !path_subtitle.is_empty() {
-                    span { class: "mono lib-header-path", " · {path_subtitle}" }
-                }
-            }
+            // The selected shelf tab names the list; the page heading stays
+            // for assistive tech only.
+            h1 { class: "sr-only", "Your Library" }
             div { class: "lib-header-row",
-                LandingHeaderTitleRow {
-                    section_title,
-                    book_count,
-                    count_pending,
+                FilterBar { filters: prefs.filters.clone(), shelves, viewer_id, on_change: set_filters }
+                LandingHeaderReceipt {
+                    book_count: book_count.filter(|_| filtered),
+                    count_pending: count_pending && filtered,
                     hidden_count,
-                    can_edit,
+                    editable_shelf,
                     on_edit_shelf,
                 }
                 Toolbar {
                     prefs: prefs,
-                    shelves,
                     sort_lock,
                     stack,
+                    hidden_formats_apply,
                     on_change: move |next: ViewPrefs| on_prefs_change.call(next),
                     on_stack_toggle,
                 }
@@ -146,49 +160,56 @@ pub(super) fn LandingHeader(
     }
 }
 
-/// Section title + book count + hidden-formats receipt + the shelf edit
-/// pencil, extracted from [`LandingHeader`] to keep it under the line cap.
+/// The selected shelf tab names the list, so this receipt shows only what the
+/// tab can't: the count a filter leaves (a shelf tab counts its whole shelf),
+/// the books hidden formats keep out, and the shelf's edit pencil. The caller
+/// passes a count only while a filter is on.
 #[component]
-fn LandingHeaderTitleRow(
-    section_title: String,
+fn LandingHeaderReceipt(
     book_count: Option<usize>,
     count_pending: bool,
     hidden_count: Option<i64>,
-    can_edit: bool,
+    /// The shelf the pencil edits, when the viewer may edit it.
+    editable_shelf: Option<String>,
     on_edit_shelf: EventHandler<()>,
 ) -> Element {
+    let hidden = hidden_count.filter(|n| *n > 0);
+    let counted = book_count.is_some() || count_pending;
+    if !counted && hidden.is_none() && editable_shelf.is_none() {
+        return rsx! {};
+    }
     rsx! {
-        div { class: "lib-header-title-wrap",
-            p { class: "lib-header-title", "data-testid": "lib-section-title",
-                em { "{section_title}" }
-                if let Some(n) = book_count {
-                    span { class: "lib-header-count",
-                        " · {n} "
-                        if n == 1 { "book" } else { "books" }
+        div { class: "lib-header-receipt",
+            if counted || hidden.is_some() {
+                p { class: "lib-header-receipt-text", "data-testid": "lib-header-receipt",
+                    if let Some(n) = book_count {
+                        span { class: "lib-header-count", "data-testid": "lib-filtered-count",
+                            "{n} "
+                            if n == 1 { "book" } else { "books" }
+                        }
+                    } else if count_pending {
+                        // Never "0 books" before the list has answered.
+                        span { class: "lib-header-count", "data-testid": "lib-count-pending",
+                            span { class: "ld-sheen", "counting" }
+                        }
                     }
-                } else if count_pending {
-                    // Never "0 books" before the list has answered.
-                    span { class: "lib-header-count", "data-testid": "lib-count-pending",
-                        " · "
-                        span { class: "ld-sheen", "counting" }
-                    }
-                }
-                // The receipt: hidden books must never look like data loss,
-                // so the exclusion always shows its count.
-                if let Some(n) = hidden_count.filter(|n| *n > 0) {
-                    span {
-                        class: "lib-header-hidden",
-                        "data-testid": "lib-hidden-count",
-                        " · {n} hidden"
+                    // The receipt: hidden books must never look like data loss,
+                    // so the exclusion always shows its count.
+                    if let Some(n) = hidden {
+                        span {
+                            class: "lib-header-hidden",
+                            "data-testid": "lib-hidden-count",
+                            "{n} hidden"
+                        }
                     }
                 }
             }
-            if can_edit {
+            if let Some(name) = editable_shelf {
                 button {
                     r#type: "button",
                     class: "shelf-edit-btn",
                     "data-testid": "shelf-edit",
-                    "aria-label": "Edit shelf",
+                    "aria-label": "Edit {name}",
                     onclick: move |_| on_edit_shelf.call(()),
                     {pencil_glyph()}
                 }
@@ -231,7 +252,7 @@ fn LandingHeaderMessages(
     rsx! {
         if path_missing {
             p { class: "lib-header-hint",
-                "Configure your ebook library path in Settings."
+                "Configure your ebook library path in {AdminSection::Sources.place()}."
             }
         }
         if let Some(msg) = page_error.as_ref() {

@@ -58,6 +58,116 @@ async fn api_get_author_returns_200_with_detail() {
     assert_eq!(detail.book_count, 1);
     assert_eq!(detail.books.len(), 1);
     assert_eq!(detail.books[0].title.as_deref(), Some("Test Book"));
+    assert!(
+        detail.reading.is_empty(),
+        "an unopened book carries no state"
+    );
+}
+
+/// Seeds one book by Jane Austen under `/lib`, points settings at it, and has
+/// `user` finish it. Returns the author id.
+async fn seed_finished_austen(pool: &sqlx::SqlitePool, user: i64) -> i64 {
+    db::set_settings(
+        pool,
+        &omnibus_shared::Settings {
+            ebook_library_path: Some("/lib".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    db::replace_books(
+        pool,
+        "/lib",
+        vec![db::ebook::IndexedBook {
+            metadata: omnibus_shared::EbookMetadata {
+                filename: "emma.epub".into(),
+                title: Some("Emma".into()),
+                creators: vec![omnibus_shared::Contributor {
+                    name: "Jane Austen".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            cover: None,
+            mtime_epoch: 0,
+            size_bytes: 0,
+            word_count: None,
+        }],
+    )
+    .await
+    .unwrap();
+    let uuid: String = sqlx::query_scalar("SELECT uuid FROM books WHERE title = 'Emma'")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    db::read_status::set_read_status(
+        pool,
+        user,
+        &omnibus_shared::SetReadStatus {
+            book_uuid: uuid,
+            status: omnibus_shared::ReadStatus::Finished,
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query_scalar("SELECT id FROM authors WHERE name = 'Jane Austen'")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn api_get_author_carries_the_callers_reading_state() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let author_id = seed_finished_austen(&pool, user.id).await;
+
+    let response = app
+        .oneshot(get_with_bearer(
+            &format!("/api/authors/{author_id}"),
+            &token,
+        ))
+        .await
+        .unwrap();
+
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let detail: omnibus_shared::AuthorDetail = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(detail.reading.len(), 1);
+    assert_eq!(
+        detail.reading[0].status,
+        omnibus_shared::ReadStatus::Finished
+    );
+}
+
+#[tokio::test]
+async fn api_get_author_reading_returns_the_callers_counts() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let author_id = seed_finished_austen(&pool, user.id).await;
+
+    let response = app
+        .oneshot(get_with_bearer("/api/authors/reading", &token))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let rows: Vec<omnibus_shared::AuthorReading> = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        (rows[0].author_id, rows[0].finished, rows[0].reading),
+        (author_id, 1, 0)
+    );
+}
+
+#[tokio::test]
+async fn api_get_author_reading_returns_401_when_anonymous() {
+    let (app, _, _) = fixture().await;
+    let res = app.oneshot(get_anon("/api/authors/reading")).await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
@@ -180,4 +290,135 @@ async fn api_get_authors_index_returns_401_when_anonymous() {
     let (app, _, _) = fixture().await;
     let res = app.oneshot(get_anon("/api/authors")).await.unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn api_get_author_returns_500_when_reading_state_cannot_be_read() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let author_id = seed_finished_austen(&pool, user.id).await;
+    sqlx::query("DROP TABLE book_read_status")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/authors/{author_id}"),
+            &token,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn api_get_author_reading_returns_500_when_reading_state_cannot_be_read() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    seed_finished_austen(&pool, user.id).await;
+    sqlx::query("DROP TABLE book_read_status")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let res = app
+        .oneshot(get_with_bearer("/api/authors/reading", &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+fn delete_author_request(id: i64, token: &str) -> axum::http::Request<axum::body::Body> {
+    axum::http::Request::builder()
+        .uri(format!("/api/authors/{id}"))
+        .method("DELETE")
+        .header(axum::http::header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(axum::body::Body::empty())
+        .unwrap()
+}
+
+#[tokio::test]
+async fn api_delete_author_removes_the_author_and_ignores_the_name_when_admin() {
+    let (app, _state, pool) = fixture().await;
+    let id = seed_author(&pool, "Ada Lovelace").await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    let res = app
+        .oneshot(delete_author_request(id, &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::NO_CONTENT);
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM authors WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+    let ignored: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ignored_authors WHERE name = 'Ada Lovelace'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(ignored, 1);
+}
+
+#[tokio::test]
+async fn api_delete_author_returns_403_and_keeps_the_author_when_not_admin() {
+    let (app, _state, pool) = fixture().await;
+    let id = seed_author(&pool, "Ada Lovelace").await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let res = app
+        .oneshot(delete_author_request(id, &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM authors WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 1);
+}
+
+#[tokio::test]
+async fn api_delete_author_returns_204_for_unknown_id() {
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    let res = app
+        .oneshot(delete_author_request(9999, &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn api_delete_author_returns_500_when_the_author_cannot_be_deleted() {
+    let (app, _state, pool) = fixture().await;
+    let id = seed_author(&pool, "Ada Lovelace").await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+    sqlx::query("DROP TABLE ignored_authors")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let res = app
+        .oneshot(delete_author_request(id, &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }

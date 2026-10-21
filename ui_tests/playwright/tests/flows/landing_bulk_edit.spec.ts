@@ -1,282 +1,243 @@
-import type { Locator, Page } from "@playwright/test";
-
+import { overrides } from "../contracts/overrides";
+import { shelves } from "../contracts/shelves";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
-import { fetchBookIdByTitle, switchToTableView } from "../utils/ebooks";
-import { gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
+import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
-import { galleryTile, withManualShelf } from "../utils/shelves";
 
-// Table-view bulk edit: row checkboxes → floating action bar → modal →
-// one `rpc_bulk_save_overrides` call for every selected book.
-//
-// The two `bulk-target-*` fixtures are reserved for this spec (see the
-// comment in fixtures/epubs.ts) — the happy-path test bulk-writes overrides
-// to BOTH and reverts them at the end, and the suite is fullyParallel, so
-// nothing else may read them. The shelf tests file both on shelves they make.
-
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
-
+// The two `bulk-target-*` fixtures are reserved for this spec (see
+// fixtures/epubs.ts): the happy path bulk-writes overrides to both, and the
+// suite is fullyParallel, so nothing else may read them.
 const TARGETS = FIXTURE_BOOKS.filter((b) => b.slug.startsWith("bulk-target-"));
 const [PRIMARY, SECONDARY] = [TARGETS[0]!, TARGETS[1]!];
+const SELECTED = [PRIMARY.slug, SECONDARY.slug];
 
-/** The selection checkbox in a target's table row. */
-function selectBox(page: Page, target: (typeof TARGETS)[number]): Locator {
-  return page
-    .getByTestId(`ebook-row-${target.slug}`)
-    .getByTestId("ebook-select");
-}
+test.describe("bulk edit", () => {
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+  });
 
-/** Check both target rows' selection checkboxes. */
-async function selectTargets(page: Page) {
-  for (const target of [PRIMARY, SECONDARY]) {
-    await selectBox(page, target).check();
-  }
-}
+  test("show the bulk edit layout", async ({ libraryPage }) => {
+    const table = libraryPage.table;
 
-test("renders the bulk edit layout: checkboxes, select-all, and no bar while nothing is selected", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  await expect(page.getByTestId("ebook-select-all")).toBeVisible();
-  for (const target of [PRIMARY, SECONDARY]) {
-    await expect(
-      page.getByTestId(`ebook-row-${target.slug}`).getByTestId("ebook-select"),
-    ).toBeVisible();
-  }
-  await expect(page.getByTestId("bulk-edit-bar")).toHaveCount(0);
-});
-
-test("selecting rows reveals the bulk edit bar and checkbox clicks do not navigate", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  await selectTargets(page);
-  // The checkbox cell stops propagation — the row's click-to-navigate
-  // handler must not fire.
-  await expect(page).toHaveURL(/\/$/);
-
-  const bar = page.getByTestId("bulk-edit-bar");
-  await expect(bar).toContainText("2 books selected");
-  // The bar flattens into the landing column, where `.lmq > *` lifts each
-  // section — a rule that ties the bar on specificity. Losing that tie drops
-  // it into the flow, far below the rows it reports on.
-  await expect
-    .poll(() => bar.evaluate((el) => getComputedStyle(el).position))
-    .toBe("fixed");
-
-  await page.getByTestId("bulk-edit-clear").click();
-  await expect(bar).toHaveCount(0);
-});
-
-test("select all toggles every visible row", async ({ page }) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  const selectAll = page.getByTestId("ebook-select-all");
-  await selectAll.check();
-  const rowCount = await page.getByTestId("ebook-select").count();
-  await expect(page.getByTestId("bulk-edit-bar")).toContainText(
-    `${rowCount} books selected`,
-  );
-
-  await selectAll.uncheck();
-  await expect(page.getByTestId("bulk-edit-bar")).toHaveCount(0);
-});
-
-test("bulk edits publisher and tags across the selected books via rpc_bulk_save_overrides", async ({
-  page,
-  request,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  await selectTargets(page);
-  await page.getByTestId("bulk-edit-open").click();
-
-  const modal = page.getByTestId("bulk-edit-modal");
-  await expect(modal).toBeVisible();
-  await expect(modal).toContainText("Edit 2 books");
-
-  await modal.getByLabel("Publisher").fill("Bulk Edited Press");
-  await modal.getByTestId("bulk-add-tags-input").fill("bulk-tagged");
-  await modal.getByTestId("bulk-add-tags-input").press("Enter");
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/ebook\/overrides\/bulk$/,
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("bulk-edit-submit").click(),
-  );
-
-  // Modal and bar close; the rows re-render from the returned metadata —
-  // the added tag lands in each row's Tags cell (publisher has no table
-  // column; it's covered by the request/response contract above).
-  await expect(modal).toHaveCount(0);
-  await expect(page.getByTestId("bulk-edit-bar")).toHaveCount(0);
-  for (const target of [PRIMARY, SECONDARY]) {
-    await expect(
-      page
-        .getByTestId(`ebook-row-${target.slug}`)
-        .getByTestId("ebook-cell-tags"),
-    ).toContainText("bulk-tagged");
-  }
-
-  // Cleanup: revert both books' overrides so subsequent runs start from
-  // pristine fixture state. Assert each delete succeeds — a silent failure
-  // would leak the override across the suite.
-  for (const target of [PRIMARY, SECONDARY]) {
-    const uuid = await fetchBookIdByTitle(request, target.title);
-    const revertResp = await request.post(`/api/rpc/ebook/overrides/delete`, {
-      data: { uuid },
+    await test.step("open the table view", async () => {
+      await libraryPage.goto();
+      await table.switchTo();
     });
-    expect(
-      revertResp.status(),
-      `cleanup revert for ${target.slug} must succeed`,
-    ).toBe(200);
-  }
-});
 
-test("bulk edit save error keeps the modal open and the rows unchanged", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
+    await test.step("check the shared nav shows", async () => {
+      await libraryPage.topNav.assertDisplayed();
+    });
 
-  await selectTargets(page);
-  await page.getByTestId("bulk-edit-open").click();
-  const modal = page.getByTestId("bulk-edit-modal");
-  await modal.getByLabel("Publisher").fill("Should Not Persist");
-  await modal.getByTestId("bulk-add-tags-input").fill("should-not-persist");
-  await modal.getByTestId("bulk-add-tags-input").press("Enter");
-
-  await page.route("**/api/rpc/ebook/overrides/bulk", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 500,
-        contentType: "text/plain",
-        body: "forced failure",
-      });
-    }
-    return route.continue();
+    await test.step("check the checkboxes show and no bar yet", async () => {
+      await expect(table.selectAllBox).toBeVisible();
+      await expect(table.selectBox(PRIMARY.slug)).toBeVisible();
+      await expect(table.selectBox(SECONDARY.slug)).toBeVisible();
+      await expect(libraryPage.bulkEditBar.root).toHaveCount(0);
+    });
   });
 
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/ebook\/overrides\/bulk$/,
-      expectedStatus: 500,
-    },
-    async () => page.getByTestId("bulk-edit-submit").click(),
-  );
-  await page.unroute("**/api/rpc/ebook/overrides/bulk");
+  test("select rows to reveal the bulk edit bar", async ({ libraryPage }) => {
+    const { table, bulkEditBar } = libraryPage;
 
-  // The modal surfaces the failure and stays open; nothing was written —
-  // the rejected tag never reaches the rows' Tags cells.
-  await expect(page.getByTestId("bulk-edit-error")).toBeVisible();
-  await expect(page.getByTestId("bulk-edit-modal")).toBeVisible();
-  for (const target of [PRIMARY, SECONDARY]) {
-    await expect(
-      page
-        .getByTestId(`ebook-row-${target.slug}`)
-        .getByTestId("ebook-cell-tags"),
-    ).not.toContainText("should-not-persist");
-  }
-});
+    await test.step("open the table view", async () => {
+      await libraryPage.goto();
+      await table.switchTo();
+    });
 
-test("add the selected books to a hand-picked shelf in one request", async ({
-  page,
-  request,
-}) => {
-  const uuids = await Promise.all(
-    [PRIMARY, SECONDARY].map((t) => fetchBookIdByTitle(request, t.title)),
-  );
-  await withManualShelf(request, "E2E Bulk Shelf", async ({ id, name }) => {
-    await gotoReady(page, "/");
-    await switchToTableView(page);
-    await selectTargets(page);
-    await page.getByTestId("bulk-add-to-shelf").click();
+    await test.step("select two rows", async () => {
+      await table.selectRows(SELECTED);
+    });
 
-    const picker = page.getByTestId("shelf-picker");
-    await expect(
-      picker.getByRole("heading", { name: "Add 2 books to a shelf" }),
-    ).toBeVisible();
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: "/api/rpc/shelves/add-books",
-        expectedBody: { id, book_uuids: [...uuids].sort() },
-        expectedStatus: 200,
-      },
-      async () => picker.getByRole("button", { name, exact: true }).click(),
-    );
+    await test.step("check the bar shows without opening a book", async () => {
+      // The checkbox cell stops propagation, so the row's navigate must not fire.
+      await libraryPage.assertDisplayed();
+      await expect(bulkEditBar.root).toContainText("2 books selected");
+      // The bar ties `.lmq > *` on specificity; losing the tie drops it into
+      // the flow, far below the rows it reports on.
+      await expect.poll(() => bulkEditBar.position()).toBe("fixed");
+    });
 
-    // Picker and bar close, the selection is gone, and the gallery's count
-    // follows without a reload.
-    await expect(picker).toHaveCount(0);
-    await expect(page.getByTestId("bulk-edit-bar")).toHaveCount(0);
-    await expect(galleryTile(page, id)).toContainText("2 books");
-    for (const target of [PRIMARY, SECONDARY]) {
-      await expect(selectBox(page, target)).not.toBeChecked();
-    }
+    await test.step("clear the selection", async () => {
+      await bulkEditBar.clear();
+      await expect(bulkEditBar.root).toHaveCount(0);
+    });
   });
-});
 
-test("keep the selection when adding to a shelf fails", async ({
-  page,
-  request,
-}) => {
-  const uuids = await Promise.all(
-    [PRIMARY, SECONDARY].map((t) => fetchBookIdByTitle(request, t.title)),
-  );
-  await withManualShelf(request, "E2E Bulk Shelf", async ({ id, name }) => {
-    await gotoReady(page, "/");
-    await switchToTableView(page);
-    await selectTargets(page);
-    await page.getByTestId("bulk-add-to-shelf").click();
+  test("select all rows", async ({ libraryPage }) => {
+    const { table, bulkEditBar } = libraryPage;
 
-    await page.route("**/api/rpc/shelves/add-books", (route) =>
-      route.fulfill({
-        status: 500,
-        contentType: "text/plain",
-        body: "forced failure",
-      }),
-    );
-    const picker = page.getByTestId("shelf-picker");
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: "/api/rpc/shelves/add-books",
-        expectedBody: { id, book_uuids: [...uuids].sort() },
-        expectedStatus: 500,
-      },
-      async () => picker.getByRole("button", { name, exact: true }).click(),
-    );
-    await page.unroute("**/api/rpc/shelves/add-books");
+    await test.step("open the table view", async () => {
+      await libraryPage.goto();
+      await table.switchTo();
+    });
 
-    await expect(page.getByTestId("shelf-picker-error")).toBeVisible();
-    await expect(picker).toBeVisible();
-    await expect(page.getByTestId("bulk-edit-bar")).toContainText(
-      "2 books selected",
-    );
+    await test.step("select all", async () => {
+      await table.selectAll();
+      const rowCount = await table.selectBoxes.count();
+      await expect(bulkEditBar.root).toContainText(
+        `${rowCount} books selected`,
+      );
+    });
 
-    await page.getByTestId("shelf-picker-close").click();
-    await expect(picker).toHaveCount(0);
-    await expect(page.getByTestId("bulk-edit-bar")).toContainText(
-      "2 books selected",
-    );
+    await test.step("deselect all", async () => {
+      await table.deselectAll();
+      await expect(bulkEditBar.root).toHaveCount(0);
+    });
+  });
+
+  test("bulk edit publisher and tags across the selected books", async ({
+    libraryPage,
+    expectMutation,
+    revertOverridesOf,
+  }) => {
+    const { table, bulkEditBar, bulkEditModal } = libraryPage;
+    await revertOverridesOf(PRIMARY.title, SECONDARY.title);
+
+    await test.step("select two rows and open the editor", async () => {
+      await libraryPage.goto();
+      await table.switchTo();
+      await table.selectRows(SELECTED);
+      await bulkEditBar.openEditor();
+      await expect(bulkEditModal.root).toBeVisible();
+      await expect(bulkEditModal.root).toContainText("Edit 2 books");
+    });
+
+    await test.step("fill in a publisher and a tag", async () => {
+      await bulkEditModal.setPublisher("Bulk Edited Press");
+      await bulkEditModal.addTag("bulk-tagged");
+    });
+
+    await test.step("save the edit", async () => {
+      await expectMutation(overrides.bulkSave(), () => bulkEditModal.submit());
+    });
+
+    // The rows re-render from the returned metadata. Publisher has no table
+    // column, so the request contract above is its only check.
+    await test.step("check the rows carry the tag", async () => {
+      await expect(bulkEditModal.root).toHaveCount(0);
+      await expect(bulkEditBar.root).toHaveCount(0);
+      for (const slug of SELECTED) {
+        await expect(table.cell(slug, "tags")).toContainText("bulk-tagged");
+      }
+    });
+  });
+
+  test("keep the bulk edit modal open when saving fails", async ({
+    libraryPage,
+    expectMutation,
+  }) => {
+    const { table, bulkEditBar, bulkEditModal } = libraryPage;
+
+    await test.step("fill in the editor for two rows", async () => {
+      await libraryPage.goto();
+      await table.switchTo();
+      await table.selectRows(SELECTED);
+      await bulkEditBar.openEditor();
+      await bulkEditModal.setPublisher("Should Not Persist");
+      await bulkEditModal.addTag("should-not-persist");
+    });
+
+    await test.step("save while the server fails", async () => {
+      await libraryPage.forceServerError(overrides.bulkSave());
+      await expectMutation(failing(overrides.bulkSave()), () =>
+        bulkEditModal.submit(),
+      );
+    });
+
+    await test.step("check the modal reports the failure and the rows are unchanged", async () => {
+      await expect(bulkEditModal.errorMessage).toBeVisible();
+      await expect(bulkEditModal.root).toBeVisible();
+      for (const slug of SELECTED) {
+        await expect(table.cell(slug, "tags")).not.toContainText(
+          "should-not-persist",
+        );
+      }
+    });
+  });
+
+  test("add the selected books to a hand-picked shelf in one request", async ({
+    libraryPage,
+    ownShelf,
+    expectMutation,
+    request,
+  }) => {
+    const { table, bulkEditBar } = libraryPage;
+    const picker = bulkEditBar.shelfPicker;
+    const bookUuids = (
+      await Promise.all(
+        [PRIMARY, SECONDARY].map((t) => fetchBookUuidByTitle(request, t.title)),
+      )
+    ).sort();
+    const shelf = await ownShelf("E2E Bulk Shelf");
+
+    await test.step("select two rows and open the shelf picker", async () => {
+      await libraryPage.goto();
+      await table.switchTo();
+      await table.selectRows(SELECTED);
+      await bulkEditBar.openShelfPicker();
+      await expect(picker.heading("Add 2 books to a shelf")).toBeVisible();
+    });
+
+    await test.step("pick the shelf", async () => {
+      await expectMutation(shelves.addBooks(shelf.id, bookUuids), () =>
+        bulkEditBar.chooseShelf(shelf.name),
+      );
+    });
+
+    // The gallery's count follows without a reload.
+    await test.step("check the picker and selection are gone", async () => {
+      await expect(picker.root).toHaveCount(0);
+      await expect(bulkEditBar.root).toHaveCount(0);
+      await expect(libraryPage.galleryShelfTile(shelf.id)).toHaveAccessibleName(
+        /\b2 books\b/,
+      );
+      for (const slug of SELECTED) {
+        await expect(table.selectBox(slug)).not.toBeChecked();
+      }
+    });
+  });
+
+  test("keep the selection when adding to a shelf fails", async ({
+    libraryPage,
+    ownShelf,
+    expectMutation,
+    request,
+  }) => {
+    const { table, bulkEditBar } = libraryPage;
+    const picker = bulkEditBar.shelfPicker;
+    const bookUuids = (
+      await Promise.all(
+        [PRIMARY, SECONDARY].map((t) => fetchBookUuidByTitle(request, t.title)),
+      )
+    ).sort();
+    const shelf = await ownShelf("E2E Bulk Shelf");
+
+    await test.step("select two rows and open the shelf picker", async () => {
+      await libraryPage.goto();
+      await table.switchTo();
+      await table.selectRows(SELECTED);
+      await bulkEditBar.openShelfPicker();
+    });
+
+    await test.step("pick the shelf while the server fails", async () => {
+      await libraryPage.forceServerError(shelves.addBooks());
+      await expectMutation(failing(shelves.addBooks(shelf.id, bookUuids)), () =>
+        bulkEditBar.chooseShelf(shelf.name),
+      );
+    });
+
+    await test.step("check the picker reports the failure and the selection stays", async () => {
+      await expect(picker.errorMessage).toBeVisible();
+      await expect(picker.root).toBeVisible();
+      await expect(bulkEditBar.root).toContainText("2 books selected");
+    });
+
+    await test.step("close the picker", async () => {
+      await bulkEditBar.closeShelfPicker();
+      await expect(picker.root).toHaveCount(0);
+      await expect(bulkEditBar.root).toContainText("2 books selected");
+    });
   });
 });

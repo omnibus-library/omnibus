@@ -9,9 +9,10 @@ use serde::{Deserialize, Serialize};
 use crate::ebook::BookFileInfo;
 use crate::physical::PhysicalCopy;
 
-/// Everything the delete dialog needs for one book: the deletable items and
-/// the user data a total delete would take with them.
+/// What an admin can delete for one book: its files and physical copies, and the reader
+/// data that deleting all of them would take with the book.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BookDeletionManifest {
     pub files: Vec<BookFileInfo>,
     pub copies: Vec<PhysicalCopy>,
@@ -26,9 +27,9 @@ impl BookDeletionManifest {
     }
 }
 
-/// What a total delete would take with the book — the numbers the confirm
-/// dialog names before an admin commits.
+/// The reader data that deleting a book removes, counted across every reader.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BookDeletionImpact {
     pub highlights: i64,
     pub journal_entries: i64,
@@ -36,13 +37,15 @@ pub struct BookDeletionImpact {
     pub reading_sessions: i64,
     pub listening_sessions: i64,
     pub ratings: i64,
+    /// How many hand-picked shelves hold the book.
     pub shelves: i64,
 }
 
 impl BookDeletionImpact {
     /// Human-readable phrases for each non-zero count, in the order the dialog
-    /// lists them (`["3 highlights", "1 rating"]`). Empty when the book
-    /// carries no user data at all.
+    /// lists them (`["3 highlights", "1 review"]`). Empty when the book
+    /// carries no user data at all. `ratings` counts reviews: the wire name
+    /// predates them.
     pub fn losses(&self) -> Vec<String> {
         [
             (self.highlights, "highlight", "highlights"),
@@ -54,7 +57,7 @@ impl BookDeletionImpact {
                 "listening session",
                 "listening sessions",
             ),
-            (self.ratings, "rating", "ratings"),
+            (self.ratings, "review", "reviews"),
             (self.shelves, "shelf placement", "shelf placements"),
         ]
         .iter()
@@ -64,10 +67,11 @@ impl BookDeletionImpact {
     }
 }
 
-/// Request body for `POST /api/books/{uuid}/delete-files`: the `book_files`
-/// ids and physical-copy ids to remove. Either list may be empty; both empty
-/// on a book with no items at all deletes the record.
+/// The files and physical copies `POST /api/books/{uuid}/delete-files` deletes, by `id`.
+/// Either list may be empty or left out. The book itself goes once no file or copy is
+/// left, so two empty lists delete a book that has neither.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DeleteBookFilesRequest {
     #[serde(default)]
@@ -76,13 +80,14 @@ pub struct DeleteBookFilesRequest {
     pub copy_ids: Vec<i64>,
 }
 
-/// What a delete actually removed.
+/// What the delete removed.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DeleteBookFilesResult {
     pub deleted_file_ids: Vec<i64>,
     pub deleted_copy_ids: Vec<i64>,
-    /// True when the book row itself was removed, so the caller must navigate
-    /// away instead of refetching a page that no longer exists.
+    /// True when the book itself was deleted because nothing of it was left. Its uuid
+    /// no longer resolves.
     pub book_deleted: bool,
 }
 
@@ -98,7 +103,17 @@ mod tests {
             ..Default::default()
         };
 
-        assert_eq!(impact.losses(), vec!["3 highlights", "1 rating"]);
+        assert_eq!(impact.losses(), vec!["3 highlights", "1 review"]);
+    }
+
+    #[test]
+    fn losses_names_the_ratings_count_as_reviews() {
+        let impact = BookDeletionImpact {
+            ratings: 2,
+            ..Default::default()
+        };
+
+        assert_eq!(impact.losses(), vec!["2 reviews"]);
     }
 
     #[test]

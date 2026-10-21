@@ -460,8 +460,8 @@ async fn shelf_page_recently_interacted_orders_the_latest_signal_first() {
         .unwrap();
 
     sqlx::query(
-        "INSERT INTO user_ratings (user_id, book_uuid, half_stars, updated_at)
-         VALUES (?, ?, 10, 9000)",
+        "INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at, updated_at)
+         VALUES (?1, ?2, 10, 9000, 9000)",
     )
     .bind(owner)
     .bind(&last_by_title)

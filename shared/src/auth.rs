@@ -6,8 +6,11 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Safe projection of a `users` row. No password fields ever cross the wire.
+// A safe projection of a `users` row: no password field ever crosses the wire.
+/// A user account: who it is, what it may do, and its saved preferences. It never
+/// carries a password.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UserSummary {
     pub id: i64,
     pub username: String,
@@ -15,33 +18,31 @@ pub struct UserSummary {
     pub can_upload: bool,
     pub can_edit: bool,
     pub can_download: bool,
-    /// Send-to-Kindle destination address, or `None` when the user hasn't
-    /// configured one. Non-secret — the user set it themselves.
+    /// The address Send to Kindle emails books to. Null when the user hasn't set one.
     #[serde(default)]
     pub kindle_email: Option<String>,
-    /// Presentation name other users see, or `None` to fall back to
-    /// [`Self::username`] — which stays the login and admin identity.
+    /// The name other users see. When null, clients show `username`, which stays the
+    /// sign-in name.
     #[serde(default)]
     pub display_name: Option<String>,
-    /// Whether this user has uploaded an avatar. Clients render
-    /// `GET /api/users/{id}/avatar` when set and a monogram otherwise.
+    /// Whether the user has uploaded an avatar. When true, `GET /api/users/{id}/avatar`
+    /// serves it. When false, clients show a monogram.
     #[serde(default)]
     pub has_avatar: bool,
-    /// Formats this user hides from the landing All Books view — canonical
-    /// lowercase tokens (`"cbz"`). Clients pass it back as the listing
-    /// request's `exclude_formats`; empty means nothing hidden.
+    /// The formats the user hides from their library view, as lowercase names such as
+    /// `cbz`. Pass them as `exclude_formats` on `GET /api/ebooks`. An empty list hides
+    /// nothing.
     #[serde(default)]
     pub hidden_formats: Vec<String>,
-    /// Whether this user's book detail page uses the snap-stop marquee.
-    /// `false` — the default, and what a pre-0092 payload decodes to —
-    /// renders it as one continuous scroll.
+    /// Whether a book's detail page stops at each section as the user scrolls. False,
+    /// the default, scrolls the page in one piece.
     #[serde(default)]
     pub book_detail_scroll_stops: bool,
-    /// Whether this user's landing grid folds each series into one tile.
+    /// Whether the user's library grid shows each series as one tile.
     #[serde(default)]
     pub stack_series: bool,
-    /// Whether other readers on this server may see this user's stats page.
-    /// `true` — the default, and what a pre-0099 payload decodes to.
+    /// Whether other readers on this server may see the user's reading stats. True by
+    /// default.
     #[serde(default = "share_stats_default")]
     pub share_stats: bool,
 }
@@ -61,25 +62,28 @@ impl UserSummary {
     }
 }
 
-/// One reader in the household listing (`GET /api/users`).
+/// A reader on this server, as `GET /api/users` lists them.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct HouseholdReader {
-    /// User id; pass it as `user_id` to the stats reads.
+    /// The user's id. Pass it as `user_id` to the stats routes.
     pub id: i64,
-    /// Display name, else the username.
+    /// The reader's display name, or their username when they have none.
     pub name: String,
     /// Whether `GET /api/users/{id}/avatar` has an image to serve.
     pub has_avatar: bool,
-    /// True for the signed-in caller, who is always listed first.
+    /// True for the signed-in user, who always comes first.
     pub is_you: bool,
 }
 
-/// The four permission booleans that define what a user can do. `is_admin`
-/// is presented in the UI as an "Administrator" permission that implies the
-/// other three; the storage layer keeps them as independent flags (there is
-/// no role enum). Used by the admin create/edit endpoints.
+// There is no role enum: the UI presents `is_admin` as an "Administrator"
+// permission implying the other three, while storage keeps four flags.
+/// The four permission flags that say what a user may do. The server stores each flag
+/// separately. Most checks let an admin through, but a few read the flag itself, such as
+/// `can_download` for downloads.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UserPermissions {
     pub is_admin: bool,
     pub can_upload: bool,
@@ -87,11 +91,12 @@ pub struct UserPermissions {
     pub can_download: bool,
 }
 
-/// Admin Users-table projection of a `users` row. Extends
-/// [`UserSummary`] with the created timestamp and locked state the admin
-/// table renders, without bloating the login-path summary. No password
-/// fields ever cross the wire.
+// The admin table's projection of a `users` row: `UserSummary` plus the
+// created time and locked state, without bloating the sign-in summary.
+/// A user account in the admin user list, `GET /api/admin/users`. It never carries a
+/// password.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AdminUserRow {
     pub id: i64,
     pub username: String,
@@ -101,30 +106,43 @@ pub struct AdminUserRow {
     pub can_download: bool,
     #[serde(default)]
     pub kindle_email: Option<String>,
-    /// Presentation name, or `None` when the user hasn't set one.
+    /// The name other users see. Null when the user hasn't set one.
     #[serde(default)]
     pub display_name: Option<String>,
-    /// Account creation time (Unix seconds).
+    /// When the account was created, in Unix seconds.
     pub created_at: i64,
-    /// `true` when the account is currently locked out by repeated failed
-    /// logins (`locked_until` is in the future).
+    /// True while too many wrong passwords keep the account locked.
+    /// `POST /api/admin/users/{id}/unlock` unlocks it.
     pub locked: bool,
 }
 
-/// Request body for `POST /api/admin/users` (admin create). See
-/// [`LoginRequest`] for why `Debug` is deliberately not derived.
+// Deliberately not `Debug`: it holds a plaintext password (see `LoginRequest`).
+/// A new account for `POST /api/admin/users` to create.
 #[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateUserRequest {
     pub username: String,
     pub password: String,
     pub permissions: UserPermissions,
 }
 
-/// Request body for `POST /api/admin/users/{id}/password` (admin password
-/// reset). See [`LoginRequest`] for why `Debug` is deliberately not derived.
+// Deliberately not `Debug`: it holds a plaintext password (see `LoginRequest`).
+/// The new password `POST /api/admin/users/{id}/password` sets.
 #[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SetPasswordRequest {
     pub password: String,
+}
+
+// Deliberately not `Debug`: it holds plaintext passwords (see `LoginRequest`).
+/// The passwords `POST /api/auth/password` takes.
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ChangePasswordRequest {
+    /// Your password now, to prove it is you.
+    pub current_password: String,
+    /// The password to switch to. It must meet the same rules as at sign-up.
+    pub new_password: String,
 }
 
 /// Stands in for a session whose holder can't be named — one minted before
@@ -141,40 +159,40 @@ fn unknown_client() -> String {
     UNKNOWN_CLIENT.to_string()
 }
 
-/// A session row as shown to its owner or an admin (device & session
-/// management). Never exposes the token hash — only enough to
-/// identify and revoke the row. Shared by the self-service
-/// `GET /api/auth/sessions` and the admin `GET /api/admin/users/{id}/sessions`.
+/// A signed-in session, as its owner or an admin sees it. It carries enough to name and
+/// end the session, never its token. `GET /api/auth/sessions` and
+/// `GET /api/admin/users/{id}/sessions` return it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionView {
     pub id: i64,
     #[serde(default)]
     pub device_id: Option<i64>,
-    /// `"cookie"` or `"bearer"`.
+    /// `cookie` for a browser session, `bearer` for a token session.
     pub kind: String,
-    /// Human-readable name of the client holding this session — the registered
-    /// device's name for a native client ("Seamus's iPhone"), otherwise a label
-    /// derived from the captured `User-Agent` ("Firefox on macOS"). Derived
-    /// server-side so the raw header never reaches a page; falls back to
-    /// [`UNKNOWN_CLIENT`] for a session minted before migration `0088`.
+    // Derived server-side so the raw `User-Agent` never reaches a page; falls back
+    // to `UNKNOWN_CLIENT` for a session minted before migration `0088`.
+    /// A readable name for the client that holds the session. It is the device name a
+    /// native client registered, such as "Seamus's iPhone", or a label built from the
+    /// browser's `User-Agent`, such as "Firefox on macOS". It is "Unknown client" when
+    /// neither is known.
     #[serde(default = "unknown_client")]
     pub client: String,
     pub created_at: i64,
     pub last_used_at: i64,
     pub expires_at: i64,
-    /// `true` when this is the session the request authenticated with. Only set by
-    /// the self-service listing; the admin listing always returns `false`, even for
-    /// the admin's own session. Enforcement lives on the write side: the self-service
-    /// `DELETE /api/auth/sessions/{id}` refuses (400) to revoke the request's own
-    /// session id.
+    /// True for the session this request signed in with. Only `GET /api/auth/sessions`
+    /// sets it. The admin listing always returns false, even for the admin's own
+    /// session. `DELETE /api/auth/sessions/{id}` refuses to end the current session
+    /// with a 400.
     #[serde(default)]
     pub is_current: bool,
 }
 
-/// A registered device row as shown to its owner or an admin. Shared by the
-/// admin `GET /api/admin/users/{id}/devices` listing (self-service devices
-/// are deferred — see `/api/auth/devices` note in the PR body).
+/// A registered device, as its owner or an admin sees it.
+/// `GET /api/admin/users/{id}/devices` lists them.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DeviceView {
     pub id: i64,
     pub name: String,
@@ -185,23 +203,25 @@ pub struct DeviceView {
     pub last_seen_at: i64,
 }
 
-/// Whether self-registration is open; the body of `GET /api/auth/registration`
-/// and `POST /api/settings/registration`.
+/// Whether new users can create their own accounts with `POST /api/auth/register`.
+/// `GET /api/auth/registration` returns it and `POST /api/settings/registration` takes it.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RegistrationStatus {
     pub enabled: bool,
 }
 
-/// Request body for `POST /api/auth/login`.
-///
-/// Deliberately does not derive `Debug`: the struct holds a plaintext
-/// password, and a stray `tracing::debug!(?req)` would write it to logs.
+// Deliberately not `Debug`: it holds a plaintext password, and a stray
+// `tracing::debug!(?req)` would write it to logs.
+/// The credentials `POST /api/auth/login` checks.
 #[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
-    /// Optional — when present, server issues a bearer session instead of a
-    /// cookie session and includes the raw token in the response.
+    /// The kind of client signing in. `ios`, `android` or `bearer` gets a bearer token in
+    /// the response body instead of a session cookie. Sent with `device_name`, it also
+    /// registers the device.
     #[serde(default)]
     pub client_kind: Option<String>,
     #[serde(default)]
@@ -210,9 +230,11 @@ pub struct LoginRequest {
     pub client_version: Option<String>,
 }
 
-/// Request body for `POST /api/auth/register`. See [`LoginRequest`] for
-/// why `Debug` is deliberately not derived.
+// Deliberately not `Debug`: it holds a plaintext password (see `LoginRequest`).
+/// A new account for `POST /api/auth/register`, with the same client fields as
+/// `LoginRequest`.
 #[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RegisterRequest {
     pub username: String,
     pub password: String,
@@ -224,51 +246,55 @@ pub struct RegisterRequest {
     pub client_version: Option<String>,
 }
 
-/// Response from `POST /api/auth/login` and `POST /api/auth/register`.
-/// `token` is populated only for bearer (mobile) sessions; cookie sessions
-/// return the cookie in a `Set-Cookie` header and `token` is `None`.
+/// The signed-in user, from `POST /api/auth/login` or `POST /api/auth/register`. `token`
+/// is present only for a bearer session. A cookie session comes in the `Set-Cookie`
+/// header instead.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LoginResponse {
     pub user: UserSummary,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
 }
 
-/// One live API token in the management listing (`GET /api/auth/api-tokens`).
-/// Never carries the secret — that appears exactly once, in
-/// [`CreateApiTokenResponse::secret`].
+/// An API token, as `GET /api/auth/api-tokens` lists it. It never carries the secret,
+/// which only `CreateApiTokenResponse` shows.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ApiTokenView {
     pub id: i64,
     pub name: String,
     pub created_at: i64,
-    /// `None` until the token first authenticates a request.
+    /// When the token last authenticated a request, in Unix seconds. Null until its
+    /// first use.
     #[serde(default)]
     pub last_used_at: Option<i64>,
-    /// Last 4 characters of the raw token, for the `omni_…xxxx` display
-    /// identifier. `None` on tokens minted before the suffix was recorded.
+    /// The token's last 4 characters, for showing it as `omni_…xxxx`. Null for tokens
+    /// created before Omnibus recorded them.
     #[serde(default)]
     pub suffix: Option<String>,
 }
 
-/// Body of `POST /api/auth/api-tokens`.
+/// A name for a new API token, 1 to 100 characters.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateApiTokenRequest {
     pub name: String,
 }
 
-/// Body of `PATCH /api/auth/api-tokens/{id}` — the row's Rename action.
+/// A new name for an API token, 1 to 100 characters.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RenameApiTokenRequest {
     pub name: String,
 }
 
-/// Response from `POST /api/auth/api-tokens`. `secret` is the raw `omni_…`
-/// token, shown to the client exactly once — the server keeps only its hash,
-/// so it is unrecoverable afterward. Deliberately does not derive `Debug`,
-/// same as `LoginRequest`: a stray `tracing::debug!(?resp)` must not leak a
-/// long-lived credential.
+// Deliberately not `Debug`, same as `LoginRequest`: a stray
+// `tracing::debug!(?resp)` must not leak a long-lived credential.
+/// A new API token. `secret` is the raw `omni_…` token, and this is the only response
+/// that shows it. The server keeps only a hash, so a lost secret can't be recovered.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateApiTokenResponse {
     pub token: ApiTokenView,
     pub secret: String,

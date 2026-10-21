@@ -1,8 +1,10 @@
-//! Send-to-Kindle client wrappers: the per-user send + Kindle-email, and
-//! the admin SMTP config (get/set/clear/test). Each has a web/SSR
-//! server-function wrapper and a mobile `reqwest` variant with identical
-//! signatures across the `#[cfg]` split.
+//! Send-to-Kindle client wrappers: the per-user send + Kindle-email, delivery
+//! readiness, and the admin SMTP config (get/set/clear/test). Each has a web/SSR
+//! server-function wrapper and, where a native screen calls it, a mobile
+//! `reqwest` variant with the same signature.
 
+#[cfg(not(feature = "mobile"))]
+use omnibus_shared::KindleDelivery;
 use omnibus_shared::{KindleSendStatus, SmtpConfigStatus, SmtpConfigUpdate};
 
 #[cfg(not(feature = "mobile"))]
@@ -85,6 +87,15 @@ pub async fn kindle_send_status(
         return Err(drain_error(response, status).await);
     }
     Ok(Some(response.json::<KindleSendStatus>().await?))
+}
+
+/// Web/SSR: whether this server can deliver to a Kindle, and from which
+/// sender address. Only the web Kindle card asks, so there is no mobile arm.
+#[cfg(not(feature = "mobile"))]
+pub async fn kindle_delivery(_server_url: &str) -> Result<KindleDelivery, DataError> {
+    crate::rpc::rpc_kindle_delivery()
+        .await
+        .map_err(note_server_fn_err)
 }
 
 // ── Per-user Kindle email ────────────────────────────────────────

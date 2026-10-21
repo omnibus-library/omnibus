@@ -1,0 +1,84 @@
+.auth-strength {
+  margin-top: 0.5rem;
+}
+.auth-strength-bar {
+  display: flex;
+  gap: 0.25rem;
+}
+.auth-strength-segment {
+  flex: 1;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--auth-bg-2);
+}
+.auth-strength-tier-bad .auth-strength-segment-on {
+  background: var(--auth-bad);
+}
+.auth-strength-tier-warn .auth-strength-segment-on {
+  background: var(--auth-warn);
+}
+.auth-strength-tier-mid .auth-strength-segment-on {
+  background: #eab308;
+}
+.auth-strength-tier-ok .auth-strength-segment-on {
+  background: var(--auth-ok);
+}
+.auth-strength-label {
+  margin-top: 0.4rem;
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--auth-mono);
+  font-size: 0.68rem;
+  color: var(--auth-ink-3);
+  letter-spacing: 0.04em;
+}
+.auth-strength-label-rhs.auth-strength-tier-bad {
+  color: var(--auth-bad);
+}
+.auth-strength-label-rhs.auth-strength-tier-warn {
+  color: var(--auth-warn);
+}
+.auth-strength-label-rhs.auth-strength-tier-mid {
+  color: #eab308;
+}
+.auth-strength-label-rhs.auth-strength-tier-ok {
+  color: var(--auth-ok);
+}
+
+.auth-requirements {
+  margin-top: 0.9rem;
+  padding: 0.7rem 0.85rem;
+  background: var(--auth-bg-2);
+  border: 1px solid var(--auth-line-2);
+  border-radius: 10px;
+}
+.auth-requirements-title {
+  font-family: var(--auth-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--auth-ink-2);
+  margin-bottom: 0.5rem;
+}
+.auth-req {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--auth-ink-2);
+  padding: 0.15rem 0;
+}
+.auth-req-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--auth-ink-3);
+  flex: 0 0 6px;
+}
+/* By hand: the extractor's stop list drops `ok`, which is a modifier here. */
+.auth-req.ok {
+  color: var(--auth-ink-0);
+}
+.auth-req.ok .auth-req-dot {
+  background: var(--auth-ok);
+}

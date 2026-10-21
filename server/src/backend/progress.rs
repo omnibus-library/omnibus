@@ -10,39 +10,38 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, progress::ProgressError};
-use omnibus_shared::{ProgressFormat, ProgressUpdate, SessionReport, SESSION_BATCH_CAP};
-use serde::Deserialize;
+use omnibus_shared::{
+    BookProgress, ProgressQuery, ProgressRecord, ProgressUpdate, RecentProgressQuery, ResumePoint,
+    SessionReport, SessionsRecorded, SESSION_BATCH_CAP,
+};
 
 use super::{internal, stats::viewer_error, AppState};
 use crate::auth::AuthUser;
-
-#[derive(Debug, Deserialize)]
-pub(super) struct ProgressQuery {
-    /// Narrow the response to one format. Omitted, every format the user has
-    /// a position in comes back — see [`get_progress`].
-    #[serde(default)]
-    format: Option<ProgressFormat>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct RecentQuery {
-    #[serde(default = "default_recent_limit")]
-    limit: i64,
-    /// Whose in-progress books to read; strict like `StatsQuery::user_id`.
-    user_id: Option<i64>,
-}
-
-fn default_recent_limit() -> i64 {
-    1
-}
 
 /// Ceiling on `?limit=` for `GET /api/progress/recent` — the surface is a
 /// small "pick up where you left off" strip, not a history browser.
 const RECENT_LIMIT_CAP: i64 = 20;
 
-/// Persist a new reading/listening position. Last-write-wins on
-/// `(user, book, format)`; returns the server-authoritative record so the
-/// caller can sync forward.
+/// Save a position
+///
+/// Records where you are in a book in one format: `epub` with an `epub_cfi`, a
+/// `progress_percent` or both, or `audio` with `audio_position_seconds`. The latest
+/// position wins, judged by `client_updated_at` (the server's clock when absent), so a
+/// write older than the stored position changes nothing. An `audio` position without
+/// `book_file_id` also loses to a stored one that names a file of a multi-file audiobook.
+/// The response is the position the server kept, yours or the stored one. A book you
+/// haven't given a read status becomes `reading`; one you have keeps its status.
+#[utoipa::path(
+    post,
+    path = "/api/progress",
+    tag = "Progress",
+    request_body = ProgressUpdate,
+    responses(
+        (status = 200, description = "The position the server kept.", body = ProgressRecord),
+        (status = 400, description = "The position doesn't fit its format: it is missing or blank, sets a field of the other format, has `progress_percent` outside 0 to 100, a `book_file_id` below 1 or a negative `client_updated_at`, or `book_uuid` is blank."),
+        (status = 404, description = "No book has that `book_uuid`."),
+    ),
+)]
 pub(super) async fn post_progress(
     user: AuthUser,
     State(state): State<AppState>,
@@ -65,10 +64,21 @@ pub(super) async fn post_progress(
     }
 }
 
-/// Every position the user holds in this book, as a [`BookProgress`] envelope: the records,
-/// which one is `furthest`, and the cross-format link state. `?format=epub|audio` narrows
-/// `records` to that format alone. `200 null` when the uuid names no book, distinct from
-/// `200 {records: []}`, a real book the user has never opened.
+/// Get your positions in a book
+///
+/// Every position you hold in the book, one per format, with which one is furthest and the
+/// cross-format link state. The body is `null` when no book has the uuid, and has empty
+/// `records` when you have never opened the book.
+#[utoipa::path(
+    get,
+    path = "/api/progress/{uuid}",
+    tag = "Progress",
+    params(("uuid" = String, Path, description = "The book's uuid."), ProgressQuery),
+    responses(
+        (status = 200, description = "Your positions, or `null` when no book has that uuid.", body = Option<BookProgress>),
+        (status = 400, description = "`format` is not `epub` or `audio`."),
+    ),
+)]
 pub(super) async fn get_progress(
     user: AuthUser,
     State(state): State<AppState>,
@@ -77,23 +87,32 @@ pub(super) async fn get_progress(
 ) -> Response {
     match db::progress::book_progress(&state.pool, user.id, &uuid, q.format).await {
         Ok(progress) => Json(progress).into_response(),
-        Err(ProgressError::BookNotFound) => {
-            Json(None::<omnibus_shared::BookProgress>).into_response()
-        }
+        Err(ProgressError::BookNotFound) => Json(None::<BookProgress>).into_response(),
         Err(ProgressError::Sqlx(e)) => internal("book_progress", e),
     }
 }
 
-/// The caller's most recent progress rows joined with their books — the
-/// mobile "pick up where you left off" feed — or a sharing reader's with
-/// `user_id`, under the same 404 contract `GET /api/stats` answers. `limit`
-/// defaults to 1 and is capped at [`RECENT_LIMIT_CAP`]. Rows whose book has
-/// vanished are skipped in the db layer.
+/// List the books you were last in
+///
+/// Your most recent positions, newest first, each with its book: a "pick up where you left
+/// off" list. Send `user_id` for another reader's list.
+#[utoipa::path(
+    get,
+    path = "/api/progress/recent",
+    tag = "Progress",
+    params(RecentProgressQuery),
+    responses(
+        (status = 200, description = "The most recent positions, newest first.", body = Vec<ResumePoint>),
+        (status = 400, description = "`limit` or `user_id` isn't a whole number."),
+        (status = 404, description = "`user_id` names no reader, or one who doesn't share their stats."),
+    ),
+)]
 pub(super) async fn get_recent_progress(
     user: AuthUser,
     State(state): State<AppState>,
-    Query(q): Query<RecentQuery>,
+    Query(q): Query<RecentProgressQuery>,
 ) -> Response {
+    // Rows whose book has vanished are skipped in the db layer.
     let limit = q.limit.clamp(1, RECENT_LIMIT_CAP);
     match db::stats::recent_progress_for_viewer(&state.pool, user.id, q.user_id, limit).await {
         Ok(points) => Json(points).into_response(),
@@ -101,16 +120,30 @@ pub(super) async fn get_recent_progress(
     }
 }
 
-/// Append a batch of session reports (mobile posts on reconnect, web best-effort on unmount).
-/// Each is validated at the API boundary (negative durations / inverted ranges → 400);
-/// unknown book uuids are silently skipped. `recorded` is the **inserted** row count.
-/// Batches over `SESSION_BATCH_CAP` are rejected with 422 before any DB work. The batch runs
-/// in one transaction, so a mid-loop DB error rolls back all rows and the client can retry.
+/// Record reading sessions
+///
+/// Stores a batch of up to 500 reading or listening sessions, each a stretch of time spent
+/// in one book. Sessions for a book the server doesn't know are dropped. Give each session a
+/// `client_id` and a batch is safe to send again: a repeated `client_id` isn't stored twice.
+/// The batch is stored whole or not at all.
+#[utoipa::path(
+    post,
+    path = "/api/progress/sessions",
+    tag = "Progress",
+    request_body = Vec<SessionReport>,
+    responses(
+        (status = 200, description = "The batch is stored.", body = SessionsRecorded),
+        (status = 400, description = "A session is invalid: `book_uuid` is blank, a time is negative, `ended_at` is before `started_at`, `progress_units` is negative, `client_id` or `time_zone` is blank or too long, or `utc_offset_minutes` is outside -720 to 840."),
+        (status = 422, description = "The batch holds more than 500 sessions."),
+    ),
+)]
 pub(super) async fn post_sessions(
     user: AuthUser,
     State(state): State<AppState>,
     Json(reports): Json<Vec<SessionReport>>,
 ) -> Response {
+    // Checked before any DB work. The batch runs in one transaction, so a mid-loop DB error
+    // rolls back every row and the client can retry.
     if reports.len() > SESSION_BATCH_CAP {
         let msg = format!(
             "batch too large: {} records exceeds maximum of {}",
@@ -155,7 +188,7 @@ pub(super) async fn post_sessions(
     if let Err(e) = tx.commit().await {
         return internal("commit", e);
     }
-    Json(serde_json::json!({ "recorded": inserted })).into_response()
+    Json(SessionsRecorded { recorded: inserted }).into_response()
 }
 
 #[cfg(test)]

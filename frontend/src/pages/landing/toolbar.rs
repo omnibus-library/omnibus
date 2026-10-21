@@ -1,41 +1,37 @@
-//! Toolbar (Stack series + view mode + sort key + sort direction) and the
-//! filter chip bar beneath it, for the landing page.
+//! Toolbar (Stack series, view mode, sort key, sort direction and the
+//! hidden-formats note) for the landing page.
 //!
 //! Stateless: emits a new [`ViewPrefs`] through the parent's `on_change`
 //! handler so [`super::LandingPage`] owns the canonical signal.
 
 use dioxus::prelude::*;
-use omnibus_shared::{SortDir, SortKey, ViewFilters, ViewMode, ViewPrefs};
+use dioxus_router::Link;
+use omnibus_shared::{SortDir, SortKey, ViewMode, ViewPrefs};
 
-use crate::components::{FilterBar, ShelfList};
+use crate::components::glyphs::{arrow_down_glyph, arrow_up_glyph};
+use crate::pages::settings::sections::{SettingsSection, SettingsTarget};
+use crate::routes::link_target;
 
 use super::sorting::{
     default_dir_for, sort_key_from_value, sort_key_label, sort_key_value, toggle_dir, SORT_KEYS,
 };
 use super::stack_toggle::{StackToggle, StackToggleView};
 
-/// `shelves` is what the filter bar names its shelf chips from.
+/// `hidden_formats_apply` is whether this pick is one the reader's
+/// hidden-formats preference narrows (All Books, not a shelf).
 #[component]
 pub(super) fn Toolbar(
     prefs: ViewPrefs,
-    shelves: ShelfList,
     sort_lock: Option<&'static str>,
     stack: StackToggleView,
+    hidden_formats_apply: bool,
     on_change: EventHandler<ViewPrefs>,
     on_stack_toggle: EventHandler<()>,
 ) -> Element {
     let view_mode = prefs.view_mode;
-    let filters = prefs.filters.clone();
-    let viewer_id = crate::use_current_user_summary()().map(|u| u.id);
-    let set_filters = {
-        let prefs = prefs.clone();
-        move |filters: ViewFilters| {
-            on_change.call(ViewPrefs {
-                filters,
-                ..prefs.clone()
-            })
-        }
-    };
+    let hidden_formats = crate::use_current_user_summary()()
+        .filter(|_| hidden_formats_apply)
+        .and_then(|u| hidden_formats_label(&u.hidden_formats));
 
     rsx! {
         div { class: "lib-toolbar", role: "toolbar", "data-testid": "lib-toolbar",
@@ -56,9 +52,36 @@ pub(super) fn Toolbar(
                     "{reason}"
                 }
             }
+            if let Some(label) = hidden_formats {
+                HiddenFormatsLink { label }
+            }
         }
-        // A sibling of the toolbar so the header row wraps it onto its own line.
-        FilterBar { filters, shelves, viewer_id, on_change: set_filters }
+    }
+}
+
+/// The formats the reader's preference keeps off All Books, worded as
+/// "Hidden: M4B, MP3", or `None` when it hides nothing.
+fn hidden_formats_label(formats: &[String]) -> Option<String> {
+    if formats.is_empty() {
+        return None;
+    }
+    let mut names: Vec<String> = formats.iter().map(|f| f.to_uppercase()).collect();
+    names.sort();
+    Some(format!("Hidden: {}", names.join(", ")))
+}
+
+/// The hidden-formats note, linking to the preference that hides them so a
+/// missing book never reads as a missing file.
+#[component]
+fn HiddenFormatsLink(label: String) -> Element {
+    rsx! {
+        Link {
+            class: "lib-hidden-formats",
+            "data-testid": "lib-hidden-formats",
+            to: link_target(SettingsTarget::Personal(SettingsSection::Preferences).route()),
+            "{label}"
+            span { class: "sr-only", ". Change in Settings" }
+        }
     }
 }
 
@@ -121,6 +144,11 @@ fn SortControls(prefs: ViewPrefs, locked: bool, on_change: EventHandler<ViewPref
             on_change.call(next);
         }
     };
+    // The arrow is drawn, not text, so the label carries the direction.
+    let (dir_label, dir_glyph) = match sort_dir {
+        SortDir::Asc => ("Sort direction: ascending", arrow_up_glyph(13)),
+        SortDir::Desc => ("Sort direction: descending", arrow_down_glyph(13)),
+    };
     let toggle_sort_dir = move |_| {
         let mut next = prefs.clone();
         next.sort_dir = toggle_dir(next.sort_dir);
@@ -153,10 +181,10 @@ fn SortControls(prefs: ViewPrefs, locked: bool, on_change: EventHandler<ViewPref
             button {
                 class: "lib-sort-dir",
                 "data-testid": "lib-sort-dir",
-                aria_label: "Toggle sort direction",
+                aria_label: dir_label,
                 disabled: locked,
                 onclick: toggle_sort_dir,
-                if sort_dir == SortDir::Asc { "↑" } else { "↓" }
+                {dir_glyph}
             }
         }
     }
@@ -167,26 +195,23 @@ fn SortControls(prefs: ViewPrefs, locked: bool, on_change: EventHandler<ViewPref
 // mount the toolbar through a tiny prop-only harness.
 #[cfg(all(test, feature = "server"))]
 mod tests {
-    use omnibus_shared::{FilterClause, FilterField, FilterMode, ViewFilters};
-
     use super::*;
     use crate::test_support::render;
 
-    use super::super::stack_toggle::{StackToggleView, STACK_SAVE_ERROR};
+    use super::super::stack_toggle::StackToggleView;
 
     #[component]
     fn ToolbarHarness(
         prefs: ViewPrefs,
-        shelves: ShelfList,
         sort_lock: Option<&'static str>,
         stack: StackToggleView,
     ) -> Element {
         rsx! {
             Toolbar {
                 prefs,
-                shelves,
                 sort_lock,
                 stack,
+                hidden_formats_apply: true,
                 on_change: move |_| {},
                 on_stack_toggle: move |_| {},
             }
@@ -215,7 +240,7 @@ mod tests {
         stack: StackToggleView,
     ) -> String {
         render(rsx! {
-            ToolbarHarness { prefs, shelves: ShelfList::Pending, sort_lock, stack }
+            ToolbarHarness { prefs, sort_lock, stack }
         })
     }
 
@@ -333,7 +358,7 @@ mod tests {
     #[test]
     fn toolbar_shows_a_failed_stack_save_as_an_alert() {
         let stack = StackToggleView {
-            error: Some(STACK_SAVE_ERROR.to_string()),
+            failed: true,
             ..live_stack()
         };
         let html = render_toolbar_with(ViewPrefs::default(), None, stack);
@@ -345,39 +370,54 @@ mod tests {
     }
 
     #[test]
-    fn toolbar_renders_the_filter_bar_in_grid_mode() {
+    fn hidden_formats_label_names_each_hidden_format_in_capitals() {
+        let hidden = vec!["mp3".to_string(), "m4b".to_string()];
+        assert_eq!(
+            hidden_formats_label(&hidden),
+            Some("Hidden: M4B, MP3".to_string())
+        );
+    }
+
+    #[test]
+    fn hidden_formats_label_is_none_when_nothing_is_hidden() {
+        assert_eq!(hidden_formats_label(&[]), None);
+    }
+
+    #[test]
+    fn toolbar_shows_no_hidden_formats_note_before_the_viewer_resolves() {
         let html = render_toolbar(ViewPrefs::default());
-
-        assert!(html.contains("data-testid=\"lib-filter-bar\""), "{html}");
-        assert!(html.contains("data-testid=\"filter-add\""));
+        assert!(!html.contains("lib-hidden-formats"), "{html}");
     }
 
-    #[test]
-    fn toolbar_renders_the_filter_bar_in_table_mode() {
-        let prefs = ViewPrefs {
-            view_mode: ViewMode::Table,
-            ..ViewPrefs::default()
-        };
-        let html = render_toolbar(prefs);
+    mod hidden_formats_link {
+        use dioxus_router::{Routable, Router};
 
-        assert!(html.contains("data-testid=\"lib-filter-bar\""), "{html}");
-    }
+        use super::*;
+        use crate::test_support::render_in_vdom;
 
-    #[test]
-    fn toolbar_draws_a_chip_for_each_clause_in_the_prefs() {
-        let prefs = ViewPrefs {
-            filters: ViewFilters {
-                clauses: vec![FilterClause::new(
-                    FilterField::Format,
-                    FilterMode::Exclude,
-                    &["pdf"],
-                )],
-            },
-            ..ViewPrefs::default()
-        };
-        let html = render_toolbar(prefs);
+        #[derive(Clone, Debug, PartialEq, Routable)]
+        enum Harness {
+            #[route("/")]
+            LinkHost {},
+        }
 
-        assert!(html.contains("Format excludes any of PDF"), "{html}");
-        assert!(html.contains("data-testid=\"filter-clear-all\""));
+        #[component]
+        fn LinkHost() -> Element {
+            rsx! { HiddenFormatsLink { label: "Hidden: M4B, MP3".to_string() } }
+        }
+
+        #[test]
+        fn hidden_formats_link_opens_the_preferences_section() {
+            let html = render_in_vdom(|| rsx! { Router::<Harness> {} });
+            assert!(
+                html.contains("data-testid=\"lib-hidden-formats\""),
+                "{html}"
+            );
+            assert!(
+                html.contains(r#"href="/settings?section=preferences""#),
+                "{html}"
+            );
+            assert!(html.contains("Hidden: M4B, MP3"), "{html}");
+        }
     }
 }

@@ -20,6 +20,9 @@ pub enum Quirk {
     /// Every request carries the device's serial as `x-kobo-deviceid`.
     /// Evidence: `server/src/backend/kobo/extractor.rs`. Observed.
     HardwareId,
+    /// Every request's `Host` is its URL's host without the port.
+    /// Evidence: #2756. Observed.
+    PortlessHost,
     /// `library_sync` and `get_tests_request` come only from the adopted
     /// `Resources` map, never from `api_endpoint`. Evidence: #2684. Observed.
     ResourcesOnly,

@@ -53,7 +53,8 @@ always gets.
 Surfaces no flow reaches. Each is a decision, not an oversight; an agent that
 finds itself on one of them has wandered off a flow.
 
-- **Settings, the admin health page, the logs page, and cleanup review.** All
+- **Administration at `/admin` (sources, metadata, cleanup, people,
+  integrations, health and logs) and the cleanup review.** All
   instance-wide configuration or admin tooling. One edit breaks the run for
   every other agent, so they are on the rails in
   [start.md](../start.md#rails). Admin coverage needs a scratch instance of

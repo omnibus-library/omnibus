@@ -4,7 +4,7 @@
 //! server-function transport on web (server functions can't carry binary
 //! payloads) and posts directly to the REST endpoint via `gloo-net`.
 
-use omnibus_shared::{AuthorDetail, AuthorPhotoScanResult, AuthorSummary};
+use omnibus_shared::{AuthorDetail, AuthorPhotoScanResult, AuthorReading, AuthorSummary};
 
 #[cfg(not(feature = "mobile"))]
 use super::note_server_fn_err;
@@ -132,6 +132,30 @@ pub(crate) async fn list_authors_online(server_url: &str) -> Result<Vec<AuthorSu
     Ok(response.json::<Vec<AuthorSummary>>().await?)
 }
 
+/// GET `/api/authors/reading` — the caller's progress through each author.
+#[cfg(feature = "mobile")]
+pub async fn list_author_reading(server_url: &str) -> Result<Vec<AuthorReading>, DataError> {
+    let url = server_url.to_string();
+    crate::offline::cache::read_through(crate::offline::cache::keys::author_reading(), async move {
+        list_author_reading_online(&url).await
+    })
+    .await
+}
+
+/// Native HTTP transport for [`list_author_reading`].
+#[cfg(feature = "mobile")]
+pub(crate) async fn list_author_reading_online(
+    server_url: &str,
+) -> Result<Vec<AuthorReading>, DataError> {
+    let url = format!("{server_url}/api/authors/reading");
+    let response = with_bearer(http_client().get(&url)).send().await?;
+    let status = note_status(response.status());
+    if !status.is_success() {
+        return Err(drain_error(response, status).await);
+    }
+    Ok(response.json::<Vec<AuthorReading>>().await?)
+}
+
 /// Web/SSR `get_author` — server-function wrapper that proxies to `rpc_get_author`.
 #[cfg(not(feature = "mobile"))]
 pub async fn get_author(_server_url: &str, id: i64) -> Result<Option<AuthorDetail>, DataError> {
@@ -256,6 +280,14 @@ pub async fn upload_author_photo(
 #[cfg(not(feature = "mobile"))]
 pub async fn list_authors(_server_url: &str) -> Result<Vec<AuthorSummary>, DataError> {
     crate::rpc::rpc_list_authors()
+        .await
+        .map_err(note_server_fn_err)
+}
+
+/// Web/SSR `list_author_reading` — proxies to `rpc_list_author_reading`.
+#[cfg(not(feature = "mobile"))]
+pub async fn list_author_reading(_server_url: &str) -> Result<Vec<AuthorReading>, DataError> {
+    crate::rpc::rpc_list_author_reading()
         .await
         .map_err(note_server_fn_err)
 }

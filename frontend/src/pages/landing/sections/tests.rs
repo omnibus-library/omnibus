@@ -100,41 +100,58 @@ fn add_books_state_hides_while_the_detail_trails_a_new_pick() {
 mod render {
     use dioxus::prelude::*;
 
-    use super::super::{add_books_button, AddBooks, LandingHeaderTitleRow};
+    use super::super::{add_books_button, AddBooks, LandingHeaderReceipt};
     use crate::test_support::render_in_vdom;
 
-    fn title_row(book_count: Option<usize>, count_pending: bool) -> Element {
+    fn receipt(
+        book_count: Option<usize>,
+        count_pending: bool,
+        hidden_count: Option<i64>,
+        editable_shelf: Option<String>,
+    ) -> Element {
         rsx! {
-            LandingHeaderTitleRow {
-                section_title: "All Books".to_string(),
+            LandingHeaderReceipt {
                 book_count,
                 count_pending,
-                hidden_count: None,
-                can_edit: false,
+                hidden_count,
+                editable_shelf,
                 on_edit_shelf: EventHandler::new(|_| {}),
             }
         }
     }
 
     #[test]
+    fn landing_header_receipt_draws_nothing_with_nothing_to_say() {
+        let html = render_in_vdom(|| receipt(None, false, None, None));
+        assert!(!html.contains("lib-header-receipt"), "{html}");
+    }
+
+    #[test]
     fn landing_header_counts_nothing_before_the_list_has_answered() {
-        let html = render_in_vdom(|| title_row(None, true));
+        let html = render_in_vdom(|| receipt(None, true, None, None));
         assert!(html.contains("lib-count-pending"), "{html}");
         assert!(!html.contains("0 books"), "{html}");
     }
 
     #[test]
-    fn landing_header_shows_no_count_after_the_list_failed() {
-        let html = render_in_vdom(|| title_row(None, false));
+    fn landing_header_states_zero_books_once_the_list_says_so() {
+        let html = render_in_vdom(|| receipt(Some(0), false, None, None));
+        assert!(html.contains("0 books"), "{html}");
         assert!(!html.contains("lib-count-pending"), "{html}");
-        assert!(!html.contains("books"), "{html}");
     }
 
     #[test]
-    fn landing_header_states_zero_books_once_the_list_says_so() {
-        let html = render_in_vdom(|| title_row(Some(0), false));
-        assert!(html.contains("0 books"), "{html}");
-        assert!(!html.contains("lib-count-pending"), "{html}");
+    fn landing_header_shows_the_hidden_receipt_without_a_count() {
+        let html = render_in_vdom(|| receipt(None, false, Some(3), None));
+        assert!(html.contains(">3 hidden<"), "{html}");
+        assert!(!html.contains("lib-filtered-count"), "{html}");
+    }
+
+    #[test]
+    fn landing_header_offers_only_the_pencil_on_an_editable_shelf() {
+        let html = render_in_vdom(|| receipt(None, false, None, Some("Cosmere".into())));
+        assert!(html.contains("aria-label=\"Edit Cosmere\""), "{html}");
+        assert!(!html.contains("lib-header-receipt-text"), "{html}");
     }
 
     #[test]

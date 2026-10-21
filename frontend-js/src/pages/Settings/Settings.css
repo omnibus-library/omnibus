@@ -1,0 +1,266 @@
+.kobo-device-list {
+  list-style: none;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.kobo-device-row {
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.kobo-device-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.kobo-device-name {
+  font-weight: 600;
+  color: var(--ink-0);
+}
+.kobo-endpoint-url {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.85rem;
+}
+.kobo-endpoint-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.kobo-endpoint-row .kobo-endpoint-url {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+.kobo-setup-steps {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.kobo-setup-steps code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.8rem;
+}
+.kobo-warning {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid color-mix(in oklch, var(--bad) 40%, transparent);
+  border-radius: 8px;
+  background: var(--bg-1);
+  font-size: 0.85rem;
+  color: var(--ink-1);
+}
+.kobo-warning p {
+  margin: 0 0 0.5rem;
+}
+.kobo-warning ul {
+  margin: 0 0 0.5rem;
+  padding-left: 1.25rem;
+}
+.kobo-warning p:last-child {
+  margin-bottom: 0;
+}
+.kobo-warning-title {
+  font-weight: 600;
+  color: var(--bad);
+}
+.kobo-warning code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.8rem;
+}
+.hidden-formats-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+.hidden-format-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.profile-initials-photo {
+  width: 100%;
+  height: 100%;
+  /* The monogram spans are grids with an auto implicit row, so `height:
+     100%` can collapse to auto and the photo reverts to its natural
+     aspect ratio — an ellipse once the 50% radius applies. Pinning the
+     ratio keeps the box square wherever the percentage fails. */
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+.profile-initials {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+.profile-initials {
+  font-weight: 700;
+}
+.profile-identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.profile-avatar {
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft, var(--bg-2));
+  color: var(--accent);
+  border: 1px solid var(--line-2);
+  font-size: 24px;
+  overflow: hidden;
+}
+.profile-avatar-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.profile-avatar-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.profile-avatar-actions .subtitle {
+  margin: 0;
+}
+.profile-avatar-pick {
+  position: relative;
+}
+.profile-avatar-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  opacity: 0;
+}
+.profile-avatar-pick:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.profile-avatar-pick:has(input:disabled) {
+  opacity: 0.5;
+  cursor: default;
+}
+.pref-control {
+  display: flex;
+  align-items: center;
+}
+.pref-status {
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+.pref-status:not(:empty) {
+  margin-right: 0.75rem;
+}
+.pref-status.error {
+  color: var(--bad);
+}
+.pref-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0.9rem 0;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.pref-fieldset:last-child {
+  border-bottom: 0;
+}
+.pref-fieldset > legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  cursor: default;
+}
+.pref-fieldset > legend + * {
+  clear: both;
+}
+.pref-fieldset .hidden-formats-list {
+  margin-top: 0.75rem;
+}
+.pref-fieldset .pref-status {
+  display: block;
+  margin: 0.5rem 0 0;
+}
+.kindle-delivery {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+}
+.kindle-delivery .subtitle {
+  margin-bottom: 0;
+}
+.kindle-delivery code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.kobo-setup {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+.kobo-setup-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: fit-content;
+  list-style: none;
+  border-radius: 4px;
+  color: var(--ink-0);
+  font-weight: 500;
+  cursor: pointer;
+}
+.kobo-setup-summary::-webkit-details-marker {
+  display: none;
+}
+.kobo-setup-summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--ink-2);
+  border-bottom: 1.5px solid var(--ink-2);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.kobo-setup[open] > .kobo-setup-summary::before {
+  transform: rotate(45deg);
+}
+.kobo-setup-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.kobo-setup .kobo-setup-steps {
+  margin-top: 0.75rem;
+}
+.kobo-setup .kobo-shelf-rule {
+  margin: 0.75rem 0 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kobo-setup-summary::before {
+    transition: none;
+  }
+}

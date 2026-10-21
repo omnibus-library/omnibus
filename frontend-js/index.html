@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Omnibus (React PoC)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400..700;1,400..700&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap"
+    />
+    <!-- No SSR draws a loader, so this one paints before the bundle arrives,
+         tinted by the saved theme; React replaces it on its first render. -->
+    <script>
+      try {
+        document.documentElement.dataset.bootTheme =
+          // THEME_STORAGE_KEY in src/components/Theme/AtriumRoot.tsx.
+          localStorage.getItem("omn.theme") || "dark";
+      } catch {}
+    </script>
+    <!-- The loader paints its own colours over the whole viewport: the bundle's
+         CSS, which arrives first in a build, styles <body> for the app. -->
+    <style>
+      .boot { background: oklch(0.135 0.006 70); color: oklch(0.62 0.012 70); }
+      [data-boot-theme="black"] .boot { background: oklch(0 0 0); color: oklch(0.63 0 0); }
+      [data-boot-theme="light"] .boot { background: oklch(0.985 0.003 75); color: oklch(0.52 0.01 70); }
+      [data-boot-theme="sepia"] .boot { background: oklch(0.945 0.022 80); color: oklch(0.52 0.032 58); }
+      .boot {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font: 500 10.5px/1 "Space Mono", ui-monospace, monospace;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="boot" role="status" aria-live="polite">Opening your library</div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -27,17 +27,29 @@ const SYNC_PAGE_SIZE: usize = 100;
 /// monotonically, so the remainder heals across subsequent syncs.
 const SPAN_DERIVATIONS_PER_SYNC: usize = 8;
 
-/// `GET library/sync` — the per-device delta, streamed as a JSON array via
-/// [`Body::from_stream`] with no item cap. First sync emits `NewEntitlement`s for the
-/// opted-in set; later ones only changes and `ChangedEntitlement {IsRemoved:true}`. Paged
-/// at [`SYNC_PAGE_SIZE`] (`x-kobo-sync: continue`). The snapshot advances in the final
-/// poll, so a connection dropped mid-body replays the same delta rather than losing books.
+/// The sync token header and its one value.
+const SYNC_TOKEN_HEADER: &str = "x-kobo-synctoken";
+const SYNC_TOKEN: &str = "omnibus";
+
+/// `GET library/sync`, the per-device delta streamed as a JSON array via [`Body::from_stream`] and
+/// paged at [`SYNC_PAGE_SIZE`] (`x-kobo-sync: continue`). A request without our sync token (first
+/// sync, factory reset, re-sign-in, a Kobo store token) may hold any library, so the still-synced
+/// books resend as `NewEntitlement`s and owed removals still go out. The snapshot advances in the
+/// final poll, so a dropped body replays.
 pub async fn library_sync(
     auth: KoboAuthUser,
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Response {
-    let delta = match db::kobo::sync_delta(state.pool(), auth.user_id, auth.device_id).await {
+    let fresh = headers
+        .get(SYNC_TOKEN_HEADER)
+        .is_none_or(|v| v != SYNC_TOKEN);
+    let delta = if fresh {
+        db::kobo::fresh_sync_delta(state.pool(), auth.user_id, auth.device_id).await
+    } else {
+        db::kobo::sync_delta(state.pool(), auth.user_id, auth.device_id).await
+    };
+    let delta = match delta {
         Ok(d) => d,
         Err(e) => return internal("kobo sync_delta", e),
     };
@@ -54,7 +66,7 @@ pub async fn library_sync(
 
     build_sync_response(
         changes,
-        origin_from_headers(&headers),
+        origin_from_headers(&state, &headers),
         auth.token,
         states,
         state.pool().clone(),
@@ -126,11 +138,10 @@ fn build_sync_response(
         StatusCode::OK,
         [
             (header::CONTENT_TYPE, "application/json"),
-            // Opaque; the device echoes it back but the real cursor is the
-            // per-device snapshot (`kobo_books_sync`), never this value.
+            // The device echoes this back; see `library_sync`.
             (
-                header::HeaderName::from_static("x-kobo-synctoken"),
-                "omnibus",
+                header::HeaderName::from_static(SYNC_TOKEN_HEADER),
+                SYNC_TOKEN,
             ),
         ],
         Body::from_stream(stream),
@@ -471,7 +482,7 @@ pub async fn library_metadata(
     }
     match db::kobo::book_for_sync(state.pool(), &uuid).await {
         Ok(Some(book)) => {
-            let base = origin_from_headers(&headers);
+            let base = origin_from_headers(&state, &headers);
             Json(vec![dto::book_metadata(&base, &auth.token, &book)]).into_response()
         }
         Ok(None) => StatusCode::NOT_FOUND.into_response(),

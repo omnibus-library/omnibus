@@ -8,6 +8,7 @@ use std::io::{Read, Seek};
 use epub::doc::EpubDoc;
 use quick_xml::events::Event;
 
+use crate::ebook::images::{archive_path, attr, image_refs, strip_fragment};
 use crate::ebook::toc::join_href;
 
 /// Manifest ids that name the cover by convention rather than declaration.
@@ -98,7 +99,7 @@ fn guide_cover_href(opf: &[u8]) -> Option<String> {
 /// this can trust, so it yields nothing.
 fn page_image<R: Read + Seek>(doc: &mut EpubDoc<R>, page_path: &str) -> Option<(Vec<u8>, String)> {
     let page = doc.get_resource_by_path(page_path)?;
-    let mut srcs = image_srcs(&page);
+    let mut srcs: Vec<String> = image_refs(&page).into_iter().map(|r| r.src).collect();
     srcs.sort();
     srcs.dedup();
     let [src] = srcs.as_slice() else {
@@ -108,32 +109,6 @@ fn page_image<R: Read + Seek>(doc: &mut EpubDoc<R>, page_path: &str) -> Option<(
     let path = join_href(dir, strip_fragment(src));
     let mime = mime_at(doc, &path).filter(|m| m.starts_with("image/"))?;
     doc.get_resource_by_path(&path).map(|bytes| (bytes, mime))
-}
-
-/// Every image reference in an XHTML page, in document order.
-fn image_srcs(xhtml: &[u8]) -> Vec<String> {
-    let mut reader = quick_xml::Reader::from_reader(xhtml);
-    let mut buf = Vec::new();
-    let mut srcs = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
-                let local = e.local_name();
-                let src = if local.as_ref().eq_ignore_ascii_case(b"img") {
-                    attr(e, b"src")
-                } else if local.as_ref().eq_ignore_ascii_case(b"image") {
-                    attr(e, b"href")
-                } else {
-                    None
-                };
-                srcs.extend(src.filter(|s| !s.is_empty()));
-            }
-            Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-        buf.clear();
-    }
-    srcs
 }
 
 /// The largest raster image in the manifest; ties go to the earlier path so
@@ -184,27 +159,4 @@ fn mime_for_extension(path: &str) -> Option<&'static str> {
 
 fn is_page(mime: &str) -> bool {
     mime == "application/xhtml+xml" || mime == "text/html"
-}
-
-/// A manifest path as the `/`-separated archive entry name, `.`/`..`
-/// resolved — the crate joins hrefs onto the OPF directory verbatim.
-fn archive_path(path: &std::path::Path) -> String {
-    join_href("", &path.to_string_lossy().replace('\\', "/"))
-}
-
-fn strip_fragment(href: &str) -> &str {
-    href.split('#').next().unwrap_or(href)
-}
-
-/// An attribute's value by local name, so `xlink:href` answers to `href`.
-fn attr(e: &quick_xml::events::BytesStart, name: &[u8]) -> Option<String> {
-    e.attributes().flatten().find_map(|a| {
-        let key = a.key.as_ref();
-        let local = key.rsplit(|b| *b == b':').next().unwrap_or(key);
-        local
-            .eq_ignore_ascii_case(name)
-            .then(|| a.normalized_value(quick_xml::XmlVersion::Implicit1_0).ok())
-            .flatten()
-            .map(|v| v.into_owned())
-    })
 }

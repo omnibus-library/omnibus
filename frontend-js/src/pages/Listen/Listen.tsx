@@ -1,0 +1,152 @@
+import { useEffect, useState } from "react";
+import { useParams, useSearchParams } from "react-router";
+import type { BookDetail } from "../../api";
+import { parseBookUuid, positiveInt } from "../../api";
+import { Loading } from "../../components/Loading/Loading";
+import { Modal } from "../../components/Modal/Modal";
+import { PageError, PageNotFound } from "../../components/PageState/PageState";
+import { PageTitle } from "../../components/PageTitle/PageTitle";
+import {
+  SearchPaletteOverlay,
+  SearchPaletteProvider,
+  useSearchPaletteOpen,
+} from "../../components/SearchPalette/SearchPalette";
+import { TopNav } from "../../components/TopNav/TopNav";
+import { usePlayback } from "../../playback/PlaybackProvider";
+import {
+  BookmarksDrawer,
+  BookmarkToast,
+  ChaptersDrawer,
+  useBookmarks,
+} from "./Drawers";
+import type { Pane } from "./listenView";
+import { SleepPanelBody, SpeedPanelBody } from "./Panels";
+import { Stage } from "./Stage";
+import "./Listen.css";
+
+function FailedOverlay() {
+  return (
+    <div className="lp-overlay" data-testid="listen-failed" role="alert">
+      <p className="lp-overlay-title">Playback failed.</p>
+      <p className="lp-overlay-detail">
+        The audiobook could not be prepared or kept stalling. Reload the page to
+        try again, or check the server logs for a transcode failure.
+      </p>
+    </div>
+  );
+}
+
+function Frame({ book }: { book: BookDetail }) {
+  const { ready, failed, rateError } = usePlayback();
+  const [pane, setPane] = useState<Pane | null>(null);
+  const bookmarks = useBookmarks(book.uuid);
+  const close = () => setPane(null);
+  // Inert under the open palette, so focus can't wander behind its scrim.
+  const inert = useSearchPaletteOpen();
+  return (
+    <div
+      className="lp-root"
+      style={book.accent ? { "--accent": book.accent } : undefined}
+      inert={inert}
+    >
+      <PageTitle page={book.title} />
+      <div className="lp-backdrop" />
+      <TopNav />
+      {failed ? (
+        <FailedOverlay />
+      ) : (
+        !ready && (
+          <Loading
+            kind="stage"
+            mark="line"
+            className="lp-overlay"
+            testId="listen-preparing"
+            title="Preparing your audiobook…"
+            label="This may take a moment on first listen"
+          />
+        )
+      )}
+      <Stage
+        book={book}
+        pane={pane}
+        onPane={(next) => setPane((open) => (open === next ? null : next))}
+      />
+      {pane === "speed" && (
+        <Modal
+          label="Playback speed"
+          backdropClass="lp-scrim"
+          dialogClass="lp-panel lp-speed-panel"
+          dialogTestId="speed-panel"
+          onClose={close}
+        >
+          <SpeedPanelBody />
+        </Modal>
+      )}
+      {pane === "sleep" && (
+        <Modal
+          label="Sleep timer"
+          backdropClass="lp-scrim"
+          dialogClass="lp-panel lp-sleep-panel"
+          dialogTestId="sleep-panel"
+          onClose={close}
+        >
+          <SleepPanelBody />
+        </Modal>
+      )}
+      {pane === "bookmarks" && (
+        <BookmarksDrawer bookmarks={bookmarks} onClose={close} />
+      )}
+      {pane === "chapters" && <ChaptersDrawer onClose={close} />}
+      {bookmarks.toast && <BookmarkToast toast={bookmarks.toast} />}
+      {rateError && (
+        <div
+          className="lp-toast"
+          role="alert"
+          data-testid="playback-rate-error"
+        >
+          <span className="lp-toast-text">{rateError}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The full-screen audiobook player at `/listen/:uuid`; `?file_id` picks one of a book's audio files. */
+export function Listen() {
+  const uuid = parseBookUuid(useParams().uuid);
+  const fileId = positiveInt(useSearchParams()[0].get("file_id"));
+  const { open, uuid: playing, book } = usePlayback();
+  useEffect(() => {
+    if (uuid) open(uuid, fileId);
+  }, [uuid, fileId, open]);
+
+  if (!uuid) return <PageNotFound subject="Audiobook" />;
+  // Until the effect has retargeted the player, it still holds the last book.
+  if (playing !== uuid) return <Opening />;
+  switch (book.status) {
+    case "error":
+      return <PageError message={book.message} />;
+    case "missing":
+      return <PageNotFound subject="Audiobook" />;
+    case "ready":
+      return (
+        <SearchPaletteProvider>
+          <Frame book={book.book} />
+          <SearchPaletteOverlay />
+        </SearchPaletteProvider>
+      );
+    default:
+      return <Opening />;
+  }
+}
+
+function Opening() {
+  return (
+    <Loading
+      kind="stage"
+      mark="line"
+      className="in-flow"
+      label="Opening the audiobook"
+    />
+  );
+}

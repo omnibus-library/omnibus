@@ -1,34 +1,35 @@
 //  AvatarAttributionTests.swift
-//  The avatar flags on other users' ratings and journal entries.
+//  The avatar flags on other users' reviews and journal entries.
 //
-//  Both models are persisted verbatim into the offline replica
-//  (`CacheKey.ratingsOthers`, `CacheKey.journals`), so a blob written before
-//  this release has no avatar key — it must still decode (as `false`) rather
-//  than wiping a book's cached ratings or journals.
+//  Both are persisted into the offline replica (`CacheKey.reviews`,
+//  `CacheKey.journals`), so a payload without the avatar key must still decode
+//  (as `false`) rather than failing a book's cached reviews or journals.
 
 import Foundation
 import Testing
 
 @testable import omnibus
 
-@Suite struct AttributedRatingDecodeTests {
+@Suite struct AttributedReviewDecodeTests {
     @Test func decodesTheAvatarFlagFromAFullPayload() throws {
         let json = """
-            {"user_id":7,"username":"Alice A.","has_avatar":true,
-             "stars":4.5,"updated_at":1700000000}
+            {"user_id":7,"username":"Alice A.","has_avatar":true,"stars":4.5,
+             "body_md":null,"body_html":null,"spoiler":false,"rated_at":1700000000,
+             "created_at":1700000000,"updated_at":1700000000}
             """
-        let decoded = try JSONDecoder().decode(AttributedRating.self, from: Data(json.utf8))
+        let decoded = try JSONDecoder().decode(AttributedReview.self, from: Data(json.utf8))
         #expect(decoded.hasAvatar == true)
         #expect(decoded.userId == 7)
         #expect(decoded.stars == 4.5)
     }
 
     @Test func decodesAPayloadWithoutTheAvatarFlag() throws {
-        // A pre-upgrade `CacheKey.ratingsOthers` blob; absent means `false`.
+        // The server marks the flag `serde(default)`; absent means `false`.
         let json = """
-            {"user_id":7,"username":"alice","stars":3.0,"updated_at":1700000000}
+            {"user_id":7,"username":"alice","stars":3.0,"spoiler":false,
+             "created_at":1700000000,"updated_at":1700000000}
             """
-        let decoded = try JSONDecoder().decode(AttributedRating.self, from: Data(json.utf8))
+        let decoded = try JSONDecoder().decode(AttributedReview.self, from: Data(json.utf8))
         #expect(decoded.hasAvatar == false)
     }
 }

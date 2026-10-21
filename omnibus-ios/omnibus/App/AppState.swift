@@ -53,6 +53,11 @@ final class AppState {
         if ProcessInfo.processInfo.arguments.contains("--uitest-reset") {
             ServerURLStore.clear()
             TokenStore.clear()
+            // Saved preferences too (sort, filters, theme), so a run never
+            // starts from the choices the previous run left behind.
+            if let domain = Bundle.main.bundleIdentifier {
+                UserDefaults.standard.removePersistentDomain(forName: domain)
+            }
         }
         // Second hermetic hook: seed a server and token so the suite reaches
         // the signed-in shell without one. The address is a closed port, so
@@ -164,6 +169,21 @@ final class AppState {
         if let fresh = try? await AuthService.me() { user = fresh }
     }
 
+    /// Applies an account setting the server just confirmed, so every screen
+    /// reading `user` follows it even when the `refreshUser()` after it fails.
+    func applyConfirmed(_ update: (inout UserSummary) -> Void) {
+        user = Self.applying(update, to: user)
+    }
+
+    /// `user` with `update` applied; with no one signed in there is nothing to patch.
+    nonisolated static func applying(
+        _ update: (inout UserSummary) -> Void, to user: UserSummary?
+    ) -> UserSummary? {
+        guard var user else { return nil }
+        update(&user)
+        return user
+    }
+
     private func confirmIdentity() async {
         do {
             user = try await AuthService.me()
@@ -268,7 +288,7 @@ final class AppState {
         await SyncEngine.shared.drain()
         await AuthService.logout()
         await Connectivity.shared.refreshPendingCount()
-        // Whoever signs in next must not inherit this reader's chips or shelf ids.
+        // Whoever signs in next must not inherit this reader's filters or shelf ids.
         LibraryFilterStore.shared.clear()
         user = nil
         phase = .needsLogin

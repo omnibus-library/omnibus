@@ -1,747 +1,1049 @@
-import type { APIRequestContext, Page } from "@playwright/test";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { account } from "../contracts/account";
+import { kobo } from "../contracts/kobo";
+import type { CreatedKoboDevice } from "../data/account";
+import { uniqueSuffix } from "../data/unique";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 import { TEST_PASSWORD } from "../utils/auth";
-import { expectNavVisible, gotoReady } from "../utils/nav";
+import { topEdge } from "../utils/dom";
 
-// The unified Settings sidebar (#1324, #1345) splits the per-user surfaces
-// into their own sections: Account holds the password card, Kindle the
-// Send-to-Kindle destination address (F4.3), Kobo the wireless-sync devices
-// (#927/#1439). The legacy standalone `/account` page redirects into Account
-// (mirroring `/logs`) so there is one consistently-chromed entry point.
-// The seeded session (global setup) is an authed admin, which is a superset
-// of the plain-user surface these sections need.
-const ACCOUNT = "/settings?section=account";
-const KINDLE = "/settings?section=kindle";
-const KOBO = "/settings?section=kobo";
+// The seeded admin covers the plain-user sections: Profile, Preferences, Goals,
+// Devices and Sign-in & security. Other specs read its stack series, hidden
+// formats and scroll stops, so this file only checks those controls render.
 
-const emailInput = (page: Page) => page.getByTestId("kindle-email-input");
-const currentPassword = (page: Page) =>
-  page.getByTestId("current-password-input");
-const newPassword = (page: Page) => page.getByTestId("new-password-input");
-const changeStatus = (page: Page) => page.getByTestId("change-password-status");
-const displayNameInput = (page: Page) => page.getByTestId("display-name-input");
-const profileStatus = (page: Page) => page.getByTestId("profile-status");
+test.describe("profile section", () => {
+  test("show the profile section layout", async ({ settingsPage }) => {
+    const section = settingsPage.account;
 
-test("renders the account section layout", async ({ page }) => {
-  await gotoReady(page, ACCOUNT);
-
-  await expect(page.getByTestId("settings-nav-account")).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  // Profile card sits at the top of the section.
-  await expect(page.getByTestId("account-profile-card")).toBeVisible();
-  await expect(displayNameInput(page)).toBeVisible();
-  await expect(page.getByTestId("display-name-save")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Password" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("account-password-card")).toBeVisible();
-  await expect(currentPassword(page)).toBeVisible();
-  await expect(newPassword(page)).toBeVisible();
-  await expect(page.getByTestId("change-password-submit")).toBeVisible();
-  // The per-user feature switches sit above the goals as a table — one row
-  // per setting, so a new one is a row rather than another card.
-  await expect(page.getByTestId("account-user-settings-card")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Omnibus User Settings" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("user-settings-table")).toBeVisible();
-  await expect(page.getByTestId("user-setting-scroll-stops")).toBeVisible();
-  const scrollStops = page.getByRole("switch", {
-    name: "Use book details scroll stops",
-  });
-  await expect(scrollStops).toBeEnabled();
-  await expect(page.getByTestId("scroll-stops-soon")).toHaveCount(0);
-  // Share stats with household (its state is covered by the serial block below).
-  await expect(page.getByTestId("user-setting-share-stats")).toBeVisible();
-  await expect(
-    page.getByRole("switch", { name: "Share stats with household" }),
-  ).toBeEnabled();
-  // Hidden-formats card (its behavior is covered by hidden_formats.spec.ts).
-  await expect(page.getByTestId("account-hidden-formats-card")).toBeVisible();
-
-  // Kindle and Kobo have their own sections now — not this one.
-  await expect(page.getByTestId("account-kindle-card")).toHaveCount(0);
-  await expect(page.getByTestId("kobo-devices-card")).toHaveCount(0);
-
-  await expectNavVisible(page);
-});
-
-test("renders the Kindle section layout", async ({ page }) => {
-  await gotoReady(page, KINDLE);
-
-  await expect(page.getByTestId("settings-nav-kindle")).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Kindle" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("account-kindle-card")).toBeVisible();
-  await expect(emailInput(page)).toBeVisible();
-  await expect(page.getByTestId("kindle-email-save")).toBeVisible();
-  await expect(page.getByTestId("kindle-email-connected")).toBeAttached();
-
-  await expectNavVisible(page);
-});
-
-test("renders the Kobo section layout", async ({ page }) => {
-  await gotoReady(page, KOBO);
-
-  await expect(page.getByTestId("settings-nav-kobo")).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  await expect(page.getByTestId("kobo-devices-card")).toBeVisible();
-
-  await expectNavVisible(page);
-});
-
-test("adds a Kobo device with an absolute endpoint URL, then removes it", async ({
-  page,
-}) => {
-  await gotoReady(page, KOBO);
-
-  const name = `E2E Kobo ${Date.now()}`;
-  await page.getByTestId("kobo-device-name-input").fill(name);
-
-  const { response } = await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/kobo/devices/create",
-      expectedBody: { name },
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("kobo-device-add").click(),
-  );
-  const created = await response.json();
-
-  try {
-    // The endpoint must be a full URL a Kobo on its own Wi-Fi can resolve,
-    // not a bare path relative to the web app's own origin.
-    await expect(page.getByTestId("kobo-endpoint-url").last()).toHaveValue(
-      /^https?:\/\/[^/]+\/kobo\/[^/]+$/,
-    );
-  } finally {
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: "/api/rpc/kobo/devices/revoke",
-        expectedBody: { id: created.id },
-        expectedStatus: 200,
-      },
-      async () => page.getByTestId("kobo-device-remove").last().click(),
-    );
-  }
-});
-
-test("the legacy /account route redirects into the Account section", async ({
-  page,
-}) => {
-  await gotoReady(page, "/account");
-
-  await expect(page).toHaveURL(/\/settings\??$/);
-  await expect(page.getByTestId("account-password-card")).toBeVisible();
-});
-
-test("saves the Kindle email and shows a success status", async ({ page }) => {
-  await gotoReady(page, KINDLE);
-
-  const address = "reader@kindle.com";
-  await emailInput(page).fill(address);
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/account/kindle-email",
-      expectedBody: { email: address },
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("kindle-email-save").click(),
-  );
-
-  await expect(page.getByTestId("kindle-email-status")).toHaveText(
-    "Kindle email saved.",
-  );
-  await expect(page.getByTestId("kindle-email-status")).toHaveClass(/success/);
-});
-
-test("shows an error status when saving the Kindle email fails", async ({
-  page,
-}) => {
-  await gotoReady(page, KINDLE);
-
-  await emailInput(page).fill("reader@kindle.com");
-
-  await page.route("**/api/rpc/account/kindle-email", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 500,
-        contentType: "text/plain",
-        body: "forced failure",
-      });
-    }
-    return route.continue();
-  });
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/account/kindle-email",
-      expectedStatus: 500,
-    },
-    async () => page.getByTestId("kindle-email-save").click(),
-  );
-
-  await expect(page.getByTestId("kindle-email-status")).toHaveClass(/error/);
-});
-
-// Change-password (#1325). The success test mocks the mutation: the suite
-// reuses this admin's credentials across every spec, so an actual password
-// change would strand later `ensureLoggedIn` calls. The real DB behavior
-// (verify current, validate new, stamp `password_changed_at`) is covered by
-// the `omnibus-db` unit tests; the rejection tests below hit the live server
-// and are safe because both reject *before* the write.
-
-test("changes the password and clears the form on success", async ({
-  page,
-}) => {
-  await gotoReady(page, ACCOUNT);
-
-  await page.route("**/api/rpc/account/change-password", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: "null",
-      });
-    }
-    return route.continue();
-  });
-
-  await currentPassword(page).fill(TEST_PASSWORD);
-  await newPassword(page).fill("Brand-New-Valid-9x");
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/account/change-password",
-      expectedBody: {
-        current_password: TEST_PASSWORD,
-        new_password: "Brand-New-Valid-9x",
-      },
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("change-password-submit").click(),
-  );
-
-  await expect(changeStatus(page)).toHaveText("Password changed.");
-  await expect(changeStatus(page)).toHaveClass(/success/);
-  await expect(currentPassword(page)).toHaveValue("");
-  await expect(newPassword(page)).toHaveValue("");
-});
-
-test("rejects a wrong current password and leaves the form untouched", async ({
-  page,
-}) => {
-  await gotoReady(page, ACCOUNT);
-
-  await currentPassword(page).fill("definitely-not-the-password");
-  await newPassword(page).fill("Brand-New-Valid-9x");
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/account/change-password",
-      expectedBody: {
-        current_password: "definitely-not-the-password",
-        new_password: "Brand-New-Valid-9x",
-      },
-      expectedStatus: 500,
-    },
-    async () => page.getByTestId("change-password-submit").click(),
-  );
-
-  await expect(changeStatus(page)).toHaveClass(/error/);
-  await expect(changeStatus(page)).toContainText(
-    "current password is incorrect",
-  );
-  // Inputs keep their values so the user can correct just the current field.
-  await expect(currentPassword(page)).toHaveValue(
-    "definitely-not-the-password",
-  );
-});
-
-test("rejects an invalid new password", async ({ page }) => {
-  await gotoReady(page, ACCOUNT);
-
-  // Correct current password authorizes; the too-short new password fails
-  // policy on the server before any write happens.
-  await currentPassword(page).fill(TEST_PASSWORD);
-  await newPassword(page).fill("short");
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/account/change-password",
-      expectedBody: { current_password: TEST_PASSWORD, new_password: "short" },
-      expectedStatus: 500,
-    },
-    async () => page.getByTestId("change-password-submit").click(),
-  );
-
-  await expect(changeStatus(page)).toHaveClass(/error/);
-});
-
-// Display name (profile card). The seeded admin is shared across the parallel
-// suite and the display name is globally visible — it relabels the wishlist
-// shelf and every journal/rating byline — so the success test resets it in a
-// `finally`, and the failure test mocks the response rather than writing.
-
-test("saves the display name and shows a success status", async ({ page }) => {
-  await gotoReady(page, ACCOUNT);
-
-  try {
-    await displayNameInput(page).fill("Seamus");
-
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: "/api/rpc/account/profile",
-        expectedBody: { display_name: "Seamus" },
-        expectedStatus: 200,
-      },
-      async () => page.getByTestId("display-name-save").click(),
-    );
-
-    await expect(profileStatus(page)).toHaveText("Profile saved.");
-    await expect(profileStatus(page)).toHaveClass(/success/);
-
-    // The card re-reads `/api/auth/me` after the save, so the user menu shows
-    // the new name without a reload.
-    await page.getByTestId("user-menu-trigger").click();
-    await expect(page.getByTestId("user-menu-panel")).toContainText("Seamus");
-  } finally {
-    await page.keyboard.press("Escape");
-    await displayNameInput(page).fill("");
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: "/api/rpc/account/profile",
-        expectedBody: { display_name: null },
-        expectedStatus: 200,
-      },
-      async () => page.getByTestId("display-name-save").click(),
-    );
-  }
-});
-
-test("shows an error status when saving the display name fails", async ({
-  page,
-}) => {
-  await gotoReady(page, ACCOUNT);
-
-  await displayNameInput(page).fill("Seamus");
-
-  await page.route("**/api/rpc/account/profile", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: JSON.stringify({ message: "forced failure" }),
-      });
-    }
-    return route.continue();
-  });
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/account/profile",
-      expectedStatus: 500,
-    },
-    async () => page.getByTestId("display-name-save").click(),
-  );
-
-  await expect(profileStatus(page)).toHaveClass(/error/);
-});
-
-test("confirms a replaced avatar and clears it when the next upload starts", async ({
-  page,
-}) => {
-  await gotoReady(page, ACCOUNT);
-
-  // Stubbed: the admin's real avatar would show in every other spec's menu.
-  let answer = 204;
-  await page.route("**/api/account/avatar", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({ status: answer, body: "" });
-    }
-    return route.continue();
-  });
-  const pick = () =>
-    page.getByTestId("avatar-file-input").setInputFiles({
-      name: "avatar.png",
-      mimeType: "image/png",
-      buffer: Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-        "base64",
-      ),
+    await test.step("open the profile section", async () => {
+      await settingsPage.goto("profile");
     });
 
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/account/avatar", expectedStatus: 204 },
-    pick,
-  );
-  await expect(profileStatus(page)).toHaveText("Profile picture saved.");
-  await expect(profileStatus(page)).toHaveClass(/success/);
+    await test.step("check the settings frame", async () => {
+      await settingsPage.assertDisplayedFor("profile");
+      await settingsPage.topNav.assertDisplayed();
+      await expect(settingsPage.sectionLink("profile")).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+    });
 
-  // A confirmation left from the last write must not pass for this one's.
-  answer = 400;
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/account/avatar", expectedStatus: 400 },
-    pick,
-  );
-  await expect(page.getByTestId("avatar-status")).toHaveClass(/error/);
-  await expect(profileStatus(page)).toHaveCount(0);
-});
+    await test.step("check the profile card", async () => {
+      await expect(section.profileCard).toBeVisible();
+      await expect(section.profileHeading).toBeVisible();
+      await expect(section.displayNameField).toBeVisible();
+      // Nothing to save until the name changes.
+      await expect(section.saveDisplayNameButton).toBeDisabled();
+    });
 
-test("shows an error when the avatar upload fails", async ({ page }) => {
-  await gotoReady(page, ACCOUNT);
+    // The picker's file input is visually hidden but still in the tab order.
+    await test.step("check the picture picker takes keyboard focus", async () => {
+      await section.focusAvatarPicker();
+      await expect(section.avatarFileInput).toBeFocused();
+    });
 
-  await page.route("**/api/account/avatar", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 400,
-        contentType: "text/plain",
-        body: "unsupported image type",
-      });
-    }
-    return route.continue();
+    await test.step("check the password lives elsewhere", async () => {
+      await expect(section.passwordCard).toHaveCount(0);
+    });
   });
 
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/account/avatar",
-      expectedStatus: 400,
-    },
-    async () =>
-      page.getByTestId("avatar-file-input").setInputFiles({
-        name: "avatar.png",
-        mimeType: "image/png",
-        buffer: Buffer.from(
-          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-          "base64",
-        ),
-      }),
-  );
+  test("redirect the legacy account route into settings", async ({
+    settingsPage,
+  }) => {
+    await test.step("open the legacy route", async () => {
+      await settingsPage.gotoLegacy("/account");
+    });
 
-  await expect(page.getByTestId("avatar-status")).toBeVisible();
-  await expect(page.getByTestId("avatar-status")).toHaveClass(/error/);
+    await test.step("check the settings page shows the profile card", async () => {
+      await settingsPage.assertDisplayedFor();
+      await expect(settingsPage.account.profileCard).toBeVisible();
+    });
+  });
 });
 
-// The five goal tests all reset the same three per-user rows, so they have to
-// run one at a time — under the suite's `fullyParallel` default they clobber
-// each other's state mid-assertion. Scoped to this block rather than the file,
-// so the rest of the account surface keeps its parallelism.
-test.describe
-  .serial("reading goals", () => {
-    /**
-     * Seed one goal through the REST route, asserting it landed. A silent
-     * setup failure — a moved route, an auth regression — would otherwise
-     * surface as a confusing assertion about the UI rather than the setup.
-     */
-    async function seedGoal(
-      request: APIRequestContext,
-      path: string,
-      data: Record<string, unknown>,
-    ) {
-      const resp = await request.put(path, { data });
-      expect(resp.status(), `seeding ${path} failed`).toBe(200);
-    }
+test.describe("preferences section", () => {
+  test("show the preferences section layout", async ({ settingsPage }) => {
+    const section = settingsPage.account;
 
-    /**
-     * Reset every goal so each test below starts from the not-set state. The REST
-     * writes invalidate this user's stats cache, so the card reads the cleared
-     * values immediately rather than after the TTL.
-     */
-    async function clearAllGoals(request: APIRequestContext) {
-      const annual = await request.put("/api/stats/goal", {
-        data: { target: null },
+    await test.step("open the preferences section", async () => {
+      await settingsPage.goto("preferences");
+    });
+
+    await test.step("check the settings frame", async () => {
+      await expect(settingsPage.sectionLink("preferences")).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      await settingsPage.topNav.assertDisplayed();
+    });
+
+    await test.step("check the preference groups", async () => {
+      for (const group of ["Appearance", "Library", "Book page", "Privacy"]) {
+        await expect(section.preferenceGroupHeading(group)).toBeVisible();
+      }
+      await expect(section.deviceNote).toBeVisible();
+      await expect(section.themeButton("dark")).toBeVisible();
+    });
+
+    await test.step("check the switches are offered", async () => {
+      await expect(section.stackSeriesSwitch).toBeEnabled();
+      await expect(section.scrollStopsSwitch).toBeEnabled();
+      await expect(section.shareStatsSwitch).toBeEnabled();
+    });
+
+    // Hidden formats is one labelled group that saves on change; its behaviour
+    // is covered by hidden_formats.spec.ts.
+    await test.step("check the hidden formats group", async () => {
+      await expect(section.hiddenFormatsGroup).toBeVisible();
+      await expect(section.hiddenFormatToggle("epub")).toBeVisible();
+      await expect(section.saveHiddenFormatsButton).toHaveCount(0);
+    });
+  });
+});
+
+test.describe("devices section", () => {
+  test("show the devices section layout", async ({ settingsPage }) => {
+    const { kindle, kobo } = settingsPage;
+
+    await test.step("open the devices section", async () => {
+      await settingsPage.goto("devices");
+    });
+
+    await test.step("check the settings frame", async () => {
+      await settingsPage.assertDisplayedFor("devices");
+      await settingsPage.topNav.assertDisplayed();
+      await expect(settingsPage.sectionLink("devices")).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+    });
+
+    await test.step("check the kindle card", async () => {
+      await expect(kindle.heading).toBeVisible();
+      await expect(kindle.card).toBeVisible();
+      await expect(kindle.emailField).toBeVisible();
+      await expect(kindle.saveButton).toBeVisible();
+      await expect(kindle.connectedMarker).toBeAttached();
+      await expect(kindle.delivery).toBeVisible();
+    });
+
+    await test.step("check the kobo card", async () => {
+      await expect(kobo.devicesCard).toBeVisible();
+      await expect(kobo.dataLossWarning).toBeVisible();
+      await expect(kobo.setupToggle).toBeVisible();
+      await expect(kobo.shelvesLink).toHaveAttribute("href", "/shelves");
+    });
+  });
+
+  // Delivery readiness is instance configuration (an SMTP relay), so the two
+  // states are stubbed rather than set up on the shared server.
+  test("name the sender to approve when kindle delivery is ready", async ({
+    settingsPage,
+  }) => {
+    const { kindle } = settingsPage;
+
+    await test.step("open the devices section with delivery ready", async () => {
+      await kindle.stubDelivery("library@example.com");
+      await settingsPage.goto("devices");
+    });
+
+    await test.step("check the sender is named and copyable", async () => {
+      await expect(kindle.delivery).toContainText(
+        "Approve library@example.com",
+      );
+      await expect(kindle.senderCopyButton).toBeVisible();
+    });
+  });
+
+  test("link an admin to integrations when kindle delivery isn't set up", async ({
+    settingsPage,
+  }) => {
+    const { kindle } = settingsPage;
+
+    await test.step("open the devices section with no sender", async () => {
+      await kindle.stubDelivery(null);
+      await settingsPage.goto("devices");
+    });
+
+    await test.step("check the way to email delivery shows", async () => {
+      await expect(kindle.emailDeliveryLink).toHaveAttribute(
+        "href",
+        "/admin?section=integrations",
+      );
+    });
+  });
+
+  // These three write the shared admin's address, so they run one at a time.
+  test.describe("kindle email", () => {
+    test.describe.configure({ mode: "serial" });
+
+    test("save the kindle email", async ({
+      settingsPage,
+      presetKindleEmail,
+      expectMutation,
+    }) => {
+      const kindle = settingsPage.kindle;
+      const address = "reader@kindle.com";
+
+      await test.step("start with no address", async () => {
+        await presetKindleEmail(null);
+        await settingsPage.goto("devices");
       });
-      expect(annual.status(), "clearing the reading goal failed").toBe(200);
-      for (const kind of ["pages", "minutes"]) {
-        const resp = await request.put("/api/stats/goal/daily", {
-          data: { kind, target: null },
-        });
-        expect(resp.status(), `clearing the daily ${kind} goal failed`).toBe(
-          200,
+
+      await test.step("save an address", async () => {
+        await expectMutation(account.kindleEmail(address), () =>
+          kindle.saveEmail(address),
         );
-      }
-    }
-
-    test("the goals card sets all three targets behind one control", async ({
-      page,
-      request,
-    }) => {
-      await clearAllGoals(request);
-      await gotoReady(page, ACCOUNT);
-
-      const card = page.getByTestId("account-goals-card");
-      await expect(card).toBeVisible();
-      await expect(
-        page.getByRole("heading", { level: 2, name: "Reading goals" }),
-      ).toBeVisible();
-
-      // Read mode: every kind states its target or that it has none, and there is
-      // exactly one control — the point of consolidating them here.
-      for (const testid of ["goal-books", "goal-pages", "goal-minutes"]) {
-        await expect(page.getByTestId(`${testid}-value`)).toHaveText("Not set");
-      }
-      await expect(card.getByRole("button")).toHaveCount(1);
-      await expect(page.getByTestId("goals-edit")).toBeVisible();
-
-      await page.getByTestId("goals-edit").click();
-      await page.getByTestId("goal-books-input").fill("24");
-      await page.getByTestId("goal-pages-input").fill("30");
-      await page.getByTestId("goal-minutes-input").fill("45");
-
-      // One Save, three per-kind writes: the annual route and the daily route
-      // can't be batched, so the card fans out and reports what landed.
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: "/api/rpc/stats-goal",
-          // `utc_offset_minutes` is the browser's own offset, which the config
-          // pins to UTC (`timezoneId`) so this is deterministically 0 — it is
-          // where the server cuts the answer's day boundaries (rule 10).
-          expectedBody: { update: { target: 24 }, utc_offset_minutes: 0 },
-          expectedStatus: 200,
-        },
-        async () => page.getByTestId("goals-save").click(),
-      );
-
-      await expect(page.getByTestId("goals-status")).toHaveText("Goals saved.");
-      await expect(page.getByTestId("goal-books-value")).toHaveText("24 books");
-      await expect(page.getByTestId("goal-pages-value")).toHaveText("30 pages");
-      await expect(page.getByTestId("goal-minutes-value")).toHaveText(
-        "45 minutes",
-      );
-
-      // They survive a reload — the card reads all three back off the server,
-      // which is what tells an optimistic render apart from a real write.
-      await gotoReady(page, ACCOUNT);
-      await expect(page.getByTestId("goal-books-value")).toHaveText("24 books");
-      await expect(page.getByTestId("goal-pages-value")).toHaveText("30 pages");
-      await expect(page.getByTestId("goal-minutes-value")).toHaveText(
-        "45 minutes",
-      );
-    });
-
-    test("an emptied field clears that goal and leaves the others alone", async ({
-      page,
-      request,
-    }) => {
-      await clearAllGoals(request);
-      await seedGoal(request, "/api/stats/goal", { target: 24 });
-      await seedGoal(request, "/api/stats/goal/daily", {
-        kind: "pages",
-        target: 30,
       });
-      await gotoReady(page, ACCOUNT);
 
-      await page.getByTestId("goals-edit").click();
-      // Blanking is how a single form drops a goal — there is no Clear per row.
-      await page.getByTestId("goal-pages-input").fill("");
-
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: "/api/rpc/stats-goal-daily",
-          // `target` is `skip_serializing_if = "Option::is_none"`, so a clear
-          // travels as the kind alone — same shape the annual clear uses. The
-          // offset rides every stats write; the config pins it to 0.
-          expectedBody: { update: { kind: "pages" }, utc_offset_minutes: 0 },
-          expectedStatus: 200,
-        },
-        async () => page.getByTestId("goals-save").click(),
-      );
-
-      await expect(page.getByTestId("goal-pages-value")).toHaveText("Not set");
-      // The untouched annual target is not restated — only changed kinds are
-      // written, so another device's value can't be clobbered by a no-op save.
-      await expect(page.getByTestId("goal-books-value")).toHaveText("24 books");
+      await test.step("check the success status", async () => {
+        await expect(kindle.statusMessage).toHaveText("Kindle email saved.");
+        await expect(kindle.statusMessage).toHaveClass(/success/);
+      });
     });
 
-    test("an out-of-range target is refused before it costs a round trip", async ({
-      page,
-      request,
+    test("ask before clearing the kindle email", async ({
+      settingsPage,
+      presetKindleEmail,
     }) => {
-      await clearAllGoals(request);
-      await gotoReady(page, ACCOUNT);
+      const kindle = settingsPage.kindle;
+      const address = "reader@kindle.com";
 
-      await page.getByTestId("goals-edit").click();
-      // 1,500 is a legal day of pages and an impossible day of minutes, so the
-      // same number has to be accepted by one field and refused by the other.
-      await page.getByTestId("goal-pages-input").fill("1500");
-      await page.getByTestId("goal-minutes-input").fill("1500");
-      await page.getByTestId("goals-save").click();
+      await test.step("start with an address saved", async () => {
+        await presetKindleEmail(address);
+        await settingsPage.goto("devices");
+      });
 
-      const status = page.getByTestId("goals-status");
-      await expect(status).toContainText("Minutes a day");
-      await expect(status).toContainText("1440");
-      // Nothing was written — the form stays open on the value it rejected.
-      await expect(page.getByTestId("goal-pages-input")).toHaveValue("1500");
+      const writes = kindle.recordEmailWrites();
+
+      await test.step("ask to clear it and back out", async () => {
+        await kindle.startClear();
+        await expect(kindle.clearDialog).toContainText(address);
+        await kindle.cancelClear();
+      });
+
+      await test.step("check the dialog closed and nothing was sent", async () => {
+        await expect(kindle.clearDialog).toHaveCount(0);
+        expect(writes).toEqual([]);
+      });
     });
 
-    test("a failed save names the kind that didn't land", async ({
-      page,
-      request,
+    test("clear the kindle email once the named address is confirmed", async ({
+      settingsPage,
+      presetKindleEmail,
+      expectMutation,
     }) => {
-      await clearAllGoals(request);
-      await page.route("**/api/rpc/stats-goal-daily", (route) =>
-        route.fulfill({ status: 500, contentType: "text/plain", body: "boom" }),
-      );
+      const kindle = settingsPage.kindle;
 
-      await gotoReady(page, ACCOUNT);
-      await page.getByTestId("goals-edit").click();
-      await page.getByTestId("goal-books-input").fill("24");
-      await page.getByTestId("goal-pages-input").fill("30");
-      await page.getByTestId("goals-save").click();
+      await test.step("start with an address saved", async () => {
+        await presetKindleEmail("reader@kindle.com");
+        await settingsPage.goto("devices");
+      });
 
-      // Three goals are three writes: the reader has to know which one to retry
-      // rather than being told "something went wrong".
-      const status = page.getByTestId("goals-status");
-      await expect(status).toContainText("Pages a day");
-      await expect(status).toHaveClass(/error/);
-      // The annual write did land, and the form stays open on the failure.
-      await expect(page.getByTestId("goal-books-input")).toHaveValue("24");
-    });
+      await test.step("ask to clear it and confirm", async () => {
+        await kindle.startClear();
+        await expectMutation(account.kindleEmail(null), () =>
+          kindle.confirmClear(),
+        );
+      });
 
-    test("cancel drops the drafts back to what the server confirmed", async ({
-      page,
-      request,
-    }) => {
-      await clearAllGoals(request);
-      await seedGoal(request, "/api/stats/goal", { target: 24 });
-      await gotoReady(page, ACCOUNT);
-
-      await page.getByTestId("goals-edit").click();
-      await page.getByTestId("goal-books-input").fill("99");
-      await page.getByTestId("goals-cancel").click();
-
-      await expect(page.getByTestId("goal-books-value")).toHaveText("24 books");
-      await page.getByTestId("goals-edit").click();
-      await expect(page.getByTestId("goal-books-input")).toHaveValue("24");
+      await test.step("check the dialog closed and the email cleared", async () => {
+        await expect(kindle.clearDialog).toHaveCount(0);
+        await expect(kindle.statusMessage).toHaveText("Kindle email cleared.");
+      });
     });
   });
+
+  test("show an error status when saving the kindle email fails", async ({
+    settingsPage,
+    expectMutation,
+  }) => {
+    const kindle = settingsPage.kindle;
+
+    await test.step("open the devices section", async () => {
+      await settingsPage.goto("devices");
+      await settingsPage.forceServerError(account.kindleEmail());
+    });
+
+    await test.step("save an address", async () => {
+      await expectMutation(failing(account.kindleEmail()), () =>
+        kindle.saveEmail("reader@kindle.com"),
+      );
+    });
+
+    await test.step("check the error status", async () => {
+      await expect(kindle.statusMessage).toHaveClass(/error/);
+    });
+  });
+
+  test("add a kobo device with an absolute endpoint url", async ({
+    settingsPage,
+    createdKoboDeviceIds,
+    expectMutation,
+  }) => {
+    const { kobo: section } = settingsPage;
+    const name = `E2E Kobo ${uniqueSuffix()}`;
+
+    await test.step("open the devices section", async () => {
+      await settingsPage.goto("devices");
+    });
+
+    await test.step("add a device", async () => {
+      const { response } = await expectMutation(kobo.create(name), () =>
+        section.addDevice(name),
+      );
+      const created: CreatedKoboDevice = await response.json();
+      createdKoboDeviceIds.add(created.id);
+    });
+
+    // A Kobo on its own Wi-Fi can't resolve a bare path against the web app's origin.
+    await test.step("check its endpoint is a full url", async () => {
+      await expect(section.endpointField(name)).toHaveValue(
+        /^https?:\/\/[^/]+\/kobo\/[^/]+$/,
+      );
+    });
+
+    await test.step("check the device joins the list below the form", async () => {
+      expect(await topEdge(section.deviceRow(name))).toBeGreaterThan(
+        await topEdge(section.addButton),
+      );
+    });
+  });
+
+  test("ask before regenerating a kobo token", async ({
+    settingsPage,
+    ownKoboDevice,
+  }) => {
+    const { kobo } = settingsPage;
+    const name = `E2E Kobo ${uniqueSuffix()}`;
+
+    await test.step("add a device through the api", async () => {
+      await ownKoboDevice(name);
+    });
+
+    await test.step("open the devices section", async () => {
+      await settingsPage.goto("devices");
+    });
+
+    const regenerates = kobo.recordRegenerates();
+
+    await test.step("ask to regenerate it and back out", async () => {
+      await kobo.startRegenerate(name);
+      await expect(kobo.regenerateConfirmation(name)).toBeVisible();
+      await kobo.cancelRegenerate();
+    });
+
+    await test.step("check the dialog closed and nothing was sent", async () => {
+      await expect(kobo.regenerateConfirmation(name)).toHaveCount(0);
+      expect(regenerates).toEqual([]);
+    });
+  });
+
+  test("remove a kobo device", async ({
+    settingsPage,
+    ownKoboDevice,
+    createdKoboDeviceIds,
+    expectMutation,
+  }) => {
+    const { kobo: section } = settingsPage;
+    const name = `E2E Kobo ${uniqueSuffix()}`;
+
+    const id = await test.step("add a device through the api", () =>
+      ownKoboDevice(name));
+
+    // Removing asks first, naming the device it would stop syncing.
+    await test.step("ask to remove the device", async () => {
+      await settingsPage.goto("devices");
+      await section.startRemove(name);
+      await expect(section.removeConfirmation(name)).toBeVisible();
+    });
+
+    await test.step("confirm the removal", async () => {
+      await expectMutation(kobo.revoke(id), () => section.confirmRemove());
+      createdKoboDeviceIds.delete(id);
+    });
+
+    await test.step("check the dialog closed and the device is gone", async () => {
+      await expect(section.removeConfirmation(name)).toHaveCount(0);
+      await expect(section.deviceRow(name)).toHaveCount(0);
+    });
+  });
+
+  // The device list is per-user state on the shared admin, so both disclosure
+  // states are stubbed: whether it opens on its own depends on the list.
+  test("open the kobo setup steps from their disclosure", async ({
+    settingsPage,
+  }) => {
+    const { kobo } = settingsPage;
+
+    await test.step("open the devices section with one kobo", async () => {
+      await kobo.stubDevices([{ id: 1, name: "Kobo Clara" }]);
+      await settingsPage.goto("devices");
+      await expect(kobo.deviceRows).toHaveCount(1);
+    });
+
+    await test.step("check the steps start folded away", async () => {
+      await expect(kobo.setupSteps).toBeHidden();
+    });
+
+    await test.step("open the steps", async () => {
+      await kobo.openSetupSteps();
+      await expect(kobo.setupSteps).toBeVisible();
+      await expect(kobo.backupToolLink).toHaveAttribute(
+        "href",
+        "https://github.com/omnibus-library/kobo-backup",
+      );
+    });
+  });
+
+  test("show the kobo setup steps to a reader with no kobo yet", async ({
+    settingsPage,
+  }) => {
+    const { kobo } = settingsPage;
+
+    await test.step("open the devices section with no kobo", async () => {
+      await kobo.stubDevices([]);
+      await settingsPage.goto("devices");
+    });
+
+    await test.step("check the steps are already open", async () => {
+      await expect(kobo.emptyMessage).toBeVisible();
+      await expect(kobo.setupSteps).toBeVisible();
+    });
+  });
+});
+
+test.describe("security section", () => {
+  test("show the sign-in and security section layout", async ({
+    settingsPage,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("open the security section", async () => {
+      await settingsPage.goto("security");
+    });
+
+    await test.step("check the settings frame", async () => {
+      await settingsPage.topNav.assertDisplayed();
+      await expect(settingsPage.sectionLink("security")).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+    });
+
+    await test.step("check the password, sessions and token cards", async () => {
+      await expect(section.passwordHeading).toBeVisible();
+      await expect(section.passwordCard).toBeVisible();
+      await expect(section.currentPasswordField).toBeVisible();
+      await expect(section.newPasswordField).toBeVisible();
+      await expect(section.changePasswordButton).toBeVisible();
+      await expect(section.sessionsCard).toBeVisible();
+      await expect(settingsPage.apiTokens.card).toBeVisible();
+    });
+  });
+
+  // The admin's sessions are shared by every spec, so the list is stubbed.
+  test("ask before revoking another session", async ({ settingsPage }) => {
+    const section = settingsPage.account;
+
+    await test.step("open the security section with another session listed", async () => {
+      await section.stubSessions("Kobo Libra");
+      await settingsPage.goto("security");
+    });
+
+    const revokes = section.recordSessionRevokes();
+
+    await test.step("ask to revoke it and back out", async () => {
+      await section.startRevokeSession("Kobo Libra");
+      await expect(section.sessionRevokeDialog).toBeVisible();
+      await section.cancelSessionRevoke();
+    });
+
+    await test.step("check the dialog closed and nothing was sent", async () => {
+      await expect(section.sessionRevokeDialog).toHaveCount(0);
+      expect(revokes).toEqual([]);
+    });
+  });
+});
+
+// The success test stubs the write: a real change would strand every later
+// sign-in as this admin. The rejection tests hit the live server, which refuses
+// both before it writes.
+test.describe("password", () => {
+  test("change the password and clear the form", async ({
+    settingsPage,
+    expectMutation,
+  }) => {
+    const section = settingsPage.account;
+    const replacement = "Brand-New-Valid-9x";
+
+    await test.step("open the security section", async () => {
+      await settingsPage.goto("security");
+      await section.stubPasswordChanged();
+    });
+
+    await test.step("change the password", async () => {
+      await expectMutation(
+        account.changePassword(TEST_PASSWORD, replacement),
+        () => section.changePassword(TEST_PASSWORD, replacement),
+      );
+    });
+
+    await test.step("check the success status and the cleared form", async () => {
+      await expect(section.passwordStatus).toHaveText("Password changed.");
+      await expect(section.passwordStatus).toHaveClass(/success/);
+      await expect(section.currentPasswordField).toHaveValue("");
+      await expect(section.newPasswordField).toHaveValue("");
+    });
+  });
+
+  test("reject a wrong current password", async ({
+    settingsPage,
+    expectMutation,
+  }) => {
+    const section = settingsPage.account;
+    const wrong = "definitely-not-the-password";
+
+    await test.step("open the security section", async () => {
+      await settingsPage.goto("security");
+    });
+
+    await test.step("change the password with the wrong current one", async () => {
+      await expectMutation(
+        account.changePassword(wrong, "Brand-New-Valid-9x", 500),
+        () => section.changePassword(wrong, "Brand-New-Valid-9x"),
+      );
+    });
+
+    // The inputs keep their values so the user can correct just the current one.
+    await test.step("check the error shows and the form is untouched", async () => {
+      await expect(section.passwordStatus).toHaveClass(/error/);
+      await expect(section.passwordStatus).toContainText(
+        "current password is incorrect",
+      );
+      await expect(section.currentPasswordField).toHaveValue(wrong);
+    });
+  });
+
+  // The correct current password authorizes; the server's policy then refuses a
+  // too-short new one before any write.
+  test("reject an invalid new password", async ({
+    settingsPage,
+    expectMutation,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("open the security section", async () => {
+      await settingsPage.goto("security");
+    });
+
+    await test.step("change the password to a short one", async () => {
+      await expectMutation(
+        account.changePassword(TEST_PASSWORD, "short", 500),
+        () => section.changePassword(TEST_PASSWORD, "short"),
+      );
+    });
+
+    await test.step("check the error status", async () => {
+      await expect(section.passwordStatus).toHaveClass(/error/);
+    });
+  });
+});
+
+// The display name is visible everywhere (it relabels the wishlist shelf and
+// every byline), so the success test restores it and the failure test stubs.
+test.describe("profile", () => {
+  test("save the display name", async ({
+    settingsPage,
+    presetDisplayName,
+    expectMutation,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("start with no display name", async () => {
+      await presetDisplayName(null);
+      await settingsPage.goto("profile");
+    });
+
+    await test.step("save a name", async () => {
+      await expectMutation(account.profile("Seamus"), () =>
+        section.saveDisplayName("Seamus"),
+      );
+    });
+
+    await test.step("check the success status", async () => {
+      await expect(section.profileStatus).toHaveText("Profile saved.");
+      await expect(section.profileStatus).toHaveClass(/success/);
+    });
+
+    // The card re-reads `/api/auth/me` after the save, so no reload is needed.
+    await test.step("check the user menu shows the name", async () => {
+      await settingsPage.topNav.openUserMenu();
+      await expect(settingsPage.topNav.userMenuPanel).toContainText("Seamus");
+    });
+
+    await test.step("clear the name", async () => {
+      await settingsPage.topNav.closeUserMenuWithEscape();
+      await expectMutation(account.profile(null), () =>
+        section.saveDisplayName(""),
+      );
+    });
+  });
+
+  test("show an error status when saving the display name fails", async ({
+    settingsPage,
+    expectMutation,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("open the profile section", async () => {
+      await settingsPage.goto("profile");
+      await settingsPage.forceServerError(account.profile());
+    });
+
+    await test.step("save a name", async () => {
+      await expectMutation(failing(account.profile()), () =>
+        section.saveDisplayName("Seamus"),
+      );
+    });
+
+    await test.step("check the error status", async () => {
+      await expect(section.profileStatus).toHaveClass(/error/);
+    });
+  });
+
+  test("offer save display name only once the name changes", async ({
+    settingsPage,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("open the profile section", async () => {
+      await settingsPage.goto("profile");
+    });
+
+    const original = await section.displayNameField.inputValue();
+
+    await test.step("check there is nothing to save yet", async () => {
+      await expect(section.saveDisplayNameButton).toBeDisabled();
+    });
+
+    await test.step("change the name", async () => {
+      await section.fillDisplayName(`${original} draft`);
+      await expect(section.saveDisplayNameButton).toBeEnabled();
+    });
+
+    await test.step("type the original back", async () => {
+      await section.fillDisplayName(original);
+      await expect(section.saveDisplayNameButton).toBeDisabled();
+    });
+  });
+
+  test("ask before leaving an unsaved display name", async ({
+    settingsPage,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("edit the display name", async () => {
+      await settingsPage.goto("profile");
+      await section.fillDisplayName("Unsaved name");
+    });
+
+    await test.step("try to leave and keep editing", async () => {
+      await settingsPage.openSection("preferences");
+      await expect(settingsPage.unsavedPrompt).toBeVisible();
+      await settingsPage.keepEditing();
+    });
+
+    await test.step("check the section and the edit stay", async () => {
+      await settingsPage.assertDisplayedFor("profile");
+      await expect(section.displayNameField).toHaveValue("Unsaved name");
+    });
+
+    await test.step("try to leave again and discard the edit", async () => {
+      await settingsPage.openSection("preferences");
+      await settingsPage.discardEdits();
+      await settingsPage.assertDisplayedFor("preferences");
+    });
+  });
+
+  test("stay on the open section when its own link is clicked over edits", async ({
+    settingsPage,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("edit the display name", async () => {
+      await settingsPage.goto("profile");
+      await section.fillDisplayName("Unsaved name");
+    });
+
+    await test.step("click the open section's own link", async () => {
+      await settingsPage.openSection("profile");
+    });
+
+    await test.step("check nothing asks and the edit stays", async () => {
+      await expect(settingsPage.unsavedPrompt).toHaveCount(0);
+      await expect(section.displayNameField).toHaveValue("Unsaved name");
+    });
+  });
+
+  test("confirm a saved profile picture", async ({
+    settingsPage,
+    expectMutation,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("open the profile section", async () => {
+      await settingsPage.goto("profile");
+      await section.stubAvatarUpload(204);
+    });
+
+    await test.step("upload a picture", async () => {
+      await expectMutation(account.avatar(), () => section.uploadAvatar());
+    });
+
+    await test.step("check the success status", async () => {
+      await expect(section.profileStatus).toHaveText("Profile picture saved.");
+      await expect(section.profileStatus).toHaveClass(/success/);
+    });
+  });
+
+  test("clear the picture confirmation when the next upload starts", async ({
+    settingsPage,
+    expectMutation,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("save a picture", async () => {
+      await settingsPage.goto("profile");
+      await section.stubAvatarUpload(204);
+      await expectMutation(account.avatar(), () => section.uploadAvatar());
+      await expect(section.profileStatus).toHaveText("Profile picture saved.");
+    });
+
+    await test.step("upload another that fails", async () => {
+      await section.stubAvatarUpload(400);
+      await expectMutation(account.avatar(400), () => section.uploadAvatar());
+    });
+
+    // A confirmation left from the last write must not pass for this one's.
+    await test.step("check the error replaces the confirmation", async () => {
+      await expect(section.avatarStatus).toHaveClass(/error/);
+      await expect(section.profileStatus).toBeEmpty();
+    });
+  });
+
+  test("show an error when the avatar upload fails", async ({
+    settingsPage,
+    expectMutation,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("open the profile section", async () => {
+      await settingsPage.goto("profile");
+      await section.stubAvatarUpload(400);
+    });
+
+    await test.step("upload a picture", async () => {
+      await expectMutation(account.avatar(400), () => section.uploadAvatar());
+    });
+
+    await test.step("check the error status", async () => {
+      await expect(section.avatarStatus).toBeVisible();
+      await expect(section.avatarStatus).toHaveClass(/error/);
+    });
+  });
+});
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("ask before the back link drops unsaved goals", async ({
+    settingsPage,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("edit a goal", async () => {
+      await settingsPage.goto("goals");
+      await section.fillGoal("pages", "42");
+    });
+
+    await test.step("follow the back link and keep editing", async () => {
+      await settingsPage.openSectionList();
+      await expect(settingsPage.unsavedPrompt).toBeVisible();
+      await settingsPage.keepEditing();
+    });
+
+    await test.step("check the section and the edit stay", async () => {
+      await settingsPage.assertDisplayedFor("goals");
+      await expect(section.goalField("pages")).toHaveValue("42");
+    });
+  });
+
+  test("go back from the default section without asking", async ({
+    settingsPage,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("edit the display name", async () => {
+      await settingsPage.goto("profile");
+      await section.fillDisplayName("Unsaved name");
+    });
+
+    await test.step("follow the back link", async () => {
+      await settingsPage.openSectionList();
+    });
+
+    await test.step("check the list shows and nothing asked", async () => {
+      await settingsPage.assertDisplayedFor();
+      await expect(settingsPage.unsavedPrompt).toHaveCount(0);
+    });
+  });
+});
+
+// The five goal tests reset the same three per-user rows, so they run one at a
+// time; the rest of the account surface keeps its parallelism.
+test.describe("reading goals", () => {
+  test.describe.configure({ mode: "serial" });
+
+  test("edit goals inline and save all", async ({
+    settingsPage,
+    presetGoals,
+    expectMutation,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("start with no goals", async () => {
+      await presetGoals();
+      await settingsPage.goto("goals");
+    });
+
+    // Always a form: three empty fields and one Save all, which waits for a change.
+    await test.step("check the form is empty with one control", async () => {
+      await expect(section.goalsHeading).toBeVisible();
+      for (const kind of ["books", "pages", "minutes"] as const) {
+        await expect(section.goalField(kind)).toBeEnabled();
+        await expect(section.goalField(kind)).toHaveValue("");
+      }
+      await expect(section.goalsCardButtons).toHaveCount(1);
+      await expect(section.saveGoalsButton).toHaveText("Save all");
+      await expect(section.saveGoalsButton).toBeDisabled();
+    });
+
+    await test.step("fill in the three goals", async () => {
+      await section.fillGoal("books", "24");
+      await section.fillGoal("pages", "30");
+      await section.fillGoal("minutes", "45");
+      await expect(section.saveGoalsButton).toBeEnabled();
+    });
+
+    // The annual and daily routes can't be batched, so one Save all fans out
+    // into per-kind writes and reports what landed.
+    await test.step("save all", async () => {
+      await expectMutation(account.annualGoal(24), () => section.saveGoals());
+    });
+
+    await test.step("check the goals saved", async () => {
+      await expect(section.goalsStatus).toHaveText("Goals saved.");
+      await expect(section.saveGoalsButton).toBeDisabled();
+    });
+
+    // The card reads all three back off the server, which tells an optimistic
+    // render apart from a real write.
+    await test.step("check the goals survive a reload", async () => {
+      await settingsPage.reload();
+      await expect(section.goalField("books")).toHaveValue("24");
+      await expect(section.goalField("pages")).toHaveValue("30");
+      await expect(section.goalField("minutes")).toHaveValue("45");
+    });
+  });
+
+  test("clear a goal by emptying its field", async ({
+    settingsPage,
+    presetGoals,
+    expectMutation,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("start with an annual and a pages goal", async () => {
+      await presetGoals({ books: 24, pages: 30 });
+      await settingsPage.goto("goals");
+      await expect(section.goalField("pages")).toHaveValue("30");
+    });
+
+    // Blanking is how the form drops a goal: there is no Clear per row.
+    await test.step("empty the pages field and save", async () => {
+      await section.fillGoal("pages", "");
+      await expectMutation(account.dailyGoal("pages"), () =>
+        section.saveGoals(),
+      );
+      await expect(section.goalsStatus).toHaveText("Goals saved.");
+    });
+
+    // Only changed kinds are written, so another device's value can't be
+    // clobbered by a no-op save.
+    await test.step("check only the pages goal cleared", async () => {
+      await settingsPage.reload();
+      await expect(section.goalField("books")).toHaveValue("24");
+      await expect(section.goalField("pages")).toHaveValue("");
+    });
+  });
+
+  test("refuse an out-of-range target before it costs a round trip", async ({
+    settingsPage,
+    presetGoals,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("start with no goals", async () => {
+      await presetGoals();
+      await settingsPage.goto("goals");
+    });
+
+    // 1,500 is a legal day of pages and an impossible day of minutes.
+    await test.step("save 1500 pages and 1500 minutes", async () => {
+      await section.fillGoal("pages", "1500");
+      await section.fillGoal("minutes", "1500");
+      await section.saveGoals();
+    });
+
+    await test.step("check the minutes field is refused and nothing is written", async () => {
+      await expect(section.goalError("minutes")).toContainText("1440");
+      await expect(section.goalField("minutes")).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      );
+      await expect(section.goalError("pages")).toHaveCount(0);
+      await expect(section.goalsStatus).toContainText("Nothing saved");
+      await expect(section.goalField("pages")).toHaveValue("1500");
+    });
+  });
+
+  test("name the goal that failed to save", async ({
+    settingsPage,
+    presetGoals,
+    expectMutation,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("start with no goals", async () => {
+      await presetGoals();
+      await settingsPage.goto("goals");
+      await settingsPage.forceServerError(account.dailyGoal("pages", 30));
+    });
+
+    await test.step("save an annual and a pages goal", async () => {
+      await section.fillGoal("books", "24");
+      await section.fillGoal("pages", "30");
+      await expectMutation(failing(account.dailyGoal("pages", 30)), () =>
+        section.saveGoals(),
+      );
+    });
+
+    // Three goals are three writes, so the reader needs to know which to retry.
+    await test.step("check the status names the pages goal", async () => {
+      await expect(section.goalsStatus).toContainText("Pages a day");
+      await expect(section.goalsStatus).toHaveClass(/error/);
+      await expect(section.goalError("pages")).toBeVisible();
+    });
+
+    // The annual write landed; the failed kind keeps its draft to retry.
+    await test.step("check the failed kind keeps its draft", async () => {
+      await expect(section.goalField("books")).toHaveValue("24");
+      await expect(section.goalField("pages")).toHaveValue("30");
+      await expect(section.saveGoalsButton).toBeEnabled();
+    });
+  });
+
+  test("ask before leaving unsaved goals", async ({
+    settingsPage,
+    presetGoals,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("start with an annual goal", async () => {
+      await presetGoals({ books: 24 });
+      await settingsPage.goto("goals");
+      await expect(section.goalField("books")).toHaveValue("24");
+    });
+
+    await test.step("edit it, try to leave and keep editing", async () => {
+      await section.fillGoal("books", "99");
+      await settingsPage.openSection("profile");
+      await expect(settingsPage.unsavedPrompt).toBeVisible();
+      await settingsPage.keepEditing();
+      await expect(section.goalField("books")).toHaveValue("99");
+    });
+
+    // Typing the saved value back leaves nothing to lose.
+    await test.step("type the saved value back and leave", async () => {
+      await section.fillGoal("books", "24");
+      await expect(section.saveGoalsButton).toBeDisabled();
+      await settingsPage.openSection("profile");
+      await settingsPage.assertDisplayedFor("profile");
+    });
+  });
+});
 
 // The shared admin's share-stats flag is per-account state every other spec
-// (and the layout test above) reads as "on" — serialized so no other test in
-// this file observes it mid-flip, and reset to on both before and after.
-test.describe
-  .serial("share stats", () => {
-    /**
-     * Set the caller's `share_stats` preference, asserting it landed. A silent
-     * setup failure would otherwise surface as a confusing assertion about
-     * which state rendered — the `setScrollStops` shape in `book_detail.spec.ts`.
-     */
-    async function setShareStats(request: APIRequestContext, enabled: boolean) {
-      const resp = await request.post("/api/account/share-stats", {
-        data: { enabled },
-      });
-      expect(resp.status(), `setting share stats to ${enabled} failed`).toBe(
-        200,
-      );
-    }
+// reads as on, so these run one at a time and begin and end with it on.
+test.describe("share stats", () => {
+  test.describe.configure({ mode: "serial" });
 
-    test.beforeEach(async ({ request }) => {
-      await setShareStats(request, true);
-    });
-    test.afterEach(async ({ request }) => {
-      await setShareStats(request, true);
+  test("turn share stats off", async ({
+    settingsPage,
+    presetShareStats,
+    expectMutation,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("start with sharing on", async () => {
+      await presetShareStats(true);
+      await settingsPage.goto("preferences");
+      await expect(section.shareStatsSwitch).toBeChecked();
+      await expect(section.shareStatsRow).toContainText("On by default.");
     });
 
-    const shareStatsSwitch = (page: Page) =>
-      page.getByRole("switch", { name: "Share stats with household" });
-
-    test("turning share stats off saves and survives a reload", async ({
-      page,
-    }) => {
-      await gotoReady(page, ACCOUNT);
-
-      await expect(shareStatsSwitch(page)).toBeChecked();
-      await expect(page.getByTestId("user-setting-share-stats")).toContainText(
-        "Other readers on this server can see your stats page.",
+    await test.step("flip the switch", async () => {
+      await expectMutation(account.shareStats(false), () =>
+        section.toggleShareStats(),
       );
-
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: "/api/rpc/account/share-stats",
-          expectedBody: { enabled: false },
-          expectedStatus: 200,
-        },
-        async () => shareStatsSwitch(page).click(),
-      );
-
-      await expect(shareStatsSwitch(page)).not.toBeChecked();
-
-      await gotoReady(page, ACCOUNT);
-      await expect(shareStatsSwitch(page)).not.toBeChecked();
-      await expect(page.getByTestId("user-setting-share-stats")).toContainText(
-        "Only you can see your stats page.",
-      );
+      await expect(section.shareStatsSwitch).not.toBeChecked();
+      await expect(section.shareStatsStatus).toHaveText("Saved");
     });
 
-    test("a failed share-stats save puts the switch back and shows the error", async ({
-      page,
-    }) => {
-      await gotoReady(page, ACCOUNT);
-      await expect(shareStatsSwitch(page)).toBeChecked();
-
-      await page.route("**/api/rpc/account/share-stats", (route) => {
-        if (route.request().method() === "POST") {
-          return route.fulfill({
-            status: 500,
-            contentType: "text/plain",
-            body: "forced failure",
-          });
-        }
-        return route.continue();
-      });
-
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: "/api/rpc/account/share-stats",
-          expectedBody: { enabled: false },
-          expectedStatus: 500,
-        },
-        async () => shareStatsSwitch(page).click(),
-      );
-
-      await expect(shareStatsSwitch(page)).toBeChecked();
-      await expect(page.getByTestId("share-stats-error")).toBeVisible();
+    await test.step("check it survives a reload", async () => {
+      await settingsPage.reload();
+      await expect(section.shareStatsSwitch).toBeEnabled();
+      await expect(section.shareStatsSwitch).not.toBeChecked();
     });
   });
+
+  test("put the share stats switch back when the save fails", async ({
+    settingsPage,
+    presetShareStats,
+    expectMutation,
+  }) => {
+    const section = settingsPage.account;
+
+    await test.step("start with sharing on", async () => {
+      await presetShareStats(true);
+      await settingsPage.goto("preferences");
+      await expect(section.shareStatsSwitch).toBeChecked();
+      await settingsPage.forceServerError(account.shareStats());
+    });
+
+    await test.step("flip the switch", async () => {
+      await expectMutation(failing(account.shareStats(false)), () =>
+        section.toggleShareStats(),
+      );
+    });
+
+    await test.step("check the switch is back on with an error", async () => {
+      await expect(section.shareStatsSwitch).toBeChecked();
+      await expect(section.shareStatsStatus).toHaveText(
+        "Couldn’t save. Try again.",
+      );
+      await expect(section.shareStatsStatus).toHaveClass(/error/);
+    });
+  });
+});

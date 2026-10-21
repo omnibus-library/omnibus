@@ -93,7 +93,9 @@ mod server {
         let rate_limits = rate_limit::RateLimits::at_boot(
             std::env::var_os(rate_limit::DEV_DISABLE_RATE_LIMITS_ENV).as_deref(),
         );
-        let state = backend::AppState::new(pool.clone()).with_rate_limits(rate_limits);
+        let state = backend::AppState::new(pool.clone())
+            .with_rate_limits(rate_limits)
+            .with_public_origins(auth::csrf::allowed_origins().unwrap_or_default());
         let worker: Arc<Worker> = state.worker().clone();
 
         kick_recovery_scans(&pool, &worker).await;
@@ -305,6 +307,7 @@ mod server {
                 "/api/auth/login",
                 "/api/auth/register",
                 "/api/auth/logout",
+                "/api/auth/password",
             ]),
             search: Arc::new(
                 rate_limit::RateLimiter::with_policy(
@@ -389,7 +392,17 @@ mod server {
             ),
         );
 
-        merge_route_surfaces(base, state.clone(), &limiters)
+        let surfaces = merge_route_surfaces(base, state.clone(), &limiters);
+        // Opt-in: the React client beside the Dioxus UI (backend::react_ui).
+        let surfaces = match backend::react_dir(std::env::var_os(backend::REACT_DIR_ENV)) {
+            Some(dir) => {
+                tracing::info!(dir = %dir.display(), "serving the React client at /react/");
+                surfaces.merge(backend::react_ui_router(dir))
+            }
+            None => surfaces,
+        };
+
+        surfaces
             // Apply require_auth and origin_check at the top level so
             // every cookie-authed /api/* request — not just /api/auth/* —
             // is origin-checked. Bearer requests and safe methods are

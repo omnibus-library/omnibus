@@ -488,7 +488,7 @@ struct UserSummary: Codable, Hashable, Sendable {
     /// `false`, so a pre-0092 `/me` payload (or a cached blob from one) still
     /// decodes, with the off default this setting ships as.
     var bookDetailScrollStops: Bool = false
-    /// Whether the library grid folds each series into one tile; a missing key decodes as off.
+    /// Whether book grids fold each series into one tile; a missing key decodes as off.
     var stackSeries: Bool = false
     /// Raw wire value; read `shareStats`. `Bool?` rather than the file's
     /// lenient `Bool`, which defaults a missing key to `false` — the
@@ -1115,49 +1115,7 @@ extension CreateBookmark {
     }
 }
 
-// MARK: - Ratings & read status
-
-struct RatingUpdate: Codable, Sendable {
-    var bookUUID: String
-    var stars: Double
-
-    enum CodingKeys: String, CodingKey {
-        case stars
-        case bookUUID = "book_uuid"
-    }
-}
-
-struct RatingRecord: Codable, Sendable {
-    var bookUUID: String
-    var stars: Double
-    var updatedAt: Int64
-
-    enum CodingKeys: String, CodingKey {
-        case stars
-        case bookUUID = "book_uuid"
-        case updatedAt = "updated_at"
-    }
-}
-
-struct AttributedRating: Codable, Sendable, Identifiable {
-    var userId: Int64
-    var username: String
-    /// Whether the rater has an avatar. Non-optional: the lenient
-    /// `decode(Bool.Type,forKey:)` above defaults a missing key to `false`,
-    /// so a pre-upgrade `CacheKey.ratingsOthers` blob still decodes.
-    var hasAvatar: Bool = false
-    var stars: Double
-    var updatedAt: Int64
-
-    var id: Int64 { userId }
-
-    enum CodingKeys: String, CodingKey {
-        case username, stars
-        case userId = "user_id"
-        case hasAvatar = "has_avatar"
-        case updatedAt = "updated_at"
-    }
-}
+// MARK: - Read status
 
 enum ReadStatus: String, Codable, CaseIterable, Sendable {
     case unread, reading, finished

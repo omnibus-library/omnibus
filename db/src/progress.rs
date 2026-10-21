@@ -16,7 +16,7 @@ mod upsert;
 #[cfg(test)]
 mod tests;
 
-pub use enrich::fill_derived_epub_cfi;
+pub use enrich::{fill_derived_epub_cfi, resolve_listening, ListeningPoint};
 pub use ledger::{pages_ledger_epoch, SLOT_SECS};
 pub use resume::{recent_progress, resume_points};
 pub use session::{insert_session_tx, record_session, record_session_tx};
@@ -70,7 +70,8 @@ fn format_str(f: ProgressFormat) -> &'static str {
     }
 }
 
-fn parse_format(raw: &str) -> ProgressFormat {
+/// A stored `reading_progress.format` token as a [`ProgressFormat`].
+pub fn parse_format(raw: &str) -> ProgressFormat {
     // The CHECK constraint on `reading_progress.format` rules out anything
     // other than these two values, so an unknown string here would be a
     // schema-level invariant breach. Default to Epub rather than panic.

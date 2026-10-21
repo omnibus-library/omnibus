@@ -338,7 +338,7 @@ fn parse_nav(xhtml: &[u8], nav_dir: &str) -> anyhow::Result<Vec<(String, String)
             }
             Event::GeneralRef(ref r) => {
                 if let Some((_, title)) = current.as_mut() {
-                    if let Some(c) = r.resolve_char_ref().ok().flatten().or(match r.as_ref() {
+                    if let Some(c) = r.resolve_char_ref().ok().flatten().or(match &r[..] {
                         b"amp" => Some('&'),
                         b"lt" => Some('<'),
                         b"gt" => Some('>'),

@@ -14,8 +14,6 @@ struct ShelvesView: View {
     @State private var error: String?
     @State private var showCreate = false
 
-    private let columns = [GridItem(.adaptive(minimum: 112, maximum: 168), spacing: 16)]
-
     var body: some View {
         Group {
             if isLoading && previews.isEmpty {
@@ -34,16 +32,13 @@ struct ShelvesView: View {
                 )
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 26) {
-                        ForEach(Array(previews.enumerated()), id: \.element.id) { index, preview in
-                            NavigationLink(value: Destination.shelf(id: preview.shelf.id)) {
-                                ShelfCard(preview: preview, viewerId: app.user?.id)
-                            }
-                            .buttonStyle(BookPressStyle())
-                            .cascadeIn(index: index)
-                            .shelfContextMenu(preview.shelf) {
-                                Task { await load(force: true) }
-                            }
+                    CoverGrid(previews) { preview in
+                        NavigationLink(value: Destination.shelf(id: preview.shelf.id)) {
+                            ShelfCard(preview: preview, viewerId: app.user?.id)
+                        }
+                        .buttonStyle(BookPressStyle())
+                        .shelfContextMenu(preview.shelf) {
+                            Task { await load(force: true) }
                         }
                     }
                     .screenPadding()
@@ -124,10 +119,6 @@ struct ShelfDetailView: View {
     @State private var scrollY: CGFloat = 0
     @Environment(AppState.self) private var app
 
-    // `.top` keeps `BookGridCell`s aligned by their cover art when captions
-    // in the same row wrap to different line counts — see LibraryView.swift.
-    private let columns = [GridItem(.adaptive(minimum: 112, maximum: 168), spacing: 16, alignment: .top)]
-
     /// Whatever is known about this shelf, detail read first.
     private var identity: ShelfSummary? {
         isGone ? nil : shelf.map(Self.summary) ?? indexed?.shelf
@@ -174,7 +165,6 @@ struct ShelfDetailView: View {
                         header
 
                         LibraryFilterBar(store: filters, viewerId: app.user?.id)
-                            .screenPadding()
 
                         switch members.phase(knownCount: identity?.bookCount) {
                         case .loading:
@@ -186,28 +176,25 @@ struct ShelfDetailView: View {
                         case .empty:
                             emptyState
                         case .members:
-                            LazyVGrid(columns: columns, spacing: 26) {
-                                ForEach(Array(members.books.enumerated()), id: \.element.id) { index, book in
-                                    NavigationLink(value: Destination.book(uuid: book.uuid)) {
-                                        BookGridCell(book: book)
-                                    }
-                                    .buttonStyle(BookPressStyle())
-                                    .cascadeIn(index: index)
-                                    .bookContextMenu(book, onEdited: { Task { await load() } }) {
-                                        if shelf?.kind == .manual {
-                                            Button(role: .destructive) {
-                                                Task {
-                                                    await UserDataService.removeBook(
-                                                        shelfId: id, uuid: book.uuid
-                                                    )
-                                                    // A filtered copy is dropped, not patched, so
-                                                    // offline the reload can't take the book away.
-                                                    members.remove(book.uuid)
-                                                    await load()
-                                                }
-                                            } label: {
-                                                Label("Remove from shelf", systemImage: "minus.circle")
+                            StackedBookGrid(members.books) { book, cell in
+                                NavigationLink(value: Destination.book(uuid: book.uuid)) {
+                                    cell
+                                }
+                                .buttonStyle(BookPressStyle())
+                                .bookContextMenu(book, onEdited: { Task { await load() } }) {
+                                    if shelf?.kind == .manual {
+                                        Button(role: .destructive) {
+                                            Task {
+                                                await UserDataService.removeBook(
+                                                    shelfId: id, uuid: book.uuid
+                                                )
+                                                // A filtered copy is dropped, not patched, so
+                                                // offline the reload can't take the book away.
+                                                members.remove(book.uuid)
+                                                await load()
                                             }
+                                        } label: {
+                                            Label("Remove from shelf", systemImage: "minus.circle")
                                         }
                                     }
                                 }

@@ -33,7 +33,7 @@ mod ssr_tests {
         // can't change that — the contract the discovery pages rely on for
         // hydration parity.
         save(&DiscoveryPrefs {
-            authors_sort: omnibus_shared::IndexSort::BookCount,
+            authors_sort: omnibus_shared::AuthorSort::BookCount,
             ..Default::default()
         });
         assert_eq!(load(), DiscoveryPrefs::default());

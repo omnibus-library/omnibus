@@ -10,9 +10,10 @@ use crate::shelves::SHELF_RULE_VALUE_MAX_LEN;
 #[cfg(test)]
 mod tests;
 
-/// The book attribute a [`FilterClause`] matches against. A `Shelf` value is a
-/// shelf id as a decimal string.
+/// The book attribute a `FilterClause` matches. The values of a `shelf` clause are shelf
+/// ids written as decimal strings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FilterField {
     Tag,
@@ -31,14 +32,18 @@ pub const MAX_FILTER_VALUES: usize = 64;
 
 /// Whether a clause keeps the books that match it or drops them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FilterMode {
     Include,
     Exclude,
 }
 
-/// One clause: its values OR together; a filter's clauses AND together.
+/// One clause of a library filter. A book matches it when it carries any of `values`,
+/// compared after trimming whitespace and ignoring ASCII letter case. Up to 64 values of
+/// up to 512 characters each, none blank.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FilterClause {
     pub field: FilterField,
     pub mode: FilterMode,
@@ -64,12 +69,12 @@ impl FilterClause {
     }
 }
 
-/// Active library filter: a clause list whose clauses AND together.
-///
-/// Deserializing also accepts the legacy include-only facet lists, folding them
-/// into include clauses; serializing writes `clauses` alone. Format values are
-/// stored lowercase (`"epub"`, `"m4b"`).
+/// A library filter. A book passes when it matches every clause. Up to 16 clauses.
+/// Format values are lowercase, such as `epub` or `m4b`. On input it also takes the older
+/// `authors`, `series`, `formats`, `tags` and `genres` lists, each read as an include
+/// clause. Output carries `clauses` only.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(from = "ViewFiltersWire")]
 pub struct ViewFilters {
     pub clauses: Vec<FilterClause>,
@@ -77,6 +82,7 @@ pub struct ViewFilters {
 
 /// Every key a stored or posted filter has ever carried.
 #[derive(Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 struct ViewFiltersWire {
     #[serde(default)]
     clauses: Vec<FilterClause>,

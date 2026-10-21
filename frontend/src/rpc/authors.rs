@@ -5,7 +5,7 @@ use dioxus::fullstack::{get, post};
 use dioxus::prelude::*;
 #[cfg(feature = "server")]
 use omnibus_db as db;
-use omnibus_shared::{AuthorDetail, AuthorPhotoScanResult, AuthorSummary};
+use omnibus_shared::{AuthorDetail, AuthorPhotoScanResult, AuthorReading, AuthorSummary};
 // Only `validate_author_photo_url` (server-gated) and its tests reference this
 // cap, so keep the import `server`-gated too — otherwise it's an unused import
 // in the `mobile`/`web` client builds.
@@ -24,11 +24,17 @@ use super::{internal_rpc_error, AdminUser, AuthUser, PoolExt, WorkerExt};
 /// `Task::ResolveAuthorPhoto` when the author has no `author_photos` row yet,
 /// so the next visit picks up the resolved photo (or the `letter`
 /// negative-cache marker); the worker's per-author mutex prevents duplicates.
-#[post("/api/rpc/author", pool: PoolExt, worker: WorkerExt, _user: AuthUser)]
+/// `reading` carries the caller's own state on the author's books.
+#[post("/api/rpc/author", pool: PoolExt, worker: WorkerExt, user: AuthUser)]
 pub async fn rpc_get_author(id: i64) -> Result<Option<AuthorDetail>> {
-    let author = db::get_author(&pool.0, id)
+    let mut author = db::get_author(&pool.0, id)
         .await
         .map_err(|e| internal_rpc_error("get author", e))?;
+    if let Some(a) = author.as_mut() {
+        a.reading = db::book_reading(&pool.0, user.id, &db::book_uuids(&a.books))
+            .await
+            .map_err(|e| internal_rpc_error("author book reading", e))?;
+    }
     if let Some(ref a) = author {
         let has_status = db::author_photo_status(&pool.0, id)
             .await
@@ -150,6 +156,21 @@ pub async fn rpc_list_authors() -> Result<Vec<AuthorSummary>> {
     Ok(db::list_authors(&pool.0, &paths)
         .await
         .map_err(|e| internal_rpc_error("list authors", e))?)
+}
+
+/// The caller's progress through each author's books, for the `/authors` list.
+#[get("/api/rpc/authors/reading", pool: PoolExt, user: AuthUser)]
+pub async fn rpc_list_author_reading() -> Result<Vec<AuthorReading>> {
+    let settings = db::get_settings(&pool.0)
+        .await
+        .map_err(|e| internal_rpc_error("get settings", e))?;
+    let paths = db::collect_paths(
+        settings.ebook_library_path.as_deref(),
+        settings.audiobook_library_path.as_deref(),
+    );
+    Ok(db::author_reading(&pool.0, user.id, &paths)
+        .await
+        .map_err(|e| internal_rpc_error("author reading", e))?)
 }
 
 /// Admin "Delete author". Removes the author row, drops every

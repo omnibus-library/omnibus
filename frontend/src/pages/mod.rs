@@ -6,6 +6,7 @@
 
 mod account;
 mod add_books;
+mod admin;
 #[cfg(not(feature = "mobile"))]
 mod admin_health;
 mod auth;
@@ -43,10 +44,14 @@ mod stats;
 pub use account::AccountPage;
 pub use add_books::AddBooksPage;
 #[cfg(not(feature = "mobile"))]
-pub use admin_health::AdminHealthPage;
+pub(crate) use admin::sections::admin_page_title;
+#[cfg(not(feature = "mobile"))]
+pub use admin::AdminPage;
+#[cfg(not(feature = "mobile"))]
+pub use admin_health::HealthOverview;
 pub use auth::{LoginPage, RegisterPage};
 pub use author::AuthorPage;
-pub use authors_index::AuthorsIndexPage;
+pub use authors_index::{AuthorsBrowser, AuthorsIndexPage};
 #[cfg(not(feature = "mobile"))]
 pub(crate) use book_detail::retarget_and_open_immersive;
 pub use book_detail::BookDetailPage;
@@ -78,6 +83,14 @@ pub use search_mobile::MobileSearchPage;
 pub use series::SeriesPage;
 pub use series_index::SeriesIndexPage;
 pub use server_connect::ServerConnectPage;
+pub(crate) use settings::sections::settings_page_title;
+// The search palette finds settings by name; routes and menus link to sections.
+#[cfg(not(feature = "mobile"))]
+pub(crate) use admin::sections::AdminSection;
+#[cfg(not(feature = "mobile"))]
+pub(crate) use settings::sections::{
+    matching_settings, SettingsEntry, SettingsSection, SettingsTarget,
+};
 pub use settings::SettingsPage;
 pub use shelf_detail::ShelfDetailPage;
 pub use shelves_index::ShelvesIndexPage;

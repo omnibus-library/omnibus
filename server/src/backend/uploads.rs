@@ -23,7 +23,8 @@ use omnibus_db::{
     worker::{Task, TaskOutcome},
 };
 use omnibus_shared::{
-    detect_ebook_format, Contributor, UploadCommitResult, UploadInspection, EBOOK_MAGIC_LEN,
+    detect_ebook_format, Contributor, EbookInspectForm, EbookUploadForm, UploadCommitResult,
+    UploadInspection, EBOOK_MAGIC_LEN,
 };
 use tokio::io::AsyncWriteExt as _;
 
@@ -158,7 +159,7 @@ impl IntoResponse for UploadError {
             }
             UploadError::NotConfigured => (
                 StatusCode::BAD_REQUEST,
-                "Configure an ebook library path in Settings first",
+                "Configure an ebook library path first",
             )
                 .into_response(),
             UploadError::LibraryNotWritable => (
@@ -183,7 +184,7 @@ impl IntoResponse for UploadError {
             UploadError::BadEbook(msg) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, msg).into_response(),
             UploadError::AudiobookNotConfigured => (
                 StatusCode::BAD_REQUEST,
-                "Configure an audiobook library path in Settings first",
+                "Configure an audiobook library path first",
             )
                 .into_response(),
             UploadError::AudiobookLibraryNotWritable => (
@@ -437,14 +438,28 @@ async fn read_text_field_capped(
 
 // --- Inspect ---------------------------------------------------------------
 
-/// Parse an uploaded EPUB or PDF and return its embedded metadata for the
-/// review form. Stateless: the field is streamed to a tempfile, parsed, then
-/// discarded — nothing is filed or inserted until commit.
+/// Inspect an ebook before uploading it
+///
+/// Reads the metadata embedded in an EPUB or PDF, so you can review it before sending the
+/// file to `POST /api/uploads/ebooks`. Nothing is saved. Needs the upload permission.
+#[utoipa::path(
+    post,
+    path = "/api/uploads/ebooks/inspect",
+    tag = "Uploads",
+    request_body(content = inline(EbookInspectForm), content_type = "multipart/form-data"),
+    responses(
+        (status = 200, description = "The file's metadata.", body = UploadInspection),
+        (status = 400, description = "The form has no `file` part."),
+        (status = 403, description = "Your account lacks the upload permission."),
+        (status = 415, description = "The file isn't an EPUB or PDF, or can't be read as one."),
+    ),
+)]
 pub(super) async fn post_inspect_ebook(
     user: AuthUser,
     State(_state): State<AppState>,
     mut multipart: Multipart,
 ) -> Result<Response, UploadError> {
+    // Stateless: the field is streamed to a tempfile, parsed, then discarded.
     require_upload(&user)?;
     let field = loop {
         match multipart.next_field().await {
@@ -557,11 +572,26 @@ pub(super) fn edited_creators(first: String, embedded: &[Contributor]) -> Vec<Co
         .collect()
 }
 
-/// File the uploaded EPUB or PDF into the canonical library folder using the user's
-/// confirmed title/author, reindex so the indexer inserts the book, then layer the review
-/// edits and any staged cover onto it. Returns 201 with the new book's uuid. Everything
-/// that can be refused (the overrides diff, a staged cover's bytes or provider fetch) is
-/// settled *before* the file is placed, so a rejected review leaves no file in the library.
+/// Upload an ebook
+///
+/// Saves an EPUB or PDF into the ebook library, in a folder named for `author` and `title`,
+/// adds it to the library, then applies the form's metadata edits and cover. Everything the
+/// server can refuse is checked before the file is saved, so a refused upload leaves nothing
+/// behind. When the file is saved but can't be added as a book, the answer is a 500 whose
+/// body says whether the file was kept. Needs the upload permission.
+#[utoipa::path(
+    post,
+    path = "/api/uploads/ebooks",
+    tag = "Uploads",
+    request_body(content = inline(EbookUploadForm), content_type = "multipart/form-data"),
+    responses(
+        (status = 201, description = "The book is in the library.", body = UploadCommitResult),
+        (status = 400, description = "A part is missing or invalid, such as no `title` or `author`, a field too long, `overrides` that isn't valid JSON or a refused cover; or no ebook library folder is set up, or it is read-only. The body says which."),
+        (status = 403, description = "Your account lacks the upload permission."),
+        (status = 415, description = "The file isn't an EPUB or PDF."),
+        (status = 502, description = "The server couldn't reach the host of `cover_url`."),
+    ),
+)]
 pub(super) async fn post_upload_ebook(
     user: AuthUser,
     State(state): State<AppState>,
@@ -784,9 +814,8 @@ async fn parse_commit_multipart(
     Ok(form)
 }
 
-mod audiobooks;
+pub(super) mod audiobooks;
 mod review;
-pub(super) use audiobooks::{post_inspect_audiobook, post_upload_audiobook};
 
 #[cfg(test)]
 mod tests;

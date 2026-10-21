@@ -1,8 +1,9 @@
-//! Per-book metadata override handlers (REST, mobile-facing).
+//! Per-book metadata override handlers (REST, mobile-facing), plus the bulk route.
 //!
-//! Edit-permitted users `POST` / `DELETE` overrides against a book's uuid;
-//! reads happen via the standard ebook endpoints, which merge overrides
-//! into the wire DTO. Mounted on the REST router in [`super::rest_router`].
+//! Edit-permitted users `POST` / `DELETE` overrides against a book's uuid, or
+//! `POST` one edit to many books at once; reads happen via the standard ebook
+//! endpoints, which merge overrides into the wire DTO. Mounted on the REST
+//! router in [`super::rest_router`].
 
 use axum::{
     body::Bytes,
@@ -11,14 +12,33 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, worker::Task};
-use omnibus_shared::{detect_image_format, ExternalBookMeta, MetadataOverrides};
-use serde::Deserialize;
+use omnibus_shared::{
+    detect_image_format, BulkOverridesRequest, CoverFromUrlBody, CoverUploadForm, EbookMetadata,
+    ExternalBookMeta, MetadataOverrides,
+};
 
 use super::image_upload::extract_validated_image;
 use super::{internal, AppState};
 use crate::auth::{AdminUser, AuthUser};
 
-/// Save metadata overrides for a book. Requires `can_edit` or admin.
+/// Edit a book's metadata
+///
+/// Saves the fields you send over the book's scanned metadata. Fields you leave out keep any
+/// earlier edit, and a list field, such as `creators`, replaces the whole list. Answers with
+/// the book as it now reads. Needs the edit permission.
+#[utoipa::path(
+    post,
+    path = "/api/ebooks/{uuid}/overrides",
+    tag = "Metadata",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    request_body = MetadataOverrides,
+    responses(
+        (status = 200, description = "The book with your edits.", body = EbookMetadata),
+        (status = 400, description = "A field is too long or malformed. The body says which."),
+        (status = 403, description = "Your account lacks the edit permission."),
+        (status = 404, description = "No book has that uuid."),
+    ),
+)]
 pub(super) async fn post_ebook_overrides(
     user: AuthUser,
     State(state): State<AppState>,
@@ -58,7 +78,65 @@ pub(super) async fn post_ebook_overrides(
     }
 }
 
-/// Delete metadata overrides for a book, reverting to scanned values.
+/// Edit several books' metadata
+///
+/// Applies one edit to every book in `uuids`. Tags and genres are added to or removed from
+/// each book's current list on the server, so two clients editing at once don't overwrite
+/// each other. All-or-nothing: if any book fails, none change. Needs the edit permission.
+#[utoipa::path(
+    post,
+    path = "/api/ebooks/overrides/bulk",
+    tag = "Metadata",
+    request_body = BulkOverridesRequest,
+    responses(
+        (status = 204, description = "Every book was edited."),
+        (status = 400, description = "No uuids, an empty edit, or a field that is too long or has too many values. The body says which."),
+        (status = 403, description = "Your account lacks the edit permission."),
+        (status = 404, description = "A uuid matches no book, so none were edited."),
+    ),
+)]
+pub(super) async fn post_bulk_overrides(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Json(req): Json<BulkOverridesRequest>,
+) -> Response {
+    if !user.is_admin && !user.can_edit {
+        return (
+            axum::http::StatusCode::FORBIDDEN,
+            "edit permission required",
+        )
+            .into_response();
+    }
+    if let Err(msg) = req.validate() {
+        return (axum::http::StatusCode::BAD_REQUEST, msg).into_response();
+    }
+    match db::bulk_merge_metadata_overrides(&state.pool, &req.uuids, &req.edit, user.id).await {
+        Ok(()) => axum::http::StatusCode::NO_CONTENT.into_response(),
+        Err(e @ db::MetadataOverridesError::BookNotFound(_)) => {
+            (axum::http::StatusCode::NOT_FOUND, e.to_string()).into_response()
+        }
+        Err(e @ db::MetadataOverridesError::TooManyValues { .. }) => {
+            (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response()
+        }
+        Err(e) => internal("bulk_merge_metadata_overrides", e),
+    }
+}
+
+/// Revert a book's metadata
+///
+/// Removes every edit to the book, its cover included, so it reads as scanned. Answers with
+/// the book as it now reads. Needs the edit permission.
+#[utoipa::path(
+    delete,
+    path = "/api/ebooks/{uuid}/overrides",
+    tag = "Metadata",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses(
+        (status = 200, description = "The book as scanned.", body = EbookMetadata),
+        (status = 403, description = "Your account lacks the edit permission."),
+        (status = 404, description = "No book has that uuid."),
+    ),
+)]
 pub(super) async fn delete_ebook_overrides(
     user: AuthUser,
     State(state): State<AppState>,
@@ -98,8 +176,24 @@ pub(super) async fn delete_ebook_overrides(
     }
 }
 
-/// Upload a replacement cover image for a book. Multipart form with a single
-/// `cover` field containing the image bytes.
+/// Upload a book's cover
+///
+/// Replaces the book's cover with the image in the form's `cover` part. The book's other
+/// metadata edits stay. Answers with the book as it now reads. Needs the edit permission.
+#[utoipa::path(
+    post,
+    path = "/api/ebooks/{uuid}/cover",
+    tag = "Covers",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    request_body(content = inline(CoverUploadForm), content_type = "multipart/form-data"),
+    responses(
+        (status = 200, description = "The book with its new cover.", body = EbookMetadata),
+        (status = 400, description = "The form has no `cover` part, the part's content type isn't an image or is SVG, or the image is over 10 MB."),
+        (status = 403, description = "Your account lacks the edit permission."),
+        (status = 404, description = "No book has that uuid."),
+        (status = 415, description = "The `cover` bytes aren't in an image format the server recognizes."),
+    ),
+)]
 pub(super) async fn post_ebook_cover(
     user: AuthUser,
     State(state): State<AppState>,
@@ -146,24 +240,35 @@ pub(super) async fn post_ebook_cover(
     }
 }
 
-/// JSON body for [`post_ebook_cover_from_url`]. Inline for the same reason
-/// [`super::author_photos::AuthorPhotoUrlBody`] is: one field, one call site.
-#[derive(Debug, Deserialize)]
-pub(super) struct CoverFromUrlBody {
-    url: String,
-}
-
-/// Apply a cover by URL: the compare view's arrow on a provider's cover row, or a pasted
-/// image URL. The server fetches it under [`cover_fetch_config_for`]'s host-split terms
-/// and sniffs the bytes before they land on disk. **Rate-limited** (mounted in
-/// `upload_router`): the only override route that spends *outbound* fetches. A Google
-/// Books cover is stored full-size (not its 128px thumbnail) via [`db::fetch_provider_cover`].
+/// Set a book's cover from a URL
+///
+/// Fetches the image at `url` and makes it the book's cover. For a Google Books cover, the
+/// server stores the full-size image instead of the thumbnail when it can. The book's other
+/// metadata edits stay. Answers with the book as it now reads. Needs the edit permission.
+#[utoipa::path(
+    post,
+    path = "/api/ebooks/{uuid}/cover/from-url",
+    tag = "Covers",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    request_body = CoverFromUrlBody,
+    responses(
+        (status = 200, description = "The book with its new cover.", body = EbookMetadata),
+        (status = 400, description = "`url` is empty, over 2,048 bytes or not `https`, its host resolves to a private address, or it doesn't answer with an image of up to 10 MB."),
+        (status = 403, description = "Your account lacks the edit permission."),
+        (status = 404, description = "No book has that uuid."),
+        (status = 415, description = "The URL answered with bytes that aren't an image."),
+        (status = 502, description = "The server couldn't reach the URL's host."),
+    ),
+)]
 pub(super) async fn post_ebook_cover_from_url(
     user: AuthUser,
     State(state): State<AppState>,
     Path(uuid): Path<String>,
     Json(body): Json<CoverFromUrlBody>,
 ) -> Response {
+    // Fetched under `cover_fetch_config_for`'s host-split terms and sniffed before the
+    // bytes land on disk. Mounted in `upload_router`, rate-limited: the only override
+    // route that spends an outbound fetch.
     if !user.is_admin && !user.can_edit {
         return (
             axum::http::StatusCode::FORBIDDEN,
@@ -297,10 +402,22 @@ pub(super) fn cover_fetch_config_for(
     with_loopback_hatch(state, db::cover_image_config_for(url, loopback_testing))
 }
 
-/// Revert an overridden cover back to the scanned original, preserving any
-/// other field overrides on the book. Requires `can_edit` or admin. Mirrors
-/// `delete_ebook_overrides` but only clears the cover half of the override
-/// row — see [`db::clear_cover_override`].
+/// Revert a book's cover
+///
+/// Removes a cover you set, so the book shows the cover from its file again. The book's
+/// other metadata edits stay. Answers with the book as it now reads. Needs the edit
+/// permission.
+#[utoipa::path(
+    delete,
+    path = "/api/ebooks/{uuid}/cover",
+    tag = "Covers",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses(
+        (status = 200, description = "The book with its scanned cover.", body = EbookMetadata),
+        (status = 403, description = "Your account lacks the edit permission."),
+        (status = 404, description = "No book has that uuid."),
+    ),
+)]
 pub(super) async fn delete_ebook_cover(
     user: AuthUser,
     State(state): State<AppState>,
@@ -407,15 +524,25 @@ pub(super) async fn persist_cover(
     Ok(())
 }
 
-/// Admin-only: queue a fleet-wide bake of every book's active metadata/cover overrides
-/// into its EPUB container, the bulk sibling of the per-book export bake
-/// `get_ebook_download` performs on demand. Dispatches `Task::RewriteAllEpubs` and returns
-/// 200 as soon as it's queued, like `post_scan_library`. Mobile-facing REST; the web
-/// counterpart is `rpc_rewrite_all_epubs`.
+/// Bake metadata edits into every EPUB
+///
+/// Queues a background job that writes each edited book's metadata and cover into the copy
+/// of its EPUB that downloads serve. The library's own files aren't changed. Answers as
+/// soon as the job is queued. Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/admin/rewrite-all-epubs",
+    tag = "Admin",
+    responses(
+        (status = 200, description = "The job is queued."),
+        (status = 403, description = "Your account isn't an admin."),
+    ),
+)]
 pub(super) async fn post_rewrite_all_epubs(
     _admin: AdminUser,
     State(state): State<AppState>,
 ) -> Response {
+    // The bulk sibling of the per-book export bake `get_ebook_download` does on demand.
     state.worker().post(Task::RewriteAllEpubs);
     axum::http::StatusCode::OK.into_response()
 }

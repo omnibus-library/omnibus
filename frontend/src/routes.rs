@@ -24,6 +24,10 @@ pub enum Route {
     #[route("/settings?:section")]
     Settings { section: Option<String> },
     #[route("/settings/cleanup/:kind")]
+    LegacyCleanupReview { kind: String },
+    #[route("/admin?:section")]
+    Admin { section: Option<String> },
+    #[route("/admin/cleanup/:kind")]
     CleanupReview { kind: String },
     #[route("/logs")]
     Logs {},
@@ -51,10 +55,12 @@ pub enum Route {
     },
     #[route("/listen/:uuid?:file_id")]
     BookListen { uuid: String, file_id: Option<i64> },
+    #[layout(AuthorsShell)]
     #[route("/authors")]
     AuthorsIndex {},
     #[route("/authors/:id")]
     AuthorDetail { id: i64 },
+    #[end_layout]
     #[route("/series")]
     SeriesIndex {},
     #[route("/series/:id")]
@@ -86,9 +92,14 @@ pub enum Route {
 /// Caption for a stub that bounces to the library.
 const TO_LIBRARY: &str = "Returning to the library";
 
-/// What a redirect stub paints for the frame before its effect navigates:
-/// the app's chrome around a page loader, never an empty body.
-fn redirecting(label: &'static str) -> Element {
+/// A stub route's body: replace this history entry with `to`, painting the
+/// app's chrome around a page loader (never an empty body) until it lands.
+#[component]
+fn Redirect(to: Route, label: &'static str) -> Element {
+    let nav = dioxus_router::use_navigator();
+    use_effect(use_reactive!(|to| {
+        nav.replace(link_target(to));
+    }));
     rsx! {
         ScreenLayout {
             Loading { kind: LoadingKind::Page, label }
@@ -110,13 +121,46 @@ pub fn Landing() -> Element {
 /// section on web; the mobile shell ignores it.
 #[component]
 pub fn Settings(section: Option<String>) -> Element {
-    use_page_title(|| Some("Settings".into()));
+    let title = use_memo(use_reactive!(|section| {
+        crate::pages::settings_page_title(section.as_deref())
+    }));
+    use_page_title(move || Some(title()));
     rsx! {
         ScreenLayout { SettingsPage { section } }
     }
 }
 
-/// Route target for `/settings/cleanup/:kind` — the one-card-at-a-time
+/// Route target for `/admin`, the server administration page wrapped in the
+/// platform screen layout. `section` picks the sidebar section.
+#[cfg(not(feature = "mobile"))]
+#[component]
+pub fn Admin(section: Option<String>) -> Element {
+    let title = use_memo(use_reactive!(|section| {
+        crate::pages::admin_page_title(section.as_deref())
+    }));
+    use_page_title(move || Some(title()));
+    rsx! {
+        ScreenLayout { AdminPage { section } }
+    }
+}
+
+/// Mobile stub for `/admin`. The native shell's flat settings page carries the
+/// admin cards it supports, so open that.
+#[cfg(feature = "mobile")]
+#[component]
+pub fn Admin(section: Option<String>) -> Element {
+    let _ = section;
+    rsx! { Redirect { to: Route::Settings { section: None }, label: "Opening settings" } }
+}
+
+/// Route target for `/settings/cleanup/:kind`, the review queue's address
+/// before it moved under `/admin`; redirects so old links keep working.
+#[component]
+pub fn LegacyCleanupReview(kind: String) -> Element {
+    rsx! { Redirect { to: Route::CleanupReview { kind }, label: "Opening library cleanup" } }
+}
+
+/// Route target for `/admin/cleanup/:kind`, the one-card-at-a-time
 /// library-cleanup review queue, wrapped in the platform screen layout.
 /// Web/server only; the in-page `use_is_admin` gate (backed by the
 /// `AdminUser`-gated `cleanup/*` server functions) keeps the chrome off a
@@ -130,33 +174,22 @@ pub fn CleanupReview(kind: String) -> Element {
     }
 }
 
-/// Mobile stub for `/settings/cleanup/:kind`: redirect to the landing page —
+/// Mobile stub for `/admin/cleanup/:kind`. It redirects to the landing page, as
 /// there is no cleanup review surface on mobile.
 #[cfg(feature = "mobile")]
 #[component]
 pub fn CleanupReview(kind: String) -> Element {
     let _ = kind;
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(Route::Landing {});
-    });
-    redirecting(TO_LIBRARY)
+    rsx! { Redirect { to: Route::Landing {}, label: TO_LIBRARY } }
 }
 
-/// Route target for `/logs` — the server log viewer now lives inside Settings
-/// as the admin-only Logs section, so the standalone route is a redirect that
-/// keeps old bookmarks working. Mobile has no log viewer, so it redirects to
-/// the landing page instead.
+/// Route target for `/logs`. The server log viewer is Administration › Logs,
+/// so the standalone route is a redirect that keeps old bookmarks working.
+/// Mobile has no log viewer, so it redirects to the landing page instead.
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn Logs() -> Element {
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(Route::Settings {
-            section: Some("logs".into()),
-        });
-    });
-    redirecting("Opening the logs")
+    rsx! { Redirect { to: AdminSection::Logs.route(), label: "Opening the logs" } }
 }
 
 /// Mobile stub for `/logs`: redirect to the landing page (no log viewer on
@@ -164,24 +197,15 @@ pub fn Logs() -> Element {
 #[cfg(feature = "mobile")]
 #[component]
 pub fn Logs() -> Element {
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(Route::Landing {});
-    });
-    redirecting(TO_LIBRARY)
+    rsx! { Redirect { to: Route::Landing {}, label: TO_LIBRARY } }
 }
 
-/// Route target for `/admin/health` — wraps [`AdminHealthPage`] in
-/// the platform screen layout. Web/server only; the in-page `use_is_admin`
-/// gate (backed by the `AdminUser`-gated `rpc_get_admin_health`) keeps the
-/// chrome off a non-admin screen (AC2/AC4).
+/// Route target for `/admin/health`. Server health is Administration ›
+/// Health now, so this redirects there.
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn AdminHealth() -> Element {
-    use_page_title(|| Some("Server health".into()));
-    rsx! {
-        ScreenLayout { AdminHealthPage {} }
-    }
+    rsx! { Redirect { to: AdminSection::Health.route(), label: "Opening server health" } }
 }
 
 /// Mobile stub for `/admin/health`: redirect to the landing page — there is
@@ -189,26 +213,16 @@ pub fn AdminHealth() -> Element {
 #[cfg(feature = "mobile")]
 #[component]
 pub fn AdminHealth() -> Element {
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(Route::Landing {});
-    });
-    redirecting(TO_LIBRARY)
+    rsx! { Redirect { to: Route::Landing {}, label: TO_LIBRARY } }
 }
 
-/// Route target for `/account` on web/server — the Account content now lives
-/// inside Settings (the same [`AccountPage`], `embedded: true`, behind the
-/// sidebar), so this is a redirect that keeps old bookmarks and the bottom
-/// nav's "You" tab working, mirroring how `/logs` redirects into Settings
-/// above.
+/// Route target for `/account` on web/server. The account controls live in
+/// Settings now, so this redirect keeps old bookmarks and the bottom nav's
+/// "You" tab working.
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn Account() -> Element {
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(Route::Settings { section: None });
-    });
-    redirecting("Opening your account")
+    rsx! { Redirect { to: Route::Settings { section: None }, label: "Opening your account" } }
 }
 
 /// Route target for `/account` on mobile — wraps [`AccountPage`] in the
@@ -412,21 +426,30 @@ pub fn Login(next: Option<String>) -> Element {
     rsx! { LoginPage { next } }
 }
 
-/// Route target for `/authors/:id` — single author discovery page.
+/// Layout for both author routes: the authors list stays mounted beside
+/// their pane, so moving between authors keeps its scroll and filter.
 #[component]
-pub fn AuthorDetail(id: i64) -> Element {
+pub fn AuthorsShell() -> Element {
+    let routed = match dioxus_router::use_route::<Route>() {
+        Route::AuthorDetail { id } => Some(id),
+        _ => None,
+    };
     rsx! {
-        ScreenLayout { AuthorPage { id } }
+        ScreenLayout { AuthorsBrowser { routed } }
     }
 }
 
-/// Route target for `/authors` — browse-all authors index.
+/// Route target for `/authors/:id` — one author's pane beside the list.
+#[component]
+pub fn AuthorDetail(id: i64) -> Element {
+    rsx! { AuthorPage { id } }
+}
+
+/// Route target for `/authors` — the list, previewing a default author.
 #[component]
 pub fn AuthorsIndex() -> Element {
     use_page_title(|| Some("Authors".into()));
-    rsx! {
-        ScreenLayout { AuthorsIndexPage {} }
-    }
+    rsx! { AuthorsIndexPage {} }
 }
 
 /// Route target for `/series/:id` — single series discovery page.
@@ -473,11 +496,7 @@ pub fn StatsChart() -> Element {
 #[cfg(feature = "mobile")]
 #[component]
 pub fn StatsChart() -> Element {
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(Route::Landing {});
-    });
-    redirecting(TO_LIBRARY)
+    rsx! { Redirect { to: Route::Landing {}, label: TO_LIBRARY } }
 }
 
 /// Route target for `/shelves` — the shelves index: a searchable, owner-grouped
@@ -517,11 +536,7 @@ pub fn MobileSearch() -> Element {
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn MobileSearch() -> Element {
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(Route::Landing {});
-    });
-    redirecting(TO_LIBRARY)
+    rsx! { Redirect { to: Route::Landing {}, label: TO_LIBRARY } }
 }
 
 /// Route target for `/search/:query` — full-page search results.
@@ -579,11 +594,33 @@ fn trim_query_separators(url: &str) -> String {
 /// `book_file_id` as `?file_id=`, since a bare `/listen/:uuid` opens the
 /// first audio file) or the reader.
 pub fn resume_route(point: &omnibus_shared::ResumePoint) -> Route {
-    let uuid = point.record.book_uuid.clone();
-    match point.record.format {
-        omnibus_shared::ProgressFormat::Audio => Route::BookListen {
+    reader_route(
+        point.record.book_uuid.clone(),
+        Some(point.record.format),
+        point.record.book_file_id,
+        &point.book.formats,
+    )
+}
+
+/// Where a book opens to read or listen. `format` and `book_file_id` are its
+/// latest position's; with no position, an audio-only book opens in the
+/// player and anything else in its reader.
+pub fn reader_route(
+    uuid: String,
+    format: Option<omnibus_shared::ProgressFormat>,
+    book_file_id: Option<i64>,
+    formats: &[String],
+) -> Route {
+    let has = |ext: &str| formats.iter().any(|f| f.eq_ignore_ascii_case(ext));
+    let readable = has("epub") || has("cbz") || has("pdf");
+    match format {
+        Some(omnibus_shared::ProgressFormat::Audio) => Route::BookListen {
             uuid,
-            file_id: point.record.book_file_id,
+            file_id: book_file_id,
+        },
+        None if !readable && (has("m4b") || has("m4a") || has("mp3")) => Route::BookListen {
+            uuid,
+            file_id: None,
         },
         // Comics and PDFs reuse the Epub-format progress record (see
         // `omnibus_shared::comic_page_anchor` / `pdf_page_anchor`), so the
@@ -591,9 +628,7 @@ pub fn resume_route(point: &omnibus_shared::ResumePoint) -> Route {
         // EPUB > CBZ > PDF: anything with a real EPUB keeps the epub.js
         // reader (a `pdf-page:` anchor must never reach it), a CBZ-only book
         // resumes into the pager, and a PDF-only book into the PDF reader.
-        omnibus_shared::ProgressFormat::Epub => {
-            let formats = &point.book.formats;
-            let has = |ext: &str| formats.iter().any(|f| f.eq_ignore_ascii_case(ext));
+        _ => {
             if has("epub") {
                 Route::BookRead { uuid }
             } else if has("cbz") {
@@ -612,240 +647,4 @@ pub fn resume_route(point: &omnibus_shared::ResumePoint) -> Route {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::str::FromStr;
-
-    use omnibus_shared::{ProgressFormat, ProgressRecord, ResumePoint};
-
-    use super::*;
-
-    #[test]
-    fn route_from_str_parses_stats_with_and_without_a_user() {
-        assert_eq!(
-            Route::from_str("/stats").unwrap(),
-            Route::Stats { user: None }
-        );
-        assert_eq!(
-            Route::from_str("/stats?user=7").unwrap(),
-            Route::Stats { user: Some(7) }
-        );
-    }
-
-    fn point(format: ProgressFormat, book_file_id: Option<i64>) -> ResumePoint {
-        ResumePoint {
-            record: ProgressRecord {
-                book_uuid: "book-a".into(),
-                format,
-                epub_cfi: None,
-                audio_position_seconds: None,
-                book_file_id,
-                progress_percent: None,
-                kobo_location: None,
-                updated_at: 0,
-                client_updated_at: 0,
-                total_duration_seconds: None,
-                resolved: None,
-                derived_epub_cfi: None,
-            },
-            book: Default::default(),
-            linked: false,
-            cross_format: None,
-            audio_part: None,
-            audio_part_count: None,
-            playback_rate: None,
-        }
-    }
-
-    #[test]
-    fn link_target_drops_the_separator_when_no_query_argument_is_set() {
-        // The reported Files-section Listen href: `/listen/book-a?`.
-        assert_eq!(
-            link_target(Route::BookListen {
-                uuid: "book-a".into(),
-                file_id: None,
-            }),
-            NavigationTarget::Internal("/listen/book-a".into())
-        );
-        assert_eq!(
-            link_target(Route::Settings { section: None }),
-            NavigationTarget::Internal("/settings".into())
-        );
-        assert_eq!(
-            link_target(Route::Stats { user: None }),
-            NavigationTarget::Internal("/stats".into())
-        );
-    }
-
-    #[test]
-    fn link_target_keeps_a_query_argument_that_is_set() {
-        assert_eq!(
-            link_target(Route::BookListen {
-                uuid: "book-a".into(),
-                file_id: Some(917),
-            }),
-            NavigationTarget::Internal("/listen/book-a?file_id=917".into())
-        );
-        assert_eq!(
-            link_target(Route::Settings {
-                section: Some("library".into()),
-            }),
-            NavigationTarget::Internal("/settings?section=library".into())
-        );
-        assert_eq!(
-            link_target(Route::Stats { user: Some(7) }),
-            NavigationTarget::Internal("/stats?user=7".into())
-        );
-    }
-
-    #[test]
-    fn link_target_leaves_a_route_with_no_query_segment_alone() {
-        assert_eq!(
-            link_target(Route::BookRead {
-                uuid: "book-a".into(),
-            }),
-            NavigationTarget::Internal("/read/book-a".into())
-        );
-    }
-
-    #[test]
-    fn resume_route_sends_a_cbz_only_book_to_the_comic_pager() {
-        let mut p = point(ProgressFormat::Epub, None);
-        p.book.formats = vec!["CBZ".into()];
-        assert_eq!(
-            resume_route(&p),
-            Route::ComicRead {
-                uuid: "book-a".into()
-            }
-        );
-    }
-
-    #[test]
-    fn resume_route_sends_a_pdf_only_book_to_the_pdf_reader() {
-        let mut p = point(ProgressFormat::Epub, None);
-        p.book.formats = vec!["PDF".into()];
-        assert_eq!(
-            resume_route(&p),
-            Route::PdfRead {
-                uuid: "book-a".into(),
-                file_id: None,
-                page: None,
-            }
-        );
-    }
-
-    #[test]
-    fn resume_route_prefers_the_epub_reader_over_a_pdf_on_a_mixed_book() {
-        // The `pdf-page:` anchor on the shared record must never reach
-        // epub.js, but the EPUB is still the book's reader: the PDF is only
-        // reachable through the file picker.
-        let mut p = point(ProgressFormat::Epub, None);
-        p.book.formats = vec!["PDF".into(), "EPUB".into()];
-        assert_eq!(
-            resume_route(&p),
-            Route::BookRead {
-                uuid: "book-a".into()
-            }
-        );
-    }
-
-    #[test]
-    fn resume_route_prefers_the_comic_pager_over_a_pdf() {
-        let mut p = point(ProgressFormat::Epub, None);
-        p.book.formats = vec!["pdf".into(), "cbz".into()];
-        assert_eq!(
-            resume_route(&p),
-            Route::ComicRead {
-                uuid: "book-a".into()
-            }
-        );
-    }
-
-    #[test]
-    fn link_target_trims_the_separators_left_by_one_absent_query_argument() {
-        // Two optional query args: setting only the first leaves a trailing
-        // `&`, only the second a leading `?&`. Neither belongs in an href.
-        assert_eq!(
-            link_target(Route::PdfRead {
-                uuid: "book-a".into(),
-                file_id: Some(917),
-                page: None,
-            }),
-            NavigationTarget::Internal("/pdf/book-a?file_id=917".into())
-        );
-        assert_eq!(
-            link_target(Route::PdfRead {
-                uuid: "book-a".into(),
-                file_id: None,
-                page: Some(4),
-            }),
-            NavigationTarget::Internal("/pdf/book-a?page=4".into())
-        );
-        assert_eq!(trim_query_separators("/x?a=1&"), "/x?a=1");
-        assert_eq!(trim_query_separators("/x?&b=2"), "/x?b=2");
-        assert_eq!(trim_query_separators("/x?&"), "/x");
-    }
-
-    #[test]
-    fn link_target_trims_the_pdf_route_with_no_query_arguments() {
-        assert_eq!(
-            link_target(Route::PdfRead {
-                uuid: "book-a".into(),
-                file_id: None,
-                page: None,
-            }),
-            NavigationTarget::Internal("/pdf/book-a".into())
-        );
-        assert_eq!(
-            link_target(Route::PdfRead {
-                uuid: "book-a".into(),
-                file_id: Some(917),
-                page: Some(4),
-            }),
-            NavigationTarget::Internal("/pdf/book-a?file_id=917&page=4".into())
-        );
-    }
-
-    #[test]
-    fn resume_route_keeps_the_epub_reader_when_a_book_has_both_formats() {
-        let mut p = point(ProgressFormat::Epub, None);
-        p.book.formats = vec!["EPUB".into(), "CBZ".into()];
-        assert_eq!(
-            resume_route(&p),
-            Route::BookRead {
-                uuid: "book-a".into()
-            }
-        );
-    }
-
-    #[test]
-    fn resume_route_carries_the_audio_file_the_position_was_taken_in() {
-        assert_eq!(
-            resume_route(&point(ProgressFormat::Audio, Some(917))),
-            Route::BookListen {
-                uuid: "book-a".into(),
-                file_id: Some(917),
-            }
-        );
-    }
-
-    #[test]
-    fn resume_route_leaves_the_file_open_when_the_point_names_none() {
-        assert_eq!(
-            resume_route(&point(ProgressFormat::Audio, None)),
-            Route::BookListen {
-                uuid: "book-a".into(),
-                file_id: None,
-            }
-        );
-    }
-
-    #[test]
-    fn resume_route_sends_an_epub_position_to_the_reader() {
-        assert_eq!(
-            resume_route(&point(ProgressFormat::Epub, None)),
-            Route::BookRead {
-                uuid: "book-a".into()
-            }
-        );
-    }
-}
+mod tests;

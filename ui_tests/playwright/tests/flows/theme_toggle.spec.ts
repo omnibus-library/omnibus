@@ -1,104 +1,136 @@
-import { expect, test } from "../fixtures/test";
-import { gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
 
-// F1.6 Atrium theme toggle. The theme controls now live inside the user-menu
-// dropdown (Dark / Black / Light / Sepia segmented control). The web build
-// persists the choice under `omn.theme` in localStorage and applies it in a
-// post-hydration `use_effect` so SSR markup stays deterministic.
-//
-// Notes for future test authors:
-//   - Each Playwright test gets a fresh storage state (only the auth cookie
-//     survives — see `auth.setup.ts`). localStorage starts empty per test,
-//     so the cold-load assertion below tests the genuine "no persisted
-//     value" path.
-//   - We assert the `data-theme` attribute on `.atrium` rather than a
-//     specific computed style. The attribute is the contract; the variable
-//     values are an implementation detail tested at the CSS level.
+// The segmented control in the user menu and in Settings › Preferences keeps
+// its choice under `omn.theme` and applies it after hydration. Each test starts
+// with empty localStorage and asserts `data-theme`, the contract.
 
-async function openUserMenu(page: import("@playwright/test").Page) {
-  await page.getByTestId("user-menu-trigger").click();
-}
+test.describe("theme toggle", () => {
+  test("show the dark theme on first paint", async ({ libraryPage }) => {
+    const { topNav } = libraryPage;
 
-test("renders the dark theme on first paint", async ({ page }) => {
-  await gotoReady(page, "/");
+    await test.step("open the library", async () => {
+      await libraryPage.goto();
+    });
 
-  const root = page.locator("div.atrium").first();
-  await expect(root).toBeVisible();
-  await expect(root).toHaveAttribute("data-theme", "dark");
+    await test.step("check the theme is dark", async () => {
+      await expect(libraryPage.themeRoot).toBeVisible();
+      await expect(libraryPage.themeRoot).toHaveAttribute("data-theme", "dark");
+    });
 
-  await openUserMenu(page);
-  await expect(page.getByTestId("theme-dark")).toBeVisible();
-  await expect(page.getByTestId("theme-light")).toBeVisible();
-});
+    await test.step("check the menu marks the dark theme", async () => {
+      await topNav.openUserMenu();
+      await expect(topNav.themeButton("dark")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await expect(topNav.themeButton("light")).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+  });
 
-test("toggles dark to light, persists across reload", async ({ page }) => {
-  await gotoReady(page, "/");
+  test("persist the light theme across a reload", async ({ libraryPage }) => {
+    const { topNav } = libraryPage;
 
-  const root = page.locator("div.atrium").first();
-  await expect(root).toHaveAttribute("data-theme", "dark");
+    await test.step("choose the light theme", async () => {
+      await libraryPage.goto();
+      await expect(libraryPage.themeRoot).toHaveAttribute("data-theme", "dark");
+      await topNav.openUserMenu();
+      await topNav.selectTheme("light");
+      await expect(libraryPage.themeRoot).toHaveAttribute(
+        "data-theme",
+        "light",
+      );
+    });
 
-  await openUserMenu(page);
-  await page.getByTestId("theme-light").click();
-  await expect(root).toHaveAttribute("data-theme", "light");
+    await test.step("check the switch settles and is stored", async () => {
+      // The switch holds a `theme-snap` class that pauses CSS transitions for
+      // one repaint; if it never clears, hover transitions stay dead.
+      await expect(libraryPage.themeRoot).toHaveAttribute("class", "atrium");
+      expect(await libraryPage.storedTheme()).toBe("light");
+    });
 
-  // The switch briefly holds a `theme-snap` class on the root that disables
-  // CSS transitions so every surface repaints in the same frame. It must
-  // clear again (two animation frames later) or hover transitions would stay
-  // dead for the whole session — poll for the settled class.
-  await expect.poll(async () => root.getAttribute("class")).toBe("atrium");
+    await test.step("reload", async () => {
+      // SSR still renders dark; the post-hydration effect then flips it.
+      await libraryPage.reload();
+      await expect(libraryPage.themeRoot).toHaveAttribute(
+        "data-theme",
+        "light",
+      );
+    });
+  });
 
-  const stored = await page.evaluate(() =>
-    window.localStorage.getItem("omn.theme"),
-  );
-  expect(stored).toBe("light");
+  test("persist the black theme across a reload", async ({ libraryPage }) => {
+    const { topNav } = libraryPage;
 
-  // Reload: the SSR layer still renders `dark`, then the post-hydration
-  // effect reads localStorage and flips to `light`. Poll the attribute so
-  // we wait for that single follow-up render instead of asserting on the
-  // pre-effect frame.
-  await page.reload();
-  await expect.poll(async () => root.getAttribute("data-theme")).toBe("light");
-});
+    await test.step("choose the black theme", async () => {
+      await libraryPage.goto();
+      await expect(libraryPage.themeRoot).toHaveAttribute("data-theme", "dark");
+      await topNav.openUserMenu();
+      await topNav.selectTheme("black");
+      await expect(libraryPage.themeRoot).toHaveAttribute(
+        "data-theme",
+        "black",
+      );
+      expect(await libraryPage.storedTheme()).toBe("black");
+    });
 
-test("toggles dark to black, persists across reload", async ({ page }) => {
-  await gotoReady(page, "/");
+    await test.step("reload", async () => {
+      await libraryPage.reload();
+      await expect(libraryPage.themeRoot).toHaveAttribute(
+        "data-theme",
+        "black",
+      );
+    });
+  });
 
-  const root = page.locator("div.atrium").first();
-  await expect(root).toHaveAttribute("data-theme", "dark");
+  test("flip back to dark after choosing light", async ({ libraryPage }) => {
+    const { topNav } = libraryPage;
 
-  await openUserMenu(page);
-  await page.getByTestId("theme-black").click();
-  await expect(root).toHaveAttribute("data-theme", "black");
+    await test.step("choose the light theme", async () => {
+      await libraryPage.goto();
+      // Selecting a theme leaves the menu open, so a second choice needs no reopen.
+      await topNav.openUserMenu();
+      await topNav.selectTheme("light");
+      await expect(libraryPage.themeRoot).toHaveAttribute(
+        "data-theme",
+        "light",
+      );
+    });
 
-  const stored = await page.evaluate(() =>
-    window.localStorage.getItem("omn.theme"),
-  );
-  expect(stored).toBe("black");
+    await test.step("choose the dark theme", async () => {
+      await topNav.selectTheme("dark");
+      await expect(libraryPage.themeRoot).toHaveAttribute("data-theme", "dark");
+      expect(await libraryPage.storedTheme()).toBe("dark");
+    });
+  });
 
-  // Reload: SSR renders `dark`, then the post-hydration effect reads
-  // localStorage and flips to `black`. Poll for the follow-up render.
-  await page.reload();
-  await expect.poll(async () => root.getAttribute("data-theme")).toBe("black");
-});
+  test("switch the theme from preferences", async ({ settingsPage }) => {
+    const { account } = settingsPage;
 
-test("clicking light then dark flips back and clears divergence from default", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
+    await test.step("open the preferences section", async () => {
+      await settingsPage.goto("preferences");
+      await expect(settingsPage.themeRoot).toHaveAttribute(
+        "data-theme",
+        "dark",
+      );
+    });
 
-  const root = page.locator("div.atrium").first();
+    await test.step("choose the sepia theme", async () => {
+      await account.selectTheme("sepia");
+    });
 
-  // Menu stays open between clicks — selecting a theme does not auto-close
-  // the panel (the user might want to toggle multiple settings in sequence).
-  await openUserMenu(page);
-  await page.getByTestId("theme-light").click();
-  await expect(root).toHaveAttribute("data-theme", "light");
-
-  await page.getByTestId("theme-dark").click();
-  await expect(root).toHaveAttribute("data-theme", "dark");
-
-  const stored = await page.evaluate(() =>
-    window.localStorage.getItem("omn.theme"),
-  );
-  expect(stored).toBe("dark");
+    await test.step("check the theme applies, is marked and is stored", async () => {
+      await expect(settingsPage.themeRoot).toHaveAttribute(
+        "data-theme",
+        "sepia",
+      );
+      await expect(account.themeButton("sepia")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(await settingsPage.storedTheme()).toBe("sepia");
+    });
+  });
 });

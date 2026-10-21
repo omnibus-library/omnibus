@@ -42,10 +42,23 @@ and admin recovery are all in the [Docker guide](docs/docker.md).
 | [**Kobo sync & KEPUB**](docs/kobo.md) | Wired one-click transfer, wireless sync setup, two-way highlights |
 | [**Local development**](docs/local-development.md) | Nix shells, `just` recipes, tests, mobile builds, project layout |
 | [**Architecture**](docs/architecture.md) | Crates, request flows, mobile auth; the [iOS app](docs/ios.md)'s design |
+| [**REST API**](#rest-api) | The OpenAPI contract every client builds against |
 | [**Configuration reference**](.env.example) | Every supported environment variable, annotated |
 | [**Roadmap**](https://github.com/users/seamus-sloan/projects/2/views/9) | What's shipped and what's next |
 | [**Contributing**](CONTRIBUTING.md) | Issue-first workflow, quality gate, PR conventions |
 | [**Security policy**](.github/SECURITY.md) | How to report a vulnerability privately |
+
+## REST API
+
+The iOS app, the MCP server and the React web client talk to Omnibus through
+one REST API under `/api/`. Its contract is
+[`openapi/openapi.json`](openapi/openapi.json), an OpenAPI 3.1 document the
+server's code generates, so it can't drift from what the server does. To
+write a client, generate one from that file; the copy at a release tag
+describes that release.
+
+To read it as an API reference, run `just openapi` in a checkout. It
+regenerates the file and opens the reference in your browser.
 
 ## License
 

@@ -6,7 +6,7 @@
 use omnibus_shared::{RuleField, RuleOp, ShelfRule, Visibility};
 
 use super::*;
-use crate::test_support::render;
+use crate::test_support::{render, tag_with_testid};
 
 /// A minimal shelf for prop-driven render tests.
 fn shelf(kind: ShelfKind, sync_to_kobo: bool) -> Shelf {
@@ -36,18 +36,6 @@ fn Harness(kind: ShelfKind, sync_to_kobo: bool) -> Element {
             on_saved: move |_| {},
         }
     }
-}
-
-/// The opening tag holding `data-testid="<testid>"` — attribute-order-proof
-/// so assertions survive renderer reordering.
-fn tag_with_testid<'a>(html: &'a str, testid: &str) -> &'a str {
-    let needle = format!("data-testid=\"{testid}\"");
-    let pos = html
-        .find(&needle)
-        .unwrap_or_else(|| panic!("no element with testid {testid} in: {html}"));
-    let start = html[..pos].rfind('<').expect("testid outside a tag");
-    let end = pos + html[pos..].find('>').expect("unterminated tag");
-    &html[start..=end]
 }
 
 #[test]

@@ -1,0 +1,155 @@
+name: Frontend JS
+
+# Lint, typecheck, test and build the React client (frontend-js/) and its
+# Storybook. Mirrors ts-lint.yml: path gating lives in the `changes` job rather
+# than a workflow-level `paths:` filter, so the gate job always reports a status.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: frontend-js-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      js: ${{ steps.filter.outputs.js }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            js:
+              - "frontend-js/**"
+              # The client is generated from the spec, so a spec change can break it.
+              - "openapi/openapi.json"
+              # The parity tests in frontend-js compare these copies.
+              - "frontend/assets/vendor/**"
+              - "frontend/assets/reader-fonts/**"
+              - ".github/workflows/frontend-js.yml"
+              - "flake.nix"
+              - "flake.lock"
+
+  frontend-js:
+    name: biome + tsc + tests + storybook + build
+    needs: changes
+    if: ${{ needs.changes.outputs.js == 'true' || github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    env:
+      STORYBOOK_DISABLE_TELEMETRY: "1"
+    permissions:
+      contents: read
+      # See rust.yml: id-token for the Nix installer's FlakeHub OIDC auth,
+      # actions:write for cache-nix-action's `purge: true` self-eviction.
+      id-token: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v22
+
+      # Its own prefix so this and the other workflows don't evict each other.
+      # The `.#e2e` shell carries the Chromium bundle the story tests run in.
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-fejs-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix') }}
+          restore-prefixes-first-match: nix-fejs-${{ runner.os }}-
+          purge: true
+          purge-prefixes: nix-fejs-${{ runner.os }}-
+          purge-last-accessed: 604800
+          purge-primary-key: never
+          gc-max-store-size-linux: 5G
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: frontend-js/node_modules
+          key: frontend-js-node-modules-${{ runner.os }}-${{ hashFiles('frontend-js/pnpm-lock.yaml') }}
+          restore-keys: |
+            frontend-js-node-modules-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: nix develop .#e2e --command pnpm --dir frontend-js install --frozen-lockfile
+
+      # The zod schemas, fetchers, query hooks and MSW handlers, from
+      # openapi/openapi.json. Gitignored, so every run rebuilds them.
+      - name: Generate the API client
+        run: nix develop .#e2e --command pnpm --dir frontend-js run generate
+
+      - name: Biome
+        run: nix develop .#e2e --command pnpm --dir frontend-js exec biome check .
+
+      - name: Typecheck
+        run: nix develop .#e2e --command pnpm --dir frontend-js exec tsc --noEmit
+
+      # API parsers, formatting, the theme root and every route that renders
+      # without the API, in jsdom.
+      - name: Unit tests
+        run: >-
+          nix develop .#e2e --command pnpm --dir frontend-js exec vitest run
+          --project unit --reporter=default --reporter=junit
+          --outputFile.junit=results-unit.xml
+          --coverage --coverage.reportsDirectory=coverage/unit
+
+      # Every story renders in Chromium; a story's `play` is its test.
+      - name: Story tests
+        run: >-
+          nix develop .#e2e --command pnpm --dir frontend-js exec vitest run
+          --project storybook --reporter=default --reporter=junit
+          --outputFile.junit=results-stories.xml
+          --coverage --coverage.reportsDirectory=coverage/stories
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() && hashFiles('frontend-js/results-*.xml') != '' }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: frontend-js/results-unit.xml,frontend-js/results-stories.xml
+          report_type: test_results
+          flags: frontend-js
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      # Codecov merges the two uploads under one flag.
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() && hashFiles('frontend-js/coverage/*/lcov.info') != '' }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: frontend-js/coverage/unit/lcov.info,frontend-js/coverage/stories/lcov.info
+          flags: frontend-js
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Build Storybook
+        run: nix develop .#e2e --command pnpm --dir frontend-js exec storybook build --quiet
+
+      - name: Build the app
+        run: nix develop .#e2e --command pnpm --dir frontend-js exec vite build --base=/react/
+
+  # Green when `frontend-js` passed or was skipped, red when it failed. Require
+  # only this job in branch protection, never `frontend-js` itself.
+  frontend-js-required:
+    name: 🔒 Frontend JS Required
+    needs: [changes, frontend-js]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: seamus-sloan/gh-actions/ci-gate@ci-gate-v1
+        with:
+          needs: ${{ toJSON(needs) }}

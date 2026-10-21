@@ -1,0 +1,271 @@
+:root {
+  --bg-0: oklch(0.135 0.006 70);
+  --bg-1: oklch(0.175 0.008 70);
+  --bg-2: oklch(0.215 0.01 70);
+  --bg-3: oklch(0.265 0.011 70);
+  --line: oklch(0.3 0.01 70 / 0.65);
+  --line-2: oklch(0.3 0.01 70 / 0.3);
+
+  --ink-0: oklch(0.97 0.006 80);
+  --ink-1: oklch(0.82 0.01 75);
+  --ink-2: oklch(0.62 0.012 70);
+  --ink-3: oklch(0.48 0.012 70);
+
+  --accent: oklch(0.78 0.13 65);
+  --accent-soft: oklch(0.3 0.07 65);
+  --accent-ink: oklch(0.16 0.02 65);
+
+  /* Missing-cover plate ground (issue #92): neutral grey, never the accent. */
+  --cover-fallback-bg: oklch(0.3 0.004 70);
+  --cover-fallback-ink: oklch(0.92 0.004 70);
+
+  --ok: oklch(0.78 0.13 150);
+  --warn: oklch(0.78 0.13 75);
+  --bad: oklch(0.72 0.16 25);
+
+  /* Reader page ground — must match the epub.js body background the glue
+     registers per theme (`rendition.themes.register` in
+     `vendor/epub-reader-glue.js`), so the reader surface around the prose
+     is seamless with the page itself. */
+  --rd-page: #201e1b;
+
+  --serif: "Cormorant Garamond", "EB Garamond", Georgia, serif;
+  --sans:
+    "Instrument Sans", ui-sans-serif, -apple-system, system-ui, sans-serif;
+  --mono: "Space Mono", ui-monospace, "SF Mono", monospace;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 22px;
+  --pad: 28px;
+  --gap: 18px;
+
+  color-scheme: dark;
+}
+[data-theme="black"] {
+  --bg-0: oklch(0 0 0);
+  --bg-1: oklch(0.15 0 0);
+  --bg-2: oklch(0.19 0 0);
+  --bg-3: oklch(0.24 0 0);
+  --line: oklch(0.34 0 0 / 0.6);
+  --line-2: oklch(0.34 0 0 / 0.26);
+
+  --ink-0: oklch(0.99 0 0);
+  --ink-1: oklch(0.82 0 0);
+  --ink-2: oklch(0.63 0 0);
+  --ink-3: oklch(0.48 0 0);
+
+  --accent: oklch(0.94 0 0);
+  --accent-soft: oklch(0.3 0 0);
+  --accent-ink: oklch(0.14 0 0);
+
+  --cover-fallback-bg: oklch(0.26 0 0);
+  --cover-fallback-ink: oklch(0.94 0 0);
+
+  /* Matches the `black` reading theme the glue registers, so the strips
+     freed when the reader chrome slides away stay seamless with the page
+     instead of falling back to the default dark ground. */
+  --rd-page: #000000;
+
+  color-scheme: dark;
+}
+[data-theme="light"] {
+  --bg-0: oklch(0.985 0.003 75);
+  --bg-1: oklch(0.965 0.004 75);
+  --bg-2: oklch(0.94 0.006 75);
+  --bg-3: oklch(0.91 0.008 75);
+  --line: oklch(0.4 0.01 70 / 0.2);
+  --line-2: oklch(0.4 0.01 70 / 0.1);
+  --ink-0: oklch(0.17 0.006 70);
+  --ink-1: oklch(0.36 0.008 70);
+  --ink-2: oklch(0.52 0.01 70);
+  /* `--ink-3` is the muted-label tier — meta-table keys, hints, axis labels,
+     disabled-action arrows. The dark theme runs it at 0.48 L against a
+     0.175 L ground (≈3.9:1). The original light value of 0.66 L against a
+     0.965 L card ground only reached ≈2.2:1, which is the rails-mismatch
+     issue (#289): on the book-detail / metadata-edit rails the identifier
+     keys, "Mark as finished" action row, and axis labels wash out in Light
+     mode. Pulling it down to 0.50 L mirrors the dark side of the token and
+     lands the contrast ratio near 3.5:1 — still reads as muted, but legible
+     for the small UI text these rails carry. */
+  --ink-3: oklch(0.5 0.01 70);
+  /* Light does not darken `--accent`, so it keeps the 0.78 L amber from
+     `:root`. A near-white ink on that ground is ~2:1 — every accent-filled
+     control (the hero resume pill, primary buttons, active toggles) was
+     unreadable. Sepia can afford white ink because it drops the accent to
+     0.58 L; light has to take the dark ink instead. */
+  --accent-ink: oklch(0.16 0.02 65);
+  /* Light never set this, so it kept the dark theme's 0.30 L brown, and an
+     accent-soft fill under dark ink was unreadable. */
+  --accent-soft: oklch(0.91 0.05 70);
+  --cover-fallback-bg: oklch(0.86 0.004 70);
+  --cover-fallback-ink: oklch(0.28 0.006 70);
+  --rd-page: #fcfbfa;
+  /* Status inks darkened for a light ground; the dark theme's 0.72–0.78 L
+     values sit near 2:1 on these cards. */
+  --ok: oklch(0.48 0.11 150);
+  --warn: oklch(0.5 0.11 70);
+  --bad: oklch(0.48 0.16 25);
+  color-scheme: light;
+}
+[data-theme="sepia"] {
+  --bg-0: oklch(0.945 0.022 80);
+  --bg-1: oklch(0.915 0.026 80);
+  --bg-2: oklch(0.88 0.03 78);
+  --bg-3: oklch(0.84 0.034 76);
+  --line: oklch(0.42 0.03 60 / 0.28);
+  --line-2: oklch(0.42 0.03 60 / 0.14);
+  --ink-0: oklch(0.26 0.038 55);
+  --ink-1: oklch(0.4 0.036 55);
+  --ink-2: oklch(0.52 0.032 58);
+  --ink-3: oklch(0.64 0.028 60);
+  --accent: oklch(0.58 0.11 50);
+  --accent-soft: oklch(0.82 0.05 60);
+  --accent-ink: oklch(0.98 0.012 80);
+  --cover-fallback-bg: oklch(0.8 0.03 72);
+  --cover-fallback-ink: oklch(0.3 0.036 55);
+  --rd-page: #ede4d0;
+  --ok: oklch(0.45 0.1 150);
+  --warn: oklch(0.47 0.1 65);
+  --bad: oklch(0.46 0.15 30);
+  color-scheme: light;
+}
+body.atrium,
+.atrium {
+  background: var(--bg-0);
+  color: var(--ink-0);
+  font-family: var(--sans);
+  /* Cormorant's default figures are oldstyle: `0` sits at x-height and reads
+     as a lowercase `o`, so a duration renders as "oh oom" and a stat value
+     as "om". Forced app-wide rather than site-by-site — the UI is chrome and
+     numerals in it are data, and the one place oldstyle would genuinely read
+     better (a quoted passage) is not worth a split that every new serif
+     surface would have to remember. Instrument Sans and Space Mono carry
+     only lining figures, so this is a no-op outside the serif. */
+  font-variant-numeric: lining-nums;
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
+  /* `dvh`, not `vh`: on iOS `100vh` is the *large* viewport (taller than the
+     visible area), which left the shell a few px taller than the screen and
+     let the page rubber-band/scroll behind the fixed player. */
+  min-height: 100dvh;
+  overscroll-behavior: none;
+  margin: 0;
+}
+
+.atrium *,
+.atrium *::before,
+.atrium *::after {
+  box-sizing: border-box;
+}
+.atrium :where(input, textarea, select, button) {
+  font-variant-numeric: inherit;
+}
+.atrium h1,
+.atrium h2,
+.atrium h3,
+.atrium h4,
+.atrium h5 {
+  font-family: var(--serif);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  margin: 0;
+  color: var(--ink-0);
+}
+.atrium h1,
+.atrium h2,
+.atrium h3,
+.atrium h4,
+.atrium h5 {
+  --descender-guard: max(0px, calc((0.6015 - var(--lh, 1.203) / 2) * 1em));
+  padding-bottom: var(--descender-guard);
+}
+.atrium h1 {
+  --lh: 1;
+  font-size: 70px;
+  line-height: var(--lh);
+}
+.atrium h2 {
+  --lh: 1.05;
+  font-size: 46px;
+  line-height: var(--lh);
+}
+.atrium h3 {
+  --lh: 1.1;
+  font-size: 31px;
+  line-height: var(--lh);
+}
+.atrium h4 {
+  --lh: 1.2;
+  font-size: 22px;
+  line-height: var(--lh);
+}
+.atrium h1 em,
+.atrium h2 em,
+.atrium h3 em,
+.atrium h4 em,
+.atrium h5 em {
+  font-style: normal;
+}
+.atrium p {
+  margin: 0;
+}
+.atrium a {
+  color: inherit;
+  text-decoration: none;
+}
+:root {
+  color-scheme: dark;
+}
+.atrium {
+  --auth-ink-0: var(--ink-0);
+  --auth-ink-1: var(--ink-1);
+  --auth-ink-2: var(--ink-2);
+  --auth-ink-3: var(--ink-3);
+  --auth-bg-0: var(--bg-0);
+  --auth-bg-1: var(--bg-1);
+  --auth-bg-2: var(--bg-2);
+  --auth-line: var(--line);
+  --auth-line-2: var(--line-2);
+  /* Accent stays a fixed cyan rather than `--accent`: the light theme leaves
+     `--accent` at the dark default (a pale orange) that fails contrast as link
+     text. Cyan reads on the dark, cream, and parchment grounds alike. */
+  --auth-accent: #22d3ee;
+  --auth-accent-ink: #03131c;
+  --auth-ok: var(--ok);
+  --auth-warn: var(--warn);
+  --auth-bad: var(--bad);
+  --auth-info: var(--accent);
+  --auth-sans: var(--sans);
+  --auth-serif: var(--serif);
+  --auth-mono: var(--mono);
+}
+:root {
+  --hl-amber: rgb(245, 158, 11);
+  --hl-green: rgb(34, 197, 94);
+  --hl-blue: rgb(59, 130, 246);
+  --hl-rose: rgb(244, 63, 94);
+  --hl-violet: rgb(139, 92, 246);
+}
+@media (max-width: 720px) {
+  .atrium h1 {
+    font-size: clamp(30px, 10vw, 42px);
+  }
+  .atrium h2 {
+    font-size: clamp(24px, 8vw, 32px);
+  }
+}
+
+:root {
+  /* The page-turn curve: a slow lift, a quick fall, a soft landing. */
+  --ld-ease: cubic-bezier(0.45, 0.05, 0.25, 1);
+  --ld-ease-out: cubic-bezier(0.2, 0.7, 0.3, 1);
+  /* One pass of the line; one full riffle. */
+  --ld-beat: 1.7s;
+  --ld-turn: 2.7s;
+  /* A loader that resolves inside this window is never seen at all. */
+  --ld-hold: 160ms;
+}

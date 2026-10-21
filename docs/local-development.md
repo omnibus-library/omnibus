@@ -91,12 +91,23 @@ tests fail with a pointer to it when they're missing.
 ## Tests & lint
 
 ```bash
-just test    # full matrix: db + server + frontend(--features server) + shared
+just test    # full matrix: db + server + frontend(--features server) + shared, then the script suites
 just lint    # cargo fmt --check + clippy across the crate/feature matrix + stylelint
 just check   # lint then test
 
 just coverage       # lcov + per-file summary via cargo-llvm-cov over nextest
 just coverage-html  # browsable per-line report
+```
+
+### The REST contract
+
+`openapi/openapi.json` describes every `/api/*` route and is generated from the
+handlers. After changing a route or a type in `shared/`, regenerate it and commit
+the result; a test fails until you do.
+
+```bash
+just openapi-gen  # rewrite openapi/openapi.json
+just openapi      # regenerate, then browse it as an API reference on a local port
 ```
 
 Per-crate, when you want a tighter loop. Note that `cargo test --workspace`
@@ -115,8 +126,18 @@ cargo test -p omnibus-mock-kobo                    # fake Kobo firmware tests (o
 
 ### Web E2E (Playwright)
 
-The server must be running; Chromium comes from Nix. The project uses **pnpm**
-(not npm) and TypeScript 7, with Biome as linter/formatter:
+`just e2e-ci` runs the suite the way CI does: it bundles the app, starts its
+standalone server on a scratch database, runs the specs and stops the server.
+Pass spec paths (relative to `ui_tests/playwright`) to run a subset:
+
+```bash
+just e2e-ci                                   # whole suite
+just e2e-ci tests/flows/browse_indices.spec.ts
+```
+
+To run against a dev server you already have up instead, Chromium comes from
+Nix. The project uses **pnpm** (not npm) and TypeScript 7, with Biome as
+linter/formatter:
 
 ```bash
 cd ui_tests/playwright
@@ -218,7 +239,8 @@ prints a directory's map from them. The rules contributors follow live under
 
 | Topic | Rule |
 |---|---|
-| Dev environment, env vars | [01-dev-environment.md](../.claude/rules/01-dev-environment.md) |
+| Dev environment | [01-dev-environment.md](../.claude/rules/01-dev-environment.md) |
+| Environment variables | [environment.md](environment.md) |
 | Error handling | [02-error-handling.md](../.claude/rules/02-error-handling.md) |
 | Unit & integration testing | [03-unit-testing.md](../.claude/rules/03-unit-testing.md) |
 | Playwright E2E conventions | [04-playwright.md](../.claude/rules/04-playwright.md) |

@@ -122,7 +122,11 @@ Back up the device first — see the warning above.
 2. Go to **Account → Kobo wireless sync**, give your Kobo a name, and click
    **Add a Kobo**. Omnibus prints that device's own sync endpoint —
    `<your_omnibus_server_url>/kobo/<token>`. The token identifies the device,
-   so treat the URL as a secret and use a different one per Kobo.
+   so treat the URL as a secret and use a different one per Kobo. If the
+   server is on a port other than 80 or 443, such as
+   `http://192.168.1.10:3001`, also list that address in
+   `OMNIBUS_PUBLIC_ORIGIN`. The Kobo leaves the port off its requests, and
+   without that entry its download links point at the wrong port.
 3. Connect the Kobo over USB and tap **Connect** on the device. It appears as a
    USB drive.
 4. Open `.kobo/Kobo/Kobo eReader.conf` on that drive and set `api_endpoint=`
@@ -233,7 +237,9 @@ wrong.
 
 For development: `mock-kobo` is a fake Kobo e-reader that syncs against the
 same `/kobo/<token>/v1/*` routes a real device uses, so wireless sync can be
-tried, and its bugs reproduced, with no hardware.
+tried, and its bugs reproduced, with no hardware. Like a real Kobo, it leaves
+the port off `Host`, so a server on a port other than 80 or 443 must list its
+address in `OMNIBUS_PUBLIC_ORIGIN`.
 
 ### In a terminal
 
@@ -247,10 +253,15 @@ It follows this worktree's dev server, logs in as `OMNIBUS_DEV_SEED_USER`, and
 reuses or creates the Omnibus device named "Mock Kobo". The screen shows the
 device's hardware id, URL, library, last sync and the requests it made.
 
+The seeded admin starts with a **Kobo library** smart shelf that holds every
+EPUB, CBZ and PDF and has **Sync to Kobo** on, so the first sync downloads all
+of them. The server adds that shelf only when it creates the admin. If your dev
+database already had an admin, mark a shelf **Sync to Kobo** yourself.
+
 | Key | Does |
 |---|---|
 | <kbd>s</kbd> | Sync now |
-| <kbd>r</kbd> | Reset the device: empty library, no sync token |
+| <kbd>r</kbd> | Reset the device: empty library, no sync token, so the next sync resends every opted-in book |
 | <kbd>u</kbd> | Edit the server URL (pinned and saved) |
 | <kbd>t</kbd> | Edit the device token (saved) |
 | <kbd>w</kbd> | Wire a token for the current URL, as startup does |
@@ -265,12 +276,6 @@ action runs (a sync, reset, edit or wire) waits for it, so nothing is left half
 done; press <kbd>q</kbd> or <kbd>Ctrl-C</kbd> again to quit at once. A running
 sync is always waited for, so the pages Omnibus recorded are saved; one more
 <kbd>Ctrl-C</kbd> kills the process.
-
-> [!NOTE]
-> Reset empties the device, but Omnibus still remembers what it delivered, so
-> the next sync sends only changes (until #2743). For a full resend, remove the
-> device in **Account settings** and press <kbd>w</kbd> (or point a fresh state
-> file at it).
 
 For a second device, give it its own state file; inside the gitignored
 `.claude/runtime/`, because a state file holds the device token:

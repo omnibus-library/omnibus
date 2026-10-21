@@ -37,15 +37,6 @@ private func eventually(timeout: Duration = .seconds(5), _ condition: () -> Bool
     return condition()
 }
 
-/// An empty scratch replica and its path, for tests that read or wipe keys.
-private func scratchStore() async -> (OfflineStore, String) {
-    let path = FileManager.default.temporaryDirectory
-        .appendingPathComponent("filter-store-\(UUID().uuidString).sqlite").path
-    let store = OfflineStore(path: path)
-    await store.open()
-    return (store, path)
-}
-
 /// The first library page key read under `clauses`.
 private func libraryKey(_ clauses: [FilterClause]) -> String {
     var filter = LibraryFilter()
@@ -362,56 +353,65 @@ struct LibraryFilterStoreTests {
         #expect(LibraryFilterStore(defaults: defaults).clauses == [genreClause])
     }
 
-    @Test func addWritesTheClauseThrough() {
+    @Test func applyWritesTheClauseThrough() {
         let defaults = scratchDefaults()
         let store = LibraryFilterStore(defaults: defaults)
-        store.add(genreClause)
+        store.apply(genreClause)
         #expect(store.clauses == [genreClause])
         #expect(LibraryFilterPreference.load(from: defaults).clauses == [genreClause])
     }
 
-    @Test func canAddStopsAtTheServersSixteenClauses() {
-        let store = LibraryFilterStore(defaults: scratchDefaults())
-        for index in 0..<15 {
-            store.add(FilterClause(field: .tag, mode: .include, values: ["t\(index)"]))
-        }
-        #expect(store.canAdd(reservingFormatClause: false))
-        store.add(FilterClause(field: .tag, mode: .include, values: ["t15"]))
-        #expect(!store.canAdd(reservingFormatClause: false))
+    @Test func aFilterSavedWithTwoClausesOnAFieldLoadsTheFirst() {
+        let defaults = scratchDefaults()
+        let tag = FilterClause(field: .tag, mode: .include, values: ["a"])
+        let horror = FilterClause(field: .genre, mode: .exclude, values: ["Horror"])
+        LibraryFilterPreference(clauses: [genreClause, tag, horror]).save(to: defaults)
+        #expect(LibraryFilterStore(defaults: defaults).clauses == [tag, genreClause])
     }
 
-    @Test func canAddLeavesRoomForTheCategorysFormatsAsASixteenthClause() {
+    @Test func applyingAnUnchangedClauseLeavesTheListAlone() {
         let store = LibraryFilterStore(defaults: scratchDefaults())
-        for index in 0..<14 {
-            store.add(FilterClause(field: .tag, mode: .include, values: ["t\(index)"]))
-        }
-        #expect(store.canAdd(reservingFormatClause: true))
-        store.add(FilterClause(field: .tag, mode: .include, values: ["t14"]))
-        #expect(!store.canAdd(reservingFormatClause: true), "the server counts ?formats= as one more clause")
+        store.apply(genreClause)
+        store.apply(FilterClause(field: .tag, mode: .include, values: ["a"]))
+        let before = store.clauses
+        store.apply(genreClause)
+        #expect(store.clauses == before)
     }
 
-    @Test func removeDropsOnlyTheClauseAtThatIndex() {
+    @Test func applyReplacesEveryClauseOnItsField() {
+        let defaults = scratchDefaults()
+        let tag = FilterClause(field: .tag, mode: .include, values: ["a"])
+        let horror = FilterClause(field: .genre, mode: .exclude, values: ["Horror"])
+        LibraryFilterPreference(clauses: [genreClause, tag, horror]).save(to: defaults)
+        let store = LibraryFilterStore(defaults: defaults)
+        let poetry = FilterClause(field: .genre, mode: .include, values: ["Poetry"])
+        store.apply(poetry)
+        #expect(store.clauses == [tag, poetry])
+    }
+
+    @Test func applyWithoutValuesClearsTheField() {
+        let store = LibraryFilterStore(defaults: scratchDefaults())
+        store.apply(genreClause)
+        store.apply(shelfClause)
+        store.apply(FilterClause(field: .genre, mode: .include, values: []))
+        #expect(store.clauses == [shelfClause])
+    }
+
+    @Test func clearingAFieldDropsOnlyItsClauses() {
         let defaults = scratchDefaults()
         let store = LibraryFilterStore(defaults: defaults)
-        store.add(genreClause)
-        store.add(shelfClause)
-        store.remove(at: 0)
+        store.apply(genreClause)
+        store.apply(shelfClause)
+        store.clear(.genre)
         #expect(store.clauses == [shelfClause])
         #expect(LibraryFilterPreference.load(from: defaults).clauses == [shelfClause])
-    }
-
-    @Test func removeIgnoresAnIndexOutOfRange() {
-        let store = LibraryFilterStore(defaults: scratchDefaults())
-        store.add(genreClause)
-        store.remove(at: 1)
-        #expect(store.clauses == [genreClause])
     }
 
     @Test func clearRemovesEveryClauseInOneAction() {
         let defaults = scratchDefaults()
         let store = LibraryFilterStore(defaults: defaults)
-        store.add(genreClause)
-        store.add(shelfClause)
+        store.apply(genreClause)
+        store.apply(shelfClause)
         store.clear()
         #expect(store.clauses.isEmpty)
         #expect(LibraryFilterPreference.load(from: defaults).clauses.isEmpty)
@@ -429,7 +429,7 @@ struct LibraryModelFilterTests {
     @Test func theGridIsReadUnderTheSharedClauses() {
         let store = LibraryFilterStore(defaults: scratchDefaults())
         let model = model(store)
-        store.add(genreClause)
+        store.apply(genreClause)
         #expect(model.activeFilter.clauses == [genreClause])
     }
 
@@ -437,7 +437,7 @@ struct LibraryModelFilterTests {
         let store = LibraryFilterStore(defaults: scratchDefaults())
         let model = model(store)
         model.books = [stale]
-        store.add(FilterClause(field: .tag, mode: .include, values: ["no-such-tag-\(UUID().uuidString)"]))
+        store.apply(FilterClause(field: .tag, mode: .include, values: ["no-such-tag-\(UUID().uuidString)"]))
         let reloaded = await eventually { model.books.isEmpty }
         #expect(reloaded, "a clause change re-reads the grid under the new filter")
     }
@@ -462,7 +462,7 @@ struct LibraryModelFilterTests {
 
     @Test func reloadingForAFilterChangeDropsTheGridDrawnUnderTheOldOne() async {
         let store = LibraryFilterStore(defaults: scratchDefaults())
-        store.add(FilterClause(field: .tag, mode: .include, values: ["no-such-tag-\(UUID().uuidString)"]))
+        store.apply(FilterClause(field: .tag, mode: .include, values: ["no-such-tag-\(UUID().uuidString)"]))
         let model = model(store)
         model.books = [stale]
         await model.reload(clearingGrid: true)
@@ -527,59 +527,92 @@ private func shelf(
     )
 }
 
-struct FilterChipLabelTests {
+struct FilterFacetValueTests {
     private let shelves = [shelf(12, "Faves"), shelf(13, "Beach", owner: 2, username: "bob")]
 
-    @Test func chipReadsTheFieldTheModeAndEveryValue() {
-        #expect(
-            genreClause.chipLabel(shelves: .loaded(shelves), viewerId: 1)
-                == "Genre includes any of Fantasy, Sci-Fi"
-        )
+    @Test func aFacetNamesItsFirstValueAndCountsTheRest() {
+        #expect(genreClause.facetValue(shelves: .loaded(shelves), viewerId: 1) == "Fantasy +1")
     }
 
-    @Test func anExcludeChipSaysExcludes() {
+    @Test func anExcludeFacetSaysNot() {
         let clause = FilterClause(field: .author, mode: .exclude, values: ["Jane Austen"])
-        #expect(clause.chipLabel(shelves: .loaded(shelves), viewerId: 1) == "Author excludes any of Jane Austen")
+        #expect(clause.facetValue(shelves: .loaded(shelves), viewerId: 1) == "not Jane Austen")
     }
 
     @Test func formatValuesReadInCapitals() {
         let clause = FilterClause(field: .format, mode: .include, values: ["epub", "m4b"])
-        #expect(clause.chipLabel(shelves: .loaded(shelves), viewerId: 1) == "Format includes any of EPUB, M4B")
+        #expect(clause.facetValue(shelves: .loaded(shelves), viewerId: 1) == "EPUB +1")
     }
 
-    @Test func aShelfChipNamesTheShelfRatherThanItsId() {
+    @Test func aShelfFacetNamesTheShelfRatherThanItsId() {
         let clause = FilterClause(field: .shelf, mode: .include, values: ["12"])
-        #expect(clause.chipLabel(shelves: .loaded(shelves), viewerId: 1) == "Shelf includes any of Faves")
+        #expect(clause.facetValue(shelves: .loaded(shelves), viewerId: 1) == "Faves")
     }
 
-    @Test func aShelfChipNamesTheOwnerOfAnotherReadersShelf() {
+    @Test func aShelfFacetNamesTheOwnerOfAnotherReadersShelf() {
         let clause = FilterClause(field: .shelf, mode: .include, values: ["13"])
-        #expect(clause.chipLabel(shelves: .loaded(shelves), viewerId: 1) == "Shelf includes any of Beach · bob")
+        #expect(clause.facetValue(shelves: .loaded(shelves), viewerId: 1) == "Beach · bob")
     }
 
-    @Test func aShelfChipSaysWhenTheShelfIsNotThere() {
+    @Test func aShelfFacetSaysWhenTheShelfIsNotThere() {
         let clause = FilterClause(field: .shelf, mode: .exclude, values: ["99"])
-        #expect(
-            clause.chipLabel(shelves: .loaded(shelves), viewerId: 1)
-                == "Shelf excludes any of unavailable shelf"
-        )
+        #expect(clause.facetValue(shelves: .loaded(shelves), viewerId: 1) == "not unavailable shelf")
     }
 
-    @Test func aShelfChipNamesTheIdWhenTheShelvesCouldNotBeRead() {
+    @Test func aShelfFacetNamesTheIdWhenTheShelvesCouldNotBeRead() {
         let clause = FilterClause(field: .shelf, mode: .include, values: ["12"])
         #expect(
-            clause.chipLabel(shelves: .failed, viewerId: 1) == "Shelf includes any of shelf #12",
+            clause.facetValue(shelves: .failed, viewerId: 1) == "shelf #12",
             "a failed read is not proof the shelf is gone"
         )
     }
 
-    @Test func aShelfChipWaitsWithAnEllipsisWhileShelvesLoad() {
+    @Test func aShelfFacetWaitsWithAnEllipsisWhileShelvesLoad() {
         let clause = FilterClause(field: .shelf, mode: .include, values: ["12"])
-        #expect(clause.chipLabel(shelves: .loading, viewerId: 1) == "Shelf includes any of …")
+        #expect(clause.facetValue(shelves: .loading, viewerId: 1) == "…")
+    }
+}
+
+struct FilterFacetOpeningTests {
+    @Test func aFacetOpensOnItsFieldsClause() {
+        let tag = FilterClause(field: .tag, mode: .include, values: ["a"])
+        #expect(FilterClause.opening(.genre, in: [tag, genreClause]) == genreClause)
+    }
+
+    @Test func aFacetWithNoClauseOpensOnAnEmptyInclude() {
+        #expect(
+            FilterClause.opening(.author, in: [genreClause])
+                == FilterClause(field: .author, mode: .include, values: [])
+        )
     }
 }
 
 struct FilterOptionTests {
+    @Test func strandedOffersThePickedValuesTheListLacks() {
+        let options = [FilterOption(value: "Fantasy", label: "Fantasy", count: 3)]
+        #expect(
+            FilterOption.stranded(["fantasy", "Gone"], in: options, field: .tag)
+                == [FilterOption(value: "Gone", label: "Gone", count: nil)]
+        )
+    }
+
+    @Test func togglingUnticksASavedPickThatDiffersOnlyByCase() {
+        #expect(FilterOption.toggling("Fantasy", in: ["fantasy", "Horror"]) == ["Horror"])
+    }
+
+    @Test func togglingAddsAValueThatIsNotPicked() {
+        #expect(FilterOption.toggling("Fantasy", in: ["Horror"]) == ["Horror", "Fantasy"])
+    }
+
+    @Test func togglingRefusesANewPickPastTheValueCap() {
+        let full = (0..<FilterClause.maxValues).map { "v\($0)" }
+        #expect(FilterOption.toggling("new", in: full) == full)
+    }
+
+    @Test func aStrandedShelfReadsAsUnavailable() {
+        #expect(FilterOption.stranded(["99"], in: [], field: .shelf).map(\.label) == ["unavailable shelf"])
+    }
+
     @Test func shelfOptionsOfferHandPickedShelvesAndWishlistsButNoSmartOnes() {
         let options = FilterOption.shelves(
             [shelf(12, "Faves"), shelf(14, "ana's wishlist", kind: .wishlist), shelf(15, "Rule", kind: .smart)],
@@ -736,7 +769,7 @@ struct ShelfClausePageInvalidationTests {
 struct ShelfPageDropTests {
     /// A scratch replica holding `keys`, and its path.
     private func replica(holding keys: [String]) async -> (OfflineStore, String) {
-        let (store, path) = await scratchStore()
+        let (store, path) = await scratchStore(filePrefix: "filter-store")
         for key in keys {
             await store.cachePut(key, Data("{}".utf8))
         }
@@ -790,7 +823,7 @@ struct ShelfPageDropTests {
 @MainActor
 struct AccountSwitchFilterTests {
     @Test func anotherAccountSigningInDropsTheLibraryPagesAShelfClauseKeyed() async {
-        let (store, path) = await scratchStore()
+        let (store, path) = await scratchStore(filePrefix: "filter-store")
         defer { try? FileManager.default.removeItem(atPath: path) }
         await store.noteUser("ana")
         let byShelf = libraryKey([shelfClause])
@@ -806,11 +839,11 @@ struct AccountSwitchFilterTests {
     }
 
     @Test func anotherAccountSigningInForgetsTheClauses() async {
-        let (store, path) = await scratchStore()
+        let (store, path) = await scratchStore(filePrefix: "filter-store")
         defer { try? FileManager.default.removeItem(atPath: path) }
         let defaults = scratchDefaults()
         let filters = LibraryFilterStore(defaults: defaults)
-        filters.add(shelfClause)
+        filters.apply(shelfClause)
         await AuthService.noteUser("ana", in: store, filters: filters)
 
         await AuthService.noteUser("bob", in: store, filters: filters)
@@ -820,10 +853,10 @@ struct AccountSwitchFilterTests {
     }
 
     @Test func theSameAccountSigningInAgainKeepsTheClauses() async {
-        let (store, path) = await scratchStore()
+        let (store, path) = await scratchStore(filePrefix: "filter-store")
         defer { try? FileManager.default.removeItem(atPath: path) }
         let filters = LibraryFilterStore(defaults: scratchDefaults())
-        filters.add(genreClause)
+        filters.apply(genreClause)
         await AuthService.noteUser("ana", in: store, filters: filters)
 
         await AuthService.noteUser("ana", in: store, filters: filters)

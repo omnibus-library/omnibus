@@ -1,7 +1,7 @@
 //! Send-to-Kindle REST handlers (mobile-facing). Mirrors the web server
 //! functions in `frontend/src/rpc/{kindle,account}.rs` and the SMTP admin RPCs
-//! in `frontend/src/rpc/settings.rs`: per-user send + Kindle-email, and the
-//! admin-only SMTP config (get / set / clear / test).
+//! in `frontend/src/rpc/settings.rs`: per-user send + Kindle-email, delivery
+//! readiness, and the admin-only SMTP config (get / set / clear / test).
 
 use axum::{
     extract::{Query, State},
@@ -10,52 +10,51 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, worker::Task};
-use omnibus_shared::{KindleSendStatus, ProgressState, SmtpConfigUpdate};
-use serde::Deserialize;
+use omnibus_shared::{
+    KindleDelivery, KindleSendQueued, KindleSendRequest, KindleSendStatus, KindleSendStatusQuery,
+    ProgressState, SetKindleEmail, SmtpConfigStatus, SmtpConfigUpdate, BOOK_UUID_MAX_LEN,
+};
 
 use super::{internal, AppState};
 use crate::auth::{AdminUser, AuthUser};
 
-/// Body for `POST /api/kindle/send`.
-#[derive(Debug, Deserialize)]
-pub(super) struct SendBody {
-    book_uuid: String,
-    #[serde(default)]
-    file_id: Option<i64>,
-}
-
-impl SendBody {
-    /// Reject a `book_uuid` over [`omnibus_shared::BOOK_UUID_MAX_LEN`] before
-    /// any DB round trip.
-    fn validate(&self) -> Result<(), String> {
-        if self.book_uuid.len() > omnibus_shared::BOOK_UUID_MAX_LEN {
-            return Err(format!(
-                "book_uuid must be ≤ {} bytes",
-                omnibus_shared::BOOK_UUID_MAX_LEN
-            ));
-        }
-        Ok(())
-    }
-}
-
-/// Enqueue a send of the EPUB to the authenticated user's Kindle address and
-/// return the worker `task_id` to poll (`{"task_id": N}`). Fast pre-checks (no
-/// Kindle email, SMTP unconfigured, unknown book) still fail synchronously; the
-/// SMTP delivery runs on the worker, polled via `GET /api/kindle/send/status`.
+/// Send a book to your Kindle
+///
+/// Queues an email of the book's EPUB, or its PDF when it has no EPUB, to your Kindle
+/// address, and answers before it goes out. Poll `GET /api/kindle/send/status` with the
+/// `task_id` to learn whether it was sent. A file over 50 MB fails there, not here.
+#[utoipa::path(
+    post,
+    path = "/api/kindle/send",
+    tag = "Account",
+    operation_id = "send_to_kindle",
+    request_body = KindleSendRequest,
+    responses(
+        (status = 200, description = "The send is queued.", body = KindleSendQueued),
+        (status = 404, description = "No book has that uuid."),
+        (status = 409, description = "The server has no email delivery set up."),
+        (status = 422, description = "`book_uuid` is longer than 64 bytes, or you have no Kindle address set."),
+    ),
+)]
 pub(super) async fn post_send(
     user: AuthUser,
     State(state): State<AppState>,
-    Json(body): Json<SendBody>,
+    Json(body): Json<KindleSendRequest>,
 ) -> Response {
-    if let Err(msg) = body.validate() {
-        return (StatusCode::UNPROCESSABLE_ENTITY, msg).into_response();
+    // Reject an oversized lookup key before any DB round trip.
+    if body.book_uuid.len() > BOOK_UUID_MAX_LEN {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("book_uuid must be ≤ {BOOK_UUID_MAX_LEN} bytes"),
+        )
+            .into_response();
     }
     let recipient = match db::auth::get_kindle_email(&state.pool, user.id).await {
         Ok(Some(email)) => email,
         Ok(None) => {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
-                "add your Kindle email on your account page before sending",
+                "add your Kindle email in Settings › Devices before sending",
             )
                 .into_response();
         }
@@ -86,25 +85,30 @@ pub(super) async fn post_send(
     // Scope the pollable status to this user so the guessable task-id space
     // can't be probed for other users' send outcomes.
     state.worker.set_task_owner(task_id, user.id);
-    Json(serde_json::json!({ "task_id": task_id })).into_response()
+    Json(KindleSendQueued { task_id }).into_response()
 }
 
-/// Query for `GET /api/kindle/send/status`.
-#[derive(Debug, Deserialize)]
-pub(super) struct SendStatusQuery {
-    task_id: u64,
-}
-
-/// Poll a send enqueued by [`post_send`]. Returns the [`KindleSendStatus`] for
-/// `task_id`, or 404 once it's unknown (never posted, evicted after the
-/// worker's terminal-retention window, or not owned by the caller). Scoped to
-/// the requesting user so the guessable task-id space can't be probed for
-/// other users' send outcomes.
+/// Check on a Kindle send
+///
+/// Whether a send from `POST /api/kindle/send` is still going, went out, or failed. Poll
+/// about once a second: a finished send is forgotten 10 seconds after it ends.
+#[utoipa::path(
+    get,
+    path = "/api/kindle/send/status",
+    tag = "Account",
+    operation_id = "get_kindle_send_status",
+    params(KindleSendStatusQuery),
+    responses(
+        (status = 200, description = "Where the send stands.", body = KindleSendStatus),
+        (status = 404, description = "No send of yours has that `task_id`, or it ended more than 10 seconds ago."),
+    ),
+)]
 pub(super) async fn get_send_status(
     user: AuthUser,
     State(state): State<AppState>,
-    Query(q): Query<SendStatusQuery>,
+    Query(q): Query<KindleSendStatusQuery>,
 ) -> Response {
+    // Owner-scoped so the guessable task-id space can't be probed for other users' sends.
     match state.worker.owned_task_state(q.task_id, user.id) {
         Some(ProgressState::Running { .. }) => Json(KindleSendStatus::Pending).into_response(),
         Some(ProgressState::Done { .. }) => Json(KindleSendStatus::Sent).into_response(),
@@ -115,16 +119,20 @@ pub(super) async fn get_send_status(
     }
 }
 
-/// Body for `POST /api/account/kindle-email`. A `null`/absent/blank email
-/// clears it.
-#[derive(Debug, Deserialize)]
-pub(super) struct SetKindleEmail {
-    #[serde(default)]
-    email: Option<String>,
-}
-
-/// Set or clear the authenticated user's Kindle email. 422 on a malformed
-/// address.
+/// Set your Kindle address
+///
+/// Sets or clears the address `POST /api/kindle/send` emails books to. Read back as
+/// `kindle_email` on `GET /api/auth/me`.
+#[utoipa::path(
+    post,
+    path = "/api/account/kindle-email",
+    tag = "Account",
+    request_body = SetKindleEmail,
+    responses(
+        (status = 200, description = "The address is saved."),
+        (status = 422, description = "The address doesn't look like an email address, or is over 320 bytes."),
+    ),
+)]
 pub(super) async fn post_kindle_email(
     user: AuthUser,
     State(state): State<AppState>,
@@ -139,7 +147,43 @@ pub(super) async fn post_kindle_email(
     }
 }
 
-/// Admin-only: masked SMTP config status.
+/// Check Send to Kindle delivery
+///
+/// Whether the server can email books, and the sender address you must approve at Amazon
+/// before a Kindle accepts them. Never carries the mail server or its credentials.
+#[utoipa::path(
+    get,
+    path = "/api/kindle/delivery",
+    tag = "Account",
+    operation_id = "get_kindle_delivery",
+    responses(
+        (status = 200, description = "The sender address, or null when the server has no email delivery set up.", body = KindleDelivery),
+    ),
+)]
+pub(super) async fn get_delivery(_user: AuthUser, State(state): State<AppState>) -> Response {
+    match db::effective_smtp_config(&state.pool).await {
+        Ok(config) => Json(KindleDelivery {
+            sender_address: config.map(|c| c.from_email),
+        })
+        .into_response(),
+        Err(e) => internal("read smtp config", e),
+    }
+}
+
+/// Get the email settings
+///
+/// The outgoing mail server Send to Kindle uses, with the password left out. Needs an
+/// admin account.
+#[utoipa::path(
+    get,
+    path = "/api/smtp",
+    tag = "Admin",
+    operation_id = "get_smtp_config",
+    responses(
+        (status = 200, description = "The email settings.", body = SmtpConfigStatus),
+        (status = 403, description = "You aren't an admin."),
+    ),
+)]
 pub(super) async fn get_smtp(_admin: AdminUser, State(state): State<AppState>) -> Response {
     match db::smtp_status(&state.pool).await {
         Ok(s) => Json(s).into_response(),
@@ -147,8 +191,21 @@ pub(super) async fn get_smtp(_admin: AdminUser, State(state): State<AppState>) -
     }
 }
 
-/// Admin-only: save the SMTP config; returns the new masked status. 422 on a
-/// validation failure.
+/// Save the email settings
+///
+/// Sets the outgoing mail server Send to Kindle uses. Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/smtp",
+    tag = "Admin",
+    operation_id = "set_smtp_config",
+    request_body = SmtpConfigUpdate,
+    responses(
+        (status = 200, description = "The settings are saved; the body is what is now set.", body = SmtpConfigStatus),
+        (status = 403, description = "You aren't an admin."),
+        (status = 422, description = "`host` is empty or over 255 bytes, `port` is 0, `username` is over 255 bytes, `password` is over 1024 bytes, or `from_email` isn't an email address; the body says which."),
+    ),
+)]
 pub(super) async fn post_smtp(
     _admin: AdminUser,
     State(state): State<AppState>,
@@ -167,7 +224,19 @@ pub(super) async fn post_smtp(
     }
 }
 
-/// Admin-only: clear the SMTP config.
+/// Clear the email settings
+///
+/// Removes the saved outgoing mail server. Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/smtp/clear",
+    tag = "Admin",
+    operation_id = "clear_smtp_config",
+    responses(
+        (status = 200, description = "The settings are cleared; the body is what is now set.", body = SmtpConfigStatus),
+        (status = 403, description = "You aren't an admin."),
+    ),
+)]
 pub(super) async fn post_smtp_clear(_admin: AdminUser, State(state): State<AppState>) -> Response {
     match db::clear_smtp_config(&state.pool).await {
         Ok(()) => match db::smtp_status(&state.pool).await {
@@ -178,14 +247,30 @@ pub(super) async fn post_smtp_clear(_admin: AdminUser, State(state): State<AppSt
     }
 }
 
-/// Admin-only: send a test email to the admin's own Kindle address.
+/// Send a test email
+///
+/// Emails a short message, with no book attached, to your own Kindle address through the
+/// saved mail server, and waits for the server to accept it. Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/smtp/test",
+    tag = "Admin",
+    operation_id = "test_smtp_config",
+    responses(
+        (status = 200, description = "The mail server accepted the test email."),
+        (status = 403, description = "You aren't an admin."),
+        (status = 409, description = "The server has no email delivery set up."),
+        (status = 422, description = "You have no Kindle address set."),
+        (status = 502, description = "The mail server refused the email or didn't answer within 90 seconds."),
+    ),
+)]
 pub(super) async fn post_smtp_test(admin: AdminUser, State(state): State<AppState>) -> Response {
     let recipient = match db::auth::get_kindle_email(&state.pool, admin.0.id).await {
         Ok(Some(email)) => email,
         Ok(None) => {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
-                "set your Kindle email on your account page first, then send a test",
+                "set your Kindle email in Settings › Devices first, then send a test",
             )
                 .into_response();
         }

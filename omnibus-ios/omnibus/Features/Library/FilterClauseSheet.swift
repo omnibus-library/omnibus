@@ -1,7 +1,7 @@
 //  FilterClauseSheet.swift
-//  Builds one library filter clause: pick a field, then whether it includes or
-//  excludes, then any number of values drawn from the reads that already feed
-//  the tag, genre, author, series and shelf screens.
+//  One facet's sheet: whether its clause includes or excludes, then any number
+//  of values drawn from the reads that already feed the tag, genre, author,
+//  series and shelf screens.
 
 import SwiftUI
 
@@ -58,6 +58,35 @@ struct FilterOption: Hashable, Sendable, Identifiable {
             : shelf.name
     }
 
+    /// The picked values `options` doesn't hold (a deleted shelf, a tag no
+    /// longer in use), so each can still be seen and unticked.
+    static func stranded(_ picked: [String], in options: [FilterOption], field: FilterField) -> [FilterOption] {
+        picked
+            .filter { value in !options.contains { isPicked($0.value, in: [value]) } }
+            .map { value in
+                let label = switch field {
+                case .format: value.uppercased()
+                case .shelf: "unavailable shelf"
+                default: value
+                }
+                return FilterOption(value: value, label: label, count: nil)
+            }
+    }
+
+    /// Whether `value` is among `picked`, ignoring case as the server does.
+    static func isPicked(_ value: String, in picked: [String]) -> Bool {
+        picked.contains { $0.caseInsensitiveCompare(value) == .orderedSame }
+    }
+
+    /// `picked` with `value` flipped, ignoring case; a new pick past the value
+    /// cap is refused.
+    static func toggling(_ value: String, in picked: [String]) -> [String] {
+        if isPicked(value, in: picked) {
+            return picked.filter { $0.caseInsensitiveCompare(value) != .orderedSame }
+        }
+        return picked.count < FilterClause.maxValues ? picked + [value] : picked
+    }
+
     /// Every format the category strip knows.
     static let formats: [FilterOption] = LibraryCategory.allCases
         .flatMap(\.serverFormats)
@@ -68,99 +97,77 @@ struct FilterOption: Hashable, Sendable, Identifiable {
     }
 }
 
-/// The add-a-filter sheet. The field list is the root; picking one pushes its
-/// values, whose Add hands the finished clause back and closes the sheet.
+/// A facet's sheet: its field's values, multi-select, under an includes /
+/// excludes switch, opened on the facet's current clause. Apply hands the
+/// finished clause back and closes it.
 struct FilterClauseSheet: View {
+    let field: FilterField
     var viewerId: Int64?
-    var onAdd: (FilterClause) -> Void
+    var onApply: (FilterClause) -> Void
 
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List(FilterField.allCases, id: \.self) { field in
-                NavigationLink(value: field) {
-                    Label(field.label, systemImage: field.glyph)
-                        .font(.ui(15, weight: .medium))
-                        .foregroundStyle(palette.ink0Color)
-                }
-                .accessibilityIdentifier("filter-field-\(field.rawValue)")
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(ScreenBackground())
-            .navigationTitle("Add a filter")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-            }
-            .navigationDestination(for: FilterField.self) { field in
-                FilterValuesStep(field: field, viewerId: viewerId) { clause in
-                    onAdd(clause)
-                    dismiss()
-                }
-            }
-        }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-    }
-}
-
-/// One field's values, multi-select, under an includes / excludes switch.
-private struct FilterValuesStep: View {
-    let field: FilterField
-    var viewerId: Int64?
-    var onAdd: (FilterClause) -> Void
-
-    @Environment(\.palette) private var palette
-    @State private var mode: FilterMode = .include
-    @State private var picked: [String] = []
+    @State private var mode: FilterMode
+    @State private var picked: [String]
     /// `nil` until the source answers, so a list still loading never reads as empty.
     @State private var options: [FilterOption]? = nil
     @State private var loadFailed = false
     @State private var query = ""
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Picker("Match", selection: $mode) {
-                ForEach(FilterMode.allCases, id: \.self) { option in
-                    Text(option.label).tag(option)
-                }
-            }
-            .pickerStyle(.segmented)
-            .screenPadding()
-            .accessibilityIdentifier("filter-mode")
+    init(initial: FilterClause, viewerId: Int64?, onApply: @escaping (FilterClause) -> Void) {
+        field = initial.field
+        self.viewerId = viewerId
+        self.onApply = onApply
+        _mode = State(initialValue: initial.mode)
+        _picked = State(initialValue: initial.values)
+    }
 
-            values
-        }
-        .padding(.top, Spacing.sm)
-        .background(ScreenBackground())
-        .navigationTitle(field.label)
-        .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Add") {
-                    Haptics.success()
-                    onAdd(FilterClause(field: field, mode: mode, values: picked))
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Picker("Match", selection: $mode) {
+                    ForEach(FilterMode.allCases, id: \.self) { option in
+                        Text(option.label).tag(option)
+                    }
                 }
-                .disabled(picked.isEmpty)
-                .accessibilityIdentifier("filter-apply")
+                .pickerStyle(.segmented)
+                .screenPadding()
+                .accessibilityIdentifier("filter-mode")
+
+                values
             }
+            .padding(.top, Spacing.sm)
+            .background(ScreenBackground())
+            .navigationTitle(field.label)
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Apply") {
+                        Haptics.success()
+                        onApply(FilterClause(field: field, mode: mode, values: picked))
+                        dismiss()
+                    }
+                    .accessibilityIdentifier("filter-apply")
+                }
+            }
+            .task { await load() }
         }
-        .task { await load() }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     @ViewBuilder
     private var values: some View {
         if let options {
-            if options.isEmpty {
+            let rows = options + FilterOption.stranded(picked, in: options, field: field)
+            if rows.isEmpty {
                 note("Nothing in the library to filter by yet.")
             } else {
-                List(visible(options)) { option in
+                List(visible(rows)) { option in
                     row(option)
                 }
                 .listStyle(.plain)
@@ -180,16 +187,12 @@ private struct FilterValuesStep: View {
     }
 
     private func row(_ option: FilterOption) -> some View {
-        let isPicked = picked.contains(option.value)
+        let isPicked = FilterOption.isPicked(option.value, in: picked)
         let isFull = picked.count >= FilterClause.maxValues
 
         return Button {
             Haptics.select()
-            if isPicked {
-                picked.removeAll { $0 == option.value }
-            } else if !isFull {
-                picked.append(option.value)
-            }
+            picked = FilterOption.toggling(option.value, in: picked)
         } label: {
             HStack(spacing: Spacing.md) {
                 Text(option.label)

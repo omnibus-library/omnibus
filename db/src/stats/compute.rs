@@ -447,7 +447,7 @@ pub(super) async fn finished_books(
          LEFT JOIN books_authors_link bal ON bal.book = b.id AND bal.position = 0
          LEFT JOIN authors a ON a.id = bal.author
          {}
-         LEFT JOIN user_ratings ur ON ur.user_id = ? AND ur.book_uuid = b.uuid
+         LEFT JOIN reviews ur ON ur.user_id = ? AND ur.book_uuid = b.uuid
          WHERE f.finished_at >= ?
          GROUP BY b.uuid
          ORDER BY finished_at DESC

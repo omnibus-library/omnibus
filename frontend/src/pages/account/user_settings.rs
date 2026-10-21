@@ -1,77 +1,69 @@
-//! "Omnibus User Settings" account card (Settings → Account): the table of
-//! per-user feature switches, the book detail's scroll stops being the first.
-//! A table because the list is expected to grow — a new switch is a row, not
-//! a section — and each row saves on change, since independent switches have
-//! nothing to batch a Save across.
+//! The per-user preference switches in Settings › Preferences: Stack series,
+//! the book page's scroll stops and sharing stats with the household. It also
+//! holds the inline autosave status every Preferences control shares, and the
+//! one save the same switches on Stats and the book page use. Each is account
+//! configuration (rule 08), so a change saves straight to the server, patching
+//! the cached viewer optimistically and putting it back if the server refuses.
 
 use dioxus::prelude::*;
 use omnibus_shared::UserSummary;
 
+use crate::components::setting_row::SettingRow;
 use crate::data;
 
-/// One row of the user-settings table.
+/// One preference switch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum UserSetting {
+    StackSeries,
     ScrollStops,
     ShareStats,
 }
 
-/// Every row the table renders, in display order.
-const USER_SETTINGS: [UserSetting; 2] = [UserSetting::ScrollStops, UserSetting::ShareStats];
-
 impl UserSetting {
-    /// Testid stem: `user-setting-{slug}`, `{slug}-toggle`, `{slug}-error`.
+    /// Testid stem: `user-setting-{slug}`, `{slug}-toggle`, `{slug}-status`.
     fn slug(self) -> &'static str {
         match self {
+            UserSetting::StackSeries => "stack-series",
             UserSetting::ScrollStops => "scroll-stops",
             UserSetting::ShareStats => "share-stats",
         }
     }
 
-    /// The row's name cell.
+    /// The row's label, which is also the switch's accessible name.
     fn name(self) -> &'static str {
         match self {
-            UserSetting::ScrollStops => "Book details scroll stops",
+            UserSetting::StackSeries => "Stack series",
+            UserSetting::ScrollStops => "Scroll stops",
             UserSetting::ShareStats => "Share stats with household",
         }
     }
 
-    /// The switch's `aria-label`.
-    fn aria_label(self) -> &'static str {
+    /// What the setting does, under its label.
+    fn description(self) -> &'static str {
         match self {
-            UserSetting::ScrollStops => "Use book details scroll stops",
-            UserSetting::ShareStats => "Share stats with household",
+            UserSetting::StackSeries => "Fold each series into one stack in the library grid.",
+            UserSetting::ScrollStops => {
+                "Snap a book\u{2019}s page through one panel at a time instead of scrolling it."
+            }
+            UserSetting::ShareStats => {
+                "Let other readers on this server see your Stats page. On by default."
+            }
         }
     }
 
-    /// Subtitle describing what the setting currently does, in terms of how
-    /// the page reads rather than restating the switch.
-    fn status_line(self, enabled: Option<bool>) -> &'static str {
+    /// This setting's value on the cached viewer.
+    pub(crate) fn read(self, user: &UserSummary) -> bool {
         match self {
-            UserSetting::ScrollStops => match enabled {
-                None => "Checking…",
-                Some(true) => "Book details snap through one panel at a time.",
-                Some(false) => "Book details scroll continuously, top to bottom.",
-            },
-            UserSetting::ShareStats => match enabled {
-                None => "Checking…",
-                Some(true) => "Other readers on this server can see your stats page.",
-                Some(false) => "Only you can see your stats page.",
-            },
-        }
-    }
-
-    /// Read this setting's current value off the resolved viewer.
-    fn read(self, user: &UserSummary) -> bool {
-        match self {
+            UserSetting::StackSeries => user.stack_series,
             UserSetting::ScrollStops => user.book_detail_scroll_stops,
             UserSetting::ShareStats => user.share_stats,
         }
     }
 
-    /// Patch this setting's value onto the app-wide viewer after a save.
-    fn write(self, user: &mut UserSummary, enabled: bool) {
+    /// Write this setting's value onto the cached viewer.
+    pub(crate) fn write(self, user: &mut UserSummary, enabled: bool) {
         match self {
+            UserSetting::StackSeries => user.stack_series = enabled,
             UserSetting::ScrollStops => user.book_detail_scroll_stops = enabled,
             UserSetting::ShareStats => user.share_stats = enabled,
         }
@@ -80,134 +72,88 @@ impl UserSetting {
     /// Save this setting's new value.
     async fn save(self, enabled: bool) -> Result<(), data::DataError> {
         match self {
+            UserSetting::StackSeries => data::set_stack_series("", enabled).await,
             UserSetting::ScrollStops => data::set_book_detail_scroll_stops("", enabled).await,
             UserSetting::ShareStats => data::set_share_stats("", enabled).await,
         }
     }
 }
 
-/// `onchange` for a row's switch, shared by every [`UserSetting`] and
-/// extracted so its guards and failure revert are testable without a browser.
-///
-/// Ignores the event: the click already flipped the DOM checkbox, and the
-/// value this writes comes from `confirmed`, not from the input.
-fn user_setting_toggle_handler(
-    setting: UserSetting,
-    confirmed: Signal<Option<bool>>,
-    mut shown: Signal<Option<bool>>,
-    mut error: Signal<Option<String>>,
-    mut saving: Signal<bool>,
-    mut viewer_slot: Signal<Option<Option<UserSummary>>>,
-) -> impl FnMut(Event<FormData>) {
-    move |_| {
-        let Some(current) = confirmed() else {
-            return;
-        };
-        if saving() {
-            return;
-        }
-        saving.set(true);
-        // Track the native flip so a later revert is a real vdom change.
-        let next = !current;
-        shown.set(Some(next));
-        let mut confirmed = confirmed;
-        spawn(async move {
-            match setting.save(next).await {
-                Ok(()) => {
-                    confirmed.set(Some(next));
-                    error.set(None);
-                    // Patch the app-wide viewer so a page opened next reads
-                    // the new value — written from the value the server just
-                    // accepted rather than re-fetched, since a failed
-                    // refetch would leave the context stale with nothing to
-                    // report.
-                    viewer_slot.with_mut(|slot| {
-                        if let Some(Some(user)) = slot.as_mut() {
-                            setting.write(user, next);
-                        }
-                    });
-                }
-                Err(e) => {
-                    // Push the checkbox back to what the server still holds.
-                    shown.set(Some(current));
-                    error.set(Some(e.to_string()));
-                }
-            }
-            saving.set(false);
-        });
+/// The preferences with a save out, app-wide rather than per switch, because a
+/// switch remounted mid-save would otherwise send a second save that can land
+/// first.
+static SAVES_OUT: GlobalSignal<Vec<UserSetting>> = Signal::global(Vec::new);
+
+/// Whether `setting` has a save out, from this switch or one since unmounted.
+pub(crate) fn saving(setting: UserSetting) -> bool {
+    SAVES_OUT.read().contains(&setting)
+}
+
+/// How an autosaving control's last save went.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SaveState {
+    Idle,
+    Saving,
+    Saved,
+    Failed,
+}
+
+/// The inline status beside an autosaving control.
+pub(crate) fn save_state_text(state: SaveState) -> &'static str {
+    match state {
+        SaveState::Idle => "",
+        SaveState::Saving => "Saving\u{2026}",
+        SaveState::Saved => "Saved",
+        SaveState::Failed => "Couldn\u{2019}t save. Try again.",
     }
 }
 
-/// One row of the user-settings table, owning its own
-/// confirmed/shown/error/saving signals. `confirmed` is what the server has
-/// acknowledged and drives the subtitle; `shown` is what the checkbox renders.
-/// Both start `None` and the switch stays disabled until the viewer resolves,
-/// so it can't be flipped against a value that hasn't arrived.
+/// The status as a live region, mounted before the first save so that save is
+/// announced too.
+pub(crate) fn save_status(testid: &str, state: SaveState) -> Element {
+    let class = match state {
+        SaveState::Failed => "pref-status error",
+        SaveState::Saving => "pref-status ld-sheen",
+        SaveState::Idle | SaveState::Saved => "pref-status",
+    };
+    rsx! {
+        span { role: "status", class, "data-testid": "{testid}", "{save_state_text(state)}" }
+    }
+}
+
+/// One switch row. It reads the cached viewer directly, so it is unknown (and
+/// disabled) until `/me` resolves and never claims off before then.
 #[component]
-fn UserSettingRow(setting: UserSetting) -> Element {
-    let confirmed = use_signal(|| None::<bool>);
-    // Separate from `confirmed`: a click flips the DOM checkbox natively, so if the
-    // rendered value never moved, Dioxus would diff it as unchanged and a rejected
-    // save would leave the box in a state the server refused.
-    let shown = use_signal(|| None::<bool>);
-    let error = use_signal(|| None::<String>);
-    let saving = use_signal(|| false);
-
-    // Seed once from the resolved viewer. A later context refresh (another
-    // row's save) must not clobber a value this row has since changed, so
-    // the seed only ever fires while `confirmed` is still unresolved.
-    let viewer = crate::use_current_user_summary();
-    use_effect(move || {
-        if confirmed.peek().is_some() {
-            return;
-        }
-        if let Some(user) = viewer() {
-            let mut confirmed = confirmed;
-            let mut shown = shown;
-            confirmed.set(Some(setting.read(&user)));
-            shown.set(Some(setting.read(&user)));
-        }
-    });
-
-    // Captured before the async save: `use_current_user` is a hook and can
-    // only run during render.
-    let viewer_slot = crate::use_current_user().0;
-    let toggle = user_setting_toggle_handler(setting, confirmed, shown, error, saving, viewer_slot);
-    let is_on = shown() == Some(true);
-    let pending = confirmed().is_none();
+pub(crate) fn UserSettingSwitch(setting: UserSetting) -> Element {
+    let viewer = crate::use_current_user().0;
+    let state = use_signal(|| SaveState::Idle);
+    let value = match &*viewer.read() {
+        Some(Some(user)) => Some(setting.read(user)),
+        _ => None,
+    };
     let slug = setting.slug();
+    let id = format!("{slug}-toggle");
 
     rsx! {
-        tr { "data-testid": "user-setting-{slug}",
-            td {
-                div { class: "settings-row-name", "{setting.name()}" }
-                div { class: "settings-row-note",
-                    span {
-                        class: if pending { "ld-sheen" } else { "{slug}-status" },
-                        "{setting.status_line(confirmed())}"
-                    }
-                }
-                if let Some(err) = error() {
-                    p {
-                        role: "alert",
-                        class: "settings-status error",
-                        "data-testid": "{slug}-error",
-                        "{err}"
-                    }
-                }
-            }
-            td { class: "settings-col-switch",
-                label { class: "settings-switch",
+        SettingRow {
+            label: setting.name(),
+            description: setting.description(),
+            control_id: id.clone(),
+            testid: format!("user-setting-{slug}"),
+            div { class: "pref-control",
+                {save_status(&format!("{slug}-status"), state())}
+                span { class: "settings-switch",
                     input {
                         r#type: "checkbox",
                         role: "switch",
-                        "aria-label": "{setting.aria_label()}",
+                        id: "{id}",
+                        "aria-describedby": "{id}-desc",
                         // Unknown: the knob waits at centre rather than claim off.
-                        class: if pending { "ld-unknown" } else { "{slug}-check" },
-                        "data-testid": "{slug}-toggle",
-                        checked: is_on,
-                        disabled: confirmed().is_none() || saving(),
-                        onchange: toggle,
+                        class: if value.is_none() { "ld-unknown" },
+                        "data-testid": "{id}",
+                        checked: value == Some(true),
+                        disabled: value.is_none() || saving(setting),
+                        onchange: move |_| toggle(setting, viewer, state),
                     }
                 }
             }
@@ -215,32 +161,68 @@ fn UserSettingRow(setting: UserSetting) -> Element {
     }
 }
 
-/// The per-user settings table (Settings → Account): one row per
-/// [`UserSetting`], each saving independently on change.
-#[cfg(not(feature = "mobile"))]
-#[component]
-pub(crate) fn UserSettingsCard() -> Element {
-    rsx! {
-        section { class: "card", "data-testid": "account-user-settings-card",
-            h2 { "Omnibus User Settings" }
-            p { class: "subtitle", "Features you can turn on for your account alone." }
-
-            table { class: "users-table settings-table", "data-testid": "user-settings-table",
-                thead {
-                    tr {
-                        th { "Setting" }
-                        th { class: "settings-col-switch", "Enabled" }
-                    }
-                }
-                tbody {
-                    for setting in USER_SETTINGS {
-                        UserSettingRow { key: "{setting.slug()}", setting }
-                    }
-                }
-            }
-        }
-    }
+/// Flip `setting` on the cached viewer and save it, putting it back on failure.
+pub(crate) fn toggle(
+    setting: UserSetting,
+    viewer: Signal<Option<Option<UserSummary>>>,
+    state: Signal<SaveState>,
+) {
+    flip_and_save(setting, viewer, state, move |enabled| setting.save(enabled));
 }
 
-#[cfg(test)]
+/// [`toggle`] with the save passed in. The click already flipped the DOM
+/// checkbox, so the rendered value has to move with it for a revert to be a
+/// real vdom change. The save runs at the root so a switch that unmounts
+/// mid-save still puts the viewer back; its own `state` goes with it.
+fn flip_and_save<F>(
+    setting: UserSetting,
+    viewer: Signal<Option<Option<UserSummary>>>,
+    mut state: Signal<SaveState>,
+    save: impl FnOnce(bool) -> F,
+) where
+    F: std::future::Future<Output = Result<(), data::DataError>> + 'static,
+{
+    let Some(Some(was)) = viewer
+        .peek()
+        .as_ref()
+        .map(|v| v.as_ref().map(|u| setting.read(u)))
+    else {
+        return;
+    };
+    if SAVES_OUT.peek().contains(&setting) {
+        return;
+    }
+    SAVES_OUT.write().push(setting);
+    state.set(SaveState::Saving);
+    write_viewer(viewer, setting, !was);
+    let request = save(!was);
+    dioxus::core::spawn_forever(async move {
+        let settled = match request.await {
+            Ok(()) => SaveState::Saved,
+            Err(_) => {
+                write_viewer(viewer, setting, was);
+                SaveState::Failed
+            }
+        };
+        SAVES_OUT.write().retain(|out| *out != setting);
+        if let Ok(mut state) = state.try_write() {
+            *state = settled;
+        }
+    });
+}
+
+/// Write `enabled` into the cached viewer, if one is cached.
+fn write_viewer(
+    mut viewer: Signal<Option<Option<UserSummary>>>,
+    setting: UserSetting,
+    enabled: bool,
+) {
+    viewer.with_mut(|slot| {
+        if let Some(Some(user)) = slot.as_mut() {
+            setting.write(user, enabled);
+        }
+    });
+}
+
+#[cfg(all(test, feature = "server"))]
 mod tests;

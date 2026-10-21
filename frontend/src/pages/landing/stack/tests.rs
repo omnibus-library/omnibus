@@ -69,6 +69,28 @@ fn stack_entries_prefix_the_position_line_with_the_format_being_resumed() {
 }
 
 #[test]
+fn stack_entries_put_the_author_and_percent_on_one_byline_for_an_ebook() {
+    let epub = &stack_entries_for_test(&[point("a", ProgressFormat::Epub, Some(55))], "")[0];
+    assert_eq!(epub.byline, "Susanna Clarke \u{00b7} 55%");
+}
+
+#[test]
+fn stack_entries_keep_the_time_left_on_an_audiobooks_byline() {
+    let audio = &stack_entries_for_test(&[point("b", ProgressFormat::Audio, None)], "")[0];
+    assert_eq!(
+        audio.byline,
+        "Susanna Clarke \u{00b7} 17% \u{00b7} 50m left"
+    );
+}
+
+#[test]
+fn stack_entries_drop_the_author_from_the_byline_when_the_book_has_none() {
+    let mut p = point("c", ProgressFormat::Epub, Some(55));
+    p.book.creators.clear();
+    assert_eq!(stack_entries_for_test(&[p], "")[0].byline, "55%");
+}
+
+#[test]
 fn stack_entries_label_the_veil_with_the_formats_verb_and_the_percent() {
     let epub = &stack_entries_for_test(&[point("a", ProgressFormat::Epub, Some(55))], "")[0];
     assert_eq!(epub.veil_label, "resume \u{00b7} 55%");
@@ -123,17 +145,6 @@ fn lead_accent_style_follows_the_front_book_and_is_empty_without_one() {
 }
 
 #[test]
-fn stack_kicker_names_a_single_book_instead_of_counting_a_stack() {
-    // One book on the fan: nothing to bring forward, so nothing implies a
-    // stack behind it.
-    assert_eq!(stack_kicker(1), "your in-progress book");
-    // A defensive zero renders the same line — the stack is hidden anyway.
-    assert_eq!(stack_kicker(0), "your in-progress book");
-    assert_eq!(stack_kicker(2), "2 books open");
-    assert_eq!(stack_kicker(5), "5 books open");
-}
-
-#[test]
 fn stack_entries_keys_the_two_formats_of_one_book_apart() {
     // Progress is stored per format, so a dual-format book open in both is two
     // points sharing a uuid. Keying the fan on the uuid alone gave them one
@@ -150,53 +161,6 @@ fn stack_entries_keys_the_two_formats_of_one_book_apart() {
 
     assert_eq!(keys.len(), 2);
     assert_ne!(keys[0], keys[1]);
-}
-
-/// A point whose resolved book carries `id` — what `open_book_count` folds on.
-fn point_on_book(uuid: &str, format: ProgressFormat, book_id: i64) -> ResumePoint {
-    let mut p = point(uuid, format, Some(30));
-    p.book.id = book_id;
-    p
-}
-
-#[test]
-fn open_book_count_counts_books_not_fan_cards() {
-    // A book open in both formats holds two cards; the kicker above them
-    // says "N books open", so it must not count the cards.
-    let entries = stack_entries_for_test(
-        &[
-            point_on_book("dual", ProgressFormat::Epub, 1),
-            point_on_book("dual", ProgressFormat::Audio, 1),
-            point_on_book("other", ProgressFormat::Epub, 2),
-        ],
-        "http://x",
-    );
-
-    assert_eq!(entries.len(), 3);
-    assert_eq!(open_book_count(&entries), 2);
-    assert_eq!(stack_kicker(open_book_count(&entries)), "2 books open");
-}
-
-#[test]
-fn open_book_count_folds_two_rows_that_resolve_to_one_book() {
-    // `get_book_by_uuid` resolves both rows through `merged_uuids` to the one
-    // surviving book, so the points differ in `record.book_uuid` alone and
-    // carry an identical `book` — which is why the fold is on that book and
-    // not on the uuid `resume_key` deliberately keys apart.
-    let survivor = point_on_book("survivor", ProgressFormat::Epub, 1).book;
-    let mut old = point_on_book("old-uuid", ProgressFormat::Epub, 1);
-    old.book = survivor.clone();
-    let mut new = point_on_book("new-uuid", ProgressFormat::Audio, 1);
-    new.book = survivor;
-
-    let entries = stack_entries_for_test(&[old, new], "http://x");
-
-    assert_eq!(entries.len(), 2);
-    assert_eq!(open_book_count(&entries), 1);
-    assert_eq!(
-        stack_kicker(open_book_count(&entries)),
-        "your in-progress book"
-    );
 }
 
 #[cfg(feature = "server")]

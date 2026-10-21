@@ -189,11 +189,12 @@ pub fn Loading(
     }
 }
 
-/// Stamps `data-loaded` on every `<img>` as it finishes, from a capture-phase
-/// listener (load events don't bubble). The cover glint stops on it: CSS alone
-/// can't tell a loaded-but-transparent cover from one still arriving. Guarded,
-/// because both the boot script and [`use_hydration_marker`] install it.
-const IMAGE_WATCH_JS: &str = "if(!window.__omnImgWatch){window.__omnImgWatch=1;document.addEventListener('load',function(e){var t=e.target;if(t&&t.tagName==='IMG')t.setAttribute('data-loaded','');},true);}";
+/// Stamps `data-loaded` on every `<img>` once it has decoded, from a
+/// capture-phase listener (load events don't bubble). A cover stays hidden and
+/// glints until it lands; `decode()` because `load` means the bytes are in, not
+/// the pixels. Guarded: the boot script and [`use_hydration_marker`] both
+/// install it, and the sweep catches what loaded before the latter ran.
+const IMAGE_WATCH_JS: &str = "if(!window.__omnImgWatch){window.__omnImgWatch=1;var w=function(t){var d=function(){t.setAttribute('data-loaded','');};if(t.decode)t.decode().then(d,d);else d();};document.addEventListener('load',function(e){var t=e.target;if(t&&t.tagName==='IMG')w(t);},true);document.querySelectorAll('img').forEach(function(t){if(t.complete&&t.naturalWidth)w(t);});}";
 
 /// Pre-paint work: wear the reader's saved theme, and start watching images
 /// load. Runs once at parse time from the SSR markup; hydration adopts the
@@ -229,7 +230,7 @@ pub fn use_hydrated() -> ReadSignal<bool> {
 
 /// Stamp `data-hydrated` on `<html>` once the client has mounted.
 ///
-/// Playwright's `gotoReady` waits for it, and CSS may key on it. Also installs the image watcher where no boot script ran (the
+/// The Playwright page objects wait for it, and CSS may key on it. Also installs the image watcher where no boot script ran (the
 /// Android shell renders client-side only). An effect, so never during SSR.
 pub fn use_hydration_marker() {
     use_effect(|| {

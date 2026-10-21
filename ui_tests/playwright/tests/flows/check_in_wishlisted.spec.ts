@@ -1,7 +1,9 @@
 import { scan } from "../contracts/scan";
 import type { PhysicalCopy } from "../data/physical";
 import {
+  type BookRef,
   buildExternalBook,
+  filedBook,
   inLibraryUnowned,
   notInLibrary,
 } from "../data/scan";
@@ -30,7 +32,7 @@ test.describe("wishlist check-in", () => {
       await bookDetailPage.topNav.assertDisplayed();
       await expect(bookDetailPage.titleHeading).toHaveText(wish.title);
       await expect(bookDetailPage.checkInWhenAcquiredButton).toBeVisible();
-      await expect(bookDetailPage.physicalCopyCards).toHaveCount(0);
+      await expect(bookDetailPage.physicalCopy.cards).toHaveCount(0);
     });
   });
 
@@ -59,9 +61,9 @@ test.describe("wishlist check-in", () => {
     });
 
     await test.step("find the wishlist entry", async () => {
-      await expectMutation(scan.resolve(), () => overlay.findBook());
+      await expectMutation(scan.resolve(wish.isbn13), () => overlay.findBook());
       await expect(overlay.confirmScreen).toContainText("on your wishlist");
-      await expect(overlay.bookCard).toContainText(wish.title);
+      await expect(overlay.bookCards).toContainText(wish.title);
     });
 
     await test.step("check in the copy", async () => {
@@ -94,8 +96,8 @@ test.describe("wishlist check-in", () => {
 
     await test.step("check the book page follows the check-in", async () => {
       await overlay.close();
-      await expect(bookDetailPage.physicalCopyCards).toHaveCount(1);
-      await expect(bookDetailPage.physicalCopyCards).toContainText("by you");
+      await expect(bookDetailPage.physicalCopy.cards).toHaveCount(1);
+      await expect(bookDetailPage.physicalCopy.cards).toContainText("by you");
       await expect(bookDetailPage.checkInWhenAcquiredButton).toHaveCount(0);
       await expect(bookDetailPage.fromSameHandEmptyMessage).toContainText(
         "1 book in your library",
@@ -118,21 +120,22 @@ test.describe("wishlist check-in", () => {
 
     await test.step("open the book with one copy filed", async () => {
       await bookDetailPage.goto(wish.uuid);
-      await expect(bookDetailPage.physicalCopyCards).toHaveCount(1);
+      await expect(bookDetailPage.physicalCopy.cards).toHaveCount(1);
     });
 
     await test.step("check in a second copy from the top nav", async () => {
       // A filed book resolves as already owned, which navigates, not confirms.
-      await overlay.stubIsbnLookup(inLibraryUnowned(wish));
+      await overlay.stubIsbnLookup(inLibraryUnowned(filedBook(wish)));
       await bookDetailPage.topNav.openCheckIn();
-      await overlay.enterIsbn(wish.isbn13);
-      await expectMutation(scan.resolve(), () => overlay.findBook());
+      await expectMutation(scan.resolve(wish.isbn13), () =>
+        overlay.lookUpIsbn(wish.isbn13),
+      );
       await expectMutation(scan.checkIn(wish), () => overlay.checkInCopy());
       await overlay.close();
     });
 
     await test.step("check the second copy lands on the page", async () => {
-      await expect(bookDetailPage.physicalCopyCards).toHaveCount(2);
+      await expect(bookDetailPage.physicalCopy.cards).toHaveCount(2);
     });
   });
 
@@ -149,29 +152,31 @@ test.describe("wishlist check-in", () => {
     await test.step("select the wishlist shelf", async () => {
       await libraryPage.goto();
       await libraryPage.selectShelf(wish.shelf);
-      await expect(libraryPage.galleryShelfTile(wish.shelf.id)).toContainText(
-        "1 book",
-      );
+      await expect(
+        libraryPage.galleryShelfTile(wish.shelf.id),
+      ).toHaveAccessibleName(/\b1 book\b/);
     });
 
     await test.step("add a book to the wishlist from check-in", async () => {
       // The providers would answer this lookup; the wishlist write is real.
       await overlay.stubIsbnLookup(notInLibrary(added));
       await libraryPage.topNav.openCheckIn();
-      await overlay.enterIsbn(added.isbn13);
-      await expectMutation(scan.resolve(), () => overlay.findBook());
-      const { result } = await expectMutation(scan.wishlist(), () =>
+      await expectMutation(scan.resolve(added.isbn13), () =>
+        overlay.lookUpIsbn(added.isbn13),
+      );
+      const { response } = await expectMutation(scan.wishlist("manual"), () =>
         overlay.addToWishlist(),
       );
-      createdBookUuids.push(result.book_uuid);
+      const created: BookRef = await response.json();
+      createdBookUuids.add(created.book_uuid);
       await expect(overlay.successScreen).toContainText(added.title);
       await overlay.close();
     });
 
     await test.step("check the selected shelf follows the add", async () => {
-      await expect(libraryPage.galleryShelfTile(wish.shelf.id)).toContainText(
-        "2 books",
-      );
+      await expect(
+        libraryPage.galleryShelfTile(wish.shelf.id),
+      ).toHaveAccessibleName(/\b2 books\b/);
       await expect(libraryPage.bookTile(added.title)).toBeVisible();
     });
   });

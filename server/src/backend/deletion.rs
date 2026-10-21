@@ -20,15 +20,29 @@ use crate::auth::AdminUser;
 #[cfg(test)]
 mod tests;
 
-/// `GET /api/books/{uuid}/deletion-manifest` — the book's deletable items
-/// (files + physical copies) and the user data a total delete would take with
-/// them. Repeats the `AdminUser` gate of `rpc_book_deletion_manifest` in
-/// `omnibus_frontend::rpc::books`; changing one side's gate means changing the other.
+/// Preview deleting a book
+///
+/// What `POST /api/books/{uuid}/delete-files` can delete for this book, its files and
+/// physical copies, and how much reader data deleting all of them would take with the
+/// book. Needs an admin account.
+#[utoipa::path(
+    get,
+    path = "/api/books/{uuid}/deletion-manifest",
+    tag = "Admin",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses(
+        (status = 200, description = "The book's files and copies, and the reader data at stake.", body = BookDeletionManifest),
+        (status = 403, description = "You aren't an admin."),
+        (status = 404, description = "No book has that uuid."),
+    ),
+)]
 pub(super) async fn get_deletion_manifest(
     _admin: AdminUser,
     State(state): State<AppState>,
     Path(uuid): Path<String>,
 ) -> Response {
+    // Repeats the `AdminUser` gate of `rpc_book_deletion_manifest` in
+    // `omnibus_frontend::rpc::books`; changing one side's gate means changing the other.
     match db::book_deletion_manifest(&state.pool, &uuid).await {
         Ok(m) => Json(BookDeletionManifest {
             files: m.files,
@@ -51,17 +65,32 @@ pub(super) async fn get_deletion_manifest(
     }
 }
 
-/// `POST /api/books/{uuid}/delete-files` — delete the given items: `file_ids` are
-/// `book_files` rows (removed from disk too), `copy_ids` physical copies
-/// (un-recorded only). When every item goes, the book and everything keyed to its
-/// uuid go too, irreversibly. Mirrors `rpc_delete_book_files`; same gate-parity
-/// note as [`get_deletion_manifest`].
+/// Delete a book's files or copies
+///
+/// Deletes the listed files from disk and the listed physical copies from the collection.
+/// When nothing of the book is left, the book goes too, with every reader's data for it:
+/// the `impact` that `GET /api/books/{uuid}/deletion-manifest` counts. This can't be undone.
+/// Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/books/{uuid}/delete-files",
+    tag = "Admin",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    request_body = DeleteBookFilesRequest,
+    responses(
+        (status = 200, description = "What was deleted, and whether the book went with it.", body = DeleteBookFilesResult),
+        (status = 403, description = "You aren't an admin."),
+        (status = 404, description = "No book has that uuid."),
+        (status = 422, description = "A file or copy id isn't one of this book's; the body says which."),
+    ),
+)]
 pub(super) async fn post_delete_book_files(
     _admin: AdminUser,
     State(state): State<AppState>,
     Path(uuid): Path<String>,
     Json(req): Json<DeleteBookFilesRequest>,
 ) -> Response {
+    // Mirrors `rpc_delete_book_files`; same gate-parity note as `get_deletion_manifest`.
     match db::delete_book_items(&state.pool, &uuid, &req.file_ids, &req.copy_ids).await {
         Ok(out) => Json(DeleteBookFilesResult {
             deleted_file_ids: out.deleted_file_ids,

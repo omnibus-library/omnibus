@@ -1,389 +1,316 @@
-import type { Page } from "@playwright/test";
+import { scan } from "../contracts/scan";
+import {
+  alreadyOwned,
+  buildExternalBook,
+  closeMatch,
+  inLibraryUnowned,
+  libraryBook,
+  onWishlist,
+} from "../data/scan";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// The terminal branches reached once a resolved ISBN lands past the lookup
-// screen: checking in a copy of a book the library already holds (3a) or one
-// on the reader's own wishlist, the fuzzy (title, author) close-match confirm
-// (2b), and the already-owned outcome that skips the wizard and navigates
-// straight to the book's detail page. Every provider RPC is mocked — same rationale as
-// `check_in_search.spec.ts` — and here the check-in write itself is mocked
-// too: the target book (`standalone-island`) is read by
-// `physical_collection.spec.ts` elsewhere in the suite, so a real physical
-// copy written against it here would leak a copy that spec never expects.
-// The real check-in round trip (a book this spec never touches, created and
-// then deleted) lives in `check_in_choose.spec.ts`.
+// Check-ins are stubbed because `physical_collection.spec.ts` reads TARGET and
+// would see a real copy. `check_in_link_existing` makes the real write.
 
 const ISBN = "9780441013593";
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-island")!;
+const STUB_UUID = "island-uuid";
+const LIBRARY_ISBN = "9780000000000";
 
-function scanBook(
-  uuid: string,
-  over: Record<string, unknown> = {},
-): Record<string, unknown> {
-  return {
-    uuid,
-    title: TARGET.title,
-    authors: TARGET.authors,
-    cover_url: null,
-    has_physical: false,
-    has_files: true,
-    isbn: ISBN,
-    ...over,
-  };
-}
-
-function candidate(
-  over: Record<string, unknown> = {},
-): Record<string, unknown> {
-  return {
-    isbn13: ISBN,
-    title: "A Fuzzy-Matched Title",
-    authors: ["Some Author"],
-    year: "2011",
-    pages: null,
-    publisher: null,
-    description: null,
-    cover_url: null,
-    series: null,
-    first_publish_year: null,
-    source: "open_library",
-    ...over,
-  };
-}
-
-async function mockJsonPost(
-  page: Page,
-  url: string | RegExp,
-  body: unknown,
-): Promise<void> {
-  await page.route(url, (route) =>
-    route.request().method() === "POST"
-      ? route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(body),
-        })
-      : route.continue(),
-  );
-}
-
-async function reachConfirm(
-  page: Page,
-  uuid: string,
-  over: Record<string, unknown> = {},
-): Promise<void> {
-  await mockJsonPost(page, /\/api\/rpc\/scan\/resolve$/, {
-    kind: "in_library_unowned",
-    book: scanBook(uuid, over),
+test.describe("check-in lookup outcomes", () => {
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
-  await gotoReady(page, "/check-in");
-  await page.getByTestId("check-in-isbn").fill(ISBN);
-  await expectMutation(
-    page,
-    { method: "POST", url: /\/api\/rpc\/scan\/resolve$/, expectedStatus: 200 },
-    async () => page.getByTestId("check-in-submit").click(),
-  );
-  await expect(page.getByTestId("check-in-confirm")).toBeVisible();
-}
 
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
-
-test.describe("check-in confirm and close-match", () => {
-  test("words the confirm from the book's holdings, not as a digital copy", async ({
-    page,
-    request,
+  test("call a print-only book a print copy", async ({
+    checkInPage,
+    expectMutation,
   }) => {
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const flow = checkInPage.flow;
+
     // A paper-only row: no file, a copy already filed (#2525).
-    await reachConfirm(page, uuid, { has_files: false, has_physical: true });
+    await test.step("look up a print-only library book", async () => {
+      await flow.stubIsbnLookup(
+        inLibraryUnowned(
+          libraryBook(TARGET, STUB_UUID, {
+            has_files: false,
+            has_physical: true,
+          }),
+        ),
+      );
+      await checkInPage.goto();
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
+    });
 
-    const confirm = page.getByTestId("check-in-confirm");
-    await expect(confirm).not.toContainText("digitally");
-    await expect(confirm).toContainText("print copy");
+    await test.step("check the confirm calls it a print copy", async () => {
+      await expect(flow.confirmScreen).not.toContainText("digitally");
+      await expect(flow.confirmScreen).toContainText("print copy");
+    });
   });
 
-  test("checks in a copy of a seeded digital book after an exact ISBN match", async ({
-    page,
-    request,
+  test("check in a copy of a digital book after an exact isbn match", async ({
+    checkInPage,
+    expectMutation,
   }) => {
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-    await reachConfirm(page, uuid);
+    const flow = checkInPage.flow;
+    const book = { uuid: STUB_UUID, isbn13: ISBN };
+    const note = "Trade paperback, 2nd printing";
 
-    await expect(page.getByTestId("check-in-book")).toContainText(TARGET.title);
-    // A file-backed book is the one case the "digitally" line is true for.
-    await expect(page.getByTestId("check-in-confirm")).toContainText(
-      "You already have this one digitally",
-    );
+    await test.step("look up the digital book", async () => {
+      await flow.stubIsbnLookup(
+        inLibraryUnowned(libraryBook(TARGET, book.uuid)),
+      );
+      await flow.stubCheckIn(book.uuid);
+      await checkInPage.goto();
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
+    });
+
     // Typed at the lookup field, so the line must not call it a scan (#2247).
-    await expect(page.getByText(`Entered ISBN ${ISBN}`)).toBeVisible();
-
-    await page
-      .getByTestId("check-in-note")
-      .fill("Trade paperback, 2nd printing");
-    await mockJsonPost(page, "**/api/rpc/scan/check-in", {
-      book_uuid: uuid,
+    await test.step("check the confirm describes the match", async () => {
+      await expect(flow.bookCards).toContainText(TARGET.title);
+      await expect(flow.confirmScreen).toContainText(
+        "You already have this one digitally",
+      );
+      await expect(flow.confirmScreen).toContainText(`Entered ISBN ${ISBN}`);
     });
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: "/api/rpc/scan/check-in",
-        expectedBody: {
-          req: {
-            book_uuid: uuid,
-            isbn: ISBN,
-            note: "Trade paperback, 2nd printing",
-          },
-        },
-        expectedStatus: 200,
-      },
-      async () => page.getByTestId("check-in-confirm-submit").click(),
-    );
 
-    await expect(page.getByTestId("check-in-success")).toContainText(
-      "In your physical collection",
-    );
-    await expect(page.getByTestId("check-in-success")).toContainText(
-      TARGET.title,
-    );
-    await expect(page.getByTestId("check-in-view-book")).toBeVisible();
-  });
-
-  test("cancels a check-in confirmation and returns to the lookup front door", async ({
-    page,
-  }) => {
-    await reachConfirm(page, "island-uuid");
-
-    await page.getByTestId("check-in-cancel").click();
-
-    await expect(page.getByTestId("check-in-lookup")).toBeVisible();
-    await expect(page.getByTestId("check-in-isbn")).toHaveValue("");
-  });
-
-  test("surfaces a check-in failure and stays on the confirm screen", async ({
-    page,
-  }) => {
-    await reachConfirm(page, "island-uuid");
-
-    await page.route("**/api/rpc/scan/check-in", (route) =>
-      route.request().method() === "POST"
-        ? route.fulfill({
-            status: 500,
-            contentType: "text/plain",
-            body: "forced failure",
-          })
-        : route.continue(),
-    );
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: "/api/rpc/scan/check-in",
-        expectedStatus: 500,
-      },
-      async () => page.getByTestId("check-in-confirm-submit").click(),
-    );
-
-    await expect(page.getByTestId("check-in-error")).toBeVisible();
-    await expect(page.getByTestId("check-in-confirm")).toBeVisible();
-  });
-
-  test("confirms a close-match hit and lands on the same check-in confirm", async ({
-    page,
-  }) => {
-    const scanned = candidate();
-    await mockJsonPost(page, /\/api\/rpc\/scan\/resolve$/, {
-      kind: "close_match",
-      book: scanBook("island-uuid", { isbn: "9780000000000" }),
-      scanned,
+    await test.step("check in the copy with an edition note", async () => {
+      await flow.enterNote(note);
+      await expectMutation(scan.checkIn(book, note), () => flow.checkInCopy());
     });
-    await gotoReady(page, "/check-in");
-    await page.getByTestId("check-in-isbn").fill(ISBN);
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: /\/api\/rpc\/scan\/resolve$/,
-        expectedStatus: 200,
-      },
-      async () => page.getByTestId("check-in-submit").click(),
-    );
 
-    await expect(page.getByTestId("check-in-close-match")).toBeVisible();
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Is this the book?" }),
-    ).toBeVisible();
-    await expect(
-      page.getByText(`Entered ISBN ${scanned.isbn13}`),
-    ).toBeVisible();
-    await expect(
-      page.getByText("Library edition ISBN 9780000000000"),
-    ).toBeVisible();
-
-    await page.getByTestId("check-in-close-match-pick").click();
-
-    await expect(page.getByTestId("check-in-confirm")).toBeVisible();
-    await expect(
-      page.getByText(`Entered ISBN ${scanned.isbn13}`),
-    ).toBeVisible();
+    await test.step("check the copy joined the collection", async () => {
+      await expect(flow.successScreen).toContainText(
+        "In your physical collection",
+      );
+      await expect(flow.successScreen).toContainText(TARGET.title);
+      await expect(flow.viewBookLink).toBeVisible();
+    });
   });
 
-  // A book's EPUB and its unattached audiobook are two rows carrying the same
-  // effective (title, author): the ladder offers both rather than declining
-  // into a duplicate physical-only book (#1791).
-  test("picks between two library rows that both matched the scan", async ({
-    page,
+  test("cancel a confirm back to an empty lookup", async ({
+    checkInPage,
+    expectMutation,
   }) => {
-    const scanned = candidate();
-    await mockJsonPost(page, /\/api\/rpc\/scan\/resolve$/, {
-      kind: "close_match",
-      book: scanBook("epub-uuid", { isbn: "9780000000000" }),
-      others: [
-        scanBook("audiobook-uuid", {
-          title: `${TARGET.title} (Unabridged)`,
-          isbn: null,
-        }),
-      ],
-      scanned,
-    });
-    await gotoReady(page, "/check-in");
-    await page.getByTestId("check-in-isbn").fill(ISBN);
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: /\/api\/rpc\/scan\/resolve$/,
-        expectedStatus: 200,
-      },
-      async () => page.getByTestId("check-in-submit").click(),
-    );
+    const flow = checkInPage.flow;
 
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Which one is this?" }),
-    ).toBeVisible();
-    await expect(page.getByTestId("check-in-close-match-pick")).toHaveCount(2);
-    await expect(page.getByTestId("check-in-book")).toHaveCount(2);
+    await test.step("look up a library book", async () => {
+      await flow.stubIsbnLookup(
+        inLibraryUnowned(libraryBook(TARGET, STUB_UUID)),
+      );
+      await checkInPage.goto();
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
+      await expect(flow.confirmScreen).toBeVisible();
+    });
+
+    await test.step("cancel the confirm", async () => {
+      await flow.cancelConfirmation();
+      await expect(flow.lookupScreen).toBeVisible();
+      await expect(flow.isbnField).toHaveValue("");
+    });
+  });
+
+  test("stay on the confirm when the check-in fails", async ({
+    checkInPage,
+    expectMutation,
+  }) => {
+    const flow = checkInPage.flow;
+    const book = { uuid: STUB_UUID, isbn13: ISBN };
+
+    await test.step("look up a library book", async () => {
+      await flow.stubIsbnLookup(
+        inLibraryUnowned(libraryBook(TARGET, book.uuid)),
+      );
+      await checkInPage.forceServerError(scan.checkIn(book));
+      await checkInPage.goto();
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
+      await expect(flow.confirmScreen).toBeVisible();
+    });
+
+    await test.step("check in while check-ins fail", async () => {
+      await expectMutation(failing(scan.checkIn(book)), () =>
+        flow.checkInCopy(),
+      );
+    });
+
+    await test.step("check the error shows over the confirm", async () => {
+      await expect(flow.errorMessage).toBeVisible();
+      await expect(flow.confirmScreen).toBeVisible();
+    });
+  });
+
+  test("confirm a close match before checking in", async ({
+    checkInPage,
+    expectMutation,
+  }) => {
+    const flow = checkInPage.flow;
+    const scanned = buildExternalBook({
+      isbn13: ISBN,
+      title: "A Fuzzy-Matched Title",
+      authors: ["Some Author"],
+    });
+
+    await test.step("look up an isbn with one close match", async () => {
+      await flow.stubIsbnLookup(
+        closeMatch(scanned, [
+          libraryBook(TARGET, STUB_UUID, { isbn: LIBRARY_ISBN }),
+        ]),
+      );
+      await checkInPage.goto();
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
+    });
+
+    await test.step("check both isbns are shown", async () => {
+      await expect(flow.closeMatchScreen).toBeVisible();
+      await expect(flow.screenHeading).toHaveText("Is this the book?");
+      await expect(flow.closeMatchScreen).toContainText(
+        `Entered ISBN ${scanned.isbn13}`,
+      );
+      await expect(flow.closeMatchScreen).toContainText(
+        `Library edition ISBN ${LIBRARY_ISBN}`,
+      );
+    });
+
+    await test.step("confirm the match", async () => {
+      await flow.pickCloseMatch(TARGET.title);
+      await expect(flow.confirmScreen).toBeVisible();
+      await expect(flow.confirmScreen).toContainText(
+        `Entered ISBN ${scanned.isbn13}`,
+      );
+    });
+  });
+
+  // An EPUB and its unattached audiobook share a title and author, so the
+  // flow offers both instead of creating a print-only duplicate (#1791).
+  test("pick between two library books that matched", async ({
+    checkInPage,
+    expectMutation,
+  }) => {
+    const flow = checkInPage.flow;
+    const scanned = buildExternalBook({
+      isbn13: ISBN,
+      title: "A Fuzzy-Matched Title",
+      authors: ["Some Author"],
+    });
+    const audiobookTitle = `${TARGET.title} (Unabridged)`;
+
+    await test.step("look up an isbn with two close matches", async () => {
+      await flow.stubIsbnLookup(
+        closeMatch(scanned, [
+          libraryBook(TARGET, "epub-uuid", { isbn: LIBRARY_ISBN }),
+          libraryBook(
+            { title: audiobookTitle, authors: TARGET.authors },
+            "audiobook-uuid",
+          ),
+        ]),
+      );
+      await checkInPage.goto();
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
+    });
+
+    await test.step("check both books are offered", async () => {
+      await expect(flow.screenHeading).toHaveText("Which one is this?");
+      await expect(flow.closeMatchPickButtons).toHaveCount(2);
+      await expect(flow.bookCards).toHaveCount(2);
+    });
 
     // The second candidate is the one only a picker can reach.
-    await page.getByTestId("check-in-close-match-pick").nth(1).click();
-
-    await expect(page.getByTestId("check-in-confirm")).toBeVisible();
-    await expect(page.getByTestId("check-in-book")).toContainText(
-      `${TARGET.title} (Unabridged)`,
-    );
-  });
-
-  test("declines a close match and falls through to the online chooser", async ({
-    page,
-  }) => {
-    const scanned = candidate({ title: "Definitely Not That Book" });
-    await mockJsonPost(page, /\/api\/rpc\/scan\/resolve$/, {
-      kind: "close_match",
-      book: scanBook("island-uuid"),
-      scanned,
+    await test.step("pick the audiobook", async () => {
+      await flow.pickCloseMatch(audiobookTitle);
+      await expect(flow.confirmScreen).toBeVisible();
+      await expect(flow.bookCards).toContainText(audiobookTitle);
     });
-    await gotoReady(page, "/check-in");
-    await page.getByTestId("check-in-isbn").fill(ISBN);
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: /\/api\/rpc\/scan\/resolve$/,
-        expectedStatus: 200,
-      },
-      async () => page.getByTestId("check-in-submit").click(),
-    );
-    await expect(page.getByTestId("check-in-close-match")).toBeVisible();
-
-    await page.getByTestId("check-in-close-match-no").click();
-
-    await expect(page.getByTestId("check-in-choose")).toBeVisible();
-    await expect(page.getByTestId("check-in-book")).toContainText(
-      "Definitely Not That Book",
-    );
   });
 
-  test("an already-owned scan navigates straight to the book's detail page", async ({
-    page,
+  test("decline a close match into the online chooser", async ({
+    checkInPage,
+    expectMutation,
+  }) => {
+    const flow = checkInPage.flow;
+    const scanned = buildExternalBook({
+      isbn13: ISBN,
+      title: "Definitely Not That Book",
+      authors: ["Some Author"],
+    });
+
+    await test.step("look up an isbn with a close match", async () => {
+      await flow.stubIsbnLookup(
+        closeMatch(scanned, [libraryBook(TARGET, STUB_UUID)]),
+      );
+      await checkInPage.goto();
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
+      await expect(flow.closeMatchScreen).toBeVisible();
+    });
+
+    await test.step("decline the match", async () => {
+      await flow.declineCloseMatch();
+      await expect(flow.chooseScreen).toBeVisible();
+      await expect(flow.bookCards).toContainText(scanned.title);
+    });
+  });
+
+  test("open an already-owned book straight from the lookup", async ({
     request,
+    checkInPage,
+    bookDetailPage,
+    expectMutation,
   }) => {
+    const flow = checkInPage.flow;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-    await mockJsonPost(page, /\/api\/rpc\/scan\/resolve$/, {
-      kind: "already_owned",
-      book: scanBook(uuid, { has_physical: true }),
-    });
-    await gotoReady(page, "/check-in");
-    await page.getByTestId("check-in-isbn").fill(ISBN);
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: /\/api\/rpc\/scan\/resolve$/,
-        expectedStatus: 200,
-      },
-      async () => page.getByTestId("check-in-submit").click(),
-    );
 
-    await expect(page).toHaveURL(new RegExp(`/books/${uuid}$`));
-    await expect(
-      page.getByRole("heading", { level: 1, name: TARGET.title }),
-    ).toBeVisible();
-    await expect(page.getByTestId("check-in")).toHaveCount(0);
+    await test.step("look up a book that already has a copy", async () => {
+      await flow.stubIsbnLookup(
+        alreadyOwned(libraryBook(TARGET, uuid, { has_physical: true })),
+      );
+      await checkInPage.goto();
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
+    });
+
+    await test.step("check the book's page opens instead", async () => {
+      await bookDetailPage.assertDisplayedFor(uuid);
+      await expect(bookDetailPage.titleHeading).toHaveText(TARGET.title);
+      await expect(flow.root).toHaveCount(0);
+    });
   });
 
-  test("an on-wishlist scan offers the check-in and says the entry went", async ({
-    page,
-    request,
+  // The book they wished for is the one they now hold, so the flow offers to
+  // file it rather than sending them to its page.
+  test("check in a wishlisted book from the lookup", async ({
+    checkInPage,
+    expectMutation,
   }) => {
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-    await mockJsonPost(page, /\/api\/rpc\/scan\/resolve$/, {
-      kind: "on_wishlist",
-      book: scanBook(uuid, { has_files: false }),
+    const flow = checkInPage.flow;
+    const book = { uuid: STUB_UUID, isbn13: ISBN };
+
+    await test.step("look up a book on the wishlist", async () => {
+      await flow.stubIsbnLookup(
+        onWishlist(libraryBook(TARGET, book.uuid, { has_files: false })),
+      );
+      await flow.stubCheckIn(book.uuid);
+      await checkInPage.goto();
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
     });
-    await gotoReady(page, "/check-in");
-    await page.getByTestId("check-in-isbn").fill(ISBN);
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: /\/api\/rpc\/scan\/resolve$/,
-        expectedStatus: 200,
-      },
-      async () => page.getByTestId("check-in-submit").click(),
-    );
 
-    // The book the reader wished for is the one they now hold: the flow
-    // offers to file it rather than sending them to its page.
-    await expect(page).toHaveURL(/\/check-in$/);
-    await expect(page.getByTestId("check-in-confirm")).toContainText(
-      "on your wishlist",
-    );
-    await expect(page.getByTestId("check-in-book")).toContainText(TARGET.title);
+    await test.step("check the confirm offers to file it", async () => {
+      await checkInPage.assertDisplayed();
+      await expect(flow.confirmScreen).toContainText("on your wishlist");
+      await expect(flow.bookCards).toContainText(TARGET.title);
+    });
 
-    await mockJsonPost(page, "**/api/rpc/scan/check-in", { book_uuid: uuid });
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: "/api/rpc/scan/check-in",
-        expectedBody: { req: { book_uuid: uuid, isbn: ISBN, note: null } },
-        expectedStatus: 200,
-      },
-      async () => page.getByTestId("check-in-confirm-submit").click(),
-    );
+    await test.step("check in the copy", async () => {
+      await expectMutation(scan.checkIn(book), () => flow.checkInCopy());
+    });
 
-    const success = page.getByTestId("check-in-success");
-    await expect(success).toContainText("In your physical collection");
-    await expect(success).toContainText(TARGET.title);
-    await expect(page.getByTestId("check-in-off-wishlist")).toContainText(
-      "off your wishlist",
-    );
+    await test.step("check the copy left the wishlist", async () => {
+      await expect(flow.successScreen).toContainText(
+        "In your physical collection",
+      );
+      await expect(flow.successScreen).toContainText(TARGET.title);
+      await expect(flow.offWishlistMessage).toContainText("off your wishlist");
+    });
   });
 });

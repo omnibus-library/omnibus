@@ -1,8 +1,9 @@
-//! Stop 01 · Home — the hero panel: kicker, marquee title, authors,
-//! genre/tag chips, description, the read/listen/immersive/export CTA row,
-//! reading-status control, and the position ruler with the sync line under
-//! it. Wishlist-only books swap the CTA row for the design's
-//! find-a-copy / check-in / remove actions.
+//! Stop 01 · Home — the hero panel: kicker, marquee title, authors, the
+//! household rating that jumps to the Reviews stop, genre/tag chips,
+//! description, the read/listen/immersive/export CTA row, reading-status
+//! control, and the position ruler with the sync line under it.
+//! Wishlist-only books swap the CTA row for the design's find-a-copy /
+//! check-in / remove actions.
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
@@ -24,6 +25,7 @@ use crate::pages::book_detail::file_picker::{
 use crate::pages::book_detail::immersive::BdImmersiveButton;
 use crate::pages::book_detail::physical::{find_a_copy_url, remove_from_wishlist};
 use crate::pages::book_detail::read_status::BdReadStatusControl;
+use crate::pages::book_detail::reviews::{BdReviewsJumpLink, ReviewsCtx};
 use crate::pages::book_detail::sync_link::BdSyncPanel;
 use crate::pages::book_detail::PhysSignals;
 use crate::routes::link_target;
@@ -46,6 +48,8 @@ pub(super) fn MarqueeHomeStop(
     refresh: Signal<u32>,
     after_merge: Signal<bool>,
     wishlist: Option<WishlistEntry>,
+    /// The Reviews stop's state, for the household rating under the byline.
+    reviews: ReviewsCtx,
 ) -> Element {
     let uuid = b.unique_identifier.clone().unwrap_or_default();
     let is_fileless = b.formats.is_empty();
@@ -119,6 +123,10 @@ pub(super) fn MarqueeHomeStop(
                     }
                 }
             }
+        }
+        BdReviewsJumpLink {
+            summary: reviews.summary(),
+            on_jump: move |_| super::jump_to_stop(super::REVIEWS_STOP),
         }
         div { class: "bdmq-chips",
             BdChipListEditor {

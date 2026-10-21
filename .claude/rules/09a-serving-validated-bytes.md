@@ -1,3 +1,6 @@
+---
+paths: "server/src/backend.rs, server/src/backend/**"
+---
 # 09a — Serving validated bytes
 
 Companion to [09-content-validators.md](09-content-validators.md), which owns

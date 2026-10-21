@@ -35,6 +35,8 @@ export interface ExpectedBook {
    * fixtures pin `[]`.
    */
   tags?: string[];
+  /** True iff a spec edits the title and authors, so row checks skip them and the cover label. */
+  titleAndAuthorsEdited?: boolean;
   /**
    * Raw stored `dc:date` value (e.g. `"1843-10-01"`). The published cell
    * renders a formatted human date derived from this, not the raw string —
@@ -369,13 +371,14 @@ export const FIXTURE_BOOKS: readonly ExpectedBook[] = [
     hasCover: true,
   },
   {
-    // Reserved for landing_inline_edit.spec.ts's Tags-cell tests: they hold
-    // a `subjects` override on this book mid-test, so `tags` stays
-    // undefined (unasserted) and no other spec may touch its overrides.
+    // Reserved for landing_inline_edit.spec.ts: its tests hold title, author
+    // and `subjects` overrides on this book mid-test, so `tags` is unasserted,
+    // the title and authors are flagged edited, and no other spec may touch it.
     slug: "standalone-ocean",
     filename: "standalone-ocean.epub",
     title: "Ocean of Bytes",
     authors: ["Donald Knuth", "Leslie Lamport"],
+    titleAndAuthorsEdited: true,
     publisher: "MIT Press Mirror",
     published: "1989-06-21",
     language: "en",
@@ -731,12 +734,9 @@ export const FIXTURE_BOOKS: readonly ExpectedBook[] = [
     hasCover: true,
   },
   {
-    // Reserved for reader.spec.ts's two-finger gesture test: it parks a
-    // position and asserts nothing carried it back, so any other spec writing
-    // a position on it would be asserting against a moving target. The
-    // smallest multi-chapter public-domain fixture, for the same cold-open
-    // reason as `romeo-and-juliet` above — epub.js regenerates whole-book
-    // locations on a first open, and a large book spends the poll budget on it.
+    // Reserved for reader.spec.ts's two-finger gesture tests, which park a
+    // position. The smallest multi-chapter fixture, so epub.js builds its
+    // whole-book locations quickly on a first open.
     slug: "mariucha",
     filename: "public_domain/mariucha.epub",
     title: "Mariucha",
@@ -852,3 +852,6 @@ export const FIXTURE_BOOKS: readonly ExpectedBook[] = [
     hasCover: true,
   },
 ] as const;
+
+/** The face `standalone-lagoon`'s publisher CSS embeds (tools/make_epub.ts). */
+export const EMBEDDED_FONT_FAMILY = "Fixture Serif";

@@ -1,7 +1,7 @@
 //! The admin-triggered worker tasks: a settings save kicks off a scan,
-//! and the reindex, scan-library and FTS-rebuild routes each gate on auth
-//! and admin (including a second promoted admin), answer 409 without a
-//! library path, and surface a worker failure as 500.
+//! and the reindex, scan-library, backfill-chapters and FTS-rebuild routes
+//! each gate on auth and admin (including a second promoted admin), answer
+//! 409 without a library path, and report a worker failure as 500.
 
 use axum::{
     body::{to_bytes, Body},
@@ -473,4 +473,85 @@ async fn post_fts_rebuild_returns_403_when_not_admin() {
         .await
         .expect("request should succeed");
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+fn backfill_chapters_request(token: Option<&str>) -> Request<Body> {
+    request("POST", "/api/audiobooks/backfill-chapters", token, None)
+}
+
+/// Whether the worker holds a chapter-backfill task, queued, running or just finished.
+fn backfill_queued(state: &AppState) -> bool {
+    worker_holds_task(state, |task| {
+        task.kind == omnibus_shared::TaskKind::BackfillChapters
+    })
+}
+
+#[tokio::test]
+async fn backfill_chapters_returns_401_when_anonymous() {
+    let (app, _, _) = fixture().await;
+    let response = app
+        .oneshot(backfill_chapters_request(None))
+        .await
+        .expect("request should succeed");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn backfill_chapters_returns_403_when_not_admin() {
+    let (app, _state, pool) = fixture().await;
+    let token = reader_token(&pool).await;
+    let response = app
+        .oneshot(backfill_chapters_request(Some(&token)))
+        .await
+        .expect("request should succeed");
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn backfill_chapters_returns_409_when_no_audiobook_library_path_configured() {
+    let (app, state, pool) = fixture().await;
+    let token = admin_token(&pool).await;
+    // An ebook folder alone doesn't count: the job reads audiobooks.
+    set_library_paths(&pool, Some("/some/ebooks"), None).await;
+
+    let response = app
+        .oneshot(backfill_chapters_request(Some(&token)))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(body_text(response).await, "no audiobook library configured");
+    assert!(!backfill_queued(&state));
+}
+
+#[tokio::test]
+async fn backfill_chapters_returns_200_and_queues_the_job_when_an_audiobook_path_is_configured() {
+    let (app, state, pool) = fixture().await;
+    let token = admin_token(&pool).await;
+    set_library_paths(&pool, None, Some("/some/audiobooks")).await;
+
+    let response = app
+        .oneshot(backfill_chapters_request(Some(&token)))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(backfill_queued(&state));
+}
+
+#[tokio::test]
+async fn backfill_chapters_returns_500_when_the_settings_cannot_be_read() {
+    let (app, _state, pool) = fixture().await;
+    let token = admin_token(&pool).await;
+    sqlx::query("DROP TABLE settings")
+        .execute(&pool)
+        .await
+        .expect("drop settings");
+
+    let response = app
+        .oneshot(backfill_chapters_request(Some(&token)))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }

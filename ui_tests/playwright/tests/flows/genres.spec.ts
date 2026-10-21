@@ -8,310 +8,316 @@
 // `standalone-tundra` outright (see the fixture comment in
 // `tests/fixtures/epubs.ts`).
 
-import type { APIRequestContext } from "@playwright/test";
+import { overrides } from "../contracts/overrides";
+import type { EbookDetail } from "../data/ebooks";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
-import { fetchBookUuidByTitle, switchToTableView } from "../utils/ebooks";
-import { expectNavVisible, gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
+import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-tundra")!;
 
-// Every test writes/clears overrides on the SAME reserved book, so the
-// suite-wide `fullyParallel` would let one test's `clearOverrides` wipe
-// another's just-saved genres mid-assertion. Run this file sequentially
-// in one worker instead (the `book_detail_chips.spec.ts` precedent).
-test.describe.configure({ mode: "default" });
+// A name no fixture title, author, series or tag carries, so only the genre itself can match it.
+const GENRE = "Solarpunk";
 
-/** The save endpoint every genre write goes through. */
-const OVERRIDES_RPC = /\/api\/rpc\/ebook\/overrides$/;
+test.describe("genres", () => {
+  // One test's clear would wipe another's just-saved genres, so the file runs in a single worker.
+  test.describe.configure({ mode: "default" });
 
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
-
-/** Assign `genres` to the target book, bypassing the UI. Setup only — the
- *  edit-page and table-cell tests below cover the assign flows themselves. */
-async function assignGenres(request: APIRequestContext, genres: string[]) {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  const resp = await request.post("/api/rpc/ebook/overrides", {
-    data: { uuid, overrides: { genres } },
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
-  expect(resp.status(), "genre seed must succeed").toBe(200);
-}
 
-/** Drop every override on the target so each test starts genre-free. */
-async function clearOverrides(request: APIRequestContext) {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  const resp = await request.post("/api/rpc/ebook/overrides/delete", {
-    data: { uuid },
+  // The fixture also clears the book after the test, so a failure leaves nothing behind.
+  test.beforeEach(
+    "clear the target's overrides",
+    async ({ request, overridesRequests, overriddenBookUuids }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      const cleared = await overridesRequests.deleteOverrides(uuid);
+      await expect(cleared, "cleanup revert must succeed").toBeOK();
+      overriddenBookUuids.add(uuid);
+    },
+  );
+
+  test("show the genres layout", async ({ metadataEditPage, request }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+    await test.step("open the edit page", async () => {
+      await metadataEditPage.goto(uuid);
+    });
+
+    await test.step("check the page and its nav", async () => {
+      await metadataEditPage.assertDisplayed();
+      await metadataEditPage.topNav.assertDisplayed();
+    });
+
+    // The label tells it from the Tags section above, which is the same control over another vocabulary.
+    await test.step("check the genres section", async () => {
+      await expect(metadataEditPage.genresSection).toBeVisible();
+      await expect(metadataEditPage.genresLabel).toBeVisible();
+      await expect(metadataEditPage.genresInput).toHaveAttribute(
+        "placeholder",
+        "+ add genre…",
+      );
+    });
   });
-  expect(resp.status(), "cleanup revert must succeed").toBe(200);
-}
 
-test.beforeEach(async ({ request }) => {
-  await clearOverrides(request);
-});
+  test.describe("edit page", () => {
+    test("assign genres from the metadata edit page", async ({
+      metadataEditPage,
+      bookDetailPage,
+      expectMutation,
+      request,
+    }) => {
+      const { form, genresSection } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-test.afterAll(async ({ request }) => {
-  await clearOverrides(request);
-});
+      // Each chip lands before the next is typed: Enter re-renders the list and a fill issued before that settles is dropped.
+      await test.step("open the edit page and add two genres", async () => {
+        await metadataEditPage.goto(uuid);
+        await metadataEditPage.addGenre("Hard Science Fiction");
+        await expect(genresSection).toContainText("Hard Science Fiction");
+        await metadataEditPage.addGenre("Adventure");
+        await expect(genresSection).toContainText("Adventure");
+      });
 
-test("renders the metadata edit page's Genres section", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}/edit`);
-  await expectNavVisible(page);
+      await test.step("save", async () => {
+        await expectMutation(overrides.save(), () => form.save());
+      });
 
-  const section = page.getByTestId("me-genres-section");
-  await expect(section).toBeVisible();
-  // The label distinguishes it from the Tags section directly above, which
-  // is the same control over a different vocabulary.
-  await expect(page.getByText("Genres", { exact: true })).toBeVisible();
-  await expect(section.getByTestId("me-genres-input")).toHaveAttribute(
-    "placeholder",
-    "+ add genre…",
-  );
-});
+      // Genres render as their own chip list above the tags.
+      await test.step("check the book page lists them", async () => {
+        await bookDetailPage.assertDisplayedFor(uuid);
+        await expect(bookDetailPage.genreChips.list).toBeVisible();
+        await expect(bookDetailPage.genreChips.list).toContainText(
+          "Hard Science Fiction",
+        );
+        await expect(bookDetailPage.genreChips.list).toContainText("Adventure");
+      });
+    });
 
-test("assigns genres from the metadata edit page and shows them on book detail", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}/edit`);
+    test("keep the scanned tags when editing genres", async ({
+      metadataEditPage,
+      ebooksRequests,
+      expectMutation,
+      request,
+    }) => {
+      const { form, genresSection } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-  const section = page.getByTestId("me-genres-section");
-  const input = section.getByTestId("me-genres-input");
+      await test.step("open the edit page and add a genre", async () => {
+        await metadataEditPage.goto(uuid);
+        await metadataEditPage.addGenre("Noir");
+        await expect(genresSection).toContainText("Noir");
+      });
 
-  // Wait for each chip to land before typing the next: Enter clears the
-  // input and re-renders the chip list, so a second `fill` issued before
-  // that settles races the re-render and is dropped.
-  await input.fill("Hard Science Fiction");
-  await input.press("Enter");
-  await expect(section).toContainText("Hard Science Fiction");
-  await input.fill("Adventure");
-  await input.press("Enter");
-  await expect(section).toContainText("Adventure");
+      await test.step("save", async () => {
+        await expectMutation(overrides.save(), () => form.save());
+      });
 
-  await expectMutation(
-    page,
-    { method: "POST", url: OVERRIDES_RPC, expectedStatus: 200 },
-    async () => page.getByRole("button", { name: /Save/ }).click(),
-  );
+      // A genres override must not write a subjects one: that would pin the scanned tags against a later rescan.
+      await test.step("read the book back", async () => {
+        const read = await ebooksRequests.getEbook(uuid);
+        await expect(read).toBeOK();
+        const book: EbookDetail = await read.json();
+        expect(book.genres).toEqual(["Noir"]);
+        expect(book.subjects).toEqual(TARGET.tags ?? []);
+      });
+    });
+  });
 
-  // Saving navigates back to the detail page, where genres render as their
-  // own chip list above the tag list.
-  await expect(page).toHaveURL(new RegExp(`/books/${uuid}$`));
-  const genreList = page.getByTestId("bd-genre-list");
-  await expect(genreList).toBeVisible();
-  await expect(genreList).toContainText("Hard Science Fiction");
-  await expect(genreList).toContainText("Adventure");
-});
+  test.describe("table cell", () => {
+    test("open the genres cell as an inline chip editor", async ({
+      libraryPage,
+    }) => {
+      const { table } = libraryPage;
+      const cell = table.cell(TARGET.slug, "genres");
+      const input = table.cellInput(TARGET.slug, "genres");
 
-test("editing genres leaves the scanned tag list untouched", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      await test.step("open the table and click the cell", async () => {
+        await libraryPage.goto();
+        await table.switchTo();
+        await table.openCell(TARGET.slug, "genres");
+      });
 
-  await gotoReady(page, `/books/${uuid}/edit`);
-  const section = page.getByTestId("me-genres-section");
-  const input = section.getByTestId("me-genres-input");
-  await input.fill("Noir");
-  await input.press("Enter");
-  await expect(section).toContainText("Noir");
-  await expectMutation(
-    page,
-    { method: "POST", url: OVERRIDES_RPC, expectedStatus: 200 },
-    async () => page.getByRole("button", { name: /Save/ }).click(),
-  );
+      await test.step("check the chip editor shows", async () => {
+        await expect(input).toBeVisible();
+        await expect(input).toHaveAttribute("placeholder", "+ add genre…");
+        await expect(cell).toHaveClass(/ebook-cell-editing/);
+      });
 
-  // A genres override must not write a `subjects` one: doing so would pin
-  // the scanned tag list against a later rescan.
-  const resp = await request.get(`/api/ebooks/${uuid}`);
-  expect(resp.status()).toBe(200);
-  const book = (await resp.json()) as {
-    genres?: string[];
-    subjects: string[];
-  };
-  expect(book.genres).toEqual(["Noir"]);
-  expect(book.subjects).toEqual(TARGET.tags ?? []);
-});
+      await test.step("leave with Escape", async () => {
+        await table.cancelCell(TARGET.slug, "genres");
+        await expect(input).toHaveCount(0);
+        await expect(cell).not.toHaveClass(/ebook-cell-editing/);
+      });
+    });
 
-test("clicking the Genres cell in the table renders the chip editor inline", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
+    test("assign a genre inline from the table", async ({
+      libraryPage,
+      expectMutation,
+    }) => {
+      const { table } = libraryPage;
+      const cell = table.cell(TARGET.slug, "genres");
 
-  const cell = page
-    .getByTestId(`ebook-row-${TARGET.slug}`)
-    .getByTestId("ebook-cell-genres");
-  await cell.click();
+      await test.step("open the table and click the cell", async () => {
+        await libraryPage.goto();
+        await table.switchTo();
+        await table.openCell(TARGET.slug, "genres");
+      });
 
-  const chipInput = cell.getByTestId("ebook-cell-genres-input");
-  await expect(chipInput).toBeVisible();
-  await expect(chipInput).toHaveAttribute("placeholder", "+ add genre…");
-  await expect(cell).toHaveClass(/ebook-cell-editing/);
+      await test.step("add a genre", async () => {
+        await table.fillCell(TARGET.slug, "genres", "Techno-Thriller");
+        await expectMutation(overrides.save(), () =>
+          table.commitCell(TARGET.slug, "genres"),
+        );
+      });
 
-  // Escape exits edit mode without saving.
-  await chipInput.press("Escape");
-  await expect(chipInput).toHaveCount(0);
-  await expect(cell).not.toHaveClass(/ebook-cell-editing/);
-});
+      await test.step("check the cell shows the server-merged value", async () => {
+        await libraryPage.assertDisplayed();
+        await expect(cell).toContainText("Techno-Thriller");
+        await table.cancelCell(TARGET.slug, "genres");
+        await expect(cell).toContainText("Techno-Thriller");
+      });
+    });
 
-test("assigns a genre inline from the table and reflects it in the cell", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
+    test("keep the cell unchanged when the genre save fails", async ({
+      libraryPage,
+      expectMutation,
+    }) => {
+      const { table } = libraryPage;
 
-  const cell = page
-    .getByTestId(`ebook-row-${TARGET.slug}`)
-    .getByTestId("ebook-cell-genres");
-  await cell.click();
+      await test.step("open the table and click the cell", async () => {
+        await libraryPage.goto();
+        await table.switchTo();
+        await table.openCell(TARGET.slug, "genres");
+      });
 
-  const chipInput = cell.getByTestId("ebook-cell-genres-input");
-  await chipInput.fill("Techno-Thriller");
-  await expectMutation(
-    page,
-    { method: "POST", url: OVERRIDES_RPC, expectedStatus: 200 },
-    async () => chipInput.press("Enter"),
-  );
+      await test.step("add a genre while the server fails the write", async () => {
+        await libraryPage.forceServerError(overrides.save());
+        await table.fillCell(TARGET.slug, "genres", "Never Saved");
+        await expectMutation(failing(overrides.save()), () =>
+          table.commitCell(TARGET.slug, "genres"),
+        );
+      });
 
-  // Stayed on the landing page; the cell shows the server-merged value.
-  await expect(page).toHaveURL(/\/$/);
-  await expect(cell).toContainText("Techno-Thriller");
-  await chipInput.press("Escape");
-  await expect(cell).toContainText("Techno-Thriller");
-});
+      // The optimistic state is replaced only by a successful answer, so a rejected save leaves no genre in the cell.
+      await test.step("reload and check the cell never took it", async () => {
+        await libraryPage.goto();
+        await table.switchTo();
+        await expect(table.cell(TARGET.slug, "genres")).not.toContainText(
+          "Never Saved",
+        );
+      });
+    });
+  });
 
-// ── Search ───────────────────────────────────────────────────────────
-//
-// Genres reach `books_fts` on the override save itself, so a genre is
-// searchable with no reindex in between. The palette is the only web entry
-// point to `/search/:query`, so these drive it rather than deep-linking.
+  // Genres reach `books_fts` on the override save itself, so one is searchable
+  // with no reindex between. The palette is the only web entry to `/search/:query`.
+  test.describe("search", () => {
+    test("group an assigned genre in the palette", async ({
+      libraryPage,
+      assignGenres,
+      request,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-/** Open the command palette and type `query` into its input. */
-async function openPaletteAndType(
-  page: import("@playwright/test").Page,
-  query: string,
-) {
-  await page.getByTestId("search-trigger").click();
-  const input = page.getByTestId("sp-input");
-  await expect(input).toBeVisible();
-  await input.fill(query);
-}
+      await test.step("assign the genre through the api", async () => {
+        await assignGenres(uuid, [GENRE]);
+      });
 
-test("groups an assigned genre in the palette and refines the query to it", async ({
-  page,
-  request,
-}) => {
-  // A name no fixture title, author, series, or tag carries, so the only
-  // thing that can match it is the genre itself.
-  const GENRE = "Solarpunk";
-  await assignGenres(request, [GENRE]);
+      await test.step("search the palette for it", async () => {
+        await libraryPage.goto();
+        await palette.search(GENRE);
+      });
 
-  await gotoReady(page, "/");
-  await openPaletteAndType(page, GENRE);
+      await test.step("check one genre row names it and counts its books", async () => {
+        await expect(palette.row("genre")).toHaveCount(1);
+        await expect(palette.row("genre")).toContainText(GENRE);
+        await expect(palette.row("genre")).toContainText("1 book");
+      });
+    });
 
-  const row = page.getByTestId("sp-genre-row");
-  await expect.poll(async () => row.count()).toBe(1);
-  await expect(row).toContainText(GENRE);
-  await expect(row).toContainText("1 book");
+    test("refine the search to a genre from the palette", async ({
+      libraryPage,
+      searchResultsPage,
+      assignGenres,
+      request,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-  // Selecting the row refines to the `genre:` facet and lands on the
-  // full-page results, where the book itself is the hit.
-  await row.click();
-  await expect(page).toHaveURL(new RegExp(`/search/genre:${GENRE}$`));
-  await expect(page.getByTestId("search-book-row")).toContainText(TARGET.title);
-});
+      await test.step("assign the genre and search the palette for it", async () => {
+        await assignGenres(uuid, [GENRE]);
+        await libraryPage.goto();
+        await palette.search(GENRE);
+        await expect(palette.row("genre")).toHaveCount(1);
+      });
 
-test("keeps a genre name out of free-text results", async ({
-  page,
-  request,
-}) => {
-  // Free text stays scoped to {title authors series}: a genre-only match
-  // must not surface the book as a *book* hit, the same way a tag-only
-  // match doesn't. The Genres group still offers it as a refinement.
-  const GENRE = "Solarpunk";
-  await assignGenres(request, [GENRE]);
+      await test.step("pick the genre row", async () => {
+        await palette.chooseTopResult("genre");
+      });
 
-  await gotoReady(page, "/");
-  await openPaletteAndType(page, GENRE);
-  await expect
-    .poll(async () => page.getByTestId("sp-genre-row").count())
-    .toBe(1);
+      // The book itself is the hit on the full-page results.
+      await test.step("check the results are scoped to the genre", async () => {
+        await searchResultsPage.assertDisplayedFor(`genre:${GENRE}`);
+        await expect(searchResultsPage.bookRows).toContainText(TARGET.title);
+      });
+    });
 
-  const bookRows = page.getByTestId("sp-book-row");
-  await expect
-    .poll(async () => {
-      const texts = await bookRows.allInnerTexts();
-      return texts.filter((t) => t.includes(TARGET.title)).length;
-    })
-    .toBe(0);
-});
+    // Free text stays scoped to title, authors and series, so a genre-only match is a refinement and not a book hit.
+    test("keep a genre name out of free-text results", async ({
+      libraryPage,
+      assignGenres,
+      request,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-test("drops a book from genre-scoped results once its genres are cleared", async ({
-  page,
-  request,
-}) => {
-  const GENRE = "Solarpunk";
-  await assignGenres(request, [GENRE]);
-  await gotoReady(page, "/");
-  await openPaletteAndType(page, GENRE);
-  await expect
-    .poll(async () => page.getByTestId("sp-genre-row").count())
-    .toBe(1);
+      await test.step("assign the genre and search the palette for it", async () => {
+        await assignGenres(uuid, [GENRE]);
+        await libraryPage.goto();
+        await palette.search(GENRE);
+        await expect(palette.row("genre")).toHaveCount(1);
+      });
 
-  // An empty list is the clear-all override; the index has to follow it.
-  await assignGenres(request, []);
+      await test.step("check the book is not listed as a book hit", async () => {
+        await expect
+          .poll(async () => {
+            const texts = await palette.rowTexts("book");
+            return texts.filter((t) => t.includes(TARGET.title)).length;
+          })
+          .toBe(0);
+      });
+    });
 
-  await gotoReady(page, "/");
-  await openPaletteAndType(page, GENRE);
-  await expect
-    .poll(async () => page.getByTestId("sp-genre-row").count())
-    .toBe(0);
-});
+    test("drop a book from the genre results once its genres are cleared", async ({
+      libraryPage,
+      assignGenres,
+      request,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-test("surfaces a failed genre save by leaving the cell unchanged", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
+      await test.step("assign the genre and find it in the palette", async () => {
+        await assignGenres(uuid, [GENRE]);
+        await libraryPage.goto();
+        await palette.search(GENRE);
+        await expect(palette.row("genre")).toHaveCount(1);
+      });
 
-  const cell = page
-    .getByTestId(`ebook-row-${TARGET.slug}`)
-    .getByTestId("ebook-cell-genres");
-  await cell.click();
-  const chipInput = cell.getByTestId("ebook-cell-genres-input");
+      // An empty list is the clear-all override, and the index has to follow it.
+      await test.step("clear the genres and search again", async () => {
+        await assignGenres(uuid, []);
+        await libraryPage.goto();
+        await palette.search(GENRE);
+      });
 
-  await page.route(OVERRIDES_RPC, (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "application/json",
-      body: JSON.stringify({ error: "boom" }),
-    }),
-  );
-
-  await chipInput.fill("Never Saved");
-  await expectMutation(
-    page,
-    { method: "POST", url: OVERRIDES_RPC, expectedStatus: 500 },
-    async () => chipInput.press("Enter"),
-  );
-
-  // The optimistic book state is only replaced on a successful response, so
-  // a rejected save must not leave the genre in the committed cell text.
-  await page.unroute(OVERRIDES_RPC);
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-  const reloaded = page
-    .getByTestId(`ebook-row-${TARGET.slug}`)
-    .getByTestId("ebook-cell-genres");
-  await expect(reloaded).not.toContainText("Never Saved");
+      await test.step("check the palette no longer groups the genre", async () => {
+        await expect(palette.row("genre")).toHaveCount(0);
+      });
+    });
+  });
 });

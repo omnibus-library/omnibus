@@ -180,10 +180,6 @@ pub(super) fn web_landing_body(
             {render_edit_shelf_overlay(edit_shelf, selected_shelf, shelves_tick)}
             if show_stack {
                 EdgeResume { entries, lead }
-                div { class: "lmq-scrollhint", aria_hidden: true,
-                    "scroll \u{2014} the books take over"
-                    span { class: "arr", "\u{2193}" }
-                }
             }
         }
     }
@@ -264,14 +260,12 @@ fn render_header_and_content(
     rsx! {
         LandingHeader {
             view: LandingHeaderView {
-                path_subtitle: view.path_subtitle,
                 book_count: view.book_count,
                 count_pending: view.count_pending,
                 hidden_count: view.hidden_count,
                 path_missing: view.path_missing,
                 page_error: view.page_error.clone(),
                 lib_err: view.lib_err.clone(),
-                section_title: view.section_title,
                 selected_shelf,
                 can_edit,
                 add_books,
@@ -282,6 +276,8 @@ fn render_header_and_content(
                     (sigs.shelves_answered)(),
                     (sigs.shelves)(),
                 ),
+                hidden_formats_apply: super::view::visible_source((sigs.selection)())
+                    == super::view::VisibleSource::Browse,
             },
             prefs: prefs.clone(),
             on_prefs_change: on_prefs_change_header,
@@ -331,12 +327,16 @@ fn render_gallery(
     on_select_shelf: EventHandler<crate::shelf_selection::ShelfSelection>,
     on_shelf_created: EventHandler<()>,
 ) -> Element {
+    // The picked shelf's own member list, not a list still loading for it.
+    let picked_members = (!(sigs.shelf_loading)())
+        .then(|| sigs.shelf_books.read().as_ref().map(Vec::len))
+        .flatten();
     rsx! {
         ShelfGallery {
             shelves: (sigs.shelves)(),
             loaded: (sigs.shelves_answered)(),
-            filtered: !sigs.prefs.read().filters.is_empty(),
             selection: (sigs.selection)(),
+            picked_members,
             all_count: (sigs.total)(),
             all_cover_uuids,
             server_url,
@@ -491,8 +491,8 @@ fn render_edit_shelf_overlay(
                     on_close: move |_| edit_shelf.set(false),
                     on_saved: move |_| {
                         edit_shelf.set(false);
-                        // Refetches the gallery list, the section title,
-                        // and (via `selected_key`) the full shelf.
+                        // Refetches the gallery list (so the tab shows the
+                        // edit) and, via `selected_key`, the full shelf.
                         shelves_tick.with_mut(|n| *n += 1);
                     },
                 }

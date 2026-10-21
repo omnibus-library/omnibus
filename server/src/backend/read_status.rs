@@ -9,14 +9,25 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, read_status::ReadStatusError};
-use omnibus_shared::SetReadStatus;
+use omnibus_shared::{ReadStatusRecord, SetReadStatus};
 
 use super::{internal, AppState};
 use crate::auth::AuthUser;
 
-/// Persist a read state. Last-write-wins on `(user, book)`; returns the
-/// server-authoritative record so the caller can sync forward. 400 on a blank
-/// uuid, 404 for a book the server has never indexed.
+/// Set a book's read status
+///
+/// Marks a book as unread, reading or finished for you, replacing its previous status.
+#[utoipa::path(
+    put,
+    path = "/api/read-status",
+    tag = "Read status",
+    request_body = SetReadStatus,
+    responses(
+        (status = 200, description = "The status as stored.", body = ReadStatusRecord),
+        (status = 400, description = "`book_uuid` is blank or over 64 bytes."),
+        (status = 404, description = "No book has that `book_uuid`."),
+    ),
+)]
 pub(super) async fn put_read_status(
     user: AuthUser,
     State(state): State<AppState>,
@@ -34,9 +45,18 @@ pub(super) async fn put_read_status(
     }
 }
 
-/// Fetch the current read state for `(user, uuid)`. Returns `200 { … }` with an
-/// `Option<ReadStatusRecord>` body (`null` when the book has no row — the
-/// client treats that as `unread`).
+/// Get a book's read status
+///
+/// Your read status for the book. Saving a position sets `reading` when you have no
+/// status. The body is `null` when you have neither set one nor saved a position, or no
+/// book has the uuid; treat that as `unread`.
+#[utoipa::path(
+    get,
+    path = "/api/read-status/{uuid}",
+    tag = "Read status",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses((status = 200, description = "Your status, or `null`.", body = Option<ReadStatusRecord>)),
+)]
 pub(super) async fn get_read_status(
     user: AuthUser,
     State(state): State<AppState>,

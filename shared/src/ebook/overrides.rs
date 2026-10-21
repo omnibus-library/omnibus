@@ -7,11 +7,14 @@ use serde::{Deserialize, Serialize};
 
 use super::metadata::Contributor;
 
-/// User-supplied metadata overrides, JSON-serialized into the
-/// `metadata_overrides.overrides` column. Each field, when `Some`, replaces the
-/// scanned value at read time; M2M fields (`creators`, `subjects`, `genres`)
-/// replace the whole list rather than appending.
+// Stored as JSON in `metadata_overrides.overrides` and laid over the scanned
+// metadata at read time.
+/// Edits to a book's metadata, laid over what Omnibus read from its file. A field that
+/// is present replaces the file's value, and a list replaces the whole list. Text limits
+/// in characters: 500 for `title`, 50,000 for `description`, and 250 for the other text
+/// fields and for each creator's `name`, `role` and `file_as`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct MetadataOverrides {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -24,37 +27,33 @@ pub struct MetadataOverrides {
     pub published: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+    /// The series name. An empty string takes the book out of its series.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub series: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub series_index: Option<String>,
-    /// ISBN-13 override. `Some("")` clears any scanned/prior-override value
-    /// (mirrors the empty-string-clears convention used by the other scalar
-    /// fields); a non-empty value must be exactly 13 ASCII digits, enforced
-    /// by `validate`.
+    /// An ISBN-13 of exactly 13 digits, with no hyphens or spaces. An empty string clears
+    /// the book's ISBN-13.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isbn13: Option<String>,
-    /// ISBN-10 override. Same empty-string-clears convention as `isbn13`; a
-    /// non-empty value must be exactly 10 characters — 9 digits plus a
-    /// check-digit position that is a digit or `X` — enforced by `validate`.
+    /// An ISBN-10 of 9 digits followed by a digit or `X`, with no hyphens or spaces. An
+    /// empty string clears the book's ISBN-10.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isbn10: Option<String>,
-    /// Replaces the entire creators list when present.
+    /// Replaces the whole list of creators. Up to 32.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub creators: Option<Vec<Contributor>>,
-    /// Replaces the entire subjects (tags) list when present.
+    /// Replaces the whole list of tags. Up to 64 tags of up to 128 characters each.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subjects: Option<Vec<String>>,
-    /// Replaces the entire genres list when present. Unlike every other
-    /// field here this is not an *override* of a scanned value — nothing
-    /// scans a genre — so this key is the sole storage for a book's genres.
+    /// Replaces the whole list of genres. Up to 64 genres of up to 128 characters each.
+    /// Book files carry no genre, so this is where a book's genres come from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub genres: Option<Vec<String>>,
-    /// Print page count override. Like `genres`, nothing Omnibus scans
-    /// carries a print page count — `books.page_count` is a different thing
-    /// entirely (the CBZ image count, migration `0063`) — so this field is
-    /// named `print_pages` rather than `page_count` to keep the two
-    /// unambiguous on `EbookMetadata`, where both eventually land.
+    // Named `print_pages`, not `page_count`, because `EbookMetadata` already has
+    // a `page_count` (the CBZ image count) and both land there.
+    /// The page count of a print edition, from 1 to 20,000. It is not `page_count` on
+    /// `EbookMetadata`, which counts the images in a CBZ comic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub print_pages: Option<i64>,
 }
@@ -265,12 +264,14 @@ fn validate_name_list(
     Ok(())
 }
 
-/// One edit applied to many books at once from the table view's bulk-edit modal.
-/// Scalar fields: `None` leaves every book unchanged, `Some(v)` sets it on every
-/// book (`Some("")` is reserved). `authors` replaces each book's full creator
-/// list when `Some`; an empty chip list maps to `None`, so bulk cannot clear
-/// authors. Tags and genres are add/remove deltas against each book's current list.
+// The web bulk-edit form maps an empty author chip list to `None`, so it never
+// clears authors.
+/// One edit applied to many books at once. A text field that is absent leaves every
+/// book's value as it is, and a value sets it on every book. An empty string is
+/// reserved. `authors` replaces each book's whole list of creators. The tag and genre
+/// fields add to or remove from each book's own list.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BulkMetadataEdit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub authors: Option<Vec<String>>,
@@ -288,6 +289,33 @@ pub struct BulkMetadataEdit {
     pub add_genres: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub remove_genres: Vec<String>,
+}
+
+/// The body of the bulk metadata edit: the books to change and the edit to apply to each.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BulkOverridesRequest {
+    /// The uuids of the books to edit.
+    pub uuids: Vec<String>,
+    pub edit: BulkMetadataEdit,
+}
+
+impl BulkOverridesRequest {
+    /// Check the request before any DB work: books chosen, a real edit, every field within its cap.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.uuids.is_empty() {
+            return Err("no books selected".into());
+        }
+        crate::validate_book_uuids(&self.uuids)?;
+        if self.edit.is_empty() {
+            return Err("no fields to apply".into());
+        }
+        // `authors` replaces the whole list, so an empty one would clear creators on every book.
+        if self.edit.authors.as_ref().is_some_and(Vec::is_empty) {
+            return Err("authors must name at least one".into());
+        }
+        self.edit.validate()
+    }
 }
 
 impl BulkMetadataEdit {
@@ -381,17 +409,38 @@ fn apply_delta(current: &[String], remove: &[String], add: &[String]) -> Vec<Str
     result
 }
 
-/// Summary of a fleet-wide EPUB override bake: each book counts exactly once, into `rewritten`, `skipped`, or `errors`.
+/// The outcome of rewriting the EPUB of every book with metadata edits, so its download
+/// carries the edits. Each book counts once, in `rewritten`, `skipped` or `errors`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BulkRewriteSummary {
     pub rewritten: usize,
     pub skipped: usize,
     pub errors: Vec<BulkRewriteError>,
 }
 
-/// One per-book failure from a fleet-wide EPUB rewrite pass.
+/// A book whose EPUB rewrite failed, and why.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BulkRewriteError {
     pub book_uuid: String,
     pub message: String,
+}
+
+/// The image URL `POST /api/ebooks/{uuid}/cover/from-url` fetches as the book's cover.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CoverFromUrlBody {
+    /// The image to fetch, up to 2,048 bytes long. Only `https` URLs on public addresses
+    /// are fetched.
+    pub url: String,
+}
+
+/// Describes the `multipart/form-data` form of `POST /api/ebooks/{uuid}/cover`.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CoverUploadForm {
+    /// The image, under 10 MB, with an `image/*` content type. SVG is refused.
+    #[cfg_attr(feature = "openapi", schema(value_type = String, format = Binary))]
+    pub cover: Vec<u8>,
 }

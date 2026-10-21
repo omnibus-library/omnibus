@@ -16,7 +16,9 @@ use omnibus_db::{self as db, scanner};
 // for `web`/`mobile` never calls them, so gate the imports to match or a
 // non-`server` build sees them as unused.
 #[cfg(feature = "server")]
-use omnibus_shared::{is_valid_metadata_precedence, DEFAULT_METADATA_PRECEDENCE};
+use omnibus_shared::{
+    is_valid_metadata_precedence, precedence_library_path, DEFAULT_METADATA_PRECEDENCE,
+};
 
 #[cfg(feature = "server")]
 use super::{internal_rpc_error, AdminUser, AuthUser, PoolExt, WorkerExt};
@@ -60,25 +62,6 @@ pub async fn rpc_save_settings(settings: Settings) -> Result<Settings> {
     Ok(updated)
 }
 
-/// Resolve the `library` discriminator (`"ebook"` or `"audiobook"`) used by
-/// the metadata-precedence RPCs below to the corresponding configured path.
-/// A separate get/set pair per concern (mirroring the Hardcover-key / SMTP
-/// RPCs) keeps this setting out of the `Settings` struct, whose
-/// exhaustive field literals are used across dozens of call sites.
-#[cfg(feature = "server")]
-fn precedence_library_path(
-    settings: &Settings,
-    library: &str,
-) -> Result<Option<String>, ServerFnError> {
-    match library {
-        "ebook" => Ok(settings.ebook_library_path.clone()),
-        "audiobook" => Ok(settings.audiobook_library_path.clone()),
-        _ => Err(ServerFnError::new(
-            "library must be \"ebook\" or \"audiobook\"",
-        )),
-    }
-}
-
 /// Fetch the metadata-source precedence for `library` (`"ebook"` or
 /// `"audiobook"`). Returns the default order when the library path isn't
 /// configured yet, so the settings UI always has something to render.
@@ -87,7 +70,8 @@ pub async fn rpc_get_metadata_precedence(library: String) -> Result<Vec<Metadata
     let settings = db::get_settings(&pool.0)
         .await
         .map_err(|e| internal_rpc_error("get settings", e))?;
-    let path = precedence_library_path(&settings, &library)?;
+    let path = precedence_library_path(&settings, &library)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
     match path {
         Some(p) => Ok(db::get_metadata_precedence(&pool.0, &p)
             .await
@@ -113,7 +97,9 @@ pub async fn rpc_set_metadata_precedence(
     let settings = db::get_settings(&pool.0)
         .await
         .map_err(|e| internal_rpc_error("get settings", e))?;
-    let Some(path) = precedence_library_path(&settings, &library)? else {
+    let Some(path) = precedence_library_path(&settings, &library)
+        .map_err(|e| ServerFnError::new(e.to_string()))?
+    else {
         return Err(ServerFnError::new(
             "configure the library path before setting its metadata precedence",
         )
@@ -235,7 +221,7 @@ pub async fn rpc_clear_smtp_config() -> Result<SmtpConfigStatus> {
 
 /// Admin-only: send a test email to the admin's own configured Kindle address
 /// to verify the SMTP config works. Requires the admin to have set their Kindle
-/// email on their account page first.
+/// email in Settings › Devices first.
 #[post("/api/rpc/smtp/test", pool: PoolExt, admin: AdminUser)]
 pub async fn rpc_send_smtp_test() -> Result<()> {
     let email = db::auth::get_kindle_email(&pool.0, admin.0.id)
@@ -243,7 +229,7 @@ pub async fn rpc_send_smtp_test() -> Result<()> {
         .map_err(|e| internal_rpc_error("get kindle email", e))?;
     let Some(email) = email else {
         return Err(ServerFnError::new(
-            "set your Kindle email on your account page first, then send a test",
+            "set your Kindle email in Settings › Devices first, then send a test",
         )
         .into());
     };
@@ -298,48 +284,4 @@ pub async fn rpc_backfill_chapters() -> Result<()> {
         .0
         .post(omnibus_db::worker::Task::BackfillChapters { library_path });
     Ok(())
-}
-
-// `server`-gated: exercises the string-to-config-key resolution directly, no
-// DB needed. CI runs this via `cargo test -p omnibus-frontend --features
-// server`.
-#[cfg(all(test, feature = "server"))]
-mod tests {
-    use super::precedence_library_path;
-    use omnibus_shared::Settings;
-
-    fn settings() -> Settings {
-        Settings {
-            ebook_library_path: Some("/lib/ebooks".into()),
-            audiobook_library_path: Some("/lib/audiobooks".into()),
-            scan_interval_hours: None,
-        }
-    }
-
-    #[test]
-    fn precedence_library_path_resolves_ebook() {
-        let path = precedence_library_path(&settings(), "ebook").unwrap();
-        assert_eq!(path.as_deref(), Some("/lib/ebooks"));
-    }
-
-    #[test]
-    fn precedence_library_path_resolves_audiobook() {
-        let path = precedence_library_path(&settings(), "audiobook").unwrap();
-        assert_eq!(path.as_deref(), Some("/lib/audiobooks"));
-    }
-
-    #[test]
-    fn precedence_library_path_returns_none_for_an_unconfigured_path() {
-        let unconfigured = Settings::default();
-        let path = precedence_library_path(&unconfigured, "ebook").unwrap();
-        assert_eq!(path, None);
-    }
-
-    #[test]
-    fn precedence_library_path_rejects_an_unrecognized_key() {
-        let err = precedence_library_path(&settings(), "comics").unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("library must be \"ebook\" or \"audiobook\""));
-    }
 }

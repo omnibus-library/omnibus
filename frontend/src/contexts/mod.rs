@@ -67,6 +67,19 @@ pub fn thumb_url(server_url: &str, uuid: &str, size: &str) -> String {
     media_url(server_url, &format!("/api/thumbs/{uuid}/{size}"))
 }
 
+/// A library filter another page hands the landing — an author's "Show in
+/// library" — applied when the landing next mounts, then cleared. Handed over
+/// rather than saved, because a browser that never saved landing prefs has no
+/// library key to save it under; the landing saves it once it learns one.
+#[derive(Copy, Clone)]
+pub struct LibraryFilterHandoff(pub Signal<Option<omnibus_shared::ViewFilters>>);
+
+/// The [`LibraryFilterHandoff`] signal; a detached one outside [`crate::App`].
+pub fn use_library_filter_handoff() -> Signal<Option<omnibus_shared::ViewFilters>> {
+    let detached = use_signal(|| None);
+    try_use_context::<LibraryFilterHandoff>().map_or(detached, |h| h.0)
+}
+
 /// Browser-tab title. Owned by [`crate::App`] via `use_context_provider` and
 /// rendered once as the App-level `document::Title`; each route sets its own
 /// subtitle through [`use_page_title`]. Kept target-agnostic (mobile's WebView

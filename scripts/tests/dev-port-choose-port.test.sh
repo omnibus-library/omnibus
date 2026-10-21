@@ -84,6 +84,22 @@ HELD=()
 for p in $(seq 3000 3009); do HELD[$p]="$(omnibus_body /wt/sibling)"; done
 check "window full of siblings is exhausted" "exhausted" "$(verdict)"
 
+# --- choose_react_port: the React dev server's port above the server's ----
+react_verdict() { choose_react_port "$@" 2>/dev/null || echo "none"; }
+
+HELD=([3000]="$(omnibus_body /wt/mine)")
+check "react takes the first port above the server's" "3001" "$(react_verdict 3000)"
+
+HELD=([3000]="$(omnibus_body /wt/mine)" [3001]="" [3002]="$(omnibus_body /wt/sibling)")
+check "react walks past held ports" "3003" "$(react_verdict 3000)"
+
+HELD=()
+for p in $(seq 3000 3009); do HELD[$p]=""; done
+check "react finds none when the window above is full" "none" "$(react_verdict 3004)"
+
+HELD=([3009]="$(omnibus_body /wt/mine)")
+check "react finds none above the window's last port" "none" "$(react_verdict 3009)"
+
 echo "---"
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

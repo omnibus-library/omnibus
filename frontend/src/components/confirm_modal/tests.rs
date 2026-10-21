@@ -1,12 +1,13 @@
-//! SSR render-smoke coverage for the shared modal shell and its
-//! title/body/action-row body, plus direct coverage of the backdrop's
-//! busy-gate logic. Needs the `server` feature (`dioxus::ssr`).
+//! SSR render-smoke coverage for the shared modal shell, its title/body/action
+//! row body and the one-action confirm dialog, plus direct coverage of the
+//! backdrop's busy-gate logic. Needs the `server` feature (`dioxus::ssr`).
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use super::*;
 use crate::test_support::render;
+
+use super::*;
 
 #[component]
 fn Harness() -> Element {
@@ -221,4 +222,35 @@ fn dismiss_unless_busy_is_a_noop_while_busy() {
     let fired = Rc::new(RefCell::new(false));
     render(rsx! { DismissHarness { busy: true, fired: fired.clone() } });
     assert!(!*fired.borrow());
+}
+
+#[component]
+fn ConfirmHarness() -> Element {
+    confirm_dialog(
+        Confirm {
+            testid: "thing-dialog",
+            title: "Remove the thing?",
+            body: "It stops working.",
+            action: "Remove thing",
+            busy_label: "Removing\u{2026}",
+        },
+        false,
+        EventHandler::new(|()| {}),
+        EventHandler::new(|()| {}),
+    )
+}
+
+#[test]
+fn confirm_dialog_names_the_action_and_hangs_its_buttons_off_the_testid() {
+    let html = render(rsx! { ConfirmHarness {} });
+    for expected in [
+        r#"data-testid="thing-dialog""#,
+        r#"aria-label="Remove the thing?""#,
+        "It stops working.",
+        r#"data-testid="thing-dialog-cancel""#,
+        r#"data-testid="thing-dialog-confirm""#,
+        "Remove thing",
+    ] {
+        assert!(html.contains(expected), "{expected}: {html}");
+    }
 }

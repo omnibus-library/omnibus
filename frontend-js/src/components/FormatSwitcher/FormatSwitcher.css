@@ -1,0 +1,72 @@
+.kindle-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 110;
+  /* Shows even inside a closed, visibility-hidden menu. */
+  visibility: visible;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+.kindle-toast-msg {
+  font-size: 0.9rem;
+}
+.format-badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-1);
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  padding: 2px 6px;
+  background: transparent;
+}
+.format-badge--physical {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.format-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+}
+.format-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.format-row + .format-row {
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.format-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.format-actions-empty {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
+}
+
+/* Hand-added: the extractor skips a modifier named like a status word. */
+.kindle-toast-msg.success {
+  color: #34d399;
+}
+.kindle-toast-msg.error {
+  color: #f87171;
+}

@@ -16,25 +16,26 @@ use crate::Route;
 
 /// Signals an index page needs once its shell has resolved: the fetched
 /// rows plus the filter/sort inputs the page's own toolbar drives.
-pub(crate) struct IndexPageState<T: 'static> {
+pub(crate) struct IndexPageState<T: 'static, S: 'static = IndexSort> {
     pub items: Signal<Vec<T>>,
     pub loading: Signal<bool>,
     pub error: Signal<Option<String>>,
     pub filter: Signal<String>,
-    pub sort: Signal<IndexSort>,
+    pub sort: Signal<S>,
 }
 
 /// Runs the fetch-effect (re-run on mount and cache-revalidation bumps), the
 /// post-mount sort-prefs reconcile, and the scroll-restore wiring common to
 /// every index page. `fetch` builds a fresh list future per call; `load_sort`
-/// reads the page's persisted sort axis. `sort` is seeded to
-/// `IndexSort::default()` so SSR and first-hydration markup match (rule 07).
-pub(crate) fn use_index_page_shell<T, F, Fut>(
+/// reads the page's persisted sort axis. `sort` is seeded to the axis'
+/// default so SSR and first-hydration markup match (rule 07).
+pub(crate) fn use_index_page_shell<T, S, F, Fut>(
     fetch: F,
-    load_sort: impl Fn() -> IndexSort + 'static,
-) -> IndexPageState<T>
+    load_sort: impl Fn() -> S + 'static,
+) -> IndexPageState<T, S>
 where
     T: 'static,
+    S: Copy + Default + PartialEq + 'static,
     F: Fn() -> Fut + 'static,
     Fut: Future<Output = Result<Vec<T>, DataError>> + 'static,
 {
@@ -42,7 +43,7 @@ where
     let loading = use_signal(|| true);
     let error: Signal<Option<String>> = use_signal(|| None);
     let filter = use_signal(String::new);
-    let mut sort = use_signal(IndexSort::default);
+    let mut sort = use_signal(S::default);
 
     use_fetch_effect(fetch, items, loading, error);
 

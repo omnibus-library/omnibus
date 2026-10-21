@@ -1,8 +1,7 @@
 //! A counter the book page's writers bump after saving something a smart
 //! shelf's rules read (read status, rating, tags, genres), so the shelves block
-//! re-reads which shelves hold the book. Read by `marquee::more`.
-
-#![cfg_attr(feature = "mobile", allow(dead_code))]
+//! re-reads which shelves hold the book and the Reviews section re-reads
+//! whether you finished it. Provided by the marquee stage and the mobile page.
 
 use dioxus::prelude::*;
 
@@ -29,7 +28,7 @@ impl RuleFactsSaved {
 }
 
 /// The page's [`RuleFactsSaved`], or a local one that never moves where no
-/// stage provides it (the mobile layout, a component rendered on its own).
+/// page provides it (a component rendered on its own).
 pub(super) fn use_rule_facts_saved() -> RuleFactsSaved {
     let local = use_signal(|| 0u32);
     try_use_context::<RuleFactsSaved>().unwrap_or(RuleFactsSaved(local))

@@ -31,10 +31,9 @@ pub mod scroll_restore;
 pub mod session_tracker;
 pub mod shelf_access;
 pub mod shelf_selection;
-// SSR render-smoke test harness. `dioxus::ssr` only exists under `server`, and
-// every consumer is a `server`-gated render test, so the module is gated on it
-// too — otherwise the wasm `web --all-targets` lint would compile it and fail.
-#[cfg(all(any(test, feature = "test-support"), feature = "server"))]
+// Test harness. Its SSR render helpers gate themselves on `server`, where
+// `dioxus::ssr` exists; the handler helpers serve every target's tests.
+#[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 pub mod time;
 pub mod version;
@@ -226,8 +225,11 @@ const ATRIUM_CSS: Asset = asset!("/assets/atrium.css");
 /// apart from Atrium so every loading visual lives in one reviewable file.
 const LOADING_CSS: Asset = asset!("/assets/loading.css");
 
-/// The library filter bar's stylesheet (chips and the add-filter popover).
+/// The library filter bar's stylesheet (the facets and their menus).
 const FILTER_BAR_CSS: Asset = asset!("/assets/filter_bar.css");
+
+/// The authors browser's stylesheet (the list, its rail, and the author pane).
+const AUTHORS_CSS: Asset = asset!("/assets/authors.css");
 
 /// Browser-tab favicon — the Omnibus brand mark, served as a hashed static
 /// asset via Manganis. 128² PNG; browsers downscale it to the tab size.
@@ -442,6 +444,20 @@ pub fn use_cache_generation() -> Signal<u64> {
     generation
 }
 
+/// The cache generation this moment (mobile), read straight from the channel
+/// rather than [`use_cache_generation`]'s signal, which catches up only after
+/// mount: for telling whether the cache moved across an await.
+#[cfg(feature = "mobile")]
+pub fn cache_generation_now() -> u64 {
+    offline::cache::generation()
+}
+
+/// Non-mobile stub: the cache generation never moves.
+#[cfg(not(feature = "mobile"))]
+pub fn cache_generation_now() -> u64 {
+    0
+}
+
 /// Capture-phase left-edge back-swipe listener for the mobile WebView. The
 /// native edge gesture can't drive navigation (the WebView's history is fed
 /// only by `history.pushState`, which the in-memory router never calls), so
@@ -543,6 +559,8 @@ pub fn App() -> Element {
     use_context_provider(|| CoverCacheBust(Signal::new(std::collections::HashMap::new())));
     // Avatar cache-bust counter — see `contexts::AvatarCacheBust`.
     use_context_provider(|| AvatarCacheBust(Signal::new(0u32)));
+    // A filter handed to the landing — see `contexts::LibraryFilterHandoff`.
+    use_context_provider(|| LibraryFilterHandoff(Signal::new(None)));
     // Check-in overlay open/closed. Provided above both `ScreenLayout`
     // variants so every entry point can raise the centered modal and the
     // root-mounted `CheckInOverlay` can read it. Starts closed for SSR/WASM
@@ -582,6 +600,7 @@ pub fn App() -> Element {
         document::Stylesheet { href: ATRIUM_CSS }
         document::Stylesheet { href: LOADING_CSS }
         document::Stylesheet { href: FILTER_BAR_CSS }
+        document::Stylesheet { href: AUTHORS_CSS }
         components::atrium::AtriumRoot {
             // First child: its pre-paint script must run before the page
             // paints, and finds the `.atrium` root around it.

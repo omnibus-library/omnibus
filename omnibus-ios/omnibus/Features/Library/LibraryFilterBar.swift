@@ -1,100 +1,104 @@
 //  LibraryFilterBar.swift
-//  The library filter on screen: a chip per clause, Add filter and Clear
-//  filters over the shared `LibraryFilterStore`, what a filtered grid says
-//  while it has no books to show, and how the library grid follows the filter.
-//  Hosted by the library and every shelf page.
+//  The library filter on screen: a facet per field and Clear filters over the
+//  shared `LibraryFilterStore`, what a filtered grid says while it has no books
+//  to show, and how the library grid follows the filter. Hosted by the library
+//  and every shelf page.
 
 import Observation
 import SwiftUI
 
-/// The chips, each removable, then Add filter, then Clear filters once any
-/// clause is set.
+/// One facet per field in a row that scrolls sideways, then Clear filters once
+/// any clause is set. A facet opens its field's sheet; an active one names what
+/// it keeps and carries its own clear.
 struct LibraryFilterBar: View {
     let store: LibraryFilterStore
-    /// Who is looking, for naming another reader's shelf on its chip.
+    /// Who is looking, for naming another reader's shelf on its facet.
     var viewerId: Int64?
-    /// Whether the host's read also sends `?formats=`, which the server counts as a clause.
-    var reservesFormatClause = false
 
     @Environment(\.palette) private var palette
-    /// The shelves a shelf chip is named from.
+    /// The shelves a shelf facet is named from.
     @State private var shelves: ShelfList = .loading
-    @State private var showPicker = false
+    @State private var openField: FilterField?
 
     var body: some View {
-        FlowLayout(spacing: 7, lineSpacing: 7) {
-            ForEach(Array(store.clauses.enumerated()), id: \.offset) { index, clause in
-                chip(clause, at: index)
+        ScrollView(.horizontal) {
+            HStack(spacing: 7) {
+                ForEach(FilterField.allCases) { field in
+                    facet(field)
+                }
+                if !store.clauses.isEmpty {
+                    clearButton
+                }
             }
-            addButton
-            if !store.clauses.isEmpty {
-                clearButton
-            }
+            .screenPadding()
         }
-        .sheet(isPresented: $showPicker) {
-            FilterClauseSheet(viewerId: viewerId) { store.add($0) }
+        .scrollIndicators(.hidden)
+        .sheet(item: $openField) { field in
+            FilterClauseSheet(initial: FilterClause.opening(field, in: store.clauses), viewerId: viewerId) {
+                store.apply($0)
+            }
         }
         .task(id: store.clauses.contains(where: { $0.field == .shelf })) {
             await loadShelves()
         }
     }
 
-    private func chip(_ clause: FilterClause, at index: Int) -> some View {
-        let label = clause.chipLabel(shelves: shelves, viewerId: viewerId)
-        return HStack(spacing: 4) {
-            Text(label)
-                .font(.ui(12.5, weight: .medium))
-                .foregroundStyle(palette.ink1Color)
-                .lineLimit(1)
-                // The flow lays chips out at their ideal width; a long value list truncates instead.
-                .frame(maxWidth: 260, alignment: .leading)
-
+    private func facet(_ field: FilterField) -> some View {
+        let clause = store.clauses.first { $0.field == field }
+        let isActive = clause != nil
+        return HStack(spacing: 0) {
             Button {
                 Haptics.tap()
-                store.remove(at: index)
+                openField = field
             } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(palette.ink3Color)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Circle())
+                HStack(spacing: 5) {
+                    Text(field.label)
+                        .foregroundStyle(palette.ink1Color)
+                    if let clause {
+                        Text(clause.facetValue(shelves: shelves, viewerId: viewerId))
+                            .foregroundStyle(palette.ink0Color)
+                            .lineLimit(1)
+                            .frame(maxWidth: 180, alignment: .leading)
+                    }
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(palette.ink3Color)
+                        .accessibilityHidden(true)
+                }
+                .font(.ui(12.5, weight: .medium))
+                .padding(.leading, 12)
+                .padding(.trailing, isActive ? 4 : 11)
+                .padding(.vertical, 8)
+                .contentShape(Capsule())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Remove filter: \(label)")
-        }
-        .padding(.leading, 11)
-        .padding(.trailing, 4)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(palette.bg2Color))
-        .overlay(Capsule().strokeBorder(palette.line2.color, lineWidth: 0.5))
-        .accessibilityIdentifier("library-filter-chip-\(index)")
-    }
+            .accessibilityIdentifier("library-filter-facet-\(field.rawValue)")
 
-    private var addButton: some View {
-        Button {
-            Haptics.tap()
-            showPicker = true
-        } label: {
-            Label("Add filter", systemImage: "plus")
-                .font(.ui(12.5, weight: .medium))
-                .foregroundStyle(palette.accentColor)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 6)
-                .overlay(
-                    Capsule().strokeBorder(
-                        palette.accentColor.opacity(0.55),
-                        style: StrokeStyle(lineWidth: 1, dash: [4, 3])
-                    )
-                )
-                .contentShape(Capsule())
+            if isActive {
+                Button {
+                    Haptics.tap()
+                    store.clear(field)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(palette.ink3Color)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 5)
+                .accessibilityLabel("Clear the \(field.label) filter")
+                .accessibilityIdentifier("library-filter-facet-clear-\(field.rawValue)")
+            }
         }
-        .buttonStyle(PressableStyle())
-        .disabled(!canAdd)
-        .opacity(canAdd ? 1 : 0.4)
-        .accessibilityIdentifier("library-filter-add")
+        .background(Capsule().fill(isActive ? palette.bg2Color : Color.clear))
+        .overlay(
+            Capsule().strokeBorder(
+                isActive ? palette.accentColor.opacity(0.45) : palette.line2.color,
+                lineWidth: isActive ? 1 : 0.5
+            )
+        )
     }
-
-    private var canAdd: Bool { store.canAdd(reservingFormatClause: reservesFormatClause) }
 
     private var clearButton: some View {
         Button {
@@ -110,8 +114,8 @@ struct LibraryFilterBar: View {
         .accessibilityIdentifier("library-filter-clear")
     }
 
-    /// Only a shelf chip needs the list. A failed read still settles, so a
-    /// chip names its id rather than waiting forever.
+    /// Only a shelf facet needs the list. A failed read still settles, so a
+    /// facet names its id rather than waiting forever.
     private func loadShelves() async {
         guard store.clauses.contains(where: { $0.field == .shelf }) else { return }
         do {

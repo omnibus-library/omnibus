@@ -1,0 +1,723 @@
+import type { GoalTargets } from "../api";
+import { getGetStatsResponseMock } from "../api/generated/omnibus.msw";
+import type {
+  AlignmentView,
+  ApiTokenView,
+  AttributedReview,
+  AudiobookManifest,
+  AuthorDetail,
+  AuthorReading,
+  AuthorSummary,
+  BookDeletionManifest,
+  BookFileInfo,
+  BookInsights,
+  Bookmark,
+  BookProgress,
+  BookReading,
+  BookReviews,
+  BookSuggestion,
+  ChapterInfo,
+  EbookMetadata,
+  Highlight,
+  JournalEntry,
+  KoboDeviceView,
+  PaletteBookHit,
+  PaletteResults,
+  PhysicalCopy,
+  ProgressRecord,
+  ReadStatusRecord,
+  ResumePoint,
+  Review,
+  ReviewSummary,
+  RulePreview,
+  SeriesDetail,
+  SeriesStack,
+  SeriesSummary,
+  SessionLogEntry,
+  SessionView,
+  Shelf,
+  ShelfSummary,
+  StatsSummary,
+  UserSummary,
+  WishlistEntry,
+} from "../api/generated/schemas";
+
+// Fixtures in the shape the server sends them: snake_case JSON, typed by the
+// generated schemas so a fixture that drifts from the spec fails to compile.
+// Kept beside the parsed fixtures in books.ts.
+
+/** A book as `GET /api/ebooks` and `GET /api/ebooks/{uuid}` send it. */
+export function aWireBook(
+  overrides: Partial<EbookMetadata> = {},
+): EbookMetadata {
+  return {
+    id: 2,
+    filename: "aurora-station-01.cbz",
+    title: "Aurora Station, Vol. 1",
+    description: null,
+    publisher: null,
+    published: "2021-03-01",
+    language: null,
+    creators: [{ name: "Sora Inkwell", role: null, file_as: null, id: 2 }],
+    subjects: [],
+    identifiers: [],
+    series: "Aurora Station",
+    series_index: "1",
+    unique_identifier: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    cover_url: "/api/covers/ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    accent: "oklch(0.555 0.153 28.4)",
+    formats: ["CBZ"],
+    error: null,
+    has_override: false,
+    has_cover_override: false,
+    added_at: "2026-08-01T12:00:00Z",
+    modified: "2026-08-02T12:00:00Z",
+    ...overrides,
+  };
+}
+
+/** One of a book's files as `GET /api/ebooks/{uuid}` sends it. */
+export function aWireFile(overrides: Partial<BookFileInfo> = {}): BookFileInfo {
+  return {
+    id: 11,
+    format: "EPUB",
+    filename: "aurora-station-01.epub",
+    ordinal: 0,
+    label: null,
+    size_bytes: 3_100_000,
+    ...overrides,
+  };
+}
+
+/** A series as `GET /api/series/{id}` sends it. */
+export function aWireSeries(
+  overrides: Partial<SeriesDetail> = {},
+): SeriesDetail {
+  return {
+    id: 4,
+    name: "Aurora Station",
+    book_count: 3,
+    books: [],
+    ...overrides,
+  };
+}
+
+/** A saved position as `GET /api/progress/{uuid}` sends it: an EPUB one 42% in, by default. */
+export function aWirePosition(
+  overrides: Partial<ProgressRecord> = {},
+): ProgressRecord {
+  return {
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    format: "epub",
+    epub_cfi: null,
+    audio_position_seconds: null,
+    progress_percent: 42,
+    kobo_location: null,
+    book_file_id: null,
+    updated_at: 1_760_000_000,
+    client_updated_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** `GET /api/progress/{uuid}`'s answer for a book holding `records`. */
+export function aWireProgress(...records: ProgressRecord[]): BookProgress {
+  return { book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0", records };
+}
+
+/** `GET /api/books/{uuid}/alignment`'s answer; an ebook with no audio, by default. */
+export function aWireAlignment(
+  overrides: Partial<AlignmentView> = {},
+): AlignmentView {
+  return { audio_files: [], ...overrides };
+}
+
+/** A read status as `GET /api/read-status/{uuid}` sends it. */
+export function aWireReadStatus(
+  overrides: Partial<ReadStatusRecord> = {},
+): ReadStatusRecord {
+  return {
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    status: "reading",
+    updated_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** The reader's own review as `GET /api/reviews/{uuid}` sends it in `mine`: four stars, nothing written. */
+export function aWireReview(overrides: Partial<Review> = {}): Review {
+  return {
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    stars: 4,
+    body_md: null,
+    body_html: null,
+    notes_md: null,
+    notes_html: null,
+    spoiler: false,
+    rated_at: 1_760_000_000,
+    created_at: 1_760_000_000,
+    updated_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** Another reader's review as `GET /api/reviews/{uuid}` lists it in `others`: grace's 3.5 stars, no text. */
+export function aWireOtherReview(
+  overrides: Partial<AttributedReview> = {},
+): AttributedReview {
+  return {
+    user_id: 7,
+    username: "grace",
+    has_avatar: false,
+    stars: 3.5,
+    body_md: null,
+    body_html: null,
+    spoiler: false,
+    rated_at: 1_760_000_000,
+    created_at: 1_760_000_000,
+    updated_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** The household summary for `stars`, one reader per value, every one of the ten buckets present. */
+export function aWireReviewSummary(...stars: number[]): ReviewSummary {
+  const total = stars.reduce((sum, s) => sum + s, 0);
+  return {
+    average_stars: stars.length ? total / stars.length : 0,
+    ratings: stars.length,
+    buckets: Array.from({ length: 10 }, (_, i) => ({
+      half_stars: i + 1,
+      readers: stars.filter((s) => s * 2 === i + 1).length,
+    })),
+  };
+}
+
+/** `GET /api/reviews/{uuid}`: nobody has reviewed the book unless overridden. */
+export function aWireBookReviews(
+  overrides: Partial<BookReviews> = {},
+): BookReviews {
+  return { mine: null, others: [], summary: null, ...overrides };
+}
+
+/** One sitting as `GET /api/stats/sessions` sends it: 45 minutes of reading. */
+export function aWireSession(
+  overrides: Partial<SessionLogEntry> = {},
+): SessionLogEntry {
+  return {
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    title: "Aurora Station, Vol. 1",
+    format: "reading",
+    started_at: 1_700_000_000,
+    ended_at: 1_700_002_700,
+    seconds: 2700,
+    ...overrides,
+  };
+}
+
+/** A saved passage as `GET /api/highlights/book/{uuid}` sends it. */
+export function aWireHighlight(overrides: Partial<Highlight> = {}): Highlight {
+  return {
+    id: 1,
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    color: "amber",
+    text: "A station at the edge of the map hears something answer.",
+    note: null,
+    epub_cfi_range: "epubcfi(/6/6!/4/2,/1:0,/1:20)",
+    created_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** A saved place as `GET /api/bookmarks/book/{uuid}` sends it. */
+export function aWireBookmark(overrides: Partial<Bookmark> = {}): Bookmark {
+  return {
+    id: 1,
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    position: "epubcfi(/6/6!/4/2/1:0)",
+    title: "Landfall",
+    created_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** A journal entry as `GET /api/journals/book/{uuid}` sends it: Ada's published note. */
+export function aWireJournalEntry(
+  overrides: Partial<JournalEntry> = {},
+): JournalEntry {
+  return {
+    id: 1,
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    author_id: 1,
+    author_name: "Ada Lovelace",
+    body_md: "The footnotes have footnotes.",
+    body_html: "<p>The footnotes have footnotes.</p>",
+    progress: 42,
+    status: "published",
+    created_at: 1_760_000_000,
+    updated_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** A checked-in copy as `GET /api/physical/{uuid}/copies` sends it: Ada's, with an ISBN and no note. */
+export function aWireCopy(overrides: Partial<PhysicalCopy> = {}): PhysicalCopy {
+  return {
+    id: 4,
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    added_by_user_id: 1,
+    added_by_name: "Ada Lovelace",
+    checked_in_at: 1_760_000_000,
+    isbn: "9781234567897",
+    note: null,
+    ...overrides,
+  };
+}
+
+/** The reader's wishlist entry as `GET /api/physical/{uuid}/wishlist` sends it. */
+export function aWireWishlist(
+  overrides: Partial<WishlistEntry> = {},
+): WishlistEntry {
+  return {
+    id: 1,
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    user_id: 1,
+    source: "detail",
+    added_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** The reader's record in a book as `GET /api/books/{uuid}/insights` sends it: three sittings over two days. */
+export function aWireInsights(
+  overrides: Partial<BookInsights> = {},
+): BookInsights {
+  return {
+    started_at: 1_760_011_200,
+    seconds_total: 3600,
+    sessions: 3,
+    sitting_seconds: 3000,
+    longest_seconds: 1800,
+    longest_started_at: 1_760_011_200,
+    daily: [
+      { day: "2026-08-24", seconds: 1800 },
+      { day: "2026-08-20", seconds: 1800 },
+    ],
+    as_of_day: "2026-08-24",
+    ...overrides,
+  };
+}
+
+/** What an admin can delete of a book: one EPUB and no copies or reader data, by default. */
+export function aWireManifest(
+  overrides: Partial<BookDeletionManifest> = {},
+): BookDeletionManifest {
+  return {
+    files: [aWireFile({ path: "sora-inkwell/aurora-station-01.epub" })],
+    copies: [],
+    impact: {
+      bookmarks: 0,
+      highlights: 0,
+      journal_entries: 0,
+      listening_sessions: 0,
+      ratings: 0,
+      reading_sessions: 0,
+      shelves: 0,
+    },
+    ...overrides,
+  };
+}
+
+/** An author as `GET /api/authors/{id}` sends them. */
+export function aWireAuthor(
+  overrides: Partial<AuthorDetail> = {},
+): AuthorDetail {
+  return {
+    id: 2,
+    name: "Sora Inkwell",
+    book_count: 0,
+    books: [],
+    ...overrides,
+  };
+}
+
+/** A read-alike as `GET /api/ebooks/{uuid}/suggestions` sends it. */
+export function aWireSuggestion(
+  overrides: Partial<BookSuggestion> = {},
+): BookSuggestion {
+  return {
+    hardcover_id: 1,
+    title: "Piranesi",
+    author: "Susanna Clarke",
+    hardcover_url: "https://hardcover.app/books/piranesi",
+    list_count: 4,
+    cover_url: null,
+    ...overrides,
+  };
+}
+
+/** The nth fixture uuid: valid, distinct, and readable in a failure. */
+export const uuidOf = (n: number) =>
+  `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
+/** `count` distinct books, uuids and titles numbered, for paging. */
+export function aWireLibrary(count: number): EbookMetadata[] {
+  return Array.from({ length: count }, (_, i) =>
+    aWireBook({
+      id: i + 1,
+      title: `Aurora Station, Vol. ${i + 1}`,
+      series_index: String(i + 1),
+      unique_identifier: uuidOf(i + 1),
+    }),
+  );
+}
+
+/** A reading position as `GET /api/progress/recent` sends it. */
+export function aWireResumePoint(
+  record: Partial<ResumePoint["record"]> = {},
+  book: Partial<EbookMetadata> = {},
+): ResumePoint {
+  return {
+    record: {
+      book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+      format: "epub",
+      epub_cfi: "epubcfi(/6/4!/4/2/1:0)",
+      audio_position_seconds: null,
+      progress_percent: 42,
+      kobo_location: null,
+      book_file_id: null,
+      updated_at: 1_760_000_000,
+      client_updated_at: 1_760_000_000,
+      ...record,
+    },
+    book: aWireBook({ formats: ["EPUB"], ...book }),
+    linked: false,
+  };
+}
+
+/** The signed-in admin as `GET /api/auth/me` and the login response send it. */
+export const WIRE_ADA: UserSummary = {
+  id: 1,
+  username: "ada",
+  display_name: "Ada Lovelace",
+  is_admin: true,
+  can_upload: true,
+  can_edit: true,
+  can_download: true,
+  kindle_email: null,
+};
+
+/** A folded series as `GET /api/ebooks` sends it with `stack_series`; override what a case needs. */
+export function aWireStack(overrides: Partial<SeriesStack> = {}): SeriesStack {
+  return {
+    lead_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    name: "Saga",
+    series_id: 7,
+    members: [],
+    states: [],
+    ...overrides,
+  };
+}
+
+/** A hand-picked shelf the signed-in admin (user 1) owns, as `GET /api/shelves` sends it. */
+export function aWireShelf(
+  overrides: Partial<ShelfSummary> = {},
+): ShelfSummary {
+  return {
+    id: 3,
+    kind: "manual",
+    name: "Winter reads",
+    visibility: "private",
+    accent: null,
+    owner_user_id: 1,
+    owner_username: "ada",
+    owner_has_avatar: false,
+    book_count: 2,
+    cover_uuids: [],
+    ...overrides,
+  };
+}
+
+/** A book hit as `GET /api/search/palette` sends it. */
+export function aWirePaletteBook(
+  overrides: Partial<PaletteBookHit> = {},
+): PaletteBookHit {
+  return {
+    id: 2,
+    uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    title: "Aurora Station, Vol. 1",
+    author_display: "Sora Inkwell",
+    year: "2021",
+    formats: ["CBZ"],
+    cover_url: "/api/covers/ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    accent: "oklch(0.555 0.153 28.4)",
+    ...overrides,
+  };
+}
+
+/** `GET /api/search/palette`'s answer; the totals default to the hit counts. */
+export function aWirePalette(
+  overrides: Partial<PaletteResults> = {},
+): PaletteResults {
+  const groups: Required<
+    Pick<PaletteResults, "books" | "authors" | "series" | "tags" | "genres">
+  > = {
+    books: [aWirePaletteBook()],
+    authors: [{ id: 2, name: "Sora Inkwell", book_count: 3 }],
+    series: [
+      {
+        id: 4,
+        name: "Aurora Station",
+        book_count: 3,
+        author_display: "Sora Inkwell",
+      },
+    ],
+    tags: [{ id: 9, name: "space opera", book_count: 12 }],
+    genres: [{ name: "Science Fiction", book_count: 40 }],
+    ...overrides,
+  };
+  return {
+    query: "aurora",
+    duration_ms: 18,
+    book_total: groups.books.length,
+    author_total: groups.authors.length,
+    series_total: groups.series.length,
+    tag_total: groups.tags.length,
+    genre_total: groups.genres.length,
+    ...groups,
+  };
+}
+
+/** An author as `GET /api/authors` lists them: three books, no photo. */
+export function aWireAuthorSummary(
+  overrides: Partial<AuthorSummary> = {},
+): AuthorSummary {
+  return {
+    id: 2,
+    name: "Sora Inkwell",
+    sort: "Inkwell, Sora",
+    book_count: 3,
+    accent: "oklch(0.555 0.153 28.4)",
+    has_photo: false,
+    ...overrides,
+  };
+}
+
+/** The reader's progress through an author as `GET /api/authors/reading` sends it: one finished, one in progress. */
+export function aWireAuthorReading(
+  overrides: Partial<AuthorReading> = {},
+): AuthorReading {
+  return {
+    author_id: 2,
+    finished: 1,
+    reading: 1,
+    last_read_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** The reader's state on one book as `GET /api/authors/{id}` sends it: 42% in. */
+export function aWireBookReading(
+  overrides: Partial<BookReading> = {},
+): BookReading {
+  return {
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    status: "reading",
+    percent: 42,
+    last_read_at: 1_760_000_000,
+    format: "epub",
+    book_file_id: null,
+    ...overrides,
+  };
+}
+
+/** A series as `GET /api/series` lists it. */
+export function aWireSeriesSummary(
+  overrides: Partial<SeriesSummary> = {},
+): SeriesSummary {
+  return {
+    id: 4,
+    name: "Aurora Station",
+    sort: null,
+    book_count: 3,
+    accent: "oklch(0.555 0.153 28.4)",
+    primary_author: "Sora Inkwell",
+    ...overrides,
+  };
+}
+
+/** A hand-picked shelf the signed-in admin owns, as `GET /api/shelves/{id}` sends it. */
+export function aWireShelfDetail(overrides: Partial<Shelf> = {}): Shelf {
+  return {
+    id: 3,
+    kind: "manual",
+    name: "Winter reads",
+    description: null,
+    visibility: "private",
+    accent: null,
+    match_mode: null,
+    rules: [],
+    sync_to_kobo: false,
+    owner_user_id: 1,
+    owner_username: "ada",
+    owner_has_avatar: false,
+    book_count: 2,
+    ...overrides,
+  };
+}
+
+/** `POST /api/shelves/preview`'s answer: two of ten books match, the first two of them shown. */
+export function aWireRulePreview(
+  overrides: Partial<RulePreview> = {},
+): RulePreview {
+  return {
+    matched: 2,
+    total: 10,
+    sample: aWireLibrary(2),
+    ...overrides,
+  };
+}
+
+/** `GET /api/stats` carrying the given targets (`null` is none); the rest is generated filler. */
+export function aWireStatsGoals({
+  books,
+  pages,
+  minutes,
+}: GoalTargets): StatsSummary {
+  const progress = { current: 0, day: "2026-10-19" };
+  return getGetStatsResponseMock({
+    // The generated mock draws this from the enum's keys, which the schema refuses.
+    range: "all_time",
+    goal:
+      books === null
+        ? null
+        : { ...progress, kind: "books", target: books, year: 2026 },
+    daily_goals: {
+      pages:
+        pages === null ? null : { ...progress, kind: "pages", target: pages },
+      minutes:
+        minutes === null
+          ? null
+          : { ...progress, kind: "minutes", target: minutes },
+    },
+  });
+}
+
+/** A Kobo as `GET /api/account/kobo-devices` sends it; override what a case needs. */
+export function aWireKoboDevice(
+  overrides: Partial<KoboDeviceView> = {},
+): KoboDeviceView {
+  return {
+    id: 1,
+    name: "Clara",
+    token: "tok-clara",
+    created_at: 1_760_000_000,
+    last_seen_at: 1_760_000_000,
+    ...overrides,
+  };
+}
+
+/** A sign-in as `GET /api/auth/sessions` sends it; override what a case needs. */
+export function aWireAuthSession(
+  overrides: Partial<SessionView> = {},
+): SessionView {
+  return {
+    id: 1,
+    kind: "cookie",
+    client: "Firefox on Linux",
+    created_at: 1_760_000_000,
+    last_used_at: 1_760_086_400,
+    expires_at: 1_762_000_000,
+    is_current: false,
+    ...overrides,
+  };
+}
+
+/** An API token as `GET /api/auth/api-tokens` lists it; override what a case needs. */
+export function aWireApiToken(
+  overrides: Partial<ApiTokenView> = {},
+): ApiTokenView {
+  return {
+    id: 1,
+    name: "MCP on my laptop",
+    suffix: "k3Zq",
+    created_at: 1_750_000_000,
+    last_used_at: null,
+    ...overrides,
+  };
+}
+
+type DirectManifest = Extract<AudiobookManifest, { mode: "direct" }>;
+type HlsManifest = Extract<AudiobookManifest, { mode: "hls" }>;
+
+/** One chapter of an audio file as the manifest sends it: an hour long, the first by default. */
+export function aWireChapter(
+  overrides: Partial<ChapterInfo> = {},
+): ChapterInfo {
+  return {
+    ordinal: 1,
+    title: "Departures",
+    start_seconds: 0,
+    duration_seconds: 3600,
+    ...overrides,
+  };
+}
+
+/** `GET /api/audiobooks/{uuid}/manifest` for a direct book: file 917, three hour-long chapters in one part. */
+export function aWireAudioManifest(
+  overrides: Partial<DirectManifest> = {},
+): DirectManifest {
+  return {
+    mode: "direct",
+    book_file_id: 917,
+    audio_file_count: 1,
+    next_file_id: null,
+    parts: [
+      {
+        ordinal: 1,
+        url: "/api/audiobooks/ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0/parts/1?file_id=917",
+        duration_seconds: 10_800,
+        mime: "audio/mpeg",
+      },
+    ],
+    total_duration_seconds: 10_800,
+    chapters: [
+      aWireChapter(),
+      aWireChapter({
+        ordinal: 2,
+        title: "The Long Water",
+        start_seconds: 3600,
+      }),
+      aWireChapter({ ordinal: 3, title: "Landfall", start_seconds: 7200 }),
+    ],
+    ...overrides,
+  };
+}
+
+/** The manifest of a book the browser can't play natively: one transcoded stream. */
+export function aWireHlsManifest(
+  overrides: Partial<HlsManifest> = {},
+): HlsManifest {
+  return {
+    mode: "hls",
+    book_file_id: 917,
+    audio_file_count: 1,
+    playlist_url:
+      "/api/audiobooks/ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0/playlist.m3u8",
+    ...overrides,
+  };
+}
+
+/** An audio bookmark as `GET /api/bookmarks/book/{uuid}` sends it: ten minutes in, unnamed. */
+export function aWireAudioBookmark(
+  overrides: Partial<Bookmark> = {},
+): Bookmark {
+  return {
+    id: 1,
+    book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    position: "600",
+    title: null,
+    created_at: 1_760_000_000,
+    ...overrides,
+  };
+}

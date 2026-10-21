@@ -12,8 +12,9 @@ just modules db/src                 # or frontend/src/pages, omnibus-ios/omnibus
 
 Cargo workspace with seven crates:
 
-- **`shared/`** (`omnibus-shared`) — serde types shared across every target,
-  plus logic the server and its clients must agree on (range parsing, text
+- **`shared/`** (`omnibus-shared`) — every type on the `/api/*` wire, plus
+  the other serde types shared across targets and logic the server and its
+  clients must agree on (range parsing, text
   folding, sort order, ETags, ISBN normalization) so the two sides cannot
   drift. No Dioxus / axum / sqlx deps.
 - **`db/`** (`omnibus-db`) — server-side data layer: SQL migrations, SQLite
@@ -65,9 +66,13 @@ Beside the workspace:
 - **`omnibus-ios/`** — the native SwiftUI client, an Xcode project rather than a
   crate. See [ios.md](ios.md).
 - **`ui_tests/playwright/`** — the E2E suite: `tests/flows/` (one spec per user
-  flow), `tests/ios_glue/` (the iOS reader glue, driven in Chromium),
-  `tests/utils/`, `tests/fixtures/`. Conventions in
+  flow), `tests/ios_glue/` (the iOS reader glue, driven in Chromium), and the
+  page-object layers they use: `pages/`, `components/`, `apiRequests/`,
+  `contracts/`, `data/`, `fixtures/` (plus `utils/`). Conventions in
   [rule 04](../.claude/rules/04-playwright.md).
+- **`openapi/`** — the REST contract; see [below](#the-rest-contract).
+- **`frontend-js/`** — a React client over the REST API, typed from that
+  contract.
 - **`site/`** — the marketing site; see [below](#site).
 
 ## Request flows
@@ -91,6 +96,31 @@ Most features are therefore served twice — a `/api/*` handler for the mobile a
 iOS clients, and a server function for the web — each with its own permission
 gate and error mapping. A change to one usually needs the other.
 
+## The REST contract
+
+[`openapi/openapi.json`](../openapi/openapi.json) is the OpenAPI 3.1 contract
+for the `/api/*` REST API, and the one place a client reads it from: the iOS
+app, the React client, the MCP server and any client in another repo. The Rust
+code generates it; nobody writes it by hand.
+
+- **Wire types** live in `shared/` and derive `utoipa::ToSchema` behind its
+  `openapi` feature, which only the server turns on.
+- **Each handler** declares its path, parameters and responses in a
+  `#[utoipa::path]` attribute, and `routes.rs` registers it with
+  `utoipa_axum::routes!`, which reads the path from that attribute. The router
+  and the document come out of one tree (`backend::rest_routes`), so a route
+  can't be served without being documented.
+- **`backend::openapi::spec`** adds the overview, security schemes and tags.
+  `just openapi-gen` writes the file, and a test fails while the committed
+  copy is stale, so CI catches a changed route or wire type.
+- **`frontend-js/`** generates its zod schemas, fetchers, TanStack Query hooks
+  and MSW handlers from the file with orval, so a wire change becomes a
+  TypeScript error there.
+
+Left out: the Dioxus server functions (`/api/rpc/*`), Kobo and OPDS, whose
+formats their clients fix. Conventions are in
+[rule 13](../.claude/rules/13-openapi.md).
+
 ## Auth boundary
 
 `auth::require_auth` gates only `/api/*`, exempting `/api/auth/*` and
@@ -103,6 +133,8 @@ too:
 - `/opds/*` — a session, else HTTP Basic.
 - `/metrics` — `OMNIBUS_METRICS_TOKEN`; the route does not exist until it is set.
 - `/mcp` — a bearer token, gated per request on the admin `mcp_enabled` setting.
+- `/api/ebooks/{uuid}/images/signed` — exempted from the gate and authenticated
+  by a per-image HMAC link (`backend::ebooks::images`).
 
 ## Database
 
@@ -122,9 +154,13 @@ No single module owns these, so a change to any one surface has to keep them:
   taxonomy orphan sweeps, smart-shelf rules — gates on the same override-aware
   membership (the `effective_*_sql!` macros). A looser rule on one makes them
   disagree: the palette offers an author the index rejects.
-- **Attribution.** Every user-facing name (journal author, rating, shelf owner)
+- **Attribution.** Every user-facing name (journal author, reviewer, shelf owner)
   reads `COALESCE(display_name, username)`; `username` stays the login and admin
   identity.
+- **Private notes.** A review's notes reach only their author: another reader
+  gets an `AttributedReview`, which has no notes field, and nothing they see —
+  the review's timestamps, the "Recently Interacted" sort — moves on an edit
+  that touched only the notes.
 - **Derived-byte caches.** Thumbnails, the KEPUB cache and the export-EPUB cache
   all invalidate on `books.last_modified`, so every metadata or cover write must
   bump it (`touch_book_last_modified`) or all three serve stale bytes.
@@ -182,6 +218,15 @@ value as a nullable field (`{ "progress": null }`). MCP requires an
 `outputSchema` root of `type: "object"`, and strict clients refuse the whole
 server over one tool that breaks the rule. rmcp no longer enforces this, so
 `every_tool_advertises_an_object_rooted_output_schema` does.
+
+`read_book_image` returns a download URL for an EPUB image's original, for a
+person to open rather than the tool layer to call. It is a per-image HMAC-signed
+link: 15 minutes, minted by `GET /api/ebooks/{uuid}/images/link` for
+download-permitted users and verified by `GET /api/ebooks/{uuid}/images/signed`
+without a session, so a leaked URL opens that one image and nothing else. It is
+built on the caller's public origin, never the loopback the hosted tools call
+through: the configured base URL over stdio, or the `/mcp` request's own origin
+when hosted (`AppState::request_origin`).
 
 MCP sessions are separable everywhere: `User-Agent: omnibus-mcp/<ver>` on every
 request (logged by the server's request span), and login sends

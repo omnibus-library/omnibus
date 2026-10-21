@@ -1,0 +1,215 @@
+.rd-phone-only {
+  display: none;
+}
+.rd-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--line-2);
+}
+.rd-drawer-title {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 23px;
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.rd-drawer-body {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rd-x {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  transition:
+    background 0.14s,
+    color 0.14s;
+}
+@media (hover: hover) {
+  .rd-x:hover {
+    background: var(--bg-2);
+    color: var(--ink-0);
+    border-color: var(--line-2);
+  }
+}
+.rd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.rd-chip.on {
+  border-color: var(--accent);
+  color: var(--ink-0);
+}
+/* Doubled: the reader's lazy `.rd-drawer` loads after this file and would win the width. */
+.rd-drawer.rd-quote-drawer {
+  width: 432px;
+}
+.rd-quote-kicker {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.rd-quote-card {
+  width: 100%;
+  border-radius: 12px;
+  padding: 30px 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 18px;
+  font-family: var(--serif);
+  box-shadow: 0 24px 50px -22px rgba(0, 0, 0, 0.6);
+}
+.rd-quote-card-head {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  opacity: 0.55;
+}
+.rd-quote-card-body {
+  font-size: 22px;
+  line-height: 1.24;
+  font-style: italic;
+  text-wrap: balance;
+}
+.rd-quote-card-foot {
+  border-top: 1px solid currentColor;
+  opacity: 0.85;
+  padding-top: 10px;
+}
+.rd-quote-card-author {
+  font-family: var(--sans);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+.rd-quote-card-sub {
+  font-size: 14px;
+  margin-top: 1px;
+}
+.rd-quote-controls {
+  margin-top: 20px;
+}
+.rd-quote-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  margin: 16px 0 8px;
+}
+.rd-quote-swatches {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.rd-quote-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid var(--line-2);
+}
+.rd-quote-custom {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  cursor: pointer;
+  background: conic-gradient(
+    from 0.25turn,
+    #f43f5e,
+    #f59e0b,
+    #facc15,
+    #22c55e,
+    #06b6d4,
+    #6366f1,
+    #d946ef,
+    #f43f5e
+  );
+}
+.rd-quote-custom input {
+  position: absolute;
+  inset: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+.rd-quote-ratios,
+.rd-quote-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.rd-quote-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 22px;
+}
+@media (max-width: 480px) {
+  .rd-drawer.rd-quote-drawer {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 78vh;
+    border-left: 0;
+    border-top: 1px solid var(--line-2);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, 0.5);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .rd-drawer-head {
+    padding: 4px 20px 10px;
+    border-bottom: 0;
+  }
+  .rd-drawer-title {
+    font-size: 20px;
+  }
+  .rd-phone-only {
+    display: inline-flex;
+  }
+  .rd-desktop-only {
+    display: none;
+  }
+  .rd-drawer.rd-quote-drawer {
+    max-height: 92vh;
+  }
+  .rd-quote-actions > .btn {
+    flex: 1;
+    justify-content: center;
+  }
+}

@@ -1,226 +1,260 @@
+import { type AddedBook, addedDateText, crossesUtcDay } from "../data/ebooks";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import {
-  expectRowMatches,
-  MONTH_NAMES,
-  ordinalSuffix,
-  switchToTableView,
-} from "../utils/ebooks";
-import { expectNavVisible, gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Seed the running server against the committed EPUB fixtures before any
-// landing-page assertion runs. The settings POST kicks off an async reindex
-// inside the server (`tokio::spawn`), so `seedLibrary` polls
-// `/api/rpc/ebooks` until the indexer has surfaced every fixture.
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
+const ZONES = [
+  { name: "behind UTC", timezoneId: "Etc/GMT+12", offsetHours: -12 },
+  { name: "ahead of UTC", timezoneId: "Etc/GMT-14", offsetHours: 14 },
+];
 
-// View prefs persist in localStorage. Each Playwright test gets a fresh
-// browser context and storageState's `origins` is empty (only the auth
-// cookie is saved), so localStorage starts empty per test without needing
-// an explicit cleanup hook. A `page.addInitScript` clear() would run on
-// `page.reload()` too — wiping the very state the persistence test asserts.
+test.describe("library page", () => {
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+  });
 
-test("renders the landing page layout", async ({ page }) => {
-  await gotoReady(page, "/");
+  test("show the library layout", async ({ libraryPage }) => {
+    await test.step("open the library", async () => {
+      await libraryPage.goto();
+    });
 
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Your Library" }),
-  ).toBeVisible();
-  // Grid is the default view mode; the table is opt-in via the toolbar.
-  await expect(page.getByTestId("lib-grid")).toBeVisible();
-  await expect(page.getByTestId("lib-toolbar")).toBeVisible();
-  // The shelves row replaced the left rail on the landing: an "All Books"
-  // entry (selected by default) plus a New-shelf action, with paging buttons
-  // that `marquee.js` arms only at an end that has more to show. In-place
-  // selection and paging are covered by shelf_gallery.spec.ts; shelf CRUD by
-  // shelves.spec.ts.
-  await expect(page.getByTestId("shelf-gallery")).toBeVisible();
-  await expect(page.getByTestId("gallery-all-books")).toBeVisible();
-  await expect(page.getByTestId("new-shelf")).toBeVisible();
-  await expect(page.getByTestId("shelf-row-prev")).toBeAttached();
-  await expect(page.getByTestId("shelf-row-next")).toBeAttached();
-  await expectNavVisible(page);
-});
+    await test.step("check the page chrome shows", async () => {
+      await libraryPage.assertDisplayed();
+      await libraryPage.topNav.assertDisplayed();
+      await expect(libraryPage.libraryHeading).toBeAttached();
+      // Grid is the default view; the table is opt-in via the toolbar.
+      await expect(libraryPage.grid).toBeVisible();
+      await expect(libraryPage.toolbar).toBeVisible();
+    });
 
-test("the cover wall keeps its captions off the covers until hover", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
+    // `marquee.js` arms the paging buttons only at an end with more to show.
+    await test.step("check the shelves row shows", async () => {
+      await expect(libraryPage.shelfGallery.root).toBeVisible();
+      await expect(libraryPage.shelfGallery.allBooksTile).toBeVisible();
+      await expect(libraryPage.shelfGallery.newShelfButton).toBeVisible();
+      await expect(libraryPage.shelfGallery.previousArrow).toBeAttached();
+      await expect(libraryPage.shelfGallery.nextArrow).toBeAttached();
+    });
+  });
 
-  // Read-only: any book will do, so this takes the first tile rather than
-  // reserving a fixture.
-  const tile = page.getByTestId(/^ebook-tile-/).first();
-  await expect(tile).toBeVisible();
-  const caption = tile.locator(".lib-tile-cap");
+  test("keep captions off the covers until hover", async ({ libraryPage }) => {
+    await test.step("open the library", async () => {
+      await libraryPage.goto();
+      await expect(libraryPage.firstBookTile).toBeVisible();
+    });
 
-  // The wall is covers; the words are a layer over the cover's foot that is
-  // transparent until pointed at. `toBeHidden` would not catch this — an
-  // opacity-0 element is still "visible" to Playwright.
-  await expect(caption).toHaveCSS("opacity", "0");
-  await tile.hover();
-  await expect(caption).toHaveCSS("opacity", "1");
-});
+    // `toBeHidden` misses this: an opacity-0 caption still counts as visible.
+    await test.step("check the caption is transparent", async () => {
+      await expect(libraryPage.firstBookTileCaption).toHaveCSS("opacity", "0");
+    });
 
-test("renders every fixture book with the expected metadata", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
+    await test.step("hover the tile", async () => {
+      await libraryPage.hoverFirstBookTile();
+    });
 
-  // Every ebook fixture must appear; audiobooks may also be present when
-  // parallel specs have seeded the audiobook library on the shared server.
-  const rowCount = await page.getByTestId(/^ebook-row-/).count();
-  expect(rowCount).toBeGreaterThanOrEqual(FIXTURE_BOOKS.length);
+    await test.step("check the caption shows", async () => {
+      await expect(libraryPage.firstBookTileCaption).toHaveCSS("opacity", "1");
+    });
+  });
 
-  for (const expected of FIXTURE_BOOKS) {
-    await test.step(`renders "${expected.title}" from ${expected.filename}`, async () => {
-      await expectRowMatches(page, expected);
+  // A browser draws an image as its bytes arrive, so the plate must hide that
+  // half-drawn cover until the watcher stamps it decoded.
+  test("keep a cover hidden until its image has decoded", async ({
+    libraryPage,
+  }) => {
+    const release =
+      await test.step("open the library while every thumbnail is held", async () => {
+        const release = await libraryPage.holdThumbnails();
+        await libraryPage.gotoUnsettled();
+        return release;
+      });
+
+    await test.step("check the cover waits, transparent and unstamped", async () => {
+      await expect(libraryPage.firstCover).toBeAttached();
+      await expect(libraryPage.firstCover).not.toHaveAttribute("data-loaded");
+      await expect(libraryPage.firstCover).toHaveCSS("opacity", "0");
+    });
+
+    await test.step("release the thumbnails", async () => {
+      await release();
+    });
+
+    await test.step("check the cover is stamped and shows", async () => {
+      await expect(libraryPage.firstCover).toHaveAttribute("data-loaded", "");
+      await expect(libraryPage.firstCover).toHaveCSS("opacity", "1");
+    });
+  });
+
+  test("show every fixture book with its metadata", async ({ libraryPage }) => {
+    const table = libraryPage.table;
+
+    await test.step("open the table view", async () => {
+      await libraryPage.goto();
+      await table.switchTo();
+    });
+
+    // Parallel specs may have seeded audiobooks on the shared server too.
+    await test.step("check every fixture book has a row", async () => {
+      expect(await table.rows.count()).toBeGreaterThanOrEqual(
+        FIXTURE_BOOKS.length,
+      );
+    });
+
+    for (const book of FIXTURE_BOOKS) {
+      await test.step(`check "${book.title}" from ${book.filename}`, async () => {
+        await table.assertRowMatches(book);
+      });
+    }
+  });
+
+  for (const zone of ZONES) {
+    test.describe(`in a zone ${zone.name}`, () => {
+      test.use({ timezoneId: zone.timezoneId });
+
+      test("show the added date on the reader's day, as the detail page does", async ({
+        libraryPage,
+        bookDetailPage,
+        ebooksRequests,
+      }) => {
+        const book = FIXTURE_BOOKS[0]!;
+
+        const added =
+          await test.step("look up when the book was added", async () => {
+            const listed = await ebooksRequests.getEbooks();
+            await expect(listed).toBeOK();
+            const { books }: { books: AddedBook[] } = await listed.json();
+            const found = books.find((b) => b.title === book.title);
+            expect(
+              found?.added_at,
+              `${book.title} carries an added_at`,
+            ).toBeTruthy();
+            return found!;
+          });
+        const addedMs = Date.parse(added.added_at!);
+
+        // Only a zone whose day differs from UTC's for this instant proves anything.
+        test.skip(
+          !crossesUtcDay(addedMs, zone.offsetHours),
+          "this zone shares UTC's day for the instant the book was added",
+        );
+        const expected = addedDateText(addedMs, zone.offsetHours);
+
+        await test.step("check the table cell", async () => {
+          await libraryPage.goto();
+          await libraryPage.table.switchTo();
+          await expect(libraryPage.table.cell(book.slug, "added")).toHaveText(
+            expected,
+          );
+        });
+
+        await test.step("check the detail page", async () => {
+          await bookDetailPage.goto(added.unique_identifier!);
+          await expect(bookDetailPage.metaValue("Added")).toHaveText(expected);
+        });
+      });
     });
   }
-});
 
-test("dates the Added cell on the reader's day, as the detail page does", async ({
-  browser,
-  request,
-}) => {
-  const book = FIXTURE_BOOKS[0]!;
-  const resp = await request.get("/api/rpc/ebooks");
-  expect(resp.status()).toBe(200);
-  const { books } = (await resp.json()) as {
-    books: {
-      title: string | null;
-      unique_identifier: string | null;
-      added_at: string | null;
-    }[];
-  };
-  const row = books.find((b) => b.title === book.title);
-  expect(row?.added_at, `${book.title} carries an added_at`).toBeTruthy();
-  const added = Date.parse(row!.added_at!);
+  test("browse the fixture library in one keyset page", async ({
+    libraryPage,
+  }) => {
+    await test.step("open the library", async () => {
+      await libraryPage.goto();
+      await expect(libraryPage.firstBookTile).toBeVisible();
+    });
 
-  // A zone whose day differs from UTC's for this instant: UTC−12 before noon
-  // UTC, UTC+14 after it.
-  const early = new Date(added).getUTCHours() < 12;
-  const offsetHours = early ? -12 : 14;
-  const local = new Date(added + offsetHours * 3_600_000);
-  const day = local.getUTCDate();
-  const expected = `${MONTH_NAMES[local.getUTCMonth()]} ${day}${ordinalSuffix(day)}, ${local.getUTCFullYear()}`;
-
-  const context = await browser.newContext({
-    timezoneId: early ? "Etc/GMT+12" : "Etc/GMT-14",
+    // The fixtures sit far under the 100-book page size, so one page holds them all.
+    await test.step("check one page holds every book with no load more", async () => {
+      expect(await libraryPage.bookTiles.count()).toBeGreaterThanOrEqual(
+        FIXTURE_BOOKS.length,
+      );
+      await expect(libraryPage.loadMoreButton).toHaveCount(0);
+    });
   });
-  const page = await context.newPage();
-  try {
-    await gotoReady(page, "/");
-    await switchToTableView(page);
-    await expect(
-      page
-        .getByTestId(`ebook-row-${book.slug}`)
-        .getByTestId("ebook-cell-added"),
-    ).toHaveText(expected);
 
-    await gotoReady(page, `/books/${row!.unique_identifier}`);
-    const addedRow = page
-      .locator("tr.bd-meta-row")
-      .filter({ has: page.locator(".bd-meta-k", { hasText: /^Added$/ }) });
-    await expect(addedRow.locator(".bd-meta-v")).toHaveText(expected);
-  } finally {
-    await context.close();
-  }
+  // The view lives in localStorage, which each test's fresh context starts
+  // without, so no cleanup is needed.
+  test("keep the table view across a reload", async ({ libraryPage }) => {
+    const table = libraryPage.table;
+
+    await test.step("open the library as a grid", async () => {
+      await libraryPage.goto();
+      await expect(libraryPage.grid).toBeVisible();
+    });
+
+    await test.step("switch to the table", async () => {
+      await table.switchTo();
+      await expect(libraryPage.grid).toHaveCount(0);
+      expect(await table.rows.count()).toBeGreaterThanOrEqual(
+        FIXTURE_BOOKS.length,
+      );
+      await expect(table.viewToggleButton).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    await test.step("reload the page", async () => {
+      await libraryPage.reload();
+    });
+
+    await test.step("check the table is still showing", async () => {
+      await expect(table.root).toBeVisible();
+      await expect(libraryPage.grid).toHaveCount(0);
+    });
+  });
+
+  test("sort by title descending from the title header", async ({
+    libraryPage,
+  }) => {
+    const table = libraryPage.table;
+
+    await test.step("open the table view", async () => {
+      await libraryPage.goto();
+      await table.switchTo();
+    });
+
+    // The default sort is title ascending, so one click flips it.
+    await test.step("click the title header", async () => {
+      await table.sortByTitle();
+      await expect(table.descendingHeader).toBeVisible();
+    });
+
+    await test.step("check the alphabetically last book comes first", async () => {
+      const titles = FIXTURE_BOOKS.map((book) => book.title).sort((a, b) =>
+        a.toLowerCase().localeCompare(b.toLowerCase()),
+      );
+      await expect(table.firstRowTitleCell).toHaveText(titles.at(-1)!);
+    });
+  });
+
+  // Only the markup is pinned here. A spec would have to write a library-wide
+  // rating or status to prove the order, so the Rust suite covers that.
+  test("offer Recently Interacted in the sort menu, newest first", async ({
+    libraryPage,
+  }) => {
+    await test.step("open the library", async () => {
+      await libraryPage.goto();
+      await expect(libraryPage.sortSelect).toBeVisible();
+      await expect(
+        libraryPage.sortOption("Recently Interacted"),
+      ).toHaveAttribute("value", "recently_interacted");
+    });
+
+    await test.step("pick the sort", async () => {
+      await libraryPage.sortBy("recently_interacted");
+      await expect(libraryPage.sortSelect).toHaveValue("recently_interacted");
+      // A recency axis defaults to descending.
+      await expect(libraryPage.sortDirectionButton).toHaveAccessibleName(
+        "Sort direction: descending",
+      );
+    });
+
+    await test.step("check the table still lists the whole library", async () => {
+      await libraryPage.table.switchTo();
+      expect(await libraryPage.table.rows.count()).toBeGreaterThanOrEqual(
+        FIXTURE_BOOKS.length,
+      );
+    });
+  });
 });
-
-test("browse fits the fixture library in one keyset page (no Load more)", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-
-  // F5b: browse is keyset-paginated, but the fixtures are far under the
-  // 100-book page size, so the first page contains the whole library and the
-  // pagination sentinel must not render. (Above the page size, a
-  // `lib-load-more` button appears and appends further pages.)
-  await expect(page.getByTestId(/^ebook-tile-/).first()).toBeVisible();
-  const tileCount = await page.getByTestId(/^ebook-tile-/).count();
-  expect(tileCount).toBeGreaterThanOrEqual(FIXTURE_BOOKS.length);
-  await expect(page.getByTestId("lib-load-more")).toHaveCount(0);
-});
-
-test("toggles to table view and persists across reload", async ({ page }) => {
-  await gotoReady(page, "/");
-
-  await expect(page.getByTestId("lib-grid")).toBeVisible();
-  await page.getByTestId("view-toggle-table").click();
-
-  await expect(page.getByTestId("ebook-table")).toBeVisible();
-  await expect(page.getByTestId("lib-grid")).toHaveCount(0);
-  const rowCount = await page.getByTestId(/^ebook-row-/).count();
-  expect(rowCount).toBeGreaterThanOrEqual(FIXTURE_BOOKS.length);
-  await expect(page.getByTestId("view-toggle-table")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-
-  await page.reload();
-  await page.waitForLoadState("networkidle");
-  await expect(page.getByTestId("ebook-table")).toBeVisible();
-  await expect(page.getByTestId("lib-grid")).toHaveCount(0);
-});
-
-test("sorts by title descending when the Title header is clicked", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  // Default sort is title asc — click once to flip to desc.
-  await page.getByRole("button", { name: /^Title( ↑| ↓)?$/ }).click();
-
-  const titleHeader = page.locator(".sort-th[aria-sort='descending']");
-  await expect(titleHeader).toBeVisible();
-
-  // First row's title cell should match the alphabetically-last fixture.
-  const titles = [...FIXTURE_BOOKS.map((b) => b.title)].sort((a, b) =>
-    a.toLowerCase().localeCompare(b.toLowerCase()),
-  );
-  const lastTitle = titles[titles.length - 1]!;
-  await expect(
-    page
-      .getByTestId(/^ebook-row-/)
-      .first()
-      .getByTestId("ebook-cell-title"),
-  ).toHaveText(lastTitle);
-});
-
-// The Recently Interacted axis is asserted here as a *markup contract* only —
-// the option exists, selecting it sticks, and it opens newest-first. Its
-// ordering semantics are covered by the Rust suite (`db/src/interaction`),
-// deliberately: every signal it reads (a rating, a read status, a journal
-// entry) is library-wide the moment it lands, so a spec that wrote one to
-// prove an order would be mutating state every other spec on this shared
-// server reads back. See rule 04 on reserved fixtures.
-test("offers Recently Interacted in the sort dropdown, newest first", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-
-  const sort = page.getByTestId("lib-sort-select");
-  await expect(sort).toBeVisible();
-  await expect(
-    sort.getByRole("option", { name: "Recently Interacted" }),
-  ).toHaveAttribute("value", "recently_interacted");
-
-  await sort.selectOption("recently_interacted");
-  await expect(sort).toHaveValue("recently_interacted");
-  // A recency axis picks descending by default, so the toggle reads "down".
-  await expect(page.getByTestId("lib-sort-dir")).toHaveText("↓");
-
-  // The grid still renders the whole library on the new axis.
-  await switchToTableView(page);
-  const rowCount = await page.getByTestId(/^ebook-row-/).count();
-  expect(rowCount).toBeGreaterThanOrEqual(FIXTURE_BOOKS.length);
-});
-
-// F3.1 removed the home-page facet filters (format chips + author/series/tag
-// sidebar); their coverage retired with them. Slicing the library is now the
-// job of shelves — see shelves.spec.ts.

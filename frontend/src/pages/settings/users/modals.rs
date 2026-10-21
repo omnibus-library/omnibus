@@ -7,11 +7,27 @@ use omnibus_shared::{AdminUserRow, CreateUserRequest, DeviceView, SessionView, U
 
 use crate::components::auth::{score_password, PasswordRequirements, StrengthMeter};
 use crate::components::{
-    confirm_modal_body, BusyLabel, ConfirmModal, ConfirmModalAction, ConfirmModalTone,
+    confirm_modal_body, BusyLabel, ConfirmModal, ConfirmModalAction, ConfirmModalTone, Loading,
+    LoadingKind,
 };
 use crate::data;
 
 use super::PermissionToggles;
+
+/// A row's current permissions, as the edit form starts them.
+pub(super) fn permissions_of(user: &AdminUserRow) -> UserPermissions {
+    UserPermissions {
+        is_admin: user.is_admin,
+        can_upload: user.can_upload,
+        can_edit: user.can_edit,
+        can_download: user.can_download,
+    }
+}
+
+/// Whether the edit form holds a change a stray scrim click would throw away.
+pub(super) fn edit_is_dirty(user: &AdminUserRow, perms: UserPermissions, password: &str) -> bool {
+    perms != permissions_of(user) || !password.is_empty()
+}
 
 /// New-user modal: username + password (with strength meter/checklist) +
 /// permissions.
@@ -29,9 +45,11 @@ pub(super) fn NewUserModal(on_close: EventHandler<()>, on_created: EventHandler<
     let saving = use_signal(|| false);
     let submit =
         build_new_user_submit_handler(username, password, perms, error, saving, on_created);
+    // Typed credentials hold the scrim, so only Cancel or the close button discards them.
+    let holds = saving() || !username().is_empty() || !password().is_empty();
 
     rsx! {
-        ModalShell { title: "New user", testid: "users-new-modal", on_close,
+        ModalShell { title: "New user", testid: "users-new-modal", busy: holds, on_close,
             form { class: "settings-form", onsubmit: submit,
                 NewUserFields { username, password, error }
                 PermissionToggles { perms }
@@ -67,6 +85,7 @@ fn NewUserFields(
             input {
                 r#type: "text",
                 id: "new-user-username",
+                name: "username",
                 "data-testid": "new-user-username",
                 autocomplete: "off",
                 autocapitalize: "none",
@@ -80,6 +99,7 @@ fn NewUserFields(
             input {
                 r#type: "password",
                 id: "new-user-password",
+                name: "new_password",
                 "data-testid": "new-user-password",
                 autocomplete: "new-password",
                 value: "{password}",
@@ -176,12 +196,7 @@ pub(super) fn EditUserModal(
     on_saved: EventHandler<()>,
 ) -> Element {
     let uid = user.id;
-    let perms = use_signal(|| UserPermissions {
-        is_admin: user.is_admin,
-        can_upload: user.can_upload,
-        can_edit: user.can_edit,
-        can_download: user.can_download,
-    });
+    let perms = use_signal(|| permissions_of(&user));
     let mut new_password = use_signal(String::new);
     let mut error = use_signal(|| None::<String>);
     let saving = use_signal(|| false);
@@ -190,9 +205,10 @@ pub(super) fn EditUserModal(
     let pw = new_password();
     let show_meter = !pw.is_empty();
     let (score, score_label, rules) = score_password(&pw);
+    let holds = saving() || edit_is_dirty(&user, perms(), &pw);
 
     rsx! {
-        ModalShell { title: "Edit {user.username}", testid: "users-edit-modal", on_close,
+        ModalShell { title: "Edit {user.username}", testid: "users-edit-modal", busy: holds, on_close,
             form { class: "settings-form", onsubmit: submit,
                 PermissionToggles { perms }
                 div { class: "settings-field",
@@ -200,12 +216,14 @@ pub(super) fn EditUserModal(
                     input {
                         r#type: "password",
                         id: "edit-user-password",
+                        name: "new_password",
                         "data-testid": "edit-user-password",
                         autocomplete: "new-password",
-                        placeholder: "Leave blank to keep current",
+                        "aria-describedby": "edit-user-password-hint",
                         value: "{new_password}",
                         oninput: move |e| { new_password.set(e.value()); error.set(None); },
                     }
+                    p { class: "settings-hint", id: "edit-user-password-hint", "Leave blank to keep the current password." }
                 }
                 if show_meter {
                     StrengthMeter { score, label: Some(score_label.to_string()) }
@@ -270,6 +288,7 @@ pub(super) fn DeleteUserModal(
             aria_label: title.clone(),
             dialog_class: "users-modal-card".to_string(),
             busy,
+            focus_on_open: true,
             on_dismiss: move |_| on_close.call(()),
             if is_self {
                 p { class: "settings-status error", "data-testid": "delete-self-warning",
@@ -313,8 +332,9 @@ pub(super) fn DeleteUserModal(
 #[component]
 pub(super) fn SessionsModal(user: AdminUserRow, on_close: EventHandler<()>) -> Element {
     let uid = user.id;
-    let mut sessions = use_signal(Vec::<SessionView>::new);
-    let mut devices = use_signal(Vec::<DeviceView>::new);
+    // `None` until each list answers, since an empty list would claim there are none.
+    let mut sessions = use_signal(|| None::<Vec<SessionView>>);
+    let mut devices = use_signal(|| None::<Vec<DeviceView>>);
     let mut error = use_signal(|| None::<String>);
     let mut reload = use_signal(|| 0u32);
     let mut busy_id = use_signal(|| None::<i64>);
@@ -327,11 +347,11 @@ pub(super) fn SessionsModal(user: AdminUserRow, on_close: EventHandler<()>) -> E
         error.set(None);
         spawn(async move {
             match data::list_user_sessions(uid).await {
-                Ok(rows) => sessions.set(rows),
+                Ok(rows) => sessions.set(Some(rows)),
                 Err(e) => error.set(Some(e)),
             }
             match data::list_user_devices(uid).await {
-                Ok(rows) => devices.set(rows),
+                Ok(rows) => devices.set(Some(rows)),
                 Err(e) => error.set(Some(e)),
             }
         });
@@ -370,12 +390,26 @@ pub(super) fn SessionsModal(user: AdminUserRow, on_close: EventHandler<()>) -> E
         ModalShell {
             title: "Sessions & devices \u{2014} {user.username}",
             testid: "users-sessions-modal",
+            busy: false,
             on_close,
             ModalError { error: error() }
-            h4 { "Sessions" }
-            {render_session_list(&sessions(), busy_id(), revoke_session)}
-            h4 { "Devices" }
-            {render_device_list(&devices(), busy_id(), revoke_device)}
+            match (sessions(), devices()) {
+                (Some(sessions), Some(devices)) => rsx! {
+                    h4 { "Sessions" }
+                    {render_session_list(&sessions, busy_id(), revoke_session)}
+                    h4 { "Devices" }
+                    {render_device_list(&devices, busy_id(), revoke_device)}
+                },
+                // The error line above says why the lists never arrived.
+                _ if error().is_some() => rsx! {},
+                _ => rsx! {
+                    Loading {
+                        kind: LoadingKind::Sheet,
+                        testid: "user-sessions-loading",
+                        label: "Reading sessions and devices\u{2026}",
+                    }
+                },
+            }
             div { class: "settings-actions",
                 button { r#type: "button", class: "btn ghost", onclick: move |_| on_close.call(()), "Close" }
             }
@@ -384,7 +418,7 @@ pub(super) fn SessionsModal(user: AdminUserRow, on_close: EventHandler<()>) -> E
 }
 
 /// The session list, or an empty-state line when the user has none live.
-fn render_session_list(
+pub(super) fn render_session_list(
     rows: &[SessionView],
     busy_id: Option<i64>,
     on_revoke: Callback<i64>,
@@ -408,6 +442,7 @@ fn render_session_list(
                                 r#type: "button",
                                 class: "btn ghost danger sm",
                                 "data-testid": "user-session-revoke-{id}",
+                                "aria-label": "Revoke the session on {client}",
                                 disabled: busy_id == Some(id),
                                 "aria-busy": if busy_id == Some(id) { "true" } else { "false" },
                                 onclick: move |_| on_revoke.call(id),
@@ -422,7 +457,7 @@ fn render_session_list(
 }
 
 /// The device list, or an empty-state line when the user has none registered.
-fn render_device_list(
+pub(super) fn render_device_list(
     rows: &[DeviceView],
     busy_id: Option<i64>,
     on_revoke: Callback<i64>,
@@ -445,6 +480,7 @@ fn render_device_list(
                                 r#type: "button",
                                 class: "btn ghost danger sm",
                                 "data-testid": "user-device-revoke-{id}",
+                                "aria-label": "Revoke the device {d.name}",
                                 disabled: busy_id == Some(id),
                                 "aria-busy": if busy_id == Some(id) { "true" } else { "false" },
                                 onclick: move |_| on_revoke.call(id),
@@ -459,14 +495,14 @@ fn render_device_list(
 }
 
 /// Shared modal overlay + card chrome, built on the `ConfirmModal` shell with
-/// its `head` slot carrying the title bar and close button. Clicking the scrim
-/// or the close button dismisses; clicks inside the card don't propagate. It
-/// always passes `busy: false`, as no caller (new/edit/sessions) gates the
-/// backdrop on an in-flight save.
+/// its `head` slot carrying the title bar and close button. Focus moves into
+/// the panel on open. While `busy` (a save in flight, or edits a stray click
+/// would discard) the scrim and Escape are held; the close button always works.
 #[component]
 fn ModalShell(
     title: String,
     testid: String,
+    busy: bool,
     on_close: EventHandler<()>,
     children: Element,
 ) -> Element {
@@ -476,7 +512,8 @@ fn ModalShell(
             aria_label: title.clone(),
             backdrop_class: "users-modal-overlay".to_string(),
             dialog_class: "users-modal-card".to_string(),
-            busy: false,
+            busy,
+            focus_on_open: true,
             on_dismiss: move |_| on_close.call(()),
             head: rsx! {
                 div { class: "users-modal-head",
@@ -486,7 +523,12 @@ fn ModalShell(
                         class: "users-modal-close",
                         "aria-label": "Close",
                         onclick: move |_| on_close.call(()),
-                        "\u{00d7}"
+                        svg {
+                            width: "14", height: "14", view_box: "0 0 24 24", fill: "none",
+                            stroke: "currentColor", stroke_width: "2", stroke_linecap: "round",
+                            "aria-hidden": "true",
+                            path { d: "M6 6l12 12M18 6L6 18" }
+                        }
                     }
                 }
             },

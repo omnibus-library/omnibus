@@ -16,6 +16,7 @@ Numbered rules in [.claude/rules/](.claude/rules/), applied in order. Follow the
 - [04b-playwright-ios-glue.md](.claude/rules/04b-playwright-ios-glue.md) — the iOS reader glue's test lane: serving `omnibus-ios/omnibus/Reader/Web/` on a routed origin, driving the host's entry points, and what Chromium can't prove.
 - [04c-playwright-filters.md](.claude/rules/04c-playwright-filters.md) — the library filter's test lane: the bar's popover, the landing lens and shelf page states, and the held-request technique.
 - [04d-playwright-page-objects.md](.claude/rules/04d-playwright-page-objects.md) — page, component and request objects injected by fixtures: the layout, the rules, and one sign-in per worker.
+- [04e-playwright-stats.md](.claude/rules/04e-playwright-stats.md) — the stats page's test lane: windowed vs standing figures, the goals link into Settings, household sharing and the reader picker.
 - [05-rust-style.md](.claude/rules/05-rust-style.md) — Rust style guide: comments, function/file shape, errors, tests, mechanics. Long-form rationale in [docs/style-guide.md](docs/style-guide.md).
 - [06-migrations.md](.claude/rules/06-migrations.md) — authoring SQL migrations: `NNNN_` naming, never-edit-applied, the `_norm` backfill pattern, testing against `sqlite::memory:`, and the dev-bounce step.
 - [07-hydration.md](.claude/rules/07-hydration.md) — SSR/WASM hydration parity: never feature-gate a component body on `web`; how to confirm and fix a hydration mismatch; why keyed siblings must each be unique.
@@ -25,10 +26,15 @@ Numbered rules in [.claude/rules/](.claude/rules/), applied in order. Follow the
 - [10-reader-calendar.md](.claude/rules/10-reader-calendar.md) — which calendar a figure is cut on: day boundaries take the asking client's offset (one per request), time-of-day takes the offset each session recorded; why the ledger stores a quarter-hour and never a day.
 - [11-spoiler-boundary.md](.claude/rules/11-spoiler-boundary.md) — what a reader may be shown: the three-valued spoiler filter, why every figure rounds conservatively, and why the boundary reads stored columns rather than resolving a position.
 - [12-loading-states.md](.claude/rules/12-loading-states.md) — every wait draws from `components/loading.rs`: pick the `Loading` kind by the shape it fills, unknown is never shown as empty or forbidden, no boot screen (SSR draws the loaders) + the `data-hydrated` marker, reduced motion for every animation.
+- [13-openapi.md](.claude/rules/13-openapi.md) — the REST contract: wire types in `shared/`, `#[utoipa::path]` on every `/api/*` handler registered with `routes!`, docs written for API callers, and `just openapi-gen` after any route or wire-type change.
 - [98-keep-skills-fresh.md](.claude/rules/98-keep-skills-fresh.md) — update skills when the code they reference changes.
 - [99-end-of-session.md](.claude/rules/99-end-of-session.md) — end-of-session checklist (docs sync, fmt/clippy, coverage, line-count cap).
 
+**Reviews:** every code review also applies [CODING_STANDARDS.md](CODING_STANDARDS.md), the judgement rules no linter or test can check.
+
 **Line-count cap:** every file in `CLAUDE.md`, `AGENTS.md`, and `.claude/` stays under ~200 lines. Split by topic when it grows past that — enforced by rule 99.
+
+**Path-scoped rules:** a topic rule opens with `paths:` frontmatter, so Claude Code loads it only once a matching file is touched; only 01, 02, 03, 05, 98 and 99 load every session. Give a new topic rule the same — Claude Code warns once the always-loaded instruction files pass 120k chars in total.
 
 ## Skills
 
@@ -39,6 +45,7 @@ Auto-discoverable skills in [.claude/skills/](.claude/skills/) — Claude Code l
 - [add-playwright-flow](.claude/skills/add-playwright-flow/SKILL.md) — adding a new E2E spec.
 - [create-github-issue](.claude/skills/create-github-issue/SKILL.md) — filing GitHub issues in the omnibus house style: bracketed `[Scope]` title prefixes, a standard body template, consistent labels, and native sub-issue linking.
 - [ui-validate](.claude/skills/ui-validate/SKILL.md) — bring up a port-walking dev server, log in as the seeded admin, drive the browser, poll `/api/_health` for rebuild signal, and check the change against its flow doc.
+- [ios-validate](.claude/skills/ios-validate/SKILL.md) — screenshot tours of the native iOS app: a scratch server, a simulator per worktree, screens opened by DEBUG deep link.
 
 ### Browser tools
 
@@ -53,6 +60,8 @@ Seven-crate Cargo workspace: `shared/` (serde types), `db/` (data layer + indexe
 Alongside it, `omnibus-ios/` is a native SwiftUI client — an Xcode project, not a Cargo crate; `just ios-build` / `ios-test` / `ios-test-ui` / `ios-sim` wrap xcodebuild + simctl for it (no cargo target touches it). It is the iOS surface; `mobile/` is the Android shell (nothing builds the `mobile/` crate for iOS anymore). It speaks the same `/api/*` REST surface.
 
 `site/` is the marketing site served at <https://omnibus-library.github.io/omnibus/> — static HTML with no build step, published to the `gh-pages` branch by `.github/workflows/pages.yml`. Its framed app screens are stills exported from the Claude Design "Omnibus" project, not live markup; see the `site/` section of [docs/architecture.md](docs/architecture.md).
+
+The `/api/*` REST surface is described by [openapi/openapi.json](openapi/openapi.json), the contract every client builds against, generated from the handlers (see [the REST contract](docs/architecture.md#the-rest-contract)).
 
 Crate descriptions, request flows, and mobile-auth details live in [docs/architecture.md](docs/architecture.md); the iOS app's design lives in [docs/ios.md](docs/ios.md). Per-module detail lives only in each file's own `//!` doc (a Swift file's header comment) — `just modules <dir>` prints a directory's map from them.
 
@@ -72,11 +81,12 @@ Operator-specific conventions (ticket prefixes, branch naming) live in personal 
 ## Quick commands
 
 ```bash
-# Multiplexed dev stack (server + native ios + android + playwright panes)
+# Multiplexed dev stack (server + react + native ios + android + playwright panes)
 # The server pane port-walks this worktree's window, so two worktrees can
 # run the stack at once without colliding.
 just serve                                                  # Zellij
 just serve-pc                                               # process-compose
+just react                                                  # React client (frontend-js/) dev server, proxying to this worktree's server
 
 # Idempotent dev-server bring-up — port-walks from $PORT (this worktree's
 # window base: 3000 for the main checkout, hash-derived in 3010..3900
@@ -94,12 +104,15 @@ dx serve --platform web -p omnibus
 cargo run -p omnibus                                        # start at http://0.0.0.0:3000
 
 # Tests & lint — aggregate targets cover the full crate matrix in one go
-just test                                                   # db + server + frontend(server + mobile features) + shared + mcp + mock-kobo
+just test                                                   # Rust matrix (db + server + frontend(server + mobile features) + shared + mcp + mock-kobo), then the Python script suites
+just test-rust                                              # the Rust matrix alone
 just lint                                                   # cargo fmt --check + clippy -D warnings (incl. mobile + mcp + mock-kobo + frontend-server + frontend-web wasm32) + stylelint
-just lint-css                                               # structural CSS lint only (stylelint; catches unclosed rules in frontend/assets)
+just lint-css                                               # structural CSS lint only (stylelint; catches unclosed rules and duplicate selectors in frontend/assets)
 just lint-ts                                                # Playwright TS: biome check + tsc --noEmit (TypeScript 7), in .#e2e
 just check                                                  # lint then test
 just modules db/src                                         # module map for any directory, from each file's //! doc
+just openapi-gen                                            # regenerate openapi/openapi.json, the REST contract (a test fails while it is stale)
+just openapi                                                # regenerate, then browse the API reference on a local port
 # …or per-crate (note: `cargo test --workspace` SKIPS frontend rpc/page tests,
 #  mobile, mcp, and mock-kobo — the rpc/page tests need --features server to
 #  compile the server-function bodies; mobile, mcp, and mock-kobo are out of
@@ -114,7 +127,10 @@ cargo test -p omnibus-mock-kobo                             # fake Kobo firmware
 cargo clippy                                                # lint default-members (server, shared, frontend)
 cargo fmt                                                   # format all crates
 
-# Playwright E2E (server must be running; baseURL = $PLAYWRIGHT_BASE_URL or :3000)
+# Playwright E2E. `just e2e-ci` runs specs the way CI does: its own bundle,
+# standalone server and scratch DB, torn down afterwards (no server needed).
+just e2e-ci                                                 # whole suite; or `just e2e-ci tests/flows/<flow>.spec.ts`
+# Against a running dev server instead (baseURL = $PLAYWRIGHT_BASE_URL or :3000).
 # The Playwright project uses pnpm (not npm) and TypeScript 7; Biome is its
 # linter/formatter. `just lint-ts` runs biome check + tsc --noEmit.
 cd ui_tests/playwright && pnpm install                      # first time

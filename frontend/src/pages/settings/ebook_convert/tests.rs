@@ -83,7 +83,7 @@ fn card_renders_the_unresolved_state_before_the_status_loads() {
         html.contains("data-testid=\"ebook-convert-card\""),
         "card must render, got: {html}"
     );
-    assert!(html.contains("Format conversion"), "got: {html}");
+    assert!(html.contains("Calibre format conversion"), "got: {html}");
     assert!(
         html.contains("placeholder=\"ebook-convert\""),
         "unresolved placeholder must be the bare $PATH name, got: {html}"
@@ -106,4 +106,15 @@ fn card_hides_use_auto_detection_until_an_override_is_saved() {
         "no override is saved on first paint, got: {html}"
     );
     assert!(!html.contains("Use auto-detection"), "got: {html}");
+}
+
+#[cfg(feature = "server")]
+#[test]
+fn card_titles_itself_as_a_group_and_names_its_save() {
+    let html = crate::test_support::render_in_vdom(EbookConvertField);
+    assert!(
+        html.contains("<h3>Calibre format conversion</h3>"),
+        "{html}"
+    );
+    assert!(html.contains("Save ebook-convert path"), "{html}");
 }

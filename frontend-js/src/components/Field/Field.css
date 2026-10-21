@@ -1,0 +1,84 @@
+.auth-field {
+  display: block;
+  margin-bottom: 0.9rem;
+  position: relative;
+}
+.auth-field-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.35rem;
+}
+.auth-field-label {
+  font-family: var(--auth-mono);
+  font-size: 0.72rem;
+  color: var(--auth-ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.auth-field-action {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 0.78rem;
+  color: var(--auth-accent);
+  line-height: 1;
+}
+.auth-field-input-wrap {
+  position: relative;
+}
+.auth-field input,
+.auth-field textarea,
+.auth-field select {
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  background: var(--auth-bg-1);
+  border: 1px solid var(--auth-line-2);
+  border-radius: 10px;
+  color: var(--auth-ink-0);
+  font-size: 0.9rem;
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.auth-field input:focus,
+.auth-field textarea:focus,
+.auth-field select:focus {
+  border-color: var(--auth-accent);
+}
+.auth-field-err input,
+.auth-field-err textarea,
+.auth-field-err select {
+  border-color: var(--auth-bad);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--auth-bad) 18%, transparent);
+}
+.auth-field-ok input,
+.auth-field-ok textarea,
+.auth-field-ok select {
+  border-color: var(--auth-ok);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--auth-ok) 18%, transparent);
+}
+.auth-field-check {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--auth-ok);
+  font-size: 1rem;
+  line-height: 1;
+}
+.auth-field-msg {
+  margin-top: 0.4rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.auth-field-msg-err {
+  color: var(--auth-bad);
+}
+.auth-field-msg-hint {
+  color: var(--auth-ink-3);
+  font-family: var(--auth-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+}

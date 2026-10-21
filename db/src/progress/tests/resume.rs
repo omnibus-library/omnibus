@@ -1,6 +1,7 @@
 //! The resume-card read path: `recent_progress` ordering, limit, and
 //! read-status filtering, plus the duration / part / audio-file enrichment
-//! `resume_points` layers on top via `progress::enrich`.
+//! `resume_points` layers on top via `progress::enrich`, and the same
+//! resolution `resolve_listening` hands other surfaces.
 
 use omnibus_shared::{ChapterInfo, ProgressUpdate};
 use sqlx::SqlitePool;
@@ -534,4 +535,61 @@ fn mark_index_at_tracks_boundaries_and_empty_list() {
     assert_eq!(mark_index_at(&chs, 399.9), Some(0));
     assert_eq!(mark_index_at(&chs, 400.0), Some(1));
     assert_eq!(mark_index_at(&chs, 9000.0), Some(1));
+}
+
+#[tokio::test]
+async fn resolve_listening_keeps_the_stored_file_and_floors_the_percent() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    let book_id = seed_audiobook(&pool, uuid).await;
+    let second = seed_second_audiobook_file(&pool, book_id).await;
+
+    let point = resolve_listening(&pool, uuid, Some(second), Some(1600.0))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(point.book_file_id, second);
+    // 1600 s of the second file's 3000 s is 53.3%, floored.
+    assert_eq!(point.percent, Some(53));
+}
+
+#[tokio::test]
+async fn resolve_listening_falls_back_to_the_first_audio_file_for_a_dead_id() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    seed_audiobook(&pool, uuid).await;
+    let first = crate::hls::resolve_audiobook(&pool, uuid)
+        .await
+        .unwrap()
+        .unwrap()
+        .book_file_id;
+
+    let point = resolve_listening(&pool, uuid, Some(9_999), Some(450.0))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(point.book_file_id, first);
+    assert_eq!(point.percent, Some(37));
+}
+
+#[tokio::test]
+async fn resolve_listening_is_none_for_a_book_without_audio() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (_, uuid) = seed(&pool, "/lib", "Only an EPUB").await;
+    assert!(resolve_listening(&pool, &uuid, None, Some(10.0))
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn resolve_listening_propagates_db_error_when_pool_is_closed() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    pool.close().await;
+    assert!(matches!(
+        resolve_listening(&pool, "x", None, None).await,
+        Err(ProgressError::Sqlx(_))
+    ));
 }

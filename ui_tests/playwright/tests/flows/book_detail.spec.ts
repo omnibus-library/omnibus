@@ -1,21 +1,17 @@
-import type { APIRequestContext } from "@playwright/test";
+import { account } from "../contracts/account";
+import { highlights } from "../contracts/highlights";
+import { kindle } from "../contracts/kindle";
+import { readStatus } from "../contracts/readStatus";
 import {
   AUDIOBOOK_BOOK_COUNT,
   AUDIOBOOK_BOOKS,
   MERGE_ONLY_TITLES,
-  MERGE_PRIMARY,
   MERGE_SECONDARY,
 } from "../fixtures/audiobooks";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
-import {
-  fetchBookUuidByTitle,
-  getRow,
-  switchToTableView,
-} from "../utils/ebooks";
-import { withLock } from "../utils/lock";
-import { gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
+import { fetchBookUuidByTitle } from "../utils/ebooks";
 import {
   audiobookFixturesDir,
   fixturesDir,
@@ -23,28 +19,14 @@ import {
   seedLibrary,
 } from "../utils/seed";
 
-// Force serial mode for this file. The audiobook re-seed inside the
-// `describe("audiobook-only seed", …)` block below mutates shared server
-// state (re-points the library at the audiobook fixtures), so it must
-// not race the ebook-seeded tests above — `playwright.config.ts` runs
-// with `fullyParallel: true`, which otherwise interleaves them.
-test.describe.configure({ mode: "serial" });
-
-// Re-seed in this spec's beforeAll so the running server is indexed against
-// the committed EPUB fixtures before any assertion runs — independent of
-// whatever other specs in the same worker did before us. The audiobook
-// library is seeded in a separate beforeAll (sharded by test.describe) so the
-// listen-CTA test gets MP3/M4B-only books to land on.
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
-
-// A fixture with predictable, distinctive metadata to drive the layout and
-// breadcrumb tests. `alpha` is a single-author standalone ebook (Ada
-// Lovelace) so the breadcrumb is Home > Ada Lovelace > Alpha — and we can
-// reuse it for the "From the same hand" empty-state test because it's the
-// only book by that author in the seed.
+// An EPUB-only book with one author, Ada Lovelace.
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
+
+// The dot rail and the back to the book pill mark themselves with this class.
+const ON_CLASS = /\bon\b/;
+
+// `beta` is the first of the "Pioneers" series.
+const SERIES_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "beta")!;
 
 // Niklaus Wirth has four books in FIXTURE_BOOKS (the Code Quartet) — three
 // where he's the sole/lead author and one (Quartet III) where he's the lead
@@ -55,1461 +37,1673 @@ const WIRTH_LEAD = FIXTURE_BOOKS.find((b) => b.slug === "code-quartet-1")!;
 const WIRTH_OTHERS = FIXTURE_BOOKS.filter(
   (b) => b.authors[0] === "Niklaus Wirth" && b.slug !== WIRTH_LEAD.slug,
 );
+const SIBLING = FIXTURE_BOOKS.find((b) => b.slug === "code-quartet-2")!;
+const LAMARR_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "gamma")!;
 
-// Reserved for the read/unread-status tests: read state is per-(user, book)
-// server state, so this book must be read by no other spec. `standalone-canyon`
-// (Annie Easley) appears in no other flow.
+// Only this spec opens `standalone-canyon`, so it can write its read status.
 const READ_STATUS_BOOK = FIXTURE_BOOKS.find(
   (b) => b.slug === "standalone-canyon",
 )!;
 
-// Reserved for the saved-passages tests: highlights are per-(user, book)
-// server state, so seeding one here must not disturb another spec's counts.
-// `standalone-garden` is read by no other flow, and the reader spec's own
-// highlight books (beta / gamma / pioneers-3) stay untouched.
+// Only this spec seeds highlights on `standalone-garden`.
+// `shelf_gallery.spec.ts` reads only its progress, so no test here parks the
+// book.
 const PASSAGES_BOOK = FIXTURE_BOOKS.find(
   (b) => b.slug === "standalone-garden",
 )!;
 
-// ---------------------------------------------------------------------------
-// Layout
-// ---------------------------------------------------------------------------
+// An MP3 with no ebook companion, so Start listening is its primary action.
+// It is not in the merge pair, whose picker a merge would falsify.
+const SOLO_MP3 = AUDIOBOOK_BOOKS.find(
+  (b) =>
+    b.format === "MP3" &&
+    b.source === "generated" &&
+    !MERGE_ONLY_TITLES.includes(b.title),
+)!;
 
-test("renders the book detail layout", async ({ page, request }) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
+// The picker names a file by its label, else by its part number. The merge
+// pair's primary file has no label, and a merge labels the file it moves in
+// with its source book's title.
+const FIRST_PART = "Part 1";
+const SECOND_PART = MERGE_SECONDARY.title;
 
-  // Hero — title heading is the H1.
-  await expect(
-    page.getByRole("heading", { level: 1, name: TARGET.title }),
-  ).toBeVisible();
+test.describe("book detail page", () => {
+  // Its groups share the admin's scroll stops preference and one book each,
+  // so they run one at a time in file order.
+  test.describe.configure({ mode: "default" });
 
-  // Hero — author appears in the dedicated authors line as a router link
-  // (creators[0] has an id in the seeded DB). Scoped to `book-authors`
-  // because the breadcrumb also renders the same name.
-  const primaryAuthor = TARGET.authors[0]!;
-  const authorsLine = page.getByTestId("book-authors");
-  await expect(authorsLine).toContainText(primaryAuthor);
-  await expect(
-    authorsLine.getByRole("link", { name: primaryAuthor }),
-  ).toBeVisible();
-
-  // Hero — cover renders inside the cover column. There's also one cover
-  // per "From the same hand" tile when populated, so scope to `.first()`
-  // — it's the hero cover (alpha's empty-state case has no tile covers).
-  await expect(page.getByTestId("cover").first()).toBeVisible();
-
-  // Hero — primary CTA: alpha is EPUB-only, so the "Start reading" link
-  // must be present and href into the /read/:uuid reader route.
-  const startReading = page.getByTestId("start-reading");
-  await expect(startReading).toBeVisible();
-  await expect(startReading).toHaveAttribute(
-    "href",
-    new RegExp(`/read/${uuid}$`),
-  );
-
-  // marquee stage — the dot-rail TOC renders one row per stop, with the first
-  // stop active on load.
-  const dots = page.getByTestId("bdmq-dots");
-  await expect(dots).toBeVisible();
-  await expect(dots.getByRole("button")).toHaveCount(6);
-  await expect(page.getByTestId("bdmq-dot-0")).toHaveClass(/\bon\b/);
-
-  // Stops — "Passages you saved" (stop 03) is always rendered. Only its
-  // presence is asserted here: `journal.spec.ts` seeds a highlight on this
-  // same book, so whether the list or the empty state fills it depends on
-  // run order. The empty and populated states are covered by the
-  // saved-passages action tests below, on a book reserved for them.
-  await expect(
-    page.getByRole("heading", { name: "Passages you saved" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("highlights-section")).toBeVisible();
-
-  // Stops — the More stop (06) carries the shelf, the author's other work
-  // and the suggestions in one run, so its heading is always rendered.
-  await expect(page.getByTestId("bdmq-more")).toBeAttached();
-  await expect(
-    page.getByRole("heading", { name: "From the same hand" }),
-  ).toBeVisible();
-});
-
-// ---------------------------------------------------------------------------
-// Scroll stops — the panel reads two ways (#2395's preference, default off)
-// ---------------------------------------------------------------------------
-
-/**
- * Set the caller's `book_detail_scroll_stops` preference, asserting it landed.
- * A silent setup failure would otherwise surface as a confusing assertion
- * about which layout rendered.
- */
-async function setScrollStops(request: APIRequestContext, enabled: boolean) {
-  const resp = await request.post("/api/account/book-detail-scroll-stops", {
-    data: { enabled },
-  });
-  expect(resp.status(), `setting scroll stops to ${enabled} failed`).toBe(200);
-}
-
-test.describe("scroll stops preference", () => {
-  // Every other test in this file reads the default layout, so the switch
-  // must go back off however these two finish.
-  test.afterAll(async ({ request }) => {
-    await setScrollStops(request, false);
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
 
-  test("defaults to one continuous flow with numbered section rules", async ({
-    page,
-    request,
-  }) => {
-    await setScrollStops(request, false);
+  test("show the book detail layout", async ({ bookDetailPage, request }) => {
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-    await gotoReady(page, `/books/${uuid}`);
+    const author = TARGET.authors[0]!;
 
-    // The flow owns the scrolling; the snap container is not rendered at all.
-    await expect(page.locator("#bdmq-flow")).toBeAttached();
-    await expect(page.locator("#bdmq-snap")).toHaveCount(0);
-    await expect(page.locator(".bdmq-flowsec")).toHaveCount(6);
-
-    // The first section is the book itself and carries no rule — its own
-    // title is the heading. Every later section is introduced by one.
-    await expect(page.locator(".bdmq-flowsec.lead")).toHaveCount(1);
-    await expect(page.locator(".bdmq-flowsec.lead .bdmq-flowlab")).toHaveCount(
-      0,
-    );
-    await expect(page.locator(".bdmq-flowlab")).toHaveCount(5);
-    await expect(page.locator(".bdmq-flowlab").first()).toContainText("Stats");
-
-    // Nothing snaps, so the per-stop "scroll — next" cue has no meaning.
-    await expect(page.locator(".bdmq-next")).toHaveCount(0);
-
-    // The back-to-the-book pill stays hidden until the top is out of sight,
-    // then appears — and takes the reader back to it.
-    const backToBook = page.getByTestId("bdmq-flowtop");
-    await expect(backToBook).toBeAttached();
-    await expect(backToBook).not.toHaveClass(/\bon\b/);
-
-    await page.locator("#bdmq-flow").evaluate((el) => {
-      el.scrollTop = 900;
-    });
-    await expect(backToBook).toHaveClass(/\bon\b/);
-
-    // The cover drifts with the scroll rather than panning stop to stop, so
-    // its transform tracks the position instead of sitting at one offset.
-    const drifted = await page
-      .locator("#bdmq-coverpx")
-      .evaluate((el) => el.style.transform);
-    expect(drifted).toMatch(/translateY/);
-
-    await backToBook.click();
-    await expect
-      .poll(() => page.locator("#bdmq-flow").evaluate((el) => el.scrollTop))
-      .toBe(0);
-    await expect(backToBook).not.toHaveClass(/\bon\b/);
-  });
-
-  test("flipping the switch in Settings changes the next detail page without a reload", async ({
-    page,
-    request,
-  }) => {
-    await setScrollStops(request, false);
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-
-    // Arrive at the book first, so the app-wide viewer is already resolved
-    // and holding the old value — the state the stale read came from.
-    await gotoReady(page, `/books/${uuid}`);
-    await expect(page.locator("#bdmq-flow")).toBeAttached();
-
-    // Flip it in Settings the way a reader would, then come back by
-    // navigating rather than reloading.
-    await gotoReady(page, "/settings?section=account");
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: "/api/rpc/account/book-detail-scroll-stops",
-        expectedStatus: 200,
-      },
-      async () =>
-        page
-          .getByRole("switch", { name: "Use book details scroll stops" })
-          .click(),
-    );
-
-    await page.getByRole("link", { name: "Library" }).first().click();
-    await gotoReady(page, `/books/${uuid}`);
-
-    // The save refreshes the app-wide viewer, so the marquee is already in
-    // place — no reload needed to see the setting take effect.
-    await expect(page.locator("#bdmq-snap")).toBeAttached();
-    await expect(page.locator("#bdmq-flow")).toHaveCount(0);
-  });
-
-  test("the marquee's own scroll glue is installed when the preference is on", async ({
-    page,
-    request,
-  }) => {
-    await setScrollStops(request, true);
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-    await gotoReady(page, `/books/${uuid}`);
-    await expect(page.locator("#bdmq-snap")).toBeAttached();
-
-    // The mode is only known once the viewer resolves, so the first paint is
-    // the flow and the marquee replaces it. The glue has to follow that swap:
-    // if the flow's listeners stay bound, the snap container scrolls with no
-    // dot tracking and no parallax, and the rail goes dead.
-    await page.locator("#bdmq-snap").evaluate((el) => {
-      el.scrollTop = 3 * el.clientHeight;
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(uuid);
     });
 
-    await expect(page.getByTestId("bdmq-dot-3")).toHaveClass(/\bon\b/);
-    await expect(page.getByTestId("bdmq-dot-0")).not.toHaveClass(/\bon\b/);
-  });
+    await test.step("check the hero shows", async () => {
+      await bookDetailPage.assertDisplayedFor(uuid);
+      await bookDetailPage.topNav.assertDisplayed();
+      await expect(bookDetailPage.titleHeading).toHaveText(TARGET.title);
+      await expect(bookDetailPage.authorsLine).toContainText(author);
+      await expect(bookDetailPage.authorLink(author)).toBeVisible();
+      await expect(bookDetailPage.heroCover).toBeVisible();
+    });
 
-  test("turning the preference on restores the snap-stop marquee", async ({
-    page,
-    request,
-  }) => {
-    await setScrollStops(request, true);
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-    await gotoReady(page, `/books/${uuid}`);
+    // Alpha is EPUB-only, so the primary action reads the book.
+    await test.step("check the primary action shows", async () => {
+      await expect(bookDetailPage.startReadingButton).toBeVisible();
+      await expect(bookDetailPage.startReadingButton).toHaveAttribute(
+        "href",
+        new RegExp(`/read/${uuid}$`),
+      );
+    });
 
-    // The snap container is back and the flow is gone — the same six
-    // sections either way, only the mechanics differ.
-    await expect(page.locator("#bdmq-snap")).toBeAttached();
-    await expect(page.locator("#bdmq-flow")).toHaveCount(0);
-    await expect(page.locator(".bdmq-sec")).toHaveCount(6);
-    await expect(page.getByTestId("bdmq-flowtop")).toHaveCount(0);
+    await test.step("check the dot rail shows", async () => {
+      await expect(bookDetailPage.sectionsNav).toBeVisible();
+      await expect(bookDetailPage.sectionDots).toHaveCount(7);
+      await expect(bookDetailPage.sectionDot("Home")).toHaveClass(ON_CLASS);
+    });
 
-    // The dot rail is common to both readings.
-    await expect(page.getByTestId("bdmq-dots").getByRole("button")).toHaveCount(
-      6,
-    );
-  });
-});
+    await test.step("check the scroll stops toggle sits above the rail", async () => {
+      await expect(bookDetailPage.scrollStopsToggleButton).toBeVisible();
+      await expect(bookDetailPage.railScrollStopsToggleButton).toHaveCount(0);
+      const { toggleBottom, railTop } =
+        await bookDetailPage.toggleAndRailEdges();
+      expect(toggleBottom).toBeLessThan(railTop);
+    });
 
-test("dot rail jumps between stops and tracks the active section", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
+    // The saved passages stop always renders, but whether its list or its
+    // empty state fills it depends on `journal.spec.ts`, so only the stop is
+    // checked here.
+    await test.step("check the stops show", async () => {
+      await expect(bookDetailPage.reviews.starsGroup).toBeVisible();
+      await expect(bookDetailPage.savedPassagesHeading).toBeVisible();
+      await expect(bookDetailPage.savedPassagesSection).toBeVisible();
+      await expect(bookDetailPage.moreStop).toBeAttached();
+      await expect(bookDetailPage.fromSameHandHeading).toBeVisible();
+    });
 
-  // Jumping to stop 05 (The files) via the rail scrolls the snap container
-  // and moves the active marker. The scroll is smooth, so poll for the flip.
-  await page.getByTestId("bdmq-dot-4").click();
-  await expect(page.getByTestId("bdmq-dot-4")).toHaveClass(/\bon\b/);
-  await expect(page.getByTestId("bdmq-dot-0")).not.toHaveClass(/\bon\b/);
-
-  // The files stop's content is on screen once the snap settles.
-  await expect(page.getByTestId("format-switcher")).toBeInViewport();
-});
-
-// ---------------------------------------------------------------------------
-// Action — start reading (ebook)
-// ---------------------------------------------------------------------------
-
-test("Start reading navigates to /read/:uuid for ebook-format books", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  // The hero CTA is a router Link — clicking it triggers SPA navigation.
-  // The reader page mounts the full-screen reader chrome, so we just
-  // assert the URL flips to /read/:uuid; the reader spec covers its
-  // contents in detail.
-  await page.getByTestId("start-reading").click();
-  await expect(page).toHaveURL(new RegExp(`/read/${uuid}$`));
-});
-
-// ---------------------------------------------------------------------------
-// Action — "From the same hand" populated row
-// ---------------------------------------------------------------------------
-
-test("From the same hand row renders other books by the same author", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  // The author-fetch is awaited after the initial render, so poll for the
-  // populated row rather than asserting visibility synchronously.
-  const row = page.getByTestId("from-same-hand");
-  await expect(row).toBeVisible();
-  // Empty-state marker must NOT be present once the row is populated.
-  await expect(page.getByTestId("from-same-hand-empty")).toHaveCount(0);
-
-  // The row should hold exactly the other Wirth books — never the current
-  // book (the page filters by `unique_identifier` to drop the self-tile).
-  const tiles = row.getByTestId("from-same-hand-tile");
-  await expect(tiles).toHaveCount(WIRTH_OTHERS.length);
-
-  // The current book's cover-of-{title} alt must not appear under any of
-  // the row's tiles — verifies the self-exclusion behaviour from
-  // `pages/book_detail.rs::BookDetailPage`.
-  await expect(
-    row.getByRole("img", { name: `Cover of ${WIRTH_LEAD.title}` }),
-  ).toHaveCount(0);
-
-  // Clicking any sibling tile must navigate to its /books/:uuid page —
-  // tiles are router Links that swap the route param in place. The Atrium
-  // stack overlaps the tiles behind the author-lead card and only spreads
-  // them apart on row hover, so hover first to settle the layout before
-  // clicking — otherwise the tile's centre sits under the lead card and the
-  // click is intercepted (matches the "Hover the row to spread" affordance).
-  await row.hover();
-  await tiles.first().click();
-  await expect(page).toHaveURL(/\/books\/[0-9a-fA-F-]{36}$/);
-  await expect(page).not.toHaveURL(new RegExp(`/books/${uuid}$`));
-});
-
-// ---------------------------------------------------------------------------
-// Action — "From the same hand" empty state
-// ---------------------------------------------------------------------------
-
-test("From the same hand shows empty state for single-book authors", async ({
-  page,
-  request,
-}) => {
-  // Hedy Lamarr authors exactly one work across the *entire* fixture set —
-  // the standalone `gamma` ebook, and (unlike Ada Lovelace) no audiobook. So
-  // even when a parallel spec has seeded the audiobook library, her
-  // author-fetch stays single-book: the row filters to empty and the page
-  // renders `from-same-hand-empty`. `alpha`/Ada can't be used here — Ada also
-  // authors "The Analytical Audiobook", which flips her to multi-book the
-  // moment audiobooks are indexed, so this assertion raced audiobook seeding.
-  const SOLO = FIXTURE_BOOKS.find((b) => b.slug === "gamma")!;
-  const uuid = await fetchBookUuidByTitle(request, SOLO.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  // Wait for the heading to confirm the section rendered.
-  await expect(
-    page.getByRole("heading", { name: "From the same hand" }),
-  ).toBeVisible();
-
-  // Empty-state card must be visible; the populated row must be absent.
-  await expect(page.getByTestId("from-same-hand-empty")).toBeVisible();
-  await expect(page.getByTestId("from-same-hand")).toHaveCount(0);
-});
-
-// Regression for #2478: while the author fetch was in flight the block read
-// "1 book in your library · this is the only book by <author> so far", then
-// corrected itself once the real count arrived. Holding the request open makes
-// that window the whole test rather than a race.
-test("the author block states no count until its fetch has landed", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
-
-  let release: (() => void) | undefined;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  // Web fetches the author through the server function, not the REST route.
-  await page.route("**/api/rpc/author", async (route) => {
-    await held;
-    await route.continue();
-  });
-
-  // Plain `goto`, not `gotoReady`: the held request means the page never
-  // reaches `networkidle`, which is the state this test exists to inspect.
-  await page.goto(`/books/${uuid}`);
-
-  // The section is up, and says it is still looking — not that this is the
-  // only book by them.
-  await expect(page.getByTestId("from-same-hand-loading")).toBeVisible();
-  await expect(page.getByTestId("from-same-hand-empty")).toHaveCount(0);
-  await expect(page.getByText(/only book by/)).toHaveCount(0);
-
-  release?.();
-
-  // And once it lands, the real row replaces the note.
-  await expect(page.getByTestId("from-same-hand")).toBeVisible();
-  await expect(page.getByTestId("from-same-hand-loading")).toHaveCount(0);
-});
-
-// ---------------------------------------------------------------------------
-// Pre-existing coverage — kept so the spec remains a single source of truth
-// for the book detail page. These post-date the original landing-row entry
-// from #297; the new tests above were added for #385.
-// ---------------------------------------------------------------------------
-
-test("navigates from a landing row to the detail page and back", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  // #2350: the row is a plain <tr> — its editable cells (title, author, …)
-  // are separate interactive controls, so it is no longer a role="button"
-  // that claims to "open details" while a click on those cells edits instead.
-  // The announced, keyboard-reachable navigate affordance is the cover cell's
-  // link; assert its accessible name matches its action, then activate it.
-  const openLink = getRow(page, TARGET.slug).getByRole("link", {
-    name: `Open details for ${TARGET.title}`,
-  });
-  await expect(openLink).toBeVisible();
-  await openLink.click();
-  // `/books/:uuid` — UUIDv5 in canonical 8-4-4-4-12 hyphenated form.
-  await expect(page).toHaveURL(/\/books\/[0-9a-fA-F-]{36}$/);
-
-  // The detail page should render the marquee title heading.
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-
-  // The topbar's Library link is the way back on the marquee stage (the old
-  // footer link is gone). Assert URL plus that the table view (persisted
-  // above) comes back.
-  await page.getByRole("link", { name: "Library", exact: true }).click();
-  await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByTestId("ebook-table")).toBeVisible();
-});
-
-test("renders the detail contents for the selected book", async ({
-  page,
-  request,
-}) => {
-  // Resolve the backend uuid the same way a real click would: read it out
-  // of the same RPC the landing page consumes. Deep-linking by uuid keeps
-  // this test independent of the landing page's row order.
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-
-  await gotoReady(page, `/books/${uuid}`);
-
-  // Title heading matches the fixture
-  await expect(
-    page.getByRole("heading", { level: 1, name: TARGET.title }),
-  ).toBeVisible();
-
-  // At least the first author is visible. Scoped to the dedicated authors
-  // line because the breadcrumb falls back to the first author when the book
-  // has no series, so a bare getByText(...) matches twice.
-  await expect(page.getByTestId("book-authors")).toContainText(
-    TARGET.authors[0]!,
-  );
-
-  // Format switcher renders one row per available format (F1.4).
-  const switcher = page.getByTestId("format-switcher");
-  await expect(switcher).toBeVisible();
-
-  // All fixture books are EPUB; the EPUB row must exist with its badge and
-  // the per-format CTAs grouped underneath. Use getByTestId rather than CSS
-  // attribute/class locators per `04-playwright.md` ("semantic first").
-  const epubRow = switcher.getByTestId("format-row-epub");
-  await expect(epubRow).toBeVisible();
-  await expect(epubRow).toHaveAttribute("data-format", "EPUB");
-  // The marquee copies row draws the format as a glyph tile, so the code lives in
-  // the badge's accessible name rather than its text.
-  await expect(epubRow.getByTestId("format-badge")).toHaveAttribute(
-    "aria-label",
-    "EPUB",
-  );
-
-  // Read now routes into the F2.2 immersive reader (an enabled link to
-  // /read/:uuid on web); F4.3 Send-to-Kindle is now an enabled action button
-  // (the send flow is exercised in its own action test below).
-  const readBtn = epubRow.getByTestId("action-read");
-  await expect(readBtn).toBeVisible();
-  await expect(readBtn).toHaveAttribute("href", /\/read\//);
-  const kindleBtn = epubRow.getByTestId("action-kindle");
-  await expect(kindleBtn).toBeVisible();
-  await expect(kindleBtn).toBeEnabled();
-
-  // The hero CTA row condenses the per-device actions behind an "Export"
-  // dropdown. It's closed by default; opening it reveals the EPUB download
-  // link and the Send-to-Kindle button (enabled because the book has an
-  // EPUB), which carries its own testid so it doesn't collide with the
-  // per-format-row button above.
-  const exportTrigger = page.getByTestId("hero-export");
-  await expect(exportTrigger).toBeVisible();
-  await expect(page.getByTestId("hero-export-panel")).toHaveCount(0);
-  await exportTrigger.click();
-  const exportPanel = page.getByTestId("hero-export-panel");
-  await expect(exportPanel).toBeVisible();
-  const downloadEpub = exportPanel.getByTestId("export-download-epub");
-  await expect(downloadEpub).toHaveAttribute(
-    "href",
-    /\/api\/ebooks\/.+\/download$/,
-  );
-  await expect(downloadEpub).toHaveAttribute("download");
-  const heroKindleBtn = exportPanel.getByTestId("hero-send-kindle");
-  await expect(heroKindleBtn).toBeVisible();
-  await expect(heroKindleBtn).toBeEnabled();
-  // Send-to-Kobo is the interactive button (writes the KEPUB onto a plugged-in
-  // Kobo on Chromium, or downloads it to copy over elsewhere); enabled because
-  // the book has an EPUB. Its own testid keeps it distinct from the per-format
-  // action-kobo above.
-  const koboExport = exportPanel.getByTestId("hero-send-kobo");
-  await expect(koboExport).toBeVisible();
-  await expect(koboExport).toBeEnabled();
-  // The audiobook download only appears for books with an audio file; the
-  // ebook-only seed must not render it. Close the menu again via the scrim.
-  // The scrim fills the viewport, so click a spot clear of the panel — below
-  // the sticky topbar (which sits above the scrim and intercepts a corner
-  // click) and left of the dropdown.
-  await expect(exportPanel.getByTestId("export-download-audio")).toHaveCount(0);
-  await page
-    .getByTestId("hero-export-scrim")
-    .click({ position: { x: 10, y: 300 } });
-  await expect(page.getByTestId("hero-export-panel")).toHaveCount(0);
-
-  // No M4B fixture in the ebook seed — the per-format Listen CTA must NOT
-  // render. (Scoped to the format switcher; the hero "Listen" secondary
-  // button only renders when both formats are present.)
-  await expect(switcher.getByTestId("action-listen")).toHaveCount(0);
-
-  // F3.2 ratings ship as the interactive hero rating card; F3.3 suggestions
-  // renders the "Readers also enjoyed" strip below the metadata. (Its inner
-  // state — connect message / pending / results — depends on whether a
-  // Hardcover key is configured and on the external API, so we only assert the
-  // section + heading are present here, not the resolved contents.)
-  await expect(page.getByTestId("rating-stars")).toBeVisible();
-  await expect(page.getByTestId("suggestions-strip")).toBeAttached();
-  await expect(
-    page.getByRole("heading", { name: "Suggested for you" }),
-  ).toBeVisible();
-
-  // The topbar Library link still navigates to landing (default Grid view).
-  await page.getByRole("link", { name: "Library", exact: true }).click();
-  await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByTestId("lib-grid")).toBeVisible();
-});
-
-// Action — Send to Kobo (F4.1 KEPUB direct write / download fallback)
-// ---------------------------------------------------------------------------
-
-test("Send to Kobo delivers the book with a uuid-named file", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-
-  // Force the download fallback path: without the File System Access API the
-  // button fetches the KEPUB and triggers a normal browser download. The native
-  // directory picker can't be driven headlessly (and isn't present in every
-  // Chromium build), so nulling `showDirectoryPicker` makes the path
-  // deterministic in CI. Must run before navigation so it applies to the page.
-  await page.addInitScript(() => {
-    Object.defineProperty(window, "showDirectoryPicker", {
-      configurable: true,
-      value: undefined,
+    // Its contents depend on a Hardcover key and the external API, so only
+    // the section and its heading are checked.
+    await test.step("check the suggestions show", async () => {
+      await expect(bookDetailPage.suggestions.root).toBeAttached();
+      await expect(bookDetailPage.suggestions.heading).toBeVisible();
     });
   });
-  await gotoReady(page, `/books/${uuid}`);
 
-  const epubRow = page
-    .getByTestId("format-switcher")
-    .getByTestId("format-row-epub");
-  const koboBtn = epubRow.getByTestId("action-kobo");
-  await expect(koboBtn).toBeVisible();
-  await expect(koboBtn).toBeEnabled();
+  // The preference is per account and outlives a test, so each sets it first.
+  test.describe("scroll stops", () => {
+    test("read the panel as one continuous flow by default", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-  // Clicking downloads the file (the fallback anchor keeps the page put). The
-  // filename stem is the canonical book uuid; the extension is `.kepub.epub`
-  // when kepubify converts, or `.epub` on fallback — assert the uuid-embedded
-  // contract that F4.4's USB import relies on, tolerant of both.
-  const [download] = await Promise.all([
-    page.waitForEvent("download"),
-    koboBtn.click(),
-  ]);
-  expect(download.suggestedFilename()).toMatch(
-    new RegExp(`^${uuid}\\.(kepub\\.)?epub$`),
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Action — Send to Kindle (F4.3)
-// ---------------------------------------------------------------------------
-
-test("sends the EPUB to Kindle and shows a sent status", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  const kindleBtn = page
-    .getByTestId("format-row-epub")
-    .getByTestId("action-kindle");
-  await expect(kindleBtn).toBeEnabled();
-
-  // Send is enqueue-and-poll: the POST returns a worker task id, then the button
-  // polls the status endpoint. Mock both so the test never touches a real SMTP
-  // relay or a configured Kindle email.
-  await page.route("**/api/rpc/kindle/send", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: "1",
+      await test.step("turn scroll stops off through the api", async () => {
+        await presetScrollStops(false);
       });
-    }
-    return route.continue();
-  });
-  await page.route("**/api/rpc/kindle/send/status", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ status: "sent" }),
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
       });
-    }
-    return route.continue();
-  });
 
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/kindle/send",
-      expectedBody: { book_uuid: uuid, file_id: null },
-      expectedStatus: 200,
-    },
-    async () => kindleBtn.click(),
-  );
-
-  await expect(page.getByTestId("kindle-send-status")).toHaveText(
-    "Sent to your Kindle.",
-  );
-  await expect(page.getByTestId("kindle-send-status")).toHaveClass(/success/);
-});
-
-test("shows an error when the Kindle send fails", async ({ page, request }) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  const kindleBtn = page
-    .getByTestId("format-row-epub")
-    .getByTestId("action-kindle");
-
-  // Enqueue succeeds (returns a task id); the worker delivery then fails,
-  // surfaced by the status poll. This is the path that previously hung the
-  // button on "Sending…" instead of ever raising an error.
-  await page.route("**/api/rpc/kindle/send", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: "7",
+      await test.step("check the flow replaces the marquee", async () => {
+        await expect(bookDetailPage.flowScroller).toBeAttached();
+        await expect(bookDetailPage.snapScroller).toHaveCount(0);
+        await expect(bookDetailPage.flowSections).toHaveCount(7);
       });
-    }
-    return route.continue();
+
+      // The first section is the book itself, headed by its own title, so only
+      // the six after it are introduced by a rule.
+      await test.step("check each later section has a rule", async () => {
+        await expect(bookDetailPage.leadFlowSection).toHaveCount(1);
+        await expect(bookDetailPage.leadFlowSectionLabels).toHaveCount(0);
+        await expect(bookDetailPage.flowSectionLabels).toHaveCount(6);
+        await expect(bookDetailPage.flowSectionLabels).toContainText([
+          "Stats",
+          "Reviews",
+          "Highlights",
+          "Journals",
+          "The files",
+          "More",
+        ]);
+      });
+
+      // Nothing snaps, so the per-stop "scroll, next" cue has no meaning.
+      await test.step("check no snap cues show", async () => {
+        await expect(bookDetailPage.nextStopCues).toHaveCount(0);
+      });
+    });
+
+    test("drift the cover as the flow scrolls", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops off through the api", async () => {
+        await presetScrollStops(false);
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      // The glue paints a transform at install, so only a change proves a drift.
+      const before = await test.step("read the cover at the top", async () => {
+        await expect
+          .poll(() => bookDetailPage.coverTransform(), {
+            message: "cover transform once the glue installs",
+          })
+          .toMatch(/translateY/);
+        return bookDetailPage.coverTransform();
+      });
+
+      await test.step("scroll the flow", async () => {
+        await bookDetailPage.scrollFlowTo(900);
+      });
+
+      await test.step("check the cover drifts", async () => {
+        await expect
+          .poll(() => bookDetailPage.coverTransform(), {
+            message: "cover transform after the flow scrolls",
+          })
+          .not.toBe(before);
+      });
+    });
+
+    test("show the back to the book pill once the top scrolls away", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops off through the api", async () => {
+        await presetScrollStops(false);
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the pill is hidden at the top", async () => {
+        await expect(bookDetailPage.backToBookButton).toBeAttached();
+        await expect(bookDetailPage.backToBookButton).not.toHaveClass(ON_CLASS);
+      });
+
+      await test.step("scroll the top out of sight", async () => {
+        await bookDetailPage.scrollFlowTo(900);
+        await expect(bookDetailPage.backToBookButton).toHaveClass(ON_CLASS);
+      });
+    });
+
+    test("scroll back to the top with the back to the book pill", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops off through the api", async () => {
+        await presetScrollStops(false);
+      });
+
+      await test.step("scroll the top out of sight", async () => {
+        await bookDetailPage.goto(uuid);
+        await bookDetailPage.scrollFlowTo(900);
+        await expect(bookDetailPage.backToBookButton).toHaveClass(ON_CLASS);
+      });
+
+      await test.step("go back to the book", async () => {
+        await bookDetailPage.backToBook();
+      });
+
+      await test.step("check the flow is back at the top", async () => {
+        await expect
+          .poll(() => bookDetailPage.flowScrollTop(), {
+            message: "flow scroll position after the pill",
+          })
+          .toBe(0);
+        await expect(bookDetailPage.backToBookButton).not.toHaveClass(ON_CLASS);
+      });
+    });
+
+    test("switch to the marquee from settings without a reload", async ({
+      bookDetailPage,
+      settingsPage,
+      libraryPage,
+      request,
+      presetScrollStops,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops off through the api", async () => {
+        await presetScrollStops(false);
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(bookDetailPage.flowScroller).toBeAttached();
+      });
+
+      await test.step("turn scroll stops on in settings", async () => {
+        await settingsPage.goto("preferences");
+        await settingsPage.markDocument();
+        await expectMutation(account.scrollStops(true), () =>
+          settingsPage.account.toggleScrollStops(),
+        );
+      });
+
+      await test.step("return to the book through the library", async () => {
+        await settingsPage.topNav.openLibrary();
+        await libraryPage.openBook(TARGET.title);
+      });
+
+      // The save refreshes the app-wide viewer, so the marquee is already in
+      // place with no reload.
+      await test.step("check the marquee replaces the flow", async () => {
+        await expect(bookDetailPage.snapScroller).toBeAttached();
+        await expect(bookDetailPage.flowScroller).toHaveCount(0);
+      });
+
+      await test.step("check the trip stayed in the app", async () => {
+        await bookDetailPage.assertDisplayedFor(uuid);
+        expect(
+          await bookDetailPage.documentIsMarked(),
+          "the trip back must stay in-app",
+        ).toBe(true);
+      });
+    });
+
+    // The flip back needs the toggle the first flip re-rendered, and only the
+    // first flip can make that state, so both stay in one test.
+    test("flip between the flow and the stops in place from the page's toggle", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+      expectMutation,
+    }) => {
+      const toggle = bookDetailPage.scrollStopsToggleButton;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops off through the api", async () => {
+        await presetScrollStops(false);
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the toggle shows the flow", async () => {
+        await expect(toggle).toBeEnabled();
+        await expect(toggle).toHaveAttribute("aria-pressed", "false");
+        await expect(bookDetailPage.flowScroller).toBeAttached();
+      });
+
+      // A flip keeps the reader where they are, so read down first.
+      await test.step("read down to the journals section", async () => {
+        await bookDetailPage.scrollFlowToSection("Journals");
+        await expect(bookDetailPage.sectionDot("Journals")).toHaveClass(
+          ON_CLASS,
+        );
+      });
+
+      await test.step("turn scroll stops on from the toggle", async () => {
+        await expectMutation(account.scrollStops(true), () =>
+          bookDetailPage.toggleScrollStops(),
+        );
+      });
+
+      // No reload: the stage re-renders around the toggle, which keeps focus.
+      await test.step("check the stops replace the flow in place", async () => {
+        await expect(bookDetailPage.snapScroller).toBeAttached();
+        await expect(bookDetailPage.flowScroller).toHaveCount(0);
+        await expect(toggle).toHaveAttribute("aria-pressed", "true");
+        await expect(toggle).toBeFocused();
+        await expect(bookDetailPage.sectionPanel("Journals")).toBeInViewport();
+        await expect(bookDetailPage.sectionDot("Journals")).toHaveClass(
+          ON_CLASS,
+        );
+      });
+
+      // The marquee's glue must follow the swap, or the rail goes dead.
+      await test.step("check the dot rail tracks the stops", async () => {
+        await bookDetailPage.scrollMarqueeToStop("The files");
+        await expect(bookDetailPage.sectionDot("The files")).toHaveClass(
+          ON_CLASS,
+        );
+      });
+
+      await test.step("turn scroll stops back off from the toggle", async () => {
+        await expectMutation(account.scrollStops(false), () =>
+          bookDetailPage.toggleScrollStops(),
+        );
+      });
+
+      await test.step("check the flow replaces the stops in place", async () => {
+        await expect(bookDetailPage.flowScroller).toBeAttached();
+        await expect(bookDetailPage.snapScroller).toHaveCount(0);
+        await expect(toggle).toHaveAttribute("aria-pressed", "false");
+        await expect(bookDetailPage.sectionPanel("The files")).toBeInViewport();
+        await expect(bookDetailPage.sectionDot("The files")).toHaveClass(
+          ON_CLASS,
+        );
+      });
+    });
+
+    test("keep the flow when the page's toggle fails to save", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+      expectMutation,
+    }) => {
+      const toggle = bookDetailPage.scrollStopsToggleButton;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops off through the api", async () => {
+        await presetScrollStops(false);
+      });
+
+      await test.step("open the book while saves fail", async () => {
+        await bookDetailPage.goto(uuid);
+        await bookDetailPage.forceServerError(account.scrollStops(true));
+      });
+
+      await test.step("turn scroll stops on from the toggle", async () => {
+        await expectMutation(failing(account.scrollStops(true)), () =>
+          bookDetailPage.toggleScrollStops(),
+        );
+      });
+
+      // The toggle goes back and the line beside it says the save failed.
+      await test.step("check the flow stays and the error shows", async () => {
+        await expect(bookDetailPage.scrollStopsErrorMessage).toBeVisible();
+        await expect(toggle).toHaveAttribute("aria-pressed", "false");
+        await expect(bookDetailPage.flowScroller).toBeAttached();
+        await expect(bookDetailPage.snapScroller).toHaveCount(0);
+      });
+    });
+
+    test("track the active stop as the marquee scrolls", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops on through the api", async () => {
+        await presetScrollStops(true);
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(bookDetailPage.snapScroller).toBeAttached();
+      });
+
+      // The first paint is the flow, and the marquee replaces it once the
+      // viewer resolves. The glue must follow that swap, or the rail goes dead.
+      await test.step("scroll the marquee to the journals stop", async () => {
+        await bookDetailPage.scrollMarqueeToStop("Journals");
+      });
+
+      await test.step("check the dot rail follows", async () => {
+        await expect(bookDetailPage.sectionDot("Journals")).toHaveClass(
+          ON_CLASS,
+        );
+        await expect(bookDetailPage.sectionDot("Home")).not.toHaveClass(
+          ON_CLASS,
+        );
+      });
+    });
+
+    test("show the snap stop marquee when scroll stops are on", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops on through the api", async () => {
+        await presetScrollStops(true);
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the marquee replaces the flow", async () => {
+        await expect(bookDetailPage.snapScroller).toBeAttached();
+        await expect(bookDetailPage.flowScroller).toHaveCount(0);
+        await expect(bookDetailPage.snapSections).toHaveCount(7);
+        await expect(bookDetailPage.backToBookButton).toHaveCount(0);
+      });
+
+      await test.step("check the dot rail is the same", async () => {
+        await expect(bookDetailPage.sectionDots).toHaveCount(7);
+      });
+    });
   });
-  await page.route("**/api/rpc/kindle/send/status", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
+
+  // The rail works in both modes, so only the tests that scroll the flow
+  // beside it set the preference.
+  test.describe("dot rail", () => {
+    test("jump to a stop from the dot rail", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("jump to the files stop", async () => {
+        await bookDetailPage.jumpToSection("The files");
+      });
+
+      await test.step("check the stop's content is in view", async () => {
+        await expect(bookDetailPage.formatSwitcher).toBeInViewport();
+      });
+    });
+
+    test("mark the jumped-to stop on the dot rail", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("jump to the files stop", async () => {
+        await bookDetailPage.jumpToSection("The files");
+      });
+
+      // The scroll is smooth, so the marker moves a moment after the click.
+      await test.step("check the rail marks the files stop", async () => {
+        await expect(bookDetailPage.sectionDot("The files")).toHaveClass(
+          ON_CLASS,
+        );
+        await expect(bookDetailPage.sectionDot("Home")).not.toHaveClass(
+          ON_CLASS,
+        );
+      });
+    });
+
+    // The rail floats over the panel's right edge, so a box wider than its
+    // dots would take the clicks meant for what scrolls beside it.
+    test("open the journal composer from beside the dot rail", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops off through the api", async () => {
+        await presetScrollStops(false);
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(bookDetailPage.journal.newEntryButton).toBeVisible();
+      });
+
+      await test.step("scroll the new entry level with the rail", async () => {
+        await bookDetailPage.alignNewJournalEntryWithRail();
+      });
+
+      await test.step("click the new entry at its rail side", async () => {
+        await bookDetailPage.journal.clickNewEntryRailEnd();
+      });
+
+      await test.step("check the composer opens", async () => {
+        await expect(bookDetailPage.journal.composer).toBeVisible();
+      });
+    });
+
+    test("close the journal composer opened beside the dot rail", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops off through the api", async () => {
+        await presetScrollStops(false);
+      });
+
+      await test.step("open the composer beside the rail", async () => {
+        await bookDetailPage.goto(uuid);
+        await bookDetailPage.alignNewJournalEntryWithRail();
+        await bookDetailPage.journal.clickNewEntryRailEnd();
+        await expect(bookDetailPage.journal.composer).toBeVisible();
+      });
+
+      // Nothing was typed, so closing writes nothing.
+      await test.step("cancel the entry", async () => {
+        await bookDetailPage.journal.closeEmptyComposer();
+      });
+
+      await test.step("check the composer closes", async () => {
+        await expect(bookDetailPage.journal.composer).toHaveCount(0);
+      });
+    });
+  });
+
+  test.describe("navigation", () => {
+    test("open the reader from start reading", async ({
+      bookDetailPage,
+      epubReaderPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      // Opening an unread EPUB writes `reading`. That write is the reader's,
+      // so this test leaves it unasserted.
+      await test.step("start reading", async () => {
+        await bookDetailPage.startReading();
+        await epubReaderPage.assertDisplayedFor(uuid);
+      });
+    });
+
+    test("open a book's details from its library table row", async ({
+      libraryPage,
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("show the library as a table", async () => {
+        await libraryPage.goto();
+        await libraryPage.table.switchTo();
+        await expect(libraryPage.table.root).toBeVisible();
+      });
+
+      // #2350: only the cover cell's link opens details, not the row itself.
+      await test.step("open the book from its row", async () => {
+        await expect(
+          libraryPage.table.openLink(TARGET.slug, TARGET.title),
+        ).toBeVisible();
+        await libraryPage.table.openBook(TARGET.slug, TARGET.title);
+      });
+
+      await test.step("check the book shows", async () => {
+        await bookDetailPage.assertDisplayedFor(uuid);
+      });
+    });
+
+    test("return to the library table view from a book's details", async ({
+      libraryPage,
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open a book from the table view", async () => {
+        await libraryPage.goto();
+        await libraryPage.table.switchTo();
+        await expect(libraryPage.table.root).toBeVisible();
+        await expect(
+          libraryPage.table.openLink(TARGET.slug, TARGET.title),
+        ).toBeVisible();
+        await libraryPage.table.openBook(TARGET.slug, TARGET.title);
+        await bookDetailPage.assertDisplayedFor(uuid);
+      });
+
+      await test.step("return through the top nav", async () => {
+        await bookDetailPage.topNav.openLibrary();
+      });
+
+      await test.step("check the library shows as a table", async () => {
+        await libraryPage.assertDisplayed();
+        await expect(libraryPage.table.root).toBeVisible();
+      });
+    });
+
+    test("return to the library grid from the top nav", async ({
+      bookDetailPage,
+      libraryPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("return through the top nav", async () => {
+        await bookDetailPage.topNav.openLibrary();
+      });
+
+      await test.step("check the library shows as a grid", async () => {
+        await libraryPage.assertDisplayed();
+        await expect(libraryPage.grid).toBeVisible();
+      });
+    });
+
+    test("open the author page from the authors line", async ({
+      bookDetailPage,
+      authorPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      const author = TARGET.authors[0]!;
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(bookDetailPage.authorLink(author)).toBeVisible();
+      });
+
+      await test.step("open the author", async () => {
+        await bookDetailPage.openAuthor(author);
+      });
+
+      await test.step("check the author page shows", async () => {
+        await authorPage.assertDisplayed();
+      });
+    });
+
+    test("open the series page from the series kicker", async ({
+      bookDetailPage,
+      seriesPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, SERIES_BOOK.title);
+      const series = SERIES_BOOK.series!;
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(bookDetailPage.seriesLink(series)).toBeVisible();
+      });
+
+      await test.step("open the series", async () => {
+        await bookDetailPage.openSeries(series);
+      });
+
+      await test.step("check the series page shows", async () => {
+        await seriesPage.assertDisplayed();
+      });
+    });
+  });
+
+  test.describe("formats", () => {
+    test("list the epub format with its actions", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const epubRow = bookDetailPage.formatRow("EPUB");
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the epub row shows", async () => {
+        await expect(bookDetailPage.formatSwitcher).toBeVisible();
+        await expect(epubRow.root).toBeVisible();
+        await expect(epubRow.root).toHaveAttribute("data-format", "EPUB");
+        // The row draws the format as a glyph tile, so the code is in the
+        // badge's accessible name rather than its text.
+        await expect(epubRow.badge).toHaveAttribute("aria-label", "EPUB");
+      });
+
+      await test.step("check the epub actions show", async () => {
+        await expect(epubRow.readLink).toBeVisible();
+        await expect(epubRow.readLink).toHaveAttribute("href", /\/read\//);
+        await expect(epubRow.kindleButton).toBeVisible();
+        await expect(epubRow.kindleButton).toBeEnabled();
+      });
+
+      // Alpha has no audio file, so no row in the switcher offers Listen.
+      await test.step("check no listen action shows", async () => {
+        await expect(bookDetailPage.formatListenLinks).toHaveCount(0);
+      });
+    });
+
+    test("open the export menu with the ebook's exports", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const { exportMenu } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the menu starts closed", async () => {
+        await expect(exportMenu.triggerButton).toBeVisible();
+        await expect(exportMenu.panel).toHaveCount(0);
+      });
+
+      await test.step("open the menu", async () => {
+        await exportMenu.open();
+        await expect(exportMenu.panel).toBeVisible();
+      });
+
+      await test.step("check the ebook exports show", async () => {
+        await expect(exportMenu.downloadEpubLink).toHaveAttribute(
+          "href",
+          /\/api\/ebooks\/.+\/download$/,
+        );
+        await expect(exportMenu.downloadEpubLink).toHaveAttribute("download");
+        await expect(exportMenu.sendToKindleButton).toBeVisible();
+        await expect(exportMenu.sendToKindleButton).toBeEnabled();
+        await expect(exportMenu.sendToKoboButton).toBeVisible();
+        await expect(exportMenu.sendToKoboButton).toBeEnabled();
+      });
+
+      await test.step("check no audiobook download shows", async () => {
+        await expect(exportMenu.downloadAudiobookLink).toHaveCount(0);
+      });
+    });
+
+    test("close the export menu by clicking outside it", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const { exportMenu } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the menu", async () => {
+        await bookDetailPage.goto(uuid);
+        await exportMenu.open();
+        await expect(exportMenu.panel).toBeVisible();
+      });
+
+      await test.step("click outside it", async () => {
+        await exportMenu.closeByClickingOutside();
+      });
+
+      await test.step("check the menu closed", async () => {
+        await expect(exportMenu.panel).toHaveCount(0);
+      });
+    });
+
+    test("download a kobo copy named by the book's uuid", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const epubRow = bookDetailPage.formatRow("EPUB");
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book without a directory picker", async () => {
+        await bookDetailPage.presetNoDirectoryPicker();
+        await bookDetailPage.goto(uuid);
+        await expect(epubRow.koboButton).toBeVisible();
+        await expect(epubRow.koboButton).toBeEnabled();
+      });
+
+      const downloads = bookDetailPage.recordDownloads();
+
+      await test.step("send it to kobo", async () => {
+        await epubRow.sendToKobo();
+      });
+
+      // The stem is the book uuid, which the USB import relies on. The
+      // extension is `.kepub.epub` when kepubify converts and `.epub` if not.
+      await test.step("check the download is named by the uuid", async () => {
+        await expect
+          .poll(() => downloads[0], {
+            message: "kobo download name",
+            timeout: 30_000,
+          })
+          .toMatch(new RegExp(`^${uuid}\\.(kepub\\.)?epub$`));
+      });
+    });
+
+    test("send the epub to kindle", async ({
+      bookDetailPage,
+      request,
+      expectMutation,
+    }) => {
+      const epubRow = bookDetailPage.formatRow("EPUB");
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book with kindle sends answered", async () => {
+        await bookDetailPage.stubKindleSend({ status: "sent" });
+        await bookDetailPage.goto(uuid);
+        await expect(epubRow.kindleButton).toBeEnabled();
+      });
+
+      await test.step("send it to kindle", async () => {
+        await expectMutation(kindle.send(uuid), () => epubRow.sendToKindle());
+      });
+
+      await test.step("check the send reports success", async () => {
+        await expect(epubRow.kindleSendStatus).toHaveText(
+          "Sent to your Kindle.",
+        );
+        await expect(epubRow.kindleSendStatus).toHaveClass(/success/);
+      });
+    });
+
+    test("show an error when a kindle send fails", async ({
+      bookDetailPage,
+      request,
+      expectMutation,
+    }) => {
+      const epubRow = bookDetailPage.formatRow("EPUB");
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book with kindle sends failing", async () => {
+        await bookDetailPage.stubKindleSend({
           status: "failed",
           message: "SMTP delivery failed",
-        }),
+        });
+        await bookDetailPage.goto(uuid);
       });
-    }
-    return route.continue();
-  });
 
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/kindle/send",
-      expectedBody: { book_uuid: uuid, file_id: null },
-      expectedStatus: 200,
-    },
-    async () => kindleBtn.click(),
-  );
+      await test.step("send it to kindle", async () => {
+        await expectMutation(kindle.send(uuid), () => epubRow.sendToKindle());
+      });
 
-  // The error surfaces as a persistent toast (it does not auto-dismiss like the
-  // success toast) and can be cleared via its dismiss button.
-  await expect(page.getByTestId("kindle-send-status")).toHaveClass(/error/);
-  await expect(page.getByTestId("kindle-send-status")).toContainText(
-    "SMTP delivery failed",
-  );
-  await page.getByTestId("kindle-toast-dismiss").click();
-  await expect(page.getByTestId("kindle-send-status")).toHaveCount(0);
-});
-
-// ---------------------------------------------------------------------------
-// Action — star rating (F3.2)
-// ---------------------------------------------------------------------------
-
-test("hides other ratings when no one else has rated the book", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await page.route("**/api/rpc/ratings/others", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: "[]" }),
-  );
-
-  await gotoReady(page, `/books/${uuid}`);
-
-  await expect(page.getByTestId("other-ratings")).toHaveCount(0);
-});
-
-test("shows attributed ratings from other users", async ({ page, request }) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  const twoDaysAgo = Math.floor(Date.now() / 1000) - 2 * 86_400;
-  await page.route("**/api/rpc/ratings/others", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify([
-        {
-          user_id: 42,
-          username: "reader",
-          stars: 4.5,
-          updated_at: twoDaysAgo,
-        },
-      ]),
-    }),
-  );
-
-  await gotoReady(page, `/books/${uuid}`);
-
-  const row = page.getByTestId("other-rating-row");
-  await expect(row).toBeVisible();
-  await expect(row).toContainText("R");
-  await expect(row.getByTestId("other-rating-byline")).toHaveText(
-    "reader rated 2 days ago",
-  );
-  await expect(row.getByTestId("other-rating-content")).toHaveCSS(
-    "flex-direction",
-    "column",
-  );
-  await expect(row.getByLabel("4.5 out of 5 stars")).toBeVisible();
-});
-
-test("rates a book a half-star, persists across reload, then un-rates", async ({
-  page,
-  request,
-}) => {
-  // Use a Wirth book so the rating never collides with the alpha-focused
-  // assertions elsewhere in this serial file.
-  const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  const stars = page.getByTestId("rating-stars");
-  await expect(stars).toBeVisible();
-  await expect(page.getByTestId("rating-meta")).toHaveText("Not rated yet");
-
-  // Click the left half of the 5th star → 4.5 → POST set, meta shows "of 5".
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/ratings/set", expectedStatus: 200 },
-    async () => stars.getByRole("button", { name: "Rate 4.5 stars" }).click(),
-  );
-  await expect(page.getByTestId("rating-meta")).toContainText("4.5 of 5");
-
-  // The saved rating survives a reload (the post-mount effect refetches it).
-  await gotoReady(page, `/books/${uuid}`);
-  await expect(page.getByTestId("rating-meta")).toContainText("4.5 of 5");
-
-  // #2352: once rated, the active half-star becomes the un-rate control and
-  // announces it — "Clear your 4.5-star rating" — instead of keeping the
-  // misleading "Rate 4.5 stars". Re-clicking it clears the rating (and cleans
-  // up shared server state for the next run).
-  await expect(
-    page
-      .getByTestId("rating-stars")
-      .getByRole("button", { name: "Clear your 4.5-star rating" }),
-  ).toBeVisible();
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/ratings/clear", expectedStatus: 200 },
-    async () =>
-      page
-        .getByTestId("rating-stars")
-        .getByRole("button", { name: "Clear your 4.5-star rating" })
-        .click(),
-  );
-  await expect(page.getByTestId("rating-meta")).toHaveText("Not rated yet");
-});
-
-test("surfaces an error and leaves the rating unchanged when the save fails", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  await page.route("**/api/rpc/ratings/set", (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "text/plain",
-      body: "rating exploded",
-    }),
-  );
-
-  const stars = page.getByTestId("rating-stars");
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/ratings/set", expectedStatus: 500 },
-    async () => stars.getByRole("button", { name: "Rate 3 stars" }).click(),
-  );
-
-  // The optimistic pick rolls back and the status line reports the failure.
-  await expect(page.getByTestId("rating-meta")).toHaveText(
-    "Couldn't save rating — try again",
-  );
-});
-
-test("renders the read-status control with three segments", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  const control = page.getByTestId("read-status-control");
-  await expect(control).toBeVisible();
-  await expect(control.getByTestId("read-status-unread")).toBeVisible();
-  await expect(control.getByTestId("read-status-reading")).toBeVisible();
-  await expect(control.getByTestId("read-status-finished")).toBeVisible();
-});
-
-test("marks a book finished, persists across reload, then resets to unread", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  const control = page.getByTestId("read-status-control");
-  // Mark finished → POST set, the Finished segment activates, meta updates.
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/read-status/set", expectedStatus: 200 },
-    async () => control.getByTestId("read-status-finished").click(),
-  );
-  await expect(control.getByTestId("read-status-finished")).toHaveClass(
-    /active/,
-  );
-  await expect(page.getByTestId("read-status-meta")).toContainText("Finished");
-
-  // The saved state survives a reload (the post-mount effect refetches it).
-  await gotoReady(page, `/books/${uuid}`);
-  await expect(
-    page.getByTestId("read-status-control").getByTestId("read-status-finished"),
-  ).toHaveClass(/active/);
-
-  // Reset to unread so the shared server state is clean for the next run.
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/read-status/set", expectedStatus: 200 },
-    async () =>
-      page
-        .getByTestId("read-status-control")
-        .getByTestId("read-status-unread")
-        .click(),
-  );
-  await expect(page.getByTestId("read-status-meta")).toHaveText("Not started");
-});
-
-test("reverts the read status and reports an error when the save fails", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  // Establish a known baseline (reading), then force the next save to fail.
-  const control = page.getByTestId("read-status-control");
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/read-status/set", expectedStatus: 200 },
-    async () => control.getByTestId("read-status-reading").click(),
-  );
-  await expect(control.getByTestId("read-status-reading")).toHaveClass(
-    /active/,
-  );
-
-  await page.route("**/api/rpc/read-status/set", (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "text/plain",
-      body: "read-status exploded",
-    }),
-  );
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/read-status/set", expectedStatus: 500 },
-    async () => control.getByTestId("read-status-finished").click(),
-  );
-
-  // The optimistic pick rolls back to reading and the status line reports it.
-  await expect(control.getByTestId("read-status-reading")).toHaveClass(
-    /active/,
-  );
-  await expect(page.getByTestId("read-status-meta")).toHaveText(
-    "Couldn't save — try again",
-  );
-
-  // Clean up shared state: drop the route override and reset to unread.
-  await page.unroute("**/api/rpc/read-status/set");
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/read-status/set", expectedStatus: 200 },
-    async () => control.getByTestId("read-status-unread").click(),
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Action — saved passages (highlights)
-// ---------------------------------------------------------------------------
-
-/// Seed one highlight on PASSAGES_BOOK and return its uuid, id and quote. The
-/// quote is stamped so a re-run never collides with a leftover row on the
-/// shared, persistent dev DB. `note` needs a follow-up PATCH — `CreateHighlight`
-/// carries no note field, so passing one to the POST would be silently dropped.
-async function seedPassage(
-  request: APIRequestContext,
-  cfi: string,
-  note?: string,
-): Promise<{ uuid: string; id: number; quote: string }> {
-  const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
-  const quote = `saved passage ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const created = await request.post("/api/highlights", {
-    data: {
-      book_uuid: uuid,
-      epub_cfi_range: cfi,
-      color: "violet",
-      text: quote,
-    },
-  });
-  expect(created.status(), "seed highlight").toBe(200);
-  const { id } = (await created.json()) as { id: number };
-  if (note !== undefined) {
-    const patched = await request.patch(`/api/highlights/${id}/note`, {
-      data: { note },
+      await test.step("check the send reports the failure", async () => {
+        await expect(epubRow.kindleSendStatus).toHaveClass(/error/);
+        await expect(epubRow.kindleSendStatus).toContainText(
+          "SMTP delivery failed",
+        );
+      });
     });
-    expect(patched.status(), "seed highlight note").toBe(204);
-  }
-  return { uuid, id, quote };
-}
 
-/// Delete every highlight on `uuid`.
-async function clearPassages(request: APIRequestContext, uuid: string) {
-  const list = await request.get(`/api/highlights/book/${uuid}`);
-  expect(list.status(), "list highlights").toBe(200);
-  for (const h of (await list.json()) as { id: number }[]) {
-    expect((await request.delete(`/api/highlights/${h.id}`)).status()).toBe(
-      204,
-    );
-  }
-}
-
-// Start from a known-empty book. These tests assert the empty state *returns*
-// after a delete, so residue from an interrupted earlier run would fail them
-// for the wrong reason.
-test.beforeAll(async ({ request }) => {
-  await clearPassages(
-    request,
-    await fetchBookUuidByTitle(request, PASSAGES_BOOK.title),
-  );
-});
-
-test("lists a saved passage with its locator, note and date, then deletes it", async ({
-  page,
-  request,
-}) => {
-  const { uuid, quote } = await seedPassage(
-    request,
-    "epubcfi(/6/14[chap03]!/4/2,/1:0,/1:40)",
-    "the line that stuck",
-  );
-
-  await gotoReady(page, `/books/${uuid}`);
-
-  // The empty state must give way to the list.
-  await expect(page.getByTestId("highlights-empty")).toHaveCount(0);
-  const card = page.getByTestId("highlight-card").filter({ hasText: quote });
-  await expect(card).toHaveCount(1);
-  await expect(card.getByTestId("highlight-note")).toHaveText(
-    "the line that stuck",
-  );
-  // The locator names the chapter's own TOC title once the book's structure
-  // is known (#2463), and falls back to the CFI's raw spine step
-  // (/14 → section 7) until then (#2356) — either is a valid locator for the
-  // same position, so assert the shape rather than one of the two. The date
-  // comes from the server-assigned created_at.
-  await expect(card.getByTestId("highlight-meta")).toContainText(
-    /^.+ · saved /,
-  );
-  await expect(card.getByTestId("highlight-meta")).toContainText("saved ");
-
-  // Delete it — the RPC must fire and the card must leave the list.
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/highlights\/delete(?:\?|$)/,
-      expectedStatus: 200,
-    },
-    async () => card.getByTestId("highlight-delete").click(),
-  );
-  await expect(page.getByText(quote)).toHaveCount(0);
-  await expect(page.getByTestId("highlights-empty")).toBeVisible();
-});
-
-test("keeps the passage listed when the delete request fails", async ({
-  page,
-  request,
-}) => {
-  const { uuid, quote } = await seedPassage(
-    request,
-    "epubcfi(/6/6!/4/2,/1:0,/1:20)",
-  );
-
-  await gotoReady(page, `/books/${uuid}`);
-  const card = page.getByTestId("highlight-card").filter({ hasText: quote });
-  await expect(card).toHaveCount(1);
-
-  await page.route("**/api/rpc/highlights/delete*", (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "text/plain",
-      body: "delete exploded",
-    }),
-  );
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/highlights\/delete(?:\?|$)/,
-      expectedStatus: 500,
-    },
-    async () => card.getByTestId("highlight-delete").click(),
-  );
-
-  // The row is only dropped once the server confirms, so it survives.
-  await expect(card).toHaveCount(1);
-
-  // Clean up shared state: drop the override and delete for real.
-  await page.unroute("**/api/rpc/highlights/delete*");
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/highlights\/delete(?:\?|$)/,
-      expectedStatus: 200,
-    },
-    async () => card.getByTestId("highlight-delete").click(),
-  );
-  await expect(page.getByText(quote)).toHaveCount(0);
-});
-
-test("opens the reader at the passage via a cfi deep link", async ({
-  page,
-  request,
-}) => {
-  const cfi = "epubcfi(/6/4!/4/2,/1:0,/1:30)";
-  const { uuid, id, quote } = await seedPassage(request, cfi);
-
-  await gotoReady(page, `/books/${uuid}`);
-  const card = page.getByTestId("highlight-card").filter({ hasText: quote });
-  const open = card.getByTestId("highlight-open");
-
-  // The link carries the percent-encoded CFI so the reader boots at the
-  // passage rather than resuming wherever this book was last left off.
-  // Assert the decoded contract, not the escaping style — the Rust encoder
-  // escapes `!()` too, which `encodeURIComponent` leaves alone.
-  const href = await open.getAttribute("href");
-  expect(href).not.toBeNull();
-  const linked = new URL(href as string, page.url());
-  expect(linked.pathname).toBe(`/read/${uuid}`);
-  expect(linked.searchParams.get("cfi")).toBe(cfi);
-
-  await open.click();
-  await expect(page).toHaveURL(
-    (url) =>
-      url.pathname === `/read/${uuid}` && url.searchParams.get("cfi") === cfi,
-  );
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-  // Clean up the seeded highlight so re-runs start from the empty state.
-  expect((await request.delete(`/api/highlights/${id}`)).status()).toBe(204);
-});
-
-test("opens the quote-card editor in a modal and closes it again", async ({
-  page,
-  request,
-}) => {
-  const { uuid, id, quote } = await seedPassage(
-    request,
-    "epubcfi(/6/10!/4/2,/1:0,/1:25)",
-  );
-
-  await gotoReady(page, `/books/${uuid}`);
-  const card = page.getByTestId("highlight-card").filter({ hasText: quote });
-  await card.getByTestId("highlight-quote").click();
-
-  // The shared quote-card editor mounts in the app modal shell with the
-  // passage on the preview and the export actions available.
-  const modal = page.getByTestId("quote-card-modal");
-  await expect(modal).toBeVisible();
-  await expect(
-    modal.getByRole("heading", { name: "Make a quote card" }),
-  ).toBeVisible();
-  await expect(modal).toContainText(quote);
-  await expect(modal.getByTestId("quote-download")).toBeVisible();
-  await expect(modal.getByTestId("quote-copy-image")).toBeVisible();
-
-  // Typography controls restyle the preview in place — no request fires, so
-  // assert the rendered card rather than a network contract.
-  const preview = modal.getByTestId("quote-preview");
-  const previewBody = modal.getByTestId("quote-preview-body");
-  await expect(preview).toHaveCSS("font-family", /Cormorant Garamond/);
-  await modal.getByRole("button", { name: "Sans", exact: true }).click();
-  await expect(preview).toHaveCSS("font-family", /Instrument Sans/);
-
-  await expect(previewBody).toHaveCSS("font-style", "italic");
-  await modal.getByRole("button", { name: "Italic", exact: true }).click();
-  await expect(previewBody).toHaveCSS("font-style", "normal");
-  await modal.getByRole("button", { name: "Bold", exact: true }).click();
-  await expect(previewBody).toHaveCSS("font-weight", "700");
-  await modal.getByRole("button", { name: "L", exact: true }).click();
-  await expect(previewBody).toHaveCSS("font-size", "27px");
-
-  // Close via the X — no mutation fires; the card stays listed.
-  await modal.getByRole("button", { name: "Close" }).click();
-  await expect(modal).toHaveCount(0);
-  await expect(card).toHaveCount(1);
-
-  // Clean up the seeded highlight so re-runs start from the empty state.
-  expect((await request.delete(`/api/highlights/${id}`)).status()).toBe(204);
-});
-
-test("lists every saved passage with no show-more control", async ({
-  page,
-  request,
-}) => {
-  // Earlier tests in this serial file leave passages behind on PASSAGES_BOOK,
-  // so clear it first — the visible count is the whole assertion here.
-  const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
-  await clearPassages(request, uuid);
-  const ids: number[] = [];
-  for (let i = 0; i < 8; i++) {
-    ids.push((await seedPassage(request, `epubcfi(/6/${4 + i * 2}!/4/2)`)).id);
-  }
-
-  await gotoReady(page, `/books/${uuid}`);
-  // The stop scrolls the list rather than holding rows back, so all eight
-  // are in the DOM and nothing offers to load more.
-  await expect(page.getByTestId("highlight-card")).toHaveCount(8);
-  await expect(page.getByTestId("highlights-show-more")).toHaveCount(0);
-
-  // Clean up shared state so the next run starts from the empty state.
-  for (const id of ids) {
-    expect((await request.delete(`/api/highlights/${id}`)).status()).toBe(204);
-  }
-});
-
-test("authors line links to the author page", async ({ page, request }) => {
-  // `alpha` has a single author (Ada Lovelace); the "by …" line renders the
-  // name as a router link to /authors/:id.
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  const authorLink = page
-    .getByTestId("book-authors")
-    .getByRole("link", { name: TARGET.authors[0] });
-  await expect(authorLink).toBeVisible();
-  await authorLink.click();
-  await expect(page).toHaveURL(/\/authors\/\d+$/);
-});
-
-test("series kicker links to the series page", async ({ page, request }) => {
-  // `beta` is "Beta in the Series" #1 of "Pioneers" — the Home stop's kicker
-  // leads with the series name as a router link to /series/:id.
-  const beta = FIXTURE_BOOKS.find((b) => b.slug === "beta")!;
-  const uuid = await fetchBookUuidByTitle(request, beta.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  const seriesLink = page.getByRole("link", { name: /Pioneers/ }).first();
-  await expect(seriesLink).toBeVisible();
-  await seriesLink.click();
-  await expect(page).toHaveURL(/\/series\/\d+$/);
-});
-
-// ---------------------------------------------------------------------------
-// Audiobook-only seed: re-seeds the server with the audiobook fixtures so
-// the audio-only "Start listening" CTA can be exercised. Sharded into a
-// `describe` block so the audiobook re-seed only runs for the listen-CTA
-// test — the rest of the spec keeps the ebook library it set up above.
-// ---------------------------------------------------------------------------
-
-test.describe("audiobook-only seed", () => {
-  test.beforeAll(async ({ request }) => {
-    await seedAudiobookLibrary(
+    test("dismiss a failed kindle send's error", async ({
+      bookDetailPage,
       request,
-      audiobookFixturesDir(),
-      AUDIOBOOK_BOOK_COUNT,
-    );
-  });
+      expectMutation,
+    }) => {
+      const epubRow = bookDetailPage.formatRow("EPUB");
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-  // The merge-only MP3 pair. Merging them (F5.10 allows same-format merges)
-  // is what produces a real multi-file `book_files` group for #1005's
-  // file-picker coverage below. They are reserved for the merge tests
-  // precisely so this mutation stays invisible to the specs running in
-  // parallel against the same server — see `fixtures/audiobooks.ts`.
-  const PRIMARY_MP3 = MERGE_PRIMARY;
-  const SECOND_MP3 = MERGE_SECONDARY;
-
-  // Read-only audiobook for the non-mutating CTA test below. It must NOT be
-  // one of the merge pair: that test asserts the *absence* of a file picker,
-  // which a concurrent merge would falsify.
-  const SOLO_MP3 = AUDIOBOOK_BOOKS.find(
-    (b) =>
-      b.format === "MP3" &&
-      b.source === "generated" &&
-      !MERGE_ONLY_TITLES.includes(b.title),
-  )!;
-
-  test("Start listening navigates to /listen/:uuid for audio-only books", async ({
-    page,
-    request,
-  }) => {
-    // Pick an MP3 audiobook with no ebook companion — has_audio is true
-    // and has_ebook is false, so the hero renders "Start listening" as
-    // the primary CTA (the secondary "Listen" button only appears when
-    // both formats coexist).
-    const uuid = await fetchBookUuidByTitle(request, SOLO_MP3.title);
-    await gotoReady(page, `/books/${uuid}`);
-
-    const startListening = page.getByTestId("start-listening");
-    await expect(startListening).toBeVisible();
-    await expect(startListening).toHaveAttribute(
-      "href",
-      new RegExp(`/listen/${uuid}$`),
-    );
-
-    // AC2 (#1005): a single-file audiobook shows no file picker next to
-    // the CTA — the picker only appears once a book has >1 file of the
-    // format that CTA opens (see the merge-based test below).
-    await expect(page.getByTestId("listen-file-picker-trigger")).toHaveCount(0);
-
-    // Clicking the primary CTA must SPA-navigate to the listen page — with
-    // no trailing `?`, per #2256.
-    await startListening.click();
-    await expect(page).toHaveURL(new RegExp(`/listen/${uuid}$`));
-  });
-
-  // ---------------------------------------------------------------------------
-  // #1005 — Listen file picker for a multi-file (duplicate-format) audiobook
-  // ---------------------------------------------------------------------------
-
-  test("shows a Listen file picker after merging two same-format audiobooks, and picking a file navigates with its file_id", async ({
-    page,
-    request,
-  }) => {
-    // Serialize against merge.spec's audiobook merge: both mutate "The
-    // Analytical Audiobook" on the shared per-shard server, so running them in
-    // parallel workers corrupts this test's two-file state. The lock leaves the
-    // fixture restored (via the finally undo) before releasing. `test.slow()`
-    // covers the worst case of waiting out the other holder plus this run.
-    test.slow();
-    await withLock("audiobook-merge", async () => {
-      const primaryUuid = await fetchBookUuidByTitle(
-        request,
-        PRIMARY_MP3.title,
-      );
-      const secondUuid = await fetchBookUuidByTitle(request, SECOND_MP3.title);
-
-      // Arrange: merge SECOND into PRIMARY via the RPC directly (the merge
-      // dialog UI itself is covered by merge.spec.ts) so PRIMARY ends up with
-      // two MP3 `book_files` rows — the duplicate-format scenario #1005's
-      // picker targets. `merge_log_id` is the undo handle used in `finally`.
-      const mergeResp = await request.post("/api/rpc/merge-books", {
-        data: { source_uuid: secondUuid, target_uuid: primaryUuid },
+      await test.step("open the book with kindle sends failing", async () => {
+        await bookDetailPage.stubKindleSend({
+          status: "failed",
+          message: "SMTP delivery failed",
+        });
+        await bookDetailPage.goto(uuid);
       });
-      expect(mergeResp.status(), "POST /api/rpc/merge-books failed").toBe(200);
-      const { merge_log_id: mergeLogId } = (await mergeResp.json()) as {
-        merge_log_id: number;
-      };
 
-      try {
-        await gotoReady(page, `/books/${primaryUuid}`);
+      await test.step("send it to kindle", async () => {
+        await expectMutation(kindle.send(uuid), () => epubRow.sendToKindle());
+        await expect(epubRow.kindleSendStatus).toHaveClass(/error/);
+      });
 
-        // AC1: a book with >1 file of the format the CTA opens shows a way
-        // to pick which file to open before listening.
-        const trigger = page.getByTestId("listen-file-picker-trigger");
-        await expect(trigger).toBeVisible();
-        await expect(trigger).toHaveText(/Start listening\s*▾/);
-        await expect(page.getByTestId("listen-file-picker-panel")).toHaveCount(
+      // An error toast stays up until dismissed, unlike the success toast.
+      await test.step("dismiss the error", async () => {
+        await epubRow.dismissKindleToast();
+        await expect(epubRow.kindleSendStatus).toHaveCount(0);
+      });
+    });
+  });
+
+  test.describe("from the same hand", () => {
+    test("show the author's other books", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the row shows", async () => {
+        await expect(bookDetailPage.fromSameHandRow).toBeVisible();
+        await expect(bookDetailPage.fromSameHandEmptyMessage).toHaveCount(0);
+      });
+
+      // The page drops the book's own tile, so only the others show.
+      await test.step("check the row holds the other books", async () => {
+        await expect(bookDetailPage.fromSameHandTiles).toHaveCount(
+          WIRTH_OTHERS.length,
+        );
+        await expect(
+          bookDetailPage.fromSameHandCover(WIRTH_LEAD.title),
+        ).toHaveCount(0);
+      });
+    });
+
+    test("open another book by the author from its cover", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
+      const siblingUuid = await fetchBookUuidByTitle(request, SIBLING.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(bookDetailPage.fromSameHandRow).toBeVisible();
+      });
+
+      await test.step("open a sibling from the row", async () => {
+        await bookDetailPage.openSameHandBook(SIBLING.title);
+      });
+
+      await test.step("check the sibling shows", async () => {
+        await bookDetailPage.assertDisplayedFor(siblingUuid);
+      });
+    });
+
+    // Hedy Lamarr is single-book across both libraries. Ada Lovelace is not,
+    // since the audiobook seed gives her a second book.
+    test("show the empty state for an author's only book", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, LAMARR_BOOK.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the empty state shows", async () => {
+        await expect(bookDetailPage.fromSameHandHeading).toBeVisible();
+        await expect(bookDetailPage.fromSameHandEmptyMessage).toBeVisible();
+        await expect(bookDetailPage.fromSameHandRow).toHaveCount(0);
+      });
+    });
+
+    // #2478: the block called itself the only book by its author while the
+    // author fetch was still in flight.
+    test("show a loading note until the author's books load", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
+
+      const release = await test.step("hold the author fetch", async () => {
+        return bookDetailPage.holdAuthorFetch();
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.gotoUnsettled(uuid);
+      });
+
+      await test.step("check the section says it is still looking", async () => {
+        await expect(bookDetailPage.fromSameHandLoadingMessage).toBeVisible();
+        await expect(bookDetailPage.fromSameHandEmptyMessage).toHaveCount(0);
+        await expect(bookDetailPage.onlyBookByNote).toHaveCount(0);
+      });
+
+      await test.step("let the fetch land", async () => {
+        release();
+      });
+
+      await test.step("check the row replaces the note", async () => {
+        await expect(bookDetailPage.fromSameHandRow).toBeVisible();
+        await expect(bookDetailPage.fromSameHandLoadingMessage).toHaveCount(0);
+      });
+    });
+  });
+
+  // Read status outlives a test, so the ones that rely on it park it first.
+  test.describe("read status", () => {
+    test("show the read status control with its three segments", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the control shows", async () => {
+        const control = bookDetailPage.readStatus;
+        await expect(control.root).toBeVisible();
+        await expect(control.segmentButton("unread")).toBeVisible();
+        await expect(control.segmentButton("reading")).toBeVisible();
+        await expect(control.segmentButton("finished")).toBeVisible();
+      });
+    });
+
+    test("mark a book finished", async ({
+      bookDetailPage,
+      request,
+      presetReadStatus,
+      storedReadStatus,
+      expectMutation,
+    }) => {
+      const control = bookDetailPage.readStatus;
+      const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
+
+      await test.step("park the book unread", async () => {
+        await presetReadStatus(uuid, "unread");
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("mark it finished", async () => {
+        await expectMutation(readStatus.set(uuid, "finished"), () =>
+          control.mark("finished"),
+        );
+      });
+
+      await test.step("check the control shows finished", async () => {
+        await expect(control.segmentButton("finished")).toHaveClass(/active/);
+        await expect(control.metaText).toContainText("Finished");
+      });
+
+      await test.step("check the server stored finished", async () => {
+        await expect
+          .poll(() => storedReadStatus(uuid), { message: "stored status" })
+          .toBe("finished");
+      });
+    });
+
+    test("show the saved read status when the book opens", async ({
+      bookDetailPage,
+      request,
+      presetReadStatus,
+    }) => {
+      const control = bookDetailPage.readStatus;
+      const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
+
+      await test.step("park the book finished", async () => {
+        await presetReadStatus(uuid, "finished");
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the control shows finished", async () => {
+        await expect(control.segmentButton("finished")).toHaveClass(/active/);
+      });
+    });
+
+    test("mark a finished book unread", async ({
+      bookDetailPage,
+      request,
+      presetReadStatus,
+      storedReadStatus,
+      expectMutation,
+    }) => {
+      const control = bookDetailPage.readStatus;
+      const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
+
+      await test.step("park the book finished", async () => {
+        await presetReadStatus(uuid, "finished");
+      });
+
+      // The parked segment is active only once the saved status has loaded.
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(control.segmentButton("finished")).toHaveClass(/active/);
+      });
+
+      await test.step("mark it unread", async () => {
+        await expectMutation(readStatus.set(uuid, "unread"), () =>
+          control.mark("unread"),
+        );
+      });
+
+      await test.step("check the control shows not started", async () => {
+        await expect(control.metaText).toHaveText("Not started");
+      });
+
+      await test.step("check the server stored unread", async () => {
+        await expect
+          .poll(() => storedReadStatus(uuid), { message: "stored status" })
+          .toBe("unread");
+      });
+    });
+
+    test("mark an unread book reading", async ({
+      bookDetailPage,
+      request,
+      presetReadStatus,
+      storedReadStatus,
+      expectMutation,
+    }) => {
+      const control = bookDetailPage.readStatus;
+      const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
+
+      await test.step("park the book unread", async () => {
+        await presetReadStatus(uuid, "unread");
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("mark it reading", async () => {
+        await expectMutation(readStatus.set(uuid, "reading"), () =>
+          control.mark("reading"),
+        );
+      });
+
+      await test.step("check the control shows reading", async () => {
+        await expect(control.segmentButton("reading")).toHaveClass(/active/);
+      });
+
+      await test.step("check the server stored reading", async () => {
+        await expect
+          .poll(() => storedReadStatus(uuid), { message: "stored status" })
+          .toBe("reading");
+      });
+    });
+
+    test("keep the read status when its save fails", async ({
+      bookDetailPage,
+      request,
+      presetReadStatus,
+      expectMutation,
+    }) => {
+      const control = bookDetailPage.readStatus;
+      const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
+
+      await test.step("park the book reading", async () => {
+        await presetReadStatus(uuid, "reading");
+      });
+
+      await test.step("open the book while saves fail", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(control.segmentButton("reading")).toHaveClass(/active/);
+        await bookDetailPage.forceServerError(readStatus.set(uuid, "finished"));
+      });
+
+      await test.step("mark it finished", async () => {
+        await expectMutation(failing(readStatus.set(uuid, "finished")), () =>
+          control.mark("finished"),
+        );
+      });
+
+      // The optimistic pick rolls back and the line under the control says so.
+      await test.step("check the control still shows reading", async () => {
+        await expect(control.segmentButton("reading")).toHaveClass(/active/);
+        await expect(control.metaText).toHaveText("Couldn't save — try again");
+      });
+
+      await test.step("stop failing saves", async () => {
+        await bookDetailPage.stopForcingServerError(
+          readStatus.set(uuid, "finished"),
+        );
+      });
+
+      await test.step("mark it finished again", async () => {
+        await expectMutation(readStatus.set(uuid, "finished"), () =>
+          control.mark("finished"),
+        );
+      });
+
+      await test.step("check the control shows finished", async () => {
+        await expect(control.segmentButton("finished")).toHaveClass(/active/);
+      });
+    });
+  });
+
+  test.describe("saved passages", () => {
+    // Passages outlive a test, so each starts from none and seeds its own.
+    test.beforeEach(
+      "clear the book's saved passages",
+      async ({ request, sweepHighlights }) => {
+        const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+        await sweepHighlights(uuid);
+      },
+    );
+
+    test("list a saved passage with its locator, note and date", async ({
+      bookDetailPage,
+      request,
+      highlightOn,
+      highlightsRequests,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+
+      const passage =
+        await test.step("save a passage with a note", async () => {
+          const seeded = await highlightOn(uuid, {
+            epub_cfi_range: "epubcfi(/6/14[chap03]!/4/2,/1:0,/1:40)",
+          });
+          const noted = await highlightsRequests.patchHighlightNote(
+            seeded.id,
+            "the line that stuck",
+          );
+          expect(noted.status(), "seed highlight note").toBe(204);
+          return seeded;
+        });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      // The locator names the chapter's TOC title once the book's structure is
+      // known (#2463) and the raw spine section until then (#2356), so only
+      // its shape is asserted. The date is the server's `created_at`.
+      await test.step("check the passage shows", async () => {
+        const card = bookDetailPage.savedPassageCard(passage.text);
+        await expect(bookDetailPage.savedPassagesEmptyMessage).toHaveCount(0);
+        await expect(card.root).toHaveCount(1);
+        await expect(card.noteText).toHaveText("the line that stuck");
+        await expect(card.metaText).toContainText(/^.+ · saved /);
+      });
+    });
+
+    test("delete a saved passage", async ({
+      bookDetailPage,
+      request,
+      highlightOn,
+      seededHighlightIds,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+      const passage = await highlightOn(uuid);
+      const card = bookDetailPage.savedPassageCard(passage.text);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("delete the passage", async () => {
+        await expectMutation(highlights.delete(), () => card.delete());
+        seededHighlightIds.delete(passage.id);
+      });
+
+      await test.step("check the list is empty", async () => {
+        await expect(card.root).toHaveCount(0);
+        await expect(bookDetailPage.savedPassagesEmptyMessage).toBeVisible();
+      });
+    });
+
+    test("keep a saved passage listed when its delete fails", async ({
+      bookDetailPage,
+      request,
+      highlightOn,
+      seededHighlightIds,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+      const passage = await highlightOn(uuid);
+      const card = bookDetailPage.savedPassageCard(passage.text);
+
+      await test.step("open the book while deletes fail", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(card.root).toHaveCount(1);
+        await bookDetailPage.forceServerError(highlights.delete());
+      });
+
+      await test.step("delete the passage", async () => {
+        await expectMutation(failing(highlights.delete()), () => card.delete());
+      });
+
+      // The row is only dropped once the server confirms.
+      await test.step("check the passage is still listed", async () => {
+        await expect(card.root).toHaveCount(1);
+      });
+
+      await test.step("stop failing deletes", async () => {
+        await bookDetailPage.stopForcingServerError(highlights.delete());
+      });
+
+      await test.step("delete the passage again", async () => {
+        await expectMutation(highlights.delete(), () => card.delete());
+        seededHighlightIds.delete(passage.id);
+      });
+
+      await test.step("check the passage is gone", async () => {
+        await expect(card.root).toHaveCount(0);
+      });
+    });
+
+    // Opening an unread EPUB writes `reading`. That write is the reader's, so
+    // this test leaves it unasserted.
+    test("open the reader at a saved passage", async ({
+      bookDetailPage,
+      epubReaderPage,
+      request,
+      highlightOn,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+      const cfi = "epubcfi(/6/4!/4/2,/1:0,/1:30)";
+      const passage = await highlightOn(uuid, { epub_cfi_range: cfi });
+      const card = bookDetailPage.savedPassageCard(passage.text);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      // The link carries the percent-encoded position, so the reader opens at
+      // the passage and not at the saved one. Only the decoded form is checked.
+      await test.step("check the passage links to its position", async () => {
+        await expect
+          .poll(() => card.linkedPassage(), { message: "passage link" })
+          .toEqual({ path: `/read/${uuid}`, cfi });
+      });
+
+      await test.step("open it in the book", async () => {
+        await card.openInBook();
+        await epubReaderPage.assertDisplayedFor(uuid, cfi);
+      });
+    });
+
+    test("open a passage's quote card editor", async ({
+      bookDetailPage,
+      request,
+      highlightOn,
+    }) => {
+      const { quoteCardModal } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+      const passage = await highlightOn(uuid);
+      const card = bookDetailPage.savedPassageCard(passage.text);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("open the quote card editor", async () => {
+        await card.openQuoteCard();
+      });
+
+      await test.step("check the editor shows the passage", async () => {
+        await expect(quoteCardModal.root).toBeVisible();
+        await expect(quoteCardModal.heading).toBeVisible();
+        await expect(quoteCardModal.root).toContainText(passage.text);
+        await expect(quoteCardModal.downloadButton).toBeVisible();
+        await expect(quoteCardModal.copyButton).toBeVisible();
+      });
+    });
+
+    // The controls restyle the preview in place and send no request.
+    test("restyle the quote card preview", async ({
+      bookDetailPage,
+      request,
+      highlightOn,
+    }) => {
+      const { quoteCardModal } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+      const passage = await highlightOn(uuid);
+
+      await test.step("open the quote card editor", async () => {
+        await bookDetailPage.goto(uuid);
+        await bookDetailPage.savedPassageCard(passage.text).openQuoteCard();
+        await expect(quoteCardModal.root).toBeVisible();
+      });
+
+      await test.step("pick the sans font", async () => {
+        await expect(quoteCardModal.preview).toHaveCSS(
+          "font-family",
+          /Cormorant Garamond/,
+        );
+        await quoteCardModal.chooseFont("Sans");
+        await expect(quoteCardModal.preview).toHaveCSS(
+          "font-family",
+          /Instrument Sans/,
+        );
+      });
+
+      await test.step("toggle italic and bold", async () => {
+        await expect(quoteCardModal.previewBody).toHaveCSS(
+          "font-style",
+          "italic",
+        );
+        await quoteCardModal.toggleStyle("Italic");
+        await expect(quoteCardModal.previewBody).toHaveCSS(
+          "font-style",
+          "normal",
+        );
+        await quoteCardModal.toggleStyle("Bold");
+        await expect(quoteCardModal.previewBody).toHaveCSS(
+          "font-weight",
+          "700",
+        );
+      });
+
+      await test.step("pick the large size", async () => {
+        await quoteCardModal.chooseSize("L");
+        await expect(quoteCardModal.previewBody).toHaveCSS("font-size", "27px");
+      });
+    });
+
+    test("close the quote card editor", async ({
+      bookDetailPage,
+      request,
+      highlightOn,
+    }) => {
+      const { quoteCardModal } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+      const passage = await highlightOn(uuid);
+      const card = bookDetailPage.savedPassageCard(passage.text);
+
+      await test.step("open the quote card editor", async () => {
+        await bookDetailPage.goto(uuid);
+        await card.openQuoteCard();
+        await expect(quoteCardModal.root).toBeVisible();
+      });
+
+      await test.step("close it", async () => {
+        await quoteCardModal.close();
+      });
+
+      await test.step("check the passage is still listed", async () => {
+        await expect(quoteCardModal.root).toHaveCount(0);
+        await expect(card.root).toHaveCount(1);
+      });
+    });
+
+    test("list every saved passage with no show more control", async ({
+      bookDetailPage,
+      request,
+      highlightOn,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+
+      await test.step("save eight passages", async () => {
+        for (let i = 0; i < 8; i++) {
+          await highlightOn(uuid, {
+            epub_cfi_range: `epubcfi(/6/${4 + i * 2}!/4/2)`,
+          });
+        }
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      // The stop scrolls the list rather than holding rows back, so all eight
+      // are in the page and nothing offers to load more.
+      await test.step("check every passage is listed", async () => {
+        await expect(bookDetailPage.savedPassageCards).toHaveCount(8);
+        await expect(bookDetailPage.showMorePassagesButton).toHaveCount(0);
+      });
+    });
+  });
+
+  // Last in the file, because its seed adds the audiobooks to the library the
+  // earlier groups read.
+  test.describe("listening", () => {
+    test.beforeAll("seed the audiobook library", async ({ request }) => {
+      await seedAudiobookLibrary(
+        request,
+        audiobookFixturesDir(),
+        AUDIOBOOK_BOOK_COUNT,
+      );
+    });
+
+    test("show start listening with no file picker on a single file audiobook", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, SOLO_MP3.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      // #1005: the picker appears only once a book has more than one file of
+      // the format the action opens.
+      await test.step("check start listening shows without a picker", async () => {
+        await expect(bookDetailPage.startListeningButton).toBeVisible();
+        await expect(bookDetailPage.startListeningButton).toHaveAttribute(
+          "href",
+          new RegExp(`/listen/${uuid}$`),
+        );
+        await expect(bookDetailPage.listenFilePicker.triggerButton).toHaveCount(
           0,
         );
-        await trigger.click();
-        const panel = page.getByTestId("listen-file-picker-panel");
-        await expect(panel).toBeVisible();
-        await expect(page.getByTestId("listen-file-picker-heading")).toHaveText(
-          "2 files · choose one",
-        );
-        await expect(panel.getByRole("link")).toHaveCount(2);
-        await expect(panel.getByRole("link").first()).toContainText(
-          "Audiobook ·",
-        );
-        await expect(panel.getByRole("link").first()).toContainText(
-          /\d+(?:\.\d+)? [KMGT]?B/,
-        );
-
-        // Picking the second (non-default) file navigates to /listen/:uuid
-        // with that file's id, and the manifest fetch carries the same id.
-        const [manifestReq] = await Promise.all([
-          page.waitForRequest((req) =>
-            req
-              .url()
-              .includes(`/api/audiobooks/${primaryUuid}/manifest?file_id=`),
-          ),
-          panel.getByRole("link").nth(1).click(),
-        ]);
-        expect(manifestReq.url()).toMatch(
-          new RegExp(`/api/audiobooks/${primaryUuid}/manifest\\?file_id=\\d+$`),
-        );
-        await expect(page).toHaveURL(
-          new RegExp(`/listen/${primaryUuid}\\?file_id=\\d+$`),
-        );
-      } finally {
-        // Undo — restores SECOND as its own book so later specs (and re-runs
-        // of this one) see the pre-merge fixture state, mirroring
-        // merge.spec.ts's own undo-as-cleanup pattern.
-        const undoResp = await request.post("/api/rpc/merge-books/undo", {
-          data: { merge_log_id: mergeLogId },
-        });
-        expect(undoResp.status(), "POST /api/rpc/merge-books/undo failed").toBe(
-          200,
-        );
-      }
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Regression: picking a different part of the *already-playing* book must
-  // switch parts. The app-root web driver used to react only to the book uuid
-  // (constant across a book's files), so re-picking a file on the active book
-  // silently kept part 1. Assert a fresh manifest fetch fires for the newly
-  // selected file_id even when the uuid is unchanged.
-  // ---------------------------------------------------------------------------
-
-  test("re-picking a different part of the already-active audiobook reloads onto that part", async ({
-    page,
-    request,
-  }) => {
-    test.slow();
-    await withLock("audiobook-merge", async () => {
-      const primaryUuid = await fetchBookUuidByTitle(
-        request,
-        PRIMARY_MP3.title,
-      );
-      const secondUuid = await fetchBookUuidByTitle(request, SECOND_MP3.title);
-
-      const mergeResp = await request.post("/api/rpc/merge-books", {
-        data: { source_uuid: secondUuid, target_uuid: primaryUuid },
       });
-      expect(mergeResp.status(), "POST /api/rpc/merge-books failed").toBe(200);
-      const { merge_log_id: mergeLogId } = (await mergeResp.json()) as {
-        merge_log_id: number;
-      };
+    });
 
-      try {
-        // The two audio `book_files` rows the merge produced, in file-picker
-        // order (`GET /api/ebooks/:uuid` returns them by ordinal).
-        const detailResp = await request.get(`/api/ebooks/${primaryUuid}`);
-        expect(detailResp.status(), "GET /api/ebooks/:uuid failed").toBe(200);
-        const detail = (await detailResp.json()) as {
-          book_files: { id: number; format: string }[];
-        };
-        const audioIds = detail.book_files
-          .filter((f) => /^(mp3|m4b|m4a)$/i.test(f.format))
-          .map((f) => f.id);
-        expect(audioIds.length, "expected two audio files after merge").toBe(2);
+    test("open the listen page from start listening", async ({
+      bookDetailPage,
+      listenPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, SOLO_MP3.title);
 
-        // The whole flow below is one single-page-app session: a single full
-        // load of the book-detail page, then every navigation is a real Dioxus
-        // `<Link>` (the file picker) or an in-app history transition
-        // (`goBack`). The `__repickSentinel` on `window` is set once after that
-        // initial load and must survive to the end — a full page load anywhere
-        // clears it, and a full reload refetches the manifest regardless of the
-        // app-root driver fix, so the sentinel is what proves the *driver* (not
-        // a reload) rebooted onto the newly-picked part.
-        //
-        // (A raw injected `<a>` is NOT usable here: dioxus-web routes clicks
-        // through its `Link` components, not a document-level delegated
-        // listener, so an injected anchor full-page-loads and defeats the
-        // sentinel. The real picker links are the only faithful in-app nav.)
-        const manifestFor = (fid: string) =>
-          new RegExp(
-            `/api/audiobooks/${primaryUuid}/manifest\\?file_id=${fid}$`,
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("start listening", async () => {
+        await bookDetailPage.startListening();
+        await listenPage.assertDisplayedFor(uuid);
+      });
+    });
+
+    test("show a file picker for an audiobook with two files", async ({
+      bookDetailPage,
+      mergedAudiobook,
+    }) => {
+      const { uuid } = mergedAudiobook;
+      const picker = bookDetailPage.listenFilePicker;
+
+      await test.step("open the merged book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check start listening offers the picker", async () => {
+        await expect(picker.triggerButton).toBeVisible();
+        await expect(picker.triggerButton).toHaveText(/Start listening\s*▾/);
+        await expect(picker.panel).toHaveCount(0);
+      });
+
+      await test.step("open the picker", async () => {
+        await picker.open();
+        await expect(picker.panel).toBeVisible();
+      });
+
+      await test.step("check it lists both files", async () => {
+        const firstLink = picker.fileLink(FIRST_PART);
+        await expect(picker.heading).toHaveText("2 files · choose one");
+        await expect(picker.fileLinks).toHaveCount(2);
+        await expect(firstLink).toContainText("Audiobook ·");
+        await expect(firstLink).toContainText(/\d+(?:\.\d+)? [KMGT]?B/);
+      });
+    });
+
+    test("listen to the file picked from the file picker", async ({
+      bookDetailPage,
+      listenPage,
+      mergedAudiobook,
+    }) => {
+      const {
+        uuid,
+        audioFileIds: [, secondFile],
+      } = mergedAudiobook;
+      const picker = bookDetailPage.listenFilePicker;
+
+      await test.step("open the merged book's picker", async () => {
+        await bookDetailPage.goto(uuid);
+        await picker.open();
+      });
+
+      const manifests = picker.recordManifestRequests();
+
+      await test.step("pick the second file", async () => {
+        await picker.pick(SECOND_PART);
+      });
+
+      await test.step("check the player opens on that file", async () => {
+        await expect
+          .poll(() => manifests[0], { message: "the manifest the player read" })
+          .toMatch(
+            new RegExp(
+              `/api/audiobooks/${uuid}/manifest\\?file_id=${secondFile}$`,
+            ),
           );
-        const pickerLinks = async () => {
-          await page.getByTestId("listen-file-picker-trigger").click();
-          await expect(
-            page.getByTestId("listen-file-picker-panel"),
-          ).toBeVisible();
-          return page.getByTestId("listen-file-picker-panel").getByRole("link");
-        };
-        const fileIdOf = (manifestUrl: string) =>
-          new URL(manifestUrl).searchParams.get("file_id");
+        await listenPage.assertDisplayedFor(uuid, secondFile);
+      });
+    });
 
-        await gotoReady(page, `/books/${primaryUuid}`);
-        await page.evaluate(() => {
-          (
-            window as unknown as { __repickSentinel?: boolean }
-          ).__repickSentinel = true;
-        });
+    // The app-root player once keyed only on the book's uuid, so re-picking a
+    // part of the book already playing kept the first part.
+    test("switch to another part of the audiobook already playing", async ({
+      bookDetailPage,
+      listenPage,
+      mergedAudiobook,
+    }) => {
+      const {
+        uuid,
+        audioFileIds: [firstFile, secondFile],
+      } = mergedAudiobook;
+      const picker = bookDetailPage.listenFilePicker;
 
-        // Pick the FIRST part via the picker → SPA-navigate to /listen and make
-        // the book the active playback book (uuid now set on the app-root
-        // PlaybackState).
-        const [firstManifest] = await Promise.all([
-          page.waitForRequest((req) => manifestFor("\\d+").test(req.url())),
-          (await pickerLinks()).nth(0).click(),
-        ]);
-        const firstFileId = fileIdOf(firstManifest.url());
-        await expect(page).toHaveURL(
-          new RegExp(`/listen/${primaryUuid}\\?file_id=\\d+$`),
-        );
+      // A full page load would void this test, because a reload fetches the
+      // manifest again whatever the driver does. The mark must survive it all.
+      await test.step("open the merged book", async () => {
+        await bookDetailPage.goto(uuid);
+        await bookDetailPage.markDocument();
+      });
 
-        // Back to the detail page in-app (history popstate — no full load).
-        await page.goBack();
-        await expect(page).toHaveURL(new RegExp(`/books/${primaryUuid}$`));
+      const manifests = picker.recordManifestRequests();
 
-        // Re-pick the SECOND part of the *already-active* book. Before the fix
-        // the driver keyed only on the (unchanged) uuid, so this fired no fresh
-        // manifest and stayed on part 1.
-        const [secondManifest] = await Promise.all([
-          page.waitForRequest((req) => manifestFor("\\d+").test(req.url()), {
-            timeout: 10_000,
-          }),
-          (await pickerLinks()).nth(1).click(),
-        ]);
-        const secondFileId = fileIdOf(secondManifest.url());
+      // The first part's manifest is in before the re-pick, so the last one
+      // recorded afterwards can only be the second part's.
+      await test.step("play the first part", async () => {
+        await picker.open();
+        await picker.pick(FIRST_PART);
+        await listenPage.assertDisplayedFor(uuid, firstFile);
+        await expect
+          .poll(() => manifests.length, { message: "the first manifest" })
+          .toBeGreaterThan(0);
+      });
+
+      await test.step("go back to the book", async () => {
+        await bookDetailPage.goBack();
+        await bookDetailPage.assertDisplayedFor(uuid);
+      });
+
+      await test.step("open the picker again", async () => {
+        await picker.open();
+      });
+
+      await test.step("pick the second part", async () => {
+        await picker.pick(SECOND_PART);
+      });
+
+      await test.step("check the player reboots onto the second part", async () => {
+        await expect
+          .poll(() => manifests.at(-1), {
+            message: "re-pick must reboot onto the second part",
+          })
+          .toMatch(
+            new RegExp(
+              `/api/audiobooks/${uuid}/manifest\\?file_id=${secondFile}$`,
+            ),
+          );
+      });
+
+      await test.step("check the pages stayed in the app", async () => {
         expect(
-          secondFileId,
-          "re-pick must reboot onto a different part",
-        ).not.toBe(firstFileId);
-
-        // The whole session stayed client-side — if any hop fully reloaded, the
-        // manifest fetch above would prove nothing.
-        const stayedInApp = await page.evaluate(
-          () =>
-            (window as unknown as { __repickSentinel?: boolean })
-              .__repickSentinel === true,
-        );
-        expect(
-          stayedInApp,
+          await bookDetailPage.documentIsMarked(),
           "re-pick nav must stay in-app (no full page load)",
         ).toBe(true);
-      } finally {
-        const undoResp = await request.post("/api/rpc/merge-books/undo", {
-          data: { merge_log_id: mergeLogId },
-        });
-        expect(undoResp.status(), "POST /api/rpc/merge-books/undo failed").toBe(
-          200,
-        );
-      }
+      });
     });
   });
 });

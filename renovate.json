@@ -1,0 +1,94 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "ignorePresets": [":semanticPrefixFixDepsChoreOthers"],
+  "timezone": "America/New_York",
+  "schedule": ["* 0-11 * * 1"],
+  "minimumReleaseAge": "14 days",
+  "osvVulnerabilityAlerts": true,
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": null,
+  "labels": ["no release"],
+  "dependencyDashboardHeader": "This issue lists Renovate updates and detected dependencies. Everything under **Pending Approval** is a manual bump: do it by hand as [CONTRIBUTING.md](https://github.com/omnibus-library/omnibus/blob/main/CONTRIBUTING.md#dependency-updates) describes rather than ticking it here.",
+  "nix": {
+    "enabled": true,
+    "lockFileMaintenance": {
+      "enabled": true,
+      "schedule": ["* 0-11 1 * *"]
+    }
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Swift packages the Xcode project resolves; Renovate has no manager for project.pbxproj.",
+      "managerFilePatterns": ["/(^|/)Package\\.resolved$/"],
+      "matchStrings": [
+        "\"location\" : \"https://github\\.com/(?<depName>[^\"]+?)(?:\\.git)?\",\\s*\"state\" : \\{\\s*\"revision\" : \"(?<currentDigest>[0-9a-f]{40})\",\\s*\"version\" : \"(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "github-tags"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Titles read `chore: update <dependency> to <version>`.",
+      "matchPackageNames": ["*"],
+      "commitMessageTopic": "{{depName}}"
+    },
+    {
+      "description": "A security fix to a runtime crate releases on merge.",
+      "matchDatasources": ["crate"],
+      "matchDepTypes": ["dependencies", "workspace.dependencies"],
+      "labels": ["{{#unless isVulnerabilityAlert}}no release{{/unless}}"]
+    },
+    {
+      "description": "Git refs carry no release date, so the age gate would hold flake inputs forever.",
+      "matchManagers": ["nix"],
+      "groupName": "nix flake inputs",
+      "schedule": ["* 0-11 1 * *"],
+      "minimumReleaseAge": null
+    },
+    {
+      "matchDepTypes": ["devDependencies", "dev-dependencies"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true
+    },
+    {
+      "description": "Must match the Chromium bundle in the nixpkgs-playwright input (rule 04).",
+      "matchDepNames": ["@playwright/test", "playwright", "playwright-core", "nixpkgs-playwright"],
+      "groupName": "playwright monorepo",
+      "dependencyDashboardApproval": true,
+      "automerge": false
+    },
+    {
+      "description": "`dx` rejects any dioxus but its own, and dioxus-cli comes from nixpkgs-unstable.",
+      "matchDepNames": ["dioxus", "dioxus-*", "nixpkgs-unstable"],
+      "groupName": "dioxus",
+      "dependencyDashboardApproval": true,
+      "automerge": false
+    },
+    {
+      "description": "`dx` needs wasm-bindgen-cli in flake.nix to match the locked crate.",
+      "matchDepNames": ["wasm-bindgen", "wasm-bindgen-*", "js-sys", "web-sys"],
+      "groupName": "rust-wasm-bindgen monorepo",
+      "dependencyDashboardApproval": true,
+      "automerge": false
+    },
+    {
+      "description": "pnpm comes from nixpkgs-unstable; packageManager only records its version.",
+      "matchDepTypes": ["packageManager"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "A major Swift update must also move its requirement in project.pbxproj.",
+      "matchManagers": ["custom.regex"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}

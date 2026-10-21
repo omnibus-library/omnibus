@@ -88,7 +88,7 @@ pub async fn book_deletion_manifest(
         ("bookmarks", &mut impact.bookmarks),
         ("reading_sessions", &mut impact.reading_sessions),
         ("listening_sessions", &mut impact.listening_sessions),
-        ("user_ratings", &mut impact.ratings),
+        ("reviews", &mut impact.ratings),
         ("shelf_books", &mut impact.shelves),
     ] {
         *slot = count_by_uuid(pool, table, &uuid).await?;
@@ -191,17 +191,14 @@ async fn run_deletion_tx(
         }
     }
     let library_roots = library_roots(&mut tx).await?;
-    let journal_images = if total_delete {
-        purge::journal_image_names(&mut tx, uuid).await?
-    } else {
-        Vec::new()
-    };
 
     purge::delete_file_rows(&mut tx, book_id, file_ids).await?;
     purge::delete_copy_rows(&mut tx, uuid, copy_ids).await?;
-    if total_delete {
-        purge::purge_book(&mut tx, book_id, uuid).await?;
-    }
+    let journal_images = if total_delete {
+        purge::purge_book(&mut tx, book_id, uuid).await?
+    } else {
+        Vec::new()
+    };
     tx.commit().await?;
 
     Ok(Some(CommittedDeletion {

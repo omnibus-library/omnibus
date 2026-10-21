@@ -177,8 +177,10 @@ pub fn Cover(
             "data-testid": "cover",
             div {
                 class: plate_class,
-                if let Some(url) = shown_src {
+                // Keyed on the url, so a new cover mounts a fresh `<img>` and fades in again.
+                for url in shown_src.clone() {
                     img {
+                        key: "{url}",
                         src: "{url}",
                         srcset: "{srcset_attr}",
                         sizes: "{sizes_attr}",
@@ -189,7 +191,8 @@ pub fn Cover(
                             move |_| broken_cover_src.set(Some(url.clone()))
                         },
                     }
-                } else {
+                }
+                if shown_src.is_none() {
                     div { class: "ca", "{author_label}" }
                     div { class: "ct", "{title}" }
                 }
@@ -198,10 +201,10 @@ pub fn Cover(
     }
 }
 
-/// The cover plate's classes. A plate waiting on an image glints behind it
-/// until the pixels land — CSS rather than a load event, which an SSR'd
-/// `<img>` can fire before hydration and never repeat. The typographic plate
-/// is already final, so it stays still.
+/// The cover plate's classes. A plate waiting on an image glints, and holds the
+/// image hidden, until it has decoded — CSS rather than a load event, which an
+/// SSR'd `<img>` can fire before hydration and never repeat. The typographic
+/// plate is already final, so it stays still.
 fn cover_class(has_image: bool) -> &'static str {
     if has_image {
         "cover tpl-plate ld-cover-glint"
@@ -410,6 +413,52 @@ mod render_tests {
                 },
             }
         }
+    }
+
+    #[derive(Clone)]
+    struct SrcSlot(std::rc::Rc<std::cell::RefCell<Option<Signal<String>>>>);
+
+    impl PartialEq for SrcSlot {
+        fn eq(&self, other: &Self) -> bool {
+            std::rc::Rc::ptr_eq(&self.0, &other.0)
+        }
+    }
+
+    fn swapping_cover(slot: SrcSlot) -> Element {
+        use_context_provider(|| {
+            crate::contexts::CoverCacheBust(Signal::new(std::collections::HashMap::new()))
+        });
+        let src = use_signal(|| "/api/thumbs/a/md?v=1".to_string());
+        use_hook(|| *slot.0.borrow_mut() = Some(src));
+        rsx! {
+            Cover {
+                book: EbookMetadata {
+                    cover_url: Some("/api/covers/1".to_string()),
+                    ..Default::default()
+                },
+                src_override: src(),
+            }
+        }
+    }
+
+    #[test]
+    fn cover_mounts_a_fresh_img_when_its_src_changes() {
+        use dioxus::dioxus_core::Mutation;
+
+        let slot = SrcSlot(Default::default());
+        let mut dom = VirtualDom::new_with_props(swapping_cover, slot.clone());
+        dom.rebuild_in_place();
+        let mut src = slot.0.borrow_mut().take().expect("captured on mount");
+        src.set("/api/thumbs/a/md?v=2".to_string());
+        let edits = dom.render_immediate_to_vec().edits;
+        // An `<img>` that only swapped `src` keeps the old image's `data-loaded`.
+        assert!(
+            edits
+                .iter()
+                .any(|m| matches!(m, Mutation::LoadTemplate { .. })),
+            "src swapped in place: {edits:?}"
+        );
+        assert!(dioxus::ssr::render(&dom).contains("v=2"));
     }
 
     #[test]

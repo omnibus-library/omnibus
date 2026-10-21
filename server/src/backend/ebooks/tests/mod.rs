@@ -10,6 +10,7 @@ mod download;
 mod file;
 mod filter_param;
 mod format_filters;
+mod images;
 mod listing;
 mod pages;
 mod pagination;

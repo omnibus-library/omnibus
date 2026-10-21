@@ -11,13 +11,31 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, journals::JournalError};
-use omnibus_shared::{CreateJournalEntry, JournalImageUpload, UpdateJournalEntry, BODY_MAX_LEN};
+use omnibus_shared::{
+    ClientStamped, CreateJournalEntry, FileBytes, JournalEntry, JournalImageForm,
+    JournalImageUpload, UpdateJournalEntry, BODY_MAX_LEN,
+};
 
-use super::{image_upload, internal, AppState, ClientStamped};
+use super::{image_upload, internal, AppState};
 use crate::auth::{AuthUser, MediaAuthUser};
 
-/// Create a journal entry. 400 on an empty/oversized body or out-of-range
-/// progress, 404 for a book the server has never indexed.
+/// Create a journal entry
+///
+/// Writes a markdown entry about a book. A published entry, the default, is visible to
+/// every user under your name; a `draft` only to you. Mint a `client_id` on the device and
+/// the create is safe to repeat: sending the same `client_id` again returns the entry the
+/// first create made, unchanged.
+#[utoipa::path(
+    post,
+    path = "/api/journals",
+    tag = "Journals",
+    request_body = ClientStamped<CreateJournalEntry>,
+    responses(
+        (status = 200, description = "The entry, with its markdown rendered to HTML.", body = JournalEntry),
+        (status = 400, description = "`book_uuid` or `body_md` is blank, `body_md` is over 65,536 bytes, `progress` is over 100, `client_id` is blank or too long, or `client_created_at` is negative."),
+        (status = 404, description = "No book has that `book_uuid`."),
+    ),
+)]
 pub(super) async fn post_journal(
     user: AuthUser,
     State(state): State<AppState>,
@@ -43,8 +61,17 @@ pub(super) async fn post_journal(
     }
 }
 
-/// List every user's published journal entries for a book — plus the caller's
-/// own drafts — newest first.
+/// List a book's journal entries
+///
+/// Every user's published entries for the book, plus your own drafts, newest first. Returns
+/// up to 1,000, and an empty list for a uuid no book has.
+#[utoipa::path(
+    get,
+    path = "/api/journals/book/{book_uuid}",
+    tag = "Journals",
+    params(("book_uuid" = String, Path, description = "The book's uuid.")),
+    responses((status = 200, description = "The book's entries.", body = Vec<JournalEntry>)),
+)]
 pub(super) async fn get_journal_entries(
     user: AuthUser,
     State(state): State<AppState>,
@@ -70,8 +97,23 @@ async fn resolve_id(state: &AppState, user_id: i64, raw: &str) -> Result<i64, Jo
         .ok_or(JournalError::NotFound)
 }
 
-/// Edit a journal entry owned by the current user. 400 on an invalid body, 404
-/// when the id does not exist or belongs to another user.
+/// Edit a journal entry
+///
+/// Replaces the body and progress of one of your entries. Send `status` to publish a draft
+/// or turn an entry back into one; leave it out to keep the status. An uploaded image the
+/// change drops, and no journal entry or review still shows, is deleted.
+#[utoipa::path(
+    patch,
+    path = "/api/journals/{id}",
+    tag = "Journals",
+    params(("id" = String, Path, description = "The entry's id, or the `client_id` it was created with.")),
+    request_body = UpdateJournalEntry,
+    responses(
+        (status = 200, description = "The entry as saved.", body = JournalEntry),
+        (status = 400, description = "`body_md` is blank or over 65,536 bytes, or `progress` is over 100."),
+        (status = 404, description = "You have no entry with that id. Another user's entry answers the same."),
+    ),
+)]
 pub(super) async fn patch_journal(
     user: AuthUser,
     State(state): State<AppState>,
@@ -98,11 +140,23 @@ pub(super) async fn patch_journal(
     }
 }
 
-/// Render a draft journal body to sanitized HTML for the composer preview,
-/// using the same renderer as the persisted read path. The request and response
-/// bodies are both bare JSON strings. Rejects bodies over `BODY_MAX_LEN` so an
-/// authenticated client can't drive arbitrary markdown+sanitize work.
+/// Preview journal markdown
+///
+/// Renders markdown to HTML exactly as a saved entry's `body_html` is rendered, so a
+/// composer can show a preview. The request body is the markdown as a JSON string, and the
+/// response the sanitized HTML as a JSON string.
+#[utoipa::path(
+    post,
+    path = "/api/journals/preview",
+    tag = "Journals",
+    request_body(content = String, content_type = "application/json", description = "The markdown, as a JSON string."),
+    responses(
+        (status = 200, description = "The rendered HTML, as a JSON string.", body = String, content_type = "application/json"),
+        (status = 400, description = "The markdown is over 65,536 bytes."),
+    ),
+)]
 pub(super) async fn post_journal_preview(_user: AuthUser, Json(body_md): Json<String>) -> Response {
+    // The cap stops an authenticated client driving unbounded markdown and sanitize work.
     if body_md.len() > BODY_MAX_LEN {
         return (
             axum::http::StatusCode::BAD_REQUEST,
@@ -113,10 +167,21 @@ pub(super) async fn post_journal_preview(_user: AuthUser, Json(body_md): Json<St
     Json(db::journals::markdown::render(&body_md)).into_response()
 }
 
-/// Upload an image to embed in a journal entry. Multipart form with a single
-/// `image` field; validated (content-type, SVG rejection, 10 MiB cap, magic
-/// bytes) by the shared image-upload pipeline, then stored under a
-/// server-minted name. Returns the serving URL to reference from markdown.
+/// Upload a journal image
+///
+/// Stores an image to embed in a journal entry or review and returns its URL. Put the URL
+/// in the markdown as `![caption](url)`.
+#[utoipa::path(
+    post,
+    path = "/api/journals/images",
+    tag = "Journals",
+    request_body(content = inline(JournalImageForm), content_type = "multipart/form-data"),
+    responses(
+        (status = 200, description = "The stored image's URL.", body = JournalImageUpload),
+        (status = 400, description = "The form has no `image` part, or the part's `Content-Type` isn't an image type, is SVG, or the image is over 10 MiB."),
+        (status = 415, description = "The bytes aren't a JPEG, PNG, GIF or WebP image."),
+    ),
+)]
 pub(super) async fn post_journal_image(
     _user: AuthUser,
     mut multipart: axum::extract::Multipart,
@@ -140,8 +205,21 @@ pub(super) async fn post_journal_image(
     }
 }
 
-/// Serve a stored journal image by its minted name. 404 for a malformed name
-/// (the traversal guard) or a missing file. Media-gated like covers/thumbs.
+/// Get a journal image
+///
+/// An image uploaded for a journal entry or review, by the name at the end of its URL. A
+/// name never points at different bytes, so the response may be cached for a year.
+#[utoipa::path(
+    get,
+    path = "/api/journals/images/{name}",
+    tag = "Journals",
+    security(("bearer" = []), ("session_cookie" = []), ("media_token" = [])),
+    params(("name" = String, Path, description = "The last segment of the URL the upload returned: a uuid and an extension.")),
+    responses(
+        (status = 200, description = "The image.", body = FileBytes, content_type = "image/*"),
+        (status = 404, description = "No image has that name."),
+    ),
+)]
 pub(super) async fn get_journal_image(_user: MediaAuthUser, Path(name): Path<String>) -> Response {
     // Sync `std::fs` read — run on the blocking pool.
     match tokio::task::spawn_blocking(move || db::journal_images::read_journal_image(&name)).await {
@@ -168,8 +246,20 @@ pub(super) async fn get_journal_image(_user: MediaAuthUser, Path(name): Path<Str
     }
 }
 
-/// Delete a journal entry owned by the current user. 404 when the id does not
-/// exist or belongs to another user.
+/// Delete a journal entry
+///
+/// Deletes one of your entries. An uploaded image it showed, and no other journal entry or
+/// review still shows, is deleted.
+#[utoipa::path(
+    delete,
+    path = "/api/journals/{id}",
+    tag = "Journals",
+    params(("id" = String, Path, description = "The entry's id, or the `client_id` it was created with.")),
+    responses(
+        (status = 204, description = "The entry is deleted."),
+        (status = 404, description = "You have no entry with that id. Another user's entry answers the same."),
+    ),
+)]
 pub(super) async fn delete_journal(
     user: AuthUser,
     State(state): State<AppState>,

@@ -11,7 +11,10 @@ use axum::{
     Json,
 };
 use omnibus_db as db;
-use omnibus_shared::metadata_lookup::{EditionHydrateRequest, EditionSearchRequest};
+use omnibus_shared::metadata_lookup::{
+    EditionHydrateRequest, EditionSearchRequest, EditionSearchResponse, ProviderEdition,
+    ProviderInfo,
+};
 
 use super::{internal, AppState};
 use crate::auth::AuthUser;
@@ -26,10 +29,18 @@ async fn provider_config(state: &AppState) -> Result<db::MetadataLookupConfig, d
     ))
 }
 
-/// The provider catalog for this instance: identity, whether each provider
-/// is usable right now, and what each can answer. Drives a future
-/// provider-filter UI; today it lets any client enumerate sources without
-/// hardcoding a `match` on `MetadataProvider`.
+/// List the metadata providers
+///
+/// Every external metadata provider the server knows: its name, whether it needs an API
+/// key, whether it can be asked right now, and what it can answer. No key material is
+/// returned.
+#[utoipa::path(
+    get,
+    path = "/api/metadata/providers",
+    tag = "Metadata",
+    operation_id = "list_metadata_providers",
+    responses((status = 200, description = "The providers.", body = Vec<ProviderInfo>)),
+)]
 pub(super) async fn get_providers(_user: AuthUser, State(state): State<AppState>) -> Response {
     match provider_config(&state).await {
         Ok(config) => Json(db::catalog(&config)).into_response(),
@@ -37,16 +48,30 @@ pub(super) async fn get_providers(_user: AuthUser, State(state): State<AppState>
     }
 }
 
-/// Fan an edition search out across the providers, keeping every source's candidates
-/// attributed and un-collapsed for the metadata editor's picker. Always 200 once the
-/// request is well-formed and the caller may edit: a failing provider reports `Failed`
-/// on its own status row, not as a failed search. 400 for a blank/oversized query or
-/// empty provider list, 403 without edit permission (it spends outbound provider calls).
+/// Search the providers for editions
+///
+/// Asks the metadata providers, all of them or those in `providers`, for editions that
+/// match, and returns every candidate labelled with the provider it came from. Each
+/// provider also gets a row in `sources`: a provider that fails or is skipped says so
+/// there, and the search still succeeds. Send `title`, `author` and `isbn` when you have
+/// them; `query` alone is searched as a title. Needs the edit permission.
+#[utoipa::path(
+    post,
+    path = "/api/metadata/editions/search",
+    tag = "Metadata",
+    request_body = EditionSearchRequest,
+    responses(
+        (status = 200, description = "The candidates and each provider's status.", body = EditionSearchResponse),
+        (status = 400, description = "Every field is blank, a field is too long, or `providers` is an empty list; the body says which."),
+        (status = 403, description = "You lack the edit permission."),
+    ),
+)]
 pub(super) async fn post_edition_search(
     user: AuthUser,
     State(state): State<AppState>,
     Json(req): Json<EditionSearchRequest>,
 ) -> Response {
+    // Gated on edit because it spends outbound provider calls.
     if !user.is_admin && !user.can_edit {
         return (StatusCode::FORBIDDEN, "edit permission required").into_response();
     }
@@ -62,11 +87,24 @@ pub(super) async fn post_edition_search(
     Json(found).into_response()
 }
 
-/// Re-fetch one selected candidate from the provider that offered it: the picker's
-/// second call, since a search hit is thinner than the provider's own record. Answers
-/// `null` when that provider no longer knows the candidate, a clean miss the caller
-/// absorbs by keeping its list row. 400 for a blank or oversized handle, 403 without
-/// edit permission, 502 when the provider could not be reached (a failure, unlike a miss).
+/// Fetch an edition's full record
+///
+/// Fetches one search candidate again from the provider that offered it, which returns
+/// more than the search did. Answers `null` when the provider no longer knows the
+/// candidate. Send the candidate's `isbn13` when it has one: it names the exact printing.
+/// Needs the edit permission.
+#[utoipa::path(
+    post,
+    path = "/api/metadata/editions/hydrate",
+    tag = "Metadata",
+    request_body = EditionHydrateRequest,
+    responses(
+        (status = 200, description = "The full edition, or `null`.", body = Option<ProviderEdition>),
+        (status = 400, description = "`provider_ref` is blank or longer than 256 bytes, or `isbn13` is longer than 32 characters."),
+        (status = 403, description = "You lack the edit permission."),
+        (status = 502, description = "The provider couldn't be reached, or it rate-limited the server recently and is still cooling down."),
+    ),
+)]
 pub(super) async fn post_edition_hydrate(
     user: AuthUser,
     State(state): State<AppState>,

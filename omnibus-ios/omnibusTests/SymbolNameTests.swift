@@ -42,11 +42,4 @@ struct SymbolNameTests {
     func stackGlyphResolves() {
         #expect(UIImage(systemName: SeriesStackCell.glyph) != nil)
     }
-
-    @Test("every filter field's picker glyph resolves")
-    func filterFieldGlyphsResolve() {
-        for field in FilterField.allCases {
-            #expect(UIImage(systemName: field.glyph) != nil, "\(field.rawValue)")
-        }
-    }
 }

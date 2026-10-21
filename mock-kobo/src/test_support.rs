@@ -9,7 +9,10 @@ use std::time::Duration;
 
 use axum::{
     extract::State,
-    http::{header::LOCATION, HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri},
+    http::{
+        header::{HOST, LOCATION},
+        HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri,
+    },
     response::{IntoResponse, Response},
     Json, Router,
 };
@@ -42,6 +45,8 @@ pub struct Stub {
     /// Where under `/kobo/<token>` the resources map puts `library_sync` and
     /// `get_tests_request`; the default `/v1/...` paths answer 404 once moved.
     pub resources_under: &'static str,
+    /// Build the `Resources` URLs on the request's `Host`, as Omnibus did before #2758.
+    pub resources_from_host: bool,
     /// The `library_sync` bodies, served in turn; all but the last say `continue`.
     /// Empty means the server has no books: one `[]` page.
     pub sync_pages: Vec<Value>,
@@ -75,6 +80,7 @@ impl Default for Stub {
             gettests_accepts_post: true,
             store_path_status: StatusCode::OK,
             resources_under: "",
+            resources_from_host: false,
             sync_pages: Vec::new(),
             sends_sync_token: true,
             sync_status: StatusCode::OK,
@@ -257,7 +263,7 @@ async fn handle(
         return StatusCode::NOT_FOUND.into_response();
     };
     match rest {
-        "/v1/initialization" => initialization(&state),
+        "/v1/initialization" => initialization(&state, &headers),
         "/v1/user/profile"
         | "/v1/user/loyalty/benefits"
         | "/v1/products/books/subscriptions"
@@ -399,15 +405,17 @@ pub fn book_metadata(id: &str, title: &str) -> Value {
     })
 }
 
-fn initialization(state: &StubState) -> Response {
+fn initialization(state: &StubState, headers: &HeaderMap) -> Response {
     let status = state.stub.initialization_status;
     if !status.is_success() {
         return status.into_response();
     }
-    let prefix = format!(
-        "{}/kobo/{STUB_TOKEN}{}",
-        state.base, state.stub.resources_under
-    );
+    let origin = if state.stub.resources_from_host {
+        format!("http://{}", headers[HOST].to_str().unwrap())
+    } else {
+        state.base.clone()
+    };
+    let prefix = format!("{origin}/kobo/{STUB_TOKEN}{}", state.stub.resources_under);
     let resources = json!({
         "library_sync": format!("{prefix}/v1/library/sync"),
         "get_tests_request": format!("{prefix}/v1/analytics/gettests"),

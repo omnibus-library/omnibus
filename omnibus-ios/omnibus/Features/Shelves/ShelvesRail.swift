@@ -13,12 +13,13 @@ struct ShelvesRail: View {
     /// the identity is still confirming, which withholds attribution rather
     /// than guessing it.
     var viewerId: Int64?
-    /// Runs after a card's long-press menu edits or deletes a shelf, so the
-    /// rail redraws without the whole landing screen reloading.
+    /// Runs after a card's long-press menu edits or deletes a shelf, or a new
+    /// one is made, so the rail redraws without the whole landing screen reloading.
     var onChanged: () -> Void = {}
     var onSeeAll: () -> Void
 
     @Environment(\.palette) private var palette
+    @State private var showCreate = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
@@ -29,84 +30,62 @@ struct ShelvesRail: View {
 
                 Spacer(minLength: 0)
 
-                Button(action: onSeeAll) {
-                    HStack(spacing: 3) {
-                        Text("All")
-                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
-                    }
-                    .font(.ui(13, weight: .medium))
-                    .foregroundStyle(palette.accentColor)
-                    // Text alone gives a ~30pt target; pad out to the 44pt
-                    // minimum without moving the label.
-                    .padding(.vertical, 10)
-                    .padding(.leading, 16)
-                    .contentShape(Rectangle())
+                headingLink { showCreate = true } label: {
+                    Image(systemName: "plus").font(.system(size: 10, weight: .semibold)).accessibilityHidden(true)
+                    Text("New shelf")
+                }
+                headingLink(action: onSeeAll) {
+                    Text("All")
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).accessibilityHidden(true)
                 }
             }
             .screenPadding()
 
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 14) {
-                    ForEach(Array(previews.enumerated()), id: \.element.id) { index, preview in
-                        NavigationLink(value: Destination.shelf(id: preview.shelf.id)) {
-                            ShelfCard(preview: preview, viewerId: viewerId, width: 108)
-                        }
-                        .buttonStyle(BookPressStyle())
-                        .cascadeIn(index: index)
-                        .shelfContextMenu(preview.shelf, onChanged: onChanged)
-                        // Cards ease off as they leave, so the rail reads as a
-                        // shelf continuing past the edge rather than a list
-                        // that stops being drawn.
-                        .scrollTransition(axis: .horizontal) { view, phase in
-                            view
-                                .opacity(phase.isIdentity ? 1 : 0.55)
-                                .scaleEffect(phase.isIdentity ? 1 : 0.94)
+            if !previews.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(alignment: .top, spacing: 14) {
+                        ForEach(previews) { preview in
+                            NavigationLink(value: Destination.shelf(id: preview.shelf.id)) {
+                                ShelfCard(preview: preview, viewerId: viewerId, width: 108)
+                            }
+                            .buttonStyle(BookPressStyle())
+                            .cascadeIn()
+                            .shelfContextMenu(preview.shelf, onChanged: onChanged)
+                            // Cards ease off as they leave, so the rail reads as a
+                            // shelf continuing past the edge rather than a list
+                            // that stops being drawn.
+                            .scrollTransition(axis: .horizontal) { view, phase in
+                                view
+                                    .opacity(phase.isIdentity ? 1 : 0.55)
+                                    .scaleEffect(phase.isIdentity ? 1 : 0.94)
+                            }
                         }
                     }
-
-                    NewShelfTile(action: onSeeAll)
+                    .screenPadding()
+                    .scrollTargetLayout()
+                    .cascadeFill()
                 }
-                .screenPadding()
-                .scrollTargetLayout()
+                .scrollIndicators(.hidden)
+                .scrollTargetBehavior(.viewAligned)
             }
-            .scrollIndicators(.hidden)
-            .scrollTargetBehavior(.viewAligned)
+        }
+        .sheet(isPresented: $showCreate) {
+            CreateShelfSheet(onCreated: onChanged)
         }
     }
-}
 
-/// Trailing affordance in the rail, so creating a shelf doesn't require
-/// finding the index screen first.
-private struct NewShelfTile: View {
-    var action: () -> Void
-
-    @Environment(\.palette) private var palette
-
-    var body: some View {
+    private func headingLink<Content: View>(
+        action: @escaping () -> Void, @ViewBuilder label: () -> Content
+    ) -> some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 8) {
-                Color.clear
-                    .aspectRatio(2.0 / 3.0, contentMode: .fit)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(
-                                palette.line.color,
-                                style: StrokeStyle(lineWidth: 1, dash: [5, 4])
-                            )
-                            .overlay {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 20, weight: .light))
-                                    .foregroundStyle(palette.ink3Color)
-                            }
-                    }
-
-                Text("New shelf")
-                    .font(.ui(13, weight: .medium))
-                    .foregroundStyle(palette.ink2Color)
-                    .lineLimit(1)
-            }
-            .frame(width: 108)
+            HStack(spacing: 3, content: label)
+                .font(.ui(13, weight: .medium))
+                .foregroundStyle(palette.accentColor)
+                // Text alone gives a ~30pt target; pad out to the 44pt
+                // minimum without moving the label.
+                .padding(.vertical, 10)
+                .padding(.leading, 16)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(PressableStyle())
     }
 }

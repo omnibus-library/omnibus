@@ -109,6 +109,8 @@ cd ui_tests/playwright && pnpm exec playwright test
 
 `PLAYWRIGHT_BASE_URL` makes the suite hit the walked-up port — both `baseURL` and the `Origin` header are derived from it, so the CSRF `origin_check` middleware stays happy.
 
+That is for iterating. The dev DB accumulates state between runs, so a red here is not proof: confirm it with `just e2e-ci <spec>`, which runs the spec as CI does — its own bundle, standalone server and scratch DB (see [04-playwright](../../rules/04-playwright.md#running-specs--just-e2e-ci)).
+
 ## Common pitfalls
 
 - **Snapshot shows the login form.** Cookie expired or cleared. Repeat step 4. The server redirects a signed-out load of any page to `/login?next=<that page>`, so logging in from there lands back on the page rather than the library.
@@ -119,4 +121,4 @@ cd ui_tests/playwright && pnpm exec playwright test
 - **You see `port N held by sibling workspace ...` on stderr.** Expected when another worktree's omnibus server is bound to your starting port. `dev-up` walks past it; nothing to fix.
 - **Playwright hits the wrong server (seed 403s / unknown routes) when run through `scripts/with-dev-env.sh`.** The wrapper re-runs the shellHook, which resets `PLAYWRIGHT_BASE_URL` exported by your outer shell — the suite then falls back to `:3000`, which may be a *sibling workspace's* server. Source the runtime env **inside** the wrapped command: `./scripts/with-dev-env.sh e2e bash -ec 'source .claude/runtime/env.sh && cd ui_tests/playwright && pnpm exec playwright test'`.
 - **Blank/black screenshots while the pane is hidden.** `document.hidden: true` means the Browser pane isn't fronted; the compositor paints nothing below the fold. Front the tab (or verify via DOM/`preview_eval` instead) — the app itself is fine.
-- **Never run `cargo test`/`clippy` while `dx serve` is mid-rebuild.** They share `CARGO_TARGET_DIR`, and a concurrent build can corrupt the binary dx is signing ("Failed to read link args", codesign errors, or a wasm bundle that panics with misaligned-pointer errors). Let the rebuild finish (poll `/api/_health`), or `just dev-bounce` after the cargo run completes.
+- **Never run `cargo test`/`clippy` while `dx serve` is mid-rebuild.** They share `CARGO_TARGET_DIR`, and a concurrent build can corrupt the binary dx is signing ("Failed to read link args", codesign errors, or a wasm bundle that panics with misaligned-pointer errors). Let the rebuild finish (poll `/api/_health`), or `just dev-bounce` after the cargo run completes. `just e2e-ci` counts: its debug `dx bundle` builds into the same artifacts (`OMNIBUS_E2E_RELEASE=1` builds apart, slower).

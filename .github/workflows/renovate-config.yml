@@ -1,0 +1,34 @@
+name: Renovate Config
+
+# The hosted Renovate app stops opening PRs on an invalid config and says so
+# only on the Dependency Dashboard, so a broken renovate.json fails here instead.
+
+# Path lists are spelled out twice because GitHub Actions does not support YAML
+# anchors — keep the two in step.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "renovate.json"
+      - ".github/workflows/renovate-config.yml"
+  pull_request:
+    paths:
+      - "renovate.json"
+      - ".github/workflows/renovate-config.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: renovate-config-validator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Validate renovate.json
+        run: npx --yes --package renovate@44.121.4 -- renovate-config-validator --strict

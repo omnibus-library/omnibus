@@ -1,154 +1,219 @@
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// F1.12 — Browse authors & series index pages.
-//
-// Seed the library once before all tests so the indexer has populated the
-// `authors` and `series` tables that the index queries aggregate over.
-test.beforeAll(async ({ request }) => {
+// The indexer must have filled the `authors` and `series` tables that the
+// index queries aggregate over.
+test.beforeAll("seed the library", async ({ request }) => {
   await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
 });
 
-// ---------------------------------------------------------------------------
-// /authors index
-// ---------------------------------------------------------------------------
+test.describe("authors index", () => {
+  test("show the authors index layout", async ({ authorsIndexPage }) => {
+    const { topNav } = authorsIndexPage;
 
-test("renders the authors index layout", async ({ page }) => {
-  await gotoReady(page, "/authors");
+    await test.step("open the authors index", async () => {
+      await authorsIndexPage.goto();
+    });
 
-  // Hero — "By author."
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("author");
+    await test.step("check the hero and the nav", async () => {
+      await authorsIndexPage.assertDisplayed();
+      await topNav.assertDisplayed();
+      await expect(authorsIndexPage.heading).toContainText("Authors");
+      // A top-level route: the nav is the only wayfinding it needs.
+      await expect(topNav.breadcrumbNav).toHaveCount(0);
+      await expect(topNav.navLink("Authors")).toBeVisible();
+    });
 
-  // No breadcrumb — /authors is a top-level route, so the shared nav is the
-  // only wayfinding it needs.
-  await expect(page.locator("nav.breadcrumb")).toHaveCount(0);
+    await test.step("check the toolbar and the cards", async () => {
+      await expect(authorsIndexPage.filterField).toBeVisible();
+      await expect(authorsIndexPage.sortByNameButton).toBeVisible();
+      await expect(authorsIndexPage.sortByCountButton).toBeVisible();
+      await expect(authorsIndexPage.sortByRecentButton).toBeVisible();
+      await expect(authorsIndexPage.readingFilterButton).toBeEnabled();
+      await expect(authorsIndexPage.firstCard).toBeVisible();
+      expect(await authorsIndexPage.cards.count()).toBeGreaterThan(0);
+    });
 
-  // Toolbar — filter input and at least one sort button.
-  await expect(page.getByTestId("authors-filter")).toBeVisible();
-  await expect(page.getByTestId("authors-sort-name")).toBeVisible();
-  await expect(page.getByTestId("authors-sort-count")).toBeVisible();
+    await test.step("check an author previews beside the list", async () => {
+      await expect(authorsIndexPage.previewName).toBeVisible();
+    });
+  });
 
-  // At least one author card was rendered.
-  const cards = page.getByTestId("author-card");
-  await expect(cards.first()).toBeVisible();
-  const count = await cards.count();
-  expect(count).toBeGreaterThan(0);
+  test("open an author beside the list", async ({
+    authorsIndexPage,
+    authorPage,
+  }) => {
+    await test.step("filter to one author and open them", async () => {
+      await authorsIndexPage.goto();
+      await authorsIndexPage.filterBy("Lovelace");
+      await authorsIndexPage.openCard("Ada Lovelace");
+    });
 
-  // Nav present.
-  const nav = page.getByRole("navigation").first();
-  await expect(nav.getByRole("link", { name: "Authors" })).toBeVisible();
+    await test.step("check the pane changed and the list stayed", async () => {
+      await expect(authorPage.heading).toHaveText("Ada Lovelace");
+      await expect(authorsIndexPage.filterField).toHaveValue("Lovelace");
+      await expect(authorsIndexPage.card("Ada Lovelace")).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+    });
+  });
+
+  test("leave progress unknown when it fails to load", async ({
+    authorsIndexPage,
+  }) => {
+    await test.step("open the index with progress failing", async () => {
+      await authorsIndexPage.failReadingProgress();
+      await authorsIndexPage.goto();
+      await expect(authorsIndexPage.firstCard).toBeVisible();
+    });
+
+    await test.step("check nothing claims the reader read nothing", async () => {
+      await expect(authorsIndexPage.readingFilterButton).toBeDisabled();
+      await expect(authorsIndexPage.firstRowBar).toHaveAttribute(
+        "data-state",
+        "unknown",
+      );
+    });
+
+    await test.step("check an author still previews", async () => {
+      await expect(authorsIndexPage.previewName).toBeVisible();
+    });
+  });
+
+  test("filter authors by name", async ({ authorsIndexPage }) => {
+    let initialCount = 0;
+
+    await test.step("open the authors index", async () => {
+      await authorsIndexPage.goto();
+      initialCount = await authorsIndexPage.cards.count();
+      expect(initialCount).toBeGreaterThan(1);
+    });
+
+    await test.step("filter to one author", async () => {
+      await authorsIndexPage.filterBy("Lovelace");
+      await expect
+        .poll(() => authorsIndexPage.cards.count(), {
+          message: "the filter left every author card",
+        })
+        .toBeLessThan(initialCount);
+    });
+
+    await test.step("check only matching cards remain", async () => {
+      for (const text of await authorsIndexPage.cards.allTextContents()) {
+        expect(text.toLowerCase()).toContain("lovelace");
+      }
+    });
+  });
+
+  test("jump to the matching section from the letter strip", async ({
+    authorsIndexPage,
+  }) => {
+    await test.step("open the authors index", async () => {
+      await authorsIndexPage.goto();
+      // Ada Lovelace is in the fixtures, so the surname bucket "L" exists.
+      await expect(authorsIndexPage.firstCard).toBeVisible();
+    });
+
+    await test.step("check the letter is a same-page anchor", async () => {
+      await expect(authorsIndexPage.letterLink("L")).toBeVisible();
+      await expect(authorsIndexPage.letterLink("L")).toHaveAttribute(
+        "href",
+        "#letter-L",
+      );
+    });
+
+    await test.step("click the letter", async () => {
+      await authorsIndexPage.jumpToLetter("L");
+      await authorsIndexPage.assertJumpedTo("L");
+    });
+  });
+
+  test("open the author page from a card", async ({
+    authorsIndexPage,
+    authorPage,
+  }) => {
+    await test.step("filter to one author", async () => {
+      await authorsIndexPage.goto();
+      await authorsIndexPage.filterBy("Lovelace");
+      await expect(authorsIndexPage.firstCard).toBeVisible();
+    });
+
+    await test.step("click the card", async () => {
+      // Read first, so the URL check needs no fetch after navigating, which
+      // HMR disturbs on a dev server.
+      const path = await authorsIndexPage.firstCardPath();
+      expect(path).toMatch(/^\/authors\/\d+$/);
+      await authorsIndexPage.openFirstCard();
+      await authorPage.assertDisplayedFor(path);
+    });
+  });
 });
 
-test("authors index filters by name", async ({ page }) => {
-  await gotoReady(page, "/authors");
+test.describe("series index", () => {
+  test("show the series index layout", async ({ seriesIndexPage }) => {
+    const { topNav } = seriesIndexPage;
 
-  const initialCount = await page.getByTestId("author-card").count();
-  expect(initialCount).toBeGreaterThan(1);
+    await test.step("open the series index", async () => {
+      await seriesIndexPage.goto();
+    });
 
-  // Filter to a single author known to be in the fixture set.
-  await page.getByTestId("authors-filter").fill("Lovelace");
+    await test.step("check the hero and the nav", async () => {
+      await seriesIndexPage.assertDisplayed();
+      await topNav.assertDisplayed();
+      await expect(seriesIndexPage.heading).toContainText("series");
+      await expect(topNav.breadcrumbNav).toHaveCount(0);
+    });
 
-  // Poll until only matching cards remain.
-  await expect
-    .poll(async () => page.getByTestId("author-card").count())
-    .toBeLessThan(initialCount);
+    await test.step("check the toolbar and the cards", async () => {
+      await expect(seriesIndexPage.filterField).toBeVisible();
+      await expect(seriesIndexPage.sortByNameButton).toBeVisible();
+      await expect(seriesIndexPage.sortByCountButton).toBeVisible();
+      await expect(seriesIndexPage.firstCard).toBeVisible();
+      expect(await seriesIndexPage.cards.count()).toBeGreaterThan(0);
+    });
+  });
 
-  const visible = await page.getByTestId("author-card").allTextContents();
-  for (const text of visible) {
-    expect(text.toLowerCase()).toContain("lovelace");
-  }
-});
+  test("filter series by name", async ({ seriesIndexPage }) => {
+    let initialCount = 0;
 
-test("authors index letter strip jumps to the matching section", async ({
-  page,
-}) => {
-  await gotoReady(page, "/authors");
+    await test.step("open the series index", async () => {
+      await seriesIndexPage.goto();
+      initialCount = await seriesIndexPage.cards.count();
+    });
 
-  // Wait for the index to render so the letter strip has populated.
-  // Ada Lovelace is in the fixture set, so the surname-sort bucket "L"
-  // is guaranteed to be present.
-  await expect(page.getByTestId("author-card").first()).toBeVisible();
+    await test.step("filter to one series", async () => {
+      await seriesIndexPage.filterBy("Pioneers");
+      await expect
+        .poll(() => seriesIndexPage.cards.count(), {
+          message: "the filter left more series cards than before",
+        })
+        .toBeLessThanOrEqual(initialCount);
+    });
 
-  const letter = page.getByTestId("authors-letter-L");
-  await expect(letter).toBeVisible();
-  // Active letters render as same-page anchors so the browser scrolls
-  // natively to the matching section — no JS required.
-  await expect(letter).toHaveAttribute("href", "#letter-L");
+    await test.step("check only matching cards remain", async () => {
+      for (const text of await seriesIndexPage.cards.allTextContents()) {
+        expect(text.toLowerCase()).toContain("pioneer");
+      }
+    });
+  });
 
-  await letter.click();
+  test("open the series page from a card", async ({
+    seriesIndexPage,
+    seriesPage,
+  }) => {
+    await test.step("filter to one series", async () => {
+      await seriesIndexPage.goto();
+      // Hydration can lag network idle, so wait for the cards before filtering.
+      await expect(seriesIndexPage.firstCard).toBeVisible();
+      await seriesIndexPage.filterBy("Pioneers");
+      await expect(seriesIndexPage.firstCard).toBeVisible();
+    });
 
-  await expect(page).toHaveURL(/#letter-L$/);
-  const section = page.locator("#letter-L");
-  await expect(section).toBeInViewport();
-});
-
-test("authors index card navigates to the detail page", async ({ page }) => {
-  await gotoReady(page, "/authors");
-
-  // Filter so the card we click is deterministic.
-  await page.getByTestId("authors-filter").fill("Lovelace");
-  const card = page.getByTestId("author-card").first();
-  await expect(card).toBeVisible();
-
-  // Capture the destination id from the card's href so we can assert on
-  // the URL without depending on a post-navigation server-function fetch
-  // (which is HMR-sensitive against the live dev server). The author
-  // detail page itself is covered by discovery.spec.ts.
-  const href = await card.getAttribute("href");
-  expect(href).toMatch(/^\/authors\/\d+$/);
-
-  await card.click();
-  await expect(page).toHaveURL(new RegExp(`${href}$`));
-});
-
-// ---------------------------------------------------------------------------
-// /series index
-// ---------------------------------------------------------------------------
-
-test("renders the series index layout", async ({ page }) => {
-  await gotoReady(page, "/series");
-
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("series");
-
-  await expect(page.locator("nav.breadcrumb")).toHaveCount(0);
-
-  await expect(page.getByTestId("series-filter")).toBeVisible();
-  await expect(page.getByTestId("series-sort-name")).toBeVisible();
-  await expect(page.getByTestId("series-sort-count")).toBeVisible();
-
-  const cards = page.getByTestId("series-card");
-  await expect(cards.first()).toBeVisible();
-  expect(await cards.count()).toBeGreaterThan(0);
-});
-
-test("series index filters by name", async ({ page }) => {
-  await gotoReady(page, "/series");
-
-  const initialCount = await page.getByTestId("series-card").count();
-
-  await page.getByTestId("series-filter").fill("Pioneers");
-  await expect
-    .poll(async () => page.getByTestId("series-card").count())
-    .toBeLessThanOrEqual(initialCount);
-
-  const visible = await page.getByTestId("series-card").allTextContents();
-  for (const text of visible) {
-    expect(text.toLowerCase()).toContain("pioneer");
-  }
-});
-
-test("series index card navigates to the detail page", async ({ page }) => {
-  await gotoReady(page, "/series");
-
-  // Wait for cards to render before filtering (hydration may lag networkidle).
-  await expect(page.getByTestId("series-card").first()).toBeVisible();
-
-  await page.getByTestId("series-filter").fill("Pioneers");
-  const card = page.getByTestId("series-card").first();
-  await expect(card).toBeVisible();
-  await card.click();
-
-  await expect(page).toHaveURL(/\/series\/\d+$/);
+    await test.step("click the card", async () => {
+      await seriesIndexPage.openFirstCard();
+      await seriesPage.assertDisplayed();
+    });
+  });
 });

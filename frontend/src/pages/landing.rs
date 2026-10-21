@@ -98,28 +98,10 @@ pub fn LandingPage() -> Element {
     result
 }
 
-/// Short, human-friendly tail of an absolute library path. We show only the
-/// last segment to keep the header line tidy — full path lives in Settings.
-fn short_path(path: &str) -> String {
-    path.rsplit('/')
-        .find(|s| !s.is_empty())
-        .unwrap_or(path)
-        .to_string()
-}
-
-#[cfg(test)]
+#[cfg(all(test, not(feature = "mobile")))]
 mod tests {
     use super::*;
-    use crate::shelf_selection::ShelfSelection;
 
-    #[test]
-    fn short_path_returns_last_segment() {
-        assert_eq!(short_path("/Users/ek/books"), "books");
-        assert_eq!(short_path("/Users/ek/books/"), "books");
-        assert_eq!(short_path("relative"), "relative");
-    }
-
-    #[cfg(not(feature = "mobile"))]
     fn book_with_uuid(uuid: &str, publisher: &str) -> omnibus_shared::EbookMetadata {
         omnibus_shared::EbookMetadata {
             unique_identifier: Some(uuid.to_string()),
@@ -128,7 +110,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(feature = "mobile"))]
     #[test]
     fn selected_bulk_books_gathers_from_both_lists_without_duplicates() {
         use std::collections::BTreeSet;
@@ -144,39 +125,11 @@ mod tests {
         assert_eq!(uuids, vec!["a", "b"]);
     }
 
-    #[cfg(not(feature = "mobile"))]
     #[test]
     fn replace_updated_books_replaces_matching_uuids_and_keeps_the_rest() {
         let mut list = vec![book_with_uuid("a", "Old"), book_with_uuid("c", "Keep")];
         body::replace_updated_books(&mut list, &[book_with_uuid("a", "New")]);
         assert_eq!(list[0].publisher.as_deref(), Some("New"));
         assert_eq!(list[1].publisher.as_deref(), Some("Keep"));
-    }
-
-    #[test]
-    fn section_title_names_the_pick_and_falls_back_while_shelves_load() {
-        let shelf = omnibus_shared::ShelfSummary {
-            id: 3,
-            owner_user_id: 1,
-            owner_username: "elena".into(),
-            owner_has_avatar: false,
-            kind: omnibus_shared::ShelfKind::Manual,
-            name: "Space Operas".into(),
-            visibility: omnibus_shared::Visibility::Private,
-            accent: None,
-            book_count: 2,
-            cover_uuids: Vec::new(),
-        };
-        assert_eq!(view::section_title(ShelfSelection::All, &[]), "All Books");
-        assert_eq!(
-            view::section_title(ShelfSelection::Shelf(3), std::slice::from_ref(&shelf)),
-            "Space Operas"
-        );
-        // Reloading straight into a persisted pick renders before the list
-        // arrives — the header must not panic or claim All Books.
-        assert_eq!(
-            view::section_title(ShelfSelection::Shelf(9), &[shelf]),
-            "Shelf"
-        );
     }
 }

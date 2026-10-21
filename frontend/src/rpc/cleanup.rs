@@ -1,5 +1,5 @@
 //! Library-cleanup review surface: the admin-gated server functions behind
-//! the Settings section and the `/settings/cleanup/:kind` review page. Thin
+//! the Cleanup section and the `/admin/cleanup/:kind` review page. Thin
 //! wrappers over `db::cleanup` — the review queue itself lives there.
 
 use dioxus::fullstack::post;
@@ -34,13 +34,19 @@ pub async fn rpc_cleanup_queue(kind: CleanupKind, limit: i64) -> Result<Vec<Sugg
 /// runs the matching apply primitive, so a card the admin accepted is applied
 /// before this returns. `value` is the reviewer's own wording, sent only when
 /// they typed over the detector's; the db layer refuses it for kinds whose
-/// apply primitive cannot honour one.
+/// apply primitive cannot honour one. Returns the applied change's
+/// `cleanup_log` id for an undo, `None` for a reject.
 #[post("/api/rpc/cleanup/decide", pool: PoolExt, admin: AdminUser)]
-pub async fn rpc_cleanup_decide(id: i64, decision: Decision, value: Option<String>) -> Result<()> {
-    db::cleanup::decide_suggestion(&pool.0, id, decision, admin.0.id, value.as_deref())
-        .await
-        .map_err(|e| map_store_error("cleanup decide", e))?;
-    Ok(())
+pub async fn rpc_cleanup_decide(
+    id: i64,
+    decision: Decision,
+    value: Option<String>,
+) -> Result<Option<i64>> {
+    Ok(
+        db::cleanup::decide_suggestion(&pool.0, id, decision, admin.0.id, value.as_deref())
+            .await
+            .map_err(|e| map_store_error("cleanup decide", e))?,
+    )
 }
 
 /// Admin-only: queue a detection pass. `kind = None` runs every detector.
@@ -93,9 +99,14 @@ fn map_store_error(context: &'static str, e: db::cleanup::CleanupStoreError) -> 
 /// safe sentence; only the opaque ones are genericized and logged.
 #[cfg(feature = "server")]
 fn map_apply_error(context: &'static str, e: db::CleanupApplyError) -> ServerFnError {
+    use db::MetadataOverridesError as O;
     match e {
         db::CleanupApplyError::Db(inner) => internal_rpc_error(context, inner),
         db::CleanupApplyError::Snapshot(inner) => internal_rpc_error(context, inner),
+        db::CleanupApplyError::Overrides(
+            inner @ (O::BookNotFound(_) | O::TooManyValues { .. }),
+        ) => ServerFnError::new(inner.to_string()),
+        db::CleanupApplyError::Overrides(inner) => internal_rpc_error(context, inner),
         other => ServerFnError::new(other.to_string()),
     }
 }

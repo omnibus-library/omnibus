@@ -1,8 +1,10 @@
-//! Marquee book-detail stage (web): the cover pinned huge on the left, six
+//! Marquee book-detail stage (web): the cover pinned huge on the left, seven
 //! sections in a translucent panel on the right, a dot-rail TOC. The panel
 //! reads two ways on the viewer's `book_detail_scroll_stops` preference — off
 //! (the default) is one continuous flow, on is the snapped marquee, same
-//! content either way. Mechanics: `flow.js` / `marquee.js`, post-mount.
+//! content either way. A switch in the stage's top-right corner flips it in
+//! place.
+//! `flow.js` and `marquee.js` run both readings after mount.
 
 use dioxus::prelude::*;
 use omnibus_shared::progress::ProgressFormat;
@@ -16,6 +18,7 @@ use crate::data;
 use super::body::BdPageCtx;
 use super::highlights::{BdHighlightsSection, BdQuoteMeta};
 use super::journal::MarqueeJournalStop;
+use super::reviews::{use_book_reviews, BdReviewsKicker, BdReviewsSection, ReviewsCtx};
 use super::rule_facts::RuleFactsSaved;
 use super::view::LoadedBookView;
 use super::PhysSignals;
@@ -28,18 +31,23 @@ mod stats;
 #[cfg(test)]
 mod tests;
 
-/// The six stops, in running order. The label pair is `NN` + name — the
-/// section label renders `NN / 06 — Name` and the dot rail `NN · Name`.
+/// The seven stops, in running order. The label pair is `NN` + name — the
+/// section label renders `NN / 07 — Name` and the dot rail `NN · Name`.
 // The shelf has no stop of its own: books beside this one sit under `More`,
 // the one place the page points away from the book it is about.
-pub(super) const MARQUEE_SECTIONS: [(&str, &str); 6] = [
+pub(super) const MARQUEE_SECTIONS: [(&str, &str); 7] = [
     ("01", "Home"),
     ("02", "Stats"),
-    ("03", "Highlights"),
-    ("04", "Journals"),
-    ("05", "The files"),
-    ("06", "More"),
+    ("03", "Reviews"),
+    ("04", "Highlights"),
+    ("05", "Journals"),
+    ("06", "The files"),
+    ("07", "More"),
 ];
+
+/// The Reviews stop's place in [`MARQUEE_SECTIONS`], where the title area's
+/// household rating jumps to.
+pub(super) const REVIEWS_STOP: usize = 2;
 
 /// Scroll-mechanics glue for the snapped marquee (parallax, dot tracking,
 /// dot-rail navigation).
@@ -85,6 +93,8 @@ pub(super) fn MarqueeStage(
     // The page's writers count each save on it here; the More stop's shelves
     // re-read on the count.
     use_context_provider(RuleFactsSaved::new);
+    // The Reviews stop and the title area's household rating share one fetch.
+    let reviews = use_book_reviews(uuid.clone());
 
     // Page-wide data: newest saved position per format + session insights.
     // Seeded `None` on SSR and the first WASM paint (rule 07); post-mount
@@ -165,15 +175,20 @@ pub(super) fn MarqueeStage(
     // this preference ships as (rule 07).
     let viewer = crate::use_current_user_summary();
     let scroll_stops = use_memo(move || viewer().is_some_and(|u| u.book_detail_scroll_stops));
+    let (mode_view, on_mode_toggle) = use_scroll_stops_toggle();
 
-    // Install the scroll glue after mount, and re-run it when the book or the
-    // mode changes (resets to the top, replaces the other mode's listeners).
-    // Web-only interop — the eval is a no-op on SSR.
+    // Install the scroll glue after mount and re-run it when the book or mode
+    // changes, replacing the other mode's listeners. A new book opens at the
+    // top; a flip keeps the reader's section. The eval is a no-op on SSR.
     {
         let uuid = uuid.clone();
+        let mut glued_book = use_signal(String::new);
         use_effect(use_reactive!(|uuid, scroll_stops| {
-            let _ = uuid;
-            let _ = dioxus::document::eval(if scroll_stops() { MARQUEE_JS } else { FLOW_JS });
+            let flip = *glued_book.peek() == uuid;
+            glued_book.set(uuid.clone());
+            let glue = if scroll_stops() { MARQUEE_JS } else { FLOW_JS };
+            let _ =
+                dioxus::document::eval(&format!("window.__omnibusMarqueeKeep = {flip};\n{glue}"));
         }));
     }
 
@@ -191,7 +206,7 @@ pub(super) fn MarqueeStage(
         accent: b.accent.clone(),
     };
 
-    let stops: [Element; 6] = [
+    let stops: [Element; 7] = [
         rsx! {
             home::MarqueeHomeStop {
                 b: b.clone(),
@@ -204,6 +219,7 @@ pub(super) fn MarqueeStage(
                 refresh: ctx.refresh,
                 after_merge: ctx.after_merge,
                 wishlist: wishlist.clone(),
+                reviews,
             }
         },
         rsx! {
@@ -215,6 +231,9 @@ pub(super) fn MarqueeStage(
                 audio_only: view.has_audio && !view.has_ebook && !view.has_comic && !view.has_pdf,
                 wish_mode,
             }
+        },
+        rsx! {
+            MarqueeReviewsStop { uuid: uuid.clone(), reviews }
         },
         rsx! {
             if wish_mode {
@@ -265,77 +284,182 @@ pub(super) fn MarqueeStage(
                     Cover { book: b.clone() }
                 }
             }
-            nav { class: "bdmq-dots", "aria-label": "Page sections", "data-testid": "bdmq-dots",
-                for (i, (no, name)) in MARQUEE_SECTIONS.iter().enumerate() {
-                    button {
-                        key: "{no}",
-                        r#type: "button",
-                        class: if i == 0 { "bdmq-dotrow on" } else { "bdmq-dotrow" },
-                        title: "{name}",
-                        "data-testid": "bdmq-dot-{i}",
-                        i {}
-                        span { class: "lb", "{no} \u{b7} {name}" }
-                    }
-                }
-            }
-            if scroll_stops() {
-                div { class: "bdmq-snap", id: "bdmq-snap",
-                    for (i, (no, name)) in MARQUEE_SECTIONS.iter().enumerate() {
-                        section {
-                            key: "{no}",
-                            class: "bdmq-sec",
-                            "data-testid": "bdmq-sec-{i}",
-                            div { class: "bdmq-seclab", "{no} / 06 \u{2014} " b { "{name}" } }
-                            // A filter on the panel would capture every fixed overlay inside it.
-                            div { class: "bdmq-panelscrim", aria_hidden: "true" }
-                            div { class: "bdmq-panel",
-                                div { class: "bdmq-panel-inner", {stops[i].clone()} }
-                            }
-                            if i < MARQUEE_SECTIONS.len() - 1 {
-                                div { class: "bdmq-next", aria_hidden: "true",
-                                    "scroll \u{2014} next: {MARQUEE_SECTIONS[i + 1].1}"
-                                    span { class: "arr", "\u{2193}" }
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                // A filter on the scroller would capture every fixed overlay inside it.
-                div { class: "bdmq-flowscrim", aria_hidden: "true" }
-                div { class: "bdmq-flowscroll", id: "bdmq-flow",
-                    div { class: "bdmq-flow",
+            DotRail {}
+            ScrollStopsToggle { view: mode_view, on_toggle: on_mode_toggle }
+            // One stable element around the mode swap, so the toggle beside it
+            // stays mounted, focused and live across a flip (rule 07).
+            div { class: "bdmq-mode",
+                if scroll_stops() {
+                    div { class: "bdmq-snap", id: "bdmq-snap",
                         for (i, (no, name)) in MARQUEE_SECTIONS.iter().enumerate() {
                             section {
                                 key: "{no}",
-                                class: if i == 0 { "bdmq-flowsec lead" } else { "bdmq-flowsec" },
+                                class: "bdmq-sec",
                                 "data-testid": "bdmq-sec-{i}",
-                                // The first section is the book itself, so it
-                                // is not announced — its own title is the
-                                // heading, and a "01 HOME" rule above it would
-                                // label the page rather than a section of it.
-                                if i > 0 {
-                                    div { class: "bdmq-flowlab",
-                                        "{no}"
-                                        b { "{name}" }
-                                        i { class: "rule", aria_hidden: "true" }
+                                div { class: "bdmq-seclab", "{no} / 07 \u{2014} " b { "{name}" } }
+                                // A filter on the panel would capture every fixed overlay inside it.
+                                div { class: "bdmq-panelscrim", aria_hidden: "true" }
+                                div { class: "bdmq-panel",
+                                    div { class: "bdmq-panel-inner", {stops[i].clone()} }
+                                }
+                                if i < MARQUEE_SECTIONS.len() - 1 {
+                                    div { class: "bdmq-next", aria_hidden: "true",
+                                        "scroll \u{2014} next: {MARQUEE_SECTIONS[i + 1].1}"
+                                        span { class: "arr", "\u{2193}" }
                                     }
                                 }
-                                div { class: "bdmq-flowbody", {stops[i].clone()} }
                             }
                         }
                     }
-                }
-                button {
-                    r#type: "button",
-                    class: "bdmq-flowtop",
-                    id: "bdmq-flowtop",
-                    "data-testid": "bdmq-flowtop",
-                    "\u{2191} back to the book"
+                } else {
+                    // A filter on the scroller would capture every fixed overlay inside it.
+                    div { class: "bdmq-flowscrim", aria_hidden: "true" }
+                    div { class: "bdmq-flowscroll", id: "bdmq-flow",
+                        div { class: "bdmq-flow",
+                            for (i, (no, name)) in MARQUEE_SECTIONS.iter().enumerate() {
+                                section {
+                                    key: "{no}",
+                                    class: if i == 0 { "bdmq-flowsec lead" } else { "bdmq-flowsec" },
+                                    "data-testid": "bdmq-sec-{i}",
+                                    // The first section is the book itself, so it
+                                    // is not announced — its own title is the
+                                    // heading, and a "01 HOME" rule above it would
+                                    // label the page rather than a section of it.
+                                    if i > 0 {
+                                        div { class: "bdmq-flowlab",
+                                            "{no}"
+                                            b { "{name}" }
+                                            i { class: "rule", aria_hidden: "true" }
+                                        }
+                                    }
+                                    div { class: "bdmq-flowbody", {stops[i].clone()} }
+                                }
+                            }
+                        }
+                    }
+                    button {
+                        r#type: "button",
+                        class: "bdmq-flowtop",
+                        id: "bdmq-flowtop",
+                        "data-testid": "bdmq-flowtop",
+                        "\u{2191} back to the book"
+                    }
                 }
             }
         }
     }
+}
+
+/// Stop 03 · Reviews: the counts kicker over the section, whose composer opens
+/// over the stage like the journal's. Every book can be reviewed, so a
+/// wishlist-only one gets the live section rather than an empty state.
+#[component]
+fn MarqueeReviewsStop(uuid: String, reviews: ReviewsCtx) -> Element {
+    rsx! {
+        BdReviewsKicker { ctx: reviews, class: "bdmq-k" }
+        BdReviewsSection { uuid, ctx: reviews, overlay_composer: true }
+    }
+}
+
+/// Take the reader to stop `index` through its dot, so the jump moves
+/// whichever reading the panel is in exactly as the rail does. A no-op off
+/// the web, where there is no rail.
+pub(super) fn jump_to_stop(index: usize) {
+    #[cfg(feature = "web")]
+    {
+        let _ = dioxus::document::eval(&format!(
+            "document.querySelector('[data-testid=\"bdmq-dot-{index}\"]')?.click();"
+        ));
+    }
+    #[cfg(not(feature = "web"))]
+    let _ = index;
+}
+
+/// The dot-rail TOC: one button per stop, the first marked current. The
+/// scroll glue moves the marker and wires the jumps.
+#[component]
+fn DotRail() -> Element {
+    rsx! {
+        nav { class: "bdmq-dots", "aria-label": "Page sections", "data-testid": "bdmq-dots",
+            for (i, (no, name)) in MARQUEE_SECTIONS.iter().enumerate() {
+                button {
+                    key: "{no}",
+                    r#type: "button",
+                    class: if i == 0 { "bdmq-dotrow on" } else { "bdmq-dotrow" },
+                    title: "{name}",
+                    "data-testid": "bdmq-dot-{i}",
+                    i {}
+                    span { class: "lb", "{no} \u{b7} {name}" }
+                }
+            }
+        }
+    }
+}
+
+/// Shown when a save fails; the toggle has already gone back.
+const SCROLL_STOPS_SAVE_ERROR: &str = "Couldn't save scroll stops. Try again.";
+
+/// What the scroll-stops toggle shows this render.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct ScrollStopsView {
+    /// The viewer's saved preference.
+    on: bool,
+    /// `/me` has resolved; until then `on` is only the default.
+    ready: bool,
+    /// The last save failed; the next press clears it.
+    failed: bool,
+}
+
+/// The stage's Scroll stops switch, pinned to its top-right corner and pressed
+/// while the panel snaps section by section. Until the viewer resolves it is
+/// inert and claims neither reading (rule 12).
+#[component]
+fn ScrollStopsToggle(view: ScrollStopsView, on_toggle: EventHandler<()>) -> Element {
+    let pressed = view.ready.then_some(if view.on { "true" } else { "false" });
+    rsx! {
+        div { class: "bdmq-modebar",
+            button {
+                r#type: "button",
+                class: "bdmq-mode-toggle",
+                "data-testid": "bdmq-mode-toggle",
+                "aria-pressed": pressed,
+                title: "Snap through the page one section at a time",
+                disabled: !view.ready,
+                onclick: move |_| on_toggle.call(()),
+                "Scroll stops"
+                span {
+                    class: if view.ready { "bdmq-mode-sw" } else { "bdmq-mode-sw ld-toggle-unknown" },
+                    aria_hidden: true,
+                }
+            }
+            if view.failed {
+                span { class: "bdmq-mode-error", role: "alert", "data-testid": "bdmq-mode-error",
+                    "{SCROLL_STOPS_SAVE_ERROR}"
+                }
+            }
+        }
+    }
+}
+
+/// The toggle's state and press handler. It flips the cached viewer (the stage
+/// re-renders in the other mode at once), saves, and flips back if refused,
+/// through the same save the Preferences switch makes.
+fn use_scroll_stops_toggle() -> (ScrollStopsView, EventHandler<()>) {
+    use crate::pages::account::user_settings::{toggle, SaveState, UserSetting};
+
+    let state = use_signal(|| SaveState::Idle);
+    let viewer = crate::use_current_user().0;
+    let saved = match &*viewer.read() {
+        Some(Some(user)) => Some(user.book_detail_scroll_stops),
+        _ => None,
+    };
+    let view = ScrollStopsView {
+        on: saved.unwrap_or(false),
+        ready: saved.is_some(),
+        failed: state() == SaveState::Failed,
+    };
+    let on_toggle = EventHandler::new(move |_: ()| toggle(UserSetting::ScrollStops, viewer, state));
+    (view, on_toggle)
 }
 
 /// Display facts shared by every stop, derived once in `view.rs` from the

@@ -12,8 +12,9 @@ use crate::view_filters::ViewFilters;
 #[cfg(test)]
 mod tests;
 
-/// Which list view to render on the library page.
+/// How a library list is laid out: as a table or as a grid of covers.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ViewMode {
     Table,
@@ -21,8 +22,9 @@ pub enum ViewMode {
     Grid,
 }
 
-/// Sortable axes exposed in the toolbar / table headers.
+/// The order to list books in.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SortKey {
@@ -30,11 +32,13 @@ pub enum SortKey {
     Title,
     Author,
     Series,
+    /// By the book's `modified` time.
     LastUpdated,
+    /// By the book's `added_at` time.
     NewestAdded,
-    /// Most recent moment *anyone* touched the book — rated it, published a
-    /// journal entry, changed its read status, added it to the library,
-    /// edited its metadata or cover, or checked in a physical copy.
+    /// By the last time anyone rated the book, published a journal entry on it, changed
+    /// its read status, added it, edited its metadata or cover, or checked in a physical
+    /// copy.
     RecentlyInteracted,
 }
 
@@ -69,8 +73,9 @@ impl SortKey {
     }
 }
 
-/// Ascending or descending sort direction for a [`SortKey`].
+/// The direction of a `SortKey` order: ascending or descending.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum SortDir {
@@ -90,23 +95,24 @@ impl SortDir {
     }
 }
 
-/// Persisted library-view preference for a single library path.
+/// One library's saved view settings: layout, sort order and filter.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ViewPrefs {
     pub view_mode: ViewMode,
     pub sort_key: SortKey,
     pub sort_dir: SortDir,
     #[serde(default)]
     pub filters: ViewFilters,
-    /// Whether the filter sidebar is open. Defaults to `false`: a brand-new visitor
-    /// sees an unobstructed library and opts in via the toolbar's `Filters` toggle.
-    /// The choice persists per library.
+    /// Whether the filter panel is open. Defaults to false.
     #[serde(default)]
     pub filters_open: bool,
 }
 
-/// Sort axis for the Authors / Series / Shelves index pages (name A–Z or most books first).
+/// How to order the series or shelves list: by name, or by book count with the most
+/// books first.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum IndexSort {
     #[default]
@@ -114,11 +120,26 @@ pub enum IndexSort {
     BookCount,
 }
 
-/// Persisted, library-wide sort choices for the index pages (Authors, Series, Shelves).
+// Its tokens match `IndexSort`'s, so a choice stored before `Recent` existed
+// still parses.
+/// How to order the authors list: by name, by book count, or by the authors you read
+/// most recently.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AuthorSort {
+    #[default]
+    Name,
+    BookCount,
+    Recent,
+}
+
+/// The saved orders of the authors, series and shelves lists.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DiscoveryPrefs {
     #[serde(default)]
-    pub authors_sort: IndexSort,
+    pub authors_sort: AuthorSort,
     #[serde(default)]
     pub series_sort: IndexSort,
     #[serde(default)]

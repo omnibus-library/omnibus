@@ -1,21 +1,16 @@
-// Cross-format resume prompts + the unified Continue hero, on the
-// RESERVED "Parallel Latitudes" dual pair (see fixtures/dual_format.ts):
-// this spec confirms a link and writes reading/listening progress — all
-// globally visible server state — so no other spec may touch the book.
-//
-// Serial: the tests build on one linked book and strictly increasing
-// position clocks.
+// Cross-format resume prompts and the unified Continue hero, on the reserved
+// "Parallel Latitudes" pair (see fixtures/dual_format.ts). It writes progress
+// and confirms a link, so no other spec may touch the book.
 
-import type { APIRequestContext, Page } from "@playwright/test";
+// Serial: every test links and unlinks the same reserved pair.
+
+import { crossFormat } from "../contracts/crossFormat";
+import { progress } from "../contracts/progress";
 import { AUDIOBOOK_BOOK_COUNT } from "../fixtures/audiobooks";
-import {
-  AUTO_ATTACHED_PAIRS,
-  RESUME_PROMPT_BOOK,
-} from "../fixtures/dual_format";
+import { AUTO_ATTACHED_PAIRS } from "../fixtures/dual_format";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
-import { gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 import {
   audiobookFixturesDir,
   fixturesDir,
@@ -23,445 +18,355 @@ import {
   seedLibrary,
 } from "../utils/seed";
 
-test.describe.configure({ mode: "serial" });
+test.describe("cross-format resume prompts", () => {
+  test.describe.configure({ mode: "serial" });
 
-// Strictly increasing event clocks, anchored to real time (the server
-// clamps future clocks to now, so stay at-or-behind wall clock).
-let clock = Math.floor(Date.now() / 1000) - 60;
-const nextClock = () => ++clock;
-
-let uuid = "";
-
-test.beforeAll(async ({ request }) => {
-  test.setTimeout(120_000);
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-  await seedAudiobookLibrary(
-    request,
-    audiobookFixturesDir(),
-    FIXTURE_BOOKS.length + AUDIOBOOK_BOOK_COUNT - AUTO_ATTACHED_PAIRS,
-  );
-  uuid = await fetchDualUuid(request);
-  const link = await request.post("/api/rpc/cross-format/link", {
-    data: { update: { book_uuid: uuid, mode: "sequence" } },
+  test.beforeAll("seed both libraries", async ({ request }) => {
+    test.setTimeout(120_000);
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+    await seedAudiobookLibrary(
+      request,
+      audiobookFixturesDir(),
+      FIXTURE_BOOKS.length + AUDIOBOOK_BOOK_COUNT - AUTO_ATTACHED_PAIRS,
+    );
   });
-  expect(link.status(), "link confirm failed").toBe(200);
-});
 
-test.afterAll(async ({ request }) => {
-  // Restore the unlinked state so a future spec inherits nothing.
-  if (uuid) {
-    await request.post("/api/rpc/cross-format/unlink", {
-      data: { uuid },
+  // The fixture unlinks the pair after each test, so each one confirms it
+  // afresh. That also turns follow on, the state every test starts from.
+  test.beforeEach(
+    "link the reserved pair",
+    async ({ crossFormatRequests, resumePromptUuid, linkedBookUuids }) => {
+      const linked = await crossFormatRequests.postLink(resumePromptUuid);
+      await expect(linked, "link confirm").toBeOK();
+      linkedBookUuids.add(resumePromptUuid);
+    },
+  );
+
+  test("resolve a linked book silently on the player", async ({
+    listenPage,
+    progressRequests,
+    resumePromptUuid: uuid,
+    eventClock,
+  }) => {
+    // Reading ahead at 50% of the text maps to ~1s of the 2-second fixture,
+    // so the seek slider must boot past 0 with no prompt card anywhere.
+    await test.step("read ahead of the audio", async () => {
+      const audio = await progressRequests.postAudioPosition(
+        uuid,
+        0,
+        eventClock.next(),
+      );
+      await expect(audio, "audio progress write").toBeOK();
+      const epub = await progressRequests.postEpubPercent(
+        uuid,
+        50,
+        eventClock.next(),
+      );
+      await expect(epub, "epub progress write").toBeOK();
     });
-  }
-});
 
-async function fetchDualUuid(request: APIRequestContext): Promise<string> {
-  const isEbook = (f: string) => /^(epub|pdf)$/i.test(f);
-  const isAudio = (f: string) => /^(mp3|m4b)$/i.test(f);
-  let found: string | null = null;
-  await expect
-    .poll(
-      async () => {
-        const resp = await request.get("/api/rpc/ebooks");
-        if (resp.status() !== 200) return false;
-        const body = (await resp.json()) as {
-          books: {
-            title: string | null;
-            unique_identifier: string | null;
-            formats: string[];
-          }[];
-        };
-        const match = body.books.find(
-          (b) => b.title === RESUME_PROMPT_BOOK.title,
-        );
-        if (!match?.formats.some(isEbook) || !match.formats.some(isAudio)) {
-          return false;
-        }
-        found = match.unique_identifier;
-        return found !== null;
-      },
-      { timeout: 45_000 },
-    )
-    .toBe(true);
-  return found!;
-}
-
-async function writeEpubPercent(
-  request: APIRequestContext,
-  percent: number,
-): Promise<void> {
-  const resp = await request.post("/api/rpc/progress", {
-    data: {
-      update: {
-        book_uuid: uuid,
-        format: "epub",
-        progress_percent: percent,
-        client_updated_at: nextClock(),
-      },
-    },
-  });
-  expect(resp.status(), "epub progress write failed").toBe(200);
-}
-
-async function writeAudioSeconds(
-  request: APIRequestContext,
-  seconds: number,
-): Promise<void> {
-  const resp = await request.post("/api/rpc/progress", {
-    data: {
-      update: {
-        book_uuid: uuid,
-        format: "audio",
-        audio_position_seconds: seconds,
-        client_updated_at: nextClock(),
-      },
-    },
-  });
-  expect(resp.status(), "audio progress write failed").toBe(200);
-}
-
-// Named by its stable aria-label rather than its visible text, which flips
-// between "following" and "not following" with the state.
-const followSwitch = (page: Page) =>
-  page.getByRole("switch", { name: "Follow the other format" });
-
-test("a linked book resolves silently on the player — no prompt, mapped seek", async ({
-  page,
-  request,
-}) => {
-  // Confirming the link turns follow on, and follow-only is the whole
-  // surface now:
-  // the old "jump ahead?" card is gone, the boot itself seeds the mapped
-  // position (resolve_follow_boot). Reading ahead at 50% of the text maps
-  // to ~1s of the 2-second fixture — the seek slider must boot past 0
-  // with no prompt card anywhere.
-  await writeAudioSeconds(request, 0);
-  await writeEpubPercent(request, 50);
-
-  await gotoReady(page, `/listen/${uuid}`);
-  await page.waitForLoadState("networkidle");
-  // "No prompt card": the declare pill is the only sync affordance, and
-  // the removed offer card's user-facing copy ("Jump ahead?" / "Sync to")
-  // appears nowhere — pinned to the historical strings so a resurrected
-  // prompt would fail this, unlike a role/testid that never existed.
-  await expect(page.getByTestId("listen-sync-here")).toBeVisible();
-  await expect(page.getByText(/Jump ahead|Sync to \d/)).toHaveCount(0);
-  const seek = page.getByRole("slider", { name: "Seek" });
-  await expect
-    .poll(async () => Number(await seek.inputValue()), {
-      timeout: 15_000,
-      message: "the boot should seed the mapped (non-zero) position",
-    })
-    .toBeGreaterThan(0);
-});
-
-test("the stack shows one synced card with the counterpart affordance", async ({
-  page,
-  request,
-}) => {
-  // The stack holds the five newest positions and drops finished books —
-  // and the 2-second fixture MP3 finishes on any playback, which flips
-  // read status to `finished`. Reset to `reading`, re-stamp, and reload
-  // until the card lands (the established hero-spec pattern).
-  //
-  // Re-anchor the synthetic clock to wall time first (test 4's pattern):
-  // the file-level clock starts at wall−60 and gains one second per
-  // write, while parallel specs stamp wall-clock positions — without the
-  // re-anchor this card can be out-ranked for the entire retry window.
-  clock = Math.floor(Date.now() / 1000) - 3;
-  await expect
-    .poll(
-      async () => {
-        const status = await request.post("/api/rpc/read-status/set", {
-          data: { update: { book_uuid: uuid, status: "reading" } },
-        });
-        expect(status.status(), "read-status reset failed").toBe(200);
-        await writeEpubPercent(request, 80);
-        await gotoReady(page, "/");
-        return page
-          .getByTestId(`hero-resume-${uuid}`)
-          .waitFor({ state: "visible", timeout: 3_000 })
-          .then(() => true)
-          .catch(() => false);
-      },
-      { timeout: 45_000, intervals: [1_000] },
-    )
-    .toBe(true);
-
-  const cards = page.getByTestId(`hero-resume-${uuid}`);
-  await expect(cards).toHaveCount(1);
-
-  // The cross-format affordances describe the book that is out front, so
-  // bring this one forward if a parallel spec stamped a newer position while
-  // the poll above was converging. Clicking the front card would navigate, so
-  // only a card that is behind gets clicked — and a card behind sits ~74px
-  // under its neighbour at rest, so spread the fan first and click the left
-  // sliver that is always its own.
-  if (!(await cards.getAttribute("class"))?.includes("lead")) {
-    await page.getByTestId("continue-stack").locator(".lmq-fan").hover();
-    await cards.click({ position: { x: 12, y: 60 } });
-  }
-  await expect(cards).toHaveClass(/\blead\b/);
-
-  // The stack has no per-card eyebrow, so the synced state is reported once,
-  // in the kicker above the front book.
-  await expect(page.getByTestId("continue-stack")).toContainText("synced");
-  await expect(page.getByTestId(`hero-crossformat-${uuid}`)).toBeVisible();
-
-  // The linked dual-format card also carries the Immersive pill, which
-  // opens the reader with the audiobook docked (same handler as the
-  // book-detail CTA — immersive.spec.ts covers the dock itself).
-  const immersive = page.getByTestId(`hero-immersive-${uuid}`);
-  await expect(immersive).toBeVisible();
-  await immersive.click();
-  await expect(page).toHaveURL(new RegExp(`/read/${uuid}$`));
-});
-
-test("the book detail shows the newest-format progress row above the sync chip", async ({
-  page,
-}) => {
-  // Linked and fresh: the marquee stage shows ONE position ruler for the book
-  // plus the linked sync readout naming the audio-timeline hand-off.
-  await gotoReady(page, `/books/${uuid}`);
-  const row = page.getByTestId("sync-link-row");
-  await expect(page.getByTestId("bdmq-ruler")).toBeVisible();
-  await expect(page.getByTestId("sync-link-manage")).toBeVisible();
-  // The one-spot line explains the mapped hand-off.
-  await expect(row.getByText("one spot, both formats")).toBeVisible();
-});
-
-test("declaring a sync point anchors the mapping and the reader auto-applies", async ({
-  page,
-  request,
-}) => {
-  // Establish a REAL stored CFI first: the live failure mode was the
-  // restore settle chain yanking the view back off the follow jump, and
-  // that chain only engages when a stored CFI restore is in flight — a
-  // percent-only row skips the restore entirely, which is how the earlier
-  // version of this test missed it.
-  await gotoReady(page, `/read/${uuid}`);
-  await expectMutation(
-    page,
-    { method: "POST", url: /\/api\/rpc\/progress(?:\?|$)/ },
-    async () => page.getByTestId("reader-next").click(),
-  );
-
-  // Earlier tests in this serial file leave WALL-clock progress writes
-  // (a reader relocate, a player flush — and the page turn above), which
-  // outrank this file's synthetic `now-60+n` clocks at the resume clock
-  // gate — the follow candidate would read as NothingNewer and the
-  // auto-apply would never fire. Re-anchor above the newest stored clock
-  // (staying at-or-behind wall clock, which the server clamps to).
-  let newest = 0;
-  for (const format of ["epub", "audio"] as const) {
-    const resp = await request.post("/api/rpc/progress/get", {
-      data: { uuid, format },
+    await test.step("open the player", async () => {
+      await listenPage.goto(uuid);
     });
-    if (resp.status() === 200) {
-      const rec = (await resp.json()) as {
-        client_updated_at: number | null;
-      } | null;
-      newest = Math.max(newest, rec?.client_updated_at ?? 0);
-    }
-  }
-  // If the newest write is at (or near) wall clock, anchoring on it would
-  // push nextClock() into the future, where the server clamps every write
-  // to now — collapsing them onto one clock that then loses the
-  // strictly-newer gate. Wait out the collision window instead so the
-  // anchor is both strictly newer than every stored clock and far enough
-  // behind wall clock for this test's three writes.
-  await expect
-    .poll(() => Math.floor(Date.now() / 1000), { timeout: 15_000 })
-    .toBeGreaterThan(newest + 3);
-  clock = Math.floor(Date.now() / 1000) - 3;
 
-  // Reading behind (the stored page-turn CFI above), listening ahead —
-  // then declare from the player so follow mode engages.
-  await writeAudioSeconds(request, 1);
+    await test.step("check the boot seeded the mapped position without a prompt", async () => {
+      await expect(listenPage.syncHereButton).toBeVisible();
+      await expect(listenPage.removedSyncPrompt).toHaveCount(0);
+      await expect
+        .poll(() => listenPage.seekPosition(), {
+          timeout: 15_000,
+          message: "the boot should seed the mapped (non-zero) position",
+        })
+        .toBeGreaterThan(0);
+    });
+  });
 
-  await gotoReady(page, `/listen/${uuid}`);
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: `/api/rpc/cross-format/sync-point`,
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("listen-sync-here").click(),
-  );
-  await expect(page.getByTestId("listen-sync-here")).toContainText("Synced");
+  test("show one synced card with the counterpart affordance on the continue stack", async ({
+    libraryPage,
+    epubReaderPage,
+    progressRequests,
+    readStatusRequests,
+    resumePromptUuid: uuid,
+    eventClock,
+  }) => {
+    const { continueStack } = libraryPage;
 
-  // Listening advances past the declared pair; the reader then opens at
-  // the mapped spot silently — no banner, and the view lands near the end.
-  // Banner absence alone is not the contract (a silently-dropped jump also
-  // shows no banner): the footer must show the moved position. The jump
-  // fires before epub.js locations resolve, so this exercises the glue's
-  // pending-jump path (displayPercentage parks the percentage and init's
-  // locations hook applies it) — the fixture's `longBody` is what gives
-  // the book enough locations for the jump to be visually distinct.
-  await writeAudioSeconds(request, 2);
-  await gotoReady(page, `/read/${uuid}`);
-  await page.waitForLoadState("networkidle");
-  // The footer's whole-book percent proves the view actually moved to the
-  // mapped spot (audio at end → epub ≈ 100%), not merely that no banner
-  // showed — a silently-dropped jump also shows no banner.
-  await expect(page.getByTestId("reader-footer")).toContainText(
-    /(8[6-9]|9\d|100)%/,
-    { timeout: 20_000 },
-  );
-});
+    // The stack drops finished books and the 2-second fixture MP3 finishes on
+    // any playback, so reset, re-stamp and reload until the card lands. The
+    // clock is re-anchored because parallel specs stamp wall-clock positions.
+    await test.step("reopen the library until the book's card lands", async () => {
+      eventClock.reanchor();
+      await expect
+        .poll(
+          async () => {
+            const reset = await readStatusRequests.putReadStatus(
+              uuid,
+              "reading",
+            );
+            await expect(reset, "read-status reset").toBeOK();
+            const epub = await progressRequests.postEpubPercent(
+              uuid,
+              80,
+              eventClock.next(),
+            );
+            await expect(epub, "epub progress write").toBeOK();
+            await libraryPage.goto();
+            return continueStack.showsCard(uuid);
+          },
+          { timeout: 45_000, intervals: [1_000] },
+        )
+        .toBe(true);
+      await expect(continueStack.card(uuid)).toHaveCount(1);
+    });
 
-test("sync-point refusal offers linking even when the server message changes", async ({
-  page,
-}) => {
-  // Dioxus's real wire shape for a LinkRequired refusal: HTTP 500, the
-  // refusal in the payload's `code` (428), no `data`. Only the message is
-  // rewritten, so the label must come from the code alone.
-  await page.route("**/api/rpc/cross-format/sync-point", (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "application/json",
-      body: JSON.stringify({
-        message: "Choose the matching formats before syncing.",
-        code: 428,
-      }),
-    }),
-  );
-  await gotoReady(page, `/listen/${uuid}`);
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/cross-format/sync-point",
-      expectedStatus: 500,
-    },
-    async () => page.getByTestId("listen-sync-here").click(),
-  );
-  await expect(page.getByTestId("listen-sync-here")).toHaveText(
-    "Link formats first",
-  );
-});
+    // The affordances describe the book out front, so a parallel spec's newer
+    // position may have to be moved behind it.
+    await test.step("bring the card to the front of the fan", async () => {
+      await continueStack.bringForward(uuid);
+      await expect(continueStack.card(uuid)).toHaveClass(/\blead\b/);
+    });
 
-// The follow tests come last in this serial file on purpose: they flip
-// follow, which every test above depends on being on. Each restores it.
-test("the follow switch turns the jumps off without discarding the alignment", async ({
-  page,
-}) => {
-  await gotoReady(page, `/books/${uuid}`);
-  const toggle = followSwitch(page);
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
+    // The stack has no per-card eyebrow, so the synced state is reported once,
+    // on the front book's byline.
+    await test.step("check the front card is synced and offers the counterpart", async () => {
+      await expect(continueStack.root).toContainText("synced");
+      await expect(continueStack.crossFormatChip(uuid)).toBeVisible();
+      await expect(continueStack.immersiveChip(uuid)).toBeVisible();
+    });
 
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/cross-format/follow",
-      expectedBody: { uuid, body: { enabled: false } },
-      expectedStatus: 200,
-    },
-    async () => toggle.click(),
-  );
-  await expect(toggle).toHaveAttribute("aria-checked", "false");
+    // Same handler as the book-detail CTA; immersive.spec covers the dock.
+    await test.step("open the reader with the audiobook docked", async () => {
+      await continueStack.openImmersive(uuid);
+      await epubReaderPage.assertDisplayedFor(uuid);
+    });
+  });
 
-  // Off is not a disguised unlink (AC2): the confirmed link survives, so
-  // the line still reads linked and still offers Manage rather than the
-  // unlinked "Link Formats" nudge.
-  const row = page.getByTestId("sync-link-row");
-  await expect(row.getByText("one spot, both formats")).toBeVisible();
-  await expect(page.getByTestId("sync-link-manage")).toBeVisible();
-  await expect(page.getByTestId("sync-link-open")).toHaveCount(0);
+  test("show the newest-format progress row above the sync chip", async ({
+    bookDetailPage,
+    resumePromptUuid: uuid,
+  }) => {
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(uuid);
+    });
 
-  // And back on, so the serial file leaves the state it started in.
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/cross-format/follow",
-      expectedBody: { uuid, body: { enabled: true } },
-      expectedStatus: 200,
-    },
-    async () => toggle.click(),
-  );
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
-});
+    // One position ruler for the book plus the linked readout naming the
+    // audio-timeline hand-off.
+    await test.step("check the ruler and the linked readout show", async () => {
+      await expect(bookDetailPage.progressRuler).toBeVisible();
+      await expect(bookDetailPage.syncLink.manageButton).toBeVisible();
+      await expect(bookDetailPage.syncLink.linkedSummary).toBeVisible();
+    });
+  });
 
-test("a failed follow flip surfaces the error and leaves the switch where it was", async ({
-  page,
-}) => {
-  await gotoReady(page, `/books/${uuid}`);
-  const toggle = followSwitch(page);
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  test("apply a declared sync point when the reader opens", async ({
+    epubReaderPage,
+    listenPage,
+    progressRequests,
+    resumePromptUuid: uuid,
+    eventClock,
+    newestStoredClock,
+    expectMutation,
+  }) => {
+    // The live failure was the restore settle chain yanking the view off the
+    // follow jump, and that chain only engages for a stored CFI restore. A
+    // percent-only row skips it.
+    await test.step("turn a page to store a real position", async () => {
+      await epubReaderPage.goto(uuid);
+      await expectMutation(progress.save(), () => epubReaderPage.turnPage());
+    });
 
-  await page.route("**/api/rpc/cross-format/follow", (route) =>
-    route.fulfill({ status: 500, body: "boom" }),
-  );
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/cross-format/follow",
-      expectedBody: { uuid, body: { enabled: false } },
-      expectedStatus: 500,
-    },
-    async () => toggle.click(),
-  );
+    // Wall-clock writes outrank this file's synthetic clocks at the resume
+    // gate. Anchoring on a clock near wall time would let the server clamp
+    // later writes onto one clock, so wait it out and anchor behind it.
+    await test.step("move the clock past the position just stored", async () => {
+      const newest = await newestStoredClock(uuid);
+      await expect
+        .poll(() => Math.floor(Date.now() / 1000), { timeout: 15_000 })
+        .toBeGreaterThan(newest + 3);
+      eventClock.reanchor();
+    });
 
-  const err = page.getByTestId("sync-follow-error");
-  await expect(err).toBeVisible();
-  // Visible is not enough — the message has to READ as a failure. Its class
-  // is the only thing that colours it, and the obvious `bdmq-syncline-warn`
-  // exists solely as a compound selector on the line itself, so a span
-  // carrying it renders in body ink.
-  await expect(err).toHaveClass(/bdmq-syncerr/);
-  // The write never landed, so the switch must not claim it did.
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
-});
+    await test.step("listen ahead of the reading position", async () => {
+      const audio = await progressRequests.postAudioPosition(
+        uuid,
+        1,
+        eventClock.next(),
+      );
+      await expect(audio, "audio progress write").toBeOK();
+    });
 
-test("the switch holds the value the server took, then yields to a fresher view", async ({
-  page,
-}) => {
-  // The flip is two round trips: the write, then a re-read of the alignment
-  // the switch renders from. The re-read keeps the previous view on failure,
-  // so without the acknowledged value standing in, a dropped refetch would
-  // leave the switch showing the PRE-flip state with no error. But the
-  // stand-in has to expire on the next view that LANDS, not on one whose
-  // value happens to agree — otherwise a server move the switch didn't make
-  // latches it on a stale label forever.
-  await gotoReady(page, `/books/${uuid}`);
-  const toggle = followSwitch(page);
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
+    await test.step("declare a sync point from the player", async () => {
+      await listenPage.goto(uuid);
+      await expectMutation(crossFormat.syncPoint(), () =>
+        listenPage.declareSyncPoint(),
+      );
+      await expect(listenPage.syncHereButton).toContainText("Synced");
+    });
 
-  // Let the write through, break only the refetch behind it.
-  await page.route("**/api/rpc/cross-format/alignment", (route) =>
-    route.fulfill({ status: 500, body: "boom" }),
-  );
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/cross-format/follow",
-      expectedBody: { uuid, body: { enabled: false } },
-      expectedStatus: 200,
-    },
-    async () => toggle.click(),
-  );
-  await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await test.step("listen past the declared pair and open the reader", async () => {
+      const audio = await progressRequests.postAudioPosition(
+        uuid,
+        2,
+        eventClock.next(),
+      );
+      await expect(audio, "audio progress write").toBeOK();
+      await epubReaderPage.goto(uuid);
+    });
 
-  // The half that a "hold it until the value agrees" rule gets wrong: the
-  // server moves follow for a reason that is NOT this switch. Confirming
-  // the alignment re-arms it, so once that fresh view lands the switch must
-  // follow the server back to on rather than holding the value it wrote.
-  await page.unroute("**/api/rpc/cross-format/alignment");
-  await page.getByTestId("sync-link-manage").click();
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/cross-format/link",
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("alignment-confirm").click(),
-  );
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
+    // The jump fires before epub.js locations resolve, so this exercises the
+    // glue's pending-jump path. A silently dropped jump also shows no banner,
+    // so the footer's whole-book percent is the proof (audio at end → ~100%).
+    await test.step("check the reader opened at the mapped spot", async () => {
+      await expect(epubReaderPage.footerBar).toContainText(
+        /(8[6-9]|9\d|100)%/,
+        { timeout: 20_000 },
+      );
+    });
+  });
+
+  test("offer linking when a sync point is refused whatever the server says", async ({
+    listenPage,
+    resumePromptUuid: uuid,
+    expectMutation,
+  }) => {
+    // Only the message differs from the server's, so the label has to come
+    // from the refusal code alone.
+    await test.step("open the player while sync points are refused", async () => {
+      await listenPage.stubSyncPointRefusal();
+      await listenPage.goto(uuid);
+    });
+
+    await test.step("declare a sync point", async () => {
+      await expectMutation(failing(crossFormat.syncPoint()), () =>
+        listenPage.declareSyncPoint(),
+      );
+    });
+
+    await test.step("check the pill offers linking", async () => {
+      await expect(listenPage.syncHereButton).toHaveText("Link formats first");
+    });
+  });
+
+  test("turn the jumps off with the follow switch without discarding the alignment", async ({
+    bookDetailPage,
+    resumePromptUuid: uuid,
+    expectMutation,
+  }) => {
+    const { syncLink } = bookDetailPage;
+
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(uuid);
+      await expect(syncLink.followSwitch).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+    });
+
+    await test.step("turn follow off", async () => {
+      await expectMutation(crossFormat.follow(uuid, false), () =>
+        syncLink.toggleFollow(),
+      );
+      await expect(syncLink.followSwitch).toHaveAttribute(
+        "aria-checked",
+        "false",
+      );
+    });
+
+    // Off is not a disguised unlink (AC2): the confirmed link survives, so the
+    // line still reads linked and offers Manage, not the unlinked nudge.
+    await test.step("check the link survives", async () => {
+      await expect(syncLink.linkedSummary).toBeVisible();
+      await expect(syncLink.manageButton).toBeVisible();
+      await expect(syncLink.linkFormatsButton).toHaveCount(0);
+    });
+
+    await test.step("turn follow back on", async () => {
+      await expectMutation(crossFormat.follow(uuid, true), () =>
+        syncLink.toggleFollow(),
+      );
+      await expect(syncLink.followSwitch).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+    });
+  });
+
+  test("surface a failed follow flip and leave the switch where it was", async ({
+    bookDetailPage,
+    resumePromptUuid: uuid,
+    expectMutation,
+  }) => {
+    const { syncLink } = bookDetailPage;
+
+    await test.step("open the book while follow flips fail", async () => {
+      await bookDetailPage.goto(uuid);
+      await expect(syncLink.followSwitch).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+      await bookDetailPage.forceServerError(crossFormat.follow(uuid, false));
+    });
+
+    await test.step("turn follow off", async () => {
+      await expectMutation(failing(crossFormat.follow(uuid, false)), () =>
+        syncLink.toggleFollow(),
+      );
+    });
+
+    await test.step("check the error shows and the switch stays on", async () => {
+      await expect(syncLink.followError).toBeVisible();
+      // Visible is not enough: the message has to read as a failure. Its class
+      // is the only thing that colours it, and the obvious `bdmq-syncline-warn`
+      // exists solely as a compound selector on the line itself.
+      await expect(syncLink.followError).toHaveClass(/bdmq-syncerr/);
+      // The write never landed, so the switch must not claim it did.
+      await expect(syncLink.followSwitch).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+    });
+  });
+
+  // The flip's acknowledged value stands in while the alignment re-read fails,
+  // and must expire on the next view that LANDS, not one whose value agrees.
+  // One scenario rather than two: the stand-in exists only in the flipping page.
+  test("keep the switch on the value the server took until a fresher alignment lands", async ({
+    bookDetailPage,
+    resumePromptUuid: uuid,
+    expectMutation,
+  }) => {
+    const { syncLink, alignmentModal } = bookDetailPage;
+
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(uuid);
+      await expect(syncLink.followSwitch).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+    });
+
+    await test.step("turn follow off while the alignment re-read fails", async () => {
+      await bookDetailPage.forceServerError(crossFormat.alignment());
+      await expectMutation(crossFormat.follow(uuid, false), () =>
+        syncLink.toggleFollow(),
+      );
+      await expect(syncLink.followSwitch).toHaveAttribute(
+        "aria-checked",
+        "false",
+      );
+    });
+
+    // Confirming the alignment re-arms follow, so once that fresh view lands
+    // the switch must follow the server back to on rather than hold what it
+    // wrote.
+    await test.step("confirm the alignment again", async () => {
+      await bookDetailPage.stopForcingServerError(crossFormat.alignment());
+      await syncLink.manageAlignment();
+      await expectMutation(crossFormat.link(), () => alignmentModal.confirm());
+      await expect(syncLink.followSwitch).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+    });
+  });
 });

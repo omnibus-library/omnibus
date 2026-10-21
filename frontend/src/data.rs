@@ -6,7 +6,7 @@
 
 mod account;
 // Admin server-health report (F5, #952) — web (server-fn) + SSR stubs; not
-// a mobile surface, same shape as `errors`/`logs`.
+// a mobile surface, same shape as `logs`.
 #[cfg(not(feature = "mobile"))]
 mod admin_health;
 // Per-user API tokens (#2313) — web (server-fn); the Settings management
@@ -20,7 +20,7 @@ mod admin_sessions;
 mod auth;
 mod authors;
 // Admin background-task history read (#941) — web (server-fn) + SSR stubs;
-// not a mobile surface, same shape as `errors`.
+// not a mobile surface, same shape as `admin_health`.
 #[cfg(not(feature = "mobile"))]
 mod background_tasks;
 mod bookmarks;
@@ -29,15 +29,11 @@ mod books;
 // mobile posts the same `/api/rpc/cleanup/*` routes, so the wrappers compile
 // under both gates even though no mobile UI ships yet.
 mod cleanup;
-// Admin "last errors" ring buffer read (#954) — web (server-fn) + SSR stubs;
-// not a mobile surface, same shape as `logs`.
-#[cfg(not(feature = "mobile"))]
-mod errors;
 mod genres;
 mod highlights;
 // Per-book Started/Time-read/Sessions insights (#1904) — the book-detail
 // rail section that renders them doesn't compile on mobile, so there's no
-// REST transport, same shape as `admin_health`/`errors`.
+// REST transport, same shape as `admin_health`.
 #[cfg(not(feature = "mobile"))]
 mod insights;
 mod journals;
@@ -57,8 +53,11 @@ mod metadata_search;
 mod physical;
 mod profile;
 mod progress;
+// Mobile only: what the outbox needs to replay a rating queued before reviews.
+#[cfg(feature = "mobile")]
 mod ratings;
 mod read_status;
+mod reviews;
 mod scan;
 mod series;
 // Self-service session management (F5.4, #910) — web (gloo REST) + SSR
@@ -98,8 +97,6 @@ pub use bookmarks::*;
 pub use books::*;
 pub use cleanup::*;
 pub use cross_format::*;
-#[cfg(not(feature = "mobile"))]
-pub use errors::*;
 pub use genres::*;
 pub use highlights::*;
 #[cfg(not(feature = "mobile"))]
@@ -116,8 +113,10 @@ pub use metadata_search::*;
 pub use physical::*;
 pub use profile::*;
 pub use progress::*;
-pub use ratings::*;
+#[cfg(feature = "mobile")]
+pub(crate) use ratings::*;
 pub use read_status::*;
+pub use reviews::*;
 pub use scan::*;
 pub use series::*;
 #[cfg(not(feature = "mobile"))]

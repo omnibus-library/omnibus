@@ -78,7 +78,7 @@ files…**, no other user's private shelves, and "You
 don't have permission to add books" on the add page — the criteria the
 catalog marks undecidable for admins become decidable for it. Every call sets
 each account's permissions to its role, so last run's reader is this run's
-admin again without anyone touching **Settings → Users**.
+admin again without anyone touching **Administration → People**.
 
 ## The phantom device (`resuming_from_another_device`)
 

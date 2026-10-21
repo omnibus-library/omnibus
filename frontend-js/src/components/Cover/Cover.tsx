@@ -1,0 +1,45 @@
+import { useState } from "react";
+import type { Book } from "../../api";
+import { plateAuthor } from "../../format";
+import "./Cover.css";
+
+type CoverProps = {
+  book: Pick<Book, "title" | "authors" | "accent">;
+  src: string | null;
+  srcSet?: string;
+  sizes?: string;
+};
+
+/** A book cover, or the typeset plate when there is no image or it fails. */
+export function Cover({ book, src, srcSet, sizes }: CoverProps) {
+  // Keyed by address, so a new src gets its own chance to load.
+  const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
+  const shown = src !== null && src !== brokenSrc;
+  return (
+    <div
+      className="cover-wrap"
+      style={book.accent ? { "--accent": book.accent } : undefined}
+      data-testid="cover"
+    >
+      <div
+        className={shown ? "cover tpl-plate ld-cover-glint" : "cover tpl-plate"}
+      >
+        {shown ? (
+          <img
+            src={src}
+            srcSet={srcSet}
+            sizes={sizes}
+            alt={`Cover of ${book.title}`}
+            loading="lazy"
+            onError={() => setBrokenSrc(src)}
+          />
+        ) : (
+          <>
+            <div className="ca">{plateAuthor(book.authors)}</div>
+            <div className="ct">{book.title}</div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

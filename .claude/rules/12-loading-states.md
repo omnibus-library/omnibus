@@ -1,3 +1,6 @@
+---
+paths: "frontend/**"
+---
 # 12 — Loading states
 
 Every surface that waits draws from one vocabulary:
@@ -65,11 +68,13 @@ paint and installs the image-load listener; `use_hydration_marker` stamps
 
 - **Never read `data-hydrated` in rsx.** It exists outside the vdom so SSR and
   the first client paint stay identical (rule 07); only CSS and tests key on it.
-- **Playwright:** `gotoReady` waits for the marker, then `networkidle` — the
-  marker is what proves handlers are attached. To pin the pre-hydration page,
-  hold the app's `omnibus_bg*.wasm` (`boot.spec.ts`), not a `/wasm/` path:
+- **Playwright:** a page object's `open` waits for the marker and `openAndSettle`
+  adds `networkidle`. The marker is what proves handlers are attached. To pin
+  the pre-hydration page, hold the app's `omnibus_bg*.wasm`
+  (`PreHydrationComponent`, used by `boot.spec.ts`), not a `/wasm/` path:
   `dx serve` serves it from `/wasm/`, the release bundle CI runs from a hashed
-  `/assets/` name. Navigate with `waitUntil: "domcontentloaded"` while held.
+  `/assets/` name. Navigate with `waitUntil: "domcontentloaded"` while held
+  (`gotoBeforeHydration`).
 
 ## Motion
 
@@ -77,9 +82,13 @@ paint and installs the image-load listener; `use_hydration_marker` stamps
 - Block loaders and skeleton plates enter after `--ld-hold`, so a fetch that
   settles inside it paints nothing rather than a flash (skeletons still hold
   their space from the first frame).
-- The cover glint stops on `img[data-loaded]`, stamped by a capture-phase load
-  listener `BootScript` installs. Never key loading visuals on an `onload`
-  handler: an SSR'd image can finish before hydration and the event is gone.
+- A cover's `<img>` stays transparent until `img[data-loaded]`, then fades in
+  over its plate, and the glint stops on the same stamp — set by a
+  capture-phase load listener `BootScript` installs, once the image decodes.
+  Hiding it is the point: a browser draws an image as its bytes arrive, and
+  may paint the missing rows white. Never key loading visuals on an
+  `onload` handler: an SSR'd image can finish before hydration and the event
+  is gone.
 - Under `prefers-reduced-motion` nothing travels: marks hold still and breathe
   opacity. This applies to **every** animation in the app, not only loaders —
   a new keyframe ships with its reduced-motion override.

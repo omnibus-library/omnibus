@@ -66,19 +66,19 @@ turn up something cosmetic that no assertion would catch.
    - **Look at the suggestions.** These come from Hardcover and need a
      server-wide API key. If the panel offers an "Add a Hardcover API key" CTA
      instead of books, the feature is switched off — that is **not** a finding,
-     and you must not go to Settings to enable it. Note it and follow the
+     and you must not go to Administration to enable it. Note it and follow the
      sibling "More by <author>" panel instead.
    - **If the book has both an ebook and an audiobook**, look for the
      immersive-read invitation and the two separate positions. Reading
      position and listening position are independent; both showing is
      correct, and one moving because the other did is not.
    - **Flip the scroll-stop layout.** The detail page has two shapes, chosen
-     by a toggle on **your own** account page (Settings → Account on the web,
-     reached from the user menu's Edit link; You → User settings on iOS): off
+     by a per-reader preference (the Scroll stops toggle in the stage's
+     top-right corner, or Settings → Preferences on the web; You → User settings on iOS): off
      (the default) is one
      continuous page with the sections introduced by rules; on snaps the page
-     section by section with a dot rail. Go to your account page, turn it on,
-     come back to this book, and confirm the page now snaps and the dot rail
+     section by section with a dot rail. Turn it on, come back to this book
+     if you left it, and confirm the page now snaps and the dot rail
      is there. Read the same sections in the new layout — nothing should be
      missing that the other layout had. Then turn it off again and confirm the
      continuous page is back. Journal `ui.scroll_stops` with each change and

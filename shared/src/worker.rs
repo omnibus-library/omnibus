@@ -6,12 +6,15 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Discriminant for [`TaskProgress`] entries. Mirrors the payload-less
-/// shape of the server-side `Task` enum so the wire protocol stays
-/// decoupled from the runtime `Task` type's lifetimes and handler
-/// closures. `#[non_exhaustive]` so future worker actions can be added
-/// without breaking client matches.
+// Mirrors the payload-less shape of the server-side `Task` enum so the wire
+// protocol stays decoupled from the runtime `Task` type's lifetimes and handler
+// closures. `#[non_exhaustive]` so future worker actions can be added without
+// breaking client matches.
+/// The kind of a background task. `scan` also covers the jobs that follow a scan and
+/// other jobs without a kind of their own. More kinds may come, so clients should accept
+/// values they don't know.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum TaskKind {
@@ -23,12 +26,12 @@ pub enum TaskKind {
     ResolveSuggestions,
 }
 
-/// Lifecycle state of a single worker task as exposed to the UI.
-///
-/// `Running.total = None` means no granular progress yet or a pre-count phase
-/// (e.g. scanner tree-walk); with `Some`, `processed / total` is a stable ratio.
-/// `Done` and `Failed` stay in [`WorkerStatus::recent_complete`] for ~10s.
+/// Where a background task stands. `state` says which case it is. A `running` task
+/// without `total` hasn't counted its work yet. With `total`, `processed` out of `total`
+/// is its progress. `done` and `failed` tasks stay in `recent_complete` for about 10
+/// seconds.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum ProgressState {
     Running {
@@ -38,16 +41,16 @@ pub enum ProgressState {
     },
     Done {
         processed: u32,
-        /// Set when a scan ghosted a large-but-sub-abort-threshold number of
-        /// books — the UI renders a dismissible warning row
-        /// instead of the ordinary success row.
+        /// Present when a scan found many books' files missing, though not so many that
+        /// it stopped. Clients warn about it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ghost_warning: Option<GhostFilesWarning>,
-        /// `book_uuid`s that failed a fleet-wide EPUB override bake: `Some` only for a
-        /// `RewriteAllEpubs` run that left at least one book unbaked, else `None`.
-        /// Mutually exclusive with `ghost_warning`. Deliberately just uuids, not error
-        /// text: this endpoint is readable by any authenticated user and the underlying
-        /// error can carry a server filesystem path (the full message is logged instead).
+        // Deliberately just uuids, not error text: this endpoint is readable by any
+        // authenticated user and the underlying error can carry a server filesystem
+        // path (the full message is logged instead).
+        /// The uuids of books whose EPUB couldn't be rebuilt with their edited metadata,
+        /// after a rebuild of every EPUB. Absent otherwise, and never present together
+        /// with `ghost_warning`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bake_errors: Option<Vec<String>>,
     },
@@ -56,30 +59,31 @@ pub enum ProgressState {
     },
 }
 
-/// Ghost-count tally attached to a scan's `Done` state: `removed` books lost
-/// their backing file this scan out of `total` file-backed books in the
-/// library, clearing the warn threshold but staying under the abort guard.
+/// How many books lost their files in one scan. `removed` books lost theirs, out of the
+/// `total` that had files. The share was high enough to warn about, but below the point
+/// where the scan stops.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct GhostFilesWarning {
     pub removed: u32,
     pub total: u32,
 }
 
-/// Live verbose detail attached to a [`TaskProgress`] entry: which phase the
-/// task is in, the item it is working on right now, and (for scans) the diff's
-/// classification tallies. Every field is optional; all three absent serializes
-/// to no `detail` key. `current_item` is user-facing display text and must never
-/// carry an absolute server path: `rpc_worker_status` is readable by any user.
+// `current_item` is user-facing display text and must never carry an absolute
+// server path: `rpc_worker_status` is readable by any user.
+/// Live detail about a task: its phase, the item it is on and, for a scan, its file
+/// counts. Every field may be absent.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TaskDetail {
-    /// Short human-readable phase label, e.g. "Walking the library".
+    /// A short label for the task's current phase, such as "Walking the library".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase: Option<String>,
-    /// The item being processed right now, e.g. "books/Author/Title.epub".
+    /// The item the task is working on, such as "books/Author/Title.epub".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_item: Option<String>,
-    /// Scan classification tallies; retained on the terminal `Done` entry so
-    /// the completion row can summarize what the scan changed.
+    /// A scan's file counts. They stay on the finished task, so a client can sum up what
+    /// the scan changed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tallies: Option<ScanTallies>,
 }
@@ -91,10 +95,11 @@ impl TaskDetail {
     }
 }
 
-/// Running tallies from a library scan's diff: how many files the walk
-/// `found`, and how the diff classified them. Counts are fixed once the
-/// diff completes; the UI renders them alongside the per-file progress.
+/// File counts from a library scan. `found` is how many files it found on disk, and the
+/// other counts say how it sorted them against the index. The counts are final once the
+/// scan has compared every file.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ScanTallies {
     pub found: u32,
     pub new: u32,
@@ -104,43 +109,43 @@ pub struct ScanTallies {
     pub unchanged: u32,
 }
 
-/// One row of the worker progress feed. `task_id` is the process-local
-/// worker id (not stable across server restarts); the UI uses it only as a
-/// stable key for list rendering and dismiss-tracking.
+/// One background task in the progress feed. `task_id` identifies it until the server
+/// restarts.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TaskProgress {
     pub task_id: u64,
     pub kind: TaskKind,
     pub state: ProgressState,
+    /// What the task works on, such as a library folder or a book. Tasks with the same
+    /// key run one after another. Absent when the task claims nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resource_key: Option<String>,
-    /// Live phase / current-item / tally detail. `None` for task kinds that
-    /// haven't opted in, and omitted from the wire entirely in that case so
-    /// pre-existing payload shapes are unchanged.
+    /// Live detail about the task. Absent for kinds of task that don't report it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<TaskDetail>,
-    /// Milliseconds since the UNIX epoch — wall-clock, for UI elapsed-time
-    /// display only. The server's actual eviction logic uses a monotonic
-    /// `Instant` internally, so these timestamps don't have to be precise.
+    // The server's eviction logic uses a monotonic `Instant`, so these wall-clock
+    // timestamps don't have to be precise.
+    /// When the task started, in Unix milliseconds by the server's clock. It is for
+    /// showing elapsed time only.
     pub started_at_ms: i64,
+    /// When the task last reported progress, in Unix milliseconds.
     pub last_update_ms: i64,
 }
 
-/// Aggregate progress feed served from `POST /api/rpc/worker_status`.
-///
-/// Both vecs are sorted by `task_id` for stable list rendering across polls;
-/// callers can check `recent_complete.is_empty()` to skip a fade timer.
+/// The background task progress feed: tasks running now, and tasks that finished in the
+/// last 10 seconds or so. Both lists are sorted by `task_id`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct WorkerStatus {
     pub active: Vec<TaskProgress>,
     pub recent_complete: Vec<TaskProgress>,
 }
 
-/// Lifecycle status of a persisted [`BackgroundTaskRecord`].
-/// `Running` covers a task that started but has no terminal write yet —
-/// including one an ungraceful shutdown left stuck, which is itself a
-/// useful signal on the admin dashboard rather than something to hide.
+/// Where a recorded background task run ended up. `running` also covers a run that never
+/// finished because the server stopped abruptly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum BackgroundTaskStatus {
     Running,
@@ -173,22 +178,23 @@ impl std::str::FromStr for BackgroundTaskStatus {
     }
 }
 
-/// One durable row of `background_tasks` history: a worker task
-/// run's kind, lifecycle status, and timing. Read-only from the wire's
-/// perspective — the admin dashboard only ever fetches these, never writes
-/// them (the worker is the sole writer, via `omnibus_db::background_tasks`).
+// The worker is the sole writer, via `omnibus_db::background_tasks`.
+/// One recorded run of a background task: its kind, status and timing. Clients can read
+/// these but never write them.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BackgroundTaskRecord {
     pub id: i64,
     pub task_kind: String,
     pub status: BackgroundTaskStatus,
-    /// Unix-seconds.
+    /// When the run started, in Unix seconds.
     pub started_at: i64,
-    /// Unix-seconds; `None` while `status` is `Running`.
+    /// When the run finished, in Unix seconds. Null while `status` is `running`.
     pub finished_at: Option<i64>,
-    /// Set only when `status` is `Failed`. Client-facing — the worker's
-    /// `handlers::sanitized_err` convention already keeps raw internals out
-    /// of every `TaskOutcome::Err`, and this carries that same sanitized text.
+    // The worker's `handlers::sanitized_err` convention keeps raw internals out of
+    // every `TaskOutcome::Err`, and this carries that same sanitized text.
+    /// Why the run failed. Null unless `status` is `failed`. The text is safe to show
+    /// and holds no server internals.
     pub error: Option<String>,
 }
 

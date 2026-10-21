@@ -1,8 +1,9 @@
-//! Star-rating REST handlers for the mobile client (`/api/ratings*`): set, get,
-//! and clear a half-star rating (`0.5..=5.0`) per `(user, book)`. Writes are
-//! last-write-wins, with the range and half-step validated at the boundary so
-//! an invalid value returns 400. Web clients use the `/api/rpc/ratings*` server
-//! functions in `omnibus_frontend::rpc`.
+//! Star-rating REST handlers (`/api/ratings*`), the stars-only view of a
+//! review: set, get, and clear a half-star rating (`0.5..=5.0`) per
+//! `(user, book)`, with the range and half-step validated at the boundary so an
+//! invalid value returns 400. Installed iOS and Android builds still call them,
+//! including when they replay writes queued offline, so the routes stay. Each
+//! is `#[deprecated]`, which marks it so in the spec; `/api/reviews` replaces them.
 
 use axum::{
     extract::{Path, State},
@@ -10,14 +11,27 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, ratings::RatingError};
-use omnibus_shared::RatingUpdate;
+use omnibus_shared::{AttributedRating, RatingRecord, RatingUpdate};
 
 use super::{internal, AppState};
 use crate::auth::AuthUser;
 
-/// Persist a new rating. Last-write-wins on `(user, book)`; returns the
-/// server-authoritative record so the caller can sync forward. 400 on an
-/// out-of-range star count, 404 for a book the server has never indexed.
+/// Rate a book
+///
+/// Sets your star rating for a book, from 0.5 to 5 in half-star steps, replacing any rating
+/// you gave it before. Any review text and notes stay. Use `PATCH /api/reviews/{uuid}`.
+#[utoipa::path(
+    post,
+    path = "/api/ratings",
+    tag = "Ratings",
+    request_body = RatingUpdate,
+    responses(
+        (status = 200, description = "Your rating as stored.", body = RatingRecord),
+        (status = 400, description = "`book_uuid` is blank, or `stars` is outside 0.5 to 5 or not a whole number of half stars."),
+        (status = 404, description = "No book has that `book_uuid`."),
+    ),
+)]
+#[deprecated = "use the /api/reviews routes"]
 pub(super) async fn post_rating(
     user: AuthUser,
     State(state): State<AppState>,
@@ -35,8 +49,18 @@ pub(super) async fn post_rating(
     }
 }
 
-/// Fetch the current rating for `(user, uuid)`. Returns `200 { … }` with an
-/// `Option<RatingRecord>` body (`null` when the user has not rated the book).
+/// Get your rating for a book
+///
+/// The body is `null` when you haven't rated the book, or no book has the uuid. Use
+/// `GET /api/reviews/{uuid}`.
+#[utoipa::path(
+    get,
+    path = "/api/ratings/{uuid}",
+    tag = "Ratings",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses((status = 200, description = "Your rating, or `null`.", body = Option<RatingRecord>)),
+)]
+#[deprecated = "use the /api/reviews routes"]
 pub(super) async fn get_rating(
     user: AuthUser,
     State(state): State<AppState>,
@@ -48,7 +72,19 @@ pub(super) async fn get_rating(
     }
 }
 
-/// Fetch every other user's attributed rating for a book, newest first.
+/// List other users' ratings of a book
+///
+/// Every other user's rating of the book, with their name, most recently rated first.
+/// Returns up to 1,000, and an empty list for a uuid no book has. Use
+/// `GET /api/reviews/{uuid}`.
+#[utoipa::path(
+    get,
+    path = "/api/ratings/others/{uuid}",
+    tag = "Ratings",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses((status = 200, description = "Other users' ratings, most recently rated first.", body = Vec<AttributedRating>)),
+)]
+#[deprecated = "use the /api/reviews routes"]
 pub(super) async fn get_other_ratings(
     user: AuthUser,
     State(state): State<AppState>,
@@ -60,8 +96,18 @@ pub(super) async fn get_other_ratings(
     }
 }
 
-/// Clear (un-rate) the current user's rating for a book. Idempotent — clearing
-/// an absent rating still returns 204.
+/// Remove your rating of a book
+///
+/// Clears only the stars: any review text and notes stay. Succeeds whether or not you had
+/// rated the book. Use `PATCH /api/reviews/{uuid}` with `"stars": null`.
+#[utoipa::path(
+    delete,
+    path = "/api/ratings/{uuid}",
+    tag = "Ratings",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses((status = 204, description = "You have no rating for the book.")),
+)]
+#[deprecated = "use the /api/reviews routes"]
 pub(super) async fn delete_rating(
     user: AuthUser,
     State(state): State<AppState>,

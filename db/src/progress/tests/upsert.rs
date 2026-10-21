@@ -592,3 +592,10 @@ async fn audio_rows_cannot_carry_the_epub_only_position_columns() {
         "got: {err}"
     );
 }
+
+#[test]
+fn parse_format_reads_audio_and_defaults_everything_else_to_epub() {
+    assert_eq!(parse_format("audio"), ProgressFormat::Audio);
+    assert_eq!(parse_format("epub"), ProgressFormat::Epub);
+    assert_eq!(parse_format("bogus"), ProgressFormat::Epub);
+}

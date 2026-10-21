@@ -40,10 +40,10 @@ pub fn parse_comic_page_anchor(anchor: &str) -> Option<usize> {
     anchor.strip_prefix("comic-page:")?.parse().ok()
 }
 
-/// Discriminator for the format-specific payload variant in [`ProgressUpdate`]
-/// / [`ProgressRecord`] / [`SessionReport`]. Serializes as a plain
-/// lowercase string (`"epub"` / `"audio"`) so the wire shape stays compact.
+/// Which kind of position a progress record holds. `epub` is a reading position in any
+/// ebook, comics and PDFs included. `audio` is a listening position in an audiobook.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ProgressFormat {
@@ -63,41 +63,44 @@ impl ProgressFormat {
     }
 }
 
-/// Progress-sync write payload. `format` discriminates which position
-/// field is meaningful: `Epub` requires `epub_cfi`, `Audio` requires
-/// `audio_position_seconds`. The server validates this at the handler
-/// boundary via [`ProgressUpdate::validate`].
+/// A reading or listening position, as `POST /api/progress` takes it. `format` decides
+/// which position fields apply.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProgressUpdate {
     pub book_uuid: String,
     pub format: ProgressFormat,
+    /// The reading position, up to 4,096 characters. It is an EPUB CFI, or `comic-page:N` in
+    /// a comic and `pdf-page:N` in a PDF, where N is the 0-based page. An `epub` update
+    /// needs this or `progress_percent`. Must be absent for `audio`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub epub_cfi: Option<String>,
+    /// The listening position, in seconds from the start of the audio file. Required for
+    /// `audio`, and must be absent for `epub`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_position_seconds: Option<f64>,
-    /// Whole-book percent, 0..=100. The cross-surface half of a position:
-    /// unlike a CFI or a `KoboSpan` it means the same thing everywhere. A
-    /// Kobo reports one and no CFI, so for `Epub` this satisfies the
-    /// "some position" requirement on its own.
+    /// How far through the whole book, from 0 to 100. Unlike a CFI, it means the same thing
+    /// on every device. A Kobo sends only this, so for `epub` it can stand in for
+    /// `epub_cfi`. Must be absent for `audio`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub progress_percent: Option<i64>,
-    /// A Kobo's `CurrentBookmark.Location` object, serialized to a JSON
-    /// string and stored verbatim. Echoed back to the device for exact
-    /// resume; the server may additionally translate it to/from a CFI
-    /// (`db::kobo_position`), but no client ever renders it, and a string
-    /// keeps `shared` free of a `serde_json` runtime dependency.
+    // A string rather than a JSON value keeps `shared` free of a `serde_json`
+    // runtime dependency. The server may translate it to and from a CFI
+    // (`db::kobo_position`).
+    /// A Kobo e-reader's own location object, as a JSON string. The Kobo sync stores it so
+    /// the Kobo can resume at the exact spot. Other clients leave it out. Must be absent for
+    /// `audio`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kobo_location: Option<String>,
-    /// The `book_files` row the position was taken in, for books carrying
-    /// more than one file of the format (two narrations of one audiobook).
-    /// `None` from a client that doesn't track it — the server then resolves
-    /// the same default file the manifest would have served.
+    /// The file the position was taken in, for a book with more than one file of the
+    /// format, such as two narrations of one audiobook. It is the `book_file_id` that
+    /// `GET /api/audiobooks/{uuid}/manifest` returns. Left out, the server uses the file the
+    /// manifest serves by default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub book_file_id: Option<i64>,
-    /// Unix seconds when the client observed this position, used to resolve
-    /// most-recent-wins by **event** time rather than server receipt time. An older
-    /// client that never sends it still parses; `upsert_progress` then uses server
-    /// now.
+    /// When the device recorded this position, in Unix seconds. The server keeps the
+    /// position with the newest such time, not the one that arrived last. Left out, the
+    /// server uses the time the update arrives.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_updated_at: Option<i64>,
 }
@@ -180,154 +183,165 @@ impl ProgressUpdate {
     }
 }
 
-/// Server-authoritative position returned by `POST /api/progress` and
-/// `GET /api/progress/{uuid}`. The non-discriminated field for the other format
-/// is always `None`. `updated_at` is unix seconds of server receipt;
-/// `client_updated_at` is the event time most-recent-wins resolves on (clamped
-/// to server now for a fast clock; server now when the write carried none).
+/// Your position in one format of a book, as the server stores it. Only the position
+/// fields of `format` are set.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ProgressRecord {
     pub book_uuid: String,
     pub format: ProgressFormat,
+    /// The reading position of an `epub` record, in the forms `ProgressUpdate` takes. Null
+    /// for `audio`, and for an `epub` record that holds only a percent.
     pub epub_cfi: Option<String>,
+    /// The listening position of an `audio` record, in seconds from the start of the audio
+    /// file. Null for `epub`.
     pub audio_position_seconds: Option<f64>,
-    /// Whole-book percent, 0..=100. `#[serde(default)]` — unlike its siblings
-    /// here — so a payload from a server predating this field still decodes.
+    // `#[serde(default)]`, unlike its siblings here, so a payload from a server
+    // predating this field still decodes.
+    /// How far through the whole book, from 0 to 100. On `GET /api/progress/{uuid}` and
+    /// `GET /api/progress/recent`, an `audio` record carries one computed from its
+    /// position. When an `epub` position arrives with only a CFI, the server works out the
+    /// percent shortly after, so it can be null for a moment.
     #[serde(default)]
     pub progress_percent: Option<i64>,
-    /// Opaque Kobo `CurrentBookmark.Location` JSON; see [`ProgressUpdate::kobo_location`].
+    /// A Kobo e-reader's own location object, as a JSON string. Only the Kobo sync reads it.
     #[serde(default)]
     pub kobo_location: Option<String>,
-    /// The `book_files` row the position was taken in; see
-    /// [`ProgressUpdate::book_file_id`].
+    /// The file the position was taken in. On `GET /api/progress/{uuid}` and
+    /// `GET /api/progress/recent`, an `audio` record names the file the position plays in:
+    /// the file it was taken in, or the book's first audio file when that one is gone. It
+    /// is null there when the book has no audio file left.
     #[serde(default)]
     pub book_file_id: Option<i64>,
+    /// When the server received the position, in Unix seconds.
     pub updated_at: i64,
+    /// When the device recorded the position, in Unix seconds. The newest one wins. The
+    /// server uses its own clock when the update carried no time, and moves a time ahead of
+    /// its clock back to it.
     pub client_updated_at: i64,
-    /// Whole-book audio duration (sum of parts), so no caller has to source an
-    /// audiobook's runtime elsewhere to turn [`Self::audio_position_seconds`] into
-    /// a percent. `None` for epub rows. Read-path only: filled by
-    /// `GET /api/progress/{uuid}` and the resume feed, absent from the
-    /// `POST /api/progress` echo.
+    /// The length of the whole audiobook in seconds, across all its files. Absent for
+    /// `epub` records. Only `GET /api/progress/{uuid}` and `GET /api/progress/recent` fill
+    /// it, so the `POST /api/progress` response leaves it out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_duration_seconds: Option<f64>,
-    /// Where this position actually is in the book. Read-path only, on the
-    /// same terms as [`Self::total_duration_seconds`].
+    /// Where the position is in the book's chapters. Absent when the server can't place
+    /// it, and from the `POST /api/progress` response.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved: Option<ResolvedPosition>,
-    /// A point CFI for an epub row that stores a whole-book percent but no CFI (a
-    /// Kobo's percent-only write), so a reader can open it where it is rather than
-    /// at the cover. Floored onto the spine-stats ruler, so it never sits past the
-    /// stored percent. Derived per read, never stored; `None` whenever
-    /// [`Self::epub_cfi`] is set or the book has no measured structure.
+    /// A point CFI for an `epub` record that holds a percent but no CFI, such as one a Kobo
+    /// wrote. A reader can open the book there instead of at the start. It never points
+    /// past the stored percent. Only `GET /api/progress/{uuid}` fills it. Absent when
+    /// `epub_cfi` is set or the server doesn't know the book's structure.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub derived_epub_cfi: Option<String>,
 }
 
-/// How far a [`ResolvedPosition`]'s chapter attribution can be trusted.
-/// Reported rather than withheld: a coarse answer a caller knows is coarse
-/// beats an absent block it fills in by guessing.
+// Reported rather than withheld: a coarse answer a caller knows is coarse
+// beats an absent block it fills in by guessing.
+/// How far a client can trust the chapter a `ResolvedPosition` names.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum PositionConfidence {
-    /// Resolved against real structure: a TOC entry that owns its spine
-    /// document, or container-supplied audio chapter marks.
+    /// Placed against the book's real structure: a table of contents entry that has its
+    /// spine document to itself, or chapter marks from the audio file.
     High,
-    /// The best available answer, known to be coarse — a percent-only
-    /// position mapped back onto the spine, several TOC entries sharing one
-    /// spine document, or audio marks that are the indexer's synthetic
-    /// per-part fallback rather than real chapters.
+    /// The best answer available, but coarse. The position was a percent mapped back onto
+    /// the book, several table of contents entries share one spine document, or the audio
+    /// marks stand for files rather than chapters.
     Low,
 }
 
-/// Where a stored position sits in the book, resolved server-side against the
-/// spine/TOC data `GET /api/ebooks/{uuid}/chapters` serves and the chapter marks
-/// the player reads. Every field is optional because the structure may be
-/// missing (a TOC-less EPUB, an audiobook with no marks); [`Self::confidence`]
-/// says how much of the block to lean on.
+/// Where a stored position is in the book: its chapter, and how far through the chapter
+/// and the book. The server works it out from the chapters `GET /api/ebooks/{uuid}/chapters`
+/// lists, or from the audiobook's chapter marks. Each field but `confidence` is absent
+/// when the book lacks the structure it needs, such as an EPUB with no table of contents.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ResolvedPosition {
-    /// 0-based spine document index, matching `GET /api/ebooks/{uuid}/chapters`.
-    /// `None` for audio positions and for a comic page anchor.
+    /// The 0-based index of the spine document, as `GET /api/ebooks/{uuid}/chapters` numbers
+    /// them. In a PDF it is the page. Absent for audio positions and comic pages.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spine_index: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chapter_title: Option<String>,
-    /// 1-based, so `chapter_ordinal` of [`Self::chapters_total`] reads
-    /// directly. Deliberately not the stored 0-based `ebook_chapters.ordinal`
-    /// — an off-by-one here is the whole failure this block exists to end.
+    // Deliberately not the stored 0-based `ebook_chapters.ordinal`: an
+    // off-by-one here is the whole failure this block exists to end.
+    /// The chapter's number, counting from 1, so it reads directly against
+    /// `chapters_total`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chapter_ordinal: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chapters_total: Option<i64>,
-    /// 0..=100 through the resolved chapter.
+    /// How far through the chapter, from 0 to 100. For an ebook, only
+    /// `GET /api/progress/{uuid}` fills it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub percent_through_chapter: Option<i64>,
-    /// 0..=100 through the whole book, on the same ruler
-    /// `ProgressRecord::progress_percent` uses for epub rows.
+    /// How far through the whole book, from 0 to 100, on the same scale as
+    /// `progress_percent` in `ProgressRecord`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub percent_through_book: Option<i64>,
     pub confidence: PositionConfidence,
 }
 
-/// Every position the user holds in one book, the body of
-/// `GET /api/progress/{uuid}`. Returned whole rather than one format at a time:
-/// a reader 87% through the audiobook and 47% through the EPUB has one true
-/// place, which an EPUB-only answer would misreport. `format` narrows
-/// [`Self::records`] to a single entry.
+// Returned whole rather than one format at a time: a reader 87% through the
+// audiobook and 47% through the EPUB has one true place, which an EPUB-only
+// answer would misreport.
+/// Every position you have in one book, one per format, as `GET /api/progress/{uuid}`
+/// returns it. The `format` query parameter narrows `records` to one entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookProgress {
-    /// The canonical book uuid the positions were resolved against — not
-    /// necessarily the one asked for, which may be a merged-away uuid.
+    /// The uuid of the book the positions belong to. It differs from the uuid in the path
+    /// when that book was merged into this one.
     pub book_uuid: String,
-    /// One entry per format the user has a position in, newest event time
-    /// first. Empty when the user has never opened the book.
+    /// One record per format you have a position in, the most recently recorded first.
+    /// Empty when you have never opened the book.
     pub records: Vec<ProgressRecord>,
-    /// Which record represents the reader's true place: the one furthest
-    /// through the book by whole-book percent, falling back to the most
-    /// recent event time when the two aren't comparable. `None` only when
-    /// [`Self::records`] is empty. A caller that reads nothing else gets the
-    /// right answer.
+    /// The format of the record that is your true place. It is the record furthest through
+    /// the book by whole-book percent, or the most recent when a record has no percent.
+    /// Null only when `records` is empty.
     pub furthest: Option<ProgressFormat>,
-    /// Whether the user has confirmed a cross-format link for this book.
+    /// Whether you have linked this book's ebook and audiobook, so positions sync between
+    /// them.
     #[serde(default)]
     pub linked: bool,
-    /// For linked books: the mapped "resume in the other format" candidate,
-    /// measured from [`Self::furthest`]. Absent when unmappable.
+    /// Where to resume in the other format, for a linked book. It is mapped from your
+    /// position in `furthest`. Absent when there is nothing newer to offer or the position
+    /// can't be mapped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cross_format: Option<crate::cross_format::CrossFormatCandidate>,
 }
 
-/// "Pick up where you left off" entry returned by `GET /api/progress/recent` and `rpc_recent_progress`.
+/// A book to pick up where you left off, as `GET /api/progress/recent` returns it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ResumePoint {
     pub record: ProgressRecord,
     pub book: EbookMetadata,
-    /// Whether the user has confirmed a cross-format link for this book —
-    /// linked books collapse to one card carrying both resume affordances.
+    /// Whether you have linked this book's ebook and audiobook. A linked book appears once,
+    /// for the format you used last.
     #[serde(default)]
     pub linked: bool,
-    /// For linked books: the mapped "resume in the other format" candidate
-    /// (absent when the other side is newer or unmappable).
+    /// Where to resume in the other format, for a linked book. Absent when the other
+    /// format's position is newer or the position can't be mapped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cross_format: Option<crate::cross_format::CrossFormatCandidate>,
-    /// 1-based structural part of the audiobook timeline at the saved position, from
-    /// the resolved file's marks. `None` for epub rows. **Not a book chapter:** the
-    /// marks are whatever the container carried (a 65-chapter novel stored as a
-    /// 4-part M4B has four); book chapters live in [`ProgressRecord::resolved`].
+    /// The 1-based part of the audiobook the saved position is in, from the audio file's
+    /// own marks. Absent for `epub` records. A part is not a book chapter: a 65-chapter
+    /// novel stored as a 4-part M4B has four parts. Book chapters are in `record.resolved`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_part: Option<i64>,
-    /// Total structural parts, for a "3 of 12" readout. `None` for epub rows.
+    /// How many parts the audiobook has. Absent for `epub` records.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_part_count: Option<i64>,
-    /// The user's saved playback rate for this book, so resume surfaces can
-    /// rate-adjust their "left" readouts. `None` for epub rows and when no
-    /// preference has been saved (treat as 1x).
+    /// Your saved playback speed for this book, such as 1.5. Absent for `epub` records and
+    /// when you haven't saved one, which means 1x.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub playback_rate: Option<f64>,
 }
@@ -374,38 +388,37 @@ impl ResumePoint {
     }
 }
 
-/// Batched session row (reader / audio open-to-close span). Mobile
-/// posts these on reconnect via `POST /api/progress/sessions`; web posts
-/// best-effort on unmount. `progress_units` is seconds_read (epub) or
-/// seconds_listened (audio).
+/// One stretch of reading or listening, from opening a book to closing it.
+/// `POST /api/progress/sessions` takes up to 500 of them at a time.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionReport {
     pub book_uuid: String,
     pub format: ProgressFormat,
+    /// When the session started, in Unix seconds.
     pub started_at: i64,
+    /// When the session ended, in Unix seconds. Must not be before `started_at`.
     pub ended_at: i64,
+    /// Seconds spent reading or listening in the session. Must not be negative.
     pub progress_units: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_id: Option<i64>,
-    /// Handle minted by the device that recorded the session, making a
-    /// replay idempotent (migration 0052). A queued report is retried
-    /// whenever the reply was lost rather than the request, and without a
-    /// handle each retry appended a second row. `None` for web clients,
-    /// which post once and never retry.
+    /// An id the device makes up for the session, such as a UUID, up to 64 characters. A
+    /// session whose `client_id` is already stored isn't stored again, so a client can
+    /// resend a batch whose response it lost. Without one, a resent session is stored
+    /// twice.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
-    /// Minutes east of UTC on the recording device at capture time (`-420` for
-    /// UTC-7, `330` for UTC+05:30). The time-of-day rollups bucket `started_at`
-    /// against this instead of UTC (see `db::stats::patterns`). `None` from a client
-    /// that doesn't report one and on older rows, which the time-pattern charts
-    /// exclude rather than default to UTC.
+    /// The device's offset from UTC in minutes when the session was recorded, east
+    /// positive: `-420` for UTC-7, `330` for UTC+05:30. From -720 to 840. The time-of-day
+    /// and weekday stats place the session by it, and leave out a session without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub utc_offset_minutes: Option<i64>,
-    /// IANA zone name on the recording device at capture time
-    /// (`"America/Los_Angeles"`, `"Asia/Tokyo"`), recorded **alongside**
-    /// [`Self::utc_offset_minutes`]: the offset says what the clock read, the zone
-    /// says *where* (`-420` is Los Angeles in summer, Phoenix year-round). `None`
-    /// from a client that doesn't report one and on older rows.
+    /// The device's IANA time zone when the session was recorded, such as
+    /// `America/Los_Angeles`, up to 64 characters. It goes with `utc_offset_minutes`. The
+    /// offset says what the clock read, and the zone says where. An offset of `-420` is Los
+    /// Angeles in summer and Phoenix all year. The server stores the name without checking
+    /// it.
     // Captured ahead of any reader: a zone cannot be recovered from an offset later.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time_zone: Option<String>,
@@ -491,4 +504,42 @@ impl SessionReport {
         }
         Ok(())
     }
+}
+
+/// The response of `POST /api/progress/sessions`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionsRecorded {
+    /// How many sessions named a book the server knows; it drops the rest, so this can be
+    /// less than the number sent. A session repeating a stored `client_id` counts here but
+    /// isn't stored twice.
+    pub recorded: usize,
+}
+
+/// Query parameters of `GET /api/progress/{uuid}`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct ProgressQuery {
+    /// Return only the position in this format. Absent, every format you have a position
+    /// in comes back.
+    #[serde(default)]
+    pub format: Option<ProgressFormat>,
+}
+
+/// Query parameters of `GET /api/progress/recent`.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct RecentProgressQuery {
+    /// How many books to return, from 1 to 20. Defaults to 1; a value outside the range is
+    /// moved to the nearest end.
+    #[serde(default = "default_recent_limit")]
+    pub limit: i64,
+    /// Read another reader's books instead of your own. They must share their stats.
+    pub user_id: Option<i64>,
+}
+
+fn default_recent_limit() -> i64 {
+    1
 }

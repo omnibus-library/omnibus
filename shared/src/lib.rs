@@ -1,9 +1,11 @@
-//! Shared API types between the `omnibus` server and `omnibus-mobile`
-//! client. Kept free of Dioxus and transport-layer dependencies so both
-//! `#[server]` functions (web) and `reqwest` calls (mobile) can depend on
-//! it. Types are organized by domain into submodules and re-exported flat
+//! Every type that crosses the `/api/*` wire: request bodies, query parameters and
+//! responses. The server, its Rust clients and the OpenAPI document all read them from
+//! here, so the contract lives in one place. Kept free of Dioxus and transport-layer
+//! dependencies so both `#[server]` functions (web) and `reqwest` calls (mobile) can
+//! depend on it. Types are organized by domain into submodules and re-exported flat
 //! from the crate root as `omnibus_shared::Foo`.
 
+pub mod account;
 pub mod admin_health;
 pub mod audiobook;
 pub mod auth;
@@ -16,6 +18,8 @@ pub mod deletion;
 pub mod discovery;
 pub mod ebook;
 pub mod error_ring;
+pub mod file_bytes;
+pub mod health;
 pub mod highlight;
 pub mod http_range;
 pub mod image_format;
@@ -31,6 +35,7 @@ pub mod physical;
 pub mod progress;
 pub mod ratings;
 pub mod read_status;
+pub mod reviews;
 pub mod scan;
 pub mod series_stacks;
 pub mod settings;
@@ -101,6 +106,7 @@ pub fn sanitize_exclude_formats(mut formats: Vec<String>) -> Vec<String> {
     formats
 }
 
+pub use account::*;
 pub use admin_health::*;
 pub use audiobook::*;
 pub use auth::*;
@@ -113,6 +119,8 @@ pub use deletion::*;
 pub use discovery::*;
 pub use ebook::*;
 pub use error_ring::*;
+pub use file_bytes::*;
+pub use health::*;
 pub use highlight::*;
 pub use image_format::detect_image_format;
 pub use isbn::*;
@@ -126,6 +134,7 @@ pub use physical::*;
 pub use progress::*;
 pub use ratings::*;
 pub use read_status::*;
+pub use reviews::*;
 pub use scan::*;
 pub use series_stacks::*;
 pub use settings::*;

@@ -23,7 +23,7 @@ pub use basic::{BasicAuthState, OpdsAuthUser};
 pub use csrf::origin_check;
 pub use extractor::{AdminUser, AuthUser, MediaAuthUser};
 pub use gate::require_auth;
-pub use handlers::auth_router;
+pub use handlers::{auth_router, auth_routes};
 pub use page_gate::require_page_session;
 
 /// Plain session-cookie name used on plain-HTTP dev origins. Re-exported

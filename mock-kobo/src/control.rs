@@ -1,9 +1,9 @@
 //! One running device: the state the control API reads and drives.
 //! A sync runs on its own task, so a caller that disconnects never cancels it
-//! half-way. A reset clears what the device holds, but Omnibus still remembers
-//! what it delivered, so the next sync sends only changes. A retarget changes
-//! the URL or token between syncs; a sync reads both under one lock, so it
-//! never mixes two targets, and never sends a token auto-wired for another URL.
+//! half-way. A reset clears what the device holds and its sync token, so the
+//! next sync gets every book again. A retarget changes the URL or token between
+//! syncs; a sync reads both under one lock, so it never mixes two targets, and
+//! never sends a token auto-wired for another URL.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -51,9 +51,8 @@ pub enum LastSync {
     },
 }
 
-/// What `PUT /reset` tells the caller about the server's delivery record.
-pub const RESET_MESSAGE: &str = "device reset; Omnibus still remembers what it sent this device until #2743, \
-so the next sync sends only changes — remove the device in Account settings and add it again for a full resend";
+/// What `PUT /reset` tells the caller about the next sync.
+pub const RESET_MESSAGE: &str = "device reset; the next sync sends every opted-in book again";
 
 /// Why the control API couldn't do what it was asked.
 #[derive(Debug, thiserror::Error)]

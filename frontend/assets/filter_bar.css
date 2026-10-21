@@ -1,42 +1,23 @@
-/* Library filter bar: the chip row under the landing toolbar and its add-filter
-   popover. No keyframes here, so nothing needs a reduced-motion override. */
+/* Library filter bar: one facet per field beside the landing toolbar, and each
+   facet's menu. No keyframes here, so nothing needs a reduced-motion override. */
 
 .fb {
   position: relative;
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
   flex: 1 0 100%; min-width: 0;
 }
-/* `.lmq` lifts each section to z-index 1, which buries an open popover under the
-   cover wall, the edge ribbon (7) and the sticky top bar (5): rise above them all. */
-.lmq > *:has(.fb-pop) { z-index: 8; }
+/* `.lmq` lifts each section to z-index 1, which buries an open menu under the
+   cover wall, the edge ribbon (7), the sticky top bar (5) and the mini player
+   (40); rise above them all. */
+.lmq > *:has(.fb-pop) { z-index: 41; }
 
-.fb-chip {
-  display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
-  height: 28px; padding: 0 4px 0 12px;
-  background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 999px;
-  color: var(--ink-0); font-size: 12px;
-}
-.fb-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fb-chip-x {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px; padding: 0; flex: 0 0 auto;
-  background: transparent; border: 0; border-radius: 50%;
-  color: var(--ink-2); font: inherit; font-size: 14px; line-height: 1; cursor: pointer;
-  transition: color .15s, background .15s;
-}
-.fb-chip-x:hover { color: var(--ink-0); background: var(--bg-3); }
-
-.fb-add, .fb-clear {
+.fb-clear {
   height: 28px; padding: 0 12px;
-  background: transparent; border: 1px dashed var(--line-2); border-radius: 999px;
-  color: var(--ink-1); font: inherit; font-size: 12px; cursor: pointer;
+  background: transparent; border: 1px solid transparent; border-radius: 999px;
+  color: var(--ink-2); font: inherit; font-size: 12px; cursor: pointer;
   transition: color .15s, border-color .15s;
 }
-.fb-clear { border-style: solid; border-color: transparent; color: var(--ink-2); }
-.fb-add:hover:not(:disabled), .fb-clear:hover { color: var(--ink-0); border-color: var(--ink-3); }
-.fb-add:disabled { opacity: .55; cursor: not-allowed; }
-
-.fb-add-wrap { display: inline-flex; }
+.fb-clear:hover { color: var(--ink-0); border-color: var(--ink-3); }
 
 /* Click-outside catcher over the whole viewport, beneath the popover. */
 .fb-scrim {
@@ -47,21 +28,23 @@
 .fb-pop {
   position: absolute; top: calc(100% + 8px); left: 0; z-index: 61;
   width: min(380px, calc(100vw - 24px));
+  /* Fits under a facet scrolled up beneath the top bar, however short the window. */
+  max-height: calc(100dvh - 140px); overflow-y: auto;
   display: flex; flex-direction: column; gap: 12px; padding: 14px;
   background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 14px;
   box-shadow: 0 18px 40px color-mix(in oklch, black 55%, transparent);
 }
 .fb-pop:focus { outline: none; }
 
-.fb-fields, .fb-modes { display: flex; flex-wrap: wrap; gap: 6px; }
-.fb-field, .fb-mode {
+.fb-modes { display: flex; flex-wrap: wrap; gap: 6px; }
+.fb-mode {
   height: 28px; padding: 0 12px;
   background: transparent; border: 1px solid var(--line-2); border-radius: 999px;
   color: var(--ink-1); font: inherit; font-size: 12px; cursor: pointer;
   transition: color .15s, background .15s, border-color .15s;
 }
-.fb-field:hover, .fb-mode:hover { color: var(--ink-0); border-color: var(--ink-3); }
-.fb-field[aria-pressed="true"], .fb-mode[aria-pressed="true"] {
+.fb-mode:hover { color: var(--ink-0); border-color: var(--ink-3); }
+.fb-mode[aria-pressed="true"] {
   background: var(--bg-3); color: var(--ink-0); border-color: var(--ink-3);
 }
 
@@ -91,3 +74,76 @@
 .fb-error-detail { color: var(--ink-2); }
 
 .fb-foot { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Facets: one button per field. An active facet fills in, names what it
+   keeps, and carries its own clear; its menu opens under it. */
+.fb-facet-wrap {
+  display: inline-flex; align-items: center; height: 30px;
+  border: 1px solid var(--line-2); border-radius: 999px;
+  transition: border-color .15s, background .15s;
+}
+.fb-facet-wrap:hover { border-color: var(--ink-3); }
+.fb-facet-wrap.on {
+  background: var(--bg-2);
+  border-color: color-mix(in oklch, var(--accent) 45%, var(--line-2));
+}
+.fb-facet {
+  display: inline-flex; align-items: center; gap: 6px; height: 100%; scroll-margin-top: 84px;
+  padding: 0 10px 0 12px; border: 0; border-radius: 999px; background: none;
+  color: var(--ink-1); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.fb-facet:hover { color: var(--ink-0); }
+.fb-facet:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fb-facet svg { flex: none; color: var(--ink-3); }
+.fb-facet-wrap.on .fb-facet { padding-right: 4px; }
+.fb-facet-v {
+  max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ink-0); font-weight: 500;
+}
+.fb-facet-x {
+  display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 4px;
+  padding: 0; border: 0; border-radius: 50%; background: none;
+  color: var(--ink-2); cursor: pointer;
+}
+.fb-facet-x:hover { background: var(--bg-3); color: var(--ink-0); }
+.fb-facet-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fb-facet-x svg { width: 12px; height: 12px; }
+
+/* With anchor positioning a menu opens below its own facet and flips to its
+   end near the right edge, so its containing block is the wider section, not
+   `.fb`; without it, the menu opens at the bar's start (the rule above). */
+@supports (position-anchor: --fb) {
+  .fb { position: static; }
+  .fb-facet-wrap { anchor-scope: --fb-facet; }
+  .fb-facet { anchor-name: --fb-facet; }
+  .fb-facet-wrap > .fb-pop {
+    position: absolute; position-anchor: --fb-facet;
+    top: anchor(bottom); left: anchor(left); right: auto; margin-top: 8px;
+    /* A fallback must fit in both axes; a far bottom inset gives a menu that
+       hangs below the section the room to. */
+    bottom: -1000dvh; height: fit-content;
+    position-try-fallbacks: flip-inline;
+  }
+}
+
+/* Phones: the facets are one swipeable row, and a menu is a bottom sheet
+   over a dimmed page. */
+@media (max-width: 720px) {
+  .fb {
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    margin-inline: -20px; padding-inline: 20px; scroll-padding-inline: 20px;
+  }
+  .fb::-webkit-scrollbar { display: none; }
+  .fb-facet-wrap, .fb-clear { flex: none; }
+  .fb-scrim { background: color-mix(in oklch, black 55%, transparent); }
+  .fb-facet-wrap > .fb-pop {
+    position: fixed; position-try-fallbacks: none; margin: 0;
+    top: auto; right: 0; bottom: 0; left: 0;
+    width: auto; height: auto; max-height: min(75dvh, 560px); overflow-y: auto;
+    padding: 18px 20px calc(18px + env(safe-area-inset-bottom));
+    border-radius: 18px 18px 0 0; border-bottom: 0;
+    box-shadow: 0 -18px 40px color-mix(in oklch, black 45%, transparent);
+  }
+  .fb-facet-wrap > .fb-pop .fb-opt { min-height: 44px; }
+  .fb-facet-wrap { height: 34px; }
+}

@@ -1,6 +1,6 @@
-//! Users settings section — the admin table plus the New / Edit /
-//! Delete modals and inline Unlock. Admin-only; rendered as the `users`
-//! section of `/settings`. SSR and the first WASM paint both start from an
+//! The People section: the admin accounts table plus the New / Edit /
+//! Delete modals and inline Unlock. Admin-only; rendered as the `people`
+//! section of `/admin`. SSR and the first WASM paint both start from an
 //! unanswered list shown as skeleton rows (rule 07); the post-mount effect
 //! loads the real rows.
 
@@ -9,6 +9,7 @@ use dioxus_router::use_navigator;
 use omnibus_shared::{AdminUserRow, UserPermissions};
 
 use crate::components::loading::RowSkeletons;
+use crate::components::BusyLabel;
 use crate::data;
 
 mod modals;
@@ -128,7 +129,7 @@ fn UsersHeader(on_new: EventHandler<MouseEvent>) -> Element {
     rsx! {
         div { class: "users-head",
             div {
-                h2 { "Users" }
+                h3 { "Accounts" }
                 p { class: "subtitle", "Create, edit, and remove accounts." }
             }
             button {
@@ -150,7 +151,8 @@ fn UsersTable(
     on_action: EventHandler<UserRowAction>,
 ) -> Element {
     rsx! {
-        table { class: "users-table", "data-testid": "users-table",
+        div { class: "table-scroll",
+        table { class: "users-table", "data-testid": "users-table", "aria-label": "Accounts",
             thead {
                 tr {
                     th { "User" }
@@ -176,6 +178,7 @@ fn UsersTable(
                     }
                 }
             }
+        }
         }
     }
 }
@@ -262,6 +265,7 @@ fn UserRow(user: AdminUserRow, is_self: bool, on_action: EventHandler<UserRowAct
     let edit_row = user.clone();
     let delete_row = user.clone();
     let sessions_row = user.clone();
+    let name = user.username.clone();
 
     rsx! {
         tr { "data-testid": "user-row-{uid}",
@@ -271,7 +275,7 @@ fn UserRow(user: AdminUserRow, is_self: bool, on_action: EventHandler<UserRowAct
             }
             td { {permission_chips(&user)} }
             td { class: "users-kindle", "{kindle}" }
-            td { "{fmt_date(user.created_at)}" }
+            td { class: "users-created", "{fmt_date(user.created_at)}" }
             td {
                 if user.locked {
                     span { class: "users-badge users-badge-locked", "Locked" }
@@ -279,9 +283,11 @@ fn UserRow(user: AdminUserRow, is_self: bool, on_action: EventHandler<UserRowAct
                         r#type: "button",
                         class: "btn ghost sm",
                         "data-testid": "user-unlock-{uid}",
+                        "aria-label": "Unlock {name}",
                         disabled: unlocking(),
+                        "aria-busy": if unlocking() { "true" } else { "false" },
                         onclick: unlock,
-                        "Unlock"
+                        BusyLabel { busy: unlocking(), label: "Unlock", busy_label: "Unlocking\u{2026}" }
                     }
                 } else {
                     span { class: "users-badge", "Active" }
@@ -292,6 +298,7 @@ fn UserRow(user: AdminUserRow, is_self: bool, on_action: EventHandler<UserRowAct
                     r#type: "button",
                     class: "btn ghost sm",
                     "data-testid": "user-edit-{uid}",
+                    "aria-label": "Edit {name}",
                     onclick: move |_| on_action.call(UserRowAction::Edit(edit_row.clone())),
                     "Edit"
                 }
@@ -299,6 +306,7 @@ fn UserRow(user: AdminUserRow, is_self: bool, on_action: EventHandler<UserRowAct
                     r#type: "button",
                     class: "btn ghost sm",
                     "data-testid": "user-sessions-{uid}",
+                    "aria-label": "Sessions for {name}",
                     onclick: move |_| on_action.call(UserRowAction::Sessions(sessions_row.clone())),
                     "Sessions"
                 }
@@ -306,6 +314,7 @@ fn UserRow(user: AdminUserRow, is_self: bool, on_action: EventHandler<UserRowAct
                     r#type: "button",
                     class: "btn ghost sm users-danger",
                     "data-testid": "user-delete-{uid}",
+                    "aria-label": "Delete {name}",
                     onclick: move |_| on_action.call(UserRowAction::Delete(delete_row.clone())),
                     "Delete"
                 }

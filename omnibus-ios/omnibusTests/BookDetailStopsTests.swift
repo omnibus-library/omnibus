@@ -400,6 +400,31 @@ private func journalEntry(
     ])
 }
 
+// MARK: - Swipe hint clearance
+
+@Test func swipeHintShowsOnEveryStopButHomeAndTheLast() {
+    #expect(!DetailRead.showsNextHint(.home))
+    #expect(DetailRead.showsNextHint(.stats))
+    #expect(DetailRead.showsNextHint(.files))
+    #expect(!DetailRead.showsNextHint(.more))
+}
+
+@Test func stopContentEndsAboveTheSwipeHintWhereTheHintRidesHigher() {
+    // A home-indicator device: the hint's top is above the bar's clearance,
+    // so the stop gives up the difference.
+    #expect(DetailRead.stopBottomInset(barClearance: 108, hintTop: 138, showsHint: true) == 138)
+    // No home indicator (SE): the hint already sits inside the clearance.
+    #expect(DetailRead.stopBottomInset(barClearance: 108, hintTop: 104, showsHint: true) == 108)
+    // No hint, nothing to clear but the bar.
+    #expect(DetailRead.stopBottomInset(barClearance: 108, hintTop: 138, showsHint: false) == 108)
+}
+
+@Test func aStopFadesItsFootOnlyWhenItsContentOverflows() {
+    #expect(!DetailRead.overflows(content: 500, area: 500))
+    #expect(!DetailRead.overflows(content: 420, area: 500))
+    #expect(DetailRead.overflows(content: 540, area: 500))
+}
+
 // MARK: - Rating
 
 @Test func tappingTheRatingAlreadySetClearsIt() {

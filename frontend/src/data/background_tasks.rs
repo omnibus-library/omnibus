@@ -1,6 +1,5 @@
 //! Admin background-task history data access. Web/SSR-only, the same shape as
-//! `errors` (the Server Health "Last errors" panel): there is no `reqwest` or
-//! REST counterpart, so the whole module is gated off the mobile build and
+//! `admin_health`: there is no `reqwest` or REST counterpart, so the whole module is gated off the mobile build and
 //! calls the `rpc_get_background_tasks` server function directly.
 #![cfg(not(feature = "mobile"))]
 

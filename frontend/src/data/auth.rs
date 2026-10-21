@@ -40,7 +40,7 @@ pub async fn mobile_login(
         device_name,
         client_version: Some(env!("CARGO_PKG_VERSION").into()),
     };
-    finish_bearer_auth(post_mobile_auth(server_url, "/api/auth/login", &req).await?)
+    finish_bearer_auth(post_mobile_auth(server_url, "/api/auth/login", &req).await?).await
 }
 
 /// POST `/api/auth/register` (mobile) — bearer-token signup, stashes the token.
@@ -59,7 +59,7 @@ pub async fn mobile_register(
         device_name,
         client_version: Some(env!("CARGO_PKG_VERSION").into()),
     };
-    finish_bearer_auth(post_mobile_auth(server_url, "/api/auth/register", &req).await?)
+    finish_bearer_auth(post_mobile_auth(server_url, "/api/auth/register", &req).await?).await
 }
 
 /// Common tail for `mobile_login` / `mobile_register`: stash the bearer
@@ -68,12 +68,16 @@ pub async fn mobile_register(
 /// `client_kind` discriminator was missed server-side, which we want to
 /// fail loudly rather than silently degrade to a no-auth state.
 #[cfg(feature = "mobile")]
-fn finish_bearer_auth(resp: LoginResponse) -> Result<UserSummary, DataError> {
+async fn finish_bearer_auth(resp: LoginResponse) -> Result<UserSummary, DataError> {
     let Some(token) = resp.token else {
         return Err(DataError::Other(
             "server did not issue a bearer token".into(),
         ));
     };
+    // Wipe a previous reader's replica and queued writes before the token
+    // lands: the first request under it may drain the outbox, which would
+    // replay their writes, private notes included, as this reader.
+    crate::offline::note_user(&resp.user).await;
     token_store::set(token);
     Ok(resp.user)
 }
@@ -339,8 +343,8 @@ pub async fn current_user() -> Result<Option<UserSummary>, String> {
 /// SSR stubs for the registration read/write. Neither runs: the Users
 /// settings section loads and mutates only after the WASM client mounts.
 /// Present so its effect and click closure compile unconditionally, keeping
-/// the hook count identical across targets (rule 07).
-#[cfg(all(feature = "server", not(feature = "web")))]
+/// the hook count identical across targets (rule 07). Mobile has its own.
+#[cfg(all(feature = "server", not(any(feature = "web", feature = "mobile"))))]
 pub async fn registration_status() -> Result<bool, String> {
     Ok(true)
 }
@@ -447,7 +451,80 @@ mod tests {
     // its own thread + runtime, so there is no interleaving to deadlock on.
     #![allow(clippy::await_holding_lock)]
 
+    use axum::routing::post;
+    use axum::Json;
+    use omnibus_db::test_support::EnvVarGuard;
+    use omnibus_shared::ReviewPatch;
+
     use super::*;
+    use crate::offline::test_support::spawn_router;
+    use crate::offline::{cache, outbox, store, sync};
+
+    #[tokio::test]
+    async fn mobile_login_wipes_the_previous_readers_queued_writes_before_storing_the_token() {
+        // No `$HOME`, so storing the token never touches a real `~/.omnibus`.
+        let _home = EnvVarGuard::set("HOME", None);
+        store::init_global_for_tests();
+        let _guard = sync::test_state_lock().lock().unwrap();
+        sync::note_online();
+        let st = store::store().expect("test store");
+        let ids: Vec<i64> = st.ops_list().await.into_iter().map(|o| o.id).collect();
+        st.ops_delete_many(ids).await;
+        st.meta_put("last_user", "login-wipe-previous".into());
+        let book = "login-wipe-book";
+        let notes = ReviewPatch {
+            notes_md: Some(Some("Only mine".into())),
+            ..Default::default()
+        };
+        outbox::queue_update_review(book, &notes)
+            .await
+            .expect("the previous reader's write is queued");
+        cache::put_json(&cache::keys::reviews(book), &"the previous reader's review");
+        let next = UserSummary {
+            username: "login-wipe-next".into(),
+            ..crate::test_support::test_user(false, false)
+        };
+        let answer = LoginResponse {
+            user: next.clone(),
+            token: Some("bearer-next".into()),
+        };
+        let app = axum::Router::new().route(
+            "/api/auth/login",
+            post(move || {
+                let answer = answer.clone();
+                async move { Json(answer) }
+            }),
+        );
+        let base_url = spawn_router(app).await;
+        // Whatever runs once the token lands — a drain among it — sees the
+        // queue as it stands then.
+        let mut authed = token_store::subscribe();
+        authed.mark_unchanged();
+        let queued_when_authed = tokio::spawn(async move {
+            let _ = authed.changed().await;
+            store::store().expect("store").ops_count().await
+        });
+
+        let user = mobile_login(&base_url, "next".into(), "pw".into(), None)
+            .await
+            .expect("signed in");
+
+        assert_eq!(user, next);
+        assert_eq!(
+            queued_when_authed.await.expect("watcher"),
+            0,
+            "the previous reader's queue must be gone before the token is usable"
+        );
+        assert_eq!(
+            cache::get_json::<String>(&cache::keys::reviews(book)).await,
+            None
+        );
+        assert_eq!(
+            st.meta_get("last_user").await.as_deref(),
+            Some("login-wipe-next")
+        );
+        token_store::clear();
+    }
 
     #[tokio::test]
     async fn mobile_login_fails_fast_when_offline() {

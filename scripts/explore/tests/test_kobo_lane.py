@@ -55,9 +55,20 @@ USAGE_CASES = {
 
 
 def is_running(pid: int) -> bool:
-    """Whether `pid` is a live process; a zombie awaiting its reaper is not."""
+    """Whether `pid` is a live process; a zombie awaiting its reaper is not.
+
+    Existence comes from signal 0, not `ps`: a macOS `ps` without setuid root
+    (nixpkgs' procps, first on PATH in the dev shell) prints a blank state for a
+    live process. It still prints a zombie's `Z`, so `ps` only rules that out.
+    """
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
     out = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
-    return bool(out) and not out.startswith("Z")
+    return not out.startswith("Z")
 
 
 class KoboLaneTestCase(unittest.TestCase):

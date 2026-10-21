@@ -1,5 +1,6 @@
-//! Per-user physical wishlist: add (idempotent), remove, the per-user
-//! scoped list and its hard response cap, and the single-entry lookup.
+//! Per-user physical wishlist: add (idempotent), remove (and the purge of a
+//! book only wanted, journal images included), the per-user scoped list and
+//! its hard response cap, and the single-entry lookup.
 
 use omnibus_shared::physical::WishlistSource;
 use sqlx::SqlitePool;
@@ -7,7 +8,7 @@ use sqlx::SqlitePool;
 use crate::test_support::{seed_minimal_books, CoversTempDir};
 
 use super::super::*;
-use super::{count, pool, seed_user};
+use super::{count, image_env, pool, seed_review_image, seed_user};
 
 #[tokio::test]
 async fn add_wishlist_entry_returns_the_entry() {
@@ -231,6 +232,23 @@ async fn remove_wishlist_entry_purges_a_book_that_existed_only_to_be_wanted() {
         count(&pool, "SELECT COUNT(*) FROM wishlist_entries").await,
         0
     );
+}
+
+#[tokio::test]
+async fn remove_wishlist_entry_sweeps_the_journal_images_of_a_book_it_purges() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _env = image_env(tmp.path());
+    let pool = pool().await;
+    let user = seed_user(&pool, "reader").await;
+    let uuid = seed_wished(&pool, user, "Wanted").await;
+    let name = seed_review_image(&pool, user, &uuid).await;
+
+    let removal = remove_wishlist_entry(&pool, user, &uuid).await.unwrap();
+
+    assert!(removal.book_deleted);
+    assert!(!crate::journal_images::journal_images_dir()
+        .join(&name)
+        .exists());
 }
 
 #[tokio::test]

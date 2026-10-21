@@ -7,7 +7,6 @@ use omnibus_db::test_support::indexed;
 use omnibus_shared::{SeriesStack, Settings, StackMemberState};
 use tower::ServiceExt;
 
-use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::*;
 
 use super::super::*;
@@ -39,13 +38,6 @@ fn saga_and_lone() -> Vec<db::ebook::IndexedBook> {
         book("saga-2.epub", "Saga Two", Some(("Saga", "2"))),
         book("lone.epub", "Lone Book", None),
     ]
-}
-
-/// A new reader's id and bearer token.
-async fn reader(pool: &sqlx::SqlitePool, name: &str) -> (i64, String) {
-    let user = auth_test_support::create_user(pool, name).await;
-    let token = auth_test_support::bearer_token(pool, user.id).await;
-    (user.id, token)
 }
 
 /// One `GET /api/ebooks` response, unpacked.

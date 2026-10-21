@@ -10,17 +10,31 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, worker::Task};
-use omnibus_shared::detect_image_format;
-use serde::Deserialize;
+use omnibus_shared::{
+    detect_image_format, AuthorPhotoScanResult, AuthorPhotoUpload, AuthorPhotoUrlBody, FileBytes,
+};
 
 use super::image_upload::extract_validated_image;
 use super::{internal, AppState};
 use crate::auth::{AdminUser, MediaAuthUser};
 
-/// Serve a cached author profile photo. Returns 404 when no photo is cached
-/// (including `'letter'` negative-cache markers) — the frontend keeps the
-/// letter avatar in that case. On a miss, enqueues a background resolution
-/// task so a subsequent page view can render the resolved photo.
+/// Get an author's photo
+///
+/// The author's profile photo. When none is cached, the server looks for one at Open
+/// Library in the background, so a later request may find it. Once Open Library has had
+/// none, the author stays without a photo until an admin deletes the photo record or
+/// scans again.
+#[utoipa::path(
+    get,
+    path = "/api/authors/{id}/photo",
+    tag = "Discovery",
+    security(("bearer" = []), ("session_cookie" = []), ("media_token" = [])),
+    params(("id" = i64, Path, description = "The author's id.")),
+    responses(
+        (status = 200, description = "The photo.", body = FileBytes, content_type = "image/*"),
+        (status = 404, description = "The author has no photo, or no author has that id."),
+    ),
+)]
 pub(super) async fn get_author_photo(
     _user: MediaAuthUser,
     State(state): State<AppState>,
@@ -39,9 +53,9 @@ pub(super) async fn get_author_photo(
         )
             .into_response(),
         Ok(None) => {
-            // Only queue resolution if no row exists yet — a `letter` marker
-            // is a sticky miss until an admin DELETEs it. `author_photo_status`
-            // returns the row regardless of source.
+            // A 404 keeps the client on its letter avatar. Only queue resolution if
+            // no row exists yet — a `letter` marker is a sticky miss until an admin
+            // DELETEs it. `author_photo_status` returns the row regardless of source.
             if let Ok(None) = db::author_photo_status(&state.pool, id).await {
                 state
                     .worker
@@ -53,15 +67,31 @@ pub(super) async fn get_author_photo(
     }
 }
 
-/// Admin upload of a manual author profile photo. Multipart with one
-/// `photo` field. Mirrors the `/api/ebooks/{id}/cover` validation
-/// pipeline: 10 MiB cap, magic-byte sniff, SVG rejection.
+/// Upload an author's photo
+///
+/// Sets the author's photo from an uploaded image. An uploaded photo wins over one found
+/// at Open Library, and a scan doesn't replace it. Needs an admin account.
+#[utoipa::path(
+    put,
+    path = "/api/authors/{id}/photo",
+    tag = "Discovery",
+    params(("id" = i64, Path, description = "The author's id.")),
+    request_body(content = inline(AuthorPhotoUpload), content_type = "multipart/form-data"),
+    responses(
+        (status = 204, description = "The photo is saved."),
+        (status = 400, description = "The form has no `photo` part, or the part's content type isn't `image/*`, is SVG, or the image is larger than 10 MiB."),
+        (status = 403, description = "You aren't an admin."),
+        (status = 404, description = "No author has that id."),
+        (status = 415, description = "The bytes aren't a JPEG, PNG, GIF or WebP image."),
+    ),
+)]
 pub(super) async fn put_author_photo(
     _admin: AdminUser,
     State(state): State<AppState>,
     Path(id): Path<i64>,
     mut multipart: axum::extract::Multipart,
 ) -> Response {
+    // Same validation as the cover upload: 10 MiB cap, magic-byte sniff, no SVG.
     // Confirm the author exists before reading multipart so a malformed
     // upload to a missing id fails fast with 404 (not 400).
     let exists = match db::author_exists(&state.pool, id).await {
@@ -92,7 +122,21 @@ pub(super) async fn put_author_photo(
     axum::http::StatusCode::NO_CONTENT.into_response()
 }
 
-/// Admin: drop the cached photo so the next page view re-queues resolution.
+/// Delete an author's photo
+///
+/// Drops the author's photo, uploaded or found, and any record that Open Library had
+/// none. The next request for the photo starts a fresh search. Succeeds when there is no
+/// photo, and for an unknown id. Needs an admin account.
+#[utoipa::path(
+    delete,
+    path = "/api/authors/{id}/photo",
+    tag = "Discovery",
+    params(("id" = i64, Path, description = "The author's id.")),
+    responses(
+        (status = 204, description = "The photo is gone."),
+        (status = 403, description = "You aren't an admin."),
+    ),
+)]
 pub(super) async fn delete_author_photo(
     _admin: AdminUser,
     State(state): State<AppState>,
@@ -104,11 +148,23 @@ pub(super) async fn delete_author_photo(
     }
 }
 
-/// Admin: synchronously run the Open Library cascade for an author. Clears any
-/// sticky `letter` negative-cache marker so the resolver re-queries Open Library,
-/// then awaits it inline and returns `{ "resolved": bool }`; `false` means Open
-/// Library had nothing (a `letter` marker is re-set). A `source = 'manual'` row is
-/// preserved and reports `resolved=true`, so a manual upload can't be wiped here.
+/// Search Open Library for an author's photo
+///
+/// Drops a photo found earlier, or the record that Open Library had none, and asks Open
+/// Library again, answering once it has. `resolved` says whether a photo was found. An
+/// uploaded photo is kept as it is, and the answer is `resolved: true`. Needs an admin
+/// account.
+#[utoipa::path(
+    post,
+    path = "/api/authors/{id}/photo/scan",
+    tag = "Discovery",
+    params(("id" = i64, Path, description = "The author's id.")),
+    responses(
+        (status = 200, description = "Whether the author has a photo now.", body = AuthorPhotoScanResult),
+        (status = 403, description = "You aren't an admin."),
+        (status = 404, description = "No author has that id."),
+    ),
+)]
 pub(super) async fn post_author_photo_scan(
     _admin: AdminUser,
     State(state): State<AppState>,
@@ -127,7 +183,7 @@ pub(super) async fn post_author_photo_scan(
     // and report resolved=true so the UI keeps the existing photo.
     match db::author_photo_status(&state.pool, id).await {
         Ok(Some((db::AuthorPhotoSource::Manual, _))) => {
-            return Json(omnibus_shared::AuthorPhotoScanResult { resolved: true }).into_response();
+            return Json(AuthorPhotoScanResult { resolved: true }).into_response();
         }
         Ok(_) => {}
         Err(e) => return internal("author_photo_status (pre-scan)", e),
@@ -142,12 +198,23 @@ pub(super) async fn post_author_photo_scan(
         Ok(opt) => opt.is_some(),
         Err(e) => return internal("get_author_photo (post-scan)", e),
     };
-    Json(omnibus_shared::AuthorPhotoScanResult { resolved }).into_response()
+    Json(AuthorPhotoScanResult { resolved }).into_response()
 }
 
-/// Admin: bulk re-resolve all author photos via the background worker.
-/// Returns 202 Accepted immediately; progress is polled via
-/// `/api/rpc/worker_status`.
+/// Refetch every author's photo
+///
+/// Drops every photo found at Open Library and searches again for every author, in the
+/// background. Uploaded photos are kept. Answers at once, before the work starts. Needs
+/// an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/authors/refetch-photos",
+    tag = "Admin",
+    responses(
+        (status = 202, description = "The refetch is queued."),
+        (status = 403, description = "You aren't an admin."),
+    ),
+)]
 pub(super) async fn post_refetch_author_photos(
     _admin: AdminUser,
     State(state): State<AppState>,
@@ -156,18 +223,25 @@ pub(super) async fn post_refetch_author_photos(
     axum::http::StatusCode::ACCEPTED.into_response()
 }
 
-/// JSON body for [`put_author_photo_url`]. Kept inline because the shape is
-/// trivial and not shared with any other call site (the RPC server function
-/// passes the URL as a positional arg).
-#[derive(Debug, Deserialize)]
-pub(super) struct AuthorPhotoUrlBody {
-    url: String,
-}
-
-/// Admin: persist an author photo by URL. Server-side fetches the URL,
-/// validates content-type/size/magic-bytes, and stores it as a `manual`
-/// row — the same source as a multipart upload, so it wins over Open
-/// Library resolution and survives a "Scan for picture" click.
+/// Set an author's photo from a URL
+///
+/// Downloads the image at `url` and saves it as the author's photo, the same as an
+/// upload: it wins over Open Library, and a scan doesn't replace it. The server fetches
+/// the URL itself, refuses addresses inside its own network, and doesn't follow
+/// redirects. Needs an admin account.
+#[utoipa::path(
+    put,
+    path = "/api/authors/{id}/photo/url",
+    tag = "Discovery",
+    params(("id" = i64, Path, description = "The author's id.")),
+    request_body = AuthorPhotoUrlBody,
+    responses(
+        (status = 204, description = "The photo is saved."),
+        (status = 400, description = "`url` is empty, longer than 2048 bytes, not `http` or `https`, or points inside the server's network, or what it serves isn't a JPEG, PNG, GIF or WebP image of 10 MiB or less; the body says which."),
+        (status = 403, description = "You aren't an admin."),
+        (status = 404, description = "No author has that id."),
+    ),
+)]
 pub(super) async fn put_author_photo_url(
     _admin: AdminUser,
     State(state): State<AppState>,

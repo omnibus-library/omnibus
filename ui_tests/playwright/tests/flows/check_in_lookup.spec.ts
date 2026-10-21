@@ -1,223 +1,192 @@
-import type { Page } from "@playwright/test";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
-import { expectNavVisible, gotoReady } from "../utils/nav";
+import { scan } from "../contracts/scan";
+import { unresolved } from "../data/scan";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 
-// The flow's front door: ISBN entry and title search on one screen, with the
-// camera behind an explicit button. The provider RPCs are mocked so these
-// assertions don't ride on ambient server config — real provider behaviour is
-// covered by the `omnibus_db` wiremock suites.
+// These tests stub provider answers so server settings can't change them.
 
 const ISBN = "9780441013593";
-const KEY_STATUS_URL = "/api/rpc/scan/google-books-configured";
-
-async function mockJsonPost(
-  page: Page,
-  url: string | RegExp,
-  body: unknown,
-): Promise<void> {
-  await page.route(url, (route) =>
-    route.request().method() === "POST"
-      ? route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(body),
-        })
-      : route.continue(),
-  );
-}
-
-// The provider disclaimer keys off the non-admin-gated configured flag
-// (`POST /api/rpc/scan/google-books-configured`). Mock it so the note's two
-// states don't ride on ambient server config (another worker's settings save
-// could otherwise flip it mid-run). It's a read that POSTs because it's a
-// Dioxus server function, so its `expectMutation` wrappers assert status only
-// and raise the timeout — the call is triggered by a page load, not a click.
-async function mockGoogleBooksKey(
-  page: Page,
-  configured: boolean,
-): Promise<void> {
-  await page.route("**/api/rpc/scan/google-books-configured", (route) =>
-    route.request().method() === "POST"
-      ? route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(configured),
-        })
-      : route.continue(),
-  );
-}
 
 test.describe("check-in lookup", () => {
-  test("renders the lookup layout", async ({ page }) => {
-    await gotoReady(page, "/check-in");
-    await expectNavVisible(page);
+  test("show the lookup layout", async ({ checkInPage }) => {
+    const flow = checkInPage.flow;
 
-    await expect(page.getByTestId("check-in-lookup")).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Check in a book" }),
-    ).toBeVisible();
-    // Both ways in are on screen at once — no mode switch to find either.
-    await expect(page.getByLabel("ISBN")).toBeVisible();
-    await expect(page.getByLabel("Title")).toBeVisible();
-    await expect(page.getByTestId("check-in-scan-instead")).toBeVisible();
-    // Nothing typed yet: neither submit can fire, and no stale empty state.
-    await expect(page.getByTestId("check-in-submit")).toBeDisabled();
-    await expect(page.getByTestId("check-in-search-submit")).toBeDisabled();
-    await expect(page.getByTestId("check-in-search-empty")).toHaveCount(0);
-  });
-
-  test("opening the flow mounts no scanner, so no camera starts", async ({
-    page,
-  }) => {
-    await gotoReady(page, "/check-in");
-
-    // The camera-opening effect runs on the scanner component's mount, so an
-    // unmounted scanner is what keeps a webcam dark until someone asks for it.
-    await expect(page.getByTestId("check-in-lookup")).toBeVisible();
-    await expect(page.getByTestId("barcode-scanner")).toHaveCount(0);
-    await expect(page.getByTestId("barcode-scanner-video")).toHaveCount(0);
-  });
-
-  test("the scan button is what reveals the camera", async ({ page }) => {
-    await gotoReady(page, "/check-in");
-    await page.getByTestId("check-in-scan-instead").click();
-
-    await expect(page.getByTestId("check-in-scan")).toBeVisible();
-    await expect(page.getByTestId("barcode-scanner")).toBeVisible();
-    await expect(page.getByTestId("check-in-lookup")).toHaveCount(0);
-  });
-
-  test("Find book stays disabled until the check digit validates", async ({
-    page,
-  }) => {
-    await gotoReady(page, "/check-in");
-    const submit = page.getByTestId("check-in-submit");
-    await expect(submit).toBeDisabled();
-
-    // Right length, wrong check digit — the case a shape-only gate misses.
-    await page.getByTestId("check-in-isbn").fill("9780441013539");
-    await expect(submit).toBeDisabled();
-
-    await page.getByTestId("check-in-isbn").fill(ISBN);
-    await expect(submit).toBeEnabled();
-  });
-
-  test("an unresolved ISBN routes back to the lookup screen's title search", async ({
-    page,
-  }) => {
-    await mockJsonPost(page, /\/api\/rpc\/scan\/resolve$/, {
-      kind: "unresolved",
+    await test.step("open check-in", async () => {
+      await checkInPage.goto();
     });
-    await gotoReady(page, "/check-in");
-    await page.getByTestId("check-in-isbn").fill(ISBN);
 
-    // Dioxus keys a server-fn body by parameter name, so `req` wraps the struct.
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: /\/api\/rpc\/scan\/resolve$/,
-        expectedBody: { req: { isbn: ISBN } },
-        expectedStatus: 200,
-      },
-      async () => page.getByTestId("check-in-submit").click(),
-    );
+    await test.step("check both ways in are on screen", async () => {
+      await checkInPage.assertDisplayed();
+      await checkInPage.topNav.assertDisplayed();
+      await expect(flow.lookupScreen).toBeVisible();
+      await expect(flow.screenHeading).toHaveText("Check in a book");
+      await expect(flow.isbnField).toBeVisible();
+      await expect(flow.titleField).toBeVisible();
+      await expect(flow.scanBarcodeButton).toBeVisible();
+    });
 
-    await expect(page.getByTestId("check-in-unresolved")).toBeVisible();
-    await page.getByTestId("check-in-search-instead").click();
-
-    await expect(page.getByTestId("check-in-lookup")).toBeVisible();
-    await expect(page.getByLabel("Title")).toBeVisible();
+    await test.step("check nothing can be submitted yet", async () => {
+      await expect(flow.findBookButton).toBeDisabled();
+      await expect(flow.searchButton).toBeDisabled();
+      await expect(flow.searchEmptyMessage).toHaveCount(0);
+    });
   });
 
-  test("a failed lookup surfaces the error without leaving the fields", async ({
-    page,
-  }) => {
-    await page.route(/\/api\/rpc\/scan\/resolve$/, (route) =>
-      route.request().method() === "POST"
-        ? route.fulfill({
-            status: 500,
-            contentType: "text/plain",
-            body: "forced failure",
-          })
-        : route.continue(),
-    );
-    await gotoReady(page, "/check-in");
-    await page.getByTestId("check-in-isbn").fill(ISBN);
+  test("open check-in without starting the camera", async ({ checkInPage }) => {
+    const flow = checkInPage.flow;
 
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: /\/api\/rpc\/scan\/resolve$/,
-        expectedBody: { req: { isbn: ISBN } },
-        expectedStatus: 500,
-      },
-      async () => page.getByTestId("check-in-submit").click(),
-    );
+    await test.step("open check-in", async () => {
+      await checkInPage.goto();
+    });
 
-    // The reader is dropped back where they typed, digits intact to correct —
-    // never onto the keypad screen they never asked for.
-    await expect(page.getByTestId("check-in-error")).toBeVisible();
-    await expect(page.getByTestId("check-in-lookup")).toBeVisible();
-    await expect(page.getByTestId("check-in-isbn")).toHaveValue(ISBN);
+    // The camera starts when the scanner mounts, so no scanner means no webcam.
+    await test.step("check no scanner is mounted", async () => {
+      await expect(flow.lookupScreen).toBeVisible();
+      await expect(flow.scannerPanel).toHaveCount(0);
+      await expect(flow.scannerVideo).toHaveCount(0);
+    });
   });
 
-  test("the cancel button exits the flow back to the library", async ({
-    page,
-  }) => {
-    await gotoReady(page, "/check-in");
-    await expect(page.getByTestId("check-in")).toBeVisible();
+  test("reveal the camera with the scan button", async ({ checkInPage }) => {
+    const flow = checkInPage.flow;
 
-    await page.getByTestId("check-in-close").click();
+    await test.step("open the scanner from the lookup", async () => {
+      await checkInPage.goto();
+      await flow.openScanner();
+    });
 
-    await expect(page).toHaveURL(/\/$/);
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Your Library" }),
-    ).toBeVisible();
-    await expect(page.getByTestId("check-in")).toHaveCount(0);
+    await test.step("check the scanner replaces the lookup", async () => {
+      await expect(flow.scanScreen).toBeVisible();
+      await expect(flow.scannerPanel).toBeVisible();
+      await expect(flow.lookupScreen).toHaveCount(0);
+    });
   });
 
-  test("shows the Open Library fallback note when no Google Books key is set", async ({
-    page,
+  test("enable find book once the check digit validates", async ({
+    checkInPage,
   }) => {
-    await mockGoogleBooksKey(page, false);
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: KEY_STATUS_URL,
-        expectedStatus: 200,
-        timeout: 15_000,
-      },
-      async () => gotoReady(page, "/check-in"),
-    );
+    const flow = checkInPage.flow;
 
-    await expect(page.getByTestId("check-in-google-books-note")).toContainText(
-      "Without a Google Books API key",
-    );
-    await expect(page.getByTestId("check-in-google-books-note")).toContainText(
-      "Set up your Google Books API key in Settings",
-    );
+    await test.step("open check-in", async () => {
+      await checkInPage.goto();
+      await expect(flow.findBookButton).toBeDisabled();
+    });
+
+    // Right length but wrong check digit, which a length check alone misses.
+    await test.step("enter an isbn with a wrong check digit", async () => {
+      await flow.enterIsbn("9780441013539");
+      await expect(flow.findBookButton).toBeDisabled();
+    });
+
+    await test.step("enter a valid isbn", async () => {
+      await flow.enterIsbn(ISBN);
+      await expect(flow.findBookButton).toBeEnabled();
+    });
   });
 
-  test("hides the fallback note when a Google Books key is configured", async ({
-    page,
+  test("search by title after an unresolved isbn", async ({
+    checkInPage,
+    expectMutation,
   }) => {
-    await mockGoogleBooksKey(page, true);
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: KEY_STATUS_URL,
-        expectedStatus: 200,
-        timeout: 15_000,
-      },
-      async () => gotoReady(page, "/check-in"),
-    );
+    const flow = checkInPage.flow;
 
-    await expect(page.getByTestId("check-in-lookup")).toBeVisible();
-    await expect(page.getByTestId("check-in-google-books-note")).toHaveCount(0);
+    await test.step("look up an isbn nobody knows", async () => {
+      await flow.stubIsbnLookup(unresolved());
+      await checkInPage.goto();
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
+      await expect(flow.unresolvedScreen).toBeVisible();
+    });
+
+    await test.step("search by title instead", async () => {
+      await flow.searchByTitleInstead();
+      await expect(flow.lookupScreen).toBeVisible();
+      await expect(flow.titleField).toBeVisible();
+    });
+  });
+
+  test("keep the typed isbn when a lookup fails", async ({
+    checkInPage,
+    expectMutation,
+  }) => {
+    const flow = checkInPage.flow;
+
+    await test.step("look up an isbn while lookups fail", async () => {
+      await checkInPage.forceServerError(scan.resolve(ISBN));
+      await checkInPage.goto();
+      await expectMutation(failing(scan.resolve(ISBN)), () =>
+        flow.lookUpIsbn(ISBN),
+      );
+    });
+
+    // The reader stays on the lookup with their digits, not on the keypad.
+    await test.step("check the error shows over the same fields", async () => {
+      await expect(flow.errorMessage).toBeVisible();
+      await expect(flow.lookupScreen).toBeVisible();
+      await expect(flow.isbnField).toHaveValue(ISBN);
+    });
+  });
+
+  test("cancel check-in back to the library", async ({
+    checkInPage,
+    libraryPage,
+  }) => {
+    const flow = checkInPage.flow;
+
+    await test.step("open check-in", async () => {
+      await checkInPage.goto();
+      await expect(flow.root).toBeVisible();
+    });
+
+    await test.step("cancel the flow", async () => {
+      await flow.cancelCheckIn();
+    });
+
+    await test.step("check the library shows without the flow", async () => {
+      await libraryPage.assertDisplayed();
+      await expect(libraryPage.libraryHeading).toHaveText("Your Library");
+      await expect(flow.root).toHaveCount(0);
+    });
+  });
+
+  test("show the open library note without a google books key", async ({
+    checkInPage,
+    expectMutation,
+  }) => {
+    const flow = checkInPage.flow;
+
+    await test.step("open check-in with no key configured", async () => {
+      await flow.stubGoogleBooksKey(false);
+      await expectMutation(scan.googleBooksConfigured(), () =>
+        checkInPage.goto(),
+      );
+    });
+
+    await test.step("check the note explains the fallback", async () => {
+      await expect(flow.fallbackNoteMessage).toContainText(
+        "Without a Google Books API key",
+      );
+      await expect(flow.fallbackNoteMessage).toContainText(
+        "Set up your Google Books API key in Administration › Integrations",
+      );
+    });
+  });
+
+  test("hide the open library note with a google books key", async ({
+    checkInPage,
+    expectMutation,
+  }) => {
+    const flow = checkInPage.flow;
+
+    await test.step("open check-in with a key configured", async () => {
+      await flow.stubGoogleBooksKey(true);
+      await expectMutation(scan.googleBooksConfigured(), () =>
+        checkInPage.goto(),
+      );
+    });
+
+    await test.step("check no note shows", async () => {
+      await expect(flow.lookupScreen).toBeVisible();
+      await expect(flow.fallbackNoteMessage).toHaveCount(0);
+    });
   });
 });
