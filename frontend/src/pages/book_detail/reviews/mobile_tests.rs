@@ -12,7 +12,7 @@
 #![allow(clippy::await_holding_lock)]
 
 use std::cell::Cell;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -418,9 +418,12 @@ async fn a_background_re_read_asked_for_one_book_never_starts_for_the_next() {
     let (mut dom, ctx) = mount(&url).await;
     let (_, _, began) = household_flags(&dom, ctx);
     // Hold the store worker, so the re-read's outbox check waits behind it.
-    store::store()
-        .expect("store")
-        .run_detached(|_| std::thread::sleep(Duration::from_millis(300)));
+    let released = Arc::new(AtomicBool::new(false));
+    let release = released.clone();
+    store::store().expect("store").run_detached(move |_| {
+        std::thread::sleep(Duration::from_millis(300));
+        release.store(true, Ordering::SeqCst);
+    });
 
     dom.in_runtime(|| writes::refresh_after_sync(ctx, BOOK.into(), url.clone()));
     // Polled once: it is now parked on that check.
@@ -429,6 +432,9 @@ async fn a_background_re_read_asked_for_one_book_never_starts_for_the_next() {
     dom.in_runtime(|| {
         writes::bump(ctx.epoch);
     });
+    // Its check answers right after the worker is let go, so the resumed task
+    // runs inside the settle below.
+    run_until(&mut dom, |_| released.load(Ordering::SeqCst)).await;
     settle(&mut dom).await;
 
     assert_eq!(reads.load(Ordering::SeqCst), 1);
