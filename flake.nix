@@ -12,7 +12,7 @@
     # Rust toolchain, dioxus-cli and node — the browser version has to track
     # the npm @playwright/test pin, and nothing else should be dragged along
     # for that. Bump this rev and `@playwright/test` together, never apart.
-    nixpkgs-playwright.url = "github:NixOS/nixpkgs/c27cdad491a991b11ed731760aa2ef8db0cb0410";
+    nixpkgs-playwright.url = "github:NixOS/nixpkgs/319e4cebef10cbb636c6ea392137b52ad105336a";
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs-unstable";
