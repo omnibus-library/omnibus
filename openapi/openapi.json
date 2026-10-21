@@ -4722,7 +4722,7 @@
           "Journals"
         ],
         "summary": "Upload a journal image",
-        "description": "Stores an image to embed in a journal entry and returns its URL. Put the URL in the\nentry's markdown as `![caption](url)`.",
+        "description": "Stores an image to embed in a journal entry or review and returns its URL. Put the URL\nin the markdown as `![caption](url)`.",
         "operationId": "post_journal_image",
         "requestBody": {
           "content": {
@@ -4771,7 +4771,7 @@
           "Journals"
         ],
         "summary": "Get a journal image",
-        "description": "An image uploaded for a journal entry, by the name at the end of its URL. A name never\npoints at different bytes, so the response may be cached for a year.",
+        "description": "An image uploaded for a journal entry or review, by the name at the end of its URL. A\nname never points at different bytes, so the response may be cached for a year.",
         "operationId": "get_journal_image",
         "parameters": [
           {
@@ -4854,7 +4854,7 @@
           "Journals"
         ],
         "summary": "Delete a journal entry",
-        "description": "Deletes one of your entries, and any uploaded image it showed that no other entry\nshows.",
+        "description": "Deletes one of your entries. An uploaded image it showed, and no other journal entry or\nreview still shows, is deleted.",
         "operationId": "delete_journal",
         "parameters": [
           {
@@ -4881,7 +4881,7 @@
           "Journals"
         ],
         "summary": "Edit a journal entry",
-        "description": "Replaces the body and progress of one of your entries. Send `status` to publish a draft\nor turn an entry back into one; leave it out to keep the status. An uploaded image the\nold body showed and no entry shows any more is deleted.",
+        "description": "Replaces the body and progress of one of your entries. Send `status` to publish a draft\nor turn an entry back into one; leave it out to keep the status. An uploaded image the\nchange drops, and no journal entry or review still shows, is deleted.",
         "operationId": "patch_journal",
         "parameters": [
           {
@@ -5652,7 +5652,7 @@
           "Ratings"
         ],
         "summary": "Rate a book",
-        "description": "Sets your star rating for a book, from 0.5 to 5 in half-star steps, replacing any rating\nyou gave it before.",
+        "description": "Sets your star rating for a book, from 0.5 to 5 in half-star steps, replacing any rating\nyou gave it before. Any review text and notes stay. Use `PATCH /api/reviews/{uuid}`.",
         "operationId": "post_rating",
         "requestBody": {
           "content": {
@@ -5681,7 +5681,8 @@
           "404": {
             "description": "No book has that `book_uuid`."
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/ratings/others/{uuid}": {
@@ -5690,7 +5691,7 @@
           "Ratings"
         ],
         "summary": "List other users' ratings of a book",
-        "description": "Every other user's rating of the book, with their name, newest first. Returns up to\n1,000, and an empty list for a uuid no book has.",
+        "description": "Every other user's rating of the book, with their name, most recently rated first.\nReturns up to 1,000, and an empty list for a uuid no book has. Use\n`GET /api/reviews/{uuid}`.",
         "operationId": "get_other_ratings",
         "parameters": [
           {
@@ -5705,7 +5706,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Other users' ratings, newest first.",
+            "description": "Other users' ratings, most recently rated first.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5717,7 +5718,8 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/ratings/{uuid}": {
@@ -5726,7 +5728,7 @@
           "Ratings"
         ],
         "summary": "Get your rating for a book",
-        "description": "The body is `null` when you haven't rated the book, or no book has the uuid.",
+        "description": "The body is `null` when you haven't rated the book, or no book has the uuid. Use\n`GET /api/reviews/{uuid}`.",
         "operationId": "get_rating",
         "parameters": [
           {
@@ -5757,14 +5759,15 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       },
       "delete": {
         "tags": [
           "Ratings"
         ],
         "summary": "Remove your rating of a book",
-        "description": "Succeeds whether or not you had rated the book.",
+        "description": "Clears only the stars: any review text and notes stay. Succeeds whether or not you had\nrated the book. Use `PATCH /api/reviews/{uuid}` with `\"stars\": null`.",
         "operationId": "delete_rating",
         "parameters": [
           {
@@ -5781,7 +5784,8 @@
           "204": {
             "description": "You have no rating for the book."
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/read-status": {
@@ -5879,6 +5883,120 @@
           },
           "409": {
             "description": "No ebook library path is set."
+          }
+        }
+      }
+    },
+    "/api/reviews/{uuid}": {
+      "get": {
+        "tags": [
+          "Reviews"
+        ],
+        "summary": "Get a book's reviews",
+        "description": "Your own review, private notes included; every other reader's review with stars or\ntext, without their notes; and a summary of every reader's stars once at least two\nhave rated the book.",
+        "operationId": "get_book_reviews",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The book's reviews.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookReviews"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No book has that uuid."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Reviews"
+        ],
+        "summary": "Delete your review of a book",
+        "description": "Removes your stars, text and private notes together. An uploaded image they showed,\nand no journal entry or review still shows, is deleted. Succeeds whether or not you had\nreviewed the book.",
+        "operationId": "delete_review",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "You have no review of the book."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Reviews"
+        ],
+        "summary": "Change your review of a book",
+        "description": "Creates the review on first write. Only the fields you send change: leave a field out\nto keep it. Send `stars`, `body_md` or `notes_md` as null to clear it. `spoiler` takes\ntrue or false; a null counts as leaving it out, so it keeps the flag rather than\nclearing it. Stars, text and notes are independent, so clearing the stars keeps your\ntext. The body is `null` when the change left the review with no stars, text or notes,\nwhich deletes it.\n\nText and notes can embed images uploaded with `POST /api/journals/images`. An uploaded\nimage the change drops, and no journal entry or review still shows, is deleted.",
+        "operationId": "patch_review",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Your review as stored, or `null` if it is now empty and deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Review"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`stars` is outside 0.5 to 5 or not a whole number of half stars, or `body_md` or `notes_md` is over 65,536 bytes."
+          },
+          "404": {
+            "description": "No book has that uuid."
           }
         }
       }
@@ -8601,6 +8719,96 @@
           }
         }
       },
+      "AttributedReview": {
+        "type": "object",
+        "description": "Another reader's review of a book, with who wrote it. Never carries their private notes.",
+        "required": [
+          "user_id",
+          "username",
+          "spoiler",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "body_html": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`body_md` rendered to HTML, with unsafe markup removed."
+          },
+          "body_md": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The public review text, as Markdown. Null for a rating with no text."
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the review first had stars or text, in Unix seconds. Adding text to a review that\nhad none restarts it, so a text review dates from its text."
+          },
+          "created_at_iso": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The same moment as `created_at`, as an ISO 8601 string in UTC."
+          },
+          "has_avatar": {
+            "type": "boolean",
+            "description": "Whether the reviewer has an avatar. `GET /api/users/{user_id}/avatar` serves it."
+          },
+          "rated_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "When they last changed the stars, in Unix seconds. Null when there are none."
+          },
+          "rated_at_iso": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The same moment as `rated_at`, as an ISO 8601 string in UTC."
+          },
+          "spoiler": {
+            "type": "boolean",
+            "description": "Whether the reviewer marked the review as containing spoilers. The stars are never\na spoiler; hide only the text."
+          },
+          "stars": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "The star rating, from 0.5 to 5 in half-star steps. Null when they gave none."
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When they last changed the stars, text or spoiler flag, in Unix seconds."
+          },
+          "updated_at_iso": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The same moment as `updated_at`, as an ISO 8601 string in UTC."
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "username": {
+            "type": "string",
+            "description": "The reviewer's display name, or their username when they have none."
+          }
+        }
+      },
       "AudiobookInspection": {
         "type": "object",
         "description": "The metadata `POST /api/uploads/audiobooks/inspect` reads from an uploaded\naudiobook's tags.",
@@ -9402,6 +9610,44 @@
         "properties": {
           "book_uuid": {
             "type": "string"
+          }
+        }
+      },
+      "BookReviews": {
+        "type": "object",
+        "description": "Everything readers have said about one book.",
+        "required": [
+          "others"
+        ],
+        "properties": {
+          "mine": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Review",
+                "description": "Your own review. Null when you haven't reviewed the book."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "others": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttributedReview"
+            },
+            "description": "Other readers' reviews: those with text first, newest first by when the text was\nfirst written, then ratings with no text, most recently rated first. A review\nholding only private notes isn't listed."
+          },
+          "summary": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ReviewSummary",
+                "description": "The book's ratings summed up. Null until at least two readers have rated it."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -14132,6 +14378,179 @@
           }
         }
       },
+      "Review": {
+        "type": "object",
+        "description": "Your review of a book, private notes included.",
+        "required": [
+          "book_uuid",
+          "spoiler",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "body_html": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`body_md` rendered to HTML, with unsafe markup removed."
+          },
+          "body_md": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Your public review text, as Markdown. Null when you wrote none."
+          },
+          "book_uuid": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the review first had stars or text, in Unix seconds. Adding text to a review that\nhad none restarts it, so a text review dates from its text. For a review holding only\nnotes, when you wrote them."
+          },
+          "created_at_iso": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The same moment as `created_at`, as an ISO 8601 string in UTC."
+          },
+          "notes_html": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`notes_md` rendered to HTML, with unsafe markup removed."
+          },
+          "notes_md": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Your private notes, as Markdown. Only you ever see them. Null when you wrote none."
+          },
+          "rated_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "When you last changed the stars, in Unix seconds. Null when there are none."
+          },
+          "rated_at_iso": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The same moment as `rated_at`, as an ISO 8601 string in UTC."
+          },
+          "spoiler": {
+            "type": "boolean",
+            "description": "Whether you marked the review as containing spoilers."
+          },
+          "stars": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "Your star rating, from 0.5 to 5 in half-star steps. Null when you gave none."
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When you last changed the stars, text or spoiler flag, in Unix seconds. Editing\nyour notes doesn't move it, because other readers see it too."
+          },
+          "updated_at_iso": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The same moment as `updated_at`, as an ISO 8601 string in UTC."
+          }
+        }
+      },
+      "ReviewBucket": {
+        "type": "object",
+        "description": "How many readers gave a book one star value.",
+        "required": [
+          "half_stars",
+          "readers"
+        ],
+        "properties": {
+          "half_stars": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The rating in half stars, from 1 to 10. Divide by 2 for stars, so 10 is 5 stars."
+          },
+          "readers": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ReviewPatch": {
+        "type": "object",
+        "description": "The changes `PATCH /api/reviews/{uuid}` makes to your review of a book. A field left\nout stays as it is; `stars`, `body_md` or `notes_md` sent as null is cleared. Blank\ntext counts as null. A review left with no stars, text or notes is deleted.",
+        "properties": {
+          "body_md": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The public review text, as Markdown, up to 65,536 bytes."
+          },
+          "notes_md": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Private notes only you see, as Markdown, up to 65,536 bytes."
+          },
+          "spoiler": {
+            "type": "boolean",
+            "description": "Whether the review contains spoilers: true or false. Leave it out to keep it; a null\ncounts as leaving it out and doesn't clear the flag."
+          },
+          "stars": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "The star rating, from 0.5 to 5 in half-star steps. Null clears the stars and keeps\nany text and notes."
+          }
+        }
+      },
+      "ReviewSummary": {
+        "type": "object",
+        "description": "Every reader's rating of a book, yours included, summed up.",
+        "required": [
+          "average_stars",
+          "ratings",
+          "buckets"
+        ],
+        "properties": {
+          "average_stars": {
+            "type": "number",
+            "format": "float",
+            "description": "The mean rating, in stars."
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewBucket"
+            },
+            "description": "All ten half-star values, lowest first, zeros included."
+          },
+          "ratings": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many readers rated the book."
+          }
+        }
+      },
       "RuleField": {
         "type": "string",
         "description": "A field a smart shelf condition can match on.",
@@ -16508,8 +16927,12 @@
       "description": "Journal entries about a book, and the images in them."
     },
     {
+      "name": "Reviews",
+      "description": "Book reviews: your stars, text and private notes, and what other readers wrote."
+    },
+    {
       "name": "Ratings",
-      "description": "Star ratings."
+      "description": "Star ratings alone. Superseded by Reviews, which carry the same stars."
     },
     {
       "name": "Read status",

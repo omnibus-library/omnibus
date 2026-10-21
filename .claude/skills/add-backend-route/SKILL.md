@@ -54,7 +54,7 @@ Write the handler function in the matching per-domain module under
 [server/src/backend/](../../../server/src/backend/) (e.g. `backend/ebooks.rs`,
 `backend/progress.rs`), give it a `#[utoipa::path(...)]` attribute with the method,
 path, tag, params, body and every response with a description (see
-[13-openapi.md](../../rules/13-openapi.md), and any handler in `backend/ratings.rs`
+[13-openapi.md](../../rules/13-openapi.md), and any handler in `backend/reviews.rs`
 for the shape), then register it with `.routes(routes!(handler))` inside the
 matching builder function in
 [server/src/backend/routes.rs](../../../server/src/backend/routes.rs) —

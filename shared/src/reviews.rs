@@ -150,16 +150,17 @@ pub struct ReviewSummary {
 pub struct BookReviews {
     /// Your own review. Null when you haven't reviewed the book.
     pub mine: Option<Review>,
-    /// Other readers' reviews: those with text first, newest first, then ratings with no
-    /// text, most recently rated first. A review holding only private notes isn't listed.
+    /// Other readers' reviews: those with text first, newest first by when the text was
+    /// first written, then ratings with no text, most recently rated first. A review
+    /// holding only private notes isn't listed.
     pub others: Vec<AttributedReview>,
     /// The book's ratings summed up. Null until at least two readers have rated it.
     pub summary: Option<ReviewSummary>,
 }
 
 /// The changes `PATCH /api/reviews/{uuid}` makes to your review of a book. A field left
-/// out stays as it is; a field sent as null is cleared. Blank text counts as null. A
-/// review left with no stars, text or notes is deleted.
+/// out stays as it is; `stars`, `body_md` or `notes_md` sent as null is cleared. Blank
+/// text counts as null. A review left with no stars, text or notes is deleted.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ReviewPatch {
@@ -188,8 +189,10 @@ pub struct ReviewPatch {
     )]
     #[cfg_attr(feature = "openapi", schema(value_type = Option<String>))]
     pub notes_md: Option<Option<String>>,
-    /// Whether the review contains spoilers.
+    /// Whether the review contains spoilers: true or false. Leave it out to keep it; a null
+    /// counts as leaving it out and doesn't clear the flag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "openapi", schema(value_type = bool))]
     pub spoiler: Option<bool>,
 }
 

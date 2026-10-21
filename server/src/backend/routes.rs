@@ -13,9 +13,9 @@ use crate::rate_limit::{rate_limit_by_ip, RateLimiter, RateLimits};
 use super::{
     account, admin_health, admin_sessions, audiobooks, author_photos, authors, bookmarks, cleanup,
     covers, cross_format, deletion, ebooks, genres, highlights, journals, kindle, kobo_devices,
-    logs, merge, metadata, overrides, physical, profile, progress, ratings, read_status, scan,
-    search, series, settings, shelves, stats, suggestions, summary, tags, tasks, uploads, users,
-    AppState,
+    logs, merge, metadata, overrides, physical, profile, progress, ratings, read_status, reviews,
+    scan, search, series, settings, shelves, stats, suggestions, summary, tags, tasks, uploads,
+    users, AppState,
 };
 
 /// Health check, settings, ebooks, and audiobook playback routes.
@@ -190,9 +190,13 @@ fn bookmark_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(bookmarks::put_bookmark, bookmarks::delete_bookmark))
 }
 
-/// Reading stats, star ratings, and read/unread state —
-/// mobile-facing REST. Web hits the analogous `/api/rpc/stats`,
-/// `/api/rpc/ratings/*`, and `/api/rpc/read-status/*` server functions.
+/// Reading stats, reviews (and the deprecated stars-only ratings view), and
+/// read/unread state — mobile-facing REST. Web hits the analogous
+/// `/api/rpc/stats`, `/api/rpc/reviews/*`, `/api/rpc/ratings/*`, and
+/// `/api/rpc/read-status/*` server functions.
+// The ratings handlers are `#[deprecated]` so the spec marks them; serving them
+// until installed clients move to `/api/reviews` is deliberate.
+#[allow(deprecated)]
 fn engagement_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(stats::get_household_readers))
@@ -207,6 +211,11 @@ fn engagement_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(ratings::post_rating))
         .routes(routes!(ratings::get_other_ratings))
         .routes(routes!(ratings::get_rating, ratings::delete_rating))
+        .routes(routes!(
+            reviews::get_book_reviews,
+            reviews::patch_review,
+            reviews::delete_review
+        ))
         .routes(routes!(read_status::put_read_status))
         .routes(routes!(read_status::get_read_status))
 }

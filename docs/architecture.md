@@ -154,9 +154,13 @@ No single module owns these, so a change to any one surface has to keep them:
   taxonomy orphan sweeps, smart-shelf rules — gates on the same override-aware
   membership (the `effective_*_sql!` macros). A looser rule on one makes them
   disagree: the palette offers an author the index rejects.
-- **Attribution.** Every user-facing name (journal author, rating, shelf owner)
+- **Attribution.** Every user-facing name (journal author, reviewer, shelf owner)
   reads `COALESCE(display_name, username)`; `username` stays the login and admin
   identity.
+- **Private notes.** A review's notes reach only their author: another reader
+  gets an `AttributedReview`, which has no notes field, and nothing they see —
+  the review's timestamps, the "Recently Interacted" sort — moves on an edit
+  that touched only the notes.
 - **Derived-byte caches.** Thumbnails, the KEPUB cache and the export-EPUB cache
   all invalidate on `books.last_modified`, so every metadata or cover write must
   bump it (`touch_book_last_modified`) or all three serve stale bytes.
