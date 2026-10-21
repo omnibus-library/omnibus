@@ -202,9 +202,10 @@ pub(crate) fn clear_cache() {
 
 /// Drop every cached summary for one user, across every range.
 ///
-/// Called by a write whose result the next read must reflect immediately —
-/// [`goals::set_goal`] today. Scoped to the one user so another reader's warm
-/// cache isn't thrown away for a change that can't affect them.
+/// Called by a write to one reader's own data that a summary is built from,
+/// when the next read must show it at once rather than after the TTL. Scoped
+/// to that user so another reader's warm cache isn't thrown away for a change
+/// that can't affect them.
 pub fn invalidate_user(user_id: i64) {
     if let Ok(mut guard) = cache().lock() {
         guard.retain(|(uid, _, _), _| *uid != user_id);

@@ -5,9 +5,10 @@
 
 /// Every interaction signal, folded into one INTEGER unix-seconds expression
 /// over the `books` alias `b`. Expands to a string literal so the callers
-/// that build a `const` projection can `concat!` it. Journal drafts are
-/// excluded deliberately: a private draft must not reveal its existence by
-/// moving a book up a shared sort.
+/// that build a `const` projection can `concat!` it. Journal drafts and
+/// reviews holding only private notes are excluded deliberately: neither may
+/// reveal its existence by moving a book up a shared sort. A review's
+/// `updated_at` already ignores notes edits.
 macro_rules! interacted_at_epoch_sql {
     () => {
         // `NULLIF(…, 0)` maps "no signal at all" to `NULL`, which SQLite orders first
@@ -15,8 +16,9 @@ macro_rules! interacted_at_epoch_sql {
         r"NULLIF(MAX(
         COALESCE(b.last_modified, 0),
         COALESCE(b.timestamp, 0),
-        COALESCE((SELECT MAX(ur.updated_at) FROM user_ratings ur
-                   WHERE ur.book_uuid = b.uuid), 0),
+        COALESCE((SELECT MAX(ur.updated_at) FROM reviews ur
+                   WHERE ur.book_uuid = b.uuid
+                     AND (ur.half_stars IS NOT NULL OR ur.body_md IS NOT NULL)), 0),
         COALESCE((SELECT MAX(MAX(je.created_at, je.updated_at)) FROM journal_entries je
                    WHERE je.book_uuid = b.uuid AND je.status = 'published'), 0),
         COALESCE((SELECT MAX(brs.updated_at) FROM book_read_status brs

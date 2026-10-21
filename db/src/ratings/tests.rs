@@ -1,7 +1,8 @@
 //! Unit tests for the `ratings` module: `set_rating` round-trip (incl.
 //! half-star storage), change-overwrites, per-user isolation, `BookNotFound`,
 //! `get_rating` empty-state, `delete_rating` clear + absent no-op,
-//! merged-uuid canonical resolution, and the `list_other_ratings` hard cap.
+//! merged-uuid canonical resolution, the `list_other_ratings` hard cap, and
+//! the review underneath: un-rating keeps text, text-only reviews aren't ratings.
 
 use omnibus_shared::EbookMetadata;
 
@@ -80,7 +81,7 @@ async fn set_rating_round_trips_half_star_value() {
     assert_eq!(saved.stars, 4.5);
 
     // Stored as an exact half-star count (9 = 4.5★).
-    let half: i64 = sqlx::query_scalar("SELECT half_stars FROM user_ratings WHERE book_uuid = ?")
+    let half: i64 = sqlx::query_scalar("SELECT half_stars FROM reviews WHERE book_uuid = ?")
         .bind(&uuid)
         .fetch_one(&pool)
         .await
@@ -103,7 +104,7 @@ async fn set_rating_overwrites_existing_value() {
     assert_eq!(updated.stars, 5.0);
 
     // Still exactly one row for this (user, book).
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_ratings WHERE book_uuid = ?")
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM reviews WHERE book_uuid = ?")
         .bind(&uuid)
         .fetch_one(&pool)
         .await
@@ -246,7 +247,7 @@ async fn list_other_ratings_excludes_viewer_and_orders_newest_first() {
     set_rating(&pool, bob, &update(&uuid, 4.5)).await.unwrap();
     set_rating(&pool, carol, &update(&uuid, 3.0)).await.unwrap();
     sqlx::query(
-        "UPDATE user_ratings SET updated_at = CASE user_id
+        "UPDATE reviews SET rated_at = CASE user_id
              WHEN ? THEN 100
              WHEN ? THEN 300
              WHEN ? THEN 200
@@ -332,8 +333,8 @@ async fn seed_other_raters_raw(pool: &SqlitePool, book_uuid: &str, count: i64) {
     .await
     .expect("seed raters");
     sqlx::query(
-        "INSERT INTO user_ratings (user_id, book_uuid, half_stars, updated_at)
-         SELECT u.id, ?, 8, u.id FROM users u WHERE u.username LIKE 'rater%'",
+        "INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at, updated_at)
+         SELECT u.id, ?, 8, u.id, u.id FROM users u WHERE u.username LIKE 'rater%'",
     )
     .bind(book_uuid)
     .execute(pool)
@@ -377,4 +378,48 @@ async fn list_other_ratings_attributes_to_the_display_name_and_reports_avatars()
     assert_eq!(ratings.len(), 1);
     assert_eq!(ratings[0].username, "Bob B.");
     assert!(ratings[0].has_avatar);
+}
+
+#[tokio::test]
+async fn delete_rating_clears_only_the_stars_of_a_review_with_text() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let (_, uuid) = seed(&pool, "/lib", "Book A").await;
+    let patch = omnibus_shared::ReviewPatch {
+        stars: Some(Some(4.0)),
+        body_md: Some(Some("Worth it".into())),
+        ..Default::default()
+    };
+    crate::reviews::update_review(&pool, user, &uuid, &patch)
+        .await
+        .unwrap();
+
+    delete_rating(&pool, user, &uuid).await.unwrap();
+
+    assert_eq!(get_rating(&pool, user, &uuid).await.unwrap(), None);
+    let review = crate::reviews::get_review(&pool, user, &uuid)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(review.body_md.as_deref(), Some("Worth it"));
+}
+
+#[tokio::test]
+async fn list_other_ratings_skips_a_review_with_no_stars() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let alice = seed_user(&pool, "alice").await;
+    let bob = seed_user(&pool, "bob").await;
+    let (_, uuid) = seed(&pool, "/lib", "Book A").await;
+    let patch = omnibus_shared::ReviewPatch {
+        body_md: Some(Some("No stars, just words".into())),
+        ..Default::default()
+    };
+    crate::reviews::update_review(&pool, bob, &uuid, &patch)
+        .await
+        .unwrap();
+
+    assert!(list_other_ratings(&pool, alice, &uuid)
+        .await
+        .unwrap()
+        .is_empty());
 }

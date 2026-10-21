@@ -92,9 +92,9 @@ pub(super) struct SourceSnapshot {
     /// undo leaves the target's identifiers alone as it always did.
     #[serde(default)]
     pub identifiers_added_to_target: Vec<(String, String)>,
-    /// Both books' read-status and rating rows either side of the merge. The
-    /// merge deletes the losing row of a per-reader collision, so this is the
-    /// only record undo has of where each row started.
+    /// Both books' read-status and review rows either side of the merge. The
+    /// merge deletes a row of each per-reader collision, so this is the only
+    /// record undo has of where each row started.
     #[serde(default)]
     pub curation: CurationSnapshot,
     /// Link names the merge added to the target — undo takes exactly these

@@ -26,7 +26,7 @@ use super::MergeError;
 
 /// Reverse a merge: recreate the source `books` row from the snapshot, move its files and
 /// every moved row back, restore links by name, hand each book back its own read status and
-/// rating, and strip the identifiers the merge copied; returns the restored uuid. A file
+/// review, and strip the identifiers the merge copied; returns the restored uuid. A file
 /// deleted since leaves the source fileless (no error). Fails with [`MergeError::UndoConflict`]
 /// when a reader re-curated the survivor since, or a later open merge overlaps.
 pub async fn undo_merge(pool: &SqlitePool, merge_log_id: i64) -> Result<String, MergeError> {
@@ -455,7 +455,7 @@ async fn restore_links(
 /// undone, is holding on the survivor. This undo cannot see what that later
 /// merge's own dedupe deleted, so each field makes undoing the two overlapping
 /// merges last-in-first-out. The reader sets stay apart because
-/// `book_read_status` and `user_ratings` collide independently.
+/// `book_read_status` and `reviews` collide independently.
 struct LaterMergeClaims {
     status_readers: HashSet<i64>,
     rating_readers: HashSet<i64>,
