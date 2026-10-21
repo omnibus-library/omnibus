@@ -220,6 +220,11 @@ pub fn subscribe() -> watch::Receiver<u64> {
     channel().0.subscribe()
 }
 
+/// The cache-change generation now.
+pub fn generation() -> u64 {
+    *channel().0.borrow()
+}
+
 /// Bump the generation channel (revalidation landed changed data, or the
 /// drain rewrote cache rows).
 pub(crate) fn notify_changed() {
