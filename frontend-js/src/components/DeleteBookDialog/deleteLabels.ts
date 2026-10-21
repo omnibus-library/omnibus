@@ -14,11 +14,12 @@ const IMPACT = [
   ["bookmarks", "bookmark", "bookmarks"],
   ["reading_sessions", "reading session", "reading sessions"],
   ["listening_sessions", "listening session", "listening sessions"],
-  ["ratings", "rating", "ratings"],
+  // The wire field kept its old name; it counts reviews, stars-only ones included.
+  ["ratings", "review", "reviews"],
   ["shelves", "shelf placement", "shelf placements"],
 ] as const;
 
-/** The reader data a total delete takes with it, as phrases: ["3 highlights", "1 rating"]. */
+/** The reader data a total delete takes with it, as phrases: ["3 highlights", "1 review"]. */
 export function losses(impact: DeletionManifest["impact"]): string[] {
   return IMPACT.flatMap(([key, one, many]) =>
     impact[key] > 0 ? [`${impact[key]} ${impact[key] === 1 ? one : many}`] : [],

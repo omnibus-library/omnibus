@@ -1,7 +1,12 @@
 import { MutationObserver, QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { toUser, type User } from "./api";
-import { endSession, meQuery, startSession } from "./session";
+import {
+  endSession,
+  meQuery,
+  sessionGeneration,
+  startSession,
+} from "./session";
 import { WIRE_ADA } from "./testing/wire";
 
 const grace = toUser({ ...WIRE_ADA, id: 2, username: "grace" });
@@ -93,5 +98,18 @@ describe("endSession", () => {
     endSession(client, () => {});
 
     expect(client.getQueryData(["progress", "recent", 2])).toBeUndefined();
+  });
+});
+
+describe("sessionGeneration", () => {
+  it("moves on when a session starts and when one ends, so a write made before can tell", () => {
+    const before = sessionGeneration();
+
+    startSession(new QueryClient(), grace);
+    const signedIn = sessionGeneration();
+    endSession(new QueryClient(), () => {});
+
+    expect(signedIn).not.toBe(before);
+    expect(sessionGeneration()).not.toBe(signedIn);
   });
 });

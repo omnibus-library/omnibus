@@ -17,17 +17,25 @@ import { HomeStop } from "./HomeStop";
 import { JournalStop } from "./JournalStop";
 import { MoreStop } from "./MoreStop";
 import { bookQuery } from "./queries";
+import { ReviewsStop } from "./ReviewsStop";
 import { StatsStop } from "./StatsStop";
 import { useFlowScroll } from "./useFlowScroll";
 import "./BookDetail.css";
+
+// The Reviews stop's place in `sections`, where the title's household rating jumps to.
+const REVIEWS_STOP = 2;
 
 function Marquee({ book }: { book: Detail }) {
   const stage = useRef<HTMLDivElement>(null);
   const { active, backOn, goTo } = useFlowScroll(stage);
   // iOS pins the same order; a dot's number is its place here.
   const sections = [
-    { name: "Home", stop: <HomeStop book={book} /> },
+    {
+      name: "Home",
+      stop: <HomeStop book={book} onShowReviews={() => goTo(REVIEWS_STOP)} />,
+    },
     { name: "Stats", stop: <StatsStop book={book} /> },
+    { name: "Reviews", stop: <ReviewsStop book={book} /> },
     { name: "Highlights", stop: <HighlightsStop book={book} /> },
     { name: "Journals", stop: <JournalStop book={book} /> },
     { name: "The files", stop: <FilesStop book={book} /> },

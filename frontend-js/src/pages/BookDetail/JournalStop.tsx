@@ -64,7 +64,7 @@ function LadderRow({
   );
 }
 
-/** Stop 04: everyone's journal entries as a ladder of excerpts, each opening its full card. */
+/** Stop 05: everyone's journal entries as a ladder of excerpts, each opening its full card. */
 export function JournalStop({ book }: { book: BookDetail }) {
   return useWish(book) ? (
     <div

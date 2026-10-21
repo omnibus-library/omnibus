@@ -47,9 +47,13 @@ describe("losses", () => {
   it("counts each kind of reader data, singular or plural, skipping none", () => {
     expect(losses({ ...NO_IMPACT, highlights: 3, ratings: 1 })).toEqual([
       "3 highlights",
-      "1 rating",
+      "1 review",
     ]);
     expect(losses(NO_IMPACT)).toEqual([]);
+  });
+
+  it("counts the ratings field as reviews, which is what it now holds", () => {
+    expect(losses({ ...NO_IMPACT, ratings: 2 })).toEqual(["2 reviews"]);
   });
 });
 

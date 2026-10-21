@@ -48,9 +48,11 @@ native shell's shelves screens) are left out. As on Dioxus web, a bare
 `/settings` has its five sections (Profile, Preferences, Goals, Devices,
 Sign-in & security) picked by `?section=`; an old slug redirects to its new
 home and `/account` redirects to it.
-Book detail carries all six stops (home, stats, highlights, journals, files,
-more) with the rating, quote cards, journal editor, copies and wishlist, shelf
-picker, Send to Kindle, merge and delete. It leaves the alignment modal, the
+Book detail carries all seven stops (home, stats, reviews, highlights,
+journals, files, more) with reviews (one-tap stars, public text and private
+notes in the journal editor, a spoiler flag, the household summary under the
+title and in the stop, other readers' reviews), quote cards, journal editor,
+copies and wishlist, shelf picker, Send to Kindle, merge and delete. It leaves the alignment modal, the
 snapped scroll mode, the genre and tag chip editor, the Immersive Read button and the
 check-in overlay (the top bar links to the `/check-in` page instead) to the
 screens that own them.
@@ -184,7 +186,8 @@ shell provides it.
 - **The API is faked with MSW.** orval generates a handler per documented
   status (`src/api/generated/omnibus.msw.ts`), and `src/testing/handlers.ts`
   adds the ones that need behaviour: paging headers, a password check, a journal
-  that keeps what is posted, a Kindle send that answers `pending` and then
+  that keeps what is posted, reviews that merge each patch and sum the stars
+  again on every read, a Kindle send that answers `pending` and then
   `sent`. `src/testing/adminHandlers.ts` does the same for the admin screens.
   A story uses the generated handler itself for a one-route read (the library
   folders, the worker feed, the task list, the cleanup counts and queue, the
@@ -206,8 +209,8 @@ shell provides it.
   formatting (`fixed` included), `safeNext`, the theme root, the session, and
   the pure helpers behind the screens (`resume`, `password`, `settingsIndex`,
   `hiddenFormats`, `goals`, `apiTokens`, `viewPrefs`, `focusTrap`, book
-  detail's `readout`, `identifiers`, `shelves`, `journalMarkdown` and delete
-  copy, the palette's `selection`, the results page's `results`, Register's
+  detail's `readout`, `identifiers`, `shelves`, `journalMarkdown`, `rating`,
+  `reviews` (patches, spoiler folding, grouping, the summary) and delete copy, the palette's `selection`, the results page's `results`, Register's
   `refusal`, the library's `filters`, `libraryView`, `seriesStacks`,
   `shelfLens`, `sorting` and `bulkMetadata`, the editor's `metadata` (form
   schema and override diff), `dirty` and `editionFields`, `uploads`,

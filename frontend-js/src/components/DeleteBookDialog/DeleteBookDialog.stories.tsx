@@ -181,7 +181,7 @@ export const TotalDeleteNamesTheLossesAndTakesTheBook: Story = {
 
     await expect(canvas.getByText("Delete all 3 items?")).toBeInTheDocument();
     await expect(canvas.getByTestId("delete-losses")).toHaveTextContent(
-      "Also deleted: 3 highlights, 1 rating.",
+      "Also deleted: 3 highlights, 1 review.",
     );
     await expect(canvas.getByTestId("delete-confirm")).toHaveTextContent(
       "Delete book",
