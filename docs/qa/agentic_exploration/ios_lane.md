@@ -39,10 +39,9 @@ The surface has less than the web in a few places, and each is a known gap
 rather than a finding: no Edit shelf control (a shelf card's long-press menu
 offers only Delete shelf), and no member sort control on a shelf screen —
 that one belongs to the Android web shell's `/shelves/:id`, not here; no copy note and no
-remove-copy control for a physical copy; no delete for any book; no
-rating-clear control (re-tapping the same star does not clear it); no recolour
+remove-copy control for a physical copy; no delete for any book; no recolour
 and no note edit for a highlight, only create and delete; no image control in
-the journal composer; no Genres section in Search; no toast on a profile save
+the journal or review composer; no Genres section in Search; no toast on a profile save
 (the sheet closes and the header updates); "reload" is `ios.sh relaunch`; and after sign-out the
 **Welcome back** screen keeps the server, with the connect step behind "Use a
 different server". The You tab's **User settings → Book details scroll stops** toggle

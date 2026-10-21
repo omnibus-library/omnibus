@@ -37,15 +37,6 @@ private func eventually(timeout: Duration = .seconds(5), _ condition: () -> Bool
     return condition()
 }
 
-/// An empty scratch replica and its path, for tests that read or wipe keys.
-private func scratchStore() async -> (OfflineStore, String) {
-    let path = FileManager.default.temporaryDirectory
-        .appendingPathComponent("filter-store-\(UUID().uuidString).sqlite").path
-    let store = OfflineStore(path: path)
-    await store.open()
-    return (store, path)
-}
-
 /// The first library page key read under `clauses`.
 private func libraryKey(_ clauses: [FilterClause]) -> String {
     var filter = LibraryFilter()
@@ -778,7 +769,7 @@ struct ShelfClausePageInvalidationTests {
 struct ShelfPageDropTests {
     /// A scratch replica holding `keys`, and its path.
     private func replica(holding keys: [String]) async -> (OfflineStore, String) {
-        let (store, path) = await scratchStore()
+        let (store, path) = await scratchStore(filePrefix: "filter-store")
         for key in keys {
             await store.cachePut(key, Data("{}".utf8))
         }
@@ -832,7 +823,7 @@ struct ShelfPageDropTests {
 @MainActor
 struct AccountSwitchFilterTests {
     @Test func anotherAccountSigningInDropsTheLibraryPagesAShelfClauseKeyed() async {
-        let (store, path) = await scratchStore()
+        let (store, path) = await scratchStore(filePrefix: "filter-store")
         defer { try? FileManager.default.removeItem(atPath: path) }
         await store.noteUser("ana")
         let byShelf = libraryKey([shelfClause])
@@ -848,7 +839,7 @@ struct AccountSwitchFilterTests {
     }
 
     @Test func anotherAccountSigningInForgetsTheClauses() async {
-        let (store, path) = await scratchStore()
+        let (store, path) = await scratchStore(filePrefix: "filter-store")
         defer { try? FileManager.default.removeItem(atPath: path) }
         let defaults = scratchDefaults()
         let filters = LibraryFilterStore(defaults: defaults)
@@ -862,7 +853,7 @@ struct AccountSwitchFilterTests {
     }
 
     @Test func theSameAccountSigningInAgainKeepsTheClauses() async {
-        let (store, path) = await scratchStore()
+        let (store, path) = await scratchStore(filePrefix: "filter-store")
         defer { try? FileManager.default.removeItem(atPath: path) }
         let filters = LibraryFilterStore(defaults: scratchDefaults())
         filters.apply(genreClause)
