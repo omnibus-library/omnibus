@@ -6,7 +6,7 @@
     flake-utils.url = "github:numtide/flake-utils";
     # Pinned to a rev so `nix flake update` can't move dioxus-cli off the
     # `dioxus` crate pin; bump the two together (CONTRIBUTING.md).
-    nixpkgs-unstable.url = "github:NixOS/nixpkgs/29916453413845e54a65b8a1cf996842300cd299";
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/4ee93bdc2feab5fda72b4f1115572793670b7c22";
     # Pinned solely for `playwright-driver.browsers`. Kept separate from
     # nixpkgs-unstable so moving the Chromium bundle does not also move the
     # Rust toolchain, dioxus-cli and node — the browser version has to track
