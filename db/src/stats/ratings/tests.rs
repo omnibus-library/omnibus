@@ -2,7 +2,7 @@
 //! shares with [`super::avg_stars`]. The mean and the trailing-month trend keep
 //! their coverage in the `stats/tests.rs` suite that drives them through
 //! `compute`; these cover the distribution and the invariant tying it to the
-//! mean.
+//! mean, and the `rated_at` window key that review text never moves.
 
 use super::*;
 use crate::init_db;
@@ -12,8 +12,8 @@ const T0: i64 = 1_700_000_000;
 
 async fn rate_book(pool: &SqlitePool, user: i64, uuid: &str, half_stars: i64, updated_at: i64) {
     sqlx::query(
-        "INSERT INTO user_ratings (user_id, book_uuid, half_stars, updated_at)
-         VALUES (?, ?, ?, ?)",
+        "INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?4)",
     )
     .bind(user)
     .bind(uuid)
@@ -168,7 +168,7 @@ async fn rating_histogram_is_scoped_to_the_requesting_user() {
 #[tokio::test]
 async fn rating_histogram_propagates_sqlx_error_when_the_ratings_table_is_missing() {
     let pool = init_db("sqlite::memory:").await.unwrap();
-    sqlx::query("DROP TABLE user_ratings")
+    sqlx::query("DROP TABLE reviews")
         .execute(&pool)
         .await
         .unwrap();
@@ -176,4 +176,44 @@ async fn rating_histogram_propagates_sqlx_error_when_the_ratings_table_is_missin
     let err = rating_histogram(&pool, 1, 0).await.unwrap_err();
 
     assert!(matches!(err, StatsError::Sqlx(_)));
+}
+
+#[tokio::test]
+async fn avg_stars_windows_on_when_the_stars_changed_not_when_the_review_text_did() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    seed_minimal_books(&pool, 2).await;
+    let user = seed_user(&pool, "alice").await;
+    rate_book(&pool, user, "uuid-1", 8, T0).await;
+    rate_book(&pool, user, "uuid-2", 4, T0 + 100).await;
+    // Text written long after the stars — the window must not follow it.
+    sqlx::query(
+        "UPDATE reviews SET body_md = 'Late thoughts', updated_at = ? WHERE book_uuid = 'uuid-1'",
+    )
+    .bind(T0 + 1_000)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let mean = avg_stars(&pool, user, T0 + 50).await.unwrap();
+
+    assert_eq!(mean, Some(2.0), "only uuid-2 was rated inside the window");
+}
+
+#[tokio::test]
+async fn avg_stars_skips_a_review_with_no_stars() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    seed_minimal_books(&pool, 2).await;
+    let user = seed_user(&pool, "alice").await;
+    rate_book(&pool, user, "uuid-1", 6, T0).await;
+    sqlx::query(
+        "INSERT INTO reviews (user_id, book_uuid, body_md, updated_at)
+         VALUES (?1, 'uuid-2', 'Words only', ?2)",
+    )
+    .bind(user)
+    .bind(T0)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(avg_stars(&pool, user, 0).await.unwrap(), Some(3.0));
 }

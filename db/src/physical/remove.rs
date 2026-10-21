@@ -11,9 +11,9 @@ use crate::metadata_overrides::delete_override_cover;
 
 /// Hard-delete a book that has no `book_files`, taking **every** uuid-keyed row
 /// with it via the canonical [`purge_book`] sweep, plus the `books` row, FTS
-/// twin, orphan taxonomy and cover files. Refuses a file-backed book with
-/// [`PhysicalError::BookHasFiles`]: the reindex diff owns those and would
-/// resurrect it on the next scan. Cover unlink is best-effort, after the commit.
+/// twin, orphan taxonomy, cover files and journal images left unreferenced.
+/// Refuses a file-backed book with [`PhysicalError::BookHasFiles`]: the reindex
+/// diff owns those and would resurrect it. File unlinks are best-effort, after the commit.
 pub async fn delete_fileless_book(pool: &SqlitePool, book_uuid: &str) -> Result<(), PhysicalError> {
     let canonical = resolve_canonical_book_uuid(pool, book_uuid)
         .await?
@@ -37,12 +37,13 @@ pub async fn delete_fileless_book(pool: &SqlitePool, book_uuid: &str) -> Result<
 
     // One canonical sweep of every uuid-keyed table + the books row + FTS twin +
     // orphan taxonomy, shared with the admin delete path.
-    crate::deletion::purge::purge_book(&mut tx, book_id, &canonical)
+    let images = crate::deletion::purge::purge_book(&mut tx, book_id, &canonical)
         .await
         .map_err(map_delete_error)?;
     tx.commit().await?;
 
     discard_cover_files(canonical).await;
+    crate::journals::cleanup_orphaned_images(pool, images.into_iter().collect()).await;
     Ok(())
 }
 

@@ -1,0 +1,77 @@
+import { queryOptions } from "@tanstack/react-query";
+import { ok, send } from "./core";
+import {
+  getCleanupCounts,
+  getCleanupQueue,
+  getPostCleanupDetectUrl,
+  getPostCleanupUndoUrl,
+  postCleanupDecision,
+} from "./generated/omnibus";
+import { CleanupKind } from "./generated/schemas";
+
+export type {
+  CleanupAction,
+  CleanupKindCounts,
+  SuggestionCard,
+} from "./generated/schemas";
+export type { CleanupKind };
+
+const LABELS = {
+  author: "Authors",
+  series: "Series",
+  tag: "Tags",
+  book_title: "Book titles",
+} satisfies Record<CleanupKind, string>;
+
+/** Every kind, in the order the server lists them. */
+export const CLEANUP_KINDS = CleanupKind.options;
+
+/** The kind a route's slug names, or null when it names none. */
+export const parseCleanupKind = (slug: string): CleanupKind | null =>
+  CleanupKind.safeParse(slug).data ?? null;
+
+/** A cleanup kind's name in the plural, as the screens list it. */
+export const cleanupKindLabel = (kind: CleanupKind) => LABELS[kind];
+
+/** How many suggestions each kind has pending, accepted and rejected. */
+export const cleanupCountsQuery = queryOptions({
+  queryKey: ["admin", "cleanup", "counts"],
+  queryFn: async () => ok(await getCleanupCounts()),
+});
+
+/** Queues a pass of every detector; the counts change as it finishes. */
+export async function detectCleanup() {
+  await send(getPostCleanupDetectUrl(), "POST");
+}
+
+/**
+ * A kind's pending suggestions, oldest first. A pass works through the list as fetched:
+ * nothing refetches under the cursor, and each visit reads afresh.
+ */
+export const cleanupQueueQuery = (kind: CleanupKind) =>
+  queryOptions({
+    queryKey: ["admin", "cleanup", "queue", kind],
+    queryFn: async () => ok(await getCleanupQueue(kind)),
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 0,
+  });
+
+/**
+ * Applies or dismisses one suggestion, a book-title rename under the reviewer's own `value`
+ * when given; answers the change an accept made, or null for a reject.
+ */
+export async function decideCleanup(
+  id: number,
+  decision: "accepted" | "rejected",
+  value: string | null,
+): Promise<number | null> {
+  return (
+    ok(await postCleanupDecision(id, { decision, value: value ?? undefined }))
+      .log_id ?? null
+  );
+}
+
+/** Reverses an applied change by its log id. */
+export async function undoCleanup(logId: number) {
+  await send(getPostCleanupUndoUrl(logId), "POST");
+}

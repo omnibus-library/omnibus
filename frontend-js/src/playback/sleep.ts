@@ -2,7 +2,7 @@ import type { Chapter } from "../api";
 import {
   chapterIndexForElapsed,
   remainingAtRate,
-} from "../pages/Listen/listen";
+} from "../pages/Listen/listenView";
 import { formatHmsShort } from "../resume";
 
 /** The duration presets, in seconds; 0 is off. */

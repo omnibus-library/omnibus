@@ -1,11 +1,14 @@
-//! `GET` / `POST /api/settings` handlers.
+//! The admin's server-configuration routes: `GET` / `POST /api/settings`, the
+//! registration, MCP, Calibre and metadata-order settings, and the scan,
+//! chapter-backfill and search-rebuild jobs.
 //!
-//! Admin-gated read and write of the library-path settings KV. A successful
-//! save dispatches a `Task::Scan` on the shared worker so the indexer
-//! reflects any new library directory.
+//! All `AdminUser`-gated. A successful settings save dispatches a
+//! `Task::Scan` on the shared worker so the indexer reflects any new library
+//! directory.
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
+    http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
@@ -13,7 +16,10 @@ use omnibus_db::{
     self as db,
     worker::{Task, TaskOutcome},
 };
-use omnibus_shared::{McpStatus, RegistrationStatus, Settings};
+use omnibus_shared::{
+    is_valid_metadata_precedence, precedence_library_path, EbookConvertStatus, EbookConvertUpdate,
+    McpStatus, MetadataSource, RegistrationStatus, Settings, DEFAULT_METADATA_PRECEDENCE,
+};
 
 use super::{internal, AppState};
 use crate::auth::AdminUser;
@@ -235,6 +241,183 @@ pub(super) async fn post_scan_library(
         state.worker.post(Task::ScanAudiobooks { library_path });
     }
     axum::http::StatusCode::OK.into_response()
+}
+
+/// Extract audiobook chapters
+///
+/// Queues a job that reads chapter markers from audiobooks added before chapters were
+/// recorded, and answers without waiting for it. Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/audiobooks/backfill-chapters",
+    tag = "Admin",
+    responses(
+        (status = 200, description = "The job is queued."),
+        (status = 403, description = "You aren't an admin."),
+        (status = 409, description = "No audiobook library path is set."),
+    ),
+)]
+pub(super) async fn post_backfill_chapters(
+    _admin: AdminUser,
+    State(state): State<AppState>,
+) -> Response {
+    let settings = match db::get_settings(&state.pool).await {
+        Ok(s) => s,
+        Err(error) => return internal("read settings", error),
+    };
+    let Some(library_path) = settings.audiobook_library_path else {
+        return (StatusCode::CONFLICT, "no audiobook library configured").into_response();
+    };
+    state.worker.post(Task::BackfillChapters { library_path });
+    StatusCode::OK.into_response()
+}
+
+/// Get the Calibre setting
+///
+/// Whether the server can run Calibre's `ebook-convert`, which command it runs and where
+/// that command came from. Calibre is optional, so a command that can't run is a normal
+/// answer, not an error. Needs an admin account.
+#[utoipa::path(
+    get,
+    path = "/api/settings/ebook-convert",
+    tag = "Admin",
+    responses(
+        (status = 200, description = "The command in effect.", body = EbookConvertStatus),
+        (status = 403, description = "You aren't an admin."),
+    ),
+)]
+pub(super) async fn get_ebook_convert(
+    _admin: AdminUser,
+    State(state): State<AppState>,
+) -> Response {
+    match db::ebook_convert_status(&state.pool).await {
+        Ok(status) => Json(status).into_response(),
+        Err(error) => internal("read ebook-convert status", error),
+    }
+}
+
+/// Set the Calibre path
+///
+/// Saves the path of `ebook-convert`. A null or blank `path` clears it, so the server falls
+/// back to the `OMNIBUS_EBOOK_CONVERT_PATH` environment variable and then to `ebook-convert`
+/// on its `PATH`. Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/settings/ebook-convert",
+    tag = "Admin",
+    request_body = EbookConvertUpdate,
+    responses(
+        (status = 200, description = "The path is saved; the body is the command now in effect.", body = EbookConvertStatus),
+        (status = 422, description = "`path` is over 4096 bytes."),
+        (status = 403, description = "You aren't an admin."),
+    ),
+)]
+pub(super) async fn post_ebook_convert(
+    _admin: AdminUser,
+    State(state): State<AppState>,
+    Json(update): Json<EbookConvertUpdate>,
+) -> Response {
+    match db::set_ebook_convert_path(&state.pool, update.path.as_deref()).await {
+        Ok(()) => match db::ebook_convert_status(&state.pool).await {
+            Ok(status) => Json(status).into_response(),
+            Err(error) => internal("read ebook-convert status", error),
+        },
+        Err(db::SettingsError::Validation(message)) => {
+            (StatusCode::UNPROCESSABLE_ENTITY, message).into_response()
+        }
+        Err(error) => internal("save ebook-convert path", error),
+    }
+}
+
+/// The folder of the library `library` names, or the response to refuse it with.
+async fn library_folder(state: &AppState, library: &str) -> Result<Option<String>, Response> {
+    let settings = db::get_settings(&state.pool)
+        .await
+        .map_err(|error| internal("read settings", error))?;
+    precedence_library_path(&settings, library)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()).into_response())
+}
+
+/// Get a library's metadata order
+///
+/// The order of metadata sources for the ebook or audiobook library, lowest priority first:
+/// a later source wins over an earlier one. It is the default order until the library's
+/// folder is set. Needs an admin account.
+#[utoipa::path(
+    get,
+    path = "/api/settings/metadata-precedence/{library}",
+    tag = "Admin",
+    params(("library" = String, Path, description = "`ebook` or `audiobook`.")),
+    responses(
+        (status = 200, description = "The sources, lowest priority first.", body = Vec<MetadataSource>),
+        (status = 400, description = "`library` isn't `ebook` or `audiobook`."),
+        (status = 403, description = "You aren't an admin."),
+    ),
+)]
+pub(super) async fn get_metadata_precedence(
+    _admin: AdminUser,
+    State(state): State<AppState>,
+    Path(library): Path<String>,
+) -> Response {
+    let folder = match library_folder(&state, &library).await {
+        Ok(folder) => folder,
+        Err(refusal) => return refusal,
+    };
+    let Some(folder) = folder else {
+        return Json(DEFAULT_METADATA_PRECEDENCE.to_vec()).into_response();
+    };
+    match db::get_metadata_precedence(&state.pool, &folder).await {
+        Ok(order) => Json(order).into_response(),
+        Err(error) => internal("read metadata precedence", error),
+    }
+}
+
+/// Set a library's metadata order
+///
+/// Saves the order of metadata sources for the ebook or audiobook library, lowest priority
+/// first. The list must name each of the five sources exactly once, and the library's folder
+/// must already be set. Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/settings/metadata-precedence/{library}",
+    tag = "Admin",
+    params(("library" = String, Path, description = "`ebook` or `audiobook`.")),
+    request_body = Vec<MetadataSource>,
+    responses(
+        (status = 200, description = "The order is saved; the body is what is now set.", body = Vec<MetadataSource>),
+        (status = 400, description = "`library` isn't `ebook` or `audiobook`, or the list doesn't name each source exactly once."),
+        (status = 403, description = "You aren't an admin."),
+        (status = 409, description = "The library's folder isn't set."),
+    ),
+)]
+pub(super) async fn post_metadata_precedence(
+    _admin: AdminUser,
+    State(state): State<AppState>,
+    Path(library): Path<String>,
+    Json(precedence): Json<Vec<MetadataSource>>,
+) -> Response {
+    if !is_valid_metadata_precedence(&precedence) {
+        return (
+            StatusCode::BAD_REQUEST,
+            "metadata precedence must list each source exactly once",
+        )
+            .into_response();
+    }
+    let folder = match library_folder(&state, &library).await {
+        Ok(folder) => folder,
+        Err(refusal) => return refusal,
+    };
+    let Some(folder) = folder else {
+        return (
+            StatusCode::CONFLICT,
+            "configure the library path before setting its metadata precedence",
+        )
+            .into_response();
+    };
+    match db::set_metadata_precedence(&state.pool, &folder, &precedence).await {
+        Ok(()) => Json(precedence).into_response(),
+        Err(error) => internal("set metadata precedence", error),
+    }
 }
 
 /// Rebuild the search index

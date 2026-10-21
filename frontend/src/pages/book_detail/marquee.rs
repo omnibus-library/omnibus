@@ -1,4 +1,4 @@
-//! Marquee book-detail stage (web): the cover pinned huge on the left, six
+//! Marquee book-detail stage (web): the cover pinned huge on the left, seven
 //! sections in a translucent panel on the right, a dot-rail TOC. The panel
 //! reads two ways on the viewer's `book_detail_scroll_stops` preference — off
 //! (the default) is one continuous flow, on is the snapped marquee, same
@@ -18,6 +18,7 @@ use crate::data;
 use super::body::BdPageCtx;
 use super::highlights::{BdHighlightsSection, BdQuoteMeta};
 use super::journal::MarqueeJournalStop;
+use super::reviews::{use_book_reviews, BdReviewsKicker, BdReviewsSection, ReviewsCtx};
 use super::rule_facts::RuleFactsSaved;
 use super::view::LoadedBookView;
 use super::PhysSignals;
@@ -30,18 +31,23 @@ mod stats;
 #[cfg(test)]
 mod tests;
 
-/// The six stops, in running order. The label pair is `NN` + name — the
-/// section label renders `NN / 06 — Name` and the dot rail `NN · Name`.
+/// The seven stops, in running order. The label pair is `NN` + name — the
+/// section label renders `NN / 07 — Name` and the dot rail `NN · Name`.
 // The shelf has no stop of its own: books beside this one sit under `More`,
 // the one place the page points away from the book it is about.
-pub(super) const MARQUEE_SECTIONS: [(&str, &str); 6] = [
+pub(super) const MARQUEE_SECTIONS: [(&str, &str); 7] = [
     ("01", "Home"),
     ("02", "Stats"),
-    ("03", "Highlights"),
-    ("04", "Journals"),
-    ("05", "The files"),
-    ("06", "More"),
+    ("03", "Reviews"),
+    ("04", "Highlights"),
+    ("05", "Journals"),
+    ("06", "The files"),
+    ("07", "More"),
 ];
+
+/// The Reviews stop's place in [`MARQUEE_SECTIONS`], where the title area's
+/// household rating jumps to.
+pub(super) const REVIEWS_STOP: usize = 2;
 
 /// Scroll-mechanics glue for the snapped marquee (parallax, dot tracking,
 /// dot-rail navigation).
@@ -87,6 +93,8 @@ pub(super) fn MarqueeStage(
     // The page's writers count each save on it here; the More stop's shelves
     // re-read on the count.
     use_context_provider(RuleFactsSaved::new);
+    // The Reviews stop and the title area's household rating share one fetch.
+    let reviews = use_book_reviews(uuid.clone());
 
     // Page-wide data: newest saved position per format + session insights.
     // Seeded `None` on SSR and the first WASM paint (rule 07); post-mount
@@ -198,7 +206,7 @@ pub(super) fn MarqueeStage(
         accent: b.accent.clone(),
     };
 
-    let stops: [Element; 6] = [
+    let stops: [Element; 7] = [
         rsx! {
             home::MarqueeHomeStop {
                 b: b.clone(),
@@ -211,6 +219,7 @@ pub(super) fn MarqueeStage(
                 refresh: ctx.refresh,
                 after_merge: ctx.after_merge,
                 wishlist: wishlist.clone(),
+                reviews,
             }
         },
         rsx! {
@@ -222,6 +231,9 @@ pub(super) fn MarqueeStage(
                 audio_only: view.has_audio && !view.has_ebook && !view.has_comic && !view.has_pdf,
                 wish_mode,
             }
+        },
+        rsx! {
+            MarqueeReviewsStop { uuid: uuid.clone(), reviews }
         },
         rsx! {
             if wish_mode {
@@ -284,7 +296,7 @@ pub(super) fn MarqueeStage(
                                 key: "{no}",
                                 class: "bdmq-sec",
                                 "data-testid": "bdmq-sec-{i}",
-                                div { class: "bdmq-seclab", "{no} / 06 \u{2014} " b { "{name}" } }
+                                div { class: "bdmq-seclab", "{no} / 07 \u{2014} " b { "{name}" } }
                                 // A filter on the panel would capture every fixed overlay inside it.
                                 div { class: "bdmq-panelscrim", aria_hidden: "true" }
                                 div { class: "bdmq-panel",
@@ -336,6 +348,31 @@ pub(super) fn MarqueeStage(
             }
         }
     }
+}
+
+/// Stop 03 · Reviews: the counts kicker over the section, whose composer opens
+/// over the stage like the journal's. Every book can be reviewed, so a
+/// wishlist-only one gets the live section rather than an empty state.
+#[component]
+fn MarqueeReviewsStop(uuid: String, reviews: ReviewsCtx) -> Element {
+    rsx! {
+        BdReviewsKicker { ctx: reviews, class: "bdmq-k" }
+        BdReviewsSection { uuid, ctx: reviews, overlay_composer: true }
+    }
+}
+
+/// Take the reader to stop `index` through its dot, so the jump moves
+/// whichever reading the panel is in exactly as the rail does. A no-op off
+/// the web, where there is no rail.
+pub(super) fn jump_to_stop(index: usize) {
+    #[cfg(feature = "web")]
+    {
+        let _ = dioxus::document::eval(&format!(
+            "document.querySelector('[data-testid=\"bdmq-dot-{index}\"]')?.click();"
+        ));
+    }
+    #[cfg(not(feature = "web"))]
+    let _ = index;
 }
 
 /// The dot-rail TOC: one button per stop, the first marked current. The

@@ -104,7 +104,7 @@ function HighlightCard({ highlight, chapters, onQuote, onDelete }: CardProps) {
   );
 }
 
-/** Stop 03: the passages the reader saved, with open, copy and delete on each. */
+/** Stop 04: the passages the reader saved, with open, copy and delete on each. */
 export function HighlightsStop({ book }: { book: BookDetail }) {
   return useWish(book) ? (
     <>

@@ -14,9 +14,10 @@ use serde::Serialize;
 
 use omnibus_shared::cross_format::CrossFormatCandidate;
 use omnibus_shared::{
-    BookProgress, Bookmark, Contributor, EbookMetadata, Highlight, HighlightColor, JournalEntry,
-    JournalStatus, PhysicalCopy, ProgressFormat, ProgressRecord, ReadStatus, ReadStatusRecord,
-    ResolvedPosition, ResumePoint, SessionFormat, SessionLogEntry, SessionLogPage,
+    AttributedReview, BookProgress, Bookmark, Contributor, EbookMetadata, Highlight,
+    HighlightColor, JournalEntry, JournalStatus, PhysicalCopy, ProgressFormat, ProgressRecord,
+    ReadStatus, ReadStatusRecord, ResolvedPosition, ResumePoint, Review, SessionFormat,
+    SessionLogEntry, SessionLogPage,
 };
 
 /// Unix seconds as an ISO 8601 UTC stamp (`2026-09-04T03:25:36Z`), total over `i64`.
@@ -283,6 +284,79 @@ impl From<JournalEntry> for JournalEntryView {
             created_at_epoch: j.created_at,
             updated_at: iso(j.updated_at),
             updated_at_epoch: j.updated_at,
+        }
+    }
+}
+
+/// The signed-in user's own review of a book, private notes included.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct OwnReviewView {
+    /// Half-star steps from 0.5 to 5; absent when they gave no stars.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stars: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_md: Option<String>,
+    /// Only the signed-in user ever sees these.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes_md: Option<String>,
+    pub spoiler: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rated_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rated_at_epoch: Option<i64>,
+    pub created_at: String,
+    pub created_at_epoch: i64,
+    pub updated_at: String,
+    pub updated_at_epoch: i64,
+}
+
+impl From<Review> for OwnReviewView {
+    fn from(r: Review) -> Self {
+        OwnReviewView {
+            stars: r.stars,
+            body_md: r.body_md,
+            notes_md: r.notes_md,
+            spoiler: r.spoiler,
+            rated_at: iso_opt(r.rated_at),
+            rated_at_epoch: r.rated_at,
+            created_at: iso(r.created_at),
+            created_at_epoch: r.created_at,
+            updated_at: iso(r.updated_at),
+            updated_at_epoch: r.updated_at,
+        }
+    }
+}
+
+/// Another reader's review of a book. Their private notes never reach here.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct ReviewView {
+    pub user_id: i64,
+    pub username: String,
+    /// Half-star steps from 0.5 to 5; absent when they gave no stars.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stars: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_md: Option<String>,
+    /// The reviewer flagged the text as containing spoilers.
+    pub spoiler: bool,
+    pub created_at: String,
+    pub created_at_epoch: i64,
+    pub updated_at: String,
+    pub updated_at_epoch: i64,
+}
+
+impl From<AttributedReview> for ReviewView {
+    fn from(r: AttributedReview) -> Self {
+        ReviewView {
+            user_id: r.user_id,
+            username: r.username,
+            stars: r.stars,
+            body_md: r.body_md,
+            spoiler: r.spoiler,
+            created_at: iso(r.created_at),
+            created_at_epoch: r.created_at,
+            updated_at: iso(r.updated_at),
+            updated_at_epoch: r.updated_at,
         }
     }
 }

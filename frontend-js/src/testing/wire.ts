@@ -3,7 +3,7 @@ import { getGetStatsResponseMock } from "../api/generated/omnibus.msw";
 import type {
   AlignmentView,
   ApiTokenView,
-  AttributedRating,
+  AttributedReview,
   AudiobookManifest,
   AuthorDetail,
   AuthorReading,
@@ -14,6 +14,7 @@ import type {
   Bookmark,
   BookProgress,
   BookReading,
+  BookReviews,
   BookSuggestion,
   ChapterInfo,
   EbookMetadata,
@@ -24,9 +25,10 @@ import type {
   PaletteResults,
   PhysicalCopy,
   ProgressRecord,
-  RatingRecord,
   ReadStatusRecord,
   ResumePoint,
+  Review,
+  ReviewSummary,
   RulePreview,
   SeriesDetail,
   SeriesStack,
@@ -142,29 +144,60 @@ export function aWireReadStatus(
   };
 }
 
-/** The reader's rating as `GET /api/ratings/{uuid}` sends it. */
-export function aWireRating(
-  overrides: Partial<RatingRecord> = {},
-): RatingRecord {
+/** The reader's own review as `GET /api/reviews/{uuid}` sends it in `mine`: four stars, nothing written. */
+export function aWireReview(overrides: Partial<Review> = {}): Review {
   return {
     book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
     stars: 4,
+    body_md: null,
+    body_html: null,
+    notes_md: null,
+    notes_html: null,
+    spoiler: false,
+    rated_at: 1_760_000_000,
+    created_at: 1_760_000_000,
     updated_at: 1_760_000_000,
     ...overrides,
   };
 }
 
-/** Another reader's rating as `GET /api/ratings/others/{uuid}` sends it. */
-export function aWireOtherRating(
-  overrides: Partial<AttributedRating> = {},
-): AttributedRating {
+/** Another reader's review as `GET /api/reviews/{uuid}` lists it in `others`: grace's 3.5 stars, no text. */
+export function aWireOtherReview(
+  overrides: Partial<AttributedReview> = {},
+): AttributedReview {
   return {
     user_id: 7,
     username: "grace",
+    has_avatar: false,
     stars: 3.5,
+    body_md: null,
+    body_html: null,
+    spoiler: false,
+    rated_at: 1_760_000_000,
+    created_at: 1_760_000_000,
     updated_at: 1_760_000_000,
     ...overrides,
   };
+}
+
+/** The household summary for `stars`, one reader per value, every one of the ten buckets present. */
+export function aWireReviewSummary(...stars: number[]): ReviewSummary {
+  const total = stars.reduce((sum, s) => sum + s, 0);
+  return {
+    average_stars: stars.length ? total / stars.length : 0,
+    ratings: stars.length,
+    buckets: Array.from({ length: 10 }, (_, i) => ({
+      half_stars: i + 1,
+      readers: stars.filter((s) => s * 2 === i + 1).length,
+    })),
+  };
+}
+
+/** `GET /api/reviews/{uuid}`: nobody has reviewed the book unless overridden. */
+export function aWireBookReviews(
+  overrides: Partial<BookReviews> = {},
+): BookReviews {
+  return { mine: null, others: [], summary: null, ...overrides };
 }
 
 /** One sitting as `GET /api/stats/sessions` sends it: 45 minutes of reading. */

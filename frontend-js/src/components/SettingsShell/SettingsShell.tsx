@@ -39,6 +39,9 @@ export function useUnsavedGuard(id: string, dirty: boolean) {
   }, [report, id, dirty]);
 }
 
+/** A react-hook-form `register` option that holds a field trimmed, as the server keeps it, so a padded save reads back as no edit. */
+export const heldTrimmed = { setValueAs: (text: string) => text.trim() };
+
 type SettingsShellProps = {
   title: string;
   testId: string;

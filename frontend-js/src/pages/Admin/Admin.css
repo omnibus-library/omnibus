@@ -1,0 +1,252 @@
+.admin-forbidden {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  color: var(--ink-1);
+}
+
+.metadata-precedence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+}
+.metadata-precedence-item {
+  align-items: center;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+}
+.metadata-precedence-item span {
+  flex: 1;
+  font-size: 0.9rem;
+}
+.metadata-precedence-item button {
+  padding: 0.2rem 0.55rem;
+}
+.library-summary.error {
+  color: var(--bad);
+  font-size: 0.85rem;
+}
+.logs-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem 1rem;
+  align-items: end;
+  margin: 1.25rem 0;
+}
+.logs-filters .settings-actions.logs-apply {
+  margin: 0;
+}
+.logs-stream {
+  max-height: 70vh;
+  overflow: auto;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+.logs-line {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1.6em;
+  /* max-content + min-width:100% makes each line grow to its own width so the
+     container's scrollWidth tracks the widest line, which gives horizontal
+     scroll instead of wrapping. */
+  white-space: pre;
+  width: max-content;
+  min-width: 100%;
+  padding: 0.05rem 0;
+}
+@media (hover: hover) {
+  .logs-line:hover {
+    background: var(--bg-2);
+  }
+}
+.logs-time {
+  color: var(--ink-2);
+}
+.logs-module-cell {
+  color: var(--ink-2);
+}
+.logs-message {
+  color: var(--ink-1);
+}
+.logs-fields {
+  color: var(--ink-2);
+}
+.logs-level {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--bg-1);
+  color: var(--ink-1);
+}
+.logs-level-error {
+  background: color-mix(in oklch, var(--bad) 16%, transparent);
+  color: var(--bad);
+}
+.logs-level-warn {
+  background: color-mix(in oklch, var(--warn) 16%, transparent);
+  color: var(--warn);
+}
+.logs-level-info {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.logs-level-debug,
+.logs-level-trace {
+  color: var(--ink-2);
+}
+.logs-ref-link {
+  color: var(--accent);
+  text-decoration: underline;
+  font-weight: 600;
+}
+.logs-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.ah-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 0 2.5rem;
+  margin-bottom: 1rem;
+}
+.ah-grid > * {
+  min-width: 0;
+}
+.ah-card h3 {
+  --lh: 1.3;
+  font-family: var(--sans);
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: var(--lh);
+  margin: 0 0 0.75rem;
+}
+.ah-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ah-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+.ah-kv-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.875rem;
+}
+.ah-kv-label {
+  color: var(--ink-2);
+  flex: none;
+}
+.ah-kv-value {
+  min-width: 0;
+  color: var(--ink-0);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.api-key-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.api-key-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  flex: 0 0 8px;
+}
+.api-key-dot.connected {
+  background: var(--ok);
+}
+.api-key-dot.pending {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ink-3);
+}
+.cleanup-kinds {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.cleanup-kind-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.cleanup-kind-row:last-child {
+  border-bottom: none;
+}
+.cleanup-kind-label {
+  flex: 1;
+  font-weight: 500;
+}
+.cleanup-kind-count {
+  font-size: 12px;
+  color: var(--ink-1);
+}
+.cleanup-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+.maint-list {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+}
+.maint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.maint-row:last-child {
+  border-bottom: 0;
+}
+.maint-desc {
+  margin: 0;
+  max-width: 56ch;
+  color: var(--ink-1);
+  font-size: 0.875rem;
+}
+.maint-row .btn {
+  flex: none;
+}
+@media (max-width: 720px) {
+  .maint-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+}

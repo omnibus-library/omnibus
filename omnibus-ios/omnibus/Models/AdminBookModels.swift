@@ -79,6 +79,7 @@ struct BookDeletionImpact: Codable, Equatable, Sendable {
     var bookmarks: Int64 = 0
     var readingSessions: Int64 = 0
     var listeningSessions: Int64 = 0
+    /// Reviews, counted under the wire name they had when they were stars only.
     var ratings: Int64 = 0
     var shelves: Int64 = 0
 
@@ -90,7 +91,7 @@ struct BookDeletionImpact: Codable, Equatable, Sendable {
     }
 
     /// Human-readable phrases for each non-zero count, in the order the
-    /// confirm lists them (`["3 highlights", "1 rating"]`). Empty when the
+    /// confirm lists them (`["3 highlights", "1 review"]`). Empty when the
     /// book carries no user data at all. Mirrors `BookDeletionImpact::losses`.
     var losses: [String] {
         [
@@ -99,7 +100,7 @@ struct BookDeletionImpact: Codable, Equatable, Sendable {
             (bookmarks, "bookmark", "bookmarks"),
             (readingSessions, "reading session", "reading sessions"),
             (listeningSessions, "listening session", "listening sessions"),
-            (ratings, "rating", "ratings"),
+            (ratings, "review", "reviews"),
             (shelves, "shelf placement", "shelf placements"),
         ]
         .filter { $0.0 > 0 }

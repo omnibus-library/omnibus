@@ -1,6 +1,8 @@
 // Mirrors SETTINGS_INDEX in frontend/src/pages/settings/sections.rs, which
 // the Dioxus palette searches; keep the two in step until that one retires.
 
+import type { Location } from "react-router";
+
 type Area = "settings" | "admin";
 
 export type Section = { area: Area; slug: string; label: string };
@@ -20,11 +22,27 @@ const personal = (slug: PersonalSlug, label: string): PersonalSection => ({
   slug,
   label,
 });
-const admin = (slug: string, label: string): Section => ({
-  area: "admin",
-  slug,
-  label,
-});
+/** The `?section=` slugs of `/admin`. */
+export type AdminSlug =
+  | "sources"
+  | "maintenance"
+  | "metadata"
+  | "cleanup"
+  | "people"
+  | "integrations"
+  | "health"
+  | "logs";
+
+export type AdminSection = Section & {
+  slug: AdminSlug;
+  group: "Library" | "Server";
+};
+
+const admin = (
+  slug: AdminSlug,
+  label: string,
+  group: AdminSection["group"],
+): AdminSection => ({ area: "admin", slug, label, group });
 
 const PROFILE = personal("profile", "Profile");
 const PREFERENCES = personal("preferences", "Preferences");
@@ -40,14 +58,25 @@ export const PERSONAL_SECTIONS: readonly PersonalSection[] = [
   SECURITY,
 ];
 
-const SOURCES = admin("sources", "Sources");
-const MAINTENANCE = admin("maintenance", "Maintenance");
-const METADATA = admin("metadata", "Metadata");
-const CLEANUP = admin("cleanup", "Cleanup");
-const PEOPLE = admin("people", "People");
-const INTEGRATIONS = admin("integrations", "Integrations");
-const HEALTH = admin("health", "Health");
-const LOGS = admin("logs", "Logs");
+const SOURCES = admin("sources", "Sources", "Library");
+const MAINTENANCE = admin("maintenance", "Maintenance", "Library");
+const METADATA = admin("metadata", "Metadata", "Library");
+const CLEANUP = admin("cleanup", "Cleanup", "Library");
+const PEOPLE = admin("people", "People", "Server");
+const INTEGRATIONS = admin("integrations", "Integrations", "Server");
+const HEALTH = admin("health", "Health", "Server");
+const LOGS = admin("logs", "Logs", "Server");
+/** The eight admin sections, in sidebar order: Library's four, then Server's. */
+export const ADMIN_SECTIONS: readonly AdminSection[] = [
+  SOURCES,
+  MAINTENANCE,
+  METADATA,
+  CLEANUP,
+  PEOPLE,
+  INTEGRATIONS,
+  HEALTH,
+  LOGS,
+];
 
 /** One searchable setting: its name, the words that find it, and its section. */
 export type SettingsEntry = {
@@ -172,6 +201,27 @@ export const settingsPlace = ({ section }: SettingsEntry) =>
 export function parseSettingsSection(raw: string | null): PersonalSection {
   return PERSONAL_SECTIONS.find((s) => s.slug === raw) ?? PROFILE;
 }
+
+/** The admin section a `?section=` slug names; Sources when it is missing or unknown. */
+export function parseAdminSection(raw: string | null): AdminSection {
+  return ADMIN_SECTIONS.find((s) => s.slug === raw) ?? SOURCES;
+}
+
+const sectionAt = ({
+  pathname,
+  search,
+}: Pick<Location, "pathname" | "search">) => {
+  const raw = new URLSearchParams(search).get("section");
+  return pathname === "/admin"
+    ? parseAdminSection(raw)
+    : parseSettingsSection(raw);
+};
+
+/** Moving between two places on `/settings` or `/admin` that open the same section drops no edits. */
+export const sameSection = (
+  a: Pick<Location, "pathname" | "search">,
+  b: Pick<Location, "pathname" | "search">,
+) => a.pathname === b.pathname && sectionAt(a).slug === sectionAt(b).slug;
 
 // Slugs from before server administration moved to /admin, as legacy_settings_target maps them.
 const LEGACY_SECTIONS: Record<string, Section> = {

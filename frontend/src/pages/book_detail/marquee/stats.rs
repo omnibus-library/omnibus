@@ -1,7 +1,7 @@
 //! Stop 02 · Stats — the at-a-glance record: the 2×2 record grid
 //! (Started / Time in book / Pickups / Longest sit), a time-left note, the
-//! per-day activity spark over the last 22 days, the session log behind those
-//! figures, and the rating widget.
+//! per-day activity spark over the last 22 days, and the session log behind
+//! those figures.
 //! Insights arrive from the stage's shared post-mount fetch; books with no
 //! sessions (and wishlist-only books) get the design's quiet empty state.
 
@@ -16,8 +16,6 @@ use crate::date_fmt::civil_from_days;
 use crate::format::count_label;
 use crate::time::now_unix;
 use crate::time::{local_date_offset, use_local_dates_ready};
-
-use crate::pages::book_detail::rating::BdRatingWidget;
 
 use super::MarqueeProgress;
 
@@ -65,9 +63,6 @@ pub(super) fn MarqueeStatsStop(
                     }
                 }
             },
-        }
-        div { class: "bdmq-ratingrow", "data-testid": "bdmq-rating",
-            BdRatingWidget { uuid: uuid.clone() }
         }
     }
 }

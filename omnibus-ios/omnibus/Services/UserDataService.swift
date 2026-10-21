@@ -1,5 +1,5 @@
 //  UserDataService.swift
-//  Per-user reads and writes: progress, ratings, read status, annotations,
+//  Per-user reads and writes: progress, reviews, read status, annotations,
 //  journals, shelves, and stats.
 //
 //  Every write is offline-tolerant: it hits the server when reachable, and
@@ -231,39 +231,92 @@ enum UserDataService {
         )
     }
 
-    // MARK: - Ratings
+    // MARK: - Reviews
 
-    static func rating(uuid: String) -> AsyncThrowingStream<CacheRead<RatingRecord>, Error> {
-        Cache.live(CacheKey.rating(uuid)) {
-            try await APIClient.shared.get("/api/ratings/\(uuid)")
+    /// A book's reviews, replica first: yours with its private notes, every
+    /// other reader's, and the household summary when the server sends one.
+    static func reviews(uuid: String) -> AsyncThrowingStream<CacheRead<BookReviews>, Error> {
+        reviewsReads(uuid: uuid) {
+            try await APIClient.shared.get("/api/reviews/\(uuid)")
         }
     }
 
-    static func otherRatings(
-        uuid: String
-    ) -> AsyncThrowingStream<CacheRead<[AttributedRating]>, Error> {
-        Cache.live(CacheKey.ratingsOthers(uuid)) {
-            try await APIClient.shared.get("/api/ratings/others/\(uuid)")
+    /// The reviews read with its fetch injected. Guards writes: a page read
+    /// that went out before a stars tap and answers after it must not store
+    /// the old stars over the tap, or refuse the tap's own refresh by doing so.
+    static func reviewsReads(
+        uuid: String, fetch: @escaping @Sendable () async throws -> BookReviews
+    ) -> AsyncThrowingStream<CacheRead<BookReviews>, Error> {
+        Cache.live(CacheKey.reviews(uuid), guardsWrites: true, fetch: fetch)
+    }
+
+    /// Change your review field by field, offline or not, answering with what
+    /// the replica holds once the write has been made.
+    ///
+    /// The patch reaches the replica before it is queued, so it shows at once
+    /// and survives a relaunch; queued patches for one book fold field by
+    /// field (`SyncEngine.writeFieldPatch`). The refresh runs whether or not
+    /// the write landed: held off while it is still queued, it reads back the
+    /// rendered text once it lands, and what the server kept if it was refused.
+    @discardableResult
+    static func patchReview(uuid: String, _ patch: ReviewPatch) async -> BookReviews? {
+        if !patch.isEmpty {
+            let now = Int64(Date().timeIntervalSince1970)
+            await mutateLocalReviews(uuid) { $0 = $0.applying(patch, uuid: uuid, now: now) }
+            let op = ReviewOutbox.patch(uuid: uuid)
+            await SyncEngine.shared.writeFieldPatch(
+                kind: op.kind, path: op.path, body: patch, legacyStars: op.legacyStars
+            )
+            await refreshReviews(uuid)
         }
+        return await Cache.cachedOnly(CacheKey.reviews(uuid))
     }
 
-    static func setRating(uuid: String, stars: Double) async {
-        let update = RatingUpdate(bookUUID: uuid, stars: stars)
-        await Cache.write(
-            CacheKey.rating(uuid),
-            RatingRecord(bookUUID: uuid, stars: stars, updatedAt: Int64(Date().timeIntervalSince1970))
-        )
+    /// Delete your stars, text and notes together. Coalesced, so it replaces
+    /// every patch still queued for the book — and any pre-upgrade stars write
+    /// for it — since it would clear them anyway.
+    @discardableResult
+    static func deleteReview(uuid: String) async -> BookReviews? {
+        await mutateLocalReviews(uuid) { $0 = $0.deletingMine() }
+        let op = ReviewOutbox.delete(uuid: uuid)
         await SyncEngine.shared.write(
-            kind: OpKind.rating(uuid), path: "/api/ratings", body: update, coalesce: true
+            kind: op.kind, path: op.path, method: op.method, body: nil, coalesce: true,
+            superseding: op.superseding
         )
+        await refreshReviews(uuid)
+        return await Cache.cachedOnly(CacheKey.reviews(uuid))
     }
 
-    static func clearRating(uuid: String) async {
-        await OfflineStore.shared.cacheDelete(CacheKey.rating(uuid))
-        await SyncEngine.shared.write(
-            kind: OpKind.rating(uuid), path: "/api/ratings/\(uuid)",
-            method: "DELETE", body: nil, coalesce: true
-        )
+    /// Read the book's reviews back after a write. Stored only if nothing has
+    /// written the replica since the request went out: two writes in a row
+    /// each refresh, and the first one's answer can arrive last, describing
+    /// the server before the second landed.
+    private static func refreshReviews(_ uuid: String) async {
+        let key = CacheKey.reviews(uuid)
+        let generation = await OfflineStore.shared.cacheGeneration(key)
+        guard await canAdoptServerState(for: key),
+              let fresh: BookReviews = try? await APIClient.shared.get("/api/reviews/\(uuid)"),
+              await canAdoptServerState(for: key),
+              let data = try? JSONEncoder().encode(fresh)
+        else { return }
+        await OfflineStore.shared.cachePut(key, data, ifGeneration: generation)
+    }
+
+    /// Apply a change to the cached reviews in one store step, so a stars tap
+    /// and a text save made together can't each start from the same read and
+    /// drop the other's field. Starts from `.empty` when nothing is cached
+    /// yet, as the journal and highlight lists start from `[]`: a write made
+    /// before the first read must still be in the replica after a relaunch.
+    static func mutateLocalReviews(
+        _ uuid: String, in store: OfflineStore = .shared,
+        _ mutate: @escaping @Sendable (inout BookReviews) -> Void
+    ) async {
+        await store.cacheUpdate(CacheKey.reviews(uuid)) { data in
+            var reviews = data.flatMap { try? JSONDecoder().decode(BookReviews.self, from: $0) }
+                ?? .empty
+            mutate(&reviews)
+            return try? JSONEncoder().encode(reviews)
+        }
     }
 
     // MARK: - Read status
@@ -1136,8 +1189,37 @@ enum UserDataService {
             group.addTask { for await _ in highlights(uuid: uuid).values() {} }
             group.addTask { for await _ in bookmarks(uuid: uuid).values() {} }
             group.addTask { for await _ in journals(uuid: uuid).values() {} }
+            group.addTask { for await _ in reviews(uuid: uuid).values() {} }
             group.addTask { for await _ in readStatus(uuid: uuid).values() {} }
         }
+    }
+}
+
+/// How a book's review writes queue, named in one place so the suite can pin
+/// that both absorb the book's pre-review `rating:` op rather than race it.
+enum ReviewOutbox {
+    struct Write: Equatable {
+        let kind: String
+        let path: String
+        let method: String
+        /// A stars write a patch folds in as its oldest value.
+        let legacyStars: String?
+        /// Kinds whose pending ops this write drops.
+        let superseding: [String]
+    }
+
+    static func patch(uuid: String) -> Write {
+        Write(
+            kind: OpKind.review(uuid), path: "/api/reviews/\(uuid)", method: "PATCH",
+            legacyStars: OpKind.rating(uuid), superseding: []
+        )
+    }
+
+    static func delete(uuid: String) -> Write {
+        Write(
+            kind: OpKind.review(uuid), path: "/api/reviews/\(uuid)", method: "DELETE",
+            legacyStars: nil, superseding: [OpKind.rating(uuid)]
+        )
     }
 }
 

@@ -584,6 +584,7 @@ private struct RejectedWritesSheet: View {
     private static func label(for kind: String) -> String {
         if kind.hasPrefix("progress:") { return "Reading position" }
         if kind.hasPrefix("rating:") { return "Star rating" }
+        if kind.hasPrefix("review:") { return "Review" }
         if kind.hasPrefix("read_status:") { return "Read status" }
         if kind.hasPrefix("playback_rate:") { return "Playback speed" }
         switch kind {

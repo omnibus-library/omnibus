@@ -1,5 +1,5 @@
 import { Outlet } from "react-router";
-import { dockBook } from "../pages/Listen/listen";
+import { dockBook } from "../pages/Listen/listenView";
 import { MiniDock } from "../pages/Listen/MiniDock";
 import { usePlayback } from "../playback/PlaybackProvider";
 import "./ReaderDock.css";

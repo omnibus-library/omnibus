@@ -23,6 +23,9 @@ pub enum SettingsError {
     /// `scan_interval_hours` was set below [`SCAN_INTERVAL_MIN_HOURS`].
     #[error("scan_interval_hours must be at least {SCAN_INTERVAL_MIN_HOURS} (omit to disable)")]
     ScanIntervalTooSmall,
+    /// A metadata-precedence request named a library other than `ebook` or `audiobook`.
+    #[error("library must be \"ebook\" or \"audiobook\"")]
+    UnknownLibrary,
 }
 
 /// The server's library folders, and how often it rescans them.
@@ -104,6 +107,20 @@ pub fn is_valid_metadata_precedence(order: &[MetadataSource]) -> bool {
     DEFAULT_METADATA_PRECEDENCE
         .iter()
         .all(|s| order.iter().filter(|o| *o == s).count() == 1)
+}
+
+/// The configured folder of the library `library` names, `"ebook"` or `"audiobook"`; `None`
+/// when that library's folder isn't set. Each transport resolves the precedence routes'
+/// `library` token here, so an unknown one reads the same on both.
+pub fn precedence_library_path(
+    settings: &Settings,
+    library: &str,
+) -> Result<Option<String>, SettingsError> {
+    match library {
+        "ebook" => Ok(settings.ebook_library_path.clone()),
+        "audiobook" => Ok(settings.audiobook_library_path.clone()),
+        _ => Err(SettingsError::UnknownLibrary),
+    }
 }
 
 /// Loose email plausibility check: exactly one `@`, non-empty local part, a
@@ -210,6 +227,15 @@ pub struct KindleDelivery {
 /// Default `ebook-convert` command used when neither the settings override nor
 /// `OMNIBUS_EBOOK_CONVERT_PATH` is set — resolved on `$PATH` at spawn time.
 pub const DEFAULT_EBOOK_CONVERT_BIN: &str = "ebook-convert";
+
+/// The `ebook-convert` path to save.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct EbookConvertUpdate {
+    /// The path of Calibre's `ebook-convert`, up to 4096 bytes. Null or blank clears the
+    /// saved path.
+    pub path: Option<String>,
+}
 
 /// Whether the server can run Calibre's `ebook-convert` to convert book formats.
 /// Calibre is optional. Without it, format conversion is off and nothing else is wrong.

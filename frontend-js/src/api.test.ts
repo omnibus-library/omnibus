@@ -3,7 +3,7 @@ import {
   ApiError,
   type BookUuid,
   type FilterClause,
-  fetchRating,
+  fetchReadStatus,
   filterParam,
   toBookDetail,
   toBookPage,
@@ -333,14 +333,14 @@ describe("the nullable read fetchers", () => {
     vi.stubGlobal("fetch", async () => res);
   };
 
-  it("fetchRating rejects with the server's text on a plain-text failure", async () => {
+  it("fetchReadStatus rejects with the server's text on a plain-text failure", async () => {
     answer(
       new Response("internal server error", {
         status: 500,
         headers: { "content-type": "text/plain" },
       }),
     );
-    const err = await fetchRating("u" as BookUuid).catch((e: unknown) => e);
+    const err = await fetchReadStatus("u" as BookUuid).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({
       status: 500,
@@ -348,9 +348,9 @@ describe("the nullable read fetchers", () => {
     });
   });
 
-  it("fetchRating rejects a 200 body that is not a rating", async () => {
-    answer(Response.json({ stars: "five" }));
-    await expect(fetchRating("u" as BookUuid)).rejects.toThrow();
+  it("fetchReadStatus rejects a 200 body that is not a read status", async () => {
+    answer(Response.json({ status: "skimmed" }));
+    await expect(fetchReadStatus("u" as BookUuid)).rejects.toThrow();
   });
 });
 

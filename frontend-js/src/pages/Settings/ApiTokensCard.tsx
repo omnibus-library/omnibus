@@ -22,6 +22,7 @@ import {
 import { initialsFor, nowSecs, utcDay } from "../../format";
 import { useCurrentUser } from "../../session";
 import { mcpCommand, type PillTone, relDate, statusPill } from "./apiTokens";
+import "../../styles/tokens.css";
 
 const NAME_REQUIRED = "Enter a name for the token.";
 const NameSchema = z.object({ name: z.string().trim().min(1, NAME_REQUIRED) });

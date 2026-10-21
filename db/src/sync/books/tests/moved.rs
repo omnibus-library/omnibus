@@ -159,7 +159,7 @@ async fn seed_user_data(pool: &SqlitePool, user_id: i64, book_uuid: &str) {
     .execute(pool)
     .await
     .unwrap();
-    sqlx::query("INSERT INTO user_ratings (user_id, book_uuid, half_stars) VALUES (?, ?, 8)")
+    sqlx::query("INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at) VALUES (?, ?, 8, strftime('%s','now'))")
         .bind(user_id)
         .bind(book_uuid)
         .execute(pool)
@@ -201,7 +201,7 @@ async fn user_data_count(pool: &SqlitePool, book_uuid: &str) -> i64 {
     let mut total = 0i64;
     for table in [
         "reading_progress",
-        "user_ratings",
+        "reviews",
         "shelf_books",
         "annotations",
         "journal_entries",

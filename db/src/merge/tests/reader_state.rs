@@ -1,7 +1,7 @@
 //! Per-reader state across a merge: progress and playback rate with
 //! latest-wins on collision, highlights, the Kobo annotation sync state
-//! preferring the target's row, and read status / ratings / journals with
-//! the newer row kept.
+//! preferring the target's row, read status with the newer row kept, the
+//! stars of a review from the later rating, and journals.
 
 use super::super::*;
 use super::seed_user;
@@ -243,8 +243,8 @@ async fn seed_reader_record(
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO user_ratings (user_id, book_uuid, half_stars, updated_at)
-         VALUES (?, ?, ?, ?)",
+        "INSERT INTO reviews (user_id, book_uuid, half_stars, rated_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?4)",
     )
     .bind(user)
     .bind(book_uuid)
@@ -289,11 +289,10 @@ async fn merge_books_moves_read_status_ratings_and_journals_to_target() {
             .unwrap();
     assert_eq!(status, vec![(target.clone(), "finished".to_string())]);
 
-    let ratings: Vec<(String, i64)> =
-        sqlx::query_as("SELECT book_uuid, half_stars FROM user_ratings")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
+    let ratings: Vec<(String, i64)> = sqlx::query_as("SELECT book_uuid, half_stars FROM reviews")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
     assert_eq!(ratings, vec![(target.clone(), 10)]);
 
     let journals: Vec<(String, String)> =
@@ -320,11 +319,10 @@ async fn merge_books_keeps_the_newer_read_status_and_rating_on_collision() {
         .unwrap();
 
     // One row each, on the target, carrying the newer side's values.
-    let ratings: Vec<(String, i64)> =
-        sqlx::query_as("SELECT book_uuid, half_stars FROM user_ratings")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
+    let ratings: Vec<(String, i64)> = sqlx::query_as("SELECT book_uuid, half_stars FROM reviews")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
     assert_eq!(ratings, vec![(target.clone(), 10)]);
 
     let finished: Vec<(String, i64)> =
@@ -358,10 +356,9 @@ async fn merge_books_keeps_the_target_rating_when_it_is_the_newer_one() {
         .await
         .unwrap();
 
-    let ratings: Vec<(String, i64)> =
-        sqlx::query_as("SELECT book_uuid, half_stars FROM user_ratings")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
+    let ratings: Vec<(String, i64)> = sqlx::query_as("SELECT book_uuid, half_stars FROM reviews")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
     assert_eq!(ratings, vec![(target.clone(), 6)]);
 }

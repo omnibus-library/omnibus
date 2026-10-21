@@ -126,7 +126,7 @@ async fn api_merge_retargets_per_reader_state_onto_the_target() {
     let admin = auth_test_support::create_admin(&pool, "root").await;
     let token = auth_test_support::bearer_token(&pool, admin.id).await;
     let (source_uuid, target_uuid) = seed_source_and_target(&pool).await;
-    // A rating keyed on the source book's uuid (`user_ratings` is in
+    // A rating keyed on the source book's uuid (`reviews` is in
     // `RETARGET_TABLES`) must survive the merge on the target.
     db::ratings::set_rating(
         &pool,

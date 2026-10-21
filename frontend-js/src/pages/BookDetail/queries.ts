@@ -16,6 +16,7 @@ import {
   fetchJournalEntries,
   fetchProgress,
   fetchReadStatus,
+  fetchReviews,
   fetchShelves,
   fetchShelvesContaining,
   fetchSmartShelvesContaining,
@@ -63,6 +64,13 @@ export const readStatusQuery = (uuid: BookUuid) =>
   queryOptions({
     queryKey: ["book", uuid, "readStatus"],
     queryFn: () => fetchReadStatus(uuid),
+  });
+
+/** Your review, other readers' and the household summary: one read, so the summary agrees with the list. */
+export const reviewsQuery = (uuid: BookUuid) =>
+  queryOptions({
+    queryKey: ["book", uuid, "reviews"],
+    queryFn: () => fetchReviews(uuid),
   });
 
 export const highlightsQuery = (uuid: BookUuid) =>

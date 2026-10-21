@@ -1,0 +1,85 @@
+.worker-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.worker-status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+  color: var(--ink-1);
+  font-size: 0.875rem;
+}
+.worker-status-active {
+  border-left: 3px solid var(--accent);
+}
+.worker-status-done {
+  border-left: 3px solid var(--ok);
+  color: var(--ink-0);
+}
+.worker-status-failed {
+  border-left: 3px solid var(--bad);
+  background: color-mix(in oklch, var(--bad) 8%, var(--bg-1));
+  color: var(--ink-0);
+  align-items: flex-start;
+}
+.worker-status-warn {
+  border-left: 3px solid var(--warn);
+  background: color-mix(in oklch, var(--warn) 8%, var(--bg-1));
+  color: var(--ink-0);
+  align-items: flex-start;
+}
+.worker-status-label {
+  flex: 1;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.worker-status-icon {
+  font-weight: 700;
+  width: 18px;
+  text-align: center;
+}
+.worker-status-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.worker-status-message {
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+}
+.worker-status-phase {
+  font-size: 0.8125rem;
+  color: var(--ink-1);
+}
+.worker-status-item {
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+  font-variant-numeric: lining-nums tabular-nums;
+  overflow-wrap: anywhere;
+}
+.worker-status-tallies {
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.worker-status-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-size: 0.875rem;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+@media (hover: hover) {
+  .worker-status-dismiss:hover {
+    color: var(--ink-0);
+    background: var(--bg-2);
+  }
+}

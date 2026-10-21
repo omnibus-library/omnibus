@@ -99,9 +99,14 @@ fn map_store_error(context: &'static str, e: db::cleanup::CleanupStoreError) -> 
 /// safe sentence; only the opaque ones are genericized and logged.
 #[cfg(feature = "server")]
 fn map_apply_error(context: &'static str, e: db::CleanupApplyError) -> ServerFnError {
+    use db::MetadataOverridesError as O;
     match e {
         db::CleanupApplyError::Db(inner) => internal_rpc_error(context, inner),
         db::CleanupApplyError::Snapshot(inner) => internal_rpc_error(context, inner),
+        db::CleanupApplyError::Overrides(
+            inner @ (O::BookNotFound(_) | O::TooManyValues { .. }),
+        ) => ServerFnError::new(inner.to_string()),
+        db::CleanupApplyError::Overrides(inner) => internal_rpc_error(context, inner),
         other => ServerFnError::new(other.to_string()),
     }
 }

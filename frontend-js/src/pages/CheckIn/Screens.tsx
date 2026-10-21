@@ -16,7 +16,7 @@ import {
   foundViaLine,
   metaDetails,
   wishlistSource,
-} from "./checkIn";
+} from "./checkInFlow";
 
 /** Shown while the resolve request is in flight. */
 export function ResolvingScreen() {

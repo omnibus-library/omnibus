@@ -1,13 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
+  ADMIN_SECTIONS,
   legacySettingsHref,
   matchingSettings,
   PERSONAL_SECTIONS,
+  parseAdminSection,
   parseSettingsSection,
+  sameSection,
 } from "./settingsIndex";
 
 const labels = (query: string, isAdmin: boolean) =>
   matchingSettings(query, isAdmin).map((entry) => entry.label);
+
+/** The parts of a router location `sameSection` reads, for an in-app path. */
+const at = (path: string) => {
+  const url = new URL(path, "http://omnibus.test");
+  return { pathname: url.pathname, search: url.search };
+};
 
 describe("matchingSettings", () => {
   it("finds a setting by keyword", () => {
@@ -56,6 +65,68 @@ describe("parseSettingsSection", () => {
     ["an unknown slug", "smtp"],
   ])("opens Profile for %s", (_condition, raw) => {
     expect(parseSettingsSection(raw).slug).toBe("profile");
+  });
+});
+
+describe("parseAdminSection", () => {
+  it("lists the admin sections in sidebar order under their groups", () => {
+    expect(ADMIN_SECTIONS.map((s) => `${s.group}/${s.slug}`)).toEqual([
+      "Library/sources",
+      "Library/maintenance",
+      "Library/metadata",
+      "Library/cleanup",
+      "Server/people",
+      "Server/integrations",
+      "Server/health",
+      "Server/logs",
+    ]);
+  });
+
+  it("returns the section a slug names", () => {
+    expect(parseAdminSection("people").label).toBe("People");
+  });
+
+  it.each([
+    ["no slug", null],
+    ["an empty slug", ""],
+    ["an unknown slug", "bogus"],
+    ["a personal slug", "profile"],
+  ])("opens Sources for %s", (_condition, raw) => {
+    expect(parseAdminSection(raw).slug).toBe("sources");
+  });
+});
+
+describe("sameSection", () => {
+  it.each([
+    [
+      "a bare admin page and its first section",
+      "/admin",
+      "/admin?section=sources",
+    ],
+    [
+      "an unknown admin slug and the first section",
+      "/admin?section=bogus",
+      "/admin?section=sources",
+    ],
+    [
+      "a bare settings page and its first section",
+      "/settings",
+      "/settings?section=profile",
+    ],
+  ])("treats %s as one place", (_condition, from, to) => {
+    expect(sameSection(at(from), at(to))).toBe(true);
+  });
+
+  it.each([
+    ["two admin sections", "/admin?section=sources", "/admin?section=people"],
+    ["two personal sections", "/settings", "/settings?section=goals"],
+    [
+      "one slug on two pages",
+      "/admin?section=sources",
+      "/settings?section=sources",
+    ],
+  ])("treats %s as different places", (_condition, from, to) => {
+    expect(sameSection(at(from), at(to))).toBe(false);
   });
 });
 
