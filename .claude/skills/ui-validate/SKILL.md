@@ -81,7 +81,8 @@ Then reload via `mcp__Claude_Preview__preview_eval` with `location.reload()`.
 
 Find the flow doc for the feature you changed in [`docs/qa/agentic_exploration/flows/`](../../../docs/qa/agentic_exploration/flows/README.md), drive its **Steps**, and check the result against its **Pass** section. Read its **Sharp edges** first; they list the traps that waste a run. The docs are written for the exploration swarm, so on your own server:
 
-- Skip the **Journal** section and anything about `journal.py`, explorer accounts, or ownership. You are the seeded admin.
+- Skip the **Journal** section and anything about `journal.py` or explorer accounts. You are the seeded admin.
+- Keep the ownership rule for destructive steps: delete or merge only books you uploaded for this check, on both sides of a merge, and never delete one whose upload attached to an existing book. `dev-up` may reuse a server whose library is real.
 - Drive only the web steps. iOS and Kobo steps belong to the exploration lanes.
 - A precondition your dev library can't meet (no audiobook, no CBZ) makes that step unverified, not passed. Say so.
 - When no flow covers the change (see [Not covered](../../../docs/qa/agentic_exploration/flows/README.md#not-covered-and-why)), check the behaviour the change is meant to have, and say there was no flow.
