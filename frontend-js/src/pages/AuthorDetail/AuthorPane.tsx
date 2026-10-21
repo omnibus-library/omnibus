@@ -315,7 +315,7 @@ export function AuthorPane({
         {!preview && <PageTitle page={page.name} />}
         <article
           key={page.id}
-          className="au-author"
+          className="au-pane"
           style={{ "--au-accent": accent }}
           data-testid="author-pane"
         >
