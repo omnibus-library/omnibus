@@ -417,10 +417,16 @@ async fn a_background_re_read_asked_for_one_book_never_starts_for_the_next() {
     let (url, reads) = household_server(Fails::Never, Duration::ZERO).await;
     let (mut dom, ctx) = mount(&url).await;
     let (_, _, began) = household_flags(&dom, ctx);
+    // Hold the store worker, so the re-read's outbox check waits behind it.
+    store::store()
+        .expect("store")
+        .run_detached(|_| std::thread::sleep(Duration::from_millis(300)));
 
+    dom.in_runtime(|| writes::refresh_after_sync(ctx, BOOK.into(), url.clone()));
+    // Polled once: it is now parked on that check.
+    dom.process_events();
+    // Another book is shown while it waits.
     dom.in_runtime(|| {
-        writes::refresh_after_sync(ctx, BOOK.into(), url.clone());
-        // Another book is shown before the re-read would start.
         writes::bump(ctx.epoch);
     });
     settle(&mut dom).await;
