@@ -136,51 +136,17 @@ async fn api_get_series_index_returns_401_when_anonymous() {
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// Seeds "Dune" as book 1 of "Dune Chronicles" under a configured `/lib`,
-/// marks it finished for `user`, and returns the series id.
+/// Seeds "Dune" as book 1 of "Dune Chronicles" under `/lib` and has `user`
+/// finish it. Returns the series id.
 async fn seed_finished_dune(pool: &sqlx::SqlitePool, user: i64) -> i64 {
-    db::set_settings(
-        pool,
-        &omnibus_shared::Settings {
-            ebook_library_path: Some("/lib".into()),
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
-    db::replace_books(
-        pool,
-        "/lib",
-        vec![db::ebook::IndexedBook {
-            metadata: omnibus_shared::EbookMetadata {
-                filename: "dune.epub".into(),
-                title: Some("Dune".into()),
-                series: Some("Dune Chronicles".into()),
-                series_index: Some("1".into()),
-                ..Default::default()
-            },
-            cover: None,
-            mtime_epoch: 0,
-            size_bytes: 0,
-            word_count: None,
-        }],
-    )
-    .await
-    .unwrap();
-    let uuid: String = sqlx::query_scalar("SELECT uuid FROM books WHERE title = 'Dune'")
-        .fetch_one(pool)
-        .await
-        .unwrap();
-    db::read_status::set_read_status(
-        pool,
-        user,
-        &omnibus_shared::SetReadStatus {
-            book_uuid: uuid,
-            status: omnibus_shared::ReadStatus::Finished,
-        },
-    )
-    .await
-    .unwrap();
+    let dune = omnibus_shared::EbookMetadata {
+        filename: "dune.epub".into(),
+        title: Some("Dune".into()),
+        series: Some("Dune Chronicles".into()),
+        series_index: Some("1".into()),
+        ..Default::default()
+    };
+    seed_finished_book(pool, user, dune).await;
     sqlx::query_scalar("SELECT id FROM series WHERE name = 'Dune Chronicles'")
         .fetch_one(pool)
         .await

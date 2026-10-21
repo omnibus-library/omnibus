@@ -64,53 +64,19 @@ async fn api_get_author_returns_200_with_detail() {
     );
 }
 
-/// Seeds one book by Jane Austen under `/lib`, points settings at it, and has
-/// `user` finish it. Returns the author id.
+/// Seeds one book by Jane Austen under `/lib` and has `user` finish it.
+/// Returns the author id.
 async fn seed_finished_austen(pool: &sqlx::SqlitePool, user: i64) -> i64 {
-    db::set_settings(
-        pool,
-        &omnibus_shared::Settings {
-            ebook_library_path: Some("/lib".into()),
+    let emma = omnibus_shared::EbookMetadata {
+        filename: "emma.epub".into(),
+        title: Some("Emma".into()),
+        creators: vec![omnibus_shared::Contributor {
+            name: "Jane Austen".into(),
             ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
-    db::replace_books(
-        pool,
-        "/lib",
-        vec![db::ebook::IndexedBook {
-            metadata: omnibus_shared::EbookMetadata {
-                filename: "emma.epub".into(),
-                title: Some("Emma".into()),
-                creators: vec![omnibus_shared::Contributor {
-                    name: "Jane Austen".into(),
-                    ..Default::default()
-                }],
-                ..Default::default()
-            },
-            cover: None,
-            mtime_epoch: 0,
-            size_bytes: 0,
-            word_count: None,
         }],
-    )
-    .await
-    .unwrap();
-    let uuid: String = sqlx::query_scalar("SELECT uuid FROM books WHERE title = 'Emma'")
-        .fetch_one(pool)
-        .await
-        .unwrap();
-    db::read_status::set_read_status(
-        pool,
-        user,
-        &omnibus_shared::SetReadStatus {
-            book_uuid: uuid,
-            status: omnibus_shared::ReadStatus::Finished,
-        },
-    )
-    .await
-    .unwrap();
+        ..Default::default()
+    };
+    seed_finished_book(pool, user, emma).await;
     sqlx::query_scalar("SELECT id FROM authors WHERE name = 'Jane Austen'")
         .fetch_one(pool)
         .await
