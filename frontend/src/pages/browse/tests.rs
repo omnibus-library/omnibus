@@ -1,14 +1,15 @@
 //! Tests for the browse building blocks: a row's bar while progress is
 //! pending, once it lands and when it never will; the Reading chip before
 //! its count is known; the letter a key files under and the groups letters
-//! make; and the reader's tally, book in progress and "read ago" over a pane.
+//! make; and the reader's tally, book in progress, "read ago", meter and
+//! cover bars over a pane.
 
 use std::collections::HashMap;
 
 use dioxus::prelude::*;
 use omnibus_shared::{BookReading, BrowseSort, EbookMetadata, ReadStatus};
 
-use super::books::Tally;
+use super::books::{tile_fill, Tally};
 use super::*;
 use crate::test_support::{render, render_in_vdom};
 
@@ -226,4 +227,31 @@ fn books_meta_adds_finished_only_when_there_is_some() {
     assert_eq!(books_meta(&books, &BookStates::new()), "2 books");
     let one: BookStates = [state("a", ReadStatus::Finished, None, Some(1))].into();
     assert_eq!(books_meta(&books, &one), "2 books \u{b7} 1 finished");
+}
+
+#[test]
+fn tile_fill_is_full_when_finished_a_sliver_at_least_while_reading_and_none_unread() {
+    let states: BookStates = [
+        state("done", ReadStatus::Finished, Some(40), Some(1)),
+        state("new", ReadStatus::Reading, None, Some(2)),
+        state("mid", ReadStatus::Reading, Some(42), Some(3)),
+    ]
+    .into();
+    assert_eq!(tile_fill(&book("done"), &states), Some(100));
+    assert_eq!(tile_fill(&book("new"), &states), Some(3));
+    assert_eq!(tile_fill(&book("mid"), &states), Some(42));
+    assert_eq!(tile_fill(&book("unread"), &states), None);
+}
+
+#[test]
+fn progress_meter_sizes_finished_then_reading_and_says_both() {
+    let t = Tally {
+        finished: 1,
+        reading: 2,
+        unread: 1,
+    };
+    let html = render(progress_meter(4, t));
+    assert!(html.contains("1 of 4 finished, 2 reading"), "{html}");
+    assert!(html.contains("width: 25%"), "finished share: {html}");
+    assert!(html.contains("width: 50%"), "reading share: {html}");
 }

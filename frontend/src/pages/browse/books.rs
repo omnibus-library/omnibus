@@ -180,6 +180,20 @@ pub fn book_grid(
     }
 }
 
+/// How full a cover's bar is, in percent: all of it once finished, the
+/// position while reading (a sliver when no percent is known yet), none
+/// while unread.
+pub fn tile_fill(book: &EbookMetadata, states: &BookStates) -> Option<i64> {
+    match (
+        status_of(book, states),
+        state_of(book, states).and_then(|s| s.percent),
+    ) {
+        (ReadStatus::Finished, _) => Some(100),
+        (ReadStatus::Reading, p) => Some(p.unwrap_or(0).clamp(3, 100)),
+        (ReadStatus::Unread, _) => None,
+    }
+}
+
 /// One cover, the reader's bar under it, the caption, and the title.
 fn book_tile(
     book: EbookMetadata,
@@ -190,16 +204,7 @@ fn book_tile(
     let uuid = book.unique_identifier.clone().unwrap_or_default();
     let title = book.display_title();
     let (src, srcset) = thumb_srcs(&book, &uuid, server_url, 0);
-    // Finished is a full bar; in progress shows its percent, with a sliver
-    // when the reader is in but no percent is known yet.
-    let bar = match (
-        status_of(&book, states),
-        state_of(&book, states).and_then(|s| s.percent),
-    ) {
-        (ReadStatus::Finished, _) => Some(100),
-        (ReadStatus::Reading, p) => Some(p.unwrap_or(0).clamp(3, 100)),
-        (ReadStatus::Unread, _) => None,
-    };
+    let bar = tile_fill(&book, states);
     let id = book.id;
     let caption = caption(&book);
     rsx! {
