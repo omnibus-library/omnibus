@@ -110,11 +110,24 @@ pub(super) fn use_book_reviews(uuid: String) -> ReviewsCtx {
         failure: use_signal(|| None),
         saved: use_rule_facts_saved(),
     };
-    let reload = use_signal(|| 0u64);
-    use_reviews_load(uuid.clone(), server_url.clone(), ctx, reload);
+    let marks = SyncMarks {
+        reload: use_signal(|| 0),
+        seen: use_signal(crate::cache_generation_now),
+    };
+    use_reviews_load(uuid.clone(), server_url.clone(), ctx, marks);
     use_finished_load(uuid.clone(), server_url.clone(), ctx);
-    use_household_resync(uuid, server_url, ctx, reload);
+    use_household_resync(uuid, server_url, ctx, marks);
     ctx
+}
+
+/// What the load and the resync hook share, so one replica move never gets
+/// acted on twice.
+#[derive(Clone, Copy)]
+struct SyncMarks {
+    /// Bumped to run the whole load again.
+    reload: Signal<u64>,
+    /// The newest cache generation either has acted on.
+    seen: Signal<u64>,
 }
 
 /// Load the reviews for `uuid`, again on every `reload` bump. A new book
@@ -122,10 +135,10 @@ pub(super) fn use_book_reviews(uuid: String) -> ReviewsCtx {
 /// last one. If the replica moved while the read was out (a drain landed a
 /// queued write), the household it answered may predate that, so it is
 /// re-read once.
-fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx, reload: Signal<u64>) {
+fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx, marks: SyncMarks) {
     let mut loaded_for = use_signal(String::new);
     use_effect(use_reactive!(|uuid| {
-        let _ = reload();
+        let _ = (marks.reload)();
         if uuid.is_empty() {
             return;
         }
@@ -156,7 +169,16 @@ fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx, reload: S
             }
             let next = ctx.feed.peek().after(ok);
             ctx.feed.set(next);
-            if ok && crate::cache_generation_now() != generation_at_start {
+            if !ok {
+                return;
+            }
+            let now = crate::cache_generation_now();
+            // Seen either way: the read either covers this move or re-reads for it.
+            let mut seen = marks.seen;
+            if now > *seen.peek() {
+                seen.set(now);
+            }
+            if now != generation_at_start {
                 writes::refresh_after_sync(ctx, uuid, url);
             }
         });
@@ -169,14 +191,14 @@ fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx, reload: S
 /// A move while a re-read is out waits for it to settle, since that read may
 /// have asked the server before the move. The cache generation never moves
 /// on web, so there this does nothing.
-fn use_household_resync(uuid: String, server_url: String, ctx: ReviewsCtx, reload: Signal<u64>) {
+fn use_household_resync(uuid: String, server_url: String, ctx: ReviewsCtx, marks: SyncMarks) {
     let generation = crate::use_cache_generation();
-    let mut seen = use_signal(|| *generation.peek());
     let mut wanted = use_signal(|| false);
     use_effect(use_reactive!(|uuid| {
         let now = generation();
         let busy = (ctx.refreshing)();
-        if now != *seen.peek() {
+        let mut seen = marks.seen;
+        if now > *seen.peek() {
             seen.set(now);
             wanted.set(true);
         }
@@ -189,7 +211,7 @@ fn use_household_resync(uuid: String, server_url: String, ctx: ReviewsCtx, reloa
                 writes::refresh_after_sync(ctx, uuid.clone(), server_url.clone());
             }
             FeedState::Failed => {
-                writes::bump(reload);
+                writes::bump(marks.reload);
             }
             FeedState::Pending => {}
         }
