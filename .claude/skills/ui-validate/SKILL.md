@@ -1,6 +1,6 @@
 ---
 name: ui-validate
-description: End-to-end recipe for validating omnibus UI changes in a real browser — brings up a port-walking dev server, logs in as the seeded admin, polls /api/_health for the rebuild signal, and verifies via snapshot/screenshot. Triggers when you need to drive the running web app to verify a change, when another agent may already own :3000, when the page isn't reloading after an edit, or when login state is uncertain.
+description: End-to-end recipe for validating omnibus UI changes in a real browser — brings up a port-walking dev server, logs in as the seeded admin, polls /api/_health for the rebuild signal, and verifies the change against its flow doc's Pass criteria via snapshot/screenshot. Triggers when you need to drive the running web app to verify a change, when another agent may already own :3000, when the page isn't reloading after an edit, or when login state is uncertain.
 ---
 
 # Validate a UI change in the browser
@@ -77,7 +77,23 @@ Then reload via `mcp__Claude_Preview__preview_eval` with `location.reload()`.
 
 **Frontend-only changes** (Dioxus components, CSS) may not restart the server, so `build_id` won't move within 30s. In that case skip the build-id poll, reload directly, and rely on DOM testid presence (`take_snapshot`) to detect the new render.
 
-## 6. Verify
+## 6. Verify against the flow doc
+
+Find the flow doc for the feature you changed in [`docs/qa/agentic_exploration/flows/`](../../../docs/qa/agentic_exploration/flows/README.md), drive its **Steps**, and check the result against its **Pass** section. Read its **Sharp edges** first; they list the traps that waste a run. The docs are written for the exploration swarm, so on your own server:
+
+- Skip the **Journal** section and anything about `journal.py` or explorer accounts. You are the seeded admin.
+- Keep the ownership rule for destructive steps: delete or merge only books you uploaded for this check, on both sides of a merge, and never delete one whose upload attached to an existing book. `dev-up` may reuse a server whose library is real.
+- Drive only the web steps. iOS and Kobo steps belong to the exploration lanes.
+- A precondition your dev library can't meet (no audiobook, no CBZ) makes that step unverified, not passed. Say so.
+- When no flow covers the change (see [Not covered](../../../docs/qa/agentic_exploration/flows/README.md#not-covered-and-why)), check the behaviour the change is meant to have, and say there was no flow.
+
+What counts as proof:
+
+- The action and the resulting state, not only the final screen.
+- Side effects confirmed by a second read: reload the page, or `preview_eval` a `fetch` of the matching `/api/` route. A success toast alone proves nothing.
+- A step you couldn't reach is reported as unverified, never as passed through a different path.
+
+The tools:
 
 - `mcp__Claude_Preview__preview_snapshot` — content/structure assertion (DOM tree).
 - `mcp__Claude_Preview__preview_screenshot` — visual proof to share with the user.
