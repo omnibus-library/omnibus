@@ -160,19 +160,24 @@ fn use_reviews_load(uuid: String, server_url: String, ctx: ReviewsCtx, reload: S
 /// Re-read whenever the replica moves under the section (on mobile a drain
 /// replayed a queued write, or a revalidation landed): the household once
 /// the reviews have loaded, the whole load again if the first read failed.
-/// The cache generation never moves on web, so there this does nothing.
+/// A move while a re-read is out waits for it to settle, since that read may
+/// have asked the server before the move. The cache generation never moves
+/// on web, so there this does nothing.
 fn use_household_resync(uuid: String, server_url: String, ctx: ReviewsCtx, reload: Signal<u64>) {
     let generation = crate::use_cache_generation();
     let mut seen = use_signal(|| *generation.peek());
+    let mut wanted = use_signal(|| false);
     use_effect(use_reactive!(|uuid| {
         let now = generation();
-        if now == *seen.peek() {
+        let busy = (ctx.refreshing)();
+        if now != *seen.peek() {
+            seen.set(now);
+            wanted.set(true);
+        }
+        if !*wanted.peek() || busy || uuid.is_empty() {
             return;
         }
-        seen.set(now);
-        if uuid.is_empty() {
-            return;
-        }
+        wanted.set(false);
         match *ctx.feed.peek() {
             FeedState::Loaded => {
                 writes::refresh_after_sync(ctx, uuid.clone(), server_url.clone());

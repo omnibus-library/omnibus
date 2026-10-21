@@ -1,9 +1,9 @@
 //! The section on mobile, driven in a live `VirtualDom` against a stub server:
 //! a stars tap re-reads the household from the server rather than the replica
 //! the tap just refreshed; the section re-reads it once when the replica moves,
-//! never while a write to the review is queued or over a re-read already out,
-//! keeps its figures and note when that re-read fails, and reloads a failed
-//! first read.
+//! never while a write to the review is queued or over a re-read already out
+//! (reading once that one settles), keeps its figures and note when that
+//! re-read fails, and reloads a failed first read.
 
 // The state-lock guard is deliberately held across awaits: it serializes
 // whole async test bodies against process-global state, and each test owns
@@ -300,16 +300,16 @@ async fn a_background_re_read_never_replaces_one_already_out() {
     assert_eq!(household_flags(&dom, ctx), (false, true, began));
 }
 
-#[tokio::test]
-async fn a_background_re_read_that_fails_leaves_the_figures_and_the_note() {
+/// A background re-read that fails, starting with the stale note `note`:
+/// the figures and the note must come out as they went in.
+async fn fail_a_background_re_read(note: bool) {
     let _guard = test_state_lock().lock().unwrap();
     fresh_start().await;
     let (url, reads) = household_server(Fails::Later).await;
     let (mut dom, ctx) = mount(&url).await;
-    // A note left by an earlier re-read of yours.
     dom.in_runtime(|| {
-        let mut note = ctx.refresh_failed;
-        note.set(true);
+        let mut flag = ctx.refresh_failed;
+        flag.set(note);
     });
 
     cache::notify_changed();
@@ -321,7 +321,44 @@ async fn a_background_re_read_that_fails_leaves_the_figures_and_the_note() {
     settle(&mut dom).await;
 
     assert_eq!(average(&dom, ctx), Some(3.0), "the figures stay");
-    let (refreshing, note, _) = household_flags(&dom, ctx);
+    let (refreshing, note_after, _) = household_flags(&dom, ctx);
     assert!(!refreshing, "no longer dimmed");
-    assert!(note, "the note stays as it was");
+    assert_eq!(note_after, note, "the note stays as it was");
+    assert_eq!(reads.load(Ordering::SeqCst), 2, "and it isn't retried");
+}
+
+#[tokio::test]
+async fn a_background_re_read_that_fails_keeps_a_note_your_re_read_left() {
+    fail_a_background_re_read(true).await;
+}
+
+#[tokio::test]
+async fn a_background_re_read_that_fails_raises_no_note_of_its_own() {
+    fail_a_background_re_read(false).await;
+}
+
+#[tokio::test]
+async fn a_move_announced_while_a_re_read_is_out_is_read_once_that_settles() {
+    let _guard = test_state_lock().lock().unwrap();
+    fresh_start().await;
+    let (url, reads) = household_server(Fails::Never).await;
+    let (mut dom, ctx) = mount(&url).await;
+    // Out before the move: what it answers may predate it.
+    let start = dom
+        .in_runtime(|| writes::begin_refresh(ctx))
+        .expect("begun");
+
+    cache::notify_changed();
+    settle(&mut dom).await;
+    assert_eq!(
+        reads.load(Ordering::SeqCst),
+        1,
+        "waits for the read that's out"
+    );
+
+    dom.in_runtime(|| writes::settle_refresh(ctx, start, Ok(household(3.0, 2))));
+    run_until(&mut dom, |dom| average(dom, ctx) == Some(4.5)).await;
+    settle(&mut dom).await;
+
+    assert_eq!(reads.load(Ordering::SeqCst), 2, "exactly one read after it");
 }
