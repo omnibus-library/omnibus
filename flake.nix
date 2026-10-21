@@ -167,7 +167,8 @@
           # component in rustCore. In slim because it runs the same native test
           # matrix as `just test`. From unstable because the stable-pinned
           # nixpkgs marks cargo-llvm-cov broken.
-          pkgs-unstable.cargo-llvm-cov
+          # shortcut: 0.9.0's own test suite fails in the Nix sandbox, so skip it; drop once cache.nixos.org serves a build.
+          (pkgs-unstable.cargo-llvm-cov.overrideAttrs { doCheck = false; })
           # Test runner for `just test` / `just coverage` and the CI `test` job.
           # Drives coverage via `cargo llvm-cov nextest` and emits JUnit (the
           # `.config/nextest.toml` `ci` profile) for Codecov Test Analytics —

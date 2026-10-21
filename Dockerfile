@@ -28,10 +28,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN rustup target add wasm32-unknown-unknown
 
 # Pull the prebuilt Dioxus CLI release binary (compiling it from source would
-# add many minutes). Pinned to v0.7.9 to match the pinned Dioxus libraries.
+# add many minutes). Pinned to v0.7.10 to match the pinned Dioxus libraries.
 RUN curl -L --proto '=https' --tlsv1.2 -sSf \
         https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash \
-    && cargo binstall -y dioxus-cli@0.7.9
+    && cargo binstall -y dioxus-cli@0.7.10
 
 WORKDIR /src
 COPY . .
