@@ -1542,3 +1542,114 @@ export const BackToEditingKeepsTheForm: Story = {
     await expect(saved).toEqual([]);
   },
 };
+
+// ---------- The editor's screens ----------
+
+export const DetailsTab: Story = {
+  play: async ({ canvas }) => {
+    const dialog = await sheet(canvas);
+    const panel = dialog.getByRole("tabpanel", { name: "Details" });
+
+    await expect(dialog.getByRole("tab", { name: "Details" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(await within(panel).findByLabelText(/^Title/)).toHaveValue(
+      "Aurora Station, Vol. 1",
+    );
+    await expect(within(panel).getByText("Sora Inkwell")).toBeInTheDocument();
+    await expect(within(panel).getByLabelText(/^Series/)).toHaveValue(
+      "Aurora Station",
+    );
+    await expect(within(panel).getByLabelText(/^Number in series/)).toHaveValue(
+      "1",
+    );
+    await expect(within(panel).getByLabelText(/^Description/)).toHaveValue(
+      "A station at the edge of the map hears something answer.",
+    );
+    await expect(within(panel).getByText("space opera")).toBeInTheDocument();
+    await expect(
+      within(panel).getByText("Science fiction"),
+    ).toBeInTheDocument();
+    await expect(dialog.getByTestId("es-save-state")).toHaveTextContent(
+      "No changes",
+    );
+  },
+};
+
+export const ArtworkTab: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+
+    await userEvent.click(dialog.getByRole("tab", { name: "Artwork" }));
+
+    const panel = within(dialog.getByRole("tabpanel", { name: "Artwork" }));
+    await expect(await panel.findByTestId("cover-hint")).toHaveTextContent(
+      "extracted from file",
+    );
+    await expect(panel.getByLabelText("Replace cover")).toBeEnabled();
+    await expect(panel.getByLabelText("Or paste an image URL")).toBeEnabled();
+    await expect(
+      panel.getByRole("img", { name: /^Cover of Aurora Station/ }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const IdentifiersTab: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+
+    await userEvent.click(dialog.getByRole("tab", { name: "Identifiers" }));
+
+    const panel = within(dialog.getByRole("tabpanel", { name: "Identifiers" }));
+    // The panel fades in.
+    await waitFor(async () =>
+      expect(await panel.findByText("9780134685991")).toBeVisible(),
+    );
+    await expect(panel.getByText("ISBN")).toBeVisible();
+  },
+};
+
+export const FetchState: Story = {
+  beforeEach({ msw }) {
+    providers([VOLUME_ONE])({ msw });
+  },
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+
+    const view = await openFetch(dialog, userEvent);
+
+    await expect(view.getByLabelText("Title or ISBN")).toHaveValue(
+      "Aurora Station, Vol. 1",
+    );
+    await expect(
+      await view.findByRole("button", { name: /Aurora Station: Volume One/ }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await expect(await view.findByTestId("mes-sources")).toHaveTextContent(
+      "Open Library 1",
+    );
+    await expect(
+      view.getByRole("button", { name: "Back to editing" }),
+    ).toBeEnabled();
+  },
+};
+
+export const UnsavedState: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+
+    await userEvent.type(await dialog.findByLabelText(/^Publisher/), " & Co");
+
+    await expect(dialog.getByTestId("es-save-state")).toHaveTextContent(
+      "1 unsaved change",
+    );
+    await expect(dialog.getByText("• Edited")).toBeInTheDocument();
+    await expect(
+      dialog.getByRole("button", { name: "Discard edits" }),
+    ).toBeEnabled();
+    await expect(dialog.getByRole("button", { name: "Done" })).toBeEnabled();
+    await expect(dialog.getByRole("tab", { name: "Details" })).toHaveAttribute(
+      "data-edited",
+    );
+  },
+};

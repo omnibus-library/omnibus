@@ -90,6 +90,44 @@ export function aWireFile(overrides: Partial<BookFileInfo> = {}): BookFileInfo {
   };
 }
 
+/**
+ * Bram Stoker's Dracula as a household library holds it: one audiobook, nobody has started it,
+ * and the metadata is thin: a description that belongs to a comic adaptation, and no publisher,
+ * publication date, language or ISBN. It has no series and a muted rust accent.
+ */
+export function aWireAudiobook(
+  overrides: Partial<EbookMetadata> = {},
+): EbookMetadata {
+  const uuid = "2f1d1d86-5b0c-4a3a-9a53-2c8a1d9e7a01";
+  return aWireBook({
+    id: 9,
+    filename: "Dracula - Bram Stoker.m4b",
+    title: "Dracula",
+    description: "<p>A graphic adaptation of Bram Stoker's novel.</p>",
+    published: null,
+    creators: [
+      { name: "Bram Stoker", role: null, file_as: "Stoker, Bram", id: 7 },
+    ],
+    subjects: ["Kelsey"],
+    series: null,
+    series_index: null,
+    unique_identifier: uuid,
+    cover_url: `/api/covers/${uuid}`,
+    accent: "oklch(0.5 0.07 55)",
+    formats: ["M4B"],
+    book_files: [
+      aWireFile({
+        id: 41,
+        format: "M4B",
+        filename: "Dracula - Bram Stoker.m4b",
+        size_bytes: 2_254_857_830,
+        duration_seconds: 21_420,
+      }),
+    ],
+    ...overrides,
+  });
+}
+
 /** A series as `GET /api/series/{id}` sends it. */
 export function aWireSeries(
   overrides: Partial<SeriesDetail> = {},
