@@ -22,6 +22,7 @@ import {
   type EditableBook,
   editableBookQuery,
   editFormSchema,
+  hasProviderQuery,
   type MetaForm,
   overridesFrom,
   parseBookUuid,
@@ -29,12 +30,15 @@ import {
   saveOverrides,
   uploadCover,
 } from "../../api";
+import { Button } from "../../components/Button/Button";
 import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
+import { SparkleGlyph } from "../../components/Glyphs/Glyphs";
 import { Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { Sheet } from "../../components/Sheet/Sheet";
 import { useToast } from "../../components/Toast/Toast";
 import { useLeaveGuard } from "../../components/Unsaved/Unsaved";
+import { prefersReducedMotion } from "../../motion";
 import { MORE_BUTTON_ID } from "../BookDetail/HeroActions";
 import {
   CoverEditor,
@@ -46,7 +50,9 @@ import {
 import { DetailsPanel } from "./DetailsPanel";
 import { dirtyLabels } from "./dirty";
 import { SheetHead } from "./EditHeader";
+import { FetchView } from "./FetchView";
 import { SheetFooter } from "./SheetFooter";
+import "./BookEdit.css";
 import "./EditSheet.css";
 
 type TabKey = "details" | "artwork" | "identifiers";
@@ -64,10 +70,13 @@ const panelId = (key: TabKey) => `es-panel-${key}`;
 function SheetTabs({
   tab,
   edited,
+  hidden,
   onSelect,
 }: {
   tab: TabKey;
   edited: Record<TabKey, boolean>;
+  /** The fetch view has taken the tabs' place. */
+  hidden: boolean;
   onSelect: (tab: TabKey) => void;
 }) {
   const onKeyDown = (event: KeyboardEvent) => {
@@ -96,6 +105,7 @@ function SheetTabs({
       role="tablist"
       aria-label="Book information"
       tabIndex={-1}
+      hidden={hidden}
       onKeyDown={onKeyDown}
     >
       {TABS.map(({ key, label }) => (
@@ -168,6 +178,9 @@ function EditSheet({ book }: { book: EditableBook }) {
   const [closing, setClosing] = useState(false);
   const [asking, setAsking] = useState(false);
   const [confirmingRevert, setConfirmingRevert] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  // Shown only once a provider is set up to answer.
+  const providers = useQuery(hasProviderQuery);
 
   const dirty = dirtyLabels(book.form, form.watch());
   const count = dirty.length + (held ? 1 : 0);
@@ -296,6 +309,17 @@ function EditSheet({ book }: { book: EditableBook }) {
   } satisfies CoverProps;
   const values = form.watch();
   const shown = coverPreview(cover);
+  // The fetch view hands back: to Details with the edited fields in view, or to Artwork for a cover alone.
+  const applied = (to: TabKey, field: string | null) => {
+    flushSync(() => {
+      setFetching(false);
+      setTab(to);
+    });
+    document.getElementById(field ?? "")?.scrollIntoView({
+      block: "nearest",
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+    });
+  };
 
   return (
     <Sheet
@@ -312,6 +336,20 @@ function EditSheet({ book }: { book: EditableBook }) {
           cover={shown}
           title={values.title}
           author={values.authors[0] ?? ""}
+          fetch={
+            providers.data ? (
+              <Button
+                className="es-fetch-open"
+                data-testid="es-fetch"
+                aria-expanded={fetching}
+                disabled={locked}
+                onClick={() => setFetching(!fetching)}
+              >
+                <SparkleGlyph />
+                Fetch metadata
+              </Button>
+            ) : undefined
+          }
           onClose={requestClose}
         />
         <SheetTabs
@@ -321,10 +359,23 @@ function EditSheet({ book }: { book: EditableBook }) {
             artwork: held !== null,
             identifiers: false,
           }}
+          hidden={fetching}
           onSelect={setTab}
         />
         <div className="es-body">
-          <Panel tab="details" current={tab}>
+          {fetching && (
+            <FetchView
+              form={form}
+              hasCover={live.coverUrl !== null || held !== null}
+              onHoldCover={(url) => {
+                releaseHeld(held);
+                setHeld({ source: { kind: "url", url }, preview: url });
+              }}
+              onBack={() => setFetching(false)}
+              onApplied={applied}
+            />
+          )}
+          <Panel tab="details" current={tab} fetching={fetching}>
             <DetailsPanel
               form={form}
               dirty={dirty}
@@ -336,10 +387,10 @@ function EditSheet({ book }: { book: EditableBook }) {
               }}
             />
           </Panel>
-          <Panel tab="artwork" current={tab}>
+          <Panel tab="artwork" current={tab} fetching={fetching}>
             <CoverEditor {...cover} />
           </Panel>
-          <Panel tab="identifiers" current={tab}>
+          <Panel tab="identifiers" current={tab} fetching={fetching}>
             <IdentifiersPanel identifiers={live.identifiers} />
           </Panel>
         </div>
@@ -385,10 +436,12 @@ function EditSheet({ book }: { book: EditableBook }) {
 function Panel({
   tab,
   current,
+  fetching,
   children,
 }: {
   tab: TabKey;
   current: TabKey;
+  fetching: boolean;
   children: ReactNode;
 }) {
   return (
@@ -397,7 +450,7 @@ function Panel({
       role="tabpanel"
       id={panelId(tab)}
       aria-labelledby={tabId(tab)}
-      hidden={tab !== current}
+      hidden={fetching || tab !== current}
     >
       {children}
     </div>

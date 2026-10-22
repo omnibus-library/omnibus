@@ -27,17 +27,6 @@ const PNG = Uint8Array.from(
 );
 const PICK = () => new File([PNG], "new-cover.png", { type: "image/png" });
 
-/** The page's part: it holds the book a write returns. */
-function Live({ book }: { book: EditableBook }) {
-  const [live, setLive] = useState(book);
-  return (
-    <CoverEditor
-      book={live}
-      target={{ kind: "live", uuid: live.uuid, onApplied: setLive }}
-    />
-  );
-}
-
 /** The sheet's part: it holds the pick for Done, and the book a revert returns. */
 function Held({ book }: { book: EditableBook }) {
   const [live, setLive] = useState(book);
@@ -72,12 +61,12 @@ function Staged({ preview }: { preview: string | null }) {
 
 const meta = {
   title: "Pages/BookEdit/CoverEditor",
-  component: Live,
+  component: Held,
   args: { book: SCANNED },
   beforeEach({ msw }) {
     msw.use(...coverWriteHandlers(wire));
   },
-} satisfies Meta<typeof Live>;
+} satisfies Meta<typeof Held>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -119,100 +108,6 @@ export const CustomCover: Story = {
     await expect(
       canvas.getByRole("button", { name: "Revert to scanned cover" }),
     ).toBeEnabled();
-  },
-};
-
-export const UploadsACover: Story = {
-  beforeEach({ msw }) {
-    msw.use(...coverWriteHandlers(wire, { uploaded: UPLOADED }));
-  },
-  play: async ({ canvas, userEvent }) => {
-    UPLOADED.length = 0;
-    await userEvent.upload(
-      await canvas.findByLabelText("Replace cover"),
-      PICK(),
-    );
-
-    await expect(await canvas.findByText("Cover updated.")).toBeInTheDocument();
-    await expect(canvas.getByTestId("cover-hint")).toHaveTextContent(
-      "custom upload",
-    );
-    await expect(
-      canvas.getByRole("img", { name: /^Cover of/ }),
-    ).toHaveAttribute("src", `${wire.cover_url}?v=1`);
-    await expect(UPLOADED).toEqual(["new-cover.png"]);
-  },
-};
-
-export const ShowsTheUploadInFlight: Story = {
-  beforeEach({ msw }) {
-    msw.use(
-      ...coverWriteHandlers(wire, {
-        gate: new Promise<void>(() => {}),
-      }),
-    );
-  },
-  play: async ({ canvas, userEvent }) => {
-    await userEvent.upload(
-      await canvas.findByLabelText("Replace cover"),
-      PICK(),
-    );
-
-    await expect(
-      await canvas.findByText("Uploading new-cover.png…"),
-    ).toBeInTheDocument();
-    await expect(canvas.getByLabelText("Replace cover")).toBeDisabled();
-  },
-};
-
-export const UploadFails: Story = {
-  beforeEach({ msw }) {
-    msw.use(...coverWriteHandlers(wire, { refuse: "not an image" }));
-  },
-  play: async ({ canvas, userEvent }) => {
-    await userEvent.upload(
-      await canvas.findByLabelText("Replace cover"),
-      PICK(),
-    );
-
-    await expect(
-      await canvas.findByText("Upload failed: not an image"),
-    ).toBeInTheDocument();
-    await expect(canvas.getByTestId("cover-hint")).toHaveTextContent(
-      "extracted from file",
-    );
-  },
-};
-
-export const AppliesAnImageUrl: Story = {
-  beforeEach({ msw }) {
-    msw.use(...coverWriteHandlers(wire, { fetched: FETCHED }));
-  },
-  play: async ({ canvas, userEvent }) => {
-    FETCHED.length = 0;
-    await expect(await canvas.findByTestId("cover-url-apply")).toBeDisabled();
-    const field = canvas.getByLabelText("Or paste an image URL");
-    await userEvent.type(field, "https://images.example.com/c.jpg");
-    await userEvent.click(canvas.getByRole("button", { name: "Apply" }));
-
-    await expect(await canvas.findByText("Cover updated.")).toBeInTheDocument();
-    await expect(field).toHaveValue("");
-    await expect(FETCHED).toEqual(["https://images.example.com/c.jpg"]);
-  },
-};
-
-export const KeepsTheUrlWhenItFails: Story = {
-  beforeEach({ msw }) {
-    msw.use(...coverWriteHandlers(wire, { refuse: "that host is private" }));
-  },
-  play: async ({ canvas, userEvent }) => {
-    const field = await canvas.findByLabelText("Or paste an image URL");
-    await userEvent.type(field, "https://10.0.0.1/c.jpg{Enter}");
-
-    await expect(
-      await canvas.findByText("Couldn't apply that URL: that host is private"),
-    ).toBeInTheDocument();
-    await expect(field).toHaveValue("https://10.0.0.1/c.jpg");
   },
 };
 
@@ -313,7 +208,6 @@ export const StagedWithoutACover: Story = {
 };
 
 export const HoldsAPickedImage: Story = {
-  render: () => <Held book={SCANNED} />,
   beforeEach({ msw }) {
     UPLOADED.length = 0;
     msw.use(...coverWriteHandlers(wire, { uploaded: UPLOADED }));
@@ -342,7 +236,6 @@ export const HoldsAPickedImage: Story = {
 };
 
 export const HoldsAnImageUrl: Story = {
-  render: () => <Held book={SCANNED} />,
   play: async ({ canvas, userEvent }) => {
     const url = await canvas.findByLabelText("Or paste an image URL");
     // An address that loads, since a preview that fails to decode drops its <img>.
@@ -362,7 +255,6 @@ export const HoldsAnImageUrl: Story = {
 };
 
 export const ANewPickReleasesTheEarlierOne: Story = {
-  render: () => <Held book={SCANNED} />,
   play: async ({ canvas, userEvent }) => {
     const revoke = spyOn(URL, "revokeObjectURL");
     await userEvent.upload(
@@ -381,7 +273,6 @@ export const ANewPickReleasesTheEarlierOne: Story = {
 };
 
 export const DroppingTheHeldCoverKeepsTheCurrentOne: Story = {
-  render: () => <Held book={SCANNED} />,
   play: async ({ canvas, userEvent }) => {
     await userEvent.upload(
       await canvas.findByLabelText("Replace cover"),
@@ -401,7 +292,7 @@ export const DroppingTheHeldCoverKeepsTheCurrentOne: Story = {
 };
 
 export const HeldRevertsTheScannedCoverAtOnce: Story = {
-  render: () => <Held book={CUSTOM} />,
+  args: { book: CUSTOM },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       await canvas.findByRole("button", { name: "Revert to scanned cover" }),

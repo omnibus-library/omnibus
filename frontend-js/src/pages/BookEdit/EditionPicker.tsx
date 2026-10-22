@@ -1,13 +1,11 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import {
   type EditionSearchRequest,
   type EditionSearchResponse,
   editionRequest,
-  fillMissing,
   hasProviderQuery,
-  hydrateEdition,
   inStableOrder,
   type MetaForm,
   PROVIDERS,
@@ -18,9 +16,10 @@ import { Button } from "../../components/Button/Button";
 import { SparkleGlyph } from "../../components/Glyphs/Glyphs";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { Modal } from "../../components/Modal/Modal";
-import type { CoverProps } from "./CoverEditor";
+import type { StagedCoverProps } from "./CoverEditor";
 import { EditionCompare } from "./EditionCompare";
 import { coverSrc, EMPTY, sourceStatusText } from "./editionFields";
+import { useHydrated } from "./useHydrated";
 
 type FieldProps = {
   slug: "title" | "author" | "isbn";
@@ -117,7 +116,7 @@ function CandidateRow({
 }
 
 /** One line saying what each source contributed, so an outage never reads as an empty result. */
-function SourceSummary({
+export function SourceSummary({
   sources,
 }: {
   sources: EditionSearchResponse["sources"];
@@ -263,7 +262,7 @@ type PickerProps = {
   form: UseFormReturn<MetaForm>;
   /** The form as the book loaded: what the compare screen counts changes against. */
   baseline: MetaForm;
-  cover: CoverProps;
+  cover: StagedCoverProps;
 };
 
 function SearchOverlay({
@@ -273,30 +272,7 @@ function SearchOverlay({
   onClose,
 }: PickerProps & { onClose: () => void }) {
   const state = useEditionSearch(form);
-  // The candidate being compared; `hydrating` while its full record is still on the way.
-  const [compare, setCompare] = useState<{
-    edition: ProviderEdition;
-    hydrating: boolean;
-  } | null>(null);
-
-  const latest = useRef(0);
-
-  // The full record fills in what the list row lacked and never takes a field away from it.
-  const select = (edition: ProviderEdition) => {
-    setCompare({ edition, hydrating: true });
-    const request = ++latest.current;
-    const land = (settled: ProviderEdition) =>
-      // A slow answer must not overwrite a selection the reader has since replaced, or reappear after they went back.
-      setCompare((now) =>
-        now && request === latest.current
-          ? { edition: settled, hydrating: false }
-          : now,
-      );
-    hydrateEdition(edition).then(
-      (full) => land(full ? fillMissing(full, edition) : edition),
-      () => land(edition),
-    );
-  };
+  const { picked, pick, clear } = useHydrated();
 
   return (
     <Modal
@@ -316,18 +292,18 @@ function SearchOverlay({
       >
         ×
       </button>
-      {compare ? (
+      {picked ? (
         <EditionCompare
-          edition={compare.edition}
-          hydrating={compare.hydrating}
+          edition={picked.edition}
+          hydrating={picked.hydrating}
           form={form}
           baseline={baseline}
           cover={cover}
-          onBack={() => setCompare(null)}
+          onBack={clear}
           onDone={onClose}
         />
       ) : (
-        <ResultsScreen state={state} onSelect={select} />
+        <ResultsScreen state={state} onSelect={pick} />
       )}
     </Modal>
   );

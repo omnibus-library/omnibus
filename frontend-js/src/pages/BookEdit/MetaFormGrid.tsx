@@ -4,7 +4,7 @@ import { Controller, type UseFormReturn } from "react-hook-form";
 import { type MetaForm, nameCountsQuery } from "../../api";
 import { ChipInput } from "../../components/ChipInput/ChipInput";
 import { bookCount } from "../../format";
-import type { CoverProps } from "./CoverEditor";
+import type { StagedCoverProps } from "./CoverEditor";
 import type { DirtyLabel } from "./dirty";
 import { EditionPicker } from "./EditionPicker";
 import { MeArea, MeField, MeLabel } from "./MetaFields";
@@ -13,7 +13,7 @@ type Props = {
   form: UseFormReturn<MetaForm>;
   /** The form as the book loaded, which the edition picker counts changes against. */
   baseline: MetaForm;
-  cover: CoverProps;
+  cover: StagedCoverProps;
   /** Labels of the edited fields, from `dirtyLabels`. */
   dirty: DirtyLabel[];
   sortBy: string;
