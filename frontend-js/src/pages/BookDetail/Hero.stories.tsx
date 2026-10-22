@@ -1303,9 +1303,7 @@ export const FinishedCardOffersNothingWhileTheReviewsLoad: Story = {
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     await expect(
-      canvas.queryByRole("button", {
-        name: /Leave a review|New journal entry/,
-      }),
+      canvas.queryByRole("button", { name: /Leave a review/ }),
     ).not.toBeInTheDocument();
     await expect(
       canvas.queryByRole("link", { name: /Up next/ }),
@@ -1313,40 +1311,20 @@ export const FinishedCardOffersNothingWhileTheReviewsLoad: Story = {
   },
 };
 
-export const FinishedWithoutASeriesOffersAJournalEntry: Story = {
+export const FinishedAndRatedWithoutASeriesOffersNothing: Story = {
   beforeEach({ msw }) {
     msw.use(...finishedHandlers({ mine: aWireReview({ stars: 5 }) }));
   },
   args: { book: aBook({ series: null, series_id: null, series_index: null }) },
-  play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      await canvas.findByRole("button", { name: /New journal entry/ }),
+  play: async ({ canvas }) => {
+    // Your rating has loaded, so an empty card means nothing was offered.
+    await canvas.findByText(/You rated it/);
+    const card = within(
+      await canvas.findByRole("region", { name: /You finished/ }),
     );
 
-    await expect(
-      await canvas.findByRole("dialog", { name: "New journal entry" }),
-    ).toBeInTheDocument();
-  },
-};
-
-export const FinishedLastBookOfASeriesOffersAJournalEntry: Story = {
-  beforeEach({ msw }) {
-    msw.use(...finishedHandlers({ mine: aWireReview({ stars: 5 }) }));
-  },
-  // The third and last volume of the three the series holds.
-  args: {
-    book: aBook({
-      unique_identifier: "00000000-0000-4000-8000-000000000003",
-      series_index: "3",
-    }),
-  },
-  play: async ({ canvas }) => {
-    await expect(
-      await canvas.findByRole("button", { name: /New journal entry/ }),
-    ).toBeInTheDocument();
-    await expect(
-      canvas.queryByRole("link", { name: /Up next/ }),
-    ).not.toBeInTheDocument();
+    await expect(card.queryByRole("button")).not.toBeInTheDocument();
+    await expect(card.queryByRole("link")).not.toBeInTheDocument();
   },
 };
 

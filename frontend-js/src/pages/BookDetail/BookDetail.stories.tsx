@@ -912,39 +912,45 @@ export const Finished: Story = {
   },
 };
 
-export const JournalComposerFromTheFinishedCardCoversTheTabs: Story = {
+const LAST_VOLUME = seriesVolume(3);
+
+export const FinishedAndRatedLastBookOfASeriesOffersNothing: Story = {
+  parameters: { path: `/books/${LAST_VOLUME.unique_identifier}` },
   beforeEach({ msw }) {
     msw.use(
       ...readStatusHandlers(
         aWireReadStatus({ status: "finished", finished_at: noon(10, 18) }),
       ),
-      ...reviewHandlers({ mine: aWireReview({ stars: 4 }) }),
+      ...reviewHandlers({ mine: aWireReview({ stars: 5 }) }),
+      getGetSeriesByIdMockHandler200(
+        aWireSeries({
+          books: [seriesVolume(1), seriesVolume(2), LAST_VOLUME],
+        }),
+      ),
+      getGetBookInsightsMockHandler200(
+        aWireInsights({ started_at: noon(10, 2), sessions: 13 }),
+      ),
       ...bookDetailHandlers(
         aWireBook({
           ...BOOK,
-          series: null,
-          series_id: null,
-          series_index: null,
+          id: LAST_VOLUME.id,
+          title: LAST_VOLUME.title,
+          series_index: LAST_VOLUME.series_index,
+          unique_identifier: LAST_VOLUME.unique_identifier,
         }),
       ),
     );
   },
-  play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      await canvas.findByRole("button", { name: /New journal entry/ }),
-    );
-    const overlay = await canvas.findByTestId("journal-composer-overlay");
-
-    const tabs = canvas.getByRole("tablist");
-    tabs.scrollIntoView({ block: "center" });
-    const box = tabs.getBoundingClientRect();
-    const top = document.elementFromPoint(
-      box.left + box.width / 2,
-      box.top + box.height / 2,
+  play: async ({ canvas }) => {
+    // The fan draws from the same series read as the card, so the card has its answer too.
+    await canvas.findByTestId("bp-series-fan");
+    await canvas.findAllByText(/You rated it/);
+    const card = within(
+      await canvas.findByRole("region", { name: /You finished/ }),
     );
 
-    // The strip is behind the dimmed overlay, not drawn over the editor's backdrop.
-    await expect(overlay.contains(top)).toBe(true);
+    await expect(card.queryByRole("button")).not.toBeInTheDocument();
+    await expect(card.queryByRole("link")).not.toBeInTheDocument();
   },
 };
 

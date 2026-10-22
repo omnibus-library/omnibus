@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import { Link } from "react-router";
 import {
   type Book,
@@ -8,8 +7,7 @@ import {
   thumbUrl,
 } from "../../api";
 import { Cover } from "../../components/Cover/Cover";
-import { ChevronRightGlyph, PlusGlyph } from "../../components/Glyphs/Glyphs";
-import { NewJournalEntryModal } from "./JournalComposer";
+import { ChevronRightGlyph } from "../../components/Glyphs/Glyphs";
 import { highlightsQuery, insightsQuery, reviewsQuery } from "./queries";
 import { StarShape } from "./StarPicker";
 import { finishTotals } from "./stats";
@@ -33,7 +31,7 @@ type FinishCardProps = {
 /**
  * The card that takes the chapter bar's place once a book is finished: what it took, then one
  * whole-half target. Until you rate it that is "Leave a review"; once you have, the next book
- * in the series, or a new journal entry when there is none.
+ * in the series, or nothing when there is none.
  */
 export function FinishCard({
   book,
@@ -45,7 +43,6 @@ export function FinishCard({
   const highlights = useQuery(highlightsQuery(book.uuid));
   const reviews = useQuery(reviewsQuery(book.uuid));
   const series = useQuery(seriesQuery(book.seriesId));
-  const [writing, setWriting] = useState(false);
 
   const totals =
     insights.data && finishedAt !== null
@@ -63,8 +60,6 @@ export function FinishCard({
   const at = books.findIndex((b) => b.uuid === book.uuid);
   const next = at >= 0 ? books[at + 1] : undefined;
   const seriesName = book.series?.name;
-  // Without a series there is nothing to wait for; with one, the answer decides.
-  const nextKnown = book.seriesId === null || !series.isPending;
 
   let target = null;
   if (rated === false) {
@@ -100,25 +95,6 @@ export function FinishCard({
         <ChevronRightGlyph size={16} />
       </Link>
     );
-  } else if (rated && nextKnown) {
-    target = (
-      <button
-        type="button"
-        className="bp-finish-next"
-        onClick={() => setWriting(true)}
-      >
-        <span className="bp-finish-icon">
-          <PlusGlyph size={20} />
-        </span>
-        <span className="bp-finish-copy">
-          <span className="bp-finish-title">New journal entry</span>
-          <span className="bp-finish-meta">
-            Write down what stayed with you
-          </span>
-        </span>
-        <ChevronRightGlyph size={16} />
-      </button>
-    );
   }
 
   return (
@@ -131,12 +107,6 @@ export function FinishCard({
         {totals && <p className="bp-finish-stats">{totals}</p>}
       </div>
       {target}
-      {writing && (
-        <NewJournalEntryModal
-          uuid={book.uuid}
-          onClose={() => setWriting(false)}
-        />
-      )}
     </section>
   );
 }
