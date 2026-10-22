@@ -5,14 +5,10 @@
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
-use omnibus_shared::{EbookMetadata, ReadStatus};
+use omnibus_shared::EbookMetadata;
 
-use crate::components::atrium::Cover;
-use crate::components::cover_tile::thumb_srcs;
+use crate::pages::browse::{book_grid, books_meta, BookStates};
 use crate::Route;
-
-use super::progress::{state_of, status_of};
-use super::BookStates;
 
 /// One series' books, in the order the author read returned them.
 #[derive(Debug, Clone, PartialEq)]
@@ -52,24 +48,6 @@ pub fn series_count(books: &[EbookMetadata]) -> usize {
     names.len()
 }
 
-/// "6 books · 1 finished", leaving out none finished.
-pub fn shelf_meta(books: &[EbookMetadata], states: &BookStates) -> String {
-    let n = books.len();
-    let finished = books
-        .iter()
-        .filter(|b| status_of(b, states) == ReadStatus::Finished)
-        .count();
-    let count = if n == 1 {
-        "1 book".to_string()
-    } else {
-        format!("{n} books")
-    };
-    match finished {
-        0 => count,
-        f => format!("{count} \u{b7} {f} finished"),
-    }
-}
-
 /// Every series shelf, then "Other works".
 pub fn author_shelves(books: Vec<EbookMetadata>, states: &BookStates, server_url: &str) -> Element {
     let (shelves, standalone) = group_by_series(books);
@@ -79,7 +57,7 @@ pub fn author_shelves(books: Vec<EbookMetadata>, states: &BookStates, server_url
                 section { key: "{shelf.id}-{shelf.name}", class: "au-shelf",
                     header { class: "au-shelf-head",
                         h3 { class: "au-shelf-title", "{shelf.name}" }
-                        span { class: "au-shelf-meta", "{shelf_meta(&shelf.books, states)}" }
+                        span { class: "au-shelf-meta", "{books_meta(&shelf.books, states)}" }
                         if shelf.id > 0 {
                             Link {
                                 to: Route::SeriesDetail { id: shelf.id },
@@ -90,68 +68,17 @@ pub fn author_shelves(books: Vec<EbookMetadata>, states: &BookStates, server_url
                             }
                         }
                     }
-                    {shelf_grid(shelf.books, states, server_url)}
+                    {book_grid(shelf.books, states, server_url, |_| None)}
                 }
             }
             if !standalone.is_empty() {
                 section { class: "au-shelf",
                     header { class: "au-shelf-head",
                         h3 { class: "au-shelf-title", "Other works" }
-                        span { class: "au-shelf-meta", "{shelf_meta(&standalone, states)}" }
+                        span { class: "au-shelf-meta", "{books_meta(&standalone, states)}" }
                     }
-                    {shelf_grid(standalone, states, server_url)}
+                    {book_grid(standalone, states, server_url, |_| None)}
                 }
-            }
-        }
-    }
-}
-
-/// A row of covers.
-fn shelf_grid(books: Vec<EbookMetadata>, states: &BookStates, server_url: &str) -> Element {
-    rsx! {
-        div { class: "au-grid", role: "list",
-            for book in books.into_iter() {
-                {shelf_tile(book, states, server_url)}
-            }
-        }
-    }
-}
-
-/// One cover, the reader's bar under it, and the title.
-fn shelf_tile(book: EbookMetadata, states: &BookStates, server_url: &str) -> Element {
-    let uuid = book.unique_identifier.clone().unwrap_or_default();
-    let title = book.display_title();
-    let (src, srcset) = thumb_srcs(&book, &uuid, server_url, 0);
-    // Finished is a full bar; in progress shows its percent, with a sliver
-    // when the reader is in but no percent is known yet.
-    let bar = match (
-        status_of(&book, states),
-        state_of(&book, states).and_then(|s| s.percent),
-    ) {
-        (ReadStatus::Finished, _) => Some(100),
-        (ReadStatus::Reading, p) => Some(p.unwrap_or(0).clamp(3, 100)),
-        (ReadStatus::Unread, _) => None,
-    };
-    let id = book.id;
-    rsx! {
-        // The list role sits on a wrapper so the tile stays a link to assistive tech.
-        div { key: "{id}", class: "au-tile-item", role: "listitem",
-            Link {
-                to: Route::BookDetail { uuid },
-                class: "au-tile",
-                "aria-label": "Open details for {title}",
-                Cover {
-                    book,
-                    src_override: src,
-                    srcset,
-                    sizes: Some("(max-width: 720px) 30vw, 150px".to_string()),
-                }
-                span { class: "au-tile-bar", "aria-hidden": "true",
-                    if let Some(pct) = bar {
-                        span { class: "au-tile-fill", style: "width: {pct}%" }
-                    }
-                }
-                span { class: "au-tile-title", "{title}" }
             }
         }
     }

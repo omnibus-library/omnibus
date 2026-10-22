@@ -102,6 +102,10 @@ pub mod keys {
     pub fn series_index() -> String {
         "series".into()
     }
+    /// `GET /api/series/reading`.
+    pub fn series_reading() -> String {
+        "series_reading".into()
+    }
     /// `GET /api/series/{id}`.
     pub fn series(id: i64) -> String {
         format!("series:{id}")

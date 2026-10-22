@@ -13,6 +13,7 @@ mod auth;
 mod author;
 mod authors_index;
 mod book_detail;
+mod browse;
 mod check_in;
 // Web/server only: the review page drives the admin-gated `cleanup/*` server
 // functions; no mobile cleanup surface ships, same shape as `admin_health`.
@@ -81,7 +82,7 @@ pub use search::SearchPage;
 #[cfg(feature = "mobile")]
 pub use search_mobile::MobileSearchPage;
 pub use series::SeriesPage;
-pub use series_index::SeriesIndexPage;
+pub use series_index::{SeriesBrowser, SeriesIndexPage};
 pub use server_connect::ServerConnectPage;
 pub(crate) use settings::sections::settings_page_title;
 // The search palette finds settings by name; routes and menus link to sections.

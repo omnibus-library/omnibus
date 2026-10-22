@@ -6,14 +6,14 @@
 //! reader's state on each book (`AuthorDetail::reading`), so the progress
 //! strip and the cover bars paint with the books, not after them.
 
-use std::collections::HashMap;
-
 use dioxus::prelude::*;
-use omnibus_shared::{AuthorDetail, BookReading};
+use omnibus_shared::AuthorDetail;
 
 use crate::components::loading::Stale;
 use crate::components::{Loading, LoadingKind, PageError, PageNotFound};
 use crate::{data, use_server_url, Route};
+
+use super::browse::BookStates;
 
 #[cfg(not(feature = "mobile"))]
 mod delete;
@@ -24,9 +24,6 @@ mod shelf;
 use hero::AuthorHero;
 use progress::reading_strip;
 use shelf::author_shelves;
-
-/// The reader's state on each of the author's books, by book uuid.
-pub type BookStates = HashMap<String, BookReading>;
 
 /// The author pane. `preview` marks `/authors`' stand-in: it leaves the page
 /// title to the index.
@@ -122,7 +119,7 @@ fn render_author(
     rsx! {
         article {
             key: "{a.id}",
-            class: "au-author",
+            class: "au-pane",
             style: "--au-accent: {accent}",
             "data-testid": "author-pane",
             AuthorHero {

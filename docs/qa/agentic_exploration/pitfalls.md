@@ -199,10 +199,6 @@ Each of these is intended, and each has been mistaken for a defect before:
   `aria-pressed`, not a checkbox. The New-shelf and Edit-shelf forms are a
   modal overlay with **no** `role="dialog"` and no accessible name, so
   `getByRole("dialog")` matches nothing.
-- **A series card carries two overlapping anchors** with the same href and the
-  same accessible name, so `getByRole("link", {name}).first().click()` times
-  out with a pointer-interception error. A person clicking the card navigates
-  fine.
 - **On iOS, a SwiftUI switch ignores a zero-duration tap.** Use a drag, or a
   tap with `duration: 0.2`. Buttons, segmented controls, star ratings and menu
   items all answer a zero-duration tap normally.

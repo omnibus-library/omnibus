@@ -54,10 +54,10 @@ points a user has (a bookmark, the nav, a deep link the app itself hands out) â€
 not for a route with no affordance pointing at it, which tests a surface no user
 can reach and hides the fact that it is unreachable.
 
-**The discovery back arrow is mobile-only markup.** `series-back` and
-`author-back` come from the mobile shell alone (`components/back_link.rs`,
-#2291); on web the top nav is the way back. `tags-back` went with the tag
-cloud page (#2157).
+**`series-back` shows below 900px only.** The series pane's link back to the
+list exists because the phone layout hides the list and the tab bar has no
+Series tab; `author-back` went, since Authors has a tab. `tags-back` went with
+the tag cloud page (#2157).
 
 **A shelf opens two ways on web, and they are different surfaces.** Both start
 in the landing library's shelf section, because **the top nav has no Shelves

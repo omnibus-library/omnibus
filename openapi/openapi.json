@@ -6502,13 +6502,38 @@
         }
       }
     },
+    "/api/series/reading": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "List your progress through each series",
+        "description": "For each series whose books you have opened or marked: how many you have finished, how\nmany you are reading, and when you last read one. Series you haven't started are left\nout.",
+        "operationId": "get_series_reading",
+        "responses": {
+          "200": {
+            "description": "Your progress, one row per series.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SeriesReading"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/series/{id}": {
       "get": {
         "tags": [
           "Discovery"
         ],
         "summary": "Get a series",
-        "description": "One series and its books, in series order.",
+        "description": "One series and its books, in series order. `reading` holds your own status and\nposition on each of those books you have opened or marked.",
         "operationId": "get_series_by_id",
         "parameters": [
           {
@@ -9147,6 +9172,7 @@
           },
           "finished": {
             "type": "integer",
+            "description": "How many of the author's books you have finished.",
             "minimum": 0
           },
           "last_read_at": {
@@ -9159,6 +9185,7 @@
           },
           "reading": {
             "type": "integer",
+            "description": "How many of the author's books you are reading now.",
             "minimum": 0
           }
         }
@@ -14976,11 +15003,51 @@
           "name": {
             "type": "string"
           },
+          "reading": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookReading"
+            },
+            "description": "Your state on each of `books` that you have opened or marked. A book missing\nhere is unread, with no position."
+          },
           "sort": {
             "type": [
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "SeriesReading": {
+        "type": "object",
+        "description": "Your progress through one series, from `GET /api/series/reading`.",
+        "required": [
+          "series_id",
+          "finished",
+          "reading"
+        ],
+        "properties": {
+          "finished": {
+            "type": "integer",
+            "description": "How many of the series' books you have finished.",
+            "minimum": 0
+          },
+          "last_read_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The latest `last_read_at` of your `BookReading` across the series' books, in\nUnix seconds."
+          },
+          "reading": {
+            "type": "integer",
+            "description": "How many of the series' books you are reading now.",
+            "minimum": 0
+          },
+          "series_id": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

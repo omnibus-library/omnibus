@@ -73,8 +73,8 @@ fn index_sort_default_is_name() {
 #[test]
 fn discovery_prefs_round_trips_through_json() {
     let prefs = DiscoveryPrefs {
-        authors_sort: AuthorSort::Recent,
-        series_sort: IndexSort::Name,
+        authors_sort: BrowseSort::Recent,
+        series_sort: BrowseSort::Recent,
         shelves_sort: IndexSort::BookCount,
     };
     let raw = serde_json::to_string(&prefs).expect("serialize");
@@ -90,11 +90,11 @@ fn discovery_prefs_round_trips_through_json() {
 }
 
 #[test]
-fn author_sort_reads_a_choice_stored_as_an_index_sort() {
+fn browse_sort_reads_a_choice_stored_as_an_index_sort() {
     let stored = serde_json::to_string(&IndexSort::BookCount).expect("serialize");
     assert_eq!(
-        serde_json::from_str::<AuthorSort>(&stored).expect("parse"),
-        AuthorSort::BookCount
+        serde_json::from_str::<BrowseSort>(&stored).expect("parse"),
+        BrowseSort::BookCount
     );
 }
 

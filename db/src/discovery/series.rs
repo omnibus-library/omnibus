@@ -39,6 +39,7 @@ pub async fn get_series(
         sort: s.get("sort"),
         book_count: usize::try_from(book_count).unwrap_or(0),
         books,
+        reading: Vec::new(),
     }))
 }
 

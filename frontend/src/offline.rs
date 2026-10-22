@@ -28,9 +28,9 @@ pub fn init() {
 }
 
 /// Cache-key prefixes holding *user-scoped* replicated data. Library-wide
-/// rows (books, authors, series, manifests, the replica) survive an account
-/// switch; these do not.
-const USER_SCOPED_PREFIXES: [&str; 18] = [
+/// rows (books, the author and series lists, manifests, the replica) survive
+/// an account switch; these do not.
+const USER_SCOPED_PREFIXES: [&str; 22] = [
     "me",
     "progress:",
     "recent_progress",
@@ -52,6 +52,11 @@ const USER_SCOPED_PREFIXES: [&str; 18] = [
     "reader_cfi:",
     "audio_pos:",
     "audio_rate:",
+    // An author's or series' page carries the reader's state on each book.
+    "author:",
+    "author_reading",
+    "series:",
+    "series_reading",
 ];
 
 /// Record which account this device's replica belongs to; when a *different*

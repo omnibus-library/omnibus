@@ -1,8 +1,8 @@
 //! Shared "index list page" shell — the fetch-effect, sort-prefs reconcile,
-//! scroll-restore, and loading/error early-return wiring that
-//! `authors_index` and `series_index` both need. Each page supplies only
-//! its own fetch future and sort-pref reader; everything else (filter/sort
-//! text, card layout, breadcrumbs) stays page-owned.
+//! scroll-restore, and loading/error early-return wiring the authors, series
+//! and shelves indexes need. Each page supplies only its own fetch future and
+//! sort-pref reader; everything else (filter/sort text, card layout,
+//! breadcrumbs) stays page-owned.
 
 use std::future::Future;
 
@@ -101,6 +101,8 @@ fn use_fetch_effect<T, F, Fut>(
 /// The shared loading/error early-return: `Some(element)` when the caller
 /// should return it immediately, `None` once the page should render its
 /// own body.
+// Only the web shelves index calls it.
+#[cfg_attr(feature = "mobile", allow(dead_code))]
 pub(crate) fn index_page_early_return(
     loading: Signal<bool>,
     error: Signal<Option<String>>,
@@ -115,22 +117,8 @@ pub(crate) fn index_page_early_return(
     None
 }
 
-/// The "Books" stat block inside an index card — identical between the
-/// series and author card kinds.
-pub(crate) fn index_card_stats(count: usize) -> Element {
-    rsx! {
-        div { class: "idx-card-stats",
-            div { class: "idx-stat",
-                div { class: "mono idx-stat-label", "Books" }
-                div { class: "idx-stat-value", "{count}" }
-            }
-        }
-    }
-}
-
-/// Search input for an index page's toolbar, shared by the series and
-/// authors index headers. `placeholder`/`aria_label` are the input's hint
-/// text; `testid` and `on_filter` are per-page.
+/// Search input for an index page's toolbar. `placeholder`/`aria_label` are
+/// the input's hint text; `testid` and `on_filter` are per-page.
 #[component]
 pub(crate) fn IndexFilterInput(
     filter: String,
@@ -153,9 +141,9 @@ pub(crate) fn IndexFilterInput(
     }
 }
 
-/// Name / most-books two-button sort toggle shared by the series and
-/// authors index toolbars. `name_label` differs per page ("A\u{2013}Z" vs
-/// "Last name A\u{2013}Z"); testids derive from `testid_prefix`.
+/// Name / most-books two-button sort toggle for an index page's toolbar.
+/// `name_label` is per page ("A\u{2013}Z"); testids derive from
+/// `testid_prefix`.
 #[component]
 pub(crate) fn IndexSortToggle(
     sort: IndexSort,
