@@ -546,6 +546,8 @@ export const FinishedNextRingFollowsItsEdgesOnAPhone: Story = {
           finished_at: nowSecs() - 86_400,
         }),
       ),
+      // Unrated, so the card offers "Leave a review" whatever the series holds.
+      ...reviewHandlers({}),
     );
   },
   play: async ({ canvasElement }) => {
