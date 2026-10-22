@@ -96,6 +96,22 @@ export const DescriptionClampsToThreeLinesWithShowMore: Story = {
   },
 };
 
+export const ShortParagraphsPastThreeLinesOfferShowMore: Story = {
+  args: {
+    book: aBook({
+      description: "<p>One.</p><p>Two.</p><p>Three.</p><p>Four.</p>",
+    }),
+  },
+  play: async ({ canvas, userEvent }) => {
+    const toggle = await canvas.findByRole("button", { name: "Show more" });
+
+    await userEvent.click(toggle);
+
+    await expect(toggle).toHaveTextContent("Show less");
+    await expect(canvas.getByText("Four.")).toBeVisible();
+  },
+};
+
 export const ShortDescriptionHasNoShowMore: Story = {
   args: { book: aBook({ description: "<p>A short one.</p>" }) },
   play: async ({ canvas }) => {

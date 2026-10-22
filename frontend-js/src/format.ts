@@ -48,13 +48,6 @@ const wordCount = (html: string) =>
     .split(/\s+/)
     .filter(Boolean).length;
 
-const DESCRIPTION_CLAMP_WORDS = 50;
-
-/** Whether a description runs past the clamp and needs a Show more toggle. */
-export function descriptionOverflows(html: string): boolean {
-  return wordCount(html) > DESCRIPTION_CLAMP_WORDS;
-}
-
 // The server's own threshold for offering to fetch a summary.
 const SUMMARY_MIN_WORDS = 10;
 

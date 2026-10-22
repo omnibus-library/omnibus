@@ -3,7 +3,6 @@ import {
   ago,
   bookCount,
   capitalize,
-  descriptionOverflows,
   durationLabel,
   facetQuery,
   fileSize,
@@ -98,15 +97,6 @@ describe("initialOf", () => {
 
   it("returns a question mark for an empty name", () => {
     expect(initialOf("")).toBe("?");
-  });
-});
-
-describe("descriptionOverflows", () => {
-  it("counts words outside the tags against the 50-word clamp", () => {
-    const words = (n: number) => `<p>${"word ".repeat(n)}</p>`;
-
-    expect(descriptionOverflows(words(50))).toBe(false);
-    expect(descriptionOverflows(words(51))).toBe(true);
   });
 });
 
