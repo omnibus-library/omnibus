@@ -190,10 +190,10 @@ specs:
   `hidden-format-toggle-<fmt>` that POSTs on every change, and All Books shows
   `lib-hidden-formats` only while the viewer hides one.
 
-**The authors pages are one layout.** `/authors` and `/authors/:id` both draw the
-list (`authors-list`, rows `author-card`) beside an author pane, so the page's h1
-is the list's "Authors" and the author's name is `author-name`, an h2; `/authors`
-previews the reader's latest author there. Delete author is behind `author-more`.
+**The authors and series pages are one layout each**: a list (`authors-list` of
+`author-card`, `series-list` of `series-card`) beside a pane. The h1 is the list's
+title, the pane's name an h2 (`author-name`, `series-name`); the bare route
+previews the reader's latest. Delete author is behind `author-more`.
 
 **The filter bar and what reads its saved filter** (the facets, their menus,
 the shelf lens and `/shelves/:id` states) have their own file:

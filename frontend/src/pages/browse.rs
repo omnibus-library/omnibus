@@ -12,7 +12,8 @@ mod list;
 mod rail;
 
 pub use books::{
-    ago, book_card, book_grid, current_book, progress_meter, status_of, tally, BookCard, BookStates,
+    ago, book_card, book_grid, books_meta, current_book, progress_meter, state_of, status_of,
+    tally, BookCard, BookStates,
 };
 pub use letters::{group_by_letter, is_non_alpha_key, letter_for_key, letter_frag};
 pub use list::{
@@ -20,5 +21,7 @@ pub use list::{
     ListHead, ListReading, ListView, Preview,
 };
 
+#[cfg(test)]
+pub mod test_support;
 #[cfg(all(test, feature = "server"))]
 mod tests;

@@ -256,17 +256,20 @@
 @media (hover: hover) { .au-tile:hover .cover-wrap { translate: 0 -3px; } }
 .au-tile-bar { display: block; height: 3px; margin-top: 10px; border-radius: 2px; overflow: hidden; }
 .au-tile-fill { display: block; height: 100%; background: var(--au-tint); }
-.au-tile-title {
-  margin-top: 8px; font-size: 14px; color: var(--ink-1);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.au-tile-caption, .au-tile-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.au-tile-caption {
+  margin-top: 9px; font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-3);
 }
+.au-tile-title { margin-top: 8px; font-size: 14px; color: var(--ink-1); }
+.au-tile-caption + .au-tile-title { margin-top: 3px; }
 
 /* ── One pane at a time ────────────────────────────────────────── */
 
 @media (max-width: 900px) {
   .au-page { grid-template-columns: minmax(0, 1fr); min-height: 0; }
   .au-page[data-pane="index"] .au-detail,
-  .au-page[data-pane="author"] .au-list { display: none; }
+  .au-page:not([data-pane="index"]) .au-list { display: none; }
   .au-list { position: static; height: auto; border-right: 0; }
   .au-scroll { overflow: visible; }
   .au-group-head { top: var(--au-top); }

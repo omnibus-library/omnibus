@@ -109,8 +109,7 @@ pub struct ViewPrefs {
     pub filters_open: bool,
 }
 
-/// How to order the series or shelves list: by name, or by book count with the most
-/// books first.
+/// How to order the shelves list: by name, or by book count with the most books first.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
@@ -122,8 +121,8 @@ pub enum IndexSort {
 
 // Its tokens match `IndexSort`'s, so a choice stored before `Recent` existed
 // still parses.
-/// How to order the authors list: by name, by book count, or by the ones you read most
-/// recently.
+/// How to order the authors or series list: by name, by book count, or by the ones you
+/// read most recently.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
@@ -141,7 +140,7 @@ pub struct DiscoveryPrefs {
     #[serde(default)]
     pub authors_sort: BrowseSort,
     #[serde(default)]
-    pub series_sort: IndexSort,
+    pub series_sort: BrowseSort,
     #[serde(default)]
     pub shelves_sort: IndexSort,
 }

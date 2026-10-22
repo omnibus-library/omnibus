@@ -162,7 +162,7 @@ test.describe("series index", () => {
     await test.step("check the hero and the nav", async () => {
       await seriesIndexPage.assertDisplayed();
       await topNav.assertDisplayed();
-      await expect(seriesIndexPage.heading).toContainText("series");
+      await expect(seriesIndexPage.heading).toContainText("Series");
       await expect(topNav.breadcrumbNav).toHaveCount(0);
     });
 
@@ -170,8 +170,56 @@ test.describe("series index", () => {
       await expect(seriesIndexPage.filterField).toBeVisible();
       await expect(seriesIndexPage.sortByNameButton).toBeVisible();
       await expect(seriesIndexPage.sortByCountButton).toBeVisible();
+      await expect(seriesIndexPage.sortByRecentButton).toBeVisible();
+      await expect(seriesIndexPage.readingFilterButton).toBeEnabled();
       await expect(seriesIndexPage.firstCard).toBeVisible();
       expect(await seriesIndexPage.cards.count()).toBeGreaterThan(0);
+    });
+
+    await test.step("check a series previews beside the list", async () => {
+      await expect(seriesIndexPage.previewName).toBeVisible();
+    });
+  });
+
+  test("open a series beside the list", async ({
+    seriesIndexPage,
+    seriesPage,
+  }) => {
+    await test.step("filter to one series and open it", async () => {
+      await seriesIndexPage.goto();
+      await seriesIndexPage.filterBy("Pioneers");
+      await seriesIndexPage.openCard("Pioneers");
+    });
+
+    await test.step("check the pane changed and the list stayed", async () => {
+      await expect(seriesPage.heading).toHaveText("Pioneers");
+      await expect(seriesIndexPage.filterField).toHaveValue("Pioneers");
+      await expect(seriesIndexPage.card("Pioneers")).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+    });
+  });
+
+  test("leave progress unknown when it fails to load", async ({
+    seriesIndexPage,
+  }) => {
+    await test.step("open the index with progress failing", async () => {
+      await seriesIndexPage.failReadingProgress();
+      await seriesIndexPage.goto();
+      await expect(seriesIndexPage.firstCard).toBeVisible();
+    });
+
+    await test.step("check nothing claims the reader read nothing", async () => {
+      await expect(seriesIndexPage.readingFilterButton).toBeDisabled();
+      await expect(seriesIndexPage.firstRowBar).toHaveAttribute(
+        "data-state",
+        "unknown",
+      );
+    });
+
+    await test.step("check a series still previews", async () => {
+      await expect(seriesIndexPage.previewName).toBeVisible();
     });
   });
 
@@ -181,21 +229,44 @@ test.describe("series index", () => {
     await test.step("open the series index", async () => {
       await seriesIndexPage.goto();
       initialCount = await seriesIndexPage.cards.count();
+      expect(initialCount).toBeGreaterThan(1);
     });
 
     await test.step("filter to one series", async () => {
       await seriesIndexPage.filterBy("Pioneers");
       await expect
         .poll(() => seriesIndexPage.cards.count(), {
-          message: "the filter left more series cards than before",
+          message: "the filter left every series card",
         })
-        .toBeLessThanOrEqual(initialCount);
+        .toBeLessThan(initialCount);
     });
 
     await test.step("check only matching cards remain", async () => {
       for (const text of await seriesIndexPage.cards.allTextContents()) {
         expect(text.toLowerCase()).toContain("pioneer");
       }
+    });
+  });
+
+  test("jump to the matching section from the letter rail", async ({
+    seriesIndexPage,
+  }) => {
+    await test.step("open the series index", async () => {
+      await seriesIndexPage.goto();
+      // Pioneers is in the fixtures, so the bucket "P" exists.
+      await expect(seriesIndexPage.firstCard).toBeVisible();
+    });
+
+    await test.step("check the letter is a same-page anchor", async () => {
+      await expect(seriesIndexPage.letterLink("P")).toHaveAttribute(
+        "href",
+        "#letter-P",
+      );
+    });
+
+    await test.step("click the letter", async () => {
+      await seriesIndexPage.jumpToLetter("P");
+      await seriesIndexPage.assertJumpedTo("P");
     });
   });
 
@@ -212,8 +283,11 @@ test.describe("series index", () => {
     });
 
     await test.step("click the card", async () => {
+      // Read first, so the URL check needs no fetch after navigating.
+      const path = await seriesIndexPage.firstCardPath();
+      expect(path).toMatch(/^\/series\/\d+$/);
       await seriesIndexPage.openFirstCard();
-      await seriesPage.assertDisplayed();
+      await seriesPage.assertDisplayedFor(path);
     });
   });
 });

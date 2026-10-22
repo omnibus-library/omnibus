@@ -1,14 +1,13 @@
 //! Tests for the author pane's pure helpers: the meta lines and shelving
 //! books by series.
 
-use omnibus_shared::{BookReading, EbookMetadata, ReadStatus};
+use omnibus_shared::{EbookMetadata, ReadStatus};
+
+use crate::pages::browse::test_support::{state, DAY};
 
 use super::hero::hero_meta;
 use super::progress::current_meta;
-use super::shelf::{group_by_series, series_count, shelf_meta};
-use super::BookStates;
-
-const DAY: i64 = 86_400;
+use super::shelf::{group_by_series, series_count};
 
 fn book(uuid: &str, series: Option<(&str, &str)>) -> EbookMetadata {
     EbookMetadata {
@@ -19,24 +18,6 @@ fn book(uuid: &str, series: Option<(&str, &str)>) -> EbookMetadata {
         series_id: series.map(|_| 7),
         ..Default::default()
     }
-}
-
-fn state(
-    uuid: &str,
-    status: ReadStatus,
-    percent: Option<i64>,
-    at: Option<i64>,
-) -> (String, BookReading) {
-    (
-        uuid.into(),
-        BookReading {
-            book_uuid: uuid.into(),
-            status,
-            percent,
-            last_read_at: at,
-            ..Default::default()
-        },
-    )
 }
 
 #[test]
@@ -73,15 +54,6 @@ fn group_by_series_keeps_first_seen_order_and_sets_standalones_apart() {
         series_count(&[book("a", Some(("X", "1"))), book("b", Some(("X", "2")))]),
         1
     );
-}
-
-#[test]
-fn shelf_meta_adds_finished_only_when_there_is_some() {
-    let books = [book("a", None), book("b", None)];
-    let none: BookStates = BookStates::new();
-    assert_eq!(shelf_meta(&books, &none), "2 books");
-    let one: BookStates = [state("a", ReadStatus::Finished, None, Some(1))].into();
-    assert_eq!(shelf_meta(&books, &one), "2 books \u{b7} 1 finished");
 }
 
 #[test]

@@ -74,7 +74,7 @@ fn index_sort_default_is_name() {
 fn discovery_prefs_round_trips_through_json() {
     let prefs = DiscoveryPrefs {
         authors_sort: BrowseSort::Recent,
-        series_sort: IndexSort::Name,
+        series_sort: BrowseSort::Recent,
         shelves_sort: IndexSort::BookCount,
     };
     let raw = serde_json::to_string(&prefs).expect("serialize");

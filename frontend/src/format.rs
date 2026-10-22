@@ -2,8 +2,8 @@
 //! `book_files` pickers, [`plural`] / [`plural_noun`] / [`count_label`] for
 //! counted nouns,
 //! [`facet_query`] for taxonomy refinements, and the
-//! [`format_date_short`]/[`format_date_month_year`]/[`format_year`] trio that
-//! every reader-facing date goes through. Pure functions with no
+//! [`format_date_short`]/[`format_year`] pair that every reader-facing date
+//! goes through. Pure functions with no
 //! Dioxus/renderer state, so they unit-test easily and render identically on
 //! SSR and WASM (rule 07).
 
@@ -277,25 +277,6 @@ pub fn instant_secs(raw: &str) -> Option<i64> {
 /// `0101-01-01` placeholder as the year `0101`.
 pub fn format_year(raw: &str) -> Option<String> {
     render_date(raw, |d| d.year.to_string())
-}
-
-/// Format a stored date string as `"May 2016"` for a series card — coarser
-/// than [`format_date_short`] since a card only has room for month + year,
-/// on the same abbreviated month names. Same absent/sentinel handling.
-pub fn format_date_month_year(raw: &str) -> String {
-    format_date_month_year_opt(raw).unwrap_or_else(|| EM_DASH.to_string())
-}
-
-/// [`format_date_month_year`]'s answer, or `None` where that would render an
-/// em dash — for the series card eyebrow, which drops the whole date slot
-/// (its `·` separator included) rather than trailing a bare dash. Mirrors
-/// [`format_date_short_opt`]; without it a sentinel/absent date renders `· —`
-/// beside a `None` date's nothing, so two equally-dateless books disagree.
-pub fn format_date_month_year_opt(raw: &str) -> Option<String> {
-    render_date(raw, |d| match d.month.and_then(month_name) {
-        Some(month) => format!("{month} {}", d.year),
-        None => d.year.to_string(),
-    })
 }
 
 /// `text` with its first letter upper-cased, to open a sentence.

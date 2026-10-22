@@ -3,24 +3,33 @@ import { TopNavComponent } from "../components/TopNavComponent";
 import { expect } from "../fixtures/test";
 import { BasePage } from "./BasePage";
 
-/** One series at `/series/:id`, listing its books in order. */
+/** One series at `/series/:id`: its pane beside the series list. */
 export class SeriesPage extends BasePage {
   protected readonly urlPattern = /\/series\/\d+$/;
 
   readonly topNav: TopNavComponent;
 
+  /** The series' name: an h2, since the list beside it owns the page's h1. */
   readonly heading: Locator;
-  readonly bookCountLabel: Locator;
+  /** "5 books · by …", the line under the name. */
+  readonly meta: Locator;
+  readonly readingStrip: Locator;
+  readonly showInLibraryButton: Locator;
+  /** The link back to the list, drawn only where the phone layout hides it. */
+  readonly backLink: Locator;
   readonly bookCards: Locator;
   readonly firstCardNumberLabel: Locator;
 
   constructor(page: Page) {
     super(page);
     this.topNav = new TopNavComponent(page);
-    this.heading = page.getByRole("heading", { level: 1 });
-    this.bookCountLabel = page.getByText(/in library/);
-    this.bookCards = page.locator("article.series-card");
-    this.firstCardNumberLabel = this.bookCards.first().getByText("Book #1");
+    this.heading = page.getByTestId("series-name");
+    this.meta = page.getByTestId("series-meta");
+    this.readingStrip = page.getByTestId("series-reading");
+    this.showInLibraryButton = page.getByTestId("series-show-in-library");
+    this.backLink = page.getByTestId("series-back");
+    this.bookCards = page.getByTestId("series-pane").getByRole("listitem");
+    this.firstCardNumberLabel = this.bookCards.first().getByText(/^Book 1\b/);
   }
 
   protected get readyLocator(): Locator {
@@ -31,26 +40,35 @@ export class SeriesPage extends BasePage {
     await this.openAndSettle(`/series/${seriesId}`);
   }
 
-  /** Clicks the card at its "Book #1" label, so the click reaches the stretched-link overlay (the label itself is covered). */
+  /** Clicks the first cover's "Book 1" caption, which opens the book like the rest of it. */
   async openFirstBookFromItsNumber(): Promise<void> {
-    const card = this.bookCards.first();
-    const cardBox = await card.boundingBox();
-    const labelBox = await this.firstCardNumberLabel.boundingBox();
-    if (!cardBox || !labelBox) {
-      throw new Error("expected the card and label to have a bounding box");
-    }
-    await card.click({
-      position: {
-        x: labelBox.x + labelBox.width / 2 - cardBox.x,
-        y: labelBox.y + labelBox.height / 2 - cardBox.y,
-      },
-    });
+    await this.firstCardNumberLabel.click();
   }
 
-  /** Checks the series page rendered: its heading and the book count. */
+  async goBackToList(): Promise<void> {
+    await this.backLink.click();
+  }
+
+  /** Opens the library on `name`'s books, once its first page answers for them. */
+  async showInLibrary(name: string): Promise<void> {
+    const answered = this.page.waitForResponse(
+      (res) =>
+        res.url().includes("/api/rpc/ebooks/page") &&
+        (res.request().postData() ?? "").includes(name),
+    );
+    await this.showInLibraryButton.click();
+    await answered;
+  }
+
+  /** Checks the page is the series at `path`, such as `/series/12`. */
+  async assertDisplayedFor(path: string): Promise<void> {
+    await this.assertDisplayedAt(new RegExp(`${path}$`));
+  }
+
+  /** Checks the series page rendered: its name and the book count. */
   async assertShowsSeries(name: string): Promise<void> {
     await this.assertDisplayed();
     await expect(this.heading).toContainText(name);
-    await expect(this.bookCountLabel).toBeVisible();
+    await expect(this.meta).toContainText("book");
   }
 }

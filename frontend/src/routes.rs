@@ -61,10 +61,12 @@ pub enum Route {
     #[route("/authors/:id")]
     AuthorDetail { id: i64 },
     #[end_layout]
+    #[layout(SeriesShell)]
     #[route("/series")]
     SeriesIndex {},
     #[route("/series/:id")]
     SeriesDetail { id: i64 },
+    #[end_layout]
     #[route("/stats?:user")]
     Stats { user: Option<i64> },
     #[route("/stats/chart")]
@@ -452,21 +454,30 @@ pub fn AuthorsIndex() -> Element {
     rsx! { AuthorsIndexPage {} }
 }
 
-/// Route target for `/series/:id` — single series discovery page.
+/// Layout for both series routes: the series list stays mounted beside
+/// their pane, so moving between series keeps its scroll and filter.
 #[component]
-pub fn SeriesDetail(id: i64) -> Element {
+pub fn SeriesShell() -> Element {
+    let routed = match dioxus_router::use_route::<Route>() {
+        Route::SeriesDetail { id } => Some(id),
+        _ => None,
+    };
     rsx! {
-        ScreenLayout { SeriesPage { id } }
+        ScreenLayout { SeriesBrowser { routed } }
     }
 }
 
-/// Route target for `/series` — browse-all series index.
+/// Route target for `/series/:id` — one series' pane beside the list.
+#[component]
+pub fn SeriesDetail(id: i64) -> Element {
+    rsx! { SeriesPage { id } }
+}
+
+/// Route target for `/series` — the list, previewing a default series.
 #[component]
 pub fn SeriesIndex() -> Element {
     use_page_title(|| Some("Series".into()));
-    rsx! {
-        ScreenLayout { SeriesIndexPage {} }
-    }
+    rsx! { SeriesIndexPage {} }
 }
 
 /// Route target for `/stats` — the reading-stats page. `user` (`?user=`)

@@ -1954,69 +1954,9 @@ html, body { overscroll-behavior: none; }
   gap: 20px 16px;
 }
 
-/* Series header (no avatar, simpler layout) */
-.disc-series-header {
-  padding: 48px 0 32px;
-}
-.disc-series-head-row {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 32px;
-  margin-top: 12px;
-}
-
-/* Series card grid */
-.series-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-  gap: 20px;
-}
-@media (max-width: 800px) {
-  .series-cards { grid-template-columns: 1fr; }
-}
-.series-card {
-  display: grid;
-  grid-template-columns: 120px 1fr;
-  gap: 20px;
-  align-items: flex-start;
-  padding: 22px;
-  position: relative;
-}
-@media (max-width: 480px) {
-  .series-card { grid-template-columns: 80px 1fr; gap: 12px; padding: 14px; }
-}
-.series-card-cover { width: 120px; }
-@media (max-width: 480px) { .series-card-cover { width: 80px; } }
-.series-card-info { min-width: 0; }
-.series-card-title {
-  font-size: 24px;
-  margin-top: 8px;
-  color: var(--ink-0);
-  --lh: 1.2; line-height: var(--lh);
-}
-.series-card-title a {
-  color: inherit;
-  text-decoration: none;
-}
-@media (hover: hover) { .series-card-title a:hover { text-decoration: underline; } }
-.series-card-hit::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-}
-.series-card-desc {
-  margin-top: 12px;
-  font-size: 13.5px;
-  color: var(--ink-1);
-  line-height: 1.5;
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-/* ===== F1.12 Browse index pages — /authors and /series ===== */
+/* ===== Browse index chrome — the shelves index's header and toolbar =====
+   The letter strip and cards below served the old /authors and /series
+   indexes; the React client's copies of those pages still wear them. */
 
 .idx-page { padding-bottom: 60px; }
 
@@ -2219,54 +2159,8 @@ a.idx-letter-on:focus-visible {
 }
 .idx-card-name-rest { color: var(--ink-1); }
 
-.idx-card-stats {
-  margin-top: 12px;
-  display: flex;
-  gap: 18px;
-  align-items: center;
-}
-.idx-stat-label {
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-.idx-stat-value {
-  font-family: var(--serif); font-weight: 600;
-  font-size: 21px;
-  line-height: 1;
-  margin-top: 3px;
-  color: var(--ink-0);
-}
-
-/* Series grid — two-column on wide, single on narrow */
-.idx-series-grid {
-  padding-top: 24px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 16px;
-}
-
-.idx-card-series {
-  grid-template-columns: 8px 1fr;
-  gap: 18px;
-}
-.idx-series-spine {
-  width: 8px;
-  align-self: stretch;
-  border-radius: 4px;
-  background: var(--accent);
-  opacity: 0.85;
-  min-height: 64px;
-}
-.idx-series-author {
-  margin-top: 6px;
-  font-size: 11.5px;
-  color: var(--ink-2);
-}
-
 /* ===== Shelves index — /shelves (web) =====
-   Rides the /authors + /series chrome above (`.idx-header`, `.idx-toolbar`,
+   Rides the index chrome above (`.idx-header`, `.idx-toolbar`,
    `.idx-btn`) and adds owner chips, owner-grouped sections, and shelf cards
    whose member covers stand on a ledge lit in the shelf's accent. */
 .shv-head-row {
@@ -4938,20 +4832,13 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 }
 @media (hover: hover) { .m-icon-btn:hover { border-color: var(--accent); color: var(--ink-0); } }
 
-/* Discovery pages (/authors, /series + details) inside the native shell.
-   `.screen` (mobile-only wrapper) already carries the safe-area top padding,
-   so the web-sized hero/header paddings stack into a large blank band —
-   collapse them to the library screen's rhythm. The `.disc-back` button is
-   emitted by the mobile shell alone (see `components/back_link.rs`); the
-   hidden base rule stays so a stray instance can never paint outside
-   `.screen`, and is declared after `.m-icon-btn` so it wins their
-   specificity tie. */
-.disc-back { display: none; }
-.screen .disc-back { display: grid; margin-bottom: 12px; }
+/* Discovery pages inside the native shell. `.screen` (mobile-only wrapper)
+   already carries the safe-area top padding, so the web-sized hero/header
+   paddings stack into a large blank band — collapse them to the library
+   screen's rhythm. */
 .screen .idx-header { padding: 4px 0 16px; }
 .screen .disc-hero { padding: 4px 0 20px; }
 .screen .disc-hero-grid { margin-top: 12px; }
-.screen .disc-series-header { padding: 4px 0 20px; }
 
 .m-head { padding: 4px 2px 8px; }
 .m-head-top { display: flex; align-items: center; justify-content: space-between; min-height: 32px; }

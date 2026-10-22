@@ -75,11 +75,6 @@ pub use cover_tile::{CoverTile, CoverTileKind};
 // line and every settings card's save/clear/test result line.
 pub mod credential_card;
 
-// The mobile-only `←` "back to index" link shared by the series/author
-// detail headers.
-pub mod back_link;
-pub use back_link::disc_back_link;
-
 // Shared "pick books from the whole library" picker — server-backed, used by
 // the create-shelf hand-picked body and the shelf page's "add books" modal.
 pub mod library_picker;

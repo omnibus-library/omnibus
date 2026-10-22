@@ -68,10 +68,14 @@ pub struct ListCopy {
     pub noun: &'static str,
     /// The test-id prefix: `{testid}-filter`, `{testid}-sort-name`, …
     pub testid: &'static str,
+    /// The filter's placeholder text.
     pub filter_placeholder: &'static str,
+    /// The filter's accessible name.
     pub filter_label: &'static str,
     /// The name sort's button label, such as "Surname".
     pub name_sort: &'static str,
+    /// What the list says when it has no rows at all.
+    pub empty: &'static str,
 }
 
 /// Fetches the reader's progress per row, keyed by `id`, on mount and on
@@ -167,6 +171,7 @@ pub fn ListHead(
         filter_placeholder,
         filter_label,
         name_sort,
+        ..
     } = copy;
     let sorts = [
         (BrowseSort::Name, name_sort, "name"),
@@ -260,7 +265,12 @@ pub fn list_body<T>(view: ListView<'_, T>, row: impl Fn(&T) -> Element) -> Eleme
         error,
         any,
     } = view;
-    let ListCopy { noun, testid, .. } = copy;
+    let ListCopy {
+        noun,
+        testid,
+        empty,
+        ..
+    } = copy;
     let show_rail = sort == BrowseSort::Name && !waiting && !groups.letters.is_empty();
     rsx! {
         div { class: "au-list-body",
@@ -271,7 +281,7 @@ pub fn list_body<T>(view: ListView<'_, T>, row: impl Fn(&T) -> Element) -> Eleme
                     p { class: "au-list-note error", role: "alert", "Couldn\u{2019}t load {noun}: {msg}" }
                 } else if groups.filtered.is_empty() {
                     p { class: "au-list-note subtitle",
-                        if any { "No {noun} match." } else { "No {noun} yet \u{2014} the library is empty." }
+                        if any { "No {noun} match." } else { "{empty}" }
                     }
                 } else if sort == BrowseSort::Name {
                     for (letter, group) in groups.letters.iter() {

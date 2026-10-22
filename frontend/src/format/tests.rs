@@ -190,54 +190,6 @@ fn format_year_agrees_with_format_date_short_on_whether_a_date_exists() {
     }
 }
 
-#[test]
-fn format_date_month_year_renders_month_and_year() {
-    assert_eq!(
-        format_date_month_year("2016-05-02T21:00:00+00:00"),
-        "May 2016"
-    );
-}
-
-#[test]
-fn format_date_month_year_falls_back_to_the_bare_year_with_no_month() {
-    assert_eq!(format_date_month_year("2016"), "2016");
-}
-
-#[test]
-fn format_date_month_year_renders_an_em_dash_for_the_sentinel() {
-    assert_eq!(
-        format_date_month_year("0101-01-01T00:00:00+00:00"),
-        "\u{2014}"
-    );
-}
-
-#[test]
-fn format_date_month_year_renders_an_em_dash_for_an_empty_string() {
-    assert_eq!(format_date_month_year(""), "\u{2014}");
-}
-
-#[test]
-fn format_date_month_year_opt_is_some_for_a_real_date() {
-    assert_eq!(
-        format_date_month_year_opt("2016-05-02"),
-        Some("May 2016".to_string())
-    );
-    assert_eq!(format_date_month_year_opt("2016"), Some("2016".to_string()));
-}
-
-#[test]
-fn format_date_month_year_opt_is_none_for_absent_and_sentinel_dates() {
-    // The series card drops the whole slot on `None`, so a sentinel and a
-    // truly-absent date must both answer `None` — otherwise one renders `· —`
-    // and the other nothing (#2294, #2360).
-    assert_eq!(format_date_month_year_opt(""), None);
-    assert_eq!(format_date_month_year_opt("circa 1850"), None);
-    assert_eq!(
-        format_date_month_year_opt("0101-01-01T00:00:00+00:00"),
-        None
-    );
-}
-
 // Regression for #2504: `Science Fiction & Fantasy` used to become four
 // facets — `tag:Science tag:Fiction tag:& tag:Fantasy` — AND-ed, which is a
 // different question from the one the reader clicked.

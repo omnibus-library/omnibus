@@ -41,6 +41,7 @@ const COPY: ListCopy = ListCopy {
     filter_placeholder: "Filter by name\u{2026}",
     filter_label: "Filter authors by name",
     name_sort: "Surname",
+    empty: "No authors yet \u{2014} the library is empty.",
 };
 
 /// What the layout shares with the pane below it: `/authors`' [`Preview`],
