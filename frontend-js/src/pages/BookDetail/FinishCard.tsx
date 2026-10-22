@@ -11,15 +11,8 @@ import { Cover } from "../../components/Cover/Cover";
 import { ChevronRightGlyph, PlusGlyph } from "../../components/Glyphs/Glyphs";
 import { NewJournalEntryModal } from "./JournalComposer";
 import { highlightsQuery, insightsQuery, reviewsQuery } from "./queries";
+import { StarShape } from "./StarPicker";
 import { finishTotals } from "./stats";
-
-function StarMark() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 2.8 14.8 8.6l6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z" />
-    </svg>
-  );
-}
 
 /** What the next book in the series says about itself: its place in the series it follows. */
 const placeInSeries = (next: Book, series: string) =>
@@ -78,7 +71,7 @@ export function FinishCard({
     target = (
       <button type="button" className="bp-finish-next" onClick={onLeaveReview}>
         <span className="bp-finish-icon">
-          <StarMark />
+          <StarShape />
         </span>
         <span className="bp-finish-copy">
           <span className="bp-finish-title">Leave a review</span>

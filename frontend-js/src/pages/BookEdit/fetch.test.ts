@@ -11,7 +11,7 @@ describe("fetchRequest", () => {
     ["thirteen digits", "9780134685991", "9780134685991"],
     ["thirteen digits with hyphens", "978-0-13-468599-1", "9780134685991"],
     ["ten digits", "0134685997", "0134685997"],
-    ["ten characters ending in X", "013468599x", "013468599x"],
+    ["ten characters ending in X", "013468599x", "013468599X"],
   ])("asks by isbn for %s", (_shape, query, isbn) => {
     expect(fetchRequest(query, "Sora Inkwell")).toEqual({
       query: "",

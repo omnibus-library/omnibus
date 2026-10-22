@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import {
   type EditionSearchRequest,
-  type EditionSearchResponse,
   inStableOrder,
   type MetaForm,
   PROVIDERS,
@@ -17,10 +16,6 @@ import { SourceSummary } from "./EditionPicker";
 import { applyField, coverSrc, EMPTY, labelToId } from "./editionFields";
 import { type DiffRow, diffRows, fetchRequest, onePerProvider } from "./fetch";
 import { useHydrated } from "./useHydrated";
-
-type Found = Pick<EditionSearchResponse, "sources"> & {
-  editions: ProviderEdition[];
-};
 
 /** "Pierce Brown · Del Rey 2014 · 382 pages": the parts an edition has, in that order. */
 function summary(edition: ProviderEdition) {
@@ -168,7 +163,7 @@ export function FetchView({
       return {
         sources: found.sources,
         editions: onePerProvider(inStableOrder(found.editions, req.query)),
-      } satisfies Found;
+      };
     },
   });
   const ask = (text: string) => {

@@ -4,6 +4,7 @@ import {
   type MetaForm,
   type ProviderEdition,
 } from "../../api";
+import { isbnValue } from "../BookDetail/identifiers";
 import {
   currentValue,
   differs,
@@ -22,10 +23,8 @@ export function fetchRequest(
 ): EditionSearchRequest | null {
   const text = query.trim();
   if (!text) return null;
-  const digits = text.replace(/[\s-]/g, "");
-  return /^(\d{13}|\d{9}[\dXx])$/.test(digits)
-    ? editionRequest("", "", digits)
-    : editionRequest(text, author, "");
+  const isbn = isbnValue(text);
+  return isbn ? editionRequest("", "", isbn) : editionRequest(text, author, "");
 }
 
 /** The first edition each provider returned, in the order given: the best match from every source. */

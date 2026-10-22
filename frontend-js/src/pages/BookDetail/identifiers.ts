@@ -104,7 +104,7 @@ function labelFor({ scheme, value }: Identifier): [string, number] {
 
 // The value's ISBN shape (13 digits, or 9 plus a digit or X) after dropping a
 // `urn:isbn:` / `isbn:` prefix. No checksum, so a mistyped ISBN still collapses.
-function isbnValue(value: string): string | null {
+export function isbnValue(value: string): string | null {
   const lower = value.trim().toLowerCase();
   const bare = lower.replace(/^(urn:isbn:|isbn:|isbn )/, "");
   const cleaned = stripped(bare);
