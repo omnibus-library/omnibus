@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   type BookUuid,
   deleteJournalEntry,
@@ -51,6 +51,8 @@ function EditForm({
     },
   });
   const error = save.error?.message ?? uploadError;
+  // Opened in place, so the editor takes focus, as a dialog's field would.
+  useEffect(() => editor.current?.focusEnd(), []);
   return (
     <>
       <div className="bd-journal-toolbar-row">
@@ -106,6 +108,14 @@ export function JournalEntryCard({
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // Edit unmounts while the editor is open, so the editor can't hand focus back to it; the card does, once it is mounted again.
+  const editButton = useRef<HTMLButtonElement>(null);
+  const refocusEdit = useRef(false);
+  useEffect(() => {
+    if (editing || !refocusEdit.current) return;
+    refocusEdit.current = false;
+    editButton.current?.focus();
+  }, [editing]);
   const body = useRef<HTMLDivElement>(null);
   const overflowing = useClampOverflow(
     body,
@@ -155,7 +165,10 @@ export function JournalEntryCard({
           <EditForm
             uuid={uuid}
             entry={entry}
-            onDone={() => setEditing(false)}
+            onDone={() => {
+              refocusEdit.current = true;
+              setEditing(false);
+            }}
           />
         ) : (
           <>
@@ -192,6 +205,7 @@ export function JournalEntryCard({
                     </Button>
                   )}
                   <Button
+                    ref={editButton}
                     variant="ghost"
                     size="sm"
                     data-testid="journal-edit"

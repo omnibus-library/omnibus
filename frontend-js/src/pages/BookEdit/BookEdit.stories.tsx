@@ -1893,3 +1893,45 @@ export const DeepLinkCloseFocusesMoreButton: Story = {
     );
   },
 };
+
+export const SheetButtonsAreTouchSizedOnAPhone: Story = {
+  globals: { viewport: { value: "phone", isRotated: false } },
+  parameters: {
+    ownRouter: true,
+    viewport: {
+      options: {
+        phone: { name: "Phone", styles: { width: "390px", height: "844px" } },
+      },
+    },
+  },
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+    await userEvent.click(dialog.getByRole("tab", { name: "Artwork" }));
+
+    const apply = await dialog.findByRole("button", { name: "Apply" });
+
+    await waitFor(() =>
+      expect(apply.getBoundingClientRect().height).toBeGreaterThanOrEqual(44),
+    );
+  },
+};
+
+export const SheetInputsFocusInInk: Story = {
+  globals: { theme: "light" },
+  play: async ({ canvas }) => {
+    const dialog = await sheet(canvas);
+    const title = await dialog.findByLabelText(/^Title/);
+
+    title.focus();
+
+    // A fixed ink, since the book's own colour may be too pale for a light sheet.
+    const probe = document.createElement("span");
+    probe.style.color = "var(--ink-0)";
+    title.parentElement?.append(probe);
+    const ink = getComputedStyle(probe).color;
+    probe.remove();
+    // The border eases in over 160 ms.
+    await waitFor(() => expect(getComputedStyle(title).borderColor).toBe(ink));
+    await expect(getComputedStyle(title).caretColor).toBe(ink);
+  },
+};

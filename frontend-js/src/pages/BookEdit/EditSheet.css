@@ -181,7 +181,7 @@
   background: var(--bg-0);
   color: var(--ink-0);
   font: 400 16px / 1.4 var(--sans);
-  caret-color: var(--bp-accent-text);
+  caret-color: var(--ink-0);
   transition:
     border-color 160ms ease-out,
     box-shadow 160ms ease-out;
@@ -206,11 +206,12 @@
 .es-sheet .me-textarea.me-input-edited {
   border-color: color-mix(in oklch, var(--ink-0) 50%, transparent);
 }
+/* In ink, not the book's colour, which may be too pale to see on a light sheet. */
 .es-sheet .me-input:focus,
 .es-sheet .me-textarea:focus {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 32%, transparent);
+  border-color: var(--ink-0);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ink-0) 25%, transparent);
 }
 .es-sheet .me-input[aria-invalid="true"],
 .es-sheet .me-textarea[aria-invalid="true"] {
@@ -705,6 +706,9 @@
   }
   .es-idents > div {
     grid-template-columns: 96px minmax(0, 1fr);
+  }
+  .es-sheet .btn.sm {
+    min-height: 44px;
   }
   .es-sheet .btn.es-fetch-open {
     order: 1;

@@ -104,9 +104,13 @@
   justify-content: center;
   padding: 0;
 }
-.bp-quote-actions .btn:focus-visible,
-.bp-qc-actions .btn:focus-visible {
+.bp-quote-actions .btn:focus-visible {
   outline: 2px solid var(--ink-0);
+  outline-offset: 2px;
+}
+/* The back is the book's deep accent in every theme, so its ring is the cream its text is. */
+.bp-qc-actions .btn:focus-visible {
+  outline: 2px solid var(--bp-cream);
   outline-offset: 2px;
 }
 
@@ -173,7 +177,7 @@
   border-radius: 999px;
   background: var(--bp-fill);
   color: var(--ink-1);
-  font: 600 12px / 1.5 var(--sans);
+  font: 600 13px / 1.5 var(--sans);
   vertical-align: 1px;
 }
 .bp-entry-tag.is-draft {
@@ -243,7 +247,11 @@
     font-size: 22px;
   }
   .bp-quote-actions .btn.sm,
-  .bp-qc-actions .btn.sm {
+  .bp-qc-actions .btn.sm,
+  .bp-entry-actions .btn.sm {
+    min-height: 44px;
+  }
+  .bp-entry-more {
     min-height: 44px;
   }
 }

@@ -1,4 +1,10 @@
+:root {
+  /* The bar's own height, which full-screen overlays on a page begin beneath. */
+  --topbar-h: 65px;
+}
 .atrium-topbar {
+  box-sizing: border-box;
+  min-height: var(--topbar-h);
   display: flex;
   align-items: center;
   gap: 18px;
@@ -77,6 +83,9 @@
   white-space: nowrap;
 }
 @media (max-width: 720px) {
+  :root {
+    --topbar-h: 61px;
+  }
   .atrium-topbar {
     padding: 12px 16px;
     gap: 7px;

@@ -519,3 +519,42 @@ export const WishlistOnlyBookHasNoJournalYet: Story = {
     ).not.toBeInTheDocument();
   },
 };
+
+export const EditFocusesTheEditorAndGivesFocusBack: Story = {
+  beforeEach({ msw }) {
+    msw.use(...journalHandlers(ENTRIES, ADA));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const card = (await cards(canvas))[0] as HTMLElement;
+    const edit = within(card).getByTestId("journal-edit");
+    await userEvent.click(edit);
+
+    const editor = within(card).getByRole("textbox", {
+      name: "Edit journal entry",
+    });
+    await waitFor(() => expect(editor).toHaveFocus());
+
+    await userEvent.click(within(card).getByRole("button", { name: "Cancel" }));
+
+    // The button that opened the editor is back, and focus with it.
+    const back = within(card).getByTestId("journal-edit");
+    await waitFor(() => expect(back).toHaveFocus());
+  },
+};
+
+export const SavingAnEditGivesFocusBackToEdit: Story = {
+  beforeEach({ msw }) {
+    msw.use(...journalHandlers(ENTRIES, ADA));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const card = (await cards(canvas))[0] as HTMLElement;
+    await userEvent.click(within(card).getByTestId("journal-edit"));
+    await within(card).findByRole("textbox", { name: "Edit journal entry" });
+
+    await userEvent.click(within(card).getByTestId("journal-edit-save"));
+
+    await waitFor(() =>
+      expect(within(card).getByTestId("journal-edit")).toHaveFocus(),
+    );
+  },
+};

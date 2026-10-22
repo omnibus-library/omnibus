@@ -57,7 +57,7 @@
   color: var(--ink-0);
 }
 .bp-root .bp-files .bd-export-caret {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-1);
 }
 .bp-root .bp-files .btn:focus-visible,
@@ -215,5 +215,13 @@
   .bp-root .bp-copies .btn,
   .bp-root .bp-curator .btn {
     min-height: 44px;
+  }
+  .bp-add {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .bp-root .bdmq-synclink {
+    height: 44px;
   }
 }

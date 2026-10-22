@@ -32,6 +32,7 @@
 }
 .toast-action,
 .toast-dismiss {
+  flex: none;
   display: inline-grid;
   place-items: center;
   min-height: 32px;
@@ -76,7 +77,20 @@
 @media (max-width: 720px) {
   .toast {
     bottom: calc(84px + env(safe-area-inset-bottom));
+    /* left: 50% leaves half the screen to fit in; size to the words, up to the edges. */
+    width: max-content;
     max-width: calc(100% - 32px);
+  }
+  /* Fingers: the buttons are 44 tall, and the pill hugs them. */
+  .toast[data-actionable] {
+    padding-block: 4px;
+  }
+  .toast-action,
+  .toast-dismiss {
+    min-height: 44px;
+  }
+  .toast-dismiss {
+    width: 44px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

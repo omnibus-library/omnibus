@@ -23,7 +23,8 @@
   .bp-root {
     /* Fixed lightness keeps white text readable whatever the cover's accent. */
     --bp-accent-deep: oklch(from var(--accent) 0.44 c h);
-    --bp-accent-fill: oklch(from var(--accent) 0.58 c h);
+    /* White on this clears 4.5:1 for every hue: the worst is full-chroma green (hue 142), 5.1:1 at this lightness. */
+    --bp-accent-fill: oklch(from var(--accent) 0.52 c h);
     --bp-accent-text: oklch(from var(--accent) 0.8 c h);
   }
 }
@@ -48,6 +49,7 @@
   --ink-1: oklch(0.82 0.01 75);
   --ink-2: oklch(0.62 0.012 70);
   --ink-3: oklch(0.48 0.012 70);
+  --bad: oklch(0.72 0.16 25);
   color-scheme: dark;
   position: relative;
   isolation: isolate;
@@ -282,6 +284,7 @@
   color: var(--ink-1);
 }
 .bp-info .bp-title {
+  overflow-wrap: anywhere;
   --lh: 0.92;
   font: 600 84px / var(--lh) var(--serif);
   letter-spacing: -0.015em;
@@ -346,6 +349,8 @@ button.bp-byline-series {
 .bp-reader {
   display: flex;
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
   gap: 8px;
   color: var(--ink-1);
   font-size: 15px;
@@ -361,7 +366,7 @@ button.bp-byline-series {
   border-radius: 50%;
   background: var(--bg-3);
   color: var(--ink-0);
-  font: 600 11px / 1 var(--sans);
+  font: 600 13px / 1 var(--sans);
 }
 .bp-avatar-photo {
   width: 100%;
@@ -369,9 +374,11 @@ button.bp-byline-series {
   object-fit: cover;
 }
 .bp-reader-name {
-  min-width: 64px;
+  min-width: 0;
+  overflow: hidden;
   color: var(--ink-0);
   font-weight: 600;
+  text-overflow: ellipsis;
 }
 .bp-reader-score {
   font-variant-numeric: tabular-nums;
@@ -800,9 +807,9 @@ button.bp-byline-series {
   inset: 0;
   background: linear-gradient(
     90deg,
-    var(--accent) 0,
-    var(--accent) calc(var(--bp-progress) - 36px),
-    color-mix(in oklch, var(--accent) 0%, transparent)
+    var(--bp-accent-fill) 0,
+    var(--bp-accent-fill) calc(var(--bp-progress) - 36px),
+    color-mix(in oklch, var(--bp-accent-fill) 0%, transparent)
       calc(var(--bp-progress) + 36px)
   );
   transition: --bp-progress 900ms var(--ease-out);
@@ -935,7 +942,11 @@ button.bp-byline-series {
 .bp-stage .shd-menu-item:hover,
 .bp-stage .shd-menu-item:focus-visible {
   background: var(--bp-fill);
-  outline: none;
+}
+/* A line, not a change of background, so it also shows on the checked item. */
+.bp-stage .shd-menu-item:focus-visible {
+  outline: 2px solid var(--ink-0);
+  outline-offset: -2px;
 }
 .bp-stage .shd-menu-item[aria-checked="true"] {
   background: color-mix(in oklch, var(--accent) 18%, transparent);
@@ -943,8 +954,12 @@ button.bp-byline-series {
 .bp-stage .shd-menu-item[aria-checked="true"] .shd-menu-icon {
   color: var(--bp-accent-text);
 }
-.bp-stage .shd-menu-item--danger {
+.bp-stage .shelf-menu-item--danger {
   color: var(--bad);
+}
+.bp-stage .shd-menu-note {
+  color: var(--ink-2);
+  font-size: 13px;
 }
 .bp-stage .shd-menu-icon svg {
   width: 20px;
@@ -1284,6 +1299,24 @@ button.bp-byline-series {
     padding-top: 58px;
     padding-bottom: 48px;
   }
+  .bp-section-head {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .bp-entry {
+    padding: 18px 20px;
+  }
+  /* Phone targets are fingers: the row's chevron is as big as one, the row itself no taller for it. */
+  .bp-reader-go {
+    width: 44px;
+    height: 44px;
+    margin: -6px -6px -6px -8px;
+  }
+  /* Stacked under the card, the ring keeps to its edges. */
+  .bp-finish-next:focus-visible {
+    border-radius: 0;
+    outline-offset: 2px;
+  }
 }
 
 /* Reduced motion: every change still happens, instantly. */
@@ -1305,15 +1338,5 @@ button.bp-byline-series {
   }
   .bp-burst {
     display: none !important;
-  }
-}
-
-@media (max-width: 720px) {
-  .bp-section-head {
-    flex-wrap: wrap;
-    row-gap: 4px;
-  }
-  .bp-entry {
-    padding: 18px 20px;
   }
 }

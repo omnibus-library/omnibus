@@ -166,3 +166,30 @@ export const AnActionToastTakesFocusAndGivesItBack: Story = {
     await waitFor(() => expect(opener).toHaveFocus());
   },
 };
+
+export const ActionToastButtonsAreTouchSizedOnAPhone: Story = {
+  globals: { viewport: { value: "phone", isRotated: false } },
+  parameters: {
+    viewport: {
+      options: {
+        phone: { name: "Phone", styles: { width: "390px", height: "844px" } },
+      },
+    },
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Show with Undo" }),
+    );
+
+    const undo = await canvas.findByRole("button", { name: "Undo" });
+    const dismiss = canvas.getByRole("button", { name: "Dismiss" });
+    for (const button of [undo, dismiss]) {
+      await expect(
+        Math.min(
+          button.getBoundingClientRect().width,
+          button.getBoundingClientRect().height,
+        ),
+      ).toBeGreaterThanOrEqual(44);
+    }
+  },
+};

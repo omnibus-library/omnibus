@@ -223,7 +223,7 @@
   border-radius: 50%;
   background: none;
   color: var(--ink-1);
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
 }
 @media (hover: hover) {
@@ -360,6 +360,14 @@
 .bp-suggest-row > li {
   scroll-snap-align: start;
 }
+/* A pointer that can drag a scrollbar is shown one, so the row's extent is not a secret. */
+@media (hover: hover) and (pointer: fine) {
+  .bp-suggest-row {
+    scrollbar-color: color-mix(in oklch, var(--ink-0) 30%, transparent)
+      transparent;
+    scrollbar-width: thin;
+  }
+}
 .bp-suggest-pending {
   display: flex;
   align-items: center;
@@ -422,19 +430,6 @@
 .bp-fan:focus-within + .bp-fan-caption {
   opacity: 0;
 }
-@media (hover: none) {
-  .bp-fan .bp-fan-card {
-    left: 0;
-    transform: translateX(calc(var(--i) * var(--spread))) rotate(0);
-  }
-  .bp-fan .bp-tile-title,
-  .bp-fan .bp-tile-meta {
-    opacity: 1;
-  }
-  .bp-fan-caption {
-    display: none;
-  }
-}
 
 @media (max-width: 960px) {
   .bp-split-shelf {
@@ -462,5 +457,41 @@
   .bp-fan {
     --stack: 40px;
     height: 230px;
+  }
+  .bp-chip-remove,
+  .bp-facts-list .me-chip-remove {
+    width: 44px;
+    height: 44px;
+    margin: -7px -8px -7px 0;
+  }
+}
+/* With nothing to hover, the series is a row to scroll, so every book is reachable whatever the width. */
+@media (hover: none) {
+  .bp-fan {
+    display: grid;
+    grid-auto-columns: var(--bp-cover-w);
+    grid-auto-flow: column;
+    gap: var(--bp-cover-gap);
+    height: auto;
+    margin: 0 calc(-1 * var(--bp-gutter));
+    padding: 8px var(--bp-gutter) 4px;
+    overflow-x: auto;
+    scroll-padding-inline: var(--bp-gutter);
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .bp-fan .bp-fan-card {
+    position: relative;
+    top: auto;
+    left: auto;
+    transform: none;
+    scroll-snap-align: start;
+  }
+  .bp-fan .bp-tile-title,
+  .bp-fan .bp-tile-meta {
+    opacity: 1;
+  }
+  .bp-fan-caption {
+    display: none;
   }
 }

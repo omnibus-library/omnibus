@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, Ref } from "react";
 import { Link, type LinkProps } from "react-router";
 import { classes } from "../../classes";
 import "./Button.css";
@@ -26,7 +26,8 @@ function buttonClass({ variant = "default", size = "md", className }: Look) {
   return classes("btn", VARIANT_CLASS[variant], SIZE_CLASS[size], className);
 }
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & Look;
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
+  Look & { ref?: Ref<HTMLButtonElement> };
 
 /** The Atrium `.btn`. `className` adds a screen's own modifier. */
 export function Button({

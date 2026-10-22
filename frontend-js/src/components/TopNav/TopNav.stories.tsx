@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect } from "storybook/test";
+import { expect, waitFor } from "storybook/test";
 import { WIRE_ADA } from "../../testing/wire";
 import { TopNav } from "./TopNav";
 
@@ -41,4 +41,33 @@ export const InASection: Story = {
       "on",
     );
   },
+};
+
+/** The bar's height must be the one `--topbar-h` says, since full-screen overlays begin beneath it. */
+const heightMatchesToken = async (canvas: {
+  getByRole: (r: string, o: { name: string }) => HTMLElement;
+}) => {
+  const bar = canvas.getByRole("navigation", { name: "Primary" });
+  await waitFor(() => {
+    const token = Number.parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--topbar-h"),
+    );
+    expect(bar.getBoundingClientRect().height).toBe(token);
+  });
+};
+
+export const BarIsAsTallAsTheTopbarToken: Story = {
+  play: async ({ canvas }) => heightMatchesToken(canvas),
+};
+
+export const BarIsAsTallAsTheTopbarTokenOnAPhone: Story = {
+  globals: { viewport: { value: "phone", isRotated: false } },
+  parameters: {
+    viewport: {
+      options: {
+        phone: { name: "Phone", styles: { width: "390px", height: "844px" } },
+      },
+    },
+  },
+  play: async ({ canvas }) => heightMatchesToken(canvas),
 };
