@@ -20,7 +20,7 @@ import {
   hydrateHandler,
   providersHandler,
 } from "../../testing/metadataHandlers";
-import type { CoverProps, StagedCover } from "./CoverEditor";
+import type { StagedCover, StagedCoverProps } from "./CoverEditor";
 import { EditionPicker } from "./EditionPicker";
 
 const BOOK = anEditableWireBook();
@@ -87,42 +87,26 @@ const hydrated: string[] = [];
 const fetchedCovers: string[] = [];
 
 /** Stands in for the page: it owns the form and the cover, and shows what a copy did to them. */
-function Picker({ stagedCover = false }: { stagedCover?: boolean }) {
+function Picker() {
   const form = useForm({ defaultValues: formFromBook(BOOK) });
-  const [live, setLive] = useState(toEditableBook(BOOK));
+  const [live] = useState(toEditableBook(BOOK));
   const [staged, setStaged] = useState<StagedCover>({
     source: { kind: "keep" },
     preview: null,
     originalPreview: null,
   });
-  const cover: CoverProps = stagedCover
-    ? {
-        book: live,
-        target: { kind: "staged", staged, onStage: setStaged },
-      }
-    : {
-        book: live,
-        target: { kind: "live", uuid: live.uuid, onApplied: setLive },
-      };
+  const cover: StagedCoverProps = {
+    book: live,
+    target: { kind: "staged", staged, onStage: setStaged },
+  };
   return (
     <>
       <output aria-label="Form values">{JSON.stringify(form.watch())}</output>
-      <output aria-label="Cover">
-        {live.hasCoverOverride ? "replaced" : "scanned"} staged:
-        {staged.source.kind}
-      </output>
+      <output aria-label="Cover">staged:{staged.source.kind}</output>
       <EditionPicker form={form} baseline={formFromBook(BOOK)} cover={cover} />
     </>
   );
 }
-
-const currentCoverSrc = (canvas: {
-  getByTestId: (id: string) => HTMLElement;
-}) =>
-  canvas
-    .getByTestId("mes-row-cover-current")
-    .querySelector("img")
-    ?.getAttribute("src") ?? "";
 
 const meta = {
   title: "Pages/BookEdit/EditionPicker",
@@ -619,10 +603,12 @@ export const ListsOnlyWhatWouldChangeUntilShowAll: Story = {
 
     await expect(showAll).toHaveAttribute("aria-pressed", "true");
     await expect(showAll).toHaveTextContent("Only differences");
-    // Title, Author(s), Publisher, Published, Series, Book #, ISBN-13, ISBN-10, Print Pages, Genres, Description.
+    // Title, Author(s), Publisher, Published, Series, Number in series, ISBN-13, ISBN-10, Print pages, Genres, Description.
     await expect(rows()).toHaveLength(12);
     await expect(canvas.getByTestId("mes-row-author-s-")).toBeInTheDocument();
-    await expect(canvas.getByTestId("mes-row-book--")).toBeInTheDocument();
+    await expect(
+      canvas.getByTestId("mes-row-number-in-series"),
+    ).toBeInTheDocument();
   },
 };
 
@@ -731,46 +717,7 @@ export const GoesBackToTheListAndFinishes: Story = {
   },
 };
 
-export const AppliesTheCoverAtOnceToASavedBook: Story = {
-  play: async ({ canvas, userEvent }) => {
-    await openCompare({ canvas, userEvent });
-    await expect(
-      await canvas.findByTestId("mes-row-cover-note"),
-    ).toHaveTextContent("The cover applies immediately");
-    await userEvent.click(
-      canvas.getByRole("button", {
-        name: "Use the cover from Open Library — saves immediately",
-      }),
-    );
-
-    await expect(await canvas.findByText("Cover updated.")).toBeInTheDocument();
-    await expect(fetchedCovers).toEqual(["https://images.example.com/a.jpg"]);
-    await expect(canvas.getByLabelText("Cover")).toHaveTextContent("replaced");
-    await expect(currentCoverSrc(canvas)).toMatch(/\?v=1$/);
-  },
-};
-
-export const SaysWhyTheCoverWasRefused: Story = {
-  beforeEach({ msw }) {
-    msw.use(...coverWriteHandlers(BOOK, { refuse: "that host is private" }));
-  },
-  play: async ({ canvas, userEvent }) => {
-    await openCompare({ canvas, userEvent });
-    await userEvent.click(await canvas.findByTestId("mes-row-cover-apply"));
-
-    await expect(
-      await canvas.findByText(
-        "Couldn't apply that cover: that host is private",
-      ),
-    ).toBeInTheDocument();
-    await expect(canvas.getByLabelText("Cover")).toHaveTextContent("scanned");
-    await expect(currentCoverSrc(canvas)).not.toContain("?v=");
-    await expect(canvas.getByTestId("mes-row-cover-apply")).toBeEnabled();
-  },
-};
-
 export const StagesTheCoverUnderReview: Story = {
-  render: () => <Picker stagedCover />,
   play: async ({ canvas, userEvent }) => {
     await openCompare({ canvas, userEvent });
     await expect(

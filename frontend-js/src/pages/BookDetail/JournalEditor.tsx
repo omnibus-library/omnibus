@@ -108,7 +108,11 @@ function jumpTo(editor: HTMLElement, key: "Home" | "End", extend: boolean) {
   });
 }
 
-export type EditorHandle = { apply: (edit: EditOp) => void };
+export type EditorHandle = {
+  apply: (edit: EditOp) => void;
+  /** Focus the editor with the caret after its last word. */
+  focusEnd: () => void;
+};
 
 type JournalEditorProps = {
   /** The markdown the editor opens with; later changes are ignored, the editor owns its text. */
@@ -155,7 +159,15 @@ export function JournalEditor({
     editor.focus();
   };
 
-  useImperativeHandle(ref, () => ({ apply: edit }));
+  const focusEnd = () => {
+    const editor = surface.current;
+    if (!editor) return;
+    editor.focus();
+    const end = (editor.textContent ?? "").length;
+    select(editor, end, end);
+  };
+
+  useImperativeHandle(ref, () => ({ apply: edit, focusEnd }));
 
   useEffect(() => {
     const editor = surface.current;

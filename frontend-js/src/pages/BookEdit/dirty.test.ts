@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { formFromBook, type MetaForm } from "../../api";
 import { anEditableWireBook } from "../../testing/metadataHandlers";
-import { dirtyLabels, saveLabel } from "./dirty";
+import { dirtyLabels, leavePrompt, saveLabel, unsavedSummary } from "./dirty";
 
 const BASE = formFromBook(anEditableWireBook());
 const edit = (changes: Partial<MetaForm>): MetaForm => ({
@@ -24,7 +24,7 @@ describe("dirtyLabels", () => {
 
     expect(dirtyLabels(BASE, values)).toEqual([
       "Title",
-      "Book #",
+      "Number in series",
       "Authors",
       "Genres",
     ]);
@@ -33,25 +33,40 @@ describe("dirtyLabels", () => {
   it("ignores whitespace around the page count", () => {
     expect(dirtyLabels(BASE, edit({ printPages: " 320 " }))).toEqual([]);
     expect(dirtyLabels(BASE, edit({ printPages: "321" }))).toEqual([
-      "Print Pages",
+      "Print pages",
     ]);
   });
 });
 
 describe("saveLabel", () => {
   it.each([
-    [false, 0, "Done"],
-    [false, 1, "Save · 1 field"],
-    [false, 3, "Save · 3 fields"],
-    [true, 3, "Saving…"],
-  ])("reads for saving=%s with %d dirty", (saving, count, label) => {
-    expect(saveLabel(saving, count)).toBe(label);
-  });
-
-  it.each([
     [false, "Add to library"],
     [true, "Adding…"],
   ])("reads for a book being added with saving=%s", (saving, label) => {
-    expect(saveLabel(saving, 3, true)).toBe(label);
+    expect(saveLabel(saving)).toBe(label);
+  });
+});
+
+describe("unsavedSummary", () => {
+  it("says no changes", () => {
+    expect(unsavedSummary(0)).toBe("No changes");
+  });
+
+  it("counts one change", () => {
+    expect(unsavedSummary(1)).toBe("1 unsaved change");
+  });
+
+  it("counts several changes", () => {
+    expect(unsavedSummary(3)).toBe("3 unsaved changes");
+  });
+});
+
+describe("leavePrompt", () => {
+  it("asks about one change", () => {
+    expect(leavePrompt(1)).toBe("Save your change before closing?");
+  });
+
+  it("asks about several changes", () => {
+    expect(leavePrompt(2)).toBe("Save your 2 changes before closing?");
   });
 });

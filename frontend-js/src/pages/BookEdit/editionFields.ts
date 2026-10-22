@@ -80,10 +80,10 @@ export const FIELDS: MetadataField[] = [
   field("Publisher", "publisher", (e) => text(e.publisher)),
   field("Published", "published", (e) => text(e.year)),
   field("Series", "series", (e) => text(e.series)),
-  field("Book #", "seriesIndex", (e) => text(e.series_index)),
+  field("Number in series", "seriesIndex", (e) => text(e.series_index)),
   field("ISBN-13", "isbn13", (e) => text(e.isbn13)),
   field("ISBN-10", "isbn10", (e) => text(e.isbn10)),
-  field("Print Pages", "printPages", (e) => e.pages?.toString() ?? ""),
+  field("Print pages", "printPages", (e) => e.pages?.toString() ?? ""),
   field("Genres", "genres", (e) => nonBlank(e.genres ?? [])),
   field("Description", "description", (e) => text(e.description)),
 ];

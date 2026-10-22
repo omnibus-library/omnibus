@@ -1,16 +1,11 @@
 import { useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
-import {
-  coverFromUrl,
-  type MetaForm,
-  PROVIDERS,
-  type ProviderEdition,
-} from "../../api";
+import { type MetaForm, PROVIDERS, type ProviderEdition } from "../../api";
 import { classes } from "../../classes";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
-import { Loading, Ring } from "../../components/Loading/Loading";
-import { type CoverProps, coverPreview, restage } from "./CoverEditor";
+import { Loading } from "../../components/Loading/Loading";
+import { coverPreview, restage, type StagedCoverProps } from "./CoverEditor";
 import {
   applyField,
   coverSrc,
@@ -100,43 +95,19 @@ function CompareRow({ field: f, edition, form, values, baseline }: RowProps) {
   );
 }
 
-/** Yours-vs-theirs for the cover: the one row that writes at once against a saved book, and says so. */
+/** Yours-vs-theirs for the cover: the source's image is staged with the book, and the note says so. */
 function CoverRow({
   cover,
   edition,
 }: {
-  cover: CoverProps;
+  cover: StagedCoverProps;
   edition: ProviderEdition;
 }) {
   const { target } = cover;
-  const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const sourceName = PROVIDERS[edition.source].name;
   const sourceUrl = coverSrc(edition);
-  const live = target.kind === "live";
   const { plate, src: current } = coverPreview(cover);
-
-  async function apply(url: string) {
-    if (target.kind === "staged") {
-      target.onStage(restage(target.staged, { kind: "url", url }, url));
-      setStatus("Cover staged.");
-      return;
-    }
-    setBusy(true);
-    cover.onBusy?.(true);
-    setStatus("Applying cover…");
-    try {
-      target.onApplied(await coverFromUrl(target.uuid, url));
-      setStatus("Cover updated.");
-    } catch (e) {
-      setStatus(
-        `Couldn't apply that cover: ${e instanceof Error ? e.message : String(e)}`,
-      );
-    } finally {
-      setBusy(false);
-      cover.onBusy?.(false);
-    }
-  }
 
   return (
     <div className="mes-cover" data-testid="mes-row-cover">
@@ -151,14 +122,19 @@ function CoverRow({
           type="button"
           className="mes-apply"
           data-testid="mes-row-cover-apply"
-          aria-label={
-            live
-              ? `Use the cover from ${sourceName} — saves immediately`
-              : `Use the cover from ${sourceName}`
-          }
-          disabled={!sourceUrl || busy || cover.disabled}
-          aria-busy={busy}
-          onClick={() => sourceUrl && apply(sourceUrl)}
+          aria-label={`Use the cover from ${sourceName}`}
+          disabled={!sourceUrl || cover.disabled}
+          onClick={() => {
+            if (!sourceUrl) return;
+            target.onStage(
+              restage(
+                target.staged,
+                { kind: "url", url: sourceUrl },
+                sourceUrl,
+              ),
+            );
+            setStatus("Cover staged.");
+          }}
         >
           →
         </button>
@@ -180,11 +156,7 @@ function CoverRow({
         role="status"
         data-testid="mes-row-cover-note"
       >
-        {busy && <Ring size="xs" className="mes-cover-ring" />}
-        {status ??
-          (live
-            ? "The cover applies immediately · it isn’t staged with the fields"
-            : "The cover is saved with the book when you add it")}
+        {status ?? "The cover is saved with the book when you add it"}
       </span>
     </div>
   );
@@ -218,7 +190,7 @@ type Props = {
   form: Form;
   /** The book as loaded: what "staged" is measured against, so the count agrees with the save bar's. */
   baseline: MetaForm;
-  cover: CoverProps;
+  cover: StagedCoverProps;
   hydrating: boolean;
   onBack: () => void;
   onDone: () => void;

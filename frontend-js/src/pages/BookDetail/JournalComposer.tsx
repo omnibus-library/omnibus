@@ -8,6 +8,7 @@ import {
   updateJournalEntry,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
+import { ConfirmModal } from "../../components/ConfirmModal/ConfirmModal";
 import { BusyLabel } from "../../components/Loading/Loading";
 import {
   type EditorHandle,
@@ -313,5 +314,28 @@ export function JournalComposer({
         </Button>
       </div>
     </div>
+  );
+}
+
+/** The composer in its static modal, as every "new entry" button opens it; a click outside cannot throw away an open draft. */
+export function NewJournalEntryModal({
+  uuid,
+  onClose,
+}: {
+  uuid: BookUuid;
+  onClose: () => void;
+}) {
+  return (
+    <ConfirmModal
+      testId="journal-composer-overlay"
+      ariaLabel="New journal entry"
+      backdropClass="bdmq-overlay bdmq-overlay-static"
+      dialogClass="bdmq-ocard bdmq-ocard-composer"
+      busy
+      onDismiss={onClose}
+      focusOnOpen
+    >
+      <JournalComposer uuid={uuid} onClose={onClose} />
+    </ConfirmModal>
   );
 }

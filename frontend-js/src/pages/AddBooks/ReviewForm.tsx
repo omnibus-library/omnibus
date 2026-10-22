@@ -86,7 +86,6 @@ export function ReviewForm({ pick, saving, error, onAdd, onStartOver }: Props) {
         />
       </div>
       <SaveBar
-        mode={{ kind: "create" }}
         dirty={dirty}
         coverReplaced={staged.source.kind !== "keep"}
         saving={saving}
@@ -99,7 +98,7 @@ export function ReviewForm({ pick, saving, error, onAdd, onStartOver }: Props) {
           setMissing(refusal);
           if (!refusal) onAdd(values, staged);
         })}
-        onDiscard={onStartOver}
+        onStartOver={onStartOver}
       />
     </div>
   );

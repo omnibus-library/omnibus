@@ -1,38 +1,26 @@
-import type { BookUuid } from "../../api";
-import { Button, ButtonLink } from "../../components/Button/Button";
+import { Button } from "../../components/Button/Button";
 import { BusyLabel } from "../../components/Loading/Loading";
 import { editedSummary, saveLabel } from "./dirty";
 
-/** What the bar's two actions mean. */
-export type SaveBarMode =
-  /** A saved book: Discard is a link back to it, and Save is offered once there is something to save. */
-  | { kind: "edit"; uuid: BookUuid }
-  /** An upload under review: Discard drops the pick, and the primary action adds the book untouched or not. */
-  | { kind: "create" };
-
 type Props = {
-  mode: SaveBarMode;
   dirty: string[];
-  /** A cover was replaced: already saved, but worth leaving through Save. */
+  /** A cover was picked: saved with the book, so worth saying. */
   coverReplaced: boolean;
   saving: boolean;
   error: string | undefined;
   onSave: () => void;
-  /** Edit: called as the Discard link is followed, before the router navigates. Create: the "Start over" press. */
-  onDiscard: () => void;
+  onStartOver: () => void;
 };
 
-/** The sticky bar under the form: what is edited, any error, and Discard and Save. */
+/** The sticky bar under an upload's review form: what is edited, any error, Start over and Add to library. */
 export function SaveBar({
-  mode,
   dirty,
   coverReplaced,
   saving,
   error,
   onSave,
-  onDiscard,
+  onStartOver,
 }: Props) {
-  const creating = mode.kind === "create";
   return (
     <div className="me-save-bar">
       {dirty.length > 0 ? (
@@ -43,9 +31,7 @@ export function SaveBar({
         </>
       ) : coverReplaced ? (
         <span className="mono me-dirty-label" data-testid="me-cover-replaced">
-          {creating
-            ? "Cover replaced · saved with the book"
-            : "Cover replaced · already saved"}
+          Cover replaced · saved with the book
         </span>
       ) : (
         <span className="mono me-dirty-label" style={{ color: "var(--ink-3)" }}>
@@ -62,47 +48,25 @@ export function SaveBar({
         </span>
       )}
       <div className="me-save-actions">
-        {mode.kind === "edit" ? (
-          // Leaves the field edits unsent.
-          <ButtonLink
-            to={`/books/${mode.uuid}`}
-            variant="ghost"
-            data-testid="me-discard"
-            // A modified click opens elsewhere and leaves this page (and its guard) alone.
-            onClick={(e) => {
-              if (
-                e.button === 0 &&
-                !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
-              ) {
-                onDiscard();
-              }
-            }}
-          >
-            Discard edits
-          </ButtonLink>
-        ) : (
-          <Button
-            variant="ghost"
-            data-testid="me-discard"
-            disabled={saving}
-            onClick={onDiscard}
-          >
-            Start over
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          data-testid="me-discard"
+          disabled={saving}
+          onClick={onStartOver}
+        >
+          Start over
+        </Button>
         <Button
           variant="primary"
           data-testid="me-save"
-          disabled={
-            (!creating && dirty.length === 0 && !coverReplaced) || saving
-          }
+          disabled={saving}
           aria-busy={saving}
           onClick={onSave}
         >
           <BusyLabel
             busy={saving}
-            label={saveLabel(false, dirty.length, creating)}
-            busyLabel={saveLabel(true, 0, creating)}
+            label={saveLabel(false)}
+            busyLabel={saveLabel(true)}
           />
         </Button>
       </div>

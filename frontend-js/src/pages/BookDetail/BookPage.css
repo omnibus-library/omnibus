@@ -1,0 +1,1342 @@
+:root {
+  /* Which way a page turn goes: 1 to a later tab, -1 to an earlier one. Set on the root so the transition's pseudo-elements inherit it. */
+  --dir: 1;
+}
+
+.bp-root {
+  /* Bleed past `main`'s side padding so the stage meets the window edges. */
+  margin-inline: calc(-1 * clamp(1.25rem, 4vw, 3.5rem));
+  --bp-cream: #f3ebdd;
+  --bp-gold: #c9a15b;
+  --bp-page: 1200px;
+  --bp-gutter: 32px;
+  --bp-radius: 12px;
+  --bp-cover-w: 150px;
+  --bp-cover-gap: 24px;
+  --bp-accent-deep: color-mix(in oklch, var(--accent) 55%, black);
+  --bp-accent-fill: color-mix(in oklch, var(--accent) 75%, black);
+  --bp-accent-text: color-mix(in oklch, var(--accent) 45%, white);
+  font-size: 16px;
+  line-height: 1.5;
+}
+@supports (color: oklch(from red l c h)) {
+  .bp-root {
+    /* Fixed lightness keeps white text readable whatever the cover's accent. */
+    --bp-accent-deep: oklch(from var(--accent) 0.44 c h);
+    /* White on this clears 4.5:1 for every hue: the worst is full-chroma green (hue 142), 5.1:1 at this lightness. */
+    --bp-accent-fill: oklch(from var(--accent) 0.52 c h);
+    --bp-accent-text: oklch(from var(--accent) 0.8 c h);
+  }
+}
+.bp-root,
+.bp-stage {
+  --bp-fill: color-mix(in oklch, var(--ink-0) 10%, transparent);
+  --bp-fill-hover: color-mix(in oklch, var(--ink-0) 17%, transparent);
+}
+.bp-root [hidden] {
+  display: none !important;
+}
+
+/* ---------- The stage: dark and tinted by the cover in every theme ---------- */
+.bp-stage {
+  --bg-0: oklch(0.135 0.006 70);
+  --bg-1: oklch(0.175 0.008 70);
+  --bg-2: oklch(0.215 0.01 70);
+  --bg-3: oklch(0.265 0.011 70);
+  --line: oklch(0.3 0.01 70 / 0.65);
+  --line-2: oklch(0.3 0.01 70 / 0.3);
+  --ink-0: oklch(0.97 0.006 80);
+  --ink-1: oklch(0.82 0.01 75);
+  --ink-2: oklch(0.62 0.012 70);
+  --ink-3: oklch(0.48 0.012 70);
+  --bad: oklch(0.72 0.16 25);
+  color-scheme: dark;
+  position: relative;
+  isolation: isolate;
+  overflow-x: clip;
+  background: var(--bg-0);
+  color: var(--ink-0);
+}
+/* An open menu, or a dialog opened from the stage, sits above the tabs. */
+.bp-stage:has([aria-expanded="true"], .bdmq-overlay) {
+  z-index: 7;
+}
+.bp-stage-body {
+  max-width: var(--bp-page);
+  margin: 0 auto;
+  padding: 40px var(--bp-gutter) 52px;
+}
+
+.bp-backdrop {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  overflow: hidden;
+}
+/* The camera: one crop of the cover per tab. */
+.bp-cam {
+  position: absolute;
+  inset: -12%;
+  transition: transform 760ms var(--ease-out);
+  will-change: transform;
+}
+.bp-drift {
+  position: absolute;
+  inset: 0;
+  animation: bp-drift 22s ease-in-out infinite alternate;
+}
+.bp-drift img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  filter: blur(20px) saturate(1.3) brightness(0.8);
+}
+.bp-drift.is-plain {
+  background:
+    radial-gradient(
+      ellipse 70% 90% at 25% 30%,
+      color-mix(in oklch, var(--accent) 60%, transparent),
+      transparent 70%
+    ),
+    var(--bg-0);
+}
+@keyframes bp-drift {
+  from {
+    transform: translate3d(-2%, -1.5%, 0) scale(1.02);
+  }
+  to {
+    transform: translate3d(2%, 1.5%, 0) scale(1.07);
+  }
+}
+.bp-warm {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 55% 80% at 22% 35%,
+    rgba(255, 168, 96, 0.32),
+    transparent 70%
+  );
+  opacity: 0.5;
+  transition: opacity 760ms var(--ease-out);
+}
+.bp-shade {
+  position: absolute;
+  inset: 0;
+  transition: opacity 760ms var(--ease-out);
+  background:
+    linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--bg-0) 60%, transparent) 0,
+      color-mix(in oklch, var(--bg-0) 20%, transparent) 26%,
+      color-mix(in oklch, var(--bg-0) 72%, transparent) 80%,
+      var(--bg-0) 100%
+    ),
+    linear-gradient(
+      to right,
+      color-mix(in oklch, var(--bg-0) 12%, transparent),
+      color-mix(in oklch, var(--bg-0) 62%, transparent)
+    );
+}
+.bp-dim {
+  position: absolute;
+  inset: 0;
+  background: #050506;
+  opacity: 0;
+  transition: opacity 760ms var(--ease-out);
+}
+.bp-stage.is-offscreen .bp-drift,
+.bp-stage[data-tab="files"] .bp-drift {
+  animation-play-state: paused;
+}
+.bp-stage[data-tab="highlights"] .bp-cam {
+  transform: scale(2.1) translate(-16%, 14%);
+}
+.bp-stage[data-tab="highlights"] .bp-warm {
+  opacity: 1;
+}
+.bp-stage[data-tab="reviews"] .bp-cam {
+  transform: scale(1.6) translate(18%, -10%);
+}
+.bp-stage[data-tab="files"] .bp-cam {
+  transform: scale(1.06) translate(0, -2%);
+}
+.bp-stage[data-tab="files"] .bp-warm {
+  opacity: 0.1;
+}
+.bp-stage[data-tab="files"] .bp-dim {
+  opacity: 0.5;
+}
+
+/* ---------- The hero ---------- */
+.bp-hero {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 76px;
+  align-items: end;
+}
+.bp-info {
+  position: relative;
+  min-width: 0;
+}
+
+/* The book: rests slightly askew, tilts further on hover, and leans toward the pointer. */
+.bp-book {
+  position: relative;
+  width: 340px;
+  perspective: 1700px;
+  --rx: 2deg;
+  --ry: 8deg;
+  --rz: -2.5deg;
+}
+.bp-book:hover {
+  --rz: -5deg;
+}
+.bp-book::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -45% -85% -25%;
+  pointer-events: none;
+  background: radial-gradient(
+    closest-side,
+    rgba(255, 190, 122, 0.24),
+    color-mix(in oklch, var(--accent) 36%, transparent) 42%,
+    color-mix(in oklch, var(--accent) 8%, transparent) 72%,
+    transparent
+  );
+}
+/* The lamp's beam from above. */
+.bp-book::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: -40%;
+  right: -40%;
+  top: -62%;
+  height: 95%;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 46% 100% at 50% 0%,
+    rgba(255, 228, 192, 0.18),
+    transparent 74%
+  );
+}
+.bp-tilt {
+  position: relative;
+  transform-style: preserve-3d;
+  transform: rotate(var(--rz)) rotateX(var(--rx)) rotateY(var(--ry));
+  transition: transform 600ms var(--ease-out);
+}
+.bp-cover-front {
+  position: relative;
+  border-radius: 3px 6px 6px 3px;
+  overflow: hidden;
+  backface-visibility: hidden;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.4),
+    22px 30px 60px rgba(0, 0, 0, 0.62);
+}
+.bp-cover-front img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+/* The plate stands in for a missing cover; the front already throws the shadow. */
+.bp-cover-front .cover-wrap {
+  filter: none;
+}
+.bp-cover-front::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.55) 0,
+    rgba(0, 0, 0, 0.15) 2.2%,
+    rgba(255, 255, 255, 0.22) 3.2%,
+    rgba(255, 255, 255, 0) 5.5%,
+    rgba(0, 0, 0, 0.18) 6.5%,
+    rgba(0, 0, 0, 0) 9%
+  );
+}
+.bp-book[data-shape="square"] .bp-cover-front {
+  border-radius: 6px;
+}
+.bp-book[data-shape="square"] .bp-cover-front::before {
+  display: none;
+}
+.bp-book-shadow {
+  position: absolute;
+  z-index: -1;
+  left: 2%;
+  right: -6%;
+  bottom: -24px;
+  height: 36px;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.72), transparent);
+}
+
+.bp-eyebrow {
+  margin-bottom: 10px;
+  color: var(--ink-1);
+}
+.bp-info .bp-title {
+  overflow-wrap: anywhere;
+  --lh: 0.92;
+  font: 600 84px / var(--lh) var(--serif);
+  letter-spacing: -0.015em;
+  color: var(--ink-0);
+}
+.bp-byline {
+  margin-top: 14px;
+  color: var(--ink-1);
+  font: 500 20px / 1.3 var(--sans);
+}
+.bp-byline .bd-author-link {
+  border-bottom: 0;
+}
+@media (hover: hover) {
+  .bp-byline .bd-author-link:hover,
+  button.bp-byline-series:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+.bp-byline-sep {
+  margin: 0 4px;
+  color: var(--ink-2);
+}
+.bp-byline-series {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-1);
+  font: inherit;
+}
+button.bp-byline-series {
+  cursor: pointer;
+}
+.bp-facts {
+  margin-top: 8px;
+  color: var(--ink-1);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ratings: yours, then each household reader's own. */
+.bp-ratings {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin-top: 14px;
+}
+.bp-info .bd-review-starsmeta {
+  color: var(--ink-1);
+  font: 400 16px / 1.3 var(--sans);
+  white-space: nowrap;
+}
+.bp-readers {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 4px 24px;
+  list-style: none;
+  border-left: 1px solid color-mix(in oklch, var(--ink-0) 16%, transparent);
+}
+.bp-reader {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  gap: 8px;
+  color: var(--ink-1);
+  font-size: 15px;
+  white-space: nowrap;
+}
+.bp-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--bg-3);
+  color: var(--ink-0);
+  font: 600 13px / 1 var(--sans);
+}
+.bp-avatar-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.bp-reader-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-0);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.bp-reader-score {
+  font-variant-numeric: tabular-nums;
+}
+.bp-mini-stars {
+  display: inline-flex;
+  gap: 1px;
+  color: var(--bp-accent-text);
+}
+.bp-mini {
+  position: relative;
+  width: 14px;
+  height: 14px;
+}
+.bp-mini svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: color-mix(in oklch, var(--ink-0) 40%, transparent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.bp-mini-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+}
+.bp-mini-fill svg {
+  fill: currentColor;
+  stroke: currentColor;
+}
+.bp-reader-go {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-left: -2px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition:
+    background-color 160ms ease-out,
+    color 160ms ease-out;
+}
+.bp-reader-go svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bp-reader:hover .bp-reader-go {
+  background: var(--bp-fill);
+  color: var(--ink-0);
+}
+.bp-reader-go:focus-visible {
+  outline: 2px solid var(--ink-0);
+  outline-offset: 1px;
+  color: var(--ink-0);
+}
+
+/* Finishing: a one-shot burst of ribbons in the cover's colours, sized for a portrait cover. */
+.bp-burst {
+  position: absolute;
+  z-index: 3;
+  left: -32%;
+  top: -18.7%;
+  width: 164%;
+  height: 137.4%;
+  pointer-events: none;
+  visibility: hidden;
+}
+.bp-book[data-shape="square"] .bp-burst {
+  top: -25%;
+  height: 150%;
+}
+.bp-burst[data-playing] {
+  visibility: visible;
+}
+.bp-piece {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+}
+.bp-burst[data-playing] .bp-piece {
+  animation: bp-burst 2s both;
+}
+.bp-burst[data-playing] .bp-piece:nth-child(3n + 2) {
+  animation-delay: 50ms;
+}
+.bp-burst[data-playing] .bp-piece:nth-child(3n) {
+  animation-delay: 100ms;
+}
+.bp-piece-ribbon,
+.bp-piece-diamond {
+  stroke: none;
+}
+.bp-piece-squiggle {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.bp-piece-ribbon.is-accent,
+.bp-piece-diamond.is-accent {
+  fill: var(--accent);
+}
+.bp-piece-ribbon.is-deep,
+.bp-piece-diamond.is-deep {
+  fill: var(--bp-accent-deep);
+}
+.bp-piece-ribbon.is-cream,
+.bp-piece-diamond.is-cream {
+  fill: var(--bp-cream);
+}
+.bp-piece-ribbon.is-gold,
+.bp-piece-diamond.is-gold {
+  fill: var(--bp-gold);
+}
+.bp-piece-squiggle.is-accent {
+  stroke: var(--accent);
+}
+.bp-piece-squiggle.is-deep {
+  stroke: var(--bp-accent-deep);
+}
+.bp-piece-squiggle.is-cream {
+  stroke: var(--bp-cream);
+}
+.bp-piece-squiggle.is-gold {
+  stroke: var(--bp-gold);
+}
+@keyframes bp-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+    animation-timing-function: var(--ease-out);
+  }
+  9% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(0) rotate(0);
+    animation-timing-function: var(--ease-in);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(110px) rotate(50deg);
+  }
+}
+
+/* The finished card: what it took, and one whole-half target for what comes next. */
+.bp-finish {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px 28px;
+  align-items: center;
+  max-width: 740px;
+  margin-top: 22px;
+  padding: 20px 22px;
+  border-radius: 16px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--accent) 30%, transparent),
+    color-mix(in oklch, var(--bp-accent-deep) 50%, black 20%)
+  );
+  border: 1px solid color-mix(in oklch, var(--bp-accent-text) 35%, transparent);
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.6);
+}
+.bp-finish.is-entering {
+  animation: bp-rise 560ms var(--ease-out);
+}
+@keyframes bp-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+.bp-finish h2 {
+  --lh: 1.05;
+  font: 600 32px / var(--lh) var(--serif);
+  font-variant-numeric: lining-nums;
+  text-wrap: balance;
+}
+.bp-finish-stats {
+  margin-top: 6px;
+  color: var(--ink-1);
+  font-variant-numeric: tabular-nums;
+}
+/* The half after the divider is one target: its padding, picture and words all take the click. */
+.bp-finish-next {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  align-self: stretch;
+  min-width: 260px;
+  margin: -20px -22px -20px 0;
+  padding: 20px 22px 20px 24px;
+  border: 0;
+  border-left: 1px solid color-mix(in oklch, var(--ink-0) 16%, transparent);
+  border-radius: 0 15px 15px 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 160ms ease-out;
+}
+.bp-finish-next:hover {
+  background: color-mix(in oklch, var(--ink-0) 7%, transparent);
+}
+.bp-finish-next:focus-visible {
+  outline: 2px solid var(--ink-0);
+  outline-offset: -4px;
+  border-radius: 0 15px 15px 0;
+}
+.bp-finish-cover {
+  flex: none;
+  width: 56px;
+}
+.bp-finish-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--ink-0) 12%, transparent);
+  color: var(--ink-0);
+}
+.bp-finish-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+.bp-finish-copy {
+  flex: 1;
+  min-width: 0;
+}
+.bp-finish-title {
+  display: block;
+  font-weight: 600;
+}
+.bp-finish-meta {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-1);
+  font-size: 14px;
+}
+.bp-finish-next > svg {
+  flex: none;
+  color: var(--ink-1);
+  transition: transform 200ms var(--ease-out);
+}
+.bp-finish-next:hover > svg {
+  transform: translateX(3px);
+}
+
+/* ---------- Progress, then the actions ---------- */
+@property --bp-progress {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 0%;
+}
+.bp-runtime {
+  margin-top: 22px;
+  color: var(--ink-1);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.bp-progress {
+  max-width: 440px;
+  margin-top: 22px;
+}
+/* One segment per chapter, a flag on the current one. */
+.bp-chapter-bar {
+  position: relative;
+  display: flex;
+  gap: 3px;
+  height: 6px;
+  margin-top: 34px;
+}
+.bp-seg {
+  flex: var(--w) 1 0;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--ink-0) 20%, transparent);
+}
+.bp-seg.is-done {
+  background: var(--accent);
+}
+.bp-seg.is-current {
+  background: linear-gradient(
+    90deg,
+    var(--accent) var(--fill),
+    color-mix(in oklch, var(--ink-0) 20%, transparent) var(--fill)
+  );
+}
+.bp-chapter-flag {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #fff;
+  color: #0e0e10;
+  font: 600 14px / 1 var(--sans);
+  white-space: nowrap;
+}
+.bp-chapter-flag::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 2px;
+  height: 14px;
+  margin-left: -1px;
+  background: #fff;
+}
+.bp-progress-text {
+  margin-top: 10px;
+  color: var(--ink-1);
+  font-variant-numeric: tabular-nums;
+  text-wrap: balance;
+}
+.bp-progress-text strong {
+  color: var(--ink-0);
+  font-weight: 600;
+}
+
+.bp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 26px;
+}
+.bp-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bp-fill);
+  color: var(--ink-0);
+  font: 600 15px / 1 var(--sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease-out,
+    transform 500ms var(--ease-out),
+    box-shadow 500ms var(--ease-out);
+}
+.bp-button:hover {
+  background: var(--bp-fill-hover);
+}
+.bp-button:active {
+  transform: scale(0.97);
+  transition-duration: 120ms;
+}
+.bp-button:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.bp-button:focus-visible {
+  outline: 2px solid var(--ink-0);
+  outline-offset: 3px;
+}
+.bp-button svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+.bp-button-large {
+  min-height: 52px;
+  padding: 0 26px;
+  font-size: 17px;
+}
+.bp-button-icon {
+  width: 52px;
+  padding: 0;
+}
+.bp-tinted {
+  background: color-mix(in oklch, var(--accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklch, var(--bp-accent-text) 22%, transparent);
+}
+.bp-tinted:hover {
+  background: color-mix(in oklch, var(--accent) 28%, transparent);
+}
+
+/* Continue: the page turns under the cursor, and the button fills as far as the reader has got. */
+.bp-continue {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--bp-accent-deep);
+  color: #fff;
+  word-spacing: 0.1em;
+}
+.bp-continue:hover {
+  background: var(--bp-accent-deep);
+  transform: translateY(-2px);
+  box-shadow:
+    0 14px 30px -10px color-mix(in oklch, var(--accent) 75%, transparent),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+}
+.bp-continue:active {
+  transform: scale(0.97);
+}
+.bp-continue-fill {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    var(--bp-accent-fill) 0,
+    var(--bp-accent-fill) calc(var(--bp-progress) - 36px),
+    color-mix(in oklch, var(--bp-accent-fill) 0%, transparent)
+      calc(var(--bp-progress) + 36px)
+  );
+  transition: --bp-progress 900ms var(--ease-out);
+}
+.bp-page-turn {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bp-page-turn .bp-leaf {
+  transform-box: view-box;
+  transform-origin: 12px 12px;
+}
+.bp-continue:hover .bp-leaf {
+  animation: bp-page-turn 650ms var(--ease-out) both;
+}
+@keyframes bp-page-turn {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(-1);
+  }
+}
+.bp-listen:hover,
+.bp-status-pill:hover {
+  transform: translateY(-2px);
+}
+.bp-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+.bp-eq span {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: currentColor;
+  transform-origin: bottom;
+}
+.bp-eq span:nth-child(1) {
+  transform: scaleY(0.3);
+}
+.bp-eq span:nth-child(2) {
+  transform: scaleY(1);
+}
+.bp-eq span:nth-child(3) {
+  transform: scaleY(0.55);
+}
+.bp-eq span:nth-child(4) {
+  transform: scaleY(0.8);
+}
+.bp-listen:hover .bp-eq span,
+.bp-listen.is-playing .bp-eq span {
+  animation: bp-eq 620ms ease-in-out infinite alternate;
+}
+.bp-listen:hover .bp-eq span:nth-child(2),
+.bp-listen.is-playing .bp-eq span:nth-child(2) {
+  animation-delay: -250ms;
+}
+.bp-listen:hover .bp-eq span:nth-child(3),
+.bp-listen.is-playing .bp-eq span:nth-child(3) {
+  animation-delay: -480ms;
+}
+.bp-listen:hover .bp-eq span:nth-child(4),
+.bp-listen.is-playing .bp-eq span:nth-child(4) {
+  animation-delay: -120ms;
+}
+@keyframes bp-eq {
+  from {
+    transform: scaleY(0.2);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+.bp-status-pill {
+  gap: 10px;
+  padding: 0 18px 0 20px;
+}
+.bp-status-pill > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.bp-status-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  color: var(--ink-1);
+  font-size: 14px;
+}
+
+/* The status and More menus, restyled on the stage only. */
+.bp-stage .shd-menu {
+  top: calc(100% + 8px);
+  min-width: 260px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--bp-radius);
+  background: var(--bg-2);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  transform-origin: top right;
+  animation: bp-menu-in 220ms var(--ease-out);
+}
+.bp-status .shd-menu {
+  left: 0;
+  right: auto;
+  transform-origin: top left;
+}
+@keyframes bp-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+}
+.bp-stage .shd-menu-item {
+  min-height: 44px;
+  gap: 12px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: var(--ink-0);
+  font: 500 16px / 1 var(--sans);
+  white-space: nowrap;
+}
+.bp-stage .shd-menu-item:hover,
+.bp-stage .shd-menu-item:focus-visible {
+  background: var(--bp-fill);
+}
+/* A line, not a change of background, so it also shows on the checked item. */
+.bp-stage .shd-menu-item:focus-visible {
+  outline: 2px solid var(--ink-0);
+  outline-offset: -2px;
+}
+.bp-stage .shd-menu-item[aria-checked="true"] {
+  background: color-mix(in oklch, var(--accent) 18%, transparent);
+}
+.bp-stage .shd-menu-item[aria-checked="true"] .shd-menu-icon {
+  color: var(--bp-accent-text);
+}
+.bp-stage .shelf-menu-item--danger {
+  color: var(--bad);
+}
+.bp-stage .shd-menu-note {
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.bp-stage .shd-menu-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ---------- Primitives the tabs share ---------- */
+.bp-panel {
+  padding: 24px;
+  border-radius: var(--bp-radius);
+  background: var(--bg-1);
+}
+.bp-panel-title {
+  --lh: 1.15;
+  font: 600 26px / var(--lh) var(--serif);
+  font-variant-numeric: lining-nums;
+}
+.bp-link-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-1);
+  font: 600 15px / 1 var(--sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .bp-link-row:hover {
+    color: var(--ink-0);
+  }
+}
+.bp-link-row:focus-visible {
+  outline: 2px solid var(--ink-0);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+/* A section's heading row and its count. */
+.bp-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 36px;
+  margin-bottom: 20px;
+}
+.bp-section-head h2 {
+  --lh: 1.1;
+  font: 600 32px / var(--lh) var(--serif);
+  font-variant-numeric: lining-nums;
+}
+.bp-count {
+  margin-left: 8px;
+  color: var(--ink-2);
+  font: 500 18px / 1 var(--sans);
+  vertical-align: 4px;
+}
+
+/* The stoat's note for a section with nothing in it. */
+.bp-empty {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 18px 20px;
+  border: 1px dashed var(--line);
+  border-radius: var(--bp-radius);
+}
+.bp-empty img {
+  width: 56px;
+  height: 56px;
+}
+.bp-empty h2,
+.bp-empty h3 {
+  --lh: 1.2;
+  font: 600 22px / var(--lh) var(--serif);
+  font-variant-numeric: lining-nums;
+}
+.bp-empty p {
+  color: var(--ink-1);
+}
+.bp-empty > :last-child:not(:nth-child(2)) {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+/* A person's card: an avatar, then who and when, then what they wrote. */
+.bp-entry {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 14px;
+  padding: 20px 24px;
+}
+.bp-entry .bp-avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 14px;
+}
+.bp-entry-meta {
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.bp-entry-meta strong {
+  color: var(--ink-0);
+  font: 600 16px / 1.4 var(--sans);
+}
+.bp-entry-text {
+  margin-top: 6px;
+  color: var(--ink-1);
+}
+
+/* ---------- Tabs, with the ribbon bookmark as the indicator ---------- */
+.bp-tabs {
+  position: relative;
+  z-index: 6;
+  border-bottom: 1px solid var(--line);
+}
+.bp-tablist {
+  position: relative;
+  display: flex;
+  gap: 40px;
+  max-width: var(--bp-page);
+  margin: 0 auto;
+  padding: 0 var(--bp-gutter);
+}
+.bp-tab {
+  min-height: 56px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-1);
+  font: 500 17px / 1 var(--sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .bp-tab:hover {
+    color: var(--ink-0);
+  }
+}
+.bp-tab[aria-selected="true"] {
+  color: var(--ink-0);
+  font-weight: 600;
+}
+.bp-tab:focus-visible {
+  outline: 2px solid var(--ink-0);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+/* Placed with `left`, not a transform, so a static capture still finds it under the tab. */
+.bp-ribbon {
+  position: absolute;
+  top: calc(100% + 1px);
+  left: 0;
+  width: 22px;
+  height: 46px;
+  transition: left 580ms var(--ease-out);
+  pointer-events: none;
+}
+.bp-ribbon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 0;
+  filter: drop-shadow(1px 3px 2px rgba(0, 0, 0, 0.5));
+}
+.bp-ribbon-cloth {
+  fill: var(--accent);
+}
+.bp-ribbon svg.is-swinging {
+  animation: bp-swing 900ms var(--ease-out);
+}
+@keyframes bp-swing {
+  22% {
+    transform: rotate(calc(var(--dir) * -10deg));
+  }
+  58% {
+    transform: rotate(calc(var(--dir) * 4deg));
+  }
+}
+
+/* ---------- The panels, turned like pages ---------- */
+.bp-page {
+  max-width: var(--bp-page);
+  margin: 0 auto;
+  padding: 60px var(--bp-gutter) 96px;
+}
+.bp-panels {
+  view-transition-name: bp-tab-page;
+}
+.bp-page-enter {
+  animation: bp-page-in 440ms var(--ease-out) both;
+}
+@keyframes bp-page-in {
+  from {
+    opacity: 0;
+    transform: perspective(1400px) translateX(calc(var(--dir) * 40px))
+      rotateY(calc(var(--dir) * -6deg));
+  }
+}
+@keyframes bp-page-out {
+  to {
+    opacity: 0;
+    transform: perspective(1400px) translateX(calc(var(--dir) * -40px))
+      rotateY(calc(var(--dir) * 8deg));
+  }
+}
+/* The live page keeps the ribbon's slide and the camera visible during the turn; only the panels are snapshotted. */
+::view-transition-old(root) {
+  animation: none;
+  opacity: 0;
+}
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-group(bp-tab-page) {
+  animation-duration: 440ms;
+  animation-timing-function: var(--ease-out);
+}
+::view-transition-old(bp-tab-page) {
+  animation: bp-page-out 240ms var(--ease-in) both;
+  transform-origin: left center;
+}
+::view-transition-new(bp-tab-page) {
+  animation: bp-page-in 440ms var(--ease-out) both;
+}
+
+@media (max-width: 720px) {
+  .bp-root {
+    --bp-gutter: 16px;
+    --bp-cover-w: 108px;
+    --bp-cover-gap: 16px;
+  }
+  .bp-stage-body {
+    padding-top: 6px;
+    padding-bottom: 32px;
+    text-align: center;
+  }
+  .bp-hero {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 30px;
+  }
+  .bp-book {
+    width: 190px;
+  }
+  .bp-info {
+    width: 100%;
+  }
+  .bp-info .bp-title {
+    font-size: 52px;
+  }
+  .bp-byline {
+    font-size: 17px;
+  }
+  .bp-byline-sep {
+    display: none;
+  }
+  .bp-byline-series {
+    display: block;
+    margin: 2px auto 0;
+  }
+  .bp-facts {
+    font-size: 16px;
+  }
+  .bp-ratings {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .bp-readers {
+    justify-items: center;
+    gap: 6px;
+    padding: 0;
+    border-left: 0;
+  }
+  .bp-reader-name {
+    min-width: 0;
+  }
+  .bp-progress {
+    max-width: none;
+    width: 100%;
+  }
+  .bp-finish {
+    grid-template-columns: minmax(0, 1fr);
+    text-align: left;
+  }
+  .bp-finish-next {
+    min-width: 0;
+    margin: 0;
+    padding: 16px 0 0;
+    border-left: 0;
+    border-top: 1px solid color-mix(in oklch, var(--ink-0) 16%, transparent);
+    border-radius: 0;
+  }
+  .bp-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 52px;
+    width: 100%;
+    gap: 10px;
+  }
+  .bp-actions > :first-child {
+    grid-column: 1 / -1;
+  }
+  .bp-actions .bp-status,
+  .bp-status-pill {
+    width: 100%;
+  }
+  .bp-status-pill {
+    justify-content: center;
+    padding: 0 12px;
+  }
+  .bp-status .shd-menu {
+    left: auto;
+    right: 0;
+    transform-origin: top right;
+  }
+  /* With no Listen beside it the pill is first in its row: it spans two columns, so its right-anchored menu opens inside the gutter. */
+  .bp-actions > :first-child + .bp-status {
+    grid-column: 1 / 3;
+  }
+  .bp-tablist {
+    gap: 26px;
+  }
+  .bp-tab {
+    min-height: 52px;
+    font-size: 16px;
+  }
+  .bp-tab-long {
+    display: none;
+  }
+  .bp-page {
+    padding-top: 58px;
+    padding-bottom: 48px;
+  }
+  .bp-section-head {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .bp-entry {
+    padding: 18px 20px;
+  }
+  /* Phone targets are fingers: the row's chevron is as big as one, the row itself no taller for it. */
+  .bp-reader-go {
+    width: 44px;
+    height: 44px;
+    margin: -6px -6px -6px -8px;
+  }
+  /* Stacked under the card, the ring keeps to its edges. */
+  .bp-finish-next:focus-visible {
+    border-radius: 0;
+    outline-offset: 2px;
+  }
+}
+
+/* Reduced motion: every change still happens, instantly. */
+@media (prefers-reduced-motion: reduce) {
+  .bp-root *,
+  .bp-root *::before,
+  .bp-root *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    transition-delay: 0s !important;
+  }
+  .bp-drift {
+    animation: none !important;
+  }
+  .bp-tilt {
+    transform: rotate(-2.5deg) !important;
+  }
+  .bp-burst {
+    display: none !important;
+  }
+}

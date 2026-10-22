@@ -1,5 +1,5 @@
 import type { Highlight, HighlightColor } from "../../api";
-import { MAX_QUADS, pdfAnchorPage } from "../BookDetail/highlights";
+import { MAX_QUADS, pdfAnchorPage } from "../BookDetail/highlightAnchors";
 import { pageFromPercent } from "../ComicReader/pager";
 
 /** The anchor a PDF page is saved under, the same string iOS's PDFKit reader reads. */

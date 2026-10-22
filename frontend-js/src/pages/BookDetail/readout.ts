@@ -1,5 +1,11 @@
-import type { Alignment, Position, Progress } from "../../api";
-import { formatHm } from "../../format";
+import type {
+  Alignment,
+  BookDetail,
+  Position,
+  Progress,
+  ReadStatusValue,
+} from "../../api";
+import { formatHm, formatYear, plural, spacedDuration } from "../../format";
 
 export type Chapter = NonNullable<Alignment["chapters"]>[number];
 
@@ -184,7 +190,6 @@ export type HomeReadout = {
   chTotal: number | null;
   chNow: { n: number; title: string } | null;
   audioAt: string | null;
-  audioTotal: string | null;
   audioLeftSecs: number | null;
 };
 
@@ -202,8 +207,7 @@ export function homeReadout(
         ? alignment.chapters.length
         : null,
     chNow: alignment?.chapters ? chapterNow(alignment.chapters, reading) : null,
-    audioAt: frac === null ? null : formatHm(frac * total),
-    audioTotal: total > 0 ? formatHm(total) : null,
+    audioAt: frac === null ? null : spacedDuration(frac * total),
     audioLeftSecs: frac === null ? null : Math.trunc((1 - frac) * total),
   };
 }
@@ -215,4 +219,96 @@ export function newestPercent({ reading, listening }: Progress): number | null {
   );
   if (a && b) return (b.updatedAt > a.updatedAt ? b : a).percent;
   return (a ?? b)?.percent ?? null;
+}
+
+const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
+
+/** A language code as its English name; anything `Intl` can't read stays as it was written. */
+function languageName(code: string): string {
+  try {
+    return languageNames.of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/** The line under the byline, `2014 · Del Rey · 382 pages · English`, without what the record doesn't know. */
+export function factLine(
+  book: Pick<BookDetail, "published" | "publisher" | "pageCount" | "language">,
+): string | null {
+  const year = book.published ? formatYear(book.published) : null;
+  const parts = [
+    year,
+    book.publisher?.trim(),
+    book.pageCount ? `${book.pageCount} page${plural(book.pageCount)}` : null,
+    book.language ? languageName(book.language) : null,
+  ].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** One chapter of the hero's progress bar: its share of the book, and how far through it the reader is. */
+export type Segment = {
+  weight: number;
+  state: "done" | "current" | "ahead";
+  /** How much of the segment is filled, 0 to 100; meaningful for the current one. */
+  fill: number;
+};
+
+/** The bar's segments: one per chapter weighted by its length, or one for the whole book without a chapter table. */
+export function chapterSegments(
+  chapters: readonly Chapter[] | null,
+  percent: number,
+): Segment[] {
+  if (!chapters || chapters.length === 0) {
+    return [
+      {
+        weight: 100,
+        state: percent >= 100 ? "done" : "current",
+        fill: percent,
+      },
+    ];
+  }
+  // A first chapter that opens late still starts the bar at the start of the book.
+  const starts = chapters.map((c, i) => (i === 0 ? 0 : c.percent));
+  const current =
+    percent >= 100 ? -1 : lastIndexWhere(starts, (s) => s <= percent);
+  return starts.map((start, i) => {
+    const weight = (starts[i + 1] ?? 100) - start;
+    if (percent >= 100 || i < current)
+      return { weight, state: "done", fill: 100 };
+    if (i > current) return { weight, state: "ahead", fill: 0 };
+    return {
+      weight,
+      state: "current",
+      fill: weight > 0 ? ((percent - start) / weight) * 100 : 100,
+    };
+  });
+}
+
+/** Your saved reading status: `undefined` while the read is pending or has failed, and Unread for a book with no record. */
+export function savedStatus(
+  record: { status: ReadStatusValue } | null | undefined,
+): ReadStatusValue | undefined {
+  return record === undefined ? undefined : (record?.status ?? "unread");
+}
+
+/** The words on the hero's main button: what it will do, from the read status and the chapter the reader is in. */
+export function continueLabel(o: {
+  audioOnly: boolean;
+  status: ReadStatusValue;
+  chapter: number | null;
+}): string {
+  switch (o.status) {
+    case "unread":
+      return o.audioOnly ? "Start listening" : "Start reading";
+    case "reading":
+      if (o.audioOnly) return "Continue listening";
+      return o.chapter ? `Continue · Chapter ${o.chapter}` : "Continue reading";
+    case "finished":
+      return o.audioOnly ? "Listen again" : "Read again";
+    default: {
+      const _exhaustive: never = o.status;
+      return _exhaustive;
+    }
+  }
 }

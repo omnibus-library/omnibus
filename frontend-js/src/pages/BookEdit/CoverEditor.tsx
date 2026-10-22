@@ -2,15 +2,13 @@ import { type FormEvent, useState } from "react";
 import {
   type BookUuid,
   bustCover,
-  coverFromUrl,
   type EditableBook,
   revertCover,
   type StagedSource,
-  uploadCover,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
-import { BusyLabel, Ring } from "../../components/Loading/Loading";
+import { Ring } from "../../components/Loading/Loading";
 
 /** A cover chosen during review, not yet written anywhere. */
 export type StagedCover = {
@@ -21,12 +19,28 @@ export type StagedCover = {
   originalPreview: string | null;
 };
 
+/** A cover the editor sheet is holding until Done writes it: a picked file, or an image's URL. */
+export type HeldCover = {
+  source: Exclude<StagedSource, { kind: "keep" }>;
+  /** What the surfaces show now: the file's object URL, or the image's own URL. */
+  preview: string;
+};
+
+/** `held` released, and the object URL its file was shown from with it. */
+export function releaseHeld(held: HeldCover | null) {
+  if (held?.source.kind === "file") URL.revokeObjectURL(held.preview);
+}
+
 export type CoverTarget =
   | {
-      kind: "live";
+      kind: "held";
       uuid: BookUuid;
-      /** A write landed: the book as the server now reports it. */
-      onApplied: (updated: EditableBook) => void;
+      /** The cover waiting for Done, or `null` when the book keeps the one it has. */
+      held: HeldCover | null;
+      /** A new pick, or `null` to drop it. The owner releases the one it replaces. */
+      onHold: (next: HeldCover | null) => void;
+      /** The scanned cover was put back at once: the book as the server now reports it. */
+      onReverted: (updated: EditableBook) => void;
     }
   | {
       kind: "staged";
@@ -64,6 +78,11 @@ export type CoverProps = {
   onBusy?: (busy: boolean) => void;
 };
 
+/** The cover surfaces of an upload under review, whose cover is staged for the add. */
+export type StagedCoverProps = Omit<CoverProps, "target"> & {
+  target: Extract<CoverTarget, { kind: "staged" }>;
+};
+
 /** The placeholder plate and the image the cover surfaces show now, for a live or a staged target. */
 export function coverPreview({ book, target }: CoverProps) {
   const plate = {
@@ -71,11 +90,11 @@ export function coverPreview({ book, target }: CoverProps) {
     authors: book.primaryAuthor ? [book.primaryAuthor.name] : [],
     accent: book.accent,
   };
-  const src =
-    target.kind === "live"
-      ? book.coverUrl && bustCover(book.coverUrl, target.uuid)
-      : target.staged.preview;
-  return { plate, src: src || null };
+  if (target.kind === "staged") {
+    return { plate, src: target.staged.preview || null };
+  }
+  const current = book.coverUrl && bustCover(book.coverUrl, target.uuid);
+  return { plate, src: (target.held?.preview ?? current) || null };
 }
 
 const ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
@@ -88,51 +107,57 @@ function stagedHint({ source, preview }: StagedCover) {
   return preview ? "extracted from file" : "no cover available";
 }
 
-/** The sidebar's cover card: preview, hint and the controls that replace or revert the cover. */
+function heldHint({ source }: HeldCover) {
+  return source.kind === "file"
+    ? "your image · saved when you press Done"
+    : "from the web · fetched when you press Done";
+}
+
+/** What the book's own cover is, when nothing is waiting to replace it. */
+const currentHint = (book: CoverProps["book"]) =>
+  !book.coverUrl
+    ? "no cover available"
+    : book.hasCoverOverride
+      ? "custom upload"
+      : "extracted from file";
+
+/** The cover card: preview, hint and the controls that replace the cover, or put the scanned one back. */
 export function CoverEditor(props: CoverProps) {
   const { book, target, disabled = false, onBusy } = props;
-  const [busy, setBusy] = useState<"file" | "url" | "revert" | null>(null);
+  const [reverting, setReverting] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [pastedUrl, setPastedUrl] = useState("");
   const { plate, src } = coverPreview(props);
-  const locked = busy !== null || disabled;
+  const locked = reverting || disabled;
 
-  // One write at a time; the status line says what is in flight and then how it ended.
-  async function write(
-    kind: NonNullable<typeof busy>,
-    working: string,
-    done: string,
-    failed: string,
-    call: () => Promise<EditableBook>,
+  // The one write the card makes at once: it puts the scanned cover back, and the status line says how that ended.
+  async function revert(
+    uuid: BookUuid,
+    onReverted: (book: EditableBook) => void,
   ) {
-    setBusy(kind);
+    setReverting(true);
     onBusy?.(true);
-    setStatus(working);
+    setStatus("Reverting…");
     try {
-      const updated = await call();
-      if (target.kind === "live") target.onApplied(updated);
-      setStatus(done);
-      return true;
+      onReverted(await revertCover(uuid));
+      setStatus("Reverted to scanned cover.");
     } catch (e) {
-      setStatus(`${failed}${e instanceof Error ? e.message : String(e)}`);
-      return false;
+      setStatus(`Revert failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
-      setBusy(null);
+      setReverting(false);
       onBusy?.(false);
     }
   }
 
   const pickFile = (file: File | undefined) => {
     if (!file) return;
-    if (target.kind === "live") {
-      const { uuid } = target;
-      void write(
-        "file",
-        `Uploading ${file.name}…`,
-        "Cover updated.",
-        "Upload failed: ",
-        () => uploadCover(uuid, file),
-      );
+    if (target.kind === "held") {
+      releaseHeld(target.held);
+      target.onHold({
+        source: { kind: "file", file },
+        preview: URL.createObjectURL(file),
+      });
+      setStatus("Cover held until Done.");
     } else {
       target.onStage(
         restage(
@@ -145,19 +170,19 @@ export function CoverEditor(props: CoverProps) {
     }
   };
 
-  const applyUrl = async (e: FormEvent) => {
+  const applyUrl = (e: FormEvent) => {
     e.preventDefault();
     const url = pastedUrl.trim();
-    if (target.kind !== "live" || locked || !url) return;
-    const { uuid } = target;
-    const applied = await write(
-      "url",
-      "Applying cover…",
-      "Cover updated.",
-      "Couldn't apply that URL: ",
-      () => coverFromUrl(uuid, url),
-    );
-    if (applied) setPastedUrl("");
+    if (target.kind !== "held" || locked || !url) return;
+    // The server fetches only https, so a cover address that is not is turned back here, not at Done.
+    if (!/^https:\/\//i.test(url)) {
+      setStatus("A cover address must start with https://.");
+      return;
+    }
+    releaseHeld(target.held);
+    target.onHold({ source: { kind: "url", url }, preview: url });
+    setPastedUrl("");
+    setStatus("Cover held until Done.");
   };
 
   return (
@@ -165,22 +190,15 @@ export function CoverEditor(props: CoverProps) {
       <div className="me-sidebar-head">
         <div className="label">Cover</div>
       </div>
-      <div
-        className="me-cover-preview"
-        data-testid={
-          target.kind === "staged" ? "cover-staged-preview" : undefined
-        }
-      >
+      <div className="me-cover-preview" data-testid="cover-staged-preview">
         <Cover book={plate} src={src} />
       </div>
       <div className="mono me-cover-hint" data-testid="cover-hint">
         {target.kind === "staged"
           ? stagedHint(target.staged)
-          : !book.coverUrl
-            ? "no cover available"
-            : book.hasCoverOverride
-              ? "custom upload"
-              : "extracted from file"}
+          : target.held
+            ? heldHint(target.held)
+            : currentHint(book)}
       </div>
       <div className="me-cover-actions">
         <label className="label" htmlFor="cover-file-input">
@@ -199,7 +217,7 @@ export function CoverEditor(props: CoverProps) {
             e.target.value = "";
           }}
         />
-        {target.kind === "live" ? (
+        {target.kind === "held" ? (
           <>
             <label className="label" htmlFor="cover-url-input">
               Or paste an image URL
@@ -220,16 +238,11 @@ export function CoverEditor(props: CoverProps) {
                 size="sm"
                 data-testid="cover-url-apply"
                 disabled={locked || !pastedUrl.trim()}
-                aria-busy={busy === "url"}
               >
-                <BusyLabel
-                  busy={busy === "url"}
-                  label="Apply"
-                  busyLabel="Applying…"
-                />
+                Apply
               </Button>
             </form>
-            {book.hasCoverOverride && (
+            {target.held ? (
               <Button
                 variant="ghost"
                 size="sm"
@@ -238,20 +251,32 @@ export function CoverEditor(props: CoverProps) {
                   width: "100%",
                   justifyContent: "center",
                 }}
-                data-testid="cover-remove-override"
-                disabled={locked}
-                onClick={() =>
-                  write(
-                    "revert",
-                    "Reverting…",
-                    "Reverted to scanned cover.",
-                    "Revert failed: ",
-                    () => revertCover(target.uuid),
-                  )
-                }
+                data-testid="cover-drop-held"
+                onClick={() => {
+                  releaseHeld(target.held);
+                  target.onHold(null);
+                  setStatus("Keeping the current cover.");
+                }}
               >
-                Revert to scanned cover
+                Drop the new cover
               </Button>
+            ) : (
+              book.hasCoverOverride && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  style={{
+                    marginTop: 8,
+                    width: "100%",
+                    justifyContent: "center",
+                  }}
+                  data-testid="cover-remove-override"
+                  disabled={locked}
+                  onClick={() => revert(target.uuid, target.onReverted)}
+                >
+                  Revert to scanned cover
+                </Button>
+              )
             )}
           </>
         ) : (
@@ -283,7 +308,7 @@ export function CoverEditor(props: CoverProps) {
           role="status"
           data-testid="cover-upload-status"
         >
-          {busy && <Ring size="xs" className="me-cover-ring" />}
+          {reverting && <Ring size="xs" className="me-cover-ring" />}
           {status}
         </p>
       )}

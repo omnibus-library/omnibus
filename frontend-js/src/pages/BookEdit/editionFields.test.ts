@@ -74,7 +74,7 @@ describe("FIELDS", () => {
       "publisher",
       "published",
       "series",
-      "book--",
+      "number-in-series",
       "isbn-13",
       "isbn-10",
       "print-pages",
@@ -96,7 +96,7 @@ describe("sourceValue and currentValue", () => {
     expect(
       currentValue(field("Author(s)"), { ...BOOK, authors: ["A", "B"] }),
     ).toBe("A, B");
-    expect(sourceValue(field("Print Pages"), edition)).toBe("352");
+    expect(sourceValue(field("Print pages"), edition)).toBe("352");
     expect(sourceValue(field("Description"), edition)).toBe("");
   });
 });

@@ -1,6 +1,13 @@
 import { queryOptions } from "@tanstack/react-query";
-import { ApiError, ok, type UserId, utcOffsetMinutes } from "./core";
 import {
+  ApiError,
+  type BookUuid,
+  ok,
+  type UserId,
+  utcOffsetMinutes,
+} from "./core";
+import {
+  getBookHousehold,
   getHouseholdReaders,
   getLibraryComposition,
   getLibrarySize,
@@ -8,6 +15,7 @@ import {
   postStatsChart,
 } from "./generated/omnibus";
 import type {
+  BookHouseholdReader as BookHouseholdReaderWire,
   ChartSpec,
   LibraryComposition as LibraryCompositionWire,
   LibrarySize as LibrarySizeWire,
@@ -146,6 +154,31 @@ export const isNotSharing = (error: unknown) =>
 /** The readers whose stats the caller may view, the caller first. */
 export async function fetchHouseholdReaders() {
   return ok(await getHouseholdReaders());
+}
+
+function toHouseholdActivity(wire: BookHouseholdReaderWire) {
+  return {
+    reader: {
+      id: wire.id as UserId,
+      name: wire.name,
+      hasAvatar: wire.has_avatar,
+    },
+    seconds: wire.seconds,
+    sessions: wire.sessions,
+    lastSessionAt: wire.last_session_at,
+  };
+}
+
+/** One other reader's time in a book. */
+export type HouseholdActivity = ReturnType<typeof toHouseholdActivity>;
+
+/** The other readers who share their stats and have sat down with a book, newest sitting first. */
+export async function fetchBookHousehold(
+  uuid: BookUuid,
+): Promise<HouseholdActivity[]> {
+  return ok(await getBookHousehold(encodeURIComponent(uuid))).map(
+    toHouseholdActivity,
+  );
 }
 
 /** How big the whole library is. */

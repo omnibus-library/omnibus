@@ -13,7 +13,7 @@ use super::{sessionize, StatsError};
 /// listening checkpoint rows scoped to a single book. `is_audio` discriminates
 /// the two tables for [`sessionize::stitched`]. Bind order is
 /// `user_id, book_uuid, user_id, book_uuid`.
-const BOOK_SESSIONS: &str = "\
+pub(super) const BOOK_SESSIONS: &str = "\
     SELECT book_uuid, started_at, ended_at, seconds_read AS secs, 0 AS is_audio \
         FROM reading_sessions WHERE user_id = ? AND book_uuid = ? \
     UNION ALL \

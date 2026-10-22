@@ -1,8 +1,8 @@
-import type { Insights } from "../../api";
-import { durationLabel, plural } from "../../format";
+import type { HouseholdActivity, Insights, ReadStatusValue } from "../../api";
+import { formatLongDate, plural, spacedDuration } from "../../format";
 
 /** How many days the spark covers, ending today. */
-export const SPARK_DAYS = 22;
+export const SPARK_DAYS = 14;
 const DAY_SECS = 86_400;
 const DAY_MS = DAY_SECS * 1000;
 
@@ -13,22 +13,7 @@ const count = (n: number, word: string) => `${n} ${word}${plural(n)}`;
 
 export const sessionsLabel = (sessions: number) => count(sessions, "session");
 
-/** The Started tile's sub-label: elapsed days, "today" within the first. */
-export function daysIn(now: number, startedAt: number): string {
-  const days = Math.max(0, Math.floor((now - startedAt) / DAY_SECS));
-  return days === 0 ? "today" : `${count(days, "day")} in`;
-}
-
-/** The mean counted sitting. Divides `sittingSeconds`, since `secondsTotal` also holds glances too short to be one. */
-export const avgSitSeconds = (i: Insights) =>
-  Math.floor(i.sittingSeconds / Math.max(1, i.sessions));
-
-/** "Mar 1": an instant dated on the reader's own calendar. */
-export const shortDate = (unixSecs: number) =>
-  new Date(unixSecs * 1000).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
+const daysLabel = (days: number) => count(days, "day");
 
 const dayLabel = (day: number) =>
   new Date(day * DAY_MS).toLocaleDateString("en-US", {
@@ -37,17 +22,107 @@ const dayLabel = (day: number) =>
     timeZone: "UTC",
   });
 
-/** The time left at the pace so far, from total time and how far in the reader is; none until the pace means something. */
-export function pacedSecondsLeft(i: Insights, percent: number): number {
+const localDay = (unixSecs: number) => {
+  const date = new Date(unixSecs * 1000);
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / DAY_MS;
+};
+
+/** The calendar days from a start to a finish, both counted, and at least one. */
+export const spanDays = (startedAt: number, finishedAt: number) =>
+  Math.max(1, localDay(finishedAt) - localDay(startedAt) + 1);
+
+/** What a finished book took, `17 days · 13 sessions · 2 highlights`: calendar days from the first sitting to the finish, both counted. */
+export function finishTotals(o: {
+  startedAt: number;
+  finishedAt: number;
+  sessions: number;
+  highlights: number;
+}): string {
+  return [
+    daysLabel(spanDays(o.startedAt, o.finishedAt)),
+    count(o.sessions, "session"),
+    o.highlights > 0 && count(o.highlights, "highlight"),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** How fast the reader goes, `About 38 pages an hour`, or `About 12% an hour` without a page count; `null` before five percent, where it would be a guess. */
+export function paceLabel(o: {
+  insights: Insights;
+  percent: number;
+  pages: number | null;
+}): string | null {
+  if (o.percent < MIN_PACE_PERCENT || o.insights.secondsTotal <= 0) return null;
+  const hours = o.insights.secondsTotal / 3600;
+  const covered = o.pages ? (o.pages * o.percent) / 100 : o.percent;
+  const rate = Math.round(covered / hours);
+  return o.pages
+    ? `About ${rate} page${plural(rate)} an hour`
+    : `About ${rate}% an hour`;
+}
+
+/** One household reader's time in the book: `Read 2 h 46 m over 3 sessions`, or `Listened` for an audiobook only book. */
+export function householdLine(
+  activity: HouseholdActivity,
+  audioOnly: boolean,
+): string {
+  const verb = audioOnly ? "Listened" : "Read";
+  return `${verb} ${spacedDuration(activity.seconds)} over ${sessionsLabel(activity.sessions)}`;
+}
+
+/** A day on the reader's own calendar, `October 12`; the year only when it isn't this one. */
+export function calendarDay(now: number, then: number): string {
+  const sameYear =
+    new Date(then * 1000).getFullYear() === new Date(now * 1000).getFullYear();
+  return new Date(then * 1000).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+}
+
+/** The clock time of an instant, `22:40`. */
+export const clockTime = (unixSecs: number) =>
+  new Date(unixSecs * 1000).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+/** When something last happened: `Yesterday at 22:40`, `October 12 at 14:30`. */
+export function lastActivityLabel(now: number, then: number): string {
+  const ago = localDay(now) - localDay(then);
+  if (ago === 0) return `Today at ${clockTime(then)}`;
+  if (ago === 1) return `Yesterday at ${clockTime(then)}`;
+  return `${calendarDay(now, then)} at ${clockTime(then)}`;
+}
+
+/** The seconds left at the pace so far, from total time and how far in the reader is; `null` below five percent, where it would be a guess, and once the book is done. */
+export function pacedLeft(i: Insights, percent: number): number | null {
+  if (percent < MIN_PACE_PERCENT || percent >= 100) return null;
   return Math.floor((i.secondsTotal * (100 - percent)) / percent);
 }
 
-/** "≈ 1h 30m to go at your pace · 40% in"; `null` below 5%, where it would be a guess. */
-export function timeLeftNote(i: Insights, percent: number): string | null {
-  const pct = Math.min(Math.max(percent, 0), 100);
-  if (pct >= 100) return "finished — the record is complete";
-  if (pct < MIN_PACE_PERCENT) return null;
-  return `≈ ${durationLabel(pacedSecondsLeft(i, pct))} to go at your pace · ${pct}% in`;
+/**
+ * The top line of Your reading: where the reader stands, from their saved status first and
+ * their sittings second. `null` while the status is unknown, so nothing is claimed.
+ */
+export function readingStatusLine(o: {
+  status: ReadStatusValue | undefined;
+  startedAt: number | null;
+  finishedAt: number | null;
+  audioOnly: boolean;
+}): string | null {
+  const { status, startedAt, finishedAt } = o;
+  if (status === undefined) return null;
+  if (status === "finished") {
+    if (finishedAt === null) return "Finished";
+    if (startedAt === null) return `Finished ${formatLongDate(finishedAt)}`;
+    return `Finished ${formatLongDate(finishedAt)} at ${clockTime(finishedAt)}, after ${daysLabel(spanDays(startedAt, finishedAt))}`;
+  }
+  const doing = o.audioOnly ? "Listening" : "Reading";
+  if (startedAt !== null) return `${doing} since ${formatLongDate(startedAt)}`;
+  return status === "reading" ? doing : "Not started yet";
 }
 
 /** `YYYY-MM-DD` as days since the epoch; `null` for a malformed or impossible date such as 2026-02-31. */

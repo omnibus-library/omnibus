@@ -58,3 +58,13 @@
   flex: none;
   color: var(--accent);
 }
+.shd-menu-icon {
+  display: inline-flex;
+  flex: none;
+}
+.shd-menu-note {
+  margin-left: auto;
+  padding-left: 16px;
+  color: var(--ink-3);
+  font-size: 12px;
+}

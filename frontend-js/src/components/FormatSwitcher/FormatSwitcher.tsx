@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import type { BookDetail, BookUuid } from "../../api";
+import { spacedDuration } from "../../format";
 import { BookGlyph, HeadphonesGlyph } from "../Glyphs/Glyphs";
 import {
   KINDLE_WEB_UPLOAD_URL,
@@ -51,6 +52,14 @@ function humanSize(bytes: number): string {
   if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
   if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+/** What a file weighs and, for audio, how long it plays: "7.5 MB · 11 h 4 m"; each part is left out when unknown. */
+function fileFacts(file: BookFile): string[] {
+  return [
+    ...(file.sizeBytes > 0 ? [humanSize(file.sizeBytes)] : []),
+    ...(file.durationSeconds ? [spacedDuration(file.durationSeconds)] : []),
+  ];
 }
 
 /** The Kindle action: email it, or past the email cap a link to Amazon's own uploader. */
@@ -183,11 +192,12 @@ type RowProps = {
 function FormatRow({ row, uuid, files, epubSizeBytes }: RowProps) {
   const multi = files.length > 1;
   const first = files[0];
-  const sub = multi
-    ? `${files.length} editions`
-    : first && first.sizeBytes > 0
-      ? humanSize(first.sizeBytes)
-      : null;
+  // "EPUB · 117 KB", "M4B · 7.5 MB · 11 h 4 m", or "EPUB · 2 editions".
+  const sub = (
+    multi
+      ? [row.label, `${files.length} editions`]
+      : [row.label, ...(first ? fileFacts(first) : [])]
+  ).join(" · ");
   const title = multi ? `${row.label} (${files.length} files)` : row.label;
   return (
     <>
@@ -209,7 +219,12 @@ function FormatRow({ row, uuid, files, epubSizeBytes }: RowProps) {
         </span>
         <div className="rx-copy-body">
           <div className="nm">{row.name}</div>
-          {sub && <div className="sb">{sub}</div>}
+          <div className="sb">{sub}</div>
+          {!multi && first && (
+            <div className="sb format-filename" data-testid="format-filename">
+              {first.filename}
+            </div>
+          )}
         </div>
         {/* Kobo's KEPUB is made from the book's primary EPUB, so a multi-file row keeps that one action. */}
         {!multi ? (
@@ -235,9 +250,17 @@ function FormatRow({ row, uuid, files, epubSizeBytes }: RowProps) {
             className="format-row format-subrow rx-copy-sub"
             data-testid={`format-file-${file.id}`}
           >
-            <span className="format-sublabel">
-              {file.label ?? `Part ${file.ordinal + 1}`}
-            </span>
+            <div className="format-subbody">
+              <span className="format-sublabel">
+                {file.label ?? `Part ${file.ordinal + 1}`}
+              </span>
+              <span className="format-subfacts" data-testid="format-facts">
+                {fileFacts(file).join(" · ")}
+              </span>
+              <span className="format-filename" data-testid="format-filename">
+                {file.filename}
+              </span>
+            </div>
             <div className="format-actions">
               <Actions
                 kind={row.kind}

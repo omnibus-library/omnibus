@@ -1,15 +1,16 @@
 //! Who may see whose stats: the caller always, else a reader who shares.
-//! `household_readers` applies that rule directly in SQL; the per-reader
-//! stats/session-log/in-progress reads apply it through the private
-//! `may_view_stats` gate. Kept in one module so the two can't disagree
+//! `household_readers` and `book_household` apply that rule directly in SQL;
+//! the per-reader stats/session-log/in-progress reads apply it through the
+//! private `may_view_stats` gate. Kept in one module so they can't disagree
 //! about what "shares" means.
 
 use omnibus_shared::{
-    HouseholdReader, ResumePoint, SessionCursor, SessionLogPage, StatsRange, StatsSummary,
+    BookHouseholdReader, HouseholdReader, ResumePoint, SessionCursor, SessionLogPage, StatsRange,
+    StatsSummary,
 };
 use sqlx::{Row, SqlitePool};
 
-use super::StatsError;
+use super::{book::BOOK_SESSIONS, sessionize, StatsError};
 
 #[cfg(test)]
 mod tests;
@@ -41,19 +42,22 @@ async fn may_view_stats(
     crate::auth::get_share_stats(pool, target_id).await
 }
 
+/// The `users u` rows other readers may see: those who share their stats.
+const SHARES: &str = "u.share_stats = 1";
+
 /// The caller first, then every other reader who shares their stats, by name.
 pub async fn household_readers(
     pool: &SqlitePool,
     caller_id: i64,
 ) -> Result<Vec<HouseholdReader>, StatsError> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(&format!(
         "SELECT u.id AS id, COALESCE(u.display_name, u.username) AS name,
                 EXISTS(SELECT 1 FROM user_avatars a WHERE a.user_id = u.id) AS has_avatar,
                 (u.id = ?1) AS is_you
          FROM users u
-         WHERE u.id = ?1 OR u.share_stats = 1
-         ORDER BY is_you DESC, name COLLATE dictionary, u.id",
-    )
+         WHERE u.id = ?1 OR {SHARES}
+         ORDER BY is_you DESC, name COLLATE dictionary, u.id"
+    ))
     .bind(caller_id)
     .fetch_all(pool)
     .await?;
@@ -67,6 +71,69 @@ pub async fn household_readers(
             is_you: row.get::<i64, _>("is_you") != 0,
         })
         .collect())
+}
+
+/// Every other reader who shares their stats and has a sitting of at least
+/// [`sessionize::MIN_SITTING_SECS`] in the book, newest `last_session_at` first, then
+/// by name. `uuid` resolves to the canonical `books.uuid` first; `None` when no book has it.
+pub async fn book_household(
+    pool: &SqlitePool,
+    caller_id: i64,
+    uuid: &str,
+) -> Result<Option<Vec<BookHouseholdReader>>, StatsError> {
+    let Some(book_uuid) = crate::books::resolve_canonical_book_uuid(pool, uuid).await? else {
+        return Ok(None);
+    };
+    let readers = sqlx::query(&format!(
+        "SELECT u.id AS id, COALESCE(u.display_name, u.username) AS name,
+                EXISTS(SELECT 1 FROM user_avatars a WHERE a.user_id = u.id) AS has_avatar
+         FROM users u
+         WHERE u.id != ? AND {SHARES}"
+    ))
+    .bind(caller_id)
+    .fetch_all(pool)
+    .await?;
+
+    let sittings = sessionize::stitched(BOOK_SESSIONS);
+    let min_secs = sessionize::MIN_SITTING_SECS;
+    let sql = format!(
+        "SELECT COALESCE(SUM(secs), 0) AS seconds, \
+                COALESCE(SUM(CASE WHEN secs >= {min_secs} THEN 1 ELSE 0 END), 0) AS sessions, \
+                MAX(CASE WHEN secs >= {min_secs} THEN ended_at END) AS last_session_at \
+         FROM ({sittings})"
+    );
+    let mut household = Vec::new();
+    // shortcut: one aggregate per sharing reader; a household is a handful of people,
+    // fold user_id into the partition if that changes
+    for reader in &readers {
+        let id: i64 = reader.get("id");
+        let row = sqlx::query(&sql)
+            .bind(id)
+            .bind(&book_uuid)
+            .bind(id)
+            .bind(&book_uuid)
+            .fetch_one(pool)
+            .await?;
+        let sessions: i64 = row.get("sessions");
+        if sessions == 0 {
+            continue;
+        }
+        household.push(BookHouseholdReader {
+            id,
+            name: reader.get("name"),
+            has_avatar: reader.get::<i64, _>("has_avatar") != 0,
+            seconds: row.get("seconds"),
+            sessions,
+            last_session_at: row.get("last_session_at"),
+        });
+    }
+    household.sort_by(|a, b| {
+        b.last_session_at
+            .cmp(&a.last_session_at)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    Ok(Some(household))
 }
 
 /// `target_id`'s summary as `viewer_id` may see it; `None` or the viewer's own id

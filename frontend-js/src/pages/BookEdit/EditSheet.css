@@ -1,0 +1,752 @@
+/* The metadata editor sheet: its head, tabs, fields, artwork, identifiers and foot. */
+.es-sheet {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ---------- Head ---------- */
+.es-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 16px 18px 24px;
+  background:
+    linear-gradient(
+      160deg,
+      color-mix(in oklch, var(--accent) 16%, transparent),
+      color-mix(in oklch, var(--accent) 4%, transparent) 60%
+    ),
+    var(--bg-1);
+}
+.es-head-cover {
+  flex: none;
+  width: 52px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 6px 14px rgba(0, 0, 0, 0.45);
+}
+.es-head-text {
+  flex: 1;
+  min-width: 0;
+}
+.es-title {
+  --lh: 1.05;
+  margin: 0;
+  font: 600 30px / var(--lh) var(--serif);
+  overflow-wrap: anywhere;
+}
+.es-author {
+  margin: 4px 0 0;
+  color: var(--ink-1);
+}
+.es-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-1);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .es-close:hover {
+    background: var(--bp-fill);
+    color: var(--ink-0);
+  }
+}
+.es-close:focus-visible,
+.es-tab:focus-visible {
+  outline: 2px solid var(--ink-0);
+  outline-offset: 2px;
+}
+
+/* ---------- Tabs ---------- */
+.es-tabs[hidden] {
+  display: none;
+}
+.es-tabs {
+  display: flex;
+  gap: 28px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--line);
+}
+.es-tab {
+  position: relative;
+  min-height: 50px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-1);
+  font: 500 16px / 1 var(--sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.es-tab[aria-selected="true"] {
+  color: var(--ink-0);
+}
+.es-tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+}
+/* A tab holding edits wears a neutral dot: the book's colour is kept for focus and Done. */
+.es-tab[data-edited]::before {
+  content: "";
+  position: absolute;
+  top: 16px;
+  right: -10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-1);
+}
+
+/* ---------- Body and panels ---------- */
+.es-body {
+  flex: 1;
+  min-height: 0;
+  padding: 24px 24px 32px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.es-panel:not([hidden]) {
+  animation: es-fade 180ms ease-out;
+}
+@keyframes es-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---------- Fields ---------- */
+.es-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-content: start;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.es-sheet .me-field {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+}
+.es-sheet .me-field-w2,
+.es-sheet .me-field-full {
+  grid-column: 1 / -1;
+}
+.es-sheet .me-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin: 0;
+  color: var(--ink-0);
+  font: 600 16px / 1.4 var(--sans);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.es-sheet .me-label-edited {
+  color: var(--ink-1);
+  font: 500 13px / 1 var(--sans);
+  letter-spacing: 0;
+}
+.es-sheet .me-label-hint {
+  margin-left: auto;
+  color: var(--ink-2);
+  font: 400 14px / 1.4 var(--sans);
+}
+.es-sheet .me-input,
+.es-sheet .me-textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in oklch, var(--ink-0) 16%, transparent);
+  border-radius: 10px;
+  background: var(--bg-0);
+  color: var(--ink-0);
+  font: 400 16px / 1.4 var(--sans);
+  caret-color: var(--ink-0);
+  transition:
+    border-color 160ms ease-out,
+    box-shadow 160ms ease-out;
+}
+.es-sheet .me-input::placeholder,
+.es-sheet .me-textarea::placeholder {
+  color: var(--ink-2);
+}
+.es-sheet .me-textarea {
+  min-height: 132px;
+  max-height: 300px;
+  line-height: 1.55;
+  resize: vertical;
+}
+@media (hover: hover) {
+  .es-sheet .me-input:hover,
+  .es-sheet .me-textarea:hover {
+    border-color: color-mix(in oklch, var(--ink-0) 28%, transparent);
+  }
+}
+.es-sheet .me-input.me-input-edited,
+.es-sheet .me-textarea.me-input-edited {
+  border-color: color-mix(in oklch, var(--ink-0) 50%, transparent);
+}
+/* In ink, not the book's colour, which may be too pale to see on a light sheet. */
+.es-sheet .me-input:focus,
+.es-sheet .me-textarea:focus {
+  outline: none;
+  border-color: var(--ink-0);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ink-0) 25%, transparent);
+}
+.es-sheet .me-input[aria-invalid="true"],
+.es-sheet .me-textarea[aria-invalid="true"] {
+  border-color: var(--bad);
+}
+.es-sheet .me-field-error {
+  margin: 0;
+  color: var(--bad);
+  font-size: 14px;
+}
+.es-sheet .me-input:disabled,
+.es-sheet .me-textarea:disabled {
+  opacity: 0.6;
+}
+.es-revert {
+  justify-items: start;
+}
+
+/* ---------- Artwork: the cover beside what replaces it ---------- */
+.es-sheet .me-sidebar-card {
+  display: grid;
+  grid-template-columns: 176px minmax(0, 1fr);
+  grid-template-areas:
+    "head head"
+    "preview actions"
+    "hint actions"
+    "status status";
+  gap: 8px 32px;
+  align-items: start;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.es-sheet .me-sidebar-head {
+  grid-area: head;
+}
+.es-sheet .me-sidebar-head .label {
+  color: var(--ink-0);
+  font: 600 16px / 1.4 var(--sans);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.es-sheet .me-cover-preview {
+  grid-area: preview;
+  width: 176px;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.4),
+    10px 16px 34px rgba(0, 0, 0, 0.55);
+}
+.es-sheet .me-cover-hint {
+  margin: 0;
+  color: var(--ink-1);
+  font: 400 14px / 1.4 var(--sans);
+}
+.es-sheet .me-cover-hint[data-testid="cover-hint"] {
+  grid-area: hint;
+}
+.es-sheet .me-cover-hint[role="status"] {
+  grid-area: status;
+}
+.es-sheet .me-cover-actions {
+  display: grid;
+  grid-area: actions;
+  gap: 8px;
+  align-content: start;
+  padding-top: 30px;
+}
+.es-sheet .me-cover-actions > .label {
+  color: var(--ink-0);
+  font: 600 16px / 1.4 var(--sans);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.es-sheet .me-cover-file {
+  color: var(--ink-1);
+  font: 400 14px / 1.4 var(--sans);
+}
+.es-sheet .me-cover-file::file-selector-button {
+  min-height: 38px;
+  margin-right: 12px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bp-fill);
+  color: var(--ink-0);
+  font: 600 15px / 1 var(--sans);
+  cursor: pointer;
+}
+.es-sheet .me-cover-url {
+  display: flex;
+  gap: 8px;
+}
+.es-sheet .me-cover-url .me-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- Identifiers ---------- */
+.es-idents {
+  margin: 0;
+}
+.es-idents > div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.es-idents > div:first-child {
+  border-top: 1px solid var(--line);
+}
+.es-idents dt {
+  color: var(--ink-2);
+}
+.es-idents dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.es-quiet {
+  color: var(--ink-1);
+}
+.es-unavailable {
+  align-content: start;
+  gap: 16px;
+  padding: 32px 24px;
+}
+
+/* ---------- Buttons: the book page's pills ---------- */
+.es-sheet .btn {
+  height: auto;
+  min-height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bp-fill);
+  color: var(--ink-0);
+  font: 600 15px / 1 var(--sans);
+  text-decoration: none;
+}
+.es-sheet .btn.sm {
+  min-height: 38px;
+  padding: 0 14px;
+}
+.es-sheet .btn.ghost {
+  background: transparent;
+  color: var(--ink-1);
+  padding: 0 12px;
+}
+.es-sheet .btn.primary {
+  min-width: 88px;
+  background: var(--bp-accent-fill);
+  color: #fff;
+}
+@media (hover: hover) {
+  .es-sheet .btn:hover:not(:disabled) {
+    background: var(--bp-fill-hover);
+    color: var(--ink-0);
+  }
+  .es-sheet .btn.primary:hover:not(:disabled) {
+    background: var(--bp-accent-fill);
+    color: #fff;
+    transform: translateY(-2px);
+    box-shadow:
+      0 14px 30px -10px color-mix(in oklch, var(--accent) 75%, transparent),
+      0 2px 6px rgba(0, 0, 0, 0.3);
+  }
+}
+.es-sheet .btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.es-sheet .btn:focus-visible {
+  outline: 2px solid var(--ink-0);
+  outline-offset: 2px;
+}
+
+/* ---------- Fetch metadata: one edition per source, the picked one beside what the form holds ---------- */
+.es-fetch {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.es-fetch-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 16px;
+  margin-bottom: 4px;
+}
+.es-fetch-head h3 {
+  --lh: 1.15;
+  margin: 0;
+  font: 600 26px / var(--lh) var(--serif);
+}
+.es-fetch-query {
+  display: grid;
+  gap: 8px;
+}
+.es-inline {
+  display: flex;
+  gap: 8px;
+}
+.es-inline .me-input {
+  flex: 1;
+  min-width: 0;
+}
+.es-fetch-note {
+  margin: 2px 0 0;
+  color: var(--ink-1);
+  font-size: 15px;
+}
+.es-sheet .mes-sources {
+  padding-top: 0;
+  border-top: 0;
+  color: var(--ink-1);
+  font: 400 15px / 1.5 var(--sans);
+}
+.es-sheet .mes-source-problem {
+  color: var(--bad);
+}
+.es-editions {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.es-edition {
+  border: 1px solid var(--line);
+  border-radius: var(--bp-radius);
+  transition:
+    background-color 160ms ease-out,
+    border-color 160ms ease-out;
+}
+.es-edition.is-picked {
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  border-color: color-mix(in oklch, var(--bp-accent-text) 40%, transparent);
+}
+.es-edition-pick {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 24px;
+  gap: 16px;
+  align-items: center;
+  width: 100%;
+  padding: 12px 16px 12px 12px;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .es-edition:not(.is-picked) .es-edition-pick:hover {
+    background: var(--bp-fill);
+  }
+}
+.es-edition-pick:focus-visible {
+  outline: 2px solid var(--ink-0);
+  outline-offset: -2px;
+}
+.es-edition-cover {
+  width: 48px;
+  aspect-ratio: 2 / 3;
+  border-radius: 3px;
+  object-fit: cover;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 6px 14px rgba(0, 0, 0, 0.45);
+}
+.es-edition-plate {
+  display: grid;
+  place-items: center;
+  background: var(--bg-2);
+  color: var(--ink-2);
+}
+.es-edition-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.es-edition-name {
+  font-weight: 600;
+}
+.es-edition-meta {
+  color: var(--ink-1);
+  font-size: 15px;
+  text-wrap: pretty;
+}
+.es-edition-source {
+  color: var(--ink-2);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.es-edition-mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1.5px solid color-mix(in oklch, var(--ink-0) 32%, transparent);
+  border-radius: 50%;
+  color: transparent;
+  font-size: 13px;
+}
+.es-edition.is-picked .es-edition-mark {
+  border-color: var(--bp-accent-fill);
+  background: var(--bp-accent-fill);
+  color: #fff;
+}
+.es-edition-diff {
+  padding: 0 16px 16px 76px;
+}
+.es-diff-list {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+.es-diff-row {
+  display: grid;
+  grid-template-columns: 20px 96px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  min-height: 46px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.es-diff-row input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.es-diff-name {
+  font-weight: 600;
+}
+.es-diff-change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.es-diff-before {
+  color: var(--ink-1);
+}
+.es-diff-empty,
+.es-diff-note {
+  color: var(--ink-2);
+}
+.es-diff-note {
+  font-size: 14px;
+}
+.es-diff-row:has(input:checked) .es-diff-before {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklch, var(--ink-0) 45%, transparent);
+}
+.es-diff-row:has(input:not(:checked)) .es-diff-after {
+  color: var(--ink-1);
+}
+.es-diff-thumb {
+  width: 26px;
+  border-radius: 2px;
+}
+.es-diff-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+.es-fetch-same {
+  margin: 0;
+  padding-top: 4px;
+  color: var(--ink-1);
+}
+.es-skeleton {
+  display: grid;
+  gap: 10px;
+  padding-top: 8px;
+}
+.es-skel-bar {
+  height: 14px;
+  border-radius: 7px;
+}
+/* Fetch metadata in the head: tinted by the book's colour, deeper while its view is open. */
+.es-sheet .btn.es-fetch-open {
+  background: color-mix(in oklch, var(--accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklch, var(--bp-accent-text) 22%, transparent);
+}
+.es-sheet .btn.es-fetch-open[aria-expanded="true"] {
+  background: color-mix(in oklch, var(--accent) 32%, transparent);
+}
+.es-sheet .btn.es-fetch-open svg {
+  flex: none;
+}
+
+/* ---------- Foot: what is unsaved, Done, and the note ---------- */
+.es-foot {
+  flex: none;
+  border-top: 1px solid var(--line);
+}
+.es-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 14px 24px;
+}
+.es-bar-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: var(--ink-1);
+  font-variant-numeric: tabular-nums;
+}
+.es-bar.is-dirty .es-save-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-0);
+  font-weight: 600;
+}
+.es-bar.is-dirty .es-save-state::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-0);
+}
+.es-bar-problem {
+  margin: 0;
+  color: var(--bad);
+  font-size: 14px;
+}
+.es-leave {
+  background: var(--bg-2);
+}
+.es-leave-text {
+  color: var(--ink-0);
+  font-weight: 600;
+}
+.es-note {
+  margin: 0;
+  padding: 0 24px 14px;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+@media (max-width: 720px) {
+  .es-head {
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: 14px 8px 14px 16px;
+  }
+  .es-head-cover {
+    width: 44px;
+  }
+  .es-title {
+    font-size: 26px;
+  }
+  .es-tabs {
+    gap: 22px;
+    padding: 0 16px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .es-body {
+    padding: 20px 16px 28px;
+  }
+  .es-fields {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+  .es-sheet .me-sidebar-card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "head" "preview" "hint" "actions" "status";
+    gap: 8px;
+  }
+  .es-sheet .me-cover-preview {
+    width: 150px;
+  }
+  .es-sheet .me-cover-actions {
+    padding-top: 12px;
+  }
+  .es-idents > div {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+  .es-sheet .btn.sm {
+    min-height: 44px;
+  }
+  .es-sheet .btn.es-fetch-open {
+    order: 1;
+    flex: 1 1 100%;
+    margin-right: 8px;
+  }
+  .es-edition-pick {
+    grid-template-columns: 44px minmax(0, 1fr) 24px;
+    gap: 12px;
+  }
+  .es-edition-cover {
+    width: 44px;
+  }
+  .es-edition-diff {
+    padding: 0 12px 14px;
+  }
+  .es-diff-row {
+    grid-template-columns: 20px minmax(0, 1fr);
+    row-gap: 2px;
+  }
+  .es-diff-change {
+    grid-column: 2;
+  }
+  .es-bar {
+    padding: 10px 12px 10px 16px;
+  }
+  .es-note {
+    padding: 0 16px calc(12px + env(safe-area-inset-bottom));
+  }
+  .es-leave .es-bar-text {
+    flex-basis: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .es-sheet .es-panel,
+  .es-sheet .btn {
+    animation: none;
+    transition: none;
+  }
+}

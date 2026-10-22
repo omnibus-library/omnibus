@@ -8,10 +8,14 @@ import {
 import {
   chapterIndexForCfi,
   chapterNow,
+  chapterSegments,
+  continueLabel,
+  factLine,
   homeReadout,
   interpolatePairs,
   linkedAudioAt,
   newestPercent,
+  savedStatus,
   shortChapterTitle,
 } from "./readout";
 
@@ -171,8 +175,8 @@ describe("homeReadout", () => {
 
     expect(readout).toMatchObject({
       chTotal: 2,
-      audioAt: "1h 30m",
-      audioTotal: "3h 00m",
+      // The chapter bar says it as the progress line beside it does.
+      audioAt: "1 h 30 m",
       audioLeftSecs: 5400,
     });
   });
@@ -182,7 +186,6 @@ describe("homeReadout", () => {
       chTotal: null,
       chNow: null,
       audioAt: null,
-      audioTotal: null,
       audioLeftSecs: null,
     });
   });
@@ -289,5 +292,163 @@ describe("newestPercent", () => {
       ),
     ).toBe(60);
     expect(newestPercent(progress(null, null))).toBeNull();
+  });
+});
+
+describe("factLine", () => {
+  const facts = {
+    published: "2014-02-18",
+    publisher: "Del Rey",
+    pageCount: 382,
+    language: "en",
+  };
+
+  it("joins year publisher pages and language", () => {
+    expect(factLine(facts)).toBe("2014 · Del Rey · 382 pages · English");
+  });
+
+  it("leaves out what is unknown", () => {
+    expect(
+      factLine({
+        published: null,
+        publisher: "Del Rey",
+        pageCount: null,
+        language: null,
+      }),
+    ).toBe("Del Rey");
+    expect(
+      factLine({
+        published: null,
+        publisher: null,
+        pageCount: null,
+        language: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("says one page for a one-page book", () => {
+    expect(factLine({ ...facts, pageCount: 1 })).toContain("1 page ·");
+  });
+
+  it("names a language code in English", () => {
+    expect(factLine({ ...facts, language: "fr" })).toContain("French");
+  });
+
+  it("keeps a language that is not a code as it is", () => {
+    expect(factLine({ ...facts, language: "Klingon!" })).toContain("Klingon!");
+  });
+});
+
+describe("chapterSegments", () => {
+  // Five chapters opening at 0, 15, 40, 70 and 85 percent of the book.
+  const book = [0, 15, 40, 70, 85].map((start) => chapter(0, null, start));
+
+  it("weights each chapter by its share of the book", () => {
+    expect(chapterSegments(book, 0).map((s) => s.weight)).toEqual([
+      15, 25, 30, 15, 15,
+    ]);
+  });
+
+  it("counts a first chapter that opens late from the start of the book", () => {
+    const late = [10, 50].map((start) => chapter(0, null, start));
+
+    expect(chapterSegments(late, 0).map((s) => s.weight)).toEqual([50, 50]);
+  });
+
+  it("marks chapters before the position done and fills the current one", () => {
+    const segments = chapterSegments(book, 62);
+
+    expect(segments.map((s) => s.state)).toEqual([
+      "done",
+      "done",
+      "current",
+      "ahead",
+      "ahead",
+    ]);
+    // 22 of the current chapter's 30 percent.
+    expect(segments[2]?.fill).toBeCloseTo(73.33, 1);
+  });
+
+  it("opens the current chapter empty at the exact start of it", () => {
+    const segments = chapterSegments(book, 40);
+
+    expect(segments[2]).toMatchObject({ state: "current", fill: 0 });
+    expect(segments[1]?.state).toBe("done");
+  });
+
+  it("marks every chapter done at the end of the book", () => {
+    expect(chapterSegments(book, 100).map((s) => s.state)).toEqual(
+      Array(5).fill("done"),
+    );
+  });
+
+  it.each([
+    ["no table", null],
+    ["an empty table", []],
+  ])(
+    "returns one segment without a chapter table (%s)",
+    (_condition, table) => {
+      expect(chapterSegments(table, 62)).toEqual([
+        { weight: 100, state: "current", fill: 62 },
+      ]);
+    },
+  );
+});
+
+describe("continueLabel", () => {
+  const ebook = { audioOnly: false, chapter: null } as const;
+  const audio = { audioOnly: true, chapter: null } as const;
+
+  it("starts reading an unread ebook", () => {
+    expect(continueLabel({ ...ebook, status: "unread" })).toBe("Start reading");
+  });
+
+  it("continues at the chapter", () => {
+    expect(continueLabel({ ...ebook, status: "reading", chapter: 3 })).toBe(
+      "Continue · Chapter 3",
+    );
+  });
+
+  it("continues reading when the chapter is not known", () => {
+    expect(continueLabel({ ...ebook, status: "reading" })).toBe(
+      "Continue reading",
+    );
+  });
+
+  it("starts listening to an audiobook only book", () => {
+    expect(continueLabel({ ...audio, status: "unread" })).toBe(
+      "Start listening",
+    );
+  });
+
+  it("continues listening", () => {
+    expect(continueLabel({ ...audio, status: "reading" })).toBe(
+      "Continue listening",
+    );
+  });
+
+  it("reads again once finished", () => {
+    expect(continueLabel({ ...ebook, status: "finished" })).toBe("Read again");
+  });
+
+  it("listens again once finished", () => {
+    expect(continueLabel({ ...audio, status: "finished" })).toBe(
+      "Listen again",
+    );
+  });
+});
+
+describe("savedStatus", () => {
+  it("is unknown while the read is pending or has failed", () => {
+    expect(savedStatus(undefined)).toBeUndefined();
+  });
+
+  it("is Unread for a book with no record", () => {
+    expect(savedStatus(null)).toBe("unread");
+  });
+
+  it("is what the record says", () => {
+    expect(savedStatus({ status: "finished" })).toBe("finished");
+    expect(savedStatus({ status: "reading" })).toBe("reading");
   });
 });

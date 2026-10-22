@@ -1,0 +1,497 @@
+/* The description on the left, the reader's record on the right. */
+.bp-split {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 64px;
+  align-items: start;
+}
+
+.bp-reading {
+  min-width: 0;
+}
+.bp-reading-status {
+  margin-top: 4px;
+  color: var(--ink-1);
+}
+.bp-reading-note {
+  margin-top: 12px;
+  color: var(--ink-1);
+}
+.bp-stats {
+  margin: 18px 0 0;
+  border-top: 1px solid var(--line);
+}
+.bp-stats div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.bp-stats dt {
+  color: var(--ink-1);
+}
+.bp-stats dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The sessions behind the totals, folded away until asked for. */
+.bp-sessions {
+  margin-top: 12px;
+}
+.bp-sessions summary {
+  list-style: none;
+}
+.bp-sessions summary::-webkit-details-marker {
+  display: none;
+}
+.bp-sessions summary svg {
+  transition: transform 300ms var(--ease-out);
+}
+.bp-sessions[open] summary svg {
+  transform: rotate(180deg);
+}
+.bp-spark-head,
+.bp-spark-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.bp-spark-head {
+  margin-top: 4px;
+  color: var(--ink-1);
+  font-size: 15px;
+}
+.bp-spark-axis {
+  margin-top: 6px;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.bp-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 44px;
+  margin-top: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.bp-spark span {
+  flex: 1;
+  height: calc(var(--m) * 100%);
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+}
+.bp-spark .is-none {
+  height: 2px;
+  border-radius: 1px 1px 0 0;
+  background: var(--bp-fill-hover);
+}
+.bp-sessions .st-log {
+  margin-top: 18px;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.bp-sessions .st-log-row {
+  padding: 9px 0;
+  border-top: 0;
+  border-bottom: 1px solid var(--line);
+}
+.bp-sessions .st-log .st-log-when,
+.bp-sessions .st-log .st-log-dur {
+  font: inherit;
+  letter-spacing: 0;
+  color: var(--ink-0);
+}
+.bp-sessions .st-log-format {
+  font: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-1);
+}
+
+/* Other readers' time in the book, shared by them. */
+.bp-household {
+  margin-top: 28px;
+}
+.bp-household h3 {
+  font: 600 22px / 1.2 var(--serif);
+  font-variant-numeric: lining-nums;
+}
+.bp-household-reader {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin-top: 12px;
+}
+.bp-household-reader .bp-avatar {
+  width: 32px;
+  height: 32px;
+}
+.bp-household-name {
+  font-weight: 600;
+}
+.bp-household-meta {
+  color: var(--ink-1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The description, clamped to three lines until asked for the rest. */
+.bp-description {
+  max-width: 64ch;
+  color: var(--ink-1);
+  font: 400 18px / 1.6 var(--sans);
+}
+.bp-description p + p {
+  margin-top: 12px;
+}
+.bp-description:not(.is-open) {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Genres, tags and shelves, as chips under the description. */
+.bp-facts-list {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 14px 24px;
+  margin: 24px 0 0;
+  align-items: start;
+}
+.bp-facts-list dt {
+  padding-top: 9px;
+  font-weight: 600;
+}
+.bp-facts-list dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ink-1);
+}
+.bp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bp-facts-list .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in oklch, var(--ink-0) 24%, transparent);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-0);
+  font: 500 16px / 1 var(--sans);
+}
+.bp-facts-list .chip:has(button) {
+  padding-right: 6px;
+}
+.bp-chip-link {
+  color: inherit;
+  text-decoration: none;
+}
+@media (hover: hover) {
+  .bp-chip-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+.bp-chip-remove,
+.bp-facts-list .me-chip-remove {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-1);
+  font-size: 13px;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .bp-chip-remove:hover,
+  .bp-facts-list .me-chip-remove:hover {
+    background: var(--bp-fill);
+    color: var(--ink-0);
+  }
+}
+.bp-chip-add,
+.bp-facts-list .me-tag-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px 0 10px;
+  border: 1px dashed color-mix(in oklch, var(--ink-0) 24%, transparent);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-1);
+  font: 500 16px / 1 var(--sans);
+  cursor: pointer;
+}
+.bp-facts-list .me-tag-input {
+  width: 11ch;
+  padding-left: 14px;
+  cursor: text;
+}
+@media (hover: hover) {
+  .bp-chip-add:hover {
+    border-color: color-mix(in oklch, var(--ink-0) 40%, transparent);
+    color: var(--ink-0);
+  }
+}
+.bp-facts-list .me-tag-input:focus {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--ink-0);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 32%, transparent);
+}
+.bp-chip-add:focus-visible,
+.bp-chip-remove:focus-visible,
+.bp-facts-list .me-chip-remove:focus-visible {
+  outline: 2px solid var(--ink-0);
+  outline-offset: 2px;
+}
+.bp-facts-list .chip-editor-input-wrap {
+  flex: none;
+  min-width: 0;
+}
+.bp-quiet {
+  padding: 9px 0;
+  color: var(--ink-1);
+}
+.bp-quiet-link {
+  color: var(--ink-0);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Related books: the series fanned, the author's others, and read-alikes. */
+.bp-related {
+  display: grid;
+  gap: 64px;
+  margin-top: 64px;
+}
+.bp-related:empty,
+.bp-split-shelf:empty {
+  display: none;
+}
+/* A scrolling row inside must be held to the column, not widen it. */
+.bp-related > *,
+.bp-split-shelf > * {
+  min-width: 0;
+}
+.bp-split-shelf {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 64px;
+  align-items: start;
+}
+.bp-head-note {
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.bp-tile {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+.bp-tile-cover {
+  display: block;
+}
+.bp-tile-cover .cover-wrap {
+  width: var(--bp-cover-w);
+  transition: transform 400ms var(--ease-out);
+}
+@media (hover: hover) {
+  .bp-tile:hover .cover-wrap {
+    transform: translateY(-4px) rotate(-1.5deg);
+  }
+}
+.bp-tile-title {
+  display: block;
+  margin-top: 12px;
+  font-weight: 600;
+}
+.bp-tile-meta {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.bp-shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--bp-cover-w));
+  gap: var(--bp-cover-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* Once five covers no longer fit, the row scrolls sideways. */
+.bp-suggest-row {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: var(--bp-cover-w);
+  margin: 0 calc(-1 * var(--bp-gutter));
+  padding: 0 var(--bp-gutter) 4px;
+  overflow-x: auto;
+  scroll-padding-inline: var(--bp-gutter);
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.bp-suggest-row > li {
+  scroll-snap-align: start;
+}
+/* A pointer that can drag a scrollbar is shown one, so the row's extent is not a secret. */
+@media (hover: hover) and (pointer: fine) {
+  .bp-suggest-row {
+    scrollbar-color: color-mix(in oklch, var(--ink-0) 30%, transparent)
+      transparent;
+    scrollbar-width: thin;
+  }
+}
+.bp-suggest-pending {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
+  border: 1px dashed var(--line);
+  border-radius: var(--bp-radius);
+}
+
+/* The series, fanned like the Atrium shelf; it spreads when you reach for it. */
+.bp-fan {
+  --stack: 54px;
+  --spread: calc(var(--bp-cover-w) + var(--bp-cover-gap));
+  position: relative;
+  height: 300px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bp-fan-card {
+  position: absolute;
+  top: 8px;
+  left: 28px;
+  width: var(--bp-cover-w);
+  transform-origin: 50% 100%;
+  transform: translateX(calc(var(--i) * var(--stack)))
+    rotate(clamp(-14deg, calc((var(--i) - 1) * 7deg), 21deg));
+  transition: transform 620ms var(--ease-out);
+}
+.bp-fan-card:nth-child(1) {
+  z-index: 3;
+}
+.bp-fan-card:nth-child(2) {
+  z-index: 2;
+}
+.bp-fan-card a {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+.bp-fan-card .bp-tile-title,
+.bp-fan-card .bp-tile-meta {
+  opacity: 0;
+  transition: opacity 260ms ease-out;
+}
+.bp-fan:hover .bp-fan-card,
+.bp-fan:focus-within .bp-fan-card {
+  transform: translateX(calc(var(--i) * var(--spread))) rotate(0);
+}
+.bp-fan:hover .bp-tile-title,
+.bp-fan:hover .bp-tile-meta,
+.bp-fan:focus-within .bp-tile-title,
+.bp-fan:focus-within .bp-tile-meta {
+  opacity: 1;
+}
+.bp-fan-caption {
+  color: var(--ink-1);
+}
+.bp-fan:hover + .bp-fan-caption,
+.bp-fan:focus-within + .bp-fan-caption {
+  opacity: 0;
+}
+
+@media (max-width: 960px) {
+  .bp-split-shelf {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 40px;
+  }
+}
+@media (max-width: 720px) {
+  .bp-split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 40px;
+  }
+  .bp-related {
+    margin-top: 48px;
+    gap: 48px;
+  }
+  .bp-facts-list {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+  .bp-facts-list .chip,
+  .bp-chip-add,
+  .bp-facts-list .me-tag-input {
+    min-height: 44px;
+  }
+  .bp-fan {
+    --stack: 40px;
+    height: 230px;
+  }
+  .bp-chip-remove,
+  .bp-facts-list .me-chip-remove {
+    width: 44px;
+    height: 44px;
+    margin: -7px -8px -7px 0;
+  }
+}
+/* With nothing to hover, the series is a row to scroll, so every book is reachable whatever the width. */
+@media (hover: none) {
+  .bp-fan {
+    display: grid;
+    grid-auto-columns: var(--bp-cover-w);
+    grid-auto-flow: column;
+    gap: var(--bp-cover-gap);
+    height: auto;
+    margin: 0 calc(-1 * var(--bp-gutter));
+    padding: 8px var(--bp-gutter) 4px;
+    overflow-x: auto;
+    scroll-padding-inline: var(--bp-gutter);
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .bp-fan .bp-fan-card {
+    position: relative;
+    top: auto;
+    left: auto;
+    transform: none;
+    scroll-snap-align: start;
+  }
+  .bp-fan .bp-tile-title,
+  .bp-fan .bp-tile-meta {
+    opacity: 1;
+  }
+  .bp-fan-caption {
+    display: none;
+  }
+}

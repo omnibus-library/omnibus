@@ -10,6 +10,7 @@ import {
   type BookUuid,
   fetchAlignment,
   fetchBook,
+  fetchBookHousehold,
   fetchCopies,
   fetchHighlights,
   fetchInsights,
@@ -149,4 +150,11 @@ export const insightsQuery = (uuid: BookUuid) =>
   queryOptions({
     queryKey: ["book", uuid, "insights"],
     queryFn: () => fetchInsights(uuid),
+  });
+
+/** The other readers who share their stats and have sat down with the book. */
+export const householdQuery = (uuid: BookUuid) =>
+  queryOptions({
+    queryKey: ["book", uuid, "household"],
+    queryFn: () => fetchBookHousehold(uuid),
   });

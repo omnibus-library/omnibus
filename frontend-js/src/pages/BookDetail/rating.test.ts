@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { halfStarLabel, ratingAfterClick, starsMeta } from "./rating";
+import {
+  halfAfterKey,
+  halfStarLabel,
+  heroRatingNote,
+  previewNote,
+  ratingAfterClick,
+  starsMeta,
+} from "./rating";
 
 describe("halfStarLabel", () => {
   it.each([
@@ -58,5 +65,63 @@ describe("starsMeta", () => {
     expect(starsMeta(2_000, true, review)).toBe(
       "Couldn’t save your rating — try again",
     );
+  });
+});
+
+describe("previewNote", () => {
+  it("reads the value the pointer rests on", () => {
+    expect(previewNote(3.5, 4)).toBe("Rate 3.5");
+    expect(previewNote(5, null)).toBe("Rate 5");
+  });
+
+  it("offers to clear when the pointer rests on the saved value", () => {
+    expect(previewNote(3.5, 3.5)).toBe("Clear your rating");
+  });
+});
+
+describe("heroRatingNote", () => {
+  it("says what you rated it", () => {
+    expect(heroRatingNote(false, 4.5)).toBe("You rated it 4.5");
+    expect(heroRatingNote(false, 3)).toBe("You rated it 3");
+  });
+
+  it("invites a first rating", () => {
+    expect(heroRatingNote(false, null)).toBe("Not rated yet");
+  });
+
+  it("puts a refused save before everything else", () => {
+    expect(heroRatingNote(true, 4)).toBe(
+      "Couldn’t save your rating — try again",
+    );
+  });
+  it("claims nothing while your rating is unknown", () => {
+    expect(heroRatingNote(false, null, "loading")).toBe("Loading your rating…");
+    expect(heroRatingNote(false, null, "failed")).toBe(
+      "Couldn’t load your rating",
+    );
+  });
+});
+
+describe("halfAfterKey", () => {
+  it.each([
+    ["ArrowRight", 3, 3.5],
+    ["ArrowUp", 3, 3.5],
+    ["ArrowLeft", 3, 2.5],
+    ["ArrowDown", 3, 2.5],
+    ["Home", 3, 0.5],
+    ["End", 3, 5],
+  ])("moves %s from %s to %s", (key, from, to) => {
+    expect(halfAfterKey(from, key)).toBe(to);
+  });
+
+  it.each([
+    ["ArrowRight", 5],
+    ["ArrowLeft", 0.5],
+  ])("stays put on %s at %s", (key, from) => {
+    expect(halfAfterKey(from, key)).toBeNull();
+  });
+
+  it("ignores any other key", () => {
+    expect(halfAfterKey(3, "a")).toBeNull();
   });
 });

@@ -1,130 +1,191 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
-import { useNavigate, useParams } from "react-router";
+import { type RefObject, useEffect, useRef, useState } from "react";
+import { Outlet, useLocation, useNavigate, useParams } from "react-router";
 import {
   type BookUuid,
   coverUrl,
   type BookDetail as Detail,
   parseBookUuid,
+  type UserId,
 } from "../../api";
-import { Cover } from "../../components/Cover/Cover";
 import { Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
-import { FilesStop } from "./FilesStop";
-import { HighlightsStop } from "./HighlightsStop";
-import { HomeStop } from "./HomeStop";
-import { JournalStop } from "./JournalStop";
-import { MoreStop } from "./MoreStop";
+import { ToastProvider } from "../../components/Toast/Toast";
+import { prefersReducedMotion } from "../../motion";
+import { type BookDialog, BookDialogs } from "./BookDialogs";
+import { BookTabs, panelId, useBookTabs } from "./BookTabs";
+import { FilesDetails } from "./FilesDetails";
+import { Hero } from "./Hero";
+import { HighlightsJournal } from "./HighlightsJournal";
+import { reviewCardId } from "./OtherReviews";
+import { Overview } from "./Overview";
 import { bookQuery } from "./queries";
-import { ReviewsStop } from "./ReviewsStop";
-import { StatsStop } from "./StatsStop";
-import { useFlowScroll } from "./useFlowScroll";
+import { SERIES_ID } from "./Related";
+import { ReviewsTab } from "./ReviewsTab";
+import { useMyRating } from "./useMyRating";
 import "./BookDetail.css";
+import "./BookPage.css";
 
-// The Reviews stop's place in `sections`, where the title's household rating jumps to.
-const REVIEWS_STOP = 2;
+/** How long a card the hero brought the reader to keeps its glow. */
+const FLASH_MS = 1600;
 
-function Marquee({ book }: { book: Detail }) {
-  const stage = useRef<HTMLDivElement>(null);
-  const { active, backOn, goTo } = useFlowScroll(stage);
-  // iOS pins the same order; a dot's number is its place here.
-  const sections = [
-    {
-      name: "Home",
-      stop: <HomeStop book={book} onShowReviews={() => goTo(REVIEWS_STOP)} />,
-    },
-    { name: "Stats", stop: <StatsStop book={book} /> },
-    { name: "Reviews", stop: <ReviewsStop book={book} /> },
-    { name: "Highlights", stop: <HighlightsStop book={book} /> },
-    { name: "Journals", stop: <JournalStop book={book} /> },
-    { name: "The files", stop: <FilesStop book={book} /> },
-    { name: "More", stop: <MoreStop book={book} /> },
-  ].map((section, i) => ({ ...section, no: String(i + 1).padStart(2, "0") }));
+/** Whether the element is out of the viewport, so a drifting backdrop can stop. */
+function useOffscreen(target: RefObject<HTMLElement | null>) {
+  const [offscreen, setOffscreen] = useState(false);
+  useEffect(() => {
+    const element = target.current;
+    if (!element || !("IntersectionObserver" in window)) return;
+    // Entries queue oldest first; the last is where the element is now.
+    const watch = new IntersectionObserver((entries) =>
+      setOffscreen(!entries.at(-1)?.isIntersecting),
+    );
+    watch.observe(element);
+    return () => watch.disconnect();
+  }, [target]);
+  return offscreen;
+}
+
+/** The cover, blurred and tinted behind the hero; a book with none gets its accent instead. */
+function Backdrop({ book }: { book: Detail }) {
   return (
-    <div
-      className="bd-root bdmq"
-      style={book.accent ? { "--accent": book.accent } : undefined}
-    >
-      <div className="bdmq-stage" id="bdmq-stage" ref={stage}>
+    <div className="bp-backdrop" aria-hidden="true">
+      <div className="bp-cam">
+        <div className={book.hasCover ? "bp-drift" : "bp-drift is-plain"}>
+          {book.hasCover && <img src={coverUrl(book.uuid)} alt="" />}
+        </div>
+      </div>
+      <div className="bp-warm" />
+      <div className="bp-shade" />
+      <div className="bp-dim" />
+    </div>
+  );
+}
+
+function Page({ book }: { book: Detail }) {
+  const { tab, entering, selectTab } = useBookTabs();
+  // One queue for every write to your review, whichever control makes it.
+  const rating = useMyRating(book.uuid);
+  const [dialog, setDialog] = useState<BookDialog | null>(null);
+  // Takes the reader to their rating on the Reviews tab, or its composer when the stars can't take focus.
+  const leaveReview = async () => {
+    await selectTab("reviews");
+    const panel = document.getElementById(panelId("reviews"));
+    const target =
+      panel?.querySelector<HTMLElement>(
+        '[data-testid="review-stars"] [tabindex="0"]',
+      ) ?? panel?.querySelector<HTMLElement>("textarea");
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      block: "center",
+    });
+  };
+  // One card glows at a time, for a moment after the hero's chevron brings the reader to it.
+  const flashed = useRef<{
+    card: HTMLElement;
+    timer: ReturnType<typeof setTimeout>;
+  } | null>(null);
+  useEffect(() => () => clearTimeout(flashed.current?.timer), []);
+  const openReview = async (reader: UserId) => {
+    await selectTab("reviews");
+    const card = document.getElementById(reviewCardId(reader));
+    if (!card) return;
+    card.focus({ preventScroll: true });
+    card.scrollIntoView({
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      block: "center",
+    });
+    if (flashed.current) {
+      clearTimeout(flashed.current.timer);
+      flashed.current.card.classList.remove("is-flash");
+    }
+    card.classList.add("is-flash");
+    flashed.current = {
+      card,
+      timer: setTimeout(() => card.classList.remove("is-flash"), FLASH_MS),
+    };
+  };
+  const showSeries = async () => {
+    await selectTab("overview");
+    document.getElementById(SERIES_ID)?.scrollIntoView({
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      block: "start",
+    });
+  };
+  const stage = useRef<HTMLElement>(null);
+  const offscreen = useOffscreen(stage);
+  return (
+    <ToastProvider>
+      <div
+        className="bp-root"
+        style={book.accent ? { "--accent": book.accent } : undefined}
+      >
         <PageTitle page={book.title} />
-        <div className="bdmq-coverwrap" aria-hidden="true">
-          <div className="bdmq-coverpx" id="bdmq-coverpx">
-            <Cover
+        <header
+          ref={stage}
+          className={offscreen ? "bp-stage is-offscreen" : "bp-stage"}
+          data-tab={tab}
+        >
+          <Backdrop book={book} />
+          <div className="bp-stage-body">
+            <Hero
               book={book}
-              src={book.hasCover ? coverUrl(book.uuid) : null}
+              rating={rating}
+              onShowSeries={showSeries}
+              onOpenReview={openReview}
+              onOpenDialog={setDialog}
+              onLeaveReview={leaveReview}
             />
           </div>
-        </div>
-        <nav
-          className="bdmq-dots"
-          aria-label="Page sections"
-          data-testid="bdmq-dots"
-        >
-          {sections.map(({ name, no }, i) => (
-            <button
-              key={name}
-              type="button"
-              className={i === active ? "bdmq-dotrow on" : "bdmq-dotrow"}
-              title={name}
-              data-testid={`bdmq-dot-${i}`}
-              onClick={() => goTo(i)}
-            >
-              <i />
-              <span className="lb">
-                {no} · {name}
-              </span>
-            </button>
-          ))}
-        </nav>
-        <div className="bdmq-flowscrim" aria-hidden="true" />
-        <div className="bdmq-flowscroll" id="bdmq-flow">
-          <div className="bdmq-flow">
-            {sections.map(({ name, no, stop }, i) => (
-              <section
-                key={name}
-                className={i === 0 ? "bdmq-flowsec lead" : "bdmq-flowsec"}
-                data-testid={`bdmq-sec-${i}`}
-              >
-                {/* The first section is the book itself: its title is the heading. */}
-                {i > 0 && (
-                  <div className="bdmq-flowlab">
-                    {no}
-                    <b>{name}</b>
-                    <i className="rule" aria-hidden="true" />
-                  </div>
-                )}
-                <div className="bdmq-flowbody">{stop}</div>
-              </section>
-            ))}
-          </div>
-        </div>
-        <button
-          type="button"
-          className={backOn ? "bdmq-flowtop on" : "bdmq-flowtop"}
-          id="bdmq-flowtop"
-          data-testid="bdmq-flowtop"
-          onClick={() => goTo(0)}
-        >
-          ↑ back to the book
-        </button>
+        </header>
+        <BookTabs
+          tab={tab}
+          entering={entering}
+          onSelect={selectTab}
+          panels={{
+            overview: <Overview book={book} onOpenDialog={setDialog} />,
+            reviews: <ReviewsTab book={book} rating={rating} />,
+            highlights: <HighlightsJournal book={book} />,
+            files: <FilesDetails book={book} onOpenDialog={setDialog} />,
+          }}
+        />
+        <BookDialogs
+          book={book}
+          dialog={dialog}
+          onClose={() => setDialog(null)}
+        />
+        {/* The metadata editor, a sheet over this page, once the book is here to sit under it. */}
+        <Outlet />
       </div>
-    </div>
+    </ToastProvider>
   );
 }
 
 function BookDetailFor({ uuid }: { uuid: BookUuid }) {
   const book = useQuery(bookQuery(uuid));
   const navigate = useNavigate();
+  const location = useLocation();
   const client = useQueryClient();
   // A merged-away uuid resolves to the surviving book; its page keys are the survivor's.
   useEffect(() => {
     if (book.data && book.data.uuid !== uuid) {
       // Seeded so the survivor's page opens on this answer instead of a loader and a refetch.
       client.setQueryData(bookQuery(book.data.uuid).queryKey, book.data);
-      navigate(`/books/${book.data.uuid}`, { replace: true });
+      // The rest of the address, `/edit` included, moves with it. Cut at the segment, since the
+      // route's uuid is decoded and the address may not be.
+      navigate(
+        {
+          pathname: location.pathname.replace(
+            /^\/books\/[^/]+/,
+            `/books/${book.data.uuid}`,
+          ),
+          search: location.search,
+        },
+        { replace: true, state: location.state },
+      );
     }
-  }, [book.data, uuid, navigate, client]);
+  }, [book.data, uuid, location, navigate, client]);
   switch (book.status) {
     case "pending":
       return <Loading kind="page" label="Taking it off the shelf" />;
@@ -134,7 +195,7 @@ function BookDetailFor({ uuid }: { uuid: BookUuid }) {
       );
     case "success":
       return book.data ? (
-        <Marquee key={book.data.uuid} book={book.data} />
+        <Page key={book.data.uuid} book={book.data} />
       ) : (
         <PageNotFound subject="Book" />
       );

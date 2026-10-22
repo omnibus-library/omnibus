@@ -1,4 +1,5 @@
 import type { BookDetail } from "../../api";
+import { formatDateShort, formatInstantShort } from "../../format";
 
 type Identifier = BookDetail["identifiers"][number];
 
@@ -103,7 +104,7 @@ function labelFor({ scheme, value }: Identifier): [string, number] {
 
 // The value's ISBN shape (13 digits, or 9 plus a digit or X) after dropping a
 // `urn:isbn:` / `isbn:` prefix. No checksum, so a mistyped ISBN still collapses.
-function isbnValue(value: string): string | null {
+export function isbnValue(value: string): string | null {
   const lower = value.trim().toLowerCase();
   const bare = lower.replace(/^(urn:isbn:|isbn:|isbn )/, "");
   const cleaned = stripped(bare);
@@ -173,4 +174,50 @@ export function identifierRows(
     book.isbn10,
   );
   return folded.map((r) => r.row);
+}
+
+/** A row of the Details list: a value, or a field the editor can fill that is still empty. */
+export type DetailRow =
+  | { key: string; label: string; value: string }
+  | {
+      key: "publisher" | "published" | "language" | "isbn13";
+      label: string;
+      unset: true;
+    };
+
+const isIsbn = (row: IdentifierRow) => row.label.startsWith("ISBN");
+
+/**
+ * The Details list: title and author, the publisher, publication date and language,
+ * the identifiers with the ISBN first, then the book's UUID and when it was added. The
+ * four fields a reader can fill read as unset when empty; any other row is absent, not
+ * blank. Published is a calendar date and never shifted; Added is an instant and
+ * lands on the reader's own day.
+ */
+export function detailRows(book: BookDetail): DetailRow[] {
+  const settable = (
+    key: "publisher" | "published" | "language" | "isbn13",
+    label: string,
+    value: string | null | undefined,
+  ): DetailRow => (value ? { key, label, value } : { key, label, unset: true });
+  const ids = identifierRows(book);
+  const identifiers: DetailRow[] = ids.some(isIsbn)
+    ? [...ids.filter(isIsbn), ...ids.filter((row) => !isIsbn(row))]
+    : [settable("isbn13", "ISBN", null), ...ids];
+  const author = book.authors.join(", ");
+  const added = book.addedAt && formatInstantShort(book.addedAt);
+  return [
+    { key: "title", label: "Title", value: book.title },
+    ...(author ? [{ key: "author", label: "Author", value: author }] : []),
+    settable("publisher", "Publisher", book.publisher),
+    settable(
+      "published",
+      "Published",
+      book.published && formatDateShort(book.published),
+    ),
+    settable("language", "Language", book.language),
+    ...identifiers,
+    { key: "uuid", label: "UUID", value: book.uuid },
+    ...(added ? [{ key: "added", label: "Added", value: added }] : []),
+  ];
 }

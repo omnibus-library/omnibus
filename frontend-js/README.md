@@ -34,7 +34,7 @@ load before the screens that override them.
 `src/router.tsx` carries all 30 routes from `frontend/src/routes.rs`, with the
 same split: the readers and the player fill the screen, everything else sits
 under the top bar, and a guest goes to `/login?next=…` and comes back. Login,
-Register, the library, book detail, the metadata editor (`/books/:uuid/edit`),
+Register, the library, book detail (with the metadata editor, `/books/:uuid/edit`),
 add books (`/add-books`), check-in (`/check-in`), search results
 (`/search/:query`), the authors, series and shelves indexes with their detail
 pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), the three readers
@@ -48,20 +48,33 @@ native shell's shelves screens) are left out. As on Dioxus web, a bare
 `/settings` has its five sections (Profile, Preferences, Goals, Devices,
 Sign-in & security) picked by `?section=`; an old slug redirects to its new
 home and `/account` redirects to it.
-Book detail carries all seven stops (home, stats, reviews, highlights,
-journals, files, more) with reviews (one-tap stars, public text and private
-notes in the journal editor, a spoiler flag, the household summary under the
-title and in the stop, other readers' reviews), quote cards, journal editor,
-copies and wishlist, shelf picker, Send to Kindle, merge and delete. It leaves the alignment modal, the
-snapped scroll mode, the genre and tag chip editor, the Immersive Read button and the
-check-in overlay (the top bar links to the `/check-in` page instead) to the
-screens that own them.
+Book detail is a hero (the cover on its stage, your stars and the household's,
+Continue or Listen, the status and More menus) over four tabs, Overview, Reviews,
+Highlights & Journal and Files & Details, whose ribbon bookmark slides under the
+open tab and whose panels turn like a page (a View Transition, with a CSS fallback
+and no motion under reduced motion). Overview holds the description, editable
+genre and tag chips, your reading and the household's time in the book (from
+`GET /api/books/{uuid}/household`), and related books. Reviews has your review
+(one-tap stars, public text and private notes, a spoiler flag) and a card for each
+household reader. Highlights & Journal has quote cards that flip to a shareable
+face beside the journal's entries, and Files & Details has each file's name,
+size and length with Send to Kindle and Kobo, Export, the sync line, physical
+copies and the wishlist, the details with an Add link on each one that is unset,
+and the curator's edit, merge and delete. Finishing a book plays a ribbon burst
+and shows what is next. The alignment modal and the check-in overlay (the top bar
+links to the `/check-in` page instead) are left to the screens that own them.
+`/books/:uuid/edit` is a child route of `/books/:uuid`: the book page stays
+mounted and the metadata editor rises over it as a sheet, so a deep link, a
+refresh and Back all draw both. The sheet's tabs are Details, Artwork and
+Identifiers, and Fetch metadata takes their place to list one edition per
+provider with a checkbox on each field it would change. Fields are refused as
+they are typed, a cover that is picked or fetched is held with the other edits
+until Done saves them, and leaving with edits asks inline.
 The mini dock sits after the page in the shell and beneath `/read`, `/comic` and
 `/pdf` (the `ReaderDock` layout route), never on `/listen`; the `<audio>` lives
 above the routes, so playback continues as the reader moves between pages. The
 mobile shell's native player is left out.
-The metadata editor saves overrides, replaces the cover, and copies a provider
-edition's fields and cover into the form; add books inspects an EPUB, PDF or
+Add books inspects an EPUB, PDF or
 audiobook with upload progress, reviews it on the same form, and files it. A
 413 (or a connection the server drops mid-send) reads as "larger than this
 server accepts": the cap is the server's `OMNIBUS_MAX_UPLOAD_BYTES`, which no
@@ -98,7 +111,18 @@ throws (the session gate, the shell, a reader) renders it full-screen.
 
 ## Styling, copied out of Atrium
 
-Each CSS file holds only the `atrium.css`, `loading.css`, `filter_bar.css` and
+The book page and the metadata editor sheet are not Atrium copies. Their CSS is
+hand-written under prefixes the Dioxus app does not use, so
+`tools/extract-atrium.cjs` never files a rule against them: `bp-` for the page
+(`BookPage.css` for the stage, hero, tabs and finished card, and one file per tab:
+`Overview.css`, `ReviewsTab.css`, `HighlightsJournal.css`, `FilesDetails.css`),
+`es-` for the sheet (`EditSheet.css`), and `Toast.css` and `Sheet.css` for the two
+shared components. `BookDetail.css` and `BookEdit.css` hold only the rules of the
+components both screens kept (the review and journal composers, the export menu,
+the cover editor, the add page's form) and are pruned when a class loses its last
+user.
+
+Elsewhere, each CSS file holds only the `atrium.css`, `loading.css`, `filter_bar.css` and
 `authors.css` rules its markup can match, copied by `tools/extract-atrium.cjs`.
 The components keep the Dioxus class names, which is what lets the copy apply
 unchanged: when sign-in, the library grid and book detail were first ported,
@@ -209,11 +233,13 @@ shell provides it.
   formatting (`fixed` included), `safeNext`, the theme root, the session, and
   the pure helpers behind the screens (`resume`, `password`, `settingsIndex`,
   `hiddenFormats`, `goals`, `apiTokens`, `viewPrefs`, `focusTrap`, book
-  detail's `readout`, `identifiers`, `shelves`, `journalMarkdown`, `rating`,
-  `reviews` (patches, spoiler folding, grouping, the summary) and delete copy, the palette's `selection`, the results page's `results`, Register's
+  detail's `readout`, `stats`, `lean`, `identifiers` (the details list included),
+  `shelves`, `highlightAnchors`, `quietReaders`, `journalMarkdown`, `rating`,
+  `reviews` (a patch applied to your review and the household's list, what a save sends, the composer's seed, spoiler veiling and Read more) and delete copy, the palette's `selection`, the results page's `results`, Register's
   `refusal`, the library's `filters`, `libraryView`, `seriesStacks`,
   `shelfLens`, `sorting` and `bulkMetadata`, the editor's `metadata` (form
-  schema and override diff), `dirty` and `editionFields`, `uploads`,
+  schema, the rules a field is refused by and the override diff), `dirty`,
+  `editionFields` and `fetch`, the View Transition helper `viewTransition`, `uploads`,
   check-in's `checkInFlow` and `scan`, the scanner's `scanStatus` and
   `loadScanner`, the discovery pages' `authorsOrder`, `authorProgress`,
   `seriesIndex`, `shelvesIndex`, the shelf rules' `rules`, the picker's

@@ -1,0 +1,101 @@
+.toast {
+  position: fixed;
+  z-index: 60;
+  left: 50%;
+  bottom: 28px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 13px 20px;
+  border-radius: 999px;
+  background: #fff;
+  color: #0e0e10;
+  font: 600 15px / 1.2 var(--sans);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 16px);
+  transition:
+    opacity 200ms ease-out,
+    transform 420ms var(--ease-out);
+}
+.toast:empty {
+  padding: 0;
+}
+.toast.is-on {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.toast.is-on[data-actionable] {
+  pointer-events: auto;
+  padding-right: 8px;
+}
+.toast-action,
+.toast-dismiss {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  min-height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.toast-action {
+  margin-left: 12px;
+  padding: 0 12px;
+  background: #0e0e10;
+  color: #fff;
+}
+.toast-dismiss {
+  width: 32px;
+  padding: 0;
+}
+.toast-dismiss svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+@media (hover: hover) {
+  .toast-action:hover {
+    background: #2a2a30;
+  }
+  .toast-dismiss:hover {
+    background: rgba(14, 14, 16, 0.1);
+  }
+}
+.toast-action:focus-visible,
+.toast-dismiss:focus-visible {
+  outline: 2px solid #0e0e10;
+  outline-offset: 2px;
+}
+@media (max-width: 720px) {
+  .toast {
+    bottom: calc(84px + env(safe-area-inset-bottom));
+    /* left: 50% leaves half the screen to fit in; size to the words, up to the edges. */
+    width: max-content;
+    max-width: calc(100% - 32px);
+  }
+  /* Fingers: the buttons are 44 tall, and the pill hugs them. */
+  .toast[data-actionable] {
+    padding-block: 4px;
+  }
+  .toast-action,
+  .toast-dismiss {
+    min-height: 44px;
+  }
+  .toast-dismiss {
+    width: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    transform: translate(-50%, 0);
+    transition: opacity 1ms;
+  }
+}

@@ -1,4 +1,4 @@
-import type { BookDetail, WishlistEntry } from "./api";
+import type { WishlistEntry } from "./api";
 
 /** The cover plate's author line: the first author's surname, uppercased. */
 export function plateAuthor(authors: readonly string[]): string {
@@ -31,36 +31,6 @@ export const plural = (n: number) => (n === 1 ? "" : "s");
 /** A count of books in words: "1 book", "2 books". */
 export const bookCount = (n: number) => `${n} book${plural(n)}`;
 
-/**
- * The detail kicker: the series name (to link) and what follows it, or just the
- * tail for a standalone, which leads with its category.
- */
-export function homeKicker(
-  book: BookDetail,
-  seriesTotal: number | null,
-  wish: WishlistEntry | null = null,
-) {
-  if (wish) {
-    return {
-      series: null,
-      tail: `On your wishlist · added from ${wishlistSource(wish.source)}`,
-    };
-  }
-  const year = book.published ? formatYear(book.published) : null;
-  const yearTail = year ? ` · ${year}` : "";
-  if (book.series) {
-    const { name, index } = book.series;
-    // The index is the book's place in the series and the count is how many the
-    // library holds: two unrelated numbers, never "Book 2 of 1".
-    const position = index
-      ? ` · Book ${index}${seriesTotal ? ` · ${seriesTotal} in your library` : ""}`
-      : "";
-    return { series: name, tail: position + yearTail };
-  }
-  const lead = book.genres[0] ?? book.subjects[0] ?? "Book";
-  return { series: null, tail: `${lead} · standalone${yearTail}` };
-}
-
 const WISH_SOURCES = {
   scan: "a scan",
   detail: "this page",
@@ -77,13 +47,6 @@ const wordCount = (html: string) =>
     .replace(/<[^>]*>/g, " ")
     .split(/\s+/)
     .filter(Boolean).length;
-
-const DESCRIPTION_CLAMP_WORDS = 50;
-
-/** Whether a description runs past the clamp and needs a Show more toggle. */
-export function descriptionOverflows(html: string): boolean {
-  return wordCount(html) > DESCRIPTION_CLAMP_WORDS;
-}
 
 // The server's own threshold for offering to fetch a summary.
 const SUMMARY_MIN_WORDS = 10;
@@ -283,6 +246,14 @@ export function durationLabel(seconds: number): string {
   const [h, m] = [Math.floor(secs / 3600), Math.floor((secs % 3600) / 60)];
   if (h === 0) return `${m}m`;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+/** "5 h 57 m", "2 h", "41 m": a length of time as the book page words it; minutes are floored. */
+export function spacedDuration(seconds: number): string {
+  const mins = Math.floor(Math.max(0, seconds) / 60);
+  const [h, m] = [Math.floor(mins / 60), mins % 60];
+  if (h === 0) return `${m} m`;
+  return m === 0 ? `${h} h` : `${h} h ${m} m`;
 }
 
 /** A unix-seconds time as the reader's calendar day, "May 17, 2026". */

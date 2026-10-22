@@ -476,6 +476,22 @@ export function TrashGlyph({ size = 15 }: GlyphProps) {
   );
 }
 
+/** A circular arrow, for turning a card back over. */
+export function RotateGlyph({ size = 15 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...stroked}
+      aria-hidden="true"
+    >
+      <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+      <path d="M21 3v5h-5" />
+    </svg>
+  );
+}
+
 /** A tick, for "picked". */
 export function CheckGlyph({ size = 12 }: GlyphProps) {
   return (
@@ -488,6 +504,106 @@ export function CheckGlyph({ size = 12 }: GlyphProps) {
       aria-hidden="true"
     >
       <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+const menuStroke = { ...stroked, strokeWidth: 1.8 } as const;
+
+/** Three dots, for a menu of more actions. */
+export function MoreGlyph({ size = 20 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...menuStroke}
+      aria-hidden="true"
+    >
+      <circle cx="5" cy="12" r="1.2" />
+      <circle cx="12" cy="12" r="1.2" />
+      <circle cx="19" cy="12" r="1.2" />
+    </svg>
+  );
+}
+
+/** A closed book, for a book not yet started. */
+export function UnreadGlyph({ size = 20 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...menuStroke}
+      aria-hidden="true"
+    >
+      <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20" />
+    </svg>
+  );
+}
+
+/** An open book, for a book in progress. */
+export function ReadingGlyph({ size = 20 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...menuStroke}
+      aria-hidden="true"
+    >
+      <path d="M12 7v14" />
+      <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" />
+    </svg>
+  );
+}
+
+/** A ticked circle, for a finished book. */
+export function FinishedGlyph({ size = 20 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...menuStroke}
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.5 12.5 2.5 2.5 4.5-5" />
+    </svg>
+  );
+}
+
+/** Books on a shelf, for filing a book onto one. */
+export function ShelfGlyph({ size = 20 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...menuStroke}
+      aria-hidden="true"
+    >
+      <rect x="3" y="4" width="4" height="16" rx="1" />
+      <rect x="9" y="4" width="4" height="16" rx="1" />
+      <path d="m15.2 5.1 3.8-1 3.6 15-3.8 1z" />
+    </svg>
+  );
+}
+
+/** Two branches meeting, for merging one book into another. */
+export function MergeGlyph({ size = 20 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...menuStroke}
+      aria-hidden="true"
+    >
+      <circle cx="18" cy="18" r="3" />
+      <circle cx="6" cy="6" r="3" />
+      <path d="M6 21V9a9 9 0 0 0 9 9" />
     </svg>
   );
 }

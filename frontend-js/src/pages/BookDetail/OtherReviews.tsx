@@ -1,15 +1,17 @@
 import { useState } from "react";
 import type { OtherReview } from "../../api";
-import { Button } from "../../components/Button/Button";
-import { StarRating } from "../../components/StarRating/StarRating";
 import { fmtStars } from "../../components/StarRating/stars";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
 import { formatLongDate } from "../../format";
+import { MiniStars } from "./MiniStars";
 import { RenderedMarkdown } from "./RenderedMarkdown";
-import { needsReadMore, splitOthers, spoilerVeiled } from "./reviews";
+import { needsReadMore, spoilerVeiled } from "./reviews";
 
-/** One reader's review with text: their stars stay in view, a spoiler's text behind a reveal. */
-function OtherReviewCard({
+/** The id a reader's card carries, which the hero's chevron for them focuses. */
+export const reviewCardId = (readerId: number) => `review-${readerId}`;
+
+/** One household reader: who, when, their stars and then their text, a spoiler's behind a reveal; "Rated only" when they wrote nothing. */
+function HouseholdCard({
   review,
   finished,
 }: {
@@ -19,104 +21,76 @@ function OtherReviewCard({
   const [revealed, setRevealed] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const { reader, stars, spoiler } = review;
-  const md = review.bodyMd ?? "";
-  const clipped = needsReadMore(md) && !expanded;
+  const md = review.bodyMd;
+  const clipped = md !== null && needsReadMore(md) && !expanded;
   return (
-    <article className="bd-review-card" data-testid="review-card">
-      <div className="bd-review-card-head">
-        <UserAvatar
-          user={reader}
-          className="bd-review-avatar"
-          photoClassName="bd-review-avatar-photo"
-        />
-        <div className="bd-review-byline">
-          <span className="bd-review-name">{reader.name}</span>
-          {stars !== null && (
-            <StarRating stars={stars} className="bd-review-card-stars" />
-          )}
-          <span className="mono bd-review-date">
-            {formatLongDate(review.updatedAt)}
-          </span>
-          {spoiler && (
-            <span className="mono bd-review-spoilertag">spoilers</span>
-          )}
-        </div>
-      </div>
-      {spoilerVeiled(spoiler, finished, revealed) ? (
-        <div className="bd-review-veil" data-testid="review-spoiler-veil">
-          <span className="mono">This review gives away the story.</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            data-testid="review-spoiler-reveal"
-            onClick={() => setRevealed(true)}
-          >
-            Show review
-          </Button>
-        </div>
-      ) : (
-        <>
-          <RenderedMarkdown
-            html={review.bodyHtml}
-            md={md}
-            className={clipped ? "bd-review-text is-clamped" : "bd-review-text"}
-            testId="review-text"
-          />
-          {clipped && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="bd-review-more"
-              data-testid="review-read-more"
-              aria-expanded="false"
-              onClick={() => setExpanded(true)}
+    <article
+      id={reviewCardId(reader.id)}
+      tabIndex={-1}
+      aria-label={`${reader.name}'s review`}
+      className="bp-panel bp-entry bp-review-card"
+      data-testid="review-card"
+    >
+      <UserAvatar
+        user={reader}
+        className="bp-avatar"
+        photoClassName="bp-avatar-photo"
+      />
+      <div>
+        <p className="bp-entry-meta">
+          <strong>{reader.name}</strong> · {formatLongDate(review.updatedAt)}
+          {spoiler && <span className="bp-spoiler-tag"> · spoilers</span>}
+        </p>
+        {stars !== null && (
+          <p className="bp-review-score">
+            <MiniStars stars={stars} />
+            {fmtStars(stars)}
+          </p>
+        )}
+        {md === null ? (
+          <p className="bp-entry-text bp-rated-only">Rated only</p>
+        ) : spoilerVeiled(spoiler, finished, revealed) ? (
+          <div className="bp-review-veil" data-testid="review-spoiler-veil">
+            <span>This review gives away the story.</span>
+            <button
+              type="button"
+              className="bp-link-row"
+              data-testid="review-spoiler-reveal"
+              onClick={() => setRevealed(true)}
             >
-              Read more ↓
-            </Button>
-          )}
-        </>
-      )}
+              Show review
+            </button>
+          </div>
+        ) : (
+          <>
+            <RenderedMarkdown
+              html={review.bodyHtml}
+              md={md}
+              className={
+                clipped
+                  ? "bp-entry-text bd-review-text is-clamped"
+                  : "bp-entry-text bd-review-text"
+              }
+              testId="review-text"
+            />
+            {clipped && (
+              <button
+                type="button"
+                className="bp-link-row"
+                data-testid="review-read-more"
+                onClick={() => setExpanded(true)}
+              >
+                Read more
+              </button>
+            )}
+          </>
+        )}
+      </div>
     </article>
   );
 }
 
-/** Every rating without text, as one row of avatars and stars. */
-function StarsOnlyRow({ ratings }: { ratings: OtherReview[] }) {
-  return (
-    <div className="bd-review-starsrow" data-testid="review-stars-only">
-      <span className="label bd-review-starsrow-k">Also rated</span>
-      <ul
-        className="bd-review-starsrow-list"
-        aria-label="Ratings without a review"
-      >
-        {ratings.map(({ reader, stars }) => (
-          <li
-            key={reader.id}
-            className="bd-review-starchip"
-            data-testid="review-stars-only-item"
-            title={
-              stars === null
-                ? reader.name
-                : `${reader.name} · ${fmtStars(stars)} ★`
-            }
-          >
-            <UserAvatar
-              user={reader}
-              className="bd-review-chip-avatar"
-              photoClassName="bd-review-chip-avatar-photo"
-            />
-            <span className="sr-only">{reader.name}</span>
-            {stars !== null && (
-              <StarRating stars={stars} className="bd-review-chip-stars" />
-            )}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-/** The other readers in the server's order: reviews with text as cards, then the bare ratings in one row. */
+/** A card for every other reader who rated or reviewed, in the server's order. */
 export function OtherReviews({
   others,
   finished,
@@ -124,26 +98,13 @@ export function OtherReviews({
   others: OtherReview[];
   finished: boolean;
 }) {
-  const { texts, ratings } = splitOthers(others);
   return (
-    <>
-      {texts.length === 0 && ratings.length === 0 && (
-        <p className="mono bd-review-quiet" data-testid="other-reviews-empty">
-          No one else has rated or reviewed this book yet.
-        </p>
-      )}
-      {texts.length > 0 && (
-        <div className="bd-review-list" data-testid="other-reviews">
-          {texts.map((review) => (
-            <OtherReviewCard
-              key={review.reader.id}
-              review={review}
-              finished={finished}
-            />
-          ))}
-        </div>
-      )}
-      {ratings.length > 0 && <StarsOnlyRow ratings={ratings} />}
-    </>
+    <ul className="bp-review-list" data-testid="other-reviews">
+      {others.map((review) => (
+        <li key={review.reader.id}>
+          <HouseholdCard review={review} finished={finished} />
+        </li>
+      ))}
+    </ul>
   );
 }

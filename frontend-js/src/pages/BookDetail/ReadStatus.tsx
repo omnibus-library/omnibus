@@ -1,44 +1,38 @@
 import { useQuery } from "@tanstack/react-query";
+import { type ReactNode, useState } from "react";
+import { type BookUuid, type ReadStatusValue, saveReadStatus } from "../../api";
 import {
-  type BookUuid,
-  type ReadStatusRecord,
-  type ReadStatusValue,
-  saveReadStatus,
-} from "../../api";
+  ChevronDownGlyph,
+  FinishedGlyph,
+  ReadingGlyph,
+  UnreadGlyph,
+} from "../../components/Glyphs/Glyphs";
+import { MoreMenu } from "../../components/MoreMenu/MoreMenu";
+import { useToast } from "../../components/Toast/Toast";
 import { ago, nowSecs } from "../../format";
 import { readStatusQuery, shelvesQuery } from "./queries";
+import { savedStatus } from "./readout";
 import { useOptimisticSave } from "./useOptimisticSave";
 
-const SEGMENTS = [
-  ["unread", "Unread"],
-  ["reading", "Reading"],
-  ["finished", "Finished"],
-] as const satisfies readonly (readonly [ReadStatusValue, string])[];
+const STATUSES = [
+  ["unread", "Unread", <UnreadGlyph key="unread" />],
+  ["reading", "Reading", <ReadingGlyph key="reading" />],
+  ["finished", "Finished", <FinishedGlyph key="finished" />],
+] as const satisfies readonly (readonly [ReadStatusValue, string, ReactNode])[];
 
-function statusMeta(
-  failed: boolean,
-  record: ReadStatusRecord | null | undefined,
-): string {
-  if (failed) return "Couldn't save — try again";
-  const status = record?.status ?? "unread";
-  switch (status) {
-    case "unread":
-      return "Not started";
-    case "reading":
-      return "In progress";
-    case "finished":
-      return record?.finishedAt
-        ? `Finished ${ago(nowSecs(), record.finishedAt)}`
-        : "Finished";
-    default: {
-      const _exhaustive: never = status;
-      return _exhaustive;
-    }
-  }
-}
-
-/** The Unread / Reading / Finished control and the line under it. */
-export function ReadStatus({ uuid }: { uuid: BookUuid }) {
+/** The status pill and its menu of Unread, Reading and Finished; a refused pick reverts and says so. */
+export function ReadStatus({
+  uuid,
+  onFinish,
+  onFinishRefused,
+}: {
+  uuid: BookUuid;
+  /** Told when the reader picks Finished after another status. */
+  onFinish: () => void;
+  /** Told when the server refused that pick, so what it celebrated is taken down. */
+  onFinishRefused: () => void;
+}) {
+  const toast = useToast();
   const { queryKey } = readStatusQuery(uuid);
   const record = useQuery(readStatusQuery(uuid));
   const save = useOptimisticSave(
@@ -51,57 +45,72 @@ export function ReadStatus({ uuid }: { uuid: BookUuid }) {
       }),
       // A smart shelf may now hold the book.
       alsoInvalidate: [shelvesQuery(uuid).queryKey],
+      onFailure: (status) => {
+        toast("Couldn’t save your reading status");
+        if (status === "finished") onFinishRefused();
+      },
     },
   );
-  // `null` is a read that succeeded with no status; `undefined` is still loading or unreadable.
-  const known = record.data !== undefined;
-  const shown = known ? (record.data?.status ?? "unread") : null;
+  const [open, setOpen] = useState(false);
+  // Unknown while loading or unreadable; Unread for a book with no record.
+  const shown = savedStatus(record.data);
+  const known = shown !== undefined;
+  const current = STATUSES.find(([status]) => status === shown);
   return (
-    <div className="bd-readstatus" data-testid="read-status-control">
-      {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings a border and min-width Atrium never resets */}
-      <div
-        className="bd-readstatus-seg"
-        role="group"
-        aria-label="Reading status"
+    <div className="shd-more bp-status" data-testid="read-status-control">
+      <button
+        type="button"
+        className="bp-button bp-button-large bp-tinted bp-status-pill"
+        aria-label={`Read status: ${current?.[1] ?? "loading"}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={!known}
+        onClick={() => setOpen(!open)}
       >
-        {SEGMENTS.map(([status, label]) => (
+        {current ? (
+          <span>
+            {current[2]}
+            {current[1]}
+          </span>
+        ) : (
+          <span className="ld-sheen">Reading status</span>
+        )}
+        <ChevronDownGlyph />
+      </button>
+      {open && (
+        <MoreMenu
+          label="Read status"
+          radio
+          onClose={() => setOpen(false)}
+          items={STATUSES.map(([status, label, icon]) => ({
+            label,
+            icon,
+            testId: `read-status-${status}`,
+            checked: status === shown,
+            note:
+              status === "finished" && record.data?.finishedAt
+                ? ago(nowSecs(), record.data.finishedAt)
+                : undefined,
+            onSelect: () => {
+              if (status === shown) return;
+              if (status === "finished") onFinish();
+              save.mutate(status);
+            },
+          }))}
+        />
+      )}
+      {record.isError && (
+        <span className="bp-status-error" data-testid="read-status-meta">
+          Couldn’t load your reading status
           <button
-            key={status}
             type="button"
-            className={
-              status === shown
-                ? "bd-readstatus-btn active"
-                : "bd-readstatus-btn"
-            }
-            data-testid={`read-status-${status}`}
-            aria-pressed={status === shown}
-            disabled={!known}
-            onClick={() => status !== shown && save.mutate(status)}
+            className="bdmq-synclink"
+            onClick={() => record.refetch()}
           >
-            {label}
+            Retry
           </button>
-        ))}
-      </div>
-      <div
-        className="mono bd-readstatus-meta"
-        role="status"
-        data-testid="read-status-meta"
-      >
-        {known ? (
-          statusMeta(save.isError, record.data)
-        ) : record.isError ? (
-          <>
-            Couldn't load your reading status
-            <button
-              type="button"
-              className="bdmq-synclink"
-              onClick={() => record.refetch()}
-            >
-              Retry
-            </button>
-          </>
-        ) : null}
-      </div>
+        </span>
+      )}
     </div>
   );
 }

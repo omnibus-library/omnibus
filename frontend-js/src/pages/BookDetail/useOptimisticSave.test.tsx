@@ -1,4 +1,8 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  MutationObserver,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -31,6 +35,7 @@ function renderSave() {
         async (note) => {
           sent.push(note);
           if (note === "first") await held.promise;
+          if (note === "refused") throw new Error("refused");
           return `saved ${note}`;
         },
         {
@@ -87,5 +92,65 @@ describe("useOptimisticSave across an account switch", () => {
     held.release();
 
     await waitFor(() => expect(client.getQueryData(KEY)).toBe("saved first"));
+  });
+});
+
+describe("useOptimisticSave among keys that begin with its own", () => {
+  it("leaves a read under a longer key running", async () => {
+    const { client, result } = renderSave();
+    const child = [...KEY, "child"];
+    const read = deferred();
+    void client.fetchQuery({
+      queryKey: child,
+      queryFn: () => read.promise.then(() => "answer"),
+    });
+
+    act(() => {
+      result.current.mutate("second");
+    });
+    await waitFor(() => expect(client.getQueryData(KEY)).toBe("saved second"));
+
+    expect(client.getQueryState(child)?.fetchStatus).toBe("fetching");
+    read.release();
+  });
+
+  it.each([
+    ["is saved", "second"],
+    ["is refused", "refused"],
+  ])(
+    "leaves the answer under a longer key fresh when a write %s",
+    async (_, note) => {
+      const { client, result } = renderSave();
+      const child = [...KEY, "child"];
+      client.setQueryData(child, "answer");
+
+      act(() => {
+        result.current.mutate(note);
+      });
+      await waitFor(() =>
+        expect(result.current.isSuccess || result.current.isError).toBe(true),
+      );
+
+      expect(client.getQueryState(child)?.isInvalidated).toBe(false);
+    },
+  );
+
+  it("refetches when its last write settles although another mutation under a longer key is running", async () => {
+    const { client, result } = renderSave();
+    const other = deferred();
+    void new MutationObserver(client, {
+      mutationKey: [...KEY, "other"],
+      mutationFn: () => other.promise,
+    }).mutate();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    act(() => {
+      result.current.mutate("second");
+    });
+
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: KEY, exact: true }),
+    );
+    other.release();
   });
 });

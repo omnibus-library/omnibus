@@ -12,6 +12,7 @@ import {
 import type {
   BookSuggestion as BookSuggestionWire,
   EbookMetadata,
+  MetadataOverrides,
   PaletteResults as PaletteWire,
   SummarySource,
 } from "./generated/schemas";
@@ -63,9 +64,12 @@ export function toBookDetail(wire: EbookMetadata) {
     bookFiles: (wire.book_files ?? []).map((f) => ({
       id: f.id,
       format: f.format,
+      filename: f.filename,
       label: f.label ?? null,
       ordinal: f.ordinal,
       sizeBytes: f.size_bytes ?? 0,
+      // Audio only, whole seconds summed over its parts.
+      durationSeconds: f.duration_seconds ?? null,
     })),
     epubSizeBytes: wire.epub_size_bytes ?? null,
     publisher: wire.publisher ?? null,
@@ -169,19 +173,19 @@ export async function fetchSummary(
   return summaryText.parse(await res.json());
 }
 
-/** Saves `description` over the scanned one and returns the book as it now reads. */
-export async function saveDescription(
+/** Writes `edit` over the book's scanned values and returns the book as it now reads. */
+export async function saveBookOverrides(
   uuid: BookUuid,
-  description: string,
+  edit: MetadataOverrides,
 ): Promise<BookDetail> {
   return toBookDetail(
-    ok(
-      await postEbookOverrides(encodeURIComponent(uuid), {
-        description,
-      }),
-    ),
+    ok(await postEbookOverrides(encodeURIComponent(uuid), edit)),
   );
 }
+
+/** Saves `description` over the scanned one and returns the book as it now reads. */
+export const saveDescription = (uuid: BookUuid, description: string) =>
+  saveBookOverrides(uuid, { description });
 
 function toSuggestion(wire: BookSuggestionWire) {
   return {

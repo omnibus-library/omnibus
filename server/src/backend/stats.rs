@@ -3,7 +3,8 @@
 //! by an optional snake_case `?range=`), the same data un-aggregated as a
 //! keyset-paginated session log (`GET /api/stats/sessions`), the annual goal
 //! (`PUT /api/stats/goal`) and the daily ones (`PUT /api/stats/goal/daily`),
-//! one book's insights (`GET /api/books/{uuid}/insights`), and the collection's
+//! one book's insights (`GET /api/books/{uuid}/insights`), the other readers' time in it
+//! (`GET /api/books/{uuid}/household`), and the collection's
 //! own scale and mix (`GET /api/library-size`, `GET /api/library-composition` —
 //! the same for every reader), and the chart builder (`POST /api/stats/chart`).
 
@@ -18,9 +19,10 @@ use omnibus_db::{
     stats::{ChartError, GoalError},
 };
 use omnibus_shared::{
-    BookInsights, BookInsightsQuery, ChartQuery, ChartResult, ChartSpec, DailyGoalUpdate,
-    DailyGoals, GoalQuery, HouseholdReader, LibraryComposition, LibrarySize, ReadingGoal,
-    ReadingGoalUpdate, SessionCursor, SessionLogPage, SessionLogQuery, StatsQuery, StatsSummary,
+    BookHouseholdReader, BookInsights, BookInsightsQuery, ChartQuery, ChartResult, ChartSpec,
+    DailyGoalUpdate, DailyGoals, GoalQuery, HouseholdReader, LibraryComposition, LibrarySize,
+    ReadingGoal, ReadingGoalUpdate, SessionCursor, SessionLogPage, SessionLogQuery, StatsQuery,
+    StatsSummary,
 };
 
 use super::{internal, AppState};
@@ -321,5 +323,33 @@ pub(super) async fn get_book_insights(
     match db::stats::book_insights(&state.pool, user.id, &uuid, query.utc_offset_minutes).await {
         Ok(insights) => Json(insights).into_response(),
         Err(e) => internal("get_book_insights", e),
+    }
+}
+
+/// List the readers who share their time in a book
+///
+/// Every other reader who shares their stats and has sat down with this book for a minute
+/// or more: the seconds they have read and listened, how many sittings, and when the
+/// latest ended. Newest first. You are never in the list, and a reader who doesn't share
+/// their stats is left out entirely.
+#[utoipa::path(
+    get,
+    path = "/api/books/{uuid}/household",
+    tag = "Stats",
+    params(("uuid" = String, Path, description = "The book's uuid.")),
+    responses(
+        (status = 200, description = "The sharing readers, newest sitting first; empty when nobody else has opened the book.", body = Vec<BookHouseholdReader>),
+        (status = 404, description = "No book has that uuid."),
+    ),
+)]
+pub(super) async fn get_book_household(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Path(uuid): Path<String>,
+) -> Response {
+    match db::stats::book_household(&state.pool, user.id, &uuid).await {
+        Ok(Some(readers)) => Json(readers).into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, "book not found").into_response(),
+        Err(e) => internal("get_book_household", e),
     }
 }

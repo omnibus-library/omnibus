@@ -14,7 +14,7 @@ import { Button } from "../../components/Button/Button";
 import { Loading } from "../../components/Loading/Loading";
 import { PageNotFound } from "../../components/PageState/PageState";
 import { useReadingSession } from "../../readingSession";
-import { pdfAnchorPage } from "../BookDetail/highlights";
+import { pdfAnchorPage } from "../BookDetail/highlightAnchors";
 import { bookQuery, progressQuery } from "../BookDetail/queries";
 import {
   type Fit,

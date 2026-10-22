@@ -67,13 +67,54 @@ export const MetaFormSchema = z.object({
 });
 export type MetaForm = z.infer<typeof MetaFormSchema>;
 
+// What the server accepts for these fields, or what the field means: the server refuses
+// a malformed ISBN, and a series number or date that isn't one reads wrongly on the page.
+const FIELD_RULES = [
+  ["isbn13", /^\d{13}$/, "ISBN-13 must be exactly 13 digits"],
+  [
+    "isbn10",
+    /^\d{9}[\dXx]$/,
+    "ISBN-10 must be 10 characters: 9 digits plus a digit or X",
+  ],
+  [
+    "seriesIndex",
+    /^\d+(\.\d+)?$/,
+    "Number in series must be a number, such as 3 or 2.5",
+  ],
+  [
+    "published",
+    /^\d{4}(-\d{2}(-\d{2})?)?$/,
+    "Published must be a year, a month or a day: 2014, 2014-02 or 2014-02-18",
+  ],
+] as const;
+
+/**
+ * `MetaFormSchema` and the field rules above, for a book's editor. A value is only held
+ * to a rule once it differs from `baseline`: the scanned values are not the reader's to
+ * fix, and the server checks only what is sent.
+ */
+export const editFormSchema = (baseline: MetaForm) =>
+  MetaFormSchema.superRefine((values, ctx) => {
+    for (const [field, pattern, message] of FIELD_RULES) {
+      const value = values[field].trim();
+      if (value && values[field] !== baseline[field] && !pattern.test(value)) {
+        ctx.addIssue({ code: "custom", path: [field], message });
+      }
+    }
+  });
+
+/** `2021-03-01` of `2021-03-01T00:00:00+00:00`; anything that does not open with a date is left as it is. */
+const datePart = (value: string) =>
+  /^\d{4}(-\d{2}(-\d{2})?)?(?=$|[T ])/.exec(value)?.[0] ?? value;
+
 /** The form's starting values for a book: a missing field is blank. */
 export function formFromBook(wire: EbookMetadata): MetaForm {
   return {
     title: wire.title ?? "",
     description: wire.description ?? "",
     publisher: wire.publisher ?? "",
-    published: wire.published ?? "",
+    // A stored instant edits in place as its date: the form takes dates, not times.
+    published: datePart(wire.published ?? ""),
     language: wire.language ?? "",
     series: wire.series ?? "",
     seriesIndex: wire.series_index ?? "",

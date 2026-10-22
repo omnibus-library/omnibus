@@ -1,63 +1,18 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import {
-  type BookReviews,
-  type BookUuid,
-  deleteReview,
-  type MyReview,
-  saveReview,
-} from "../../api";
+import type { BookUuid, MyReview } from "../../api";
 import {
   ConfirmBody,
   ConfirmModal,
 } from "../../components/ConfirmModal/ConfirmModal";
 import { PencilGlyph, TrashGlyph } from "../../components/Glyphs/Glyphs";
 import { nowSecs } from "../../format";
-import { reviewsQuery, shelvesQuery } from "./queries";
 import { RenderedMarkdown } from "./RenderedMarkdown";
 import { ReviewComposer } from "./ReviewComposer";
 import { starsMeta } from "./rating";
-import { movesStars, optimisticReviews, type ReviewWrite } from "./reviews";
 import { StarPicker } from "./StarPicker";
-import { useOptimisticSave } from "./useOptimisticSave";
+import type { MyRating } from "./useMyRating";
 
-// The stats page and the chart builder sum the stars; their queries are keyed under these.
-const STATS_KEYS = [["stats"], ["stats-chart"]] as const;
-
-/**
- * Every write to your review, through one queue so the server applies them in the order made.
- * A stars tap shows at once and reverts if refused; the composer's Save (text, notes and the
- * spoiler flag) and a delete wait for the server. Once the last write settles the reviews are
- * read again, which refreshes the summary and the other readers.
- */
-function useReviewWrites(
-  uuid: BookUuid,
-  onFailure: (write: ReviewWrite) => void,
-) {
-  const client = useQueryClient();
-  const { queryKey } = reviewsQuery(uuid);
-  const cached = (): BookReviews =>
-    client.getQueryData(queryKey) ?? { mine: null, others: [], summary: null };
-  return useOptimisticSave(
-    queryKey,
-    async (write: ReviewWrite) => {
-      const mine =
-        write === "delete"
-          ? await deleteReview(uuid).then(() => null)
-          : await saveReview(uuid, write);
-      return { ...cached(), mine };
-    },
-    {
-      optimistic: (write) => optimisticReviews(cached(), write, nowSecs()),
-      // A smart shelf may match on rating, and the stats pages sum the stars.
-      alsoInvalidate: (write) =>
-        movesStars(write) ? [...STATS_KEYS, shelvesQuery(uuid).queryKey] : [],
-      onFailure,
-    },
-  );
-}
-
-type Writes = ReturnType<typeof useReviewWrites>;
+type Writes = MyRating["save"];
 
 /** Your rendered text, then your private notes, marked as private; the spoiler flag is set in the composer, so read mode carries no marker of it. */
 function MyReviewWriting({ mine }: { mine: MyReview }) {
@@ -162,18 +117,14 @@ function DeleteReviewModal({
 export function ReviewCard({
   uuid,
   mine,
+  rating,
 }: {
   uuid: BookUuid;
   mine: MyReview | null;
+  /** The page's one queue of writes to your review, shared with the hero's stars. */
+  rating: MyRating;
 }) {
-  // The last tap made: its refusal is told even when a later Save has taken the
-  // mutation, whose answer then puts the server's stars back. A delete that lands
-  // after it empties the card, and clears the message with it.
-  const lastTap = useRef<ReviewWrite | null>(null);
-  const [starsFailed, setStarsFailed] = useState(false);
-  const save = useReviewWrites(uuid, (write) => {
-    if (write === lastTap.current) setStarsFailed(true);
-  });
+  const { save, pick, starsFailed, forgetTap } = rating;
   const [composing, setComposing] = useState(false);
   // The pencil unmounts while the editor is open, so the editor's own close can't
   // hand focus back to it; the card does, once it is mounted again.
@@ -183,28 +134,26 @@ export function ReviewCard({
     refocusPencil.current = true;
     setComposing(false);
   };
+  // Opened in place, so the field takes focus, as a dialog's would.
+  const composer = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (composing) composer.current?.querySelector("textarea")?.focus();
+  }, [composing]);
   useEffect(() => {
     if (composing || !refocusPencil.current) return;
     refocusPencil.current = false;
     pencil.current?.focus();
   }, [composing]);
   const [confirming, setConfirming] = useState(false);
-  const pick = (stars: number | null) => {
-    const write = { stars };
-    lastTap.current = write;
-    setStarsFailed(false);
-    save.mutate(write);
-  };
   const hasWriting = mine?.bodyMd != null || mine?.notesMd != null;
   const writeLabel = hasWriting ? "Edit review" : "Write review";
   return (
     <section
-      className="bd-review-mine"
+      className="bp-panel bd-review-mine"
       data-testid="my-review"
       aria-label="Your review"
     >
       <div className="bd-review-mine-head">
-        <div className="label bd-review-mine-k">Your review</div>
         <div className="bd-review-tools">
           {/* An open editor already is what the pencil would open. */}
           {!composing && (
@@ -235,44 +184,31 @@ export function ReviewCard({
         </div>
       </div>
       <div className="bd-review-starsline">
-        <StarPicker stars={mine?.stars ?? null} onPick={pick} />
-        <div
-          className="mono bd-review-starsmeta"
-          role="status"
-          data-testid="review-stars-meta"
-        >
-          {starsMeta(nowSecs(), starsFailed, mine)}
-        </div>
+        <StarPicker
+          stars={mine?.stars ?? null}
+          onPick={pick}
+          note={starsMeta(nowSecs(), starsFailed, mine)}
+        />
       </div>
-      <div className="bd-review-mine-body">
-        {mine && <MyReviewWriting mine={mine} />}
-      </div>
-      {composing && (
-        // Not dismissable by a click outside: a stray one must not throw away the draft.
-        <ConfirmModal
-          testId="review-composer-overlay"
-          ariaLabel={hasWriting ? "Edit your review" : "Write review"}
-          backdropClass="bdmq-overlay bdmq-overlay-static"
-          dialogClass="bdmq-ocard bdmq-ocard-composer"
-          busy
-          onDismiss={closeComposer}
-          focusOnOpen
-        >
+      {composing ? (
+        // Inline, so a click elsewhere on the page never throws away the draft.
+        <div ref={composer}>
           <ReviewComposer
             uuid={uuid}
             mine={mine}
             onSave={(change) => save.mutateAsync(change)}
             onClose={closeComposer}
           />
-        </ConfirmModal>
+        </div>
+      ) : (
+        <div className="bd-review-mine-body">
+          {mine && <MyReviewWriting mine={mine} />}
+        </div>
       )}
       {confirming && (
         <DeleteReviewModal
           save={save}
-          onDeleted={() => {
-            lastTap.current = null;
-            setStarsFailed(false);
-          }}
+          onDeleted={forgetTap}
           onClose={() => setConfirming(false)}
         />
       )}

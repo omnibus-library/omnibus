@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type BookDetail, toBookDetail } from "./api";
 import {
   ago,
   bookCount,
   capitalize,
-  descriptionOverflows,
   durationLabel,
   facetQuery,
   fileSize,
@@ -17,25 +15,16 @@ import {
   formatUtcDay,
   formatUtcTimestamp,
   formatYear,
-  homeKicker,
   initialOf,
   initialsFor,
   noneIfBlank,
   plateAuthor,
   recency,
   singleFacetValue,
+  spacedDuration,
   summaryIsSparse,
+  wishlistSource,
 } from "./format";
-import { aWireBook } from "./testing/wire";
-
-const book: BookDetail = toBookDetail(
-  aWireBook({
-    title: "Alpha",
-    creators: [{ name: "Ada Lovelace" }],
-    series: null,
-    published: "1843-10-01",
-  }),
-);
 
 describe("plateAuthor", () => {
   it.each([
@@ -47,61 +36,14 @@ describe("plateAuthor", () => {
   });
 });
 
-describe("homeKicker", () => {
-  const inSeries = { ...book, series: { name: "Aurora", index: "2" } };
-
-  it("leads a series book with its name, position and year", () => {
-    expect(homeKicker(inSeries, null)).toEqual({
-      series: "Aurora",
-      tail: " · Book 2 · 1843",
-    });
-  });
-
-  it("adds how many of the series the library holds once it is known", () => {
-    expect(homeKicker(inSeries, 3).tail).toBe(
-      " · Book 2 · 3 in your library · 1843",
-    );
-  });
-
-  it("leaves a series book with no index at its name and year", () => {
-    const unindexed = { ...book, series: { name: "Aurora", index: null } };
-
-    expect(homeKicker(unindexed, 3).tail).toBe(" · 1843");
-  });
-
-  it("leads a standalone with its first genre, then subject, then Book", () => {
-    expect(
-      homeKicker({ ...book, genres: ["Sci-fi"], subjects: ["Space"] }, null),
-    ).toEqual({
-      series: null,
-      tail: "Sci-fi · standalone · 1843",
-    });
-    expect(homeKicker({ ...book, subjects: ["Space"] }, null).tail).toBe(
-      "Space · standalone · 1843",
-    );
-    expect(homeKicker({ ...book, published: null }, null).tail).toBe(
-      "Book · standalone",
-    );
-  });
-
-  it("leaves out the year of calibre's placeholder date", () => {
-    expect(homeKicker({ ...book, published: "0101-01-01" }, null).tail).toBe(
-      "Book · standalone",
-    );
-  });
-
+describe("wishlistSource", () => {
   it.each([
     ["scan", "a scan"],
     ["detail", "this page"],
     ["manual", "an ISBN you entered"],
     ["search", "a title search"],
   ] as const)("names a wishlist entry added from a %s", (source, phrase) => {
-    expect(homeKicker(inSeries, 3, { addedAt: 1_760_000_000, source })).toEqual(
-      {
-        series: null,
-        tail: `On your wishlist · added from ${phrase}`,
-      },
-    );
+    expect(wishlistSource(source)).toBe(phrase);
   });
 });
 
@@ -155,15 +97,6 @@ describe("initialOf", () => {
 
   it("returns a question mark for an empty name", () => {
     expect(initialOf("")).toBe("?");
-  });
-});
-
-describe("descriptionOverflows", () => {
-  it("counts words outside the tags against the 50-word clamp", () => {
-    const words = (n: number) => `<p>${"word ".repeat(n)}</p>`;
-
-    expect(descriptionOverflows(words(50))).toBe(false);
-    expect(descriptionOverflows(words(51))).toBe(true);
   });
 });
 
@@ -337,6 +270,19 @@ describe("durationLabel", () => {
     [-1, "0m"],
   ])("reads %i seconds as %s", (secs, label) => {
     expect(durationLabel(secs)).toBe(label);
+  });
+});
+
+describe("spacedDuration", () => {
+  it.each([
+    [0, "0 m"],
+    [59, "0 m"],
+    [2460, "41 m"],
+    [7200, "2 h"],
+    [21_420, "5 h 57 m"],
+    [-1, "0 m"],
+  ])("reads %i seconds as %s", (secs, label) => {
+    expect(spacedDuration(secs)).toBe(label);
   });
 });
 

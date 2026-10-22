@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Highlight, HighlightColor } from "../../api";
-import { pdfAnchorPage } from "../BookDetail/highlights";
+import { pdfAnchorPage } from "../BookDetail/highlightAnchors";
 import { pagePercent } from "../ComicReader/pager";
 import {
   deepLinkPage,

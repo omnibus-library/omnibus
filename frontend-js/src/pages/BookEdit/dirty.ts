@@ -9,10 +9,10 @@ export function dirtyLabels(baseline: MetaForm, values: MetaForm) {
     ["Published", values.published !== baseline.published],
     ["Language", values.language !== baseline.language],
     ["Series", values.series !== baseline.series],
-    ["Book #", values.seriesIndex !== baseline.seriesIndex],
+    ["Number in series", values.seriesIndex !== baseline.seriesIndex],
     ["ISBN-13", values.isbn13 !== baseline.isbn13],
     ["ISBN-10", values.isbn10 !== baseline.isbn10],
-    ["Print Pages", values.printPages.trim() !== baseline.printPages],
+    ["Print pages", values.printPages.trim() !== baseline.printPages],
     ["Authors", !sameList(values.authors, baseline.authors)],
     ["Tags", !sameList(values.tags, baseline.tags)],
     ["Genres", !sameList(values.genres, baseline.genres)],
@@ -28,13 +28,18 @@ const fields = (count: number) => `${count} field${count === 1 ? "" : "s"}`;
 /** "N field(s) edited", for the save bar. */
 export const editedSummary = (count: number) => `${fields(count)} edited`;
 
-/** The primary button's text: what pressing it does right now. */
-export function saveLabel(
-  saving: boolean,
-  count: number,
-  creating = false,
-): string {
-  if (creating) return saving ? "Adding…" : "Add to library";
-  if (saving) return "Saving…";
-  return count > 0 ? `Save · ${fields(count)}` : "Done";
-}
+/** "No changes", "1 unsaved change", "3 unsaved changes": the editor sheet's save bar. */
+export const unsavedSummary = (count: number) =>
+  count === 0
+    ? "No changes"
+    : `${count} unsaved change${count === 1 ? "" : "s"}`;
+
+/** What the sheet asks when it is left with `count` changes unsaved. */
+export const leavePrompt = (count: number) =>
+  count === 1
+    ? "Save your change before closing?"
+    : `Save your ${count} changes before closing?`;
+
+/** The primary button's text on the add page: what pressing it does right now. */
+export const saveLabel = (saving: boolean) =>
+  saving ? "Adding…" : "Add to library";
