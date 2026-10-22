@@ -20,7 +20,14 @@ const STATUSES = [
 ] as const satisfies readonly (readonly [ReadStatusValue, string, ReactNode])[];
 
 /** The status pill and its menu of Unread, Reading and Finished; a refused pick reverts and says so. */
-export function ReadStatus({ uuid }: { uuid: BookUuid }) {
+export function ReadStatus({
+  uuid,
+  onFinish,
+}: {
+  uuid: BookUuid;
+  /** Told when the reader picks Finished after another status. */
+  onFinish: () => void;
+}) {
   const toast = useToast();
   const { queryKey } = readStatusQuery(uuid);
   const record = useQuery(readStatusQuery(uuid));
@@ -79,7 +86,11 @@ export function ReadStatus({ uuid }: { uuid: BookUuid }) {
               status === "finished" && record.data?.finishedAt
                 ? ago(nowSecs(), record.data.finishedAt)
                 : undefined,
-            onSelect: () => status !== shown && save.mutate(status),
+            onSelect: () => {
+              if (status === shown) return;
+              if (status === "finished") onFinish();
+              save.mutate(status);
+            },
           }))}
         />
       )}

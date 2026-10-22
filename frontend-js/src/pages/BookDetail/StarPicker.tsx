@@ -14,7 +14,8 @@ const HALVES = [
   { side: "right", className: "bd-star-half bd-star-half-right" },
 ] as const;
 
-function StarShape() {
+/** The five-point star every control here draws, outlined or filled by its parent's CSS. */
+export function StarShape() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M12 2.8 14.8 8.6l6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z" />

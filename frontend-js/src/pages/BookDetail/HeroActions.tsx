@@ -15,6 +15,7 @@ import { spacedDuration } from "../../format";
 import { useCurrentUser } from "../../session";
 import type { BookDialog } from "./BookDialogs";
 import { FilePicker, isAudioFile, isReadableFile } from "./FilePicker";
+import { FinishCard } from "./FinishCard";
 import { WishlistCtas } from "./PhysicalCopies";
 import {
   alignmentQuery,
@@ -228,10 +229,23 @@ type HeroActionsProps = {
   book: Detail;
   wish: WishlistEntry | null;
   onOpenDialog: (dialog: BookDialog) => void;
+  /** Told when the reader picks Finished after another status. */
+  onFinish: () => void;
+  /** The finished card rises into place; only for a book finished in this view. */
+  celebrating: boolean;
+  /** Takes the reader to their rating on the Reviews tab. */
+  onLeaveReview: () => void;
 };
 
 /** The hero's lower half: how far the reader is, then Continue and Listen, the read status and the More menu. */
-export function HeroActions({ book, wish, onOpenDialog }: HeroActionsProps) {
+export function HeroActions({
+  book,
+  wish,
+  onOpenDialog,
+  onFinish,
+  celebrating,
+  onLeaveReview,
+}: HeroActionsProps) {
   const { uuid, hasEbook, hasAudio, hasComic, hasPdf } = book;
   const hasText = hasEbook || hasComic || hasPdf;
   const hasFiles = hasText || hasAudio;
@@ -296,7 +310,14 @@ export function HeroActions({ book, wish, onOpenDialog }: HeroActionsProps) {
     hasFiles && status !== "finished" && percent !== null && pct > 0;
   return (
     <div className="bp-lower">
-      {barShown ? (
+      {hasFiles && status === "finished" ? (
+        <FinishCard
+          book={book}
+          finishedAt={recorded.data?.finishedAt ?? null}
+          entering={celebrating}
+          onLeaveReview={onLeaveReview}
+        />
+      ) : barShown ? (
         <Progress
           percent={pct}
           audioOnly={audioOnly}
@@ -372,7 +393,7 @@ export function HeroActions({ book, wish, onOpenDialog }: HeroActionsProps) {
             )}
           </>
         )}
-        <ReadStatus uuid={uuid} />
+        <ReadStatus uuid={uuid} onFinish={onFinish} />
         <MoreActions book={book} onOpenDialog={onOpenDialog} />
       </div>
     </div>

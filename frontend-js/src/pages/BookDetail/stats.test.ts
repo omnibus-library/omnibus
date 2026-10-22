@@ -3,6 +3,7 @@ import type { Insights } from "../../api";
 import {
   avgSitSeconds,
   daysIn,
+  finishTotals,
   pacedLeft,
   SPARK_DAYS,
   sparkBuckets,
@@ -79,6 +80,56 @@ describe("pacedLeft", () => {
 
   it("makes no estimate once the book is done", () => {
     expect(pacedLeft(insights(), 100)).toBeNull();
+  });
+});
+
+describe("finishTotals", () => {
+  // Local noon, so the calendar day reads the same in every zone.
+  const noon = (month: number, day: number) =>
+    new Date(2026, month - 1, day, 12).getTime() / 1000;
+
+  it("counts days sessions and highlights", () => {
+    expect(
+      finishTotals({
+        startedAt: noon(10, 2),
+        finishedAt: noon(10, 18),
+        sessions: 13,
+        highlights: 2,
+      }),
+    ).toBe("17 days · 13 sessions · 2 highlights");
+  });
+
+  it("says one day for a book finished the day it started", () => {
+    expect(
+      finishTotals({
+        startedAt: noon(10, 2),
+        finishedAt: noon(10, 2) + 3600,
+        sessions: 1,
+        highlights: 1,
+      }),
+    ).toBe("1 day · 1 session · 1 highlight");
+  });
+
+  it("leaves out highlights when there are none", () => {
+    expect(
+      finishTotals({
+        startedAt: noon(10, 2),
+        finishedAt: noon(10, 3),
+        sessions: 4,
+        highlights: 0,
+      }),
+    ).toBe("2 days · 4 sessions");
+  });
+
+  it("never counts a finish before the start as less than a day", () => {
+    expect(
+      finishTotals({
+        startedAt: noon(10, 5),
+        finishedAt: noon(10, 2),
+        sessions: 2,
+        highlights: 0,
+      }),
+    ).toBe("1 day · 2 sessions");
   });
 });
 

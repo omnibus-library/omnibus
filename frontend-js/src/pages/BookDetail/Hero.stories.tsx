@@ -7,7 +7,9 @@ import { toBookDetail } from "../../api";
 import {
   getGetAlignmentMockHandler200,
   getGetBookInsightsMockHandler200,
+  getGetHighlightsMockHandler200,
   getGetProgressMockHandler200,
+  getGetSeriesByIdMockHandler200,
 } from "../../api/generated/omnibus.msw";
 import type { ReviewPatch } from "../../api/generated/schemas";
 import { ToastProvider } from "../../components/Toast/Toast";
@@ -25,12 +27,14 @@ import {
   aWireAlignment,
   aWireBook,
   aWireFile,
+  aWireHighlight,
   aWireInsights,
   aWireOtherReview,
   aWirePosition,
   aWireProgress,
   aWireReadStatus,
   aWireReview,
+  aWireSeries,
   aWireWishlist,
   WIRE_ADA,
 } from "../../testing/wire";
@@ -97,6 +101,7 @@ const meta = {
     onShowSeries: fn(),
     onOpenReview: fn(),
     onOpenDialog: fn(),
+    onLeaveReview: fn(),
   },
   beforeEach({ msw }) {
     msw.use(...bookDetailHandlers(aWireBook()));
@@ -1173,6 +1178,205 @@ export const RulerPrefersTheAudioTimelineToThePace: Story = {
       await canvas.findByText(/1 h 30 m left of 3 h/),
     ).toBeInTheDocument();
     await expect(canvas.queryByText(/at your pace/)).not.toBeInTheDocument();
+  },
+};
+
+/** Local noon, so the calendar day reads the same in every zone. */
+const noon = (month: number, day: number) =>
+  new Date(2026, month - 1, day, 12).getTime() / 1000;
+
+const volume = (n: number) =>
+  aWireBook({
+    id: n,
+    title: `Aurora Station, Vol. ${n}`,
+    series_index: String(n),
+    unique_identifier:
+      n === 1 ? UUID : `00000000-0000-4000-8000-00000000000${n}`,
+    cover_url: null,
+  });
+
+/** The answers for a book finished on 18 October after 17 days, with highlights and the next volume waiting. */
+const finishedHandlers = (reviews: Parameters<typeof reviewHandlers>[0]) => [
+  ...readStatusHandlers(
+    aWireReadStatus({ status: "finished", finished_at: noon(10, 18) }),
+  ),
+  ...reviewHandlers(reviews),
+  getGetSeriesByIdMockHandler200(
+    aWireSeries({ books: [volume(1), volume(2), volume(3)] }),
+  ),
+  getGetBookInsightsMockHandler200(
+    aWireInsights({ started_at: noon(10, 2), sessions: 13 }),
+  ),
+  getGetHighlightsMockHandler200([
+    aWireHighlight({ id: 1 }),
+    aWireHighlight({ id: 2 }),
+  ]),
+];
+
+export const FinishedCardShowsTotalsAndUpNext: Story = {
+  beforeEach({ msw }) {
+    msw.use(...finishedHandlers({ mine: aWireReview({ stars: 4 }) }));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("heading", {
+        name: "You finished Aurora Station, Vol. 1",
+      }),
+    ).toBeInTheDocument();
+    await expect(
+      await canvas.findByText("17 days · 13 sessions · 2 highlights"),
+    ).toBeInTheDocument();
+    const next = await canvas.findByRole("link", {
+      name: /Up next: Aurora Station, Vol. 2/,
+    });
+    await expect(next).toHaveAttribute(
+      "href",
+      "/books/00000000-0000-4000-8000-000000000002",
+    );
+    await expect(next).toHaveTextContent("Book 2 of Aurora Station");
+    await expect(
+      canvas.queryByRole("button", { name: /Leave a review/ }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const FinishedAndUnratedOffersAReview: Story = {
+  beforeEach({ msw }) {
+    msw.use(...finishedHandlers({}));
+  },
+  play: async ({ args, canvas, userEvent }) => {
+    const leave = await canvas.findByRole("button", { name: /Leave a review/ });
+    await expect(leave).toHaveTextContent(
+      "Tell your household what you thought",
+    );
+    await expect(
+      canvas.queryByRole("link", { name: /Up next/ }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(leave);
+
+    await expect(args.onLeaveReview).toHaveBeenCalledOnce();
+  },
+};
+
+export const RatingFlipsTheCardToUpNext: Story = {
+  beforeEach({ msw }) {
+    msw.use(...finishedHandlers({}));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByRole("button", { name: /Leave a review/ });
+
+    await userEvent.click(canvas.getByRole("button", { name: "Rate 4 stars" }));
+
+    await expect(
+      await canvas.findByRole("link", {
+        name: /Up next: Aurora Station, Vol. 2/,
+      }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("button", { name: /Leave a review/ }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const FinishedCardOffersNothingWhileTheReviewsLoad: Story = {
+  beforeEach({ msw }) {
+    msw.use(hanging("/api/reviews/:uuid"), ...finishedHandlers({}));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByRole("heading", { name: /You finished/ });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    await expect(
+      canvas.queryByRole("button", {
+        name: /Leave a review|New journal entry/,
+      }),
+    ).not.toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("link", { name: /Up next/ }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const FinishedWithoutASeriesOffersAJournalEntry: Story = {
+  beforeEach({ msw }) {
+    msw.use(...finishedHandlers({ mine: aWireReview({ stars: 5 }) }));
+  },
+  args: { book: aBook({ series: null, series_id: null, series_index: null }) },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: /New journal entry/ }),
+    );
+
+    await expect(
+      await canvas.findByRole("dialog", { name: "New journal entry" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const FinishedLastBookOfASeriesOffersAJournalEntry: Story = {
+  beforeEach({ msw }) {
+    msw.use(...finishedHandlers({ mine: aWireReview({ stars: 5 }) }));
+  },
+  // The third and last volume of the three the series holds.
+  args: {
+    book: aBook({
+      unique_identifier: "00000000-0000-4000-8000-000000000003",
+      series_index: "3",
+    }),
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("button", { name: /New journal entry/ }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("link", { name: /Up next/ }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const FinishingPlaysTheBurstOnce: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...readStatusHandlers(null),
+      ...reviewHandlers({ mine: aWireReview({ stars: 4 }) }),
+    );
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const burst = canvasElement.querySelector(".bp-burst");
+    await expect(burst).not.toHaveAttribute("data-playing");
+
+    const pill = await canvas.findByRole("button", pillName("Unread"));
+    await waitFor(() => expect(pill).toBeEnabled());
+    await userEvent.click(pill);
+    await userEvent.click(
+      await canvas.findByRole("menuitemradio", { name: "Finished" }),
+    );
+
+    await waitFor(() => expect(burst).toHaveAttribute("data-playing"));
+    await expect(
+      await canvas.findByRole("heading", { name: /You finished/ }),
+    ).toBeInTheDocument();
+    // It plays for two seconds, once.
+    await waitFor(() => expect(burst).not.toHaveAttribute("data-playing"), {
+      timeout: 4000,
+    });
+  },
+};
+
+export const AFinishedBookOpensWithoutTheBurst: Story = {
+  beforeEach({ msw }) {
+    msw.use(...finishedHandlers({ mine: aWireReview({ stars: 4 }) }));
+  },
+  play: async ({ canvas, canvasElement }) => {
+    const card = (
+      await canvas.findByRole("heading", { name: /You finished/ })
+    ).closest("section");
+    await expect(card).not.toHaveClass("is-entering");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await expect(canvasElement.querySelector(".bp-burst")).not.toHaveAttribute(
+      "data-playing",
+    );
   },
 };
 

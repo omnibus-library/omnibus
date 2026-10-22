@@ -13,6 +13,7 @@ import {
   failing,
   mergeHandlers,
   physicalHandlers,
+  readStatusHandlers,
   reviewHandlers,
 } from "../../testing/handlers";
 import {
@@ -20,6 +21,7 @@ import {
   aWireFile,
   aWireManifest,
   aWireOtherReview,
+  aWireReadStatus,
   aWireReview,
   WIRE_ADA,
 } from "../../testing/wire";
@@ -243,6 +245,36 @@ export const AHeroTapShowsOnTheReviewsTabToo: Story = {
       ),
     ).toEqual(["100%", "100%", "100%", "100%", "0%"]);
     await expect(patches).toEqual([{ stars: 4 }]);
+  },
+};
+
+export const LeaveAReviewLandsOnTheRatingInTheReviewsTab: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...readStatusHandlers(
+        aWireReadStatus({ status: "finished", finished_at: 1_760_000_000 }),
+      ),
+      ...reviewHandlers({}),
+      ...bookDetailHandlers(BOOK),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: /Leave a review/ }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByRole("tab", { name: "Reviews" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    const reviews = canvas.getByRole("tabpanel", { name: "Reviews" });
+    await waitFor(() =>
+      expect(
+        within(reviews).getByRole("group", { name: "Your rating" }),
+      ).toContainElement(document.activeElement as HTMLElement),
+    );
   },
 };
 

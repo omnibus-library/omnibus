@@ -7,7 +7,7 @@ import { Loading } from "../../components/Loading/Loading";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
 import { formatLongDate } from "../../format";
 import { useCurrentUser } from "../../session";
-import { JournalComposer } from "./JournalComposer";
+import { NewJournalEntryModal } from "./JournalComposer";
 import { JournalEntryCard } from "./JournalEntryCard";
 import { journalExcerpt, marqueeJournalKicker } from "./journal";
 import { journalQuery, useWish } from "./queries";
@@ -147,21 +147,10 @@ function JournalFeed({ book }: { book: BookDetail }) {
         )}
       </div>
       {composing && (
-        // Not dismissable by a click outside: a stray one must not throw away an open draft.
-        <ConfirmModal
-          testId="journal-composer-overlay"
-          ariaLabel="New journal entry"
-          backdropClass="bdmq-overlay bdmq-overlay-static"
-          dialogClass="bdmq-ocard bdmq-ocard-composer"
-          busy
-          onDismiss={() => setComposing(false)}
-          focusOnOpen
-        >
-          <JournalComposer
-            uuid={book.uuid}
-            onClose={() => setComposing(false)}
-          />
-        </ConfirmModal>
+        <NewJournalEntryModal
+          uuid={book.uuid}
+          onClose={() => setComposing(false)}
+        />
       )}
       {entries === undefined ? (
         feed.isError ? (

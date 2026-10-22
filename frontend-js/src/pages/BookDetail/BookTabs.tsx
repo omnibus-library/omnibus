@@ -46,7 +46,8 @@ export function useBookTabs() {
 }
 
 const tabId = (id: TabId) => `bp-tab-${id}`;
-const panelId = (id: TabId) => `bp-panel-${id}`;
+/** The id of a tab's panel, for a caller that reaches into one once it is shown. */
+export const panelId = (id: TabId) => `bp-panel-${id}`;
 
 type BookTabsProps = {
   tab: TabId;

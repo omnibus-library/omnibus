@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { Fragment } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { BookDetail as Detail, UserId } from "../../api";
 import { ChevronRightGlyph } from "../../components/Glyphs/Glyphs";
-import { StarRating } from "../../components/StarRating/StarRating";
-import { fmtStars } from "../../components/StarRating/stars";
+import { fillPercent, fmtStars } from "../../components/StarRating/stars";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
 import { formatLongDate, wishlistSource } from "../../format";
+import { prefersReducedMotion } from "../../motion";
 import { useCurrentUser } from "../../session";
 import type { BookDialog } from "./BookDialogs";
 import { HeroActions } from "./HeroActions";
@@ -14,8 +14,34 @@ import { HeroCover } from "./HeroCover";
 import { reviewsQuery, useWish } from "./queries";
 import { heroRatingNote } from "./rating";
 import { factLine } from "./readout";
-import { StarPicker } from "./StarPicker";
+import { StarPicker, StarShape } from "./StarPicker";
 import type { MyRating } from "./useMyRating";
+
+/** The burst plays for two seconds; this is the moment it is taken down, a little after the last piece fades. */
+const BURST_MS = 2300;
+
+/** Another reader's stars at a glance, five small ones filled to the half. */
+function MiniStars({ stars }: { stars: number }) {
+  return (
+    <span
+      className="bp-mini-stars"
+      role="img"
+      aria-label={`${fmtStars(stars)} out of 5 stars`}
+    >
+      {[1, 2, 3, 4, 5].map((slot) => (
+        <span key={slot} className="bp-mini" aria-hidden="true">
+          <StarShape />
+          <span
+            className="bp-mini-fill"
+            style={{ width: `${fillPercent(stars, slot)}%` }}
+          >
+            <StarShape />
+          </span>
+        </span>
+      ))}
+    </span>
+  );
+}
 
 /** The authors, each linking to their page when the library knows it, then the series, which jumps to its fan on the Overview. */
 function Byline({
@@ -103,7 +129,7 @@ function Ratings({
               <span className="bp-reader-name">{reader.name}</span>
               {stars !== null && (
                 <>
-                  <StarRating stars={stars} className="bp-mini-stars" />
+                  <MiniStars stars={stars} />
                   <span className="bp-reader-score">{fmtStars(stars)}</span>
                 </>
               )}
@@ -125,7 +151,7 @@ function Ratings({
                 photoClassName="bp-avatar-photo"
               />
               <span className="bp-reader-name">You</span>
-              <StarRating stars={mine} className="bp-mini-stars" />
+              <MiniStars stars={mine} />
               <span className="bp-reader-score">{fmtStars(mine)}</span>
             </li>
           )}
@@ -145,6 +171,8 @@ type HeroProps = {
   onOpenReview: (reader: UserId) => void;
   /** Opens one of the book's dialogs from the More menu. */
   onOpenDialog: (dialog: BookDialog) => void;
+  /** Takes the reader to their rating on the Reviews tab. */
+  onLeaveReview: () => void;
 };
 
 /** The hero: the cover on its stage, then the title, byline, facts, ratings, and the read and listen buttons with where the reader stands. */
@@ -154,12 +182,25 @@ export function Hero({
   onShowSeries,
   onOpenReview,
   onOpenDialog,
+  onLeaveReview,
 }: HeroProps) {
   const wish = useWish(book);
+  // Finishing in this view is celebrated: a burst for two seconds, and the card rising into place.
+  const [playing, setPlaying] = useState(false);
+  const [celebrating, setCelebrating] = useState(false);
+  const stopBurst = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(stopBurst.current), []);
+  const finish = () => {
+    setCelebrating(true);
+    if (prefersReducedMotion()) return;
+    setPlaying(true);
+    clearTimeout(stopBurst.current);
+    stopBurst.current = setTimeout(() => setPlaying(false), BURST_MS);
+  };
   const facts = factLine(book);
   return (
     <div className="bp-hero">
-      <HeroCover book={book} />
+      <HeroCover book={book} playing={playing} />
       <div className="bp-info">
         {wish && (
           <p className="label bp-eyebrow">
@@ -175,7 +216,14 @@ export function Hero({
           </p>
         )}
         <Ratings book={book} rating={rating} onOpenReview={onOpenReview} />
-        <HeroActions book={book} wish={wish} onOpenDialog={onOpenDialog} />
+        <HeroActions
+          book={book}
+          wish={wish}
+          onOpenDialog={onOpenDialog}
+          onFinish={finish}
+          celebrating={celebrating}
+          onLeaveReview={onLeaveReview}
+        />
       </div>
     </div>
   );

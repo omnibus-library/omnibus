@@ -42,6 +42,28 @@ export function pacedSecondsLeft(i: Insights, percent: number): number {
   return Math.floor((i.secondsTotal * (100 - percent)) / percent);
 }
 
+const localDay = (unixSecs: number) => {
+  const date = new Date(unixSecs * 1000);
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / DAY_MS;
+};
+
+/** What a finished book took, `17 days · 13 sessions · 2 highlights`: calendar days from the first sitting to the finish, both counted. */
+export function finishTotals(o: {
+  startedAt: number;
+  finishedAt: number;
+  sessions: number;
+  highlights: number;
+}): string {
+  const days = Math.max(1, localDay(o.finishedAt) - localDay(o.startedAt) + 1);
+  return [
+    count(days, "day"),
+    count(o.sessions, "session"),
+    o.highlights > 0 && count(o.highlights, "highlight"),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 /** The seconds left at the pace so far; `null` below five percent, where it would be a guess, and once the book is done. */
 export function pacedLeft(i: Insights, percent: number): number | null {
   if (percent < MIN_PACE_PERCENT || percent >= 100) return null;

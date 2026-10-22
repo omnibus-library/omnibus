@@ -13,7 +13,7 @@ import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider } from "../../components/Toast/Toast";
 import { prefersReducedMotion } from "../../motion";
 import { type BookDialog, BookDialogs } from "./BookDialogs";
-import { BookTabs, useBookTabs } from "./BookTabs";
+import { BookTabs, panelId, useBookTabs } from "./BookTabs";
 import { FilesDetails } from "./FilesDetails";
 import { Hero } from "./Hero";
 import { Highlights } from "./Highlights";
@@ -64,6 +64,20 @@ function Page({ book }: { book: Detail }) {
   // One queue for every write to your review, whichever control makes it.
   const rating = useMyRating(book.uuid);
   const [dialog, setDialog] = useState<BookDialog | null>(null);
+  // Takes the reader to their rating on the Reviews tab, or its composer when the stars can't take focus.
+  const leaveReview = async () => {
+    await selectTab("reviews");
+    const panel = document.getElementById(panelId("reviews"));
+    const target =
+      panel?.querySelector<HTMLElement>(
+        '[data-testid="review-stars"] [tabindex="0"]',
+      ) ?? panel?.querySelector<HTMLElement>("textarea");
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      block: "center",
+    });
+  };
   const showSeries = async () => {
     await selectTab("overview");
     document.getElementById(SERIES_ID)?.scrollIntoView({
@@ -93,6 +107,7 @@ function Page({ book }: { book: Detail }) {
               onShowSeries={showSeries}
               onOpenReview={() => selectTab("reviews")}
               onOpenDialog={setDialog}
+              onLeaveReview={leaveReview}
             />
           </div>
         </header>
