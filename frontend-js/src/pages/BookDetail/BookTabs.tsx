@@ -190,7 +190,9 @@ export function BookTabs({ tab, entering, onSelect, panels }: BookTabsProps) {
               key={item.id}
               id={panelId(item.id)}
               className={
-                entering === item.id ? "bp-panel bp-page-enter" : "bp-panel"
+                entering === item.id
+                  ? "bp-tabpanel bp-page-enter"
+                  : "bp-tabpanel"
               }
               role="tabpanel"
               aria-labelledby={tabId(item.id)}

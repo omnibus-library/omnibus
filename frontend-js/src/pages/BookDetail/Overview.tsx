@@ -67,33 +67,37 @@ export function Overview({ book }: { book: Detail }) {
   const client = useQueryClient();
   return (
     <>
-      <div className="bdmq-chips">
-        <ChipRow
-          label="Genres"
-          listClass="bd-tag-list bd-genre-list"
-          tone="genre"
-          values={book.genres}
-        />
-        <ChipRow
-          label="Tags"
-          listClass="bd-tag-list"
-          tone="plain"
-          values={book.subjects}
-        />
+      <div className="bp-split">
+        <div>
+          <div className="bdmq-chips">
+            <ChipRow
+              label="Genres"
+              listClass="bd-tag-list bd-genre-list"
+              tone="genre"
+              values={book.genres}
+            />
+            <ChipRow
+              label="Tags"
+              listClass="bd-tag-list"
+              tone="plain"
+              values={book.subjects}
+            />
+          </div>
+          <Description book={book} />
+          {summaryIsSparse(book.description ?? "") && (
+            <FetchSummary
+              uuid={book.uuid}
+              onFetched={async (text) =>
+                client.setQueryData(
+                  bookQuery(book.uuid).queryKey,
+                  await saveDescription(book.uuid, text),
+                )
+              }
+            />
+          )}
+        </div>
+        <YourReading book={book} />
       </div>
-      <Description book={book} />
-      {summaryIsSparse(book.description ?? "") && (
-        <FetchSummary
-          uuid={book.uuid}
-          onFetched={async (text) =>
-            client.setQueryData(
-              bookQuery(book.uuid).queryKey,
-              await saveDescription(book.uuid, text),
-            )
-          }
-        />
-      )}
-      <YourReading book={book} />
       <Related book={book} />
     </>
   );

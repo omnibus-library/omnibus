@@ -1,0 +1,150 @@
+/* The description on the left, the reader's record on the right. */
+.bp-split {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 64px;
+  align-items: start;
+}
+
+.bp-reading {
+  min-width: 0;
+}
+.bp-reading-status {
+  margin-top: 4px;
+  color: var(--ink-1);
+}
+.bp-reading-note {
+  margin-top: 12px;
+  color: var(--ink-1);
+}
+.bp-stats {
+  margin: 18px 0 0;
+  border-top: 1px solid var(--line);
+}
+.bp-stats div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.bp-stats dt {
+  color: var(--ink-1);
+}
+.bp-stats dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The sessions behind the totals, folded away until asked for. */
+.bp-sessions {
+  margin-top: 12px;
+}
+.bp-sessions summary {
+  list-style: none;
+}
+.bp-sessions summary::-webkit-details-marker {
+  display: none;
+}
+.bp-sessions summary svg {
+  transition: transform 300ms var(--ease-out);
+}
+.bp-sessions[open] summary svg {
+  transform: rotate(180deg);
+}
+.bp-spark-head,
+.bp-spark-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.bp-spark-head {
+  margin-top: 4px;
+  color: var(--ink-1);
+  font-size: 15px;
+}
+.bp-spark-axis {
+  margin-top: 6px;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.bp-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 44px;
+  margin-top: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.bp-spark span {
+  flex: 1;
+  height: calc(var(--m) * 100%);
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+}
+.bp-spark .is-none {
+  height: 2px;
+  border-radius: 1px 1px 0 0;
+  background: var(--bp-fill-hover);
+}
+.bp-sessions .st-log {
+  margin-top: 18px;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.bp-sessions .st-log-row {
+  padding: 9px 0;
+  border-top: 0;
+  border-bottom: 1px solid var(--line);
+}
+.bp-sessions .st-log .st-log-when,
+.bp-sessions .st-log .st-log-dur {
+  font: inherit;
+  letter-spacing: 0;
+  color: var(--ink-0);
+}
+.bp-sessions .st-log-format {
+  font: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-1);
+}
+
+/* Other readers' time in the book, shared by them. */
+.bp-household {
+  margin-top: 28px;
+}
+.bp-household h3 {
+  font: 600 22px / 1.2 var(--serif);
+  font-variant-numeric: lining-nums;
+}
+.bp-household-reader {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin-top: 12px;
+}
+.bp-household-reader .bp-avatar {
+  width: 32px;
+  height: 32px;
+}
+.bp-household-name {
+  font-weight: 600;
+}
+.bp-household-meta {
+  color: var(--ink-1);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 720px) {
+  .bp-split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 40px;
+  }
+}

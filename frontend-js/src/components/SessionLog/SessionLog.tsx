@@ -36,7 +36,11 @@ export function SessionLog({ uuid }: { uuid: BookUuid }) {
           No sittings recorded yet.
         </p>
       ) : (
-        <ul className="st-log-list" data-testid="session-log-list">
+        <ul
+          className="st-log-list"
+          data-testid="session-log-list"
+          aria-label="Sessions, newest first"
+        >
           {sittings.map((s) => (
             <li
               key={`${s.bookUuid}-${s.startedAt}`}
