@@ -268,4 +268,7 @@ body.atrium,
   --ld-turn: 2.7s;
   /* A loader that resolves inside this window is never seen at all. */
   --ld-hold: 160ms;
+  /* The book page's curves: a long glide to rest, and a quick pull away. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.55, 0, 0.8, 0.4);
 }

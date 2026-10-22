@@ -1,0 +1,82 @@
+html:has(.sheet-scrim) {
+  overflow: hidden;
+}
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(6, 5, 6, 0.68);
+  animation: sheet-dim 240ms ease-out;
+}
+.sheet-scrim:focus {
+  outline: none;
+}
+.sheet-scrim.is-closing {
+  animation: sheet-dim 160ms ease-in reverse forwards;
+}
+.sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  height: min(800px, calc(100dvh - 64px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg-1);
+  color: var(--ink-0);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.35),
+    0 40px 90px -24px rgba(0, 0, 0, 0.8);
+  animation: sheet-in 240ms var(--ease-out);
+}
+.sheet-scrim.is-closing .sheet {
+  animation: sheet-out 160ms var(--ease-in) forwards;
+}
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+}
+@keyframes sheet-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+}
+@keyframes sheet-dim {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+@media (max-width: 720px) {
+  .sheet-scrim {
+    padding: 12px 0 0;
+    align-items: end;
+  }
+  .sheet {
+    width: 100%;
+    height: calc(100dvh - 12px);
+    border-width: 1px 0 0;
+    border-radius: 16px 16px 0 0;
+    animation: sheet-up 320ms var(--ease-out);
+  }
+  .sheet-scrim.is-closing .sheet {
+    animation: sheet-up 220ms var(--ease-in) reverse forwards;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet-scrim,
+  .sheet,
+  .sheet-scrim.is-closing .sheet {
+    animation: none;
+  }
+}
