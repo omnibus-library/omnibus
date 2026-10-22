@@ -98,6 +98,10 @@ function afterTheFirstRead(second: () => Response | Promise<Response>) {
   );
 }
 
+/** Visible once the sheet has risen: its entrance fades in over 240 ms, so a check in its first frames sees it at no opacity. */
+const shown = (element: HTMLElement) =>
+  waitFor(() => expect(element).toBeVisible());
+
 const sheet = async (canvas: ReturnType<typeof within>) =>
   within(await canvas.findByRole("dialog", { name: DIALOG }));
 
@@ -442,7 +446,7 @@ export const CloseWithEditsAsksInline: Story = {
     const leave = dialog.getByRole("group", {
       name: "Save your change before closing?",
     });
-    await expect(leave).toBeVisible();
+    await shown(leave);
     await expect(
       within(leave).getByRole("button", { name: "Keep editing" }),
     ).toBeInTheDocument();
@@ -538,7 +542,7 @@ export const SaveFailingFromTheLeaveBarSaysWhy: Story = {
       "title is too long",
     );
     // Still asking, still open.
-    await expect(dialog.getByTestId("es-leave")).toBeVisible();
+    await shown(dialog.getByTestId("es-leave"));
   },
 };
 
@@ -549,7 +553,7 @@ export const EscapeWithEditsAsksInline: Story = {
 
     await userEvent.keyboard("{Escape}");
 
-    await expect(dialog.getByTestId("es-leave")).toBeVisible();
+    await shown(dialog.getByTestId("es-leave"));
     await expect(router.state.location.pathname).toBe(`/books/${UUID}/edit`);
   },
 };
@@ -577,7 +581,7 @@ export const BackWithEditsAsksInline: Story = {
 
     await router.navigate(-1);
 
-    await expect(await dialog.findByTestId("es-leave")).toBeVisible();
+    await shown(await dialog.findByTestId("es-leave"));
     await expect(router.state.location.pathname).toBe(`/books/${UUID}/edit`);
     await userEvent.click(dialog.getByRole("button", { name: "Keep editing" }));
     await expect(dialog.queryByTestId("es-leave")).not.toBeInTheDocument();
@@ -701,7 +705,7 @@ export const RevertAsksFirstAndCancelWritesNothing: Story = {
 
     await expect(canvas.queryByRole("button", { name: "Revert" })).toBeNull();
     await expect(reverted.count).toBe(0);
-    await expect(dialog.getByLabelText(/^Title/)).toBeVisible();
+    await shown(dialog.getByLabelText(/^Title/));
   },
 };
 
@@ -970,7 +974,7 @@ export const HoldsDoneAndRevertWhileTheCoverUploads: Story = {
     // Nothing else may write while the cover is in flight, nor can the sheet be left.
     await expect(dialog.getByTestId("es-discard")).toBeDisabled();
     await userEvent.keyboard("{Escape}");
-    await expect(dialog.getByRole("tab", { name: "Details" })).toBeVisible();
+    await shown(dialog.getByRole("tab", { name: "Details" }));
     coverGate.release();
 
     await waitFor(() =>
@@ -1477,7 +1481,7 @@ export const CoverRowHoldsTheCoverUntilDone: Story = {
     await expect(
       view.getByRole("button", { name: "Apply 0 changes" }),
     ).toBeDisabled();
-    await expect(view.getByText("Saved when you press Done")).toBeVisible();
+    await shown(view.getByText("Saved when you press Done"));
     await userEvent.click(cover);
     await userEvent.click(view.getByRole("button", { name: "Apply 1 change" }));
 
@@ -1532,7 +1536,7 @@ export const BackToEditingKeepsTheForm: Story = {
       view.getByRole("button", { name: "Back to editing" }),
     );
 
-    await expect(dialog.getByRole("tablist")).toBeVisible();
+    await shown(dialog.getByRole("tablist"));
     await expect(dialog.getByLabelText(/^Title/)).toHaveValue(
       "Aurora Station, Vol. 1!",
     );
@@ -1606,7 +1610,7 @@ export const IdentifiersTab: Story = {
     await waitFor(async () =>
       expect(await panel.findByText("9780134685991")).toBeVisible(),
     );
-    await expect(panel.getByText("ISBN")).toBeVisible();
+    await shown(panel.getByText("ISBN"));
   },
 };
 
