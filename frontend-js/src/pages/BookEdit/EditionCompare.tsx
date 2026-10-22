@@ -10,7 +10,12 @@ import { classes } from "../../classes";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
 import { Loading, Ring } from "../../components/Loading/Loading";
-import { type CoverProps, coverPreview, restage } from "./CoverEditor";
+import {
+  type CoverProps,
+  coverPreview,
+  releaseHeld,
+  restage,
+} from "./CoverEditor";
 import {
   applyField,
   coverSrc,
@@ -122,6 +127,12 @@ function CoverRow({
       setStatus("Cover staged.");
       return;
     }
+    if (target.kind === "held") {
+      releaseHeld(target.held);
+      target.onHold({ source: { kind: "url", url }, preview: url });
+      setStatus("Cover held until Done.");
+      return;
+    }
     setBusy(true);
     cover.onBusy?.(true);
     setStatus("Applying cover…");
@@ -184,7 +195,9 @@ function CoverRow({
         {status ??
           (live
             ? "The cover applies immediately · it isn’t staged with the fields"
-            : "The cover is saved with the book when you add it")}
+            : target.kind === "held"
+              ? "The cover is saved when you press Done"
+              : "The cover is saved with the book when you add it")}
       </span>
     </div>
   );

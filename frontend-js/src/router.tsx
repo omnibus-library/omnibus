@@ -101,8 +101,12 @@ export const routes: RouteObject[] = [
                 errorElement: <RouteError />,
                 children: [
                   { path: "/", element: <Library /> },
-                  { path: "/books/:uuid", element: <BookDetail /> },
-                  { path: "/books/:uuid/edit", element: <BookEdit /> },
+                  {
+                    path: "/books/:uuid",
+                    element: <BookDetail />,
+                    // The editor is a sheet over the book page, which stays mounted beneath it.
+                    children: [{ path: "edit", element: <BookEdit /> }],
+                  },
                   {
                     path: "/authors",
                     element: <Authors />,

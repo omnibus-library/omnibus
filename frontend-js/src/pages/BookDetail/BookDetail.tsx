@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type RefObject, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Outlet, useLocation, useNavigate, useParams } from "react-router";
 import {
   type BookUuid,
   coverUrl,
@@ -154,6 +154,8 @@ function Page({ book }: { book: Detail }) {
           dialog={dialog}
           onClose={() => setDialog(null)}
         />
+        {/* The metadata editor, a sheet over this page, once the book is here to sit under it. */}
+        <Outlet />
       </div>
     </ToastProvider>
   );
@@ -162,15 +164,26 @@ function Page({ book }: { book: Detail }) {
 function BookDetailFor({ uuid }: { uuid: BookUuid }) {
   const book = useQuery(bookQuery(uuid));
   const navigate = useNavigate();
+  const location = useLocation();
   const client = useQueryClient();
   // A merged-away uuid resolves to the surviving book; its page keys are the survivor's.
   useEffect(() => {
     if (book.data && book.data.uuid !== uuid) {
       // Seeded so the survivor's page opens on this answer instead of a loader and a refetch.
       client.setQueryData(bookQuery(book.data.uuid).queryKey, book.data);
-      navigate(`/books/${book.data.uuid}`, { replace: true });
+      // The rest of the address, `/edit` included, moves with it.
+      navigate(
+        {
+          pathname: location.pathname.replace(
+            `/books/${uuid}`,
+            `/books/${book.data.uuid}`,
+          ),
+          search: location.search,
+        },
+        { replace: true, state: location.state },
+      );
     }
-  }, [book.data, uuid, navigate, client]);
+  }, [book.data, uuid, location, navigate, client]);
   switch (book.status) {
     case "pending":
       return <Loading kind="page" label="Taking it off the shelf" />;

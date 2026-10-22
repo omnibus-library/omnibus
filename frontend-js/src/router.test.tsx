@@ -147,13 +147,16 @@ describe("routes", () => {
       },
     );
 
-    it("renders the metadata editor at /books/:uuid/edit", async () => {
+    it("renders the book page under /books/:uuid/edit", async () => {
       renderRoute(`/books/${UUID}/edit`);
 
-      // jsdom has no server to fetch from, so the editor settles on its error page.
+      // jsdom has no server to fetch from, so the page settles on its load error: the book page owns the route.
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Couldn't load the book",
+      );
       expect(
-        await screen.findByRole("link", { name: "Back to book" }),
-      ).toHaveAttribute("href", `/books/${UUID}`);
+        screen.getByRole("link", { name: "Back to library" }),
+      ).toHaveAttribute("href", "/");
     });
 
     it("renders the player page at /listen/:uuid", async () => {

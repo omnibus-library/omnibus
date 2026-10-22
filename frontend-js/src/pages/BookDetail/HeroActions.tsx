@@ -141,6 +141,9 @@ function runtimeLine(book: Detail, audioSeconds: number): string | null {
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
+/** The More button's id, where focus lands when the editor sheet closes and its opener has gone. */
+export const MORE_BUTTON_ID = "bp-more";
+
 /** The More menu: file the book, edit it, and for admins merge or delete it. */
 function MoreActions({
   book,
@@ -157,6 +160,7 @@ function MoreActions({
     <div className="shd-more">
       <button
         type="button"
+        id={MORE_BUTTON_ID}
         className="bp-button bp-button-large bp-button-icon"
         aria-label="More actions"
         aria-haspopup="menu"

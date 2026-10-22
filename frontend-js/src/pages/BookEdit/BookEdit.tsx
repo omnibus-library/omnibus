@@ -1,47 +1,200 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { useNavigate, useParams } from "react-router";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { flushSync } from "react-dom";
+import { type FieldErrors, useForm } from "react-hook-form";
+import {
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router";
 import {
   type BookUuid,
+  coverFromUrl,
   type EditableBook,
   editableBookQuery,
+  editFormSchema,
   type MetaForm,
-  MetaFormSchema,
   overridesFrom,
   parseBookUuid,
   revertOverrides,
   saveOverrides,
+  uploadCover,
 } from "../../api";
+import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
 import { Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
-import { PageTitle } from "../../components/PageTitle/PageTitle";
-import { UnsavedDialog, useLeaveGuard } from "../../components/Unsaved/Unsaved";
-import type { CoverProps } from "./CoverEditor";
+import { Sheet } from "../../components/Sheet/Sheet";
+import { useToast } from "../../components/Toast/Toast";
+import { useLeaveGuard } from "../../components/Unsaved/Unsaved";
+import { MORE_BUTTON_ID } from "../BookDetail/HeroActions";
+import {
+  CoverEditor,
+  type CoverProps,
+  coverPreview,
+  type HeldCover,
+  releaseHeld,
+} from "./CoverEditor";
+import { DetailsPanel } from "./DetailsPanel";
 import { dirtyLabels } from "./dirty";
-import { Breadcrumb, PageHeader } from "./EditHeader";
-import { MetaFormGrid } from "./MetaFormGrid";
-import { SaveBar } from "./SaveBar";
-import { Sidebar } from "./Sidebar";
-import "../BookDetail/BookDetail.css";
-import "./BookEdit.css";
+import { SheetHead } from "./EditHeader";
+import { SheetFooter } from "./SheetFooter";
+import "./EditSheet.css";
 
-function EditForm({ book }: { book: EditableBook }) {
+type TabKey = "details" | "artwork" | "identifiers";
+
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "details", label: "Details" },
+  { key: "artwork", label: "Artwork" },
+  { key: "identifiers", label: "Identifiers" },
+];
+
+const tabId = (key: TabKey) => `es-tab-${key}`;
+const panelId = (key: TabKey) => `es-panel-${key}`;
+
+/** Details, Artwork and Identifiers: arrow keys move between them, and a dot marks a tab holding edits. */
+function SheetTabs({
+  tab,
+  edited,
+  onSelect,
+}: {
+  tab: TabKey;
+  edited: Record<TabKey, boolean>;
+  onSelect: (tab: TabKey) => void;
+}) {
+  const onKeyDown = (event: KeyboardEvent) => {
+    const at = TABS.findIndex((t) => t.key === tab);
+    const next =
+      event.key === "ArrowRight"
+        ? at + 1
+        : event.key === "ArrowLeft"
+          ? at - 1
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? TABS.length - 1
+              : null;
+    if (next === null) return;
+    event.preventDefault();
+    const to = TABS[(next + TABS.length) % TABS.length];
+    if (!to) return;
+    onSelect(to.key);
+    document.getElementById(tabId(to.key))?.focus();
+  };
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a tablist has no native element
+    <div
+      className="es-tabs"
+      role="tablist"
+      aria-label="Book information"
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
+    >
+      {TABS.map(({ key, label }) => (
+        <button
+          key={key}
+          type="button"
+          role="tab"
+          id={tabId(key)}
+          className="es-tab"
+          aria-selected={tab === key}
+          aria-controls={panelId(key)}
+          tabIndex={tab === key ? 0 : -1}
+          data-edited={edited[key] ? "" : undefined}
+          onClick={() => onSelect(key)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The identifiers the file carries, as they are written; a scheme it didn't name reads "Type unknown". */
+function IdentifiersPanel({
+  identifiers,
+}: {
+  identifiers: EditableBook["identifiers"];
+}) {
+  if (identifiers.length === 0) {
+    return <p className="es-quiet">This book carries no identifiers.</p>;
+  }
+  return (
+    <dl className="es-idents" data-testid="es-identifiers">
+      {identifiers.map((ident, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: the same value can be listed under two schemes, and the list is read-only
+        <div key={i}>
+          <dt>{ident.scheme?.trim() || "Type unknown"}</dt>
+          <dd>{ident.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Where focus lands when the sheet closes and the control that opened it is gone: the hero's More button. */
+const moreButton = {
+  get current() {
+    return document.getElementById(MORE_BUTTON_ID);
+  },
+};
+
+function EditSheet({ book }: { book: EditableBook }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
+  const toast = useToast();
+  const [params] = useSearchParams();
   const form = useForm<MetaForm>({
-    resolver: zodResolver(MetaFormSchema),
+    resolver: zodResolver(editFormSchema(book.form)),
     defaultValues: book.form,
+    // A refused value says so as it is typed, and Done waits on it.
+    mode: "onChange",
   });
-  // The book as the server last reported it, which a cover write moves; `book.form` stays the baseline.
+  const [tab, setTab] = useState<TabKey>("details");
+  // The book as the server last reported it, which putting the scanned cover back moves; `book.form` stays the baseline.
   const [live, setLive] = useState(book);
-  const [coverReplaced, setCoverReplaced] = useState(false);
+  // A cover picked or fetched waits here for Done, like the fields.
+  const [held, setHeld] = useState<HeldCover | null>(null);
   const [coverBusy, setCoverBusy] = useState(false);
-  const dirty = dirtyLabels(book.form, form.watch());
-  const { blocker, allowLeave } = useLeaveGuard(dirty.length > 0);
+  const [closing, setClosing] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [confirmingRevert, setConfirmingRevert] = useState(false);
 
-  // The book's detail page, the lists and the resume row all read what an edit changes.
+  const dirty = dirtyLabels(book.form, form.watch());
+  const count = dirty.length + (held ? 1 : 0);
+  const invalid = Object.keys(form.formState.errors).length > 0;
+  const { blocker, allowLeave } = useLeaveGuard(count > 0);
+  const leaving = asking || blocker.state === "blocked";
+
+  // An object URL outlives the pick that made it until it is released.
+  const heldRef = useRef(held);
+  heldRef.current = held;
+  useEffect(() => () => releaseHeld(heldRef.current), []);
+
+  // `?field=` opens on that input, once, as the sheet opens: Details' Add links.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: later changes to the address are not asks to move focus
+  useEffect(() => {
+    const field = params.get("field");
+    if (
+      field === "publisher" ||
+      field === "published" ||
+      field === "language" ||
+      field === "isbn13"
+    ) {
+      form.setFocus(field);
+    }
+  }, []);
+
+  // The book's page, the lists and the resume row all read what an edit changes.
   const written = () => {
     for (const queryKey of [
       ["book", book.uuid],
@@ -53,118 +206,255 @@ function EditForm({ book }: { book: EditableBook }) {
       queryClient.invalidateQueries({ queryKey });
     }
   };
-  // Passed per call: TanStack drops those once the page is gone, so a late answer doesn't navigate.
-  const leave = () => {
+  // Back to the book page: the way the reader came, else straight to it, so Back never reopens the sheet.
+  const leave = () =>
+    location.state?.fromBook
+      ? navigate(-1)
+      : navigate(`/books/${book.uuid}`, { replace: true });
+  const close = () => {
     allowLeave();
-    navigate(`/books/${book.uuid}`);
+    setAsking(false);
+    setClosing(true);
   };
-  // A cover is written the moment it is picked, so Save has nothing to send for it.
-  const onCoverApplied = (updated: EditableBook) => {
-    setLive(updated);
-    setCoverReplaced(true);
-    // Exact, so the edit query holding the unsaved form isn't refetched out from under it.
-    queryClient.invalidateQueries({
-      queryKey: ["book", book.uuid],
-      exact: true,
-    });
-    queryClient.invalidateQueries({ queryKey: ["books"] });
+  // A save, or "Don't save", settles whichever way out was asked for.
+  const finish = () => {
+    if (blocker.state === "blocked") {
+      allowLeave();
+      blocker.proceed();
+    } else close();
   };
+  const requestClose = () => (count > 0 ? setAsking(true) : close());
+
   const save = useMutation({
-    mutationFn: (values: MetaForm) =>
-      saveOverrides(book.uuid, overridesFrom(book.form, values)),
-    onSuccess: written,
+    mutationFn: async ({ values }: { values: MetaForm; changes: number }) => {
+      await saveOverrides(book.uuid, overridesFrom(book.form, values));
+      if (held?.source.kind === "file") {
+        await uploadCover(book.uuid, held.source.file);
+      } else if (held) {
+        await coverFromUrl(book.uuid, held.source.url);
+      }
+    },
+    onSuccess: (_done, { values, changes }) => {
+      written();
+      const title = values.title.trim() || book.displayTitle;
+      toast(`Saved ${changes} change${changes === 1 ? "" : "s"} to ${title}`);
+      finish();
+    },
   });
   const revert = useMutation({
     mutationFn: () => revertOverrides(book.uuid),
-    onSuccess: written,
+    onSuccess: () => {
+      written();
+      toast("Reverted to scanned values");
+      setConfirmingRevert(false);
+      close();
+    },
   });
-
-  // A cover lands the moment it is picked, so none may race a save or a revert, or another cover.
   const saving = save.isPending || revert.isPending;
-  const writing = saving || coverBusy;
+  const locked = saving || coverBusy;
+
+  // Fields first: a refused value is on Details, and its input is where the reader goes next.
+  const showInvalid = (errors: FieldErrors<MetaForm>) => {
+    flushSync(() => setTab("details"));
+    const first = Object.keys(errors)[0] as keyof MetaForm | undefined;
+    if (first) form.setFocus(first);
+  };
+  const submit = () => {
+    revert.reset();
+    void form.handleSubmit(
+      (values) => save.mutate({ values, changes: count }),
+      showInvalid,
+    )();
+  };
+  const done = () => (count === 0 ? close() : submit());
+  const discard = () => {
+    save.reset();
+    form.reset(book.form);
+    releaseHeld(held);
+    setHeld(null);
+  };
+
   const cover = {
     book: live,
-    target: { kind: "live", uuid: book.uuid, onApplied: onCoverApplied },
-    disabled: writing,
+    target: {
+      kind: "held",
+      uuid: book.uuid,
+      held,
+      onHold: setHeld,
+      // Exact, so the edit query holding the unsaved form isn't refetched out from under it.
+      onReverted: (updated) => {
+        setLive(updated);
+        queryClient.invalidateQueries({
+          queryKey: ["book", book.uuid],
+          exact: true,
+        });
+        queryClient.invalidateQueries({ queryKey: ["books"] });
+      },
+    },
+    disabled: saving,
     onBusy: setCoverBusy,
   } satisfies CoverProps;
+  const values = form.watch();
+  const shown = coverPreview(cover);
 
   return (
-    <div
-      className="me-root"
-      style={book.accent ? { "--accent": book.accent } : undefined}
+    <Sheet
+      label={`Edit ${book.displayTitle}`}
+      testId="edit-sheet"
+      onDismiss={requestClose}
+      closing={closing}
+      onClosed={leave}
+      busy={saving}
+      fallbackFocus={moreButton}
     >
-      <PageTitle page="Edit metadata" />
-      <Breadcrumb
-        uuid={book.uuid}
-        displayTitle={book.displayTitle}
-        author={book.primaryAuthor}
-      />
-      <PageHeader
-        displayTitle={book.displayTitle}
-        author={book.primaryAuthor?.name}
-      />
-      <div className="me-layout">
-        <MetaFormGrid
-          form={form}
-          baseline={book.form}
-          cover={cover}
-          dirty={dirty}
-          sortBy={book.sortBy}
-          filename={book.filename}
-          disabled={saving}
+      <div className="es-sheet">
+        <SheetHead
+          cover={shown}
+          title={values.title}
+          author={values.authors[0] ?? ""}
+          onClose={requestClose}
         />
-        <Sidebar
-          book={live}
-          cover={cover}
-          saving={writing}
-          onRevert={() => {
-            save.reset();
-            revert.mutate(undefined, { onSuccess: leave });
+        <SheetTabs
+          tab={tab}
+          edited={{
+            details: dirty.length > 0,
+            artwork: held !== null,
+            identifiers: false,
           }}
+          onSelect={setTab}
+        />
+        <div className="es-body">
+          <Panel tab="details" current={tab}>
+            <DetailsPanel
+              form={form}
+              dirty={dirty}
+              disabled={locked}
+              hasOverride={live.hasOverride}
+              onRevert={() => {
+                revert.reset();
+                setConfirmingRevert(true);
+              }}
+            />
+          </Panel>
+          <Panel tab="artwork" current={tab}>
+            <CoverEditor {...cover} />
+          </Panel>
+          <Panel tab="identifiers" current={tab}>
+            <IdentifiersPanel identifiers={live.identifiers} />
+          </Panel>
+        </div>
+        <SheetFooter
+          count={count}
+          saving={saving}
+          invalid={invalid}
+          error={save.error?.message}
+          leaving={leaving}
+          onDone={done}
+          onDiscard={discard}
+          onKeepEditing={() => {
+            setAsking(false);
+            if (blocker.state === "blocked") blocker.reset();
+          }}
+          onDontSave={finish}
+          onSave={submit}
         />
       </div>
-      <SaveBar
-        mode={{ kind: "edit", uuid: book.uuid }}
-        dirty={dirty}
-        coverReplaced={coverReplaced}
-        saving={writing}
-        error={
-          form.formState.errors.printPages?.message ??
-          save.error?.message ??
-          revert.error?.message
-        }
-        onSave={form.handleSubmit((values) => {
-          revert.reset();
-          save.mutate(values, { onSuccess: leave });
-        })}
-        onDiscard={allowLeave}
-      />
-      <UnsavedDialog
-        blocker={blocker}
-        body="You've edited this book's details without saving them."
-      />
+      {confirmingRevert && (
+        <ConfirmDialog
+          testId="revert-overrides-modal"
+          title="Revert to scanned values?"
+          body="Every edit to this book, its cover included, is dropped and the values read from its files come back. This can’t be undone."
+          action="Revert"
+          busyLabel="Reverting…"
+          busy={revert.isPending}
+          note={
+            revert.isError && (
+              <p className="bd-merge-error" role="alert">
+                {revert.error.message}
+              </p>
+            )
+          }
+          onCancel={() => setConfirmingRevert(false)}
+          onConfirm={() => revert.mutate()}
+        />
+      )}
+    </Sheet>
+  );
+}
+
+function Panel({
+  tab,
+  current,
+  children,
+}: {
+  tab: TabKey;
+  current: TabKey;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="es-panel"
+      role="tabpanel"
+      id={panelId(tab)}
+      aria-labelledby={tabId(tab)}
+      hidden={tab !== current}
+    >
+      {children}
     </div>
+  );
+}
+
+/** The sheet's frame around what cannot be edited: the record still loading, or not there to edit. */
+function EditUnavailable({
+  uuid,
+  children,
+}: {
+  uuid: BookUuid;
+  children: ReactNode;
+}) {
+  const navigate = useNavigate();
+  const back = () => navigate(`/books/${uuid}`, { replace: true });
+  return (
+    <Sheet
+      label="Edit metadata"
+      testId="edit-sheet"
+      onDismiss={back}
+      closing={false}
+      onClosed={() => {}}
+      fallbackFocus={moreButton}
+    >
+      <div className="es-sheet es-unavailable">{children}</div>
+    </Sheet>
   );
 }
 
 function BookEditFor({ uuid }: { uuid: BookUuid }) {
   const book = useQuery(editableBookQuery(uuid));
   // A failed refetch keeps the form: the data it holds is what the user is editing.
-  if (book.data) return <EditForm book={book.data} />;
+  if (book.data) return <EditSheet book={book.data} />;
   switch (book.status) {
     case "pending":
-      return <Loading kind="page" label="Opening the record" />;
+      return (
+        <EditUnavailable uuid={uuid}>
+          <Loading kind="sheet" label="Opening the record" />
+        </EditUnavailable>
+      );
     case "error":
       return (
-        <PageError
-          message={book.error.message}
-          backTo={`/books/${uuid}`}
-          backLabel="Back to book"
-        />
+        <EditUnavailable uuid={uuid}>
+          <PageError
+            message={book.error.message}
+            backTo={`/books/${uuid}`}
+            backLabel="Back to book"
+          />
+        </EditUnavailable>
       );
     case "success":
-      return <PageNotFound subject="Book" />;
+      return (
+        <EditUnavailable uuid={uuid}>
+          <PageNotFound subject="Book" />
+        </EditUnavailable>
+      );
     default: {
       const _exhaustive: never = book;
       return _exhaustive;
@@ -172,6 +462,7 @@ function BookEditFor({ uuid }: { uuid: BookUuid }) {
   }
 }
 
+/** The metadata editor: a sheet over the book page, opened by the `edit` child of `/books/:uuid`. */
 export function BookEdit() {
   const uuid = parseBookUuid(useParams().uuid);
   return uuid ? <BookEditFor uuid={uuid} /> : <PageNotFound subject="Book" />;

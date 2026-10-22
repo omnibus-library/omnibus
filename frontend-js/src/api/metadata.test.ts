@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  editFormSchema,
   editionRequest,
   fillMissing,
   formFromBook,
@@ -69,6 +70,76 @@ describe("MetaFormSchema", () => {
       );
     },
   );
+});
+
+describe("editFormSchema", () => {
+  const parse = (changes: Partial<MetaForm>) =>
+    editFormSchema(BASE).safeParse(edit(changes));
+  const message = (changes: Partial<MetaForm>) =>
+    parse(changes).error?.issues[0]?.message;
+
+  it("accepts the form as the book loaded", () => {
+    expect(parse({}).success).toBe(true);
+  });
+
+  it.each([
+    ["isbn13", "9780134685991"],
+    ["isbn13", ""],
+    ["isbn10", "0134685997"],
+    ["isbn10", "013468599x"],
+    ["seriesIndex", "3"],
+    ["seriesIndex", "2.5"],
+    ["seriesIndex", ""],
+    ["published", "2014"],
+    ["published", "2014-02"],
+    ["published", "2014-02-18"],
+    ["published", ""],
+  ] as const)("accepts %s %j", (field, value) => {
+    expect(parse({ [field]: value }).success).toBe(true);
+  });
+
+  it.each([
+    ["isbn13", "978-0-13-468599-1", "ISBN-13 must be exactly 13 digits"],
+    ["isbn13", "97801346859", "ISBN-13 must be exactly 13 digits"],
+    [
+      "isbn10",
+      "01346859",
+      "ISBN-10 must be 10 characters: 9 digits plus a digit or X",
+    ],
+    [
+      "seriesIndex",
+      "one",
+      "Number in series must be a number, such as 3 or 2.5",
+    ],
+    [
+      "published",
+      "last spring",
+      "Published must be a year, a month or a day: 2014, 2014-02 or 2014-02-18",
+    ],
+  ] as const)("refuses %s %j", (field, value, expected) => {
+    const parsed = parse({ [field]: value });
+
+    expect(parsed.error?.issues[0]).toMatchObject({
+      path: [field],
+      message: expected,
+    });
+  });
+
+  it("holds the print page count to the same rules", () => {
+    expect(message({ printPages: "abc" })).toBe(
+      "Print page count must be a whole number.",
+    );
+  });
+
+  it("leaves a value alone that the book already had, as the server only checks what is sent", () => {
+    const loose = {
+      ...BASE,
+      isbn13: "978-0-13-468599-1",
+      published: "May 2014",
+    };
+
+    expect(editFormSchema(loose).safeParse(loose).success).toBe(true);
+  });
 });
 
 describe("overridesFrom", () => {

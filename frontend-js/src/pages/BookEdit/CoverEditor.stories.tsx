@@ -7,7 +7,7 @@ import {
   coverWriteHandlers,
 } from "../../testing/metadataHandlers";
 import { PREVIEW } from "../../testing/uploadHandlers";
-import { CoverEditor, type StagedCover } from "./CoverEditor";
+import { CoverEditor, type HeldCover, type StagedCover } from "./CoverEditor";
 
 const wire = anEditableWireBook();
 const SCANNED = toEditableBook(wire);
@@ -34,6 +34,24 @@ function Live({ book }: { book: EditableBook }) {
     <CoverEditor
       book={live}
       target={{ kind: "live", uuid: live.uuid, onApplied: setLive }}
+    />
+  );
+}
+
+/** The sheet's part: it holds the pick for Done, and the book a revert returns. */
+function Held({ book }: { book: EditableBook }) {
+  const [live, setLive] = useState(book);
+  const [held, setHeld] = useState<HeldCover | null>(null);
+  return (
+    <CoverEditor
+      book={live}
+      target={{
+        kind: "held",
+        uuid: live.uuid,
+        held,
+        onHold: setHeld,
+        onReverted: setLive,
+      }}
     />
   );
 }
@@ -290,6 +308,110 @@ export const StagedWithoutACover: Story = {
   play: async ({ canvas }) => {
     await expect(await canvas.findByTestId("cover-hint")).toHaveTextContent(
       "no cover available",
+    );
+  },
+};
+
+export const HoldsAPickedImage: Story = {
+  render: () => <Held book={SCANNED} />,
+  beforeEach({ msw }) {
+    UPLOADED.length = 0;
+    msw.use(...coverWriteHandlers(wire, { uploaded: UPLOADED }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.upload(
+      await canvas.findByLabelText("Replace cover"),
+      PICK(),
+    );
+
+    await expect(
+      await canvas.findByText("Cover held until Done."),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("cover-hint")).toHaveTextContent(
+      "your image · saved when you press Done",
+    );
+    await expect(
+      canvas.getByTestId("cover-staged-preview").querySelector("img"),
+    ).toHaveAttribute("src", expect.stringMatching(/^blob:/));
+    // Nothing is written: the owner writes it, when the sheet's Done is pressed.
+    await expect(UPLOADED).toEqual([]);
+    // The URL form is still on offer, and the scanned-cover revert is not while a pick waits.
+    await expect(canvas.getByLabelText("Or paste an image URL")).toBeVisible();
+    await expect(canvas.getByTestId("cover-drop-held")).toBeEnabled();
+  },
+};
+
+export const HoldsAnImageUrl: Story = {
+  render: () => <Held book={SCANNED} />,
+  play: async ({ canvas, userEvent }) => {
+    const url = await canvas.findByLabelText("Or paste an image URL");
+    // An address that loads, since a preview that fails to decode drops its <img>.
+    await userEvent.click(url);
+    await userEvent.paste(PREVIEW);
+
+    await userEvent.click(canvas.getByRole("button", { name: "Apply" }));
+
+    await expect(canvas.getByTestId("cover-hint")).toHaveTextContent(
+      "from the web · saved when you press Done",
+    );
+    await expect(
+      canvas.getByTestId("cover-staged-preview").querySelector("img"),
+    ).toHaveAttribute("src", PREVIEW);
+    await expect(url).toHaveValue("");
+  },
+};
+
+export const ANewPickReleasesTheEarlierOne: Story = {
+  render: () => <Held book={SCANNED} />,
+  play: async ({ canvas, userEvent }) => {
+    const revoke = spyOn(URL, "revokeObjectURL");
+    await userEvent.upload(
+      await canvas.findByLabelText("Replace cover"),
+      PICK(),
+    );
+    const first = canvas
+      .getByTestId("cover-staged-preview")
+      .querySelector("img")?.src;
+
+    await userEvent.upload(canvas.getByLabelText("Replace cover"), PICK());
+
+    await waitFor(() => expect(revoke).toHaveBeenCalledWith(first));
+    revoke.mockRestore();
+  },
+};
+
+export const DroppingTheHeldCoverKeepsTheCurrentOne: Story = {
+  render: () => <Held book={SCANNED} />,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.upload(
+      await canvas.findByLabelText("Replace cover"),
+      PICK(),
+    );
+
+    await userEvent.click(canvas.getByTestId("cover-drop-held"));
+
+    await expect(canvas.getByTestId("cover-hint")).toHaveTextContent(
+      "extracted from file",
+    );
+    await expect(canvas.queryByTestId("cover-drop-held")).toBeNull();
+    await expect(
+      canvas.getByText("Keeping the current cover."),
+    ).toBeInTheDocument();
+  },
+};
+
+export const HeldRevertsTheScannedCoverAtOnce: Story = {
+  render: () => <Held book={CUSTOM} />,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Revert to scanned cover" }),
+    );
+
+    await expect(
+      await canvas.findByText("Reverted to scanned cover."),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("cover-hint")).toHaveTextContent(
+      "extracted from file",
     );
   },
 };

@@ -531,7 +531,7 @@ export const RefusesWithoutAnAuthor: Story = {
 export const RefusesPrintPagesThatAreNotANumber: Story = {
   play: async ({ canvas, userEvent }) => {
     await review({ canvas, userEvent });
-    await userEvent.type(canvas.getByLabelText(/^Print Pages/), "many");
+    await userEvent.type(canvas.getByLabelText(/^Print pages/), "many");
 
     await userEvent.click(
       canvas.getByRole("button", { name: "Add to library" }),

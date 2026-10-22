@@ -619,10 +619,12 @@ export const ListsOnlyWhatWouldChangeUntilShowAll: Story = {
 
     await expect(showAll).toHaveAttribute("aria-pressed", "true");
     await expect(showAll).toHaveTextContent("Only differences");
-    // Title, Author(s), Publisher, Published, Series, Book #, ISBN-13, ISBN-10, Print Pages, Genres, Description.
+    // Title, Author(s), Publisher, Published, Series, Number in series, ISBN-13, ISBN-10, Print pages, Genres, Description.
     await expect(rows()).toHaveLength(12);
     await expect(canvas.getByTestId("mes-row-author-s-")).toBeInTheDocument();
-    await expect(canvas.getByTestId("mes-row-book--")).toBeInTheDocument();
+    await expect(
+      canvas.getByTestId("mes-row-number-in-series"),
+    ).toBeInTheDocument();
   },
 };
 

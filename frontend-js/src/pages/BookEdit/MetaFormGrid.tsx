@@ -94,11 +94,11 @@ export function MetaFormGrid({
           input={register("isbn10")}
         />
         <MeField
-          label="Print Pages"
+          label="Print pages"
           mono
           hint="whole number"
           placeholder="e.g. 320"
-          edited={edited("Print Pages")}
+          edited={edited("Print pages")}
           input={register("printPages")}
         />
         <div className="me-field-full">
@@ -195,10 +195,10 @@ export function MetaFormGrid({
           ))}
         </datalist>
         <MeField
-          label="Book #"
+          label="Number in series"
           mono
           placeholder="—"
-          edited={edited("Book #")}
+          edited={edited("Number in series")}
           input={register("seriesIndex")}
         />
       </div>

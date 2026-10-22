@@ -21,12 +21,34 @@ export type StagedCover = {
   originalPreview: string | null;
 };
 
+/** A cover the editor sheet is holding until Done writes it: a picked file, or an image's URL. */
+export type HeldCover = {
+  source: Exclude<StagedSource, { kind: "keep" }>;
+  /** What the surfaces show now: the file's object URL, or the image's own URL. */
+  preview: string;
+};
+
+/** `held` released, and the object URL its file was shown from with it. */
+export function releaseHeld(held: HeldCover | null) {
+  if (held?.source.kind === "file") URL.revokeObjectURL(held.preview);
+}
+
 export type CoverTarget =
   | {
       kind: "live";
       uuid: BookUuid;
       /** A write landed: the book as the server now reports it. */
       onApplied: (updated: EditableBook) => void;
+    }
+  | {
+      kind: "held";
+      uuid: BookUuid;
+      /** The cover waiting for Done, or `null` when the book keeps the one it has. */
+      held: HeldCover | null;
+      /** A new pick, or `null` to drop it. The owner releases the one it replaces. */
+      onHold: (next: HeldCover | null) => void;
+      /** The scanned cover was put back at once: the book as the server now reports it. */
+      onReverted: (updated: EditableBook) => void;
     }
   | {
       kind: "staged";
@@ -71,10 +93,12 @@ export function coverPreview({ book, target }: CoverProps) {
     authors: book.primaryAuthor ? [book.primaryAuthor.name] : [],
     accent: book.accent,
   };
+  if (target.kind === "staged") {
+    return { plate, src: target.staged.preview || null };
+  }
+  const current = book.coverUrl && bustCover(book.coverUrl, target.uuid);
   const src =
-    target.kind === "live"
-      ? book.coverUrl && bustCover(book.coverUrl, target.uuid)
-      : target.staged.preview;
+    target.kind === "held" ? (target.held?.preview ?? current) : current;
   return { plate, src: src || null };
 }
 
@@ -87,6 +111,20 @@ function stagedHint({ source, preview }: StagedCover) {
   }
   return preview ? "extracted from file" : "no cover available";
 }
+
+function heldHint({ source }: HeldCover) {
+  return source.kind === "file"
+    ? "your image · saved when you press Done"
+    : "from the web · saved when you press Done";
+}
+
+/** What the book's own cover is, when nothing is waiting to replace it. */
+const currentHint = (book: CoverProps["book"]) =>
+  !book.coverUrl
+    ? "no cover available"
+    : book.hasCoverOverride
+      ? "custom upload"
+      : "extracted from file";
 
 /** The sidebar's cover card: preview, hint and the controls that replace or revert the cover. */
 export function CoverEditor(props: CoverProps) {
@@ -111,6 +149,7 @@ export function CoverEditor(props: CoverProps) {
     try {
       const updated = await call();
       if (target.kind === "live") target.onApplied(updated);
+      if (target.kind === "held") target.onReverted(updated);
       setStatus(done);
       return true;
     } catch (e) {
@@ -124,7 +163,14 @@ export function CoverEditor(props: CoverProps) {
 
   const pickFile = (file: File | undefined) => {
     if (!file) return;
-    if (target.kind === "live") {
+    if (target.kind === "held") {
+      releaseHeld(target.held);
+      target.onHold({
+        source: { kind: "file", file },
+        preview: URL.createObjectURL(file),
+      });
+      setStatus("Cover held until Done.");
+    } else if (target.kind === "live") {
       const { uuid } = target;
       void write(
         "file",
@@ -148,7 +194,14 @@ export function CoverEditor(props: CoverProps) {
   const applyUrl = async (e: FormEvent) => {
     e.preventDefault();
     const url = pastedUrl.trim();
-    if (target.kind !== "live" || locked || !url) return;
+    if (target.kind === "staged" || locked || !url) return;
+    if (target.kind === "held") {
+      releaseHeld(target.held);
+      target.onHold({ source: { kind: "url", url }, preview: url });
+      setPastedUrl("");
+      setStatus("Cover held until Done.");
+      return;
+    }
     const { uuid } = target;
     const applied = await write(
       "url",
@@ -168,7 +221,7 @@ export function CoverEditor(props: CoverProps) {
       <div
         className="me-cover-preview"
         data-testid={
-          target.kind === "staged" ? "cover-staged-preview" : undefined
+          target.kind === "live" ? undefined : "cover-staged-preview"
         }
       >
         <Cover book={plate} src={src} />
@@ -176,11 +229,9 @@ export function CoverEditor(props: CoverProps) {
       <div className="mono me-cover-hint" data-testid="cover-hint">
         {target.kind === "staged"
           ? stagedHint(target.staged)
-          : !book.coverUrl
-            ? "no cover available"
-            : book.hasCoverOverride
-              ? "custom upload"
-              : "extracted from file"}
+          : target.kind === "held" && target.held
+            ? heldHint(target.held)
+            : currentHint(book)}
       </div>
       <div className="me-cover-actions">
         <label className="label" htmlFor="cover-file-input">
@@ -199,7 +250,7 @@ export function CoverEditor(props: CoverProps) {
             e.target.value = "";
           }}
         />
-        {target.kind === "live" ? (
+        {target.kind !== "staged" ? (
           <>
             <label className="label" htmlFor="cover-url-input">
               Or paste an image URL
@@ -229,7 +280,7 @@ export function CoverEditor(props: CoverProps) {
                 />
               </Button>
             </form>
-            {book.hasCoverOverride && (
+            {target.kind === "held" && target.held && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -238,21 +289,41 @@ export function CoverEditor(props: CoverProps) {
                   width: "100%",
                   justifyContent: "center",
                 }}
-                data-testid="cover-remove-override"
-                disabled={locked}
-                onClick={() =>
-                  write(
-                    "revert",
-                    "Reverting…",
-                    "Reverted to scanned cover.",
-                    "Revert failed: ",
-                    () => revertCover(target.uuid),
-                  )
-                }
+                data-testid="cover-drop-held"
+                onClick={() => {
+                  releaseHeld(target.held);
+                  target.onHold(null);
+                  setStatus("Keeping the current cover.");
+                }}
               >
-                Revert to scanned cover
+                Drop the new cover
               </Button>
             )}
+            {book.hasCoverOverride &&
+              !(target.kind === "held" && target.held) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  style={{
+                    marginTop: 8,
+                    width: "100%",
+                    justifyContent: "center",
+                  }}
+                  data-testid="cover-remove-override"
+                  disabled={locked}
+                  onClick={() =>
+                    write(
+                      "revert",
+                      "Reverting…",
+                      "Reverted to scanned cover.",
+                      "Revert failed: ",
+                      () => revertCover(target.uuid),
+                    )
+                  }
+                >
+                  Revert to scanned cover
+                </Button>
+              )}
           </>
         ) : (
           target.staged.source.kind !== "keep" && (
