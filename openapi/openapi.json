@@ -9133,6 +9133,7 @@
           },
           "finished": {
             "type": "integer",
+            "description": "How many of the author's books you have finished.",
             "minimum": 0
           },
           "last_read_at": {
@@ -9145,6 +9146,7 @@
           },
           "reading": {
             "type": "integer",
+            "description": "How many of the author's books you are reading now.",
             "minimum": 0
           }
         }
@@ -14946,6 +14948,7 @@
         "properties": {
           "finished": {
             "type": "integer",
+            "description": "How many of the series' books you have finished.",
             "minimum": 0
           },
           "last_read_at": {
@@ -14958,6 +14961,7 @@
           },
           "reading": {
             "type": "integer",
+            "description": "How many of the series' books you are reading now.",
             "minimum": 0
           },
           "series_id": {
