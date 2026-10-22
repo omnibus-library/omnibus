@@ -3,7 +3,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { BookDetail as Detail, UserId } from "../../api";
 import { ChevronRightGlyph } from "../../components/Glyphs/Glyphs";
-import { fillPercent, fmtStars } from "../../components/StarRating/stars";
+import { fmtStars } from "../../components/StarRating/stars";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
 import { formatLongDate, wishlistSource } from "../../format";
 import { prefersReducedMotion } from "../../motion";
@@ -11,37 +11,15 @@ import { useCurrentUser } from "../../session";
 import type { BookDialog } from "./BookDialogs";
 import { HeroActions } from "./HeroActions";
 import { HeroCover } from "./HeroCover";
+import { MiniStars } from "./MiniStars";
 import { reviewsQuery, useWish } from "./queries";
 import { heroRatingNote } from "./rating";
 import { factLine } from "./readout";
-import { StarPicker, StarShape } from "./StarPicker";
+import { StarPicker } from "./StarPicker";
 import type { MyRating } from "./useMyRating";
 
 /** The burst plays for two seconds; this is the moment it is taken down, a little after the last piece fades. */
 const BURST_MS = 2300;
-
-/** Another reader's stars at a glance, five small ones filled to the half. */
-function MiniStars({ stars }: { stars: number }) {
-  return (
-    <span
-      className="bp-mini-stars"
-      role="img"
-      aria-label={`${fmtStars(stars)} out of 5 stars`}
-    >
-      {[1, 2, 3, 4, 5].map((slot) => (
-        <span key={slot} className="bp-mini" aria-hidden="true">
-          <StarShape />
-          <span
-            className="bp-mini-fill"
-            style={{ width: `${fillPercent(stars, slot)}%` }}
-          >
-            <StarShape />
-          </span>
-        </span>
-      ))}
-    </span>
-  );
-}
 
 /** The authors, each linking to their page when the library knows it, then the series, which jumps to its fan on the Overview. */
 function Byline({

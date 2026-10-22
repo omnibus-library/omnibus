@@ -134,6 +134,11 @@ export function ReviewCard({
     refocusPencil.current = true;
     setComposing(false);
   };
+  // Opened in place, so the field takes focus, as a dialog's would.
+  const composer = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (composing) composer.current?.querySelector("textarea")?.focus();
+  }, [composing]);
   useEffect(() => {
     if (composing || !refocusPencil.current) return;
     refocusPencil.current = false;
@@ -144,12 +149,11 @@ export function ReviewCard({
   const writeLabel = hasWriting ? "Edit review" : "Write review";
   return (
     <section
-      className="bd-review-mine"
+      className="bp-panel bd-review-mine"
       data-testid="my-review"
       aria-label="Your review"
     >
       <div className="bd-review-mine-head">
-        <div className="label bd-review-mine-k">Your review</div>
         <div className="bd-review-tools">
           {/* An open editor already is what the pencil would open. */}
           {!composing && (
@@ -186,27 +190,20 @@ export function ReviewCard({
           note={starsMeta(nowSecs(), starsFailed, mine)}
         />
       </div>
-      <div className="bd-review-mine-body">
-        {mine && <MyReviewWriting mine={mine} />}
-      </div>
-      {composing && (
-        // Not dismissable by a click outside: a stray one must not throw away the draft.
-        <ConfirmModal
-          testId="review-composer-overlay"
-          ariaLabel={hasWriting ? "Edit your review" : "Write review"}
-          backdropClass="bdmq-overlay bdmq-overlay-static"
-          dialogClass="bdmq-ocard bdmq-ocard-composer"
-          busy
-          onDismiss={closeComposer}
-          focusOnOpen
-        >
+      {composing ? (
+        // Inline, so a click elsewhere on the page never throws away the draft.
+        <div ref={composer}>
           <ReviewComposer
             uuid={uuid}
             mine={mine}
             onSave={(change) => save.mutateAsync(change)}
             onClose={closeComposer}
           />
-        </ConfirmModal>
+        </div>
+      ) : (
+        <div className="bd-review-mine-body">
+          {mine && <MyReviewWriting mine={mine} />}
+        </div>
       )}
       {confirming && (
         <DeleteReviewModal

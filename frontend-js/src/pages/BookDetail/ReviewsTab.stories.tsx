@@ -33,8 +33,9 @@ import {
 import { shelvesQuery } from "./queries";
 import { ReviewsTab } from "./ReviewsTab";
 import { useMyRating } from "./useMyRating";
-// The page brings the stop's styles.
+// The page brings the tab's styles.
 import "./BookDetail.css";
+import "./BookPage.css";
 
 const SPOILER_HTML =
   '<p>The captain <span class="spoiler" role="button" tabindex="0" aria-expanded="false" aria-label="Reveal spoiler"><span class="spoiler-text" aria-hidden="true">was the signal</span></span> all along.</p>';
@@ -135,9 +136,6 @@ export const Loading: Story = {
     msw.use(hanging("/api/reviews/:uuid"));
   },
   play: async ({ canvas }) => {
-    await expect(canvas.getByTestId("reviews-kicker")).toHaveTextContent(
-      "Counting reviews",
-    );
     await expect(canvas.getByTestId("reviews-loading")).toHaveTextContent(
       "Gathering the reviews",
     );
@@ -157,36 +155,42 @@ export const UnreadableReviewsSaySo: Story = {
   },
 };
 
-export const NobodyHasReviewedIt: Story = {
+export const EmptyStateWhenNobodyRatedOrReviewed: Story = {
   play: async ({ canvas }) => {
     await canvas.findByTestId("my-review");
-    await expect(canvas.getByTestId("reviews-kicker")).toHaveTextContent(
-      "No reviews yet",
-    );
+    await expect(
+      canvas.getByRole("heading", { name: "No ratings or reviews yet" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByText(
+        "Nobody in your household has rated or reviewed this book.",
+      ),
+    ).toBeInTheDocument();
     await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
       "Not rated yet",
     );
     await expect(canvas.getByTestId("review-write")).toHaveAccessibleName(
       "Write review",
     );
-    // Nothing to delete yet, so no trash can.
+    // Nothing to delete yet, so no trash can; and no household column to fill.
     await expect(canvas.queryByTestId("review-delete")).not.toBeInTheDocument();
     await expect(
-      canvas.queryByTestId("review-summary"),
+      canvas.queryByRole("heading", { name: /^Household/ }),
     ).not.toBeInTheDocument();
-    await expect(canvas.getByTestId("other-reviews-empty")).toHaveTextContent(
-      "No one else has rated or reviewed this book yet.",
-    );
+    await expect(canvas.queryByTestId("review-card")).not.toBeInTheDocument();
   },
 };
 
-export const EveryoneHasHadTheirSay: Story = {
+export const ACardForEachHouseholdReader: Story = {
   beforeEach: withReviews(MINE, [GRACE, LINUS, TOVE, MARGARET, ALAN]),
   play: async ({ canvas }) => {
     const mine = await canvas.findByRole("region", { name: "Your review" });
-    await expect(canvas.getByTestId("reviews-kicker")).toHaveTextContent(
-      "4 reviews · 5 ratings",
-    );
+    await expect(
+      canvas.getByRole("heading", { name: "Your review" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("heading", { name: /^Household/ }),
+    ).toHaveTextContent("Household 5");
     await expect(
       within(mine).getByTestId("review-stars-meta"),
     ).toHaveTextContent("rated 2 hours ago · 4 of 5");
@@ -200,23 +204,14 @@ export const EveryoneHasHadTheirSay: Story = {
       "Edit review",
     );
 
-    const summary = canvas.getByTestId("review-summary");
-    await expect(
-      within(summary).getByTestId("review-summary-average"),
-    ).toHaveTextContent("3.8");
-    await expect(
-      within(summary).getByTestId("review-summary-count"),
-    ).toHaveTextContent("5 readers in the household");
-    await expect(
-      within(summary).getByTestId("review-spread"),
-    ).toHaveAccessibleName(
-      "Ratings by stars: 1 reader at 2.5, 1 reader at 3, 1 reader at 4, 1 reader at 4.5, 1 reader at 5.",
-    );
-
-    const cards = within(canvas.getByTestId("other-reviews")).getAllByTestId(
-      "review-card",
-    );
-    await expect(cards).toHaveLength(3);
+    const cards = canvas.getAllByRole("article");
+    await expect(cards.map((card) => card.getAttribute("aria-label"))).toEqual([
+      "grace's review",
+      "linus's review",
+      "tove's review",
+      "margaret's review",
+      "alan's review",
+    ]);
     // Only your own card carries edit controls.
     for (const card of cards) {
       await expect(
@@ -225,52 +220,53 @@ export const EveryoneHasHadTheirSay: Story = {
         }),
       ).not.toBeInTheDocument();
     }
-    await expect(cards[0]).toHaveTextContent("grace");
-    await expect(
-      within(cards[0] as HTMLElement).getByRole("img", {
-        name: "4.5 out of 5 stars",
-      }),
-    ).toBeInTheDocument();
-
-    const row = canvas.getByRole("list", { name: "Ratings without a review" });
-    const items = within(row).getAllByRole("listitem");
-    await expect(items).toHaveLength(2);
-    await expect(items[0]).toHaveTextContent("margaret");
-    await expect(
-      within(items[0] as HTMLElement).getByRole("img", {
-        name: "5 out of 5 stars",
-      }),
-    ).toBeInTheDocument();
+    // Each card is a place to land: focusable, and found by the reader's id.
+    await expect(cards[0]).toHaveAttribute("id", "review-7");
+    await expect(cards[0]).toHaveAttribute("tabindex", "-1");
   },
 };
 
 export const EveryoneHasHadTheirSayInLight: Story = {
-  ...EveryoneHasHadTheirSay,
+  ...ACardForEachHouseholdReader,
   globals: { theme: "light" },
 };
 
-export const NoSummaryUntilTheServerSendsOne: Story = {
-  beforeEach({ msw }) {
-    // Two raters, but the threshold is the server's: no summary sent, none drawn.
-    msw.use(
-      http.get("/api/reviews/:uuid", () =>
-        HttpResponse.json(
-          aWireBookReviews({
-            mine: aWireReview({ stars: 5 }),
-            others: [MARGARET_AT_4],
-            summary: null,
-          }),
-        ),
-      ),
-    );
-  },
+export const HouseholdCardsShowStarsDateAndText: Story = {
+  beforeEach: withReviews(null, [GRACE]),
   play: async ({ canvas }) => {
-    await canvas.findByTestId("review-stars-only");
-    await expect(canvas.getByTestId("reviews-kicker")).toHaveTextContent(
-      "0 reviews · 2 ratings",
+    const card = await canvas.findByRole("article", {
+      name: "grace's review",
+    });
+    await expect(card).toHaveTextContent("grace");
+    await expect(card).toHaveTextContent(
+      new Date(1_760_000_000 * 1000).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      }),
     );
     await expect(
-      canvas.queryByTestId("review-summary"),
+      within(card).getByRole("img", { name: "4.5 out of 5 stars" }),
+    ).toBeInTheDocument();
+    await expect(card).toHaveTextContent("4.5");
+    await expect(within(card).getByTestId("review-text")).toHaveTextContent(
+      "Quietly devastating.",
+    );
+  },
+};
+
+export const ARatingWithoutTextSaysRatedOnly: Story = {
+  beforeEach: withReviews(null, [MARGARET]),
+  play: async ({ canvas }) => {
+    const card = await canvas.findByRole("article", {
+      name: "margaret's review",
+    });
+    await expect(
+      within(card).getByRole("img", { name: "5 out of 5 stars" }),
+    ).toBeInTheDocument();
+    await expect(card).toHaveTextContent("Rated only");
+    await expect(
+      within(card).queryByTestId("review-text"),
     ).not.toBeInTheDocument();
   },
 };
@@ -388,9 +384,6 @@ export const ATapSavesTheStarsAndRefreshesWhatSumsThem: Story = {
     await expect(
       await canvas.findByTestId("review-stars-meta"),
     ).toHaveTextContent("Not rated yet");
-    await expect(
-      canvas.queryByTestId("review-summary"),
-    ).not.toBeInTheDocument();
 
     await userEvent.click(
       canvas.getByRole("button", { name: "Rate 3.5 stars" }),
@@ -400,10 +393,6 @@ export const ATapSavesTheStarsAndRefreshesWhatSumsThem: Story = {
     await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
       "rated just now · 3.5 of 5",
     );
-    // Two readers have now rated it, so the re-read brings the summary.
-    await expect(
-      await canvas.findByTestId("review-summary-average"),
-    ).toHaveTextContent("4.3");
     await waitFor(() => expect(shelfReads).toBe(2));
     await waitFor(() => expect(statsReads).toBe(2));
   },
@@ -743,7 +732,7 @@ export const AFailedReReadSaysTheFiguresAreOld: Story = {
     await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
       "4 of 5",
     );
-    await expect(canvas.getByTestId("review-stars-only")).toBeInTheDocument();
+    await expect(canvas.getAllByTestId("review-card")).toHaveLength(2);
   },
 };
 

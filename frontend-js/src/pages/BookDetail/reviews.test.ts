@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type MyReview, type OtherReview, toBookReviews } from "../../api";
+import { type MyReview, toBookReviews } from "../../api";
 import {
   aWireBookReviews,
   aWireOtherReview,
@@ -8,19 +8,13 @@ import {
 } from "../../testing/wire";
 import {
   applyLocally,
-  averageLabel,
   composerSeed,
   isNoChange,
-  jumpLabel,
   movesStars,
   needsReadMore,
   optimisticReviews,
-  reviewsKicker,
   saveChange,
-  splitOthers,
   spoilerVeiled,
-  spreadBars,
-  spreadSummary,
   textChange,
 } from "./reviews";
 
@@ -31,13 +25,6 @@ const reviewsOf = (wire: Parameters<typeof aWireBookReviews>[0]) =>
 
 const mine = (overrides: Parameters<typeof aWireReview>[0] = {}) =>
   reviewsOf({ mine: aWireReview(overrides) }).mine as MyReview;
-
-const others = (...wire: Parameters<typeof aWireOtherReview>[0][]) =>
-  reviewsOf({ others: wire.map((w) => aWireOtherReview(w)) }).others;
-
-/** Ten buckets from a reader count per half star, lowest first. */
-const buckets = (readers: number[]) =>
-  readers.map((n, i) => ({ halfStars: i + 1, readers: n }));
 
 describe("applyLocally", () => {
   it("starts a review from nothing on the first tap", () => {
@@ -182,20 +169,6 @@ describe("textChange", () => {
   });
 });
 
-describe("splitOthers", () => {
-  it("keeps the server's order within each group", () => {
-    const list = others(
-      { user_id: 1, body_md: "a", body_html: "<p>a</p>", stars: null },
-      { user_id: 2, body_md: "b", body_html: "<p>b</p>" },
-      { user_id: 3 },
-      { user_id: 4, stars: 5 },
-    );
-    const { texts, ratings } = splitOthers(list);
-    expect(texts.map((r: OtherReview) => r.reader.id)).toEqual([1, 2]);
-    expect(ratings.map((r: OtherReview) => r.reader.id)).toEqual([3, 4]);
-  });
-});
-
 describe("spoilerVeiled", () => {
   it("holds until revealed or the book is finished", () => {
     expect(spoilerVeiled(true, false, false)).toBe(true);
@@ -216,81 +189,5 @@ describe("needsReadMore", () => {
 
   it("ignores surrounding whitespace", () => {
     expect(needsReadMore(`\n\n${"x".repeat(420)}\n\n\n\n\n\n`)).toBe(false);
-  });
-});
-
-describe("reviewsKicker", () => {
-  it("counts texts and ratings, yours included", () => {
-    const reviews = reviewsOf({
-      mine: aWireReview({ stars: 4, body_md: "Mine.", body_html: "<p>m</p>" }),
-      others: [
-        aWireOtherReview({ user_id: 2, body_md: "b", body_html: "<p>b</p>" }),
-        aWireOtherReview({ user_id: 3, stars: 2 }),
-      ],
-    });
-    expect(reviewsKicker(reviews)).toBe("2 reviews · 3 ratings");
-  });
-
-  it("ignores notes and says when there is nothing", () => {
-    expect(reviewsKicker(reviewsOf({}))).toBe("No reviews yet");
-    const notesOnly = reviewsOf({
-      mine: aWireReview({ stars: null, notes_md: "n", notes_html: "<p>n</p>" }),
-    });
-    expect(reviewsKicker(notesOnly)).toBe("No reviews yet");
-  });
-
-  it("counts a lone rating in the singular", () => {
-    expect(reviewsKicker(reviewsOf({ mine: aWireReview({ stars: 3 }) }))).toBe(
-      "0 reviews · 1 rating",
-    );
-  });
-});
-
-describe("averageLabel", () => {
-  it("rounds to one decimal, a half up", () => {
-    expect(averageLabel(4.333)).toBe("4.3");
-    expect(averageLabel(4.0)).toBe("4.0");
-    expect(averageLabel(3.96)).toBe("4.0");
-    expect(averageLabel(4.25)).toBe("4.3");
-  });
-
-  it("labels the jump link for a screen reader", () => {
-    const { summary } = reviewsOf({ summary: aWireReviewSummary(4, 4.5, 4.5) });
-    expect(summary && jumpLabel(summary)).toBe(
-      "Rated 4.3 by 3 readers — go to the reviews",
-    );
-  });
-});
-
-describe("spreadBars", () => {
-  const bars = spreadBars(buckets([0, 1, 0, 0, 0, 1, 0, 2, 0, 1]));
-
-  it("scales each bar to the fullest bucket and labels whole stars only", () => {
-    expect(bars).toHaveLength(10);
-    expect(bars[7]?.heightPct).toBe(100);
-    expect(bars[5]?.heightPct).toBe(50);
-    expect(bars[0]?.heightPct).toBe(0);
-    expect(bars[0]?.label).toBe("");
-    expect(bars[1]?.label).toBe("1");
-    expect(bars[9]?.label).toBe("5");
-    expect(bars[8]?.title).toBe("4.5 ★ · 0 readers");
-  });
-
-  it("rounds a half percent up", () => {
-    const thirds = spreadBars(buckets([1, 0, 0, 0, 0, 0, 0, 0, 0, 3]));
-    expect(thirds[0]?.heightPct).toBe(33);
-    const halves = spreadBars(buckets([1, 0, 0, 0, 0, 0, 0, 0, 0, 8]));
-    expect(halves[0]?.heightPct).toBe(13);
-  });
-});
-
-describe("spreadSummary", () => {
-  it("names each value given, lowest first", () => {
-    expect(spreadSummary(buckets([0, 0, 0, 0, 0, 0, 1, 0, 2, 0]))).toBe(
-      "Ratings by stars: 1 reader at 3.5, 2 readers at 4.5.",
-    );
-    expect(spreadSummary(buckets(Array(10).fill(0)))).toBe(
-      "Ratings by stars: none.",
-    );
   });
 });

@@ -132,6 +132,13 @@ export const ReadersSeeChipsTheyCannotEdit: Story = {
 export const AReaderWithNoGenresSeesNoGenreRow: Story = {
   parameters: { user: READER },
   args: { book: toBookDetail({ ...BOOK, genres: [] }) },
+  beforeEach({ msw }) {
+    msw.use(
+      http.get("/api/ebooks/:uuid", () =>
+        HttpResponse.json({ ...BOOK, genres: [] }),
+      ),
+    );
+  },
   play: async ({ canvas }) => {
     await canvas.findByText("On no shelves yet");
     await expect(canvas.queryByText("Genres")).not.toBeInTheDocument();

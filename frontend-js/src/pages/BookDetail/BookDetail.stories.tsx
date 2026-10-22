@@ -221,6 +221,53 @@ export const HouseholdRatingOpensTheReviewsTab: Story = {
   },
 };
 
+export const ChevronOpensThatReadersReview: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...reviewHandlers({
+        mine: aWireReview({ stars: 4 }),
+        others: [
+          aWireOtherReview({ user_id: 7, username: "Maya R.", stars: 5 }),
+          aWireOtherReview({
+            user_id: 8,
+            username: "Jordan K.",
+            stars: 4,
+            body_md: "Slow in the mines, then it takes off.",
+            body_html: "<p>Slow in the mines, then it takes off.</p>",
+          }),
+        ],
+      }),
+      ...bookDetailHandlers(BOOK),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "See Jordan K.'s review" }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByRole("tab", { name: "Reviews" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    const card = await canvas.findByRole("article", {
+      name: "Jordan K.'s review",
+    });
+    await waitFor(() => expect(card).toHaveFocus());
+    await waitFor(() => {
+      const box = card.getBoundingClientRect();
+      expect(box.top).toBeGreaterThanOrEqual(0);
+      expect(box.bottom).toBeLessThanOrEqual(window.innerHeight);
+    });
+    // It glows for a moment, then rests.
+    await expect(card).toHaveClass("is-flash");
+    await waitFor(() => expect(card).not.toHaveClass("is-flash"), {
+      timeout: 4000,
+    });
+  },
+};
+
 const patches: (ReviewPatch | "delete")[] = [];
 
 export const AHeroTapShowsOnTheReviewsTabToo: Story = {

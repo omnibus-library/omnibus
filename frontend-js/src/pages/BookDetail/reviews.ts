@@ -1,11 +1,4 @@
-import type {
-  BookReviews,
-  MyReview,
-  OtherReview,
-  ReviewChange,
-  ReviewSummary,
-} from "../../api";
-import { fmtStars } from "../../components/StarRating/stars";
+import type { BookReviews, MyReview, ReviewChange } from "../../api";
 
 // Ports of the Dioxus page's helpers (`pages/book_detail/reviews/`), so both clients
 // count, clip and word the section alike.
@@ -107,14 +100,6 @@ export function saveChange(
 export const isNoChange = (change: ReviewChange) =>
   Object.keys(change).length === 0;
 
-/** Other readers split as the stop draws them: reviews with text, then the ratings without, each in the server's order. */
-export function splitOthers(others: readonly OtherReview[]) {
-  return {
-    texts: others.filter((r) => r.bodyMd !== null),
-    ratings: others.filter((r) => r.bodyMd === null),
-  };
-}
-
 /** Whether a review's text stays behind its spoiler veil: marked, you haven't finished the book, and not yet revealed. */
 export const spoilerVeiled = (
   spoiler: boolean,
@@ -131,72 +116,4 @@ export function needsReadMore(md: string): boolean {
   return (
     [...text].length > CLAMP_CHARS || text.split(/\r?\n/).length > CLAMP_LINES
   );
-}
-
-/** `1 review`, `3 ratings`. */
-export const countLabel = (n: number, noun: string) =>
-  `${n} ${noun}${n === 1 ? "" : "s"}`;
-
-/** The stop's kicker, `2 reviews · 3 ratings`, counting yours: reviews have text, ratings have stars, notes count for neither. */
-export function reviewsKicker({ mine, others }: BookReviews): string {
-  const texts =
-    others.filter((r) => r.bodyMd !== null).length +
-    (mine?.bodyMd != null ? 1 : 0);
-  const rated =
-    others.filter((r) => r.stars !== null).length +
-    (mine?.stars != null ? 1 : 0);
-  if (texts + rated === 0) return "No reviews yet";
-  return `${countLabel(texts, "review")} · ${countLabel(rated, "rating")}`;
-}
-
-/** An average in stars to one decimal, a half rounding up: `4.3`, `4.0`. */
-export const averageLabel = (stars: number) =>
-  (Math.round(stars * 10) / 10).toFixed(1);
-
-/** The title area's household rating, for a screen reader: "Rated 4.3 by 3 readers — go to the reviews". */
-export const jumpLabel = (summary: ReviewSummary) =>
-  `Rated ${averageLabel(summary.average)} by ${countLabel(summary.ratings, "reader")} — go to the reviews`;
-
-/** Half stars as stars: 9 is `4.5`, 8 is `4`. */
-const starsOf = (halfStars: number) => fmtStars(halfStars / 2);
-
-/** One column of the household's spread. */
-export type SpreadBar = {
-  halfStars: number;
-  readers: number;
-  /** Height against the fullest bucket, 0 to 100. */
-  heightPct: number;
-  /** Whole stars only; the half columns between them go unlabelled. */
-  label: string;
-  title: string;
-};
-
-/** The ten buckets as bars scaled to the fullest one, a half percent rounding up. */
-export function spreadBars(buckets: ReviewSummary["buckets"]): SpreadBar[] {
-  const max = Math.max(1, ...buckets.map((b) => b.readers));
-  return buckets.map(({ halfStars, readers }) => {
-    const n = Math.max(readers, 0);
-    return {
-      halfStars,
-      readers: n,
-      heightPct: Math.min(
-        100,
-        Math.floor((n * 100 + Math.floor(max / 2)) / max),
-      ),
-      label: halfStars % 2 === 0 ? String(halfStars / 2) : "",
-      title: `${starsOf(halfStars)} ★ · ${countLabel(readers, "reader")}`,
-    };
-  });
-}
-
-/** The spread's text alternative, each value someone gave, lowest first. */
-export function spreadSummary(buckets: ReviewSummary["buckets"]): string {
-  const given = buckets
-    .filter((b) => b.readers > 0)
-    .map(
-      (b) => `${countLabel(b.readers, "reader")} at ${starsOf(b.halfStars)}`,
-    );
-  return given.length === 0
-    ? "Ratings by stars: none."
-    : `Ratings by stars: ${given.join(", ")}.`;
 }
