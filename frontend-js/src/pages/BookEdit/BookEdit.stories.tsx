@@ -1363,6 +1363,39 @@ export const ApplyThenDoneWritesTheOverrides: Story = {
   },
 };
 
+export const ApplyIsOutOfReachWhileDoneSaves: Story = {
+  beforeEach({ msw }) {
+    saveGate = deferred();
+    providers([VOLUME_ONE])({ msw });
+    msw.use(
+      http.post("/api/ebooks/:uuid/overrides", async () => {
+        await saveGate.promise;
+        return HttpResponse.json(BOOK);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+    await userEvent.type(await dialog.findByLabelText(/^Title/), "!");
+    const view = await openFetch(dialog, userEvent);
+    await pickFirst(view, userEvent);
+    const apply = await view.findByRole("button", { name: /^Apply/ });
+
+    await userEvent.click(dialog.getByRole("button", { name: "Done" }));
+    await dialog.findByRole("button", { name: "Saving…" });
+
+    // The save already holds the form, so what Apply would change can't reach it.
+    apply.focus();
+    await expect(apply).not.toHaveFocus();
+    saveGate.release();
+    await waitFor(() =>
+      expect(
+        canvas.queryByRole("dialog", { name: DIALOG }),
+      ).not.toBeInTheDocument(),
+    );
+  },
+};
+
 export const SavesTheTitleCopiedFromAnEdition: Story = {
   beforeEach({ msw }) {
     providers([

@@ -404,7 +404,8 @@ function EditSheet({ book }: { book: EditableBook }) {
           hidden={fetching}
           onSelect={setTab}
         />
-        <div className="es-body">
+        {/* A save has already read the form, so nothing in the body may change it until it lands. */}
+        <div className="es-body" inert={saving}>
           {fetching && (
             <FetchView
               form={form}
