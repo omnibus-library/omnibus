@@ -1,11 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import type { BookDetail } from "../../api";
 import { PlusGlyph } from "../../components/Glyphs/Glyphs";
 import { Loading } from "../../components/Loading/Loading";
 import { useCurrentUser } from "../../session";
 import { EmptyNote } from "./EmptyNote";
-import { NewJournalEntryModal } from "./JournalComposer";
 import { JournalEntryCard } from "./JournalEntryCard";
 import { journalQuery, reviewsQuery, useWish } from "./queries";
 import { quietReadersNote } from "./quietReaders";
@@ -13,8 +11,14 @@ import "./HighlightsJournal.css";
 
 const TITLE_ID = "bp-journal-title";
 
+type JournalProps = {
+  book: BookDetail;
+  /** Opens the composer, which the tab keeps so a change of layout can't close it. */
+  onCompose: () => void;
+};
+
 /** Everyone's journal entries, newest as the server orders them, each a card in the feed. */
-export function Journal({ book }: { book: BookDetail }) {
+export function Journal({ book, onCompose }: JournalProps) {
   return useWish(book) ? (
     <section
       className="bp-journal"
@@ -30,16 +34,15 @@ export function Journal({ book }: { book: BookDetail }) {
       </EmptyNote>
     </section>
   ) : (
-    <JournalFeed book={book} />
+    <JournalFeed book={book} onCompose={onCompose} />
   );
 }
 
-function JournalFeed({ book }: { book: BookDetail }) {
+function JournalFeed({ book, onCompose }: JournalProps) {
   const viewer = useCurrentUser();
   const feed = useQuery(journalQuery(book.uuid));
   // Who else rated, to say so when they have written nothing.
   const reviews = useQuery(reviewsQuery(book.uuid));
-  const [composing, setComposing] = useState(false);
   const entries = feed.data;
   const writers = new Set(entries?.map((e) => e.author.id));
   const quiet = quietReadersNote(
@@ -66,18 +69,12 @@ function JournalFeed({ book }: { book: BookDetail }) {
           type="button"
           className="bp-link-row"
           data-testid="journal-open-composer"
-          onClick={() => setComposing(true)}
+          onClick={onCompose}
         >
           <PlusGlyph />
           New entry
         </button>
       </div>
-      {composing && (
-        <NewJournalEntryModal
-          uuid={book.uuid}
-          onClose={() => setComposing(false)}
-        />
-      )}
       {entries === undefined ? (
         feed.isError ? (
           <div className="bd-journal-empty card" data-testid="journal-error">

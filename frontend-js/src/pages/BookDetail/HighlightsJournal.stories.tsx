@@ -4,6 +4,7 @@ import { expect, waitFor, within } from "storybook/test";
 import { toBookDetail } from "../../api";
 import {
   bookDetailHandlers,
+  deferred,
   highlightsHandlers,
   journalHandlers,
   reviewHandlers,
@@ -186,6 +187,86 @@ export const AHighlightAloneKeepsBothColumns: Story = {
         name: "No highlights or journal entries",
       }),
     ).toBeNull();
+  },
+};
+
+export const NewEntryFromTheColumnsPublishesIntoTheFeed: Story = {
+  beforeEach({ msw }) {
+    writes.length = 0;
+    msw.use(...journalHandlers([aWireJournalEntry()], ADA, writes));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("journal-open-composer"));
+    const overlay = canvas.getByTestId("journal-composer-overlay");
+    await userEvent.type(
+      within(overlay).getByRole("textbox", { name: "Journal entry" }),
+      "A fresh thought",
+    );
+    await userEvent.click(within(overlay).getByTestId("journal-publish"));
+
+    await waitFor(() =>
+      expect(writes).toEqual([{ id: 100, status: "published" }]),
+    );
+    await waitFor(() =>
+      expect(canvas.getAllByTestId("journal-entry")).toHaveLength(2),
+    );
+    await expect(canvas.getByTestId("journal-count")).toHaveTextContent("2");
+    await expect(
+      canvas.queryByTestId("journal-composer-overlay"),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const ComposerIgnoresAClickOutside: Story = {
+  beforeEach({ msw }) {
+    msw.use(...journalHandlers([aWireJournalEntry()], ADA));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("journal-open-composer"));
+    await userEvent.click(canvas.getByTestId("journal-composer-overlay"));
+    await expect(canvas.getByTestId("journal-composer")).toBeInTheDocument();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(
+        canvas.queryByTestId("journal-composer-overlay"),
+      ).not.toBeInTheDocument(),
+    );
+  },
+};
+
+let reads = deferred();
+
+export const ADraftOutlastsBothReadsAnsweringEmpty: Story = {
+  beforeEach({ msw }) {
+    reads = deferred();
+    msw.use(
+      ...journalHandlers([], ADA),
+      http.get("/api/highlights/book/:uuid", async () => {
+        await reads.promise;
+        return HttpResponse.json([]);
+      }),
+      http.get("/api/journals/book/:uuid", async () => {
+        await reads.promise;
+        return HttpResponse.json([]);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "New entry" }),
+    );
+    const entry = await canvas.findByRole("textbox", { name: "Journal entry" });
+    await userEvent.type(entry, "A fresh thought");
+
+    reads.release();
+    await canvas.findByRole("heading", {
+      name: "No highlights or journal entries",
+    });
+
+    await expect(
+      canvas.getByRole("textbox", { name: "Journal entry" }),
+    ).toHaveTextContent("A fresh thought");
   },
 };
 

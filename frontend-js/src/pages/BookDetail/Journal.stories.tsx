@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
-import { expect, waitFor, within } from "storybook/test";
+import { expect, fn, waitFor, within } from "storybook/test";
 import { toBookDetail } from "../../api";
 import {
   bookDetailHandlers,
@@ -66,7 +66,7 @@ const meta = {
       </div>
     ),
   ],
-  args: { book: toBookDetail(aWireBook()) },
+  args: { book: toBookDetail(aWireBook()), onCompose: fn() },
   beforeEach({ msw }) {
     msw.use(...bookDetailHandlers(aWireBook()));
   },
@@ -372,48 +372,14 @@ export const DeleteFailsKeepsTheEntry: Story = {
   },
 };
 
-export const NewEntryPublishesIntoTheFeed: Story = {
-  beforeEach({ msw }) {
-    writes.length = 0;
-    msw.use(...journalHandlers(ENTRIES, ADA, writes));
-  },
-  play: async ({ canvas, userEvent }) => {
-    await userEvent.click(await canvas.findByTestId("journal-open-composer"));
-    const overlay = canvas.getByTestId("journal-composer-overlay");
-    await userEvent.type(
-      within(overlay).getByRole("textbox", { name: "Journal entry" }),
-      "A fresh thought",
-    );
-    await userEvent.click(within(overlay).getByTestId("journal-publish"));
-
-    await waitFor(() =>
-      expect(writes).toEqual([{ id: 100, status: "published" }]),
-    );
-    await waitFor(() =>
-      expect(canvas.getAllByTestId("journal-entry")).toHaveLength(4),
-    );
-    await expect(canvas.getByTestId("journal-count")).toHaveTextContent("4");
-    await expect(
-      canvas.queryByTestId("journal-composer-overlay"),
-    ).not.toBeInTheDocument();
-  },
-};
-
-export const ComposerIgnoresAClickOutside: Story = {
+export const NewEntryAsksTheTabForTheComposer: Story = {
   beforeEach({ msw }) {
     msw.use(...journalHandlers(ENTRIES, ADA));
   },
-  play: async ({ canvas, userEvent }) => {
+  play: async ({ args, canvas, userEvent }) => {
     await userEvent.click(await canvas.findByTestId("journal-open-composer"));
-    await userEvent.click(canvas.getByTestId("journal-composer-overlay"));
-    await expect(canvas.getByTestId("journal-composer")).toBeInTheDocument();
 
-    await userEvent.click(canvas.getByRole("button", { name: "Cancel" }));
-    await waitFor(() =>
-      expect(
-        canvas.queryByTestId("journal-composer-overlay"),
-      ).not.toBeInTheDocument(),
-    );
+    await expect(args.onCompose).toHaveBeenCalledOnce();
   },
 };
 

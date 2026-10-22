@@ -45,7 +45,7 @@ export function HighlightsJournal({ book }: { book: BookDetail }) {
       ) : (
         <div className="bp-hj" data-testid="highlights-journal">
           <Highlights book={book} />
-          <Journal book={book} />
+          <Journal book={book} onCompose={() => setComposing(true)} />
         </div>
       )}
       {composing && (
