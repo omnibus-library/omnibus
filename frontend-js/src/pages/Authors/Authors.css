@@ -7,26 +7,26 @@
   min-height: calc(100dvh - var(--au-top));
 }
 .au-row,
-.au-author {
+.au-pane {
   --au-tint: var(--accent);
 }
 @supports (color: oklch(from red l c h)) {
   .au-row,
-  .au-author {
+  .au-pane {
     --au-tint: oklch(
       from var(--au-accent, var(--accent)) 0.79 clamp(0.05, c, 0.15) h
     );
   }
   [data-theme="light"] .au-row,
-  [data-theme="light"] .au-author,
+  [data-theme="light"] .au-pane,
   [data-theme="sepia"] .au-row,
-  [data-theme="sepia"] .au-author {
+  [data-theme="sepia"] .au-pane {
     --au-tint: oklch(
       from var(--au-accent, var(--accent)) 0.62 clamp(0.05, c, 0.15) h
     );
   }
   [data-theme="black"] .au-row,
-  [data-theme="black"] .au-author {
+  [data-theme="black"] .au-pane {
     --au-tint: var(--accent);
   }
 }
@@ -329,10 +329,10 @@
   position: relative;
 }
 .au-detail > .ld-stale,
-.au-author {
+.au-pane {
   min-height: 100%;
 }
-.au-author {
+.au-pane {
   padding: 52px clamp(28px, 4.5vw, 76px) 72px;
   background: radial-gradient(
     70% 38% at 85% 0%,
@@ -361,7 +361,7 @@
 .au-hero-body {
   min-width: 0;
 }
-.au-author .au-name {
+.au-pane .au-name {
   --lh: 1;
   font-size: clamp(42px, 4.6vw, 80px);
   line-height: var(--lh);
@@ -514,7 +514,7 @@
   gap: 8px 16px;
   margin-bottom: 20px;
 }
-.au-author .au-shelf-title {
+.au-pane .au-shelf-title {
   --lh: 1;
   font-size: 36px;
   line-height: var(--lh);
@@ -619,7 +619,7 @@
   .au-list-head {
     padding-inline: 20px;
   }
-  .au-author {
+  .au-pane {
     padding: 28px 20px 48px;
   }
   .au-hero {

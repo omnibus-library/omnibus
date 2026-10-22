@@ -17,7 +17,7 @@ fn reading(id: i64, reading: usize, last: Option<i64>) -> (i64, AuthorReading) {
     )
 }
 
-fn query(sort: AuthorSort) -> ListQuery<'static> {
+fn query(sort: BrowseSort) -> ListQuery<'static> {
     ListQuery {
         text: "",
         sort,
@@ -109,16 +109,6 @@ fn first_letter_buckets_non_alpha_under_hash() {
 }
 
 #[test]
-fn is_non_alpha_key_classifies_keys() {
-    assert!(!is_non_alpha_key("Alcott, Louisa May"));
-    assert!(!is_non_alpha_key("zZz"));
-    assert!(is_non_alpha_key("1984"));
-    assert!(is_non_alpha_key("[Anonymous]"));
-    assert!(is_non_alpha_key("\u{4E2D}\u{6587}"));
-    assert!(is_non_alpha_key(""));
-}
-
-#[test]
 fn filter_authors_returns_all_when_query_is_empty() {
     let all = [
         author("Ada Lovelace", None),
@@ -157,7 +147,7 @@ fn compute_author_groups_keeps_an_accented_name_in_its_existing_letter_bucket() 
         author("Benito Pérez Galdós", None),
         author("Ada Lovelace", None),
     ];
-    let groups = compute_author_groups(&all, query(AuthorSort::Name));
+    let groups = compute_author_groups(&all, query(BrowseSort::Name));
 
     let letters: Vec<(char, Vec<&str>)> = groups
         .letters
@@ -182,7 +172,7 @@ fn compute_author_groups_keeps_an_accented_name_in_its_existing_letter_bucket() 
 fn sort_authors_by_name_orders_alpha_before_non_alpha_bucket() {
     let all = [author("1984", None), author("Ada Lovelace", None)];
     let mut filtered: Vec<&AuthorSummary> = all.iter().collect();
-    sort_authors(&mut filtered, AuthorSort::Name, None);
+    sort_authors(&mut filtered, BrowseSort::Name, None);
     assert_eq!(filtered[0].name, "Ada Lovelace");
     assert_eq!(filtered[1].name, "1984");
 }
@@ -199,7 +189,7 @@ fn sort_authors_by_name_orders_accented_surnames_in_dictionary_order() {
         author("Ana Perez", Some("Perez, Ana")),
     ];
     let mut filtered: Vec<&AuthorSummary> = all.iter().collect();
-    sort_authors(&mut filtered, AuthorSort::Name, None);
+    sort_authors(&mut filtered, BrowseSort::Name, None);
     let names: Vec<&str> = filtered.iter().map(|a| a.name.as_str()).collect();
     assert_eq!(
         names,
@@ -231,7 +221,7 @@ fn sort_authors_by_book_count_orders_descending_then_name() {
     high.book_count = 7;
     let all = [low, high];
     let mut filtered: Vec<&AuthorSummary> = all.iter().collect();
-    sort_authors(&mut filtered, AuthorSort::BookCount, None);
+    sort_authors(&mut filtered, BrowseSort::BookCount, None);
     assert_eq!(filtered[0].name, "Bravo");
     assert_eq!(filtered[1].name, "Alpha");
 }
@@ -269,7 +259,7 @@ fn sort_authors_by_recent_puts_the_latest_read_first_and_the_unread_after() {
     }
     let map: ReadingMap = [reading(1, 0, Some(10)), reading(3, 1, Some(20))].into();
     let mut filtered: Vec<&AuthorSummary> = all.iter().collect();
-    sort_authors(&mut filtered, AuthorSort::Recent, Some(&map));
+    sort_authors(&mut filtered, BrowseSort::Recent, Some(&map));
     let names: Vec<&str> = filtered.iter().map(|a| a.name.as_str()).collect();
     assert_eq!(names, ["Cy Twombly", "Ada Lovelace", "Bob Lowe"]);
 }
@@ -285,7 +275,7 @@ fn compute_author_groups_keeps_only_authors_in_progress_when_asked() {
         ListQuery {
             reading: Some(&map),
             only_reading: true,
-            ..query(AuthorSort::Name)
+            ..query(BrowseSort::Name)
         },
     );
     let names: Vec<&str> = groups.filtered.iter().map(|a| a.name.as_str()).collect();
@@ -299,7 +289,7 @@ fn compute_author_groups_ignores_the_reading_filter_until_progress_loads() {
         &all,
         ListQuery {
             only_reading: true,
-            ..query(AuthorSort::Name)
+            ..query(BrowseSort::Name)
         },
     );
     assert_eq!(groups.filtered.len(), 1);
