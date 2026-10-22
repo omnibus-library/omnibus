@@ -5,11 +5,10 @@ import {
   type EditableBook,
   revertCover,
   type StagedSource,
-  uploadCover,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
-import { BusyLabel, Ring } from "../../components/Loading/Loading";
+import { Ring } from "../../components/Loading/Loading";
 
 /** A cover chosen during review, not yet written anywhere. */
 export type StagedCover = {
@@ -111,7 +110,7 @@ function stagedHint({ source, preview }: StagedCover) {
 function heldHint({ source }: HeldCover) {
   return source.kind === "file"
     ? "your image · saved when you press Done"
-    : "from the web · saved when you press Done";
+    : "from the web · fetched when you press Done";
 }
 
 /** What the book's own cover is, when nothing is waiting to replace it. */
@@ -175,6 +174,11 @@ export function CoverEditor(props: CoverProps) {
     e.preventDefault();
     const url = pastedUrl.trim();
     if (target.kind !== "held" || locked || !url) return;
+    // The server fetches only https, so a cover address that is not is turned back here, not at Done.
+    if (!/^https:\/\//i.test(url)) {
+      setStatus("A cover address must start with https://.");
+      return;
+    }
     releaseHeld(target.held);
     target.onHold({ source: { kind: "url", url }, preview: url });
     setPastedUrl("");

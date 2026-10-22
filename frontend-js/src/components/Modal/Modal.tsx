@@ -42,7 +42,10 @@ export function Modal({
     () => () => {
       // A saved edit drops the selection and its bar, the opener with them; the table is the next stop.
       const target =
-        opener.current instanceof HTMLElement && opener.current.isConnected
+        // A page opened on the sheet had nothing focused: `body` is no opener to hand focus back to.
+        opener.current instanceof HTMLElement &&
+        opener.current.isConnected &&
+        opener.current !== document.body
           ? opener.current
           : fallbackFocus?.current;
       target?.focus();

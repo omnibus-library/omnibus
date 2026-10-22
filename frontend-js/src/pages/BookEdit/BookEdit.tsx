@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import { flushSync } from "react-dom";
-import { type FieldErrors, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import {
   useLocation,
   useNavigate,
@@ -51,7 +51,7 @@ import { DetailsPanel } from "./DetailsPanel";
 import { dirtyLabels } from "./dirty";
 import { SheetHead } from "./EditHeader";
 import { FetchView } from "./FetchView";
-import { SheetFooter } from "./SheetFooter";
+import { DONE_ID, SheetFooter } from "./SheetFooter";
 import "./BookEdit.css";
 import "./EditSheet.css";
 
@@ -62,6 +62,9 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "artwork", label: "Artwork" },
   { key: "identifiers", label: "Identifiers" },
 ];
+
+/** The Fetch metadata button's id: where focus goes back to when its view is left. */
+const FETCH_ID = "es-fetch-open";
 
 const tabId = (key: TabKey) => `es-tab-${key}`;
 const panelId = (key: TabKey) => `es-panel-${key}`;
@@ -163,8 +166,10 @@ function EditSheet({ book }: { book: EditableBook }) {
   const location = useLocation();
   const toast = useToast();
   const [params] = useSearchParams();
+  // What the fields are measured against: the book as loaded, then as last written, so a save that half lands moves it.
+  const [baseline, setBaseline] = useState(book.form);
   const form = useForm<MetaForm>({
-    resolver: zodResolver(editFormSchema(book.form)),
+    resolver: zodResolver(editFormSchema(baseline)),
     defaultValues: book.form,
     // A refused value says so as it is typed, and Done waits on it.
     mode: "onChange",
@@ -182,7 +187,7 @@ function EditSheet({ book }: { book: EditableBook }) {
   // Shown only once a provider is set up to answer.
   const providers = useQuery(hasProviderQuery);
 
-  const dirty = dirtyLabels(book.form, form.watch());
+  const dirty = dirtyLabels(baseline, form.watch());
   const count = dirty.length + (held ? 1 : 0);
   const invalid = Object.keys(form.formState.errors).length > 0;
   const { blocker, allowLeave } = useLeaveGuard(count > 0);
@@ -236,15 +241,48 @@ function EditSheet({ book }: { book: EditableBook }) {
       blocker.proceed();
     } else close();
   };
-  const requestClose = () => (count > 0 ? setAsking(true) : close());
+  // Where focus was when the leave bar took over, so Keep editing can hand it back.
+  const beforeLeave = useRef<Element | null>(null);
+  const keeping = useRef(false);
+  const requestClose = () => {
+    if (count === 0) return close();
+    beforeLeave.current = document.activeElement;
+    setAsking(true);
+  };
+  const keepEditing = () => {
+    keeping.current = true;
+    setAsking(false);
+    if (blocker.state === "blocked") blocker.reset();
+  };
+  useEffect(() => {
+    if (leaving || !keeping.current) return;
+    keeping.current = false;
+    // Back to what held it, or Done once that went with the bar it was in.
+    const back = beforeLeave.current;
+    const target =
+      back instanceof HTMLElement && back.isConnected && back !== document.body
+        ? back
+        : document.getElementById(DONE_ID);
+    target?.focus();
+  }, [leaving]);
 
   const save = useMutation({
     mutationFn: async ({ values }: { values: MetaForm; changes: number }) => {
-      await saveOverrides(book.uuid, overridesFrom(book.form, values));
-      if (held?.source.kind === "file") {
-        await uploadCover(book.uuid, held.source.file);
-      } else if (held) {
-        await coverFromUrl(book.uuid, held.source.url);
+      await saveOverrides(book.uuid, overridesFrom(baseline, values));
+      // The fields are written: the page hears of them and they stop counting as unsaved now, so a cover refused next leaves only the cover to try again.
+      setBaseline(values);
+      written();
+      if (!held) return;
+      try {
+        if (held.source.kind === "file") {
+          await uploadCover(book.uuid, held.source.file);
+        } else {
+          await coverFromUrl(book.uuid, held.source.url);
+        }
+      } catch (e) {
+        throw new Error(
+          `Cover not saved: ${e instanceof Error ? e.message : String(e)}`,
+        );
       }
     },
     onSuccess: (_done, { values, changes }) => {
@@ -266,12 +304,8 @@ function EditSheet({ book }: { book: EditableBook }) {
   const saving = save.isPending || revert.isPending;
   const locked = saving || coverBusy;
 
-  // Fields first: a refused value is on Details, and its input is where the reader goes next.
-  const showInvalid = (errors: FieldErrors<MetaForm>) => {
-    flushSync(() => setTab("details"));
-    const first = Object.keys(errors)[0] as keyof MetaForm | undefined;
-    if (first) form.setFocus(first);
-  };
+  // A refused value is on Details; react-hook-form focuses its input once the panel is showing.
+  const showInvalid = () => flushSync(() => setTab("details"));
   const submit = () => {
     revert.reset();
     void form.handleSubmit(
@@ -282,7 +316,7 @@ function EditSheet({ book }: { book: EditableBook }) {
   const done = () => (count === 0 ? close() : submit());
   const discard = () => {
     save.reset();
-    form.reset(book.form);
+    form.reset(baseline);
     releaseHeld(held);
     setHeld(null);
   };
@@ -315,10 +349,19 @@ function EditSheet({ book }: { book: EditableBook }) {
       setFetching(false);
       setTab(to);
     });
-    document.getElementById(field ?? "")?.scrollIntoView({
+    // The first field it changed holds focus, or Details when that one is a chip list.
+    const target =
+      document.getElementById(field ?? "") ??
+      document.getElementById(tabId(to));
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({
       block: "nearest",
       behavior: prefersReducedMotion() ? "auto" : "smooth",
     });
+  };
+  const leaveFetch = () => {
+    flushSync(() => setFetching(false));
+    document.getElementById(FETCH_ID)?.focus();
   };
 
   return (
@@ -328,7 +371,7 @@ function EditSheet({ book }: { book: EditableBook }) {
       onDismiss={requestClose}
       closing={closing}
       onClosed={leave}
-      busy={saving}
+      busy={locked}
       fallbackFocus={moreButton}
     >
       <div className="es-sheet">
@@ -339,6 +382,7 @@ function EditSheet({ book }: { book: EditableBook }) {
           fetch={
             providers.data ? (
               <Button
+                id={FETCH_ID}
                 className="es-fetch-open"
                 data-testid="es-fetch"
                 aria-expanded={fetching}
@@ -371,7 +415,7 @@ function EditSheet({ book }: { book: EditableBook }) {
                 releaseHeld(held);
                 setHeld({ source: { kind: "url", url }, preview: url });
               }}
-              onBack={() => setFetching(false)}
+              onBack={leaveFetch}
               onApplied={applied}
             />
           )}
@@ -397,15 +441,13 @@ function EditSheet({ book }: { book: EditableBook }) {
         <SheetFooter
           count={count}
           saving={saving}
+          locked={locked}
           invalid={invalid}
           error={save.error?.message}
           leaving={leaving}
           onDone={done}
           onDiscard={discard}
-          onKeepEditing={() => {
-            setAsking(false);
-            if (blocker.state === "blocked") blocker.reset();
-          }}
+          onKeepEditing={keepEditing}
           onDontSave={finish}
           onSave={submit}
         />

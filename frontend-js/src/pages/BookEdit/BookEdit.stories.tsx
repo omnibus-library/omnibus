@@ -11,7 +11,7 @@ import {
   type ProviderEdition,
 } from "../../api/generated/schemas";
 import { storyClient } from "../../testing/AppHarness";
-import { bookDetailHandlers, deferred, failing } from "../../testing/handlers";
+import { bookDetailHandlers, deferred } from "../../testing/handlers";
 import {
   anEditableWireBook,
   aProviderEdition,
@@ -482,6 +482,8 @@ export const DontSaveDiscardsAndCloses: Story = {
   play: async ({ canvas, userEvent }) => {
     const dialog = await sheet(canvas);
     await userEvent.type(await dialog.findByLabelText(/^Title/), "!");
+    // The browser's own prompt is armed while edits are unsaved, and disarmed once they are let go.
+    await expect(window.onbeforeunload).not.toBeNull();
     await userEvent.click(dialog.getByRole("button", { name: "Close" }));
 
     await userEvent.click(dialog.getByRole("button", { name: "Don’t save" }));
@@ -538,9 +540,9 @@ export const SaveFailingFromTheLeaveBarSaysWhy: Story = {
       }),
     );
 
-    await expect(await dialog.findByRole("alert")).toHaveTextContent(
-      "title is too long",
-    );
+    await expect(
+      await dialog.findByText("title is too long"),
+    ).toBeInTheDocument();
     // Still asking, still open.
     await shown(dialog.getByTestId("es-leave"));
   },
@@ -771,9 +773,9 @@ export const PrintPagesNotANumber: Story = {
     await userEvent.type(pages, "abc");
 
     // Said as it is typed, under the field, and Done waits on it.
-    await expect(await dialog.findByRole("alert")).toHaveTextContent(
-      "Print page count must be a whole number.",
-    );
+    await expect(
+      await dialog.findByText("Print page count must be a whole number."),
+    ).toBeInTheDocument();
     await expect(pages).toHaveAttribute("aria-invalid", "true");
     await expect(dialog.getByRole("button", { name: "Done" })).toBeDisabled();
     await expect(saved).toEqual([]);
@@ -890,7 +892,7 @@ export const AnImageUrlIsHeldUntilDone: Story = {
     await userEvent.click(dialog.getByRole("button", { name: "Apply" }));
 
     await expect(dialog.getByTestId("cover-hint")).toHaveTextContent(
-      "from the web · saved when you press Done",
+      "from the web · fetched when you press Done",
     );
     await expect(FETCHED).toEqual([]);
     await userEvent.click(dialog.getByRole("button", { name: "Done" }));
@@ -1266,7 +1268,7 @@ export const FetchSaysNothingMatched: Story = {
     const view = await openFetch(dialog, userEvent);
 
     await expect(await view.findByTestId("es-fetch-empty")).toHaveTextContent(
-      "No editions matched.",
+      "No editions matched. Try a shorter title, or the ISBN.",
     );
     await expect(view.queryByRole("list")).not.toBeInTheDocument();
   },
@@ -1491,7 +1493,7 @@ export const CoverRowHoldsTheCoverUntilDone: Story = {
       "true",
     );
     await expect(dialog.getByTestId("cover-hint")).toHaveTextContent(
-      "from the web · saved when you press Done",
+      "from the web · fetched when you press Done",
     );
     await expect(dialog.getByTestId("es-save-state")).toHaveTextContent(
       "1 unsaved change",
@@ -1654,6 +1656,240 @@ export const UnsavedState: Story = {
     await expect(dialog.getByRole("button", { name: "Done" })).toBeEnabled();
     await expect(dialog.getByRole("tab", { name: "Details" })).toHaveAttribute(
       "data-edited",
+    );
+  },
+};
+
+// ---------- Round 1: saving with a held cover, and where focus goes ----------
+
+let coverCalls = 0;
+
+export const AHeldCoverRefusedAtDoneSaysWhy: Story = {
+  beforeEach({ msw }) {
+    coverCalls = 0;
+    // The first cover write is refused, the second lands.
+    msw.use(
+      http.post("/api/ebooks/:uuid/cover", () =>
+        ++coverCalls === 1
+          ? new HttpResponse("not an image", { status: 400 })
+          : HttpResponse.json(BOOK),
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+    const title = await dialog.findByLabelText(/^Title/);
+    await userEvent.type(title, "!");
+    await userEvent.click(dialog.getByRole("tab", { name: "Artwork" }));
+    await userEvent.upload(
+      await dialog.findByLabelText("Replace cover"),
+      PICK(),
+    );
+    const marked = watchInvalidations();
+
+    await userEvent.click(dialog.getByRole("button", { name: "Done" }));
+
+    // The fields were written, so the page hears of them and they are no longer unsaved.
+    await expect(await dialog.findByRole("alert")).toHaveTextContent(
+      "Cover not saved: not an image",
+    );
+    await expect(saved).toEqual([{ title: "Aurora Station, Vol. 1!" }]);
+    await expect(marked()).toEqual(expect.arrayContaining([["book", UUID]]));
+    await expect(dialog.getByTestId("es-save-state")).toHaveTextContent(
+      "1 unsaved change",
+    );
+    await expect(
+      dialog.getByRole("tab", { name: "Details" }),
+    ).not.toHaveAttribute("data-edited");
+    await expect(dialog.getByRole("tab", { name: "Artwork" })).toHaveAttribute(
+      "data-edited",
+    );
+    // Still open, the cover still held.
+    await expect(router.state.location.pathname).toBe(`/books/${UUID}/edit`);
+    await expect(dialog.getByTestId("cover-hint")).toHaveTextContent(
+      "your image",
+    );
+
+    // Trying again writes the cover alone.
+    await userEvent.click(dialog.getByRole("button", { name: "Done" }));
+
+    await waitFor(() =>
+      expect(
+        canvas.queryByRole("dialog", { name: DIALOG }),
+      ).not.toBeInTheDocument(),
+    );
+    await expect(saved).toHaveLength(1);
+    await expect(coverCalls).toBe(2);
+  },
+};
+
+export const DiscardAfterAPartialSaveKeepsWhatWasSaved: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      http.post(
+        "/api/ebooks/:uuid/cover",
+        () => new HttpResponse("not an image", { status: 400 }),
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+    const title = await dialog.findByLabelText(/^Title/);
+    await userEvent.type(title, "!");
+    await userEvent.click(dialog.getByRole("tab", { name: "Artwork" }));
+    await userEvent.upload(
+      await dialog.findByLabelText("Replace cover"),
+      PICK(),
+    );
+    await userEvent.click(dialog.getByRole("button", { name: "Done" }));
+    await dialog.findByText("Cover not saved: not an image");
+
+    await userEvent.click(
+      dialog.getByRole("button", { name: "Discard edits" }),
+    );
+
+    // What was written stays; only the cover is dropped.
+    await expect(title).toHaveValue("Aurora Station, Vol. 1!");
+    await expect(dialog.getByTestId("es-save-state")).toHaveTextContent(
+      "No changes",
+    );
+  },
+};
+
+let scannedGate = deferred();
+
+export const DoneWaitsForTheScannedCoverToComeBack: Story = {
+  beforeEach({ msw }) {
+    scannedGate = deferred();
+    msw.use(
+      http.get("/api/ebooks/:uuid", () => HttpResponse.json(OVERRIDDEN)),
+      http.delete("/api/ebooks/:uuid/cover", async () => {
+        await scannedGate.promise;
+        return HttpResponse.json({ ...OVERRIDDEN, has_cover_override: false });
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+    await userEvent.type(await dialog.findByLabelText(/^Title/), "!");
+    await userEvent.click(dialog.getByRole("tab", { name: "Artwork" }));
+
+    await userEvent.click(
+      await dialog.findByRole("button", { name: "Revert to scanned cover" }),
+    );
+
+    // While the cover is in flight nothing else may write, and the sheet cannot be left.
+    await expect(await dialog.findByText("Reverting…")).toBeInTheDocument();
+    await expect(dialog.getByTestId("es-done")).toBeDisabled();
+    await expect(dialog.getByTestId("es-discard")).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    await expect(dialog.queryByTestId("es-leave")).not.toBeInTheDocument();
+    scannedGate.release();
+
+    await expect(
+      await dialog.findByText("Reverted to scanned cover."),
+    ).toBeInTheDocument();
+    await expect(dialog.getByTestId("es-done")).toBeEnabled();
+  },
+};
+
+export const EscapeKeepEditingDoesNotLandOnDiscard: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+    const title = await dialog.findByLabelText(/^Title/);
+    await userEvent.type(title, "!");
+
+    await userEvent.keyboard("{Escape}");
+
+    // Focus is on the safe choice, and the question is announced.
+    const leave = await dialog.findByTestId("es-leave");
+    const keep = within(leave).getByRole("button", { name: "Keep editing" });
+    await waitFor(() => expect(keep).toHaveFocus());
+    await expect(
+      within(leave).getByText("Save your change before closing?"),
+    ).toHaveAttribute("role", "alert");
+
+    await userEvent.keyboard("{Enter}");
+
+    // Keep editing hands focus back to where it was, and a second Enter finds no Discard under it.
+    await waitFor(() =>
+      expect(dialog.queryByTestId("es-leave")).not.toBeInTheDocument(),
+    );
+    await expect(title).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    await expect(title).toHaveValue("Aurora Station, Vol. 1!");
+    await expect(dialog.getByTestId("es-save-state")).toHaveTextContent(
+      "1 unsaved change",
+    );
+    await expect(saved).toEqual([]);
+  },
+};
+
+export const KeepEditingFromTheCloseButtonReturnsThere: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+    await userEvent.type(await dialog.findByLabelText(/^Title/), "!");
+    const close = dialog.getByRole("button", { name: "Close" });
+    await userEvent.click(close);
+
+    await userEvent.click(dialog.getByRole("button", { name: "Keep editing" }));
+
+    await waitFor(() => expect(close).toHaveFocus());
+  },
+};
+
+export const BackToEditingFocusesFetchMetadata: Story = {
+  beforeEach({ msw }) {
+    providers([VOLUME_ONE])({ msw });
+  },
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+    const view = await openFetch(dialog, userEvent);
+
+    await userEvent.click(
+      view.getByRole("button", { name: "Back to editing" }),
+    );
+
+    await expect(
+      dialog.getByRole("button", { name: "Fetch metadata" }),
+    ).toHaveFocus();
+  },
+};
+
+export const ApplyFocusesTheFirstAppliedField: Story = {
+  beforeEach({ msw }) {
+    providers([VOLUME_ONE])({ msw });
+  },
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+    const view = await openFetch(dialog, userEvent);
+    await pickFirst(view, userEvent);
+    await userEvent.click(await view.findByRole("checkbox", { name: /Title/ }));
+
+    await userEvent.click(
+      view.getByRole("button", { name: "Apply 2 changes" }),
+    );
+
+    await waitFor(() => expect(dialog.getByLabelText(/^Title/)).toHaveFocus());
+  },
+};
+
+export const DeepLinkCloseFocusesMoreButton: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+
+    await userEvent.click(dialog.getByRole("button", { name: "Close" }));
+
+    // Nothing opened the sheet from the page, so focus lands on the hero's More button.
+    await waitFor(() =>
+      expect(
+        canvas.queryByRole("dialog", { name: DIALOG }),
+      ).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(
+        canvas.getByRole("button", { name: "More actions" }),
+      ).toHaveFocus(),
     );
   },
 };

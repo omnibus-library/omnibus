@@ -1,15 +1,10 @@
 import { useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
-import {
-  coverFromUrl,
-  type MetaForm,
-  PROVIDERS,
-  type ProviderEdition,
-} from "../../api";
+import { type MetaForm, PROVIDERS, type ProviderEdition } from "../../api";
 import { classes } from "../../classes";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
-import { Loading, Ring } from "../../components/Loading/Loading";
+import { Loading } from "../../components/Loading/Loading";
 import { coverPreview, restage, type StagedCoverProps } from "./CoverEditor";
 import {
   applyField,

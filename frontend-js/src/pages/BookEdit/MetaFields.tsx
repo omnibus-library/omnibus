@@ -84,7 +84,7 @@ export function MeField({
 /** Why a field's value is refused, said once it is typed. */
 function FieldError({ id, error }: { id: string; error?: string }) {
   return error ? (
-    <p className="me-field-error" id={`${id}-error`} role="alert">
+    <p className="me-field-error" id={`${id}-error`}>
       {error}
     </p>
   ) : null;

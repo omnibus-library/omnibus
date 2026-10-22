@@ -41,6 +41,21 @@ describe("formFromBook", () => {
   });
 });
 
+describe("formFromBook's published date", () => {
+  it.each([
+    ["a stored instant", "2021-03-01T00:00:00+00:00", "2021-03-01"],
+    ["a space-separated instant", "2021-03-01 00:00:00", "2021-03-01"],
+    ["a day", "2021-03-01", "2021-03-01"],
+    ["a month", "2021-03", "2021-03"],
+    ["a year", "2021", "2021"],
+    ["text with no leading date", "spring 2021", "spring 2021"],
+  ])("seeds %s as its date part", (_shape, published, expected) => {
+    expect(formFromBook(anEditableWireBook({ published })).published).toBe(
+      expected,
+    );
+  });
+});
+
 describe("MetaFormSchema", () => {
   it.each(["", "  ", "320", " 32 ", "1", "20000"])(
     "accepts %j as the page count",

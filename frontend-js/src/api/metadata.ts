@@ -103,13 +103,18 @@ export const editFormSchema = (baseline: MetaForm) =>
     }
   });
 
+/** `2021-03-01` of `2021-03-01T00:00:00+00:00`; anything that does not open with a date is left as it is. */
+const datePart = (value: string) =>
+  /^\d{4}(-\d{2}(-\d{2})?)?(?=$|[T ])/.exec(value)?.[0] ?? value;
+
 /** The form's starting values for a book: a missing field is blank. */
 export function formFromBook(wire: EbookMetadata): MetaForm {
   return {
     title: wire.title ?? "",
     description: wire.description ?? "",
     publisher: wire.publisher ?? "",
-    published: wire.published ?? "",
+    // A stored instant edits in place as its date: the form takes dates, not times.
+    published: datePart(wire.published ?? ""),
     language: wire.language ?? "",
     series: wire.series ?? "",
     seriesIndex: wire.series_index ?? "",

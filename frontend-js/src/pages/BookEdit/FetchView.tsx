@@ -251,7 +251,7 @@ export function FetchView({
       {search.data && <SourceSummary sources={search.data.sources} />}
       {search.data?.editions.length === 0 && (
         <p className="es-fetch-note" role="status" data-testid="es-fetch-empty">
-          No editions matched. Try a shorter title, or just the author.
+          No editions matched. Try a shorter title, or the ISBN.
         </p>
       )}
       {search.data && search.data.editions.length > 0 && (

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { HttpResponse, http } from "msw";
 import { useState } from "react";
 import { expect, spyOn, waitFor } from "storybook/test";
 import { type EditableBook, toEditableBook } from "../../api";
@@ -236,21 +237,50 @@ export const HoldsAPickedImage: Story = {
 };
 
 export const HoldsAnImageUrl: Story = {
+  beforeEach({ msw }) {
+    // An address that loads, since a preview that fails to decode drops its <img>.
+    msw.use(
+      http.get(
+        "https://example.test/cover.png",
+        () =>
+          new HttpResponse(PNG, { headers: { "Content-Type": "image/png" } }),
+      ),
+    );
+  },
   play: async ({ canvas, userEvent }) => {
     const url = await canvas.findByLabelText("Or paste an image URL");
-    // An address that loads, since a preview that fails to decode drops its <img>.
-    await userEvent.click(url);
-    await userEvent.paste(PREVIEW);
+    await userEvent.type(url, "https://example.test/cover.png");
 
     await userEvent.click(canvas.getByRole("button", { name: "Apply" }));
 
     await expect(canvas.getByTestId("cover-hint")).toHaveTextContent(
-      "from the web · saved when you press Done",
+      "from the web · fetched when you press Done",
     );
-    await expect(
-      canvas.getByTestId("cover-staged-preview").querySelector("img"),
-    ).toHaveAttribute("src", PREVIEW);
+    await waitFor(() =>
+      expect(
+        canvas.getByTestId("cover-staged-preview").querySelector("img"),
+      ).toHaveAttribute("src", "https://example.test/cover.png"),
+    );
     await expect(url).toHaveValue("");
+  },
+};
+
+export const RefusesAnAddressThatIsNotHttps: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const url = await canvas.findByLabelText("Or paste an image URL");
+    await userEvent.type(url, "http://example.test/cover.png");
+
+    await userEvent.click(canvas.getByRole("button", { name: "Apply" }));
+
+    // The server only fetches https, so it is said here, and nothing is held.
+    await expect(
+      await canvas.findByText("A cover address must start with https://."),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("cover-hint")).toHaveTextContent(
+      "extracted from file",
+    );
+    await expect(canvas.queryByTestId("cover-drop-held")).toBeNull();
+    await expect(url).toHaveValue("http://example.test/cover.png");
   },
 };
 
