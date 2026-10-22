@@ -99,7 +99,10 @@ describe("useOptimisticSave among keys that begin with its own", () => {
     const { client, result } = renderSave();
     const child = [...KEY, "child"];
     const read = deferred();
-    void client.fetchQuery({ queryKey: child, queryFn: () => read.promise });
+    void client.fetchQuery({
+      queryKey: child,
+      queryFn: () => read.promise.then(() => "answer"),
+    });
 
     act(() => {
       result.current.mutate("second");
