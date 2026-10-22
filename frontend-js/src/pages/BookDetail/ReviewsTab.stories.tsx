@@ -2,7 +2,12 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useQuery } from "@tanstack/react-query";
 import { delay, HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
-import { type BookUuid, statsQuery, toBookDetail } from "../../api";
+import {
+  type BookDetail,
+  type BookUuid,
+  statsQuery,
+  toBookDetail,
+} from "../../api";
 import {
   type AttributedReview,
   type Review,
@@ -27,6 +32,7 @@ import {
 } from "../../testing/wire";
 import { shelvesQuery } from "./queries";
 import { ReviewsTab } from "./ReviewsTab";
+import { useMyRating } from "./useMyRating";
 // The page brings the stop's styles.
 import "./BookDetail.css";
 
@@ -89,16 +95,21 @@ const MINE: Review = aWireReview({
 
 const writes: (ReviewPatch | "delete")[] = [];
 
+/** The tab under the page's one queue of writes, as BookDetail hands it down. */
+function Tab(props: { book: BookDetail }) {
+  return <ReviewsTab {...props} rating={useMyRating(props.book.uuid)} />;
+}
+
 const meta = {
   title: "Pages/BookDetail/ReviewsTab",
-  component: ReviewsTab,
+  component: Tab,
   args: { book: toBookDetail(aWireBook()) },
   beforeEach({ msw }) {
     writes.length = 0;
     msw.use(...bookDetailHandlers(aWireBook()));
     msw.use(...reviewHandlers({}, writes));
   },
-} satisfies Meta<typeof ReviewsTab>;
+} satisfies Meta<typeof Tab>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -356,7 +367,7 @@ export const ATapSavesTheStarsAndRefreshesWhatSumsThem: Story = {
   render: (args) => (
     <>
       <Observers uuid={args.book.uuid} />
-      <ReviewsTab {...args} />
+      <Tab {...args} />
     </>
   ),
   beforeEach({ msw }) {
@@ -546,7 +557,7 @@ export const TheLastWriteToSettleRefetchesWhenTheNewestFailed: Story = {
   render: (args) => (
     <>
       <Observers uuid={args.book.uuid} />
-      <ReviewsTab {...args} />
+      <Tab {...args} />
     </>
   ),
   beforeEach({ msw }) {

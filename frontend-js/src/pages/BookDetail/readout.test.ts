@@ -8,6 +8,7 @@ import {
 import {
   chapterIndexForCfi,
   chapterNow,
+  factLine,
   homeReadout,
   interpolatePairs,
   linkedAudioAt,
@@ -289,5 +290,49 @@ describe("newestPercent", () => {
       ),
     ).toBe(60);
     expect(newestPercent(progress(null, null))).toBeNull();
+  });
+});
+
+describe("factLine", () => {
+  const facts = {
+    published: "2014-02-18",
+    publisher: "Del Rey",
+    pageCount: 382,
+    language: "en",
+  };
+
+  it("joins year publisher pages and language", () => {
+    expect(factLine(facts)).toBe("2014 · Del Rey · 382 pages · English");
+  });
+
+  it("leaves out what is unknown", () => {
+    expect(
+      factLine({
+        published: null,
+        publisher: "Del Rey",
+        pageCount: null,
+        language: null,
+      }),
+    ).toBe("Del Rey");
+    expect(
+      factLine({
+        published: null,
+        publisher: null,
+        pageCount: null,
+        language: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("says one page for a one-page book", () => {
+    expect(factLine({ ...facts, pageCount: 1 })).toContain("1 page ·");
+  });
+
+  it("names a language code in English", () => {
+    expect(factLine({ ...facts, language: "fr" })).toContain("French");
+  });
+
+  it("keeps a language that is not a code as it is", () => {
+    expect(factLine({ ...facts, language: "Klingon!" })).toContain("Klingon!");
   });
 });

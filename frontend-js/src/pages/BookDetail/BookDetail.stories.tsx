@@ -6,6 +6,7 @@ import {
   getGetEbookByUuidMockHandler404,
   getPostEbookOverridesMockHandler200,
 } from "../../api/generated/omnibus.msw";
+import type { ReviewPatch } from "../../api/generated/schemas";
 import {
   bookDetailHandlers,
   deletionHandlers,
@@ -63,11 +64,8 @@ export const Loaded: Story = {
     await expect(
       await canvas.findByRole("heading", { name: "Aurora Station, Vol. 1" }),
     ).toBeInTheDocument();
-    const series = await canvas.findByRole("link", { name: "Aurora Station" });
-    await waitFor(() =>
-      expect(series.parentElement).toHaveTextContent(
-        "Aurora Station · Book 1 · 3 in your library · 2021",
-      ),
+    await expect(canvas.getByTestId("book-authors")).toHaveTextContent(
+      "Aurora Station, book 1",
     );
     await expect(canvas.getByText("First contact")).toBeInTheDocument();
 
@@ -208,7 +206,9 @@ export const HouseholdRatingOpensTheReviewsTab: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(await canvas.findByTestId("reviews-jump"));
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "See grace's review" }),
+    );
 
     await waitFor(() =>
       expect(canvas.getByRole("tab", { name: "Reviews" })).toHaveAttribute(
@@ -216,6 +216,33 @@ export const HouseholdRatingOpensTheReviewsTab: Story = {
         "true",
       ),
     );
+  },
+};
+
+const patches: (ReviewPatch | "delete")[] = [];
+
+export const AHeroTapShowsOnTheReviewsTabToo: Story = {
+  beforeEach({ msw }) {
+    patches.length = 0;
+    msw.use(...reviewHandlers({}, patches), ...bookDetailHandlers(BOOK));
+  },
+  play: async ({ canvas, userEvent }) => {
+    // Only the open tab's stars are in the accessibility tree: these are the hero's.
+    const hero = await canvas.findByRole("group", { name: "Your rating" });
+
+    await userEvent.click(
+      within(hero).getByRole("button", { name: "Rate 4 stars" }),
+    );
+    await waitFor(() => expect(patches).toEqual([{ stars: 4 }]));
+    await userEvent.click(canvas.getByRole("tab", { name: "Reviews" }));
+
+    const card = await canvas.findByTestId("my-review");
+    await expect(
+      [...card.querySelectorAll<HTMLElement>(".bd-star-fg")].map(
+        (fg) => fg.style.width,
+      ),
+    ).toEqual(["100%", "100%", "100%", "100%", "0%"]);
+    await expect(patches).toEqual([{ stars: 4 }]);
   },
 };
 

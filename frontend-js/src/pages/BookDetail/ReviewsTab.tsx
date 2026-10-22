@@ -12,6 +12,7 @@ import {
   spreadBars,
   spreadSummary,
 } from "./reviews";
+import type { MyRating } from "./useMyRating";
 
 /** The household's stars: the average, how many rated, and the spread over the ten half stars, drawn like the stats page's histogram. */
 function ReviewSummaryBlock({ summary }: { summary: ReviewSummary }) {
@@ -62,7 +63,13 @@ function ReviewSummaryBlock({ summary }: { summary: ReviewSummary }) {
 }
 
 /** The counts kicker over your review, the household summary and every other reader's review. */
-export function ReviewsTab({ book }: { book: BookDetail }) {
+export function ReviewsTab({
+  book,
+  rating,
+}: {
+  book: BookDetail;
+  rating: MyRating;
+}) {
   const reviews = useQuery(reviewsQuery(book.uuid));
   // Unknown reads as not finished, so spoilers stay shut.
   const status = useQuery(readStatusQuery(book.uuid));
@@ -80,7 +87,7 @@ export function ReviewsTab({ book }: { book: BookDetail }) {
       <div id="reviews" className="bd-reviews" data-testid="reviews-section">
         {data ? (
           <>
-            <ReviewCard uuid={book.uuid} mine={data.mine} />
+            <ReviewCard uuid={book.uuid} mine={data.mine} rating={rating} />
             {/* A write's follow-up read moves the summary and the others, so they dim while it runs. */}
             <Stale stale={reviews.isFetching} className="bd-review-household">
               {data.summary && <ReviewSummaryBlock summary={data.summary} />}

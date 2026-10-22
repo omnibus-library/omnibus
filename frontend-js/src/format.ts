@@ -1,4 +1,4 @@
-import type { BookDetail, WishlistEntry } from "./api";
+import type { WishlistEntry } from "./api";
 
 /** The cover plate's author line: the first author's surname, uppercased. */
 export function plateAuthor(authors: readonly string[]): string {
@@ -30,36 +30,6 @@ export const plural = (n: number) => (n === 1 ? "" : "s");
 
 /** A count of books in words: "1 book", "2 books". */
 export const bookCount = (n: number) => `${n} book${plural(n)}`;
-
-/**
- * The detail kicker: the series name (to link) and what follows it, or just the
- * tail for a standalone, which leads with its category.
- */
-export function homeKicker(
-  book: BookDetail,
-  seriesTotal: number | null,
-  wish: WishlistEntry | null = null,
-) {
-  if (wish) {
-    return {
-      series: null,
-      tail: `On your wishlist · added from ${wishlistSource(wish.source)}`,
-    };
-  }
-  const year = book.published ? formatYear(book.published) : null;
-  const yearTail = year ? ` · ${year}` : "";
-  if (book.series) {
-    const { name, index } = book.series;
-    // The index is the book's place in the series and the count is how many the
-    // library holds: two unrelated numbers, never "Book 2 of 1".
-    const position = index
-      ? ` · Book ${index}${seriesTotal ? ` · ${seriesTotal} in your library` : ""}`
-      : "";
-    return { series: name, tail: position + yearTail };
-  }
-  const lead = book.genres[0] ?? book.subjects[0] ?? "Book";
-  return { series: null, tail: `${lead} · standalone${yearTail}` };
-}
 
 const WISH_SOURCES = {
   scan: "a scan",

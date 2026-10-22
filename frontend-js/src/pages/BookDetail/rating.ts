@@ -11,6 +11,30 @@ export function halfStarLabel(value: number, current: number | null): string {
 export const ratingAfterClick = (value: number, current: number | null) =>
   value === current ? null : value;
 
+/** The note beside the stars while the pointer rests on `value`; on the saved value itself a click clears. */
+export const previewNote = (value: number, current: number | null) =>
+  value === current ? "Clear your rating" : `Rate ${fmtStars(value)}`;
+
+/** The note beside the hero's stars: a refused save first, then what you rated it, else an invitation. */
+export function heroRatingNote(failed: boolean, stars: number | null): string {
+  if (failed) return "Couldn’t save your rating — try again";
+  return stars === null ? "Not rated yet" : `You rated it ${fmtStars(stars)}`;
+}
+
+/** The half star an arrow key, Home or End moves to from `from`; `null` when the key does nothing there. */
+export function halfAfterKey(from: number, key: string): number | null {
+  const target: Record<string, number> = {
+    ArrowRight: from + 0.5,
+    ArrowUp: from + 0.5,
+    ArrowLeft: from - 0.5,
+    ArrowDown: from - 0.5,
+    Home: 0.5,
+    End: 5,
+  };
+  const to = target[key];
+  return to === undefined || to === from || to < 0.5 || to > 5 ? null : to;
+}
+
 type Rated = {
   stars: number | null;
   ratedAt: number | null;

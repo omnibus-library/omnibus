@@ -1,124 +1,55 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Fragment } from "react";
 import { Link } from "react-router";
-import {
-  type BookDetail as Detail,
-  type Insights,
-  type Progress,
-  saveDescription,
-  seriesQuery,
-  type WishlistEntry,
+import type {
+  BookDetail as Detail,
+  Insights,
+  Progress,
+  UserId,
 } from "../../api";
-import { Button, ButtonLink } from "../../components/Button/Button";
-import { Chip } from "../../components/Chip/Chip";
-import { FetchSummary } from "../../components/FetchSummary/FetchSummary";
+import { ButtonLink } from "../../components/Button/Button";
 import { ImmersiveGlyph } from "../../components/Glyphs/Glyphs";
-import {
-  descriptionOverflows,
-  durationLabel,
-  formatLongDate,
-  homeKicker,
-  summaryIsSparse,
-} from "../../format";
+import { StarRating } from "../../components/StarRating/StarRating";
+import { fmtStars } from "../../components/StarRating/stars";
+import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
+import { durationLabel, formatLongDate, wishlistSource } from "../../format";
+import { useCurrentUser } from "../../session";
 import { ExportMenu } from "./ExportMenu";
 import { FilePicker, isAudioFile, isReadableFile } from "./FilePicker";
+import { HeroCover } from "./HeroCover";
 import { WishlistCtas } from "./PhysicalCopies";
 import {
   alignmentQuery,
-  bookQuery,
   insightsQuery,
   progressQuery,
   reviewsQuery,
   useWish,
 } from "./queries";
 import { ReadStatus } from "./ReadStatus";
-import { type HomeReadout, homeReadout, newestPercent } from "./readout";
-import { averageLabel, countLabel, jumpLabel } from "./reviews";
+import { heroRatingNote } from "./rating";
+import {
+  factLine,
+  type HomeReadout,
+  homeReadout,
+  newestPercent,
+} from "./readout";
+import { StarPicker } from "./StarPicker";
 import { SyncLine } from "./SyncLine";
 import { pacedSecondsLeft } from "./stats";
+import type { MyRating } from "./useMyRating";
 
-type ChipRowProps = {
-  label: string;
-  listClass: string;
-  tone: "plain" | "genre";
-  values: string[];
-};
-
-function ChipRow({ label, listClass, tone, values }: ChipRowProps) {
-  if (values.length === 0) return null;
+/** The authors, each linking to their page when the library knows it, then the series, which jumps to its fan on the Overview. */
+function Byline({
+  book,
+  onShowSeries,
+}: {
+  book: Detail;
+  onShowSeries: () => void;
+}) {
+  const { series, seriesId } = book;
+  if (book.creators.length === 0 && !series) return null;
   return (
-    <div className="bd-chip-row">
-      <span className="label bd-chip-row-label">{label}</span>
-      <ul className={listClass}>
-        {values.map((value) => (
-          <Chip key={value} tone={tone}>
-            {value}
-          </Chip>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function Description({ book }: { book: Detail }) {
-  const [open, setOpen] = useState(false);
-  if (!book.description) return null;
-  const id = `bdmq-desc-${book.uuid}`;
-  return (
-    <>
-      <div
-        id={id}
-        className={open ? "bdmq-desc bd-desc is-open" : "bdmq-desc bd-desc"}
-        data-testid="book-description"
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: the API runs descriptions through ammonia, which the Dioxus page relies on too
-        dangerouslySetInnerHTML={{ __html: book.description }}
-      />
-      {descriptionOverflows(book.description) && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="bdmq-desc-toggle"
-          data-testid="book-description-toggle"
-          aria-expanded={open}
-          aria-controls={id}
-          onClick={() => setOpen(!open)}
-        >
-          {open ? "Show less" : "Show more"}
-        </Button>
-      )}
-    </>
-  );
-}
-
-function Kicker({ book, wish }: { book: Detail; wish: WishlistEntry | null }) {
-  const { seriesId } = book;
-  const series = useQuery(seriesQuery(seriesId));
-  const { series: name, tail } = homeKicker(
-    book,
-    series.data?.bookCount ?? null,
-    wish,
-  );
-  return (
-    <div className="bdmq-k">
-      {name && seriesId !== null ? (
-        <>
-          <Link to={`/series/${seriesId}`} className="bdmq-k-link">
-            {name}
-          </Link>
-          {tail}
-        </>
-      ) : (
-        `${name ?? ""}${tail}`
-      )}
-    </div>
-  );
-}
-
-function Authors({ book }: { book: Detail }) {
-  if (book.creators.length === 0) return null;
-  return (
-    <p className="bdmq-by" data-testid="book-authors">
-      {"by "}
+    <p className="bp-byline" data-testid="book-authors">
       {book.creators.map(({ name, id }, i) => (
         <Fragment key={`${id}:${name}`}>
           {i > 0 && ", "}
@@ -131,7 +62,99 @@ function Authors({ book }: { book: Detail }) {
           )}
         </Fragment>
       ))}
+      {series && (
+        <>
+          {book.creators.length > 0 && (
+            <span className="bp-byline-sep" aria-hidden="true">
+              {" · "}
+            </span>
+          )}
+          {seriesId === null ? (
+            <span className="bp-byline-series">{seriesLabel(series)}</span>
+          ) : (
+            <button
+              type="button"
+              className="bp-byline-series"
+              onClick={onShowSeries}
+            >
+              {seriesLabel(series)}
+            </button>
+          )}
+        </>
+      )}
     </p>
+  );
+}
+
+const seriesLabel = ({ name, index }: NonNullable<Detail["series"]>) =>
+  index ? `${name}, book ${index}` : name;
+
+/** Your stars beside each other reader's, and a row for you once you rate; absent while nobody has. */
+function Ratings({
+  book,
+  rating,
+  onOpenReview,
+}: {
+  book: Detail;
+  rating: MyRating;
+  onOpenReview: (reader: UserId) => void;
+}) {
+  const me = useCurrentUser();
+  const reviews = useQuery(reviewsQuery(book.uuid));
+  const mine = reviews.data?.mine?.stars ?? null;
+  const others = (reviews.data?.others ?? []).filter(
+    (review) => review.stars !== null,
+  );
+  return (
+    <div className="bp-ratings">
+      <StarPicker
+        stars={mine}
+        onPick={rating.pick}
+        note={heroRatingNote(rating.starsFailed, mine)}
+      />
+      {(others.length > 0 || mine !== null) && (
+        <ul className="bp-readers" aria-label="Household ratings">
+          {others.map(({ reader, stars }) => (
+            <li key={reader.id} className="bp-reader">
+              <UserAvatar
+                user={reader}
+                className="bp-avatar"
+                photoClassName="bp-avatar-photo"
+              />
+              <span className="bp-reader-name">{reader.name}</span>
+              {stars !== null && (
+                <>
+                  <StarRating stars={stars} className="bp-mini-stars" />
+                  <span className="bp-reader-score">{fmtStars(stars)}</span>
+                </>
+              )}
+              <button
+                type="button"
+                className="bp-reader-go"
+                aria-label={`See ${reader.name}'s review`}
+                onClick={() => onOpenReview(reader.id)}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </button>
+            </li>
+          ))}
+          {mine !== null && (
+            <li className="bp-reader">
+              <UserAvatar
+                user={me}
+                className="bp-avatar"
+                photoClassName="bp-avatar-photo"
+              />
+              <span className="bp-reader-name">You</span>
+              <StarRating stars={mine} className="bp-mini-stars" />
+              <span className="bp-reader-score">{fmtStars(mine)}</span>
+            </li>
+          )}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -288,42 +311,18 @@ function Ruler({ pct, readout, insights, lastOpened }: RulerProps) {
   );
 }
 
-/** The title area's read-only household rating, `★ 4.3 · 3 readers`, a jump to the Reviews stop; nothing until the server sums one up. */
-function ReviewsJumpLink({
-  book,
-  onShowReviews,
-}: {
-  book: Detail;
-  onShowReviews?: () => void;
-}) {
-  const reviews = useQuery(reviewsQuery(book.uuid));
-  const summary = reviews.data?.summary;
-  if (!summary) return null;
-  return (
-    <button
-      type="button"
-      className="bd-reviews-jump"
-      data-testid="reviews-jump"
-      aria-label={jumpLabel(summary)}
-      onClick={onShowReviews}
-    >
-      <span className="bd-reviews-jump-star" aria-hidden="true">
-        ★
-      </span>{" "}
-      {averageLabel(summary.average)} · {countLabel(summary.ratings, "reader")}
-    </button>
-  );
-}
-
 type HeroProps = {
   book: Detail;
-  /** Scrolls the page to the Reviews stop, for the household rating under the title. */
-  onShowReviews?: () => void;
+  /** The page's one queue of writes to your review, shared with the Reviews tab. */
+  rating: MyRating;
+  /** Selects the Overview and brings the series fan into view. */
+  onShowSeries: () => void;
+  /** Opens that reader's review on the Reviews tab. */
+  onOpenReview: (reader: UserId) => void;
 };
 
-/** The hero, with the kicker, title, authors, chips, description, the read and listen buttons, and where the reader stands. */
-export function Hero({ book, onShowReviews }: HeroProps) {
-  const client = useQueryClient();
+/** The hero: the cover on its stage, then the title, byline, facts, ratings, and the read and listen buttons with where the reader stands. */
+export function Hero({ book, rating, onShowSeries, onOpenReview }: HeroProps) {
   const wish = useWish(book);
   const hasFiles =
     book.hasEbook || book.hasAudio || book.hasComic || book.hasPdf;
@@ -341,78 +340,59 @@ export function Hero({ book, onShowReviews }: HeroProps) {
     positions.reading?.updatedAt ?? 0,
     positions.listening?.updatedAt ?? 0,
   );
+  const facts = factLine(book);
   return (
-    <>
-      <Kicker book={book} wish={wish} />
-      <div className="bdmq-titlerow">
-        <h1 className="bdmq-title">{book.title}</h1>
-      </div>
-      <ButtonLink
-        variant="ghost"
-        size="sm"
-        className="bdmq-editcorner"
-        to={`/books/${book.uuid}/edit`}
-        data-testid="edit-metadata-hero"
-        title="Edit metadata…"
-        aria-label="Edit metadata"
-      >
-        ✎ Edit
-      </ButtonLink>
-      <Authors book={book} />
-      <ReviewsJumpLink book={book} onShowReviews={onShowReviews} />
-      <div className="bdmq-chips">
-        <ChipRow
-          label="Genres"
-          listClass="bd-tag-list bd-genre-list"
-          tone="genre"
-          values={book.genres}
-        />
-        <ChipRow
-          label="Tags"
-          listClass="bd-tag-list"
-          tone="plain"
-          values={book.subjects}
-        />
-      </div>
-      <Description book={book} />
-      {summaryIsSparse(book.description ?? "") && (
-        <FetchSummary
-          uuid={book.uuid}
-          onFetched={async (text) =>
-            client.setQueryData(
-              bookQuery(book.uuid).queryKey,
-              await saveDescription(book.uuid, text),
-            )
-          }
-        />
-      )}
-      {wish ? (
-        <WishlistCtas book={book} />
-      ) : (
-        <CtaRow book={book} progress={positions} readout={readout} />
-      )}
-      <div className="bdmq-statusrow">
-        <ReadStatus uuid={book.uuid} />
+    <div className="bp-hero">
+      <HeroCover book={book} />
+      <div className="bp-info">
         {wish && (
-          <span className="mono bdmq-statusnote">
-            tracking since {formatLongDate(wish.addedAt)}
-          </span>
+          <p className="bp-eyebrow">
+            On your wishlist · added from {wishlistSource(wish.source)}
+          </p>
         )}
+        <h1 className="bp-title">{book.title}</h1>
+        <ButtonLink
+          variant="ghost"
+          size="sm"
+          className="bdmq-editcorner"
+          to={`/books/${book.uuid}/edit`}
+          data-testid="edit-metadata-hero"
+          title="Edit metadata…"
+          aria-label="Edit metadata"
+        >
+          ✎ Edit
+        </ButtonLink>
+        <Byline book={book} onShowSeries={onShowSeries} />
+        {facts && <p className="bp-facts">{facts}</p>}
+        <Ratings book={book} rating={rating} onOpenReview={onOpenReview} />
+        {wish ? (
+          <WishlistCtas book={book} />
+        ) : (
+          <CtaRow book={book} progress={positions} readout={readout} />
+        )}
+        <div className="bdmq-statusrow">
+          <ReadStatus uuid={book.uuid} />
+          {wish && (
+            <span className="mono bdmq-statusnote">
+              tracking since {formatLongDate(wish.addedAt)}
+            </span>
+          )}
+        </div>
+        {percent !== null && (
+          <Ruler
+            pct={Math.min(Math.max(percent, 0), 100)}
+            readout={readout}
+            insights={insights.data ?? null}
+            // A dual-format book has the sync line instead of a second recency line.
+            lastOpened={
+              dual || !updatedAt
+                ? null
+                : `last opened ${formatLongDate(updatedAt)}`
+            }
+          />
+        )}
+        {dual && <SyncLine uuid={book.uuid} />}
       </div>
-      {percent !== null && (
-        <Ruler
-          pct={Math.min(Math.max(percent, 0), 100)}
-          readout={readout}
-          insights={insights.data ?? null}
-          // A dual-format book has the sync line instead of a second recency line.
-          lastOpened={
-            dual || !updatedAt
-              ? null
-              : `last opened ${formatLongDate(updatedAt)}`
-          }
-        />
-      )}
-      {dual && <SyncLine uuid={book.uuid} />}
-    </>
+    </div>
   );
 }

@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { delay, HttpResponse, http } from "msw";
+import type { ComponentProps } from "react";
 import { expect, fn, waitFor, within } from "storybook/test";
 import { toBookDetail } from "../../api";
 import {
@@ -7,6 +8,7 @@ import {
   getGetBookInsightsMockHandler200,
   getGetProgressMockHandler200,
 } from "../../api/generated/omnibus.msw";
+import type { ReviewPatch } from "../../api/generated/schemas";
 import { nowSecs } from "../../format";
 import {
   bookDetailHandlers,
@@ -30,6 +32,9 @@ import {
   aWireWishlist,
 } from "../../testing/wire";
 import { Hero } from "./Hero";
+import { useMyRating } from "./useMyRating";
+import "./BookDetail.css";
+import "./BookPage.css";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 
@@ -54,28 +59,73 @@ function aBook(overrides: Parameters<typeof aWireBook>[0] = {}) {
   );
 }
 
+/** The hero under the page's one queue of writes, inside the stage's dark scope. */
+function HeroInPage(props: Omit<ComponentProps<typeof Hero>, "rating">) {
+  const rating = useMyRating(props.book.uuid);
+  return (
+    <div className="bp-root">
+      <div className="bp-stage">
+        <div className="bp-stage-body">
+          <Hero {...props} rating={rating} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const meta = {
   title: "Pages/BookDetail/Hero",
-  component: Hero,
-  args: { book: aBook() },
+  component: HeroInPage,
+  args: { book: aBook(), onShowSeries: fn(), onOpenReview: fn() },
   beforeEach({ msw }) {
     msw.use(...bookDetailHandlers(aWireBook()));
   },
-} satisfies Meta<typeof Hero>;
+} satisfies Meta<typeof HeroInPage>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const InASeries: Story = {
+const writes: ReviewPatch[] = [];
+
+/** The width each of your five stars is filled to, as drawn. */
+const fills = (canvasElement: HTMLElement) =>
+  [
+    ...canvasElement.querySelectorAll<HTMLElement>(
+      '[data-testid="review-stars"] .bd-star-fg',
+    ),
+  ].map((fg) => fg.style.width);
+
+export const TitleBylineAndFactLine: Story = {
+  args: {
+    book: aBook({
+      published: "2014-02-18",
+      publisher: "Del Rey",
+      page_count: 382,
+      language: "en",
+    }),
+  },
   play: async ({ canvas }) => {
-    const series = canvas.getByRole("link", { name: "Aurora Station" });
-    await expect(series).toHaveAttribute("href", "/series/4");
     await expect(
-      await canvas.findByText(/Book 1 · 3 in your library · 2021/),
+      canvas.getByRole("heading", { level: 1, name: "Aurora Station, Vol. 1" }),
     ).toBeInTheDocument();
+    await expect(canvas.getByTestId("book-authors")).toHaveTextContent(
+      "Sora Inkwell · Aurora Station, book 1",
+    );
     await expect(
-      canvas.getByRole("heading", { name: "Aurora Station, Vol. 1" }),
+      canvas.getByText("2014 · Del Rey · 382 pages · English"),
     ).toBeInTheDocument();
+  },
+};
+
+export const InASeries: Story = {
+  play: async ({ args, canvas, userEvent }) => {
+    const series = canvas.getByRole("button", {
+      name: "Aurora Station, book 1",
+    });
+
+    await userEvent.click(series);
+
+    await expect(args.onShowSeries).toHaveBeenCalledOnce();
   },
 };
 
@@ -84,7 +134,10 @@ export const SeriesCountLoading: Story = {
     msw.use(hanging("/api/series/:id"));
   },
   play: async ({ canvas }) => {
-    await expect(canvas.getByText(/· Book 1 · 2021/)).toBeInTheDocument();
+    // The byline is the book's own record: it never waits on the series page.
+    await expect(
+      canvas.getByRole("button", { name: "Aurora Station, book 1" }),
+    ).toBeInTheDocument();
     await expect(canvas.queryByText(/in your library/)).not.toBeInTheDocument();
   },
 };
@@ -102,22 +155,23 @@ export const SeriesCountFailing: Story = {
     );
   },
   play: async ({ canvas }) => {
-    // Absence only means something once the series has answered.
-    await waitFor(() => expect(seriesAsked).toBe(true));
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    await expect(canvas.getByText(/· Book 1 · 2021/)).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", { name: "Aurora Station, book 1" }),
+    ).toBeInTheDocument();
     await expect(canvas.queryByText(/in your library/)).not.toBeInTheDocument();
+    await expect(seriesAsked).toBe(false);
   },
 };
 
 export const Standalone: Story = {
   args: { book: aBook({ series: null, series_id: null, series_index: null }) },
   play: async ({ canvas }) => {
+    await expect(canvas.getByTestId("book-authors")).toHaveTextContent(
+      "Sora Inkwell",
+    );
+    await expect(canvas.getByTestId("book-authors")).not.toHaveTextContent("·");
     await expect(
-      canvas.getByText("Science fiction · standalone · 2021"),
-    ).toBeInTheDocument();
-    await expect(
-      canvas.queryByRole("link", { name: "Aurora Station" }),
+      canvas.queryByRole("button", { name: /Aurora Station/ }),
     ).not.toBeInTheDocument();
   },
 };
@@ -126,8 +180,8 @@ export const BlankSeriesName: Story = {
   args: { book: aBook({ series: "  ", series_id: 4 }) },
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByText("Science fiction · standalone · 2021"),
-    ).toBeInTheDocument();
+      canvas.queryByRole("button", { name: /book 1/ }),
+    ).not.toBeInTheDocument();
   },
 };
 
@@ -151,6 +205,193 @@ export const Authors: Story = {
     await expect(
       canvas.getByRole("link", { name: "Edit metadata" }),
     ).toHaveAttribute("href", `/books/${UUID}/edit`);
+  },
+};
+
+export const YourStarsSitBesideTheHouseholdsRatings: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...reviewHandlers({
+        mine: aWireReview({ stars: 4 }),
+        others: [
+          aWireOtherReview({ user_id: 7, username: "grace", stars: 4.5 }),
+          aWireOtherReview({ user_id: 8, username: "linus", stars: 3 }),
+          // Said something but gave no stars: nothing to list.
+          aWireOtherReview({ user_id: 9, username: "tove", stars: null }),
+        ],
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("group", { name: "Your rating" }),
+    ).toBeInTheDocument();
+    const list = await canvas.findByRole("list", {
+      name: "Household ratings",
+    });
+    const rows = within(list).getAllByRole("listitem");
+    await expect(rows).toHaveLength(3);
+    await expect(rows[0]).toHaveTextContent("grace");
+    await expect(
+      within(rows[0] as HTMLElement).getByRole("img", {
+        name: "4.5 out of 5 stars",
+      }),
+    ).toBeInTheDocument();
+    await expect(rows[0]).toHaveTextContent("4.5");
+    await expect(rows[1]).toHaveTextContent("linus");
+    await expect(rows[2]).toHaveTextContent("You");
+    await expect(
+      within(rows[2] as HTMLElement).getByRole("img", {
+        name: "4 out of 5 stars",
+      }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const NoHouseholdListWhenNobodyRated: Story = {
+  beforeEach({ msw }) {
+    msw.use(...reviewHandlers({}));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("group", { name: "Your rating" }),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
+      "Not rated yet",
+    );
+    await expect(
+      canvas.queryByRole("list", { name: "Household ratings" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const RatingAddsAYouRow: Story = {
+  beforeEach({ msw }) {
+    writes.length = 0;
+    msw.use(...reviewHandlers({}, writes));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Rate 4 stars" }),
+    );
+
+    const list = await canvas.findByRole("list", {
+      name: "Household ratings",
+    });
+    await expect(within(list).getByRole("listitem")).toHaveTextContent("You");
+    await expect(
+      within(list).getByRole("img", { name: "4 out of 5 stars" }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(writes).toEqual([{ stars: 4 }]));
+    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
+      "You rated it 4",
+    );
+  },
+};
+
+export const HoveringPreviewsTheExactValue: Story = {
+  beforeEach({ msw }) {
+    writes.length = 0;
+    msw.use(...reviewHandlers({ mine: aWireReview({ stars: 4 }) }, writes));
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const note = canvas.getByTestId("review-stars-meta");
+    await waitFor(() => expect(note).toHaveTextContent("You rated it 4"));
+
+    // The left half of the fourth star is 3.5.
+    await userEvent.hover(
+      canvas.getByRole("button", { name: "Rate 3.5 stars" }),
+    );
+
+    await expect(note).toHaveTextContent("Rate 3.5");
+    await expect(fills(canvasElement)).toEqual([
+      "100%",
+      "100%",
+      "100%",
+      "50%",
+      "0%",
+    ]);
+
+    await userEvent.unhover(
+      canvas.getByRole("button", { name: "Rate 3.5 stars" }),
+    );
+
+    await expect(note).toHaveTextContent("You rated it 4");
+    await expect(fills(canvasElement)).toEqual([
+      "100%",
+      "100%",
+      "100%",
+      "100%",
+      "0%",
+    ]);
+    await expect(writes).toEqual([]);
+  },
+};
+
+export const OneClickRatesOnceAndPopsOnce: Story = {
+  beforeEach({ msw }) {
+    writes.length = 0;
+    msw.use(...reviewHandlers({}, writes));
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const pops: string[] = [];
+    canvasElement.addEventListener("animationstart", (event) => {
+      if (event.animationName === "bd-star-pop") pops.push(event.animationName);
+    });
+
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Rate 3.5 stars" }),
+    );
+
+    await waitFor(() => expect(writes).toEqual([{ stars: 3.5 }]));
+    await waitFor(() => expect(pops).toHaveLength(1));
+    // Past the pop's length, nothing rated or popped a second time.
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    await expect(writes).toEqual([{ stars: 3.5 }]);
+    await expect(pops).toHaveLength(1);
+  },
+};
+
+export const ArrowKeysRateInHalfSteps: Story = {
+  beforeEach({ msw }) {
+    writes.length = 0;
+    msw.use(...reviewHandlers({ mine: aWireReview({ stars: 3 }) }, writes));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const rated = await canvas.findByRole("button", {
+      name: "Clear your 3-star rating",
+    });
+    rated.focus();
+
+    await userEvent.keyboard("{ArrowRight}");
+
+    await waitFor(() => expect(writes).toEqual([{ stars: 3.5 }]));
+    await expect(
+      canvas.getByRole("button", { name: "Clear your 3.5-star rating" }),
+    ).toHaveFocus();
+
+    await userEvent.keyboard("{ArrowLeft}{ArrowLeft}");
+
+    await waitFor(() =>
+      expect(writes).toEqual([{ stars: 3.5 }, { stars: 3 }, { stars: 2.5 }]),
+    );
+  },
+};
+
+export const ChevronAsksForThatReadersReview: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...reviewHandlers({
+        others: [aWireOtherReview({ user_id: 7, username: "grace", stars: 5 })],
+      }),
+    );
+  },
+  play: async ({ args, canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "See grace's review" }),
+    );
+
+    await expect(args.onOpenReview).toHaveBeenCalledWith(7);
   },
 };
 
@@ -333,21 +574,6 @@ export const Fileless: Story = {
     await expect(
       canvas.queryByRole("link", { name: /Start/ }),
     ).not.toBeInTheDocument();
-  },
-};
-
-export const LongDescription: Story = {
-  args: {
-    book: aBook({
-      description: `<p>${"A station at the edge of the map hears something answer. ".repeat(6)}</p>`,
-    }),
-  },
-  play: async ({ canvas, userEvent }) => {
-    const toggle = canvas.getByRole("button", { name: "Show more" });
-    await userEvent.click(toggle);
-
-    await expect(toggle).toHaveAttribute("aria-expanded", "true");
-    await expect(toggle).toHaveTextContent("Show less");
   },
 };
 
@@ -765,28 +991,6 @@ export const SyncLoadFails: Story = {
   },
 };
 
-export const SparseDescriptionOffersFetchSummary: Story = {
-  args: { book: aBook({ description: "<p>Too short.</p>" }) },
-  play: async ({ canvas }) => {
-    await expect(
-      await canvas.findByRole("button", { name: "Fetch Summary" }),
-    ).toBeEnabled();
-  },
-};
-
-export const LongDescriptionHasNoFetchSummary: Story = {
-  args: {
-    book: aBook({
-      description: `<p>${"A station at the edge of the map hears something answer. ".repeat(3)}</p>`,
-    }),
-  },
-  play: async ({ canvas }) => {
-    await expect(
-      canvas.queryByRole("button", { name: "Fetch Summary" }),
-    ).not.toBeInTheDocument();
-  },
-};
-
 export const WishlistOnlyBook: Story = {
   args: {
     book: aBook({ formats: [], book_files: [], series: null, series_id: null }),
@@ -917,31 +1121,6 @@ export const RulerPrefersTheAudioTimelineToThePace: Story = {
   },
 };
 
-export const HouseholdRatingJumpsToTheReviews: Story = {
-  args: { onShowReviews: fn() },
-  beforeEach({ msw }) {
-    msw.use(
-      ...reviewHandlers({
-        mine: aWireReview({ stars: 4 }),
-        others: [
-          aWireOtherReview({ user_id: 7, stars: 4.5 }),
-          aWireOtherReview({ user_id: 8, stars: 4.5 }),
-        ],
-      }),
-    );
-  },
-  play: async ({ args, canvas, userEvent }) => {
-    const link = await canvas.findByRole("button", {
-      name: "Rated 4.3 by 3 readers — go to the reviews",
-    });
-    await expect(link).toHaveTextContent("★ 4.3 · 3 readers");
-
-    await userEvent.click(link);
-
-    await expect(args.onShowReviews).toHaveBeenCalled();
-  },
-};
-
 let reviewsRead = false;
 
 export const NoHouseholdRatingUntilTheServerSumsOne: Story = {
@@ -961,7 +1140,8 @@ export const NoHouseholdRatingUntilTheServerSumsOne: Story = {
   },
   play: async ({ canvas }) => {
     await waitFor(() => expect(reviewsRead).toBe(true));
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    await expect(canvas.queryByTestId("reviews-jump")).not.toBeInTheDocument();
+    await canvas.findByRole("list", { name: "Household ratings" });
+    // The household's average is the server's to give; the hero adds no figure of its own.
+    await expect(canvas.queryByText(/\d readers?/)).not.toBeInTheDocument();
   },
 };

@@ -1,5 +1,5 @@
-import type { Alignment, Position, Progress } from "../../api";
-import { formatHm } from "../../format";
+import type { Alignment, BookDetail, Position, Progress } from "../../api";
+import { formatHm, formatYear, plural } from "../../format";
 
 export type Chapter = NonNullable<Alignment["chapters"]>[number];
 
@@ -215,4 +215,29 @@ export function newestPercent({ reading, listening }: Progress): number | null {
   );
   if (a && b) return (b.updatedAt > a.updatedAt ? b : a).percent;
   return (a ?? b)?.percent ?? null;
+}
+
+const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
+
+/** A language code as its English name; anything `Intl` can't read stays as it was written. */
+function languageName(code: string): string {
+  try {
+    return languageNames.of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/** The line under the byline, `2014 · Del Rey · 382 pages · English`, without what the record doesn't know. */
+export function factLine(
+  book: Pick<BookDetail, "published" | "publisher" | "pageCount" | "language">,
+): string | null {
+  const year = book.published ? formatYear(book.published) : null;
+  const parts = [
+    year,
+    book.publisher?.trim(),
+    book.pageCount ? `${book.pageCount} page${plural(book.pageCount)}` : null,
+    book.language ? languageName(book.language) : null,
+  ].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join(" · ") : null;
 }

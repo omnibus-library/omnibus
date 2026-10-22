@@ -11,17 +11,21 @@ import { Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider } from "../../components/Toast/Toast";
+import { prefersReducedMotion } from "../../motion";
 import { BookTabs, useBookTabs } from "./BookTabs";
 import { FilesDetails } from "./FilesDetails";
 import { Hero } from "./Hero";
 import { Highlights } from "./Highlights";
 import { Journal } from "./Journal";
+import { Overview } from "./Overview";
 import { bookQuery } from "./queries";
-import { Related } from "./Related";
 import { ReviewsTab } from "./ReviewsTab";
-import { YourReading } from "./YourReading";
+import { useMyRating } from "./useMyRating";
 import "./BookDetail.css";
 import "./BookPage.css";
+
+/** The series fan's id on the Overview, where the byline's series scrolls to. */
+const SERIES_ID = "bp-series";
 
 /** Whether the element is out of the viewport, so a drifting backdrop can stop. */
 function useOffscreen(target: RefObject<HTMLElement | null>) {
@@ -56,6 +60,15 @@ function Backdrop({ book }: { book: Detail }) {
 
 function Page({ book }: { book: Detail }) {
   const { tab, entering, selectTab } = useBookTabs();
+  // One queue for every write to your review, whichever control makes it.
+  const rating = useMyRating(book.uuid);
+  const showSeries = async () => {
+    await selectTab("overview");
+    document.getElementById(SERIES_ID)?.scrollIntoView({
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      block: "start",
+    });
+  };
   const stage = useRef<HTMLElement>(null);
   const offscreen = useOffscreen(stage);
   return (
@@ -72,7 +85,12 @@ function Page({ book }: { book: Detail }) {
         >
           <Backdrop book={book} />
           <div className="bp-stage-body">
-            <Hero book={book} onShowReviews={() => selectTab("reviews")} />
+            <Hero
+              book={book}
+              rating={rating}
+              onShowSeries={showSeries}
+              onOpenReview={() => selectTab("reviews")}
+            />
           </div>
         </header>
         <BookTabs
@@ -80,13 +98,8 @@ function Page({ book }: { book: Detail }) {
           entering={entering}
           onSelect={selectTab}
           panels={{
-            overview: (
-              <>
-                <YourReading book={book} />
-                <Related book={book} />
-              </>
-            ),
-            reviews: <ReviewsTab book={book} />,
+            overview: <Overview book={book} />,
+            reviews: <ReviewsTab book={book} rating={rating} />,
             highlights: (
               <>
                 <Highlights book={book} />
