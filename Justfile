@@ -89,10 +89,15 @@ modules dir:
 module-map-test:
     python3 scripts/tests/module-map.test.py
 
+# Unit tests for scripts/koreader_report.py (the KOReader lane's PASS/FAIL
+# report). Stdlib unittest, like explore-test.
+koreader-report-test:
+    python3 scripts/tests/koreader-report.test.py
+
 # Run every unit/integration suite: the Rust matrix first, then the Python
 # script suites. Rust leads so a failing script suite can't stop the recipe
 # before the cargo results are in.
-test: test-rust explore-test module-map-test
+test: test-rust explore-test module-map-test koreader-report-test
 
 # The Rust half of `just test`: the full matrix via cargo-nextest (the same
 # runner CI uses, so local and CI results match; no doctests in the tree, which
