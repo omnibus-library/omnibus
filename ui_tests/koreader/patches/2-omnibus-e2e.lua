@@ -231,6 +231,12 @@ local function opds_scenario()
     }
 end
 
+-- Every scenario the lane can run, by KOREADER_E2E_SCENARIO. A new scenario
+-- is an entry here plus an entry in the runner's `scenarios` list.
+local SCENARIOS = {
+    opds = opds_scenario,
+}
+
 local function run_at(scenario_steps, i)
     if done then
         return
@@ -259,11 +265,12 @@ local function run_at(scenario_steps, i)
 end
 
 UIManager:nextTick(function()
-    if SCENARIO ~= "opds" then
+    local build = SCENARIOS[SCENARIO]
+    if not build then
         fail("scenario", "unknown KOREADER_E2E_SCENARIO '" .. SCENARIO .. "'")
         return
     end
-    local scenario_steps = opds_scenario()
+    local scenario_steps = build()
     UIManager:scheduleIn(WATCHDOG_SECS, function()
         if done then
             return
