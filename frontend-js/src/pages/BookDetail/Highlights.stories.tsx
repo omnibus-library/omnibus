@@ -391,7 +391,7 @@ export const DeleteFailureKeepsTheRow: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Delete" }));
 
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
-      "Couldn't delete the passage: failed with 500",
+      "Couldn’t delete the passage: failed with 500",
     );
     await expect(canvas.getByRole("dialog")).toBeInTheDocument();
     await expect(canvas.getAllByTestId("highlight-card")).toHaveLength(2);

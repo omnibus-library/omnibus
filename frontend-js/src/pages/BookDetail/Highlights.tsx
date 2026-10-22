@@ -28,7 +28,7 @@ function CopyAction({ text }: { text: string | null }) {
     setLabel(
       await navigator.clipboard.writeText(text).then(
         () => "Copied",
-        () => "Couldn't copy",
+        () => "Couldn’t copy",
       ),
     );
     setTimeout(() => setLabel("Copy"), 1500);
@@ -285,7 +285,7 @@ function Passages({ book }: { book: BookDetail }) {
         <ConfirmDialog
           testId="highlight-delete-modal"
           title="Delete this passage?"
-          body="It will be removed from your saved passages. This can't be undone."
+          body="It will be removed from your saved passages. This can’t be undone."
           action="Delete"
           busyLabel="Deleting…"
           busy={remove.isPending}
@@ -296,7 +296,7 @@ function Passages({ book }: { book: BookDetail }) {
                 role="alert"
                 data-testid="highlight-delete-error"
               >
-                Couldn't delete the passage: {remove.error.message}
+                Couldn’t delete the passage: {remove.error.message}
               </p>
             )
           }

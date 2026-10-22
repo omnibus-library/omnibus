@@ -439,7 +439,7 @@ export const UnreadableRecordOffersRetryAndKeepsTheSessionLog: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
-      "Couldn't load your reading record",
+      "Couldn’t load your reading record",
     );
     await expect(canvas.queryByText("Not started yet")).not.toBeInTheDocument();
     // The sessions are asked for separately, and still there to open.

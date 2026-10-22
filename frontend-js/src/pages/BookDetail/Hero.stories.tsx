@@ -800,7 +800,7 @@ export const StatusSaveFailureToastsAndReverts: Story = {
     );
 
     await expect(
-      await canvas.findByText("Couldn't save your reading status"),
+      await canvas.findByText("Couldn’t save your reading status"),
     ).toBeInTheDocument();
     await expect(
       await canvas.findByRole("button", pillName("Reading")),
@@ -880,7 +880,7 @@ export const ReadStatusOffersRetryWhenItCannotBeRead: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await expect(
-      await canvas.findByText("Couldn't load your reading status"),
+      await canvas.findByText("Couldn’t load your reading status"),
     ).toBeInTheDocument();
     await expect(
       canvas.getByRole("button", pillName("loading")),
@@ -1588,7 +1588,7 @@ export const ARefusedFinishedSaveEndsTheCelebration: Story = {
     await userEvent.click(
       await canvas.findByRole("menuitemradio", { name: "Finished" }),
     );
-    await canvas.findByText("Couldn't save your reading status");
+    await canvas.findByText("Couldn’t save your reading status");
 
     // The book is not finished, so nothing celebrates it: not the burst, not the card.
     await waitFor(

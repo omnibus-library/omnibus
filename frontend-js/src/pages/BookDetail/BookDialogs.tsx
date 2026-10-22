@@ -71,7 +71,7 @@ export function useShelfMembership(book: BookDetail) {
 }
 
 /** The picker that files the book onto a hand-picked shelf or takes it off. */
-export function ShelfDialog({
+function ShelfDialog({
   book,
   onClose,
 }: {

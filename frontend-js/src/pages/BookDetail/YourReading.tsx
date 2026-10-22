@@ -257,7 +257,7 @@ export function YourReading({ book }: { book: BookDetail }) {
   } else if (insights.isError) {
     body = (
       <p className="bp-reading-note" role="alert">
-        Couldn't load your reading record
+        Couldn’t load your reading record
         <button
           type="button"
           className="bdmq-synclink"

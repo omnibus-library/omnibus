@@ -195,7 +195,7 @@ export const ARefusedChipEditPutsTheChipBack: Story = {
     );
 
     await expect(
-      await canvas.findByText("Couldn't save that change"),
+      await canvas.findByText("Couldn’t save that change"),
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(canvas.getByText("Space opera")).toBeInTheDocument(),
@@ -270,6 +270,23 @@ export const TakingTheBookOffAShelfFromItsChip: Story = {
       expect(canvas.queryByTestId("bp-shelf-7")).not.toBeInTheDocument(),
     );
     await canvas.findByText("On no shelves yet");
+  },
+};
+
+export const ARefusedTakeOffIsSaidSoAndTheChipStays: Story = {
+  beforeEach({ msw }) {
+    msw.use(...shelvesHandlers([MINE], { manual: [7] }, writes, 7));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Take off Space operas" }),
+    );
+
+    await expect(
+      await canvas.findByText(/Couldn’t take the book off Space operas/),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("bp-shelf-7")).toBeInTheDocument();
+    await expect(writes).toEqual([]);
   },
 };
 

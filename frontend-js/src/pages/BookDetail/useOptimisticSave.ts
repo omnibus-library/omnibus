@@ -49,7 +49,8 @@ export function useOptimisticSave<TData, TVars>(
     onMutate: async (vars: TVars) => {
       const session = sessionGeneration();
       const id = ++newest.current;
-      await client.cancelQueries({ queryKey });
+      // Exact: reads under a longer key (the book's reviews, say) are not this write's to cancel.
+      await client.cancelQueries({ queryKey, exact: true });
       const previous = client.getQueryData<TData>(queryKey) ?? null;
       client.setQueryData(queryKey, optimistic(vars));
       return { previous, id, session };
@@ -79,7 +80,7 @@ export function useOptimisticSave<TData, TVars>(
     // The last write to settle refetches, so a failed newest one never leaves an older guess.
     onSettled: (_data, _error, _vars, context) => {
       if (context?.session !== sessionGeneration()) return;
-      if (client.isMutating({ mutationKey: queryKey }) <= 1) {
+      if (client.isMutating({ mutationKey: queryKey, exact: true }) <= 1) {
         void client.invalidateQueries({ queryKey });
       }
     },

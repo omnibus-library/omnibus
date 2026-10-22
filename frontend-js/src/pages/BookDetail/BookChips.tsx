@@ -51,10 +51,12 @@ function useChipSave(book: BookDetail) {
         nameCountsQuery("tag").queryKey,
         nameCountsQuery("genre").queryKey,
       ],
-      onFailure: () => toast("Couldn't save that change"),
+      onFailure: () => toast("Couldn’t save that change"),
     },
   );
 }
+
+type ChipSave = ReturnType<typeof useChipSave>;
 
 /** One facts row, its label and what it holds. */
 function Fact({ title, children }: { title: string; children: ReactNode }) {
@@ -71,15 +73,16 @@ function Tags({
   book,
   kind,
   editable,
+  save,
 }: {
   book: BookDetail;
   kind: Kind;
   editable: boolean;
+  save: ChipSave;
 }) {
   const { field, title, add, remove } = KIND[kind];
   const values = field === "genres" ? book.genres : book.subjects;
   const toast = useToast();
-  const save = useChipSave(book);
   const suggestions = useQuery({
     ...nameCountsQuery(kind),
     enabled: editable,
@@ -131,6 +134,7 @@ function Shelves({
   onOpenDialog: (dialog: BookDialog) => void;
 }) {
   const { shelves, facts, viewer, toggle, list } = useShelfMembership(book);
+  const toast = useToast();
   const addChip = (
     <button
       type="button"
@@ -184,7 +188,17 @@ function Shelves({
                   className="bp-chip-remove"
                   aria-label={`Take off ${shelf.name}`}
                   disabled={toggle.isPending}
-                  onClick={() => toggle.mutate({ shelf, adding: false })}
+                  onClick={() =>
+                    toggle.mutate(
+                      { shelf, adding: false },
+                      {
+                        onError: (error) =>
+                          toast(
+                            `Couldn’t take the book off ${shelf.name}: ${error.message}`,
+                          ),
+                      },
+                    )
+                  }
                 >
                   <XGlyph size={12} />
                 </button>
@@ -208,10 +222,12 @@ export function BookChips({
 }) {
   const viewer = useCurrentUser();
   const editable = viewer.isAdmin || viewer.canEdit;
+  // One queue for both rows, so a tag saved just after a genre is sent after it.
+  const save = useChipSave(book);
   return (
     <dl className="bp-facts-list">
-      <Tags book={book} kind="genre" editable={editable} />
-      <Tags book={book} kind="tag" editable={editable} />
+      <Tags book={book} kind="genre" editable={editable} save={save} />
+      <Tags book={book} kind="tag" editable={editable} save={save} />
       <Shelves book={book} onOpenDialog={onOpenDialog} />
     </dl>
   );

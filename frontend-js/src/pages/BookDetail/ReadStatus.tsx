@@ -46,7 +46,7 @@ export function ReadStatus({
       // A smart shelf may now hold the book.
       alsoInvalidate: [shelvesQuery(uuid).queryKey],
       onFailure: (status) => {
-        toast("Couldn't save your reading status");
+        toast("Couldn’t save your reading status");
         if (status === "finished") onFinishRefused();
       },
     },
@@ -101,7 +101,7 @@ export function ReadStatus({
       )}
       {record.isError && (
         <span className="bp-status-error" data-testid="read-status-meta">
-          Couldn't load your reading status
+          Couldn’t load your reading status
           <button
             type="button"
             className="bdmq-synclink"
