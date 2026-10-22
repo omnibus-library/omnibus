@@ -117,20 +117,23 @@ describe("useOptimisticSave among keys that begin with its own", () => {
   it.each([
     ["is saved", "second"],
     ["is refused", "refused"],
-  ])("leaves the answer under a longer key fresh when a write %s", async (_, note) => {
-    const { client, result } = renderSave();
-    const child = [...KEY, "child"];
-    client.setQueryData(child, "answer");
+  ])(
+    "leaves the answer under a longer key fresh when a write %s",
+    async (_, note) => {
+      const { client, result } = renderSave();
+      const child = [...KEY, "child"];
+      client.setQueryData(child, "answer");
 
-    act(() => {
-      result.current.mutate(note);
-    });
-    await waitFor(() =>
-      expect(result.current.isSuccess || result.current.isError).toBe(true),
-    );
+      act(() => {
+        result.current.mutate(note);
+      });
+      await waitFor(() =>
+        expect(result.current.isSuccess || result.current.isError).toBe(true),
+      );
 
-    expect(client.getQueryState(child)?.isInvalidated).toBe(false);
-  });
+      expect(client.getQueryState(child)?.isInvalidated).toBe(false);
+    },
+  );
 
   it("refetches when its last write settles although another mutation under a longer key is running", async () => {
     const { client, result } = renderSave();
