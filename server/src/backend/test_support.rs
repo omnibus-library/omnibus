@@ -212,6 +212,37 @@ pub(crate) async fn seed_book_no_cover(pool: &sqlx::SqlitePool) -> i64 {
     .last_insert_rowid()
 }
 
+/// Seeds `metadata` as the only book under `/lib`, points the ebook library at
+/// `/lib`, and has `user` finish it.
+pub(crate) async fn seed_finished_book(
+    pool: &sqlx::SqlitePool,
+    user: i64,
+    metadata: omnibus_shared::EbookMetadata,
+) {
+    set_library_paths(pool, Some("/lib"), None).await;
+    let book = db::ebook::IndexedBook {
+        metadata,
+        cover: None,
+        mtime_epoch: 0,
+        size_bytes: 0,
+        word_count: None,
+    };
+    db::replace_books(pool, "/lib", vec![book])
+        .await
+        .expect("seed the book");
+    let uuid: String = sqlx::query_scalar("SELECT uuid FROM books")
+        .fetch_one(pool)
+        .await
+        .expect("the seeded book's uuid");
+    let finished = omnibus_shared::SetReadStatus {
+        book_uuid: uuid,
+        status: omnibus_shared::ReadStatus::Finished,
+    };
+    db::read_status::set_read_status(pool, user, &finished)
+        .await
+        .expect("mark the book finished");
+}
+
 /// Seed a single book with a known title via `replace_books` and return
 /// its `id`. The book's stable UUID can be looked up afterwards via
 /// `list_books` if a test needs to assert against the overrides row
