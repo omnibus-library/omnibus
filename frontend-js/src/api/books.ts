@@ -64,9 +64,12 @@ export function toBookDetail(wire: EbookMetadata) {
     bookFiles: (wire.book_files ?? []).map((f) => ({
       id: f.id,
       format: f.format,
+      filename: f.filename,
       label: f.label ?? null,
       ordinal: f.ordinal,
       sizeBytes: f.size_bytes ?? 0,
+      // Audio only, whole seconds summed over its parts.
+      durationSeconds: f.duration_seconds ?? null,
     })),
     epubSizeBytes: wire.epub_size_bytes ?? null,
     publisher: wire.publisher ?? null,

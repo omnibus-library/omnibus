@@ -22,6 +22,8 @@ import {
   aWireWishlist,
 } from "../../testing/wire";
 import { FilesDetails } from "./FilesDetails";
+import "./BookDetail.css";
+import "./BookPage.css";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 
@@ -44,6 +46,13 @@ const meta = {
   title: "Pages/BookDetail/FilesDetails",
   component: FilesDetails,
   args: { book: aBook(), onOpenDialog: fn() },
+  decorators: [
+    (Story) => (
+      <div className="bp-root">
+        <Story />
+      </div>
+    ),
+  ],
   beforeEach({ msw }) {
     msw.use(...physicalHandlers({}));
   },
@@ -52,35 +61,44 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-const rowsOf = (table: HTMLElement) =>
-  within(table)
-    .getAllByRole("row")
-    .map((row) =>
-      [...row.querySelectorAll("td")].map((cell) => cell.textContent),
-    );
+/** The Details list as label and value pairs. */
+const detailsOf = (canvas: ReturnType<typeof within>) =>
+  [...canvas.getByTestId("details-list").querySelectorAll(":scope > div")].map(
+    (row) => [
+      row.querySelector("dt")?.textContent,
+      row.querySelector("dd")?.textContent,
+    ],
+  );
 
 export const Complete: Story = {
   play: async ({ canvas }) => {
-    await expect(canvas.getByText("Formats and copies")).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("heading", { name: "Files" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("heading", { name: "Details" }),
+    ).toBeInTheDocument();
     await expect(
       canvas.getByRole("group", { name: "Available formats" }),
     ).toBeInTheDocument();
-    await expect(rowsOf(canvas.getByRole("table"))).toEqual([
+    await expect(detailsOf(canvas)).toEqual([
       ["Title", "Aurora Station, Vol. 1"],
       ["Author", "Sora Inkwell"],
       ["Publisher", "Inkwell Press"],
       ["Published", "Mar 1st, 2021"],
       ["Language", "en"],
       ["ISBN-13", "9780316769488"],
+      ["UUID", UUID],
       ["Added", "May 1st, 2024"],
     ]);
     await expect(
-      canvas.getByRole("link", { name: "Edit metadata…" }),
+      canvas.getByRole("link", { name: "Edit metadata" }),
     ).toHaveAttribute("href", `/books/${UUID}/edit`);
+    await expect(canvas.queryByText("Not set")).not.toBeInTheDocument();
   },
 };
 
-export const Sparse: Story = {
+export const UnsetDetailsReadNotSetWithAdd: Story = {
   args: {
     book: aBook({
       publisher: null,
@@ -92,9 +110,26 @@ export const Sparse: Story = {
     }),
   },
   play: async ({ canvas }) => {
-    await expect(rowsOf(canvas.getByRole("table"))).toEqual([
+    await expect(detailsOf(canvas)).toEqual([
       ["Title", "Aurora Station, Vol. 1"],
+      ["Publisher", "Not setAdd"],
+      ["Published", "Not setAdd"],
+      ["Language", "Not setAdd"],
+      ["ISBN", "Not setAdd"],
+      ["UUID", UUID],
     ]);
+    await expect(
+      canvas.getByRole("link", { name: "Add publisher" }),
+    ).toHaveAttribute("href", `/books/${UUID}/edit?field=publisher`);
+    await expect(
+      canvas.getByRole("link", { name: "Add publication date" }),
+    ).toHaveAttribute("href", `/books/${UUID}/edit?field=published`);
+    await expect(
+      canvas.getByRole("link", { name: "Add language" }),
+    ).toHaveAttribute("href", `/books/${UUID}/edit?field=language`);
+    await expect(
+      canvas.getByRole("link", { name: "Add ISBN" }),
+    ).toHaveAttribute("href", `/books/${UUID}/edit?field=isbn13`);
   },
 };
 
@@ -107,7 +142,7 @@ export const SavedIsbnReplacesTheFilesOwn: Story = {
     }),
   },
   play: async ({ canvas }) => {
-    const rows = rowsOf(canvas.getByRole("table"));
+    const rows = detailsOf(canvas);
     await expect(rows).toContainEqual(["ISBN-13", "9780316259088"]);
     await expect(rows).toContainEqual(["ISBN-10", "031625908X"]);
     await expect(
@@ -122,7 +157,10 @@ export const Fileless: Story = {
     await expect(
       canvas.queryByRole("group", { name: "Available formats" }),
     ).not.toBeInTheDocument();
-    await expect(canvas.getByRole("table")).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("heading", { name: "Files" }),
+    ).not.toBeInTheDocument();
+    await expect(canvas.getByTestId("details-list")).toBeInTheDocument();
   },
 };
 
@@ -138,6 +176,9 @@ export const ListsCopiesAndTheWishlistAmongTheFormats: Story = {
   },
   play: async ({ canvas }) => {
     await expect(
+      await canvas.findByRole("heading", { name: "Physical copies" }),
+    ).toBeInTheDocument();
+    await expect(
       await canvas.findByTestId("physical-copy-card"),
     ).toBeInTheDocument();
     await expect(
@@ -149,8 +190,9 @@ export const ListsCopiesAndTheWishlistAmongTheFormats: Story = {
 const AUDIO = aWireFile({
   id: 21,
   format: "M4B",
-  filename: "a.m4b",
-  size_bytes: 512_000_000,
+  filename: "Aurora Station - Sora Inkwell.m4b",
+  size_bytes: 7_864_320,
+  duration_seconds: 39_840,
 });
 
 const DUAL = aBook({
@@ -176,6 +218,93 @@ const ALIGNED = aWireAlignment({
     mode: "sequence",
   },
 });
+
+export const EachFileShowsItsFilenameSizeAndDuration: Story = {
+  args: { book: DUAL },
+  beforeEach({ msw }) {
+    msw.use(getGetAlignmentMockHandler200(ALIGNED));
+  },
+  play: async ({ canvas }) => {
+    const ebook = within(await canvas.findByTestId("format-row-epub"));
+    await expect(ebook.getByText("EPUB · 3.0 MB")).toBeInTheDocument();
+    await expect(ebook.getByTestId("format-filename")).toHaveTextContent(
+      "aurora-station-01.epub",
+    );
+    const audio = within(canvas.getByTestId("format-row-m4b"));
+    await expect(
+      audio.getByText("M4B · 7.5 MB · 11 h 4 m"),
+    ).toBeInTheDocument();
+    await expect(audio.getByTestId("format-filename")).toHaveTextContent(
+      "Aurora Station - Sora Inkwell.m4b",
+    );
+    // The row's actions sit with it, and Export under the rows.
+    await expect(ebook.getByRole("link", { name: "Read" })).toBeInTheDocument();
+    await expect(
+      audio.getByRole("link", { name: "Listen" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", { name: /Export/ }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const SyncRowOffersImmersiveForEbookPlusAudio: Story = {
+  args: { book: DUAL },
+  beforeEach({ msw }) {
+    msw.use(getGetAlignmentMockHandler200({ ...ALIGNED, link: null }));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText("Each format keeps its own place."),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("link", { name: "Immersive" }),
+    ).toHaveAttribute("href", `/read/${UUID}`);
+  },
+};
+
+export const LinkedFormatsDropTheOwnPlaceLine: Story = {
+  args: { book: DUAL },
+  beforeEach({ msw }) {
+    msw.use(getGetAlignmentMockHandler200(ALIGNED));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText(/one spot, both formats/),
+    ).toBeVisible();
+    await expect(
+      canvas.queryByText("Each format keeps its own place."),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const OneFormatHasNoSyncRow: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("format-row-epub");
+    await expect(
+      canvas.queryByText("Each format keeps its own place."),
+    ).not.toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("link", { name: "Immersive" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const CuratorActionsOpenTheirDialogs: Story = {
+  play: async ({ args, canvas, userEvent }) => {
+    await expect(
+      canvas.getByRole("link", { name: "Edit metadata" }),
+    ).toHaveAttribute("href", `/books/${UUID}/edit`);
+
+    await userEvent.click(canvas.getByRole("button", { name: "Merge with…" }));
+    await expect(args.onOpenDialog).toHaveBeenLastCalledWith("merge");
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Delete files…" }),
+    );
+    await expect(args.onOpenDialog).toHaveBeenLastCalledWith("delete");
+  },
+};
 
 export const DualFormatShowsTheSyncLine: Story = {
   args: { book: DUAL },

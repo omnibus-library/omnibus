@@ -54,7 +54,7 @@ export const OneFormat: Story = {
   play: async ({ canvas }) => {
     const group = canvas.getByRole("group", { name: "Available formats" });
     await expect(within(group).getByText("Ebook")).toBeInTheDocument();
-    await expect(within(group).getByText("3.0 MB")).toBeInTheDocument();
+    await expect(within(group).getByText("EPUB · 3.0 MB")).toBeInTheDocument();
     await expect(
       within(group).getByRole("link", { name: "Read" }),
     ).toHaveAttribute("href", `/read/${UUID}`);
@@ -87,7 +87,7 @@ export const SeveralFormats: Story = {
     await expect(
       within(canvas.getByTestId("format-row-cbz")).getByText("No actions yet"),
     ).toBeInTheDocument();
-    await expect(canvas.getByText("768.7 MB")).toBeInTheDocument();
+    await expect(canvas.getByText("M4B · 768.7 MB")).toBeInTheDocument();
   },
 };
 
@@ -100,7 +100,7 @@ export const SeveralFilesOfOneFormat: Story = {
     ],
   ),
   play: async ({ canvas }) => {
-    await expect(canvas.getByText("2 editions")).toBeInTheDocument();
+    await expect(canvas.getByText("EPUB · 2 editions")).toBeInTheDocument();
     await expect(
       within(canvas.getByTestId("format-file-11")).getByText("First edition"),
     ).toBeInTheDocument();
@@ -112,6 +112,77 @@ export const SeveralFilesOfOneFormat: Story = {
         name: "Read",
       }),
     ).toHaveAttribute("href", `/read/${UUID}?file_id=12`);
+  },
+};
+
+export const ShowsTheFilenameSizeAndDuration: Story = {
+  args: props(
+    ["EPUB", "M4B"],
+    [
+      {
+        id: 11,
+        format: "EPUB",
+        filename: "Aurora Station - Sora Inkwell.epub",
+      },
+      {
+        id: 21,
+        format: "M4B",
+        filename: "Aurora Station - Sora Inkwell.m4b",
+        size_bytes: 7_864_320,
+        duration_seconds: 39_840,
+      },
+    ],
+  ),
+  play: async ({ canvas }) => {
+    const ebook = within(canvas.getByTestId("format-row-epub"));
+    await expect(ebook.getByText("EPUB · 3.0 MB")).toBeInTheDocument();
+    await expect(ebook.getByTestId("format-filename")).toHaveTextContent(
+      "Aurora Station - Sora Inkwell.epub",
+    );
+
+    // The audiobook adds its playing time.
+    const audio = within(canvas.getByTestId("format-row-m4b"));
+    await expect(
+      audio.getByText("M4B · 7.5 MB · 11 h 4 m"),
+    ).toBeInTheDocument();
+    await expect(audio.getByTestId("format-filename")).toHaveTextContent(
+      "Aurora Station - Sora Inkwell.m4b",
+    );
+  },
+};
+
+export const EachFileOfSeveralShowsItsFilenameAndSize: Story = {
+  args: props(
+    ["EPUB"],
+    [
+      {
+        id: 11,
+        format: "EPUB",
+        label: "First edition",
+        filename: "first.epub",
+      },
+      {
+        id: 12,
+        format: "EPUB",
+        ordinal: 1,
+        filename: "second.epub",
+        size_bytes: 1_572_864,
+      },
+    ],
+  ),
+  play: async ({ canvas }) => {
+    const first = within(canvas.getByTestId("format-file-11"));
+    await expect(first.getByTestId("format-facts")).toHaveTextContent("3.0 MB");
+    await expect(first.getByTestId("format-filename")).toHaveTextContent(
+      "first.epub",
+    );
+    const second = within(canvas.getByTestId("format-file-12"));
+    await expect(second.getByTestId("format-facts")).toHaveTextContent(
+      "1.5 MB",
+    );
+    await expect(second.getByTestId("format-filename")).toHaveTextContent(
+      "second.epub",
+    );
   },
 };
 

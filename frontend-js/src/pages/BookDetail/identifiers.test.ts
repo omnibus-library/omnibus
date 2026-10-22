@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { identifierRows, looksLikeIsbn } from "./identifiers";
+import { toBookDetail } from "../../api";
+import { aWireBook } from "../../testing/wire";
+import { detailRows, identifierRows, looksLikeIsbn } from "./identifiers";
 
 type Input = Parameters<typeof identifierRows>[0];
 
@@ -196,5 +198,115 @@ describe("identifierRows", () => {
         ["ISBN-13", "9780316259088"],
       ]);
     });
+  });
+});
+
+describe("detailRows", () => {
+  const book = (overrides: Parameters<typeof aWireBook>[0] = {}) =>
+    toBookDetail(
+      aWireBook({
+        publisher: "Inkwell Press",
+        language: "en",
+        identifiers: [{ scheme: "15", value: "9780316769488" }],
+        // Local noon, so the day reads the same in every zone.
+        added_at: new Date(2024, 4, 1, 12).toISOString(),
+        ...overrides,
+      }),
+    );
+  const unset = (out: ReturnType<typeof detailRows>) =>
+    out.flatMap((r) => ("unset" in r ? [[r.key, r.label]] : []));
+
+  it("marks an unset publisher date language and isbn not set", () => {
+    const out = detailRows(
+      book({
+        publisher: null,
+        published: null,
+        language: null,
+        identifiers: [],
+      }),
+    );
+
+    expect(unset(out)).toEqual([
+      ["publisher", "Publisher"],
+      ["published", "Published"],
+      ["language", "Language"],
+      ["isbn13", "ISBN"],
+    ]);
+    // The ISBN's slot is the first of the identifiers, after the language.
+    expect(out.map((r) => r.label).slice(0, 7)).toEqual([
+      "Title",
+      "Author",
+      "Publisher",
+      "Published",
+      "Language",
+      "ISBN",
+      "UUID",
+    ]);
+  });
+
+  it("counts a placeholder publication date as unset", () => {
+    const out = detailRows(book({ published: "0101-01-01T00:00:00+00:00" }));
+
+    expect(unset(out)).toEqual([["published", "Published"]]);
+  });
+
+  it("lists what is set as values", () => {
+    const out = detailRows(book({ published: "2021-03-01T00:00:00+00:00" }));
+
+    expect(unset(out)).toEqual([]);
+    expect(out.slice(0, 6)).toEqual([
+      { key: "title", label: "Title", value: "Aurora Station, Vol. 1" },
+      { key: "author", label: "Author", value: "Sora Inkwell" },
+      { key: "publisher", label: "Publisher", value: "Inkwell Press" },
+      { key: "published", label: "Published", value: "Mar 1st, 2021" },
+      { key: "language", label: "Language", value: "en" },
+      expect.objectContaining({ label: "ISBN-13", value: "9780316769488" }),
+    ]);
+  });
+
+  it("lists the uuid and the date added", () => {
+    const out = detailRows(book());
+    const b = book();
+
+    expect(out.slice(-2)).toEqual([
+      { key: "uuid", label: "UUID", value: b.uuid },
+      { key: "added", label: "Added", value: "May 1st, 2024" },
+    ]);
+  });
+
+  it("leaves out the author and the date added when unknown", () => {
+    const out = detailRows(book({ creators: [], added_at: null }));
+
+    expect(out.map((r) => r.label)).not.toContain("Author");
+    expect(out.map((r) => r.label)).not.toContain("Added");
+    expect(out.at(-1)).toMatchObject({ label: "UUID" });
+  });
+
+  it("puts the ISBN ahead of the other identifiers", () => {
+    const out = detailRows(
+      book({
+        identifiers: [
+          { scheme: "goodreads", value: "12345" },
+          { scheme: "15", value: "9780316769488" },
+        ],
+      }),
+    );
+
+    expect(out.map((r) => r.label).slice(5, 7)).toEqual([
+      "ISBN-13",
+      "Goodreads ID",
+    ]);
+  });
+
+  it("keeps the ISBN unset marker when only other identifiers exist", () => {
+    const out = detailRows(
+      book({ identifiers: [{ scheme: "goodreads", value: "12345" }] }),
+    );
+
+    expect(unset(out)).toEqual([["isbn13", "ISBN"]]);
+    expect(out.map((r) => r.label).slice(5, 7)).toEqual([
+      "ISBN",
+      "Goodreads ID",
+    ]);
   });
 });

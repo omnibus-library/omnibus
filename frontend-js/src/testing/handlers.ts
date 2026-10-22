@@ -564,6 +564,8 @@ export function bookDetailHandlers(book: EbookMetadata) {
     getGetSuggestionsMockHandler200({ status: "ready", items: [] }),
     getGetBookInsightsMockHandler200(null),
     getGetBookHouseholdMockHandler200([]),
+    // The chips' suggestions.
+    ...filterOptionHandlers(),
   ];
 }
 
