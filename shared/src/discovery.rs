@@ -182,7 +182,9 @@ pub struct BookReading {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct AuthorReading {
     pub author_id: i64,
+    /// How many of the author's books you have finished.
     pub finished: usize,
+    /// How many of the author's books you are reading now.
     pub reading: usize,
     /// The latest `last_read_at` of your `BookReading` across the author's books, in
     /// Unix seconds.
@@ -240,7 +242,9 @@ pub struct SeriesDetail {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct SeriesReading {
     pub series_id: i64,
+    /// How many of the series' books you have finished.
     pub finished: usize,
+    /// How many of the series' books you are reading now.
     pub reading: usize,
     /// The latest `last_read_at` of your `BookReading` across the series' books, in
     /// Unix seconds.

@@ -1,6 +1,6 @@
-//! Account-switch regression test for `note_user`: the wipe over
+//! Account-switch regression tests for `note_user`: the wipe over
 //! `USER_SCOPED_PREFIXES` must not also erase the fresh `"me"` row the
-//! switch itself is keyed on.
+//! switch itself is keyed on, and must reach every per-reader row.
 
 // Held across awaits to serialize against other offline test modules' use of
 // the same process-global store; safe since each test owns its own thread + runtime.
@@ -113,4 +113,35 @@ async fn note_user_wipes_a_cached_review_and_its_private_notes_across_account_sw
 
     let cached: Option<String> = cache::get_json(&reviews_key).await;
     assert_eq!(cached, None);
+}
+
+#[tokio::test]
+async fn note_user_wipes_cached_author_and_series_reading_but_keeps_their_lists() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    let st = store::store().expect("test store");
+
+    let old_user = user(7, "note-user-reading-old");
+    let new_user = user(8, "note-user-reading-new");
+    st.meta_put("last_user", old_user.username.clone());
+    let per_reader = [
+        cache::keys::author(41),
+        cache::keys::author_reading(),
+        cache::keys::series(42),
+        cache::keys::series_reading(),
+    ];
+    for key in &per_reader {
+        cache::put_json(key, &"the old reader's progress");
+    }
+    cache::put_json(&cache::keys::series_index(), &"every reader's list");
+
+    cache::put_json(&cache::keys::me(), &new_user);
+    note_user(&new_user).await;
+
+    for key in &per_reader {
+        let cached: Option<String> = cache::get_json(key).await;
+        assert_eq!(cached, None, "{key} outlived the switch");
+    }
+    let list: Option<String> = cache::get_json(&cache::keys::series_index()).await;
+    assert_eq!(list.as_deref(), Some("every reader's list"));
 }
