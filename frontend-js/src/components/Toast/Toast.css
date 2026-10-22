@@ -60,6 +60,14 @@
   stroke-width: 2;
   stroke-linecap: round;
 }
+@media (hover: hover) {
+  .toast-action:hover {
+    background: #2a2a30;
+  }
+  .toast-dismiss:hover {
+    background: rgba(14, 14, 16, 0.1);
+  }
+}
 .toast-action:focus-visible,
 .toast-dismiss:focus-visible {
   outline: 2px solid #0e0e10;

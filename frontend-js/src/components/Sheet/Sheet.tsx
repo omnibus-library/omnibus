@@ -3,8 +3,8 @@ import { prefersReducedMotion } from "../../motion";
 import { Modal } from "../Modal/Modal";
 import "./Sheet.css";
 
-/** One frame past the 160 ms exit in `Sheet.css`, so the sheet is gone from the DOM only once it has faded. */
-const EXIT_MS = 200;
+/** Past the longest exit in `Sheet.css` (220 ms on a phone, 160 ms elsewhere), so the sheet leaves the DOM only once it has finished leaving. */
+const EXIT_MS = 240;
 
 type SheetProps = {
   label: string;

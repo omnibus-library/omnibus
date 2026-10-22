@@ -119,7 +119,12 @@ export function BookDialogs({ book, dialog, onClose }: BookDialogsProps) {
       toast("Merge undone");
       return refresh();
     },
-    onError: (error) => toast(error.message),
+    // Still on offer: the reason, and another go.
+    onError: (error, logId) =>
+      toast(`Couldn’t undo the merge: ${error.message}`, {
+        label: "Undo",
+        onClick: () => undo.mutate(logId),
+      }),
   });
   switch (dialog) {
     case null:

@@ -502,7 +502,7 @@ export const MergeThenUndo: Story = {
   },
 };
 
-export const FailedUndoToastsTheReason: Story = {
+export const FailedUndoKeepsTheToastWithTheReason: Story = {
   beforeEach({ msw }) {
     msw.use(
       failing("post", "/api/books/merge/undo", 409),
@@ -521,11 +521,11 @@ export const FailedUndoToastsTheReason: Story = {
     await userEvent.click(await canvas.findByRole("button", { name: "Undo" }));
 
     await expect(
-      await canvas.findByText("failed with 409"),
+      await canvas.findByText(/Couldn.t undo the merge: failed with 409/),
     ).toBeInTheDocument();
-    await expect(
-      canvas.queryByRole("button", { name: "Undo" }),
-    ).not.toBeInTheDocument();
+    // The Undo is still on offer, to try again.
+    const again = await canvas.findByRole("button", { name: "Undo" });
+    await waitFor(() => expect(again).toBeVisible());
   },
 };
 

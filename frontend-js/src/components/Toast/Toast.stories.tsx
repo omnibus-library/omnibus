@@ -106,6 +106,20 @@ export const DismissingAnActionToastDoesNotRunTheAction: Story = {
 
 export const ANewToastReplacesTheOld: Story = {
   play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Show a toast" }));
+    await canvas.findByText("Saved 2 changes");
+
+    await userEvent.click(canvas.getByRole("button", { name: "Show another" }));
+
+    await expect(await canvas.findByRole("status")).toHaveTextContent(
+      "Removed the tag",
+    );
+    await expect(canvas.queryByText("Saved 2 changes")).not.toBeInTheDocument();
+  },
+};
+
+export const APlainToastWaitsBehindAnActionToast: Story = {
+  play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       canvas.getByRole("button", { name: "Show with Undo" }),
     );
@@ -113,12 +127,42 @@ export const ANewToastReplacesTheOld: Story = {
 
     await userEvent.click(canvas.getByRole("button", { name: "Show another" }));
 
-    await expect(await canvas.findByRole("status")).toHaveTextContent(
-      "Removed the tag",
-    );
-    await expect(canvas.queryByText("Books merged")).not.toBeInTheDocument();
+    // The Undo it offered is not taken away by the next thing that happens.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await expect(canvas.getByText("Books merged")).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Undo" })).toBeVisible();
+    await expect(canvas.queryByText("Removed the tag")).not.toBeInTheDocument();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Dismiss" }));
+
+    // Once it is dealt with, the toast that waited takes its place.
     await expect(
-      canvas.queryByRole("button", { name: "Undo" }),
-    ).not.toBeInTheDocument();
+      await canvas.findByText("Removed the tag"),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByText("Books merged")).not.toBeInTheDocument();
+  },
+};
+
+export const TheStatusRegionIsThereBeforeAnyToast: Story = {
+  play: async ({ canvas }) => {
+    // Present and live from the start, so a screen reader hears the first toast's words arrive.
+    const status = canvas.getByRole("status");
+    await expect(status).toHaveAttribute("aria-live", "polite");
+    await expect(status.hasAttribute("inert")).toBe(false);
+  },
+};
+
+export const AnActionToastTakesFocusAndGivesItBack: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const opener = canvas.getByRole("button", { name: "Show with Undo" });
+    await userEvent.click(opener);
+
+    await waitFor(() =>
+      expect(canvas.getByRole("button", { name: "Undo" })).toHaveFocus(),
+    );
+
+    await userEvent.click(canvas.getByRole("button", { name: "Dismiss" }));
+
+    await waitFor(() => expect(opener).toHaveFocus());
   },
 };
