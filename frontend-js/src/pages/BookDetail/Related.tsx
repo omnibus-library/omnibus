@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
 import {
@@ -10,7 +10,6 @@ import {
   type Shelf,
   type Suggestion,
   seriesQuery,
-  setShelfMember,
   thumbSrcSet,
   thumbUrl,
   type UserId,
@@ -20,25 +19,15 @@ import { Cover } from "../../components/Cover/Cover";
 import { PlusGlyph } from "../../components/Glyphs/Glyphs";
 import { Loading, Ring } from "../../components/Loading/Loading";
 import {
-  type PickerList,
-  ShelfPicker,
-} from "../../components/ShelfPicker/ShelfPicker";
-import {
   accentStyle,
   ShelfTileFace,
   tileLabelledBy,
 } from "../../components/ShelfTile/ShelfTile";
 import { formatYear, plural } from "../../format";
-import { useCurrentUser } from "../../session";
-import { shelvesQuery, suggestionPollMs, suggestionsQuery } from "./queries";
+import { ShelfDialog, useShelfMembership } from "./BookDialogs";
+import { suggestionPollMs, suggestionsQuery } from "./queries";
 import { SectionHead } from "./SectionHead";
-import {
-  automaticShelves,
-  heldShelves,
-  pickerTargets,
-  withMemberSummary,
-  withMembership,
-} from "./shelves";
+import { heldShelves } from "./shelves";
 
 function SeriesItem({
   item,
@@ -149,53 +138,10 @@ function ShelfLink({ shelf, viewerId }: { shelf: Shelf; viewerId: UserId }) {
 
 /** Every shelf holding the book as a tile, and the picker that files it onto a hand-picked one. */
 function ShelfMembership({ book }: { book: BookDetail }) {
-  const client = useQueryClient();
-  const viewer = useCurrentUser();
-  const { queryKey } = shelvesQuery(book.uuid);
-  const shelves = useQuery(shelvesQuery(book.uuid));
+  const { shelves, facts, viewer } = useShelfMembership(book);
   const [picking, setPicking] = useState(false);
-  const toggle = useMutation({
-    mutationFn: ({ shelf, adding }: { shelf: Shelf; adding: boolean }) =>
-      setShelfMember(shelf.id, book.uuid, adding),
-    // A read begun before the write would answer with the old membership.
-    onMutate: () => client.cancelQueries({ queryKey }),
-    // The tile, the count and the ledge follow without waiting on a refetch.
-    onSuccess: (_done, { shelf, adding }) =>
-      client.setQueryData(
-        queryKey,
-        (facts) =>
-          facts && {
-            ...facts,
-            manualIds: withMembership(facts.manualIds, shelf.id, adding),
-            all: withMemberSummary(
-              facts.all,
-              shelf.id,
-              book.uuid,
-              book.hasCover,
-              adding,
-            ),
-          },
-      ),
-    onSettled: () => {
-      void client.invalidateQueries({ queryKey });
-    },
-  });
-  const facts = shelves.data;
   const held = facts && heldShelves(facts, viewer);
-  const open = () => {
-    toggle.reset();
-    setPicking(true);
-  };
-  const list: PickerList = facts
-    ? {
-        status: "ready",
-        targets: pickerTargets(facts.all, viewer),
-        checked: facts.manualIds,
-        automatic: automaticShelves(facts),
-      }
-    : shelves.isError
-      ? { status: "failed" }
-      : { status: "loading" };
+  const open = () => setPicking(true);
   return (
     <>
       <div
@@ -253,24 +199,7 @@ function ShelfMembership({ book }: { book: BookDetail }) {
           </div>
         </>
       )}
-      {picking && (
-        <ShelfPicker
-          list={list}
-          viewer={viewer}
-          busy={toggle.isPending ? toggle.variables.shelf.id : null}
-          error={
-            toggle.isError
-              ? `Couldn’t update ${toggle.variables.shelf.name}: ${toggle.error.message}`
-              : null
-          }
-          onPick={(id) => {
-            const shelf = facts?.all.find((s) => s.id === id);
-            if (shelf && facts)
-              toggle.mutate({ shelf, adding: !facts.manualIds.includes(id) });
-          }}
-          onClose={() => setPicking(false)}
-        />
-      )}
+      {picking && <ShelfDialog book={book} onClose={() => setPicking(false)} />}
     </>
   );
 }

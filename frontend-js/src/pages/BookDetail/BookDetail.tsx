@@ -12,6 +12,7 @@ import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider } from "../../components/Toast/Toast";
 import { prefersReducedMotion } from "../../motion";
+import { type BookDialog, BookDialogs } from "./BookDialogs";
 import { BookTabs, useBookTabs } from "./BookTabs";
 import { FilesDetails } from "./FilesDetails";
 import { Hero } from "./Hero";
@@ -62,6 +63,7 @@ function Page({ book }: { book: Detail }) {
   const { tab, entering, selectTab } = useBookTabs();
   // One queue for every write to your review, whichever control makes it.
   const rating = useMyRating(book.uuid);
+  const [dialog, setDialog] = useState<BookDialog | null>(null);
   const showSeries = async () => {
     await selectTab("overview");
     document.getElementById(SERIES_ID)?.scrollIntoView({
@@ -90,6 +92,7 @@ function Page({ book }: { book: Detail }) {
               rating={rating}
               onShowSeries={showSeries}
               onOpenReview={() => selectTab("reviews")}
+              onOpenDialog={setDialog}
             />
           </div>
         </header>
@@ -106,8 +109,13 @@ function Page({ book }: { book: Detail }) {
                 <Journal book={book} />
               </>
             ),
-            files: <FilesDetails book={book} />,
+            files: <FilesDetails book={book} onOpenDialog={setDialog} />,
           }}
+        />
+        <BookDialogs
+          book={book}
+          dialog={dialog}
+          onClose={() => setDialog(null)}
         />
       </div>
     </ToastProvider>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { BookDetail, BookUuid } from "../../api";
 import { classes } from "../../classes";
@@ -61,11 +61,13 @@ type FilePickerProps = {
   uuid: BookUuid;
   kind: Kind;
   files: BookFile[];
-  label: string;
+  label: ReactNode;
   /** The button's look, such as `btn primary lg`. */
   buttonClass: string;
   /** The test id the single-file link carries. */
   singleTestId: string;
+  /** Told when the button is pressed, before the link or the list takes over. */
+  onPress?: () => void;
 };
 
 /** A Read or Listen button that opens a list of files when the book has several. */
@@ -76,6 +78,7 @@ export function FilePicker({
   label,
   buttonClass,
   singleTestId,
+  onPress,
 }: FilePickerProps) {
   const [open, setOpen] = useState(false);
   const panel = useRef<HTMLDivElement>(null);
@@ -91,6 +94,7 @@ export function FilePicker({
         className={buttonClass}
         to={href(kind, uuid, files[0], false)}
         data-testid={singleTestId}
+        onClick={onPress}
       >
         {label}
       </Link>
@@ -106,7 +110,10 @@ export function FilePicker({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={LABEL[kind]}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          onPress?.();
+          setOpen(!open);
+        }}
       >
         {label}
         <span className="bd-file-picker-caret" aria-hidden="true">

@@ -12,12 +12,16 @@
   --bp-cover-w: 150px;
   --bp-cover-gap: 24px;
   --bp-accent-deep: color-mix(in oklch, var(--accent) 55%, black);
+  --bp-accent-fill: color-mix(in oklch, var(--accent) 75%, black);
   --bp-accent-text: color-mix(in oklch, var(--accent) 45%, white);
+  font-size: 16px;
+  line-height: 1.5;
 }
 @supports (color: oklch(from red l c h)) {
   .bp-root {
     /* Fixed lightness keeps white text readable whatever the cover's accent. */
     --bp-accent-deep: oklch(from var(--accent) 0.44 c h);
+    --bp-accent-fill: oklch(from var(--accent) 0.58 c h);
     --bp-accent-text: oklch(from var(--accent) 0.8 c h);
   }
 }
@@ -414,6 +418,317 @@ button.bp-byline-series {
   color: var(--ink-0);
 }
 
+/* ---------- Progress, then the actions ---------- */
+@property --bp-progress {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 0%;
+}
+.bp-runtime {
+  margin-top: 22px;
+  color: var(--ink-1);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.bp-progress {
+  max-width: 440px;
+  margin-top: 22px;
+}
+/* One segment per chapter, a flag on the current one. */
+.bp-chapter-bar {
+  position: relative;
+  display: flex;
+  gap: 3px;
+  height: 6px;
+  margin-top: 34px;
+}
+.bp-seg {
+  flex: var(--w) 1 0;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--ink-0) 20%, transparent);
+}
+.bp-seg.is-done {
+  background: var(--accent);
+}
+.bp-seg.is-current {
+  background: linear-gradient(
+    90deg,
+    var(--accent) var(--fill),
+    color-mix(in oklch, var(--ink-0) 20%, transparent) var(--fill)
+  );
+}
+.bp-chapter-flag {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #fff;
+  color: #0e0e10;
+  font: 600 14px / 1 var(--sans);
+  white-space: nowrap;
+}
+.bp-chapter-flag::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 2px;
+  height: 14px;
+  margin-left: -1px;
+  background: #fff;
+}
+.bp-progress-text {
+  margin-top: 10px;
+  color: var(--ink-1);
+  font-variant-numeric: tabular-nums;
+  text-wrap: balance;
+}
+.bp-progress-text strong {
+  color: var(--ink-0);
+  font-weight: 600;
+}
+
+.bp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 26px;
+}
+.bp-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bp-fill);
+  color: var(--ink-0);
+  font: 600 15px / 1 var(--sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease-out,
+    transform 500ms var(--ease-out),
+    box-shadow 500ms var(--ease-out);
+}
+.bp-button:hover {
+  background: var(--bp-fill-hover);
+}
+.bp-button:active {
+  transform: scale(0.97);
+  transition-duration: 120ms;
+}
+.bp-button:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.bp-button:focus-visible {
+  outline: 2px solid var(--ink-0);
+  outline-offset: 3px;
+}
+.bp-button svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+.bp-button-large {
+  min-height: 52px;
+  padding: 0 26px;
+  font-size: 17px;
+}
+.bp-button-icon {
+  width: 52px;
+  padding: 0;
+}
+.bp-tinted {
+  background: color-mix(in oklch, var(--accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklch, var(--bp-accent-text) 22%, transparent);
+}
+.bp-tinted:hover {
+  background: color-mix(in oklch, var(--accent) 28%, transparent);
+}
+
+/* Continue: the page turns under the cursor, and the button fills as far as the reader has got. */
+.bp-continue {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--bp-accent-deep);
+  color: #fff;
+  word-spacing: 0.1em;
+}
+.bp-continue:hover {
+  background: var(--bp-accent-deep);
+  transform: translateY(-2px);
+  box-shadow:
+    0 14px 30px -10px color-mix(in oklch, var(--accent) 75%, transparent),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+}
+.bp-continue:active {
+  transform: scale(0.97);
+}
+.bp-continue-fill {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    var(--accent) 0,
+    var(--accent) calc(var(--bp-progress) - 36px),
+    color-mix(in oklch, var(--accent) 0%, transparent)
+      calc(var(--bp-progress) + 36px)
+  );
+  transition: --bp-progress 900ms var(--ease-out);
+}
+.bp-page-turn {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bp-page-turn .bp-leaf {
+  transform-box: view-box;
+  transform-origin: 12px 12px;
+}
+.bp-continue:hover .bp-leaf {
+  animation: bp-page-turn 650ms var(--ease-out) both;
+}
+@keyframes bp-page-turn {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(-1);
+  }
+}
+.bp-listen:hover,
+.bp-status-pill:hover {
+  transform: translateY(-2px);
+}
+.bp-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+.bp-eq span {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: currentColor;
+  transform-origin: bottom;
+}
+.bp-eq span:nth-child(1) {
+  transform: scaleY(0.3);
+}
+.bp-eq span:nth-child(2) {
+  transform: scaleY(1);
+}
+.bp-eq span:nth-child(3) {
+  transform: scaleY(0.55);
+}
+.bp-eq span:nth-child(4) {
+  transform: scaleY(0.8);
+}
+.bp-listen:hover .bp-eq span,
+.bp-listen.is-playing .bp-eq span {
+  animation: bp-eq 620ms ease-in-out infinite alternate;
+}
+.bp-listen:hover .bp-eq span:nth-child(2),
+.bp-listen.is-playing .bp-eq span:nth-child(2) {
+  animation-delay: -250ms;
+}
+.bp-listen:hover .bp-eq span:nth-child(3),
+.bp-listen.is-playing .bp-eq span:nth-child(3) {
+  animation-delay: -480ms;
+}
+.bp-listen:hover .bp-eq span:nth-child(4),
+.bp-listen.is-playing .bp-eq span:nth-child(4) {
+  animation-delay: -120ms;
+}
+@keyframes bp-eq {
+  from {
+    transform: scaleY(0.2);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+.bp-status-pill {
+  gap: 10px;
+  padding: 0 18px 0 20px;
+}
+.bp-status-pill > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.bp-status-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  color: var(--ink-1);
+  font-size: 14px;
+}
+
+/* The status and More menus, restyled on the stage only. */
+.bp-stage .shd-menu {
+  top: calc(100% + 8px);
+  min-width: 260px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--bp-radius);
+  background: var(--bg-2);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  transform-origin: top right;
+  animation: bp-menu-in 220ms var(--ease-out);
+}
+.bp-status .shd-menu {
+  left: 0;
+  right: auto;
+  transform-origin: top left;
+}
+@keyframes bp-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+}
+.bp-stage .shd-menu-item {
+  min-height: 44px;
+  gap: 12px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: var(--ink-0);
+  font: 500 16px / 1 var(--sans);
+  white-space: nowrap;
+}
+.bp-stage .shd-menu-item:hover,
+.bp-stage .shd-menu-item:focus-visible {
+  background: var(--bp-fill);
+  outline: none;
+}
+.bp-stage .shd-menu-item[aria-checked="true"] {
+  background: color-mix(in oklch, var(--accent) 18%, transparent);
+}
+.bp-stage .shd-menu-item[aria-checked="true"] .shd-menu-icon {
+  color: var(--bp-accent-text);
+}
+.bp-stage .shd-menu-item--danger {
+  color: var(--bad);
+}
+.bp-stage .shd-menu-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
 /* ---------- Tabs, with the ribbon bookmark as the indicator ---------- */
 .bp-tabs {
   position: relative;
@@ -581,6 +896,32 @@ button.bp-byline-series {
   }
   .bp-reader-name {
     min-width: 0;
+  }
+  .bp-progress {
+    max-width: none;
+    width: 100%;
+  }
+  .bp-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 52px;
+    width: 100%;
+    gap: 10px;
+  }
+  .bp-actions > :first-child {
+    grid-column: 1 / -1;
+  }
+  .bp-actions .bp-status,
+  .bp-status-pill {
+    width: 100%;
+  }
+  .bp-status-pill {
+    justify-content: center;
+    padding: 0 12px;
+  }
+  .bp-status .shd-menu {
+    left: auto;
+    right: 0;
+    transform-origin: top right;
   }
   .bp-tablist {
     gap: 26px;

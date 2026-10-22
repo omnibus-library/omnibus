@@ -22,6 +22,7 @@ import {
   plateAuthor,
   recency,
   singleFacetValue,
+  spacedDuration,
   summaryIsSparse,
   wishlistSource,
 } from "./format";
@@ -279,6 +280,19 @@ describe("durationLabel", () => {
     [-1, "0m"],
   ])("reads %i seconds as %s", (secs, label) => {
     expect(durationLabel(secs)).toBe(label);
+  });
+});
+
+describe("spacedDuration", () => {
+  it.each([
+    [0, "0 m"],
+    [59, "0 m"],
+    [2460, "41 m"],
+    [7200, "2 h"],
+    [21_420, "5 h 57 m"],
+    [-1, "0 m"],
+  ])("reads %i seconds as %s", (secs, label) => {
+    expect(spacedDuration(secs)).toBe(label);
   });
 });
 

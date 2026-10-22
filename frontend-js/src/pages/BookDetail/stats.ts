@@ -42,6 +42,12 @@ export function pacedSecondsLeft(i: Insights, percent: number): number {
   return Math.floor((i.secondsTotal * (100 - percent)) / percent);
 }
 
+/** The seconds left at the pace so far; `null` below five percent, where it would be a guess, and once the book is done. */
+export function pacedLeft(i: Insights, percent: number): number | null {
+  if (percent < MIN_PACE_PERCENT || percent >= 100) return null;
+  return pacedSecondsLeft(i, percent);
+}
+
 /** "≈ 1h 30m to go at your pace · 40% in"; `null` below 5%, where it would be a guess. */
 export function timeLeftNote(i: Insights, percent: number): string | null {
   const pct = Math.min(Math.max(percent, 0), 100);

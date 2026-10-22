@@ -1,4 +1,10 @@
-import type { Alignment, BookDetail, Position, Progress } from "../../api";
+import type {
+  Alignment,
+  BookDetail,
+  Position,
+  Progress,
+  ReadStatusValue,
+} from "../../api";
 import { formatHm, formatYear, plural } from "../../format";
 
 export type Chapter = NonNullable<Alignment["chapters"]>[number];
@@ -240,4 +246,64 @@ export function factLine(
     book.language ? languageName(book.language) : null,
   ].filter((part): part is string => Boolean(part));
   return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** One chapter of the hero's progress bar: its share of the book, and how far through it the reader is. */
+export type Segment = {
+  weight: number;
+  state: "done" | "current" | "ahead";
+  /** How much of the segment is filled, 0 to 100; meaningful for the current one. */
+  fill: number;
+};
+
+/** The bar's segments: one per chapter weighted by its length, or one for the whole book without a chapter table. */
+export function chapterSegments(
+  chapters: readonly Chapter[] | null,
+  percent: number,
+): Segment[] {
+  if (!chapters || chapters.length === 0) {
+    return [
+      {
+        weight: 100,
+        state: percent >= 100 ? "done" : "current",
+        fill: percent,
+      },
+    ];
+  }
+  // A first chapter that opens late still starts the bar at the start of the book.
+  const starts = chapters.map((c, i) => (i === 0 ? 0 : c.percent));
+  const current =
+    percent >= 100 ? -1 : lastIndexWhere(starts, (s) => s <= percent);
+  return starts.map((start, i) => {
+    const weight = (starts[i + 1] ?? 100) - start;
+    if (percent >= 100 || i < current)
+      return { weight, state: "done", fill: 100 };
+    if (i > current) return { weight, state: "ahead", fill: 0 };
+    return {
+      weight,
+      state: "current",
+      fill: weight > 0 ? ((percent - start) / weight) * 100 : 100,
+    };
+  });
+}
+
+/** The words on the hero's main button: what it will do, from the read status and the chapter the reader is in. */
+export function continueLabel(o: {
+  audioOnly: boolean;
+  status: ReadStatusValue;
+  chapter: number | null;
+}): string {
+  switch (o.status) {
+    case "unread":
+      return o.audioOnly ? "Start listening" : "Start reading";
+    case "reading":
+      if (o.audioOnly) return "Continue listening";
+      return o.chapter ? `Continue · Chapter ${o.chapter}` : "Continue reading";
+    case "finished":
+      return o.audioOnly ? "Listen again" : "Read again";
+    default: {
+      const _exhaustive: never = o.status;
+      return _exhaustive;
+    }
+  }
 }

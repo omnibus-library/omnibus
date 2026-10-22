@@ -255,6 +255,14 @@ export function durationLabel(seconds: number): string {
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
+/** "5 h 57 m", "2 h", "41 m": a length of time as the book page words it; minutes are floored. */
+export function spacedDuration(seconds: number): string {
+  const mins = Math.floor(Math.max(0, seconds) / 60);
+  const [h, m] = [Math.floor(mins / 60), mins % 60];
+  if (h === 0) return `${m} m`;
+  return m === 0 ? `${h} h` : `${h} h ${m} m`;
+}
+
 /** A unix-seconds time as the reader's calendar day, "May 17, 2026". */
 export function formatLongDate(unixSecs: number, timeZone?: string): string {
   return new Date(unixSecs * 1000).toLocaleDateString("en-US", {

@@ -3,6 +3,7 @@ import type { Insights } from "../../api";
 import {
   avgSitSeconds,
   daysIn,
+  pacedLeft,
   SPARK_DAYS,
   sparkBuckets,
   sparkSummary,
@@ -63,6 +64,21 @@ describe("timeLeftNote", () => {
     expect(timeLeftNote(insights(), 140)).toBe(
       "finished — the record is complete",
     );
+  });
+});
+
+describe("pacedLeft", () => {
+  it("extrapolates the pace so far", () => {
+    expect(pacedLeft(insights({ secondsTotal: 3600 }), 40)).toBe(5400);
+  });
+
+  it("makes no estimate below five percent", () => {
+    expect(pacedLeft(insights(), 4)).toBeNull();
+    expect(pacedLeft(insights(), 5)).not.toBeNull();
+  });
+
+  it("makes no estimate once the book is done", () => {
+    expect(pacedLeft(insights(), 100)).toBeNull();
   });
 });
 

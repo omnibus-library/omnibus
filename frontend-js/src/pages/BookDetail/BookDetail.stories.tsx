@@ -360,26 +360,25 @@ export const MergeThenUndo: Story = {
     await userEvent.click(await canvas.findByTestId("merge-candidate"));
     await userEvent.click(canvas.getByTestId("merge-confirm"));
 
-    await expect(
-      await canvas.findByText(
-        "Books merged. Undo is available until you leave this page.",
-      ),
-    ).toBeInTheDocument();
+    const merged = await canvas.findByText("Books merged");
+    // The toast fades in.
+    await waitFor(() => expect(merged).toBeVisible());
     await expect(canvas.queryByTestId("merge-dialog")).not.toBeInTheDocument();
     await expect(writes).toEqual([
       `merge:${volume.unique_identifier}>${BOOK.unique_identifier}`,
     ]);
 
-    await userEvent.click(canvas.getByTestId("merge-undo"));
+    await userEvent.click(canvas.getByRole("button", { name: "Undo" }));
 
     await waitFor(() => expect(writes).toContain("undo:5"));
+    await expect(await canvas.findByText("Merge undone")).toBeInTheDocument();
     await waitFor(() =>
-      expect(canvas.queryByTestId("merge-undo")).not.toBeInTheDocument(),
+      expect(canvas.queryByText("Books merged")).not.toBeInTheDocument(),
     );
   },
 };
 
-export const FailedUndoKeepsTheToastWithTheReason: Story = {
+export const FailedUndoToastsTheReason: Story = {
   beforeEach({ msw }) {
     msw.use(
       failing("post", "/api/books/merge/undo", 409),
@@ -395,15 +394,14 @@ export const FailedUndoKeepsTheToastWithTheReason: Story = {
     await userEvent.type(canvas.getByTestId("merge-search"), "aurora");
     await userEvent.click(await canvas.findByTestId("merge-candidate"));
     await userEvent.click(canvas.getByTestId("merge-confirm"));
-    await userEvent.click(await canvas.findByTestId("merge-undo"));
+    await userEvent.click(await canvas.findByRole("button", { name: "Undo" }));
 
-    await expect(await canvas.findByRole("alert")).toHaveTextContent(
-      "failed with 409",
-    );
-    await expect(canvas.getByTestId("merge-undo")).toBeInTheDocument();
-
-    await userEvent.click(canvas.getByTestId("merge-toast-dismiss"));
-    await expect(canvas.queryByTestId("merge-undo")).not.toBeInTheDocument();
+    await expect(
+      await canvas.findByText("failed with 409"),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("button", { name: "Undo" }),
+    ).not.toBeInTheDocument();
   },
 };
 

@@ -1,32 +1,23 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { type BookDetail, undoBookMerge } from "../../api";
+import type { BookDetail } from "../../api";
 import { Button, ButtonLink } from "../../components/Button/Button";
-import { DeleteBookDialog } from "../../components/DeleteBookDialog/DeleteBookDialog";
 import { FormatSwitcher } from "../../components/FormatSwitcher/FormatSwitcher";
-import { MergeDialog } from "../../components/MergeDialog/MergeDialog";
 import { formatDateShort, formatInstantShort } from "../../format";
 import { useCurrentUser } from "../../session";
+import type { BookDialog } from "./BookDialogs";
+import { ExportMenu } from "./ExportMenu";
 import { identifierRows } from "./identifiers";
 import { PhysicalCopies, WishlistRow } from "./PhysicalCopies";
-import { bookQuery, useLeaveBook } from "./queries";
+import { SyncLine } from "./SyncLine";
 
-/** Merge and delete, for admins; each leaves the page refetched, or gone when the book is. */
-function AdminActions({ book }: { book: BookDetail }) {
-  const client = useQueryClient();
-  const leave = useLeaveBook(book.uuid);
+/** Merge and delete, for admins; each opens the page's dialog. */
+function AdminActions({
+  book,
+  onOpenDialog,
+}: {
+  book: BookDetail;
+  onOpenDialog: (dialog: BookDialog) => void;
+}) {
   const viewer = useCurrentUser();
-  const [dialog, setDialog] = useState<"merge" | "delete" | null>(null);
-  const [mergeLogId, setMergeLogId] = useState<number | null>(null);
-  const refresh = () =>
-    client.invalidateQueries({ queryKey: bookQuery(book.uuid).queryKey });
-  const undo = useMutation({
-    mutationFn: undoBookMerge,
-    onSuccess: () => {
-      setMergeLogId(null);
-      return refresh();
-    },
-  });
   if (!viewer.isAdmin) return null;
   // Merging folds this record's files into another book, so a record with none can't be offered it.
   const hasFiles = book.formats.length > 0;
@@ -38,7 +29,7 @@ function AdminActions({ book }: { book: BookDetail }) {
           size="sm"
           className="bd-rail-edit"
           data-testid="merge-with"
-          onClick={() => setDialog("merge")}
+          onClick={() => onOpenDialog("merge")}
         >
           Merge with…
         </Button>
@@ -49,70 +40,22 @@ function AdminActions({ book }: { book: BookDetail }) {
         size="sm"
         className="bd-rail-edit bd-rail-delete"
         data-testid="delete-files"
-        onClick={() => setDialog("delete")}
+        onClick={() => onOpenDialog("delete")}
       >
         {hasFiles ? "Delete files…" : "Delete record…"}
       </Button>
-      {dialog === "merge" && (
-        <MergeDialog
-          target={book}
-          onMerged={(logId) => {
-            undo.reset();
-            setMergeLogId(logId);
-            setDialog(null);
-            refresh();
-          }}
-          onClose={() => setDialog(null)}
-        />
-      )}
-      {dialog === "delete" && (
-        <DeleteBookDialog
-          uuid={book.uuid}
-          title={book.title}
-          onDeleted={(bookDeleted) => {
-            setDialog(null);
-            if (!bookDeleted) return refresh();
-            leave();
-          }}
-          onClose={() => setDialog(null)}
-        />
-      )}
-      {mergeLogId !== null && (
-        <div className="bd-merge-toast card" role="status">
-          <span>
-            Books merged. Undo is available until you leave this page.
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            data-testid="merge-undo"
-            disabled={undo.isPending}
-            onClick={() => undo.mutate(mergeLogId)}
-          >
-            Undo
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Dismiss"
-            data-testid="merge-toast-dismiss"
-            onClick={() => setMergeLogId(null)}
-          >
-            ×
-          </Button>
-          {undo.isError && (
-            <p role="alert" className="bd-merge-error">
-              {undo.error.message}
-            </p>
-          )}
-        </div>
-      )}
     </>
   );
 }
 
-/** Stop 06: formats and copies, the metadata table, and the edit actions. */
-export function FilesDetails({ book }: { book: BookDetail }) {
+/** Formats and copies, the sync line and export, the metadata table, and the edit actions. */
+export function FilesDetails({
+  book,
+  onOpenDialog,
+}: {
+  book: BookDetail;
+  onOpenDialog: (dialog: BookDialog) => void;
+}) {
   // A row is absent, not blank. Published is a calendar date and never shifted;
   // Added is an instant and lands on the reader's own day.
   const rows = [
@@ -145,6 +88,11 @@ export function FilesDetails({ book }: { book: BookDetail }) {
         <PhysicalCopies book={book} />
         <WishlistRow book={book} />
       </div>
+      {/* Every item sends or downloads a file; a comic-only or fileless record has none to offer. */}
+      {(book.hasEbook || book.hasAudio || book.hasPdf) && (
+        <ExportMenu book={book} />
+      )}
+      {book.hasEbook && book.hasAudio && <SyncLine uuid={book.uuid} />}
       <div className="divider bdmq-files-div" />
       <table className="rx-kv bd-meta-table mono">
         <tbody>
@@ -165,7 +113,7 @@ export function FilesDetails({ book }: { book: BookDetail }) {
         >
           Edit metadata…
         </ButtonLink>
-        <AdminActions book={book} />
+        <AdminActions book={book} onOpenDialog={onOpenDialog} />
       </div>
     </>
   );
