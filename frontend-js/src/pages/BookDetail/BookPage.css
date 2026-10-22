@@ -986,6 +986,80 @@ button.bp-byline-series {
   border-radius: 8px;
 }
 
+/* A section's heading row and its count. */
+.bp-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 36px;
+  margin-bottom: 20px;
+}
+.bp-section-head h2 {
+  --lh: 1.1;
+  font: 600 32px / var(--lh) var(--serif);
+  font-variant-numeric: lining-nums;
+}
+.bp-count {
+  margin-left: 8px;
+  color: var(--ink-2);
+  font: 500 18px / 1 var(--sans);
+  vertical-align: 4px;
+}
+
+/* The stoat's note for a section with nothing in it. */
+.bp-empty {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 18px 20px;
+  border: 1px dashed var(--line);
+  border-radius: var(--bp-radius);
+}
+.bp-empty img {
+  width: 56px;
+  height: 56px;
+}
+.bp-empty h2,
+.bp-empty h3 {
+  --lh: 1.2;
+  font: 600 22px / var(--lh) var(--serif);
+  font-variant-numeric: lining-nums;
+}
+.bp-empty p {
+  color: var(--ink-1);
+}
+.bp-empty > :last-child:not(:nth-child(2)) {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+/* A person's card: an avatar, then who and when, then what they wrote. */
+.bp-entry {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 14px;
+  padding: 20px 24px;
+}
+.bp-entry .bp-avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 14px;
+}
+.bp-entry-meta {
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.bp-entry-meta strong {
+  color: var(--ink-0);
+  font: 600 16px / 1.4 var(--sans);
+}
+.bp-entry-text {
+  margin-top: 6px;
+  color: var(--ink-1);
+}
+
 /* ---------- Tabs, with the ribbon bookmark as the indicator ---------- */
 .bp-tabs {
   position: relative;
@@ -1227,5 +1301,15 @@ button.bp-byline-series {
   }
   .bp-burst {
     display: none !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .bp-section-head {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .bp-entry {
+    padding: 18px 20px;
   }
 }

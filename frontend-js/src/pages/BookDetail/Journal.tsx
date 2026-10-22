@@ -1,89 +1,34 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import type { BookDetail, JournalEntry } from "../../api";
-import { Button } from "../../components/Button/Button";
-import { ConfirmModal } from "../../components/ConfirmModal/ConfirmModal";
+import type { BookDetail } from "../../api";
+import { PlusGlyph } from "../../components/Glyphs/Glyphs";
 import { Loading } from "../../components/Loading/Loading";
-import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
-import { formatLongDate } from "../../format";
 import { useCurrentUser } from "../../session";
+import { EmptyNote } from "./EmptyNote";
 import { NewJournalEntryModal } from "./JournalComposer";
 import { JournalEntryCard } from "./JournalEntryCard";
-import { journalExcerpt, marqueeJournalKicker } from "./journal";
-import { journalQuery, useWish } from "./queries";
+import { quietReadersNote } from "./journal";
+import { journalQuery, reviewsQuery, useWish } from "./queries";
+import "./HighlightsJournal.css";
 
-const MAX_STACKED = 5;
+const TITLE_ID = "bp-journal-title";
 
-function LadderRow({
-  entry,
-  viewerId,
-  onOpen,
-}: {
-  entry: JournalEntry;
-  viewerId: number;
-  onOpen: () => void;
-}) {
-  const date = formatLongDate(entry.createdAt);
-  const isDraft = entry.status === "draft";
-  return (
-    <button
-      type="button"
-      className={isDraft ? "bdmq-lrow draft" : "bdmq-lrow"}
-      data-testid="journal-ladder-row"
-      onClick={onOpen}
-    >
-      <UserAvatar
-        user={entry.author}
-        className="bdmq-lrow-avatar"
-        photoClassName="bdmq-lrow-avatar-photo"
-      />
-      <span className="bdmq-lrow-body">
-        <span className="bdmq-lrow-head">
-          <span className="nm">{entry.author.name}</span>
-          {entry.author.id === viewerId && (
-            <span className="nm bdmq-lrow-you">· you</span>
-          )}
-          {isDraft && (
-            <span
-              className="bdmq-draftchip"
-              data-testid="journal-draft-chip-row"
-            >
-              Draft
-            </span>
-          )}
-          <span className="at">
-            {entry.progress === null ? date : `${date} · at ${entry.progress}%`}
-          </span>
-        </span>
-        <span className="ex">
-          {journalExcerpt(entry.bodyMd)}{" "}
-          <span className="bdmq-lrow-read">read →</span>
-        </span>
-      </span>
-    </button>
-  );
-}
-
-/** Everyone's journal entries as a ladder of excerpts, each opening its full card. */
+/** Everyone's journal entries, newest as the server orders them, each a card in the feed. */
 export function Journal({ book }: { book: BookDetail }) {
   return useWish(book) ? (
-    <div
-      id="journal"
-      className="bd-journal bdmq-journal"
+    <section
+      className="bp-journal"
       data-testid="journal-section"
+      aria-labelledby={TITLE_ID}
     >
-      <div className="bdmq-journalhead">
-        <div className="bdmq-k" data-testid="journal-kicker">
-          Empty
-        </div>
+      <div className="bp-section-head">
+        <h2 id={TITLE_ID}>Journal</h2>
       </div>
-      <div className="bdmq-bigquiet">
-        No entries yet — the journal begins when you do.
-      </div>
-      <p className="mono bdmq-quiet-hint">
-        a shared log — anyone reading this book can write here
-      </p>
-    </div>
+      <EmptyNote heading="h3" title="No entries yet" testId="journal-empty">
+        The journal begins when you do. Find a copy first — check in when it
+        arrives.
+      </EmptyNote>
+    </section>
   ) : (
     <JournalFeed book={book} />
   );
@@ -92,59 +37,40 @@ export function Journal({ book }: { book: BookDetail }) {
 function JournalFeed({ book }: { book: BookDetail }) {
   const viewer = useCurrentUser();
   const feed = useQuery(journalQuery(book.uuid));
-  // By id, not position: a refetch keeps the same entry open, or drops it if it went away.
-  const [openId, setOpenId] = useState<number | null>(null);
-  // An open edit holds the overlay, so Escape and the backdrop cannot discard it.
-  const [editing, setEditing] = useState(false);
-  const closeOverlay = () => {
-    setOpenId(null);
-    setEditing(false);
-  };
+  // Who else rated, to say so when they have written nothing.
+  const reviews = useQuery(reviewsQuery(book.uuid));
   const [composing, setComposing] = useState(false);
   const entries = feed.data;
-  const drafts = entries?.filter((e) => e.status === "draft").length ?? 0;
-  const readers = [
-    ...new Map((entries ?? []).map((e) => [e.author.id, e.author])).values(),
-  ];
-  const opened = entries?.find((e) => e.id === openId);
+  const writers = new Set(entries?.map((e) => e.author.id));
+  const quiet = quietReadersNote(
+    (reviews.data?.others ?? [])
+      .filter((other) => !writers.has(other.reader.id))
+      .map((other) => other.reader.name),
+  );
   return (
-    <div
-      id="journal"
-      className="bd-journal bdmq-journal"
+    <section
+      className="bp-journal"
       data-testid="journal-section"
+      aria-labelledby={TITLE_ID}
     >
-      <div className="bdmq-journalhead">
-        <div className="bdmq-k" data-testid="journal-kicker">
-          {entries ? (
-            marqueeJournalKicker(
-              entries.length - drafts,
-              readers.length,
-              drafts,
-            )
-          ) : (
-            <span className="ld-sheen">Counting entries</span>
+      <div className="bp-section-head">
+        <h2 id={TITLE_ID}>
+          Journal{" "}
+          {entries && entries.length > 0 && (
+            <span className="bp-count" data-testid="journal-count">
+              {entries.length}
+            </span>
           )}
-        </div>
-        <span className="bdmq-headspacer" />
-        <Button
-          size="sm"
+        </h2>
+        <button
+          type="button"
+          className="bp-link-row"
           data-testid="journal-open-composer"
           onClick={() => setComposing(true)}
         >
-          ✎ New entry
-        </Button>
-        {readers.length > 1 && (
-          <div className="bdmq-avatarstack" aria-hidden="true">
-            {readers.slice(0, MAX_STACKED).map((reader) => (
-              <UserAvatar
-                key={reader.id}
-                user={reader}
-                className="bdmq-stack-avatar"
-                photoClassName="bdmq-stack-avatar-photo"
-              />
-            ))}
-          </div>
-        )}
+          <PlusGlyph />
+          New entry
+        </button>
       </div>
       {composing && (
         <NewJournalEntryModal
@@ -167,50 +93,30 @@ function JournalFeed({ book }: { book: BookDetail }) {
           />
         )
       ) : entries.length === 0 ? (
-        <div className="bd-journal-empty card" data-testid="journal-empty">
-          <p className="mono">
-            No journal entries yet — be the first to write one.
-          </p>
-        </div>
+        <EmptyNote heading="h3" title="No entries yet" testId="journal-empty">
+          Be the first to write one — anyone reading this book can add to the
+          journal.
+        </EmptyNote>
       ) : (
-        <div className="bdmq-ladder" data-testid="journal-list">
-          {entries.map((entry) => (
-            <LadderRow
-              key={entry.id}
-              entry={entry}
-              viewerId={viewer.id}
-              onOpen={() => setOpenId(entry.id)}
-            />
-          ))}
-        </div>
+        <>
+          <ul className="bp-journal-list" data-testid="journal-list">
+            {entries.map((entry) => (
+              <li key={entry.id}>
+                <JournalEntryCard
+                  uuid={book.uuid}
+                  entry={entry}
+                  viewer={viewer}
+                />
+              </li>
+            ))}
+          </ul>
+          {quiet && (
+            <EmptyNote heading="h3" title="Household" testId="journal-quiet">
+              {quiet}
+            </EmptyNote>
+          )}
+        </>
       )}
-      {opened && (
-        <ConfirmModal
-          testId="journal-overlay"
-          ariaLabel="Journal entry"
-          backdropClass="bdmq-overlay"
-          dialogClass="bdmq-ocard"
-          busy={editing}
-          onDismiss={closeOverlay}
-          focusOnOpen
-        >
-          <JournalEntryCard
-            uuid={book.uuid}
-            entry={opened}
-            viewer={viewer}
-            onEditingChange={setEditing}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            className="bdmq-ocard-close"
-            data-testid="journal-overlay-close"
-            onClick={closeOverlay}
-          >
-            ✕ Close
-          </Button>
-        </ConfirmModal>
-      )}
-    </div>
+    </section>
   );
 }

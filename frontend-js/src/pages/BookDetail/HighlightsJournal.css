@@ -1,0 +1,255 @@
+/* The Highlights & Journal tab: the reader's passages beside the household's journal. */
+.bp-hj {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 48px;
+  align-items: start;
+}
+.bp-hj > * {
+  min-width: 0;
+}
+.bp-hj.is-solo {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 860px;
+}
+.bp-quote-list,
+.bp-journal-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* New entry is a 44px target, so both columns' headings sit on one line. */
+.bp-highlights .bp-section-head,
+.bp-journal .bp-section-head {
+  min-height: 44px;
+}
+.bp-highlights .bp-empty,
+.bp-journal .bp-empty {
+  margin-top: 0;
+}
+.bp-journal-list + .bp-empty {
+  margin-top: 16px;
+}
+
+/* A passage: the card that turns over to the quote card behind it. */
+.bp-quote {
+  perspective: 1600px;
+}
+.bp-quote-inner {
+  display: grid;
+  transform-style: preserve-3d;
+  transition: transform 720ms var(--ease-out);
+}
+.bp-quote.is-flipped .bp-quote-inner {
+  transform: rotateY(180deg);
+}
+.bp-quote-face {
+  grid-area: 1 / 1;
+  border-radius: var(--bp-radius);
+  backface-visibility: hidden;
+}
+.bp-quote-front {
+  position: relative;
+  padding: 22px 24px 22px 72px;
+  background:
+    linear-gradient(
+      160deg,
+      color-mix(in oklch, var(--accent) 14%, transparent),
+      color-mix(in oklch, var(--accent) 4%, transparent) 60%
+    ),
+    var(--bg-1);
+}
+.bp-quote-front::before {
+  content: "\201C" / "";
+  position: absolute;
+  top: 8px;
+  left: 18px;
+  color: var(--accent);
+  font: 600 96px / 1 var(--serif);
+}
+.bp-quote-front blockquote {
+  --lh: 1.38;
+  font: italic 500 24px / var(--lh) var(--serif);
+}
+.bp-quote-note {
+  margin-top: 8px;
+  color: var(--ink-1);
+  font-size: 15px;
+}
+.bp-quote-meta {
+  margin-top: 8px;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.bp-quote-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 8px -12px -10px;
+}
+.bp-quote-actions .btn.sm {
+  height: auto;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font: 500 15px / 1 var(--sans);
+  text-decoration: none;
+}
+.bp-quote-actions .bp-quote-delete.btn.sm {
+  width: 44px;
+  margin-left: auto;
+  justify-content: center;
+  padding: 0;
+}
+.bp-quote-actions .btn:focus-visible,
+.bp-qc-actions .btn:focus-visible {
+  outline: 2px solid var(--ink-0);
+  outline-offset: 2px;
+}
+
+/* The quote card's face: the passage on the book's deep accent, to save and share. */
+.bp-quote-back {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px 28px;
+  text-align: center;
+  transform: rotateY(180deg);
+  background: radial-gradient(
+    circle at 18% 0%,
+    var(--bp-accent-deep),
+    color-mix(in oklch, var(--bp-accent-deep) 60%, black) 55%,
+    color-mix(in oklch, var(--bp-accent-deep) 28%, black)
+  );
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklch, var(--bp-cream) 18%, transparent);
+}
+.bp-qc-text {
+  --lh: 1.32;
+  color: var(--bp-cream);
+  font: italic 500 25px / var(--lh) var(--serif);
+}
+.bp-qc-cite {
+  color: color-mix(in oklch, var(--bp-cream) 82%, transparent);
+  font-size: 14px;
+}
+.bp-qc-cite strong {
+  color: var(--bp-cream);
+  font: 600 18px / 1 var(--serif);
+}
+.bp-qc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.bp-qc-actions .btn.sm {
+  height: auto;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bp-cream) 14%, transparent);
+  color: var(--bp-cream);
+  font: 500 15px / 1 var(--sans);
+}
+@media (hover: hover) {
+  .bp-qc-actions .btn.sm:hover {
+    background: color-mix(in oklch, var(--bp-cream) 24%, transparent);
+  }
+}
+
+/* A journal entry in the feed, two lines until "Read more". */
+.bp-journal-entry .bp-entry-main {
+  min-width: 0;
+}
+.bp-entry-tag {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bp-fill);
+  color: var(--ink-1);
+  font: 600 12px / 1.5 var(--sans);
+  vertical-align: 1px;
+}
+.bp-entry-tag.is-draft {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.bp-journal-entry .bd-journal-toolbar-row {
+  margin-top: 8px;
+}
+.bp-entry-text .bd-journal-entry-body {
+  font: inherit;
+  color: inherit;
+}
+.bp-entry-text.is-clamped {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.bp-entry-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 2px;
+}
+.bp-entry-more {
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-0);
+  font: 600 15px / 1 var(--sans);
+  cursor: pointer;
+}
+.bp-entry-more:focus-visible {
+  outline: 2px solid var(--ink-0);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+.bp-entry-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.bp-entry-actions .btn.sm {
+  height: auto;
+  min-height: 36px;
+  padding: 0 12px;
+  font: 500 14px / 1 var(--sans);
+}
+
+@media (max-width: 720px) {
+  .bp-hj {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 40px;
+  }
+  .bp-quote-front {
+    padding: 18px 16px 18px 56px;
+  }
+  .bp-quote-front::before {
+    top: 4px;
+    left: 12px;
+    font-size: 80px;
+  }
+  .bp-quote-front blockquote {
+    font-size: 22px;
+  }
+  .bp-quote-actions .btn.sm,
+  .bp-qc-actions .btn.sm {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bp-root .bp-quote-inner {
+    transition: none;
+  }
+}

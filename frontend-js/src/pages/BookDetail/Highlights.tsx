@@ -1,124 +1,189 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link } from "react-router";
+import { useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { type BookDetail, deleteHighlight, type Highlight } from "../../api";
+import { Button, ButtonLink } from "../../components/Button/Button";
 import {
   ConfirmDialog,
   ConfirmModal,
 } from "../../components/ConfirmModal/ConfirmModal";
+import {
+  DownloadGlyph,
+  RotateGlyph,
+  TrashGlyph,
+} from "../../components/Glyphs/Glyphs";
 import { Loading } from "../../components/Loading/Loading";
 import { QuoteCard } from "../../components/QuoteCard/QuoteCard";
 import { formatLongDate } from "../../format";
-import { highlightLocator, passagesKicker, readerDeepLink } from "./highlights";
+import { EmptyNote } from "./EmptyNote";
+import { highlightLocator, readerDeepLink } from "./highlights";
 import { alignmentQuery, highlightsQuery, useWish } from "./queries";
 import type { Chapter } from "./readout";
+import "./HighlightsJournal.css";
 
 function CopyAction({ text }: { text: string | null }) {
-  const [label, setLabel] = useState("copy");
+  const [label, setLabel] = useState("Copy");
   const copy = async () => {
     if (text === null) return;
     setLabel(
       await navigator.clipboard.writeText(text).then(
-        () => "copied",
-        () => "couldn't copy",
+        () => "Copied",
+        () => "Couldn't copy",
       ),
     );
-    setTimeout(() => setLabel("copy"), 1500);
+    setTimeout(() => setLabel("Copy"), 1500);
   };
   return (
-    <button
-      type="button"
-      className="bd-hl-act"
+    <Button
+      variant="ghost"
+      size="sm"
       data-testid="highlight-copy"
       disabled={text === null}
       onClick={copy}
     >
       {label}
-    </button>
+    </Button>
   );
 }
 
 type CardProps = {
+  book: BookDetail;
   highlight: Highlight;
   chapters: readonly Chapter[];
-  onQuote: (h: Highlight) => void;
+  onSaveImage: (h: Highlight) => void;
   onDelete: (h: Highlight) => void;
 };
 
-function HighlightCard({ highlight, chapters, onQuote, onDelete }: CardProps) {
+/** A passage on a card that turns over to its shareable face, where "Save image…" opens the quote card editor. */
+function HighlightCard({
+  book,
+  highlight,
+  chapters,
+  onSaveImage,
+  onDelete,
+}: CardProps) {
   const { anchor, color, note, text } = highlight;
   const locator = anchor && highlightLocator(anchor, chapters);
-  const saved = `saved ${formatLongDate(highlight.createdAt)}`;
+  const date = formatLongDate(highlight.createdAt);
+  const author = book.authors[0];
+  const [flipped, setFlipped] = useState(false);
+  const front = useRef<HTMLDivElement>(null);
+  const back = useRef<HTMLDivElement>(null);
+  // The hidden face is inert and cannot take focus until it is the live one, so focus
+  // follows the card only after React has rendered the turn.
+  const turn = (toBack: boolean) => {
+    flushSync(() => setFlipped(toBack));
+    (toBack ? back : front).current
+      ?.querySelector<HTMLElement>("[data-flip]")
+      ?.focus();
+  };
   return (
-    <article
-      className="card bd-hl-card"
+    <li
+      className={flipped ? "bp-quote is-flipped" : "bp-quote"}
       data-testid="highlight-card"
       data-color={color}
-      style={{ borderLeftColor: `var(--hl-${color})` }}
     >
-      <blockquote className="bd-hl-quote">
-        “{text ?? "(highlighted passage)"}”
-      </blockquote>
-      {note && (
-        <p className="bd-hl-note" data-testid="highlight-note">
-          {note}
-        </p>
-      )}
-      <div className="bd-hl-foot">
-        <span className="mono bd-hl-meta" data-testid="highlight-meta">
-          {locator ? `${locator} · ${saved}` : saved}
-        </span>
-        <div className="bd-hl-actions">
-          {anchor && (
-            <Link
-              to={readerDeepLink(highlight.bookUuid, anchor)}
-              className="bd-hl-act"
-              data-testid="highlight-open"
-            >
-              open in book →
-            </Link>
+      <div className="bp-quote-inner">
+        <div
+          ref={front}
+          className="bp-quote-face bp-quote-front"
+          data-testid="highlight-front"
+          inert={flipped}
+        >
+          <blockquote>{text ?? "(highlighted passage)"}</blockquote>
+          {note && (
+            <p className="bp-quote-note" data-testid="highlight-note">
+              {note}
+            </p>
           )}
-          <button
-            type="button"
-            className="bd-hl-act"
-            data-testid="highlight-quote"
-            // A passage saved before the text column has none to put on a card.
-            disabled={text === null}
-            onClick={() => onQuote(highlight)}
-          >
-            quote card →
-          </button>
-          <CopyAction text={text} />
-          <button
-            type="button"
-            className="bd-hl-act bd-hl-delete"
-            data-testid="highlight-delete"
-            onClick={() => onDelete(highlight)}
-          >
-            delete
-          </button>
+          <p className="bp-quote-meta" data-testid="highlight-meta">
+            {locator ? `${locator} · ${date}` : date}
+          </p>
+          <div className="bp-quote-actions">
+            {anchor && (
+              <ButtonLink
+                to={readerDeepLink(highlight.bookUuid, anchor)}
+                variant="ghost"
+                size="sm"
+                data-testid="highlight-open"
+              >
+                Open in book
+              </ButtonLink>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              data-flip
+              data-testid="highlight-quote"
+              // A passage saved before the text column has none to put on a card.
+              disabled={text === null}
+              onClick={() => turn(true)}
+            >
+              Make quote card
+            </Button>
+            <CopyAction text={text} />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="bp-quote-delete"
+              aria-label="Delete highlight"
+              title="Delete highlight"
+              data-testid="highlight-delete"
+              onClick={() => onDelete(highlight)}
+            >
+              <TrashGlyph />
+            </Button>
+          </div>
+        </div>
+        <div
+          ref={back}
+          className="bp-quote-face bp-quote-back"
+          data-testid="highlight-back"
+          inert={!flipped}
+        >
+          <p className="bp-qc-text">{text}</p>
+          <p className="bp-qc-cite">
+            <strong>{book.title}</strong>
+            {author && ` · ${author}`}
+          </p>
+          <div className="bp-qc-actions">
+            <Button size="sm" onClick={() => onSaveImage(highlight)}>
+              <DownloadGlyph />
+              Save image…
+            </Button>
+            <Button size="sm" data-flip onClick={() => turn(false)}>
+              <RotateGlyph />
+              Flip back
+            </Button>
+          </div>
         </div>
       </div>
-    </article>
+    </li>
   );
 }
 
-/** The passages the reader saved, with open, copy and delete on each. */
+/** The passages the reader saved, as cards that turn into quote cards, with open, copy and delete on each. */
 export function Highlights({ book }: { book: BookDetail }) {
   return useWish(book) ? (
-    <>
-      <div className="bdmq-k">Kept lines · none</div>
-      <div className="bdmq-bigquiet">
-        Highlight while you read to keep lines here.
+    <section className="bp-highlights" aria-labelledby={TITLE_ID}>
+      <div className="bp-section-head">
+        <h2 id={TITLE_ID}>Highlights</h2>
       </div>
-      <p className="mono bdmq-quiet-hint">
-        find a copy first — check in when it arrives
-      </p>
-    </>
+      <EmptyNote
+        heading="h3"
+        title="No highlights yet"
+        testId="highlights-empty"
+      >
+        Highlight while you read to keep lines here. Find a copy first — check
+        in when it arrives.
+      </EmptyNote>
+    </section>
   ) : (
     <Passages book={book} />
   );
 }
+
+const TITLE_ID = "bp-highlights-title";
 
 function Passages({ book }: { book: BookDetail }) {
   const client = useQueryClient();
@@ -143,14 +208,20 @@ function Passages({ book }: { book: BookDetail }) {
   });
   const list = highlights.data;
   return (
-    <div className="bd-highlights" data-testid="highlights-section">
-      <div className="bd-section-head">
-        <div className="bd-section-head-text">
-          <div className="label bd-section-kicker">
-            {list ? passagesKicker(list.length) : "Saved passages"}
-          </div>
-          <h3 className="bd-section-title">Passages you saved</h3>
-        </div>
+    <section
+      className="bp-highlights"
+      data-testid="highlights-section"
+      aria-labelledby={TITLE_ID}
+    >
+      <div className="bp-section-head">
+        <h2 id={TITLE_ID}>
+          Highlights{" "}
+          {list && list.length > 0 && (
+            <span className="bp-count" data-testid="highlights-count">
+              {list.length}
+            </span>
+          )}
+        </h2>
       </div>
       {list === undefined ? (
         highlights.isError ? (
@@ -167,26 +238,29 @@ function Passages({ book }: { book: BookDetail }) {
           />
         )
       ) : list.length === 0 ? (
-        <div className="bd-journal-empty card" data-testid="highlights-empty">
-          <p className="mono">
-            No saved passages yet — highlight while you read to keep them here.
-          </p>
-        </div>
+        <EmptyNote
+          heading="h3"
+          title="No highlights yet"
+          testId="highlights-empty"
+        >
+          Highlight while you read to keep passages here.
+        </EmptyNote>
       ) : (
-        <div className="bd-hl-list" data-testid="highlights-list">
+        <ul className="bp-quote-list" data-testid="highlights-list">
           {list.map((highlight) => (
             <HighlightCard
               key={highlight.id}
+              book={book}
               highlight={highlight}
               chapters={alignment.data?.chapters ?? []}
-              onQuote={setQuoting}
+              onSaveImage={setQuoting}
               onDelete={(h) => {
                 remove.reset();
                 setDeleting(h);
               }}
             />
           ))}
-        </div>
+        </ul>
       )}
       {quoting && (
         <ConfirmModal
@@ -230,6 +304,6 @@ function Passages({ book }: { book: BookDetail }) {
           onConfirm={() => remove.mutate(deleting)}
         />
       )}
-    </div>
+    </section>
   );
 }

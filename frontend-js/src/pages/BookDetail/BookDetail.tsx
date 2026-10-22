@@ -17,8 +17,7 @@ import { type BookDialog, BookDialogs } from "./BookDialogs";
 import { BookTabs, panelId, useBookTabs } from "./BookTabs";
 import { FilesDetails } from "./FilesDetails";
 import { Hero } from "./Hero";
-import { Highlights } from "./Highlights";
-import { Journal } from "./Journal";
+import { HighlightsJournal } from "./HighlightsJournal";
 import { reviewCardId } from "./OtherReviews";
 import { Overview } from "./Overview";
 import { bookQuery } from "./queries";
@@ -146,12 +145,7 @@ function Page({ book }: { book: Detail }) {
           panels={{
             overview: <Overview book={book} onOpenDialog={setDialog} />,
             reviews: <ReviewsTab book={book} rating={rating} />,
-            highlights: (
-              <>
-                <Highlights book={book} />
-                <Journal book={book} />
-              </>
-            ),
+            highlights: <HighlightsJournal book={book} />,
             files: <FilesDetails book={book} onOpenDialog={setDialog} />,
           }}
         />

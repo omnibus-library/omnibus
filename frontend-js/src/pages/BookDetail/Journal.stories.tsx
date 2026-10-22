@@ -8,13 +8,17 @@ import {
   hanging,
   journalHandlers,
   physicalHandlers,
+  reviewHandlers,
 } from "../../testing/handlers";
 import {
   aWireBook,
   aWireJournalEntry,
+  aWireOtherReview,
   aWireWishlist,
 } from "../../testing/wire";
 import { Journal } from "./Journal";
+import "./BookDetail.css";
+import "./BookPage.css";
 
 const ADA = 1;
 const GRACE = { author_id: 7, author_name: "grace" } as const;
@@ -39,9 +43,29 @@ const ENTRIES = [
   }),
 ];
 
+const PARAGRAPH =
+  "Darrow's first night in the Institute reframes everything before it. The caste colours stop being worldbuilding and start being the plot.";
+
+/** One paragraph of several lines, where a card shows two before "Read more". */
+const SAYING = Array(4).fill(PARAGRAPH).join(" ");
+const LONG = aWireJournalEntry({
+  id: 4,
+  ...GRACE,
+  progress: 80,
+  body_md: SAYING,
+  body_html: `<p>${SAYING}</p>`,
+});
+
 const meta = {
   title: "Pages/BookDetail/Journal",
   component: Journal,
+  decorators: [
+    (Story) => (
+      <div className="bp-root">
+        <Story />
+      </div>
+    ),
+  ],
   args: { book: toBookDetail(aWireBook()) },
   beforeEach({ msw }) {
     msw.use(...bookDetailHandlers(aWireBook()));
@@ -51,14 +75,18 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** The entry cards in the feed, in the order the server sent them. */
+const cards = (canvas: ReturnType<typeof within>) =>
+  canvas.findAllByTestId("journal-entry");
+
 export const Loading: Story = {
   beforeEach({ msw }) {
     msw.use(hanging("/api/journals/book/:uuid"));
   },
   play: async ({ canvas }) => {
-    await expect(canvas.getByTestId("journal-kicker")).toHaveTextContent(
-      "Counting entries",
-    );
+    await expect(
+      canvas.getByRole("heading", { name: "Journal" }),
+    ).toBeInTheDocument();
     await expect(canvas.getByText("Gathering the entries")).toBeInTheDocument();
     await expect(canvas.queryByTestId("journal-empty")).not.toBeInTheDocument();
   },
@@ -79,55 +107,72 @@ export const Failing: Story = {
 export const Empty: Story = {
   play: async ({ canvas }) => {
     await expect(await canvas.findByTestId("journal-empty")).toHaveTextContent(
-      "No journal entries yet — be the first to write one.",
+      "Be the first to write one",
     );
-    await expect(canvas.getByTestId("journal-kicker")).toHaveTextContent(
-      "No entries yet",
-    );
+    await expect(canvas.queryByTestId("journal-count")).toBeNull();
+    await expect(canvas.getByTestId("journal-open-composer")).toBeVisible();
   },
 };
 
-export const Ladder: Story = {
+export const EntriesShowInlineWithReadMore: Story = {
   beforeEach({ msw }) {
-    msw.use(...journalHandlers(ENTRIES, ADA));
+    msw.use(...journalHandlers([...ENTRIES, LONG], ADA));
   },
-  play: async ({ canvas, canvasElement }) => {
-    await waitFor(() =>
-      expect(canvas.getByTestId("journal-kicker")).toHaveTextContent(
-        "2 entries from 2 readers · 1 draft",
-      ),
-    );
-    const [mine, theirs, draft] = canvas.getAllByTestId("journal-ladder-row");
-    await expect(mine).toHaveTextContent("Ada Lovelace· you");
-    await expect(mine).toHaveTextContent(/· at 42%/);
+  play: async ({ canvas, userEvent }) => {
+    const [mine, theirs, draft, long] = (await cards(canvas)) as [
+      HTMLElement,
+      HTMLElement,
+      HTMLElement,
+      HTMLElement,
+    ];
+    await expect(canvas.getByTestId("journal-count")).toHaveTextContent("4");
+
+    // Who, when and how far in; your own entry says so, another reader's has no position.
     await expect(mine).toHaveTextContent(
-      "The footnotes have footnotes. read →",
+      /Ada Lovelaceyou · \w+ \d+, 2025 · at 42%/,
     );
-    await expect(theirs).not.toHaveTextContent("you");
-    await expect(theirs).not.toHaveTextContent(/at \d+%/);
-    // The always-visible row masks a spoiler rather than printing it.
-    await expect(theirs).toHaveTextContent("she ███ in chapter four read →");
+    await expect(theirs).toHaveTextContent(/grace · \w+ \d+, 2025She/);
     await expect(
-      within(draft as HTMLElement).getByTestId("journal-draft-chip-row"),
+      within(draft).getByTestId("journal-draft-chip"),
     ).toBeInTheDocument();
-    await expect(draft).toHaveClass("draft");
+
+    // A short entry has nothing to read more of.
     await expect(
-      canvasElement.querySelector(".bdmq-avatarstack"),
-    ).toHaveAttribute("aria-hidden", "true");
+      within(mine).queryByRole("button", { name: "Read more" }),
+    ).toBeNull();
+
+    // A long one shows two lines, and opens to all of it.
+    const text = long.querySelector(".bp-entry-text") as HTMLElement;
+    const more = await within(long).findByRole("button", {
+      name: "Read more",
+    });
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+    await expect(text.clientHeight).toBeLessThan(text.scrollHeight);
+    const lineHeight = Number.parseFloat(getComputedStyle(text).lineHeight);
+    await expect(text.clientHeight).toBeLessThanOrEqual(lineHeight * 2 + 1);
+
+    await userEvent.click(more);
+
+    await expect(more).toHaveTextContent("Show less");
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    await expect(text.clientHeight).toBeGreaterThanOrEqual(text.scrollHeight);
+
+    await userEvent.click(more);
+
+    await expect(more).toHaveTextContent("Read more");
+    await expect(text.clientHeight).toBeLessThan(text.scrollHeight);
   },
 };
 
-export const OneReaderHasNoAvatarStack: Story = {
+export const OneEntryCountsOne: Story = {
   beforeEach({ msw }) {
     msw.use(...journalHandlers([ENTRIES[0] as (typeof ENTRIES)[number]], ADA));
   },
-  play: async ({ canvas, canvasElement }) => {
-    await waitFor(() =>
-      expect(canvas.getByTestId("journal-kicker")).toHaveTextContent(
-        "1 entry from 1 reader",
-      ),
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("journal-count")).toHaveTextContent(
+      "1",
     );
-    await expect(canvasElement.querySelector(".bdmq-avatarstack")).toBeNull();
+    await expect(await cards(canvas)).toHaveLength(1);
   },
 };
 
@@ -149,59 +194,46 @@ export const AnotherReadersDraftNeverAppears: Story = {
     );
   },
   play: async ({ canvas }) => {
-    await expect(
-      await canvas.findAllByTestId("journal-ladder-row"),
-    ).toHaveLength(3);
+    await expect(await cards(canvas)).toHaveLength(3);
     await expect(
       canvas.queryByText(/grace's secret draft/),
     ).not.toBeInTheDocument();
   },
 };
 
-export const OpensTheFullCard: Story = {
+export const QuietReadersGetAStoatNote: Story = {
   beforeEach({ msw }) {
-    msw.use(...journalHandlers(ENTRIES, ADA));
+    msw.use(
+      ...journalHandlers(ENTRIES, ADA),
+      // Grace wrote an entry; linus and maya only rated.
+      ...reviewHandlers({
+        others: [
+          aWireOtherReview(),
+          aWireOtherReview({ user_id: 8, username: "linus", stars: 3 }),
+          aWireOtherReview({ user_id: 9, username: "maya", stars: 4 }),
+        ],
+      }),
+    );
   },
-  play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      (await canvas.findAllByTestId("journal-ladder-row"))[1] as HTMLElement,
+  play: async ({ canvas }) => {
+    const note = await canvas.findByTestId("journal-quiet");
+    await expect(note).toHaveTextContent(
+      "linus and maya rated or reviewed this book but haven't shared journal entries.",
     );
+    await expect(note).not.toHaveTextContent("grace");
+  },
+};
 
-    const overlay = canvas.getByTestId("journal-overlay");
-    const card = within(overlay).getByTestId("journal-entry");
-    await expect(card).toHaveTextContent("grace");
-    await expect(card).toHaveTextContent("She dies in chapter four.");
-    // Not Ada's entry: no actions.
-    await expect(
-      within(card).queryByTestId("journal-delete"),
-    ).not.toBeInTheDocument();
-
-    await userEvent.click(within(overlay).getByTestId("journal-overlay-close"));
-    await expect(
-      canvas.queryByTestId("journal-overlay"),
-    ).not.toBeInTheDocument();
-
-    await userEvent.click(
-      (await canvas.findAllByTestId("journal-ladder-row"))[1] as HTMLElement,
+export const NoNoteWhenEveryoneWrote: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...journalHandlers(ENTRIES, ADA),
+      ...reviewHandlers({ others: [aWireOtherReview()] }),
     );
-    await userEvent.click(canvas.getByTestId("journal-entry"));
-    await expect(canvas.getByTestId("journal-overlay")).toBeInTheDocument();
-    await userEvent.click(canvas.getByTestId("journal-overlay"));
-    await expect(
-      canvas.queryByTestId("journal-overlay"),
-    ).not.toBeInTheDocument();
-
-    await userEvent.click(
-      (await canvas.findAllByTestId("journal-ladder-row"))[1] as HTMLElement,
-    );
-    await expect(
-      canvas.getByRole("dialog", { name: "Journal entry" }),
-    ).toBeInTheDocument();
-    await waitFor(() => expect(canvas.getByRole("dialog")).toHaveFocus());
-    await userEvent.keyboard("{Escape}");
-    await expect(
-      canvas.queryByTestId("journal-overlay"),
-    ).not.toBeInTheDocument();
+  },
+  play: async ({ canvas }) => {
+    await cards(canvas);
+    await expect(canvas.queryByTestId("journal-quiet")).toBeNull();
   },
 };
 
@@ -210,10 +242,9 @@ export const SpoilersRevealOnClickAndKey: Story = {
     msw.use(...journalHandlers(ENTRIES, ADA));
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      (await canvas.findAllByTestId("journal-ladder-row"))[1] as HTMLElement,
-    );
-    const spoiler = canvas.getByRole("button", { name: "Reveal spoiler" });
+    const spoiler = await canvas.findByRole("button", {
+      name: "Reveal spoiler",
+    });
     await expect(spoiler).toHaveAttribute("aria-expanded", "false");
 
     await userEvent.click(spoiler);
@@ -242,10 +273,7 @@ export const OwnerPublishesADraft: Story = {
     msw.use(...journalHandlers(ENTRIES, ADA, writes));
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      (await canvas.findAllByTestId("journal-ladder-row"))[2] as HTMLElement,
-    );
-    const card = canvas.getByTestId("journal-entry");
+    const card = (await cards(canvas))[2] as HTMLElement;
     await expect(
       within(card).getByTestId("journal-draft-chip"),
     ).toBeInTheDocument();
@@ -258,13 +286,10 @@ export const OwnerPublishesADraft: Story = {
     );
     // The feed refetches: the draft is a published entry now.
     await waitFor(() =>
-      expect(canvas.getByTestId("journal-kicker")).toHaveTextContent(
-        "3 entries from 2 readers",
-      ),
+      expect(canvas.queryByTestId("journal-publish-draft")).toBeNull(),
     );
-    await expect(
-      canvas.queryByTestId("journal-publish-draft"),
-    ).not.toBeInTheDocument();
+    await expect(canvas.queryByTestId("journal-draft-chip")).toBeNull();
+    await expect(canvas.getAllByTestId("journal-entry")).toHaveLength(3);
   },
 };
 
@@ -279,18 +304,13 @@ export const PublishFailsKeepsTheDraft: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      (await canvas.findAllByTestId("journal-ladder-row"))[2] as HTMLElement,
-    );
-    await userEvent.click(canvas.getByTestId("journal-publish-draft"));
+    const card = (await cards(canvas))[2] as HTMLElement;
+    await userEvent.click(within(card).getByTestId("journal-publish-draft"));
 
-    await expect(
-      await within(canvas.getByTestId("journal-entry")).findByRole("alert"),
-    ).toHaveTextContent("failed with 500");
-    await expect(canvas.getByTestId("journal-draft-chip")).toBeInTheDocument();
-    await expect(canvas.getByTestId("journal-kicker")).toHaveTextContent(
-      "· 1 draft",
+    await expect(await within(card).findByRole("alert")).toHaveTextContent(
+      "failed with 500",
     );
+    await expect(canvas.getByTestId("journal-draft-chip")).toBeInTheDocument();
   },
 };
 
@@ -300,10 +320,8 @@ export const OwnerDeletesAnEntry: Story = {
     msw.use(...journalHandlers(ENTRIES, ADA, writes));
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      (await canvas.findAllByTestId("journal-ladder-row"))[0] as HTMLElement,
-    );
-    await userEvent.click(canvas.getByTestId("journal-delete"));
+    const card = (await cards(canvas))[0] as HTMLElement;
+    await userEvent.click(within(card).getByTestId("journal-delete"));
 
     const dialog = canvas.getByRole("dialog", { name: "Delete entry?" });
     await expect(dialog).toHaveTextContent("This can’t be undone.");
@@ -312,16 +330,13 @@ export const OwnerDeletesAnEntry: Story = {
     );
     await expect(writes).toEqual([]);
 
-    await userEvent.click(canvas.getByTestId("journal-delete"));
+    await userEvent.click(within(card).getByTestId("journal-delete"));
     await userEvent.click(canvas.getByTestId("journal-delete-modal-confirm"));
 
     await waitFor(() => expect(writes).toEqual([{ id: 1 }]));
     await waitFor(() =>
-      expect(canvas.getAllByTestId("journal-ladder-row")).toHaveLength(2),
+      expect(canvas.getAllByTestId("journal-entry")).toHaveLength(2),
     );
-    await expect(
-      canvas.queryByTestId("journal-overlay"),
-    ).not.toBeInTheDocument();
     await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
   },
 };
@@ -337,33 +352,23 @@ export const DeleteFailsKeepsTheEntry: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      (await canvas.findAllByTestId("journal-ladder-row"))[0] as HTMLElement,
-    );
-    await userEvent.click(canvas.getByTestId("journal-delete"));
+    const card = (await cards(canvas))[0] as HTMLElement;
+    await userEvent.click(within(card).getByTestId("journal-delete"));
     await userEvent.click(canvas.getByTestId("journal-delete-modal-confirm"));
 
     const confirm = canvas.getByRole("dialog", { name: "Delete entry?" });
     await expect(await within(confirm).findByRole("alert")).toHaveTextContent(
       "failed with 500",
     );
-    await expect(canvas.getAllByTestId("journal-ladder-row")).toHaveLength(3);
+    await expect(canvas.getAllByTestId("journal-entry")).toHaveLength(3);
 
-    // Escape closes only the confirm, not the entry it sits in.
+    // Escape closes the confirm once the failure ended the wait.
     await waitFor(() =>
       expect(confirm).toContainElement(document.activeElement as HTMLElement),
     );
     await userEvent.keyboard("{Escape}");
     await expect(confirm).not.toBeInTheDocument();
-    const overlay = canvas.getByTestId("journal-overlay");
-    await expect(overlay).toBeInTheDocument();
-
-    // Focus comes back to the overlay, so a second Escape closes it.
-    await waitFor(() =>
-      expect(overlay).toContainElement(document.activeElement as HTMLElement),
-    );
-    await userEvent.keyboard("{Escape}");
-    await expect(overlay).not.toBeInTheDocument();
+    await expect(canvas.getAllByTestId("journal-entry")).toHaveLength(3);
   },
 };
 
@@ -385,11 +390,9 @@ export const NewEntryPublishesIntoTheFeed: Story = {
       expect(writes).toEqual([{ id: 100, status: "published" }]),
     );
     await waitFor(() =>
-      expect(canvas.getAllByTestId("journal-ladder-row")).toHaveLength(4),
+      expect(canvas.getAllByTestId("journal-entry")).toHaveLength(4),
     );
-    await expect(canvas.getByTestId("journal-kicker")).toHaveTextContent(
-      "3 entries from 2 readers · 1 draft",
-    );
+    await expect(canvas.getByTestId("journal-count")).toHaveTextContent("4");
     await expect(
       canvas.queryByTestId("journal-composer-overlay"),
     ).not.toBeInTheDocument();
@@ -414,47 +417,13 @@ export const ComposerIgnoresAClickOutside: Story = {
   },
 };
 
-export const EscapeKeepsAnUnsavedEdit: Story = {
-  beforeEach({ msw }) {
-    msw.use(...journalHandlers(ENTRIES, ADA));
-  },
-  play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      (await canvas.findAllByTestId("journal-ladder-row"))[0] as HTMLElement,
-    );
-    const overlay = canvas.getByTestId("journal-overlay");
-    await userEvent.click(within(overlay).getByTestId("journal-edit"));
-    const editor = within(overlay).getByRole("textbox", {
-      name: "Edit journal entry",
-    });
-    getSelection()?.selectAllChildren(editor);
-    await userEvent.keyboard("Half typed");
-
-    await userEvent.keyboard("{Escape}");
-    await expect(overlay).toBeInTheDocument();
-    await expect(editor).toHaveTextContent("Half typed");
-
-    await userEvent.click(
-      within(overlay).getByRole("button", { name: "Cancel" }),
-    );
-    await waitFor(() =>
-      expect(overlay).toContainElement(document.activeElement as HTMLElement),
-    );
-    await userEvent.keyboard("{Escape}");
-    await expect(overlay).not.toBeInTheDocument();
-  },
-};
-
 export const OwnerEditsAnEntry: Story = {
   beforeEach({ msw }) {
     writes.length = 0;
     msw.use(...journalHandlers(ENTRIES, ADA, writes));
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      (await canvas.findAllByTestId("journal-ladder-row"))[0] as HTMLElement,
-    );
-    const card = canvas.getByTestId("journal-entry");
+    const card = (await cards(canvas))[0] as HTMLElement;
     await userEvent.click(within(card).getByTestId("journal-edit"));
 
     // The editor opens on the entry's markdown, and the card's own actions step aside.
@@ -477,9 +446,7 @@ export const OwnerEditsAnEntry: Story = {
         canvas.queryByRole("textbox", { name: "Edit journal entry" }),
       ).not.toBeInTheDocument(),
     );
-    await expect(canvas.getByTestId("journal-entry")).toHaveTextContent(
-      "Rewritten",
-    );
+    await expect((await cards(canvas))[0]).toHaveTextContent("Rewritten");
   },
 };
 
@@ -489,13 +456,12 @@ export const EditCancelRestoresTheCard: Story = {
     msw.use(...journalHandlers(ENTRIES, ADA, writes));
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      (await canvas.findAllByTestId("journal-ladder-row"))[0] as HTMLElement,
-    );
-    await userEvent.click(canvas.getByTestId("journal-edit"));
-    await userEvent.click(canvas.getByRole("button", { name: "Cancel" }));
+    const card = (await cards(canvas))[0] as HTMLElement;
+    await userEvent.click(within(card).getByTestId("journal-edit"));
+    await userEvent.click(within(card).getByRole("button", { name: "Cancel" }));
 
-    await expect(canvas.getByTestId("journal-edit")).toBeInTheDocument();
+    await expect(within(card).getByTestId("journal-edit")).toBeInTheDocument();
+    await expect(card).toHaveTextContent("The footnotes have footnotes.");
     await expect(writes).toEqual([]);
   },
 };
@@ -511,16 +477,14 @@ export const EditFailsKeepsTheEditor: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      (await canvas.findAllByTestId("journal-ladder-row"))[0] as HTMLElement,
-    );
-    await userEvent.click(canvas.getByTestId("journal-edit"));
-    await userEvent.click(canvas.getByTestId("journal-edit-save"));
+    const card = (await cards(canvas))[0] as HTMLElement;
+    await userEvent.click(within(card).getByTestId("journal-edit"));
+    await userEvent.click(within(card).getByTestId("journal-edit-save"));
 
-    await expect(
-      await within(canvas.getByTestId("journal-entry")).findByRole("alert"),
-    ).toHaveTextContent("failed with 500");
-    await expect(canvas.getByTestId("journal-edit-save")).toBeEnabled();
+    await expect(await within(card).findByRole("alert")).toHaveTextContent(
+      "failed with 500",
+    );
+    await expect(within(card).getByTestId("journal-edit-save")).toBeEnabled();
   },
 };
 
@@ -528,11 +492,13 @@ export const OthersEntriesOfferNoEdit: Story = {
   beforeEach({ msw }) {
     msw.use(...journalHandlers(ENTRIES, ADA));
   },
-  play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      (await canvas.findAllByTestId("journal-ladder-row"))[1] as HTMLElement,
-    );
-    await expect(canvas.queryByTestId("journal-edit")).not.toBeInTheDocument();
+  play: async ({ canvas }) => {
+    const theirs = (await cards(canvas))[1] as HTMLElement;
+    await expect(theirs).toHaveTextContent("grace");
+    await expect(within(theirs).queryByTestId("journal-edit")).toBeNull();
+    await expect(within(theirs).queryByTestId("journal-delete")).toBeNull();
+    // Ada's own two entries do.
+    await expect(canvas.getAllByTestId("journal-edit")).toHaveLength(2);
   },
 };
 
@@ -542,13 +508,11 @@ export const WishlistOnlyBookHasNoJournalYet: Story = {
     msw.use(...physicalHandlers({ wishlist: aWireWishlist() }));
   },
   play: async ({ canvas }) => {
-    await expect(
-      await canvas.findByText(
-        "No entries yet — the journal begins when you do.",
+    // The wishlist read lands after the first draw, which is the empty feed's.
+    await waitFor(() =>
+      expect(canvas.getByTestId("journal-empty")).toHaveTextContent(
+        "The journal begins when you do.",
       ),
-    ).toBeInTheDocument();
-    await expect(canvas.getByTestId("journal-kicker")).toHaveTextContent(
-      "Empty",
     );
     await expect(
       canvas.queryByTestId("journal-open-composer"),

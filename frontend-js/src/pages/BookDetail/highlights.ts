@@ -64,9 +64,3 @@ export function readerDeepLink(bookUuid: string, anchor: string): string {
   if (page !== null) return `/pdf/${uuid}?page=${page + 1}`;
   return `/read/${uuid}?${new URLSearchParams({ cfi: anchor })}`;
 }
-
-/** The section kicker: "No saved passages", "1 saved passage", "4 saved passages". */
-export function passagesKicker(count: number): string {
-  if (count === 0) return "No saved passages";
-  return `${count} saved passage${count === 1 ? "" : "s"}`;
-}

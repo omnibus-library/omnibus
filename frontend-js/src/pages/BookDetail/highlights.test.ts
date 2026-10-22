@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  highlightLocator,
-  passagesKicker,
-  pdfAnchorPage,
-  readerDeepLink,
-} from "./highlights";
+import { highlightLocator, pdfAnchorPage, readerDeepLink } from "./highlights";
 import type { Chapter } from "./readout";
 
 function toc(...entries: [string, number][]): Chapter[] {
@@ -149,15 +144,5 @@ describe("pdfAnchorPage", () => {
     ["quads that are not finite", "pdf:1:1,2,3,4,5,6,7,NaN"],
   ])("rejects %s", (_condition, anchor) => {
     expect(pdfAnchorPage(anchor)).toBeNull();
-  });
-});
-
-describe("passagesKicker", () => {
-  it.each([
-    [0, "No saved passages"],
-    [1, "1 saved passage"],
-    [4, "4 saved passages"],
-  ])("reads %i as %s", (count, kicker) => {
-    expect(passagesKicker(count)).toBe(kicker);
   });
 });

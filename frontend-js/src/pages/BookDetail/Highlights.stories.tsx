@@ -18,6 +18,8 @@ import {
   aWireWishlist,
 } from "../../testing/wire";
 import { Highlights } from "./Highlights";
+import "./BookDetail.css";
+import "./BookPage.css";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 
@@ -34,6 +36,13 @@ const PASSAGES = [
 const meta = {
   title: "Pages/BookDetail/Highlights",
   component: Highlights,
+  decorators: [
+    (Story) => (
+      <div className="bp-root">
+        <Story />
+      </div>
+    ),
+  ],
   args: {
     book: toBookDetail(
       aWireBook({ formats: ["EPUB"], book_files: [aWireFile()] }),
@@ -65,7 +74,9 @@ export const Loading: Story = {
     msw.use(hanging("/api/highlights/book/:uuid"));
   },
   play: async ({ canvas }) => {
-    await expect(canvas.getByText("Saved passages")).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("heading", { name: "Highlights" }),
+    ).toBeInTheDocument();
     await expect(canvas.getByText("Finding your passages")).toBeInTheDocument();
     await expect(
       canvas.queryByTestId("highlights-empty"),
@@ -92,9 +103,9 @@ export const Empty: Story = {
     await expect(
       await canvas.findByTestId("highlights-empty"),
     ).toHaveTextContent(
-      "No saved passages yet — highlight while you read to keep them here.",
+      "No highlights yetHighlight while you read to keep passages here.",
     );
-    await expect(canvas.getByText("No saved passages")).toBeInTheDocument();
+    await expect(canvas.queryByTestId("highlights-count")).toBeNull();
   },
 };
 
@@ -104,14 +115,15 @@ export const Passages: Story = {
   },
   play: async ({ canvas }) => {
     await expect(
-      await canvas.findByText("2 saved passages"),
+      await canvas.findByRole("heading", { name: "Highlights 2" }),
     ).toBeInTheDocument();
     const [first, second] = canvas.getAllByTestId("highlight-card");
     await expect(first).toHaveAttribute("data-color", "amber");
+    // The share face repeats the passage, so the front is read on its own.
     await expect(
-      within(first as HTMLElement).getByText(
-        "“A station at the edge of the map hears something answer.”",
-      ),
+      within(
+        within(first as HTMLElement).getByTestId("highlight-front"),
+      ).getByText("A station at the edge of the map hears something answer."),
     ).toBeInTheDocument();
     await expect(
       within(first as HTMLElement).getByTestId("highlight-note"),
@@ -119,11 +131,11 @@ export const Passages: Story = {
     await waitFor(() =>
       expect(
         within(first as HTMLElement).getByTestId("highlight-meta"),
-      ).toHaveTextContent(/^Chapter One · saved \w+ \d+, 2025$/),
+      ).toHaveTextContent(/^Chapter One · \w+ \d+, 2025$/),
     );
     await expect(
       within(second as HTMLElement).getByTestId("highlight-meta"),
-    ).toHaveTextContent(/^Chapter One · saved/);
+    ).toHaveTextContent(/^Chapter One · /);
   },
 };
 
@@ -133,7 +145,7 @@ export const OpensTheReaderAtThePassage: Story = {
   },
   play: async ({ canvas }) => {
     const links = await canvas.findAllByRole("link", {
-      name: "open in book →",
+      name: "Open in book",
     });
 
     await expect(links[0]).toHaveAttribute(
@@ -150,10 +162,10 @@ export const WithoutAnAnchor: Story = {
   },
   play: async ({ canvas }) => {
     await expect(await canvas.findByTestId("highlight-meta")).toHaveTextContent(
-      /^saved /,
+      /^\w+ \d+, 2025$/,
     );
     await expect(
-      canvas.queryByRole("link", { name: "open in book →" }),
+      canvas.queryByRole("link", { name: "Open in book" }),
     ).not.toBeInTheDocument();
   },
 };
@@ -164,9 +176,9 @@ export const WithoutText: Story = {
   },
   play: async ({ canvas }) => {
     await expect(
-      await canvas.findByText("“(highlighted passage)”"),
+      await canvas.findByText("(highlighted passage)"),
     ).toBeInTheDocument();
-    await expect(canvas.getByRole("button", { name: "copy" })).toBeDisabled();
+    await expect(canvas.getByRole("button", { name: "Copy" })).toBeDisabled();
   },
 };
 
@@ -187,10 +199,10 @@ export const CopiesThePassage: Story = {
       });
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(await canvas.findByRole("button", { name: "copy" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Copy" }));
 
     await expect(
-      await canvas.findByRole("button", { name: "copied" }),
+      await canvas.findByRole("button", { name: "Copied" }),
     ).toBeInTheDocument();
     await expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
       "A station at the edge of the map hears something answer.",
@@ -198,26 +210,100 @@ export const CopiesThePassage: Story = {
   },
 };
 
-export const OpensTheQuoteCardEditor: Story = {
-  args: {
-    book: toBookDetail(
-      aWireBook({
-        formats: ["EPUB"],
-        book_files: [aWireFile()],
-        title: "Piranesi",
-        creators: [{ name: "Susanna Clarke" }],
-      }),
-    ),
-  },
+const PIRANESI = toBookDetail(
+  aWireBook({
+    formats: ["EPUB"],
+    book_files: [aWireFile()],
+    title: "Piranesi",
+    creators: [{ name: "Susanna Clarke" }],
+  }),
+);
+
+/** The first card, with its two faces and the box they turn in. */
+const firstCard = async (canvas: ReturnType<typeof within>) => {
+  const card = (await canvas.findAllByTestId("highlight-card"))[0];
+  const scope = within(card as HTMLElement);
+  return {
+    card: card as HTMLElement,
+    scope,
+    front: scope.getByTestId("highlight-front"),
+    back: scope.getByTestId("highlight-back"),
+  };
+};
+
+export const MakeQuoteCardFlipsToTheShareFace: Story = {
+  args: { book: PIRANESI },
   beforeEach({ msw }) {
     msw.use(...highlightsHandlers(PASSAGES));
   },
   play: async ({ canvas, userEvent }) => {
+    const { card, scope, front, back } = await firstCard(canvas);
+    await expect(front).not.toHaveAttribute("inert");
+    await expect(back).toHaveAttribute("inert");
+
     await userEvent.click(
-      (
-        await canvas.findAllByRole("button", { name: "quote card →" })
-      )[0] as HTMLElement,
+      scope.getByRole("button", { name: "Make quote card" }),
     );
+
+    // The share face is the live one; the front can neither be tabbed to nor read.
+    await expect(front).toHaveAttribute("inert");
+    await expect(back).not.toHaveAttribute("inert");
+    await expect(
+      scope.getByRole("button", { name: "Flip back" }),
+    ).toHaveFocus();
+    await expect(back).toHaveTextContent(
+      "A station at the edge of the map hears something answer.",
+    );
+    await expect(back).toHaveTextContent("Piranesi · Susanna Clarke");
+    // The turn takes 720 ms and ends facing away from the front.
+    const inner = card.querySelector(".bp-quote-inner") as HTMLElement;
+    await waitFor(
+      () => expect(getComputedStyle(inner).transform).toMatch(/^matrix3d\(-1,/),
+      { timeout: 3000 },
+    );
+    // The other card stays as it was.
+    await expect(
+      within(
+        canvas.getAllByTestId("highlight-card")[1] as HTMLElement,
+      ).getByTestId("highlight-back"),
+    ).toHaveAttribute("inert");
+  },
+};
+
+export const FlipBackReturnsToTheFront: Story = {
+  args: { book: PIRANESI },
+  beforeEach({ msw }) {
+    msw.use(...highlightsHandlers(PASSAGES));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const { scope, front, back } = await firstCard(canvas);
+    await userEvent.click(
+      scope.getByRole("button", { name: "Make quote card" }),
+    );
+
+    await userEvent.click(scope.getByRole("button", { name: "Flip back" }));
+
+    await expect(front).not.toHaveAttribute("inert");
+    await expect(back).toHaveAttribute("inert");
+    await expect(
+      scope.getByRole("button", { name: "Make quote card" }),
+    ).toHaveFocus();
+  },
+};
+
+export const SaveImageOpensTheQuoteCardEditor: Story = {
+  args: { book: PIRANESI },
+  beforeEach({ msw }) {
+    msw.use(...highlightsHandlers(PASSAGES));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const { scope } = await firstCard(canvas);
+    await userEvent.click(
+      scope.getByRole("button", { name: "Make quote card" }),
+    );
+    const save = scope.getByRole("button", { name: "Save image…" });
+
+    await userEvent.click(save);
 
     const dialog = canvas.getByRole("dialog", { name: "Make a quote card" });
     await expect(
@@ -234,6 +320,8 @@ export const OpensTheQuoteCardEditor: Story = {
     await userEvent.keyboard("{Escape}");
 
     await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
+    // The card is still turned over, and focus is back where it left.
+    await waitFor(() => expect(save).toHaveFocus());
   },
 };
 
@@ -243,7 +331,7 @@ export const QuoteCardNeedsText: Story = {
   },
   play: async ({ canvas }) => {
     await expect(
-      await canvas.findByRole("button", { name: "quote card →" }),
+      await canvas.findByRole("button", { name: "Make quote card" }),
     ).toBeDisabled();
   },
 };
@@ -257,7 +345,7 @@ export const DeleteWaitsForTheServer: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     const [firstDelete] = await canvas.findAllByRole("button", {
-      name: "delete",
+      name: "Delete highlight",
     });
 
     await userEvent.click(firstDelete as HTMLElement);
@@ -269,13 +357,15 @@ export const DeleteWaitsForTheServer: Story = {
     await expect(deleted).toEqual([]);
 
     await userEvent.click(
-      canvas.getAllByRole("button", { name: "delete" })[0] as HTMLElement,
+      canvas.getAllByRole("button", {
+        name: "Delete highlight",
+      })[0] as HTMLElement,
     );
     await userEvent.click(canvas.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => expect(deleted).toEqual([1]));
     await expect(
-      await canvas.findByText("1 saved passage"),
+      await canvas.findByRole("heading", { name: "Highlights 1" }),
     ).toBeInTheDocument();
     await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
     await expect(canvas.getAllByTestId("highlight-card")).toHaveLength(1);
@@ -295,7 +385,7 @@ export const DeleteFailureKeepsTheRow: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       (
-        await canvas.findAllByRole("button", { name: "delete" })
+        await canvas.findAllByRole("button", { name: "Delete highlight" })
       )[0] as HTMLElement,
     );
     await userEvent.click(canvas.getByRole("button", { name: "Delete" }));
@@ -328,7 +418,7 @@ export const DeleteInFlightIgnoresEscape: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       (
-        await canvas.findAllByRole("button", { name: "delete" })
+        await canvas.findAllByRole("button", { name: "Delete highlight" })
       )[0] as HTMLElement,
     );
     await userEvent.click(canvas.getByRole("button", { name: "Delete" }));
@@ -350,12 +440,12 @@ export const WishlistOnlyBookKeepsNoLines: Story = {
     msw.use(...physicalHandlers({ wishlist: aWireWishlist() }));
   },
   play: async ({ canvas }) => {
-    await expect(
-      await canvas.findByText("Kept lines · none"),
-    ).toBeInTheDocument();
-    await expect(
-      canvas.getByText("Highlight while you read to keep lines here."),
-    ).toBeInTheDocument();
+    // The wishlist read lands after the first draw, which is the empty feed's.
+    await waitFor(() =>
+      expect(canvas.getByTestId("highlights-empty")).toHaveTextContent(
+        "Highlight while you read to keep lines here.",
+      ),
+    );
     await expect(
       canvas.queryByTestId("highlights-section"),
     ).not.toBeInTheDocument();

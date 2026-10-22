@@ -11,6 +11,8 @@ import {
   bookDetailHandlers,
   deletionHandlers,
   failing,
+  highlightsHandlers,
+  journalHandlers,
   mergeHandlers,
   physicalHandlers,
   readStatusHandlers,
@@ -19,6 +21,8 @@ import {
 import {
   aWireBook,
   aWireFile,
+  aWireHighlight,
+  aWireJournalEntry,
   aWireManifest,
   aWireOtherReview,
   aWireReadStatus,
@@ -133,6 +137,37 @@ export const ClickingATabShowsItsPanel: Story = {
       "data-tab",
       "reviews",
     );
+  },
+};
+
+export const HighlightsTabPutsPassagesBesideTheJournal: Story = {
+  beforeEach({ msw }) {
+    msw.use(...bookDetailHandlers(BOOK));
+    msw.use(
+      ...highlightsHandlers([aWireHighlight({ id: 1 })]),
+      ...journalHandlers([aWireJournalEntry({ id: 1 })], WIRE_ADA.id),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("tab", { name: "Highlights & Journal" }),
+    );
+
+    const panel = await canvas.findByRole("tabpanel", {
+      name: "Highlights & Journal",
+    });
+    await expect(
+      await within(panel).findByRole("heading", { name: "Highlights 1" }),
+    ).toBeVisible();
+    await expect(
+      await within(panel).findByRole("heading", { name: "Journal 1" }),
+    ).toBeVisible();
+    await expect(
+      await within(panel).findByTestId("highlight-card"),
+    ).toBeVisible();
+    await expect(
+      await within(panel).findByTestId("journal-entry"),
+    ).toBeVisible();
   },
 };
 

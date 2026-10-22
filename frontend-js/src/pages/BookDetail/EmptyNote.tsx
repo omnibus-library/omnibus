@@ -8,6 +8,7 @@ type EmptyNoteProps = {
   children: ReactNode;
   /** What the reader can do about it, as a button or a link. */
   action?: ReactNode;
+  testId?: string;
 };
 
 /** The stoat's note for a section with nothing in it yet: what is missing, and what to do about it. */
@@ -16,9 +17,10 @@ export function EmptyNote({
   title,
   children,
   action,
+  testId,
 }: EmptyNoteProps) {
   return (
-    <div className="bp-empty">
+    <div className="bp-empty" data-testid={testId}>
       <img src={stoat} alt="" width={56} height={56} />
       <div>
         <Heading>{title}</Heading>
