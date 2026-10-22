@@ -5,12 +5,13 @@
 
 use omnibus_shared::{BookReading, Contributor, EbookMetadata, ProgressFormat, ReadStatus};
 
+use crate::pages::browse::test_support::{book, state, DAY};
+use crate::Route;
+
 use super::books::{missing_label, missing_numbers, tile_caption};
 use super::hero::{series_authors, SeriesAuthor};
 use super::progress::{next_action, next_meta, next_up, NextAction, NextUp};
-use super::{way_back, BookStates};
-use crate::pages::browse::test_support::{book, state, DAY};
-use crate::Route;
+use super::{is_whole, way_back, BookStates};
 
 fn dated(index: Option<&str>, published: Option<&str>) -> EbookMetadata {
     EbookMetadata {
@@ -263,19 +264,50 @@ fn next_action_resumes_an_unread_book_where_its_kept_position_is() {
 fn next_action_resumes_the_book_in_progress_in_its_format() {
     let b = dual("2");
     let (_, s) = state("a", ReadStatus::Reading, Some(10), Some(1));
-    let reading = BookReading {
-        format: Some(ProgressFormat::Epub),
+    let listening = BookReading {
+        format: Some(ProgressFormat::Audio),
+        book_file_id: Some(3),
         ..s
     };
-    let action = next_action(NextUp::Resume(&b, &reading));
+    let action = next_action(NextUp::Resume(&b, &listening));
+    let player = Route::BookListen {
+        uuid: "a".into(),
+        file_id: Some(3),
+    };
     assert_eq!(
         (action.label, action.testid, action.to),
-        (
-            "Resume",
-            "series-current",
-            Route::BookRead { uuid: "a".into() }
-        )
+        ("Resume", "series-current", player)
     );
+}
+
+#[test]
+fn next_action_resumes_a_book_marked_reading_that_has_no_position_yet() {
+    let b = dual("2");
+    let (_, marked) = state("a", ReadStatus::Reading, None, Some(1));
+    let action = next_action(NextUp::Resume(&b, &marked));
+    assert_eq!(
+        (action.label, action.action_testid),
+        ("Resume", "series-resume")
+    );
+}
+
+#[test]
+fn next_meta_says_up_next_rather_than_start_here_for_a_kept_position() {
+    let b = book("a", Some("1"));
+    let (_, mut kept) = state("a", ReadStatus::Unread, Some(30), None);
+    kept.format = Some(ProgressFormat::Epub);
+    let next = NextUp::Start {
+        book: &b,
+        state: Some(&kept),
+        fresh: true,
+    };
+    assert_eq!(next_meta(next, 0, None), "Up next \u{b7} Book 1 \u{b7} 30%");
+}
+
+#[test]
+fn is_whole_holds_only_when_every_book_of_the_series_loaded() {
+    assert!(is_whole(5, 5));
+    assert!(!is_whole(1_000, 1_204), "a capped list is a part");
 }
 
 #[test]
@@ -305,9 +337,10 @@ fn way_back_leads_to_the_list_except_from_the_list_itself() {
 /// The pane's parts that draw no router link, rendered (SSR needs `server`).
 #[cfg(feature = "server")]
 mod render {
+    use crate::test_support::render;
+
     use super::super::books::{reading_order_head, series_books};
     use super::*;
-    use crate::test_support::render;
 
     #[test]
     fn reading_order_head_names_the_gaps_and_counts_a_capped_list_as_a_part() {

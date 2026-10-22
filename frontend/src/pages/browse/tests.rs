@@ -9,10 +9,11 @@ use std::collections::HashMap;
 use dioxus::prelude::*;
 use omnibus_shared::{BrowseSort, ReadStatus};
 
+use crate::test_support::{render, render_in_vdom};
+
 use super::books::{tile_fill, tile_label, Tally};
 use super::test_support::{book, state, DAY};
 use super::*;
-use crate::test_support::{render, render_in_vdom};
 
 /// A state that has loaded, for the bar's ready branch.
 fn ready() -> ListReading<HashMap<i64, ()>> {

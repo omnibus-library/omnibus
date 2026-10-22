@@ -3,10 +3,11 @@
 
 use omnibus_shared::{EbookMetadata, ReadStatus};
 
+use crate::pages::browse::test_support::{state, DAY};
+
 use super::hero::hero_meta;
 use super::progress::current_meta;
 use super::shelf::{group_by_series, series_count};
-use crate::pages::browse::test_support::{state, DAY};
 
 fn book(uuid: &str, series: Option<(&str, &str)>) -> EbookMetadata {
     EbookMetadata {

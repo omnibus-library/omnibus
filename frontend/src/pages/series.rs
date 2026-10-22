@@ -109,6 +109,12 @@ fn way_back(preview: bool) -> (Route, String) {
     }
 }
 
+/// Whether all `total` books loaded. Past the book cap the list arrives cut
+/// short, and a tally or next book drawn from it would describe only part.
+fn is_whole(loaded: usize, total: usize) -> bool {
+    loaded >= total
+}
+
 /// The loaded pane: hero, the reader's progress, then the books in order.
 fn render_series(
     mut s: SeriesDetail,
@@ -128,9 +134,7 @@ fn render_series(
         .map(|r| (r.book_uuid.clone(), r))
         .collect();
     let books = std::mem::take(&mut s.books);
-    // Past the book cap the list arrives cut short, and a tally or next book
-    // drawn from it would describe only the part that loaded.
-    let whole = books.len() >= s.book_count;
+    let whole = is_whole(books.len(), s.book_count);
     rsx! {
         article {
             key: "{s.id}",

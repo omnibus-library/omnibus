@@ -1,5 +1,5 @@
 //! Render tests for `/series`' preview pane — what it says while the list
-//! loads, when it failed, and when the library is empty — and a row's
+//! loads, when it failed, and when no book is in a series — and a row's
 //! accessible name.
 
 use omnibus_shared::{SeriesReading, SeriesSummary};
@@ -18,7 +18,7 @@ fn pane(preview: Preview) -> Element {
 fn preview_pane_says_the_list_failed_rather_than_that_the_library_is_empty() {
     let html = render_in_vdom(|| pane(Preview::Unavailable));
     assert!(html.contains("load series"), "{html}");
-    assert!(!html.contains("library is empty"), "{html}");
+    assert!(!html.contains(NO_SERIES), "{html}");
 }
 
 #[test]

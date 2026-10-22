@@ -61,7 +61,15 @@ pub fn next_meta(next: NextUp<'_>, now: i64, zone_secs: Option<i64>) -> String {
                 .map(|at| format!("read {}", ago(now, at, zone_secs))),
         ],
         NextUp::Start { book, state, fresh } => vec![
-            Some(if fresh { "Start here" } else { "Up next" }.to_string()),
+            // A kept position resumes, so "Start here" would contradict it.
+            Some(
+                if fresh && !kept(state) {
+                    "Start here"
+                } else {
+                    "Up next"
+                }
+                .to_string(),
+            ),
             number(book),
             percent(state),
         ],
@@ -82,22 +90,27 @@ pub struct NextAction {
     pub action_testid: &'static str,
 }
 
-/// The button for `next`: Resume where the reader holds a position — the
-/// reader opens there whatever the book's status — else Start.
+/// Whether the reader holds a position in the book, where the reader opens it.
+fn kept(state: Option<&BookReading>) -> bool {
+    state.is_some_and(|s| s.format.is_some())
+}
+
+/// The button for `next`: Resume for the book in progress, and for an unread
+/// one with a position kept — the reader opens there whatever the status —
+/// else Start.
 pub fn next_action(next: NextUp<'_>) -> NextAction {
-    let (book, state, testid) = match next {
-        NextUp::Resume(book, state) => (book, Some(state), "series-current"),
-        NextUp::Start { book, state, .. } => (book, state, "series-next"),
+    let (book, state, testid, resume) = match next {
+        NextUp::Resume(book, state) => (book, Some(state), "series-current", true),
+        NextUp::Start { book, state, .. } => (book, state, "series-next", kept(state)),
     };
     let uuid = book.unique_identifier.clone().unwrap_or_default();
-    let kept = state.filter(|s| s.format.is_some());
     let to = reader_route(
         uuid,
-        kept.and_then(|s| s.format),
-        kept.and_then(|s| s.book_file_id),
+        state.and_then(|s| s.format),
+        state.and_then(|s| s.book_file_id),
         &book.formats,
     );
-    let (label, action_testid) = if kept.is_some() {
+    let (label, action_testid) = if resume {
         ("Resume", "series-resume")
     } else {
         ("Start", "series-start")
