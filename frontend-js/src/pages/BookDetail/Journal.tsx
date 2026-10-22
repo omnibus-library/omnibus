@@ -7,8 +7,8 @@ import { useCurrentUser } from "../../session";
 import { EmptyNote } from "./EmptyNote";
 import { NewJournalEntryModal } from "./JournalComposer";
 import { JournalEntryCard } from "./JournalEntryCard";
-import { quietReadersNote } from "./journal";
 import { journalQuery, reviewsQuery, useWish } from "./queries";
+import { quietReadersNote } from "./quietReaders";
 import "./HighlightsJournal.css";
 
 const TITLE_ID = "bp-journal-title";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quietReadersNote } from "./journal";
+import { quietReadersNote } from "./quietReaders";
 
 describe("quietReadersNote", () => {
   it.each([

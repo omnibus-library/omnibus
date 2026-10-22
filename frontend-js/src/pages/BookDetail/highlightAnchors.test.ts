@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { highlightLocator, pdfAnchorPage, readerDeepLink } from "./highlights";
+import {
+  highlightLocator,
+  pdfAnchorPage,
+  readerDeepLink,
+} from "./highlightAnchors";
 import type { Chapter } from "./readout";
 
 function toc(...entries: [string, number][]): Chapter[] {

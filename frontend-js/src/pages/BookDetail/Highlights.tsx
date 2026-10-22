@@ -16,7 +16,7 @@ import { Loading } from "../../components/Loading/Loading";
 import { QuoteCard } from "../../components/QuoteCard/QuoteCard";
 import { formatLongDate } from "../../format";
 import { EmptyNote } from "./EmptyNote";
-import { highlightLocator, readerDeepLink } from "./highlights";
+import { highlightLocator, readerDeepLink } from "./highlightAnchors";
 import { alignmentQuery, highlightsQuery, useWish } from "./queries";
 import type { Chapter } from "./readout";
 import "./HighlightsJournal.css";
