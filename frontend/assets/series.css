@@ -1,7 +1,8 @@
 /* Series browser: the authors browser's layout, wearing its classes from
    `authors.css`, plus what a series has that an author doesn't — the
    author line under a row's name, the hero's fan of covers in place of a
-   portrait, the meta line's author links and the missing-numbers note. */
+   portrait, the meta line's author links, the missing-numbers note, and a
+   link back to the list where the phone layout hides it. */
 
 /* A row: the series' name over its author. */
 .se-row { min-height: 60px; }
@@ -37,7 +38,16 @@
 
 .se-empty { margin: 36px 0 0; }
 
+/* Back to the list, for the phone layout that hides it (below). */
+.se-back {
+  display: none; align-items: center; gap: 6px; margin-bottom: 18px;
+  font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-2); text-decoration: none;
+}
+.se-back:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
 @media (max-width: 900px) {
+  .se-back { display: inline-flex; }
   .se-fan { width: 84px; height: 84px; }
   .se-fan-cover { width: 54px; }
   .se-fan-cover:nth-child(2) { translate: 11px 0; }

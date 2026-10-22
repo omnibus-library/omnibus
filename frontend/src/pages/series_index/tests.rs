@@ -22,9 +22,13 @@ fn preview_pane_says_the_list_failed_rather_than_that_the_library_is_empty() {
 }
 
 #[test]
-fn preview_pane_says_the_library_is_empty_only_when_it_is() {
+fn preview_pane_says_no_book_is_in_a_series_rather_than_that_the_library_is_empty() {
     let html = render_in_vdom(|| pane(Preview::Empty));
-    assert!(html.contains("library is empty"), "{html}");
+    assert!(
+        html.contains("no book in the library belongs to one"),
+        "{html}"
+    );
+    assert!(!html.contains("library is empty"), "{html}");
 }
 
 #[test]

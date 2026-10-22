@@ -189,6 +189,28 @@ test.describe("series page", () => {
     });
   });
 
+  test("lead back to the list at phone width", async ({
+    seriesPage,
+    seriesIndexPage,
+    seriesId,
+  }) => {
+    await test.step("open a series beside the list", async () => {
+      await seriesPage.goto(await seriesId("Pioneers"));
+      await expect(seriesPage.backLink).toBeHidden();
+    });
+
+    await test.step("narrow to a phone, where the list is hidden", async () => {
+      await seriesPage.resizeViewport({ width: 390, height: 844 });
+      await expect(seriesIndexPage.filterField).toBeHidden();
+    });
+
+    await test.step("follow the link back to the list", async () => {
+      await seriesPage.goBackToList();
+      await seriesIndexPage.assertDisplayed();
+      await expect(seriesIndexPage.filterField).toBeVisible();
+    });
+  });
+
   test("show the series' books in the library", async ({
     seriesPage,
     libraryPage,

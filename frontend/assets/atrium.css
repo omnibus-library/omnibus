@@ -1954,7 +1954,9 @@ html, body { overscroll-behavior: none; }
   gap: 20px 16px;
 }
 
-/* ===== F1.12 Browse index pages — /authors and /series ===== */
+/* ===== Browse index chrome — the shelves index's header and toolbar =====
+   The letter strip and cards below served the old /authors and /series
+   indexes; the React client's copies of those pages still wear them. */
 
 .idx-page { padding-bottom: 60px; }
 
@@ -2158,7 +2160,7 @@ a.idx-letter-on:focus-visible {
 .idx-card-name-rest { color: var(--ink-1); }
 
 /* ===== Shelves index — /shelves (web) =====
-   Rides the /authors + /series chrome above (`.idx-header`, `.idx-toolbar`,
+   Rides the index chrome above (`.idx-header`, `.idx-toolbar`,
    `.idx-btn`) and adds owner chips, owner-grouped sections, and shelf cards
    whose member covers stand on a ledge lit in the shelf's accent. */
 .shv-head-row {

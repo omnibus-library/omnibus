@@ -19,6 +19,7 @@ pub type SeriesGroups = Groups<SeriesSummary>;
 /// The list's inputs besides the rows themselves.
 #[derive(Clone, Copy)]
 pub struct ListQuery<'a> {
+    /// The filter as typed; folded here before matching.
     pub text: &'a str,
     pub sort: BrowseSort,
     /// `None` until the reader's progress loads (or if it fails to).

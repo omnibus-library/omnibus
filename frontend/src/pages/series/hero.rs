@@ -20,6 +20,7 @@ const NAMED_AUTHORS: usize = 2;
 #[derive(Debug, Clone, PartialEq)]
 pub struct SeriesAuthor {
     pub name: String,
+    /// The author's page, when the library has one by this name.
     pub id: Option<i64>,
 }
 
@@ -53,13 +54,14 @@ pub fn SeriesHero(
         }
     };
     let more = authors.len().saturating_sub(NAMED_AUTHORS);
+    let books = crate::format::count_label(book_count as i64, "book");
     rsx! {
         header { class: "au-hero",
             {cover_fan(&stack, &name, &server_url)}
             div { class: "au-hero-body",
                 h2 { class: "au-name", "data-testid": "series-name", "{name}" }
                 p { class: "au-meta", "data-testid": "series-meta",
-                    "{books_label(book_count)}"
+                    "{books}"
                     if !authors.is_empty() {
                         " \u{b7} by "
                     }
@@ -86,14 +88,6 @@ pub fn SeriesHero(
                 }
             }
         }
-    }
-}
-
-/// "1 book" / "7 books".
-pub fn books_label(count: usize) -> String {
-    match count {
-        1 => "1 book".to_string(),
-        n => format!("{n} books"),
     }
 }
 

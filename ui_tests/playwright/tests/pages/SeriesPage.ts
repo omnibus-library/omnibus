@@ -15,6 +15,8 @@ export class SeriesPage extends BasePage {
   readonly meta: Locator;
   readonly readingStrip: Locator;
   readonly showInLibraryButton: Locator;
+  /** The link back to the list, drawn only where the phone layout hides it. */
+  readonly backLink: Locator;
   readonly bookCards: Locator;
   readonly firstCardNumberLabel: Locator;
 
@@ -25,6 +27,7 @@ export class SeriesPage extends BasePage {
     this.meta = page.getByTestId("series-meta");
     this.readingStrip = page.getByTestId("series-reading");
     this.showInLibraryButton = page.getByTestId("series-show-in-library");
+    this.backLink = page.getByTestId("series-back");
     this.bookCards = page.getByTestId("series-pane").getByRole("listitem");
     this.firstCardNumberLabel = this.bookCards.first().getByText(/^Book 1\b/);
   }
@@ -40,6 +43,10 @@ export class SeriesPage extends BasePage {
   /** Clicks the first cover's "Book 1" caption, which opens the book like the rest of it. */
   async openFirstBookFromItsNumber(): Promise<void> {
     await this.firstCardNumberLabel.click();
+  }
+
+  async goBackToList(): Promise<void> {
+    await this.backLink.click();
   }
 
   /** Opens the library on `name`'s books, once its first page answers for them. */

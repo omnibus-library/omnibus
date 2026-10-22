@@ -14,7 +14,13 @@ use crate::pages::browse::{book_grid, books_meta, BookStates};
 const MAX_GAP_SCAN: u32 = 200;
 
 /// Every book in reading order, or a note when the library holds none.
-pub fn series_books(books: Vec<EbookMetadata>, states: &BookStates, server_url: &str) -> Element {
+/// `total` is the series' whole count, which a capped list falls short of.
+pub fn series_books(
+    books: Vec<EbookMetadata>,
+    states: &BookStates,
+    server_url: &str,
+    total: usize,
+) -> Element {
     // A series can outlive its last member — clearing a book's series by
     // override drops the membership but not the row — so say so rather than
     // rendering a titled void.
@@ -25,17 +31,30 @@ pub fn series_books(books: Vec<EbookMetadata>, states: &BookStates, server_url: 
             }
         };
     }
-    let gaps = missing_label(&missing_numbers(&books));
     rsx! {
         section { class: "au-shelf",
-            header { class: "au-shelf-head",
-                h3 { class: "au-shelf-title", "Reading order" }
-                span { class: "au-shelf-meta", "{books_meta(&books, states)}" }
-                if let Some(gaps) = gaps {
-                    span { class: "au-shelf-meta se-gaps", "data-testid": "series-gaps", "{gaps}" }
-                }
-            }
+            {reading_order_head(&books, states, total)}
             {book_grid(books, states, server_url, tile_caption)}
+        }
+    }
+}
+
+/// The heading over the books: how many and how many finished — or, past the
+/// book cap, how many of the series loaded — and the numbers missing.
+pub fn reading_order_head(books: &[EbookMetadata], states: &BookStates, total: usize) -> Element {
+    let count = if total > books.len() {
+        format!("First {} of {total} books", books.len())
+    } else {
+        books_meta(books, states)
+    };
+    let gaps = missing_label(&missing_numbers(books));
+    rsx! {
+        header { class: "au-shelf-head",
+            h3 { class: "au-shelf-title", "Reading order" }
+            span { class: "au-shelf-meta", "{count}" }
+            if let Some(gaps) = gaps {
+                span { class: "au-shelf-meta se-gaps", "data-testid": "series-gaps", "{gaps}" }
+            }
         }
     }
 }

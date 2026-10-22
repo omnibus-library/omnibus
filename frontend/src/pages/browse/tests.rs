@@ -7,13 +7,12 @@
 use std::collections::HashMap;
 
 use dioxus::prelude::*;
-use omnibus_shared::{BookReading, BrowseSort, EbookMetadata, ReadStatus};
+use omnibus_shared::{BrowseSort, ReadStatus};
 
-use super::books::{tile_fill, Tally};
+use super::books::{tile_fill, tile_label, Tally};
+use super::test_support::{book, state, DAY};
 use super::*;
 use crate::test_support::{render, render_in_vdom};
-
-const DAY: i64 = 86_400;
 
 /// A state that has loaded, for the bar's ready branch.
 fn ready() -> ListReading<HashMap<i64, ()>> {
@@ -51,6 +50,7 @@ const COPY: ListCopy = ListCopy {
     filter_placeholder: "Filter",
     filter_label: "Filter things",
     name_sort: "A\u{2013}Z",
+    empty: "No things yet.",
 };
 
 /// The list head with the reader's in-progress count `reading_count`.
@@ -132,35 +132,9 @@ fn letter_frag_spells_the_hash_bucket_out() {
     assert_eq!(letter_frag('Q'), "Q");
 }
 
-fn book(uuid: &str) -> EbookMetadata {
-    EbookMetadata {
-        title: Some(uuid.to_uppercase()),
-        unique_identifier: Some(uuid.into()),
-        ..Default::default()
-    }
-}
-
-fn state(
-    uuid: &str,
-    status: ReadStatus,
-    percent: Option<i64>,
-    at: Option<i64>,
-) -> (String, BookReading) {
-    (
-        uuid.into(),
-        BookReading {
-            book_uuid: uuid.into(),
-            status,
-            percent,
-            last_read_at: at,
-            ..Default::default()
-        },
-    )
-}
-
 #[test]
 fn tally_counts_a_book_with_no_state_as_unread() {
-    let books = [book("a"), book("b"), book("c")];
+    let books = [book("a", None), book("b", None), book("c", None)];
     let states: BookStates = [
         state("a", ReadStatus::Finished, None, Some(1)),
         state("b", ReadStatus::Reading, Some(40), Some(2)),
@@ -178,7 +152,7 @@ fn tally_counts_a_book_with_no_state_as_unread() {
 
 #[test]
 fn current_book_is_the_book_in_progress_read_last() {
-    let books = [book("a"), book("b"), book("c")];
+    let books = [book("a", None), book("b", None), book("c", None)];
     let states: BookStates = [
         state("a", ReadStatus::Reading, Some(10), Some(5)),
         state("b", ReadStatus::Reading, Some(80), Some(9)),
@@ -191,7 +165,7 @@ fn current_book_is_the_book_in_progress_read_last() {
 
 #[test]
 fn current_book_is_none_when_nothing_is_in_progress() {
-    let books = [book("a")];
+    let books = [book("a", None)];
     let states: BookStates = [state("a", ReadStatus::Finished, None, Some(1))].into();
     assert!(current_book(&books, &states).is_none());
 }
@@ -223,7 +197,7 @@ fn ago_counts_whole_days_when_the_zone_is_unknown() {
 
 #[test]
 fn books_meta_adds_finished_only_when_there_is_some() {
-    let books = [book("a"), book("b")];
+    let books = [book("a", None), book("b", None)];
     assert_eq!(books_meta(&books, &BookStates::new()), "2 books");
     let one: BookStates = [state("a", ReadStatus::Finished, None, Some(1))].into();
     assert_eq!(books_meta(&books, &one), "2 books \u{b7} 1 finished");
@@ -237,10 +211,10 @@ fn tile_fill_is_full_when_finished_a_sliver_at_least_while_reading_and_none_unre
         state("mid", ReadStatus::Reading, Some(42), Some(3)),
     ]
     .into();
-    assert_eq!(tile_fill(&book("done"), &states), Some(100));
-    assert_eq!(tile_fill(&book("new"), &states), Some(3));
-    assert_eq!(tile_fill(&book("mid"), &states), Some(42));
-    assert_eq!(tile_fill(&book("unread"), &states), None);
+    assert_eq!(tile_fill(&book("done", None), &states), Some(100));
+    assert_eq!(tile_fill(&book("new", None), &states), Some(3));
+    assert_eq!(tile_fill(&book("mid", None), &states), Some(42));
+    assert_eq!(tile_fill(&book("unread", None), &states), None);
 }
 
 #[test]
@@ -254,4 +228,13 @@ fn progress_meter_sizes_finished_then_reading_and_says_both() {
     assert!(html.contains("1 of 4 finished, 2 reading"), "{html}");
     assert!(html.contains("width: 25%"), "finished share: {html}");
     assert!(html.contains("width: 50%"), "reading share: {html}");
+}
+
+#[test]
+fn tile_label_adds_the_caption_a_sighted_reader_sees() {
+    assert_eq!(
+        tile_label("Dune", Some("Book 1 \u{b7} 1965")),
+        "Open details for Dune, Book 1 \u{b7} 1965"
+    );
+    assert_eq!(tile_label("Dune", None), "Open details for Dune");
 }

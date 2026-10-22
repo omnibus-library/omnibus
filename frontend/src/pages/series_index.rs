@@ -40,7 +40,11 @@ const COPY: ListCopy = ListCopy {
     filter_placeholder: "Filter by name or author\u{2026}",
     filter_label: "Filter series by name or author",
     name_sort: "A\u{2013}Z",
+    empty: NO_SERIES,
 };
+
+/// Said when no series has a book: the library may hold standalones only.
+const NO_SERIES: &str = "No series yet \u{2014} no book in the library belongs to one.";
 
 /// `/series`' [`Preview`], shared from the layout with the pane below it.
 #[derive(Clone, Copy)]
@@ -81,16 +85,8 @@ pub fn SeriesBrowser(routed: Option<i64>) -> Element {
         _ => None,
     });
     let groups = use_series_groups(series, filter, sort, reading, only_reading);
-    let reading_count = reading
-        .read()
-        .ready()
-        .map(|m| m.values().filter(|r| r.reading > 0).count());
-    // A failed refresh keeps its rows, so only an empty list has no count.
-    let have_rows = !series.read().is_empty();
-    let total = (!loading() && (have_rows || error.read().is_none())).then(|| series.read().len());
-    // Recent orders by progress, so it has no order to show until that lands.
-    let rows_pending = loading() || (sort() == BrowseSort::Recent && reading.read().is_pending());
-    use_reveal_current_row(shown.is_some() && have_rows && !rows_pending);
+    let facts = list_facts(series, loading, error, sort(), reading);
+    use_reveal_current_row(shown.is_some() && facts.any && !facts.waiting);
     // The layout outlives its routes, so Back to the list (or on to another
     // series) must restore the window itself.
     crate::scroll_restore::use_scroll_restore_on_change(routed);
@@ -102,10 +98,10 @@ pub fn SeriesBrowser(routed: Option<i64>) -> Element {
             aside { class: "au-list", "aria-label": "Series",
                 ListHead {
                     copy: COPY,
-                    total,
+                    total: facts.total,
                     filter: filter(),
                     sort: sort(),
-                    reading_count,
+                    reading_count: facts.reading_count,
                     only_reading: only_reading(),
                     on_filter: move |v| filter.set(v),
                     on_sort: move |s| {
@@ -124,10 +120,10 @@ pub fn SeriesBrowser(routed: Option<i64>) -> Element {
                         copy: COPY,
                         groups: &groups,
                         sort: sort(),
-                        waiting: rows_pending,
+                        waiting: facts.waiting,
                         active,
                         error: error(),
-                        any: have_rows,
+                        any: facts.any,
                     };
                     list_body(view, |s| series_row(s, RowState {
                         shown: shown == Some(s.id),
@@ -138,6 +134,40 @@ pub fn SeriesBrowser(routed: Option<i64>) -> Element {
             }
             section { class: "au-detail", Outlet::<Route> {} }
         }
+    }
+}
+
+/// What the head and body read off the rows and the reader's progress.
+struct ListFacts {
+    /// The series count, once there is one to show.
+    total: Option<usize>,
+    /// Whether the library has any series, filtered or not.
+    any: bool,
+    /// Rows, or the order they need, are still loading.
+    waiting: bool,
+    /// Series with a book in progress, once progress lands.
+    reading_count: Option<usize>,
+}
+
+/// Reads [`ListFacts`] off the list's signals.
+fn list_facts(
+    series: Signal<Vec<SeriesSummary>>,
+    loading: Signal<bool>,
+    error: Signal<Option<String>>,
+    sort: BrowseSort,
+    reading: Signal<ReadingState>,
+) -> ListFacts {
+    let reading = reading.read();
+    let any = !series.read().is_empty();
+    ListFacts {
+        // A failed refresh keeps its rows, so only an empty list has no count.
+        total: (!loading() && (any || error.read().is_none())).then(|| series.read().len()),
+        any,
+        // Recent orders by progress, so it has no order to show until that lands.
+        waiting: loading() || (sort == BrowseSort::Recent && reading.is_pending()),
+        reading_count: reading
+            .ready()
+            .map(|m| m.values().filter(|r| r.reading > 0).count()),
     }
 }
 
@@ -183,7 +213,7 @@ pub fn SeriesIndexPage() -> Element {
             p { class: "au-pane-empty subtitle", "Couldn\u{2019}t load series." }
         },
         Preview::Empty => rsx! {
-            p { class: "au-pane-empty subtitle", "No series yet \u{2014} the library is empty." }
+            p { class: "au-pane-empty subtitle", "{NO_SERIES}" }
         },
         Preview::Item(id) => rsx! { SeriesPage { id, preview: true } },
     }
@@ -228,13 +258,12 @@ fn series_row(s: &SeriesSummary, state: RowState<'_>) -> Element {
 /// The row's accessible name: "Dune, by Frank Herbert, 6 books, 2 finished",
 /// each part dropped when unknown or zero.
 fn row_label(s: &SeriesSummary, progress: Option<&SeriesReading>) -> String {
-    let count = s.book_count;
-    let books = if count == 1 { "book" } else { "books" };
     let mut label = s.name.clone();
     if let Some(author) = &s.primary_author {
         label.push_str(&format!(", by {author}"));
     }
-    label.push_str(&format!(", {count} {books}"));
+    let books = crate::format::count_label(s.book_count as i64, "book");
+    label.push_str(&format!(", {books}"));
     if let Some(p) = progress.filter(|p| p.finished > 0) {
         label.push_str(&format!(", {} finished", p.finished));
     }

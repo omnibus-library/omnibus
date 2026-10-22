@@ -148,16 +148,11 @@ pub fn book_card(card: BookCard<'_>, server_url: &str) -> Element {
 
 /// "6 books · 1 finished", leaving out none finished.
 pub fn books_meta(books: &[EbookMetadata], states: &BookStates) -> String {
-    let n = books.len();
     let finished = books
         .iter()
         .filter(|b| status_of(b, states) == ReadStatus::Finished)
         .count();
-    let count = if n == 1 {
-        "1 book".to_string()
-    } else {
-        format!("{n} books")
-    };
+    let count = crate::format::count_label(books.len() as i64, "book");
     match finished {
         0 => count,
         f => format!("{count} \u{b7} {f} finished"),
@@ -194,6 +189,15 @@ pub fn tile_fill(book: &EbookMetadata, states: &BookStates) -> Option<i64> {
     }
 }
 
+/// A cover link's accessible name, which overrides its text: the title, then
+/// the caption a sighted reader sees under it.
+pub fn tile_label(title: &str, caption: Option<&str>) -> String {
+    match caption {
+        Some(caption) => format!("Open details for {title}, {caption}"),
+        None => format!("Open details for {title}"),
+    }
+}
+
 /// One cover, the reader's bar under it, the caption, and the title.
 fn book_tile(
     book: EbookMetadata,
@@ -207,13 +211,14 @@ fn book_tile(
     let bar = tile_fill(&book, states);
     let id = book.id;
     let caption = caption(&book);
+    let label = tile_label(&title, caption.as_deref());
     rsx! {
         // The list role sits on a wrapper so the tile stays a link to assistive tech.
         div { key: "{id}", class: "au-tile-item", role: "listitem",
             Link {
                 to: Route::BookDetail { uuid },
                 class: "au-tile",
-                "aria-label": "Open details for {title}",
+                "aria-label": "{label}",
                 Cover {
                     book,
                     src_override: src,

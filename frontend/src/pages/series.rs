@@ -8,6 +8,7 @@
 //! strip and the cover bars paint with the books, not after them.
 
 use dioxus::prelude::*;
+use dioxus_router::Link;
 use omnibus_shared::SeriesDetail;
 
 use crate::components::loading::Stale;
@@ -78,22 +79,43 @@ pub fn SeriesPage(id: i64, #[props(default)] preview: bool) -> Element {
         (Some(s), err) if s.id == id || err.is_none() => rsx! {
             // A different series still on screen while this one loads stays,
             // dimmed, rather than blanking the pane between two clicks.
-            Stale { stale, {render_series(s, &server_url, zone_secs())} }
+            Stale { stale, {render_series(s, &server_url, zone_secs(), preview)} }
         },
-        (_, Some(msg)) if !loading() => rsx! {
-            PageError { message: msg, back_to: Route::SeriesIndex {} }
-        },
-        (None, None) if !loading() => rsx! {
-            PageNotFound { subject: "Series", back_to: Route::SeriesIndex {} }
-        },
+        (_, Some(msg)) if !loading() => {
+            let (back_to, back_label) = way_back(preview);
+            rsx! {
+                PageError { message: msg, back_to, back_label }
+            }
+        }
+        (None, None) if !loading() => {
+            let (back_to, back_label) = way_back(preview);
+            rsx! {
+                PageNotFound { subject: "Series", back_to, back_label }
+            }
+        }
         _ => rsx! {
             Loading { kind: LoadingKind::Section, label: "Gathering the series" }
         },
     }
 }
 
+/// Where an error or not-found pane leads: the series list, except on
+/// `/series`, which is the list already.
+fn way_back(preview: bool) -> (Route, String) {
+    if preview {
+        (Route::Landing {}, "Back to library".into())
+    } else {
+        (Route::SeriesIndex {}, "Back to series".into())
+    }
+}
+
 /// The loaded pane: hero, the reader's progress, then the books in order.
-fn render_series(mut s: SeriesDetail, server_url: &str, zone_secs: Option<i64>) -> Element {
+fn render_series(
+    mut s: SeriesDetail,
+    server_url: &str,
+    zone_secs: Option<i64>,
+    preview: bool,
+) -> Element {
     // The first cover-derived accent tints the pane (`authors.css` evens out
     // its lightness); the theme's otherwise.
     let accent = s
@@ -106,12 +128,21 @@ fn render_series(mut s: SeriesDetail, server_url: &str, zone_secs: Option<i64>) 
         .map(|r| (r.book_uuid.clone(), r))
         .collect();
     let books = std::mem::take(&mut s.books);
+    // Past the book cap the list arrives cut short, and a tally or next book
+    // drawn from it would describe only the part that loaded.
+    let whole = books.len() >= s.book_count;
     rsx! {
         article {
             key: "{s.id}",
             class: "au-pane",
             style: "--au-accent: {accent}",
             "data-testid": "series-pane",
+            // The phone layout hides the list, and the tab bar has no Series.
+            if !preview {
+                Link { to: Route::SeriesIndex {}, class: "se-back", "data-testid": "series-back",
+                    "\u{2190} All series"
+                }
+            }
             SeriesHero {
                 name: s.name.clone(),
                 stack: books.iter().take(STACK).cloned().collect::<Vec<_>>(),
@@ -119,8 +150,10 @@ fn render_series(mut s: SeriesDetail, server_url: &str, zone_secs: Option<i64>) 
                 book_count: s.book_count,
                 server_url: server_url.to_string(),
             }
-            {reading_strip(&books, &states, server_url, zone_secs)}
-            {series_books(books, &states, server_url)}
+            if whole {
+                {reading_strip(&books, &states, server_url, zone_secs)}
+            }
+            {series_books(books, &states, server_url, s.book_count)}
         }
     }
 }

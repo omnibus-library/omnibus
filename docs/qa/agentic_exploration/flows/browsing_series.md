@@ -13,23 +13,23 @@ worth hunting here.
 
 ## Steps
 
-1. Open the list of series. Try the three sorts (A–Z, Most books, Recent),
-   the Reading filter and the name/author filter, including a filter that
-   matches nothing. The count beside the title does not narrow while
+1. Open the list of series. Try the filter, including one that matches
+   nothing. On web, also try the three sorts (A–Z, Most books, Recent) and
+   the Reading filter; the count beside the title does not narrow while
    filtered — that is how it is built, not a finding — and the sort should
-   survive a reload.
+   survive a reload. On iOS the list is by name only, with no sort control.
 2. Scan it for duplicates, empty names, and series with an implausible number
    of entries.
-3. Open a series with several books. It opens beside the list, which keeps
-   its scroll and filter; the bar under each row and the pane's counts
-   should agree about how many you have finished.
+3. Open a series with several books. On web it opens beside the list, which
+   keeps its scroll and filter, and the bar under each row and the pane's
+   counts should agree about how many you have finished.
 4. Check the books are ordered by their number in the series, and that the
    numbers shown are the numbers on the books themselves.
 5. Look for gaps — book 1 and book 3 with no book 2, or, the common shape in
    a small library, a single owned entry numbered above 1 — and journal them.
    A gap usually means you do not own the missing books, which is fine, but
-   it should be presented as a gap rather than silently renumbered — the
-   pane names the missing numbers beside the book count.
+   it should be presented as a gap rather than silently renumbered — on web
+   the pane names the missing numbers beside the book count.
 6. Open a book from the series (journal it as `book.open`) and confirm its
    detail page agrees about the series name and its position in it — in the
    header eyebrow **and** in the MORE section's series block, which carries
@@ -49,8 +49,8 @@ name, the entries in the order shown, and each one's number.
 - A series page lists only that series' books.
 - Books are in series order, with numbers matching their detail pages.
 - Gaps are presented as gaps, not closed over.
-- The book the pane offers next is the one in progress, else the first unread
-  one in series order.
+- On web, the book the pane offers next is the one in progress, else the
+  first unread one in series order. iOS has no such card.
 - Reaching the series from a book and from the index gives the same page.
 
 ## Fail

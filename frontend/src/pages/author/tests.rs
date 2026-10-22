@@ -1,13 +1,12 @@
 //! Tests for the author pane's pure helpers: the meta lines and shelving
 //! books by series.
 
-use omnibus_shared::{BookReading, EbookMetadata, ReadStatus};
+use omnibus_shared::{EbookMetadata, ReadStatus};
 
 use super::hero::hero_meta;
 use super::progress::current_meta;
 use super::shelf::{group_by_series, series_count};
-
-const DAY: i64 = 86_400;
+use crate::pages::browse::test_support::{state, DAY};
 
 fn book(uuid: &str, series: Option<(&str, &str)>) -> EbookMetadata {
     EbookMetadata {
@@ -18,24 +17,6 @@ fn book(uuid: &str, series: Option<(&str, &str)>) -> EbookMetadata {
         series_id: series.map(|_| 7),
         ..Default::default()
     }
-}
-
-fn state(
-    uuid: &str,
-    status: ReadStatus,
-    percent: Option<i64>,
-    at: Option<i64>,
-) -> (String, BookReading) {
-    (
-        uuid.into(),
-        BookReading {
-            book_uuid: uuid.into(),
-            status,
-            percent,
-            last_read_at: at,
-            ..Default::default()
-        },
-    )
 }
 
 #[test]

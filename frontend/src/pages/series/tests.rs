@@ -1,24 +1,16 @@
-//! Tests for the series pane's pure helpers: the book offered next and its
-//! meta line, a cover's caption, the numbers the library is missing, and
-//! who the series is by.
+//! Tests for the series pane: the book offered next, its meta line and its
+//! button; a cover's caption; the numbers the library is missing and the
+//! heading that names them; the empty and error notes; and who the series
+//! is by.
 
-use omnibus_shared::{BookReading, Contributor, EbookMetadata, ReadStatus};
+use omnibus_shared::{BookReading, Contributor, EbookMetadata, ProgressFormat, ReadStatus};
 
 use super::books::{missing_label, missing_numbers, tile_caption};
-use super::hero::{books_label, series_authors, SeriesAuthor};
-use super::progress::{next_meta, next_up, NextUp};
-use super::BookStates;
-
-const DAY: i64 = 86_400;
-
-fn book(uuid: &str, index: Option<&str>) -> EbookMetadata {
-    EbookMetadata {
-        title: Some(uuid.to_uppercase()),
-        unique_identifier: Some(uuid.into()),
-        series_index: index.map(Into::into),
-        ..Default::default()
-    }
-}
+use super::hero::{series_authors, SeriesAuthor};
+use super::progress::{next_action, next_meta, next_up, NextAction, NextUp};
+use super::{way_back, BookStates};
+use crate::pages::browse::test_support::{book, state, DAY};
+use crate::Route;
 
 fn dated(index: Option<&str>, published: Option<&str>) -> EbookMetadata {
     EbookMetadata {
@@ -26,24 +18,6 @@ fn dated(index: Option<&str>, published: Option<&str>) -> EbookMetadata {
         published: published.map(Into::into),
         ..Default::default()
     }
-}
-
-fn state(
-    uuid: &str,
-    status: ReadStatus,
-    percent: Option<i64>,
-    at: Option<i64>,
-) -> (String, BookReading) {
-    (
-        uuid.into(),
-        BookReading {
-            book_uuid: uuid.into(),
-            status,
-            percent,
-            last_read_at: at,
-            ..Default::default()
-        },
-    )
 }
 
 fn three() -> Vec<EbookMetadata> {
@@ -72,7 +46,7 @@ fn next_up_starts_the_first_unread_book_in_reading_order() {
         state("c", ReadStatus::Finished, None, Some(2)),
     ]
     .into();
-    let Some(NextUp::Start { book, fresh }) = next_up(&books, &states) else {
+    let Some(NextUp::Start { book, fresh, .. }) = next_up(&books, &states) else {
         panic!("expected a start");
     };
     assert_eq!(book.unique_identifier.as_deref(), Some("b"));
@@ -83,7 +57,7 @@ fn next_up_starts_the_first_unread_book_in_reading_order() {
 fn next_up_starts_book_one_fresh_and_offers_nothing_once_all_are_finished() {
     let books = three();
     let none = BookStates::new();
-    let Some(NextUp::Start { book, fresh }) = next_up(&books, &none) else {
+    let Some(NextUp::Start { book, fresh, .. }) = next_up(&books, &none) else {
         panic!("expected a start");
     };
     assert_eq!(book.unique_identifier.as_deref(), Some("a"));
@@ -111,6 +85,7 @@ fn next_meta_says_where_to_start() {
         next_meta(
             NextUp::Start {
                 book: &b,
+                state: None,
                 fresh: true
             },
             0,
@@ -123,6 +98,7 @@ fn next_meta_says_where_to_start() {
         next_meta(
             NextUp::Start {
                 book: &unnumbered,
+                state: None,
                 fresh: false
             },
             0,
@@ -224,8 +200,130 @@ fn series_authors_takes_each_books_first_author_once_in_order() {
     );
 }
 
+/// Book "a", readable as an EPUB or an audiobook.
+fn dual(index: &str) -> EbookMetadata {
+    EbookMetadata {
+        formats: vec!["epub".into(), "m4b".into()],
+        ..book("a", Some(index))
+    }
+}
+
 #[test]
-fn books_label_counts_one_book_in_the_singular() {
-    assert_eq!(books_label(1), "1 book");
-    assert_eq!(books_label(7), "7 books");
+fn next_action_starts_a_fresh_book_at_its_beginning() {
+    let b = dual("1");
+    let action = next_action(NextUp::Start {
+        book: &b,
+        state: None,
+        fresh: true,
+    });
+    assert_eq!(
+        action,
+        NextAction {
+            label: "Start",
+            to: Route::BookRead { uuid: "a".into() },
+            testid: "series-next",
+            action_testid: "series-start",
+        }
+    );
+}
+
+#[test]
+fn next_action_resumes_an_unread_book_where_its_kept_position_is() {
+    // Marking a book unread keeps its position, and the player opens there.
+    let b = dual("4");
+    let kept = BookReading {
+        book_uuid: "a".into(),
+        status: ReadStatus::Unread,
+        percent: Some(42),
+        format: Some(ProgressFormat::Audio),
+        book_file_id: Some(9),
+        last_read_at: None,
+    };
+    let next = NextUp::Start {
+        book: &b,
+        state: Some(&kept),
+        fresh: false,
+    };
+    let action = next_action(next);
+    assert_eq!(
+        (action.label, action.action_testid),
+        ("Resume", "series-resume")
+    );
+    assert_eq!(
+        action.to,
+        Route::BookListen {
+            uuid: "a".into(),
+            file_id: Some(9)
+        }
+    );
+    assert_eq!(next_meta(next, 0, None), "Up next \u{b7} Book 4 \u{b7} 42%");
+}
+
+#[test]
+fn next_action_resumes_the_book_in_progress_in_its_format() {
+    let b = dual("2");
+    let (_, s) = state("a", ReadStatus::Reading, Some(10), Some(1));
+    let reading = BookReading {
+        format: Some(ProgressFormat::Epub),
+        ..s
+    };
+    let action = next_action(NextUp::Resume(&b, &reading));
+    assert_eq!(
+        (action.label, action.testid, action.to),
+        (
+            "Resume",
+            "series-current",
+            Route::BookRead { uuid: "a".into() }
+        )
+    );
+}
+
+#[test]
+fn next_up_keeps_the_position_of_a_book_marked_unread() {
+    let books = three();
+    let (_, mut kept) = state("a", ReadStatus::Unread, Some(30), None);
+    kept.format = Some(ProgressFormat::Epub);
+    let states: BookStates = [("a".to_string(), kept)].into();
+    let Some(NextUp::Start { state, .. }) = next_up(&books, &states) else {
+        panic!("expected a start");
+    };
+    assert_eq!(state.and_then(|s| s.percent), Some(30));
+}
+
+#[test]
+fn way_back_leads_to_the_list_except_from_the_list_itself() {
+    assert_eq!(
+        way_back(false),
+        (Route::SeriesIndex {}, "Back to series".to_string())
+    );
+    assert_eq!(
+        way_back(true),
+        (Route::Landing {}, "Back to library".to_string())
+    );
+}
+
+/// The pane's parts that draw no router link, rendered (SSR needs `server`).
+#[cfg(feature = "server")]
+mod render {
+    use super::super::books::{reading_order_head, series_books};
+    use super::*;
+    use crate::test_support::render;
+
+    #[test]
+    fn reading_order_head_names_the_gaps_and_counts_a_capped_list_as_a_part() {
+        let books = [book("a", Some("1")), book("c", Some("3"))];
+        let whole = render(reading_order_head(&books, &BookStates::new(), 2));
+        assert!(whole.contains("2 books"), "{whole}");
+        assert!(whole.contains(r#"data-testid="series-gaps""#), "{whole}");
+        assert!(whole.contains("Not in your library: #2"), "{whole}");
+        let capped = render(reading_order_head(&books, &BookStates::new(), 1_204));
+        assert!(capped.contains("First 2 of 1204 books"), "{capped}");
+    }
+
+    #[test]
+    fn series_books_says_so_when_the_library_holds_none_of_the_series() {
+        let html = render(series_books(Vec::new(), &BookStates::new(), "", 0));
+        assert!(html.contains(r#"data-testid="series-empty""#), "{html}");
+        assert!(html.contains("No books in this series"), "{html}");
+    }
 }
