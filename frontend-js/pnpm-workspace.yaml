@@ -13,3 +13,5 @@ minimumReleaseAgeExclude:
   - "@storybook/addon-vitest@10.6.2"
   # Renovate security update: @vitest/browser@5.0.5
   - "@vitest/browser@5.0.5"
+  # Renovate security update: storybook@10.6.2
+  - storybook@10.6.2
