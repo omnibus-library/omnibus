@@ -77,6 +77,26 @@ pub struct HouseholdReader {
     pub is_you: bool,
 }
 
+/// A reader who shares their stats and has spent time in one book, as
+/// `GET /api/books/{uuid}/household` lists them.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct BookHouseholdReader {
+    /// The user's id. Pass it as `user_id` to the stats routes.
+    pub id: i64,
+    /// The reader's display name, or their username when they have none.
+    pub name: String,
+    /// Whether `GET /api/users/{id}/avatar` has an image to serve.
+    pub has_avatar: bool,
+    /// Seconds they have read and listened in the book, short glances included.
+    pub seconds: i64,
+    /// How many times they sat down with it for a minute or more.
+    pub sessions: i64,
+    /// When their latest sitting of a minute or more ended, in Unix seconds.
+    pub last_session_at: i64,
+}
+
 // There is no role enum: the UI presents `is_admin` as an "Administrator"
 // permission implying the other three, while storage keeps four flags.
 /// The four permission flags that say what a user may do. The server stores each flag

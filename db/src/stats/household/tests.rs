@@ -1,5 +1,7 @@
 //! `household_readers`: list ordering/exclusion, the avatar flag, and DB
-//! failure propagation. `may_view_stats` and `stats_for_viewer`: every gate
+//! failure propagation. `book_household`: the sharing rule applied to one
+//! book's sittings, the caller's exclusion, the one-minute floor, the merged
+//! uuid and the unknown book. `may_view_stats` and `stats_for_viewer`: every gate
 //! branch, both viewer reads, the calendar case, and DB-failure variants.
 //! `session_log_for_viewer` and `recent_progress_for_viewer`: the same gate
 //! applied to the session log and the in-progress list.
@@ -7,13 +9,15 @@
 use omnibus_shared::{HouseholdReader, StatsRange};
 
 use super::{
-    household_readers, may_view_stats, recent_progress_for_viewer, session_log_for_viewer,
-    stats_for_viewer, ViewerStatsError,
+    book_household, household_readers, may_view_stats, recent_progress_for_viewer,
+    session_log_for_viewer, stats_for_viewer, ViewerStatsError,
 };
 use crate::auth::{set_display_name, set_share_stats, upsert_user_avatar};
 use crate::init_db;
-use crate::stats::tests::{reading_session, seed_user_with_id};
-use crate::test_support::{seed_epub_position, seed_synced_ebook, seed_user, solid_color_png};
+use crate::stats::tests::{listening_session, reading_session, seed_user_with_id};
+use crate::test_support::{
+    seed_epub_position, seed_minimal_books, seed_synced_ebook, seed_user, solid_color_png,
+};
 
 async fn reading_session_at_offset(
     pool: &sqlx::SqlitePool,
@@ -402,4 +406,133 @@ async fn recent_progress_for_viewer_surfaces_auth_error_when_the_pool_is_closed_
         .await
         .unwrap_err();
     assert!(matches!(err, ViewerStatsError::Auth(_)));
+}
+
+const T0: i64 = 1_700_000_000;
+
+#[tokio::test]
+async fn book_household_sums_each_sharing_readers_sittings_on_the_book() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    seed_minimal_books(&pool, 2).await;
+    let caller = seed_user(&pool, "caller").await;
+    let alice = seed_user(&pool, "alice").await;
+    let zed = seed_user(&pool, "zed").await;
+    set_display_name(&pool, zed, Some("Bob")).await.unwrap();
+    upsert_user_avatar(&pool, alice, "image/png", &solid_color_png(1, 2, 3, 4, 4))
+        .await
+        .unwrap();
+    // The caller's own sittings are theirs to read through insights, never this list.
+    reading_session(&pool, caller, "uuid-1", T0, 900).await;
+    // Alice: a reading sitting, a listening one a day on, and a 30 s glance after both.
+    reading_session(&pool, alice, "uuid-1", T0, 600).await;
+    listening_session(&pool, alice, "uuid-1", T0 + 86_400, 1_200).await;
+    reading_session(&pool, alice, "uuid-1", T0 + 200_000, 30).await;
+    // Bob read another book for far longer, which must not count here.
+    reading_session(&pool, zed, "uuid-1", T0 + 5_000, 300).await;
+    reading_session(&pool, zed, "uuid-2", T0 + 9_000, 3_000).await;
+
+    let readers = book_household(&pool, caller, "uuid-1")
+        .await
+        .unwrap()
+        .unwrap();
+
+    let summary: Vec<_> = readers
+        .iter()
+        .map(|r| {
+            (
+                r.name.as_str(),
+                r.has_avatar,
+                r.seconds,
+                r.sessions,
+                r.last_session_at,
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        vec![
+            ("alice", true, 1_830, 2, T0 + 86_400 + 1_200),
+            ("Bob", false, 300, 1, T0 + 5_000 + 300),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn book_household_leaves_out_a_reader_who_does_not_share() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    seed_minimal_books(&pool, 1).await;
+    let caller = seed_user(&pool, "caller").await;
+    let dave = seed_user(&pool, "dave").await;
+    reading_session(&pool, dave, "uuid-1", T0, 600).await;
+    set_share_stats(&pool, dave, false).await.unwrap();
+
+    let readers = book_household(&pool, caller, "uuid-1")
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(readers.is_empty());
+}
+
+#[tokio::test]
+async fn book_household_counts_a_reader_from_a_sitting_of_exactly_a_minute() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    seed_minimal_books(&pool, 1).await;
+    let caller = seed_user(&pool, "caller").await;
+    let glance = seed_user(&pool, "glance").await;
+    let minute = seed_user(&pool, "minute").await;
+    reading_session(&pool, glance, "uuid-1", T0, 59).await;
+    reading_session(&pool, minute, "uuid-1", T0, 60).await;
+
+    let readers = book_household(&pool, caller, "uuid-1")
+        .await
+        .unwrap()
+        .unwrap();
+
+    let names: Vec<&str> = readers.iter().map(|r| r.name.as_str()).collect();
+    assert_eq!(names, vec!["minute"]);
+}
+
+#[tokio::test]
+async fn book_household_resolves_a_merged_uuid_to_the_surviving_book() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    seed_minimal_books(&pool, 1).await;
+    let caller = seed_user(&pool, "caller").await;
+    let alice = seed_user(&pool, "alice").await;
+    reading_session(&pool, alice, "uuid-1", T0, 600).await;
+    sqlx::query(
+        "INSERT INTO merged_uuids (uuid, book_id, format, library_path)
+         SELECT 'absorbed-uuid', id, 'EPUB', '/lib/absorbed' FROM books WHERE uuid = 'uuid-1'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let readers = book_household(&pool, caller, "absorbed-uuid")
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(readers.len(), 1);
+    assert_eq!(readers[0].seconds, 600);
+}
+
+#[tokio::test]
+async fn book_household_is_none_for_an_unknown_book() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let caller = seed_user(&pool, "caller").await;
+
+    assert!(book_household(&pool, caller, "no-such-book")
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn book_household_propagates_db_error_when_pool_is_closed() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    pool.close().await;
+
+    let err = book_household(&pool, 1, "uuid-1").await.unwrap_err();
+    assert!(matches!(err, crate::stats::StatsError::Sqlx(_)));
 }

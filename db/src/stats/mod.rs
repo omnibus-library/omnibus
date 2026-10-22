@@ -43,8 +43,8 @@ pub use builder::{chart_series, ChartError};
 pub use composition::{invalidate as invalidate_library_composition, library_composition};
 pub use goals::{current_year, daily_goals, goal_for_year, set_daily_goal, set_goal, GoalError};
 pub use household::{
-    household_readers, recent_progress_for_viewer, session_log_for_viewer, stats_for_viewer,
-    ViewerStatsError,
+    book_household, household_readers, recent_progress_for_viewer, session_log_for_viewer,
+    stats_for_viewer, ViewerStatsError,
 };
 pub use library::{invalidate as invalidate_library_size, library_size};
 /// Per-user aggregate cache TTL. A reload after a just-finished session

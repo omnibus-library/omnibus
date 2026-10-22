@@ -10,6 +10,7 @@ import type {
   AuthorSummary,
   BookDeletionManifest,
   BookFileInfo,
+  BookHouseholdReader,
   BookInsights,
   Bookmark,
   BookProgress,
@@ -304,6 +305,21 @@ export function aWireInsights(
       { day: "2026-08-20", seconds: 1800 },
     ],
     as_of_day: "2026-08-24",
+    ...overrides,
+  };
+}
+
+/** Another reader's time in a book as `GET /api/books/{uuid}/household` sends it: two sittings, the latest on 2026-08-24. */
+export function aWireBookHouseholdReader(
+  overrides: Partial<BookHouseholdReader> = {},
+): BookHouseholdReader {
+  return {
+    id: 2,
+    name: "Maya R.",
+    has_avatar: false,
+    seconds: 9_960,
+    sessions: 3,
+    last_session_at: 1_787_700_000,
     ...overrides,
   };
 }

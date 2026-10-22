@@ -5,6 +5,7 @@ import {
   getGetAuthorByIdMockHandler200,
   getGetAuthorReadingMockHandler200,
   getGetAuthorsMockHandler200,
+  getGetBookHouseholdMockHandler200,
   getGetBookInsightsMockHandler200,
   getGetBookReviewsMockHandler200,
   getGetGenresMockHandler200,
@@ -562,6 +563,7 @@ export function bookDetailHandlers(book: EbookMetadata) {
     getGetAuthorByIdMockHandler200(aWireAuthor()),
     getGetSuggestionsMockHandler200({ status: "ready", items: [] }),
     getGetBookInsightsMockHandler200(null),
+    getGetBookHouseholdMockHandler200([]),
   ];
 }
 

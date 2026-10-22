@@ -2897,6 +2897,45 @@
         }
       }
     },
+    "/api/books/{uuid}/household": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "List the readers who share their time in a book",
+        "description": "Every other reader who shares their stats and has sat down with this book for a minute\nor more: the seconds they have read and listened, how many sittings, and when the\nlatest ended. Newest first. You are never in the list, and a reader who doesn't share\ntheir stats is left out entirely.",
+        "operationId": "get_book_household",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The sharing readers, newest sitting first; empty when nobody else has opened the book.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BookHouseholdReader"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No book has that uuid."
+          }
+        }
+      }
+    },
     "/api/books/{uuid}/insights": {
       "get": {
         "tags": [
@@ -9340,6 +9379,48 @@
             "type": "integer",
             "format": "int64",
             "description": "The file's size in bytes."
+          }
+        }
+      },
+      "BookHouseholdReader": {
+        "type": "object",
+        "description": "A reader who shares their stats and has spent time in one book, as\n`GET /api/books/{uuid}/household` lists them.",
+        "required": [
+          "id",
+          "name",
+          "has_avatar",
+          "seconds",
+          "sessions",
+          "last_session_at"
+        ],
+        "properties": {
+          "has_avatar": {
+            "type": "boolean",
+            "description": "Whether `GET /api/users/{id}/avatar` has an image to serve."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The user's id. Pass it as `user_id` to the stats routes."
+          },
+          "last_session_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When their latest sitting of a minute or more ended, in Unix seconds."
+          },
+          "name": {
+            "type": "string",
+            "description": "The reader's display name, or their username when they have none."
+          },
+          "seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Seconds they have read and listened in the book, short glances included."
+          },
+          "sessions": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many times they sat down with it for a minute or more."
           }
         }
       },
