@@ -130,6 +130,9 @@ cargo fmt                                                   # format all crates
 # Playwright E2E. `just e2e-ci` runs specs the way CI does: its own bundle,
 # standalone server and scratch DB, torn down afterwards (no server needed).
 just e2e-ci                                                 # whole suite; or `just e2e-ci tests/flows/<flow>.spec.ts`
+# KOReader E2E lane: a real KOReader in Docker over OPDS against a scratch
+# server. Linux + docker only.
+just koreader-e2e                                           # PASS/FAIL per scenario (docs/koreader.md)
 # Against a running dev server instead (baseURL = $PLAYWRIGHT_BASE_URL or :3000).
 # The Playwright project uses pnpm (not npm) and TypeScript 7; Biome is its
 # linter/formatter. `just lint-ts` runs biome check + tsc --noEmit.
