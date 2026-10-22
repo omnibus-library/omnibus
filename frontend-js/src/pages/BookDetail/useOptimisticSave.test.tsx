@@ -35,6 +35,7 @@ function renderSave() {
         async (note) => {
           sent.push(note);
           if (note === "first") await held.promise;
+          if (note === "refused") throw new Error("refused");
           return `saved ${note}`;
         },
         {
@@ -113,6 +114,24 @@ describe("useOptimisticSave among keys that begin with its own", () => {
     read.release();
   });
 
+  it.each([
+    ["is saved", "second"],
+    ["is refused", "refused"],
+  ])("leaves the answer under a longer key fresh when a write %s", async (_, note) => {
+    const { client, result } = renderSave();
+    const child = [...KEY, "child"];
+    client.setQueryData(child, "answer");
+
+    act(() => {
+      result.current.mutate(note);
+    });
+    await waitFor(() =>
+      expect(result.current.isSuccess || result.current.isError).toBe(true),
+    );
+
+    expect(client.getQueryState(child)?.isInvalidated).toBe(false);
+  });
+
   it("refetches when its last write settles although another mutation under a longer key is running", async () => {
     const { client, result } = renderSave();
     const other = deferred();
@@ -127,7 +146,7 @@ describe("useOptimisticSave among keys that begin with its own", () => {
     });
 
     await waitFor(() =>
-      expect(invalidate).toHaveBeenCalledWith({ queryKey: KEY }),
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: KEY, exact: true }),
     );
     other.release();
   });

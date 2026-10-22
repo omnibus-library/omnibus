@@ -61,7 +61,7 @@ export function useOptimisticSave<TData, TVars>(
       if (context.id !== newest.current) return;
       client.setQueryData(queryKey, context.previous);
       // `previous` may itself have been an older write's guess.
-      void client.invalidateQueries({ queryKey });
+      void client.invalidateQueries({ queryKey, exact: true });
     },
     onSuccess: (saved, vars, context) => {
       // The previous reader's answer has no place in this session's cache.
@@ -78,10 +78,11 @@ export function useOptimisticSave<TData, TVars>(
       client.setQueryData(queryKey, saved);
     },
     // The last write to settle refetches, so a failed newest one never leaves an older guess.
+    // Exact, like the cancel: a refetch of a longer key could overwrite another save's guess.
     onSettled: (_data, _error, _vars, context) => {
       if (context?.session !== sessionGeneration()) return;
       if (client.isMutating({ mutationKey: queryKey, exact: true }) <= 1) {
-        void client.invalidateQueries({ queryKey });
+        void client.invalidateQueries({ queryKey, exact: true });
       }
     },
   });
