@@ -36,8 +36,9 @@ function useOffscreen(target: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const element = target.current;
     if (!element || !("IntersectionObserver" in window)) return;
-    const watch = new IntersectionObserver(([entry]) =>
-      setOffscreen(!entry?.isIntersecting),
+    // Entries queue oldest first; the last is where the element is now.
+    const watch = new IntersectionObserver((entries) =>
+      setOffscreen(!entries.at(-1)?.isIntersecting),
     );
     watch.observe(element);
     return () => watch.disconnect();
@@ -171,11 +172,12 @@ function BookDetailFor({ uuid }: { uuid: BookUuid }) {
     if (book.data && book.data.uuid !== uuid) {
       // Seeded so the survivor's page opens on this answer instead of a loader and a refetch.
       client.setQueryData(bookQuery(book.data.uuid).queryKey, book.data);
-      // The rest of the address, `/edit` included, moves with it.
+      // The rest of the address, `/edit` included, moves with it. Cut at the segment, since the
+      // route's uuid is decoded and the address may not be.
       navigate(
         {
           pathname: location.pathname.replace(
-            `/books/${uuid}`,
+            /^\/books\/[^/]+/,
             `/books/${book.data.uuid}`,
           ),
           search: location.search,

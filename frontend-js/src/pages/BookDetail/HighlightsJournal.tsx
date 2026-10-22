@@ -19,7 +19,9 @@ export function HighlightsJournal({ book }: { book: BookDetail }) {
   });
   const journal = useQuery({ ...journalQuery(book.uuid), enabled: !wish });
   const [composing, setComposing] = useState(false);
-  const bothEmpty = highlights.data?.length === 0 && journal.data?.length === 0;
+  // Not for a wished book: its reads stop, but whatever they answered before the wish landed stays.
+  const bothEmpty =
+    !wish && highlights.data?.length === 0 && journal.data?.length === 0;
   return (
     <>
       {bothEmpty ? (

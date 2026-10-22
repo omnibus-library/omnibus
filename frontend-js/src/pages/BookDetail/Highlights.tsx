@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { type BookDetail, deleteHighlight, type Highlight } from "../../api";
 import { Button, ButtonLink } from "../../components/Button/Button";
@@ -23,6 +23,9 @@ import "./HighlightsJournal.css";
 
 function CopyAction({ text }: { text: string | null }) {
   const [label, setLabel] = useState("Copy");
+  // One timer: a second press restarts the wait, and leaving the card ends it.
+  const reset = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(reset.current), []);
   const copy = async () => {
     if (text === null) return;
     setLabel(
@@ -31,7 +34,8 @@ function CopyAction({ text }: { text: string | null }) {
         () => "Couldn’t copy",
       ),
     );
-    setTimeout(() => setLabel("Copy"), 1500);
+    clearTimeout(reset.current);
+    reset.current = setTimeout(() => setLabel("Copy"), 1500);
   };
   return (
     <Button

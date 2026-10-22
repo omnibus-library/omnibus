@@ -26,22 +26,22 @@ export function useBookTabs() {
   const [tab, setTab] = useState<TabId>("overview");
   // Only without View Transitions: the page that just opened plays its own entrance.
   const [entering, setEntering] = useState<TabId | null>(null);
+  // The tab last asked for, which leads `tab` through a page turn: two asks inside one turn compare with each other.
+  const target = useRef<TabId>("overview");
   /** Resolves once the new panel is in the DOM, so a caller can focus or scroll within it. */
-  const selectTab = useCallback(
-    (next: TabId): Promise<void> => {
-      if (next === tab) return Promise.resolve();
-      document.documentElement.style.setProperty(
-        "--dir",
-        indexOf(next) > indexOf(tab) ? "1" : "-1",
-      );
-      const css = turnMode() === "css";
-      return turnPage(() => {
-        setTab(next);
-        setEntering(css ? next : null);
-      });
-    },
-    [tab],
-  );
+  const selectTab = useCallback((next: TabId): Promise<void> => {
+    if (next === target.current) return Promise.resolve();
+    document.documentElement.style.setProperty(
+      "--dir",
+      indexOf(next) > indexOf(target.current) ? "1" : "-1",
+    );
+    target.current = next;
+    const css = turnMode() === "css";
+    return turnPage(() => {
+      setTab(next);
+      setEntering(css ? next : null);
+    });
+  }, []);
   return { tab, entering, selectTab };
 }
 

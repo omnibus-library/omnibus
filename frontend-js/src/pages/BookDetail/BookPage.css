@@ -57,8 +57,8 @@
   background: var(--bg-0);
   color: var(--ink-0);
 }
-/* An open menu sits above the tabs. */
-.bp-stage:has([aria-expanded="true"]) {
+/* An open menu, or a dialog opened from the stage, sits above the tabs. */
+.bp-stage:has([aria-expanded="true"], .bdmq-overlay) {
   z-index: 7;
 }
 .bp-stage-body {

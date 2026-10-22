@@ -670,6 +670,40 @@ export const MergedAwayUuidMovesToTheSurvivingBook: Story = {
   },
 };
 
+export const MergedAwayUuidKeepsTheRestOfTheAddressWhateverItsEncoding: Story =
+  {
+    // `%61` is "a": the route reads the uuid decoded, the address keeps it as typed.
+    parameters: { path: "/books/00000000-0000-4000-8000-0000000000%61a/edit" },
+    beforeEach({ msw }) {
+      aliasReads.length = 0;
+      msw.use(
+        http.get("/api/ebooks/:uuid", ({ params }) => {
+          aliasReads.push(String(params.uuid));
+          return HttpResponse.json(BOOK);
+        }),
+        ...bookDetailHandlers(BOOK),
+      );
+    },
+    render: () => (
+      <>
+        <Routes>
+          <Route path="/books/:uuid/edit" element={<BookDetail />} />
+        </Routes>
+        <output data-testid="location">{useLocation().pathname}</output>
+      </>
+    ),
+    play: async ({ canvas }) => {
+      await canvas.findByRole("heading", { name: "Aurora Station, Vol. 1" });
+
+      await waitFor(() =>
+        expect(canvas.getByTestId("location")).toHaveTextContent(
+          `/books/${BOOK.unique_identifier}/edit`,
+        ),
+      );
+      await expect(aliasReads).toEqual([ALIAS]);
+    },
+  };
+
 // ---------- The adaptive states, each tab, and the four themes ----------
 
 const FIVE_CHAPTERS = [0, 15, 40, 70, 85].map((percent, i) => ({
@@ -874,6 +908,42 @@ export const Finished: Story = {
       canvas.getByRole("button", { name: "Read status: Finished" }),
     ).toBeInTheDocument();
     await expect(canvas.queryByRole("progressbar")).not.toBeInTheDocument();
+  },
+};
+
+export const JournalComposerFromTheFinishedCardCoversTheTabs: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...readStatusHandlers(
+        aWireReadStatus({ status: "finished", finished_at: noon(10, 18) }),
+      ),
+      ...reviewHandlers({ mine: aWireReview({ stars: 4 }) }),
+      ...bookDetailHandlers(
+        aWireBook({
+          ...BOOK,
+          series: null,
+          series_id: null,
+          series_index: null,
+        }),
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: /New journal entry/ }),
+    );
+    const overlay = await canvas.findByTestId("journal-composer-overlay");
+
+    const tabs = canvas.getByRole("tablist");
+    tabs.scrollIntoView({ block: "center" });
+    const box = tabs.getBoundingClientRect();
+    const top = document.elementFromPoint(
+      box.left + box.width / 2,
+      box.top + box.height / 2,
+    );
+
+    // The strip is behind the dimmed overlay, not drawn over the editor's backdrop.
+    await expect(overlay.contains(top)).toBe(true);
   },
 };
 

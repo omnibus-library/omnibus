@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { delay, HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 import { toBookDetail } from "../../api";
 import {
@@ -13,6 +14,7 @@ import {
   aWireHighlight,
   aWireJournalEntry,
   aWireOtherReview,
+  aWireWishlist,
 } from "../../testing/wire";
 import { HighlightsJournal } from "./HighlightsJournal";
 import "./BookDetail.css";
@@ -94,6 +96,35 @@ const PASSAGES = [
 
 const SAYING =
   "Darrow's first night in the Institute reframes everything before it. The caste colours stop being worldbuilding and start being the plot.";
+
+export const AWishedBookWithNoFileKeepsItsTwoNotesAndOffersNoComposer: Story = {
+  args: { book: toBookDetail(aWireBook({ formats: [] })) },
+  beforeEach({ msw }) {
+    msw.use(
+      // The wish lands after the empty reads, which a book that cannot be read still makes at first.
+      http.get("/api/physical/:uuid/wishlist", async () => {
+        await delay(400);
+        return HttpResponse.json(aWireWishlist());
+      }),
+      ...highlightsHandlers([]),
+      ...journalHandlers([], ADA),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("highlights-empty", undefined, {
+        timeout: 3000,
+      }),
+    ).toHaveTextContent("Find a copy first");
+    await expect(canvas.getByTestId("journal-empty")).toHaveTextContent(
+      "Find a copy first",
+    );
+    await expect(canvas.queryByTestId("highlights-journal-empty")).toBeNull();
+    await expect(
+      canvas.queryByRole("button", { name: "New journal entry" }),
+    ).toBeNull();
+  },
+};
 
 export const HighlightsBesideTheJournal: Story = {
   beforeEach({ msw }) {

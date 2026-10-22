@@ -55,7 +55,7 @@ export function MoreMenu({
     const at = all.findIndex((el) => el === document.activeElement);
     const to: Record<string, number> = {
       ArrowDown: at + 1,
-      ArrowUp: at - 1,
+      ArrowUp: at < 0 ? all.length - 1 : at - 1,
       Home: 0,
       End: all.length - 1,
     };

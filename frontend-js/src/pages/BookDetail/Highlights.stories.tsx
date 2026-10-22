@@ -210,6 +210,38 @@ export const CopiesThePassage: Story = {
   },
 };
 
+export const CopyingAgainRestartsTheCopiedLabel: Story = {
+  beforeEach({ msw }) {
+    msw.use(...highlightsHandlers([PASSAGES[0] as (typeof PASSAGES)[number]]));
+    const original = navigator.clipboard;
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: async () => {} },
+      configurable: true,
+    });
+    return () =>
+      Object.defineProperty(navigator, "clipboard", {
+        value: original,
+        configurable: true,
+      });
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: "Copy" }));
+    await canvas.findByRole("button", { name: "Copied" });
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await userEvent.click(canvas.getByRole("button", { name: "Copied" }));
+
+    // Past the first press's 1.5 s, but not the second's.
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    await expect(
+      canvas.getByRole("button", { name: "Copied" }),
+    ).toBeInTheDocument();
+
+    await expect(
+      await canvas.findByRole("button", { name: "Copy" }, { timeout: 2000 }),
+    ).toBeInTheDocument();
+  },
+};
+
 const PIRANESI = toBookDetail(
   aWireBook({
     formats: ["EPUB"],

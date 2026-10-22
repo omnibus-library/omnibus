@@ -978,6 +978,22 @@ export const MoreMenuClosesOnEscapeAndHandsFocusBack: Story = {
   },
 };
 
+export const MoreMenuArrowUpFromNoItemGoesToTheLast: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "More actions" }));
+    const menu = await canvas.findByRole("menu", { name: "More actions" });
+    await waitFor(() =>
+      expect(within(menu).getAllByRole("menuitem")[0]).toHaveFocus(),
+    );
+    // Focus on the menu itself, as after a click on its padding.
+    menu.focus();
+
+    await userEvent.keyboard("{ArrowUp}");
+
+    await expect(within(menu).getAllByRole("menuitem").at(-1)).toHaveFocus();
+  },
+};
+
 export const ResumeNamesTheChapter: Story = {
   beforeEach({ msw }) {
     msw.use(
