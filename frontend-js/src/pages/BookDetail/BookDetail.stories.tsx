@@ -324,9 +324,10 @@ export const AHeroTapShowsOnTheReviewsTabToo: Story = {
     // Only the open tab's stars are in the accessibility tree: these are the hero's.
     const hero = await canvas.findByRole("group", { name: "Your rating" });
 
-    await userEvent.click(
-      within(hero).getByRole("button", { name: "Rate 4 stars" }),
-    );
+    const star = within(hero).getByRole("button", { name: "Rate 4 stars" });
+    // Until your saved rating is read the stars wait.
+    await waitFor(() => expect(star).toBeEnabled());
+    await userEvent.click(star);
     await waitFor(() => expect(patches).toEqual([{ stars: 4 }]));
     await userEvent.click(canvas.getByRole("tab", { name: "Reviews" }));
 

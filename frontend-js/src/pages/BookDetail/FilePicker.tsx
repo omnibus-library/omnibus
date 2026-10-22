@@ -109,7 +109,6 @@ export function FilePicker({
         data-testid={`${testId}-trigger`}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={LABEL[kind]}
         onClick={() => {
           onPress?.();
           setOpen(!open);

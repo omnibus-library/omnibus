@@ -113,6 +113,13 @@ type Story = StoryObj<typeof meta>;
 
 const writes: ReviewPatch[] = [];
 
+/** A star button, once your saved rating is known: until it is, they are disabled. */
+const starButton = async (canvas: ReturnType<typeof within>, name: string) => {
+  const button = await canvas.findByRole("button", { name });
+  await waitFor(() => expect(button).toBeEnabled());
+  return button;
+};
+
 /** The width each of your five stars is filled to, as drawn. */
 const fills = (canvasElement: HTMLElement) =>
   [
@@ -279,8 +286,10 @@ export const NoHouseholdListWhenNobodyRated: Story = {
     await expect(
       await canvas.findByRole("group", { name: "Your rating" }),
     ).toBeInTheDocument();
-    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
-      "Not rated yet",
+    await waitFor(() =>
+      expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
+        "Not rated yet",
+      ),
     );
     await expect(
       canvas.queryByRole("list", { name: "Household ratings" }),
@@ -294,9 +303,7 @@ export const RatingAddsAYouRow: Story = {
     msw.use(...reviewHandlers({}, writes));
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      await canvas.findByRole("button", { name: "Rate 4 stars" }),
-    );
+    await userEvent.click(await starButton(canvas, "Rate 4 stars"));
 
     const list = await canvas.findByRole("list", {
       name: "Household ratings",
@@ -362,9 +369,7 @@ export const OneClickRatesOnceAndPopsOnce: Story = {
       if (event.animationName === "bd-star-pop") pops.push(event.animationName);
     });
 
-    await userEvent.click(
-      await canvas.findByRole("button", { name: "Rate 3.5 stars" }),
-    );
+    await userEvent.click(await starButton(canvas, "Rate 3.5 stars"));
 
     await waitFor(() => expect(writes).toEqual([{ stars: 3.5 }]));
     await waitFor(() => expect(pops).toHaveLength(1));
@@ -381,9 +386,7 @@ export const ArrowKeysRateInHalfSteps: Story = {
     msw.use(...reviewHandlers({ mine: aWireReview({ stars: 3 }) }, writes));
   },
   play: async ({ canvas, userEvent }) => {
-    const rated = await canvas.findByRole("button", {
-      name: "Clear your 3-star rating",
-    });
+    const rated = await starButton(canvas, "Clear your 3-star rating");
     rated.focus();
 
     await userEvent.keyboard("{ArrowRight}");
@@ -433,7 +436,7 @@ async function moreItems(
 export const OneEpub: Story = {
   play: async ({ canvas, userEvent }) => {
     await expect(
-      canvas.getByRole("link", { name: "Start reading" }),
+      await canvas.findByRole("link", { name: "Start reading" }),
     ).toHaveAttribute("href", `/read/${UUID}`);
     await expect(await moreItems(canvas, userEvent)).not.toContain("Immersive");
   },
@@ -468,7 +471,7 @@ export const PickerKeepsFocusWhenThePageRerenders: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
-      canvas.getByRole("button", { name: "Choose which file to read" }),
+      await canvas.findByRole("button", { name: "Start reading" }),
     );
     const panel = canvas.getByRole("dialog", {
       name: "Choose which file to read",
@@ -488,9 +491,12 @@ export const PickerKeepsFocusWhenThePageRerenders: Story = {
 export const SeveralFiles: Story = {
   args: SeveralFilesArgs,
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      canvas.getByRole("button", { name: "Choose which file to read" }),
-    );
+    // The button is named by what it says, not by a label of its own that hides it.
+    const trigger = await canvas.findByRole("button", {
+      name: "Start reading",
+    });
+    await expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+    await userEvent.click(trigger);
 
     const panel = canvas.getByRole("dialog", {
       name: "Choose which file to read",
@@ -521,7 +527,7 @@ export const ComicOnly: Story = {
   },
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByRole("link", { name: "Start reading" }),
+      await canvas.findByRole("link", { name: "Start reading" }),
     ).toHaveAttribute("href", `/comic/${UUID}`);
   },
 };
@@ -535,7 +541,7 @@ export const PdfOnly: Story = {
   },
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByRole("link", { name: "Start reading" }),
+      await canvas.findByRole("link", { name: "Start reading" }),
     ).toHaveAttribute("href", `/pdf/${UUID}`);
   },
 };
@@ -544,7 +550,7 @@ export const AudioOnly: Story = {
   args: { book: aBook({ formats: ["M4B"], book_files: [AUDIO] }) },
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByRole("link", { name: "Start listening" }),
+      await canvas.findByRole("link", { name: "Start listening" }),
     ).toHaveAttribute("href", `/listen/${UUID}`);
     await expect(
       canvas.queryByRole("link", { name: "Listen" }),
@@ -556,7 +562,7 @@ export const AudiobookOnlyHasNoReadAction: Story = {
   args: { book: aBook({ formats: ["M4B"], book_files: [AUDIO] }) },
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByRole("link", { name: "Start listening" }),
+      await canvas.findByRole("link", { name: "Start listening" }),
     ).toBeInTheDocument();
     await expect(
       canvas.queryByRole("link", { name: /Start reading|Read again/ }),
@@ -570,7 +576,7 @@ export const EbookAndAudio: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await expect(
-      canvas.getByRole("link", { name: "Start reading" }),
+      await canvas.findByRole("link", { name: "Start reading" }),
     ).toBeInTheDocument();
     await expect(canvas.getByRole("link", { name: "Listen" })).toHaveAttribute(
       "href",
@@ -598,7 +604,7 @@ export const SeveralAudioFiles: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
-      canvas.getByRole("button", { name: "Choose which file to listen to" }),
+      await canvas.findByRole("button", { name: "Start listening" }),
     );
 
     await expect(
@@ -712,6 +718,7 @@ export const NotStartedShowsTheRuntime: Story = {
 export const ChapterBarFlagsTheChapterAndTimeLeft: Story = {
   beforeEach({ msw }) {
     msw.use(
+      ...readStatusHandlers(aWireReadStatus({ status: "reading" })),
       // 15,174 s in at 62%: 38% more is 2 h 35 m.
       getGetBookInsightsMockHandler200(
         aWireInsights({ seconds_total: 15_174 }),
@@ -974,6 +981,7 @@ export const MoreMenuClosesOnEscapeAndHandsFocusBack: Story = {
 export const ResumeNamesTheChapter: Story = {
   beforeEach({ msw }) {
     msw.use(
+      ...readStatusHandlers(aWireReadStatus({ status: "reading" })),
       getGetProgressMockHandler200(
         aWireProgress(
           aWirePosition({
@@ -1000,6 +1008,7 @@ export const ResumeNamesTheChapter: Story = {
 export const ResumeWithoutAChapterTable: Story = {
   beforeEach({ msw }) {
     msw.use(
+      ...readStatusHandlers(aWireReadStatus({ status: "reading" })),
       getGetProgressMockHandler200(
         aWireProgress(aWirePosition({ progress_percent: 45 })),
       ),
@@ -1030,6 +1039,7 @@ export const NotStartedHasNoRuler: Story = {
 export const FinishedBook: Story = {
   beforeEach({ msw }) {
     msw.use(
+      ...readStatusHandlers(aWireReadStatus({ status: "finished" })),
       getGetProgressMockHandler200(
         aWireProgress(aWirePosition({ progress_percent: 100 })),
       ),
@@ -1048,6 +1058,7 @@ export const ListeningResumes: Story = {
   args: { book: aBook({ formats: ["M4B"], book_files: [AUDIO] }) },
   beforeEach({ msw }) {
     msw.use(
+      ...readStatusHandlers(aWireReadStatus({ status: "reading" })),
       getGetProgressMockHandler200(
         aWireProgress(
           aWirePosition({
@@ -1074,7 +1085,7 @@ export const ListeningResumes: Story = {
         "50%, 1 h 30 m left of 3 h",
       ),
     );
-    await expect(within(bar).getByText("1h 30m")).toBeInTheDocument();
+    await expect(within(bar).getByText("1 h 30 m")).toBeInTheDocument();
   },
 };
 
@@ -1149,6 +1160,7 @@ export const FilelessBookNotOnTheWishlist: Story = {
 export const RulerEstimatesTimeLeftAtTheReadersPace: Story = {
   beforeEach({ msw }) {
     msw.use(
+      ...readStatusHandlers(aWireReadStatus({ status: "reading" })),
       getGetBookInsightsMockHandler200(aWireInsights({ seconds_total: 3600 })),
       getGetProgressMockHandler200(
         aWireProgress(aWirePosition({ progress_percent: 40 })),
@@ -1165,6 +1177,7 @@ export const RulerEstimatesTimeLeftAtTheReadersPace: Story = {
 export const RulerPrefersTheAudioTimelineToThePace: Story = {
   beforeEach({ msw }) {
     msw.use(
+      ...readStatusHandlers(aWireReadStatus({ status: "reading" })),
       getGetBookInsightsMockHandler200(aWireInsights()),
       getGetProgressMockHandler200(
         aWireProgress(aWirePosition({ progress_percent: 40 })),
@@ -1266,7 +1279,7 @@ export const RatingFlipsTheCardToUpNext: Story = {
   play: async ({ canvas, userEvent }) => {
     await canvas.findByRole("button", { name: /Leave a review/ });
 
-    await userEvent.click(canvas.getByRole("button", { name: "Rate 4 stars" }));
+    await userEvent.click(await starButton(canvas, "Rate 4 stars"));
 
     await expect(
       await canvas.findByRole("link", {
@@ -1402,5 +1415,264 @@ export const NoHouseholdRatingUntilTheServerSumsOne: Story = {
     await canvas.findByRole("list", { name: "Household ratings" });
     // The household's average is the server's to give; the hero adds no figure of its own.
     await expect(canvas.queryByText(/\d readers?/)).not.toBeInTheDocument();
+  },
+};
+
+// ---------- Round 1 ----------
+
+const PHONE = {
+  phone: { name: "Phone", styles: { width: "390px", height: "844px" } },
+};
+
+export const StatusMenuStaysInsideThePhoneScreen: Story = {
+  globals: { viewport: { value: "phone", isRotated: false } },
+  parameters: { viewport: { options: PHONE } },
+  play: async ({ canvas, userEvent }) => {
+    const pill = await canvas.findByRole("button", pillName("Unread"));
+    await waitFor(() => expect(pill).toBeEnabled());
+    await userEvent.click(pill);
+
+    const menu = await canvas.findByRole("menu", { name: "Read status" });
+    await waitFor(() => expect(getComputedStyle(menu).opacity).toBe("1"));
+    // An ebook alone puts the pill in the first column, so the menu must open to the right of its edge.
+    await waitFor(() => {
+      const { left, right } = menu.getBoundingClientRect();
+      expect(left).toBeGreaterThanOrEqual(0);
+      expect(right).toBeLessThanOrEqual(window.innerWidth);
+    });
+  },
+};
+
+/** `window.matchMedia` answering as a reader who asked for less motion, or has a pointer that hovers, would. */
+function stubMedia({ reduced, fine }: { reduced: boolean; fine: boolean }) {
+  const real = window.matchMedia;
+  window.matchMedia = ((query: string) => ({
+    matches: query.includes("prefers-reduced-motion")
+      ? reduced
+      : query.includes("hover: hover")
+        ? fine
+        : false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia;
+  return () => {
+    window.matchMedia = real;
+  };
+}
+
+const pointerOver = (canvasElement: HTMLElement, type: string) =>
+  canvasElement
+    .querySelector(".bp-stage")
+    ?.dispatchEvent(
+      new PointerEvent(type, { clientX: 40, clientY: 40, bubbles: true }),
+    );
+
+const bookOf = (canvasElement: HTMLElement) =>
+  canvasElement.querySelector<HTMLElement>(".bp-book") as HTMLElement;
+
+export const ReducedMotionSkipsTheBurst: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...readStatusHandlers(null),
+      ...reviewHandlers({ mine: aWireReview({ stars: 4 }) }),
+    );
+    return stubMedia({ reduced: true, fine: true });
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const pill = await canvas.findByRole("button", pillName("Unread"));
+    await waitFor(() => expect(pill).toBeEnabled());
+    await userEvent.click(pill);
+    await userEvent.click(
+      await canvas.findByRole("menuitemradio", { name: "Finished" }),
+    );
+
+    await expect(
+      await canvas.findByRole("heading", { name: /You finished/ }),
+    ).toBeInTheDocument();
+    await expect(canvasElement.querySelector(".bp-burst")).not.toHaveAttribute(
+      "data-playing",
+    );
+  },
+};
+
+export const ReducedMotionLeavesTheCoverAtRest: Story = {
+  beforeEach: () => stubMedia({ reduced: true, fine: true }),
+  play: async ({ canvas, canvasElement }) => {
+    await canvas.findByRole("heading", { level: 1 });
+
+    pointerOver(canvasElement, "pointermove");
+
+    await expect(bookOf(canvasElement).style.getPropertyValue("--ry")).toBe("");
+  },
+};
+
+export const ACoarsePointerLeavesTheCoverAtRest: Story = {
+  beforeEach: () => stubMedia({ reduced: false, fine: false }),
+  play: async ({ canvas, canvasElement }) => {
+    await canvas.findByRole("heading", { level: 1 });
+
+    pointerOver(canvasElement, "pointermove");
+
+    await expect(bookOf(canvasElement).style.getPropertyValue("--ry")).toBe("");
+  },
+};
+
+export const AFinePointerLeansTheCoverAndLeavingRestsIt: Story = {
+  beforeEach: () => stubMedia({ reduced: false, fine: true }),
+  play: async ({ canvas, canvasElement }) => {
+    await canvas.findByRole("heading", { level: 1 });
+
+    pointerOver(canvasElement, "pointermove");
+    await expect(bookOf(canvasElement).style.getPropertyValue("--ry")).not.toBe(
+      "",
+    );
+
+    pointerOver(canvasElement, "pointerleave");
+    await expect(bookOf(canvasElement).style.getPropertyValue("--ry")).toBe("");
+  },
+};
+
+const SQUARE_UUID = "00000000-0000-4000-8000-00000000a0a0";
+
+/** A 200 by 200 cover, an audiobook's. */
+const SQUARE = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="#8a3b2a"/></svg>`;
+
+export const ASquareCoverMarksTheBookSquare: Story = {
+  // Its own address, since the browser keeps the image an earlier story loaded from the shared one.
+  args: { book: aBook({ unique_identifier: SQUARE_UUID }) },
+  beforeEach({ msw }) {
+    msw.use(
+      http.get(
+        "/api/covers/:uuid",
+        () =>
+          new HttpResponse(SQUARE, {
+            headers: { "Content-Type": "image/svg+xml" },
+          }),
+      ),
+    );
+  },
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(bookOf(canvasElement)).toHaveAttribute("data-shape", "square"),
+    );
+  },
+};
+
+export const TheCoverReservesItsSpaceBeforeItLoads: Story = {
+  play: async ({ canvas }) => {
+    const cover = await canvas.findByRole("img", { name: /^Cover of/ });
+
+    await expect(cover).toHaveAttribute("width", "340");
+    await expect(cover).toHaveAttribute("height", "510");
+  },
+};
+
+export const ARefusedFinishedSaveEndsTheCelebration: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      failing("put", "/api/read-status", 500),
+      ...readStatusHandlers(null),
+      ...reviewHandlers({ mine: aWireReview({ stars: 4 }) }),
+    );
+    return stubMedia({ reduced: false, fine: true });
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const pill = await canvas.findByRole("button", pillName("Unread"));
+    await waitFor(() => expect(pill).toBeEnabled());
+    await userEvent.click(pill);
+    await userEvent.click(
+      await canvas.findByRole("menuitemradio", { name: "Finished" }),
+    );
+    await canvas.findByText("Couldn't save your reading status");
+
+    // The book is not finished, so nothing celebrates it: not the burst, not the card.
+    await waitFor(
+      () =>
+        expect(canvasElement.querySelector(".bp-burst")).not.toHaveAttribute(
+          "data-playing",
+        ),
+      { timeout: 1000 },
+    );
+    await expect(
+      canvas.queryByRole("heading", { name: /You finished/ }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const NothingStatusDependentWhileTheStatusLoads: Story = {
+  beforeEach({ msw }) {
+    msw.use(hanging("/api/read-status/:uuid"));
+  },
+  play: async ({ canvas, canvasElement }) => {
+    await canvas.findByRole("heading", { level: 1 });
+
+    // No runtime or bar and no card, and the button says only what it will always do.
+    await expect(canvas.queryByRole("progressbar")).not.toBeInTheDocument();
+    await expect(canvasElement.querySelector(".bp-runtime")).toBeNull();
+    await expect(
+      canvas.queryByRole("heading", { name: /You finished/ }),
+    ).not.toBeInTheDocument();
+    await expect(canvas.getByTestId("start-reading")).toHaveTextContent("Read");
+    await expect(canvas.getByTestId("start-reading")).not.toHaveTextContent(
+      /Start|Continue|again/,
+    );
+  },
+};
+
+export const NoSavedStatusIsUnreadWhateverThePositionsSay: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...readStatusHandlers(null),
+      getGetProgressMockHandler200(
+        aWireProgress(aWirePosition({ progress_percent: 62 })),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("button", pillName("Unread")),
+    ).toBeInTheDocument();
+    await expect(
+      await canvas.findByRole("link", { name: "Start reading" }),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByRole("progressbar")).not.toBeInTheDocument();
+  },
+};
+
+export const StarsWaitForTheSavedRating: Story = {
+  beforeEach({ msw }) {
+    writes.length = 0;
+    msw.use(hanging("/api/reviews/:uuid"), ...reviewHandlers({}, writes));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const group = await canvas.findByRole("group", { name: "Your rating" });
+    const first = within(group).getByRole("button", { name: "Rate 0.5 stars" });
+
+    // Not rated yet is a claim it cannot make, and a click would write over what it cannot see.
+    await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
+      "Loading your rating…",
+    );
+    await expect(first).toBeDisabled();
+    await userEvent.click(first);
+    await expect(writes).toEqual([]);
+  },
+};
+
+export const StarsSayWhenTheRatingCouldNotBeRead: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/reviews/:uuid", 500));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText("Couldn’t load your rating"),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", { name: "Rate 0.5 stars" }),
+    ).toBeDisabled();
   },
 };

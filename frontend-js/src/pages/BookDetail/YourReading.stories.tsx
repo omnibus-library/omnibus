@@ -369,6 +369,63 @@ export const FinishedBookSaysWhenAndAfterHowLong: Story = {
   },
 };
 
+export const FinishedInOneDayReadsSingular: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      getGetBookInsightsMockHandler200(
+        aWireInsights({ started_at: noon(10, 18) }),
+      ),
+      readAt(100),
+      ...readStatusHandlers(
+        aWireReadStatus({ status: "finished", finished_at: noon(10, 18) }),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText(/, after 1 day$/)).toBeInTheDocument();
+  },
+};
+
+export const FinishedWithoutSessionsStillSaysFinished: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...readStatusHandlers(
+        aWireReadStatus({ status: "finished", finished_at: noon(10, 18) }),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText(/^Finished October 18, \d{4}$/),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByText("Not started yet")).not.toBeInTheDocument();
+  },
+};
+
+export const ReadingWithoutSessionsStillSaysReading: Story = {
+  beforeEach({ msw }) {
+    msw.use(...readStatusHandlers(aWireReadStatus({ status: "reading" })));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Reading")).toBeInTheDocument();
+    await expect(canvas.queryByText("Not started yet")).not.toBeInTheDocument();
+  },
+};
+
+export const SaysNothingAboutWhereYouStandWhileTheStatusLoads: Story = {
+  beforeEach({ msw }) {
+    msw.use(hanging("/api/read-status/:uuid"));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByRole("heading", { name: "Your reading" });
+    await waitFor(() =>
+      expect(canvas.queryByText(/Gathering|Tallying/)).not.toBeInTheDocument(),
+    );
+
+    await expect(canvas.queryByText("Not started yet")).not.toBeInTheDocument();
+  },
+};
+
 export const UnreadableRecordOffersRetryAndKeepsTheSessionLog: Story = {
   beforeEach({ msw }) {
     let reads = 0;

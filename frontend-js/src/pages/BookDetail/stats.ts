@@ -1,5 +1,5 @@
-import type { HouseholdActivity, Insights } from "../../api";
-import { plural, spacedDuration } from "../../format";
+import type { HouseholdActivity, Insights, ReadStatusValue } from "../../api";
+import { formatLongDate, plural, spacedDuration } from "../../format";
 
 /** How many days the spark covers, ending today. */
 export const SPARK_DAYS = 14;
@@ -13,17 +13,14 @@ const count = (n: number, word: string) => `${n} ${word}${plural(n)}`;
 
 export const sessionsLabel = (sessions: number) => count(sessions, "session");
 
+const daysLabel = (days: number) => count(days, "day");
+
 const dayLabel = (day: number) =>
   new Date(day * DAY_MS).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     timeZone: "UTC",
   });
-
-/** The time left at the pace so far, from total time and how far in the reader is; none until the pace means something. */
-export function pacedSecondsLeft(i: Insights, percent: number): number {
-  return Math.floor((i.secondsTotal * (100 - percent)) / percent);
-}
 
 const localDay = (unixSecs: number) => {
   const date = new Date(unixSecs * 1000);
@@ -42,7 +39,7 @@ export function finishTotals(o: {
   highlights: number;
 }): string {
   return [
-    count(spanDays(o.startedAt, o.finishedAt), "day"),
+    daysLabel(spanDays(o.startedAt, o.finishedAt)),
     count(o.sessions, "session"),
     o.highlights > 0 && count(o.highlights, "highlight"),
   ]
@@ -100,10 +97,32 @@ export function lastActivityLabel(now: number, then: number): string {
   return `${calendarDay(now, then)} at ${clockTime(then)}`;
 }
 
-/** The seconds left at the pace so far; `null` below five percent, where it would be a guess, and once the book is done. */
+/** The seconds left at the pace so far, from total time and how far in the reader is; `null` below five percent, where it would be a guess, and once the book is done. */
 export function pacedLeft(i: Insights, percent: number): number | null {
   if (percent < MIN_PACE_PERCENT || percent >= 100) return null;
-  return pacedSecondsLeft(i, percent);
+  return Math.floor((i.secondsTotal * (100 - percent)) / percent);
+}
+
+/**
+ * The top line of Your reading: where the reader stands, from their saved status first and
+ * their sittings second. `null` while the status is unknown, so nothing is claimed.
+ */
+export function readingStatusLine(o: {
+  status: ReadStatusValue | undefined;
+  startedAt: number | null;
+  finishedAt: number | null;
+  audioOnly: boolean;
+}): string | null {
+  const { status, startedAt, finishedAt } = o;
+  if (status === undefined) return null;
+  if (status === "finished") {
+    if (finishedAt === null) return "Finished";
+    if (startedAt === null) return `Finished ${formatLongDate(finishedAt)}`;
+    return `Finished ${formatLongDate(finishedAt)} at ${clockTime(finishedAt)}, after ${daysLabel(spanDays(startedAt, finishedAt))}`;
+  }
+  const doing = o.audioOnly ? "Listening" : "Reading";
+  if (startedAt !== null) return `${doing} since ${formatLongDate(startedAt)}`;
+  return status === "reading" ? doing : "Not started yet";
 }
 
 /** `YYYY-MM-DD` as days since the epoch; `null` for a malformed or impossible date such as 2026-02-31. */

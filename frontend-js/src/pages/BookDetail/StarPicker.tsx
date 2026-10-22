@@ -29,13 +29,20 @@ type StarPickerProps = {
   onPick: (stars: number | null) => void;
   /** The line beside the stars; while the pointer rests on a half star it reads that value instead. */
   note: string;
+  /** The saved rating is not known, so a tap has nothing to compare with and rates nothing. */
+  disabled?: boolean;
 };
 
 /**
  * Five stars, each with a button per half. The pointer previews the half or whole star under
  * it, a click rates once (or clears, on the current value), and the arrow keys step by halves.
  */
-export function StarPicker({ stars, onPick, note }: StarPickerProps) {
+export function StarPicker({
+  stars,
+  onPick,
+  note,
+  disabled = false,
+}: StarPickerProps) {
   const [hover, setHover] = useState<number | null>(null);
   // The slot just rated, with a count so the same slot can pop again.
   const [pop, setPop] = useState<{ slot: number; n: number } | null>(null);
@@ -43,15 +50,16 @@ export function StarPicker({ stars, onPick, note }: StarPickerProps) {
   // A hover preview wins over the saved value.
   const shown = hover ?? stars ?? 0;
 
-  const pick = (value: number) => {
+  const commit = (next: number | null) => {
     // The fill should show the answer, not the pointer.
     setHover(null);
-    const next = ratingAfterClick(value, stars);
     if (next !== null && !prefersReducedMotion()) {
       setPop((last) => ({ slot: Math.ceil(next), n: (last?.n ?? 0) + 1 }));
     }
     onPick(next);
   };
+  // A click on the saved value clears it; a key only ever rates.
+  const pick = (value: number) => commit(ratingAfterClick(value, stars));
 
   // Arrows rate as they move, from the half that has focus: the saved value lags a keypress.
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -61,7 +69,7 @@ export function StarPicker({ stars, onPick, note }: StarPickerProps) {
     if (to === null) return;
     event.preventDefault();
     group.current?.querySelector<HTMLElement>(`[data-value="${to}"]`)?.focus();
-    pick(to);
+    commit(to);
   };
 
   return (
@@ -105,6 +113,7 @@ export function StarPicker({ stars, onPick, note }: StarPickerProps) {
                   aria-label={label}
                   title={label}
                   data-value={value}
+                  disabled={disabled}
                   // One tab stop: the rated half, else the first.
                   tabIndex={value === (stars ?? 0.5) ? 0 : -1}
                   onMouseEnter={() => setHover(value)}

@@ -107,6 +107,9 @@ export function HeroCover({
           {src && broken !== src ? (
             <img
               src={src}
+              // The shape of a book cover, so the hero holds its height until the image is here.
+              width={340}
+              height={510}
               alt={`Cover of ${book.title}`}
               onLoad={(event) =>
                 setShape(

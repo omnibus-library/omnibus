@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { BookDetail as Detail, UserId } from "../../api";
 import { ChevronRightGlyph } from "../../components/Glyphs/Glyphs";
@@ -85,6 +85,8 @@ function Ratings({
   const me = useCurrentUser();
   const reviews = useQuery(reviewsQuery(book.uuid));
   const mine = reviews.data?.mine?.stars ?? null;
+  // Until it is read, your own rating is not "none": the stars wait rather than offer a write over it.
+  const read = reviews.data ? "ready" : reviews.isError ? "failed" : "loading";
   const others = (reviews.data?.others ?? []).filter(
     (review) => review.stars !== null,
   );
@@ -93,7 +95,8 @@ function Ratings({
       <StarPicker
         stars={mine}
         onPick={rating.pick}
-        note={heroRatingNote(rating.starsFailed, mine)}
+        disabled={read !== "ready"}
+        note={heroRatingNote(rating.starsFailed, mine, read)}
       />
       {(others.length > 0 || mine !== null) && (
         <ul className="bp-readers" aria-label="Household ratings">
@@ -175,6 +178,12 @@ export function Hero({
     clearTimeout(stopBurst.current);
     stopBurst.current = setTimeout(() => setPlaying(false), BURST_MS);
   };
+  // A book that is no longer finished (the save was refused, or the reader moved it back) has nothing to celebrate.
+  const unfinish = useCallback(() => {
+    clearTimeout(stopBurst.current);
+    setCelebrating(false);
+    setPlaying(false);
+  }, []);
   const facts = factLine(book);
   return (
     <div className="bp-hero">
@@ -199,6 +208,7 @@ export function Hero({
           wish={wish}
           onOpenDialog={onOpenDialog}
           onFinish={finish}
+          onUnfinish={unfinish}
           celebrating={celebrating}
           onLeaveReview={onLeaveReview}
         />

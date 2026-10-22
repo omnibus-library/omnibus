@@ -94,6 +94,12 @@ describe("heroRatingNote", () => {
       "Couldn’t save your rating — try again",
     );
   });
+  it("claims nothing while your rating is unknown", () => {
+    expect(heroRatingNote(false, null, "loading")).toBe("Loading your rating…");
+    expect(heroRatingNote(false, null, "failed")).toBe(
+      "Couldn’t load your rating",
+    );
+  });
 });
 
 describe("halfAfterKey", () => {

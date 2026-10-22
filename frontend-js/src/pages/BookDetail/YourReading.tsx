@@ -6,7 +6,7 @@ import { Loading } from "../../components/Loading/Loading";
 import { SessionLog } from "../../components/SessionLog/SessionLog";
 import { fmtStars } from "../../components/StarRating/stars";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
-import { formatLongDate, nowSecs, spacedDuration } from "../../format";
+import { nowSecs, spacedDuration } from "../../format";
 import {
   alignmentQuery,
   householdQuery,
@@ -16,17 +16,16 @@ import {
   reviewsQuery,
   useWish,
 } from "./queries";
-import { homeReadout, newestPercent } from "./readout";
+import { homeReadout, newestPercent, savedStatus } from "./readout";
 import {
   calendarDay,
-  clockTime,
   householdLine,
   lastActivityLabel,
   pacedLeft,
   paceLabel,
+  readingStatusLine,
   SPARK_DAYS,
   sessionsLabel,
-  spanDays,
   sparkBuckets,
   sparkSummary,
 } from "./stats";
@@ -171,18 +170,17 @@ export function YourReading({ book }: { book: BookDetail }) {
   const positions = progress.data ?? { reading: null, listening: null };
   const percent = newestPercent(positions);
   const stats = insights.data;
-  const status = recorded.data?.status ?? "unread";
+  const status = savedStatus(recorded.data);
   const finishedAt = recorded.data?.finishedAt ?? null;
   const now = nowSecs();
   const verb = audioOnly ? "listened" : "read";
 
-  let statusLine = "Not started yet";
-  if (stats) {
-    statusLine =
-      status === "finished" && finishedAt !== null
-        ? `Finished ${formatLongDate(finishedAt)} at ${clockTime(finishedAt)}, after ${spanDays(stats.startedAt, finishedAt)} days`
-        : `${audioOnly ? "Listening" : "Reading"} since ${formatLongDate(stats.startedAt)}`;
-  }
+  const statusLine = readingStatusLine({
+    status,
+    startedAt: stats?.startedAt ?? null,
+    finishedAt,
+    audioOnly,
+  });
 
   const rows: Row[] = [];
   if (stats) {
@@ -272,7 +270,7 @@ export function YourReading({ book }: { book: BookDetail }) {
   } else {
     body = (
       <>
-        <p className="bp-reading-status">{statusLine}</p>
+        {statusLine && <p className="bp-reading-status">{statusLine}</p>}
         {rows.length > 0 && (
           <dl className="bp-stats" data-testid="bp-stats">
             {rows.map((row) => (

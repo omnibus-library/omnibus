@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { type BookUuid, type ReadStatusValue, saveReadStatus } from "../../api";
 import {
   ChevronDownGlyph,
@@ -11,6 +11,7 @@ import { MoreMenu } from "../../components/MoreMenu/MoreMenu";
 import { useToast } from "../../components/Toast/Toast";
 import { ago, nowSecs } from "../../format";
 import { readStatusQuery, shelvesQuery } from "./queries";
+import { savedStatus } from "./readout";
 import { useOptimisticSave } from "./useOptimisticSave";
 
 const STATUSES = [
@@ -23,10 +24,13 @@ const STATUSES = [
 export function ReadStatus({
   uuid,
   onFinish,
+  onFinishRefused,
 }: {
   uuid: BookUuid;
   /** Told when the reader picks Finished after another status. */
   onFinish: () => void;
+  /** Told when the server refused that pick, so what it celebrated is taken down. */
+  onFinishRefused: () => void;
 }) {
   const toast = useToast();
   const { queryKey } = readStatusQuery(uuid);
@@ -41,19 +45,20 @@ export function ReadStatus({
       }),
       // A smart shelf may now hold the book.
       alsoInvalidate: [shelvesQuery(uuid).queryKey],
-      onFailure: () => toast("Couldn't save your reading status"),
+      onFailure: (status) => {
+        toast("Couldn't save your reading status");
+        if (status === "finished") onFinishRefused();
+      },
     },
   );
   const [open, setOpen] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
-  // `null` is a read that succeeded with no status; `undefined` is still loading or unreadable.
-  const known = record.data !== undefined;
-  const shown = known ? (record.data?.status ?? "unread") : null;
+  // Unknown while loading or unreadable; Unread for a book with no record.
+  const shown = savedStatus(record.data);
+  const known = shown !== undefined;
   const current = STATUSES.find(([status]) => status === shown);
   return (
     <div className="shd-more bp-status" data-testid="read-status-control">
       <button
-        ref={trigger}
         type="button"
         className="bp-button bp-button-large bp-tinted bp-status-pill"
         aria-label={`Read status: ${current?.[1] ?? "loading"}`}

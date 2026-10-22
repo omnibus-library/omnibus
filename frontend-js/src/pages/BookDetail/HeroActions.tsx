@@ -30,6 +30,7 @@ import {
   type HomeReadout,
   homeReadout,
   newestPercent,
+  savedStatus,
 } from "./readout";
 import { pacedLeft } from "./stats";
 
@@ -235,6 +236,8 @@ type HeroActionsProps = {
   onOpenDialog: (dialog: BookDialog) => void;
   /** Told when the reader picks Finished after another status. */
   onFinish: () => void;
+  /** Told when the book is no longer finished: a refused save, or a move back. */
+  onUnfinish: () => void;
   /** The finished card rises into place; only for a book finished in this view. */
   celebrating: boolean;
   /** Takes the reader to their rating on the Reviews tab. */
@@ -247,6 +250,7 @@ export function HeroActions({
   wish,
   onOpenDialog,
   onFinish,
+  onUnfinish,
   celebrating,
   onLeaveReview,
 }: HeroActionsProps) {
@@ -262,10 +266,11 @@ export function HeroActions({
   const readout = homeReadout(alignment.data, positions.reading);
   const percent = newestPercent(positions);
   const pct = Math.min(Math.max(percent ?? 0, 0), 100);
-  // The saved status, else what the positions say.
-  const status =
-    recorded.data?.status ??
-    (pct >= 100 ? "finished" : pct > 0 ? "reading" : "unread");
+  // The saved status alone: unknown until it is read, and Unread for a book with no record.
+  const status = savedStatus(recorded.data);
+  useEffect(() => {
+    if (status !== "finished") onUnfinish();
+  }, [status, onUnfinish]);
   const audioSeconds =
     alignment.data?.audioFiles.reduce((sum, f) => sum + f.seconds, 0) ?? 0;
 
@@ -279,12 +284,13 @@ export function HeroActions({
         ? `about ${spacedDuration(paced)} left at your pace`
         : null;
 
-  const fill = status === "finished" ? 100 : status === "unread" ? 0 : pct;
-  const label = continueLabel({
-    audioOnly,
-    status,
-    chapter: readout.chNow?.n ?? null,
-  });
+  const fill = status === "finished" ? 100 : status === "reading" ? pct : 0;
+  const label =
+    status === undefined
+      ? audioOnly
+        ? "Listen"
+        : "Read"
+      : continueLabel({ audioOnly, status, chapter: readout.chNow?.n ?? null });
   const continueClass = "bp-button bp-button-large bp-continue";
   const body = (icon: ReactNode) => (
     <>
@@ -311,7 +317,7 @@ export function HeroActions({
   const audioFiles = book.bookFiles.filter(isAudioFile);
   const runtime = runtimeLine(book, audioSeconds);
   const barShown =
-    hasFiles && status !== "finished" && percent !== null && pct > 0;
+    hasFiles && status === "reading" && percent !== null && pct > 0;
   return (
     <div className="bp-lower">
       {hasFiles && status === "finished" ? (
@@ -331,7 +337,7 @@ export function HeroActions({
         />
       ) : (
         hasFiles &&
-        status !== "finished" &&
+        status !== undefined &&
         runtime && <p className="bp-runtime">{runtime}</p>
       )}
       <div className="bp-actions">
@@ -397,7 +403,11 @@ export function HeroActions({
             )}
           </>
         )}
-        <ReadStatus uuid={uuid} onFinish={onFinish} />
+        <ReadStatus
+          uuid={uuid}
+          onFinish={onFinish}
+          onFinishRefused={onUnfinish}
+        />
         <MoreActions book={book} onOpenDialog={onOpenDialog} />
       </div>
     </div>

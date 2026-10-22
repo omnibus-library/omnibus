@@ -5,7 +5,7 @@ import type {
   Progress,
   ReadStatusValue,
 } from "../../api";
-import { formatHm, formatYear, plural } from "../../format";
+import { formatHm, formatYear, plural, spacedDuration } from "../../format";
 
 export type Chapter = NonNullable<Alignment["chapters"]>[number];
 
@@ -190,7 +190,6 @@ export type HomeReadout = {
   chTotal: number | null;
   chNow: { n: number; title: string } | null;
   audioAt: string | null;
-  audioTotal: string | null;
   audioLeftSecs: number | null;
 };
 
@@ -208,8 +207,7 @@ export function homeReadout(
         ? alignment.chapters.length
         : null,
     chNow: alignment?.chapters ? chapterNow(alignment.chapters, reading) : null,
-    audioAt: frac === null ? null : formatHm(frac * total),
-    audioTotal: total > 0 ? formatHm(total) : null,
+    audioAt: frac === null ? null : spacedDuration(frac * total),
     audioLeftSecs: frac === null ? null : Math.trunc((1 - frac) * total),
   };
 }
@@ -285,6 +283,13 @@ export function chapterSegments(
       fill: weight > 0 ? ((percent - start) / weight) * 100 : 100,
     };
   });
+}
+
+/** Your saved reading status: `undefined` while the read is pending or has failed, and Unread for a book with no record. */
+export function savedStatus(
+  record: { status: ReadStatusValue } | null | undefined,
+): ReadStatusValue | undefined {
+  return record === undefined ? undefined : (record?.status ?? "unread");
 }
 
 /** The words on the hero's main button: what it will do, from the read status and the chapter the reader is in. */

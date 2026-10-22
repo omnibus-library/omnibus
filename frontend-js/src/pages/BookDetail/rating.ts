@@ -15,8 +15,14 @@ export const ratingAfterClick = (value: number, current: number | null) =>
 export const previewNote = (value: number, current: number | null) =>
   value === current ? "Clear your rating" : `Rate ${fmtStars(value)}`;
 
-/** The note beside the hero's stars: a refused save first, then what you rated it, else an invitation. */
-export function heroRatingNote(failed: boolean, stars: number | null): string {
+/** The note beside the hero's stars: your rating not yet known, a refused save, then what you rated it, else an invitation. */
+export function heroRatingNote(
+  failed: boolean,
+  stars: number | null,
+  read: "ready" | "loading" | "failed" = "ready",
+): string {
+  if (read === "loading") return "Loading your rating…";
+  if (read === "failed") return "Couldn’t load your rating";
   if (failed) return "Couldn’t save your rating — try again";
   return stars === null ? "Not rated yet" : `You rated it ${fmtStars(stars)}`;
 }

@@ -1266,6 +1266,10 @@ button.bp-byline-series {
     right: 0;
     transform-origin: top right;
   }
+  /* With no Listen beside it the pill is first in its row: it spans two columns, so its right-anchored menu opens inside the gutter. */
+  .bp-actions > :first-child + .bp-status {
+    grid-column: 1 / 3;
+  }
   .bp-tablist {
     gap: 26px;
   }

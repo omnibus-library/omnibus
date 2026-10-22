@@ -15,6 +15,7 @@ import {
   interpolatePairs,
   linkedAudioAt,
   newestPercent,
+  savedStatus,
   shortChapterTitle,
 } from "./readout";
 
@@ -174,8 +175,8 @@ describe("homeReadout", () => {
 
     expect(readout).toMatchObject({
       chTotal: 2,
-      audioAt: "1h 30m",
-      audioTotal: "3h 00m",
+      // The chapter bar says it as the progress line beside it does.
+      audioAt: "1 h 30 m",
       audioLeftSecs: 5400,
     });
   });
@@ -185,7 +186,6 @@ describe("homeReadout", () => {
       chTotal: null,
       chNow: null,
       audioAt: null,
-      audioTotal: null,
       audioLeftSecs: null,
     });
   });
@@ -435,5 +435,20 @@ describe("continueLabel", () => {
     expect(continueLabel({ ...audio, status: "finished" })).toBe(
       "Listen again",
     );
+  });
+});
+
+describe("savedStatus", () => {
+  it("is unknown while the read is pending or has failed", () => {
+    expect(savedStatus(undefined)).toBeUndefined();
+  });
+
+  it("is Unread for a book with no record", () => {
+    expect(savedStatus(null)).toBe("unread");
+  });
+
+  it("is what the record says", () => {
+    expect(savedStatus({ status: "finished" })).toBe("finished");
+    expect(savedStatus({ status: "reading" })).toBe("reading");
   });
 });

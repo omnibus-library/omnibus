@@ -6,6 +6,7 @@ import {
   lastActivityLabel,
   pacedLeft,
   paceLabel,
+  readingStatusLine,
   SPARK_DAYS,
   spanDays,
   sparkBuckets,
@@ -257,5 +258,58 @@ describe("sparkSummary", () => {
     expect(sparkSummary(spark([13, 1]), "2026-08-24", true)).toBe(
       "Minutes listened per day over the last 14 days: 1 minute across 1 day, most on Aug 24 with 1 minute.",
     );
+  });
+});
+
+describe("readingStatusLine", () => {
+  const noon = (month: number, day: number) =>
+    new Date(2026, month - 1, day, 12).getTime() / 1000;
+  const line = (
+    status: Parameters<typeof readingStatusLine>[0]["status"],
+    startedAt: number | null = null,
+    finishedAt: number | null = null,
+    audioOnly = false,
+  ) => readingStatusLine({ status, startedAt, finishedAt, audioOnly });
+
+  it("says nothing while the status is unknown", () => {
+    expect(line(undefined, noon(10, 2))).toBeNull();
+  });
+
+  it("says when a finished book was started, finished, and after how long", () => {
+    expect(line("finished", noon(10, 2), noon(10, 18))).toBe(
+      "Finished October 18, 2026 at 12:00, after 17 days",
+    );
+  });
+
+  it("counts a single day as one", () => {
+    expect(line("finished", noon(10, 18), noon(10, 18))).toBe(
+      "Finished October 18, 2026 at 12:00, after 1 day",
+    );
+  });
+
+  it("says when a finished book with no sittings was finished", () => {
+    expect(line("finished", null, noon(10, 18))).toBe(
+      "Finished October 18, 2026",
+    );
+  });
+
+  it("says finished for a book with no date", () => {
+    expect(line("finished")).toBe("Finished");
+  });
+
+  it("says since when the sittings began", () => {
+    expect(line("reading", noon(10, 2))).toBe("Reading since October 2, 2026");
+    expect(line("reading", noon(10, 2), null, true)).toBe(
+      "Listening since October 2, 2026",
+    );
+  });
+
+  it("says reading or listening with no sittings yet", () => {
+    expect(line("reading")).toBe("Reading");
+    expect(line("reading", null, null, true)).toBe("Listening");
+  });
+
+  it("says not started only for an unread book with no sittings", () => {
+    expect(line("unread")).toBe("Not started yet");
   });
 });
