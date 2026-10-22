@@ -188,6 +188,13 @@ lint-ts:
 e2e-ci *specs: fixtures
     scripts/with-dev-env.sh e2e scripts/e2e-ci.sh "$@"
 
+# Run the KOReader E2E lane (scripts/koreader-e2e.sh): a scratch server with
+# the two generated fixture EPUBs, and a real KOReader in Docker browsing,
+# searching, downloading and opening over OPDS. Prints PASS/FAIL per scenario;
+# keeps the scratch dir on failure (docs/koreader.md). Linux + docker only.
+koreader-e2e:
+    scripts/with-dev-env.sh web scripts/koreader-e2e.sh
+
 # Regenerate openapi/openapi.json, the REST API contract, from the handlers'
 # `#[utoipa::path]` annotations. A test fails while the committed file is stale,
 # so run this after changing a route or a wire type in shared/, and commit the result.
