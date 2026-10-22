@@ -20,13 +20,11 @@ import { Highlights } from "./Highlights";
 import { Journal } from "./Journal";
 import { Overview } from "./Overview";
 import { bookQuery } from "./queries";
+import { SERIES_ID } from "./Related";
 import { ReviewsTab } from "./ReviewsTab";
 import { useMyRating } from "./useMyRating";
 import "./BookDetail.css";
 import "./BookPage.css";
-
-/** The series fan's id on the Overview, where the byline's series scrolls to. */
-const SERIES_ID = "bp-series";
 
 /** Whether the element is out of the viewport, so a drifting backdrop can stop. */
 function useOffscreen(target: RefObject<HTMLElement | null>) {
@@ -116,7 +114,7 @@ function Page({ book }: { book: Detail }) {
           entering={entering}
           onSelect={selectTab}
           panels={{
-            overview: <Overview book={book} />,
+            overview: <Overview book={book} onOpenDialog={setDialog} />,
             reviews: <ReviewsTab book={book} rating={rating} />,
             highlights: (
               <>

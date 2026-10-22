@@ -12,7 +12,6 @@ import { formatLongDate } from "../../format";
 import { highlightLocator, passagesKicker, readerDeepLink } from "./highlights";
 import { alignmentQuery, highlightsQuery, useWish } from "./queries";
 import type { Chapter } from "./readout";
-import { SectionHead } from "./SectionHead";
 
 function CopyAction({ text }: { text: string | null }) {
   const [label, setLabel] = useState("copy");
@@ -145,10 +144,14 @@ function Passages({ book }: { book: BookDetail }) {
   const list = highlights.data;
   return (
     <div className="bd-highlights" data-testid="highlights-section">
-      <SectionHead
-        kicker={list ? passagesKicker(list.length) : "Saved passages"}
-        title="Passages you saved"
-      />
+      <div className="bd-section-head">
+        <div className="bd-section-head-text">
+          <div className="label bd-section-kicker">
+            {list ? passagesKicker(list.length) : "Saved passages"}
+          </div>
+          <h3 className="bd-section-title">Passages you saved</h3>
+        </div>
+      </div>
       {list === undefined ? (
         highlights.isError ? (
           <div className="bd-journal-empty card" data-testid="highlights-error">
