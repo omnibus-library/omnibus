@@ -238,7 +238,9 @@ export const TextIsNeverUnder13px: Story = {
     await canvas.findByRole("heading", { level: 1 });
     await canvas.findByRole("heading", { name: "Your reading" });
     await waitFor(() =>
-      expect(canvas.queryByText(/Gathering|Tallying|Finding/)).toBeNull(),
+      expect(
+        canvas.queryByText(/Gathering|Tallying|Finding|Checking your shelves/),
+      ).toBeNull(),
     );
     const found = [...smallText(canvasElement)];
 
@@ -246,7 +248,11 @@ export const TextIsNeverUnder13px: Story = {
       const panel = await openTab(canvas, userEvent, name);
       await panel.findAllByRole("heading");
       await waitFor(() =>
-        expect(canvas.queryByText(/Gathering|Finding|Counting/)).toBeNull(),
+        expect(
+          canvas.queryByText(
+            /Gathering|Tallying|Finding|Checking your shelves/,
+          ),
+        ).toBeNull(),
       );
       found.push(...smallText(canvasElement));
     }

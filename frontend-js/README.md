@@ -235,7 +235,7 @@ shell provides it.
   `hiddenFormats`, `goals`, `apiTokens`, `viewPrefs`, `focusTrap`, book
   detail's `readout`, `stats`, `lean`, `identifiers` (the details list included),
   `shelves`, `highlightAnchors`, `quietReaders`, `journalMarkdown`, `rating`,
-  `reviews` (patches, spoiler folding, grouping, the summary) and delete copy, the palette's `selection`, the results page's `results`, Register's
+  `reviews` (a patch applied to your review and the household's list, what a save sends, the composer's seed, spoiler veiling and Read more) and delete copy, the palette's `selection`, the results page's `results`, Register's
   `refusal`, the library's `filters`, `libraryView`, `seriesStacks`,
   `shelfLens`, `sorting` and `bulkMetadata`, the editor's `metadata` (form
   schema, the rules a field is refused by and the override diff), `dirty`,

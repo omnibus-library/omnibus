@@ -52,7 +52,7 @@ export function MoreMenu({
       return onClose();
     }
     const all = [...event.currentTarget.querySelectorAll<HTMLElement>(ITEMS)];
-    const at = all.findIndex((el) => el === document.activeElement);
+    const at = all.indexOf(document.activeElement as HTMLElement);
     const to: Record<string, number> = {
       ArrowDown: at + 1,
       ArrowUp: at < 0 ? all.length - 1 : at - 1,
@@ -68,7 +68,6 @@ export function MoreMenu({
     <>
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a click-away scrim; the menu closes from the keyboard with Escape */}
       <div className="shd-menu-scrim" onClick={onClose} />
-      {/* biome-ignore lint/a11y/useSemanticElements: a menu is a popup of buttons, which no native element is */}
       <div
         ref={menu}
         className="shelf-actions-menu shd-menu"

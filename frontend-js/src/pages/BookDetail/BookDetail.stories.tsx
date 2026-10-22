@@ -729,7 +729,8 @@ const seriesVolume = (n: number) =>
   });
 
 /** Words a section shows while it waits, none of which may be left on a settled page. */
-const LOADING = /Gathering|Finding|Counting|Taking it off|Opening the record/;
+const LOADING =
+  /Gathering|Finding|Tallying|Checking your shelves|Taking it off|Opening the record/;
 
 /** Nothing is left waiting: a section that was loading has answered, with its content or its absence. */
 const settled = (canvas: ReturnType<typeof within>) =>
@@ -955,11 +956,18 @@ export const EmptyHousehold: Story = {
     await expect(
       await canvas.findByRole("group", { name: "Your rating" }),
     ).toBeInTheDocument();
+    // The reviews and the household have answered, so what is missing is absent, not pending.
+    await waitFor(() =>
+      expect(canvas.getAllByTestId("review-stars-meta")[0]).toHaveTextContent(
+        "Not rated yet",
+      ),
+    );
+    await expect(await heading(canvas, "Your reading")).toBeInTheDocument();
+    await settled(canvas);
     await expect(
       canvas.queryByRole("list", { name: "Household ratings" }),
     ).not.toBeInTheDocument();
     // No other reader has opened the book, so Your reading has no Household block.
-    await expect(await heading(canvas, "Your reading")).toBeInTheDocument();
     await expect(
       canvas.queryByRole("heading", { name: "Household" }),
     ).not.toBeInTheDocument();

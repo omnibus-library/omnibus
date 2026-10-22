@@ -20,7 +20,6 @@ const FILE_COVER =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
 
 const UPLOADED: string[] = [];
-const FETCHED: string[] = [];
 // Real PNG bytes: a staged preview that fails to decode drops its <img>.
 const PNG = Uint8Array.from(
   atob(PREVIEW.slice(PREVIEW.indexOf(",") + 1)),

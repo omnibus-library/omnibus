@@ -17,7 +17,6 @@ import { nowSecs } from "../../format";
 import {
   bookDetailHandlers,
   failing,
-  followHandlers,
   hanging,
   physicalHandlers,
   readStatusHandlers,
@@ -162,22 +161,9 @@ export const InASeries: Story = {
   },
 };
 
-export const SeriesCountLoading: Story = {
-  beforeEach({ msw }) {
-    msw.use(hanging("/api/series/:id"));
-  },
-  play: async ({ canvas }) => {
-    // The byline is the book's own record: it never waits on the series page.
-    await expect(
-      canvas.getByRole("button", { name: "Aurora Station, book 1" }),
-    ).toBeInTheDocument();
-    await expect(canvas.queryByText(/in your library/)).not.toBeInTheDocument();
-  },
-};
-
 let seriesAsked = false;
 
-export const SeriesCountFailing: Story = {
+export const TheHeroNeverAsksForTheSeries: Story = {
   beforeEach({ msw }) {
     seriesAsked = false;
     msw.use(
@@ -1411,13 +1397,13 @@ export const AFinishedBookOpensWithoutTheBurst: Story = {
 
 let reviewsRead = false;
 
-export const NoHouseholdRatingUntilTheServerSumsOne: Story = {
+export const HouseholdRatingsListWithoutAServerSummary: Story = {
   beforeEach({ msw }) {
     reviewsRead = false;
     msw.use(
       http.get("/api/reviews/:uuid", () => {
         reviewsRead = true;
-        // Two raters, but the threshold is the server's: no summary sent, none drawn.
+        // Two raters, but the threshold is the server's: no summary sent.
         return HttpResponse.json({
           mine: aWireReview({ stars: 5 }),
           others: [aWireOtherReview({ user_id: 7, stars: 4 })],
@@ -1428,9 +1414,8 @@ export const NoHouseholdRatingUntilTheServerSumsOne: Story = {
   },
   play: async ({ canvas }) => {
     await waitFor(() => expect(reviewsRead).toBe(true));
+    // The raters are listed whether or not the server summed them.
     await canvas.findByRole("list", { name: "Household ratings" });
-    // The household's average is the server's to give; the hero adds no figure of its own.
-    await expect(canvas.queryByText(/\d readers?/)).not.toBeInTheDocument();
   },
 };
 

@@ -4,7 +4,6 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -102,7 +101,6 @@ function SheetTabs({
     document.getElementById(tabId(to.key))?.focus();
   };
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a tablist has no native element
     <div
       className="es-tabs"
       role="tablist"

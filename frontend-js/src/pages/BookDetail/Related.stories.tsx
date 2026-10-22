@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
-import { expect, waitFor, within } from "storybook/test";
+import { expect, within } from "storybook/test";
 import { toBookDetail } from "../../api";
 import {
   getGetAuthorByIdMockHandler200,

@@ -83,7 +83,6 @@ const MARGARET = aWireOtherReview({
   stars: 5,
 });
 const ALAN = aWireOtherReview({ user_id: 11, username: "alan", stars: 2.5 });
-const MARGARET_AT_4 = { ...MARGARET, stars: 4 };
 
 const MINE: Review = aWireReview({
   stars: 4,
