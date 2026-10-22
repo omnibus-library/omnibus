@@ -26,7 +26,7 @@ import {
   aWireReview,
 } from "../../testing/wire";
 import { shelvesQuery } from "./queries";
-import { ReviewsStop } from "./ReviewsStop";
+import { ReviewsTab } from "./ReviewsTab";
 // The page brings the stop's styles.
 import "./BookDetail.css";
 
@@ -90,15 +90,15 @@ const MINE: Review = aWireReview({
 const writes: (ReviewPatch | "delete")[] = [];
 
 const meta = {
-  title: "Pages/BookDetail/ReviewsStop",
-  component: ReviewsStop,
+  title: "Pages/BookDetail/ReviewsTab",
+  component: ReviewsTab,
   args: { book: toBookDetail(aWireBook()) },
   beforeEach({ msw }) {
     writes.length = 0;
     msw.use(...bookDetailHandlers(aWireBook()));
     msw.use(...reviewHandlers({}, writes));
   },
-} satisfies Meta<typeof ReviewsStop>;
+} satisfies Meta<typeof ReviewsTab>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -356,7 +356,7 @@ export const ATapSavesTheStarsAndRefreshesWhatSumsThem: Story = {
   render: (args) => (
     <>
       <Observers uuid={args.book.uuid} />
-      <ReviewsStop {...args} />
+      <ReviewsTab {...args} />
     </>
   ),
   beforeEach({ msw }) {
@@ -546,7 +546,7 @@ export const TheLastWriteToSettleRefetchesWhenTheNewestFailed: Story = {
   render: (args) => (
     <>
       <Observers uuid={args.book.uuid} />
-      <ReviewsStop {...args} />
+      <ReviewsTab {...args} />
     </>
   ),
   beforeEach({ msw }) {

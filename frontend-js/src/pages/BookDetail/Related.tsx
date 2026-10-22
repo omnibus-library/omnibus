@@ -515,8 +515,8 @@ function Suggestions({ book }: { book: BookDetail }) {
   );
 }
 
-/** Stop 07: the series shelf, the shelves holding the book, then the author's other work and read-alikes. */
-export function MoreStop({ book }: { book: BookDetail }) {
+/** The series shelf, the shelves holding the book, then the author's other work and read-alikes. */
+export function Related({ book }: { book: BookDetail }) {
   return (
     <div className="bdmq-tight bdmq-more" data-testid="bdmq-more">
       {book.seriesId !== null && (

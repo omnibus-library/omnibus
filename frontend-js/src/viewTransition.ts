@@ -18,6 +18,8 @@ export function turnPage(update: () => void): Promise<void> {
     return Promise.resolve();
   }
   // React must commit inside the callback, or the transition snapshots the old page twice.
-  return document.startViewTransition(() => flushSync(update))
-    .updateCallbackDone;
+  const transition = document.startViewTransition(() => flushSync(update));
+  // A turn skipped by the next one rejects `ready`; the page is already where it was going.
+  transition.ready.catch(() => {});
+  return transition.updateCallbackDone;
 }

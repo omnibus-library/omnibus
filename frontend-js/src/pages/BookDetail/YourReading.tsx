@@ -105,8 +105,8 @@ function Record({ book, insights }: { book: BookDetail; insights: Insights }) {
   );
 }
 
-/** Stop 02: the reader's record in the book and their sittings. */
-export function StatsStop({ book }: { book: BookDetail }) {
+/** The reader's record in the book and their sittings. */
+export function YourReading({ book }: { book: BookDetail }) {
   const wish = useWish(book);
   // A wish has no reading to tally.
   const insights = useQuery({ ...insightsQuery(book.uuid), enabled: !wish });

@@ -104,8 +104,8 @@ function HighlightCard({ highlight, chapters, onQuote, onDelete }: CardProps) {
   );
 }
 
-/** Stop 04: the passages the reader saved, with open, copy and delete on each. */
-export function HighlightsStop({ book }: { book: BookDetail }) {
+/** The passages the reader saved, with open, copy and delete on each. */
+export function Highlights({ book }: { book: BookDetail }) {
   return useWish(book) ? (
     <>
       <div className="bdmq-k">Kept lines · none</div>

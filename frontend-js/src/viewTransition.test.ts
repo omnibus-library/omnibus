@@ -10,6 +10,7 @@ const stubReducedMotion = (reduce: boolean) =>
   }));
 
 type StartViewTransition = (update: () => void) => {
+  ready: Promise<void>;
   updateCallbackDone: Promise<void>;
 };
 
@@ -30,14 +31,20 @@ describe("turnMode", () => {
 
   it("reports view-transition when the browser has them", () => {
     stubReducedMotion(false);
-    stubViewTransitions(() => ({ updateCallbackDone: Promise.resolve() }));
+    stubViewTransitions(() => ({
+      ready: Promise.resolve(),
+      updateCallbackDone: Promise.resolve(),
+    }));
 
     expect(turnMode()).toBe("view-transition");
   });
 
   it("reports instant under reduced motion", () => {
     stubReducedMotion(true);
-    stubViewTransitions(() => ({ updateCallbackDone: Promise.resolve() }));
+    stubViewTransitions(() => ({
+      ready: Promise.resolve(),
+      updateCallbackDone: Promise.resolve(),
+    }));
 
     expect(turnMode()).toBe("instant");
   });
@@ -73,7 +80,10 @@ describe("turnPage", () => {
     stubViewTransitions((update) => {
       order.push("start");
       update();
-      return { updateCallbackDone: Promise.resolve() };
+      return {
+        ready: Promise.resolve(),
+        updateCallbackDone: Promise.resolve(),
+      };
     });
 
     await turnPage(() => order.push("update"));
@@ -84,7 +94,10 @@ describe("turnPage", () => {
   it("resolves after the update callback is done", async () => {
     stubReducedMotion(false);
     const callbackDone = deferred();
-    stubViewTransitions(() => ({ updateCallbackDone: callbackDone.promise }));
+    stubViewTransitions(() => ({
+      ready: Promise.resolve(),
+      updateCallbackDone: callbackDone.promise,
+    }));
     let resolved = false;
 
     const done = turnPage(() => {}).then(() => {

@@ -14,7 +14,7 @@ import {
   aWireJournalEntry,
   aWireWishlist,
 } from "../../testing/wire";
-import { JournalStop } from "./JournalStop";
+import { Journal } from "./Journal";
 
 const ADA = 1;
 const GRACE = { author_id: 7, author_name: "grace" } as const;
@@ -40,13 +40,13 @@ const ENTRIES = [
 ];
 
 const meta = {
-  title: "Pages/BookDetail/JournalStop",
-  component: JournalStop,
+  title: "Pages/BookDetail/Journal",
+  component: Journal,
   args: { book: toBookDetail(aWireBook()) },
   beforeEach({ msw }) {
     msw.use(...bookDetailHandlers(aWireBook()));
   },
-} satisfies Meta<typeof JournalStop>;
+} satisfies Meta<typeof Journal>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;

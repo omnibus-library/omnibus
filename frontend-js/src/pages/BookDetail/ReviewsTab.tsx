@@ -61,8 +61,8 @@ function ReviewSummaryBlock({ summary }: { summary: ReviewSummary }) {
   );
 }
 
-/** Stop 03: the counts kicker over your review, the household summary and every other reader's review. */
-export function ReviewsStop({ book }: { book: BookDetail }) {
+/** The counts kicker over your review, the household summary and every other reader's review. */
+export function ReviewsTab({ book }: { book: BookDetail }) {
   const reviews = useQuery(reviewsQuery(book.uuid));
   // Unknown reads as not finished, so spoilers stay shut.
   const status = useQuery(readStatusQuery(book.uuid));

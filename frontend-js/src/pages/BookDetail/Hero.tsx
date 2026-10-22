@@ -315,14 +315,14 @@ function ReviewsJumpLink({
   );
 }
 
-type HomeStopProps = {
+type HeroProps = {
   book: Detail;
   /** Scrolls the page to the Reviews stop, for the household rating under the title. */
   onShowReviews?: () => void;
 };
 
-/** Stop 01: the hero, with the kicker, title, authors, chips, description, the read and listen buttons, and where the reader stands. */
-export function HomeStop({ book, onShowReviews }: HomeStopProps) {
+/** The hero, with the kicker, title, authors, chips, description, the read and listen buttons, and where the reader stands. */
+export function Hero({ book, onShowReviews }: HeroProps) {
   const client = useQueryClient();
   const wish = useWish(book);
   const hasFiles =

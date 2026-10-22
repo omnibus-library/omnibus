@@ -23,16 +23,16 @@ import {
   aWireSession,
   aWireWishlist,
 } from "../../testing/wire";
-import { StatsStop } from "./StatsStop";
+import { YourReading } from "./YourReading";
 
 const meta = {
-  title: "Pages/BookDetail/StatsStop",
-  component: StatsStop,
+  title: "Pages/BookDetail/YourReading",
+  component: YourReading,
   args: { book: toBookDetail(aWireBook()) },
   beforeEach({ msw }) {
     msw.use(...bookDetailHandlers(aWireBook()));
   },
-} satisfies Meta<typeof StatsStop>;
+} satisfies Meta<typeof YourReading>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;

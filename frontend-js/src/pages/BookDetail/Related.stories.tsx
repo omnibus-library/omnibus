@@ -24,7 +24,7 @@ import {
   aWireWishlist,
   WIRE_ADA,
 } from "../../testing/wire";
-import { MoreStop } from "./MoreStop";
+import { Related } from "./Related";
 
 const THIS = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 const volume = (n: number) =>
@@ -45,8 +45,8 @@ function aBook(overrides: Parameters<typeof aWireBook>[0] = {}) {
 }
 
 const meta = {
-  title: "Pages/BookDetail/MoreStop",
-  component: MoreStop,
+  title: "Pages/BookDetail/Related",
+  component: Related,
   args: { book: aBook() },
   beforeEach({ msw }) {
     writes.length = 0;
@@ -56,7 +56,7 @@ const meta = {
       ...bookDetailHandlers(aWireBook()),
     );
   },
-} satisfies Meta<typeof MoreStop>;
+} satisfies Meta<typeof Related>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -277,7 +277,7 @@ export const AToggleSurvivesAReadStartedBeforeIt: Story = {
   render: (args) => (
     <>
       <RefetchShelves />
-      <MoreStop {...args} />
+      <Related {...args} />
     </>
   ),
   beforeEach({ msw }) {

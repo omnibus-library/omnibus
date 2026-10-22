@@ -17,7 +17,7 @@ import {
   aWireHighlight,
   aWireWishlist,
 } from "../../testing/wire";
-import { HighlightsStop } from "./HighlightsStop";
+import { Highlights } from "./Highlights";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 
@@ -32,8 +32,8 @@ const PASSAGES = [
 ];
 
 const meta = {
-  title: "Pages/BookDetail/HighlightsStop",
-  component: HighlightsStop,
+  title: "Pages/BookDetail/Highlights",
+  component: Highlights,
   args: {
     book: toBookDetail(
       aWireBook({ formats: ["EPUB"], book_files: [aWireFile()] }),
@@ -55,7 +55,7 @@ const meta = {
       ...bookDetailHandlers(aWireBook()),
     );
   },
-} satisfies Meta<typeof HighlightsStop>;
+} satisfies Meta<typeof Highlights>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;

@@ -64,8 +64,8 @@ function LadderRow({
   );
 }
 
-/** Stop 05: everyone's journal entries as a ladder of excerpts, each opening its full card. */
-export function JournalStop({ book }: { book: BookDetail }) {
+/** Everyone's journal entries as a ladder of excerpts, each opening its full card. */
+export function Journal({ book }: { book: BookDetail }) {
   return useWish(book) ? (
     <div
       id="journal"
@@ -85,11 +85,11 @@ export function JournalStop({ book }: { book: BookDetail }) {
       </p>
     </div>
   ) : (
-    <Journal book={book} />
+    <JournalFeed book={book} />
   );
 }
 
-function Journal({ book }: { book: BookDetail }) {
+function JournalFeed({ book }: { book: BookDetail }) {
   const viewer = useCurrentUser();
   const feed = useQuery(journalQuery(book.uuid));
   // By id, not position: a refetch keeps the same entry open, or drops it if it went away.

@@ -29,7 +29,7 @@ import {
   aWireReview,
   aWireWishlist,
 } from "../../testing/wire";
-import { HomeStop } from "./HomeStop";
+import { Hero } from "./Hero";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 
@@ -55,13 +55,13 @@ function aBook(overrides: Parameters<typeof aWireBook>[0] = {}) {
 }
 
 const meta = {
-  title: "Pages/BookDetail/HomeStop",
-  component: HomeStop,
+  title: "Pages/BookDetail/Hero",
+  component: Hero,
   args: { book: aBook() },
   beforeEach({ msw }) {
     msw.use(...bookDetailHandlers(aWireBook()));
   },
-} satisfies Meta<typeof HomeStop>;
+} satisfies Meta<typeof Hero>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;

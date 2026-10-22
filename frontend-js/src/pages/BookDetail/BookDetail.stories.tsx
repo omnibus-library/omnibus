@@ -78,57 +78,125 @@ export const Loaded: Story = {
   },
 };
 
-export const SectionRail: Story = {
-  // Two short sections can't scroll far enough to pass the reading line.
-  decorators: [
-    (Story) => (
-      <>
-        <style>{".bdmq-flowsec { min-height: 100vh; }"}</style>
-        <Story />
-      </>
-    ),
-  ],
+const TAB_NAMES = [
+  "Overview",
+  "Reviews",
+  "Highlights & Journal",
+  "Files & Details",
+];
+
+export const TabsListTheFourSections: Story = {
+  beforeEach({ msw }) {
+    msw.use(...bookDetailHandlers(BOOK));
+  },
+  play: async ({ canvas }) => {
+    const tabs = await canvas.findAllByRole("tab");
+    await expect(tabs.map((tab) => tab.textContent)).toEqual(TAB_NAMES);
+    await expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+
+    const panels = canvas.getAllByRole("tabpanel", { hidden: true });
+    await expect(
+      panels.map((panel) => panel.getAttribute("aria-labelledby")),
+    ).toEqual(tabs.map((tab) => tab.id));
+    await expect(panels.map((panel) => panel.hidden)).toEqual([
+      false,
+      true,
+      true,
+      true,
+    ]);
+  },
+};
+
+export const ClickingATabShowsItsPanel: Story = {
   beforeEach({ msw }) {
     msw.use(...bookDetailHandlers(BOOK));
   },
   play: async ({ canvas, canvasElement, userEvent }) => {
-    const rail = await canvas.findByRole("navigation", {
-      name: "Page sections",
-    });
-    const dots = within(rail).getAllByRole("button");
-    const last = dots.at(-1) as HTMLElement;
-    await expect(dots.map((dot) => dot.textContent)).toEqual([
-      "01 · Home",
-      "02 · Stats",
-      "03 · Reviews",
-      "04 · Highlights",
-      "05 · Journals",
-      "06 · The files",
-      "07 · More",
-    ]);
-    await expect(canvasElement.querySelectorAll(".bdmq-flowsec")).toHaveLength(
-      7,
+    const reviews = await canvas.findByRole("tab", { name: "Reviews" });
+
+    await userEvent.click(reviews);
+
+    await waitFor(() =>
+      expect(reviews).toHaveAttribute("aria-selected", "true"),
     );
-    await expect(dots[0]).toHaveClass("on");
-
-    await userEvent.click(last);
-
-    await waitFor(() => expect(last).toHaveClass("on"), { timeout: 5000 });
-    await expect(dots[0]).not.toHaveClass("on");
+    await expect(canvas.getByRole("tab", { name: "Overview" })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
     await expect(
-      canvas.getByRole("button", { name: "↑ back to the book" }),
-    ).toHaveClass("on");
-
-    await userEvent.click(
-      canvas.getByRole("button", { name: "↑ back to the book" }),
+      canvas.getByRole("tabpanel", { name: "Reviews" }),
+    ).toBeVisible();
+    await expect(
+      canvasElement.querySelector("#bp-panel-overview"),
+    ).not.toBeVisible();
+    await expect(canvasElement.querySelector(".bp-stage")).toHaveAttribute(
+      "data-tab",
+      "reviews",
     );
-
-    await waitFor(() => expect(dots[0]).toHaveClass("on"));
   },
 };
 
-export const HouseholdRatingJumpsToTheReviewsStop: Story = {
-  decorators: SectionRail.decorators,
+export const ArrowKeysMoveBetweenTabs: Story = {
+  beforeEach({ msw }) {
+    msw.use(...bookDetailHandlers(BOOK));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const tab = (name: string) => canvas.getByRole("tab", { name });
+    (await canvas.findByRole("tab", { name: "Overview" })).focus();
+
+    const selected = (name: string) =>
+      waitFor(() => expect(tab(name)).toHaveAttribute("aria-selected", "true"));
+
+    await userEvent.keyboard("{ArrowRight}");
+    await waitFor(() => expect(tab("Reviews")).toHaveFocus());
+    await selected("Reviews");
+
+    await userEvent.keyboard("{End}");
+    await waitFor(() => expect(tab("Files & Details")).toHaveFocus());
+    await selected("Files & Details");
+
+    await userEvent.keyboard("{ArrowLeft}");
+    await waitFor(() => expect(tab("Highlights & Journal")).toHaveFocus());
+    await selected("Highlights & Journal");
+
+    await userEvent.keyboard("{Home}");
+    await waitFor(() => expect(tab("Overview")).toHaveFocus());
+    await selected("Overview");
+    // Roving focus: only the open tab is in the tab order.
+    await expect(tab("Reviews")).toHaveAttribute("tabindex", "-1");
+  },
+};
+
+/** How far the ribbon's centre is from the open tab's. */
+const ribbonOffset = (canvasElement: HTMLElement) => {
+  const ribbon = canvasElement.querySelector(".bp-ribbon");
+  const open = canvasElement.querySelector(
+    '[role="tab"][aria-selected="true"]',
+  );
+  if (!ribbon || !open) throw new Error("the tab strip is not drawn");
+  const [a, b] = [ribbon.getBoundingClientRect(), open.getBoundingClientRect()];
+  return Math.abs(a.left + a.width / 2 - (b.left + b.width / 2));
+};
+
+export const RibbonSitsCentredUnderTheOpenTab: Story = {
+  beforeEach({ msw }) {
+    msw.use(...bookDetailHandlers(BOOK));
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await canvas.findByRole("tab", { name: "Overview" });
+    await waitFor(() => expect(ribbonOffset(canvasElement)).toBeLessThan(1));
+
+    await userEvent.click(canvas.getByRole("tab", { name: "Files & Details" }));
+    await waitFor(() => expect(ribbonOffset(canvasElement)).toBeLessThan(1));
+
+    // Moving the tabs inside the strip resizes it.
+    const strip = canvas.getByRole("tablist", { name: "Book sections" });
+    strip.style.paddingInlineStart = "160px";
+    await waitFor(() => expect(ribbonOffset(canvasElement)).toBeLessThan(1));
+  },
+};
+
+export const HouseholdRatingOpensTheReviewsTab: Story = {
   beforeEach({ msw }) {
     msw.use(
       // Ahead of the page's quiet answers, so the household has a rating.
@@ -140,18 +208,14 @@ export const HouseholdRatingJumpsToTheReviewsStop: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    const rail = await canvas.findByRole("navigation", {
-      name: "Page sections",
-    });
-    const reviewsDot = within(rail).getByRole("button", {
-      name: "03 · Reviews",
-    });
-
     await userEvent.click(await canvas.findByTestId("reviews-jump"));
 
-    await waitFor(() => expect(reviewsDot).toHaveClass("on"), {
-      timeout: 5000,
-    });
+    await waitFor(() =>
+      expect(canvas.getByRole("tab", { name: "Reviews" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
   },
 };
 
@@ -261,6 +325,9 @@ export const MergeThenUndo: Story = {
     msw.use(...mergeHandlers([volume], writes), ...bookDetailHandlers(BOOK));
   },
   play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("tab", { name: "Files & Details" }),
+    );
     await userEvent.click(await canvas.findByTestId("merge-with"));
     await userEvent.type(canvas.getByTestId("merge-search"), "aurora");
     await userEvent.click(await canvas.findByTestId("merge-candidate"));
@@ -294,6 +361,9 @@ export const FailedUndoKeepsTheToastWithTheReason: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("tab", { name: "Files & Details" }),
+    );
     await userEvent.click(await canvas.findByTestId("merge-with"));
     await userEvent.type(canvas.getByTestId("merge-search"), "aurora");
     await userEvent.click(await canvas.findByTestId("merge-candidate"));
@@ -332,6 +402,9 @@ export const PartialDeleteRefetchesThePage: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("tab", { name: "Files & Details" }),
+    );
     await canvas.findByTestId("format-row-pdf");
     await userEvent.click(await canvas.findByTestId("delete-files"));
     await userEvent.click(await canvas.findByTestId("delete-file-12"));
@@ -359,6 +432,9 @@ export const TotalDeleteLeavesForTheLibrary: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("tab", { name: "Files & Details" }),
+    );
     await userEvent.click(await canvas.findByTestId("delete-files"));
     await userEvent.click(await canvas.findByTestId("delete-select-all"));
     await userEvent.click(canvas.getByTestId("delete-continue"));
