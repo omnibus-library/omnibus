@@ -20,6 +20,16 @@ fn series_label(series: Option<&str>, index: Option<&str>) -> Option<String> {
     }
 }
 
+/// What the strip shows once polling gives up: a lookup still `Pending` after
+/// the last poll will not finish soon, so it reads as unavailable, not loading.
+#[cfg_attr(not(feature = "web"), allow(dead_code))]
+pub(super) fn settle_after_poll_cap(last: SuggestionsResponse) -> SuggestionsResponse {
+    match last {
+        SuggestionsResponse::Pending => SuggestionsResponse::Unavailable,
+        settled => settled,
+    }
+}
+
 /// Pre-derived strings + flags ready to feed the loaded-book sections.
 /// Split out of [`render_loaded`] so the rsx body stays a thin composition
 /// of named sub-components. Mobile reads a subset (no author-id cluster), so

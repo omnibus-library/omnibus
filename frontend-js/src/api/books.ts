@@ -201,7 +201,7 @@ function toSuggestion(wire: BookSuggestionWire) {
 export type Suggestion = ReturnType<typeof toSuggestion>;
 
 export type Suggestions =
-  | { status: "not_configured" | "pending" }
+  | { status: "not_configured" | "pending" | "unavailable" }
   | { status: "ready"; items: Suggestion[] };
 
 /** Hardcover's read-alikes for a book, or why there are none yet. */

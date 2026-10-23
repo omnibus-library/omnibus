@@ -179,7 +179,8 @@ fn AuthorLead(author: String, owned: usize, rest: usize, author_route: Option<Ro
 
 /// "Readers also enjoyed" — Hardcover read-alikes below the metadata. Renders
 /// its own divider + section head, then one of: a connect message (no key), a
-/// quiet placeholder (resolving), the cover strip (results), or an empty note.
+/// quiet placeholder (resolving), the cover strip (results), an empty note, or an
+/// unavailable note (the lookup failed).
 /// The section is always present (stable `suggestions-strip` testid); only its
 /// inner content varies by state.
 #[component]
@@ -211,8 +212,12 @@ pub(super) fn BdSuggestionsStrip(
                 Some(SuggestionsResponse::NotConfigured) => rsx! {
                     SuggestionsConnectCard { is_admin }
                 },
-                // None (first paint, pre-fetch) or Pending → loading placeholder.
-                _ => rsx! {
+                Some(SuggestionsResponse::Unavailable) => rsx! {
+                    div { class: "bd-suggest-pending card", "data-testid": "suggestions-unavailable",
+                        p { class: "mono bd-stub-hint", "Suggestions are unavailable right now." }
+                    }
+                },
+                None | Some(SuggestionsResponse::Pending) => rsx! {
                     div { class: "bd-suggest-pending bd-suggest-loading card", "data-testid": "suggestions-pending",
                         SuggestionsSpinner {}
                         p { class: "mono bd-stub-hint", "Looking for read-alikes via Hardcover\u{2026}" }

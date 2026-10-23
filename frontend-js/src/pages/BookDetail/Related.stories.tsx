@@ -379,6 +379,20 @@ export const SuggestionsPendingThenReady: Story = {
   },
 };
 
+export const SuggestionsSayUnavailableWhenTheLookupFailed: Story = {
+  beforeEach({ msw }) {
+    msw.use(getGetSuggestionsMockHandler200({ status: "unavailable" }));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("suggestions-unavailable"),
+    ).toHaveTextContent("Suggestions are unavailable right now.");
+    await expect(
+      canvas.queryByTestId("suggestions-pending"),
+    ).not.toBeInTheDocument();
+  },
+};
+
 const settled = async (canvas: ReturnType<typeof within>) => {
   await canvas.findByTestId("bp-series-fan");
   await new Promise((resolve) => setTimeout(resolve, 200));

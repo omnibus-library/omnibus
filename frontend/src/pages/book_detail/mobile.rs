@@ -525,8 +525,9 @@ fn same_hand_tile(ab: &EbookMetadata, server_url: &str) -> Element {
 }
 
 /// "Suggested for you" — Hardcover read-alikes as a horizontal strip. Mirrors
-/// the web state machine: results, empty, not-configured (connect note), or a
-/// quiet pending placeholder while the worker resolves.
+/// the web state machine: results, empty, not-configured (connect note),
+/// unavailable (the lookup failed), or a quiet pending placeholder while the
+/// worker resolves.
 fn suggestions_section(
     book_title: &str,
     suggestions: &Option<SuggestionsResponse>,
@@ -558,8 +559,12 @@ fn suggestions_section(
                         }
                     }
                 },
-                // None (pre-fetch) or Pending → loading placeholder.
-                _ => rsx! {
+                Some(SuggestionsResponse::Unavailable) => rsx! {
+                    p { class: "m-strip-note", "data-testid": "mobile-suggestions-unavailable",
+                        "Suggestions are unavailable right now."
+                    }
+                },
+                None | Some(SuggestionsResponse::Pending) => rsx! {
                     Loading {
                         kind: LoadingKind::Section,
                         class: "inline",

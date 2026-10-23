@@ -124,7 +124,7 @@ export const shelvesQuery = (uuid: BookUuid) =>
   });
 
 const SUGGESTION_POLL_MS = 2500;
-/** How many times a still-pending answer is asked for again before it settles as empty. */
+/** How many times a still-pending answer is asked for again before it settles as unavailable. */
 export const SUGGESTION_POLLS = 5;
 
 /** The wait before asking again: while the server is still fetching, up to {@link SUGGESTION_POLLS} more times. */
@@ -135,6 +135,14 @@ export const suggestionPollMs = (
   data?.status === "pending" && answers <= SUGGESTION_POLLS
     ? SUGGESTION_POLL_MS
     : false;
+
+/** Whether the lookup has given up: the server says it failed, or a pending answer was asked for as often as it will be. */
+export const suggestionsUnavailable = (
+  data: Suggestions | undefined,
+  answers: number,
+) =>
+  data?.status === "unavailable" ||
+  (data?.status === "pending" && suggestionPollMs(data, answers) === false);
 
 export const suggestionsQuery = (uuid: BookUuid) =>
   queryOptions({
