@@ -444,9 +444,14 @@ async fn a_device_of_another_user_never_sees_the_annotations() {
     upload_and_ack(&app, &pool, device, &uuid, "kobo-ann-1", "yellow", None).await;
 
     let other = auth_test_support::create_user(&pool, "other-reader").await;
-    let other_device = db::kobo_devices::create_device(&pool, other.id, "Other Kobo")
-        .await
-        .unwrap();
+    let other_device = db::kobo_devices::create_device(
+        &pool,
+        other.id,
+        "Other Kobo",
+        omnibus_shared::DeviceKind::Kobo,
+    )
+    .await
+    .unwrap();
     db::kobo_devices::learn_kobo_device_id(&pool, other_device.id, "hw-other")
         .await
         .unwrap();
@@ -482,9 +487,14 @@ async fn a_second_device_of_the_same_user_is_offered_the_existing_set() {
     let uuid = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
     upload_and_ack(&app, &pool, device, &uuid, "kobo-ann-1", "yellow", None).await;
 
-    let second = db::kobo_devices::create_device(&pool, user, "Second Kobo")
-        .await
-        .unwrap();
+    let second = db::kobo_devices::create_device(
+        &pool,
+        user,
+        "Second Kobo",
+        omnibus_shared::DeviceKind::Kobo,
+    )
+    .await
+    .unwrap();
     db::kobo_devices::learn_kobo_device_id(&pool, second.id, "hw-second")
         .await
         .unwrap();

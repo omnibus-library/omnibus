@@ -1,4 +1,4 @@
-//! Wire types for the per-device Kobo wireless-sync auth surface. A
+//! Wire types for the per-device sync auth surface (Kobo and KOReader). A
 //! `KoboDeviceView` is the re-displayable projection of a `kobo_devices` row
 //! the Settings card renders — it deliberately carries the raw token so the
 //! endpoint URL can be shown again (AC2). The token never leaves the owning
@@ -9,8 +9,32 @@ use serde::{Deserialize, Serialize};
 /// Maximum length, in characters, of a user-supplied Kobo device label.
 pub const KOBO_DEVICE_NAME_MAX_LEN: usize = 100;
 
-/// A Kobo e-reader registered to your account. Its `token` is the secret in the sync
-/// address the Kobo is pointed at, `/kobo/{token}/…`.
+/// Which kind of reader a registered device is. A token only authenticates the routes of
+/// its own kind.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum DeviceKind {
+    /// A Kobo e-reader, synced over `/kobo/{token}/…`.
+    #[default]
+    Kobo,
+    /// A KOReader install.
+    Koreader,
+}
+
+impl DeviceKind {
+    /// The lowercase name stored in the `kobo_devices.kind` column and sent on the wire.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Kobo => "kobo",
+            Self::Koreader => "koreader",
+        }
+    }
+}
+
+/// A Kobo or KOReader registered to your account. Its `token` is the secret that
+/// authenticates the device; for a Kobo it is the sync address's path segment,
+/// `/kobo/{token}/…`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct KoboDeviceView {
@@ -18,21 +42,25 @@ pub struct KoboDeviceView {
     pub id: i64,
     /// The label you gave it.
     pub name: String,
-    /// The secret path segment of the sync address. Treat it like a password: anyone
-    /// holding it can sync as you.
+    /// Which kind of reader this is.
+    pub kind: DeviceKind,
+    /// The device's secret. Treat it like a password: anyone holding it can sync as you.
     pub token: String,
     /// When it was registered, in Unix seconds.
     pub created_at: i64,
-    /// When the Kobo last synced, in Unix seconds.
+    /// When the device last synced, in Unix seconds.
     pub last_seen_at: i64,
 }
 
-/// The label for a new Kobo.
+/// The label and kind for a new device.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateKoboDevice {
     /// A label of 1 to 100 characters once trimmed, such as "Clara HD".
     pub name: String,
+    /// Which kind of device to register. Defaults to a Kobo when omitted.
+    #[serde(default)]
+    pub kind: DeviceKind,
 }
 
 /// What a refused device name is told, naming the limit.

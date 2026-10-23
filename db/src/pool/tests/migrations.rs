@@ -1,7 +1,7 @@
 //! Per-migration correctness: 0021's schema cleanup, 0038's timestamp
 //! coercion and orphan-row handling across the recreated tables, 0069's
 //! library-cleanup tables with their unique constraints, and 0099's
-//! share-stats backfill.
+//! share-stats backfill, and 0105's device-kind default.
 
 use super::super::*;
 
@@ -500,4 +500,49 @@ async fn migration_0099_turns_share_stats_on_for_every_existing_reader() {
         share_stats, 1,
         "an existing reader's row must turn on sharing"
     );
+}
+
+#[tokio::test]
+async fn migration_0105_keeps_existing_devices_as_kobos_that_still_resolve() {
+    use omnibus_shared::DeviceKind;
+
+    const DEVICE_KIND_VERSION: i64 = 105;
+    static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    for m in MIGRATOR.iter().filter(|m| m.version < DEVICE_KIND_VERSION) {
+        sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+    }
+
+    sqlx::query(
+        "INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, 'u', 'h', 0)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO kobo_devices (user_id, token, name) VALUES (1, 'old-token', 'Clara')")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let m = MIGRATOR
+        .iter()
+        .find(|m| m.version == DEVICE_KIND_VERSION)
+        .expect("0105 must exist");
+    sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+
+    let kind: String =
+        sqlx::query_scalar("SELECT kind FROM kobo_devices WHERE token = 'old-token'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(kind, "kobo");
+    let resolved =
+        crate::kobo_devices::resolve_device_by_token(&pool, "old-token", DeviceKind::Kobo)
+            .await
+            .unwrap();
+    assert!(resolved.is_some(), "a pre-0105 device must keep resolving");
 }

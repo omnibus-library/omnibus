@@ -95,7 +95,7 @@ You need:
 - **An Omnibus server the Kobo can reach on its own Wi-Fi** — a LAN address or
   a tunnel, not `localhost`. The device does the talking, so whatever URL you
   give it has to resolve from the device.
-- **At least one shelf marked "Sync to Kobo"** — only opted-in shelves sync, so
+- **At least one shelf marked "Sync to my devices"** — only opted-in shelves sync, so
   set this before the first sync or the device pulls an empty library.
 - **A USB cable, once**, to edit a config file on the device.
 
@@ -117,9 +117,12 @@ You need:
 
 Back up the device first — see the warning above.
 
-1. In a shelf's settings, turn on **Sync to Kobo** for whatever you want the
+The same **Sync devices** card also adds a KOReader (**Add a KOReader**), which
+it lists with its token.
+
+1. In a shelf's settings, turn on **Sync to my devices** for whatever you want the
    device to carry.
-2. Go to **Account → Kobo wireless sync**, give your Kobo a name, and click
+2. Go to **Settings → Devices → Sync devices**, give your Kobo a name, and click
    **Add a Kobo**. Omnibus prints that device's own sync endpoint —
    `<your_omnibus_server_url>/kobo/<token>`. The token identifies the device,
    so treat the URL as a secret and use a different one per Kobo. If the
@@ -146,7 +149,7 @@ Back up the device first — see the warning above.
 **Hidden items** in Explorer's View tab.)
 
 To stop syncing, point `api_endpoint` back at the Kobo store URL you replaced,
-or remove the device from **Account → Kobo wireless sync**.
+or remove the device from **Settings → Devices → Sync devices**.
 
 ### Highlights and notes
 
@@ -254,9 +257,9 @@ reuses or creates the Omnibus device named "Mock Kobo". The screen shows the
 device's hardware id, URL, library, last sync and the requests it made.
 
 The seeded admin starts with a **Kobo library** smart shelf that holds every
-EPUB, CBZ and PDF and has **Sync to Kobo** on, so the first sync downloads all
+EPUB, CBZ and PDF and has **Sync to my devices** on, so the first sync downloads all
 of them. The server adds that shelf only when it creates the admin. If your dev
-database already had an admin, mark a shelf **Sync to Kobo** yourself.
+database already had an admin, mark a shelf **Sync to my devices** yourself.
 
 | Key | Does |
 |---|---|

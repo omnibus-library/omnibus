@@ -264,7 +264,7 @@ def _check_kobo_library(exp: Expectation, state: ActorState) -> Finding | None:
         names = ", ".join(repr(name) for name in smart)
         raise NotJudged(
             f"{exp.what}: Kobo-synced smart shelf {names} changes with the library, "
-            "so the device cannot be compared with it — turn its Sync to Kobo off to have the sync judged"
+            "so the device cannot be compared with it — turn its Sync to my devices off to have the sync judged"
         )
     on_device, synced = set(exp.value), state.kobo_books()
     if on_device == synced:

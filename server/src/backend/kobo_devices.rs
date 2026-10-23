@@ -1,4 +1,4 @@
-//! REST handlers for the signed-in reader's Kobo e-readers: list, register, rotate a
+//! REST handlers for the signed-in reader's Kobo and KOReader devices: list, register, rotate a
 //! device's sync token, and remove it. Mirrors the web server functions in
 //! `frontend/src/rpc/kobo.rs` over the same `db::kobo_devices` calls. Every query is
 //! scoped to the caller's id, so another reader's device is indistinguishable from an
@@ -29,9 +29,10 @@ fn failed(context: &'static str, e: KoboDeviceError) -> Response {
     }
 }
 
-/// List your Kobo devices
+/// List your sync devices
 ///
-/// The Kobo e-readers registered to your account, with the secret each one syncs with.
+/// The Kobo and KOReader devices registered to your account, each with its kind and the
+/// secret it syncs with.
 #[utoipa::path(
     get,
     path = "/api/account/kobo-devices",
@@ -52,10 +53,10 @@ pub(super) async fn list_kobo_devices(user: AuthUser, State(state): State<AppSta
     }
 }
 
-/// Register a Kobo device
+/// Register a sync device
 ///
-/// Adds a Kobo under the given label and mints the token its sync address
-/// `/kobo/{token}/…` carries.
+/// Adds a Kobo or KOReader (a Kobo when `kind` is omitted) under the given label and
+/// mints its token. A Kobo's sync address is `/kobo/{token}/…`.
 #[utoipa::path(
     post,
     path = "/api/account/kobo-devices",
@@ -63,7 +64,7 @@ pub(super) async fn list_kobo_devices(user: AuthUser, State(state): State<AppSta
     request_body = CreateKoboDevice,
     responses(
         (status = 200, description = "The new device, with its token.", body = KoboDeviceView),
-        (status = 422, description = "The name is empty or longer than 100 characters once trimmed."),
+        (status = 422, description = "The name is empty or longer than 100 characters once trimmed, or `kind` is not `kobo` or `koreader`."),
     ),
 )]
 pub(super) async fn create_kobo_device(
@@ -74,15 +75,15 @@ pub(super) async fn create_kobo_device(
     if kobo_device_name_invalid(&body.name) {
         return (StatusCode::UNPROCESSABLE_ENTITY, kobo_device_name_message()).into_response();
     }
-    match db::kobo_devices::create_device(&state.pool, user.id, body.name.trim()).await {
+    match db::kobo_devices::create_device(&state.pool, user.id, body.name.trim(), body.kind).await {
         Ok(device) => Json(KoboDeviceView::from(device)).into_response(),
         Err(e) => failed("create kobo device", e),
     }
 }
 
-/// Regenerate a Kobo's token
+/// Regenerate a device's token
 ///
-/// Replaces the device's token, so its old sync address stops working at once. The
+/// Replaces the device's token, so its old token stops working at once. The
 /// device keeps its name and its sync progress; point the Kobo at the new address.
 #[utoipa::path(
     post,
@@ -105,9 +106,9 @@ pub(super) async fn regenerate_kobo_device(
     }
 }
 
-/// Remove a Kobo device
+/// Remove a sync device
 ///
-/// Deletes the registration, so the Kobo's sync address stops working.
+/// Deletes the registration, so the device's token stops working.
 #[utoipa::path(
     delete,
     path = "/api/account/kobo-devices/{id}",

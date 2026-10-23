@@ -132,11 +132,12 @@ async fn download_does_not_record_download_state_when_the_file_open_fails() {
     let _kepubify_absent =
         db::test_support::EnvVarGuard::set("OMNIBUS_KEPUBIFY_PATH", Some("/no/such/kepubify"));
     let (app, pool, token, _uid) = fixture().await;
-    let device_id = db::kobo_devices::resolve_device_by_token(&pool, &token)
-        .await
-        .unwrap()
-        .unwrap()
-        .device_id;
+    let device_id =
+        db::kobo_devices::resolve_device_by_token(&pool, &token, omnibus_shared::DeviceKind::Kobo)
+            .await
+            .unwrap()
+            .unwrap()
+            .device_id;
     let uuid = seed_synced_ebook(&pool, "phantom.epub", "Phantom", "Nobody").await;
 
     let res = app
@@ -246,11 +247,12 @@ async fn download_bakes_a_metadata_override_into_the_plain_epub_fallback() {
 #[tokio::test]
 async fn download_serves_the_pdf_as_is_for_a_pdf_only_book() {
     let (app, pool, token, _uid) = fixture().await;
-    let device_id = db::kobo_devices::resolve_device_by_token(&pool, &token)
-        .await
-        .unwrap()
-        .unwrap()
-        .device_id;
+    let device_id =
+        db::kobo_devices::resolve_device_by_token(&pool, &token, omnibus_shared::DeviceKind::Kobo)
+            .await
+            .unwrap()
+            .unwrap()
+            .device_id;
 
     let tmp = db::test_support::make_test_dir("kobo_dl_pdf");
     let pdf = db::test_support::build_test_pdf(&db::test_support::TestPdf {
@@ -318,11 +320,12 @@ async fn download_serves_the_pdf_as_is_for_a_pdf_only_book() {
 #[tokio::test]
 async fn download_serves_the_cbz_archive_as_is_for_a_cbz_only_book() {
     let (app, pool, token, _uid) = fixture().await;
-    let device_id = db::kobo_devices::resolve_device_by_token(&pool, &token)
-        .await
-        .unwrap()
-        .unwrap()
-        .device_id;
+    let device_id =
+        db::kobo_devices::resolve_device_by_token(&pool, &token, omnibus_shared::DeviceKind::Kobo)
+            .await
+            .unwrap()
+            .unwrap()
+            .device_id;
 
     let pid = std::process::id();
     let nanos = std::time::SystemTime::now()
@@ -400,11 +403,12 @@ async fn download_serves_the_cbz_archive_as_is_for_a_cbz_only_book() {
 async fn download_records_holding_the_book_and_materializes_a_pending_web_highlight() {
     let (app, pool, token, uid) = fixture().await;
     let (uuid, _guard, _lib) = seed_book_with_kepub_cache(&pool, "ac2", true).await;
-    let device_id = db::kobo_devices::resolve_device_by_token(&pool, &token)
-        .await
-        .unwrap()
-        .unwrap()
-        .device_id;
+    let device_id =
+        db::kobo_devices::resolve_device_by_token(&pool, &token, omnibus_shared::DeviceKind::Kobo)
+            .await
+            .unwrap()
+            .unwrap()
+            .device_id;
 
     db::annotations::create_highlight(
         &pool,
@@ -561,9 +565,14 @@ async fn cover_writes_move_the_synced_cover_image_id_and_the_route_serves_the_ne
     let (_id, uuid) = seed_book_with_uuid(&pool, "/lib", "Cover Id Book").await;
     let admin = auth_test_support::create_admin(&pool, "admin").await;
     let bearer = auth_test_support::bearer_token(&pool, admin.id).await;
-    let device = db::kobo_devices::create_device(&pool, admin.id, "Test Kobo")
-        .await
-        .unwrap();
+    let device = db::kobo_devices::create_device(
+        &pool,
+        admin.id,
+        "Test Kobo",
+        omnibus_shared::DeviceKind::Kobo,
+    )
+    .await
+    .unwrap();
     let origin = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/cover.png"))

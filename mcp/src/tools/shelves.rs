@@ -63,7 +63,7 @@ pub struct UpdateShelfParams {
     /// Replaces the ENTIRE rule set (smart shelves only) — send the full
     /// final set, not a delta.
     pub rules: Option<Vec<ShelfRule>>,
-    /// Opt the shelf's books in or out of the owner's Kobo wireless sync.
+    /// Opt the shelf's books in or out of syncing to the owner's devices (Kobo and KOReader).
     pub sync_to_kobo: Option<bool>,
 }
 

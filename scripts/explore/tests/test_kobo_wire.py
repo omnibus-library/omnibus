@@ -280,6 +280,16 @@ class RecreateTests(KoboWireCliTests):
         self.assertLess(paths.index("/api/rpc/kobo/devices/revoke"), paths.index("/api/rpc/kobo/devices/create"))
         self.assertEqual(paths.count("/api/rpc/kobo/devices/revoke"), 2)
 
+    def test_leaves_a_same_named_koreader_alone_and_creates_a_kobo(self):
+        koreader = self.fake.add_device("explorer-1", "Mock Kobo", kind="koreader")
+        self.save_state(koreader["token"])
+
+        proc = self.wire()
+
+        self.assertEqual(json.loads(proc.stdout)["wired"], "created", proc.stderr)
+        self.assertEqual(self.fake.calls("/api/rpc/kobo/devices/revoke"), [])
+        self.assertIn(koreader, self.fake.devices["explorer-1"])
+
     def test_leaves_devices_with_other_names_alone(self):
         stale = self.fake.add_device("explorer-1", "Mock Kobo")
         other = self.fake.add_device("explorer-1", "Living Room")

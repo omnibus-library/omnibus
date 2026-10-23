@@ -164,12 +164,22 @@ async fn merge_retargets_kobo_annotation_sync_state_preferring_the_targets_row()
     let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
     let source = seed_audiobook(&pool, "B/Drakula.m4b", "Drakula", "Bram Stoker").await;
 
-    let both = crate::kobo_devices::create_device(&pool, user, "Tracks both")
-        .await
-        .unwrap();
-    let source_only = crate::kobo_devices::create_device(&pool, user, "Tracks source")
-        .await
-        .unwrap();
+    let both = crate::kobo_devices::create_device(
+        &pool,
+        user,
+        "Tracks both",
+        omnibus_shared::DeviceKind::Kobo,
+    )
+    .await
+    .unwrap();
+    let source_only = crate::kobo_devices::create_device(
+        &pool,
+        user,
+        "Tracks source",
+        omnibus_shared::DeviceKind::Kobo,
+    )
+    .await
+    .unwrap();
     // ack_served (#1647) only sticks for a book the device is on record as
     // holding — seed that first so these rows exist to retarget.
     crate::kobo::annotations::mark_downloaded(&pool, both.id, &target)

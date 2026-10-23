@@ -117,7 +117,7 @@ def instance_url() -> str:
 def wire(client: Client, url: str, state: Path) -> tuple[str, str]:
     """Reuse, create or recreate the account's "Mock Kobo"; returns how, and its token."""
     devices = client.rpc("/api/rpc/kobo/devices", {})
-    ours = [d for d in devices if d["name"] == DEVICE_NAME]
+    ours = [d for d in devices if d["name"] == DEVICE_NAME and d.get("kind", "kobo") == "kobo"]
     saved = read_state(state)
     have_state = any(state_matches(saved, url, device["token"]) for device in ours)
     action = plan(have_state, len(ours))

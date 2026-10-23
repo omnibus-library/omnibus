@@ -297,6 +297,10 @@ test.describe("devices section", () => {
     });
 
     // A Kobo on its own Wi-Fi can't resolve a bare path against the web app's origin.
+    await test.step("check it is labelled a kobo", async () => {
+      await expect(section.kindBadge(name)).toHaveText("Kobo");
+    });
+
     await test.step("check its endpoint is a full url", async () => {
       await expect(section.endpointField(name)).toHaveValue(
         /^https?:\/\/[^/]+\/kobo\/[^/]+$/,
@@ -307,6 +311,49 @@ test.describe("devices section", () => {
       expect(await topEdge(section.deviceRow(name))).toBeGreaterThan(
         await topEdge(section.addButton),
       );
+    });
+  });
+
+  test("add and remove a koreader device", async ({
+    settingsPage,
+    createdKoboDeviceIds,
+    expectMutation,
+  }) => {
+    const { kobo: section } = settingsPage;
+    const name = `E2E KOReader ${uniqueSuffix()}`;
+
+    await test.step("open the devices section", async () => {
+      await settingsPage.goto("devices");
+    });
+
+    const id = await test.step("add a koreader", async () => {
+      const { response } = await expectMutation(
+        kobo.create(name, "koreader"),
+        () => section.addKoreaderDevice(name),
+      );
+      const created: CreatedKoboDevice = await response.json();
+      createdKoboDeviceIds.add(created.id);
+      return created.id;
+    });
+
+    await test.step("check the row is a koreader with a token and no endpoint", async () => {
+      await expect(section.statusMessage).toHaveText(
+        "KOReader added. Copy its device token below.",
+      );
+      await expect(section.kindBadge(name)).toHaveText("KOReader");
+      await expect(section.tokenField(name)).not.toHaveValue("");
+      await expect(section.endpointField(name)).toHaveCount(0);
+    });
+
+    await test.step("remove it", async () => {
+      await section.startRemove(name);
+      await expectMutation(kobo.revoke(id), () => section.confirmRemove());
+      createdKoboDeviceIds.delete(id);
+    });
+
+    await test.step("check the row is gone", async () => {
+      await expect(section.statusMessage).toHaveText("KOReader removed.");
+      await expect(section.deviceRow(name)).toHaveCount(0);
     });
   });
 

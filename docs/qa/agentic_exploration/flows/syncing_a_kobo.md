@@ -28,8 +28,8 @@ You work both sides. The **browser** makes the shelf and turns its opt-in on;
    the library before the run started: one another agent uploads or merges this
    run can change under you. If the library has an **audiobook-only** book, add
    it too; it must not reach the device. Journal `shelf.create`.
-2. **Turn on Sync to Kobo.** The opt-in is not on the create form: open
-   **Edit shelf**, switch **Sync to Kobo** to **On**, save, then reload and
+2. **Turn on Sync to my devices.** The opt-in is not on the create form: open
+   **Edit shelf**, switch **Sync to my devices** to **On**, save, then reload and
    confirm it stuck. Journal `shelf.edit` with the shelf's `name` and
    `sync_to_kobo` as `{"old": false, "new": true}`.
 3. **Sync the device:** `act sync`. It answers `"code":"synced"`. A

@@ -188,8 +188,8 @@
         "tags": [
           "Account"
         ],
-        "summary": "List your Kobo devices",
-        "description": "The Kobo e-readers registered to your account, with the secret each one syncs with.",
+        "summary": "List your sync devices",
+        "description": "The Kobo and KOReader devices registered to your account, each with its kind and the\nsecret it syncs with.",
         "operationId": "list_kobo_devices",
         "responses": {
           "200": {
@@ -211,8 +211,8 @@
         "tags": [
           "Account"
         ],
-        "summary": "Register a Kobo device",
-        "description": "Adds a Kobo under the given label and mints the token its sync address\n`/kobo/{token}/…` carries.",
+        "summary": "Register a sync device",
+        "description": "Adds a Kobo or KOReader (a Kobo when `kind` is omitted) under the given label and\nmints its token. A Kobo's sync address is `/kobo/{token}/…`.",
         "operationId": "create_kobo_device",
         "requestBody": {
           "content": {
@@ -236,7 +236,7 @@
             }
           },
           "422": {
-            "description": "The name is empty or longer than 100 characters once trimmed."
+            "description": "The name is empty or longer than 100 characters once trimmed, or `kind` is not `kobo` or `koreader`."
           }
         }
       }
@@ -246,8 +246,8 @@
         "tags": [
           "Account"
         ],
-        "summary": "Remove a Kobo device",
-        "description": "Deletes the registration, so the Kobo's sync address stops working.",
+        "summary": "Remove a sync device",
+        "description": "Deletes the registration, so the device's token stops working.",
         "operationId": "delete_kobo_device",
         "parameters": [
           {
@@ -276,8 +276,8 @@
         "tags": [
           "Account"
         ],
-        "summary": "Regenerate a Kobo's token",
-        "description": "Replaces the device's token, so its old sync address stops working at once. The\ndevice keeps its name and its sync progress; point the Kobo at the new address.",
+        "summary": "Regenerate a device's token",
+        "description": "Replaces the device's token, so its old token stops working at once. The\ndevice keeps its name and its sync progress; point the Kobo at the new address.",
         "operationId": "regenerate_kobo_device",
         "parameters": [
           {
@@ -10972,11 +10972,15 @@
       },
       "CreateKoboDevice": {
         "type": "object",
-        "description": "The label for a new Kobo.",
+        "description": "The label and kind for a new device.",
         "required": [
           "name"
         ],
         "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/DeviceKind",
+            "description": "Which kind of device to register. Defaults to a Kobo when omitted."
+          },
           "name": {
             "type": "string",
             "description": "A label of 1 to 100 characters once trimmed, such as \"Clara HD\"."
@@ -11410,6 +11414,14 @@
             }
           }
         }
+      },
+      "DeviceKind": {
+        "type": "string",
+        "description": "Which kind of reader a registered device is. A token only authenticates the routes of\nits own kind.",
+        "enum": [
+          "kobo",
+          "koreader"
+        ]
       },
       "DeviceView": {
         "type": "object",
@@ -12646,10 +12658,11 @@
       },
       "KoboDeviceView": {
         "type": "object",
-        "description": "A Kobo e-reader registered to your account. Its `token` is the secret in the sync\naddress the Kobo is pointed at, `/kobo/{token}/…`.",
+        "description": "A Kobo or KOReader registered to your account. Its `token` is the secret that\nauthenticates the device; for a Kobo it is the sync address's path segment,\n`/kobo/{token}/…`.",
         "required": [
           "id",
           "name",
+          "kind",
           "token",
           "created_at",
           "last_seen_at"
@@ -12665,10 +12678,14 @@
             "format": "int64",
             "description": "The device's id, which the regenerate and delete routes take."
           },
+          "kind": {
+            "$ref": "#/components/schemas/DeviceKind",
+            "description": "Which kind of reader this is."
+          },
           "last_seen_at": {
             "type": "integer",
             "format": "int64",
-            "description": "When the Kobo last synced, in Unix seconds."
+            "description": "When the device last synced, in Unix seconds."
           },
           "name": {
             "type": "string",
@@ -12676,7 +12693,7 @@
           },
           "token": {
             "type": "string",
-            "description": "The secret path segment of the sync address. Treat it like a password: anyone\nholding it can sync as you."
+            "description": "The device's secret. Treat it like a password: anyone holding it can sync as you."
           }
         }
       },
@@ -15584,7 +15601,7 @@
           },
           "sync_to_kobo": {
             "type": "boolean",
-            "description": "Whether the owner's Kobo devices sync this shelf's books. Off by default. A Kobo\nsyncs only books on shelves with this on, never the whole library."
+            "description": "Whether the owner's sync devices (Kobos and KOReaders) sync this shelf's books. Off\nby default. A device syncs only books on shelves with this on, never the whole\nlibrary."
           },
           "visibility": {
             "$ref": "#/components/schemas/Visibility"
@@ -16620,7 +16637,7 @@
               "boolean",
               "null"
             ],
-            "description": "Turns Kobo sync for the shelf on or off."
+            "description": "Turns device sync for the shelf on or off."
           },
           "visibility": {
             "oneOf": [

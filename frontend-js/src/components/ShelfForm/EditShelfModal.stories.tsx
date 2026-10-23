@@ -118,7 +118,7 @@ export const EditWishlist: Story = {
     await expect(
       canvas.getByText("Wishlist", { selector: ".shelf-badge" }),
     ).toBeInTheDocument();
-    await expect(canvas.queryByText("Sync to Kobo")).toBeNull();
+    await expect(canvas.queryByText("Sync to my devices")).toBeNull();
 
     await userEvent.click(canvas.getByRole("button", { name: "Save" }));
 

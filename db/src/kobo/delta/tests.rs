@@ -28,7 +28,7 @@ async fn make_user(pool: &SqlitePool, username: &str) -> i64 {
 }
 
 async fn make_device(pool: &SqlitePool, user_id: i64, name: &str) -> i64 {
-    crate::kobo_devices::create_device(pool, user_id, name)
+    crate::kobo_devices::create_device(pool, user_id, name, omnibus_shared::DeviceKind::Kobo)
         .await
         .unwrap()
         .id

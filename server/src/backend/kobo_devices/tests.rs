@@ -40,9 +40,10 @@ async fn reader_with_device(
 ) -> (String, db::kobo_devices::KoboDevice) {
     let user = auth_test_support::create_user(pool, username).await;
     let token = auth_test_support::bearer_token(pool, user.id).await;
-    let device = db::kobo_devices::create_device(pool, user.id, "Clara")
-        .await
-        .unwrap();
+    let device =
+        db::kobo_devices::create_device(pool, user.id, "Clara", omnibus_shared::DeviceKind::Kobo)
+            .await
+            .unwrap();
     (token, device)
 }
 
@@ -62,6 +63,7 @@ async fn list_kobo_devices_returns_only_the_callers_devices() {
     assert_eq!(devices.len(), 1);
     assert_eq!(devices[0].id, mine.id);
     assert_eq!(devices[0].token, mine.token);
+    assert_eq!(devices[0].kind, omnibus_shared::DeviceKind::Kobo);
 }
 
 #[tokio::test]
@@ -112,6 +114,39 @@ async fn create_kobo_device_returns_the_trimmed_device_with_a_token() {
         .await
         .unwrap();
     assert_eq!(stored[0].token, device.token);
+}
+
+async fn create_with_body(body: serde_json::Value) -> KoboDeviceView {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "ada").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let res = app
+        .oneshot(request(
+            "POST",
+            "/api/account/kobo-devices",
+            &token,
+            Some(body),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    json_of(res).await
+}
+
+#[tokio::test]
+async fn create_kobo_device_registers_a_koreader_when_kind_is_koreader() {
+    let device = create_with_body(serde_json::json!({ "name": "Libra", "kind": "koreader" })).await;
+
+    assert_eq!(device.kind, omnibus_shared::DeviceKind::Koreader);
+}
+
+#[tokio::test]
+async fn create_kobo_device_defaults_to_a_kobo_when_kind_is_omitted() {
+    let device = create_with_body(serde_json::json!({ "name": "Clara" })).await;
+
+    assert_eq!(device.kind, omnibus_shared::DeviceKind::Kobo);
 }
 
 #[tokio::test]

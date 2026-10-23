@@ -68,7 +68,7 @@ export class ShelfPage extends BasePage {
     this.rulesSummary = page.getByTestId("shelf-rules");
     this.sortSelect = page.getByTestId("shelf-sort");
     this.koboSyncToggle = page.getByRole("menuitemcheckbox", {
-      name: "Sync to Kobo",
+      name: "Sync to my devices",
     });
     this.koboBadge = page.getByTestId("shelf-kobo-badge");
     this.deleteMenuItem = page.getByTestId("shelf-delete");
@@ -149,7 +149,7 @@ export class ShelfPage extends BasePage {
     await this.moreButton.click();
   }
 
-  /** Flips Sync to Kobo, which the open More menu offers. */
+  /** Flips Sync to my devices, which the open More menu offers. */
   async toggleKoboSync(): Promise<void> {
     await this.koboSyncToggle.click();
   }
