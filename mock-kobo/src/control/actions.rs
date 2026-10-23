@@ -1,0 +1,149 @@
+//! Device actions that talk to the server: download, remove-download, read
+//! and finish. Download, read and finish share the sync's busy slot and
+//! token-wire refusal, running through `Control::run_exchange`;
+//! remove-download touches nothing but the device, and is refused only
+//! while something else is running.
+
+use std::sync::Arc;
+
+use crate::device::DeviceError;
+use crate::reading::{KoboSpan, Percent};
+use crate::session::{attempt_download, attempt_state, Attempt, StateSent, SyncFailure};
+
+use super::{acted, Acted, Control, ControlError, DeviceView};
+
+/// `time::OffsetDateTime::now_utc().unix_timestamp()`, read once at this boundary.
+fn now() -> i64 {
+    time::OffsetDateTime::now_utc().unix_timestamp()
+}
+
+impl Control {
+    /// Download each listed book that isn't downloaded yet. A book the
+    /// device doesn't hold is rejected before any request.
+    pub async fn download(self: &Arc<Self>, books: Vec<String>) -> Result<Acted, ControlError> {
+        if let Some(missing) = self.missing_book(&books) {
+            return Err(ControlError::Device(DeviceError::UnknownBook(missing)));
+        }
+        let attempt = self
+            .run_exchange(
+                move |mut device, endpoint| async move {
+                    let attempt = attempt_download(&mut device, &endpoint, &books).await;
+                    (device, attempt)
+                },
+                |_live, _attempt| {},
+            )
+            .await?;
+        Ok(acted(attempt, self.view()))
+    }
+
+    /// Clear a book's downloaded flag and problem; local only, no request.
+    /// Refused while a sync or another action is running, like `reset`.
+    pub async fn remove_download(&self, book: &str) -> Result<DeviceView, ControlError> {
+        {
+            let mut live = self.live();
+            if live.syncing {
+                return Err(ControlError::SyncInProgress);
+            }
+            live.saved.device.remove_download(book)?;
+        }
+        self.persist().await?;
+        Ok(self.view())
+    }
+
+    /// The first of `books` the device's current library doesn't hold, if any.
+    fn missing_book(&self, books: &[String]) -> Option<String> {
+        let live = self.live();
+        books
+            .iter()
+            .find(|id| !live.saved.device.library.contains_key(id.as_str()))
+            .cloned()
+    }
+
+    /// Stamp `book` `Reading` at `percent` and send it. The device check
+    /// runs before any request; a refused action changes nothing and saves
+    /// nothing. A failed PUT keeps the device's change and is not retried.
+    pub async fn read(
+        self: &Arc<Self>,
+        book: String,
+        percent: Percent,
+        location: Option<KoboSpan>,
+    ) -> Result<Acted, ControlError> {
+        self.check_downloaded(&book)?;
+        let now = now();
+        let attempt = self
+            .run_exchange(
+                move |mut device, endpoint| async move {
+                    if let Err(error) = device.read(&book, percent, location, now) {
+                        return (
+                            device,
+                            Attempt {
+                                requests: Vec::new(),
+                                outcome: Err(SyncFailure::Rejected(error.to_string())),
+                            },
+                        );
+                    }
+                    let attempt =
+                        attempt_state(&mut device, &endpoint, &book, StateSent::Read).await;
+                    (device, attempt)
+                },
+                |_live, _attempt| {},
+            )
+            .await?;
+        Ok(acted(attempt, self.view()))
+    }
+
+    /// Stamp `book` `Finished` and send it. The book need not be downloaded.
+    pub async fn finish(self: &Arc<Self>, book: String) -> Result<Acted, ControlError> {
+        self.check_held(&book)?;
+        let now = now();
+        let attempt = self
+            .run_exchange(
+                move |mut device, endpoint| async move {
+                    if let Err(error) = device.finish(&book, now) {
+                        return (
+                            device,
+                            Attempt {
+                                requests: Vec::new(),
+                                outcome: Err(SyncFailure::Rejected(error.to_string())),
+                            },
+                        );
+                    }
+                    let attempt =
+                        attempt_state(&mut device, &endpoint, &book, StateSent::Finish).await;
+                    (device, attempt)
+                },
+                |_live, _attempt| {},
+            )
+            .await?;
+        Ok(acted(attempt, self.view()))
+    }
+
+    /// `book` must be held and downloaded, checked before any request.
+    fn check_downloaded(&self, book: &str) -> Result<(), ControlError> {
+        let live = self.live();
+        match live.saved.device.library.get(book) {
+            None => Err(ControlError::Device(DeviceError::UnknownBook(
+                book.to_owned(),
+            ))),
+            Some(b) if !b.downloaded => Err(ControlError::Device(DeviceError::NotDownloaded(
+                book.to_owned(),
+            ))),
+            Some(_) => Ok(()),
+        }
+    }
+
+    /// `book` must be held, checked before any request.
+    fn check_held(&self, book: &str) -> Result<(), ControlError> {
+        let live = self.live();
+        if live.saved.device.library.contains_key(book) {
+            Ok(())
+        } else {
+            Err(ControlError::Device(DeviceError::UnknownBook(
+                book.to_owned(),
+            )))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

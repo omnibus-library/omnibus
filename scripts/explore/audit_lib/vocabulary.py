@@ -73,6 +73,7 @@ FILLER = frozenset({"persist", "persisted", "state", "again", "post", "after"})
 SCOPE_METADATA = "metadata override — out of audit scope"
 SCOPE_LIBRARY = "library-wide edit, no single intent owns the value — out of audit scope"
 SCOPE_ACCOUNT = "account configuration — not in the audited per-user state set"
+SCOPE_DEVICE = "device-local file state — Omnibus keeps no copy the audit can read back"
 
 # Spelling variants of one noun. Plurals and the two spellings of read-status
 # are drift, not meaning.
@@ -255,10 +256,18 @@ VERBS: dict[tuple[str, str], tuple[str, str | None, str | None]] = {
     ("checkin", "search"): (OBSERVATION, None, None),
     # The Kobo lane's device actions (kobo_lane.md). A sync is the one write:
     # it fixes what the device library should hold. Agents never get `kobo.reset`,
-    # so it stays unlisted and reads as a visible gap.
+    # so it stays unlisted and reads as a visible gap. `download` and
+    # `remove-download` touch only the device's own file, which the audit
+    # never reads back, so they're out of scope rather than a write; the
+    # reading-position and finished-status round trips are journalled as
+    # `progress.set --surface kobo` / `status.set --surface kobo` instead —
+    # never as `kobo.read` (which the qualifier rule above already reads as
+    # a look) or `kobo.finish`.
     ("kobo", "sync"): (WRITE, "kobo_library", None),
     ("kobo", "show"): (OBSERVATION, None, None),
     ("kobo", "requests"): (OBSERVATION, None, None),
+    ("kobo", "download"): (OUT_OF_SCOPE, None, SCOPE_DEVICE),
+    ("kobo", "remove_download"): (OUT_OF_SCOPE, None, SCOPE_DEVICE),
 }
 
 # Names with no noun at all. `start.md` calls these out as special.

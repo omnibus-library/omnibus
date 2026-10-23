@@ -10,7 +10,7 @@ use std::time::Duration;
 use axum::{
     extract::State,
     http::{
-        header::{HOST, LOCATION},
+        header::{CONTENT_TYPE, HOST, LOCATION},
         HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri,
     },
     response::{IntoResponse, Response},
@@ -26,6 +26,12 @@ use crate::state::SavedState;
 
 /// The path token every stub device syncs with.
 pub const STUB_TOKEN: &str = "stub-device-token";
+
+/// A placeholder for the stub's own origin, which isn't known until it
+/// binds its ephemeral port. `book_metadata`/`new_entitlement` build a
+/// `DownloadUrls` entry with this in place of the base, and `library_sync`
+/// substitutes the real one into every page before serving it.
+pub const STUB_ORIGIN: &str = "{STUB_ORIGIN}";
 
 /// The bearer token the stub's login hands out, and the only one its device routes accept.
 pub const SESSION_TOKEN: &str = "stub-session";
@@ -70,6 +76,15 @@ pub struct Stub {
     pub login_redirects_to: Option<String>,
     /// The `token` in a successful login reply; `None` leaves it null.
     pub login_token: Option<&'static str>,
+    /// What every cover thumbnail request answers with: `(content-type, bytes)`.
+    /// `None` (the default) answers 404.
+    pub cover: Option<(&'static str, &'static [u8])>,
+    /// The status every `v1/download/<id>` request answers with.
+    pub download_status: StatusCode,
+    /// The status every state PUT answers with.
+    pub state_status: StatusCode,
+    /// The state PUT reply body; `None` (the default) is an all-`Success` reply.
+    pub state_reply: Option<Value>,
 }
 
 impl Default for Stub {
@@ -92,6 +107,10 @@ impl Default for Stub {
             login_status: StatusCode::OK,
             login_redirects_to: None,
             login_token: Some(SESSION_TOKEN),
+            cover: None,
+            download_status: StatusCode::OK,
+            state_status: StatusCode::OK,
+            state_reply: None,
         }
     }
 }
@@ -120,6 +139,20 @@ impl RunningStub {
             .iter()
             .filter(|r| r.path == path)
             .cloned()
+            .collect()
+    }
+
+    /// The `name` header each request carried, in order.
+    pub fn header_on_every_request(&self, name: &str) -> Vec<Option<String>> {
+        let requests = self.requests.lock().unwrap();
+        requests
+            .iter()
+            .map(|r| {
+                r.headers
+                    .get(name)
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_owned)
+            })
             .collect()
     }
 
@@ -196,7 +229,7 @@ pub fn spawn_sync(
     control: &Arc<Control>,
 ) -> tokio::task::JoinHandle<Result<LastSync, ControlError>> {
     let control = Arc::clone(control);
-    tokio::spawn(async move { control.sync().await })
+    tokio::spawn(async move { control.sync(crate::downloads::DownloadPolicy::None).await })
 }
 
 /// Poll `condition` until it holds, failing the test at a deadline.
@@ -235,6 +268,17 @@ pub fn dune_stub() -> Stub {
     }
 }
 
+/// Enough bytes to satisfy `covers::decode`'s JPEG magic check.
+pub const JPEG_BYTES: &[u8] = &[0xFF, 0xD8, 0xFF, 0x00];
+
+/// Enough bytes to satisfy `covers::decode`'s PNG magic check.
+pub const PNG_BYTES: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x00,
+];
+
+/// A WebP's magic bytes: `RIFF….WEBP`, which the device never decodes.
+pub const WEBP_BYTES: &[u8] = b"RIFF\x00\x00\x00\x00WEBP";
+
 /// Each request as `METHOD path status`, in order.
 pub fn request_lines(requests: &[RequestRecord]) -> Vec<String> {
     requests
@@ -268,11 +312,41 @@ async fn handle(
         | "/v1/user/loyalty/benefits"
         | "/v1/products/books/subscriptions"
         | "/v1/deals" => store_path(&state),
+        _ if rest.starts_with("/v1/download/") => download(&state),
+        _ if rest.starts_with("/v1/library/")
+            && rest.ends_with("/state")
+            && method == Method::PUT =>
+        {
+            state_put(&state)
+        }
         _ => match rest.strip_prefix(state.stub.resources_under) {
             Some(resource) => answer_resource(&state, &method, resource).await,
             None => StatusCode::NOT_FOUND.into_response(),
         },
     }
+}
+
+/// `GET v1/download/{id}`, outside the resources map like the real server's route.
+fn download(state: &StubState) -> Response {
+    (state.stub.download_status, b"stub-kepub".as_slice()).into_response()
+}
+
+/// `PUT v1/library/{id}/state`, also off `api_endpoint` directly.
+fn state_put(state: &StubState) -> Response {
+    let status = state.stub.state_status;
+    if !status.is_success() {
+        return status.into_response();
+    }
+    let reply = state.stub.state_reply.clone().unwrap_or_else(|| {
+        json!({
+            "RequestResult": "Success",
+            "UpdateResults": [{
+                "StatusInfoResult": { "Result": "Success" },
+                "CurrentBookmarkResult": { "Result": "Success" },
+            }],
+        })
+    });
+    (status, Json(reply)).into_response()
 }
 
 /// The Omnibus `/api` routes auto-wire calls: login, the device list and create, then logout.
@@ -355,7 +429,16 @@ async fn answer_resource(state: &StubState, method: &Method, resource: &str) -> 
         }
         "/v1/analytics/gettests" => Json(json!({ "Result": "Success" })).into_response(),
         "/v1/library/sync" => library_sync(state).await,
+        _ if resource.starts_with("/v1/books/") && resource.ends_with("/image.jpg") => cover(state),
         _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// The quality-template thumbnail path's answer, from the `cover` knob.
+fn cover(state: &StubState) -> Response {
+    match state.stub.cover {
+        Some((content_type, bytes)) => ([(CONTENT_TYPE, content_type)], bytes).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
@@ -370,8 +453,8 @@ async fn library_sync(state: &StubState) -> Response {
     }
     let pages = &state.stub.sync_pages;
     let page = pages.get(call).or(pages.last());
-    let body = Json(page.cloned().unwrap_or_else(|| json!([])));
-    let mut response = (state.stub.sync_status, body).into_response();
+    let page = fill_stub_origin(page.cloned().unwrap_or_else(|| json!([])), &state.base);
+    let mut response = (state.stub.sync_status, Json(page)).into_response();
     let headers = response.headers_mut();
     if state.stub.sends_sync_token {
         let token = HeaderValue::from_str(&format!("page-{}", call + 1)).unwrap();
@@ -384,17 +467,36 @@ async fn library_sync(state: &StubState) -> Response {
     response
 }
 
+/// Replace every [`STUB_ORIGIN`] placeholder in a sync page with the stub's
+/// real base, now that it's bound to a port.
+fn fill_stub_origin(page: Value, base: &str) -> Value {
+    let text = page.to_string().replace(STUB_ORIGIN, base);
+    serde_json::from_str(&text).expect("re-parsing a re-serialized Value cannot fail")
+}
+
+/// A device that already holds the book `id`/`title`, via a [`new_entitlement`].
+pub fn device_holding(id: &str, title: &str) -> Device {
+    let mut device = Device::new("HW-1");
+    device.apply(serde_json::from_value(new_entitlement(id, title)).unwrap());
+    device
+}
+
 /// A `NewEntitlement` sync item as Omnibus sends it, trimmed to the fields
 /// the device reads plus a reading state it must tolerate.
 pub fn new_entitlement(id: &str, title: &str) -> Value {
     json!({ "NewEntitlement": {
         "BookEntitlement": { "Id": id, "IsRemoved": false, "Status": "Active" },
         "BookMetadata": book_metadata(id, title),
-        "ReadingState": { "EntitlementId": id, "StatusInfo": { "Status": "ReadyToRead" } },
+        "ReadingState": {
+            "EntitlementId": id,
+            "StatusInfo": { "Status": "ReadyToRead" },
+            "CurrentBookmark": {},
+        },
     }})
 }
 
 /// A `BookMetadata` block with no description, contributors or series.
+/// `CoverImageId` defaults to `id` itself; a test after a cover change gives it its own.
 pub fn book_metadata(id: &str, title: &str) -> Value {
     json!({
         "EntitlementId": id,
@@ -402,6 +504,14 @@ pub fn book_metadata(id: &str, title: &str) -> Value {
         "Description": "",
         "Contributors": [],
         "ContributorRoles": [],
+        "CoverImageId": id,
+        "DownloadUrls": [{
+            "Format": "KEPUB",
+            "Size": 0,
+            "Url": format!("{STUB_ORIGIN}/kobo/{STUB_TOKEN}/v1/download/{id}"),
+            "Platform": "Generic",
+            "DrmType": "None",
+        }],
     })
 }
 
@@ -419,6 +529,9 @@ fn initialization(state: &StubState, headers: &HeaderMap) -> Response {
     let resources = json!({
         "library_sync": format!("{prefix}/v1/library/sync"),
         "get_tests_request": format!("{prefix}/v1/analytics/gettests"),
+        "image_url_quality_template": format!(
+            "{prefix}/v1/books/{{ImageId}}/thumbnail/{{Width}}/{{Height}}/{{Quality}}/{{IsGreyscale}}/image.jpg"
+        ),
     });
     let mut response = (status, Json(json!({ "Resources": resources }))).into_response();
     if state.stub.sends_api_token {

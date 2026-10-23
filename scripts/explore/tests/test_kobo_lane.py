@@ -437,6 +437,100 @@ class ActTests(KoboLaneTestCase):
                 self.assertIn("sync show", proc.stderr)
         self.assertEqual(self.stub_get(manifest, "/__calls"), [])
 
+    def test_act_download_posts_the_listed_books(self):
+        manifest = self.up(agent=1)
+
+        proc = self.kobo("act", "--agent", 1, "download", "uuid-1", "uuid-2")
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            self.stub_get(manifest, "/__calls"),
+            [["POST", "/actions/download", {"books": ["uuid-1", "uuid-2"]}]],
+        )
+
+    def test_act_read_posts_the_book_and_percent(self):
+        manifest = self.up(agent=1)
+
+        proc = self.kobo("act", "--agent", 1, "read", "uuid-1", "42")
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            self.stub_get(manifest, "/__calls"),
+            [["POST", "/actions/read", {"book": "uuid-1", "percent": 42}]],
+        )
+
+    def test_act_read_posts_a_kobospan_location_when_given(self):
+        manifest = self.up(agent=1)
+
+        proc = self.kobo("act", "--agent", 1, "read", "uuid-1", "42", "c1.xhtml", "kobo.2.1")
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            self.stub_get(manifest, "/__calls"),
+            [["POST", "/actions/read", {
+                "book": "uuid-1",
+                "percent": 42,
+                "location": {"source": "c1.xhtml", "value": "kobo.2.1"},
+            }]],
+        )
+
+    def test_act_finish_posts_the_book(self):
+        manifest = self.up(agent=1)
+
+        proc = self.kobo("act", "--agent", 1, "finish", "uuid-1")
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            self.stub_get(manifest, "/__calls"),
+            [["POST", "/actions/finish", {"book": "uuid-1"}]],
+        )
+
+    def test_act_remove_download_posts_the_book(self):
+        manifest = self.up(agent=1)
+
+        proc = self.kobo("act", "--agent", 1, "remove-download", "uuid-1")
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            self.stub_get(manifest, "/__calls"),
+            [["POST", "/actions/remove-download", {"book": "uuid-1"}]],
+        )
+
+    def test_act_accepts_agent_and_accounts_flags_in_any_position(self):
+        manifest = self.up(agent=1)
+
+        after_action = self.kobo("act", "show", "--agent", 1)
+        after_args = self.kobo("act", "read", "uuid-1", "42", "--agent", 1)
+
+        self.assertEqual(after_action.returncode, 0, after_action.stderr)
+        self.assertEqual(after_args.returncode, 0, after_args.stderr)
+        self.assertEqual(
+            self.stub_get(manifest, "/__calls"),
+            [
+                ["GET", "/device"],
+                ["POST", "/actions/read", {"book": "uuid-1", "percent": 42}],
+            ],
+        )
+
+    def test_act_exits_2_for_an_action_given_the_wrong_arguments(self):
+        manifest = self.up(agent=1)
+        for name, args in {
+            "download with no books": ["download"],
+            "read missing percent": ["read", "uuid-1"],
+            "read with a non-digit percent": ["read", "uuid-1", "abc"],
+            "read with a source but no span": ["read", "uuid-1", "42", "c1.xhtml"],
+            "read with an extra argument": ["read", "uuid-1", "42", "c1.xhtml", "kobo.2.1", "extra"],
+            "finish with no book": ["finish"],
+            "finish with an extra argument": ["finish", "uuid-1", "extra"],
+            "remove-download with no book": ["remove-download"],
+        }.items():
+            with self.subTest(name):
+                proc = self.kobo("act", "--agent", "1", *args)
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                self.assertEqual(proc.stdout, "")
+                self.assertIn("sync show", proc.stderr)
+        self.assertEqual(self.stub_get(manifest, "/__calls"), [])
+
     def test_act_without_a_running_device_exits_1_naming_the_agent(self):
         proc = self.kobo("act", "--agent", 3, "sync")
 

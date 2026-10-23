@@ -9,6 +9,7 @@ use tempfile::TempDir;
 
 use crate::control::{LastSync, Retarget};
 use crate::device::Device;
+use crate::downloads::DownloadPolicy;
 use crate::state::{self, StateError};
 use crate::test_support::{dune_stub, spawn_stub, stub_with_device, RunningStub, Stub, STUB_TOKEN};
 
@@ -220,7 +221,7 @@ async fn start_restores_synced_library_after_restart() {
     let dir = TempDir::new().unwrap();
     let args = args_in(&dir, Some(&stub.origin), Some(STUB_TOKEN));
     let first = Arc::new(start(&args, None, &no_runtime(&dir)).await.unwrap().control);
-    first.sync().await.unwrap();
+    first.sync(DownloadPolicy::None).await.unwrap();
     let before = first.view();
     drop(first);
 
@@ -247,7 +248,10 @@ async fn start_persists_given_url_and_token_across_restarts() {
     );
 
     assert_eq!(second.view().url, stub.origin);
-    assert_eq!(second.sync().await.unwrap(), LastSync::Synced { pages: 1 });
+    assert_eq!(
+        second.sync(DownloadPolicy::None).await.unwrap(),
+        LastSync::Synced { pages: 1 }
+    );
 }
 
 #[tokio::test]
@@ -277,7 +281,7 @@ async fn start_restores_url_set_by_retarget_after_restart() {
 
     assert_eq!(restarted.view().url, second.origin);
     assert_eq!(
-        restarted.sync().await.unwrap(),
+        restarted.sync(DownloadPolicy::None).await.unwrap(),
         LastSync::Synced { pages: 1 }
     );
     assert!(first.paths().is_empty());
@@ -309,7 +313,7 @@ async fn start_restores_token_set_by_retarget_after_restart() {
     );
 
     assert_eq!(
-        restarted.sync().await.unwrap(),
+        restarted.sync(DownloadPolicy::None).await.unwrap(),
         LastSync::Synced { pages: 1 }
     );
 }
@@ -363,7 +367,10 @@ async fn start_auto_wires_seed_admin_device_when_no_token_known() {
     assert_eq!(body, json!({ "name": "Mock Kobo (kobo)" }));
     let saved = state::load(&args.state).await.unwrap().unwrap();
     assert_eq!(saved.token, STUB_TOKEN);
-    assert_eq!(control.sync().await.unwrap(), LastSync::Synced { pages: 1 });
+    assert_eq!(
+        control.sync(DownloadPolicy::None).await.unwrap(),
+        LastSync::Synced { pages: 1 }
+    );
 }
 
 #[tokio::test]

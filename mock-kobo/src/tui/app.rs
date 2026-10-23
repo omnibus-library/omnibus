@@ -6,6 +6,7 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::cli;
+use crate::reading::Percent;
 
 /// What a key press asks of the loop.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,7 +26,21 @@ pub enum Job {
     SetToken(String),
     /// Auto-wire a token for the device's current URL.
     Wire,
+    /// Download the selected book.
+    Download(String),
+    /// Send the selected book's position; the TUI never supplies a `KoboSpan` (#2738 does).
+    Read {
+        book: String,
+        percent: Percent,
+    },
+    /// Mark the selected book finished.
+    Finish(String),
+    /// Clear the selected book's downloaded flag, locally.
+    RemoveDownload(String),
 }
+
+/// Shown for `d`/`f`/`x`/`p` with no book selected.
+const NO_BOOK: &str = "no books to act on: press s to sync first";
 
 /// What the screen is doing besides showing the device.
 #[derive(Debug, Default)]
@@ -37,6 +52,10 @@ pub struct App {
     pub busy: bool,
     /// Quit was asked for while a job ran; it happens when the job finishes.
     pub(super) quit_deferred: bool,
+    /// The library's uuids in screen order, as of the last `show_library`.
+    pub books: Vec<String>,
+    /// Index into `books`; clamped whenever the library changes.
+    pub selected: usize,
 }
 
 /// Whether keys are commands or text for a field.
@@ -55,10 +74,12 @@ pub struct Edit {
 }
 
 /// Which setting an edit changes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Field {
     Url,
     Token,
+    /// A percent for the book (uuid) this edit was opened on.
+    Percent(String),
 }
 
 /// The line under the device: how the last action went.
@@ -103,12 +124,34 @@ impl App {
         self.status = Some(status);
     }
 
+    /// Take in this tick's library, in screen order, clamping the selection to it.
+    pub fn show_library(&mut self, uuids: Vec<String>) {
+        self.books = uuids;
+        self.selected = self.selected.min(self.books.len().saturating_sub(1));
+    }
+
+    /// The uuid the selection marker sits on, if the library isn't empty.
+    pub fn selected_book(&self) -> Option<&str> {
+        self.books.get(self.selected).map(String::as_str)
+    }
+
     /// Whether a quit asked for while a job ran can happen now that it has finished.
     pub fn quit_requested(&self) -> bool {
         self.quit_deferred && !self.busy
     }
 
     fn on_normal_key(&mut self, key: KeyEvent, current_url: &str) -> Option<Action> {
+        match key.code {
+            KeyCode::Up => {
+                self.move_selection(-1);
+                return None;
+            }
+            KeyCode::Down => {
+                self.move_selection(1);
+                return None;
+            }
+            _ => {}
+        }
         // Caps Lock or Shift must not silence a command key.
         let job = match typed_char(key)?.to_ascii_lowercase() {
             'q' => return self.quit(),
@@ -120,12 +163,44 @@ impl App {
                 self.open_edit(Field::Token, "");
                 return None;
             }
+            'p' => return self.open_percent_edit(),
             's' => Job::Sync,
             'r' => Job::Reset,
             'w' => Job::Wire,
+            'd' => return self.book_action(Job::Download),
+            'f' => return self.book_action(Job::Finish),
+            'x' => return self.book_action(Job::RemoveDownload),
             _ => return None,
         };
         self.start(job)
+    }
+
+    /// Move the selection by `delta`, wrapping; a no-op on an empty library.
+    fn move_selection(&mut self, delta: i32) {
+        let Some(len) = i32::try_from(self.books.len()).ok().filter(|n| *n > 0) else {
+            return;
+        };
+        let current = i32::try_from(self.selected).unwrap_or(0);
+        self.selected = (current + delta).rem_euclid(len) as usize;
+    }
+
+    /// Start `make_job(selected uuid)`, or show [`NO_BOOK`] with nothing selected.
+    fn book_action(&mut self, make_job: impl FnOnce(String) -> Job) -> Option<Action> {
+        let Some(book) = self.selected_book().map(str::to_owned) else {
+            self.status = Some(Status::Error(NO_BOOK.to_owned()));
+            return None;
+        };
+        self.start(make_job(book))
+    }
+
+    /// Open the percent edit for the selected book, or show [`NO_BOOK`].
+    fn open_percent_edit(&mut self) -> Option<Action> {
+        let Some(book) = self.selected_book().map(str::to_owned) else {
+            self.status = Some(Status::Error(NO_BOOK.to_owned()));
+            return None;
+        };
+        self.open_edit(Field::Percent(book), "");
+        None
     }
 
     fn on_edit_key(&mut self, key: KeyEvent, current_url: &str) -> Option<Action> {
@@ -162,9 +237,19 @@ impl App {
             return None;
         };
         let buffer = edit.buffer.clone();
-        let job = match edit.field {
-            Field::Url => cli::valid_url(buffer).map(Job::SetUrl),
-            Field::Token => cli::valid_token(buffer).map(Job::SetToken),
+        let job: Result<Job, String> = match &edit.field {
+            Field::Url => cli::valid_url(buffer)
+                .map(Job::SetUrl)
+                .map_err(|e| e.to_string()),
+            Field::Token => cli::valid_token(buffer)
+                .map(Job::SetToken)
+                .map_err(|e| e.to_string()),
+            Field::Percent(book) => parse_percent(&buffer)
+                .map(|percent| Job::Read {
+                    book: book.clone(),
+                    percent,
+                })
+                .ok_or_else(|| format!("{buffer} is not a whole number 0..=100")),
         };
         match job {
             Ok(Job::SetUrl(url)) if url == current_url => {
@@ -179,7 +264,7 @@ impl App {
                 action
             }
             Err(error) => {
-                self.status = Some(Status::Error(error.to_string()));
+                self.status = Some(Status::Error(error));
                 None
             }
         }
@@ -214,6 +299,11 @@ impl App {
 /// Raw mode swallows SIGINT, so Ctrl-C arrives as a key.
 fn is_ctrl_c(key: KeyEvent) -> bool {
     key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)
+}
+
+/// `buffer` as a whole-number percent, trimmed first.
+fn parse_percent(buffer: &str) -> Option<Percent> {
+    buffer.trim().parse::<u8>().ok().and_then(Percent::new)
 }
 
 /// The character `key` types, unless Ctrl or Alt made it a shortcut instead.

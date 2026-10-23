@@ -16,6 +16,7 @@ pub struct Initialization {
 pub struct Resources {
     pub library_sync: String,
     pub get_tests_request: String,
+    pub image_url_quality_template: String,
 }
 
 /// One element of a `library_sync` page, externally tagged by its shape.
@@ -24,8 +25,14 @@ pub enum SyncItem {
     NewEntitlement(Entitlement),
     ChangedEntitlement(Entitlement),
     ChangedProductMetadata(ChangedProductMetadata),
-    /// Reading state isn't modelled until StateArbitration lands.
-    ChangedReadingState(serde::de::IgnoredAny),
+    ChangedReadingState(ChangedReadingState),
+}
+
+/// A reading-state-only sync item.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ChangedReadingState {
+    pub reading_state: ReadingState,
 }
 
 /// Refreshed metadata for a book the device already has.
@@ -41,6 +48,48 @@ pub struct ChangedProductMetadata {
 pub struct Entitlement {
     pub book_entitlement: BookEntitlement,
     pub book_metadata: BookMetadata,
+    pub reading_state: ReadingState,
+}
+
+/// Server reading state for one book, trimmed to what the device reconciles.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ReadingState {
+    pub entitlement_id: String,
+    pub status_info: StatusInfo,
+    pub current_bookmark: CurrentBookmark,
+}
+
+/// Where the reader is in the book's lifecycle, and when that last moved.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct StatusInfo {
+    pub status: crate::reading::ReadStatus,
+    #[serde(default)]
+    pub last_modified: Option<String>,
+}
+
+/// The server's notion of the device's position in a book.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct CurrentBookmark {
+    #[serde(default)]
+    pub progress_percent: Option<i64>,
+    /// The server stores and echoes any JSON a state PUT sent here, so a
+    /// value that isn't a `{Source, Value}` `KoboSpan` decodes as `None`
+    /// rather than failing the whole page.
+    #[serde(default, deserialize_with = "lenient_kobo_span")]
+    pub location: Option<crate::reading::KoboSpan>,
+    #[serde(default)]
+    pub last_modified: Option<String>,
+}
+
+fn lenient_kobo_span<'de, D>(deserializer: D) -> Result<Option<crate::reading::KoboSpan>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    Ok(value.and_then(|v| serde_json::from_value(v).ok()))
 }
 
 /// The ownership record; its `Id` is the book's key on the device.
@@ -62,6 +111,40 @@ pub struct BookMetadata {
     #[serde(default)]
     pub contributors: Vec<String>,
     pub series: Option<Series>,
+    pub cover_image_id: String,
+    pub download_urls: Vec<DownloadUrl>,
+}
+
+/// Where the device can fetch this book's bytes; the device follows only the first.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct DownloadUrl {
+    pub url: String,
+}
+
+/// The `state` PUT reply; every sub-result must read `Success`
+/// ([`crate::firmware::Quirk::StatePutResult`]).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct StateResponse {
+    pub request_result: String,
+    #[serde(default)]
+    pub update_results: Vec<UpdateResult>,
+}
+
+/// One book's per-sub-object outcome within a `state` PUT reply.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct UpdateResult {
+    pub status_info_result: ResultTag,
+    pub current_bookmark_result: ResultTag,
+}
+
+/// A single `{"Result": ...}` tag; the device checks it reads `Success`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ResultTag {
+    pub result: String,
 }
 
 /// A book's series. Serialized as it arrived, so a saved device reads back.

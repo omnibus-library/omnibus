@@ -4,7 +4,7 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-use crate::device::{Book, Device};
+use crate::device::{Book, Device, DEVICE_FORMAT};
 use crate::wire::Series;
 
 use super::*;
@@ -21,6 +21,10 @@ fn dune() -> Book {
         }),
         downloaded: false,
         archived: false,
+        cover_image_id: "book-1".into(),
+        cover: None,
+        download_problem: None,
+        reading: crate::reading::Reading::default(),
     }
 }
 
@@ -54,6 +58,30 @@ async fn save_then_load_round_trips_device_and_token() {
     save(&path, &state).await.unwrap();
 
     assert_eq!(load(&path).await.unwrap(), Some(state));
+}
+
+#[tokio::test]
+async fn load_drops_the_sync_token_of_a_device_saved_before_covers_and_downloads() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    // A format-0 file has no `format`, `covers` or `download_urls` fields at all.
+    let legacy = serde_json::json!({
+        "url": null,
+        "token": "tok-1",
+        "device": {
+            "hardware_id": "mock-ab",
+            "library": {},
+            "sync_token": "page-7",
+        },
+    });
+    std::fs::write(&path, legacy.to_string()).unwrap();
+
+    let loaded = load(&path).await.unwrap().unwrap();
+
+    assert_eq!(
+        (loaded.device.format, loaded.device.sync_token),
+        (DEVICE_FORMAT, None)
+    );
 }
 
 #[tokio::test]

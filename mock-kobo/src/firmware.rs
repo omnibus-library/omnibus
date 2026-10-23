@@ -40,6 +40,27 @@ pub enum Quirk {
     /// A `ChangedEntitlement` with `IsRemoved` archives the book rather than
     /// deleting it. Evidence: `server/src/backend/kobo/dto.rs`. Inferred.
     RemovalArchives,
+    /// A cover is cached per `(ImageId, width, height)` and never
+    /// revalidated: a changed cover under an unchanged `CoverImageId` is
+    /// never refetched. Widths observed; heights, quality and greyscale
+    /// inferred. Evidence: #2684. Observed.
+    CoverCache,
+    /// Only a JPEG or PNG cover whose content type and magic bytes agree
+    /// renders; anything else (a WebP, say) caches as undecodable and shows
+    /// no cover. Evidence: #2116. Observed.
+    CoverDecode,
+    /// A non-2xx download, or no answer at all, leaves the book
+    /// undownloaded and is retried on the next sync, whatever the policy.
+    /// Evidence: #2116. Observed.
+    DownloadFailure,
+    /// Reading status and bookmark are reconciled against the server
+    /// independently, each adopted only when stamped and strictly newer
+    /// than the device's own. Evidence: `server/src/backend/kobo/dto.rs`. Observed.
+    StateArbitration,
+    /// A state PUT's reply must read `Success` on every sub-result, or the
+    /// write is treated as failed. Evidence: `server/src/backend/kobo/dto.rs`
+    /// (`StateResponse`). Inferred.
+    StatePutResult,
 }
 
 /// The header `v1/initialization` must carry ([`Quirk::ApiToken`]).
@@ -64,3 +85,13 @@ pub const STORE_PATHS: [&str; 4] = [
     "/v1/products/books/subscriptions",
     "/v1/deals",
 ];
+
+/// The sizes, in order, every cover is fetched at ([`Quirk::CoverCache`]).
+/// Width observed (#2684); heights, quality, greyscale inferred.
+pub const COVER_SIZES: [(u32, u32); 3] = [(149, 223), (400, 600), (1072, 1448)];
+
+/// The `{Quality}` every cover request fills in. Inferred.
+pub const COVER_QUALITY: u32 = 90;
+
+/// The size whose cache entry `Book::cover` shows (the library list). Inferred.
+pub const SHOWN_COVER_SIZE: (u32, u32) = (149, 223);

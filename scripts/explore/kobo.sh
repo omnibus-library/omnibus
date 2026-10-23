@@ -38,24 +38,68 @@ READY_TICKS=150
 READY_RE='^MOCK_KOBO_READY port=[0-9]+ hardware_id=[^ ]+ state=.* pid='
 STOP_TICKS="${OMNIBUS_EXPLORE_KOBO_STOP_TICKS:-50}"
 
-# The route for action $1 as "METHOD /path"; fails for an action not listed.
-kobo::route() {
-  case "$1" in
-    sync) echo "POST /actions/sync" ;;
-    show) echo "GET /device" ;;
-    *) return 1 ;;
-  esac
-}
-
 kobo::usage() {
   cat >&2 <<EOF
 usage: kobo.sh up --agent <k> --accounts <provision.json>
-       kobo.sh act --agent <k> <action>       actions: sync show
+       kobo.sh act --agent <k> <action> [args...]
+                   actions: sync show download read finish remove-download
        kobo.sh state --agent <k>
        kobo.sh requests --agent <k>
        kobo.sh down [--agent <k>]
 EOF
   exit 2
+}
+
+# Build one action's JSON body via `json.dumps`, never string interpolation.
+kobo::json_books() { python3 -c 'import json,sys; print(json.dumps({"books": sys.argv[1:]}))' "$@"; }
+kobo::json_book() { python3 -c 'import json,sys; print(json.dumps({"book": sys.argv[1]}))' "$1"; }
+kobo::json_read() {
+  python3 -c 'import json,sys
+args = sys.argv[1:]
+body = {"book": args[0], "percent": int(args[1])}
+if len(args) > 2:
+    body["location"] = {"source": args[2], "value": args[3]}
+print(json.dumps(body))' "$@"
+}
+
+# Validate action $1's remaining args ($2…) and set $method, $path and $body
+# (empty for no body); exits 2 via kobo::usage on anything malformed.
+kobo::act_request() {
+  local action="$1"
+  shift
+  method="" path="" body=""
+  case "$action" in
+    sync)
+      [ "$#" -eq 0 ] || kobo::usage
+      method=POST path=/actions/sync
+      ;;
+    show)
+      [ "$#" -eq 0 ] || kobo::usage
+      method=GET path=/device
+      ;;
+    download)
+      [ "$#" -ge 1 ] || kobo::usage
+      method=POST path=/actions/download
+      body="$(kobo::json_books "$@")"
+      ;;
+    read)
+      case "$#" in 2 | 4) ;; *) kobo::usage ;; esac
+      [[ "$2" =~ ^[0-9]+$ ]] || kobo::usage
+      method=POST path=/actions/read
+      body="$(kobo::json_read "$@")"
+      ;;
+    finish)
+      [ "$#" -eq 1 ] || kobo::usage
+      method=POST path=/actions/finish
+      body="$(kobo::json_book "$1")"
+      ;;
+    remove-download)
+      [ "$#" -eq 1 ] || kobo::usage
+      method=POST path=/actions/remove-download
+      body="$(kobo::json_book "$1")"
+      ;;
+    *) kobo::usage ;;
+  esac
 }
 
 kobo::manifest() { echo "$KOBO_DIR/agent-$1/manifest.json"; }
@@ -201,17 +245,26 @@ open(path, "w").write(json.dumps(manifest) + "\n")' \
 }
 
 # Send one request to agent $1's control API and print the reply as received.
+# $4, if given, is a JSON body sent with a matching Content-Type.
 kobo::call() {
-  local k="$1" method="$2" path="$3" resp status port
+  local k="$1" method="$2" path="$3" body="${4-}" resp status port
   kobo::running "$k" || {
     echo "no Kobo running for agent-$k — kobo.sh up --agent $k first" >&2
     return 1
   }
   port="$(kobo::field "$(kobo::manifest "$k")" port)"
-  resp="$(curl -sS --max-time "$ACT_TIMEOUT" -X "$method" -w '\n%{http_code}' "http://127.0.0.1:$port$path")" || {
-    echo "agent-$k's Kobo gave no reply to $method $path" >&2
-    return 1
-  }
+  if [ -n "$body" ]; then
+    resp="$(curl -sS --max-time "$ACT_TIMEOUT" -X "$method" -H 'Content-Type: application/json' \
+      -d "$body" -w '\n%{http_code}' "http://127.0.0.1:$port$path")" || {
+      echo "agent-$k's Kobo gave no reply to $method $path" >&2
+      return 1
+    }
+  else
+    resp="$(curl -sS --max-time "$ACT_TIMEOUT" -X "$method" -w '\n%{http_code}' "http://127.0.0.1:$port$path")" || {
+      echo "agent-$k's Kobo gave no reply to $method $path" >&2
+      return 1
+    }
+  fi
   status="${resp##*$'\n'}"
   printf '%s\n' "${resp%$'\n'*}"
   case "$status" in 2??) return 0 ;; esac
@@ -244,25 +297,48 @@ cmd="${1-}"
 case "$cmd" in up|act|state|requests|down) ;; *) kobo::usage ;; esac
 shift
 
-agent="" accounts="" action="" have_agent=0
+agent="" accounts="" have_agent=0
+rest=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --agent) [ "$#" -ge 2 ] || kobo::usage; agent="$2"; have_agent=1; shift 2 ;;
     --accounts) [ "$#" -ge 2 ] || kobo::usage; accounts="$2"; shift 2 ;;
-    *) [ "$cmd" = act ] && [ -z "$action" ] || kobo::usage; action="$1"; shift ;;
+    --)
+      shift
+      while [ "$#" -gt 0 ]; do rest+=("$1"); shift; done
+      ;;
+    -*) kobo::usage ;;
+    *) rest+=("$1"); shift ;;
   esac
 done
+if [ "${#rest[@]}" -gt 0 ]; then
+  set -- "${rest[@]}"
+else
+  set --
+fi
+# "$@" now holds act's own action and its args, with --agent/--accounts
+# consumed wherever they appeared; every other command takes none.
 
 case "$cmd" in
   down) [ "$have_agent" = 0 ] || kobo::valid_agent "$agent" || kobo::usage ;;
   *) kobo::valid_agent "$agent" || kobo::usage ;;
 esac
 [ "$cmd" != up ] || [ -f "$accounts" ] || kobo::usage
-[ "$cmd" != act ] || route="$(kobo::route "$action")" || kobo::usage
+case "$cmd" in
+  up | state | requests | down) [ "$#" -eq 0 ] || kobo::usage ;;
+esac
+
+method="" path="" body=""
+if [ "$cmd" = act ]; then
+  [ "$#" -ge 1 ] || kobo::usage
+  action="$1"
+  shift
+  kobo::act_request "$action" "$@"
+fi
 
 case "$cmd" in
   up) kobo::up "$agent" "$accounts" ;;
-  act) kobo::call "$agent" "${route%% *}" "${route#* }" ;;
+  act) kobo::call "$agent" "$method" "$path" "$body" ;;
   requests) kobo::call "$agent" GET /requests ;;
   state) kobo::state "$agent" ;;
   down)

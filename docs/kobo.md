@@ -260,12 +260,21 @@ database already had an admin, mark a shelf **Sync to Kobo** yourself.
 
 | Key | Does |
 |---|---|
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Move the selection (marked `>`) within the library |
+| <kbd>d</kbd> | Download the selected book |
+| <kbd>p</kbd> | Edit the selected book's read percent (0–100), sent as a `Reading` state on <kbd>Enter</kbd> |
+| <kbd>f</kbd> | Mark the selected book finished |
+| <kbd>x</kbd> | Clear the selected book's downloaded flag, locally |
 | <kbd>s</kbd> | Sync now |
 | <kbd>r</kbd> | Reset the device: empty library, no sync token, so the next sync resends every opted-in book |
 | <kbd>u</kbd> | Edit the server URL (pinned and saved) |
 | <kbd>t</kbd> | Edit the device token (saved) |
 | <kbd>w</kbd> | Wire a token for the current URL, as startup does |
 | <kbd>q</kbd> / <kbd>Ctrl-C</kbd> | Quit |
+
+Each book line shows `downloaded`, `download failed`, the bookmark percent, or
+`finished`, whichever apply (the device never shows a `KoboSpan` location —
+see [#2738](https://github.com/omnibus-library/omnibus/issues/2738)).
 
 While editing, <kbd>Enter</kbd> saves and <kbd>Esc</kbd> cancels. Pointing a
 device at another server re-wires a token that was wired for the old one; a URL
@@ -306,6 +315,34 @@ Both commands take the same options; each flag wins over its env var:
 With no token, the device logs in as the `user:password` in
 `OMNIBUS_DEV_SEED_USER`. `mock-kobo --help` lists the rest.
 
+### Firmware behaviours
+
+Every rule `mock-kobo` enforces, named in `mock-kobo::firmware::Quirk`. "Observed"
+means seen on a real device or in a linked bug report; "inferred" means derived
+from the server code or docs, not seen directly.
+
+| Quirk | Behaviour | Evidence | Status |
+|---|---|---|---|
+| `ApiToken` | No `x-kobo-apitoken` on `v1/initialization` fails the sync | `kobo/auth.rs` | inferred |
+| `GetTestsPost` | `get_tests_request` is POSTed; a non-2xx answer fails the sync | #1499 | observed |
+| `StorePaths` | The four firmware store paths are fetched off `api_endpoint`; any non-2xx fails the sync before `library_sync` | #1499 | observed |
+| `HardwareId` | Every request carries the device serial as `x-kobo-deviceid` | `kobo/extractor.rs` | observed |
+| `PortlessHost` | Every request's `Host` is its URL's host without the port | #2756 | observed |
+| `ResourcesOnly` | `library_sync` and `get_tests_request` come only from the adopted `Resources` map, never from `api_endpoint` | #2684 | observed |
+| `SyncPaging` | `library_sync` pages are followed while the server says `continue`; past 50 pages the sync never ends | `flows/syncing_a_kobo.md` | inferred |
+| `ContributorsDisplay` | Before a download, authors come from `Contributors`; `ContributorRoles` alone shows "Unknown" | #2684 | observed |
+| `MetadataNoRedownload` | `ChangedProductMetadata` refreshes a book's metadata and never re-downloads its file | #2684 | observed |
+| `RemovalArchives` | A `ChangedEntitlement` with `IsRemoved` archives the book rather than deleting it | `kobo/dto.rs` | inferred |
+| `CoverCache` | A cover is cached per `(CoverImageId, width, height)` and never revalidated; widths 149/400/1072 | #2684 | observed |
+| `CoverDecode` | Only a JPEG or PNG cover whose content type and magic bytes agree renders; anything else (a WebP, say) shows no cover | #2116 | observed |
+| `DownloadFailure` | A non-2xx download, or no answer at all, leaves the book undownloaded and is retried on the next sync, whatever the policy | #2116 | observed |
+| `StateArbitration` | Reading status and bookmark are reconciled against the server independently, each adopted only when stamped and strictly newer than the device's own | `kobo/dto.rs` | observed |
+| `StatePutResult` | A state PUT's reply must read `Success` on every sub-result, or the write is treated as failed | `kobo/dto.rs` (`StateResponse`) | inferred |
+
+Heights (223/600/1448), quality (90) and greyscale (`false`) are inferred, as
+is the content-type/magic-bytes agreement rule and that a non-2xx cover is
+never cached.
+
 ### The control API
 
 Both commands serve a loopback HTTP API over the same device (the terminal UI's
@@ -314,7 +351,11 @@ port is in its header). Every reply is `{status, code, message, details}`:
 | Route | Replies (`status` `code`) |
 |---|---|
 | `GET /device` | 200 `ok` |
-| `POST /actions/sync` | 200 `synced` · 502 `sync_failed` · 409 `sync_in_progress` · 500 `state_not_saved` |
+| `POST /actions/sync` `{"download": "none" \| "all" \| ["<uuid>", …]}` (body optional, defaults to `none`) | 200 `synced` · 400 `invalid_request` · 502 `sync_failed` · 409 `sync_in_progress` · 500 `state_not_saved` |
+| `POST /actions/download` `{"books": ["<uuid>", …]}` | 200 `downloaded` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `download_failed` |
+| `POST /actions/remove-download` `{"book": "<uuid>"}` | 200 `download_removed` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` |
+| `POST /actions/read` `{"book": "<uuid>", "percent": 0..=100, "location": {"source","value"}?}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `not_downloaded` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
+| `POST /actions/finish` `{"book": "<uuid>"}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
 | `GET /requests` | 200 `ok` |
 | `PUT /reset` | 200 `reset` · 409 `sync_in_progress` · 500 `state_not_saved` |
 | any other path | 404 `not_found` |

@@ -7,11 +7,13 @@ use axum::http::StatusCode;
 use tempfile::TempDir;
 
 use crate::control::{Control, ControlError, LastSync, RESET_MESSAGE};
+use crate::downloads::DownloadPolicy;
 use crate::firmware::Quirk;
+use crate::reading::{Percent, ReadStatus};
 use crate::state::{self, StateError};
 use crate::test_support::{
-    control_wired_against, dune_stub, never_answers, spawn_stub, spawn_sync, stub_control,
-    stub_with_device, wait_until, Stub, STUB_TOKEN,
+    control_wired_against, dune_stub, never_answers, new_entitlement, spawn_stub, spawn_sync,
+    stub_control, stub_with_device, wait_until, Stub, STUB_TOKEN,
 };
 use crate::tui::app::{Job, Status};
 
@@ -86,7 +88,7 @@ async fn perform_reset_reports_reset_message_and_empties_library() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
-    control.sync().await.unwrap();
+    control.sync(DownloadPolicy::None).await.unwrap();
 
     let status = perform(&control, &wiring(), Job::Reset).await;
 
@@ -333,4 +335,90 @@ async fn perform_wire_reports_no_seed_user_when_unset() {
     let expected = "can't auto-wire: OMNIBUS_DEV_SEED_USER is not set; press t to enter a token";
     assert_eq!(status, Status::Error(expected.to_owned()));
     assert!(stub.paths().is_empty());
+}
+
+#[tokio::test]
+async fn perform_download_reports_downloaded_against_a_healthy_stub() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::None).await.unwrap();
+
+    let status = perform(&control, &wiring(), Job::Download("book-1".into())).await;
+
+    assert_eq!(status, Status::Info("downloaded".to_owned()));
+    assert!(control.view().library["book-1"].downloaded);
+}
+
+#[tokio::test]
+async fn perform_download_reports_the_problem_when_the_download_fails() {
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![serde_json::json!([new_entitlement("book-1", "Dune")])],
+        download_status: StatusCode::NOT_FOUND,
+        ..Stub::default()
+    })
+    .await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::None).await.unwrap();
+
+    let status = perform(&control, &wiring(), Job::Download("book-1".into())).await;
+
+    let Status::Error(message) = status else {
+        panic!("expected an error status");
+    };
+    assert!(message.contains("book-1"));
+}
+
+#[tokio::test]
+async fn perform_read_reports_state_sent() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::All).await.unwrap();
+
+    let status = perform(
+        &control,
+        &wiring(),
+        Job::Read {
+            book: "book-1".into(),
+            percent: Percent::new(42).unwrap(),
+        },
+    )
+    .await;
+
+    assert_eq!(status, Status::Info("state sent".to_owned()));
+    assert_eq!(
+        control.view().library["book-1"].reading.status,
+        ReadStatus::Reading
+    );
+}
+
+#[tokio::test]
+async fn perform_finish_reports_state_sent() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::None).await.unwrap();
+
+    let status = perform(&control, &wiring(), Job::Finish("book-1".into())).await;
+
+    assert_eq!(status, Status::Info("state sent".to_owned()));
+    assert_eq!(
+        control.view().library["book-1"].reading.status,
+        ReadStatus::Finished
+    );
+}
+
+#[tokio::test]
+async fn perform_remove_download_reports_removed() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::All).await.unwrap();
+
+    let status = perform(&control, &wiring(), Job::RemoveDownload("book-1".into())).await;
+
+    assert_eq!(status, Status::Info("removed".to_owned()));
+    assert!(!control.view().library["book-1"].downloaded);
 }
