@@ -296,6 +296,10 @@ For a second device, give it its own state file; inside the gitignored
 just kobo --state .claude/runtime/other.json   # the Omnibus device "Mock Kobo (other)"
 ```
 
+A downloaded book's file is kept beside the state file, in `<state>.books/`
+(`.claude/runtime/kobo.json` → `.claude/runtime/kobo.books/<id>.kepub.epub`),
+so a second device's downloads never collide with the first's.
+
 ### From a script
 
 `mock-kobo serve` runs the same device headless, printing one

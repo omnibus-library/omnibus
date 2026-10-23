@@ -112,8 +112,11 @@ pub struct DeviceView {
 }
 
 impl Control {
-    /// A device restored from (or just written to) `state_path`, syncing against `url`.
-    pub fn new(saved: SavedState, url: String, state_path: PathBuf) -> Self {
+    /// A device restored from (or just written to) `state_path`, syncing
+    /// against `url`. Its storage directory sits beside the state file,
+    /// whatever `saved` carried in (storage is never saved to disk).
+    pub fn new(mut saved: SavedState, url: String, state_path: PathBuf) -> Self {
+        saved.device.storage = Some(state::books_dir(&state_path));
         Self {
             state_path,
             save_lock: tokio::sync::Mutex::new(()),
@@ -250,6 +253,7 @@ impl Control {
             }
             let hardware_id = live.saved.device.hardware_id.clone();
             live.saved.device = Device::new(&hardware_id);
+            live.saved.device.storage = Some(state::books_dir(&self.state_path));
             live.last_sync = None;
             live.requests.clear();
         }

@@ -395,6 +395,38 @@ async fn reset_returns_sync_in_progress_while_sync_runs() {
 }
 
 #[tokio::test]
+async fn download_keeps_the_books_file_beside_the_state_file() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = stub_control(&stub, path);
+    control.sync(DownloadPolicy::None).await.unwrap();
+
+    control.download(vec!["book-1".into()]).await.unwrap();
+
+    let file = dir.path().join("kobo.books").join("book-1.kepub.epub");
+    assert!(file.exists());
+}
+
+#[tokio::test]
+async fn reset_keeps_downloading_into_the_same_storage() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = stub_control(&stub, path);
+    control.sync(DownloadPolicy::None).await.unwrap();
+    control.download(vec!["book-1".into()]).await.unwrap();
+    let file = dir.path().join("kobo.books").join("book-1.kepub.epub");
+    assert!(file.exists());
+
+    control.reset().await.unwrap();
+    control.sync(DownloadPolicy::None).await.unwrap();
+    control.download(vec!["book-1".into()]).await.unwrap();
+
+    assert!(file.exists());
+}
+
+#[tokio::test]
 async fn retarget_url_syncs_against_new_url() {
     let old = spawn_stub(Stub::default()).await;
     let new = spawn_stub(dune_stub()).await;

@@ -82,6 +82,8 @@ pub struct Stub {
     pub cover: Option<(&'static str, &'static [u8])>,
     /// The status every `v1/download/<id>` request answers with.
     pub download_status: StatusCode,
+    /// The bytes every `v1/download/<id>` request answers with, on success.
+    pub download_body: &'static [u8],
     /// The status every state PUT answers with.
     pub state_status: StatusCode,
     /// The state PUT reply body; `None` (the default) is an all-`Success` reply.
@@ -133,6 +135,7 @@ impl Default for Stub {
             login_token: Some(SESSION_TOKEN),
             cover: None,
             download_status: StatusCode::OK,
+            download_body: b"stub-kepub",
             state_status: StatusCode::OK,
             state_reply: None,
             reading_services_status: StatusCode::OK,
@@ -370,7 +373,7 @@ async fn handle(
 
 /// `GET v1/download/{id}`, outside the resources map like the real server's route.
 fn download(state: &StubState) -> Response {
-    (state.stub.download_status, b"stub-kepub".as_slice()).into_response()
+    (state.stub.download_status, state.stub.download_body).into_response()
 }
 
 /// `PUT v1/library/{id}/state`, also off `api_endpoint` directly.

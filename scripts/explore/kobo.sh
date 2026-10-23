@@ -14,6 +14,7 @@
 # ${OMNIBUS_EXPLORE_KOBO_DIR:-<repo>/.claude/runtime/explore/kobo}/agent-<k>/
 # (a relative KOBO_DIR is taken from the repo root):
 #   state.json     mock-kobo's state file; kept across up/down, holds the device token
+#   state.books/   downloaded books, one <uuid>.kepub.epub each
 #   serve.log      mock-kobo's output
 #   manifest.json  what `up` printed; removed by `down`
 #

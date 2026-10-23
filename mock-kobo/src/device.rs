@@ -2,6 +2,7 @@
 //! sync. The firmware's rules for changing it live beside each transition.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -72,6 +73,11 @@ pub struct Device {
     /// sync's `Resources.reading_services_host`; `None` before the first sync.
     #[serde(default)]
     pub reading_services_host: Option<String>,
+    /// Where downloaded books are written, one `<id>.kepub.epub` each;
+    /// `None` keeps no bytes. `Control::new` sets it beside the state file;
+    /// never saved, since it is a path derived from where this process runs.
+    #[serde(skip)]
+    pub storage: Option<PathBuf>,
 }
 
 /// One book as the device shows it.
@@ -119,7 +125,18 @@ impl Device {
             covers: BTreeMap::new(),
             download_urls: BTreeMap::new(),
             reading_services_host: None,
+            storage: None,
         }
+    }
+
+    /// `<storage>/<id>.kepub.epub`; `None` without storage, or for an id
+    /// that isn't `[A-Za-z0-9_-]+` ([`crate::annotations::is_safe_id`]).
+    pub fn book_file(&self, id: &str) -> Option<PathBuf> {
+        let dir = self.storage.as_ref()?;
+        if !crate::annotations::is_safe_id(id) {
+            return None;
+        }
+        Some(dir.join(format!("{id}.kepub.epub")))
     }
 
     /// Drop what was learned about the server this device last talked to:

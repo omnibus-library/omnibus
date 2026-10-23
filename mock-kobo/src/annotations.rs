@@ -164,10 +164,11 @@ pub async fn fetch_changed_annotations(client: &mut Client, device: &mut Device)
     }
 }
 
-/// Whether `id` is safe to interpolate into an annotations GET/PATCH path:
-/// letters, digits, `_` and `-` only, so a server-side entitlement id can
-/// never steer the request outside `/api/v3/content/` (`/`, `..`, `?`, …).
-fn is_safe_id(id: &str) -> bool {
+/// Whether `id` is safe to interpolate into a path the server named: an
+/// annotations GET/PATCH, or a downloaded book's file name — letters,
+/// digits, `_` and `-` only, so a server-side entitlement id can never steer
+/// either outside its directory (`/`, `..`, `?`, …).
+pub(crate) fn is_safe_id(id: &str) -> bool {
     !id.is_empty()
         && id
             .bytes()
