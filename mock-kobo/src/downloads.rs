@@ -5,6 +5,7 @@
 //! answer, or no URL at all leaves the book undownloaded with a redacted
 //! problem and never fails the sync.
 
+use crate::annotations;
 use crate::client::Client;
 use crate::device::Device;
 
@@ -38,11 +39,18 @@ fn policy_wants(policy: &DownloadPolicy, id: &str) -> bool {
     }
 }
 
-/// Download every book `wanted` names, through the device's own `download_urls`.
+/// Download every book `wanted` names, through the device's own
+/// `download_urls`. Each successful download is followed by one
+/// unconditional annotations GET before the next download starts
+/// ([`crate::firmware::Quirk::AnnotationsOnDownload`]).
 pub async fn download_books(client: &mut Client, device: &mut Device, policy: &DownloadPolicy) {
     for id in wanted(device, policy) {
         let outcome = attempt_one(client, device, &id).await;
+        let downloaded = matches!(outcome, Outcome::Downloaded);
         apply_outcome(device, &id, outcome);
+        if downloaded {
+            annotations::fetch_after_download(client, device, &id).await;
+        }
     }
 }
 

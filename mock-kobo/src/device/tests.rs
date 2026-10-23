@@ -3,7 +3,7 @@
 use serde_json::{json, Value};
 
 use crate::reading::{rfc3339, Bookmark, KoboSpan, Percent, ReadStatus};
-use crate::test_support::{book_metadata, new_entitlement};
+use crate::test_support::{annotation, book_metadata, new_entitlement, new_highlight, span_range};
 use crate::wire::Series;
 
 use super::*;
@@ -38,6 +38,8 @@ fn apply_adds_new_entitlement_as_undownloaded_book() {
         cover: None,
         download_problem: None,
         reading: crate::reading::Reading::default(),
+        annotations: Vec::new(),
+        dropped_annotations: 0,
     };
     assert_eq!(device.library["book-1"], expected);
 }
@@ -325,6 +327,188 @@ fn finish_returns_unknown_book_for_a_book_it_lacks() {
     let mut device = Device::new("HW-1");
 
     let error = device.finish("book-1", 1_700_000_000).unwrap_err();
+
+    assert_eq!(error, DeviceError::UnknownBook("book-1".into()));
+}
+
+#[test]
+fn receive_annotations_replaces_the_highlights_of_a_downloaded_book() {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+    let book = device.library.get_mut("book-1").unwrap();
+    book.downloaded = true;
+    book.dropped_annotations = 3;
+    let served = vec![annotation("a-1"), annotation("a-2")];
+
+    device.receive_annotations("book-1", served.clone());
+
+    let book = &device.library["book-1"];
+    assert_eq!(book.annotations, served);
+    assert_eq!(book.dropped_annotations, 0);
+}
+
+#[test]
+fn receive_annotations_drops_and_counts_the_highlights_of_an_undownloaded_book() {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+
+    device.receive_annotations("book-1", vec![annotation("a-1"), annotation("a-2")]);
+
+    let book = &device.library["book-1"];
+    assert!(book.annotations.is_empty());
+    assert_eq!(book.dropped_annotations, 2);
+}
+
+#[test]
+fn receive_annotations_changes_nothing_for_a_book_the_device_lacks() {
+    let mut device = Device::new("HW-1");
+
+    device.receive_annotations("book-1", vec![annotation("a-1")]);
+
+    assert!(!device.library.contains_key("book-1"));
+}
+
+#[test]
+fn apply_keeps_a_books_highlights_when_its_metadata_changes() {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+    device.library.get_mut("book-1").unwrap().downloaded = true;
+    device.receive_annotations("book-1", vec![annotation("a-1")]);
+
+    device.apply(item(json!({
+        "ChangedProductMetadata": { "BookMetadata": book_metadata("book-1", "Dune Messiah") }
+    })));
+
+    let book = &device.library["book-1"];
+    assert_eq!(book.title, "Dune Messiah");
+    assert_eq!(book.annotations, vec![annotation("a-1")]);
+}
+
+fn downloaded_book_1() -> Device {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+    device.library.get_mut("book-1").unwrap().downloaded = true;
+    device
+}
+
+#[test]
+fn highlight_appends_the_highlight_with_its_kobospan_location() {
+    let mut device = downloaded_book_1();
+
+    device
+        .highlight(
+            "book-1",
+            "h-1".into(),
+            new_highlight(Some("a thought"), Some(span_range())),
+        )
+        .unwrap();
+
+    let highlight = &device.library["book-1"].annotations[0];
+    assert_eq!(highlight.id, "h-1");
+    assert_eq!(highlight.text, "a passage");
+    assert_eq!(highlight.note, Some("a thought".into()));
+    assert_eq!(highlight.color, crate::annotations::Swatch::Blue);
+    assert_eq!(
+        highlight.location,
+        json!({
+            "span": {
+                "chapterFilename": "OEBPS/ch1.xhtml",
+                "startPath": "span#kobo\\.1\\.2",
+                "startChar": 3,
+                "endPath": "span#kobo\\.1\\.4",
+                "endChar": 9,
+            }
+        })
+    );
+}
+
+#[test]
+fn highlight_treats_an_empty_note_as_none() {
+    let mut device = downloaded_book_1();
+    let mut new = new_highlight(Some("a thought"), None);
+    new.note = Some(String::new());
+
+    device.highlight("book-1", "h-1".into(), new).unwrap();
+
+    assert_eq!(device.library["book-1"].annotations[0].note, None);
+    assert_eq!(
+        device.library["book-1"].annotations[0].location,
+        Value::Null
+    );
+}
+
+#[test]
+fn highlight_treats_a_whitespace_only_note_as_none() {
+    let mut device = downloaded_book_1();
+    let mut new = new_highlight(Some("a thought"), None);
+    new.note = Some("  ".into());
+
+    device.highlight("book-1", "h-1".into(), new).unwrap();
+
+    assert_eq!(device.library["book-1"].annotations[0].note, None);
+}
+
+#[test]
+fn highlight_returns_not_downloaded_for_an_undownloaded_book() {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+
+    let error = device
+        .highlight(
+            "book-1",
+            "h-1".into(),
+            new_highlight(Some("a thought"), None),
+        )
+        .unwrap_err();
+
+    assert_eq!(error, DeviceError::NotDownloaded("book-1".into()));
+}
+
+#[test]
+fn highlight_returns_unknown_book_for_a_book_it_lacks() {
+    let mut device = Device::new("HW-1");
+
+    let error = device
+        .highlight(
+            "book-1",
+            "h-1".into(),
+            new_highlight(Some("a thought"), None),
+        )
+        .unwrap_err();
+
+    assert_eq!(error, DeviceError::UnknownBook("book-1".into()));
+}
+
+#[test]
+fn delete_highlight_removes_the_highlight() {
+    let mut device = downloaded_book_1();
+    device
+        .highlight(
+            "book-1",
+            "h-1".into(),
+            new_highlight(Some("a thought"), None),
+        )
+        .unwrap();
+
+    device.delete_highlight("book-1", "h-1").unwrap();
+
+    assert!(device.library["book-1"].annotations.is_empty());
+}
+
+#[test]
+fn delete_highlight_returns_unknown_highlight_for_an_id_the_book_lacks() {
+    let mut device = downloaded_book_1();
+
+    let error = device.delete_highlight("book-1", "h-1").unwrap_err();
+
+    assert_eq!(error, DeviceError::UnknownHighlight("h-1".into()));
+}
+
+#[test]
+fn delete_highlight_returns_unknown_book_for_a_book_it_lacks() {
+    let mut device = Device::new("HW-1");
+
+    let error = device.delete_highlight("book-1", "h-1").unwrap_err();
 
     assert_eq!(error, DeviceError::UnknownBook("book-1".into()));
 }

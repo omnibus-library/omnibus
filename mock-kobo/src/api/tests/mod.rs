@@ -195,6 +195,8 @@ async fn get_device_returns_each_book_with_its_series() {
             "cover": null,
             "download_problem": null,
             "reading": { "status": "ReadyToRead", "status_modified": null, "bookmark": null },
+            "annotations": [],
+            "dropped_annotations": 0,
         })
     );
 }
@@ -431,6 +433,7 @@ async fn get_requests_returns_ok_reply_with_redacted_requests() {
                 request("GET", "/v1/products/books/subscriptions"),
                 request("GET", "/v1/deals"),
                 request("GET", "/v1/library/sync"),
+                json!({ "method": "POST", "path": "/api/v3/content/checkforchanges", "status": 200 }),
             ] },
         })
     );

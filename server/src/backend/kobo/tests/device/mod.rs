@@ -2,6 +2,7 @@
 //! and `reading_services_router` over local TCP. The suites above check what
 //! the server sends; these check what a reader would then see on the device.
 
+mod annotations;
 mod covers;
 mod downloads;
 mod library_sync;
@@ -13,6 +14,8 @@ use super::*;
 struct Omnibus {
     /// The `api_endpoint` the device is configured with.
     endpoint: String,
+    /// The server's bare origin — what a second device's `api_endpoint` is built from.
+    base: String,
     pool: SqlitePool,
     user_id: i64,
 }
@@ -31,7 +34,16 @@ async fn spawn_omnibus() -> Omnibus {
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     Omnibus {
         endpoint: format!("{base}/kobo/{}", device.token),
+        base,
         pool,
         user_id: user.id,
     }
+}
+
+/// Enrol a second `kobo_devices` row for `omnibus`'s user, returning its `{base}/kobo/{token}`.
+async fn add_device(omnibus: &Omnibus, name: &str) -> String {
+    let device = db::kobo_devices::create_device(&omnibus.pool, omnibus.user_id, name)
+        .await
+        .unwrap();
+    format!("{}/kobo/{}", omnibus.base, device.token)
 }

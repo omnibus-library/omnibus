@@ -12,8 +12,8 @@ use crate::firmware::Quirk;
 use crate::reading::{Percent, ReadStatus};
 use crate::state::{self, StateError};
 use crate::test_support::{
-    control_wired_against, dune_stub, never_answers, new_entitlement, spawn_stub, spawn_sync,
-    stub_control, stub_with_device, wait_until, Stub, STUB_TOKEN,
+    control_wired_against, dune_stub, never_answers, new_entitlement, new_highlight, spawn_stub,
+    spawn_sync, stub_control, stub_with_device, wait_until, Stub, STUB_TOKEN,
 };
 use crate::tui::app::{Job, Status};
 
@@ -421,4 +421,81 @@ async fn perform_remove_download_reports_removed() {
 
     assert_eq!(status, Status::Info("removed".to_owned()));
     assert!(!control.view().library["book-1"].downloaded);
+}
+
+#[tokio::test]
+async fn perform_highlight_reports_annotation_sent() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::All).await.unwrap();
+
+    let status = perform(
+        &control,
+        &wiring(),
+        Job::Highlight {
+            book: "book-1".into(),
+            highlight: new_highlight(None, None),
+        },
+    )
+    .await;
+
+    assert_eq!(status, Status::Info("annotation sent".to_owned()));
+    assert_eq!(control.view().library["book-1"].annotations.len(), 1);
+}
+
+#[tokio::test]
+async fn perform_delete_highlight_deletes_the_newest_highlight() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::All).await.unwrap();
+    perform(
+        &control,
+        &wiring(),
+        Job::Highlight {
+            book: "book-1".into(),
+            highlight: new_highlight(None, None),
+        },
+    )
+    .await;
+    perform(
+        &control,
+        &wiring(),
+        Job::Highlight {
+            book: "book-1".into(),
+            highlight: crate::annotations::NewHighlight {
+                text: "another passage".into(),
+                color: crate::annotations::Swatch::Green,
+                note: None,
+                location: None,
+            },
+        },
+    )
+    .await;
+
+    let status = perform(&control, &wiring(), Job::DeleteHighlight("book-1".into())).await;
+
+    assert_eq!(status, Status::Info("annotation sent".to_owned()));
+    let annotations = &control.view().library["book-1"].annotations;
+    assert_eq!(annotations.len(), 1);
+    assert_eq!(
+        annotations[0].text, "a passage",
+        "the older highlight must survive"
+    );
+}
+
+#[tokio::test]
+async fn perform_delete_highlight_reports_no_highlights_on_a_book_without_any() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::None).await.unwrap();
+
+    let status = perform(&control, &wiring(), Job::DeleteHighlight("book-1".into())).await;
+
+    assert_eq!(
+        status,
+        Status::Error("no highlights on this book".to_owned())
+    );
 }

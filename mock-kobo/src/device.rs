@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::annotations::{Annotation, NewHighlight};
 use crate::covers::Cover;
 use crate::reading::{Bookmark, KoboSpan, Percent, ReadStatus, Reading};
 use crate::wire::{BookMetadata, Series, SyncItem};
@@ -19,6 +20,8 @@ pub enum DeviceError {
     UnknownBook(String),
     #[error("{0} is not downloaded; download it first")]
     NotDownloaded(String),
+    #[error("the book holds no highlight {0}")]
+    UnknownHighlight(String),
 }
 
 /// The current on-disk shape of a saved device: covers, downloads and
@@ -26,17 +29,23 @@ pub enum DeviceError {
 /// token on load, so the next sync resends every book with these new fields.
 pub const DEVICE_FORMAT: u32 = 1;
 
+/// Hex-encode `bytes`, lowercase, two characters per byte. Shared by
+/// [`mint_hardware_id`] and `annotations::mint_id`.
+pub(crate) fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(char::from(HEX[usize::from(byte >> 4)]));
+        out.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    out
+}
+
 /// A fresh hardware id for a new device: `mock-` then 32 random hex digits.
 pub fn mint_hardware_id() -> Result<String, getrandom::Error> {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut bytes = [0u8; 16];
     getrandom::fill(&mut bytes)?;
-    let mut id = String::from("mock-");
-    for byte in bytes {
-        id.push(char::from(HEX[usize::from(byte >> 4)]));
-        id.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    Ok(id)
+    Ok(format!("mock-{}", hex_encode(&bytes)))
 }
 
 /// One fake Kobo.
@@ -59,6 +68,10 @@ pub struct Device {
     /// Holds the device token baked into the URL, so this never appears in the control API's device view.
     #[serde(default)]
     pub download_urls: BTreeMap<String, String>,
+    /// The bare origin Reading Services is served at, kept from the last
+    /// sync's `Resources.reading_services_host`; `None` before the first sync.
+    #[serde(default)]
+    pub reading_services_host: Option<String>,
 }
 
 /// One book as the device shows it.
@@ -84,6 +97,15 @@ pub struct Book {
     /// Reconciled against the server independently of everything else above.
     #[serde(default)]
     pub reading: Reading,
+    /// The book's annotations, replaced wholesale by the server's served set
+    /// once this book is held and downloaded ([`Device::receive_annotations`]).
+    #[serde(default)]
+    pub annotations: Vec<Annotation>,
+    /// How many annotations the server offered this book while it was held
+    /// but not downloaded, and so were dropped rather than kept
+    /// ([`crate::firmware::Quirk::AnnotationsUnheld`]).
+    #[serde(default)]
+    pub dropped_annotations: usize,
 }
 
 impl Device {
@@ -96,6 +118,23 @@ impl Device {
             format: DEVICE_FORMAT,
             covers: BTreeMap::new(),
             download_urls: BTreeMap::new(),
+            reading_services_host: None,
+        }
+    }
+
+    /// Drop what was learned about the server this device last talked to:
+    /// always `reading_services_host` (the next sync re-learns it from
+    /// `v1/initialization`), and when the device's token changed, also
+    /// `sync_token` and `download_urls` — the same state a token retarget
+    /// drops, because a new token means a full resync. Shared by
+    /// `Control::retarget` and `startup::start`, so a device that comes
+    /// back from a restart pointed at a different server or token never
+    /// keeps talking to the old one.
+    pub fn forget_server(&mut self, token_changed: bool) {
+        self.reading_services_host = None;
+        if token_changed {
+            self.sync_token = None;
+            self.download_urls.clear();
         }
     }
 
@@ -143,6 +182,63 @@ impl Device {
             .ok_or_else(|| DeviceError::UnknownBook(book.to_owned()))?;
         book.reading.status = ReadStatus::Finished;
         book.reading.status_modified = Some(now);
+        Ok(())
+    }
+
+    /// Apply `book`'s served annotation set:
+    /// - held and downloaded: replaced wholesale, in served order, and
+    ///   `dropped_annotations` resets to 0;
+    /// - held but not downloaded: untouched, and `dropped_annotations`
+    ///   becomes the served count ([`crate::firmware::Quirk::AnnotationsUnheld`]);
+    /// - not held: a no-op.
+    pub fn receive_annotations(&mut self, book: &str, served: Vec<Annotation>) {
+        let Some(book) = self.library.get_mut(book) else {
+            return;
+        };
+        if book.downloaded {
+            book.annotations = served;
+            book.dropped_annotations = 0;
+        } else {
+            book.dropped_annotations = served.len();
+        }
+    }
+
+    /// Add a highlight the device just made, under `id`. Needs the book held
+    /// and downloaded, because the firmware highlights only inside an open book.
+    pub fn highlight(
+        &mut self,
+        book_id: &str,
+        id: String,
+        new: NewHighlight,
+    ) -> Result<(), DeviceError> {
+        let book = self
+            .library
+            .get_mut(book_id)
+            .ok_or_else(|| DeviceError::UnknownBook(book_id.to_owned()))?;
+        if !book.downloaded {
+            return Err(DeviceError::NotDownloaded(book_id.to_owned()));
+        }
+        book.annotations.push(Annotation {
+            id,
+            text: new.text,
+            note: new.note.filter(|n| !n.trim().is_empty()),
+            color: new.color,
+            location: crate::annotations::location_json(new.location.as_ref()),
+        });
+        Ok(())
+    }
+
+    /// Remove a highlight the device holds, by its id.
+    pub fn delete_highlight(&mut self, book: &str, id: &str) -> Result<(), DeviceError> {
+        let book = self
+            .library
+            .get_mut(book)
+            .ok_or_else(|| DeviceError::UnknownBook(book.to_owned()))?;
+        let before = book.annotations.len();
+        book.annotations.retain(|a| a.id != id);
+        if book.annotations.len() == before {
+            return Err(DeviceError::UnknownHighlight(id.to_owned()));
+        }
         Ok(())
     }
 
@@ -229,13 +325,17 @@ impl Book {
             cover: None,
             download_problem: None,
             reading: Reading::default(),
+            annotations: Vec::new(),
+            dropped_annotations: 0,
         }
     }
 
     /// New metadata over the same file ([`crate::firmware::Quirk::MetadataNoRedownload`]).
     /// Keeps the cached cover too: the cover pass only replaces it after a
     /// sync completes, so a sync that fails after this refresh must not
-    /// drop a cover the cache still holds.
+    /// drop a cover the cache still holds. Keeps the device's annotations
+    /// and drop count the same way: a replayed `NewEntitlement` or a
+    /// metadata-only change must not wipe highlights already held.
     fn refresh(&mut self, metadata: BookMetadata) {
         *self = Self {
             downloaded: self.downloaded,
@@ -243,6 +343,8 @@ impl Book {
             download_problem: self.download_problem.clone(),
             reading: self.reading.clone(),
             cover: self.cover,
+            annotations: self.annotations.clone(),
+            dropped_annotations: self.dropped_annotations,
             ..Self::from_metadata(metadata)
         };
     }

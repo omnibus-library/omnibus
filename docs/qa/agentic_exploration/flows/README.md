@@ -34,6 +34,7 @@ Surfaces row, stops the draw.
 | [syncing_a_kobo](syncing_a_kobo.md) | on its own | no — your own shelves and device | — |
 | [choosing_kobo_shelves](choosing_kobo_shelves.md) | on its own | no — your own shelves and device | syncing_a_kobo |
 | [reading_on_a_kobo](reading_on_a_kobo.md) | on its own | no — your own shelves and device | syncing_a_kobo |
+| [highlighting_on_a_kobo](highlighting_on_a_kobo.md) | on its own | no — your own shelves and device | syncing_a_kobo |
 | [adding_highlight](adding_highlight.md) | inside reading_a_book | no | — |
 | [resuming_from_another_device](resuming_from_another_device.md) | inside reading_a_book | no — the runner plays the device | — |
 | [adding_bookmark](adding_bookmark.md) | inside listening_to_audiobook | no | — |

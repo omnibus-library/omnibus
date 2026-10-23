@@ -2,6 +2,7 @@
 //! the Kobo sync routes as a [`Stub`] says and records every request, so a
 //! test can reproduce an old server bug and watch the device react to it.
 
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -10,7 +11,7 @@ use std::time::Duration;
 use axum::{
     extract::State,
     http::{
-        header::{CONTENT_TYPE, HOST, LOCATION},
+        header::{CONTENT_TYPE, ETAG, HOST, LOCATION},
         HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri,
     },
     response::{IntoResponse, Response},
@@ -85,6 +86,29 @@ pub struct Stub {
     pub state_status: StatusCode,
     /// The state PUT reply body; `None` (the default) is an all-`Success` reply.
     pub state_reply: Option<Value>,
+    /// The status `POST .../checkforchanges` answers with.
+    pub reading_services_status: StatusCode,
+    /// The entitlement ids `checkforchanges` reports, minus any already
+    /// served a 200 GET (see [`StubState::served_once`]) — the AC1 self-heal.
+    pub reading_services_changed: Vec<String>,
+    /// Each reported id's served annotation set. An id absent, or mapped to
+    /// an empty vec, answers its GET `304`; a non-empty vec answers `200`.
+    pub reading_services_annotations: BTreeMap<String, Vec<Value>>,
+    /// The status every `PATCH .../annotations` answers with.
+    pub patch_status: StatusCode,
+    /// The status a non-empty served set's `GET .../annotations` answers
+    /// with (an empty set always answers `304`, regardless).
+    pub annotations_get_status: StatusCode,
+    /// Leave `checkforchanges` requests open without ever answering.
+    pub checkforchanges_never_answers: bool,
+    /// Leave an annotations GET open without ever answering.
+    pub annotations_get_never_answers: bool,
+    /// Answer `checkforchanges` 200 with a body the device can't decode as
+    /// a list of ids.
+    pub checkforchanges_bad_body: bool,
+    /// Answer a non-empty served set's GET 200 with a body the device
+    /// can't decode as the annotations envelope.
+    pub annotations_get_bad_body: bool,
 }
 
 impl Default for Stub {
@@ -111,6 +135,15 @@ impl Default for Stub {
             download_status: StatusCode::OK,
             state_status: StatusCode::OK,
             state_reply: None,
+            reading_services_status: StatusCode::OK,
+            reading_services_changed: Vec::new(),
+            reading_services_annotations: BTreeMap::new(),
+            patch_status: StatusCode::NO_CONTENT,
+            annotations_get_status: StatusCode::OK,
+            checkforchanges_never_answers: false,
+            annotations_get_never_answers: false,
+            checkforchanges_bad_body: false,
+            annotations_get_bad_body: false,
         }
     }
 }
@@ -118,6 +151,7 @@ impl Default for Stub {
 /// One request the stub received.
 #[derive(Clone, Debug)]
 pub struct Recorded {
+    pub method: String,
     pub path: String,
     pub headers: HeaderMap,
     pub body: String,
@@ -168,6 +202,9 @@ struct StubState {
     base: String,
     requests: Arc<Mutex<Vec<Recorded>>>,
     sync_calls: AtomicUsize,
+    /// Ids whose annotations GET has already answered 200 — subtracted from
+    /// `checkforchanges`'s next answer, the AC1 self-heal.
+    served_once: Mutex<HashSet<String>>,
 }
 
 /// Serve `stub` on an ephemeral local port.
@@ -180,6 +217,7 @@ pub async fn spawn_stub(stub: Stub) -> RunningStub {
         base: base.clone(),
         requests: requests.clone(),
         sync_calls: AtomicUsize::new(0),
+        served_once: Mutex::new(HashSet::new()),
     });
     let app = Router::new().fallback(handle).with_state(state);
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
@@ -295,11 +333,15 @@ async fn handle(
     body: String,
 ) -> Response {
     state.requests.lock().unwrap().push(Recorded {
+        method: method.to_string(),
         path: uri.path().to_owned(),
         headers: headers.clone(),
         body: body.clone(),
     });
     if let Some(response) = omnibus_api(&state, uri.path(), &headers, &body) {
+        return response;
+    }
+    if let Some(response) = reading_services(&state, &method, uri.path()).await {
         return response;
     }
     let prefix = format!("/kobo/{STUB_TOKEN}");
@@ -347,6 +389,131 @@ fn state_put(state: &StubState) -> Response {
         })
     });
     (status, Json(reply)).into_response()
+}
+
+/// The Reading Services routes: `checkforchanges` and the annotations GET,
+/// served at the bare origin rather than under `/kobo/<token>`.
+async fn reading_services(state: &StubState, method: &Method, path: &str) -> Option<Response> {
+    if path == "/api/v3/content/checkforchanges" && *method == Method::POST {
+        return Some(checkforchanges(state).await);
+    }
+    let id = path
+        .strip_prefix("/api/v3/content/")
+        .and_then(|rest| rest.strip_suffix("/annotations"))?;
+    match *method {
+        Method::GET => Some(annotations_get(state, id).await),
+        Method::PATCH => Some(state.stub.patch_status.into_response()),
+        _ => None,
+    }
+}
+
+/// `checkforchanges`'s answer: `reading_services_changed`, minus any id
+/// already served a 200 GET this run.
+async fn checkforchanges(state: &StubState) -> Response {
+    if state.stub.checkforchanges_never_answers {
+        std::future::pending::<()>().await;
+    }
+    let status = state.stub.reading_services_status;
+    if !status.is_success() {
+        return status.into_response();
+    }
+    if state.stub.checkforchanges_bad_body {
+        return (status, Json(json!({ "not": "a list" }))).into_response();
+    }
+    let served_once = state.served_once.lock().unwrap();
+    let ids: Vec<&String> = state
+        .stub
+        .reading_services_changed
+        .iter()
+        .filter(|id| !served_once.contains(id.as_str()))
+        .collect();
+    (status, Json(ids)).into_response()
+}
+
+/// One book's annotations GET: `200` with its served set when non-empty
+/// (marking it served, for the next `checkforchanges`), else `304 W/"0"`.
+async fn annotations_get(state: &StubState, id: &str) -> Response {
+    if state.stub.annotations_get_never_answers {
+        std::future::pending::<()>().await;
+    }
+    let served = state
+        .stub
+        .reading_services_annotations
+        .get(id)
+        .cloned()
+        .unwrap_or_default();
+    if served.is_empty() {
+        return (StatusCode::NOT_MODIFIED, [(ETAG, "W/\"0\"".to_owned())]).into_response();
+    }
+    let status = state.stub.annotations_get_status;
+    if !status.is_success() {
+        return status.into_response();
+    }
+    if state.stub.annotations_get_bad_body {
+        return (status, Json(json!({ "not": "the envelope" }))).into_response();
+    }
+    state.served_once.lock().unwrap().insert(id.to_owned());
+    (
+        status,
+        Json(json!({ "annotations": served, "nextPageOffsetToken": null })),
+    )
+        .into_response()
+}
+
+/// One served annotation entry, with a `{"span":…}` location.
+pub fn served_annotation(id: &str, color: &str, text: &str) -> Value {
+    json!({
+        "id": id,
+        "highlightColor": color,
+        "highlightedText": text,
+        "location": {
+            "span": {
+                "chapterFilename": "OEBPS/ch1.xhtml",
+                "startPath": "span#kobo\\.1\\.2",
+                "startChar": 0,
+                "endPath": "span#kobo\\.1\\.2",
+                "endChar": 1,
+            },
+        },
+    })
+}
+
+/// A plain `Annotation` under `id`, text and colour fixed — for tests that
+/// only need *an* annotation to compare identity against, never a
+/// particular colour or text.
+pub fn annotation(id: &str) -> crate::annotations::Annotation {
+    crate::annotations::Annotation {
+        id: id.to_owned(),
+        text: "a passage".into(),
+        note: None,
+        color: crate::annotations::Swatch::Yellow,
+        location: Value::Null,
+    }
+}
+
+/// A `NewHighlight` with "a passage" and `Swatch::Blue` fixed; `note` and
+/// `location` are the two fields call sites actually vary.
+pub fn new_highlight(
+    note: Option<&str>,
+    location: Option<crate::annotations::SpanRange>,
+) -> crate::annotations::NewHighlight {
+    crate::annotations::NewHighlight {
+        text: "a passage".into(),
+        color: crate::annotations::Swatch::Blue,
+        note: note.map(str::to_owned),
+        location,
+    }
+}
+
+/// A fixed KoboSpan range over `OEBPS/ch1.xhtml`, `kobo.1.2`:3 → `kobo.1.4`:9.
+pub fn span_range() -> crate::annotations::SpanRange {
+    crate::annotations::SpanRange {
+        chapter: "OEBPS/ch1.xhtml".into(),
+        start_span: "kobo.1.2".into(),
+        start_char: 3,
+        end_span: "kobo.1.4".into(),
+        end_char: 9,
+    }
 }
 
 /// The Omnibus `/api` routes auto-wire calls: login, the device list and create, then logout.
@@ -532,6 +699,7 @@ fn initialization(state: &StubState, headers: &HeaderMap) -> Response {
         "image_url_quality_template": format!(
             "{prefix}/v1/books/{{ImageId}}/thumbnail/{{Width}}/{{Height}}/{{Quality}}/{{IsGreyscale}}/image.jpg"
         ),
+        "reading_services_host": origin,
     });
     let mut response = (status, Json(json!({ "Resources": resources }))).into_response();
     if state.stub.sends_api_token {

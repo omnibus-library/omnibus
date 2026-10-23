@@ -12,6 +12,7 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
+use crate::annotations::{NewHighlight, SpanRange, Swatch};
 use crate::client::RequestRecord;
 use crate::control::{Acted, Control, ControlError, DeviceView, LastSync, RESET_MESSAGE};
 use crate::device::DeviceError;
@@ -67,10 +68,16 @@ pub enum ReplyCode {
     UnknownBook,
     /// 409: the book named isn't downloaded yet.
     NotDownloaded,
+    /// 404: a highlight id the book doesn't hold.
+    UnknownHighlight,
     /// 200: `POST /actions/read` or `POST /actions/finish` sent the state PUT.
     StateSent,
     /// 502: the state PUT failed.
     StateFailed,
+    /// 200: `POST /actions/highlight` or `POST /actions/delete-highlight` sent the PATCH.
+    AnnotationSent,
+    /// 502: the PATCH failed.
+    AnnotationFailed,
 }
 
 /// What a reply's `details` carries, for routes whose outcomes differ.
@@ -111,6 +118,8 @@ pub fn router(control: Arc<Control>) -> Router {
         .route("/actions/remove-download", post(post_remove_download))
         .route("/actions/read", post(post_read))
         .route("/actions/finish", post(post_finish))
+        .route("/actions/highlight", post(post_highlight))
+        .route("/actions/delete-highlight", post(post_delete_highlight))
         .route("/requests", get(get_requests))
         .route("/reset", put(put_reset))
         .method_not_allowed_fallback(method_not_allowed)
@@ -200,24 +209,51 @@ async fn post_remove_download(State(control): State<Arc<Control>>, body: Bytes) 
     }
 }
 
-/// The reply for a finished download action.
-fn acted_reply(result: Result<Acted, ControlError>) -> Reply<Details> {
+/// The reply for a finished action whose outcome is an [`Acted`]:
+/// `Done` under `success`/`success_message`, `Failed` under `failure`.
+/// Shared by download, read/finish and the two highlight actions, so each
+/// only names its own codes and message.
+fn acted_reply_as(
+    result: Result<Acted, ControlError>,
+    success: ReplyCode,
+    success_message: &str,
+    failure: ReplyCode,
+) -> Reply<Details> {
     match result {
-        Ok(Acted::Done(view)) => {
-            let details = Details::Device(view);
-            Reply::new(StatusCode::OK, ReplyCode::Downloaded, "downloaded", details)
-        }
-        Ok(Acted::Failed { quirk, message }) => {
-            let details = Details::Quirk { quirk };
-            Reply::new(
-                StatusCode::BAD_GATEWAY,
-                ReplyCode::DownloadFailed,
-                message,
-                details,
-            )
-        }
+        Ok(Acted::Done(view)) => Reply::new(
+            StatusCode::OK,
+            success,
+            success_message,
+            Details::Device(view),
+        ),
+        Ok(Acted::Failed { quirk, message }) => Reply::new(
+            StatusCode::BAD_GATEWAY,
+            failure,
+            message,
+            Details::Quirk { quirk },
+        ),
         Err(error) => error_reply(&error),
     }
+}
+
+/// The reply for a finished download action.
+fn acted_reply(result: Result<Acted, ControlError>) -> Reply<Details> {
+    acted_reply_as(
+        result,
+        ReplyCode::Downloaded,
+        "downloaded",
+        ReplyCode::DownloadFailed,
+    )
+}
+
+/// The reply for a finished highlight or delete-highlight action.
+fn annotation_reply(result: Result<Acted, ControlError>) -> Reply<Details> {
+    acted_reply_as(
+        result,
+        ReplyCode::AnnotationSent,
+        "annotation sent",
+        ReplyCode::AnnotationFailed,
+    )
 }
 
 async fn post_read(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
@@ -261,22 +297,61 @@ async fn post_finish(State(control): State<Arc<Control>>, body: Bytes) -> Reply<
 
 /// The reply for a finished read or finish action.
 fn state_reply(result: Result<Acted, ControlError>) -> Reply<Details> {
-    match result {
-        Ok(Acted::Done(view)) => {
-            let details = Details::Device(view);
-            Reply::new(StatusCode::OK, ReplyCode::StateSent, "state sent", details)
-        }
-        Ok(Acted::Failed { quirk, message }) => {
-            let details = Details::Quirk { quirk };
-            Reply::new(
-                StatusCode::BAD_GATEWAY,
-                ReplyCode::StateFailed,
-                message,
-                details,
-            )
-        }
-        Err(error) => error_reply(&error),
+    acted_reply_as(
+        result,
+        ReplyCode::StateSent,
+        "state sent",
+        ReplyCode::StateFailed,
+    )
+}
+
+async fn post_highlight(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    // `SpanRange` and `Swatch` already derive `Deserialize` in the request
+    // body's own shape (`deny_unknown_fields`, snake_case), so the body
+    // parses straight into them — no separate wire type to keep in sync.
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct HighlightBody {
+        book: String,
+        text: String,
+        color: Swatch,
+        #[serde(default)]
+        note: Option<String>,
+        // Required: a real device never highlights without a KoboSpan range.
+        location: SpanRange,
     }
+    let parsed: HighlightBody = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(e) => return invalid_request_reply(format!("invalid highlight body: {e}")),
+    };
+    if parsed.text.trim().is_empty() {
+        return invalid_request_reply("\"text\" must not be empty");
+    }
+    let new = NewHighlight {
+        text: parsed.text,
+        color: parsed.color,
+        note: parsed.note,
+        location: Some(parsed.location),
+    };
+    annotation_reply(control.highlight(parsed.book, new).await)
+}
+
+async fn post_delete_highlight(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct DeleteHighlightBody {
+        book: String,
+        highlight: String,
+    }
+    let parsed: DeleteHighlightBody = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(e) => return invalid_request_reply(format!("invalid delete-highlight body: {e}")),
+    };
+    annotation_reply(
+        control
+            .delete_highlight(parsed.book, parsed.highlight)
+            .await,
+    )
 }
 
 async fn get_requests(State(control): State<Arc<Control>>) -> Reply<Details> {
@@ -346,6 +421,9 @@ fn error_reply(error: &ControlError) -> Reply<Details> {
         }
         ControlError::Device(DeviceError::NotDownloaded(_)) => {
             (StatusCode::CONFLICT, ReplyCode::NotDownloaded)
+        }
+        ControlError::Device(DeviceError::UnknownHighlight(_)) => {
+            (StatusCode::NOT_FOUND, ReplyCode::UnknownHighlight)
         }
     };
     Reply::new(

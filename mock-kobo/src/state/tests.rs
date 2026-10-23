@@ -25,6 +25,8 @@ fn dune() -> Book {
         cover: None,
         download_problem: None,
         reading: crate::reading::Reading::default(),
+        annotations: Vec::new(),
+        dropped_annotations: 0,
     }
 }
 

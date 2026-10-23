@@ -7,11 +7,13 @@ use std::sync::Arc;
 use serde_json::json;
 use tempfile::TempDir;
 
-use crate::control::{LastSync, Retarget};
+use crate::control::{Acted, LastSync, Retarget};
 use crate::device::Device;
 use crate::downloads::DownloadPolicy;
 use crate::state::{self, StateError};
-use crate::test_support::{dune_stub, spawn_stub, stub_with_device, RunningStub, Stub, STUB_TOKEN};
+use crate::test_support::{
+    dune_stub, new_highlight, spawn_stub, stub_with_device, RunningStub, Stub, STUB_TOKEN,
+};
 
 use super::*;
 
@@ -523,4 +525,71 @@ async fn start_fails_without_token_or_seed_user() {
         Err(StartError::AutoWire(AutoWireError::NoSeedUser))
     ));
     assert!(!args.state.exists());
+}
+
+#[tokio::test]
+async fn start_forgets_the_old_servers_reading_services_host_when_resolving_a_different_server() {
+    let stub_a = spawn_stub(dune_stub()).await;
+    let stub_b = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let given_a = args_in(&dir, Some(&stub_a.origin), Some(STUB_TOKEN));
+    let first = Arc::new(
+        start(&given_a, None, &no_runtime(&dir))
+            .await
+            .unwrap()
+            .control,
+    );
+    first.sync(DownloadPolicy::All).await.unwrap();
+    assert!(first.view().library["book-1"].downloaded);
+    drop(first);
+
+    // A later start resolving to a different server, e.g. this worktree's
+    // dev server port-walked to a new one — same token, different origin.
+    let given_b = args_in(&dir, Some(&stub_b.origin), Some(STUB_TOKEN));
+    let restarted = Arc::new(
+        start(&given_b, None, &no_runtime(&dir))
+            .await
+            .unwrap()
+            .control,
+    );
+    let requests_before = stub_a.paths().len();
+
+    let result = restarted
+        .highlight("book-1".into(), new_highlight(None, None))
+        .await
+        .unwrap();
+
+    match result {
+        Acted::Failed { message, .. } => assert!(message.contains("sync first"), "{message}"),
+        other => panic!("expected Failed, got {other:?}"),
+    }
+    assert_eq!(stub_a.paths().len(), requests_before);
+}
+
+#[tokio::test]
+async fn start_drops_sync_token_and_download_urls_when_the_resolved_token_changed() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let given = args_in(&dir, Some(&stub.origin), Some(STUB_TOKEN));
+    let first = Arc::new(
+        start(&given, None, &no_runtime(&dir))
+            .await
+            .unwrap()
+            .control,
+    );
+    first.sync(DownloadPolicy::None).await.unwrap();
+    assert!(!first.view().library.is_empty());
+    drop(first);
+    let given_other_token = args_in(&dir, Some(&stub.origin), Some("other-token"));
+
+    start(&given_other_token, None, &no_runtime(&dir))
+        .await
+        .unwrap();
+
+    let saved = state::load(&given_other_token.state)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved.device.sync_token, None);
+    assert!(saved.device.download_urls.is_empty());
 }

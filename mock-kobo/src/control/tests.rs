@@ -8,6 +8,7 @@ use serde_json::json;
 use tempfile::TempDir;
 use tokio::sync::Notify;
 
+use crate::annotations::{NewHighlight, Swatch};
 use crate::device::Device;
 use crate::downloads::DownloadPolicy;
 use crate::state;
@@ -455,9 +456,81 @@ async fn retarget_url_keeps_library_sync_token_and_hardware_id() {
     let saved_after = state::load(&path).await.unwrap().unwrap();
     let only_the_url_moved = SavedState {
         url: Some("http://new.example:3000".to_owned()),
+        device: Device {
+            // The prior sync learned a `reading_services_host` for the old
+            // server; a retarget must drop it too, so it is excluded here.
+            reading_services_host: None,
+            ..saved_before.device.clone()
+        },
         ..saved_before
     };
     assert_eq!(saved_after, only_the_url_moved);
+}
+
+#[tokio::test]
+async fn retarget_clears_reading_services_host_so_a_highlight_reaches_no_server() {
+    let stub_a = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub_a, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::All).await.unwrap();
+    assert!(control.view().library["book-1"].downloaded);
+    let requests_after_sync = stub_a.paths().len();
+
+    control
+        .retarget(Retarget::Url("http://elsewhere.example:1".into()))
+        .await
+        .unwrap();
+    let result = control
+        .highlight(
+            "book-1".into(),
+            NewHighlight {
+                text: "a passage".into(),
+                color: Swatch::Blue,
+                note: None,
+                location: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    match result {
+        Acted::Failed { message, .. } => assert!(message.contains("sync first"), "{message}"),
+        other => panic!("expected Failed, got {other:?}"),
+    }
+    assert_eq!(stub_a.paths().len(), requests_after_sync);
+}
+
+#[tokio::test]
+async fn retarget_token_clears_reading_services_host_so_a_highlight_reaches_no_server() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::All).await.unwrap();
+    assert!(control.view().library["book-1"].downloaded);
+    let requests_after_sync = stub.paths().len();
+
+    control
+        .retarget(Retarget::Token("typed-token".into()))
+        .await
+        .unwrap();
+    let result = control
+        .highlight(
+            "book-1".into(),
+            NewHighlight {
+                text: "a passage".into(),
+                color: Swatch::Blue,
+                note: None,
+                location: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    match result {
+        Acted::Failed { message, .. } => assert!(message.contains("sync first"), "{message}"),
+        other => panic!("expected Failed, got {other:?}"),
+    }
+    assert_eq!(stub.paths().len(), requests_after_sync);
 }
 
 #[tokio::test]

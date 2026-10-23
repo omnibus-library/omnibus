@@ -265,6 +265,8 @@ database already had an admin, mark a shelf **Sync to Kobo** yourself.
 | <kbd>p</kbd> | Edit the selected book's read percent (0–100), sent as a `Reading` state on <kbd>Enter</kbd> |
 | <kbd>f</kbd> | Mark the selected book finished |
 | <kbd>x</kbd> | Clear the selected book's downloaded flag, locally |
+| <kbd>h</kbd> | Make a highlight on the selected book: `<span> <start>-<end> [<1-4> ]<text>[ // <note>]` |
+| <kbd>e</kbd> | Delete the selected book's newest highlight |
 | <kbd>s</kbd> | Sync now |
 | <kbd>r</kbd> | Reset the device: empty library, no sync token, so the next sync resends every opted-in book |
 | <kbd>u</kbd> | Edit the server URL (pinned and saved) |
@@ -272,9 +274,10 @@ database already had an admin, mark a shelf **Sync to Kobo** yourself.
 | <kbd>w</kbd> | Wire a token for the current URL, as startup does |
 | <kbd>q</kbd> / <kbd>Ctrl-C</kbd> | Quit |
 
-Each book line shows `downloaded`, `download failed`, the bookmark percent, or
-`finished`, whichever apply (the device never shows a `KoboSpan` location —
-see [#2738](https://github.com/omnibus-library/omnibus/issues/2738)).
+Each book line shows `downloaded`, `download failed`, the bookmark percent,
+`finished`, its highlight count, and a dropped-highlight count, whichever
+apply (the device never shows a `KoboSpan` location, or a highlight's colour
+or text — see [#2738](https://github.com/omnibus-library/omnibus/issues/2738)).
 
 While editing, <kbd>Enter</kbd> saves and <kbd>Esc</kbd> cancels. Pointing a
 device at another server re-wires a token that was wired for the old one; a URL
@@ -319,7 +322,10 @@ With no token, the device logs in as the `user:password` in
 
 Every rule `mock-kobo` enforces, named in `mock-kobo::firmware::Quirk`. "Observed"
 means seen on a real device or in a linked bug report; "inferred" means derived
-from the server code or docs, not seen directly.
+from the server code or docs, not seen directly; "unverified" means the rule is
+coded in but has never been checked against a real device at all — the table
+below names the one such row and [AC4](#ac4-the-highlight-colour-check) is how
+to settle it.
 
 | Quirk | Behaviour | Evidence | Status |
 |---|---|---|---|
@@ -338,10 +344,55 @@ from the server code or docs, not seen directly.
 | `DownloadFailure` | A non-2xx download, or no answer at all, leaves the book undownloaded and is retried on the next sync, whatever the policy | #2116 | observed |
 | `StateArbitration` | Reading status and bookmark are reconciled against the server independently, each adopted only when stamped and strictly newer than the device's own | `kobo/dto.rs` | observed |
 | `StatePutResult` | A state PUT's reply must read `Success` on every sub-result, or the write is treated as failed | `kobo/dto.rs` (`StateResponse`) | inferred |
+| `AnnotationsUnheld` | Annotations for an undownloaded book are dropped rather than held, and the server keeps reporting the book until it is served once downloaded; `AnnotationsOnDownload` is how a dropped set comes back | #1647 | observed |
+| `AnnotationsOnDownload` | A download triggers one unconditional `GET .../annotations`, whether or not `checkforchanges` ever named the book | #1647 | observed |
+| `HighlightColor` | A served `highlightColor` hex swatch maps onto the device's `Bookmark.Color` index; anything else lands on yellow (index 0) | #1629 | unverified |
 
 Heights (223/600/1448), quality (90) and greyscale (`false`) are inferred, as
 is the content-type/magic-bytes agreement rule and that a non-2xx cover is
-never cached.
+never cached. The `If-None-Match: W/"0"` header every checkforchanges-driven
+annotations GET sends (the post-download GET sends none at all), and the
+sync phase order (handshake → library sync → covers → downloads →
+checkforchanges → annotations GETs), are both inferred from
+`kobo/reading_services.rs`, not observed on a device. `AnnotationsUnheld`'s
+drop for an undownloaded book is observed (#1647); that a *downloaded*
+book's set is instead replaced wholesale by each served set, never merged,
+is inferred from the same file, not itself observed.
+
+### Annotations
+
+After a library sync, `mock-kobo` POSTs `checkforchanges` and then GETs each
+named book's annotations, mapping the served `highlightColor` hex swatch onto
+its own `Swatch` the same way firmware is believed to (`HighlightColor`,
+above):
+
+| Omnibus colour | Wire hex | Mock `Swatch` | Expected `Bookmark.Color` | Observed `Bookmark.Color` |
+|---|---|---|---|---|
+| amber | `#F6F3B3` | yellow | 0 | 0 (#1629) |
+| green | `#C6E09E` | green | 3 | not yet checked |
+| blue | `#B2E1E8` | blue | 2 | not yet checked |
+| rose | `#E8AFCF` | pink | 1 | not yet checked |
+| violet | `#E8AFCF` | pink | 1 | not yet checked |
+
+#### AC4: the highlight-colour check
+
+This pins the mock's `Swatch` table against the server's own `color_to_kobo`
+map — it does **not** prove either one matches a real device. Settling that
+needs a `.kobo/KoboReader.sqlite` capture:
+
+1. Back up the device — see the [warning above](#wireless-sync).
+2. In the Omnibus web reader, make one highlight in each colour (amber, green,
+   blue, rose, violet) on a Kobo-synced book that has a KEPUB.
+3. Sync the Kobo, and open the book once so the highlights materialise.
+4. Copy `.kobo/KoboReader.sqlite` off the device over USB.
+5. Run `SELECT Text, Color FROM Bookmark WHERE VolumeID LIKE '%<uuid>%'`.
+6. Record each `Color` in the "Observed" column above.
+7. Then either flip `Quirk::HighlightColor` and its table row to **observed**,
+   or correct `Swatch`'s discriminants or hex values to match.
+
+If every row reads 0, the firmware ignores `highlightColor` on inbound
+annotations entirely, and the quirk becomes "always 0" — which also answers
+[#1629](https://github.com/omnibus-library/omnibus/issues/1629)'s open question.
 
 ### The control API
 
@@ -356,6 +407,8 @@ port is in its header). Every reply is `{status, code, message, details}`:
 | `POST /actions/remove-download` `{"book": "<uuid>"}` | 200 `download_removed` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` |
 | `POST /actions/read` `{"book": "<uuid>", "percent": 0..=100, "location": {"source","value"}?}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `not_downloaded` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
 | `POST /actions/finish` `{"book": "<uuid>"}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
+| `POST /actions/highlight` `{"book": "<uuid>", "text", "color": "yellow"\|"pink"\|"blue"\|"green", "note"?, "location": {"chapter","start_span","start_char","end_span","end_char"}}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `not_downloaded` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
+| `POST /actions/delete-highlight` `{"book": "<uuid>", "highlight": "<id>"}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `unknown_highlight` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
 | `GET /requests` | 200 `ok` |
 | `PUT /reset` | 200 `reset` · 409 `sync_in_progress` · 500 `state_not_saved` |
 | any other path | 404 `not_found` |

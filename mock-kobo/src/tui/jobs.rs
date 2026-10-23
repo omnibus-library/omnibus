@@ -6,6 +6,7 @@
 use std::fmt::Display;
 use std::sync::Arc;
 
+use crate::annotations::NewHighlight;
 use crate::autowire::{self, AutoWireError, SeedUser};
 use crate::control::{Acted, Control, ControlError, LastSync, Retarget, Retargeted, RESET_MESSAGE};
 use crate::downloads::DownloadPolicy;
@@ -32,7 +33,32 @@ pub async fn perform(control: &Arc<Control>, wiring: &Wiring, job: Job) -> Statu
         Job::Read { book, percent } => read(control, book, percent).await,
         Job::Finish(book) => finish(control, book).await,
         Job::RemoveDownload(book) => remove_download(control, book).await,
+        Job::Highlight { book, highlight } => make_highlight(control, book, highlight).await,
+        Job::DeleteHighlight(book) => delete_highlight(control, book).await,
     }
+}
+
+async fn make_highlight(control: &Arc<Control>, book: String, highlight: NewHighlight) -> Status {
+    acted_status("annotation sent", control.highlight(book, highlight).await)
+}
+
+/// Delete `book`'s newest highlight (the device's own last annotation),
+/// or report there are none.
+async fn delete_highlight(control: &Arc<Control>, book: String) -> Status {
+    let Some(id) = newest_highlight_id(control, &book) else {
+        return Status::Error("no highlights on this book".to_owned());
+    };
+    acted_status("annotation sent", control.delete_highlight(book, id).await)
+}
+
+fn newest_highlight_id(control: &Control, book: &str) -> Option<String> {
+    control
+        .view()
+        .library
+        .get(book)?
+        .annotations
+        .last()
+        .map(|a| a.id.clone())
 }
 
 async fn download(control: &Arc<Control>, book: String) -> Status {

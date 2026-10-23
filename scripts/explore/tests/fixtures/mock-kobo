@@ -81,6 +81,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.finish(stub, body)
         if (method, self.path) == ("POST", "/actions/remove-download"):
             return self.remove_download(stub, body)
+        if (method, self.path) in (("POST", "/actions/highlight"), ("POST", "/actions/delete-highlight")):
+            return self.reply(200, "annotation_sent", "annotation sent", self.view(stub))
         if (method, self.path) == ("GET", "/requests"):
             return self.reply(200, "ok", "ok", {"requests": stub["requests"]})
         self.reply(404, "not_found", f"no route for {method} {self.path}", {})

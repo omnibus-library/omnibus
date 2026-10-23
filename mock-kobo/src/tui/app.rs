@@ -5,8 +5,15 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
+use crate::annotations::{NewHighlight, SpanRange, Swatch};
 use crate::cli;
 use crate::reading::Percent;
+
+/// The TUI's stand-in for a real KoboSpan chapter, before #2738's reader
+/// view supplies one from an actual KEPUB. Every shorthand highlight
+/// anchors here, so it never matches a real document until then.
+// shortcut: no chapter list before #2738 lands; swap for the real one then.
+const SHORTHAND_CHAPTER: &str = "unknown";
 
 /// What a key press asks of the loop.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -37,6 +44,13 @@ pub enum Job {
     Finish(String),
     /// Clear the selected book's downloaded flag, locally.
     RemoveDownload(String),
+    /// Make a highlight on the selected book.
+    Highlight {
+        book: String,
+        highlight: NewHighlight,
+    },
+    /// Delete the selected book's newest highlight.
+    DeleteHighlight(String),
 }
 
 /// Shown for `d`/`f`/`x`/`p` with no book selected.
@@ -80,6 +94,8 @@ pub enum Field {
     Token,
     /// A percent for the book (uuid) this edit was opened on.
     Percent(String),
+    /// A highlight shorthand for the book (uuid) this edit was opened on.
+    Highlight(String),
 }
 
 /// The line under the device: how the last action went.
@@ -170,6 +186,8 @@ impl App {
             'd' => return self.book_action(Job::Download),
             'f' => return self.book_action(Job::Finish),
             'x' => return self.book_action(Job::RemoveDownload),
+            'h' => return self.open_highlight_edit(),
+            'e' => return self.book_action(Job::DeleteHighlight),
             _ => return None,
         };
         self.start(job)
@@ -200,6 +218,16 @@ impl App {
             return None;
         };
         self.open_edit(Field::Percent(book), "");
+        None
+    }
+
+    /// Open the highlight edit for the selected book, or show [`NO_BOOK`].
+    fn open_highlight_edit(&mut self) -> Option<Action> {
+        let Some(book) = self.selected_book().map(str::to_owned) else {
+            self.status = Some(Status::Error(NO_BOOK.to_owned()));
+            return None;
+        };
+        self.open_edit(Field::Highlight(book), "");
         None
     }
 
@@ -250,6 +278,14 @@ impl App {
                     percent,
                 })
                 .ok_or_else(|| format!("{buffer} is not a whole number 0..=100")),
+            Field::Highlight(book) => parse_highlight(&buffer)
+                .map(|highlight| Job::Highlight {
+                    book: book.clone(),
+                    highlight,
+                })
+                .ok_or_else(|| {
+                    "expected \"<span> <start>-<end> [<1-4> ]<text>[ // <note>]\"".to_owned()
+                }),
         };
         match job {
             Ok(Job::SetUrl(url)) if url == current_url => {
@@ -304,6 +340,66 @@ fn is_ctrl_c(key: KeyEvent) -> bool {
 /// `buffer` as a whole-number percent, trimmed first.
 fn parse_percent(buffer: &str) -> Option<Percent> {
     buffer.trim().parse::<u8>().ok().and_then(Percent::new)
+}
+
+/// `"<span> <start>-<end> [<1-4> ]<text>[ // <note>]"`: a single-span
+/// shorthand for a real KoboSpan range — `span` anchors both ends — the
+/// TUI's stand-in for #2738's word-level selection. `None` on anything
+/// that doesn't parse this shape, including empty text.
+fn parse_highlight(buffer: &str) -> Option<NewHighlight> {
+    let mut parts = buffer.trim().splitn(3, ' ');
+    let span = parts.next()?;
+    let range = parts.next()?;
+    let rest = parts.next().unwrap_or("");
+    if span.is_empty() {
+        return None;
+    }
+    let (start, end) = range.split_once('-')?;
+    let start_char: u32 = start.parse().ok()?;
+    let end_char: u32 = end.parse().ok()?;
+    let (color, rest) = leading_swatch_digit(rest);
+    let (text, note) = split_note(rest);
+    if text.is_empty() {
+        return None;
+    }
+    Some(NewHighlight {
+        text: text.to_owned(),
+        color,
+        note: note.map(str::to_owned),
+        location: Some(SpanRange {
+            chapter: SHORTHAND_CHAPTER.to_owned(),
+            start_span: span.to_owned(),
+            start_char,
+            end_span: span.to_owned(),
+            end_char,
+        }),
+    })
+}
+
+/// A leading `"<1-4> "` picks the swatch at digit − 1 (#2738's believed key
+/// order: 1 yellow, 2 pink, 3 blue, 4 green); no digit leads to yellow.
+fn leading_swatch_digit(rest: &str) -> (Swatch, &str) {
+    let mut chars = rest.chars();
+    match (chars.next(), chars.next()) {
+        (Some(digit @ '1'..='4'), Some(' ')) => {
+            let color = match digit {
+                '1' => Swatch::Yellow,
+                '2' => Swatch::Pink,
+                '3' => Swatch::Blue,
+                _ => Swatch::Green,
+            };
+            (color, &rest[2..])
+        }
+        _ => (Swatch::Yellow, rest),
+    }
+}
+
+/// The first `" // "` splits off the note; both sides are trimmed.
+fn split_note(text_and_note: &str) -> (&str, Option<&str>) {
+    match text_and_note.split_once(" // ") {
+        Some((text, note)) => (text.trim(), Some(note.trim())),
+        None => (text_and_note.trim(), None),
+    }
 }
 
 /// The character `key` types, unless Ctrl or Alt made it a shortcut instead.

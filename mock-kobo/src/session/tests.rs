@@ -48,6 +48,7 @@ async fn sync_now_completes_handshake_against_healthy_stub() {
             "GET /kobo/<token>/v1/products/books/subscriptions 200",
             "GET /kobo/<token>/v1/deals 200",
             "GET /kobo/<token>/v1/library/sync 200",
+            "POST /api/v3/content/checkforchanges 200",
         ]
     );
 }
@@ -249,7 +250,7 @@ async fn sync_now_sends_hardware_id_on_every_request() {
     .unwrap();
 
     let ids = stub.header_on_every_request("x-kobo-deviceid");
-    assert_eq!(ids, vec![Some("HW-1".to_owned()); 7]);
+    assert_eq!(ids, vec![Some("HW-1".to_owned()); 8]);
 }
 
 #[tokio::test]
@@ -265,7 +266,7 @@ async fn sync_now_sends_host_without_port_on_every_request() {
     .unwrap();
 
     let hosts = stub.header_on_every_request("host");
-    assert_eq!(hosts, vec![Some("127.0.0.1".to_owned()); 7]);
+    assert_eq!(hosts, vec![Some("127.0.0.1".to_owned()); 8]);
 }
 
 #[tokio::test]
@@ -315,9 +316,11 @@ async fn sync_now_follows_urls_from_adopted_resources() {
         paths[1],
         "/kobo/stub-device-token/moved/v1/analytics/gettests"
     );
-    assert_eq!(
-        paths.last().unwrap(),
-        "/kobo/stub-device-token/moved/v1/library/sync"
+    assert!(
+        paths
+            .iter()
+            .any(|p| p == "/kobo/stub-device-token/moved/v1/library/sync"),
+        "{paths:?}"
     );
 }
 
@@ -456,7 +459,7 @@ async fn attempt_sync_reports_pages_and_requests_when_sync_succeeds() {
     .await;
 
     assert!(matches!(attempt.outcome, Ok(1)));
-    assert_eq!(attempt.requests.len(), 7);
+    assert_eq!(attempt.requests.len(), 8);
 }
 
 #[tokio::test]

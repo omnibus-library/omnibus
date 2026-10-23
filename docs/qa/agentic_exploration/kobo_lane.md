@@ -27,6 +27,8 @@ scripts/explore/kobo.sh act --agent <n> download <uuid>…              # downlo
 scripts/explore/kobo.sh act --agent <n> read <uuid> <percent> [<source> <span>]  # read to a percent
 scripts/explore/kobo.sh act --agent <n> finish <uuid>                 # mark a book finished
 scripts/explore/kobo.sh act --agent <n> remove-download <uuid>        # clear a book's downloaded flag
+scripts/explore/kobo.sh act --agent <n> highlight <uuid> <colour> <span> <start> <end> <text> [<note>]  # make a highlight
+scripts/explore/kobo.sh act --agent <n> delete-highlight <uuid> <id> # delete a highlight
 scripts/explore/kobo.sh requests --agent <n>                         # what it asked Omnibus for
 scripts/explore/kobo.sh state --agent <n>                            # is it still running?
 ```
@@ -47,12 +49,13 @@ The actions today:
 | `read <uuid> <percent> [<source> <span>]` | Sends a reading position; the span is optional | `code` `state_sent`, or `state_failed` with the quirk |
 | `finish <uuid>` | Marks a book finished and sends it | `code` `state_sent`, or `state_failed` with the quirk |
 | `remove-download <uuid>` | Clears a book's downloaded flag, locally | `code` `download_removed` |
+| `highlight <uuid> <colour> <span> <start> <end> <text> [<note>]` | Makes a highlight, single-span shorthand (`<colour>` one of `yellow`/`pink`/`blue`/`green`) | `code` `annotation_sent`, or `annotation_failed` with the quirk |
+| `delete-highlight <uuid> <id>` | Deletes a highlight by the id `show` reports in `annotations` | `code` `annotation_sent`, or `annotation_failed` with the quirk |
 
-Highlights arrive as a new row in this table with #2726. The `[<source>
-<span>]` on `read` is hand-supplied for testing; #2738 wires a real one from
-the reader view. **A reset is not an agent action yet.** Any action answers
-`409` `sync_in_progress` while the device is mid-sync; wait a moment and ask
-again.
+The `[<source> <span>]` on `read` is hand-supplied for testing, same as
+`highlight`'s `<span> <start> <end>`; #2738 wires both from a real reader
+view. **A reset is not an agent action yet.** Any action answers `409`
+`sync_in_progress` while the device is mid-sync; wait a moment and ask again.
 
 ## Reading a reply
 
@@ -99,6 +102,10 @@ a developer which rule broke. A sync already running answers `sync_in_progress`
 - **Never journal the device endpoint URL or its token.** The Account page's
   Kobo card shows both, and the journal is kept forever. Nothing here needs
   them: `kobo.sh` already holds the token.
+- **A device `highlight` or `delete-highlight` is never journalled as
+  `kobo.*`** either, for the same reason as `read`/`finish`: journal
+  `highlight.create --surface kobo` and `highlight.delete --surface kobo` —
+  see [highlighting_on_a_kobo.md](flows/highlighting_on_a_kobo.md).
 
 ## What the audit checks
 

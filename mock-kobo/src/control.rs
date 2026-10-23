@@ -261,7 +261,10 @@ impl Control {
     /// keeps everything; a token retarget keeps the library but drops the
     /// sync token and cached download URLs, so the next sync is a full
     /// resync that re-delivers every held book with URLs carrying the new
-    /// token. Turned away while a sync runs.
+    /// token. Every arm also drops `reading_services_host`: it was learned
+    /// from the old target's `v1/initialization`, so a highlight or a
+    /// post-download annotations GET made before the next sync must not
+    /// reach whichever server that was. Turned away while a sync runs.
     pub async fn retarget(&self, to: Retarget) -> Result<Retargeted, ControlError> {
         let retargeted = {
             let mut live = self.live();
@@ -272,18 +275,17 @@ impl Control {
                 Retarget::Url(url) => {
                     live.saved.url = Some(url.clone());
                     live.url = url;
+                    live.saved.device.forget_server(false);
                 }
                 Retarget::Token(token) => {
                     live.saved.token = token;
                     live.saved.wired_url = None;
-                    live.saved.device.sync_token = None;
-                    live.saved.device.download_urls.clear();
+                    live.saved.device.forget_server(true);
                 }
                 Retarget::Wired { token, url } => {
                     live.saved.token = token;
                     live.saved.wired_url = Some(url);
-                    live.saved.device.sync_token = None;
-                    live.saved.device.download_urls.clear();
+                    live.saved.device.forget_server(true);
                 }
             }
             let needs_wire = !live.saved.token_wired_for(&live.url);

@@ -42,7 +42,7 @@ kobo::usage() {
   cat >&2 <<EOF
 usage: kobo.sh up --agent <k> --accounts <provision.json>
        kobo.sh act --agent <k> <action> [args...]
-                   actions: sync show download read finish remove-download
+                   actions: sync show download read finish remove-download highlight delete-highlight
        kobo.sh state --agent <k>
        kobo.sh requests --agent <k>
        kobo.sh down [--agent <k>]
@@ -53,6 +53,23 @@ EOF
 # Build one action's JSON body via `json.dumps`, never string interpolation.
 kobo::json_books() { python3 -c 'import json,sys; print(json.dumps({"books": sys.argv[1:]}))' "$@"; }
 kobo::json_book() { python3 -c 'import json,sys; print(json.dumps({"book": sys.argv[1]}))' "$1"; }
+# shortcut: no chapter list before #2738's reader view, so every shorthand
+# highlight anchors to this placeholder chapter name, and both ends of the
+# range share one span. Upgrade once #2738 supplies real multi-span selection.
+kobo::json_highlight() {
+  python3 -c 'import json,sys
+args = sys.argv[1:]
+book, color, span, start, end, text = args[0:6]
+body = {"book": book, "text": text, "color": color,
+        "location": {"chapter": "unknown", "start_span": span, "start_char": int(start),
+                      "end_span": span, "end_char": int(end)}}
+if len(args) > 6:
+    body["note"] = args[6]
+print(json.dumps(body))' "$@"
+}
+kobo::json_delete_highlight() {
+  python3 -c 'import json,sys; print(json.dumps({"book": sys.argv[1], "highlight": sys.argv[2]}))' "$1" "$2"
+}
 kobo::json_read() {
   python3 -c 'import json,sys
 args = sys.argv[1:]
@@ -97,6 +114,19 @@ kobo::act_request() {
       [ "$#" -eq 1 ] || kobo::usage
       method=POST path=/actions/remove-download
       body="$(kobo::json_book "$1")"
+      ;;
+    highlight)
+      # <uuid> <colour> <span-path> <start-char> <end-char> <text> [<note>]
+      case "$#" in 6 | 7) ;; *) kobo::usage ;; esac
+      [[ "$4" =~ ^[0-9]+$ ]] || kobo::usage
+      [[ "$5" =~ ^[0-9]+$ ]] || kobo::usage
+      method=POST path=/actions/highlight
+      body="$(kobo::json_highlight "$@")"
+      ;;
+    delete-highlight)
+      [ "$#" -eq 2 ] || kobo::usage
+      method=POST path=/actions/delete-highlight
+      body="$(kobo::json_delete_highlight "$@")"
       ;;
     *) kobo::usage ;;
   esac

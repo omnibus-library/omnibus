@@ -17,7 +17,7 @@ use crate::reading::ReadStatus;
 use crate::tui::app::{App, Edit, Field, Mode, Status};
 
 const HELP: &str =
-    "↑/↓ select · d download · p read % · f finish · x remove · s sync · r reset · u edit URL · t edit token · w wire · q quit";
+    "↑/↓ select · d download · p read % · f finish · x remove · h highlight · e delete highlight · s sync · r reset · u edit URL · t edit token · w wire · q quit";
 const EDIT_HELP: &str = "Enter save · Esc cancel";
 
 /// Rows the status line may wrap onto before the rest is cut.
@@ -111,6 +111,12 @@ fn book_status(book: &Book) -> String {
         None if book.downloaded => parts.push("downloaded".to_owned()),
         None => {}
     }
+    if !book.annotations.is_empty() {
+        parts.push(format!("{} highlights", book.annotations.len()));
+    }
+    if book.dropped_annotations > 0 {
+        parts.push(format!("{} highlights dropped", book.dropped_annotations));
+    }
     parts.join(" · ")
 }
 
@@ -170,6 +176,7 @@ fn draw_edit(frame: &mut Frame, area: Rect, edit: &Edit) {
         Field::Url => "URL",
         Field::Token => "token",
         Field::Percent(_) => "percent",
+        Field::Highlight(_) => "highlight",
     };
     let prompt = Line::raw(format!("{label}: {}", edit.buffer));
     let typed = u16::try_from(prompt.width()).unwrap_or(u16::MAX);

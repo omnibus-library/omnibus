@@ -37,6 +37,8 @@ fn book(title: &str, authors: &[&str], archived: bool) -> Book {
         cover: None,
         download_problem: None,
         reading: crate::reading::Reading::default(),
+        annotations: Vec::new(),
+        dropped_annotations: 0,
     }
 }
 
@@ -392,9 +394,42 @@ fn draw_shows_key_help_in_normal_mode() {
     let shown = shown(&view(), &App::default());
 
     // The full line is longer than the 100-column fixture, so only its start is checked here.
-    let help = "↑/↓ select · d download · p read % · f finish · x remove · s sync · r reset";
+    let help =
+        "↑/↓ select · d download · p read % · f finish · x remove · h highlight · e delete highlight";
     assert!(shown.contains(help), "{shown}");
     assert!(!shown.contains("Enter save"), "{shown}");
+}
+
+#[test]
+fn draw_shows_highlight_and_dropped_counts_per_book() {
+    let mut with_highlights = book("Dune", &["Frank Herbert"], false);
+    with_highlights.annotations = vec![crate::annotations::Annotation {
+        id: "h-1".into(),
+        text: "a passage".into(),
+        note: None,
+        color: crate::annotations::Swatch::Yellow,
+        location: serde_json::Value::Null,
+    }];
+    let mut with_dropped = book("Emma", &["Jane Austen"], false);
+    with_dropped.dropped_annotations = 2;
+    let view = view_with_books(vec![("b-1", with_highlights), ("b-2", with_dropped)]);
+
+    let shown = shown(&view, &App::default());
+
+    assert!(shown.contains("1 highlights"), "{shown}");
+    assert!(shown.contains("2 highlights dropped"), "{shown}");
+}
+
+#[test]
+fn draw_shows_the_highlight_prompt_while_editing() {
+    let app = editing(Field::Highlight("b-1".into()), "kobo.1.1 0-5 some text");
+
+    let shown = shown(&view(), &app);
+
+    assert!(
+        shown.contains("highlight: kobo.1.1 0-5 some text"),
+        "{shown}"
+    );
 }
 
 #[test]

@@ -1,6 +1,7 @@
 //! One "Sync now" press, end to end: the handshake, the store paths, and the
 //! library sync, run the way the firmware runs them.
 
+use crate::annotations;
 use crate::client::{Client, RequestRecord};
 use crate::covers;
 use crate::device::Device;
@@ -108,6 +109,7 @@ async fn run_sync(
         .decode::<Initialization>(initialization)
         .await?
         .resources;
+    device.reading_services_host = Some(resources.reading_services_host.clone());
     let tests = client.get_tests(&resources.get_tests_request).await?;
     require_success(client, &tests, Quirk::GetTestsPost)?;
     for path in STORE_PATHS {
@@ -117,6 +119,7 @@ async fn run_sync(
     let pages = sync_library(client, &resources.library_sync, device).await?;
     covers::fetch_covers(client, device, &resources.image_url_quality_template).await;
     downloads::download_books(client, device, policy).await;
+    annotations::fetch_changed_annotations(client, device).await;
     Ok(pages)
 }
 
@@ -206,7 +209,11 @@ async fn run_download(
         ) {
             rejected.push(id.clone());
         }
+        let downloaded = matches!(outcome, downloads::Outcome::Downloaded);
         downloads::apply_outcome(device, id, outcome);
+        if downloaded {
+            annotations::fetch_after_download(client, device, id).await;
+        }
     }
     if let Some(message) = transport {
         return Err(SyncFailure::Transport(message));
@@ -218,6 +225,98 @@ async fn run_download(
         ));
     }
     Ok(())
+}
+
+/// Which PATCH shape a device-made highlight action sends, under its id.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AnnotationSent {
+    Upsert(String),
+    Delete(String),
+}
+
+/// PATCH one device-made highlight or delete to Reading Services. `book`
+/// must be held, and for an upsert must already hold the annotation `sent`
+/// names (as `Device::highlight` leaves it) — this only sends it, it never
+/// mutates the device. Rejected before any request when no sync has named a
+/// `reading_services_host` yet.
+pub async fn attempt_annotation(
+    device: &mut Device,
+    api_endpoint: &str,
+    book: &str,
+    sent: AnnotationSent,
+    now: i64,
+) -> Attempt<()> {
+    let mut client = match Client::new(api_endpoint, &device.hardware_id) {
+        Ok(client) => client,
+        Err(failure) => {
+            return Attempt {
+                requests: Vec::new(),
+                outcome: Err(failure),
+            }
+        }
+    };
+    let outcome = run_annotation(&mut client, device, book, &sent, now).await;
+    Attempt {
+        requests: client.into_requests(),
+        outcome,
+    }
+}
+
+async fn run_annotation(
+    client: &mut Client,
+    device: &Device,
+    book: &str,
+    sent: &AnnotationSent,
+    now: i64,
+) -> Result<(), SyncFailure> {
+    let Some(host) = device.reading_services_host.clone() else {
+        return Err(SyncFailure::Rejected(
+            "no reading_services_host yet; sync first".to_owned(),
+        ));
+    };
+    let body = annotation_patch_body(device, book, sent, now)?;
+    let response = client.patch_annotations(&host, book, &body).await?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(SyncFailure::Rejected(rejection(client, &response)))
+    }
+}
+
+/// The device's own current state of `sent`'s highlight, as the PATCH body
+/// `reading_services/dto.rs::parse_patch` expects (see `annotations.rs`'s module doc).
+/// Rejected, with no request, for an upsert naming a highlight the device
+/// no longer holds (deleted locally since it was minted, say).
+fn annotation_patch_body(
+    device: &Device,
+    book: &str,
+    sent: &AnnotationSent,
+    now: i64,
+) -> Result<serde_json::Value, SyncFailure> {
+    match sent {
+        AnnotationSent::Upsert(id) => {
+            let highlight = device
+                .library
+                .get(book)
+                .and_then(|b| b.annotations.iter().find(|a| &a.id == id))
+                .ok_or_else(|| {
+                    SyncFailure::Rejected(format!("the device holds no highlight {id}"))
+                })?;
+            let mut entry = serde_json::json!({
+                "id": highlight.id,
+                "type": if highlight.note.is_some() { "note" } else { "highlight" },
+                "highlightColor": highlight.color.hex(),
+                "highlightedText": highlight.text,
+                "clientLastModifiedUtc": reading::rfc3339(now),
+                "location": highlight.location,
+            });
+            if let Some(note) = &highlight.note {
+                entry["noteText"] = serde_json::Value::String(note.clone());
+            }
+            Ok(serde_json::json!({ "updatedAnnotations": [entry] }))
+        }
+        AnnotationSent::Delete(id) => Ok(serde_json::json!({ "deletedAnnotationIds": [id] })),
+    }
 }
 
 /// Send `book`'s current reading state to the server with one state PUT.

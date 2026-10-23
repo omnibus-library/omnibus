@@ -569,3 +569,101 @@ fn on_key_keeps_the_percent_edit_open_and_shows_an_error_for_101() {
     assert!(matches!(app.mode, Mode::Editing(_)));
     assert!(matches!(app.status, Some(Status::Error(_))));
 }
+
+#[test]
+fn on_key_opens_the_highlight_edit_for_the_selected_book_when_h_pressed() {
+    let mut app = with_library(&["book-1"]);
+
+    let action = app.on_key(key('h'), URL);
+
+    assert_eq!(action, None);
+    assert_eq!(
+        app.mode,
+        Mode::Editing(Edit {
+            field: Field::Highlight("book-1".into()),
+            buffer: String::new(),
+        })
+    );
+}
+
+#[test]
+fn on_key_shows_no_book_error_when_h_pressed_on_an_empty_library() {
+    let mut app = App::new(None);
+
+    let action = app.on_key(key('h'), URL);
+
+    assert_eq!(action, None);
+    assert_eq!(app.status, Some(Status::Error(NO_BOOK.to_owned())));
+}
+
+#[test]
+fn on_key_returns_highlight_job_with_the_swatch_text_and_note_on_enter() {
+    let mut app = with_library(&["book-1"]);
+    app.on_key(key('h'), URL);
+    type_text(&mut app, "kobo.1.1 0-12 2 a passage // a thought");
+
+    let action = app.on_key(code(KeyCode::Enter), URL);
+
+    assert_eq!(
+        action,
+        Some(Action::Run(Job::Highlight {
+            book: "book-1".into(),
+            highlight: NewHighlight {
+                text: "a passage".into(),
+                color: Swatch::Pink,
+                note: Some("a thought".into()),
+                location: Some(SpanRange {
+                    chapter: "unknown".into(),
+                    start_span: "kobo.1.1".into(),
+                    start_char: 0,
+                    end_span: "kobo.1.1".into(),
+                    end_char: 12,
+                }),
+            },
+        }))
+    );
+    assert_eq!(app.mode, Mode::Normal);
+}
+
+#[test]
+fn on_key_returns_a_yellow_highlight_job_when_no_swatch_digit_leads() {
+    let mut app = with_library(&["book-1"]);
+    app.on_key(key('h'), URL);
+    type_text(&mut app, "kobo.1.1 0-12 a passage");
+
+    let action = app.on_key(code(KeyCode::Enter), URL);
+
+    match action {
+        Some(Action::Run(Job::Highlight { highlight, .. })) => {
+            assert_eq!(highlight.color, Swatch::Yellow);
+            assert_eq!(highlight.text, "a passage");
+            assert_eq!(highlight.note, None);
+        }
+        other => panic!("expected a Highlight job, got {other:?}"),
+    }
+}
+
+#[test]
+fn on_key_keeps_the_highlight_edit_open_and_shows_an_error_for_empty_text() {
+    let mut app = with_library(&["book-1"]);
+    app.on_key(key('h'), URL);
+    type_text(&mut app, "kobo.1.1 0-12");
+
+    let action = app.on_key(code(KeyCode::Enter), URL);
+
+    assert_eq!(action, None);
+    assert!(matches!(app.mode, Mode::Editing(_)));
+    assert!(matches!(app.status, Some(Status::Error(_))));
+}
+
+#[test]
+fn on_key_returns_delete_highlight_job_for_the_selected_book_when_e_pressed() {
+    let mut app = with_library(&["book-1"]);
+
+    let action = app.on_key(key('e'), URL);
+
+    assert_eq!(
+        action,
+        Some(Action::Run(Job::DeleteHighlight("book-1".into())))
+    );
+}
