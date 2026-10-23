@@ -142,6 +142,53 @@ local function delivered_alpha()
     end
 end
 
+-- The step that opts the shelf in: `delivery` switched it off, and each scenario starts on a
+-- fresh device.
+local function opt_in_step()
+    return {
+        name = "opt_in",
+        fn = function()
+            local code = api("PATCH", "/api/shelves/" .. SHELF_ID, { sync_to_kobo = true })
+            if code ~= 200 then
+                return false, "opting the shelf in answered " .. tostring(code)
+            end
+            return true, "shelf opted in"
+        end,
+    }
+end
+
+-- The step that syncs Alpha into <results>/<scenario>/home and gives it a huge font: the
+-- two-line book becomes several pages, so a place in it is not always "the only page".
+-- `delivered(uuid, path)` hands the scenario what the plugin recorded.
+local function deliver_step(scenario, delivered)
+    return {
+        name = "deliver",
+        fn = function()
+            local plugin = omnibus_plugin()
+            if not plugin then
+                return false, "FileManager.instance.omnibus missing"
+            end
+            local home = RESULTS .. "/" .. scenario .. "/home"
+            util.makePath(home)
+            G_reader_settings:saveSetting("home_dir", home)
+            local result = plugin:sync()
+            if not result.ok or result.added ~= 1 then
+                return false, string.format("sync: ok=%s added=%s %s",
+                    tostring(result.ok), tostring(result.added), tostring(result.message))
+            end
+            local uuid, path = delivered_alpha()
+            if not uuid then
+                return false, "Alpha missing from the plugin's manifest"
+            end
+            local sidecar = require("docsettings"):open(path)
+            sidecar:saveSetting("copt_font_size", 200)
+            sidecar:flush()
+            delivered(uuid, path)
+            return true, "delivered " .. path
+        end,
+    }
+end
+
 -- The `opds` scenario: add the Omnibus catalog with Basic credentials, browse
 -- All Books, search, download the EPUB acquisition of "Alpha", open it.
 local function opds_scenario()
@@ -479,44 +526,10 @@ local function roundtrip_scenario()
     local suspended, closed
 
     return {
-        {
-            name = "opt_in",
-            fn = function()
-                -- `delivery` switched the shelf off; each scenario starts on a fresh device.
-                local code = api("PATCH", "/api/shelves/" .. SHELF_ID, { sync_to_kobo = true })
-                if code ~= 200 then
-                    return false, "opting the shelf in answered " .. tostring(code)
-                end
-                return true, "shelf opted in"
-            end,
-        },
-        {
-            name = "deliver",
-            fn = function()
-                plugin = omnibus_plugin()
-                if not plugin then
-                    return false, "FileManager.instance.omnibus missing"
-                end
-                local home = RESULTS .. "/roundtrip/home"
-                util.makePath(home)
-                G_reader_settings:saveSetting("home_dir", home)
-                local result = plugin:sync()
-                if not result.ok or result.added ~= 1 then
-                    return false, string.format("sync: ok=%s added=%s %s",
-                        tostring(result.ok), tostring(result.added), tostring(result.message))
-                end
-                uuid, path = delivered_alpha()
-                if not uuid then
-                    return false, "Alpha missing from the plugin's manifest"
-                end
-                -- Alpha is two lines, one page; a huge font spreads it over several, so a
-                -- position is a place in the book and not always "the only page".
-                local sidecar = require("docsettings"):open(path)
-                sidecar:saveSetting("copt_font_size", 200)
-                sidecar:flush()
-                return true, "delivered " .. path
-            end,
-        },
+        opt_in_step(),
+        deliver_step("roundtrip", function(book_uuid, book_path)
+            uuid, path = book_uuid, book_path
+        end),
         {
             name = "web_position",
             fn = function()
@@ -627,25 +640,46 @@ local function metadata_scenario()
     local EDITED_TITLE = "Alpha Revised"
     local uuid, path, xp, expected_cover, inode
 
-    local function read_file(file_path)
-        local file = io.open(file_path, "rb")
-        if not file then
-            return nil
-        end
-        local bytes = file:read("*a")
-        file:close()
-        return bytes
-    end
-
-    -- A 60x90 picture written as a PNG: the cover the web editor "uploads".
-    local function cover_png()
+    -- A 60x90 picture written as a PNG: the cover the web editor "uploads". A different
+    -- `shade` is a different cover.
+    local function cover_png(shade)
         local file_path = RESULTS .. "/metadata/cover.png"
         local bb = Blitbuffer.new(60, 90, Blitbuffer.TYPE_BBRGB32)
-        bb:fill(Blitbuffer.COLOR_DARK_GRAY)
+        bb:fill(shade)
         bb:paintRect(10, 10, 40, 70, Blitbuffer.COLOR_WHITE)
         bb:writePNG(file_path)
         bb:free()
-        return read_file(file_path)
+        return util.readFromFile(file_path, "rb")
+    end
+
+    -- Upload `png` as the book's cover and return the bytes the server now serves for it.
+    local function upload_cover(png)
+        local boundary = "----omnibus-lane-cover"
+        local form = table.concat({
+            "--" .. boundary,
+            'Content-Disposition: form-data; name="cover"; filename="cover.png"',
+            "Content-Type: image/png",
+            "",
+            png,
+            "--" .. boundary .. "--",
+            "",
+        }, "\r\n")
+        local code = api("POST", "/api/ebooks/" .. uuid .. "/cover", form,
+            "multipart/form-data; boundary=" .. boundary)
+        if code ~= 200 then
+            return nil, "uploading the cover answered " .. tostring(code)
+        end
+        local cover_code, _, bytes = api("GET", "/api/covers/" .. uuid)
+        if cover_code ~= 200 or #bytes == 0 then
+            return nil, "reading the cover back answered " .. tostring(cover_code)
+        end
+        return bytes
+    end
+
+    -- The properties of the file itself that "Reset custom" would restore.
+    local function own_props(book_path)
+        local custom = DocSettings.openSettingsFile(DocSettings:findCustomMetadataFile(book_path))
+        return custom:readSetting("doc_props") or {}
     end
 
     local function sync_alpha()
@@ -661,42 +695,23 @@ local function metadata_scenario()
     end
 
     return {
+        opt_in_step(),
+        deliver_step("metadata", function(book_uuid, book_path)
+            uuid, path = book_uuid, book_path
+        end),
         {
-            name = "opt_in",
+            name = "custom_metadata_written",
             fn = function()
-                local code = api("PATCH", "/api/shelves/" .. SHELF_ID, { sync_to_kobo = true })
-                if code ~= 200 then
-                    return false, "opting the shelf in answered " .. tostring(code)
+                local props = FileManagerBookInfo.extendProps({}, path)
+                if props.title ~= "Alpha" then
+                    return false, 'expected the custom title "Alpha", got ' .. tostring(props.title)
                 end
-                return true, "shelf opted in"
-            end,
-        },
-        {
-            name = "deliver",
-            fn = function()
-                local home = RESULTS .. "/metadata/home"
-                util.makePath(home)
-                G_reader_settings:saveSetting("home_dir", home)
-                local result, err = sync_alpha()
-                if not result then
-                    return false, err
+                local own = own_props(path)
+                if own.title ~= "Alpha" then
+                    return false, 'expected the file\'s own title "Alpha" kept for Reset custom, got '
+                        .. tostring(own.title)
                 end
-                if result.added ~= 1 then
-                    return false, "expected one book added, got " .. tostring(result.added)
-                end
-                uuid, path = delivered_alpha()
-                if not uuid then
-                    return false, "Alpha missing from the plugin's manifest"
-                end
-                -- A huge font spreads the two-line book over several pages, so a place is one.
-                local sidecar = DocSettings:open(path)
-                sidecar:saveSetting("copt_font_size", 200)
-                sidecar:flush()
-                local title = FileManagerBookInfo.extendProps({}, path).title
-                if title ~= "Alpha" then
-                    return false, 'expected the custom title "Alpha", got ' .. tostring(title)
-                end
-                return true, "delivered " .. path
+                return true, "custom title written over a copy of the file's own"
             end,
         },
         {
@@ -731,31 +746,25 @@ local function metadata_scenario()
         {
             name = "edit",
             fn = function()
-                local code = api("POST", "/api/ebooks/" .. uuid .. "/overrides", { title = EDITED_TITLE })
-                if code ~= 200 then
-                    return false, "saving the title answered " .. tostring(code)
+                local creator = function(name)
+                    return { name = name }
                 end
-                local boundary = "----omnibus-lane-cover"
-                local form = table.concat({
-                    "--" .. boundary,
-                    'Content-Disposition: form-data; name="cover"; filename="cover.png"',
-                    "Content-Type: image/png",
-                    "",
-                    cover_png(),
-                    "--" .. boundary .. "--",
-                    "",
-                }, "\r\n")
-                code = api("POST", "/api/ebooks/" .. uuid .. "/cover", form,
-                    "multipart/form-data; boundary=" .. boundary)
+                local code = api("POST", "/api/ebooks/" .. uuid .. "/overrides", {
+                    title = EDITED_TITLE,
+                    creators = { creator("Ada Lovelace"), creator("Bo Peep") },
+                    series = "The Greek Letters",
+                    series_index = "2",
+                    description = "An edited blurb",
+                })
                 if code ~= 200 then
-                    return false, "uploading the cover answered " .. tostring(code)
+                    return false, "saving the metadata answered " .. tostring(code)
                 end
-                local cover_code, _, bytes = api("GET", "/api/covers/" .. uuid)
-                if cover_code ~= 200 or #bytes == 0 then
-                    return false, "reading the cover back answered " .. tostring(cover_code)
+                local bytes, err = upload_cover(cover_png(Blitbuffer.COLOR_DARK_GRAY))
+                if not bytes then
+                    return false, err
                 end
                 expected_cover = bytes
-                return true, "retitled and re-covered, cover " .. #bytes .. " bytes"
+                return true, "edited the metadata and the cover, cover " .. #bytes .. " bytes"
             end,
         },
         {
@@ -773,12 +782,21 @@ local function metadata_scenario()
                 if now_path ~= path then
                     return false, "the file moved from " .. path .. " to " .. tostring(now_path)
                 end
-                local title = FileManagerBookInfo.extendProps({}, path).title
-                if title ~= EDITED_TITLE then
-                    return false, 'expected the custom title "' .. EDITED_TITLE .. '", got ' .. tostring(title)
+                local props = FileManagerBookInfo.extendProps({}, path)
+                local shown = {
+                    title = EDITED_TITLE, authors = "Ada Lovelace\nBo Peep",
+                    series = "The Greek Letters", series_index = 2,
+                }
+                for key, expected in pairs(shown) do
+                    if props[key] ~= expected then
+                        return false, string.format("%s: expected %s, got %s", key, tostring(expected), tostring(props[key]))
+                    end
+                end
+                if not tostring(props.description):find("An edited blurb", 1, true) then
+                    return false, "description: got " .. tostring(props.description)
                 end
                 local cover = DocSettings:findCustomCoverFile(path)
-                if not cover or read_file(cover) ~= expected_cover then
+                if not cover or util.readFromFile(cover, "rb") ~= expected_cover then
                     return false, "the custom cover is not the uploaded one: " .. tostring(cover)
                 end
                 local document = DocumentRegistry:openDocument(path)
@@ -792,7 +810,11 @@ local function metadata_scenario()
                 if own_title ~= EDITED_TITLE then
                     return false, 'the re-downloaded file reads "' .. tostring(own_title) .. '"'
                 end
-                return true, "custom title, cover and the file itself show the edit"
+                local reset_title = own_props(path).title
+                if reset_title ~= EDITED_TITLE then
+                    return false, 'Reset custom would show "' .. tostring(reset_title) .. '"'
+                end
+                return true, "custom fields, cover and the file itself show the edit"
             end,
         },
         {
@@ -842,6 +864,45 @@ local function metadata_scenario()
                     return false, "the file was replaced although nothing changed"
                 end
                 return true, "second sync changed nothing"
+            end,
+        },
+        {
+            name = "recover",
+            deferred = true,
+            fn = function(resume)
+                -- A book's version is the second of its last edit: let one pass after the first.
+                UIManager:scheduleIn(1.1, function()
+                    local bytes, err = upload_cover(cover_png(Blitbuffer.COLOR_BLACK))
+                    if not bytes then
+                        resume(false, err)
+                    elseif bytes == expected_cover then
+                        resume(false, "the second cover is the same as the first")
+                    else
+                        expected_cover = bytes
+                        resume(true, "replaced the cover only")
+                    end
+                end)
+                return true
+            end,
+        },
+        {
+            name = "sync_cover_only",
+            fn = function()
+                local result, err = sync_alpha()
+                if not result then
+                    return false, err
+                end
+                -- Not `replaced`: an EPUB is re-baked on any edit, so the server's file (and
+                -- its ETag) is new even when only the cover moved. The 304 for a book that is
+                -- never baked is covered by the server's CBZ test and the plugin's unit tests.
+                if result.refreshed ~= 1 then
+                    return false, "expected 1 refreshed, got " .. tostring(result.refreshed)
+                end
+                local cover = DocSettings:findCustomCoverFile(path)
+                if not cover or util.readFromFile(cover, "rb") ~= expected_cover then
+                    return false, "the custom cover is not the new one: " .. tostring(cover)
+                end
+                return true, "new cover shown"
             end,
         },
     }
