@@ -1,8 +1,9 @@
 # KOReader
 
 Omnibus puts the books on your **Sync to my devices** shelves onto a KOReader
-with its own plugin. Nothing runs in the background: you choose **Sync now**
-when you want the shelves mirrored.
+with its own plugin, and keeps your place in them in step. Nothing runs in the
+background: you choose **Sync now** when you want the shelves mirrored, and
+your place travels when you open and close a book.
 
 ## Setup
 
@@ -45,19 +46,52 @@ for the same shelf rule, which both device kinds share.
 Sync blocks KOReader's screen while it runs, so a large first sync takes a
 while.
 
+## Reading position
+
+The plugin keeps each delivered book's place and status in step with Omnibus,
+so you can read on a KOReader and pick up in the web reader or on an iPhone,
+and the other way round.
+
+- **What syncs:** how far through the whole book you are, as a whole percent,
+  and the **Reading** and **Finished** statuses. KOReader's *Abandoned* is not
+  synced, and *Unread* never reaches the device: a book you haven't started has
+  nothing to apply.
+- **When:** the plugin pulls when a book opens, so a newer position from the
+  web or another device is waiting on the page you land on, with no prompt. It
+  pushes when you close the book, when the device suspends, and on **Sync now**.
+- **Offline:** a change made without a connection waits on the device and goes
+  with the next open, close, suspend or **Sync now** that finds one. A later
+  change to the same book replaces the waiting one, so only the latest is sent.
+- **Newest wins:** whichever change happened last on its own device wins, not
+  whichever reached the server last. Position and status are decided separately.
+  A device whose clock is behind loses to a newer change from another device;
+  one whose clock is ahead is held to the server's time. Opening a book and
+  closing it without reading changes nothing, so a stale device can't overwrite
+  a newer position.
+- **Precision:** KOReader sends a whole percent, so a finer position saved by
+  the web reader is replaced by it, and Omnibus opens the book at the page that
+  percent falls on.
+- **Finishing on KOReader** is dated by when you finished on the device, not
+  when it synced, so the stats count it on that day. A Kobo that already synced
+  after that moment gets the change only with its next change to that book.
+- **Sideloaded books** (files you copied in yourself, not delivered by the
+  plugin) are never read or written.
+
 ## Test lane
 
 `just koreader-e2e` proves the path a KOReader user takes against Omnibus:
 add the OPDS catalog with Basic credentials, browse **All Books**, search,
 download the EPUB acquisition, and open it in the reader (the `opds`
 scenario), then sync a shelf through the Omnibus plugin and drop it again (the
-`delivery` scenario) — driven by a real KOReader in Docker, with nothing
-stubbed. Each scenario prints one PASS/FAIL line.
+`delivery` scenario), and open a book at the web reader's position and close it
+further on, which the web then shows (the `roundtrip` scenario) — driven by a
+real KOReader in Docker, with nothing stubbed. Each scenario prints one PASS/FAIL line.
 
 ```bash
 just koreader-e2e
 # PASS opds
 # PASS delivery
+# PASS roundtrip
 # or: FAIL opds: search: expected "Alpha" in search results, got ["Beta in the Series"] (screenshot: /tmp/omnibus-koreader.XXXXXX/results/opds.png)
 ```
 
@@ -82,7 +116,8 @@ A failure keeps the scratch dir and names it (`kept /tmp/omnibus-koreader.XXX`):
 
 In CI the same directory is uploaded as the `koreader-lane` artifact
 (retention 7 days) by [`.github/workflows/koreader.yml`](../.github/workflows/koreader.yml),
-which runs the lane on PRs touching OPDS/auth code or the lane itself, and
+which runs the lane on PRs touching OPDS/auth code, the position and
+status stores or the lane itself, and
 nightly.
 
 ### Bumping KOReader
