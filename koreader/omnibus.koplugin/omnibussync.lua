@@ -10,10 +10,11 @@ with the server, when (`event_at`), and whether a change still waits to be pushe
 change is captured only when the device differs from that agreed state, so a stale device
 never overwrites a newer server position with a fresh timestamp.
 
-Metadata is kept per delivered book in `files` (path, the `last_modified` it was last
-written at, and the file's ETag), which outlives a delete so a returning book finds its
-old path and its sidecar. A book whose server version moved gets its custom metadata
-rewritten and, if the server's file changed too, the file replaced at the same path.
+Metadata is kept per delivered book in `files`: its path, the file's ETag and the
+`last_modified` its bytes (`version`) and its custom metadata (`meta_version`) were last
+brought to. It outlives a delete, so a returning book finds its old path and its sidecar.
+A book whose server version moved gets its custom metadata rewritten and, if the server's
+file changed too, the file replaced at the same path, unless replacing is refused.
 --]]--
 
 local M = {}
@@ -41,6 +42,15 @@ local function safe(text)
     return (text:gsub('[/\\:*?"<>|%c]', "_"))
 end
 
+-- The file extension `book` is delivered under.
+local function extension(book)
+    return ((book.format or "epub"):gsub("[^%w]", "_"))
+end
+
+local function path_extension(path)
+    return path:match("%.([^./]+)$")
+end
+
 --- "<title> - <first 8 of uuid>.<format>", safe to create on any filesystem.
 function M.file_name(book)
     local title = cap(safe(book.title or ""), FOLDER_LIMIT)
@@ -48,8 +58,7 @@ function M.file_name(book)
         title = "Untitled"
     end
     local id = (book.uuid or ""):sub(1, 8):gsub("[^%w%-]", "_")
-    local format = (book.format or "epub"):gsub("[^%w]", "_")
-    return string.format("%s - %s.%s", title, id, format)
+    return string.format("%s - %s.%s", title, id, extension(book))
 end
 
 -- `url` on `server_url`: nil unless it is a path, so a token is never sent to a host the
@@ -122,15 +131,35 @@ function M.custom_props(book)
     }
 end
 
---- The delivered books to refresh, `{ book, path }` at their manifest path: those whose
---- recorded version differs from the server's. The open document and a file that is gone
---- are left to `plan`.
-function M.refresh_plan(manifest, files, books, exists, open_path)
+local COVER_EXTENSIONS = { ["image/jpeg"] = "jpg", ["image/png"] = "png", ["image/gif"] = "gif",
+    ["image/webp"] = "webp" }
+
+--- The file extension for a cover of `content_type`, nil when KOReader cannot show that type.
+function M.cover_extension(content_type)
+    return COVER_EXTENSIONS[(content_type or ""):match("^[^;]*"):lower()]
+end
+
+--- Bring `files` entries from before bytes and metadata had their own version up to date.
+function M.upgrade_files(files)
+    for _, entry in pairs(files) do
+        if entry.meta_version == nil then
+            entry.meta_version = entry.version
+        end
+    end
+end
+
+--- The delivered books to refresh, `{ book, path }` at their manifest path: those whose bytes
+--- or metadata are behind the server's version, or whose file extension is not the format the
+--- server now serves. The open document, a file that is gone and one outside `dir` are left
+--- to `plan`.
+function M.refresh_plan(manifest, files, books, dir, exists, open_path)
     local refresh = {}
     for _, book in ipairs(books) do
         local path = manifest[book.uuid]
         local kept = files[book.uuid]
-        if path and path ~= open_path and exists(path) and not (kept and kept.version == book.last_modified) then
+        if inside(dir, path) and path ~= open_path and exists(path)
+            and (not kept or kept.version ~= book.last_modified or kept.meta_version ~= book.last_modified
+                or path_extension(path) ~= extension(book)) then
             table.insert(refresh, { book = book, path = path })
         end
     end
@@ -375,46 +404,72 @@ local function fetch_library(server_url, deps)
     return body.books
 end
 
--- Where `book` is delivered: the path it had before when that is free inside the folder, so
--- its kept sidecar is found again, else the file name its title gives.
+-- Where `book` is delivered: the path it had before when that is free inside the folder and
+-- of the right format, so its kept sidecar is found again, else the file name its title gives.
 local function delivery_path(book, deps)
     local kept = deps.files[book.uuid]
-    if kept and inside(deps.dir, kept.path) and not deps.exists(kept.path) then
+    if kept and inside(deps.dir, kept.path) and not deps.exists(kept.path)
+        and path_extension(kept.path) == extension(book) then
         return kept.path
     end
     return deps.dir .. "/" .. M.file_name(book)
 end
 
--- Write `book`'s metadata at `path` and, only if that worked, record the version it was written at.
-local function apply_metadata(book, path, deps)
-    local ok, reason = deps.apply_metadata(book, path)
-    if ok then
-        deps.files[book.uuid].version = book.last_modified
+-- Put `book` in `path` as the file the server serves now, recording what was delivered.
+local function replace_file(book, path, deps, result, failures)
+    local kept = deps.files[book.uuid]
+    local format_changed = path_extension(path) ~= extension(book)
+    local target = format_changed and (deps.dir .. "/" .. M.file_name(book)) or path
+    local ok, etag_or_reason, not_modified = deps.download(book, target, not format_changed and kept.etag or nil)
+    if not ok then
+        return nil, etag_or_reason
     end
-    return ok, reason
+    if format_changed then
+        -- The old file goes, its sidecar stays; the new file has no custom metadata yet.
+        deps.manifest[book.uuid] = target
+        kept.path, kept.meta_version = target, nil
+        local removed, reason = deps.remove(path)
+        if not removed then
+            table.insert(failures, string.format("%s: %s", path, tostring(reason)))
+        end
+    end
+    if not not_modified then
+        kept.etag = etag_or_reason
+        result.replaced = result.replaced + 1
+    end
+    kept.version = book.last_modified
+    deps.save_manifest()
+    return target
 end
 
--- Bring one delivered book up to the server's version: replace its file when the server's
--- changed (an ETag the saved one no longer matches), then rewrite its metadata.
-local function refresh_book(item, deps, result)
+-- Bring one delivered book up to the server's version: replace its file when its bytes are
+-- behind (the server answers 304 when the ETag still matches) and replacing is allowed, then
+-- rewrite its metadata when that is behind.
+local function refresh_book(item, deps, result, remove_failures)
     local book, path = item.book, item.path
-    deps.files[book.uuid] = deps.files[book.uuid] or { path = path }
-    local kept = deps.files[book.uuid]
-    if deps.can_replace then
-        local ok, etag_or_reason, not_modified = deps.download(book, path, kept.etag)
-        if not ok then
-            return false, etag_or_reason
+    local kept = deps.files[book.uuid] or { path = path }
+    deps.files[book.uuid] = kept
+    local touched = false
+    local format_changed = path_extension(path) ~= extension(book)
+    if (format_changed or kept.version ~= book.last_modified) and deps.can_replace(path) then
+        local target, reason = replace_file(book, path, deps, result, remove_failures)
+        if not target then
+            return false, reason
         end
-        if not not_modified then
-            kept.etag = etag_or_reason
-            result.replaced = result.replaced + 1
-        end
+        path, touched = target, true
     end
-    local ok, reason = apply_metadata(book, path, deps)
-    if ok then
+    if kept.meta_version ~= book.last_modified then
+        local ok, reason = deps.apply_metadata(book, path)
+        if not ok then
+            return false, reason
+        end
+        kept.meta_version, touched = book.last_modified, true
+        deps.save_manifest()
+    end
+    if touched then
         result.refreshed = result.refreshed + 1
     end
-    return ok, reason
+    return true
 end
 
 --- One sync: bring the Omnibus folder in line with the server's library.
@@ -428,8 +483,9 @@ function M.run(server_url, deps)
         return { ok = false, added = 0, removed = 0, refreshed = 0, replaced = 0, message = message }
     end
 
+    M.upgrade_files(deps.files)
     local plan = M.plan(deps.manifest, books, deps.dir, deps.exists, deps.open_path)
-    local refresh = M.refresh_plan(deps.manifest, deps.files, books, deps.exists, deps.open_path)
+    local refresh = M.refresh_plan(deps.manifest, deps.files, books, deps.dir, deps.exists, deps.open_path)
     local result = { ok = true, added = 0, removed = 0, refreshed = 0, replaced = 0 }
     local download_failures, remove_failures, update_failures = {}, {}, {}
 
@@ -452,23 +508,26 @@ function M.run(server_url, deps)
         local ok, etag_or_reason = deps.download(book, path)
         if ok then
             deps.manifest[book.uuid] = path
-            deps.files[book.uuid] = { path = path, etag = etag_or_reason }
+            deps.files[book.uuid] = { path = path, etag = etag_or_reason, version = book.last_modified }
             result.added = result.added + 1
-            local applied, reason = apply_metadata(book, path, deps)
-            if not applied then
+            -- Saved before the metadata fetch, so a crash there cannot orphan the file.
+            deps.save_manifest()
+            local applied, reason = deps.apply_metadata(book, path)
+            if applied then
+                deps.files[book.uuid].meta_version = book.last_modified
+                deps.save_manifest()
+            else
                 table.insert(update_failures, string.format("%s: %s", book.title, tostring(reason)))
             end
-            deps.save_manifest()
         else
             table.insert(download_failures, string.format("%s: %s", book.title, tostring(etag_or_reason)))
         end
     end
     for _, item in ipairs(refresh) do
-        local ok, reason = refresh_book(item, deps, result)
+        local ok, reason = refresh_book(item, deps, result, remove_failures)
         if not ok then
             table.insert(update_failures, string.format("%s: %s", item.book.title, tostring(reason)))
         end
-        deps.save_manifest()
     end
 
     local problems = {}
