@@ -76,6 +76,7 @@ fn library_book() -> ScanBook {
         has_physical: false,
         has_files: true,
         isbn: None,
+        copy_filers: Vec::new(),
     }
 }
 

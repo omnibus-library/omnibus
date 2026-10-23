@@ -10826,6 +10826,27 @@
           }
         }
       },
+      "CopyFiler": {
+        "type": "object",
+        "description": "Who filed one of a book's physical copies.",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The reader's display name, or username without one. Null once their account is\ndeleted."
+          },
+          "user_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The reader's id. Null once their account is deleted."
+          }
+        }
+      },
       "CoverFromUrlBody": {
         "type": "object",
         "description": "The image URL `POST /api/ebooks/{uuid}/cover/from-url` fetches as the book's cover.",
@@ -14750,6 +14771,13 @@
             "items": {
               "type": "string"
             }
+          },
+          "copy_filers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CopyFiler"
+            },
+            "description": "Who filed each of the book's physical copies, oldest copy first. Empty when the\nbook has no copy."
           },
           "cover_url": {
             "type": [

@@ -269,7 +269,28 @@ fn scan_book(uuid: &str) -> ScanBook {
         has_physical: false,
         has_files: true,
         isbn: None,
+        copy_filers: Vec::new(),
     }
+}
+
+#[test]
+fn scan_book_decodes_a_payload_without_copy_filers_as_an_empty_list() {
+    // iOS and older servers send no filers; that must read as "none named".
+    let json = serde_json::json!({
+        "uuid": "u1",
+        "title": "Pride and Prejudice",
+        "authors": ["Jane Austen"],
+        "cover_url": null,
+        "has_physical": true,
+    });
+    let book: ScanBook = serde_json::from_value(json).unwrap();
+    assert!(book.copy_filers.is_empty());
+}
+
+#[test]
+fn scan_book_omits_an_empty_filer_list_from_the_wire() {
+    let json = serde_json::to_value(scan_book("u1")).unwrap();
+    assert!(json.get("copy_filers").is_none(), "got: {json}");
 }
 
 #[test]

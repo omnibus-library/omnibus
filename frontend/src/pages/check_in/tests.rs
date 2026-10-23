@@ -18,6 +18,7 @@ fn scan_book() -> ScanBook {
         has_physical: false,
         has_files: true,
         isbn: Some("9780441013593".into()),
+        copy_filers: Vec::new(),
     }
 }
 
