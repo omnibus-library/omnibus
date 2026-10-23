@@ -92,6 +92,17 @@ pub async fn upsert_progress_tx(
     user_id: i64,
     update: &ProgressUpdate,
 ) -> Result<ProgressRecord, ProgressError> {
+    upsert_koreader_progress_tx(tx, user_id, update, None).await
+}
+
+/// [`upsert_progress_tx`] for a KOReader write: also stores the device's XPointer
+/// verbatim (NULL when `None`) in the same newest-wins statement.
+pub async fn upsert_koreader_progress_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    user_id: i64,
+    update: &ProgressUpdate,
+    xpointer: Option<&str>,
+) -> Result<ProgressRecord, ProgressError> {
     let book_uuid = resolve_canonical_book_uuid_exec(&mut **tx, &update.book_uuid)
         .await?
         .ok_or(ProgressError::BookNotFound)?;
@@ -115,7 +126,7 @@ pub async fn upsert_progress_tx(
         return read_progress_row(tx, user_id, book_uuid, update.format, fmt).await;
     }
 
-    execute_upsert_query(tx, user_id, &book_uuid, fmt, update).await?;
+    execute_upsert_query(tx, user_id, &book_uuid, fmt, update, xpointer).await?;
     let record = read_progress_row(tx, user_id, book_uuid, update.format, fmt).await?;
     mark_started(tx, user_id, &record).await?;
 
@@ -200,15 +211,16 @@ async fn execute_upsert_query(
     book_uuid: &str,
     fmt: &str,
     update: &ProgressUpdate,
+    xpointer: Option<&str>,
 ) -> Result<(), ProgressError> {
     // Guard: a fileless audio write over a file-naming row on a multi-file book is
     // rejected whole, since audio seconds only mean something within one file.
     sqlx::query(
         "INSERT INTO reading_progress
             (user_id, book_uuid, format, epub_cfi, audio_position_seconds,
-             progress_percent, kobo_location, book_file_id,
+             progress_percent, kobo_location, book_file_id, koreader_xpointer,
              updated_at, client_updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'),
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'),
              MIN(
                  COALESCE(?, CAST(strftime('%s','now') AS INTEGER)),
                  CAST(strftime('%s','now') AS INTEGER)
@@ -219,6 +231,7 @@ async fn execute_upsert_query(
              progress_percent = excluded.progress_percent,
              kobo_location = excluded.kobo_location,
              book_file_id = excluded.book_file_id,
+             koreader_xpointer = excluded.koreader_xpointer,
              updated_at = strftime('%s','now'),
              client_updated_at = excluded.client_updated_at
          WHERE excluded.client_updated_at >=
@@ -249,6 +262,7 @@ async fn execute_upsert_query(
             .filter(|s| !s.trim().is_empty()),
     )
     .bind(update.book_file_id)
+    .bind(xpointer)
     .bind(update.client_updated_at)
     .execute(&mut **tx)
     .await?;
