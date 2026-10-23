@@ -387,6 +387,26 @@ mod put_progress {
     }
 
     #[tokio::test]
+    async fn put_syncs_progress_accepts_the_percentage_bounds_and_the_longest_progress() {
+        let r = reader().await;
+        let (uuid, document, _file) = seeded_book(&r).await;
+        let longest = "a".repeat(omnibus_shared::EPUB_CFI_MAX_LEN);
+        let cases = [
+            (0.0, SECOND_PARAGRAPH_XPOINTER, 0),
+            (1.0, longest.as_str(), 100),
+        ];
+        for (percentage, progress, stored) in cases {
+            let body = push_body(&document, progress, percentage);
+
+            let res = send(&r, "PUT", "/kosync/syncs/progress", Some(body)).await;
+
+            assert_eq!(res.status(), StatusCode::OK, "{percentage}");
+            let epub = web_epub(&r, &uuid).await.unwrap();
+            assert_eq!(epub.progress_percent, Some(stored), "{percentage}");
+        }
+    }
+
+    #[tokio::test]
     async fn put_syncs_progress_answers_200_and_stores_nothing_for_an_unknown_document() {
         let r = reader().await;
         let (uuid, _document, _file) = seeded_book(&r).await;
