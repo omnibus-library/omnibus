@@ -43,6 +43,8 @@ jobs:
               - "server/src/backend/koreader/**"
               - "server/src/backend/kobo_devices.rs"
               - "db/src/kobo.rs"
+              - "db/src/progress/**"
+              - "db/src/read_status/**"
               - "db/src/kobo_devices*"
               - "koreader/**"
               - "ui_tests/koreader/**"
