@@ -21,8 +21,9 @@ touches the device's control API directly.
    an audiobook-only book. `act download <uuid>` it.
 2. **Make two highlights in different colours.**
    `act highlight <uuid> blue kobo.1.1 0 12 "a passage"`, then
-   `act highlight <uuid> rose kobo.2.1 0 20 "another passage" "a thought"`
-   (the second carries a note). Each reply's `code` is `annotation_sent`.
+   `act highlight <uuid> pink kobo.2.1 0 20 "another passage" "a thought"`
+   (the second carries a note; journal its colour as `rose` — Omnibus's
+   name for the wire swatch `pink`). Each reply's `code` is `annotation_sent`.
    Journal each as `highlight.create --surface kobo`, `params`
    `{"text": "<the verbatim text>", "colour": "<the colour>"}`, plus
    `"note_text"` when you gave one, `target` the book's uuid.
