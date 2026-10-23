@@ -219,12 +219,16 @@ impl Book {
     }
 
     /// New metadata over the same file ([`crate::firmware::Quirk::MetadataNoRedownload`]).
+    /// Keeps the cached cover too: the cover pass only replaces it after a
+    /// sync completes, so a sync that fails after this refresh must not
+    /// drop a cover the cache still holds.
     fn refresh(&mut self, metadata: BookMetadata) {
         *self = Self {
             downloaded: self.downloaded,
             archived: self.archived,
             download_problem: self.download_problem.clone(),
             reading: self.reading.clone(),
+            cover: self.cover,
             ..Self::from_metadata(metadata)
         };
     }

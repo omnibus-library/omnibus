@@ -108,6 +108,43 @@ async fn sync_now_keeps_the_cached_cover_when_the_cover_image_id_is_unchanged() 
 }
 
 #[tokio::test]
+async fn sync_now_keeps_the_cover_after_a_sync_that_fails_following_a_metadata_refresh() {
+    let mut entitlement = new_entitlement("book-1", "Dune");
+    entitlement["NewEntitlement"]["BookMetadata"]["CoverImageId"] = json!("cover-v1");
+    let stub_a = spawn_stub(Stub {
+        sync_pages: vec![json!([entitlement])],
+        cover: Some(("image/jpeg", JPEG_BYTES)),
+        ..Stub::default()
+    })
+    .await;
+    let mut device = Device::new("HW-1");
+    sync_now(&mut device, &stub_a.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
+    assert_eq!(device.library["book-1"].cover, Some(Cover::Jpeg));
+
+    let page1 = json!([{
+        "ChangedProductMetadata": {
+            "BookMetadata": metadata_with_cover("book-1", "Dune Messiah", "cover-v1")
+        }
+    }]);
+    let page2 = json!([{ "Bogus": {} }]);
+    let stub_b = spawn_stub(Stub {
+        sync_pages: vec![page1, page2],
+        ..Stub::default()
+    })
+    .await;
+
+    let result = sync_now(&mut device, &stub_b.endpoint, &DownloadPolicy::None).await;
+
+    assert!(
+        result.is_err(),
+        "the malformed second page must fail the sync"
+    );
+    assert_eq!(device.library["book-1"].cover, Some(Cover::Jpeg));
+}
+
+#[tokio::test]
 async fn sync_now_caches_a_webp_cover_as_undecodable() {
     let stub = spawn_stub(Stub {
         sync_pages: vec![json!([new_entitlement("book-1", "Dune")])],
