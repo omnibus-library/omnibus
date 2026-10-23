@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { delay } from "msw";
+import { StrictMode } from "react";
 import { Link, Route, Routes } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import { getGetAuthorByIdMockHandler200 } from "../../api/generated/omnibus.msw";
@@ -569,5 +570,37 @@ export const ReturningToAZeroOffsetRestoresTheTop: Story = {
 
     await canvas.findByRole("heading", pageHeadingOf("Octavia E. Butler"));
     await waitFor(() => expect(window.scrollY).toBe(0));
+  },
+};
+
+export const StrictModeReplayStillRestoresAndRecords: Story = {
+  parameters: { path: "/authors/2" },
+  beforeEach({ msw }) {
+    msw.use(...withAuthors());
+  },
+  render: () => <StrictMode>{leaveAndReturn}</StrictMode>,
+  play: async ({ canvas, userEvent }) => {
+    const leaveAndComeBack = async () => {
+      await userEvent.click(
+        canvas.getByRole("link", { name: "Leave authors" }),
+      );
+      await canvas.findByText("Elsewhere");
+      window.scrollTo(0, 0);
+      await nextFrame();
+      await userEvent.click(
+        canvas.getByRole("link", { name: "Return to authors" }),
+      );
+      await canvas.findByRole("heading", pageHeadingOf("Octavia E. Butler"));
+    };
+    await canvas.findByRole("heading", pageHeadingOf("Octavia E. Butler"));
+    await scrollWindowTo(400);
+
+    await leaveAndComeBack();
+    await waitFor(() => expect(window.scrollY).toBe(400));
+
+    // Recording is armed again after the replayed restore, so a later scroll is saved.
+    await scrollWindowTo(250);
+    await leaveAndComeBack();
+    await waitFor(() => expect(window.scrollY).toBe(250));
   },
 };

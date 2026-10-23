@@ -122,6 +122,13 @@ function useRoutePath(path: string) {
 export function useScrollRestore(ready: boolean, path: string) {
   const done = useRef(false);
   useRoutePath(path);
+  // A StrictMode replay unmounts and remounts; `useRoutePath` cancelled the restore, so this one must run again.
+  useEffect(
+    () => () => {
+      done.current = false;
+    },
+    [],
+  );
   useEffect(() => {
     if (done.current || !ready) return;
     done.current = true;
