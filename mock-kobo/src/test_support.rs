@@ -545,7 +545,11 @@ pub fn minimal_kepub_zip(chapter_xhtml: &str) -> Vec<u8> {
 /// the zip entry actually holding the chapter are given separately, for a
 /// test that wants the two to differ: a `./`/`../`-relative or
 /// percent-encoded href naming an entry stored under a plain path.
-pub fn minimal_kepub_zip_with_href(manifest_href: &str, zip_entry: &str, chapter_xhtml: &str) -> Vec<u8> {
+pub fn minimal_kepub_zip_with_href(
+    manifest_href: &str,
+    zip_entry: &str,
+    chapter_xhtml: &str,
+) -> Vec<u8> {
     use std::io::Write as _;
 
     let mut buf = Vec::new();

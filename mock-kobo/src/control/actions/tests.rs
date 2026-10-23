@@ -193,7 +193,10 @@ async fn remove_download_deletes_the_books_file() {
 
     control.remove_download("book-1").await.unwrap();
 
-    assert!(!file.exists(), "the file must be removed, not just the flag");
+    assert!(
+        !file.exists(),
+        "the file must be removed, not just the flag"
+    );
 }
 
 #[tokio::test]

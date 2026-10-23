@@ -104,8 +104,7 @@ fn read_entry_refuses_an_entry_that_decompresses_past_the_byte_cap() {
 }
 
 /// A chapter body with one word, enough for `words_in` to keep the chapter.
-const ONE_WORD_CHAPTER: &str =
-    r#"<?xml version="1.0"?><html><body><span class="koboSpan" id="kobo.1.1">Hello.</span></body></html>"#;
+const ONE_WORD_CHAPTER: &str = r#"<?xml version="1.0"?><html><body><span class="koboSpan" id="kobo.1.1">Hello.</span></body></html>"#;
 
 #[test]
 fn parse_resolves_a_dot_relative_href() {

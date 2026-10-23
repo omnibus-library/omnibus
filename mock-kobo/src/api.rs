@@ -486,9 +486,7 @@ fn error_reply(error: &ControlError) -> Reply<Details> {
             (StatusCode::CONFLICT, ReplyCode::NoKoboSpans)
         }
         ControlError::NotSynced => (StatusCode::CONFLICT, ReplyCode::NotSynced),
-        ControlError::FileRemoval(_) => {
-            (StatusCode::INTERNAL_SERVER_ERROR, ReplyCode::FileRemoval)
-        }
+        ControlError::FileRemoval(_) => (StatusCode::INTERNAL_SERVER_ERROR, ReplyCode::FileRemoval),
     };
     Reply::new(
         status,

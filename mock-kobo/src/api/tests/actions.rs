@@ -516,7 +516,12 @@ async fn post_actions_highlight_returns_not_synced_before_any_sync() {
     let dir = TempDir::new().unwrap();
     let mut device = device_holding("book-1", "Dune");
     device.library.get_mut("book-1").unwrap().downloaded = true;
-    let base = serve(stub_control_with(&stub, device, dir.path().join("kobo.json"))).await;
+    let base = serve(stub_control_with(
+        &stub,
+        device,
+        dir.path().join("kobo.json"),
+    ))
+    .await;
 
     let response = reqwest::Client::new()
         .post(format!("{base}/actions/highlight"))

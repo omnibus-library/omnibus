@@ -294,7 +294,11 @@ fn show_book_records_the_stamp_for_a_bookmark_with_neither_location_nor_percent(
 
     app.show_book(&library_with(book_with_bookmark(Some(bookmark))));
 
-    assert_eq!(reader_position(&app), (0, 0), "no location or percent means no move");
+    assert_eq!(
+        reader_position(&app),
+        (0, 0),
+        "no location or percent means no move"
+    );
     assert_eq!(app.status, None, "a missing location is not an error");
 
     let older = crate::reading::Bookmark {
@@ -367,7 +371,11 @@ fn show_book_opens_on_the_page_matching_a_percent_only_bookmark() {
     let action = app.on_key(code(KeyCode::Esc), URL);
     match action {
         Some(Action::Run(Job::Read { percent, .. })) => {
-            assert_ne!(u8::from(percent), 0, "must not have fallen back to the book's start");
+            assert_ne!(
+                u8::from(percent),
+                0,
+                "must not have fallen back to the book's start"
+            );
         }
         other => panic!("expected a Read job, got {other:?}"),
     }

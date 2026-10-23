@@ -55,8 +55,17 @@ pub fn draw(
         return;
     };
     if let ReaderView::Highlights(selected) = &reader.view {
-        let chapter = reader.text.as_ref().map(|kepub| &kepub.chapters[reader.chapter]);
-        draw_highlights_list(frame, header.union(body), chapter, &reader.annotations, *selected);
+        let chapter = reader
+            .text
+            .as_ref()
+            .map(|kepub| &kepub.chapters[reader.chapter]);
+        draw_highlights_list(
+            frame,
+            header.union(body),
+            chapter,
+            &reader.annotations,
+            *selected,
+        );
         draw_help_line(frame, help, HIGHLIGHTS_HELP, status);
         return;
     }
