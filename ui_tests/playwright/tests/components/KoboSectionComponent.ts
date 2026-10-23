@@ -4,7 +4,7 @@ import type { KoboDeviceListing } from "../data/account";
 import { recordRequests } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
-/** Settings › Devices → Kobo: the wireless-sync devices of the signed-in user. */
+/** Settings › Devices → Sync devices: the Kobos and KOReaders of the signed-in user. */
 export class KoboSectionComponent extends BaseComponent {
   readonly devicesCard: Locator;
   readonly dataLossWarning: Locator;
@@ -16,6 +16,7 @@ export class KoboSectionComponent extends BaseComponent {
   readonly deviceRows: Locator;
   readonly nameField: Locator;
   readonly addButton: Locator;
+  readonly addKoreaderButton: Locator;
   readonly cancelRegenerateButton: Locator;
   readonly confirmRemoveButton: Locator;
 
@@ -35,6 +36,9 @@ export class KoboSectionComponent extends BaseComponent {
     this.deviceRows = page.getByTestId("kobo-device-row");
     this.nameField = page.getByTestId("kobo-device-name-input");
     this.addButton = page.getByTestId("kobo-device-add");
+    this.addKoreaderButton = page.getByRole("button", {
+      name: "Add a KOReader",
+    });
     this.cancelRegenerateButton = page.getByTestId(
       "kobo-regenerate-dialog-cancel",
     );
@@ -47,6 +51,15 @@ export class KoboSectionComponent extends BaseComponent {
 
   endpointField(name: string): Locator {
     return this.deviceRow(name).getByTestId("kobo-endpoint-url");
+  }
+
+  kindBadge(name: string): Locator {
+    return this.deviceRow(name).getByTestId("device-kind-badge");
+  }
+
+  /** A KOReader row's readonly token field. */
+  tokenField(name: string): Locator {
+    return this.deviceRow(name).getByTestId("koreader-device-token");
   }
 
   regenerateButton(name: string): Locator {
@@ -74,6 +87,11 @@ export class KoboSectionComponent extends BaseComponent {
   async addDevice(name: string): Promise<void> {
     await this.nameField.fill(name);
     await this.addButton.click();
+  }
+
+  async addKoreaderDevice(name: string): Promise<void> {
+    await this.nameField.fill(name);
+    await this.addKoreaderButton.click();
   }
 
   async openSetupSteps(): Promise<void> {
@@ -107,6 +125,7 @@ export class KoboSectionComponent extends BaseComponent {
       route.fulfill({
         status: 200,
         json: devices.map((device) => ({
+          kind: "kobo",
           ...device,
           token: `tok-${device.id}`,
           created_at: 0,

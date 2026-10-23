@@ -4,7 +4,7 @@
 //! functions directly and is gated off the mobile build.
 #![cfg(not(feature = "mobile"))]
 
-use omnibus_shared::KoboDeviceView;
+use omnibus_shared::{DeviceKind, KoboDeviceView};
 
 use super::{note_server_fn_err, DataError};
 
@@ -15,12 +15,13 @@ pub async fn list_kobo_devices(_server_url: &str) -> Result<Vec<KoboDeviceView>,
         .map_err(note_server_fn_err)
 }
 
-/// Register a new Kobo, returning the created device (with its fresh token).
+/// Register a new device of `kind`, returning it (with its fresh token).
 pub async fn create_kobo_device(
     _server_url: &str,
     name: String,
+    kind: DeviceKind,
 ) -> Result<KoboDeviceView, DataError> {
-    crate::rpc::rpc_create_kobo_device(name)
+    crate::rpc::rpc_create_kobo_device(name, Some(kind))
         .await
         .map_err(note_server_fn_err)
 }
