@@ -40,8 +40,19 @@ pub async fn create_fileless_book(
     book: FilelessBook,
 ) -> Result<String, PhysicalError> {
     let mut tx = pool.begin().await?;
+    let (_, uuid) = create_fileless_book_in_tx(&mut tx, book).await?;
+    tx.commit().await?;
+    Ok(uuid)
+}
 
-    let library_id = ensure_physical_library(&mut tx).await?;
+/// [`create_fileless_book`] on the caller's transaction, returning the new
+/// row's `(id, uuid)`, so more of the book's rows can land in the same commit.
+/// The cover file is written before the caller commits, as it always was.
+pub(crate) async fn create_fileless_book_in_tx(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    book: FilelessBook,
+) -> Result<(i64, String), PhysicalError> {
+    let library_id = ensure_physical_library(tx).await?;
     let uuid = mint_uuid();
     let has_cover = i64::from(book.cover.is_some());
     // Surname-first sort key (#2342), matching the scanned write path.
@@ -68,10 +79,10 @@ pub async fn create_fileless_book(
     .bind(&book.description)
     .bind(normalize_title(&book.title))
     .bind(&author_norm)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?;
 
-    link_authors(&mut tx, book_id, &book.authors).await?;
+    link_authors(tx, book_id, &book.authors).await?;
 
     if let Some(isbn) = book.isbn.as_deref().filter(|s| !s.is_empty()) {
         sqlx::query(
@@ -80,21 +91,20 @@ pub async fn create_fileless_book(
         )
         .bind(book_id)
         .bind(isbn)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
     // Index into `books_fts` through the single door so a physical-only book is
     // searchable like any other (title/authors/ISBN) — the write paths that hide
     // fileless books already include those with a physical copy.
-    crate::sync::upsert_fts(&mut tx, book_id).await?;
+    crate::sync::upsert_fts(tx, book_id).await?;
 
     if let Some(cover) = &book.cover {
         write_cover_file(&uuid, &cover.mime, &cover.bytes)?;
     }
 
-    tx.commit().await?;
-    Ok(uuid)
+    Ok((book_id, uuid))
 }
 
 /// Ensure the synthetic Physical scan root exists and return its id. Idempotent

@@ -4,7 +4,7 @@
 //! ([`PhysicalCopy::can_change`], enforced here for REST, RPC and MCP alike).
 
 use omnibus_shared::physical::PhysicalCopy;
-use sqlx::SqlitePool;
+use sqlx::{SqlitePool, Transaction};
 
 use super::PhysicalError;
 use crate::books::{resolve_canonical_book_uuid, resolve_canonical_book_uuid_exec};
@@ -54,8 +54,21 @@ pub async fn add_physical_copy(
     note: Option<&str>,
 ) -> Result<PhysicalCopy, PhysicalError> {
     let mut tx = pool.begin().await?;
+    let copy = add_physical_copy_in_tx(&mut tx, book_uuid, isbn, added_by_user_id, note).await?;
+    tx.commit().await?;
+    Ok(copy)
+}
 
-    let canonical = resolve_canonical_book_uuid_exec(&mut *tx, book_uuid)
+/// [`add_physical_copy`] on the caller's transaction, so a book created in the
+/// same commit and its first copy land together or not at all.
+pub(crate) async fn add_physical_copy_in_tx(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    book_uuid: &str,
+    isbn: Option<&str>,
+    added_by_user_id: Option<i64>,
+    note: Option<&str>,
+) -> Result<PhysicalCopy, PhysicalError> {
+    let canonical = resolve_canonical_book_uuid_exec(&mut **tx, book_uuid)
         .await?
         .ok_or(PhysicalError::BookNotFound)?;
 
@@ -68,16 +81,15 @@ pub async fn add_physical_copy(
     .bind(isbn)
     .bind(added_by_user_id)
     .bind(note)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?;
 
     // Fulfillment: a checked-in copy clears the book from EVERY user's wishlist.
     sqlx::query("DELETE FROM wishlist_entries WHERE book_uuid = ?1")
         .bind(&canonical)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
 
-    tx.commit().await?;
     Ok(map_copy(row))
 }
 
