@@ -146,7 +146,7 @@ export function settingsHandlers(server: SettingsServer) {
       const device = aWireKoboDevice({
         id,
         name: name.trim(),
-        kind,
+        kind: kind ?? "kobo",
         token: `tok-${id}`,
       });
       server.kobo = [...server.kobo, device];
