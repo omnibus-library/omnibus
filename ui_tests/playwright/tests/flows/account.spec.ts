@@ -337,6 +337,9 @@ test.describe("devices section", () => {
     });
 
     await test.step("check the row is a koreader with a token and no endpoint", async () => {
+      await expect(section.statusMessage).toHaveText(
+        "KOReader added. Copy its device token below.",
+      );
       await expect(section.kindBadge(name)).toHaveText("KOReader");
       await expect(section.tokenField(name)).not.toHaveValue("");
       await expect(section.endpointField(name)).toHaveCount(0);
@@ -349,6 +352,7 @@ test.describe("devices section", () => {
     });
 
     await test.step("check the row is gone", async () => {
+      await expect(section.statusMessage).toHaveText("KOReader removed.");
       await expect(section.deviceRow(name)).toHaveCount(0);
     });
   });

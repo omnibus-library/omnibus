@@ -13,6 +13,7 @@ export class KoboSectionComponent extends BaseComponent {
   readonly backupToolLink: Locator;
   readonly shelvesLink: Locator;
   readonly emptyMessage: Locator;
+  readonly statusMessage: Locator;
   readonly deviceRows: Locator;
   readonly nameField: Locator;
   readonly addButton: Locator;
@@ -33,6 +34,7 @@ export class KoboSectionComponent extends BaseComponent {
       name: "Choose shelves to sync",
     });
     this.emptyMessage = page.getByTestId("kobo-devices-empty");
+    this.statusMessage = page.getByTestId("kobo-devices-status");
     this.deviceRows = page.getByTestId("kobo-device-row");
     this.nameField = page.getByTestId("kobo-device-name-input");
     this.addButton = page.getByTestId("kobo-device-add");
