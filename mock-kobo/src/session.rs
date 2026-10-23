@@ -209,7 +209,11 @@ async fn run_download(
         ) {
             rejected.push(id.clone());
         }
+        let downloaded = matches!(outcome, downloads::Outcome::Downloaded);
         downloads::apply_outcome(device, id, outcome);
+        if downloaded {
+            annotations::fetch_after_download(client, device, id).await;
+        }
     }
     if let Some(message) = transport {
         return Err(SyncFailure::Transport(message));

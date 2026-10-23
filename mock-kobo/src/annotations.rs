@@ -153,8 +153,22 @@ pub async fn fetch_changed_annotations(client: &mut Client, device: &mut Device)
     }
 }
 
+/// Fetch and apply one book's annotation set unconditionally, right after it
+/// downloads successfully — the device's self-heal for a book
+/// `checkforchanges` previously dropped ([`crate::firmware::Quirk::AnnotationsOnDownload`]).
+/// Shared by the sync's own download pass (`downloads::download_books`) and
+/// the `attempt_download` action's `session::run_download`, so there is
+/// exactly one place this GET is made. A device with no
+/// `reading_services_host` yet makes no request.
+pub async fn fetch_after_download(client: &mut Client, device: &mut Device, book: &str) {
+    let Some(host) = device.reading_services_host.clone() else {
+        return;
+    };
+    fetch_one(client, device, &host, book, None).await;
+}
+
 /// Fetch and apply one book's annotation set. Shared by the checkforchanges
-/// phase (conditional) and the post-download phase (unconditional, Task 3).
+/// phase (conditional) and the post-download phase (unconditional).
 async fn fetch_one(
     client: &mut Client,
     device: &mut Device,

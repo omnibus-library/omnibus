@@ -341,7 +341,8 @@ to settle it.
 | `DownloadFailure` | A non-2xx download, or no answer at all, leaves the book undownloaded and is retried on the next sync, whatever the policy | #2116 | observed |
 | `StateArbitration` | Reading status and bookmark are reconciled against the server independently, each adopted only when stamped and strictly newer than the device's own | `kobo/dto.rs` | observed |
 | `StatePutResult` | A state PUT's reply must read `Success` on every sub-result, or the write is treated as failed | `kobo/dto.rs` (`StateResponse`) | inferred |
-| `AnnotationsUnheld` | Annotations for an undownloaded book are dropped rather than held, and the server keeps reporting the book until it is served once downloaded | #1647 | observed |
+| `AnnotationsUnheld` | Annotations for an undownloaded book are dropped rather than held, and the server keeps reporting the book until it is served once downloaded; `AnnotationsOnDownload` is how a dropped set comes back | #1647 | observed |
+| `AnnotationsOnDownload` | A download triggers one unconditional `GET .../annotations`, whether or not `checkforchanges` ever named the book | #1647 | observed |
 | `HighlightColor` | A served `highlightColor` hex swatch maps onto the device's `Bookmark.Color` index; anything else lands on yellow (index 0) | #1629 | unverified |
 
 Heights (223/600/1448), quality (90) and greyscale (`false`) are inferred, as

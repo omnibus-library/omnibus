@@ -6,7 +6,7 @@ use omnibus_db::test_support::{seed_synced_ebook, EnvVarGuard};
 use omnibus_mock_kobo::annotations::{NewHighlight, SpanRange, Swatch};
 use omnibus_mock_kobo::device::Device;
 use omnibus_mock_kobo::downloads::DownloadPolicy;
-use omnibus_mock_kobo::session::{attempt_annotation, sync_now, AnnotationSent};
+use omnibus_mock_kobo::session::{attempt_annotation, attempt_download, sync_now, AnnotationSent};
 use omnibus_shared::HighlightColor;
 
 use super::*;
@@ -199,4 +199,56 @@ async fn attempt_annotation_deletes_a_device_highlight_from_the_server() {
     .await
     .unwrap();
     assert!(highlights.is_empty());
+}
+
+#[tokio::test]
+async fn attempt_download_lands_another_devices_highlights_only_once_the_book_is_downloaded() {
+    let _no_kepubify = EnvVarGuard::set("OMNIBUS_KEPUBIFY_PATH", Some("/no/such/kepubify"));
+    let omnibus = spawn_omnibus().await;
+    let uuid = "72e1c9f0-0000-4000-8000-000000000204";
+    seed_downloadable_book(&omnibus.pool, uuid, "The Golden Fixture", "Ada Lovelace").await;
+    opt_in(&omnibus.pool, omnibus.user_id, &[uuid.to_owned()]).await;
+    let mut device_a = Device::new("HW-A");
+    sync_now(&mut device_a, &omnibus.endpoint, &DownloadPolicy::All)
+        .await
+        .unwrap();
+    device_a
+        .highlight(uuid, "mock-h-1".into(), blue_highlight_with_note())
+        .unwrap();
+    attempt_annotation(
+        &mut device_a,
+        &omnibus.endpoint,
+        uuid,
+        AnnotationSent::Upsert("mock-h-1".into()),
+        1_700_000_000,
+    )
+    .await
+    .outcome
+    .unwrap();
+
+    let b_endpoint = add_device(&omnibus, "Second Kobo").await;
+    let mut device_b = Device::new("HW-B");
+    sync_now(&mut device_b, &b_endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
+    assert!(device_b.library[uuid].annotations.is_empty());
+    assert_eq!(device_b.library[uuid].dropped_annotations, 1);
+
+    let attempt = attempt_download(&mut device_b, &b_endpoint, &[uuid.to_owned()]).await;
+    assert!(attempt.outcome.is_ok(), "{:?}", attempt.outcome);
+    let statuses: Vec<u16> = attempt.requests.iter().map(|r| r.status).collect();
+    assert_eq!(statuses, [200, 200]);
+
+    let landed = &device_b.library[uuid].annotations[0];
+    assert_eq!(landed.text, "a passage");
+    assert_eq!(landed.note, Some("a thought".into()));
+    assert_eq!(landed.color, Swatch::Blue);
+
+    let second = sync_now(&mut device_b, &b_endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
+    assert!(!second
+        .requests
+        .iter()
+        .any(|r| r.path.contains("/annotations")));
 }

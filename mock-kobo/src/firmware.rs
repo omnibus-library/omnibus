@@ -65,8 +65,12 @@ pub enum Quirk {
     StatePutResult,
     /// Annotations for a book the device hasn't downloaded are dropped
     /// rather than held, and the server keeps reporting the book until it is
-    /// served once downloaded. Evidence: #1647. Observed.
+    /// served once downloaded — [`Quirk::AnnotationsOnDownload`] is how a
+    /// dropped set comes back. Evidence: #1647. Observed.
     AnnotationsUnheld,
+    /// A download triggers one unconditional `GET .../annotations`, whether
+    /// or not `checkforchanges` ever named the book. Evidence: #1647. Observed.
+    AnnotationsOnDownload,
     /// A served `highlightColor` hex swatch maps onto the device's
     /// `Bookmark.Color` index; anything else — a CSS name, an unknown hex,
     /// or none at all — lands on yellow (`Bookmark.Color` 0). Evidence:

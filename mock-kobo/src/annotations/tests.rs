@@ -8,7 +8,7 @@ use serde_json::json;
 
 use crate::device::Device;
 use crate::downloads::DownloadPolicy;
-use crate::session::{attempt_annotation, sync_now, AnnotationSent, SyncFailure};
+use crate::session::{attempt_annotation, attempt_download, sync_now, AnnotationSent, SyncFailure};
 use crate::test_support::{
     device_holding, new_entitlement, request_lines, served_annotation, spawn_stub, RunningStub,
     Stub,
@@ -398,4 +398,95 @@ async fn attempt_annotation_fails_until_a_sync_names_the_reading_services_host()
 
     assert!(matches!(attempt.outcome, Err(SyncFailure::Rejected(_))));
     assert!(attempt.requests.is_empty());
+}
+
+#[tokio::test]
+async fn attempt_download_fetches_annotations_unconditionally_after_the_server_stopped_reporting_the_book(
+) {
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![json!([new_entitlement("book-1", "Dune")])],
+        reading_services_changed: vec!["book-1".into()],
+        reading_services_annotations: BTreeMap::from([(
+            "book-1".into(),
+            vec![served_annotation("a-1", "#F6F3B3", "a passage")],
+        )]),
+        ..Stub::default()
+    })
+    .await;
+    let mut device = Device::new("HW-1");
+    sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
+    assert!(device.library["book-1"].annotations.is_empty());
+    assert_eq!(device.library["book-1"].dropped_annotations, 1);
+
+    let attempt = attempt_download(&mut device, &stub.endpoint, &["book-1".into()]).await;
+
+    assert!(attempt.outcome.is_ok(), "{:?}", attempt.outcome);
+    assert_eq!(
+        request_lines(&attempt.requests),
+        [
+            "GET /kobo/<token>/v1/download/book-1 200",
+            "GET /api/v3/content/book-1/annotations 200",
+        ]
+    );
+    let recorded = stub.requests_to("/api/v3/content/book-1/annotations");
+    assert!(recorded.last().unwrap().headers.get("if-none-match").is_none());
+    assert_eq!(device.library["book-1"].annotations.len(), 1);
+    assert_eq!(device.library["book-1"].dropped_annotations, 0);
+}
+
+#[tokio::test]
+async fn sync_now_follows_each_download_with_one_annotations_get() {
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![json!([
+            new_entitlement("book-1", "Dune"),
+            new_entitlement("book-2", "Dune Messiah"),
+        ])],
+        ..Stub::default()
+    })
+    .await;
+    let mut device = Device::new("HW-1");
+
+    let report = sync_now(&mut device, &stub.endpoint, &DownloadPolicy::All)
+        .await
+        .unwrap();
+
+    let interesting: Vec<String> = request_lines(&report.requests)
+        .into_iter()
+        .filter(|l| {
+            l.contains("/download/") || l.contains("/annotations") || l.contains("checkforchanges")
+        })
+        .collect();
+    assert_eq!(
+        interesting,
+        [
+            "GET /kobo/<token>/v1/download/book-1 200",
+            "GET /api/v3/content/book-1/annotations 304",
+            "GET /kobo/<token>/v1/download/book-2 200",
+            "GET /api/v3/content/book-2/annotations 304",
+            "POST /api/v3/content/checkforchanges 200",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn attempt_download_makes_no_annotations_get_when_the_download_fails() {
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![json!([new_entitlement("book-1", "Dune")])],
+        download_status: StatusCode::NOT_FOUND,
+        ..Stub::default()
+    })
+    .await;
+    let mut device = Device::new("HW-1");
+    sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
+
+    let attempt = attempt_download(&mut device, &stub.endpoint, &["book-1".into()]).await;
+
+    assert!(attempt.outcome.is_err());
+    assert!(!request_lines(&attempt.requests)
+        .iter()
+        .any(|l| l.contains("/annotations")));
 }
