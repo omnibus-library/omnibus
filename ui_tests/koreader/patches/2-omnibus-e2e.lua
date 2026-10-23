@@ -1053,7 +1053,8 @@ local function precise_scenario()
 end
 
 -- The `highlights` scenario: a highlight with a note made in KOReader reaches the web at the same
--- passage, and a recolour, a delete and a new highlight made on the web reach the book.
+-- passage, and a recolour, a delete and a new highlight made on the web reach the book. The last
+-- one is read after opening alone, without Sync now.
 local function highlights_scenario()
     local Event = require("ui/event")
     local ReaderUI = require("apps/reader/readerui")
@@ -1065,7 +1066,7 @@ local function highlights_scenario()
     local RELAY_POS0 = "/body/DocFragment[6]/body/p/text().10"
     local RELAY_POS1 = "/body/DocFragment[6]/body/p/text().14"
     local RELAY_CFI = "epubcfi(/6/12!/4/4,/1:10,/1:14)"
-    local plugin, lagoon_path, relay_path, client_id
+    local lagoon_path, relay_path, client_id
 
     -- The highlight items of the open book that start at `pos0`.
     local function items_at(reader_ui, pos0)
@@ -1086,18 +1087,21 @@ local function highlights_scenario()
         return rows
     end
 
-    -- A deferred step: open the book at `path()`, run the Sync now of the open reader, then
-    -- let `check(reader_ui)` return the step's outcome.
-    local function open_sync_check(name, path, check)
+    -- A deferred step: open the book at `path()`, run the Sync now of the open reader unless
+    -- `sync_now` is false (then only the open itself can have brought a change), then let
+    -- `check(reader_ui)` return the step's outcome.
+    local function open_sync_check(name, path, check, sync_now)
         return {
             name = name,
             deferred = true,
             fn = function(resume)
                 ReaderUI:showReader(path(), nil, nil, nil, function(reader_ui)
-                    local result = reader_ui.omnibus:sync()
-                    if not result.ok then
-                        resume(false, "Sync now in the reader failed: " .. tostring(result.message))
-                        return
+                    if sync_now ~= false then
+                        local result = reader_ui.omnibus:sync()
+                        if not result.ok then
+                            resume(false, "Sync now in the reader failed: " .. tostring(result.message))
+                            return
+                        end
                     end
                     resume(check(reader_ui))
                 end)
@@ -1118,44 +1122,26 @@ local function highlights_scenario()
 
     return {
         {
-            name = "opt_in",
+            name = "add_books",
             fn = function()
                 local code = api("POST", "/api/shelves/" .. SHELF_ID .. "/books",
                     { book_uuids = { LAGOON_UUID, RELAY_UUID } })
                 if code ~= 204 then
                     return false, "adding the books to the shelf answered " .. tostring(code)
                 end
-                code = api("PATCH", "/api/shelves/" .. SHELF_ID, { sync_to_kobo = true })
-                if code ~= 200 then
-                    return false, "opting the shelf in answered " .. tostring(code)
-                end
-                return true, "shelf holds Lagoon and Relay, opted in"
+                return true, "shelf holds Lagoon and Relay"
             end,
         },
-        {
-            name = "deliver",
-            fn = function()
-                plugin = omnibus_plugin()
-                if not plugin then
-                    return false, "FileManager.instance.omnibus missing"
-                end
-                local home = RESULTS .. "/highlights/home"
-                util.makePath(home)
-                G_reader_settings:saveSetting("home_dir", home)
-                local result = plugin:sync()
-                if not result.ok then
-                    return false, "sync failed: " .. tostring(result.message)
-                end
-                local lagoon_uuid, relay_uuid
-                lagoon_uuid, lagoon_path = delivered_book("Lagoon of Ligatures")
-                relay_uuid, relay_path = delivered_book("Frontmatter Relay")
-                if lagoon_uuid ~= LAGOON_UUID or relay_uuid ~= RELAY_UUID then
-                    return false, "the manifest does not hold both books: "
-                        .. tostring(lagoon_uuid) .. ", " .. tostring(relay_uuid)
-                end
-                return true, "delivered " .. lagoon_path .. " and " .. relay_path
-            end,
-        },
+        opt_in_step(),
+        deliver_step("highlights", function(lagoon_uuid, path)
+            lagoon_path = path
+            local relay_uuid
+            relay_uuid, relay_path = delivered_book("Frontmatter Relay")
+            if lagoon_uuid ~= LAGOON_UUID or relay_uuid ~= RELAY_UUID then
+                error("the manifest does not hold both books: "
+                    .. tostring(lagoon_uuid) .. ", " .. tostring(relay_uuid))
+            end
+        end, { title = "Lagoon of Ligatures", added = 3 }),
         {
             name = "koreader_highlight",
             deferred = true,
@@ -1267,7 +1253,7 @@ local function highlights_scenario()
                     RELAY_POS1, tostring(item.color), tostring(word), tostring(item.pos1))
             end
             return true, 'the web highlight of "test" arrived in red'
-        end),
+        end, false),
         close_step("close_relay"),
     }
 end
