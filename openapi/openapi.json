@@ -271,6 +271,54 @@
         }
       }
     },
+    "/api/account/kobo-devices/{id}/koreader-plugin": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Download a KOReader's plugin",
+        "description": "The Omnibus plugin for one of your KOReaders, as a zip already set to this server and\ncarrying that KOReader's token. Unzip it into KOReader's `plugins` folder. The zip holds\nthe token, so treat the file like a password.",
+        "operationId": "download_koreader_plugin",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The KOReader's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The plugin, zipped.",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`attachment`, with the file name."
+              }
+            },
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileBytes"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your account lacks the download permission."
+          },
+          "404": {
+            "description": "No KOReader of yours has that id."
+          }
+        }
+      }
+    },
     "/api/account/kobo-devices/{id}/regenerate": {
       "post": {
         "tags": [

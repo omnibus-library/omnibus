@@ -388,3 +388,77 @@ mod sync_report {
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     }
 }
+
+mod plugin_zip {
+    use std::io::Read;
+
+    use super::*;
+
+    fn entries(bytes: Vec<u8>) -> std::collections::BTreeMap<String, Vec<u8>> {
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        (0..archive.len())
+            .map(|i| {
+                let mut entry = archive.by_index(i).unwrap();
+                let mut content = Vec::new();
+                entry.read_to_end(&mut content).unwrap();
+                (entry.name().unwrap().into_owned(), content)
+            })
+            .collect()
+    }
+
+    fn plugin_dir() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../koreader/omnibus.koplugin")
+    }
+
+    #[test]
+    fn holds_the_plugin_files_and_a_config_for_the_given_server_and_token() {
+        let files = entries(plugin::plugin_zip("https://omni.test", "tok-1").unwrap());
+
+        let names: Vec<&str> = files.keys().map(String::as_str).collect();
+        assert_eq!(
+            names,
+            [
+                "omnibus.koplugin/_meta.lua",
+                "omnibus.koplugin/main.lua",
+                "omnibus.koplugin/omnibus.json",
+                "omnibus.koplugin/omnibussync.lua",
+            ]
+        );
+        assert_eq!(
+            files["omnibus.koplugin/main.lua"],
+            std::fs::read(plugin_dir().join("main.lua")).unwrap()
+        );
+        let config: Value =
+            serde_json::from_slice(&files["omnibus.koplugin/omnibus.json"]).unwrap();
+        assert_eq!(
+            config,
+            json!({ "server_url": "https://omni.test", "token": "tok-1" })
+        );
+    }
+
+    #[test]
+    fn round_trips_a_server_url_holding_quotes_and_backslashes() {
+        let url = r#"https://omni.test/a"b\c"#;
+
+        let files = entries(plugin::plugin_zip(url, "tok").unwrap());
+
+        let config: Value =
+            serde_json::from_slice(&files["omnibus.koplugin/omnibus.json"]).unwrap();
+        assert_eq!(config["server_url"], url);
+    }
+
+    #[test]
+    fn embeds_every_lua_file_in_the_plugin_directory() {
+        let mut on_disk: Vec<String> = std::fs::read_dir(plugin_dir())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .filter(|name| name.ends_with(".lua"))
+            .collect();
+        on_disk.sort();
+
+        let mut embedded: Vec<&str> = plugin::PLUGIN_FILES.iter().map(|(name, _)| *name).collect();
+        embedded.sort();
+
+        assert_eq!(embedded, on_disk);
+    }
+}

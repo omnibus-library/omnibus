@@ -377,6 +377,7 @@ fn kobo_device_routes() -> OpenApiRouter<AppState> {
         ))
         .routes(routes!(kobo_devices::regenerate_kobo_device))
         .routes(routes!(kobo_devices::delete_kobo_device))
+        .routes(routes!(kobo_devices::download_koreader_plugin))
 }
 
 /// Sub-router for `/api/search/*` carrying its own per-IP rate-limit layer, capping each

@@ -2,7 +2,8 @@
 //! `/api/*` auth gate: each route authenticates through [`extractor::KoreaderDevice`].
 //! Like `/kobo/*` they are not part of the REST contract, so they are plain
 //! routes with DTOs local to the module. [`library`] lists and serves the synced
-//! shelves' books; [`report`] stores each sync's outcome for Settings.
+//! shelves' books; [`report`] stores each sync's outcome for Settings, and [`plugin`] builds the
+//! plugin zip the Settings download serves.
 
 use axum::{
     routing::{get, post},
@@ -13,6 +14,7 @@ use super::AppState;
 
 mod extractor;
 mod library;
+pub(super) mod plugin;
 mod report;
 #[cfg(test)]
 mod tests;
