@@ -855,4 +855,489 @@ test("settle records the device's own state as agreed at the event time and not 
     eq(e.pending, false)
 end)
 
+-- Annotation sync. A fake device: `items` is the book's annotation list, `opts.post` /
+-- `opts.get` answer as `{ code, body, err }` (a function of the request, or a fixed table),
+-- and every call lands in `log`. Adding and removing an item edits `items` like the device does.
+local NOW = 1700000000
+local PLACE = { pos0 = "/body/DocFragment/body/p[2]/text().0", pos1 = "/body/DocFragment/body/p[2]/text().6" }
+
+local function highlight(fields)
+    local item = { drawer = "lighten", color = "orange", text = "Second", note = "a note",
+        pos0 = PLACE.pos0, pos1 = PLACE.pos1,
+        datetime = os.date("%Y-%m-%d %H:%M:%S", NOW - 3600) }
+    for k, v in pairs(fields or {}) do
+        item[k] = v
+    end
+    return item
+end
+
+local function annotation_device(opts)
+    opts = opts or {}
+    local items = opts.items or {}
+    local log = { posts = {}, gets = {}, added = {}, removed = {}, minted = 0 }
+    local function answer(spec, request)
+        if type(spec) == "function" then
+            spec = spec(request)
+        end
+        return spec[1], spec[2], spec[3]
+    end
+    local deps = {
+        new_id = function()
+            log.minted = log.minted + 1
+            return string.format("minted-%d", log.minted)
+        end,
+        post = function(body)
+            table.insert(log.posts, body)
+            return answer(opts.post or { 200, { results = {} } }, body)
+        end,
+        get = function(since)
+            table.insert(log.gets, since)
+            return answer(opts.get or { 200, { cursor = 500, annotations = {}, deleted = {} } }, since)
+        end,
+        add = function(wire)
+            table.insert(log.added, wire)
+            if opts.refuse_add then
+                return nil
+            end
+            local item = highlight({ omnibus_id = wire.id, color = wire.color, note = wire.note,
+                text = wire.text, pos0 = wire.pos0, pos1 = wire.pos1 })
+            table.insert(items, item)
+            return item
+        end,
+        remove = function(item)
+            table.insert(log.removed, item)
+            for i, candidate in ipairs(items) do
+                if candidate == item then
+                    table.remove(items, i)
+                    break
+                end
+            end
+        end,
+    }
+    return items, opts.synced or {}, deps, log
+end
+
+-- The server's version of a stored annotation, as a result or a listing carries it.
+local function server_row(id, fields)
+    local row = { id = id, pos0 = PLACE.pos0, pos1 = PLACE.pos1, text = "Second", note = "a note",
+        color = "yellow", created_at = NOW - 3600, updated_at = NOW - 10 }
+    for k, v in pairs(fields or {}) do
+        row[k] = v
+    end
+    return row
+end
+
+-- The fingerprint of an item as it stands, for a `synced.agreed` entry that matches it.
+local function fingerprint(item)
+    return table.concat({ item.color or "", item.note or "", item.text or "", item.pos0, item.pos1 }, "\0")
+end
+
+local function agreed_with(item, extra)
+    local entry = { fp = fingerprint(item), server_at = NOW - 10, server_color = "yellow" }
+    for k, v in pairs(extra or {}) do
+        entry[k] = v
+    end
+    return entry
+end
+
+test("parse_datetime reads a KOReader local timestamp back to the epoch second it came from", function()
+    eq(sync.parse_datetime(os.date("%Y-%m-%d %H:%M:%S", NOW)), NOW)
+end)
+
+test("parse_datetime yields nil for nothing and for junk", function()
+    eq(sync.parse_datetime(nil), nil)
+    eq(sync.parse_datetime("yesterday"), nil)
+    eq(sync.parse_datetime("2024-01-01"), nil)
+    eq(sync.parse_datetime(42), nil)
+end)
+
+test("sync_annotations pushes a new highlight under a minted id with its device times", function()
+    local item = highlight()
+    local items, synced, deps, log = annotation_device({ items = { item } })
+
+    local result = sync.sync_annotations(items, synced, deps)
+
+    eq(result.ok, true)
+    eq(result.changed, true)
+    eq(item.omnibus_id, "minted-1")
+    eq(#log.posts, 1)
+    local sent = log.posts[1].upserts[1]
+    eq(sent.id, "minted-1")
+    eq(sent.pos0, PLACE.pos0)
+    eq(sent.pos1, PLACE.pos1)
+    eq(sent.text, "Second")
+    eq(sent.note, "a note")
+    eq(sent.color, "orange")
+    eq(sent.created_at, NOW - 3600)
+    eq(sent.updated_at, NOW - 3600)
+    eq(log.posts[1].deletes, nil)
+end)
+
+test("sync_annotations leaves a bookmark alone: never pushed, numbered or removed", function()
+    local bookmark = { pos0 = PLACE.pos0, pos1 = PLACE.pos1, text = "page 4" }
+    local items, synced, deps, log = annotation_device({
+        items = { bookmark },
+        get = { 200, { cursor = 5, annotations = {}, deleted = { "minted-1" } } },
+    })
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(#log.posts, 0)
+    eq(bookmark.omnibus_id, nil)
+    eq(#items, 1)
+    eq(#log.removed, 0)
+end)
+
+test("sync_annotations does not push an unchanged agreed highlight", function()
+    local item = highlight({ omnibus_id = "h1" })
+    local items, synced, deps, log = annotation_device({ items = { item } })
+    synced.agreed = { h1 = agreed_with(item) }
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(#log.posts, 0)
+end)
+
+for field, changed in pairs({ color = "red", note = "edited", text = "other", pos0 = "/body/DocFragment/body/p[2]/text().1",
+    pos1 = "/body/DocFragment/body/p[2]/text().5" }) do
+    test("sync_annotations pushes an agreed highlight whose " .. field .. " changed", function()
+        local item = highlight({ omnibus_id = "h1" })
+        local items, synced, deps, log = annotation_device({ items = { item } })
+        synced.agreed = { h1 = agreed_with(item) }
+        item[field] = changed
+
+        sync.sync_annotations(items, synced, deps)
+
+        eq(log.posts[1].upserts[1].id, "h1")
+        eq(log.posts[1].upserts[1][field], changed)
+    end)
+end
+
+test("sync_annotations dates an edit no earlier than the server time it last agreed on", function()
+    local newer = highlight({ omnibus_id = "newer", note = "x", datetime_updated = os.date("%Y-%m-%d %H:%M:%S", NOW) })
+    local older = highlight({ omnibus_id = "older", note = "x", datetime_updated = os.date("%Y-%m-%d %H:%M:%S", NOW - 5000) })
+    local items, synced, deps, log = annotation_device({ items = { newer, older } })
+    local was = { newer = highlight(), older = highlight() }
+    synced.agreed = { newer = agreed_with(was.newer, { server_at = NOW - 100 }),
+        older = agreed_with(was.older, { server_at = NOW - 100 }) }
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(log.posts[1].upserts[1].updated_at, NOW)
+    eq(log.posts[1].upserts[2].updated_at, NOW - 100)
+end)
+
+test("sync_annotations sends an agreed id missing from the items as a delete, and forgets a local-only one", function()
+    local items, synced, deps, log = annotation_device()
+    synced.agreed = { gone = { fp = "x", server_at = 1, server_color = "yellow" }, mine = { fp = "y", local_only = true } }
+
+    local result = sync.sync_annotations(items, synced, deps)
+
+    eq(result.ok, true)
+    eq(#log.posts, 1)
+    eq(log.posts[1].deletes[1], "gone")
+    eq(#log.posts[1].deletes, 1)
+    eq(synced.agreed.gone, nil)
+    eq(synced.agreed.mine, nil)
+end)
+
+test("sync_annotations records an applied highlight as agreed with the server's time and colour", function()
+    local item = highlight()
+    local items, synced, deps = annotation_device({
+        items = { item },
+        post = { 200, { results = { { id = "minted-1", outcome = "applied", annotation = server_row("minted-1") } } } },
+    })
+
+    sync.sync_annotations(items, synced, deps)
+
+    local agreed = synced.agreed["minted-1"]
+    eq(agreed.fp, fingerprint(item))
+    eq(agreed.server_at, NOW - 10)
+    eq(agreed.server_color, "yellow")
+    eq(item.color, "orange")
+end)
+
+test("sync_annotations takes the server's note and text on a stale answer and keeps a colour the server did not change", function()
+    local item = highlight({ omnibus_id = "h1", note = "device edit" })
+    local items, synced, deps = annotation_device({
+        items = { item },
+        post = { 200, { results = { { id = "h1", outcome = "stale",
+            annotation = server_row("h1", { note = "web edit", text = "web text", updated_at = NOW - 5 }) } } } },
+    })
+    synced.agreed = { h1 = agreed_with(highlight({ omnibus_id = "h1" })) }
+
+    local result = sync.sync_annotations(items, synced, deps)
+
+    eq(item.note, "web edit")
+    eq(item.text, "web text")
+    eq(item.color, "orange")
+    eq(synced.agreed.h1.server_at, NOW - 5)
+    eq(synced.agreed.h1.fp, fingerprint(item))
+    eq(result.changed, true)
+end)
+
+test("sync_annotations takes the server's colour on a stale answer when the server's colour moved", function()
+    local item = highlight({ omnibus_id = "h1", note = "device edit" })
+    local items, synced, deps = annotation_device({
+        items = { item },
+        post = { 200, { results = { { id = "h1", outcome = "stale",
+            annotation = server_row("h1", { color = "purple", updated_at = NOW - 5 }) } } } },
+    })
+    synced.agreed = { h1 = agreed_with(highlight({ omnibus_id = "h1" })) }
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(item.color, "purple")
+end)
+
+test("sync_annotations removes a highlight the server answers deleted", function()
+    local item = highlight({ omnibus_id = "h1", note = "edited after the web deleted it" })
+    local items, synced, deps, log = annotation_device({
+        items = { item },
+        post = { 200, { results = { { id = "h1", outcome = "deleted" } } } },
+    })
+    synced.agreed = { h1 = agreed_with(highlight({ omnibus_id = "h1" })) }
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(#items, 0)
+    eq(log.removed[1], item)
+    eq(synced.agreed.h1, nil)
+end)
+
+test("sync_annotations keeps an unplaceable highlight local and does not resend it until it changes", function()
+    local item = highlight({ omnibus_id = "h1" })
+    local items, synced, deps, log = annotation_device({
+        items = { item },
+        post = { 200, { results = { { id = "h1", outcome = "unplaceable" } } } },
+    })
+
+    sync.sync_annotations(items, synced, deps)
+    sync.sync_annotations(items, synced, deps)
+    item.note = "now different"
+    sync.sync_annotations(items, synced, deps)
+
+    eq(synced.agreed.h1.local_only, true)
+    eq(#log.posts, 2)
+    eq(#items, 1)
+end)
+
+test("sync_annotations adds a listed highlight the device lacks and agrees on it", function()
+    local items, synced, deps, log = annotation_device({
+        get = { 200, { cursor = 777, annotations = { server_row("w1", { color = "red", updated_at = NOW - 20 }) }, deleted = {} } },
+    })
+
+    local result = sync.sync_annotations(items, synced, deps)
+
+    eq(result.ok, true)
+    eq(#items, 1)
+    eq(log.added[1].id, "w1")
+    eq(synced.agreed.w1.server_at, NOW - 20)
+    eq(synced.agreed.w1.server_color, "red")
+    eq(synced.agreed.w1.fp, fingerprint(items[1]))
+    eq(synced.cursor, 777)
+    eq(log.gets[1], 0)
+end)
+
+test("sync_annotations skips a listed highlight the document cannot place and does not record it", function()
+    local items, synced, deps = annotation_device({
+        refuse_add = true,
+        get = { 200, { cursor = 9, annotations = { server_row("w1") }, deleted = {} } },
+    })
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(#items, 0)
+    eq(synced.agreed.w1, nil)
+end)
+
+test("sync_annotations leaves a listed highlight no newer than the agreed time untouched", function()
+    local item = highlight({ omnibus_id = "h1" })
+    local items, synced, deps = annotation_device({
+        items = { item },
+        get = { 200, { cursor = 9, annotations = { server_row("h1", { note = "same time", updated_at = NOW - 10 }) }, deleted = {} } },
+    })
+    synced.agreed = { h1 = agreed_with(item) }
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(item.note, "a note")
+end)
+
+test("sync_annotations applies a newer web note edit but keeps the device's own colour when the server's did not move", function()
+    local item = highlight({ omnibus_id = "h1" })
+    local items, synced, deps = annotation_device({
+        items = { item },
+        get = { 200, { cursor = 9, annotations = { server_row("h1", { note = "web note", updated_at = NOW }) }, deleted = {} } },
+    })
+    synced.agreed = { h1 = agreed_with(item) }
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(item.note, "web note")
+    eq(item.color, "orange")
+    eq(synced.agreed.h1.server_at, NOW)
+    eq(synced.agreed.h1.fp, fingerprint(item))
+end)
+
+test("sync_annotations takes a web recolour as the colour the server now names", function()
+    local item = highlight({ omnibus_id = "h1" })
+    local items, synced, deps = annotation_device({
+        items = { item },
+        get = { 200, { cursor = 9, annotations = { server_row("h1", { color = "purple", updated_at = NOW }) }, deleted = {} } },
+    })
+    synced.agreed = { h1 = agreed_with(item) }
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(item.color, "purple")
+    eq(synced.agreed.h1.server_color, "purple")
+end)
+
+test("sync_annotations removes a highlight the server lists as deleted, even one edited locally", function()
+    local item = highlight({ omnibus_id = "h1" })
+    local other = highlight({ omnibus_id = "h2" })
+    local items, synced, deps, log = annotation_device({
+        items = { item, other },
+        get = { 200, { cursor = 9, annotations = {}, deleted = { "h1", "never-here" } } },
+    })
+    synced.agreed = { h1 = agreed_with(item), h2 = agreed_with(other) }
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(#items, 1)
+    eq(items[1], other)
+    eq(log.removed[1], item)
+    eq(synced.agreed.h1, nil)
+end)
+
+test("sync_annotations never deletes a highlight the listing merely omits", function()
+    local item = highlight({ omnibus_id = "h1" })
+    local items, synced, deps, log = annotation_device({
+        items = { item },
+        get = { 200, { cursor = 9, annotations = {}, deleted = {} } },
+    })
+    synced.agreed = { h1 = agreed_with(item) }
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(#items, 1)
+    eq(#log.removed, 0)
+    eq(synced.agreed.h1 ~= nil, true)
+end)
+
+test("sync_annotations reads a decoded JSON null note or annotation as nothing", function()
+    local null = function() end
+    local item = highlight({ omnibus_id = "h1", note = "kept" })
+    local pushed = highlight({ omnibus_id = "h2" })
+    local items, synced, deps = annotation_device({
+        items = { item, pushed },
+        post = { 200, { results = { { id = "h2", outcome = "stale", annotation = null } } } },
+        get = { 200, { cursor = 9, annotations = { server_row("h1", { note = null, updated_at = NOW }) }, deleted = {} } },
+    })
+    synced.agreed = { h1 = agreed_with(item), h2 = agreed_with(highlight({ omnibus_id = "h2" })) }
+    pushed.note = "changed"
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(item.note, nil)
+    eq(pushed.note, "changed")
+end)
+
+for name, response in pairs({
+    ["no response"] = { nil, nil, "timeout" },
+    ["a server error"] = { 503 },
+    ["a 200 without results"] = { 200, {} },
+}) do
+    test("sync_annotations fails on " .. name .. " to the push and changes nothing it did not land", function()
+        local item = highlight({ omnibus_id = "h1", note = "edited" })
+        local items, synced, deps, log = annotation_device({ items = { item }, post = response })
+        synced.agreed = { h1 = agreed_with(highlight({ omnibus_id = "h1" })), gone = { fp = "x", server_at = 1 } }
+        synced.cursor = 41
+
+        local result = sync.sync_annotations(items, synced, deps)
+
+        eq(result.ok, false)
+        eq(result.message ~= nil, true)
+        eq(synced.cursor, 41)
+        eq(synced.agreed.gone ~= nil, true)
+        eq(synced.agreed.h1.fp == fingerprint(item), false)
+        eq(#items, 1)
+        eq(#log.gets, 0)
+    end)
+end
+
+for name, response in pairs({
+    ["no response"] = { nil, nil, "timeout" },
+    ["a server error"] = { 500 },
+    ["a 200 without an annotations array"] = { 200, { cursor = 9 } },
+}) do
+    test("sync_annotations fails on " .. name .. " to the listing, never reading it as nothing changed", function()
+        local item = highlight({ omnibus_id = "h1" })
+        local items, synced, deps, log = annotation_device({ items = { item }, get = response })
+        synced.agreed = { h1 = agreed_with(item), other = agreed_with(highlight(), { server_at = 1 }) }
+        synced.cursor = 41
+
+        local result = sync.sync_annotations(items, synced, deps)
+
+        eq(result.ok, false)
+        eq(synced.cursor, 41)
+        eq(#items, 1)
+        eq(#log.removed, 0)
+    end)
+end
+
+test("sync_annotations tells a removed device apart on a 401 from either call", function()
+    for _, which in ipairs({ "post", "get" }) do
+        local item = highlight({ omnibus_id = "h1", note = "edited" })
+        local items, synced, deps = annotation_device({ items = { item }, [which] = { 401 } })
+        synced.agreed = { h1 = agreed_with(highlight({ omnibus_id = "h1" })) }
+
+        local result = sync.sync_annotations(items, synced, deps)
+
+        eq(result.ok, false)
+        eq(result.message, sync.REMOVED_MESSAGE, which)
+    end
+end)
+
+test("sync_annotations reports a failed pull after a landed push as changed so the push is kept", function()
+    local item = highlight()
+    local items, synced, deps = annotation_device({
+        items = { item },
+        post = { 200, { results = { { id = "minted-1", outcome = "applied", annotation = server_row("minted-1") } } } },
+        get = { 503 },
+    })
+
+    local result = sync.sync_annotations(items, synced, deps)
+
+    eq(result.ok, false)
+    eq(result.changed, true)
+    eq(synced.agreed["minted-1"] ~= nil, true)
+end)
+
+test("sync_annotations with no saved state sends no deletes and pulls from the start", function()
+    local item = highlight({ omnibus_id = "h1" })
+    local items, synced, deps, log = annotation_device({ items = { item } })
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(log.posts[1].deletes, nil)
+    eq(log.gets[1], 0)
+end)
+
+test("sync_annotations splits a large push into requests within the server's batch cap", function()
+    local items = {}
+    for i = 1, sync.PUSH_BATCH + 1 do
+        table.insert(items, highlight({ omnibus_id = "h" .. i }))
+    end
+    local _, synced, deps, log = annotation_device({ items = items })
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(#log.posts, 2)
+    eq(#log.posts[1].upserts, sync.PUSH_BATCH)
+    eq(#log.posts[2].upserts, 1)
+end)
+
+
 os.exit(failures == 0 and 0 or 1)

@@ -15,6 +15,12 @@ Metadata is kept per delivered book in `files` (path, the `last_modified` it was
 written at, and the file's ETag), which outlives a delete so a returning book finds its
 old path and its sidecar. A book whose server version moved gets its custom metadata
 rewritten and, if the server's file changed too, the file replaced at the same path.
+
+Highlights are kept per book in `synced` (the book's `omnibus_annotations` setting): the
+server's listing cursor and, for each highlight the device and server agreed on, a
+fingerprint of what the device held and the time and colour the server named. A highlight
+is pushed only when its fingerprint moved; one is deleted on the server only when it was
+agreed on and has left the device, so a lost `synced` can never read as deleting everything.
 --]]--
 
 local M = {}
@@ -259,6 +265,274 @@ function M.pull_plan(entry, remote, current)
         plan.status = status.status
     end
     return plan
+end
+
+-- Most upserts, and most deletes, the server takes in one push.
+M.PUSH_BATCH = 500
+
+--- The epoch second of a KOReader local "%Y-%m-%d %H:%M:%S" stamp; nil when it isn't one.
+function M.parse_datetime(stamp)
+    if type(stamp) ~= "string" then
+        return nil
+    end
+    local year, month, day, hour, min, sec = stamp:match("^(%d%d%d%d)-(%d%d)-(%d%d) (%d%d):(%d%d):(%d%d)$")
+    if not year then
+        return nil
+    end
+    return os.time({ year = tonumber(year), month = tonumber(month), day = tonumber(day),
+        hour = tonumber(hour), min = tonumber(min), sec = tonumber(sec) })
+end
+
+-- A decoded JSON null is a function, so a field is only used when it has the type asked for.
+local function string_or_nil(value)
+    return type(value) == "string" and value or nil
+end
+
+local function table_or_nil(value)
+    return type(value) == "table" and value or nil
+end
+
+local function is_highlight(item)
+    return type(item) == "table" and item.drawer ~= nil and type(item.pos0) == "string"
+        and type(item.pos1) == "string"
+end
+
+-- What the server would store of `item`: any change to it is a change to push.
+local function fingerprint(item)
+    return table.concat({ item.color or "", item.note or "", item.text or "", item.pos0, item.pos1 }, "\0")
+end
+
+-- The highlights on the device, numbering any that have no id yet. Returns them in order,
+-- by id, and whether an id was minted.
+local function numbered_highlights(items, deps)
+    local list, by_id, minted = {}, {}, false
+    for _, item in ipairs(items) do
+        if is_highlight(item) then
+            if not item.omnibus_id then
+                item.omnibus_id = deps.new_id()
+                minted = true
+            end
+            by_id[item.omnibus_id] = item
+            table.insert(list, item)
+        end
+    end
+    return list, by_id, minted
+end
+
+-- When the device last changed `item`: its own stamp, but never before the server time it
+-- last agreed on, since a note edit leaves the stamp alone.
+local function event_time(item, agreed)
+    local stamp = M.parse_datetime(item.datetime_updated) or M.parse_datetime(item.datetime) or 0
+    return math.max(stamp, agreed and agreed.server_at or 0)
+end
+
+-- The highlights to push (`{ id, fp, item, wire }`) and the agreed ids that left the device.
+-- An id the server never took (`local_only`) that left is forgotten rather than deleted.
+local function outgoing(list, by_id, agreed)
+    local upserts, deletes, forgot = {}, {}, false
+    for _, item in ipairs(list) do
+        local id, fp = item.omnibus_id, fingerprint(item)
+        local entry = agreed[id]
+        if not entry or entry.fp ~= fp then
+            table.insert(upserts, {
+                id = id,
+                fp = fp,
+                item = item,
+                wire = {
+                    id = id, pos0 = item.pos0, pos1 = item.pos1, text = item.text, note = item.note,
+                    color = item.color, created_at = M.parse_datetime(item.datetime) or 0,
+                    updated_at = event_time(item, entry),
+                },
+            })
+        end
+    end
+    for id, entry in pairs(agreed) do
+        if not by_id[id] then
+            if entry.local_only then
+                agreed[id] = nil
+                forgot = true
+            else
+                table.insert(deletes, id)
+            end
+        end
+    end
+    table.sort(deletes)
+    return upserts, deletes, forgot
+end
+
+-- The message for a call that did not answer 200, or nil when it did.
+local function http_problem(code, err)
+    if not code then
+        return string.format("Couldn't reach Omnibus: %s", tostring(err))
+    elseif code == 401 then
+        return M.REMOVED_MESSAGE
+    elseif code ~= 200 then
+        return string.format("Omnibus answered HTTP %d", code)
+    end
+end
+
+-- Take the server's version of a highlight the device holds. The colour only follows when the
+-- server's colour moved from the one agreed on, so a shade the server can't name survives.
+local function take_server_version(item, server, entry)
+    item.note = string_or_nil(server.note)
+    item.text = string_or_nil(server.text)
+    local color = string_or_nil(server.color)
+    if color and color ~= (entry and entry.server_color) then
+        item.color = color
+    end
+end
+
+-- The agreed entry for a highlight whose device-side fingerprint is `fp` and whose server
+-- version is `server`.
+local function agree(fp, server)
+    return {
+        fp = fp,
+        server_at = type(server.updated_at) == "number" and server.updated_at or nil,
+        server_color = string_or_nil(server.color),
+    }
+end
+
+-- Record what the server answered for each upsert of one push: `applied` and `stale` agree on
+-- the server's version, `deleted` removes the highlight, `unplaceable` keeps it local. An
+-- upsert with no answer stays as it was, so the next sync sends it again.
+local function settle_results(sent, results, deps, state)
+    local answers = {}
+    for _, answer in ipairs(results) do
+        if type(answer) == "table" and type(answer.id) == "string" then
+            answers[answer.id] = answer
+        end
+    end
+    for _, up in ipairs(sent) do
+        local answer = answers[up.id] or {}
+        local server = table_or_nil(answer.annotation)
+        local landed = true
+        if answer.outcome == "applied" and server then
+            state.agreed[up.id] = agree(up.fp, server)
+        elseif answer.outcome == "stale" and server then
+            take_server_version(up.item, server, state.agreed[up.id])
+            state.agreed[up.id] = agree(fingerprint(up.item), server)
+        elseif answer.outcome == "deleted" then
+            deps.remove(up.item)
+            state.by_id[up.id] = nil
+            state.agreed[up.id] = nil
+        elseif answer.outcome == "unplaceable" then
+            state.agreed[up.id] = { fp = up.fp, local_only = true }
+        else
+            landed = false
+        end
+        state.result.changed = state.result.changed or landed
+    end
+end
+
+-- Push the upserts and deletes in requests within the server's cap. Returns a failure
+-- message, or nil when everything landed.
+local function push(upserts, deletes, deps, state)
+    local at_up, at_del = 1, 1
+    while at_up <= #upserts or at_del <= #deletes do
+        local sent, wires, gone = {}, {}, {}
+        for i = at_up, math.min(at_up + M.PUSH_BATCH - 1, #upserts) do
+            table.insert(sent, upserts[i])
+            table.insert(wires, upserts[i].wire)
+        end
+        for i = at_del, math.min(at_del + M.PUSH_BATCH - 1, #deletes) do
+            table.insert(gone, deletes[i])
+        end
+        at_up, at_del = at_up + #sent, at_del + #gone
+        -- An empty array may encode as an object, which the server would refuse.
+        local code, reply, err = deps.post({ upserts = #sent > 0 and wires or nil,
+            deletes = #gone > 0 and gone or nil })
+        local problem = http_problem(code, err)
+        if problem then
+            return problem
+        end
+        if type(reply) ~= "table" or (#sent > 0 and type(reply.results) ~= "table") then
+            return "Omnibus sent a reply this plugin could not read"
+        end
+        settle_results(sent, reply.results or {}, deps, state)
+        for _, id in ipairs(gone) do
+            state.agreed[id] = nil
+            state.result.changed = true
+        end
+    end
+end
+
+-- Bring in what the listing says changed: new highlights, newer versions, deletions.
+local function apply_listing(listing, synced, deps, state)
+    local gone = {}
+    for _, id in ipairs(table_or_nil(listing.deleted) or {}) do
+        if type(id) == "string" then
+            gone[id] = true
+        end
+    end
+    for _, wire in ipairs(listing.annotations) do
+        local id = type(wire) == "table" and wire.id
+        if type(id) == "string" and type(wire.updated_at) == "number" and not gone[id] then
+            local item, entry = state.by_id[id], synced.agreed[id]
+            if not item and not entry then
+                item = deps.add(wire)
+                if item then
+                    state.by_id[id] = item
+                    synced.agreed[id] = agree(fingerprint(item), wire)
+                    state.result.changed = true
+                end
+            elseif item and entry and not (entry.server_at and wire.updated_at <= entry.server_at) then
+                take_server_version(item, wire, entry)
+                synced.agreed[id] = agree(fingerprint(item), wire)
+                state.result.changed = true
+            end
+        end
+    end
+    for id in pairs(gone) do
+        if state.by_id[id] then
+            deps.remove(state.by_id[id])
+            state.by_id[id] = nil
+        end
+        if synced.agreed[id] then
+            synced.agreed[id] = nil
+            state.result.changed = true
+        end
+    end
+    if type(listing.cursor) == "number" and listing.cursor ~= synced.cursor then
+        synced.cursor = listing.cursor
+        state.result.changed = true
+    end
+end
+
+--- Reconcile the open book's highlights with Omnibus: push what changed on the device, then
+--- pull what changed on the server. `items` is the document's annotation list (highlights get
+--- an `omnibus_id` in place), `synced` = { cursor = int, agreed = { [id] = { fp, server_at,
+--- server_color, local_only } } } is mutated, and `deps` = { new_id() -> string,
+--- post(body) -> code|nil, reply|nil, err|nil, get(since) -> code|nil, listing|nil, err|nil,
+--- add(wire) -> item|nil, remove(item) }. `changed` says the caller has something to save,
+--- failure or not. Returns { ok, changed, message }.
+function M.sync_annotations(items, synced, deps)
+    synced.cursor = synced.cursor or 0
+    synced.agreed = synced.agreed or {}
+    local list, by_id, minted = numbered_highlights(items, deps)
+    local result = { ok = true, changed = minted }
+    local state = { agreed = synced.agreed, by_id = by_id, result = result }
+    local function failed(message)
+        result.ok, result.message = false, message
+        return result
+    end
+
+    local upserts, deletes, forgot = outgoing(list, by_id, synced.agreed)
+    result.changed = result.changed or forgot
+    local problem = push(upserts, deletes, deps, state)
+    if problem then
+        return failed(problem)
+    end
+
+    local code, listing, err = deps.get(synced.cursor)
+    problem = http_problem(code, err)
+    if problem then
+        return failed(problem)
+    end
+    if type(listing) ~= "table" or type(listing.annotations) ~= "table" then
+        return failed("Omnibus sent annotations this plugin could not read")
+    end
+    apply_listing(listing, synced, deps, state)
+    return result
 end
 
 local function failure_message(verb, failures)
