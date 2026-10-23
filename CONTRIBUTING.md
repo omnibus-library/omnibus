@@ -125,9 +125,9 @@ package settings along with the pin in `Package.resolved`.
   pick one, or add the `no release` label.
 - **Playwright runs itself when it matters.** The E2E workflow path-filters:
   it runs whenever the diff touches `frontend/`, `shared/`, `server/`, `db/`,
-  `ui_tests/`, or the build inputs, and reports as skipped otherwise. There is
-  no label to add. To force a run on a PR outside those paths, trigger the
-  workflow manually from the Actions tab.
+  `ui_tests/playwright/`, or the build inputs, and reports as skipped
+  otherwise. There is no label to add. To force a run on a PR outside those
+  paths, trigger the workflow manually from the Actions tab.
 - **Open as a draft** if the implementation isn't finished. Ready-for-review
   means the quality gate passes locally.
 

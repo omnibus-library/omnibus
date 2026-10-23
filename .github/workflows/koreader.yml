@@ -2,12 +2,7 @@
 # downloading and opening over OPDS against a freshly seeded scratch server
 # (docs/koreader.md).
 #
-# No workflow-level `paths:` filter: the `koreader-required` gate must report
-# a status on EVERY PR (a required check keyed on a path-filtered workflow
-# never resolves on a PR that doesn't match, which blocks the merge forever).
-# Path gating lives in the `changes` job below; `koreader` skips when nothing
-# lane-relevant changed and the gate treats skipped as pass (AC4).
-# `workflow_dispatch` is the force-run escape hatch; `schedule` is the nightly.
+# No workflow-level paths: (same reasoning as rust.yml); the changes job gates the lane.
 name: KOReader
 
 on:
@@ -35,8 +30,6 @@ jobs:
     outputs:
       koreader: ${{ steps.filter.outputs.koreader }}
     steps:
-      - uses: actions/checkout@v4
-
       # Gated to PRs: a scheduled run has no PR base to diff against.
       - uses: dorny/paths-filter@v3
         id: filter
@@ -46,8 +39,11 @@ jobs:
             koreader:
               - "server/src/backend/opds/**"
               - "server/src/auth/**"
+              - "server/src/backend/ebooks.rs"
               - "db/src/kobo_devices*"
               - "ui_tests/koreader/**"
+              - "test_data/epubs/generated/alpha.epub"
+              - "test_data/epubs/generated/beta.epub"
               - "scripts/koreader-e2e.sh"
               - "scripts/koreader_report.py"
               - "scripts/lib/scratch-server.sh"
