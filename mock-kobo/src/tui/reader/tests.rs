@@ -3,7 +3,7 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::annotations::Swatch;
-use crate::kepub::Kepub;
+use crate::kepub::{Chapter, Kepub, Span, Word};
 use crate::test_support::READER_KEPUB;
 use crate::tui::app::Job;
 
@@ -11,6 +11,38 @@ use super::*;
 
 fn fixture() -> Kepub {
     Kepub::parse(READER_KEPUB).unwrap()
+}
+
+/// A single chapter of `word_count` distinct one-span words, for a
+/// pagination test that cares about scale rather than real prose.
+fn synthetic_chapter(word_count: usize) -> Chapter {
+    let mut words = Vec::with_capacity(word_count);
+    let mut text = String::new();
+    let mut offset = 0u32;
+    for i in 0..word_count {
+        if i > 0 {
+            text.push(' ');
+            offset += 1;
+        }
+        let word = format!("w{i}");
+        let len = u32::try_from(word.len()).unwrap();
+        words.push(Word {
+            span: 0,
+            text: word.clone(),
+            start: offset,
+            end: offset + len,
+        });
+        text.push_str(&word);
+        offset += len;
+    }
+    Chapter {
+        href: "big.xhtml".to_owned(),
+        spans: vec![Span {
+            id: "kobo.1.1".to_owned(),
+            text,
+        }],
+        words,
+    }
 }
 
 fn opened() -> Reader {
@@ -89,6 +121,63 @@ fn paginate_records_the_book_percent_of_each_pages_span() {
     // counts only the words of *earlier* spans (0..=2, 15 words) — not the
     // words of kobo.4.1 before word 19 — matching `Kepub::bookmark`.
     assert_eq!(percents, [0, 10, 18, 41, 52]);
+}
+
+#[test]
+fn paginate_handles_a_long_chapter_at_a_realistic_terminal_size() {
+    let kepub = Kepub {
+        chapters: vec![synthetic_chapter(20_000)],
+    };
+
+    let pages = paginate(&kepub, 0, 80, 24);
+
+    assert!(!pages.is_empty());
+    assert_eq!(*pages[0].lines[0].start(), 0);
+}
+
+#[test]
+fn fit_on_an_unchanged_size_does_not_re_paginate() {
+    let kepub = Kepub {
+        chapters: vec![synthetic_chapter(20_000)],
+    };
+    let mut reader = Reader::open("book-1".into(), Some(kepub));
+    reader.fit(80, 24);
+    let before = reader.pages().as_ptr();
+
+    reader.fit(80, 24);
+
+    assert_eq!(
+        reader.pages().as_ptr(),
+        before,
+        "a re-fit at an unchanged size must not rebuild the cached pages"
+    );
+    assert!(!reader.pages().is_empty());
+}
+
+#[test]
+fn paginate_clamps_zero_width_and_rows_to_one() {
+    let kepub = fixture();
+
+    let pages = paginate(&kepub, 0, 0, 0);
+
+    // width 0 forces one word per line (nothing else fits); rows 0 forces
+    // one line per page — so this chapter's words become one-word pages.
+    assert_eq!(pages.len(), kepub.chapters[0].words.len());
+    assert!(
+        pages
+            .iter()
+            .all(|p| p.lines.len() == 1 && p.lines[0].clone().count() == 1),
+        "{pages:?}"
+    );
+}
+
+#[test]
+fn paginate_puts_a_word_wider_than_the_width_on_its_own_line() {
+    let kepub = fixture();
+
+    let lines = all_lines(&paginate(&kepub, 0, 5, 3));
+
+    assert_eq!(lines[0], 0..=0, "\"Chapter\" (7 wide) alone exceeds width 5");
 }
 
 #[test]

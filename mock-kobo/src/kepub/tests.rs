@@ -161,6 +161,23 @@ fn highlight_carries_utf16_offsets_over_astral_and_accented_words() {
 }
 
 #[test]
+fn highlight_carries_utf16_offsets_over_an_astral_fraktur_word() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+    let ch2 = &kepub.chapters[1];
+    // "ridge" (word 17) through the astral Fraktur "𝔨𝔞𝔦𝔫𝔞𝔦" (word 18, 6
+    // characters each outside the BMP — 2 UTF-16 units apiece), both
+    // inside kobo.3.1: "Travelers called that cold ridge 𝔨𝔞𝔦𝔫𝔞𝔦 in old maps."
+    let highlight = ch2.highlight(17..=18, crate::annotations::Swatch::Green, None);
+
+    assert_eq!(highlight.text, "ridge 𝔨𝔞𝔦𝔫𝔞𝔦");
+    let location = highlight.location.unwrap();
+    assert_eq!(location.start_span, "kobo.3.1");
+    assert_eq!(location.start_char, 27);
+    assert_eq!(location.end_span, "kobo.3.1");
+    assert_eq!(location.end_char, 45);
+}
+
+#[test]
 fn highlight_crosses_spans_with_the_books_own_spacing() {
     let kepub = Kepub::parse(READER_KEPUB).unwrap();
     let ch1 = &kepub.chapters[0];
