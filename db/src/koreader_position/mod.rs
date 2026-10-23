@@ -51,6 +51,7 @@ pub fn cfi_to_xpointer(source_epub: &Path, cfi: &str) -> anyhow::Result<Option<S
         &mut Walks::new(),
         parsed.spine_index,
         &parsed.tail,
+        parsed.element_anchored,
     )
 }
 
@@ -79,6 +80,7 @@ fn tail_xpointer(
     walks: &mut Walks,
     spine_index: usize,
     tail: &CfiTail,
+    element_anchored: bool,
 ) -> anyhow::Result<Option<String>> {
     let Ok(fragment) = u32::try_from(spine_index + 1) else {
         return Ok(None);
@@ -90,7 +92,7 @@ fn tail_xpointer(
     let Some(index) = spine_file_index(doc, walks, spine_index)? else {
         return Ok(None);
     };
-    Ok(xpointer_for(index, tail, named))
+    Ok(xpointer_for(index, tail, element_anchored, named))
 }
 
 /// The 0-based spine index a `DocFragment` names: bare only for a one-item
@@ -165,12 +167,17 @@ fn first_text_tail(index: &FileIndex, element: usize) -> Option<CfiTail> {
     let (tail, _) = index.tail_at(first.norm_start)?;
     let landed = exact_cluster(index, &tail)?;
     let inside = ancestors(elements, landed.parent).any(|a| a == element);
-    (inside && !inside_unprovable(elements, landed.parent)).then_some(tail)
+    (inside && stable_run(landed) && !inside_unprovable(elements, landed.parent)).then_some(tail)
 }
 
 /// The canonical XPointer for a CFI tail; `fragment` is `None` for a one-item spine.
-fn xpointer_for(index: &FileIndex, tail: &CfiTail, fragment: Option<u32>) -> Option<String> {
-    let (cluster, utf16_offset) = landed_cluster(index, tail)?;
+fn xpointer_for(
+    index: &FileIndex,
+    tail: &CfiTail,
+    element_anchored: bool,
+    fragment: Option<u32>,
+) -> Option<String> {
+    let (cluster, utf16_offset) = landed_cluster(index, tail, element_anchored)?;
     let elements = index.elements();
     if inside_unprovable(elements, cluster.parent) {
         return None;
@@ -197,22 +204,24 @@ fn xpointer_for(index: &FileIndex, tail: &CfiTail, fragment: Option<u32>) -> Opt
 }
 
 /// The cluster a tail names, with the offset to use in it. An element-anchored
-/// tail (`text_index` 1, offset 0, no such node) lands on the element's first
-/// visible character, which must still be inside that element.
-fn landed_cluster<'a>(index: &'a FileIndex, tail: &CfiTail) -> Option<(&'a Cluster, u32)> {
-    if let Some(cluster) = exact_cluster(index, tail) {
-        return Some((cluster, tail.offset_utf16));
+/// tail lands on the element's first visible character, which must still be
+/// inside that element.
+fn landed_cluster<'a>(
+    index: &'a FileIndex,
+    tail: &CfiTail,
+    element_anchored: bool,
+) -> Option<(&'a Cluster, u32)> {
+    if !element_anchored {
+        return exact_cluster(index, tail).map(|cluster| (cluster, tail.offset_utf16));
     }
-    if tail.text_index != 1 || tail.offset_utf16 != 0 {
-        return None;
-    }
-    let anchor = index.offset_at(tail)?;
-    let (landed, _) = index.tail_at(anchor.norm_offset)?;
+    let under = |c: &Cluster| c.element_steps.starts_with(&tail.element_steps);
+    let first = index
+        .clusters()
+        .iter()
+        .find(|c| c.norm_len > 0 && under(c))?;
+    let (landed, _) = index.tail_at(first.norm_start)?;
     let cluster = exact_cluster(index, &landed)?;
-    cluster
-        .element_steps
-        .starts_with(&tail.element_steps)
-        .then_some((cluster, landed.offset_utf16))
+    under(cluster).then_some((cluster, landed.offset_utf16))
 }
 
 fn exact_cluster<'a>(index: &'a FileIndex, tail: &CfiTail) -> Option<&'a Cluster> {
@@ -239,16 +248,23 @@ fn stable_run(cluster: &Cluster) -> bool {
         && !crengine_text::is_blank(&cluster.raw)
 }
 
-/// The `index`-th (1-based) child element of `parent` named `name`, ASCII
-/// case-insensitively.
-fn child_element(elements: &[Element], parent: usize, name: &str, index: u32) -> Option<usize> {
-    let nth = usize::try_from(index).ok()?.checked_sub(1)?;
+/// The child elements of `parent` named `name` (ASCII case-insensitively), in document order.
+fn same_name_siblings<'a>(
+    elements: &'a [Element],
+    parent: Option<usize>,
+    name: &'a str,
+) -> impl Iterator<Item = usize> + 'a {
     elements
         .iter()
         .enumerate()
-        .filter(|(_, e)| e.parent == Some(parent) && e.local.eq_ignore_ascii_case(name))
-        .nth(nth)
+        .filter(move |(_, e)| e.parent == parent && e.local.eq_ignore_ascii_case(name))
         .map(|(i, _)| i)
+}
+
+/// The `index`-th (1-based) child element of `parent` named `name`.
+fn child_element(elements: &[Element], parent: usize, name: &str, index: u32) -> Option<usize> {
+    let nth = usize::try_from(index).ok()?.checked_sub(1)?;
+    same_name_siblings(elements, Some(parent), name).nth(nth)
 }
 
 /// `idx` and its ancestors, nearest first.
@@ -282,12 +298,8 @@ fn element_path(elements: &[Element], idx: usize) -> Option<Vec<(String, Option<
             if !xpointer::is_name(&name) {
                 return None;
             }
-            let siblings: Vec<usize> = (0..elements.len())
-                .filter(|&s| {
-                    elements[s].parent == elements[i].parent
-                        && elements[s].local.eq_ignore_ascii_case(&name)
-                })
-                .collect();
+            let siblings: Vec<usize> =
+                same_name_siblings(elements, elements[i].parent, &name).collect();
             let position = siblings.iter().position(|&s| s == i)? + 1;
             Some((name, (siblings.len() > 1).then_some(position as u32)))
         })

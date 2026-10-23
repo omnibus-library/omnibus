@@ -4,14 +4,9 @@
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::ebook::test_support::fixture;
 use crate::kobo_position::{book, format_cfi, walk, CfiTail};
 use crate::test_support::{build_test_epub, make_test_dir};
-
-fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../test_data/epubs/generated")
-        .join(name)
-}
 
 /// Write an EPUB whose spine items are the given `<body>` contents, in order.
 fn epub_of(tag: &str, bodies: &[&str]) -> PathBuf {
@@ -54,7 +49,7 @@ mod literals {
     use super::*;
 
     #[test]
-    fn converts_a_single_chapter_paragraph_both_ways() {
+    fn xpointer_and_cfi_convert_a_single_chapter_paragraph_both_ways() {
         assert_pair(
             &fixture("alpha.epub"),
             "/body/DocFragment/body/p/text().10",
@@ -63,7 +58,7 @@ mod literals {
     }
 
     #[test]
-    fn converts_the_sixth_spine_item_of_a_multi_item_book_both_ways() {
+    fn xpointer_and_cfi_convert_the_sixth_spine_item_of_a_multi_item_book_both_ways() {
         assert_pair(
             &fixture("frontmatter-relay.epub"),
             "/body/DocFragment[6]/body/p/text().10",
@@ -72,7 +67,7 @@ mod literals {
     }
 
     #[test]
-    fn converts_the_twenty_third_paragraph_of_a_long_chapter_both_ways() {
+    fn xpointer_and_cfi_convert_the_twenty_third_paragraph_of_a_long_chapter_both_ways() {
         assert_pair(
             &fixture("standalone-lagoon.epub"),
             "/body/DocFragment/body/p[23]/text().43",
@@ -81,7 +76,7 @@ mod literals {
     }
 
     #[test]
-    fn maps_a_collapsed_whitespace_run_to_its_raw_offset() {
+    fn xpointer_to_cfi_maps_a_collapsed_whitespace_run_to_its_raw_offset() {
         let epub = one_chapter("collapse", "<p>\n  Hello  world</p>");
         assert_pair(
             &epub,
@@ -91,7 +86,7 @@ mod literals {
     }
 
     #[test]
-    fn keeps_one_space_of_leading_whitespace() {
+    fn xpointer_to_cfi_keeps_one_space_of_leading_whitespace() {
         let epub = one_chapter("leading", "<p>\n  Hello</p>");
         assert_pair(
             &epub,
@@ -101,7 +96,7 @@ mod literals {
     }
 
     #[test]
-    fn round_trips_an_offset_on_a_kept_space() {
+    fn xpointer_and_cfi_round_trip_an_offset_on_a_kept_space() {
         let epub = one_chapter("kept_space", "<p>\n  Hello  world</p>");
         assert_pair(
             &epub,
@@ -111,7 +106,7 @@ mod literals {
     }
 
     #[test]
-    fn counts_an_astral_character_as_two_utf16_units() {
+    fn xpointer_to_cfi_counts_an_astral_character_as_two_utf16_units() {
         let epub = one_chapter("astral", "<p>a\u{1F600}b</p>");
         assert_pair(
             &epub,
@@ -121,7 +116,7 @@ mod literals {
     }
 
     #[test]
-    fn maps_a_cfi_inside_a_collapsed_run_to_the_runs_kept_space() {
+    fn cfi_to_xpointer_maps_a_cfi_inside_a_collapsed_run_to_the_runs_kept_space() {
         let epub = one_chapter("inside_run", "<p>\n  Hello  world</p>");
         assert_eq!(
             to_xpointer(&epub, "epubcfi(/6/2!/4/2/1:9)").as_deref(),
@@ -130,7 +125,7 @@ mod literals {
     }
 
     #[test]
-    fn names_the_second_of_several_paragraphs_and_text_nodes_canonically() {
+    fn xpointer_and_cfi_name_the_second_paragraph_and_text_node_canonically() {
         let epub = one_chapter("canonical", "<p>one</p><p>Hello <em>x</em> tail</p>");
         assert_pair(
             &epub,
@@ -140,7 +135,7 @@ mod literals {
     }
 
     #[test]
-    fn lowercases_element_names_and_accepts_equivalent_index_spellings() {
+    fn xpointer_and_cfi_agree_across_name_case_and_index_spellings() {
         let epub = one_chapter("spellings", "<p>one</p><P>two</P>");
         let cfi = "epubcfi(/6/2!/4/4/1:1)";
         assert_eq!(
@@ -158,7 +153,7 @@ mod element_pointers {
     use super::*;
 
     #[test]
-    fn lands_on_the_first_visible_character_inside_the_element() {
+    fn xpointer_to_cfi_lands_on_the_first_visible_character_inside_an_element() {
         let epub = one_chapter("element", "<p><em>Lead</em> rest</p>");
         let cfi = Some("epubcfi(/6/2!/4/2/2/1:0)".to_string());
         assert_eq!(to_cfi(&epub, "/body/DocFragment/body/p"), cfi);
@@ -166,9 +161,34 @@ mod element_pointers {
     }
 
     #[test]
-    fn yields_nothing_for_an_element_without_visible_text() {
+    fn xpointer_to_cfi_yields_nothing_for_an_element_without_visible_text() {
         let epub = one_chapter("empty_element", "<p><img src=\"x.png\"/></p><p>text</p>");
         assert_eq!(to_cfi(&epub, "/body/DocFragment/body/p[1]"), None);
+    }
+}
+
+mod repairs {
+    use super::*;
+
+    #[test]
+    fn cfi_to_xpointer_lands_an_element_anchored_cfi_on_the_first_visible_character() {
+        let epub = one_chapter("anchored", "<p><em>Lead</em> rest</p>");
+        assert_eq!(
+            to_xpointer(&epub, "epubcfi(/6/2!/4/2)").as_deref(),
+            Some("/body/DocFragment/body/p/em/text().0")
+        );
+    }
+
+    #[test]
+    fn xpointer_to_cfi_yields_nothing_after_an_unresolved_entity_across_an_element_boundary() {
+        let epub = one_chapter("entity_boundary", "<p>&bogus;<br/>a  b  c</p>");
+        assert_eq!(to_cfi(&epub, "/body/DocFragment/body/p/text().4"), None);
+    }
+
+    #[test]
+    fn xpointer_to_cfi_yields_nothing_for_an_element_whose_first_run_holds_markup() {
+        let epub = one_chapter("element_markup", "<p> <!--x-->Hello</p>");
+        assert_eq!(to_cfi(&epub, "/body/DocFragment/body/p"), None);
     }
 }
 
@@ -340,7 +360,7 @@ mod errors {
     use super::*;
 
     #[test]
-    fn both_directions_fail_when_the_epub_does_not_exist() {
+    fn xpointer_and_cfi_fail_when_the_epub_does_not_exist() {
         let missing = Path::new("/nonexistent/omnibus/book.epub");
         assert!(xpointer_to_cfi(missing, "/body/DocFragment/body/p/text().1").is_err());
         assert!(cfi_to_xpointer(missing, "epubcfi(/6/2!/4/4/1:1)").is_err());
@@ -382,8 +402,7 @@ mod fixture_round_trips {
                     let Some(xp) = to_xpointer(path, &cfi) else {
                         continue;
                     };
-                    assert_eq!(to_cfi(path, &xp), Some(cfi.clone()), "{path:?} {xp}");
-                    assert_eq!(to_xpointer(path, &cfi), Some(xp), "{path:?} {cfi}");
+                    assert_eq!(to_cfi(path, &xp), Some(cfi), "{path:?} {xp}");
                     count += 1;
                 }
             }
@@ -392,7 +411,7 @@ mod fixture_round_trips {
     }
 
     #[test]
-    fn every_generated_epub_round_trips_between_cfi_and_xpointer() {
+    fn cfi_to_xpointer_and_back_round_trips_every_generated_epub() {
         let dir = fixture("alpha.epub").parent().unwrap().to_path_buf();
         let mut seen = 0;
         for entry in std::fs::read_dir(dir).unwrap() {

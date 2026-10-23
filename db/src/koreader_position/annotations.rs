@@ -71,10 +71,10 @@ fn range_xpointers(
     let Some(range) = parse_range_cfi(cfi) else {
         return Ok(None);
     };
-    let Some(start) = tail_xpointer(doc, walks, range.spine_index, &range.start)? else {
+    let Some(start) = tail_xpointer(doc, walks, range.spine_index, &range.start, false)? else {
         return Ok(None);
     };
-    let Some(end) = tail_xpointer(doc, walks, range.spine_index, &range.end)? else {
+    let Some(end) = tail_xpointer(doc, walks, range.spine_index, &range.end, false)? else {
         return Ok(None);
     };
     Ok(Some((start, end)))

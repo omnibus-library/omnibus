@@ -40,7 +40,9 @@ pub(crate) struct Element {
 /// One coalesced text cluster in the source DOM: its CFI address plus the
 /// raw text and enough state to replay normalization inside it.
 pub(crate) struct Cluster {
+    /// CFI steps of the element holding the text, from the root's children down.
     pub element_steps: Vec<u32>,
+    /// The odd CFI step of this text node among its parent's children.
     pub text_index: u32,
     /// Index into the element table of the element holding the text.
     pub parent: usize,
@@ -194,14 +196,13 @@ struct Builder {
     elements: Vec<Element>,
     /// Element-table index per open element, root included.
     open: Vec<usize>,
-    /// Markup that arrived before any text: flags the cluster it precedes.
-    markup_pending: bool,
+    /// The element whose next text cluster is flagged: markup arrived before any of its text.
+    markup_pending: Option<usize>,
 }
 
 impl Builder {
     fn element_start(&mut self, local: &str, qname: &str, id: Option<&str>) {
         self.open_cluster = None;
-        self.markup_pending = false;
         // The root element carries no step (the CFI tail starts at its
         // children); every other element is step 2k among its siblings.
         if let Some(count) = self.child_counts.last_mut() {
@@ -227,7 +228,6 @@ impl Builder {
 
     fn element_end(&mut self, _local: &str) {
         self.open_cluster = None;
-        self.markup_pending = false;
         self.open.pop();
         self.child_counts.pop();
         self.text_counts.pop();
@@ -246,12 +246,21 @@ impl Builder {
         }
     }
 
-    /// [`Builder::flag_markup`], or the next cluster when none is open yet.
+    /// Whether markup preceded this cluster's first text in its element; consumed once.
+    fn take_pending_markup(&mut self) -> bool {
+        if self.markup_pending.is_some() && self.markup_pending == self.open.last().copied() {
+            self.markup_pending = None;
+            return true;
+        }
+        false
+    }
+
+    /// [`Builder::flag_markup`], or the next cluster of this element when none is open yet.
     fn flag_markup_or_next(&mut self) {
         if self.open_cluster.is_some() {
             self.flag_markup();
         } else {
-            self.markup_pending = true;
+            self.markup_pending = self.open.last().copied();
         }
     }
 
@@ -266,11 +275,12 @@ impl Builder {
                 if let Some(t) = self.text_counts.last_mut() {
                     *t += 1;
                 }
+                let markup_inside = self.take_pending_markup();
                 self.clusters.push(Cluster {
                     element_steps: self.steps.clone(),
                     text_index: clusters_so_far * 2 + 1,
                     parent: self.open.last().copied().unwrap_or_default(),
-                    markup_inside: std::mem::take(&mut self.markup_pending),
+                    markup_inside,
                     source_bytes: 0,
                     norm_start: self.norm_len,
                     norm_len: 0,

@@ -109,6 +109,7 @@ pub async fn set_read_status_tx(
          ON CONFLICT(user_id, book_uuid) DO UPDATE SET
              status = excluded.status,
              updated_at = strftime('%s','now'),
+             auto_started = 0,
              finished_at = CASE
                  WHEN excluded.status = 'finished'
                      THEN COALESCE(book_read_status.finished_at, strftime('%s','now'))
@@ -126,8 +127,9 @@ pub async fn set_read_status_tx(
 }
 
 /// [`set_read_status_tx`], but newest-wins on `event_at` (unix seconds, clamped to now): the
-/// write lands only if it is `>=` the stored `updated_at`, and stamps that time (and
-/// `finished_at` on a move into finished). Returns the surviving record.
+/// write lands only if it is `>=` the stored `updated_at` (or the stored status is one a position
+/// started, which no explicit status loses to), and stamps that time (and `finished_at` on a move
+/// into finished). Returns the surviving record.
 pub async fn set_read_status_at_tx(
     tx: &mut Transaction<'_, Sqlite>,
     user_id: i64,
@@ -147,12 +149,14 @@ pub async fn set_read_status_at_tx(
          ON CONFLICT(user_id, book_uuid) DO UPDATE SET
              status = excluded.status,
              updated_at = excluded.updated_at,
+             auto_started = 0,
              finished_at = CASE
                  WHEN excluded.status = 'finished'
                      THEN COALESCE(book_read_status.finished_at, excluded.updated_at)
                  ELSE NULL
              END
-         WHERE excluded.updated_at >= book_read_status.updated_at",
+         WHERE excluded.updated_at >= book_read_status.updated_at
+            OR book_read_status.auto_started = 1",
     )
     .bind(user_id)
     .bind(&book_uuid)

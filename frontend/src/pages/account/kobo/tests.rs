@@ -109,11 +109,16 @@ mod render_tests {
     }
 
     fn row_with(device: KoboDeviceView) -> Element {
+        row_for(device, true)
+    }
+
+    fn row_for(device: KoboDeviceView, can_download: bool) -> Element {
         rsx! {
             KoboDeviceRow {
                 device,
                 endpoint: "https://omni.example.com/kobo/tok123".to_string(),
                 plugin_url: "https://omni.example.com/api/account/kobo-devices/1/koreader-plugin".to_string(),
+                can_download,
                 disabled: false,
                 on_regenerate: Callback::new(|_| {}),
                 on_remove: Callback::new(|_| {}),
@@ -169,7 +174,14 @@ mod render_tests {
     }
 
     fn empty_device_list() -> Element {
-        render_kobo_device_list(&[], "", false, Callback::new(|_| {}), Callback::new(|_| {}))
+        render_kobo_device_list(
+            &[],
+            "",
+            true,
+            false,
+            Callback::new(|_| {}),
+            Callback::new(|_| {}),
+        )
     }
 
     #[test]
@@ -227,6 +239,26 @@ mod render_tests {
             "{html}"
         );
         assert!(html.contains(r#"aria-label="Remove Kobo Clara""#), "{html}");
+        let koreader = render_in_vdom(koreader_row);
+        assert!(
+            koreader.contains(r#"aria-label="Download the plugin for Libra""#),
+            "{koreader}"
+        );
+    }
+
+    #[test]
+    fn kobo_device_row_hides_the_plugin_download_when_the_reader_may_not_download() {
+        let html = render_in_vdom(|| {
+            row_for(
+                KoboDeviceView {
+                    kind: DeviceKind::Koreader,
+                    ..device_of_named("Libra")
+                },
+                false,
+            )
+        });
+        assert!(!html.contains("koreader-plugin-download"), "{html}");
+        assert!(html.contains("Libra"), "{html}");
     }
 
     #[test]
@@ -253,7 +285,7 @@ mod render_tests {
             "{html}"
         );
         assert!(
-            html.contains(r#"download="omnibus.koplugin.zip""#),
+            html.contains(r#"download="omnibus-koreader-1.zip""#),
             "{html}"
         );
         assert!(!render_in_vdom(device_row).contains("koreader-plugin-download"));
@@ -283,8 +315,7 @@ mod render_tests {
             "{html}"
         );
         assert!(
-            html.contains("Last sync failed: Couldn&#39;t download Alpha: 404")
-                || html.contains("Last sync failed: Couldn't download Alpha: 404"),
+            html.contains("Last sync failed: Couldn&#39;t download Alpha: 404"),
             "{html}"
         );
     }

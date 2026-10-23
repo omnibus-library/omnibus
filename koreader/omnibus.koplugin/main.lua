@@ -13,6 +13,7 @@ download, holds the server URL and this device's token.
 local BookList = require("ui/widget/booklist")
 local DataStorage = require("datastorage")
 local DocSettings = require("docsettings")
+local DocumentRegistry = require("document/documentregistry")
 local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
 local JSON = require("json")
@@ -22,6 +23,7 @@ local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local _ = require("gettext")
+local ffiutil = require("ffi/util")
 local filemanagerutil = require("apps/filemanager/filemanagerutil")
 local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
@@ -90,17 +92,17 @@ end
 
 -- The server URL and token from omnibus.json, or nil when it is missing or unreadable.
 function Omnibus:loadConfig()
-    local file = io.open(self.path .. "/omnibus.json", "r")
-    if not file then
+    local path = self.path .. "/omnibus.json"
+    if lfs.attributes(path, "mode") ~= "file" then
         return nil
     end
-    local text = file:read("*a")
-    file:close()
-    local ok, config = pcall(JSON.decode, text)
+    local ok, config = pcall(JSON.decode, util.readFromFile(path, "rb") or "")
     if ok and type(config) == "table" and type(config.server_url) == "string"
         and type(config.token) == "string" then
-        config.server_url = config.server_url:gsub("/+$", "")
-        return config
+        config.server_url = config.server_url:match("^%s*(.-)%s*$"):gsub("/+$", "")
+        if config.server_url ~= "" then
+            return config
+        end
     end
 end
 
@@ -109,46 +111,74 @@ local function sync_dir()
     return (home:gsub("/+$", "")) .. "/" .. FOLDER
 end
 
--- GET `url` (send `put_body`, a JSON string, with PUT or the `method` given) with the device
--- token and no redirects, so the token only ever reaches the configured server;
--- `extra_headers` are sent as well. Returns the status code and the response headers (names
--- in lower case), or nil and the error.
-local function fetch(url, token, sink, block_timeout, total_timeout, put_body, extra_headers, method)
-    local headers = { Authorization = "Bearer " .. token }
-    if put_body then
-        headers["Content-Type"] = "application/json"
-        headers["Content-Length"] = #put_body
-    end
-    for name, value in pairs(extra_headers or {}) do
-        headers[name] = value
-    end
-    socketutil:set_timeout(block_timeout, total_timeout)
-    local code, response_headers = socket.skip(1, http.request{
-        url = url,
-        method = method or (put_body and "PUT" or "GET"),
-        headers = headers,
-        source = put_body and ltn12.source.string(put_body) or nil,
-        sink = sink,
-        redirect = false,
-    })
+-- One request with the device token and no redirects, so the token only ever reaches the
+-- configured server. `opts.sink` builds the sink after the timeouts are set, because
+-- socketutil's sinks read them; `opts.if_none_match` makes the GET conditional. Returns the
+-- status code and the response headers (names in lower case), or nil and the error.
+local function request(url, token, opts)
+    socketutil:set_timeout(opts.block_timeout, opts.total_timeout)
+    local ok, code, headers = pcall(function()
+        local req = {
+            url = url,
+            method = opts.method or "GET",
+            headers = { Authorization = "Bearer " .. token, ["If-None-Match"] = opts.if_none_match },
+            sink = opts.sink(),
+            redirect = false,
+        }
+        if opts.body then
+            req.headers["Content-Type"] = "application/json"
+            req.headers["Content-Length"] = #opts.body
+            req.source = ltn12.source.string(opts.body)
+        end
+        return socket.skip(1, http.request(req))
+    end)
     socketutil:reset_timeout()
-    if type(code) == "number" then
-        return code, response_headers
+    if ok and type(code) == "number" then
+        return code, headers
     end
     return nil, tostring(code)
 end
 
+-- One JSON call to the server: the status code and the decoded body (nil when unreadable), or
+-- nil, nil and the error. `body` is a table to send as JSON.
+local function call_json(config, method, path, body, block_timeout, total_timeout)
+    local chunks = {}
+    local code, err = request(config.server_url .. path, config.token, {
+        method = method,
+        body = body and JSON.encode(body),
+        sink = function()
+            return socketutil.table_sink(chunks)
+        end,
+        block_timeout = block_timeout,
+        total_timeout = total_timeout,
+    })
+    if not code then
+        return nil, nil, err
+    end
+    local ok, decoded = pcall(JSON.decode, table.concat(chunks))
+    return code, ok and decoded or nil
+end
+
 function Omnibus:library_getter(config)
     return function()
-        local chunks = {}
-        local code, err = fetch(config.server_url .. "/koreader/v1/library", config.token,
-            ltn12.sink.table(chunks), socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
-        if not code then
-            return nil, nil, err
-        end
-        local ok, body = pcall(JSON.decode, table.concat(chunks))
-        return code, ok and body or nil
+        return call_json(config, "GET", "/koreader/v1/library", nil,
+            socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
     end
+end
+
+-- Flush the finished part file, then the folder entry the rename creates, so a power cut
+-- cannot leave an empty book that the manifest already counts as delivered.
+local function publish(part, path)
+    local written = io.open(part, "rb")
+    if written then
+        ffiutil.fsyncOpenedFile(written)
+        written:close()
+    end
+    local renamed, rename_err = os.rename(part, path)
+    if renamed then
+        ffiutil.fsyncDirectory(path)
+    end
+    return renamed, rename_err
 end
 
 -- Download one book to `path` through a `.part` file, so a failed download leaves the book the
@@ -158,17 +188,22 @@ function Omnibus:book_downloader(config)
     return function(book, path, if_none_match)
         local url = sync.book_url(config.server_url, book)
         if not url then
-            return false, "unexpected download address"
+            return false, "unexpected download address. Download the plugin again from Settings › Devices."
         end
         local part = path .. ".part"
         local file, open_err = io.open(part, "wb")
         if not file then
             return false, open_err
         end
-        local code, headers = fetch(url, config.token, ltn12.sink.file(file),
-            socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT, nil,
-            if_none_match and { ["If-None-Match"] = if_none_match } or nil)
-        -- A bodiless answer never reaches the sink, which would have closed the file.
+        local code, headers = request(url, config.token, {
+            sink = function()
+                return socketutil.file_sink(file)
+            end,
+            block_timeout = socketutil.FILE_BLOCK_TIMEOUT,
+            total_timeout = socketutil.FILE_TOTAL_TIMEOUT,
+            if_none_match = if_none_match,
+        })
+        -- LuaSocket skips the sink's terminator when a request fails before the body.
         pcall(file.close, file)
         if code == 304 then
             os.remove(part)
@@ -177,7 +212,7 @@ function Omnibus:book_downloader(config)
             os.remove(part)
             return false, code and ("HTTP " .. code) or headers
         end
-        local renamed, rename_err = os.rename(part, path)
+        local renamed, rename_err = publish(part, path)
         if not renamed then
             os.remove(part)
             return false, rename_err
@@ -186,17 +221,33 @@ function Omnibus:book_downloader(config)
     end
 end
 
-local COVER_EXTENSIONS = { ["image/jpeg"] = "jpg", ["image/png"] = "png", ["image/gif"] = "gif",
-    ["image/webp"] = "webp" }
 local CUSTOM_PROP_KEYS = { "title", "authors", "series", "series_index", "description" }
 
+-- The properties of the book's own file, which "Reset custom" restores; nil when it can't be read.
+local function file_props(path)
+    if not DocumentRegistry:hasProvider(path) then
+        return nil
+    end
+    local document = DocumentRegistry:openDocument(path)
+    if not document then
+        return nil
+    end
+    local props
+    if not document.loadDocument or document:loadDocument(false) then -- metadata only
+        props = document:getProps()
+    end
+    document:close()
+    return props
+end
+
 -- Write the book's metadata as KOReader's own "custom metadata", the way Book information
--- does: the five fields in the book's metadata file, which the file itself is never edited for.
+-- does: the five fields over a copy of the file's own, which the file itself is never edited for.
 local function write_custom_props(book, path)
     local props = sync.custom_props(book)
     local custom = DocSettings.openSettingsFile(DocSettings:findCustomMetadataFile(path))
-    if not custom:readSetting("doc_props") then
-        custom:saveSetting("doc_props", {})
+    local own = file_props(path)
+    if own or not custom:readSetting("doc_props") then
+        custom:saveSetting("doc_props", own or {})
     end
     local custom_props = custom:readSetting("custom_props", {})
     for _, key in ipairs(CUSTOM_PROP_KEYS) do
@@ -215,25 +266,28 @@ local function remove_custom_cover(path)
     end
 end
 
--- Make the server's cover the book's custom cover; a book with none loses the custom one.
+-- Make the server's cover the book's custom cover. A book the server has no usable cover for
+-- (none, or a type KOReader can't show) loses the custom one and shows its own.
 function Omnibus:write_custom_cover(config, book, path)
     local url = sync.cover_url(config.server_url, book)
     if not url then
-        return false, "unexpected cover address"
+        remove_custom_cover(path)
+        return true
     end
     local chunks = {}
-    local code, headers = fetch(url, config.token, ltn12.sink.table(chunks),
-        socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
-    if code == 404 then
+    local code, headers = request(url, config.token, {
+        sink = function()
+            return socketutil.table_sink(chunks)
+        end,
+        block_timeout = socketutil.LARGE_BLOCK_TIMEOUT,
+        total_timeout = socketutil.LARGE_TOTAL_TIMEOUT,
+    })
+    local extension = code == 200 and sync.cover_extension(headers["content-type"])
+    if code == 404 or code == 200 and not extension then
         remove_custom_cover(path)
         return true
     elseif code ~= 200 then
         return false, code and ("cover HTTP " .. code) or headers
-    end
-    local content_type = (headers["content-type"] or ""):match("^[^;]*"):lower()
-    local extension = COVER_EXTENSIONS[content_type]
-    if not extension then
-        return false, "unsupported cover type " .. content_type
     end
     local cache = DataStorage:getDataDir() .. "/cache"
     util.makePath(cache)
@@ -242,11 +296,15 @@ function Omnibus:write_custom_cover(config, book, path)
     if not written then
         return false, write_err
     end
-    remove_custom_cover(path)
+    local old = DocSettings:findCustomCoverFile(path)
     local flushed = DocSettings:flushCustomCover(path, image)
     os.remove(image)
     if not flushed then
         return false, "couldn't write the custom cover"
+    end
+    -- The new cover replaced a same-named one; a different extension leaves the old to remove.
+    if old and old:match("[^/]*$") ~= "cover." .. extension then
+        os.remove(old)
     end
     return true
 end
@@ -266,45 +324,29 @@ end
 -- Best effort: a report that cannot be delivered is dropped, the device still shows the result.
 function Omnibus:reporter(config)
     return function(error_text)
-        local body = JSON.encode({ error = error_text or JSON.util.null })
-        pcall(function()
-            socketutil:set_timeout(socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
-            http.request{
-                url = config.server_url .. "/koreader/v1/sync-report",
-                method = "POST",
-                headers = {
-                    Authorization = "Bearer " .. config.token,
-                    ["Content-Type"] = "application/json",
-                    ["Content-Length"] = #body,
-                },
-                source = ltn12.source.string(body),
-                sink = ltn12.sink.null(),
-                redirect = false,
-            }
-            socketutil:reset_timeout()
-        end)
+        request(config.server_url .. "/koreader/v1/sync-report", config.token, {
+            method = "POST",
+            body = JSON.encode({ error = error_text or JSON.util.null }),
+            sink = ltn12.sink.null,
+            block_timeout = socketutil.LARGE_BLOCK_TIMEOUT,
+            total_timeout = socketutil.LARGE_TOTAL_TIMEOUT,
+        })
     end
 end
 
--- GET one book's server-side state: the status code and decoded body, or nil and the error.
+-- GET one book's server-side state: the status code and decoded body, or nil, nil and the error.
 function Omnibus:state_getter(config)
     return function(uuid)
-        local chunks = {}
-        local code, err = fetch(config.server_url .. "/koreader/v1/books/" .. uuid .. "/state",
-            config.token, ltn12.sink.table(chunks), STATE_BLOCK_TIMEOUT, STATE_TOTAL_TIMEOUT)
-        if not code then
-            return nil, nil, err
-        end
-        local ok, body = pcall(JSON.decode, table.concat(chunks))
-        return code, ok and body or nil
+        return call_json(config, "GET", "/koreader/v1/books/" .. uuid .. "/state", nil,
+            STATE_BLOCK_TIMEOUT, STATE_TOTAL_TIMEOUT)
     end
 end
 
--- PUT one book's state: the status code, or nil and the error.
+-- PUT one book's state: the status code and the state the server now holds, or nil, nil and the error.
 function Omnibus:state_putter(config)
     return function(uuid, body)
-        return fetch(config.server_url .. "/koreader/v1/books/" .. uuid .. "/state", config.token,
-            ltn12.sink.null(), STATE_BLOCK_TIMEOUT, STATE_TOTAL_TIMEOUT, JSON.encode(body))
+        return call_json(config, "PUT", "/koreader/v1/books/" .. uuid .. "/state", body,
+            STATE_BLOCK_TIMEOUT, STATE_TOTAL_TIMEOUT)
     end
 end
 
@@ -312,24 +354,16 @@ end
 -- and adding and removing a highlight the way the reader itself does.
 function Omnibus:annotation_deps(config, uuid)
     local ui = self.ui
-    local url = config.server_url .. "/koreader/v1/books/" .. uuid .. "/annotations"
-    local function call(request_url, body)
-        local chunks = {}
-        local code, err = fetch(request_url, config.token, ltn12.sink.table(chunks), STATE_BLOCK_TIMEOUT,
-            STATE_TOTAL_TIMEOUT, body and JSON.encode(body), nil, body and "POST" or "GET")
-        if not code then
-            return nil, nil, err
-        end
-        local ok, reply = pcall(JSON.decode, table.concat(chunks))
-        return code, ok and reply or nil
-    end
+    local path = "/koreader/v1/books/" .. uuid .. "/annotations"
     return {
         new_id = new_id,
         post = function(body)
-            return call(url, body)
+            return call_json(config, "POST", path, body, socketutil.LARGE_BLOCK_TIMEOUT,
+                socketutil.LARGE_TOTAL_TIMEOUT)
         end,
         get = function(since)
-            return call(url .. string.format("?since=%d", since))
+            return call_json(config, "GET", path .. string.format("?since=%d", since), nil,
+                socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
         end,
         add = function(wire)
             local document = ui.document
@@ -370,6 +404,7 @@ end
 local function state_store()
     local settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/omnibus_state.lua")
     local books = settings:readSetting("books", {})
+    sync.upgrade(books)
     return books, function()
         settings:saveSetting("books", books)
         settings:flush()
@@ -418,12 +453,18 @@ function Omnibus:set_status(status)
     BookList.setBookInfoCacheProperty(self.ui.document.file, "status", status)
 end
 
--- Push every pending book in `books`.
+-- Push every pending book in `books`; a failure leaves them pending and is logged (the message
+-- never carries the token or the request).
 function Omnibus:push_pending(config, books, save)
-    return sync.flush(books, { put_state = self:state_putter(config), save = save })
+    local result = sync.flush(books, { put_state = self:state_putter(config), save = save })
+    if not result.ok then
+        logger.warn("omnibus reading state push failed:", result.message)
+    end
+    return result
 end
 
--- Open: baseline an unseen book, push what waits, then move to the server's state if it is newer.
+-- Open: baseline an unseen book, push what waits, then move to the server's state where it is
+-- newer. A first-seen book the server knows nothing about pushes the device's own state instead.
 function Omnibus:pull_on_open()
     local config = self:loadConfig()
     local uuid = self:open_book_uuid()
@@ -432,9 +473,10 @@ function Omnibus:pull_on_open()
     end
     local books, save = state_store()
     local current = self:current_state()
-    if not books[uuid] then
-        -- Event time 0 so any server state outranks a book the device only just met.
-        sync.settle(books, uuid, current, 0)
+    local first_sight = not books[uuid]
+    if first_sight then
+        -- Time 0 so any server state outranks a book the device only just met.
+        sync.settle(books, uuid, current, { percent_at = 0, status_at = 0 })
         save()
     end
     if not NetworkMgr:isOnline() then
@@ -443,6 +485,11 @@ function Omnibus:pull_on_open()
     self:push_pending(config, books, save)
     local code, remote = self:state_getter(config)(uuid)
     if code ~= 200 or type(remote) ~= "table" then
+        return
+    end
+    if first_sight and sync.adopt_empty_server(books, uuid, current, remote, os.time()) then
+        save()
+        self:push_pending(config, books, save)
         return
     end
     local plan = sync.pull_plan(books[uuid], remote, current)
@@ -458,7 +505,7 @@ function Omnibus:pull_on_open()
         self:set_status(plan.status)
     end
     -- Read the position back: the device lands on a page, not on the exact percent asked for.
-    sync.settle(books, uuid, self:current_state(), plan.event_at)
+    sync.settle(books, uuid, self:current_state(), plan)
     save()
 end
 
@@ -515,6 +562,17 @@ function Omnibus:onSuspend()
     self:guarded("suspend", self.capture_and_flush)
 end
 
+-- Replacing a file whose sidecar KOReader keys by the file's content would orphan the reader's
+-- place and highlights: that is every file while the setting says so, and a file read under it
+-- until it is reopened.
+local function can_replace(path)
+    if G_reader_settings:readSetting("document_metadata_folder", "doc") == "hash" then
+        return false
+    end
+    local ok, hash_dir = pcall(DocSettings.getSidecarDir, DocSettings, path, "hash")
+    return ok and lfs.attributes(hash_dir, "mode") ~= "directory"
+end
+
 local function remove_file(path)
     if lfs.attributes(path, "mode") ~= "file" then
         return true
@@ -542,13 +600,12 @@ function Omnibus:sync()
     local progress = InfoMessage:new{ text = _("Syncing with Omnibus…") }
     UIManager:show(progress)
     UIManager:forceRePaint()
-    local result = sync.run(config.server_url, {
+    local ran, result = pcall(sync.run, config.server_url, {
         dir = dir,
         open_path = self.ui.document and self.ui.document.file,
         manifest = manifest,
         files = files,
-        -- Files KOReader keys by the file's content cannot be replaced without orphaning them.
-        can_replace = G_reader_settings:readSetting("document_metadata_folder", "doc") ~= "hash",
+        can_replace = can_replace,
         save_manifest = function()
             settings:saveSetting("manifest", manifest)
             settings:saveSetting("files", files)
@@ -564,6 +621,9 @@ function Omnibus:sync()
         report = self:reporter(config),
     })
     UIManager:close(progress)
+    if not ran then
+        result = { ok = false, added = 0, removed = 0, message = tostring(result) }
+    end
 
     if result.ok then
         Notification:notify(string.format(_("Omnibus synced: %d added, %d removed"),
