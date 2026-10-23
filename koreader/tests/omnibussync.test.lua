@@ -932,8 +932,14 @@ local function fingerprint(item)
     return table.concat({ item.color or "", item.note or "", item.text or "", item.pos0, item.pos1 }, "\0")
 end
 
+local function server_fingerprint(row)
+    return table.concat({ row.color, row.note or "", row.text or "" }, "\0")
+end
+
+-- The agreed entry for `item` as it stands, against the default `server_row`.
 local function agreed_with(item, extra)
-    local entry = { fp = fingerprint(item), server_at = NOW - 10, server_color = "yellow" }
+    local entry = { fp = fingerprint(item), server_at = NOW - 10, server_color = "yellow",
+        server_fp = server_fingerprint(server_row("any")) }
     for k, v in pairs(extra or {}) do
         entry[k] = v
     end
@@ -1151,17 +1157,45 @@ test("sync_annotations skips a listed highlight the document cannot place and do
     eq(synced.agreed.w1, nil)
 end)
 
-test("sync_annotations leaves a listed highlight no newer than the agreed time untouched", function()
+test("sync_annotations leaves a listed highlight older than the agreed time untouched", function()
     local item = highlight({ omnibus_id = "h1" })
     local items, synced, deps = annotation_device({
         items = { item },
-        get = { 200, { cursor = 9, annotations = { server_row("h1", { note = "same time", updated_at = NOW - 10 }) }, deleted = {} } },
+        get = { 200, { cursor = 9, annotations = { server_row("h1", { note = "older", updated_at = NOW - 11 }) }, deleted = {} } },
     })
     synced.agreed = { h1 = agreed_with(item) }
 
     sync.sync_annotations(items, synced, deps)
 
     eq(item.note, "a note")
+end)
+
+test("sync_annotations leaves a re-listed highlight the device already agreed on untouched", function()
+    local item = highlight({ omnibus_id = "h1" })
+    local items, synced, deps = annotation_device({
+        items = { item },
+        get = { 200, { cursor = 9, annotations = { server_row("h1", { updated_at = NOW - 10 }) }, deleted = {} } },
+    })
+    synced.agreed = { h1 = agreed_with(item) }
+    item.color = "red"
+    synced.agreed.h1.fp = fingerprint(item)
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(item.color, "red")
+end)
+
+test("sync_annotations applies a web edit made in the same second as the one it agreed on", function()
+    local item = highlight({ omnibus_id = "h1" })
+    local items, synced, deps = annotation_device({
+        items = { item },
+        get = { 200, { cursor = 9, annotations = { server_row("h1", { color = "purple", updated_at = NOW - 10 }) }, deleted = {} } },
+    })
+    synced.agreed = { h1 = agreed_with(item) }
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(item.color, "purple")
 end)
 
 test("sync_annotations applies a newer web note edit but keeps the device's own colour when the server's did not move", function()

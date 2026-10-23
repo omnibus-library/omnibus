@@ -18,7 +18,7 @@ rewritten and, if the server's file changed too, the file replaced at the same p
 
 Highlights are kept per book in `synced` (the book's `omnibus_annotations` setting): the
 server's listing cursor and, for each highlight the device and server agreed on, a
-fingerprint of what the device held and the time and colour the server named. A highlight
+fingerprint of what the device held and what the server named (its time, colour and text). A highlight
 is pushed only when its fingerprint moved; one is deleted on the server only when it was
 agreed on and has left the device, so a lost `synced` can never read as deleting everything.
 --]]--
@@ -382,6 +382,13 @@ local function take_server_version(item, server, entry)
     end
 end
 
+-- What the server holds of a highlight that the device would show: a change to it is a change
+-- made elsewhere. Compared as well as the time because the server's clock counts whole seconds.
+local function server_fingerprint(server)
+    return table.concat({ string_or_nil(server.color) or "", string_or_nil(server.note) or "",
+        string_or_nil(server.text) or "" }, "\0")
+end
+
 -- The agreed entry for a highlight whose device-side fingerprint is `fp` and whose server
 -- version is `server`.
 local function agree(fp, server)
@@ -389,7 +396,17 @@ local function agree(fp, server)
         fp = fp,
         server_at = type(server.updated_at) == "number" and server.updated_at or nil,
         server_color = string_or_nil(server.color),
+        server_fp = server_fingerprint(server),
     }
+end
+
+-- Whether the listed version of a highlight is one the device has not seen: not older than the
+-- agreed time, and different from what it agreed on.
+local function newer_on_server(entry, wire)
+    if entry.server_at and wire.updated_at < entry.server_at then
+        return false
+    end
+    return entry.server_fp ~= server_fingerprint(wire)
 end
 
 -- Record what the server answered for each upsert of one push: `applied` and `stale` agree on
@@ -475,7 +492,7 @@ local function apply_listing(listing, synced, deps, state)
                     synced.agreed[id] = agree(fingerprint(item), wire)
                     state.result.changed = true
                 end
-            elseif item and entry and not (entry.server_at and wire.updated_at <= entry.server_at) then
+            elseif item and entry and newer_on_server(entry, wire) then
                 take_server_version(item, wire, entry)
                 synced.agreed[id] = agree(fingerprint(item), wire)
                 state.result.changed = true
@@ -501,7 +518,7 @@ end
 --- Reconcile the open book's highlights with Omnibus: push what changed on the device, then
 --- pull what changed on the server. `items` is the document's annotation list (highlights get
 --- an `omnibus_id` in place), `synced` = { cursor = int, agreed = { [id] = { fp, server_at,
---- server_color, local_only } } } is mutated, and `deps` = { new_id() -> string,
+--- server_color, server_fp, local_only } } } is mutated, and `deps` = { new_id() -> string,
 --- post(body) -> code|nil, reply|nil, err|nil, get(since) -> code|nil, listing|nil, err|nil,
 --- add(wire) -> item|nil, remove(item) }. `changed` says the caller has something to save,
 --- failure or not. Returns { ok, changed, message }.
