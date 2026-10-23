@@ -484,6 +484,30 @@ async fn post_actions_highlight_returns_invalid_request_for_empty_text() {
 }
 
 #[tokio::test]
+async fn post_actions_highlight_returns_invalid_request_for_whitespace_only_text() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    synced_and_downloaded(&base).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/highlight"))
+        .json(&json!({
+            "book": "book-1",
+            "text": "   ",
+            "color": "blue",
+            "location": span_location(),
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_request");
+}
+
+#[tokio::test]
 async fn post_actions_highlight_returns_not_downloaded_for_an_undownloaded_book() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();

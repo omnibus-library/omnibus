@@ -205,7 +205,7 @@ impl Device {
         book.annotations.push(Annotation {
             id,
             text: new.text,
-            note: new.note.filter(|n| !n.is_empty()),
+            note: new.note.filter(|n| !n.trim().is_empty()),
             color: new.color,
             location: crate::annotations::location_json(new.location.as_ref()),
         });

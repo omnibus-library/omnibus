@@ -365,7 +365,7 @@ async fn post_highlight(State(control): State<Arc<Control>>, body: Bytes) -> Rep
         Ok(parsed) => parsed,
         Err(e) => return invalid_request_reply(format!("invalid highlight body: {e}")),
     };
-    if parsed.text.is_empty() {
+    if parsed.text.trim().is_empty() {
         return invalid_request_reply("\"text\" must not be empty");
     }
     let new = NewHighlight {

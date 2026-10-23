@@ -465,6 +465,17 @@ fn highlight_treats_an_empty_note_as_none() {
 }
 
 #[test]
+fn highlight_treats_a_whitespace_only_note_as_none() {
+    let mut device = downloaded_book_1();
+    let mut new = new_highlight(None);
+    new.note = Some("  ".into());
+
+    device.highlight("book-1", "h-1".into(), new).unwrap();
+
+    assert_eq!(device.library["book-1"].annotations[0].note, None);
+}
+
+#[test]
 fn highlight_returns_not_downloaded_for_an_undownloaded_book() {
     let mut device = Device::new("HW-1");
     device.apply(item(new_entitlement("book-1", "Dune")));
