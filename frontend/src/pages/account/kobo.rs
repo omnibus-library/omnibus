@@ -32,6 +32,7 @@ struct PendingKobo {
     action: KoboAction,
     id: i64,
     name: String,
+    kind: DeviceKind,
 }
 
 /// A confirm dialog's title and body for `action` on the device `name`.
@@ -318,14 +319,19 @@ pub fn KoboDevicesCard() -> Element {
     // The row buttons only ask; the dialog's confirm runs the action.
     let ask = move |action: KoboAction| {
         move |id: i64| {
-            let name = devices
+            let (name, kind) = devices
                 .peek()
                 .iter()
                 .flatten()
                 .find(|d| d.id == id)
-                .map(|d| d.name.clone())
+                .map(|d| (d.name.clone(), d.kind))
                 .unwrap_or_default();
-            pending.set(Some(PendingKobo { action, id, name }));
+            pending.set(Some(PendingKobo {
+                action,
+                id,
+                name,
+                kind,
+            }));
         }
     };
     let on_ask_regenerate = use_callback(ask(KoboAction::Regenerate));
@@ -357,14 +363,8 @@ pub fn KoboDevicesCard() -> Element {
     });
 
     let revoke_url = server_url.clone();
-    let on_remove = use_callback(move |id: i64| {
+    let on_remove = use_callback(move |(id, kind): (i64, DeviceKind)| {
         let url = revoke_url.clone();
-        let kind = devices
-            .peek()
-            .iter()
-            .flatten()
-            .find(|d| d.id == id)
-            .map_or_else(DeviceKind::default, |d| d.kind);
         in_flight.set(true);
         spawn(async move {
             match data::revoke_kobo_device(&url, id).await {
@@ -424,24 +424,24 @@ fn kobo_confirm(
     busy: bool,
     mut pending: Signal<Option<PendingKobo>>,
     on_regenerate: Callback<i64>,
-    on_remove: Callback<i64>,
+    on_remove: Callback<(i64, DeviceKind)>,
 ) -> Element {
     let (title, body) = kobo_confirm_text(ask.action, &ask.name);
+    let (id, kind) = (ask.id, ask.kind);
     let (testid, action, busy_label, run) = match ask.action {
         KoboAction::Regenerate => (
             "kobo-regenerate-dialog",
             "Regenerate token",
             "Regenerating\u{2026}",
-            on_regenerate,
+            EventHandler::new(move |()| on_regenerate.call(id)),
         ),
         KoboAction::Remove => (
             "kobo-remove-dialog",
             "Remove device",
             "Removing\u{2026}",
-            on_remove,
+            EventHandler::new(move |()| on_remove.call((id, kind))),
         ),
     };
-    let id = ask.id;
     confirm_dialog(
         Confirm {
             testid,
@@ -452,7 +452,7 @@ fn kobo_confirm(
         },
         busy,
         EventHandler::new(move |()| pending.set(None)),
-        EventHandler::new(move |()| run.call(id)),
+        run,
     )
 }
 
