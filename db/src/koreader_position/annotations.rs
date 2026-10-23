@@ -77,6 +77,9 @@ fn range_xpointers(
     let Some(end) = tail_xpointer(doc, walks, range.spine_index, &range.end, false)? else {
         return Ok(None);
     };
+    if document_position(&range.end) < document_position(&range.start) {
+        return Ok(None);
+    }
     Ok(Some((start, end)))
 }
 

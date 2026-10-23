@@ -567,6 +567,17 @@ mod annotation_ranges {
     }
 
     #[test]
+    fn annotation_xpointers_yields_nothing_when_the_end_precedes_the_start() {
+        let epub = one_chapter("inverted_cfi", "<p>one</p><p>two</p>");
+
+        assert_eq!(
+            range_xpointers(&epub, "epubcfi(/6/2!/4,/4/1:1,/2/1:1)"),
+            None
+        );
+        assert_eq!(range_xpointers(&epub, "epubcfi(/6/2!/4/2,/1:3,/1:1)"), None);
+    }
+
+    #[test]
     fn empty_input_yields_empty_output_without_opening_the_file() {
         let missing = Path::new("/nonexistent/omnibus/book.epub");
         assert_eq!(annotation_cfis(missing, &[]).unwrap(), Vec::new());
