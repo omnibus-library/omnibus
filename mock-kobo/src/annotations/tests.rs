@@ -89,10 +89,7 @@ async fn sync_now_gets_the_annotations_of_each_book_checkforchanges_names_with_i
         "/api/v3/content/book-2/annotations",
     ] {
         let recorded = stub.requests_to(path);
-        assert_eq!(
-            recorded[0].headers.get("if-none-match").unwrap(),
-            "W/\"0\""
-        );
+        assert_eq!(recorded[0].headers.get("if-none-match").unwrap(), "W/\"0\"");
     }
 }
 
@@ -431,7 +428,12 @@ async fn attempt_download_fetches_annotations_unconditionally_after_the_server_s
         ]
     );
     let recorded = stub.requests_to("/api/v3/content/book-1/annotations");
-    assert!(recorded.last().unwrap().headers.get("if-none-match").is_none());
+    assert!(recorded
+        .last()
+        .unwrap()
+        .headers
+        .get("if-none-match")
+        .is_none());
     assert_eq!(device.library["book-1"].annotations.len(), 1);
     assert_eq!(device.library["book-1"].dropped_annotations, 0);
 }

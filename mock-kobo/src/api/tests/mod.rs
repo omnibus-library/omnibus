@@ -433,6 +433,7 @@ async fn get_requests_returns_ok_reply_with_redacted_requests() {
                 request("GET", "/v1/products/books/subscriptions"),
                 request("GET", "/v1/deals"),
                 request("GET", "/v1/library/sync"),
+                json!({ "method": "POST", "path": "/api/v3/content/checkforchanges", "status": 200 }),
             ] },
         })
     );

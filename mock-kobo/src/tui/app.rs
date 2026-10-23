@@ -45,7 +45,10 @@ pub enum Job {
     /// Clear the selected book's downloaded flag, locally.
     RemoveDownload(String),
     /// Make a highlight on the selected book.
-    Highlight { book: String, highlight: NewHighlight },
+    Highlight {
+        book: String,
+        highlight: NewHighlight,
+    },
     /// Delete the selected book's newest highlight.
     DeleteHighlight(String),
 }

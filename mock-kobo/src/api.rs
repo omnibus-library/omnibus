@@ -220,12 +220,18 @@ fn acted_reply_as(
     failure: ReplyCode,
 ) -> Reply<Details> {
     match result {
-        Ok(Acted::Done(view)) => {
-            Reply::new(StatusCode::OK, success, success_message, Details::Device(view))
-        }
-        Ok(Acted::Failed { quirk, message }) => {
-            Reply::new(StatusCode::BAD_GATEWAY, failure, message, Details::Quirk { quirk })
-        }
+        Ok(Acted::Done(view)) => Reply::new(
+            StatusCode::OK,
+            success,
+            success_message,
+            Details::Device(view),
+        ),
+        Ok(Acted::Failed { quirk, message }) => Reply::new(
+            StatusCode::BAD_GATEWAY,
+            failure,
+            message,
+            Details::Quirk { quirk },
+        ),
         Err(error) => error_reply(&error),
     }
 }
@@ -382,7 +388,11 @@ async fn post_delete_highlight(State(control): State<Arc<Control>>, body: Bytes)
         Ok(parsed) => parsed,
         Err(e) => return invalid_request_reply(format!("invalid delete-highlight body: {e}")),
     };
-    annotation_reply(control.delete_highlight(parsed.book, parsed.highlight).await)
+    annotation_reply(
+        control
+            .delete_highlight(parsed.book, parsed.highlight)
+            .await,
+    )
 }
 
 async fn get_requests(State(control): State<Arc<Control>>) -> Reply<Details> {

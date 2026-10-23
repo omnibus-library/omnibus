@@ -394,7 +394,9 @@ fn apply_keeps_a_books_highlights_when_its_metadata_changes() {
     assert_eq!(book.annotations, vec![annotation("a-1")]);
 }
 
-fn new_highlight(location: Option<crate::annotations::SpanRange>) -> crate::annotations::NewHighlight {
+fn new_highlight(
+    location: Option<crate::annotations::SpanRange>,
+) -> crate::annotations::NewHighlight {
     crate::annotations::NewHighlight {
         text: "a passage".into(),
         color: crate::annotations::Swatch::Blue,
@@ -456,7 +458,10 @@ fn highlight_treats_an_empty_note_as_none() {
     device.highlight("book-1", "h-1".into(), new).unwrap();
 
     assert_eq!(device.library["book-1"].annotations[0].note, None);
-    assert_eq!(device.library["book-1"].annotations[0].location, Value::Null);
+    assert_eq!(
+        device.library["book-1"].annotations[0].location,
+        Value::Null
+    );
 }
 
 #[test]

@@ -409,7 +409,9 @@ fn new_highlight() -> crate::annotations::NewHighlight {
     }
 }
 
-fn device_holding_downloaded_book_1_with_highlight(stub: &crate::test_support::RunningStub) -> Device {
+fn device_holding_downloaded_book_1_with_highlight(
+    stub: &crate::test_support::RunningStub,
+) -> Device {
     let mut device = device_holding_downloaded_book_1(stub);
     device
         .highlight("book-1", "h-1".into(), new_highlight())

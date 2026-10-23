@@ -193,7 +193,10 @@ async fn fetch_one(
         // neither carries a body worth decoding.
         return;
     }
-    let Ok(reply) = client.decode::<crate::wire::AnnotationsReply>(response).await else {
+    let Ok(reply) = client
+        .decode::<crate::wire::AnnotationsReply>(response)
+        .await
+    else {
         return;
     };
     let served = reply
