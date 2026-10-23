@@ -18,7 +18,7 @@ use crate::taxonomy::{
 };
 
 use super::curation::restore_curation;
-use super::links::{strip_added_links, supplied_links};
+use super::links::{restore_target_author_sort, strip_added_links, supplied_links};
 use super::overrides::restore_overrides;
 use super::relocation::{deleted_ids, restore_relocation};
 use super::snapshot::SourceSnapshot;
@@ -76,6 +76,7 @@ pub async fn undo_merge(pool: &SqlitePool, merge_log_id: i64) -> Result<String, 
         &later.links,
     )
     .await?;
+    restore_target_author_sort(&mut tx, target_id, snap.target_author_sort.as_ref()).await?;
     restore_attach_ledger(&mut tx, new_id, &source_uuid, &snap.merged_uuid_rows).await?;
 
     // Per-reader state keys on the durable uuid, not the row id, so the

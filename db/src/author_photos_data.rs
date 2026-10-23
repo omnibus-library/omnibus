@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use sqlx::SqlitePool;
 
 use crate::metadata_overrides::rebuild_fts_for_books_batch;
+use crate::sort_keys::refresh_author_sort;
 
 /// Rows per chunk for the `author_id IN (...)` bulk lookup/delete below — one
 /// bind per id, comfortably under SQLite's 999-parameter cap.
@@ -239,14 +240,15 @@ pub async fn delete_author(
     // parameter cap on authors linked to >999 books — without that
     // cap a giant-author delete would silently skip its FTS rebuild
     // and leave the index stale.
-    let affected_uuids: Vec<String> = sqlx::query_scalar(
-        "SELECT b.uuid FROM books b
+    let affected: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT b.id, b.uuid FROM books b
          JOIN books_authors_link l ON l.book = b.id
          WHERE l.author = ?",
     )
     .bind(author_id)
     .fetch_all(&mut *tx)
     .await?;
+    let (affected_ids, affected_uuids): (Vec<i64>, Vec<String>) = affected.into_iter().unzip();
 
     sqlx::query("DELETE FROM books_authors_link WHERE author = ?")
         .bind(author_id)
@@ -262,6 +264,8 @@ pub async fn delete_author(
         .bind(&name)
         .execute(&mut *tx)
         .await?;
+
+    refresh_author_sort(&mut tx, &affected_ids).await?;
 
     tx.commit().await?;
 

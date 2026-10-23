@@ -5,7 +5,9 @@
 //! metadata only; `metadata_overrides` is a read layer and is ignored here.
 
 use omnibus_shared::EbookMetadata;
-use sqlx::SqlitePool;
+use sqlx::{SqliteConnection, SqlitePool};
+
+use crate::normalize::creator_sort_key;
 
 /// Errors returned by [`backfill_series_sort`].
 #[derive(Debug, thiserror::Error)]
@@ -20,6 +22,33 @@ pub enum SortKeysError {
 /// this column and the `books_series_link` write always agree.
 pub fn series_sort_value(m: &EbookMetadata) -> Option<String> {
     crate::helpers::cleaned_series_name(m)
+}
+
+/// Re-key `books.author_sort` from each book's lowest-position linked author,
+/// the one the book displays first. Runs on the caller's connection so it joins
+/// the transaction that changed the links; a book left with no links keeps its
+/// stored value, since nothing remains to derive it from.
+pub(crate) async fn refresh_author_sort(
+    conn: &mut SqliteConnection,
+    book_ids: &[i64],
+) -> Result<(), sqlx::Error> {
+    for book_id in book_ids {
+        let first: Option<(Option<String>, String)> = sqlx::query_as(
+            "SELECT a.sort, a.name FROM books_authors_link l
+               JOIN authors a ON a.id = l.author
+              WHERE l.book = ? ORDER BY l.position LIMIT 1",
+        )
+        .bind(book_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+        let Some((sort, name)) = first else { continue };
+        sqlx::query("UPDATE books SET author_sort = ? WHERE id = ?")
+            .bind(creator_sort_key(sort.as_deref(), &name))
+            .bind(book_id)
+            .execute(&mut *conn)
+            .await?;
+    }
+    Ok(())
 }
 
 /// One-time backfill of `books.series_sort`, run on every boot from `init_db`
