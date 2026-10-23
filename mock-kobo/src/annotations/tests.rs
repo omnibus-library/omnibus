@@ -94,6 +94,30 @@ async fn sync_now_gets_the_annotations_of_each_book_checkforchanges_names_with_i
 }
 
 #[tokio::test]
+async fn sync_now_skips_a_checkforchanges_id_with_unsafe_characters() {
+    let stub = crate::test_support::spawn_stub(Stub {
+        reading_services_changed: vec!["../../admin".into(), "book-1".into()],
+        reading_services_annotations: BTreeMap::from([(
+            "book-1".into(),
+            vec![served_annotation("a-1", "#F6F3B3", "a passage")],
+        )]),
+        ..Stub::default()
+    })
+    .await;
+    let mut device = device_holding("book-1", "Dune");
+
+    let report = sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
+
+    let get_lines: Vec<String> = request_lines(&report.requests)
+        .into_iter()
+        .filter(|l| l.contains("/annotations"))
+        .collect();
+    assert_eq!(get_lines, ["GET /api/v3/content/book-1/annotations 200"]);
+}
+
+#[tokio::test]
 async fn sync_now_keeps_a_downloaded_books_highlights_when_the_get_answers_not_modified() {
     let stub = crate::test_support::spawn_stub(Stub {
         reading_services_changed: vec!["book-1".into()],

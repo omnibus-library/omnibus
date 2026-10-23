@@ -158,8 +158,18 @@ pub async fn fetch_changed_annotations(client: &mut Client, device: &mut Device)
         return;
     };
     for id in ids {
+        if !is_safe_id(&id) {
+            continue;
+        }
         fetch_one(client, device, &host, &id, Some(ANNOTATIONS_IF_NONE_MATCH)).await;
     }
+}
+
+/// Whether `id` is safe to interpolate into an annotations GET/PATCH path:
+/// letters, digits, `_` and `-` only, so a server-side entitlement id can
+/// never steer the request outside `/api/v3/content/` (`/`, `..`, `?`, …).
+fn is_safe_id(id: &str) -> bool {
+    !id.is_empty() && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
 /// Fetch and apply one book's annotation set unconditionally, right after it
