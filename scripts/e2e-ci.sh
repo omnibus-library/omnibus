@@ -37,6 +37,7 @@ label=e2e-ci
 kept_hint="server.log, test-results/"
 bundle_web_app
 make_scratch_dir
+# shellcheck disable=SC2119
 start_scratch_server
 
 cd ui_tests/playwright
