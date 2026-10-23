@@ -144,7 +144,8 @@ pub async fn upsert_progress_tx(
     Ok(record)
 }
 
-/// Give `(user, book)` the `reading` status unless it already has one, dated by
+/// Give `(user, book)` the `reading` status unless it already has one (marked `auto_started`, so
+/// an explicit status dated earlier still beats it), dated by
 /// the surviving position's clock rather than receipt: Kobo sync-out stamps its
 /// state with the newer clock, and a replayed offline write must not read as today.
 async fn mark_started(
@@ -154,8 +155,8 @@ async fn mark_started(
 ) -> Result<(), ProgressError> {
     // `DO NOTHING`: a status the reader chose, `unread` included, outranks a position.
     sqlx::query(
-        "INSERT INTO book_read_status (user_id, book_uuid, status, updated_at)
-         VALUES (?, ?, 'reading', ?)
+        "INSERT INTO book_read_status (user_id, book_uuid, status, updated_at, auto_started)
+         VALUES (?, ?, 'reading', ?, 1)
          ON CONFLICT(user_id, book_uuid) DO NOTHING",
     )
     .bind(user_id)
