@@ -38,6 +38,8 @@ fn apply_adds_new_entitlement_as_undownloaded_book() {
         cover: None,
         download_problem: None,
         reading: crate::reading::Reading::default(),
+        annotations: Vec::new(),
+        dropped_annotations: 0,
     };
     assert_eq!(device.library["book-1"], expected);
 }
@@ -327,6 +329,69 @@ fn finish_returns_unknown_book_for_a_book_it_lacks() {
     let error = device.finish("book-1", 1_700_000_000).unwrap_err();
 
     assert_eq!(error, DeviceError::UnknownBook("book-1".into()));
+}
+
+fn annotation(id: &str) -> crate::annotations::Annotation {
+    crate::annotations::Annotation {
+        id: id.to_owned(),
+        text: "some text".into(),
+        note: None,
+        color: crate::annotations::Swatch::Yellow,
+        location: Value::Null,
+    }
+}
+
+#[test]
+fn receive_annotations_replaces_the_highlights_of_a_downloaded_book() {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+    let book = device.library.get_mut("book-1").unwrap();
+    book.downloaded = true;
+    book.dropped_annotations = 3;
+    let served = vec![annotation("a-1"), annotation("a-2")];
+
+    device.receive_annotations("book-1", served.clone());
+
+    let book = &device.library["book-1"];
+    assert_eq!(book.annotations, served);
+    assert_eq!(book.dropped_annotations, 0);
+}
+
+#[test]
+fn receive_annotations_drops_and_counts_the_highlights_of_an_undownloaded_book() {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+
+    device.receive_annotations("book-1", vec![annotation("a-1"), annotation("a-2")]);
+
+    let book = &device.library["book-1"];
+    assert!(book.annotations.is_empty());
+    assert_eq!(book.dropped_annotations, 2);
+}
+
+#[test]
+fn receive_annotations_changes_nothing_for_a_book_the_device_lacks() {
+    let mut device = Device::new("HW-1");
+
+    device.receive_annotations("book-1", vec![annotation("a-1")]);
+
+    assert!(!device.library.contains_key("book-1"));
+}
+
+#[test]
+fn apply_keeps_a_books_highlights_when_its_metadata_changes() {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+    device.library.get_mut("book-1").unwrap().downloaded = true;
+    device.receive_annotations("book-1", vec![annotation("a-1")]);
+
+    device.apply(item(json!({
+        "ChangedProductMetadata": { "BookMetadata": book_metadata("book-1", "Dune Messiah") }
+    })));
+
+    let book = &device.library["book-1"];
+    assert_eq!(book.title, "Dune Messiah");
+    assert_eq!(book.annotations, vec![annotation("a-1")]);
 }
 
 #[test]

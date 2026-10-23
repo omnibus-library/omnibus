@@ -2,6 +2,7 @@
 //! the Kobo sync routes as a [`Stub`] says and records every request, so a
 //! test can reproduce an old server bug and watch the device react to it.
 
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -10,7 +11,7 @@ use std::time::Duration;
 use axum::{
     extract::State,
     http::{
-        header::{CONTENT_TYPE, HOST, LOCATION},
+        header::{CONTENT_TYPE, ETAG, HOST, LOCATION},
         HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri,
     },
     response::{IntoResponse, Response},
@@ -85,6 +86,14 @@ pub struct Stub {
     pub state_status: StatusCode,
     /// The state PUT reply body; `None` (the default) is an all-`Success` reply.
     pub state_reply: Option<Value>,
+    /// The status `POST .../checkforchanges` answers with.
+    pub reading_services_status: StatusCode,
+    /// The entitlement ids `checkforchanges` reports, minus any already
+    /// served a 200 GET (see [`StubState::served_once`]) — the AC1 self-heal.
+    pub reading_services_changed: Vec<String>,
+    /// Each reported id's served annotation set. An id absent, or mapped to
+    /// an empty vec, answers its GET `304`; a non-empty vec answers `200`.
+    pub reading_services_annotations: BTreeMap<String, Vec<Value>>,
 }
 
 impl Default for Stub {
@@ -111,6 +120,9 @@ impl Default for Stub {
             download_status: StatusCode::OK,
             state_status: StatusCode::OK,
             state_reply: None,
+            reading_services_status: StatusCode::OK,
+            reading_services_changed: Vec::new(),
+            reading_services_annotations: BTreeMap::new(),
         }
     }
 }
@@ -118,6 +130,7 @@ impl Default for Stub {
 /// One request the stub received.
 #[derive(Clone, Debug)]
 pub struct Recorded {
+    pub method: String,
     pub path: String,
     pub headers: HeaderMap,
     pub body: String,
@@ -168,6 +181,9 @@ struct StubState {
     base: String,
     requests: Arc<Mutex<Vec<Recorded>>>,
     sync_calls: AtomicUsize,
+    /// Ids whose annotations GET has already answered 200 — subtracted from
+    /// `checkforchanges`'s next answer, the AC1 self-heal.
+    served_once: Mutex<HashSet<String>>,
 }
 
 /// Serve `stub` on an ephemeral local port.
@@ -180,6 +196,7 @@ pub async fn spawn_stub(stub: Stub) -> RunningStub {
         base: base.clone(),
         requests: requests.clone(),
         sync_calls: AtomicUsize::new(0),
+        served_once: Mutex::new(HashSet::new()),
     });
     let app = Router::new().fallback(handle).with_state(state);
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
@@ -295,11 +312,15 @@ async fn handle(
     body: String,
 ) -> Response {
     state.requests.lock().unwrap().push(Recorded {
+        method: method.to_string(),
         path: uri.path().to_owned(),
         headers: headers.clone(),
         body: body.clone(),
     });
     if let Some(response) = omnibus_api(&state, uri.path(), &headers, &body) {
+        return response;
+    }
+    if let Some(response) = reading_services(&state, &method, uri.path()) {
         return response;
     }
     let prefix = format!("/kobo/{STUB_TOKEN}");
@@ -347,6 +368,72 @@ fn state_put(state: &StubState) -> Response {
         })
     });
     (status, Json(reply)).into_response()
+}
+
+/// The Reading Services routes: `checkforchanges` and the annotations GET,
+/// served at the bare origin rather than under `/kobo/<token>`.
+fn reading_services(state: &StubState, method: &Method, path: &str) -> Option<Response> {
+    if path == "/api/v3/content/checkforchanges" && *method == Method::POST {
+        return Some(checkforchanges(state));
+    }
+    let id = path
+        .strip_prefix("/api/v3/content/")
+        .and_then(|rest| rest.strip_suffix("/annotations"))?;
+    match *method {
+        Method::GET => Some(annotations_get(state, id)),
+        _ => None,
+    }
+}
+
+/// `checkforchanges`'s answer: `reading_services_changed`, minus any id
+/// already served a 200 GET this run.
+fn checkforchanges(state: &StubState) -> Response {
+    let status = state.stub.reading_services_status;
+    if !status.is_success() {
+        return status.into_response();
+    }
+    let served_once = state.served_once.lock().unwrap();
+    let ids: Vec<&String> = state
+        .stub
+        .reading_services_changed
+        .iter()
+        .filter(|id| !served_once.contains(id.as_str()))
+        .collect();
+    (status, Json(ids)).into_response()
+}
+
+/// One book's annotations GET: `200` with its served set when non-empty
+/// (marking it served, for the next `checkforchanges`), else `304 W/"0"`.
+fn annotations_get(state: &StubState, id: &str) -> Response {
+    let served = state
+        .stub
+        .reading_services_annotations
+        .get(id)
+        .cloned()
+        .unwrap_or_default();
+    if served.is_empty() {
+        return (StatusCode::NOT_MODIFIED, [(ETAG, "W/\"0\"".to_owned())]).into_response();
+    }
+    state.served_once.lock().unwrap().insert(id.to_owned());
+    Json(json!({ "annotations": served, "nextPageOffsetToken": null })).into_response()
+}
+
+/// One served annotation entry, with a `{"span":…}` location.
+pub fn served_annotation(id: &str, color: &str, text: &str) -> Value {
+    json!({
+        "id": id,
+        "highlightColor": color,
+        "highlightedText": text,
+        "location": {
+            "span": {
+                "chapterFilename": "OEBPS/ch1.xhtml",
+                "startPath": "span#kobo\\.1\\.2",
+                "startChar": 0,
+                "endPath": "span#kobo\\.1\\.2",
+                "endChar": 1,
+            },
+        },
+    })
 }
 
 /// The Omnibus `/api` routes auto-wire calls: login, the device list and create, then logout.
@@ -532,6 +619,7 @@ fn initialization(state: &StubState, headers: &HeaderMap) -> Response {
         "image_url_quality_template": format!(
             "{prefix}/v1/books/{{ImageId}}/thumbnail/{{Width}}/{{Height}}/{{Quality}}/{{IsGreyscale}}/image.jpg"
         ),
+        "reading_services_host": origin,
     });
     let mut response = (status, Json(json!({ "Resources": resources }))).into_response();
     if state.stub.sends_api_token {

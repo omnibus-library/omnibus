@@ -319,7 +319,10 @@ With no token, the device logs in as the `user:password` in
 
 Every rule `mock-kobo` enforces, named in `mock-kobo::firmware::Quirk`. "Observed"
 means seen on a real device or in a linked bug report; "inferred" means derived
-from the server code or docs, not seen directly.
+from the server code or docs, not seen directly; "unverified" means the rule is
+coded in but has never been checked against a real device at all — the table
+below names the one such row and [AC4](#ac4-the-highlight-colour-check) is how
+to settle it.
 
 | Quirk | Behaviour | Evidence | Status |
 |---|---|---|---|
@@ -338,10 +341,50 @@ from the server code or docs, not seen directly.
 | `DownloadFailure` | A non-2xx download, or no answer at all, leaves the book undownloaded and is retried on the next sync, whatever the policy | #2116 | observed |
 | `StateArbitration` | Reading status and bookmark are reconciled against the server independently, each adopted only when stamped and strictly newer than the device's own | `kobo/dto.rs` | observed |
 | `StatePutResult` | A state PUT's reply must read `Success` on every sub-result, or the write is treated as failed | `kobo/dto.rs` (`StateResponse`) | inferred |
+| `AnnotationsUnheld` | Annotations for an undownloaded book are dropped rather than held, and the server keeps reporting the book until it is served once downloaded | #1647 | observed |
+| `HighlightColor` | A served `highlightColor` hex swatch maps onto the device's `Bookmark.Color` index; anything else lands on yellow (index 0) | #1629 | unverified |
 
 Heights (223/600/1448), quality (90) and greyscale (`false`) are inferred, as
 is the content-type/magic-bytes agreement rule and that a non-2xx cover is
-never cached.
+never cached. The `If-None-Match: W/"0"` header every annotations GET sends,
+and the sync phase order (handshake → library sync → covers → downloads →
+checkforchanges → annotations GETs), are both inferred from
+`kobo/reading_services.rs`, not observed on a device.
+
+### Annotations
+
+After a library sync, `mock-kobo` POSTs `checkforchanges` and then GETs each
+named book's annotations, mapping the served `highlightColor` hex swatch onto
+its own `Swatch` the same way firmware is believed to (`HighlightColor`,
+above):
+
+| Omnibus colour | Wire hex | Mock `Swatch` | Expected `Bookmark.Color` | Observed `Bookmark.Color` |
+|---|---|---|---|---|
+| amber | `#F6F3B3` | yellow | 0 | 0 (#1629) |
+| green | `#C6E09E` | green | 3 | not yet checked |
+| blue | `#B2E1E8` | blue | 2 | not yet checked |
+| rose | `#E8AFCF` | pink | 1 | not yet checked |
+| violet | `#E8AFCF` | pink | 1 | not yet checked |
+
+#### AC4: the highlight-colour check
+
+This pins the mock's `Swatch` table against the server's own `color_to_kobo`
+map — it does **not** prove either one matches a real device. Settling that
+needs a `.kobo/KoboReader.sqlite` capture:
+
+1. Back up the device — see the [warning above](#wireless-sync).
+2. In the Omnibus web reader, make one highlight in each colour (amber, green,
+   blue, rose, violet) on a Kobo-synced book that has a KEPUB.
+3. Sync the Kobo, and open the book once so the highlights materialise.
+4. Copy `.kobo/KoboReader.sqlite` off the device over USB.
+5. Run `SELECT Text, Color FROM Bookmark WHERE VolumeID LIKE '%<uuid>%'`.
+6. Record each `Color` in the "Observed" column above.
+7. Then either flip `Quirk::HighlightColor` and its table row to **observed**,
+   or correct `Swatch`'s discriminants or hex values to match.
+
+If every row reads 0, the firmware ignores `highlightColor` on inbound
+annotations entirely, and the quirk becomes "always 0" — which also answers
+[#1629](https://github.com/omnibus-library/omnibus/issues/1629)'s open question.
 
 ### The control API
 

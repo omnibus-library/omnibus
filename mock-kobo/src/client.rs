@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use reqwest::header::{HeaderValue, HOST};
+use reqwest::header::{HeaderValue, HOST, IF_NONE_MATCH};
 use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -95,6 +95,29 @@ impl Client {
     ) -> Result<Response, SyncFailure> {
         let url = format!("{}/v1/library/{book}/state", self.api_endpoint);
         self.send(self.http.put(url).json(body)).await
+    }
+
+    /// `POST {host}/api/v3/content/checkforchanges`, body `[]` — the device
+    /// never sends its own id/etag list; the server-side watermark decides.
+    pub async fn check_for_changes(&mut self, host: &str) -> Result<Response, SyncFailure> {
+        let url = format!("{host}/api/v3/content/checkforchanges");
+        self.send(self.http.post(url).json(&Vec::<String>::new()))
+            .await
+    }
+
+    /// `GET {host}/api/v3/content/{book}/annotations`, with `If-None-Match` when given.
+    pub async fn annotations(
+        &mut self,
+        host: &str,
+        book: &str,
+        if_none_match: Option<&str>,
+    ) -> Result<Response, SyncFailure> {
+        let url = format!("{host}/api/v3/content/{book}/annotations");
+        let mut request = self.http.get(url);
+        if let Some(etag) = if_none_match {
+            request = request.header(IF_NONE_MATCH, etag);
+        }
+        self.send(request).await
     }
 
     /// `GET library_sync`: one page of the library delta, echoing the

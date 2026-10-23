@@ -25,6 +25,8 @@ pub enum Quirk {
     PortlessHost,
     /// `library_sync` and `get_tests_request` come only from the adopted
     /// `Resources` map, never from `api_endpoint`. Evidence: #2684. Observed.
+    /// The same holds for Reading Services: its host comes only from
+    /// `reading_services_host`. Evidence: `server/src/backend/kobo/auth.rs`. Inferred.
     ResourcesOnly,
     /// `library_sync` pages are followed while the server says
     /// `x-kobo-sync: continue`, echoing each `x-kobo-synctoken` back; past
@@ -61,6 +63,15 @@ pub enum Quirk {
     /// write is treated as failed. Evidence: `server/src/backend/kobo/dto.rs`
     /// (`StateResponse`). Inferred.
     StatePutResult,
+    /// Annotations for a book the device hasn't downloaded are dropped
+    /// rather than held, and the server keeps reporting the book until it is
+    /// served once downloaded. Evidence: #1647. Observed.
+    AnnotationsUnheld,
+    /// A served `highlightColor` hex swatch maps onto the device's
+    /// `Bookmark.Color` index; anything else — a CSS name, an unknown hex,
+    /// or none at all — lands on yellow (`Bookmark.Color` 0). Evidence:
+    /// #1629. Unverified.
+    HighlightColor,
 }
 
 /// The header `v1/initialization` must carry ([`Quirk::ApiToken`]).
@@ -95,3 +106,8 @@ pub const COVER_QUALITY: u32 = 90;
 
 /// The size whose cache entry `Book::cover` shows (the library list). Inferred.
 pub const SHOWN_COVER_SIZE: (u32, u32) = (149, 223);
+
+/// Every checkforchanges-driven and post-download annotations GET's
+/// `If-None-Match`. Firmware always sends this value rather than echoing a
+/// prior ETag. Evidence: `server/src/backend/kobo/reading_services.rs`. Inferred.
+pub const ANNOTATIONS_IF_NONE_MATCH: &str = "W/\"0\"";

@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::annotations::Annotation;
 use crate::covers::Cover;
 use crate::reading::{Bookmark, KoboSpan, Percent, ReadStatus, Reading};
 use crate::wire::{BookMetadata, Series, SyncItem};
@@ -59,6 +60,10 @@ pub struct Device {
     /// Holds the device token baked into the URL, so this never appears in the control API's device view.
     #[serde(default)]
     pub download_urls: BTreeMap<String, String>,
+    /// The bare origin Reading Services is served at, kept from the last
+    /// sync's `Resources.reading_services_host`; `None` before the first sync.
+    #[serde(default)]
+    pub reading_services_host: Option<String>,
 }
 
 /// One book as the device shows it.
@@ -84,6 +89,15 @@ pub struct Book {
     /// Reconciled against the server independently of everything else above.
     #[serde(default)]
     pub reading: Reading,
+    /// The book's annotations, replaced wholesale by the server's served set
+    /// once this book is held and downloaded ([`Device::receive_annotations`]).
+    #[serde(default)]
+    pub annotations: Vec<Annotation>,
+    /// How many annotations the server offered this book while it was held
+    /// but not downloaded, and so were dropped rather than kept
+    /// ([`crate::firmware::Quirk::AnnotationsUnheld`]).
+    #[serde(default)]
+    pub dropped_annotations: usize,
 }
 
 impl Device {
@@ -96,6 +110,7 @@ impl Device {
             format: DEVICE_FORMAT,
             covers: BTreeMap::new(),
             download_urls: BTreeMap::new(),
+            reading_services_host: None,
         }
     }
 
@@ -144,6 +159,24 @@ impl Device {
         book.reading.status = ReadStatus::Finished;
         book.reading.status_modified = Some(now);
         Ok(())
+    }
+
+    /// Apply `book`'s served annotation set:
+    /// - held and downloaded: replaced wholesale, in served order, and
+    ///   `dropped_annotations` resets to 0;
+    /// - held but not downloaded: untouched, and `dropped_annotations`
+    ///   becomes the served count ([`crate::firmware::Quirk::AnnotationsUnheld`]);
+    /// - not held: a no-op.
+    pub fn receive_annotations(&mut self, book: &str, served: Vec<Annotation>) {
+        let Some(book) = self.library.get_mut(book) else {
+            return;
+        };
+        if book.downloaded {
+            book.annotations = served;
+            book.dropped_annotations = 0;
+        } else {
+            book.dropped_annotations = served.len();
+        }
     }
 
     /// Apply one `library_sync` item the way the firmware does.
@@ -229,13 +262,17 @@ impl Book {
             cover: None,
             download_problem: None,
             reading: Reading::default(),
+            annotations: Vec::new(),
+            dropped_annotations: 0,
         }
     }
 
     /// New metadata over the same file ([`crate::firmware::Quirk::MetadataNoRedownload`]).
     /// Keeps the cached cover too: the cover pass only replaces it after a
     /// sync completes, so a sync that fails after this refresh must not
-    /// drop a cover the cache still holds.
+    /// drop a cover the cache still holds. Keeps the device's annotations
+    /// and drop count the same way: a replayed `NewEntitlement` or a
+    /// metadata-only change must not wipe highlights already held.
     fn refresh(&mut self, metadata: BookMetadata) {
         *self = Self {
             downloaded: self.downloaded,
@@ -243,6 +280,8 @@ impl Book {
             download_problem: self.download_problem.clone(),
             reading: self.reading.clone(),
             cover: self.cover,
+            annotations: self.annotations.clone(),
+            dropped_annotations: self.dropped_annotations,
             ..Self::from_metadata(metadata)
         };
     }

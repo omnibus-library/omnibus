@@ -17,6 +17,9 @@ pub struct Resources {
     pub library_sync: String,
     pub get_tests_request: String,
     pub image_url_quality_template: String,
+    /// The bare origin Reading Services (`/api/v3/content/*`) is served at.
+    /// Always sent by Omnibus ([`crate::firmware::Quirk::ResourcesOnly`]).
+    pub reading_services_host: String,
 }
 
 /// One element of a `library_sync` page, externally tagged by its shape.
@@ -145,6 +148,27 @@ pub struct UpdateResult {
 #[serde(rename_all = "PascalCase")]
 pub struct ResultTag {
     pub result: String,
+}
+
+/// `GET .../annotations`'s 200 body.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnotationsReply {
+    pub annotations: Vec<ServedAnnotation>,
+}
+
+/// One served annotation, in the field shape Reading Services answers with.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServedAnnotation {
+    pub id: String,
+    #[serde(default)]
+    pub highlight_color: Option<String>,
+    pub highlighted_text: String,
+    #[serde(default)]
+    pub note_text: Option<String>,
+    #[serde(default)]
+    pub location: serde_json::Value,
 }
 
 /// A book's series. Serialized as it arrived, so a saved device reads back.

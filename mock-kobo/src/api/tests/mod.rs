@@ -195,6 +195,8 @@ async fn get_device_returns_each_book_with_its_series() {
             "cover": null,
             "download_problem": null,
             "reading": { "status": "ReadyToRead", "status_modified": null, "bookmark": null },
+            "annotations": [],
+            "dropped_annotations": 0,
         })
     );
 }

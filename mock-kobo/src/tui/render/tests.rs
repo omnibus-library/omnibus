@@ -37,6 +37,8 @@ fn book(title: &str, authors: &[&str], archived: bool) -> Book {
         cover: None,
         download_problem: None,
         reading: crate::reading::Reading::default(),
+        annotations: Vec::new(),
+        dropped_annotations: 0,
     }
 }
 

@@ -1,6 +1,7 @@
 //! One "Sync now" press, end to end: the handshake, the store paths, and the
 //! library sync, run the way the firmware runs them.
 
+use crate::annotations;
 use crate::client::{Client, RequestRecord};
 use crate::covers;
 use crate::device::Device;
@@ -108,6 +109,7 @@ async fn run_sync(
         .decode::<Initialization>(initialization)
         .await?
         .resources;
+    device.reading_services_host = Some(resources.reading_services_host.clone());
     let tests = client.get_tests(&resources.get_tests_request).await?;
     require_success(client, &tests, Quirk::GetTestsPost)?;
     for path in STORE_PATHS {
@@ -117,6 +119,7 @@ async fn run_sync(
     let pages = sync_library(client, &resources.library_sync, device).await?;
     covers::fetch_covers(client, device, &resources.image_url_quality_template).await;
     downloads::download_books(client, device, policy).await;
+    annotations::fetch_changed_annotations(client, device).await;
     Ok(pages)
 }
 

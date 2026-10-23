@@ -23,6 +23,8 @@ fn book(downloaded: bool, archived: bool, download_problem: Option<&str>) -> Boo
         cover: None,
         download_problem: download_problem.map(str::to_owned),
         reading: crate::reading::Reading::default(),
+        annotations: Vec::new(),
+        dropped_annotations: 0,
     }
 }
 
