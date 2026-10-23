@@ -3,7 +3,9 @@
 
 use axum::{http::StatusCode, response::Response};
 use omnibus_db as db;
-use omnibus_shared::{BookProgress, ProgressFormat, ProgressRecord, ProgressUpdate, ReadStatus};
+use omnibus_shared::{
+    BookProgress, DeviceKind, ProgressFormat, ProgressRecord, ProgressUpdate, ReadStatus,
+};
 use omnibus_shared::{ReadStatusRecord, SetReadStatus};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -280,6 +282,163 @@ mod put {
     }
 
     #[tokio::test]
+    async fn put_state_with_a_percent_only_keeps_a_newer_web_status() {
+        let (app, pool, token, uid, uuid) = seeded().await;
+        let (t2, t3) = (now() - 200, now() - 100);
+        web_status(&pool, uid, &uuid, ReadStatus::Finished, t2).await;
+
+        let res = put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "percent": 55, "event_at": t3 }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let (epub, status) = web_view(&pool, uid, &uuid).await;
+        assert_eq!(epub.unwrap().progress_percent, Some(55));
+        let status = status.unwrap();
+        assert_eq!(
+            (status.status, status.updated_at),
+            (ReadStatus::Finished, t2)
+        );
+    }
+
+    #[tokio::test]
+    async fn put_state_with_a_status_only_keeps_the_stored_position() {
+        let (app, pool, token, uid, uuid) = seeded().await;
+        let (t2, t3) = (now() - 200, now() - 100);
+        web_position(&pool, uid, &uuid, 70, t2).await;
+
+        let res = put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "status": "complete", "event_at": t3 }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let (epub, status) = web_view(&pool, uid, &uuid).await;
+        let epub = epub.unwrap();
+        assert_eq!(
+            (epub.progress_percent, epub.client_updated_at),
+            (Some(70), t2)
+        );
+        assert_eq!(status.unwrap().status, ReadStatus::Finished);
+    }
+
+    #[tokio::test]
+    async fn put_state_answers_a_losing_status_with_the_stored_one() {
+        let (app, pool, token, uid, uuid) = seeded().await;
+        let (t1, t2) = (now() - 200, now() - 100);
+        web_status(&pool, uid, &uuid, ReadStatus::Finished, t2).await;
+
+        let res = put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "status": "reading", "event_at": t1 }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            body_json::<Value>(res).await["status"],
+            json!({ "status": "complete", "event_at": t2 })
+        );
+    }
+
+    #[tokio::test]
+    async fn put_state_rejects_a_body_with_neither_percent_nor_status() {
+        let (app, _pool, token, _uid, uuid) = seeded().await;
+
+        let res = put(&app, &token, &uuid, json!({ "event_at": now() })).await;
+
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn put_state_rolls_the_status_back_when_the_position_write_fails() {
+        let (app, pool, token, uid, uuid) = seeded().await;
+        sqlx::query("DROP TABLE reading_progress")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let res = put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "percent": 5, "status": "complete", "event_at": now() - 5 }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let stored = db::read_status::get_read_status(&pool, uid, &uuid)
+            .await
+            .unwrap();
+        assert_eq!(stored, None);
+    }
+
+    #[tokio::test]
+    async fn put_state_answers_500_when_the_status_write_fails() {
+        let (app, pool, token, _uid, uuid) = seeded().await;
+        sqlx::query("DROP TABLE book_read_status")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let res = put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "percent": 5, "status": "reading", "event_at": now() - 5 }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn put_state_drops_the_cached_stats_summary_when_it_writes_a_status() {
+        let pool = db::init_db("sqlite::memory:").await.unwrap();
+        // An id no sibling test uses: the stats cache is process-wide, keyed on it.
+        let user: i64 = sqlx::query_scalar(
+            "INSERT INTO users (id, username, password_hash) VALUES (9932, 'ko-stats', '!x')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let device = db::kobo_devices::create_device(&pool, user, "KOReader", DeviceKind::Koreader)
+            .await
+            .unwrap();
+        let app = crate::backend::koreader::koreader_router(AppState::new(pool.clone()));
+        let uuid = db::test_support::seed_synced_ebook(&pool, "alpha.epub", "Alpha", "Ada").await;
+        let range = omnibus_shared::StatsRange::AllTime;
+        let before = db::stats::user_stats(&pool, user, range, None)
+            .await
+            .unwrap();
+        assert!(before.finished_books.is_empty());
+
+        let res = put(
+            &app,
+            &device.token,
+            &uuid,
+            json!({ "percent": 100, "status": "complete", "event_at": now() - 5 }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let after = db::stats::user_stats(&pool, user, range, None)
+            .await
+            .unwrap();
+        assert_eq!(after.finished_books.len(), 1);
+    }
+
+    #[tokio::test]
     async fn put_state_rejects_a_percent_outside_0_to_100() {
         let (app, _pool, token, _uid, uuid) = seeded().await;
 
@@ -374,6 +533,19 @@ mod get {
         let res = get(&app, &token, &uuid).await;
 
         assert_eq!(body_json::<Value>(res).await["status"], Value::Null);
+    }
+
+    #[tokio::test]
+    async fn get_state_answers_500_when_the_read_fails() {
+        let (app, pool, token, _uid, uuid) = seeded().await;
+        sqlx::query("DROP TABLE book_read_status")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let res = get(&app, &token, &uuid).await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 
     #[tokio::test]

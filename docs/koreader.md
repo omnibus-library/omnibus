@@ -64,7 +64,10 @@ and the other way round.
   with the next open, close, suspend or **Sync now** that finds one. A later
   change to the same book replaces the waiting one, so only the latest is sent.
 - **Newest wins:** whichever change happened last on its own device wins, not
-  whichever reached the server last. Position and status are decided separately.
+  whichever reached the server last. Position and status are decided
+  separately, and the device sends only what it changed: finishing a book there
+  leaves a position saved elsewhere alone, and moving the page leaves the
+  status alone.
   A device whose clock is behind loses to a newer change from another device;
   one whose clock is ahead is held to the server's time. Opening a book and
   closing it without reading changes nothing, so a stale device can't overwrite
@@ -101,13 +104,17 @@ title, authors, series (and its number), description and cover.
   without downloading the file again.
 - **A book that is open** is left alone and updated by the next sync after you
   close it.
-- **Names don't change.** A delivered file keeps its name after a retitle, and a
-  book that leaves the shelves and returns comes back under the name it had,
-  so its kept place and highlights are found again.
-- **Hash sidecars:** with KOReader's book-metadata location set to *hash*, the
-  place and highlights are tied to the file's contents, so the plugin never
-  replaces the file there. The metadata and cover still update; a changed file
-  waits. The default location (*doc*) isn't affected.
+- **Names don't change,** except for a format change. A delivered file keeps its
+  name after a retitle, and a book that leaves the shelves and returns comes back
+  under the name it had, so its kept place and highlights are found again. A book
+  that Omnibus now serves in another format (an EPUB that is now a CBZ) is
+  delivered under a new name and the old file is removed; its old `.sdr` stays.
+- **Hash sidecars:** with KOReader's book-metadata location set to *hash* (or for
+  a book that was read under it and not reopened since), the place and highlights
+  are tied to the file's contents, so the plugin never replaces that file. The
+  metadata and cover still update; the changed file waits and is downloaded by the
+  first sync after the book is no longer kept that way. The default location
+  (*doc*) isn't affected.
 
 ## Test lane
 
@@ -116,7 +123,9 @@ add the OPDS catalog with Basic credentials, browse **All Books**, search,
 download the EPUB acquisition, and open it in the reader (the `opds`
 scenario), then sync a shelf through the Omnibus plugin and drop it again (the
 `delivery` scenario), and open a book at the web reader's position and close it
-further on, which the web then shows (the `roundtrip` scenario), and retitle and
+further on, which the web then shows after a suspend, a close, and a change
+made offline that waits for the next Sync now (the `roundtrip` scenario),
+and fails if the device token appears in KOReader's log; then retitle and
 re-cover a book on the web, which the next sync shows without losing the reader's
 place or highlights (the `metadata` scenario), and carry a spot inside a
 paragraph both ways, so the device and the web reader open on the same
